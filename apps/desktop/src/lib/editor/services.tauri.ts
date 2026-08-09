@@ -6,6 +6,7 @@
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
+	cancelTranscription,
 	captionCapabilities,
 	deleteCaptionModel,
 	detectSilence,
@@ -91,6 +92,7 @@ export const tauriEditorServices: EditorServices = {
 		deleteModel: deleteCaptionModel,
 		hasTranscribableAudio,
 		transcribe: transcribeProject,
+		cancel: cancelTranscription,
 	},
 	analysis: {
 		detectSilence: (a) => detectSilence(a.audioPath, a.microphonePath, a.cursorPath, a.options),

@@ -21,6 +21,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import { fade, slide } from "svelte/transition";
 import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
@@ -448,6 +449,11 @@ let migrationDone = false;
 const AUTOSAVE_INTERVAL_MS = 30_000;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 
+// Sonner dedupes on id, so a disk-full autosave retrying every 30s shows one
+// persistent toast rather than a stream of them.
+const AUTOSAVE_TOAST_ID = "autosave-failed";
+let autosaveFailing = false;
+
 function startAutosave() {
 	stopAutosave();
 	autosaveTimer = setInterval(async () => {
@@ -459,8 +465,21 @@ function startAutosave() {
 		try {
 			const editsJson = JSON.stringify(store.toRenderState());
 			await autosaveProject(documentPath, editsJson);
+			if (autosaveFailing) {
+				autosaveFailing = false;
+				toast.dismiss(AUTOSAVE_TOAST_ID);
+			}
 		} catch (err) {
+			// Autosave is the only thing protecting 30s of edits, so a disk-full
+			// or locked file must not fail in the console alone.
 			console.warn("Autosave failed:", err);
+			autosaveFailing = true;
+			toast.error("Autosave isn't working", {
+				id: AUTOSAVE_TOAST_ID,
+				description: `${(err as Error)?.message ?? err} — save manually to keep your edits.`,
+				duration: Number.POSITIVE_INFINITY,
+				action: { label: "Save now", onClick: () => void handleSave() },
+			});
 		}
 	}, AUTOSAVE_INTERVAL_MS);
 }
@@ -2157,7 +2176,7 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
         {#if showTimeline && !isExportFlowOpen}
           <div
             class="shrink-0 overflow-hidden"
-            transition:slide={{ axis: "y", duration: 280, easing: cubicOut }}
+            transition:slide={{ axis: "y", duration: motionDuration(280), easing: cubicOut }}
           >
             <!-- Height on the INNER div: `slide` animates the wrapper's own
                  height, so the two would fight over the same property. -->
@@ -2184,12 +2203,13 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
                     : ''}"
                 ></div>
               </div>
-              <!-- Blunt for now: this also freezes scrubbing. Timeline needs a
-                   `readonly` mode (seek yes, structural edits no) — until then
-                   playback stays reachable via the transport controls. -->
-              <div class="contents" inert={agentSession.active}>
-                <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
-              </div>
+              <Timeline
+                {store}
+                {videoEl}
+                {tileProvider}
+                {filmstripVersion}
+                readOnly={agentSession.active}
+              />
             </div>
           </div>
         {/if}
@@ -2203,7 +2223,7 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
       {#if isExportFlowOpen}
         <aside
           class="min-h-0 shrink-0 overflow-hidden border-l border-border/60"
-          transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
+          transition:slide={{ axis: "x", duration: motionDuration(280), easing: cubicOut }}
         >
           <div class="h-full w-[26rem]">
             <ExportPanel
@@ -2221,7 +2241,7 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
       {:else if showSidebar}
         <aside
           class="relative min-h-0 shrink-0 overflow-hidden border-l border-border/60"
-          transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
+          transition:slide={{ axis: "x", duration: motionDuration(280), easing: cubicOut }}
         >
           <!-- Splitter: drag or arrow-key to resize the panel. Sits in the left
                padding gutter so it never overlaps a tab. Modelled as a vertical

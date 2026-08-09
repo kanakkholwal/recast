@@ -29,8 +29,12 @@ async function handleConnect() {
 }
 
 async function handleDisconnect() {
-	await gdrive.disconnect();
-	toast.success("Disconnected from Google Drive.");
+	try {
+		await gdrive.disconnect();
+		toast.success("Disconnected from Google Drive.");
+	} catch (e) {
+		toast.error(`Couldn't disconnect Google Drive: ${(e as Error)?.message ?? e}`);
+	}
 }
 </script>
 

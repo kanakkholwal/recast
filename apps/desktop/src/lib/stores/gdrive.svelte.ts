@@ -144,7 +144,10 @@ function createGdriveStore() {
 		try {
 			await gdriveDisconnect();
 		} catch (e) {
+			// Clearing state here would claim the account is disconnected while the
+			// token is still on disk. Sibling `connect()` rethrows for the same reason.
 			console.error("[gdrive] disconnect failed", e);
+			throw e;
 		}
 		connected = false;
 		email = null;
@@ -252,6 +255,11 @@ function createGdriveStore() {
 			await gdriveCancelUpload(uploadId);
 		} catch (e) {
 			console.error("[gdrive] cancel failed", e);
+			// The transfer is still running. Leaving it "cancelled" makes
+			// `runUpload`'s catch swallow whatever really happens to it.
+			const now = uploads[uploadId];
+			if (now?.status === "cancelled") uploads[uploadId] = { ...now, status: "uploading" };
+			toast.error(`Couldn't cancel the upload: ${(e as Error)?.message ?? e}`);
 		}
 	}
 

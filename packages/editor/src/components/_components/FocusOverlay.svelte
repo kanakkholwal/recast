@@ -279,8 +279,12 @@ const isActive = $derived(store.activePanel === "focus" && store.selectedZoomReg
 </script>
 
 {#if store.activePanel === "focus"}
+  <!-- aria-hidden for the same reason as FocusPad: the drag handles are a
+       pointer convenience, and FocusPanel's scale / centre-X / centre-Y
+       sliders are the keyboard-complete way to set the same three values. -->
   <canvas
     bind:this={canvasEl}
+    aria-hidden="true"
     onpointerdown={handlePointerDown}
     onpointermove={handlePointerMove}
     onpointerup={handlePointerUp}

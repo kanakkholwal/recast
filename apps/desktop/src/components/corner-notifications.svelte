@@ -1,20 +1,29 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import { config } from "$constants/app";
-  import { LATEST_RELEASE } from "$constants/changelog";
-  import { updater } from "$lib/stores/updater.svelte";
-  import { whatsNew } from "$lib/stores/whats-new.svelte";
-  import { ArrowRight, CircleCheck, Download, RefreshCw, TriangleAlert, X, AiWand } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { cubicOut } from "svelte/easing";
-  import { fly } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { config } from "$constants/app";
+import { LATEST_RELEASE } from "$constants/changelog";
+import { updater } from "$lib/stores/updater.svelte";
+import { whatsNew } from "$lib/stores/whats-new.svelte";
+import {
+	ArrowRight,
+	CircleCheck,
+	Download,
+	RefreshCw,
+	TriangleAlert,
+	X,
+	AiWand,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { cubicOut } from "svelte/easing";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
+import { fly } from "svelte/transition";
 
-  const pct = $derived(Math.round(updater.progress * 100));
+const pct = $derived(Math.round(updater.progress * 100));
 
-  function openChangelog() {
-    whatsNew.dismissCard();
-    goto("/whats-new");
-  }
+function openChangelog() {
+	whatsNew.dismissCard();
+	goto("/whats-new");
+}
 </script>
 
 <!-- Non-blocking notification stack, bottom-right; never traps focus. -->
@@ -24,7 +33,7 @@
   {#if updater.visible}
     <div
       class="pointer-events-auto overflow-hidden rounded-xl border border-border bg-card shadow-lg ring-1 ring-black/5"
-      transition:fly={{ y: 16, x: 8, duration: 240, easing: cubicOut }}
+      transition:fly={{ y: 16, x: 8, duration: motionDuration(240), easing: cubicOut }}
     >
       <div class="flex items-start gap-3 px-4 py-3">
         <div
@@ -128,7 +137,7 @@
   {#if whatsNew.cardVisible}
     <div
       class="pointer-events-auto overflow-hidden rounded-xl border border-border bg-card shadow-lg ring-1 ring-black/5"
-      transition:fly={{ y: 16, x: 8, duration: 240, delay: 80, easing: cubicOut }}
+      transition:fly={{ y: 16, x: 8, duration: motionDuration(240), delay: motionDuration(80), easing: cubicOut }}
     >
       <div class="flex items-start gap-3 px-4 py-3">
         <div

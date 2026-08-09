@@ -326,6 +326,10 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     }
     let cursor_sprite_active = image_cache.contains_key(CURSOR_SPRITE_KEY_REST);
 
+    // Z-order is immutable for the whole render; sorting it per frame cost two
+    // allocations + a sort 54,000× on a 30-min export.
+    let ordered_annotations = sorted_visible_annotations(&request.render_state.annotations);
+
     // Renders frame `i` into its own buffer. Pure function of `i` over the
     // precomputed, read-only state above (smoothed path, press events, zoom
     // LUT, idle periods, image cache), so it's safe to call concurrently.
@@ -346,8 +350,8 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         // Render in z-order so stacking is deterministic; skip hidden so the
         // user-toggled visibility flag matches the preview. `z_index` defaults
         // to 0 for v1 projects, which preserves insertion order via the stable
-        // sort below.
-        for annotation in sorted_visible_annotations(&request.render_state.annotations) {
+        // sort in `sorted_visible_annotations`.
+        for annotation in ordered_annotations.iter().copied() {
             draw_annotation(
                 &mut frame,
                 canvas_w,

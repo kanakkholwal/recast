@@ -3041,11 +3041,12 @@ pub(crate) async fn run_export_job(
     // ~32 KB command-line limit ("The filename or extension is too long",
     // os error 206). Above a threshold, pass it via `-filter_complex_script
     // <file>` (read from disk, no command-line cost) instead of inline. The
-    // file is removed after the encode finishes.
+    // file is removed after the encode finishes — and lives in temp, not the
+    // output dir, so a killed export leaves no junk beside the user's videos.
     let mut filter_script_path: Option<PathBuf> = None;
     if let Some(ref filter_complex) = filter_complex_after_cursor {
         if filter_complex.len() > FILTER_COMPLEX_SCRIPT_THRESHOLD {
-            let path = output_dir.join(format!("recast-filtergraph-{export_id}.txt"));
+            let path = std::env::temp_dir().join(format!("recast-filtergraph-{export_id}.txt"));
             std::fs::write(&path, filter_complex).map_err(|e| {
                 AppError::msg(format!(
                     "failed to write filter script {}: {e}",

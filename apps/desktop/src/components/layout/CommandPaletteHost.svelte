@@ -7,6 +7,7 @@ import { Kbd, KbdGroup } from "@recast/ui/kbd";
 import { cn } from "@recast/ui/utils";
 import { onMount, tick } from "svelte";
 import { cubicOut } from "svelte/easing";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import { fade, scale } from "svelte/transition";
 
 let query = $state("");
@@ -102,7 +103,7 @@ function clearQuery() {
 {#if commandPalette.open}
   <div
     class="fixed inset-0 z-60 bg-background/70 backdrop-blur-sm"
-    transition:fade={{ duration: 150 }}
+    transition:fade={{ duration: motionDuration(150) }}
     onclick={close}
     role="presentation"
   ></div>
@@ -119,7 +120,7 @@ function clearQuery() {
     <div
       class="relative w-full max-w-xl transform-gpu overflow-hidden rounded-xl border border-border/60 bg-popover/95 shadow-(--shadow-craft-xl) ring-1 ring-border/50 backdrop-blur-xl"
       role="document"
-      transition:scale={{ duration: 220, start: 0.96, easing: cubicOut }}
+      transition:scale={{ duration: motionDuration(220), start: 0.96, easing: cubicOut }}
     >
       <div class="flex items-center gap-2.5 border-b border-border/50 px-3.5">
         <Search class="size-4 shrink-0 text-muted-foreground/70" />

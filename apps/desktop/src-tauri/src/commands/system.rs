@@ -1368,17 +1368,23 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
 
 /// Move a file to the OS recycle bin / trash.
 /// Validates the path exists and is a file before deleting.
+///
+/// `trash::delete` is a COM shell round-trip on Windows and a Finder/DBus one
+/// elsewhere, so it must not run on the main thread (macOS WKWebView freeze).
 #[tauri::command]
-pub fn delete_file(path: String) -> AppResult<()> {
-    let target = std::path::Path::new(&path);
-    if !target.exists() {
-        return Err(AppError::from("File not found"));
-    }
-    if !target.is_file() {
-        return Err(AppError::from("Path is not a file"));
-    }
-    trash::delete(target).map_err(|e| AppError::msg(format!("Could not move to trash: {e}")))?;
-    Ok(())
+pub async fn delete_file(path: String) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || {
+        let target = std::path::Path::new(&path);
+        if !target.exists() {
+            return Err(AppError::from("File not found"));
+        }
+        if !target.is_file() {
+            return Err(AppError::from("Path is not a file"));
+        }
+        trash::delete(target).map_err(|e| AppError::msg(format!("Could not move to trash: {e}")))
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("delete task panicked: {e}")))?
 }
 
 /// Rename a file in place (same directory, new filename).
@@ -1732,15 +1738,23 @@ pub fn cli_install_status() -> crate::path_install::InstallStatus {
 }
 
 /// Put `recast` on the user's PATH (the in-app "Install command line tool").
+///
+/// Async + `spawn_blocking`: this copies the whole release binary (tens of MB
+/// with ggml + ocr linked) and edits the registry / shell rc. A sync command
+/// runs on the main thread, which freezes the macOS WKWebView.
 #[tauri::command]
-pub fn install_cli() -> AppResult<String> {
-    crate::path_install::install().map_err(AppError::msg)
+pub async fn install_cli() -> AppResult<String> {
+    tokio::task::spawn_blocking(|| crate::path_install::install().map_err(AppError::msg))
+        .await
+        .map_err(|e| AppError::msg(format!("install task panicked: {e}")))?
 }
 
 /// Remove `recast` from the user's PATH.
 #[tauri::command]
-pub fn uninstall_cli() -> AppResult<String> {
-    crate::path_install::uninstall().map_err(AppError::msg)
+pub async fn uninstall_cli() -> AppResult<String> {
+    tokio::task::spawn_blocking(|| crate::path_install::uninstall().map_err(AppError::msg))
+        .await
+        .map_err(|e| AppError::msg(format!("uninstall task panicked: {e}")))?
 }
 
 #[derive(Debug, Serialize)]

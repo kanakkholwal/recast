@@ -48,6 +48,7 @@ import {
 	type CaptionModelInfo,
 	type DeviceCapabilities,
 	getEditorServices,
+	TRANSCRIBE_CANCELLED,
 } from "../../lib/editor/services";
 import { registry } from "../../lib/registry";
 import type { CaptionPresetValue } from "../../lib/registry/types";
@@ -93,6 +94,7 @@ let pickerOpen = $state(false);
 let downloadingId = $state<string | null>(null);
 let downloadPct = $state(0);
 let transcribing = $state(false);
+let cancelling = $state(false);
 let phase = $state<string>("");
 let error = $state<string | null>(null);
 let transcriptQuery = $state("");
@@ -232,6 +234,7 @@ async function generate() {
 	)
 		return;
 	transcribing = true;
+	cancelling = false;
 	phase = "extracting";
 	error = null;
 	startedAt = Date.now();
@@ -249,10 +252,22 @@ async function generate() {
 		// Keep whatever transcript is already loaded: this runs as "Regenerate"
 		// with real data on screen, and `transcript` is not in the undo snapshot,
 		// so clearing it here is unrecoverable.
-		error = `${e}`;
+		if (!`${e}`.includes(TRANSCRIBE_CANCELLED)) error = `${e}`;
 	} finally {
 		transcribing = false;
+		cancelling = false;
 		phase = "";
+	}
+}
+
+async function cancelGenerate() {
+	if (!asr?.cancel || cancelling) return;
+	cancelling = true;
+	try {
+		await asr.cancel();
+	} catch (e) {
+		cancelling = false;
+		error = `Couldn't stop transcription: ${e}`;
 	}
 }
 
@@ -651,25 +666,32 @@ const noSpeechFound = $derived(
 
     <!-- Generate lives in the same section as the model picker. -->
     <div class="mt-3 border-t border-border/50 pt-3">
-      <Button
-        variant="dark"
-        size="sm"
-        class="w-full gap-1.5"
-        disabled={!selected?.installed ||
-          !selected?.runnable ||
-          !selected?.runtimeAvailable ||
-          transcribing}
-        onclick={generate}
-      >
-        {#if transcribing}
-          <LoaderCircle size={14} class="animate-spin" />
-          {phase === "extracting" ? "Reading audio" : "Transcribing"}
-          <span class="tabular-nums opacity-70">{elapsedLabel(elapsedMs)}</span>
-        {:else}
-          <AiWand size={14} />
-          {store.transcript ? "Regenerate captions" : "Generate captions"}
+      <div class="flex gap-1.5">
+        <Button
+          variant="dark"
+          size="sm"
+          class="flex-1 gap-1.5"
+          disabled={!selected?.installed ||
+            !selected?.runnable ||
+            !selected?.runtimeAvailable ||
+            transcribing}
+          onclick={generate}
+        >
+          {#if transcribing}
+            <LoaderCircle size={14} class="animate-spin" />
+            {phase === "extracting" ? "Reading audio" : "Transcribing"}
+            <span class="tabular-nums opacity-70">{elapsedLabel(elapsedMs)}</span>
+          {:else}
+            <AiWand size={14} />
+            {store.transcript ? "Regenerate captions" : "Generate captions"}
+          {/if}
+        </Button>
+        {#if transcribing && asr?.cancel}
+          <Button variant="outline" size="sm" disabled={cancelling} onclick={cancelGenerate}>
+            {cancelling ? "Stopping…" : "Cancel"}
+          </Button>
         {/if}
-      </Button>
+      </div>
 
       {#if usable.length === 0}
         <p class="mt-2 text-[11px] text-muted-foreground">

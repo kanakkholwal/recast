@@ -46,9 +46,18 @@ interface Props {
 	videoEl?: HTMLVideoElement | null;
 	tileProvider?: TileProvider | null;
 	filmstripVersion?: number;
+	/** Block structural edits (an agent owns the write lock) while leaving the
+	 *  transport live, so the user can still scrub to watch what it changes. */
+	readOnly?: boolean;
 }
 
-let { store, videoEl = null, tileProvider = null, filmstripVersion = 0 }: Props = $props();
+let {
+	store,
+	videoEl = null,
+	tileProvider = null,
+	filmstripVersion = 0,
+	readOnly = false,
+}: Props = $props();
 
 let timelineEl: HTMLDivElement | undefined = $state();
 let railInnerEl: HTMLDivElement | undefined = $state();
@@ -1145,8 +1154,11 @@ onMount(() => {
 
       <!-- No horizontal padding: lanes must share the x-origin of the ruler and
            playhead (both direct children at x=0), or every tile sits offset from
-           the ticks and the playhead line. -->
-      <div class="relative pb-2 pt-1.5">
+           the ticks and the playhead line.
+           `inert` sits here, not on the whole timeline: every structural gesture
+           lives inside this stack, while scrub/zoom/scroll belong to the
+           scroller above, so a write-locked timeline stays watchable. -->
+      <div class="relative pb-2 pt-1.5" inert={readOnly}>
         <TimelineClipBar
           {store}
           {videoEl}
@@ -1191,7 +1203,7 @@ onMount(() => {
               panelTab="music"
             />
           {:else if lane.id === "cuts"}
-            <TimelineCutLane {store} {pixelsPerSecond} {duration} />
+            <TimelineCutLane {store} {pixelsPerSecond} {duration} fps={effectiveFps()} />
           {:else if lane.id === "zoom"}
             <TimelineZoomLane
               {store}

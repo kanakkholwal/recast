@@ -297,3 +297,15 @@ tauri-plugin-global-shortcut = "2.3.2"
 # then cached). Our own crate is untouched, so the edit-compile loop is unchanged.
 [profile.dev.package."*"]
 opt-level = 3
+
+# Release shipped at cargo defaults (codegen-units = 16, no LTO) while the hot
+# path is per-pixel Rust: `cursor_export.rs` blends 33 MB frames 54,000× on a
+# 30-min 4K export, and `rten`/`image`/decode all loop per sample. Cross-crate
+# inlining is exactly what those need, and 16 codegen units blocks it.
+# `strip` drops ~tens of MB of symbols from the shipped binary; `panic` is left
+# at unwind because Tauri commands catch panics and `spawn_blocking` reports
+# them as errors rather than killing the app.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

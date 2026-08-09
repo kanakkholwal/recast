@@ -17,6 +17,7 @@ import { assetsStore } from "../stores/assets-store.svelte";
 import { exportActivity } from "../lib/host-hooks";
 import { type EditorStore } from "../stores/editor-store.svelte";
 import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
+import { Button } from "@recast/ui/button";
 import { Spinner } from "@recast/ui/spinner";
 import { toast } from "@recast/ui/sonner";
 import { getEditorServices } from "../lib/editor/services";
@@ -940,8 +941,12 @@ function requestRedraw() {
 		rafHandle = null;
 		try {
 			draw();
+			if (paintFailed) paintFailed = false;
 		} catch (err) {
+			// Paused, a throw here leaves the last good frame on screen, so every
+			// later edit silently appears to do nothing. Say so instead.
 			console.error("preview draw() failed:", err);
+			paintFailed = true;
 		}
 	});
 }
@@ -951,6 +956,8 @@ function requestRedraw() {
 let wcRafHandle: number | null = null;
 // Consecutive draw() failures; a bad frame must not kill the loop.
 let drawErrors = 0;
+// The composite is stuck on a stale frame; surfaced in the template.
+let paintFailed = $state(false);
 
 function startVideoFrameLoop() {
 	// Drive the loop with rAF, not the <video> element's requestVideoFrameCallback:
@@ -964,6 +971,7 @@ function startVideoFrameLoop() {
 		try {
 			draw();
 			drawErrors = 0;
+			if (paintFailed) paintFailed = false;
 		} catch (err) {
 			// A bad frame must not kill the loop (a dead loop freezes the preview
 			// and reads as a crash). Log once, tolerate transients, stop if persistent.
@@ -971,6 +979,7 @@ function startVideoFrameLoop() {
 			if (drawErrors > 120) {
 				console.error("preview draw() failing persistently; stopping loop");
 				wcRafHandle = null;
+				paintFailed = true;
 				return;
 			}
 		}
@@ -1001,9 +1010,15 @@ function stopVideoFrameLoop() {
  */
 $effect(() => {
 	captureFrame = async () => {
-		if (!canvasEl || !gl || webgl2Unsupported) return null;
+		if (!canvasEl || webgl2Unsupported) return null;
+		// The render-worker path never assigns `gl` — guarding on it alone made
+		// screenshot/copy-frame return null on the DEFAULT path.
+		if (!gl && !renderWorkerClient) return null;
+		if (renderWorkerClient && !hasRenderedFrame) return null;
 		try {
-			draw();
+			// Worker path: the canvas already holds the last presented bitmap and
+			// its composite is async, so a draw() here would land after the copy.
+			if (gl) draw();
 			const w = canvasEl.width;
 			const h = canvasEl.height;
 			if (!w || !h) return null;
@@ -1013,7 +1028,8 @@ $effect(() => {
 			const ctx = copy.getContext("2d");
 			if (!ctx) return null;
 			// Same-task drawImage from a WebGL canvas captures the current
-			// front buffer even when preserveDrawingBuffer is false.
+			// front buffer even when preserveDrawingBuffer is false. On the
+			// bitmaprenderer canvas the bitmap persists, so no timing constraint.
 			ctx.drawImage(canvasEl, 0, 0);
 			return await new Promise<Blob | null>((resolve) => {
 				copy.toBlob((b) => resolve(b), "image/png");
@@ -1457,6 +1473,21 @@ const isAnnotationActive = $derived(
 					The graphics driver reset. The preview will come back on its own — your
 					recording and edits are unaffected.
 				</p>
+			</div>
+		{/if}
+		{#if paintFailed && !glLost && !webgl2Unsupported}
+			<!-- Without this the canvas keeps showing the last good frame, so
+			     every later edit reads as "the app ignored me". -->
+			<div
+				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/95 p-6 text-center"
+				role="alert"
+			>
+				<div class="text-sm font-semibold text-foreground">Preview is out of date</div>
+				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
+					The preview couldn't redraw, so it's showing an older frame. Your edits are
+					saved and export is unaffected.
+				</p>
+				<Button variant="outline" size="sm" onclick={() => requestRedraw()}>Try again</Button>
 			</div>
 		{/if}
 		{#if webgl2Unsupported}

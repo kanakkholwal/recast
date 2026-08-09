@@ -105,6 +105,48 @@ export function buildPressEvents(samples: PressSample[]): PressEvent[] {
 	return events;
 }
 
+type PressIndex = { downs: Float64Array; maxSpan: number };
+
+// Keyed on array identity: `pressEvents` is rebuilt wholesale from the raw
+// track, so a new array IS the invalidation signal.
+const indexCache = new WeakMap<PressEvent[], PressIndex>();
+
+function pressIndex(events: PressEvent[]): PressIndex {
+	const cached = indexCache.get(events);
+	if (cached) return cached;
+	const downs = new Float64Array(events.length);
+	let maxSpan = 0;
+	for (let i = 0; i < events.length; i++) {
+		const ev = events[i];
+		downs[i] = ev.downUs;
+		const holdEnd = Math.max(ev.upUs + PRESS_LINGER_US, ev.downUs + PRESS_MIN_HOLD_US);
+		// Widest of the three windows (pressStateAt's visEnd), so one index serves all.
+		const span = holdEnd + PRESS_POSTROLL_US + PRESS_VIS_RAMP_US - ev.downUs;
+		if (span > maxSpan) maxSpan = span;
+	}
+	const index = { downs, maxSpan };
+	indexCache.set(events, index);
+	return index;
+}
+
+/**
+ * First event whose influence window can still reach `tsUs`. A held press makes
+ * window *end* non-monotonic, so the bound is `downUs >= tsUs - maxSpan` rather
+ * than a search on the end time.
+ */
+function firstCandidate(events: PressEvent[], tsUs: number): number {
+	const { downs, maxSpan } = pressIndex(events);
+	const cutoff = tsUs - maxSpan;
+	let lo = 0;
+	let hi = downs.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (downs[mid] < cutoff) lo = mid + 1;
+		else hi = mid;
+	}
+	return lo;
+}
+
 /**
  * Active click anchor + cosine falloff weight at `tsUs`, or null outside any
  * click-snap window. Picks the closest event when two windows overlap so
@@ -116,7 +158,7 @@ export function clickAnchorAt(
 ): { x: number; y: number; weight: number } | null {
 	let bestEv: PressEvent | null = null;
 	let bestAbsDt = Infinity;
-	for (let i = 0; i < events.length; i++) {
+	for (let i = firstCandidate(events, tsUs); i < events.length; i++) {
 		const ev = events[i];
 		if (tsUs < ev.downUs - CLICK_SNAP_HALF_US) break;
 		if (tsUs > ev.downUs + CLICK_SNAP_HALF_US) continue;
@@ -142,10 +184,10 @@ export function clickHighlightAt(
 ): { x: number; y: number; alpha: number } | null {
 	let best: PressEvent | null = null;
 	let bestDt = Infinity;
-	for (let i = 0; i < events.length; i++) {
+	for (let i = firstCandidate(events, tsUs); i < events.length; i++) {
 		const ev = events[i];
 		const holdEnd = Math.max(ev.upUs + PRESS_LINGER_US, ev.downUs + PRESS_MIN_HOLD_US);
-		if (tsUs < ev.downUs) continue;
+		if (tsUs < ev.downUs) break;
 		if (tsUs > holdEnd + HIGHLIGHT_FADE_OUT_US) continue;
 		const dt = tsUs - ev.downUs;
 		if (dt < bestDt) {
@@ -187,7 +229,7 @@ export function pressStateAt(events: PressEvent[], tsUs: number): PressState {
 	let bestVisStart = 0;
 	let bestVisEnd = 0;
 	let bestAbsDt = Infinity;
-	for (let i = 0; i < events.length; i++) {
+	for (let i = firstCandidate(events, tsUs); i < events.length; i++) {
 		const ev = events[i];
 		const holdEnd = Math.max(ev.upUs + PRESS_LINGER_US, ev.downUs + PRESS_MIN_HOLD_US);
 		const visStart = ev.downUs - PRESS_PREROLL_US - PRESS_VIS_RAMP_US;

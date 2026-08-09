@@ -695,6 +695,12 @@ export function transcribeProject(args: {
 	});
 }
 
+/** Stop the in-flight transcription. `transcribe_project` then rejects with
+ *  `TRANSCRIBE_CANCELLED` (see `@recast/editor/services`). */
+export function cancelTranscription(): Promise<void> {
+	return invoke("cancel_transcription");
+}
+
 // ---------------------------------------------------------------------------
 // On-device OCR (experimental). Reads a recording into a timestamped, structured
 // text timeline so an agent can understand what happened on screen without any
