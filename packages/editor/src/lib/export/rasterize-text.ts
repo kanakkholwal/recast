@@ -4,7 +4,7 @@
  * Rust has no font rasterizer, so each text annotation is rendered to a
  * transparent PNG by the WebView and sent across IPC as a data URL on a
  * synthetic image-kind annotation. Invoked from handleExport before the
- * renderState reaches `invoke("export_video", ...)`; non-text passes through.
+ * renderState reaches `invoke("enqueue_export", ...)`; non-text passes through.
  */
 import type { Annotation } from "../../stores/editor-store.svelte";
 

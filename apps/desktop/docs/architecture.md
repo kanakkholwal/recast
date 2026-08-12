@@ -438,7 +438,7 @@ seek". The clock handles pause as a wall-clock anchor (`anchorTime`,
 The Svelte frontend calls into Rust via `invoke('command-name', args)`. The
 Rust side declares them with `#[tauri::command]`. Each command is an
 **async** function on the Rust side; the JS side gets a `Promise<T>` back.
-Long-running commands (`start_recording`, `export_video`) take seconds
+Long-running commands (`start_recording`, `enqueue_export`) take seconds
 to minutes; they're `spawn_blocking` internally so the main thread stays
 free (this is the rule from `apps/desktop/src-tauri/src/lib.rs`).
 
@@ -509,8 +509,8 @@ preview.
    See video-preview.logic.ts:5-7 for the parity contract.
 
 5. EXPORT
-   JS:   invoke('export_video', { renderState, format, ... })
-   Rust: commands/export_queue.rs enqueues the job
+   JS:   invoke('enqueue_export', { req })
+   Rust: commands/export_queue.rs enqueues the job, then `run_export_job`
    Rust: spawn_blocking a worker thread that:
      a. constructs an FFmpeg filter graph from RenderState
         (see apps/desktop/src-tauri/src/render/mod.rs)
@@ -640,8 +640,8 @@ freeze at every cut that the WebCodecs path eliminates.
 ### 10.3 User exports a 5-minute recording with 3 cuts and 2 zoom regions
 
 1. `ExportPanel.svelte` `on:click={export}`
-2. `invoke('export_video', { renderState, format: 'mp4' })`
-3. `export_video` Tauri command: validates state, enqueues
+2. `invoke('enqueue_export', { req })`
+3. `enqueue_export` Tauri command: validates state, enqueues
 4. `export_queue` worker thread: 
    a. builds FFmpeg filter graph from `RenderState`
    b. starts ffmpeg with `-f lavfi -i color=...` for background, then

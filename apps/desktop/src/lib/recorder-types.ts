@@ -316,7 +316,9 @@ export interface ExportJobDto {
 	/** Source project path. */
 	filePath: string;
 	status: "queued" | "running" | "success" | "error" | "cancelled" | "interrupted";
-	phase: "preparing" | "encoding" | "finalizing" | "cancelling";
+	/** Only what `export_queue.rs` actually writes. "rendering"/"encoding" are
+	 *  synthesized frontend-side — see `ExportItemPhase` in exportActivity. */
+	phase: "preparing" | "finalizing" | "cancelling";
 	progress: number;
 	/** Output path once it succeeds. */
 	path?: string | null;

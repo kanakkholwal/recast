@@ -584,7 +584,7 @@ export interface EditorRenderState {
 	layoutMode?: LayoutMode;
 	// Hybrid-raster cursor sprite, populated only on the export path
 	// (the editor route runs `rasterizeCursorSprites` right before invoking
-	// `export_video`). Not persisted to disk; never set by `loadRenderState`.
+	// `enqueue_export`). Not persisted to disk; never set by `loadRenderState`.
 	cursorSpriteRest?: string; // data:image/png;base64,…
 	cursorSpritePress?: string; // optional; falls back to rest in Rust
 	cursorSpriteRightPress?: string; // optional; falls back to press → rest in Rust
