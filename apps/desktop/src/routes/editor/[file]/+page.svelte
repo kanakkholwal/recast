@@ -20,24 +20,18 @@ import { Spinner } from "@recast/ui/spinner";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
-import { cubicOut } from "svelte/easing";
-import { motionDuration } from "@recast/editor/lib/motion.svelte";
-import { fade, slide } from "svelte/transition";
+import { fade } from "svelte/transition";
 import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
 import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
-import { agentSession } from "@recast/editor";
+import { agentSession, Editor } from "@recast/editor";
 import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
 import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-session.tauri";
 import EditorToolbar from "@recast/editor/components/EditorToolbar.svelte";
 import ExportDialog from "@recast/editor/components/ExportDialog.svelte";
 import ExportPanel, { type ExportPanelPhase } from "@recast/editor/components/ExportPanel.svelte";
 import ExportStageLoader from "@recast/editor/components/ExportStageLoader.svelte";
-import PropertiesPanel from "@recast/editor/components/properity-panel/PropertiesPanel.svelte";
-import Timeline from "@recast/editor/components/Timeline.svelte";
-import VideoPlayerControls from "@recast/editor/components/VideoPlayerControls.svelte";
-import VideoPreview from "@recast/editor/components/VideoPreview.svelte";
 import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
 import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
 import PlayerDialog from "$components/recast/PlayerDialog.svelte";
@@ -57,12 +51,6 @@ import {
 } from "@recast/editor/lib/editor/editor-url";
 import { setEditorServices } from "@recast/editor/lib/editor/services";
 import { tauriEditorServices } from "$lib/editor/services.tauri";
-import {
-	clampTimelineHeight,
-	TIMELINE_DEFAULT_HEIGHT_PX,
-	TIMELINE_MIN_HEIGHT_PX,
-	timelineMaxHeight,
-} from "@recast/editor/lib/editor/panel-size";
 import { formatClock, frameStepOutput } from "@recast/editor/lib/editor/time";
 import { buildExportJob } from "@recast/editor/lib/export/build-export-job";
 import {
@@ -115,13 +103,7 @@ import {
 import { originalToOutput } from "@recast/editor/lib/timeline/time-map";
 import { settingsHref } from "../../(app)/settings/settings-tabs";
 import { basename } from "./editor-page.logic";
-import {
-	DEFAULT_LAYOUT,
-	LAYOUT_KEY,
-	parseLayout,
-	SIDEBAR_WIDTH_KEY,
-	TIMELINE_HEIGHT_KEY,
-} from "@recast/editor/editor-shell.logic";
+import { DEFAULT_LAYOUT, LAYOUT_KEY, parseLayout } from "@recast/editor/editor-shell.logic";
 import { exportEtaMs as computeExportEtaMs, formatElapsed } from "@recast/editor/lib/format/time";
 
 interface Props {
@@ -224,162 +206,7 @@ $effect(() => {
 	);
 });
 
-// Resizable properties panel. Width is user-set (drag the splitter or arrow
-// keys) and persisted, so a chosen width survives reopening the editor. The
-// floor is the panel's old fixed width (w-88, 352px): the dense panels were
-// already tight there, so we never let it shrink below it, only grow.
-const SIDEBAR_MIN = 352;
-const SIDEBAR_MAX = 600;
-const SIDEBAR_DEFAULT = 384;
-const clampSidebar = (w: number) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
-function loadSidebarWidth(): number {
-	if (!browser) return SIDEBAR_DEFAULT;
-	const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-	return Number.isFinite(raw) && raw > 0 ? clampSidebar(raw) : SIDEBAR_DEFAULT;
-}
-let sidebarWidth = $state(loadSidebarWidth());
-let resizingSidebar = $state(false);
-$effect(() => {
-	if (!browser) return;
-	try {
-		localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
-	} catch {
-		// Best-effort, same as the layout prefs above.
-	}
-});
-
-// The panel is docked right, so dragging the splitter left widens it: width
-// grows as the pointer's x decreases.
-function startSidebarResize(e: PointerEvent) {
-	if (e.button !== 0) return;
-	e.preventDefault();
-	resizingSidebar = true;
-	const startX = e.clientX;
-	const startW = sidebarWidth;
-	document.body.style.cursor = "col-resize";
-	(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-	const onMove = (ev: PointerEvent) => {
-		sidebarWidth = clampSidebar(startW - (ev.clientX - startX));
-	};
-	const onUp = () => {
-		resizingSidebar = false;
-		document.body.style.cursor = "";
-		window.removeEventListener("pointermove", onMove);
-		window.removeEventListener("pointerup", onUp);
-		window.removeEventListener("pointercancel", onUp);
-	};
-	window.addEventListener("pointermove", onMove);
-	window.addEventListener("pointerup", onUp);
-	window.addEventListener("pointercancel", onUp);
-}
-
-// Keyboard resize (window-splitter pattern): Left widens, Right narrows, since
-// Left moves the splitter toward the panel's growing edge. Home/End jump to the
-// bounds. Shift takes a coarser step.
-function onSidebarHandleKey(e: KeyboardEvent) {
-	const step = e.shiftKey ? 48 : 16;
-	switch (e.key) {
-		case "ArrowLeft":
-			e.preventDefault();
-			sidebarWidth = clampSidebar(sidebarWidth + step);
-			break;
-		case "ArrowRight":
-			e.preventDefault();
-			sidebarWidth = clampSidebar(sidebarWidth - step);
-			break;
-		case "Home":
-			e.preventDefault();
-			sidebarWidth = SIDEBAR_MAX;
-			break;
-		case "End":
-			e.preventDefault();
-			sidebarWidth = SIDEBAR_MIN;
-			break;
-	}
-}
-
-// Resizable timeline panel. Same splitter idiom as the sidebar, on the other
-// axis. Bounded at BOTH ends: the floor keeps the ruler, clip bar and one lane
-// on screen, and the ceiling is a share of the editor column so the timeline can
-// never take the preview's space (which is what made this necessary — every lane
-// visible at once left the video a strip).
-let editorColumnH = $state(0);
-let timelineHeight = $state(TIMELINE_DEFAULT_HEIGHT_PX);
-let resizingTimeline = $state(false);
-
-const timelineMax = $derived(timelineMaxHeight(editorColumnH));
-const clampTimeline = (h: number) => clampTimelineHeight(h, editorColumnH);
-
-if (browser) {
-	const raw = Number(localStorage.getItem(TIMELINE_HEIGHT_KEY));
-	if (Number.isFinite(raw) && raw > 0) timelineHeight = raw;
-}
-// Re-clamp when the window (and so the ceiling) changes, so a height saved on a
-// big display doesn't swallow the preview on a laptop. Depends on the CEILING
-// only; reading the height tracked would make the effect depend on its own write.
-$effect(() => {
-	const max = timelineMax;
-	untrack(() => {
-		if (timelineHeight > max) timelineHeight = max;
-		else if (timelineHeight < TIMELINE_MIN_HEIGHT_PX) timelineHeight = TIMELINE_MIN_HEIGHT_PX;
-	});
-});
-$effect(() => {
-	if (!browser) return;
-	try {
-		localStorage.setItem(TIMELINE_HEIGHT_KEY, String(timelineHeight));
-	} catch {
-		// Best-effort, same as the layout prefs above.
-	}
-});
-
-// Docked bottom, so dragging the splitter UP grows it: height rises as y falls.
-function startTimelineResize(e: PointerEvent) {
-	if (e.button !== 0) return;
-	e.preventDefault();
-	resizingTimeline = true;
-	const startY = e.clientY;
-	const startH = timelineHeight;
-	document.body.style.cursor = "row-resize";
-	(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-	const onMove = (ev: PointerEvent) => {
-		timelineHeight = clampTimeline(startH - (ev.clientY - startY));
-	};
-	const onUp = () => {
-		resizingTimeline = false;
-		document.body.style.cursor = "";
-		window.removeEventListener("pointermove", onMove);
-		window.removeEventListener("pointerup", onUp);
-		window.removeEventListener("pointercancel", onUp);
-	};
-	window.addEventListener("pointermove", onMove);
-	window.addEventListener("pointerup", onUp);
-	window.addEventListener("pointercancel", onUp);
-}
-
-function onTimelineHandleKey(e: KeyboardEvent) {
-	const step = e.shiftKey ? 48 : 16;
-	switch (e.key) {
-		case "ArrowUp":
-			e.preventDefault();
-			timelineHeight = clampTimeline(timelineHeight + step);
-			break;
-		case "ArrowDown":
-			e.preventDefault();
-			timelineHeight = clampTimeline(timelineHeight - step);
-			break;
-		case "Home":
-			e.preventDefault();
-			timelineHeight = timelineMax;
-			break;
-		case "End":
-			e.preventDefault();
-			timelineHeight = TIMELINE_MIN_HEIGHT_PX;
-			break;
-	}
-}
-
-let previewContainerEl: HTMLDivElement | null = $state(null);
+let previewContainerEl: HTMLElement | null = $state(null);
 let systemAudioEl: HTMLAudioElement | null = $state(null);
 let micAudioEl: HTMLAudioElement | null = $state(null);
 let videoSrc = $state("");
@@ -2125,154 +1952,40 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
       </div>
     </div>
   {:else}
-    <div class="flex min-h-0 flex-1 overflow-hidden">
-      <!-- Preview + playback + timeline -->
-      <!-- Measured so the timeline's maximum height stays a share of the space
-           actually available, not a fixed number that overwhelms a short window. -->
-      <div
-        bind:clientHeight={editorColumnH}
-        class="flex min-h-0 flex-1 flex-col overflow-hidden"
-      >
-        <div
-          bind:this={previewContainerEl}
-          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background px-2 pt-1.5 pb-1"
-        >
-          <div
-            class="flex-1 flex min-h-0 w-full items-center justify-center relative"
-          >
-            <VideoPreview
-              {store}
-              bind:videoEl
-              bind:captureFrame
-              bind:webcodecsActive
-              {videoSrc}
-              {cursorPath}
-              {cameraSrc}
-              onTimeUpdate={handleTimeUpdate}
-              onEnded={handleVideoEnded}
-              onLoadedMetadata={handleVideoLoadedMetadata}
-              onReady={handleVideoReady}
-              onError={handleVideoError}
-              onSeeked={handleVideoSeeked}
-              audioPositionSec={() => audioEngine?.positionOutputSec ?? null}
-            />
-          </div>
-          <VideoPlayerControls
-            {store}
-            {videoEl}
-            {captureFrame}
-            bind:loopEnabled
-            fullscreenTargetEl={previewContainerEl}
-            showScrubber={!showTimeline}
-          />
-        </div>
-
-        <!-- `slide` (axis:y) animates the wrapper height to 0 while the inner
-             keeps its height, so the preview reclaims space smoothly. Timeline
-             folds away in export mode so the preview owns the full height. -->
-        {#if showTimeline && !isExportFlowOpen}
-          <div
-            class="shrink-0 overflow-hidden"
-            transition:slide={{ axis: "y", duration: motionDuration(280), easing: cubicOut }}
-          >
-            <!-- Height on the INNER div: `slide` animates the wrapper's own
-                 height, so the two would fight over the same property. -->
-            <div class="relative" style="height: {timelineHeight}px;">
-              <!-- Splitter: drag or arrow-key to resize the panel. Sits in the
-                   timeline's top padding so it never overlaps the toolbar.
-                   Modelled as a horizontal slider (aria-valuenow = height), the
-                   same idiom as the properties-panel splitter. -->
-              <div
-                role="slider"
-                tabindex="0"
-                aria-orientation="horizontal"
-                aria-label="Resize timeline"
-                aria-valuemin={TIMELINE_MIN_HEIGHT_PX}
-                aria-valuemax={timelineMax}
-                aria-valuenow={timelineHeight}
-                onpointerdown={startTimelineResize}
-                onkeydown={onTimelineHandleKey}
-                class="group absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize focus-visible:outline-none"
-              >
-                <div
-                  class="my-auto h-px w-full bg-border/50 transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary {resizingTimeline
-                    ? 'bg-primary!'
-                    : ''}"
-                ></div>
-              </div>
-              <Timeline
-                {store}
-                {videoEl}
-                {tileProvider}
-                {filmstripVersion}
-                readOnly={agentSession.active}
-              />
-            </div>
-          </div>
-        {/if}
-      </div>
-
-      <!-- Right rail. Editing shows the properties panel; entering export swaps
-           it for the export surface. Both slide on the x-axis with the SAME
-           duration/easing so the leaving and entering widths cancel to a
-           monotonic reflow (no mid-swap wobble). The inner fixed-width div lets
-           `slide` clip cleanly instead of reflowing container queries. -->
-      {#if isExportFlowOpen}
-        <aside
-          class="min-h-0 shrink-0 overflow-hidden border-l border-border/60"
-          transition:slide={{ axis: "x", duration: motionDuration(280), easing: cubicOut }}
-        >
-          <div class="h-full w-[26rem]">
-            <ExportPanel
-              phase={exportPhase}
-              onEscape={handleExportEscape}
-              {options}
-              {queued}
-              {progress}
-              {success}
-              {cancelled}
-              error={errorPanel}
-            />
-          </div>
-        </aside>
-      {:else if showSidebar}
-        <aside
-          class="relative min-h-0 shrink-0 overflow-hidden border-l border-border/60"
-          transition:slide={{ axis: "x", duration: motionDuration(280), easing: cubicOut }}
-        >
-          <!-- Splitter: drag or arrow-key to resize the panel. Sits in the left
-               padding gutter so it never overlaps a tab. Modelled as a vertical
-               slider (aria-valuenow = width), the same interactive-role idiom the
-               timeline's trim/resize handles use. -->
-          <div
-            role="slider"
-            tabindex="0"
-            aria-orientation="vertical"
-            aria-label="Resize properties panel"
-            aria-valuemin={SIDEBAR_MIN}
-            aria-valuemax={SIDEBAR_MAX}
-            aria-valuenow={sidebarWidth}
-            onpointerdown={startSidebarResize}
-            onkeydown={onSidebarHandleKey}
-            class="group absolute inset-y-0 left-0 z-20 w-1.5 cursor-col-resize focus-visible:outline-none"
-          >
-            <div
-              class="mx-auto h-full w-px bg-border/50 transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary {resizingSidebar
-                ? 'bg-primary!'
-                : ''}"
-            ></div>
-          </div>
-          <div class="h-full" style="width: {sidebarWidth}px;" inert={agentSession.active}>
-            <PropertiesPanel
-              {store}
-              {cameraPath}
-              {cameraCapture}
-              onRegenerateAutoZoom={regenerateAutoZoom}
-            />
-          </div>
-        </aside>
-      {/if}
-    </div>
+    <!-- h-auto drops Editor's own h-full via tailwind-merge: this is a flex
+         child sharing the column with the titlebar, so flex-1 owns its height. -->
+    <Editor
+      {store}
+      services={tauriEditorServices}
+      {videoSrc}
+      {cursorPath}
+      {cameraSrc}
+      {cameraPath}
+      {cameraCapture}
+      {audioEngine}
+      {tileProvider}
+      {filmstripVersion}
+      bind:showSidebar
+      bind:showTimeline
+      bind:videoEl
+      bind:previewContainerEl
+      bind:captureFrame
+      bind:webcodecsActive
+      bind:loopEnabled
+      onTimeUpdate={handleTimeUpdate}
+      onEnded={handleVideoEnded}
+      onLoadedMetadata={handleVideoLoadedMetadata}
+      onReady={handleVideoReady}
+      onError={handleVideoError}
+      onSeeked={handleVideoSeeked}
+      audioPositionSec={() => audioEngine?.positionOutputSec ?? null}
+      onRegenerateAutoZoom={regenerateAutoZoom}
+      timelineReadOnly={agentSession.active}
+      panelReadOnly={agentSession.active}
+      toolbar={hostOwnsToolbar}
+      exportPanel={isExportFlowOpen ? exportRail : undefined}
+      class="h-auto min-h-0 flex-1"
+    />
   {/if}
 
   <!-- .recast stores system + mic audio as separate WAVs (the mp4 has no audio);
@@ -2302,6 +2015,23 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
     <PlayerDialog entry={playTarget} onclose={() => (playTarget = null)} />
   {/if}
 </div>
+
+<!-- Renders nothing on purpose: this window's toolbar lives in the native
+     CustomTitlebar above the shell, so Editor must not draw its default one. -->
+{#snippet hostOwnsToolbar()}{/snippet}
+
+{#snippet exportRail()}
+  <ExportPanel
+    phase={exportPhase}
+    onEscape={handleExportEscape}
+    {options}
+    {queued}
+    {progress}
+    {success}
+    {cancelled}
+    error={errorPanel}
+  />
+{/snippet}
 
 {#snippet options()}
   <ExportDialog

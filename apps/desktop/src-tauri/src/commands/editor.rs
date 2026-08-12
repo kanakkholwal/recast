@@ -25,8 +25,8 @@ use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
     append_output_filters_to_complex, build_annotation_blur_complex,
     build_gif_paletteuse_external_complex, build_output_scale_filter, has_audio,
-    probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayAnim,
-    CameraOverlayParams, CameraShadowOverlay, ExportSpeed, GifFilterOptions,
+    probe_video_metadata, resolve_export_profile, CameraOverlayAnim, CameraOverlayParams,
+    CameraShadowOverlay, ExportSpeed, GifFilterOptions,
 };
 use super::system::get_active_output_dir;
 use super::types::{
@@ -36,8 +36,8 @@ use crate::project::reader::ProjectOpenResult;
 #[allow(unused_imports)]
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
-use crate::render::mask_export::{render_border_radius_mask, MaskResult};
-use crate::render::node_types::{AnnotationAnchor, AnnotationKind, AudioSettings};
+use crate::render::mask_export::MaskResult;
+use crate::render::node_types::{AnnotationKind, AudioSettings};
 
 /// Filtergraph length past which we pass it via `-filter_complex_script <file>`
 /// rather than inline, to stay under Windows' ~32 KB command-line limit. Well
@@ -2288,117 +2288,26 @@ pub(crate) async fn run_export_job(
         .ok()
         .map(|base| base.join("assets"));
 
-    // Border-radius is stored as a 0..50 percentage of the shorter source edge.
-    // Generate a single-frame alpha mask at source dimensions; the export plan
-    // will alphamerge it onto the (zoomed) source video before background
-    // composition so the rounded corners cut through to the background.
-    let border_radius_pct = request.render_state.border_radius.clamp(0.0, 50.0);
-    let border_radius_px = border_radius_pct / 100.0 * metadata.width.min(metadata.height) as f64;
-    let border_radius_mask: Option<MaskResult> = if border_radius_px > 0.5 {
-        render_border_radius_mask(metadata.width, metadata.height, border_radius_px)
-            .map_err(|e| AppError::msg(format!("border-radius mask render failed: {e}")))?
-    } else {
-        None
-    };
-    let border_radius_mask_path = border_radius_mask.as_ref().map(|m| m.path.clone());
-
-    // Canvas geometry feeds the drop-shadow rasteriser, the cursor
-    // overlay PNG, and the FFmpeg filter graph. Compute once.
-    //
-    // Cursor and drop-shadow PNGs are rendered at COMP dims (= source +
-    // padding * 2), not the final canvas dims. They're composited at the
-    // comp's offset inside the canvas via FFmpeg overlay. Doing it the
-    // other way piped a 1984×3528 RGBA stream for a 9:16 of 1080p
-    // (~28 MB/frame at 60fps), which stalled the cursor sub-encode.
-    let canvas_geom = crate::render::graph::compute_canvas_geometry(
+    // Static layers (corner mask, drop shadow, gradient, pre-baked wallpaper).
+    // `layers` owns their temp-file guards, so it must stay alive until the
+    // encode below has read them.
+    let layers = crate::commands::export::raster::rasterize_static_layers(
+        &mut request,
         metadata.width,
         metadata.height,
-        request.render_state.padding,
-        request.render_state.output_aspect.as_deref(),
-    );
+        asset_cache_dir.as_deref(),
+        &static_root(),
+        prebake_static_background,
+    )?;
+    let canvas_geom = layers.geom;
     let canvas_width = canvas_geom.canvas_w;
     let canvas_height = canvas_geom.canvas_h;
     let canvas_padding = canvas_geom.padding_px;
     let comp_width = canvas_geom.comp_w;
     let comp_height = canvas_geom.comp_h;
-
-    // Drop-shadow PNG: rasterised once and overlaid on the background by the
-    // FFmpeg planner. Skipped when the user has disabled the effect or set
-    // opacity to 0 — those gates are also enforced inside
-    // `render_drop_shadow_mask`, but checking here saves the canvas-sized
-    // allocation.
-    let shadow_settings = &request.render_state.shadow;
-    let drop_shadow_mask: Option<MaskResult> =
-        if shadow_settings.enabled && shadow_settings.opacity > 0.0 {
-            crate::render::mask_export::render_drop_shadow_mask(
-                crate::render::mask_export::DropShadowRequest {
-                    canvas_width: comp_width,
-                    canvas_height: comp_height,
-                    video_width: metadata.width,
-                    video_height: metadata.height,
-                    padding: canvas_padding,
-                    video_border_radius: border_radius_px,
-                    blur: shadow_settings.blur,
-                    spread: shadow_settings.spread,
-                    offset_y: shadow_settings.offset_y,
-                    opacity: shadow_settings.opacity,
-                    color: shadow_settings.color.clone(),
-                },
-            )
-            .map_err(|e| AppError::msg(format!("drop-shadow mask render failed: {e}")))?
-        } else {
-            None
-        };
-    let drop_shadow_mask_path = drop_shadow_mask.as_ref().map(|m| m.path.clone());
-
-    // Gradient backgrounds are rasterised to a canvas-sized PNG so the export
-    // composites the exact multi-stop, angled gradient the WebGL preview shows.
-    // Without this the FFmpeg planner falls back to a single flat color. Held
-    // alive until the export finishes (the temp dir auto-cleans on drop).
-    let gradient_bg: Option<MaskResult> = if request.render_state.background_type == "gradient" {
-        crate::render::mask_export::render_gradient_background(
-            &request.render_state.background_value,
-            canvas_width,
-            canvas_height,
-        )
-        .map_err(|e| AppError::msg(format!("gradient background render failed: {e}")))?
-    } else {
-        None
-    };
-    let gradient_bg_path = gradient_bg.as_ref().map(|m| m.path.clone());
-
-    // Pre-bake a static wallpaper/image background once (canvas-sized + blurred)
-    // so the filter graph doesn't re-scale/re-blur it on every frame — a static
-    // background is identical each frame (measured ~19.5 ms/frame at 120 fps).
-    // Point the background at the baked PNG with blur 0; the graph then loops it as
-    // a near-no-op, pixel-identical to the per-frame path. Best-effort: on failure
-    // the render state is untouched and the live per-frame path runs as before. The
-    // guard keeps the PNG alive until the export finishes.
-    let _prebaked_bg = if matches!(
-        request.render_state.background_type.as_str(),
-        "wallpaper" | "image"
-    ) {
-        crate::render::graph::resolve_background_path(
-            &request.render_state.background_value,
-            &static_root(),
-            asset_cache_dir.as_deref(),
-        )
-        .and_then(|src| {
-            prebake_static_background(
-                &src,
-                canvas_width,
-                canvas_height,
-                request.render_state.background_blur,
-            )
-        })
-        .map(|(path, guard)| {
-            request.render_state.background_value = path.to_string_lossy().into_owned();
-            request.render_state.background_blur = 0.0;
-            guard
-        })
-    } else {
-        None
-    };
+    let border_radius_mask_path = layers.border_radius_mask.as_ref().map(|m| m.path.clone());
+    let drop_shadow_mask_path = layers.drop_shadow_mask.as_ref().map(|m| m.path.clone());
+    let gradient_bg_path = layers.gradient_bg.as_ref().map(|m| m.path.clone());
     // Rebuild the graph so the export plan sees the (possibly) pre-baked
     // background. `trim_start`/`trim_end` were already read above and the
     // background swap doesn't affect them.
@@ -2819,81 +2728,11 @@ pub(crate) async fn run_export_job(
     // Annotation blur regions — applied AFTER the cursor overlay so the blur
     // sits over the composited cursor too (same z-order as in the preview),
     // but BEFORE GIF palettization so the palette captures the blurred pixels.
-    let blur_regions: Vec<BlurRegion> = request
-        .render_state
-        .annotations
-        .iter()
-        .filter(|a| !a.hidden)
-        .filter_map(|a| match &a.kind {
-            AnnotationKind::Blur {
-                x,
-                y,
-                w,
-                h,
-                strength,
-                variant,
-                tint_color,
-                radius: corner_frac,
-                ..
-            } => {
-                // UV → canvas-pixel rect, over the annotation's anchor rect:
-                // the video region (video anchor, matches preview) or the padded
-                // frame (frame anchor). Identical to the old full-canvas mapping
-                // when there's no padding. Static either way — FFmpeg can't
-                // follow a per-frame zoom, so a zoomed video-anchored blur holds
-                // its un-zoomed spot.
-                let (rx, ry, rw_ref, rh_ref) = match a.anchor {
-                    AnnotationAnchor::Frame => (
-                        canvas_geom.comp_x as f64,
-                        canvas_geom.comp_y as f64,
-                        comp_width as f64,
-                        comp_height as f64,
-                    ),
-                    AnnotationAnchor::Video => (
-                        canvas_geom.video_x as f64,
-                        canvas_geom.video_y as f64,
-                        canvas_geom.video_w as f64,
-                        canvas_geom.video_h as f64,
-                    ),
-                };
-                let cx = (rx + x * rw_ref).round() as i32;
-                let cy = (ry + y * rh_ref).round() as i32;
-                let cw = (w.abs() * rw_ref).round() as i32;
-                let ch = (h.abs() * rh_ref).round() as i32;
-                if cw < 4 || ch < 4 {
-                    return None;
-                }
-                // Strength 0..1 → kernel radius up to 12% of the shorter edge,
-                // clamped at FFmpeg boxblur's hard max of 127. Mirrors
-                // ffmpeg.rs::make_blur_region — both paths must agree so the
-                // export and editor previews match.
-                let max_dim = canvas_width.min(canvas_height) as f64 * 0.12;
-                let radius = (strength.clamp(0.0, 1.0) * max_dim)
-                    .round()
-                    .clamp(1.0, 127.0) as u32;
-                let tint_rgb =
-                    u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0x000000);
-                // Corner radius as a fraction (0..0.5) of the region's shorter
-                // side — same basis as the preview's `radius * min(w, h)`.
-                let corner_px = corner_frac.clamp(0.0, 0.5) * (cw.min(ch) as f64);
-                Some(BlurRegion {
-                    x: cx,
-                    y: cy,
-                    w: cw,
-                    h: ch,
-                    radius,
-                    start_secs: a.start - trim_start,
-                    end_secs: a.end - trim_start,
-                    variant: variant.as_str(),
-                    tint_rgb,
-                    opacity: a.opacity.clamp(0.0, 1.0),
-                    strength: strength.clamp(0.0, 1.0),
-                    corner_px,
-                })
-            }
-            _ => None,
-        })
-        .collect();
+    let blur_regions = crate::commands::export::blur::blur_regions(
+        &request.render_state.annotations,
+        &canvas_geom,
+        trim_start,
+    );
     if !blur_regions.is_empty() {
         let (new_complex, new_map) = build_annotation_blur_complex(
             filter_complex_after_cursor.as_deref(),

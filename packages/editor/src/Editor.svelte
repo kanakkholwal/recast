@@ -44,6 +44,30 @@ export interface EditorProps {
 	activePanel?: PanelTab;
 	showSidebar?: boolean;
 	showTimeline?: boolean;
+	/** Preview internals, bindable for a host that owns the transport (desktop
+	 *  drives its own loop, drift correction and `<audio>` fallback off these). */
+	videoEl?: HTMLVideoElement | null;
+	/** The preview box, for a host that owns its own fullscreen shortcut. */
+	previewContainerEl?: HTMLElement | null;
+	captureFrame?: () => Promise<Blob | null>;
+	webcodecsActive?: boolean;
+	loopEnabled?: boolean;
+	/** Transport hooks. Omitted ⇒ the built-in defaults below, which are what a
+	 *  host with no audio of its own (the web playground) wants. A host that
+	 *  supplies one owns that behaviour entirely. */
+	onTimeUpdate?: () => void;
+	/** Return true to keep the clock running (the host looped). */
+	onEnded?: () => boolean;
+	onLoadedMetadata?: () => void;
+	onReady?: () => void;
+	onError?: () => void;
+	onSeeked?: () => void;
+	/** Audio clock position for A/V drift correction. Defaults to `audioEngine`. */
+	audioPositionSec?: () => number | null;
+	/** Block structural edits in the timeline / properties panel (agent write
+	 *  lock). The timeline's transport stays live either way. */
+	timelineReadOnly?: boolean;
+	panelReadOnly?: boolean;
 	onexport?: () => void;
 	onsave?: () => void | Promise<void>;
 	isSaving?: boolean;
@@ -68,6 +92,7 @@ import { cn } from "@recast/ui/utils";
 import { untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { slide } from "svelte/transition";
+import { motionDuration } from "./lib/motion.svelte";
 import EditorToolbar from "./components/EditorToolbar.svelte";
 import PropertiesPanel from "./components/properity-panel/PropertiesPanel.svelte";
 import Timeline from "./components/Timeline.svelte";
@@ -111,6 +136,20 @@ let {
 	activePanel = $bindable(),
 	showSidebar = $bindable(),
 	showTimeline = $bindable(),
+	videoEl = $bindable(null),
+	previewContainerEl = $bindable(null),
+	captureFrame = $bindable(),
+	webcodecsActive = $bindable(false),
+	loopEnabled = $bindable(false),
+	onTimeUpdate,
+	onEnded,
+	onLoadedMetadata,
+	onReady,
+	onError,
+	onSeeked,
+	audioPositionSec,
+	timelineReadOnly = false,
+	panelReadOnly = false,
 	onexport,
 	onsave,
 	isSaving = false,
@@ -168,11 +207,6 @@ $effect(() => {
 	});
 });
 
-let videoEl = $state<HTMLVideoElement | null>(null);
-let previewContainerEl = $state<HTMLElement | null>(null);
-let webcodecsActive = $state(false);
-let captureFrame = $state<(() => Promise<Blob | null>) | undefined>(undefined);
-let loopEnabled = $state(false);
 
 // --- panel sizing ---
 // Measured so the timeline's ceiling is a share of the space actually
@@ -211,6 +245,7 @@ $effect(() => {
 });
 
 function handleTimeUpdate() {
+	if (onTimeUpdate) return onTimeUpdate();
 	// The WebCodecs clock owns `store.currentTime`; echoing the element's time
 	// while it free-runs through the un-cut source snaps playback across cuts.
 	if (webcodecsActive || !videoEl) return;
@@ -218,6 +253,7 @@ function handleTimeUpdate() {
 }
 
 function handleEnded(): boolean {
+	if (onEnded) return onEnded();
 	if (endOfClipAction(loopEnabled) === "pause") {
 		store.isPlaying = false;
 		return false;
@@ -335,10 +371,12 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 						{cameraSrc}
 						onTimeUpdate={handleTimeUpdate}
 						onEnded={handleEnded}
-						onLoadedMetadata={() => {}}
-						onReady={() => {}}
-						onError={() => {}}
-						audioPositionSec={() => audioEngine?.positionOutputSec ?? null}
+						onLoadedMetadata={onLoadedMetadata ?? (() => {})}
+						onReady={onReady ?? (() => {})}
+						onError={onError ?? (() => {})}
+						{onSeeked}
+						audioPositionSec={audioPositionSec ??
+							(() => audioEngine?.positionOutputSec ?? null)}
 					/>
 				</div>
 				<VideoPlayerControls
@@ -353,10 +391,10 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 
 			<!-- `slide` (axis:y) animates the wrapper height to 0 while the inner keeps
 			     its height, so the preview reclaims the space smoothly. -->
-			{#if timelineOpen}
+			{#if timelineOpen && !exportPanel}
 				<div
 					class="shrink-0 overflow-hidden"
-					transition:slide={{ axis: "y", duration: 280, easing: cubicOut }}
+					transition:slide={{ axis: "y", duration: motionDuration(280), easing: cubicOut }}
 				>
 					<!-- Height on the INNER div: `slide` animates the wrapper's own
 					     height, so the two would otherwise fight over one property. -->
@@ -379,7 +417,13 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 									: ''}"
 							></div>
 						</div>
-						<Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
+						<Timeline
+							{store}
+							{videoEl}
+							{tileProvider}
+							{filmstripVersion}
+							readOnly={timelineReadOnly}
+						/>
 					</div>
 				</div>
 			{/if}
@@ -391,14 +435,14 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 		{#if exportPanel}
 			<aside
 				class="border-border/60 min-h-0 shrink-0 overflow-hidden border-l"
-				transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
+				transition:slide={{ axis: "x", duration: motionDuration(280), easing: cubicOut }}
 			>
 				<div class="h-full w-[26rem]">{@render exportPanel()}</div>
 			</aside>
 		{:else if sidebarOpen}
 			<aside
 				class="border-border/60 relative min-h-0 shrink-0 overflow-hidden border-l"
-				transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
+				transition:slide={{ axis: "x", duration: motionDuration(280), easing: cubicOut }}
 			>
 				<!-- Sits in the left padding gutter so it never overlaps a tab. -->
 				<div
@@ -419,7 +463,7 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 							: ''}"
 					></div>
 				</div>
-				<div class="h-full" style="width: {sidebarWidth}px;">
+				<div class="h-full" style="width: {sidebarWidth}px;" inert={panelReadOnly}>
 					<PropertiesPanel {store} {cameraPath} {cameraCapture} {onRegenerateAutoZoom} {panels} />
 				</div>
 			</aside>
