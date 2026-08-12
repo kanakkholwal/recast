@@ -569,7 +569,9 @@ export interface EditorRenderState {
 	/** Silence suggestions the user dismissed, kept so they don't resurface. */
 	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
-	annotations: Array<Omit<Annotation, "id">>;
+	/** `id` included: Rust's `Annotation.id` has no `#[serde(default)]`, and a
+	 *  missing one fails the WHOLE RenderState deserialize, not just that entry. */
+	annotations: Annotation[];
 	shadow: ShadowSettings;
 	audioSettings: AudioSettings;
 	/** Music / extra-audio clips on the output timeline. Optional for back-compat. */

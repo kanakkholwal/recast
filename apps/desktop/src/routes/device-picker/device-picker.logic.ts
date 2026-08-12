@@ -1,7 +1,8 @@
 /** URL params + device mapping/defaulting for the device-picker window. */
 
 import type { BrowserCamera } from "@recast/editor/lib/camera/browser-devices";
-import type { AudioDeviceInfo, CameraDeviceInfo } from "@recast/editor/lib/wire-types";
+import type { AudioDeviceInfo } from "@recast/editor/lib/wire-types";
+import type { CameraDeviceInfo } from "$lib/recorder-types";
 
 export type DeviceType = "mic" | "camera";
 

@@ -1,7 +1,7 @@
 /** Search, sort, and size maths for the recordings/exports/activity listings. */
 
 import { getExtension } from "@recast/editor/lib/format/files";
-import type { RecordingEntry } from "@recast/editor/lib/wire-types";
+import type { RecordingEntry } from "$lib/recorder-types";
 
 export type LibrarySort = "recent" | "name" | "size";
 

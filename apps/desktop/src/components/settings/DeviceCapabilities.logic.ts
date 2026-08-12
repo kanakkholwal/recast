@@ -1,5 +1,5 @@
 /** Pure OS/encoder derivation + copy for DeviceCapabilities. */
-import type { EncoderAvailability } from "@recast/editor/lib/wire-types";
+import type { EncoderAvailability } from "$lib/recorder-types";
 
 export const PLATFORM_LABEL: Record<string, string> = {
 	windows: "Windows",

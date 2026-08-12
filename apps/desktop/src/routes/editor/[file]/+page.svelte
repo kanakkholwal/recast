@@ -72,7 +72,6 @@ import {
 import type { ExportQuality } from "@recast/editor/lib/export/browser-export-plan";
 import { chooseExportEngine } from "@recast/editor/lib/export/choose-export-engine";
 import { probeBrowserExportCapability } from "@recast/editor/lib/export/export-capability";
-import { BROWSER_EXPORT_ENABLED } from "@recast/editor/lib/feature-flags";
 import type { RecordingEntry } from "$lib/ipc";
 import {
 	autosaveProject,
@@ -1367,14 +1366,12 @@ async function handleExport() {
 
 	try {
 		// Resolve the export engine FIRST — it decides whether the render state needs
-		// its visual half. Browser export is on when the master flag is set OR the user
-		// opted into the beta; otherwise Rust. The resolver still falls back per
-		// capability/eligibility, and `forceLegacy` is the (later) default-on opt-out.
-		const wantBrowser = BROWSER_EXPORT_ENABLED || experimentalStore.isEnabled("browserExportBeta");
+		// its visual half. The beta toggle IS the gate; the resolver still falls back
+		// per capability/eligibility.
+		const wantBrowser = experimentalStore.isEnabled("browserExportBeta");
 		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
 		const engine = chooseExportEngine({
 			masterEnabled: wantBrowser,
-			forceLegacy: false,
 			blockedReason: browserExportBlockedReason(store),
 			capabilitySupported: capability?.supported ?? false,
 		});

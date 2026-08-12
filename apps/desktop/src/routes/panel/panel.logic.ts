@@ -1,6 +1,6 @@
 /** Pure mappers + fps/timer math for the recording panel window. */
 
-import type { CaptureIntentState, LastSource } from "@recast/editor/lib/wire-types";
+import type { CaptureIntentState, LastSource } from "$lib/recorder-types";
 
 export type TargetSource = {
 	type: "monitor" | "window" | "region";

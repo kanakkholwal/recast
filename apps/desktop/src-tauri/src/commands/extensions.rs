@@ -30,6 +30,10 @@ use super::error::{AppError, AppResult};
 /// kept opaque (`serde_json::Value`) — the frontend interprets the per-kind
 /// contribution shapes; Rust only validates the security-relevant envelope and
 /// downloads `assets`.
+fn empty_contributions() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionManifest {
@@ -47,8 +51,11 @@ pub struct ExtensionManifest {
     /// Reserved for Ed25519 publisher signing (see [`verify_signature`]).
     #[serde(default)]
     pub signature: Option<String>,
-    /// Opaque per-kind contributions, interpreted frontend-side.
-    #[serde(default)]
+    /// Opaque per-kind contributions, interpreted frontend-side. Defaults to an
+    /// empty object, not `Value::Null`: TS declares `contributes` non-nullable
+    /// (`ExtensionContributions`), so a bare `default` wrote `null` over the
+    /// wire and every reader needed a `?? {}` guard.
+    #[serde(default = "empty_contributions")]
     pub contributes: serde_json::Value,
     pub assets: Vec<AssetEntry>,
 }
@@ -461,7 +468,7 @@ mod tests {
             kind: "asset-pack".into(),
             permissions: vec![],
             signature: None,
-            contributes: serde_json::Value::Null,
+            contributes: empty_contributions(),
             assets: vec![],
         };
         assert!(validate_manifest(&m).is_ok());

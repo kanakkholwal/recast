@@ -4,7 +4,7 @@
  * building. Kept side-effect-free so it's unit-tested without a webview.
  */
 
-import type { RemoteAsrEndpoint } from "@recast/editor/lib/wire-types";
+import type { RemoteAsrEndpoint } from "$lib/recorder-types";
 
 export interface EndpointForm {
 	id: string;

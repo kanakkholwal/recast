@@ -33,7 +33,8 @@ export type GdriveUpload = {
 	/** Smoothed transfer rate (bytes/sec) for the ETA readout; unset until sampled. */
 	bytesPerSec?: number;
 	status: GdriveUploadStatus;
-	webViewLink?: string;
+	/** Null when Drive returned no link (Rust sends `Option<String>` as null). */
+	webViewLink?: string | null;
 	error?: string;
 };
 

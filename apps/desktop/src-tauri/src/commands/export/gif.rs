@@ -169,6 +169,9 @@ pub(crate) fn run_gif_palette_prepass(
             Ok(None) => {
                 if cancel_flag.load(Ordering::Acquire) {
                     let _ = child.kill();
+                    // Reap it: on Unix a killed child stays a zombie until
+                    // waited on, so a cancelled GIF export leaked one each time.
+                    let _ = child.wait();
                     break Err("export cancelled".to_string());
                 }
                 std::thread::sleep(Duration::from_millis(100));

@@ -4,7 +4,7 @@
  * reads through `has`/`count` stay reactive across this factory boundary.
  */
 
-import type { RecordingEntry } from "@recast/editor/lib/wire-types";
+import type { RecordingEntry } from "$lib/recorder-types";
 import { toast } from "@recast/ui/sonner";
 import { SvelteSet } from "svelte/reactivity";
 

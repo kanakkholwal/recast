@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CaptureIntentState } from "@recast/editor/lib/wire-types";
+import type { CaptureIntentState } from "$lib/recorder-types";
 import {
 	canonicalIntent,
 	clampFpsToDisplay,

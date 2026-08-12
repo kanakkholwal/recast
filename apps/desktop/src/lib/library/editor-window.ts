@@ -5,7 +5,7 @@
  */
 
 import { goto } from "$app/navigation";
-import type { RecordingEntry } from "@recast/editor/lib/wire-types";
+import type { RecordingEntry } from "$lib/recorder-types";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 /** Encode a filesystem path for use as an `/editor/[file]` route segment. */

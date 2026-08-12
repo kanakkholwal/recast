@@ -1,6 +1,6 @@
 /** Source-list mappers + filters for the source-selector window. */
 
-import type { DisplayInfo, LastSource, WindowInfo } from "@recast/editor/lib/wire-types";
+import type { DisplayInfo, LastSource, WindowInfo } from "$lib/recorder-types";
 
 export type TargetSource = {
 	type: "monitor" | "window" | "region";

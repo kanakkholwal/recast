@@ -885,7 +885,7 @@ pub struct Annotation {
     // v2 envelope — every field defaulted so v1 projects keep loading. Order
     // matches the TS `Annotation` interface in `editor-store.svelte.ts`.
     /// User-renamed label. Falls back to a kind-derived label in the UI.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Stacking order; higher draws later (on top). v1 projects start at 0.
     #[serde(default)]
@@ -902,7 +902,7 @@ pub struct Annotation {
     /// Optional glow / soft shadow. Rendered in export for rect/ellipse
     /// (`draw_shape_shadow`) and image/text-as-image (`draw_image_shadow`);
     /// arrow glow is preview-only.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glow: Option<AnnotationGlow>,
     /// What the annotation is pinned to. `Video` (default) tracks the zoomed
     /// video content; `Frame` pins it to the output frame (no zoom).

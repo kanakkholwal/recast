@@ -1,6 +1,6 @@
 /** Drag-rect + toolbar geometry for the region-picker overlay. */
 
-import type { RegionRect } from "@recast/editor/lib/wire-types";
+import type { RegionRect } from "$lib/recorder-types";
 
 export type Rect = { x: number; y: number; w: number; h: number };
 

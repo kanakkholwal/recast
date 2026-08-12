@@ -1945,8 +1945,27 @@ pub(crate) async fn run_mux_job(
         .unwrap_or_else(|| "Recast_export".to_string());
     let output_path = super::unique_path(&output_dir, &source_stem, "mp4");
 
+    // Same command-line-length guard as the main export path: a project with
+    // many music/voice clips builds a long adelay/amix graph, and Windows caps
+    // the command line at ~32 KB ("filename or extension is too long").
+    let mut mux_script_path: Option<PathBuf> = None;
     if let Some(ref fc) = filter_complex {
-        args.extend(["-filter_complex".to_string(), fc.clone()]);
+        if fc.len() > FILTER_COMPLEX_SCRIPT_THRESHOLD {
+            let path = std::env::temp_dir().join(format!("recast-mux-filtergraph-{export_id}.txt"));
+            std::fs::write(&path, fc).map_err(|e| {
+                AppError::msg(format!(
+                    "failed to write mux filter script {}: {e}",
+                    path.display()
+                ))
+            })?;
+            args.extend([
+                "-filter_complex_script".to_string(),
+                path.to_string_lossy().to_string(),
+            ]);
+            mux_script_path = Some(path);
+        } else {
+            args.extend(["-filter_complex".to_string(), fc.clone()]);
+        }
     }
     args.extend([
         "-map".to_string(),
@@ -1990,6 +2009,10 @@ pub(crate) async fn run_mux_job(
         )
     })
     .await;
+
+    if let Some(p) = mux_script_path.as_ref() {
+        let _ = std::fs::remove_file(p);
+    }
 
     match task_result {
         Ok(Ok(path)) => {
