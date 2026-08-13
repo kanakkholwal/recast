@@ -141,6 +141,76 @@ export function splitSegmentAcrossSpans(
 	return pieces;
 }
 
+interface SegmentIndex {
+	/** Segment positions, ascending by `start`. */
+	order: Int32Array;
+	/** `starts[i]` is `segments[order[i]].start`. */
+	starts: Float64Array;
+	/** Running max of `end` over `order[0..i]`. Bounds the backward walk. */
+	maxEnd: Float64Array;
+}
+
+// Keyed on the array identity: the transcript is replaced wholesale on load and
+// on every edit, so a new array IS the invalidation signal.
+const segmentIndexCache = new WeakMap<object, SegmentIndex>();
+
+function segmentIndex(segments: ReadonlyArray<TranscriptSegment>): SegmentIndex {
+	const cached = segmentIndexCache.get(segments);
+	if (cached) return cached;
+	const n = segments.length;
+	const order = Int32Array.from({ length: n }, (_, i) => i);
+	// Nothing in the pipeline asserts the transcript is sorted, so the index
+	// establishes that itself rather than assuming it.
+	const sorted = Array.from(order).sort((a, b) => segments[a].start - segments[b].start);
+	const starts = new Float64Array(n);
+	const maxEnd = new Float64Array(n);
+	let running = Number.NEGATIVE_INFINITY;
+	for (let i = 0; i < n; i++) {
+		const at = sorted[i];
+		order[i] = at;
+		starts[i] = segments[at].start;
+		running = Math.max(running, segments[at].end);
+		maxEnd[i] = running;
+	}
+	const index = { order, starts, maxEnd };
+	segmentIndexCache.set(segments, index);
+	return index;
+}
+
+/**
+ * Segment containing `t`, or null. Equivalent to `segments.find(...)` including
+ * its tie-break — with overlapping segments the EARLIEST IN ARRAY ORDER wins —
+ * but without walking the transcript on every rendered frame.
+ */
+function segmentAt(
+	segments: ReadonlyArray<TranscriptSegment>,
+	t: number,
+): TranscriptSegment | null {
+	const { order, starts, maxEnd } = segmentIndex(segments);
+	// Last position whose start is at or before `t`.
+	let lo = 0;
+	let hi = starts.length - 1;
+	let last = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (starts[mid] <= t) {
+			last = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	let best = -1;
+	// Walk back only while an earlier segment could still reach `t`. For a
+	// well-formed transcript that is one step.
+	for (let i = last; i >= 0 && maxEnd[i] > t; i--) {
+		const at = order[i];
+		const seg = segments[at];
+		if (t >= seg.start && t < seg.end && (best < 0 || at < best)) best = at;
+	}
+	return best < 0 ? null : segments[best];
+}
+
 /**
  * The active caption at source time `nowOrig`, intersected with the kept
  * span that contains `nowOrig`. Returns null if `nowOrig` is inside a cut
@@ -156,7 +226,7 @@ export function activeClippedSegment(
 	// it) or fully after (the player hasn't reached it yet). Either way,
 	// no caption is on screen.
 	if (nowOrig < span.origStart || nowOrig >= span.origEnd) return null;
-	const segment = segments.find((s) => nowOrig >= s.start && nowOrig < s.end);
+	const segment = segmentAt(segments, nowOrig);
 	if (!segment) return null;
 	const visible = clipSegmentToSpan(segment, span);
 	if (!visible) return null;

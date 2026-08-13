@@ -11,10 +11,6 @@
 		"./taxonomy": {
 			"types": "./src/taxonomy.ts",
 			"default": "./src/taxonomy.ts"
-		},
-		"./scrub": {
-			"types": "./src/scrub.ts",
-			"default": "./src/scrub.ts"
 		}
 	},
 	"dependencies": {

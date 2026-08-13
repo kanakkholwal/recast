@@ -332,10 +332,7 @@ impl Default for CameraOverlaySettings {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Annotation, AnnotationAnchor, AnnotationKind, CameraMotionSegment, CameraOverlaySettings,
-        CameraPlacement,
-    };
+    use super::{Annotation, AnnotationAnchor, AnnotationKind};
 
     // Guards the IPC contract: the frontend sends camelCase keys, and the export
     // pipeline must read `anchor` + the image `radius`/`stroke` it sends. A key

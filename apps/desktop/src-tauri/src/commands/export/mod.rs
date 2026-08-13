@@ -11,3 +11,4 @@ pub(crate) mod progress;
 pub(crate) mod raster;
 pub(crate) mod run;
 pub(crate) mod state;
+pub(crate) mod tail;

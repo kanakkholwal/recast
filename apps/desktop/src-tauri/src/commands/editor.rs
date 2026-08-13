@@ -15,7 +15,7 @@ use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
     append_cut_speed_stage, build_speed_segments, collect_export_cuts, has_speed_change,
-    output_duration_cap, warped_output_duration,
+    warped_output_duration,
 };
 use super::export::gif::{run_gif_palette_prepass, run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
@@ -303,24 +303,6 @@ fn build_music_stage(
         labels.len()
     ));
     Some((segments.join(";"), "[afinal]".into()))
-}
-
-/// Attribution lines the music clips' licenses require (CC-BY), deduped and
-/// joined for the output file's `comment` metadata so the credit travels with
-/// the exported video. None when nothing needs crediting.
-fn build_credits_comment(clips: &[crate::render::node_types::AudioClip]) -> Option<String> {
-    let mut seen: Vec<&str> = Vec::new();
-    for clip in clips {
-        if let Some(a) = clip.source.attribution() {
-            if !seen.contains(&a) {
-                seen.push(a);
-            }
-        }
-    }
-    if seen.is_empty() {
-        return None;
-    }
-    Some(format!("Music: {}", seen.join("; ")))
 }
 
 #[tauri::command]
@@ -1257,14 +1239,16 @@ mod audio_mix_tests {
             ..provider("l", None)
         };
         let line = "\"Sunrise\" by Nova (Jamendo)";
-        let comment = build_credits_comment(&[
+        let comment = crate::commands::export::tail::build_credits_comment(&[
             provider("1", Some(line)),
             provider("2", Some(line)), // same line → deduped
             local,                     // local → no credit
         ])
         .expect("comment");
         assert_eq!(comment, format!("Music: {line}"));
-        assert!(build_credits_comment(&[provider("3", None)]).is_none());
+        assert!(
+            crate::commands::export::tail::build_credits_comment(&[provider("3", None)]).is_none()
+        );
     }
 }
 
@@ -2942,44 +2926,15 @@ pub(crate) async fn run_export_job(
         args.extend(["-vf".to_string(), output_filters.join(",")]);
     }
 
-    // The input-side `-t` above trims the source media, but filtergraph
-    // generators such as `color=...` are infinite by default. Add an
-    // output-side duration cap so background/composite exports stop after the
-    // requested timeline duration instead of encoding forever.
-    //
-    // Cap at the REAL post-edit length: cuts drop frames and per-segment speed
-    // warps them, so the edited stream is shorter (or, for slow-motion, longer)
-    // than the raw trimmed span. Because the background generators are infinite
-    // and `overlay` repeats the video's last frame past content-end, capping at
-    // the raw span would bake a frozen tail (the cut/sped-away time) onto the
-    // end — and would truncate a slowed clip. `warped_output_duration` is the
-    // length the select+setpts/atempo stage actually produces. GIF keeps the
-    // trimmed span (its cut/palette path differs and it loops).
-    let output_cap = output_duration_cap(&request.format, duration, &speed_segments);
-    if output_cap > 0.0 {
-        args.extend(["-t".to_string(), format!("{output_cap:.3}")]);
-    }
-    // The real length of the output file — the `-t` cap (cuts dropped + speed
-    // warped), not the raw trimmed span. This is the UI progress denominator and
-    // the completion-probe target; using the raw span made the bar stall short of
-    // (cuts/speed-up) or overshoot past (slow-motion) 100%.
-    let expected_output_secs = if output_cap > 0.0 {
-        output_cap
-    } else {
-        source_duration
-    };
-
-    if duration <= 0.0 && (!export_plan.extra_inputs.is_empty() || cursor_overlay_path.is_some()) {
-        args.push("-shortest".to_string());
-    }
-
-    // CC-BY music requires credit, so bake the attribution into the output's
-    // `comment` metadata (skipped for GIF — it carries no audio to credit).
-    if request.format != "gif" {
-        if let Some(comment) = build_credits_comment(&request.render_state.music_clips) {
-            args.extend(["-metadata".to_string(), format!("comment={comment}")]);
-        }
-    }
+    let expected_output_secs = crate::commands::export::tail::append_output_tail(
+        &mut args,
+        &request,
+        duration,
+        source_duration,
+        &speed_segments,
+        !export_plan.extra_inputs.is_empty() || cursor_overlay_path.is_some(),
+    )
+    .expected_output_secs;
 
     // Snapshot inputs+filter+maps before the codec tail so a hardware-encoder
     // crash can be re-run with software from the same base command.

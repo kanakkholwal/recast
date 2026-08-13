@@ -8,7 +8,7 @@ import {
 import { karaokeCentiseconds, spokenWordCount } from "./highlight";
 import { breakIntoLines } from "./linebreak";
 import { pillBox } from "./geometry";
-import { parseKaraokeCue, serializeKaraokeVtt, formatVttTime, parseVttTime } from "./vtt";
+import { parseKaraokeCue, parseVttTime } from "./vtt";
 import { CAPTION_PRESETS, DEFAULT_CAPTION_STYLE } from "./presets";
 import type { CaptionAnimation, TranscriptWord } from "./types";
 
@@ -102,17 +102,12 @@ describe("pillBox", () => {
 	});
 });
 
-describe("VTT karaoke round-trip", () => {
-	it("serializes then parses back to the same word timings", () => {
-		const w = words([
-			[4.12, 4.38, "but"],
-			[4.38, 4.6, "it's"],
-			[4.6, 5.0, "a"],
-		]);
-		const vtt = serializeKaraokeVtt([{ start: 4.12, end: 5.0, words: w, text: "but it's a" }]);
-		expect(vtt).toContain("<00:00:04.380>it's");
-		// Parse the one cue body back.
-		const body = vtt.split("\n\n")[1].split("\n").slice(1).join("\n");
+describe("VTT karaoke parsing", () => {
+	it("parses word timings out of a cue body", () => {
+		// Literal, not round-tripped through a TS serializer: Rust writes the VTT
+		// (`transcription/subtitles.rs to_vtt`), so this pins the parser against
+		// the real wire format rather than against our own encoder.
+		const body = "<00:00:04.120>but <00:00:04.380>it's <00:00:04.600>a";
 		const parsed = parseKaraokeCue(body, 4.12, 5.0);
 		expect(parsed.map((p) => p.text)).toEqual(["but", "it's", "a"]);
 		expect(parsed[1].start).toBeCloseTo(4.38, 3);
@@ -125,9 +120,10 @@ describe("VTT karaoke round-trip", () => {
 		expect(parsed[0]).toMatchObject({ start: 1, end: 2, text: "plain sentence here" });
 	});
 
-	it("formats and parses time symmetrically", () => {
-		expect(formatVttTime(3723.456)).toBe("01:02:03.456");
+	it("parses every stamp shape a cue can carry", () => {
 		expect(parseVttTime("01:02:03.456")).toBeCloseTo(3723.456, 3);
+		expect(parseVttTime("01:02.500")).toBeCloseTo(62.5, 3);
+		expect(parseVttTime("12.340")).toBeCloseTo(12.34, 3);
 	});
 });
 

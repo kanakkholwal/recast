@@ -195,3 +195,69 @@ describe("activeClippedSegment", () => {
 		expect(result?.visible).toEqual({ start: 8, end: 10 });
 	});
 });
+
+/**
+ * `activeClippedSegment` runs once per rendered caption frame. A linear
+ * `segments.find` costs the whole transcript on every one of those frames, and
+ * the cost grows with playback position — worst exactly where a long recording
+ * is already under load.
+ */
+describe("activeClippedSegment lookup cost", () => {
+	const COUNT = 2000;
+	const long: TranscriptSegment[] = Array.from({ length: COUNT }, (_, i) => ({
+		start: i * 2,
+		end: i * 2 + 1.8,
+		text: `seg ${i}`,
+		words: [] as TranscriptWord[],
+	}));
+	const late = (COUNT - 1) * 2 + 0.5;
+	const wholeSpan: KeptSpan = { origStart: 0, origEnd: COUNT * 2 };
+
+	function counted() {
+		let reads = 0;
+		const proxy = new Proxy(long, {
+			get(target, prop, recv) {
+				if (typeof prop === "string" && /^\d+$/.test(prop)) reads++;
+				return Reflect.get(target, prop, recv);
+			},
+		});
+		return { proxy, reads: () => reads };
+	}
+
+	it("does not scan the whole transcript to find a late segment", () => {
+		const { proxy, reads } = counted();
+		activeClippedSegment(proxy, wholeSpan, late); // warm the index
+		const before = reads();
+		activeClippedSegment(proxy, wholeSpan, late);
+		expect(reads() - before).toBeLessThan(20);
+	});
+
+	it("still finds the right segment anywhere in the transcript", () => {
+		expect(activeClippedSegment(long, wholeSpan, late)?.segment.text).toBe(`seg ${COUNT - 1}`);
+		expect(activeClippedSegment(long, wholeSpan, 0.5)?.segment.text).toBe("seg 0");
+		expect(activeClippedSegment(long, wholeSpan, 1000.5)?.segment.text).toBe("seg 500");
+		// 1.9 is in the gap between segment 0 ([0,1.8]) and segment 1 ([2,3.8]).
+		expect(activeClippedSegment(long, wholeSpan, 1.9)).toBeNull();
+	});
+
+	it("returns the first match when segments overlap, like the scan did", () => {
+		const overlapping: TranscriptSegment[] = [
+			{ start: 0, end: 10, text: "wide", words: [] },
+			{ start: 4, end: 6, text: "inner", words: [] },
+		];
+		const span: KeptSpan = { origStart: 0, origEnd: 10 };
+		expect(activeClippedSegment(overlapping, span, 5)?.segment.text).toBe("wide");
+	});
+
+	it("handles a transcript that is not sorted by start", () => {
+		const unsorted: TranscriptSegment[] = [
+			{ start: 6, end: 8, text: "third", words: [] },
+			{ start: 0, end: 2, text: "first", words: [] },
+			{ start: 3, end: 5, text: "second", words: [] },
+		];
+		const span: KeptSpan = { origStart: 0, origEnd: 10 };
+		expect(activeClippedSegment(unsorted, span, 7)?.segment.text).toBe("third");
+		expect(activeClippedSegment(unsorted, span, 4)?.segment.text).toBe("second");
+		expect(activeClippedSegment(unsorted, span, 1)?.segment.text).toBe("first");
+	});
+});
