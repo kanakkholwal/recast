@@ -99,7 +99,7 @@ Regression on any row fails the build via
 | Cut-cross latency | ≤ 250 ms p95 | Existing baseline; non-regression budget |
 | INP during playback | ≤ 100 ms | Scrub / cut / split must not block input |
 | Decoded-frame memory | resolution-adaptive via `frameCacheCapBytes`, ≤ 512 MB | A flat cap safe at 1080p starves the decoder's surface pool at 4K |
-| IndexedDB cache | ≤ 2 GB hard cap (user-configurable in Settings; default 2 GB), LRU by recency × bytes | Re-scrub reuse |
+| ~~IndexedDB cache~~ | **Removed** | The preview hands each frame off and closes it, so nothing structured-cloneable ever reached the store. Re-add with §8 if a browser editor needs it |
 | `@recast/media` bundle — desktop | ≤ 80 KB gz | Editor preview surface: cache + errors + playback subpath |
 | `@recast/media` bundle — web page | ≤ 5 KB gz | `tools/client.ts` is types-only and spawns the worker lazily; nothing here blocks first paint |
 | `@recast/media` bundle — conversion worker | ≤ 220 KB gz | On-demand chunk, fetched only after the user starts a conversion. Pulls MediaBunny + gifenc + lamejs + fflate |
@@ -224,8 +224,8 @@ article.
   `packages/media/src/cache/index.ts` (`#evictMemoryUntilFits`), which is the
   single close path for every decoded frame.
 - **Workers are module workers** (`new Worker(url, { type: 'module' })`).
-- **IndexedDB schema is versioned** via `onupgradeneeded`; migrations are
-  explicit, not best-effort.
+- **Any future IndexedDB schema is versioned** via `onupgradeneeded`;
+  migrations are explicit, not best-effort.
 - **Errors throw `MediaError`** with `code` from §2. No
   `throw new Error("…")` in this package.
 - **`performance.mark` / `measure` at every stage boundary.** The budgets
@@ -258,7 +258,7 @@ article.
 | OffscreenCanvas | Compositor (optional) | `transferControlToOffscreen` migrates if main-thread pressure measured |
 | Web Workers (module) | Decode + demux | Worker-from-day-one |
 | AudioWorklet | Sample-accurate audio | Replaces `apps/desktop/src/lib/playback/audio-engine.ts` (fallback kept until testing) |
-| IndexedDB | Decoded-frame cache | ≤ 2 GB LRU by recency × bytes |
+| ~~IndexedDB~~ | Decoded-frame cache | Removed — see §3 budgets |
 | Streams API (`ReadableStream`, `WritableStream`) | MediaBunny `StreamSource` | |
 | Fetch with Range | Web `StreamSource` against API | |
 | Tauri `asset:` protocol | Desktop `StreamSource` | Already in use today |

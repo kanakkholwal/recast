@@ -14,6 +14,8 @@
  * rest reads the device and is SSR-safe.
  */
 
+import { formatBytes } from "@recast/editor/lib/format/bytes";
+
 const MB = 1024 * 1024;
 
 /**
@@ -32,16 +34,16 @@ export function computeMaxInputBytes(memGB: number | null, mobile: boolean): num
 
 /** `navigator.deviceMemory` in GB (Chromium only; null elsewhere). */
 export function deviceMemoryGB(): number | null {
-	if (typeof navigator === 'undefined') return null;
+	if (typeof navigator === "undefined") return null;
 	const dm = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-	return typeof dm === 'number' ? dm : null;
+	return typeof dm === "number" ? dm : null;
 }
 
 /** Best-effort mobile detection: the UA-Client-Hints flag, else a UA regex. */
 export function isMobile(): boolean {
-	if (typeof navigator === 'undefined') return false;
+	if (typeof navigator === "undefined") return false;
 	const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData;
-	if (uaData && typeof uaData.mobile === 'boolean') return uaData.mobile;
+	if (uaData && typeof uaData.mobile === "boolean") return uaData.mobile;
 	return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
@@ -55,7 +57,9 @@ export interface SizeBudget {
 /** The input budget for the current device. */
 export function inputBudget(): SizeBudget {
 	const bytes = computeMaxInputBytes(deviceMemoryGB(), isMobile());
-	return { maxInputBytes: bytes, label: formatBytes(bytes) };
+	// The tilde belongs to the budget, which is an estimate — not to the exact
+	// file sizes `checkFileSize` reports against it.
+	return { maxInputBytes: bytes, label: `~${formatBytes(bytes)}` };
 }
 
 export interface SizeCheck {
@@ -71,12 +75,4 @@ export function checkFileSize(fileBytes: number, budget: SizeBudget): SizeCheck 
 		ok: false,
 		reason: `This file is ${formatBytes(fileBytes)}. The in-browser tool handles up to about ${budget.label} on this device. For larger files, the Recast desktop app has no size limit.`,
 	};
-}
-
-/** Compact size label: "~500 MB", "1.2 GB", "850 KB". */
-export function formatBytes(bytes: number): string {
-	if (bytes >= 1024 * MB) return `${(bytes / (1024 * MB)).toFixed(1)} GB`;
-	if (bytes >= MB) return `~${Math.round(bytes / MB)} MB`;
-	if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
-	return `${bytes} B`;
 }

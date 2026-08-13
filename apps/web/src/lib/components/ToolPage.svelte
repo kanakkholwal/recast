@@ -1,229 +1,236 @@
 <script lang="ts">
-	import { browser } from "$app/environment";
-	import SeoMeta from "$lib/components/SeoMeta.svelte";
-	import Container from "$lib/components/Container.svelte";
-	import { evaluateTool, type CapabilityStatus } from "$lib/tools/capabilities";
-	import { ConvertClientError, runConversion } from "$lib/tools/client";
-	import { checkFileSize, formatBytes, inputBudget, type SizeBudget } from "$lib/tools/device";
-	import type { ToolControl, ToolDef } from "$lib/tools/registry";
-	import {
-		buildToolJsonLd,
-		buildToolOptions,
-		numberControlsOf,
-		outputKindFor,
-		resolvePhase,
-		selectControlsOf,
-	} from "./ToolPage.logic";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import * as Card from "@recast/ui/card";
-	import { Label } from "@recast/ui/label";
-	import { Segmented } from "@recast/ui/segmented";
-	import { SliderControl } from "@recast/ui/slider-control";
-	import { Spinner } from "@recast/ui/spinner";
-	import ToolTrimRange from "./ToolTrimRange.svelte";
-	import {
-		Download,
-		FileArchive,
-		Music4,
-		RotateCcw,
-		ShieldCheck,
-		TriangleAlert,
-		Upload,
-		X,
-	} from "@recast/icons";
-	import { onMount } from "svelte";
+import { browser } from "$app/environment";
+import SeoMeta from "$lib/components/SeoMeta.svelte";
+import Container from "$lib/components/Container.svelte";
+import { evaluateTool, type CapabilityStatus } from "$lib/tools/capabilities";
+import { ConvertClientError, runConversion } from "$lib/tools/client";
+import { formatBytes } from "@recast/editor/lib/format/bytes";
+import { checkFileSize, inputBudget, type SizeBudget } from "$lib/tools/device";
+import type { ToolControl, ToolDef } from "$lib/tools/registry";
+import {
+	buildToolJsonLd,
+	buildToolOptions,
+	numberControlsOf,
+	outputKindFor,
+	resolvePhase,
+	selectControlsOf,
+} from "./ToolPage.logic";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import * as Card from "@recast/ui/card";
+import { Label } from "@recast/ui/label";
+import { Segmented } from "@recast/ui/segmented";
+import { SliderControl } from "@recast/ui/slider-control";
+import { Spinner } from "@recast/ui/spinner";
+import ToolTrimRange from "./ToolTrimRange.svelte";
+import {
+	Download,
+	FileArchive,
+	Music4,
+	RotateCcw,
+	ShieldCheck,
+	TriangleAlert,
+	Upload,
+	X,
+} from "@recast/icons";
+import { onMount } from "svelte";
 
-	let { tool }: { tool: ToolDef } = $props();
+let { tool }: { tool: ToolDef } = $props();
 
-	// svelte-ignore state_referenced_locally
-	const selectControls = selectControlsOf(tool);
-	// svelte-ignore state_referenced_locally
-	const numberControls = numberControlsOf(tool);
+// svelte-ignore state_referenced_locally
+const selectControls = selectControlsOf(tool);
+// svelte-ignore state_referenced_locally
+const numberControls = numberControlsOf(tool);
 
-	// svelte-ignore state_referenced_locally
-	let selectValues = $state<Record<string, string>>(
-		Object.fromEntries(selectControls.map((c) => [c.key, String(c.default)])),
-	);
-	// svelte-ignore state_referenced_locally
-	let numberValues = $state<Record<string, number>>(
-		Object.fromEntries(numberControls.map((c) => [c.key, Number(c.default)])),
-	);
+// svelte-ignore state_referenced_locally
+let selectValues = $state<Record<string, string>>(
+	Object.fromEntries(selectControls.map((c) => [c.key, String(c.default)])),
+);
+// svelte-ignore state_referenced_locally
+let numberValues = $state<Record<string, number>>(
+	Object.fromEntries(numberControls.map((c) => [c.key, Number(c.default)])),
+);
 
-	let capability = $state<CapabilityStatus | null>(null); // null = still probing
-	let budget = $state<SizeBudget | null>(null);
+let capability = $state<CapabilityStatus | null>(null); // null = still probing
+let budget = $state<SizeBudget | null>(null);
 
-	let file = $state<File | null>(null);
-	let fileInput = $state<HTMLInputElement | null>(null);
-	let dragOver = $state(false);
-	let sizeError = $state<string | null>(null);
-	let busy = $state(false);
-	let progress = $state(0);
-	let errorMsg = $state<string | null>(null);
-	let funnelToApp = $state(false);
-	let resultUrl = $state<string | null>(null);
-	let resultName = $state("");
-	let resultMime = $state("");
-	let resultSize = $state(0);
-	let controller: AbortController | null = null;
+let file = $state<File | null>(null);
+let fileInput = $state<HTMLInputElement | null>(null);
+let dragOver = $state(false);
+let sizeError = $state<string | null>(null);
+let busy = $state(false);
+let progress = $state(0);
+let errorMsg = $state<string | null>(null);
+let funnelToApp = $state(false);
+let resultUrl = $state<string | null>(null);
+let resultName = $state("");
+let resultMime = $state("");
+let resultSize = $state(0);
+let controller: AbortController | null = null;
 
-	onMount(async () => {
-		budget = inputBudget();
-		capability = await evaluateTool(tool.requirements);
-	});
+onMount(async () => {
+	budget = inputBudget();
+	capability = await evaluateTool(tool.requirements);
+});
 
-	// Object URL for previewing the chosen input, cleaned up when it changes.
-	let inputUrl = $state<string | null>(null);
-	$effect(() => {
-		if (!file) {
-			inputUrl = null;
-			return;
-		}
-		const url = URL.createObjectURL(file);
-		inputUrl = url;
-		return () => URL.revokeObjectURL(url);
-	});
-
-	const blocked = $derived(capability?.supported === false);
-	const blockedReason = $derived(capability && !capability.supported ? capability.reason : null);
-	const phase = $derived(resolvePhase(blocked, busy, !!resultUrl, !!file));
-	const isVideoInput = $derived((file?.type ?? "").startsWith("video/"));
-	const outputKind = $derived(outputKindFor(resultMime));
-
-	function acceptFile(f: File | null | undefined) {
-		resetResult();
-		sizeError = null;
-		errorMsg = null;
-		funnelToApp = false;
-		if (!f) {
-			file = null;
-			return;
-		}
-		if (budget) {
-			const check = checkFileSize(f.size, budget);
-			if (!check.ok) {
-				file = null;
-				sizeError = check.reason ?? "This file is too large for this device.";
-				funnelToApp = true;
-				return;
-			}
-		}
-		file = f;
+// Object URL for previewing the chosen input, cleaned up when it changes.
+let inputUrl = $state<string | null>(null);
+$effect(() => {
+	if (!file) {
+		inputUrl = null;
+		return;
 	}
+	const url = URL.createObjectURL(file);
+	inputUrl = url;
+	return () => URL.revokeObjectURL(url);
+});
 
-	function onPick(e: Event) {
-		acceptFile((e.target as HTMLInputElement).files?.[0]);
-	}
-	function onDrop(e: DragEvent) {
-		e.preventDefault();
-		dragOver = false;
-		acceptFile(e.dataTransfer?.files?.[0]);
-	}
+const blocked = $derived(capability?.supported === false);
+const blockedReason = $derived(capability && !capability.supported ? capability.reason : null);
+const phase = $derived(resolvePhase(blocked, busy, !!resultUrl, !!file));
+const isVideoInput = $derived((file?.type ?? "").startsWith("video/"));
+const outputKind = $derived(outputKindFor(resultMime));
 
-	function resetResult() {
-		if (resultUrl) URL.revokeObjectURL(resultUrl);
-		resultUrl = null;
-		resultName = "";
-		resultMime = "";
-		resultSize = 0;
-		progress = 0;
-	}
-
-	function startOver() {
-		resetResult();
-		errorMsg = null;
-		sizeError = null;
+function acceptFile(f: File | null | undefined) {
+	resetResult();
+	sizeError = null;
+	errorMsg = null;
+	funnelToApp = false;
+	if (!f) {
 		file = null;
-		if (fileInput) fileInput.value = "";
+		return;
 	}
+	if (budget) {
+		const check = checkFileSize(f.size, budget);
+		if (!check.ok) {
+			file = null;
+			sizeError = check.reason ?? "This file is too large for this device.";
+			funnelToApp = true;
+			return;
+		}
+	}
+	file = f;
+}
 
-	async function convert() {
-		if (!file || blocked) return;
-		busy = true;
-		errorMsg = null;
-		resetResult();
-		controller = new AbortController();
-		try {
-			const out = await runConversion(file, tool.op, buildToolOptions(tool, selectControls, numberControls, selectValues, numberValues), {
+function onPick(e: Event) {
+	acceptFile((e.target as HTMLInputElement).files?.[0]);
+}
+function onDrop(e: DragEvent) {
+	e.preventDefault();
+	dragOver = false;
+	acceptFile(e.dataTransfer?.files?.[0]);
+}
+
+function resetResult() {
+	if (resultUrl) URL.revokeObjectURL(resultUrl);
+	resultUrl = null;
+	resultName = "";
+	resultMime = "";
+	resultSize = 0;
+	progress = 0;
+}
+
+function startOver() {
+	resetResult();
+	errorMsg = null;
+	sizeError = null;
+	file = null;
+	if (fileInput) fileInput.value = "";
+}
+
+async function convert() {
+	if (!file || blocked) return;
+	busy = true;
+	errorMsg = null;
+	resetResult();
+	controller = new AbortController();
+	try {
+		const out = await runConversion(
+			file,
+			tool.op,
+			buildToolOptions(tool, selectControls, numberControls, selectValues, numberValues),
+			{
 				signal: controller.signal,
 				onProgress: (r) => (progress = r),
-			});
-			resultUrl = URL.createObjectURL(out.blob);
-			resultName = out.filename;
-			resultMime = out.mime;
-			resultSize = out.blob.size;
-		} catch (err) {
-			if (err instanceof ConvertClientError && err.code === "cancelled") {
-				// cancelled by the user — no error
-			} else if (err instanceof ConvertClientError && err.code === "too-large") {
-				errorMsg = err.message;
-				funnelToApp = true;
-			} else {
-				errorMsg = err instanceof Error ? err.message : "Something went wrong converting the file.";
-			}
-		} finally {
-			busy = false;
-			controller = null;
+			},
+		);
+		resultUrl = URL.createObjectURL(out.blob);
+		resultName = out.filename;
+		resultMime = out.mime;
+		resultSize = out.blob.size;
+	} catch (err) {
+		if (err instanceof ConvertClientError && err.code === "cancelled") {
+			// cancelled by the user — no error
+		} else if (err instanceof ConvertClientError && err.code === "too-large") {
+			errorMsg = err.message;
+			funnelToApp = true;
+		} else {
+			errorMsg = err instanceof Error ? err.message : "Something went wrong converting the file.";
 		}
+	} finally {
+		busy = false;
+		controller = null;
 	}
+}
 
-	const cancel = () => controller?.abort();
-	const segmentedOptions = (c: ToolControl) => (c.options ?? []).map((o) => ({ value: o.value, label: o.label }));
+const cancel = () => controller?.abort();
+const segmentedOptions = (c: ToolControl) =>
+	(c.options ?? []).map((o) => ({ value: o.value, label: o.label }));
 
-	const jsonLd = $derived(buildToolJsonLd(tool));
+const jsonLd = $derived(buildToolJsonLd(tool));
 
-	// --- Preview media + direct manipulation ---------------------------------
-	// The registry gives no max for the trim bounds (it can't: it depends on the
-	// file). Read it off the loaded media so the sliders and the trim range have
-	// a real ceiling instead of an invented one.
-	let mediaEl = $state<HTMLMediaElement | null>(null);
-	let duration = $state(0);
-	let currentTime = $state(0);
+// --- Preview media + direct manipulation ---------------------------------
+// The registry gives no max for the trim bounds (it can't: it depends on the
+// file). Read it off the loaded media so the sliders and the trim range have
+// a real ceiling instead of an invented one.
+let mediaEl = $state<HTMLMediaElement | null>(null);
+let duration = $state(0);
+let currentTime = $state(0);
 
-	const isTrim = $derived(tool.op === "trim");
-	const hasTrimBounds = $derived("startSec" in numberValues && "endSec" in numberValues);
-	/** The drag handles own the bounds once they render, so the equivalent
-	 * sliders are suppressed. If metadata never loads, the sliders stay as the
-	 * fallback rather than leaving trim with no controls at all. */
-	const trimRangeShown = $derived(isTrim && hasTrimBounds && duration > 0);
+const isTrim = $derived(tool.op === "trim");
+const hasTrimBounds = $derived("startSec" in numberValues && "endSec" in numberValues);
+/** The drag handles own the bounds once they render, so the equivalent
+ * sliders are suppressed. If metadata never loads, the sliders stay as the
+ * fallback rather than leaving trim with no controls at all. */
+const trimRangeShown = $derived(isTrim && hasTrimBounds && duration > 0);
 
-	function onMeta() {
-		const d = mediaEl?.duration;
-		if (!d || !Number.isFinite(d)) return;
-		duration = d;
-		// Default the out-point to the end of the media, so the first drag is a
-		// refinement rather than a correction.
-		if (hasTrimBounds) {
-			numberValues.startSec = 0;
-			numberValues.endSec = Math.round(d * 10) / 10;
-		}
+function onMeta() {
+	const d = mediaEl?.duration;
+	if (!d || !Number.isFinite(d)) return;
+	duration = d;
+	// Default the out-point to the end of the media, so the first drag is a
+	// refinement rather than a correction.
+	if (hasTrimBounds) {
+		numberValues.startSec = 0;
+		numberValues.endSec = Math.round(d * 10) / 10;
 	}
+}
 
-	/** A slider ceiling for a control the registry left open-ended. */
-	function maxFor(c: ToolControl): number {
-		if (c.max !== undefined) return c.max;
-		if ((c.key === "startSec" || c.key === "endSec") && duration > 0) {
-			return Math.ceil(duration);
-		}
-		return Math.max(100, Number(c.default) * 4);
+/** A slider ceiling for a control the registry left open-ended. */
+function maxFor(c: ToolControl): number {
+	if (c.max !== undefined) return c.max;
+	if ((c.key === "startSec" || c.key === "endSec") && duration > 0) {
+		return Math.ceil(duration);
 	}
+	return Math.max(100, Number(c.default) * 4);
+}
 
-	function setTrim(next: { start: number; end: number }) {
-		numberValues.startSec = Math.round(next.start * 10) / 10;
-		numberValues.endSec = Math.round(next.end * 10) / 10;
-	}
+function setTrim(next: { start: number; end: number }) {
+	numberValues.startSec = Math.round(next.start * 10) / 10;
+	numberValues.endSec = Math.round(next.end * 10) / 10;
+}
 
-	function seek(seconds: number) {
-		if (mediaEl) mediaEl.currentTime = seconds;
-	}
+function seek(seconds: number) {
+	if (mediaEl) mediaEl.currentTime = seconds;
+}
 
-	// A new file means new media: forget the old duration so a stale ceiling
-	// never leaks across files.
-	$effect(() => {
-		void file;
-		duration = 0;
-		currentTime = 0;
-	});
+// A new file means new media: forget the old duration so a stale ceiling
+// never leaks across files.
+$effect(() => {
+	void file;
+	duration = 0;
+	currentTime = 0;
+});
 </script>
 
 <SeoMeta title={tool.title} description={tool.description} eyebrow="Free tool" />

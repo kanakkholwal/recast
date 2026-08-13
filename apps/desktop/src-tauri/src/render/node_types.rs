@@ -265,6 +265,8 @@ pub struct CameraOverlaySettings {
     pub zoom_follow_easing: Easing,
     #[serde(default)]
     pub default_placement: CameraPlacement,
+    /// Camera moves recorded live. Write-only: `loadRenderState` folds them into
+    /// `keyframes` (the model preview and export both read) and clears this.
     #[serde(default)]
     pub motion_segments: Vec<CameraMotionSegment>,
     /// Per-cut position keyframes (original-time). Empty → static default_placement.
@@ -325,38 +327,6 @@ impl Default for CameraOverlaySettings {
             keyframe_easing: default_camera_keyframe_easing(),
             shadow: default_camera_shadow(),
         }
-    }
-}
-
-impl CameraOverlaySettings {
-    #[allow(dead_code)]
-    pub fn placement_at(&self, t: f64) -> CameraPlacement {
-        let mut current = self.default_placement.clone();
-        for segment in &self.motion_segments {
-            if t <= segment.start {
-                break;
-            }
-            if t >= segment.end {
-                current = CameraPlacement {
-                    x: segment.to_x,
-                    y: segment.to_y,
-                    width: segment.to_width,
-                    height: segment.to_height,
-                };
-                continue;
-            }
-
-            let duration = (segment.end - segment.start).max(1e-6);
-            let phase = ((t - segment.start) / duration).clamp(0.0, 1.0);
-            let eased = segment.ease_in.y(phase as f32) as f64;
-            return CameraPlacement {
-                x: segment.from_x + (segment.to_x - segment.from_x) * eased,
-                y: segment.from_y + (segment.to_y - segment.from_y) * eased,
-                width: segment.from_width + (segment.to_width - segment.from_width) * eased,
-                height: segment.from_height + (segment.to_height - segment.from_height) * eased,
-            };
-        }
-        current
     }
 }
 
@@ -482,62 +452,6 @@ mod tests {
             other => panic!("expected arrow, got {other:?}"),
         }
         assert_eq!(serde_json::to_value(&a).unwrap()["kind"]["headSize"], 0.3);
-    }
-
-    #[test]
-    fn camera_overlay_uses_default_placement_before_motion() {
-        let overlay = CameraOverlaySettings::default();
-        assert_eq!(overlay.placement_at(0.0), CameraPlacement::default());
-    }
-
-    #[test]
-    fn camera_overlay_interpolates_inside_motion_segment() {
-        let mut overlay = CameraOverlaySettings::default();
-        overlay.motion_segments.push(CameraMotionSegment {
-            start: 0.0,
-            end: 2.0,
-            from_x: 0.1,
-            from_y: 0.2,
-            from_width: 0.2,
-            from_height: 0.2,
-            to_x: 0.5,
-            to_y: 0.6,
-            to_width: 0.3,
-            to_height: 0.3,
-            ease_in: Default::default(),
-            ease_out: Default::default(),
-            source: "live-recorded".into(),
-        });
-
-        let at_mid = overlay.placement_at(1.0);
-        assert!(at_mid.x > 0.1 && at_mid.x < 0.5);
-        assert!(at_mid.y > 0.2 && at_mid.y < 0.6);
-        assert!(at_mid.width > 0.2 && at_mid.width < 0.3);
-    }
-
-    #[test]
-    fn camera_overlay_uses_last_segment_after_motion() {
-        let mut overlay = CameraOverlaySettings::default();
-        overlay.motion_segments.push(CameraMotionSegment {
-            start: 0.0,
-            end: 1.0,
-            from_x: 0.1,
-            from_y: 0.2,
-            from_width: 0.2,
-            from_height: 0.2,
-            to_x: 0.4,
-            to_y: 0.5,
-            to_width: 0.25,
-            to_height: 0.25,
-            ease_in: Default::default(),
-            ease_out: Default::default(),
-            source: "manual".into(),
-        });
-
-        let after = overlay.placement_at(3.0);
-        assert_eq!(after.x, 0.4);
-        assert_eq!(after.y, 0.5);
-        assert_eq!(after.width, 0.25);
     }
 }
 

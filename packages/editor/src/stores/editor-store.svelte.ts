@@ -8,6 +8,7 @@
 
 import { type CaptionStyle, DEFAULT_CAPTION_STYLE } from "@recast/captions";
 import { backgroundNeedsShadow, migrateBackgroundValue } from "@recast/design/backgrounds";
+import { keyframesFromMotionSegments } from "../components/_components/camera-overlay.logic";
 import { scaleTranscript, transcriptTimeScale } from "../lib/captions/normalize";
 import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
 import {
@@ -1838,6 +1839,31 @@ export function createEditorStore() {
 		// `?? `-fallbacks below preserve those if present, only swapping in
 		// the new defaults when the field is absent on the loaded state.
 		const fallbackPlacement = cameraPlacementFromPreset("bottom-right");
+		const loadedPlacement = {
+			x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
+			y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
+			width: state.cameraOverlay?.defaultPlacement?.width ?? fallbackPlacement.width,
+			height: state.cameraOverlay?.defaultPlacement?.height ?? fallbackPlacement.height,
+		};
+		const loadedKeyframes = (state.cameraOverlay?.keyframes ?? []).map((k) => ({
+			atSec: k.atSec,
+			placement: { ...k.placement },
+		}));
+		// Camera moves made during the recording arrive as `motionSegments`, which
+		// nothing evaluates. Fold them into the keyframes both the preview and the
+		// export already read, then drop them — authored keyframes win, since the
+		// user has since edited the path by hand.
+		const recordedKeyframes =
+			loadedKeyframes.length > 0
+				? loadedKeyframes
+				: keyframesFromMotionSegments(
+						(state.cameraOverlay?.motionSegments ?? []).map((segment) => ({
+							...segment,
+							easeIn: segment.easeIn ?? { ...EASE },
+							easeOut: segment.easeOut ?? { ...EASE },
+						})),
+						loadedPlacement,
+					);
 		cameraOverlay = {
 			enabled: state.cameraOverlay?.enabled ?? false,
 			mirror: state.cameraOverlay?.mirror ?? true,
@@ -1850,35 +1876,13 @@ export function createEditorStore() {
 			zoomFollowEasing: state.cameraOverlay?.zoomFollowEasing
 				? { ...state.cameraOverlay.zoomFollowEasing }
 				: { ...EASE_IN_OUT },
-			keyframes: (state.cameraOverlay?.keyframes ?? []).map((k) => ({
-				atSec: k.atSec,
-				placement: { ...k.placement },
-			})),
+			keyframes: recordedKeyframes,
 			keyframeEasing: state.cameraOverlay?.keyframeEasing
 				? { ...state.cameraOverlay.keyframeEasing }
 				: { ...EASE_IN_OUT },
 			shadow: state.cameraOverlay?.shadow ?? 0.35,
-			defaultPlacement: {
-				x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
-				y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
-				width: state.cameraOverlay?.defaultPlacement?.width ?? fallbackPlacement.width,
-				height: state.cameraOverlay?.defaultPlacement?.height ?? fallbackPlacement.height,
-			},
-			motionSegments: (state.cameraOverlay?.motionSegments ?? []).map((segment) => ({
-				start: segment.start,
-				end: segment.end,
-				fromX: segment.fromX,
-				fromY: segment.fromY,
-				fromWidth: segment.fromWidth,
-				fromHeight: segment.fromHeight,
-				toX: segment.toX,
-				toY: segment.toY,
-				toWidth: segment.toWidth,
-				toHeight: segment.toHeight,
-				easeIn: segment.easeIn ?? { ...EASE },
-				easeOut: segment.easeOut ?? { ...EASE },
-				source: segment.source ?? "manual",
-			})),
+			defaultPlacement: loadedPlacement,
+			motionSegments: [],
 		};
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		layoutMode = state.layoutMode ?? layoutMode;

@@ -59,7 +59,7 @@ export {
 } from "./encoders";
 export type { GifWriter } from "./encoders";
 
-// decoded-frame cache
+// decoded-frame cache (in-memory only)
 export {
 	FrameCache,
 	getFrameCache,
@@ -68,7 +68,7 @@ export type { CacheStats, FrameCacheConfig } from "./cache";
 export { frameBudget, frameCacheCapBytes, textureRingFrames } from "./cache/frame-budget";
 export type { FrameBudget } from "./cache/frame-budget";
 export { estimateFrameBytes } from "./cache/storage";
-export type { CacheableFrame, FrameStorage } from "./cache/storage";
+export type { CachedFrame } from "./cache/storage";
 
 // Formats MediaBunny cannot decode; the preview falls back to <video>.
 export {

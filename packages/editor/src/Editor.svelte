@@ -463,8 +463,15 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 							: ''}"
 					></div>
 				</div>
-				<div class="h-full" style="width: {sidebarWidth}px;" inert={panelReadOnly}>
-					<PropertiesPanel {store} {cameraPath} {cameraCapture} {onRegenerateAutoZoom} {panels} />
+				<div class="h-full" style="width: {sidebarWidth}px;">
+					<PropertiesPanel
+						{store}
+						{cameraPath}
+						{cameraCapture}
+						{onRegenerateAutoZoom}
+						{panels}
+						readOnly={panelReadOnly}
+					/>
 				</div>
 			</aside>
 		{/if}

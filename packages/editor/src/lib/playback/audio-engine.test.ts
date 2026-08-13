@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fadeGainAt } from "./audio-engine";
+import { fadeGainAt, MUSIC_BUFFER_MAX_SEC, musicPlaybackMode } from "./audio-engine";
 
 describe("fadeGainAt", () => {
 	// 10s output, 2s fade in, 3s fade out.
@@ -40,5 +40,23 @@ describe("fadeGainAt", () => {
 			expect(g).toBeGreaterThanOrEqual(0);
 			expect(g).toBeLessThanOrEqual(1);
 		}
+	});
+});
+
+describe("musicPlaybackMode", () => {
+	it("buffers short beds and streams long imports", () => {
+		expect(musicPlaybackMode(30)).toBe("buffer");
+		expect(musicPlaybackMode(MUSIC_BUFFER_MAX_SEC)).toBe("buffer");
+		expect(musicPlaybackMode(MUSIC_BUFFER_MAX_SEC + 0.1)).toBe("stream");
+		// A 30-min stereo import decoded to 691 MB and stayed resident.
+		expect(musicPlaybackMode(1800)).toBe("stream");
+	});
+
+	it("falls back to buffering when the duration is unknown", () => {
+		// Metadata probes fail outside a browser and on some containers; the
+		// buffered path is the one every other test pins.
+		expect(musicPlaybackMode(Number.NaN)).toBe("buffer");
+		expect(musicPlaybackMode(0)).toBe("buffer");
+		expect(musicPlaybackMode(Number.POSITIVE_INFINITY)).toBe("buffer");
 	});
 });

@@ -68,8 +68,9 @@ function formatFps(): string {
 	return `${Math.round(store.metadata.fps)} fps`;
 }
 
-// Wrapper: InfoPanel shows "--" for missing sizes (vs the shared default "0 B").
-const formatBytes = (bytes: number | undefined): string => formatBytesBase(bytes, "--");
+// InfoPanel shows "--" for missing sizes, not the shared "0 B".
+const formatBytes = (bytes: number | undefined): string =>
+	formatBytesBase(bytes, { zeroLabel: "--" });
 
 // Every kind always rendered (with 0) so the row doesn't shift as shapes change.
 const KIND_META: Array<{

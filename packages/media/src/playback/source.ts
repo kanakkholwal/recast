@@ -256,9 +256,7 @@ export class MediabunnyVideoSource {
 					frame.close();
 				}
 			} else {
-				// Memory only: a `VideoFrame` can't be structured-cloned into
-				// IndexedDB, and the streaming decoder would write per frame.
-				this.#cache.write(tUs, frame as unknown as CachedFrame, false);
+				this.#cache.write(tUs, frame as unknown as CachedFrame);
 			}
 			this.#decodedFrames++;
 			// §3 time-to-first-frame and scrub-seek rows, visible on the DevTools

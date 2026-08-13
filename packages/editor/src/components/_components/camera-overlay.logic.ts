@@ -6,6 +6,7 @@ import { bezierY, type Easing } from "../../lib/easing/cubic-bezier";
 import type { CanvasGeometry } from "../../lib/canvas-geometry";
 import type {
 	CameraKeyframe,
+	CameraMotionSegment,
 	CameraOverlayShape,
 	CameraPlacement,
 	ZoomRegion,
@@ -175,6 +176,50 @@ export function cameraPlacementAt(
 		}
 	}
 	return last.placement;
+}
+
+/**
+ * Camera moves made DURING a recording, as keyframes.
+ *
+ * The recorder writes `motionSegments`; the preview and the export both read
+ * `keyframes`. Folding one into the other on load is what makes a live move
+ * render at all — a second evaluator would be a parity liability, and the
+ * recorded moves become editable once they are keyframes.
+ */
+export function keyframesFromMotionSegments(
+	segments: readonly CameraMotionSegment[],
+	defaultPlacement: CameraPlacement,
+): CameraKeyframe[] {
+	if (segments.length === 0) return [];
+	const sorted = [...segments].sort((a, b) => a.start - b.start);
+	const out: CameraKeyframe[] = [];
+	const push = (atSec: number, placement: CameraPlacement) => {
+		const last = out[out.length - 1];
+		// Two segments meeting at one instant: the later one wins, matching the
+		// segment walk, which adopted each segment's `to` as it passed.
+		if (last && Math.abs(last.atSec - atSec) < 1e-6) out[out.length - 1] = { atSec, placement };
+		else out.push({ atSec, placement });
+	};
+	for (const s of sorted) {
+		push(s.start, { x: s.fromX, y: s.fromY, width: s.fromWidth, height: s.fromHeight });
+		push(s.end, { x: s.toX, y: s.toY, width: s.toWidth, height: s.toHeight });
+	}
+	const head = out[0];
+	// The bubble sat at `defaultPlacement` until the first move. Only pin it when
+	// it actually differs — holding the first keyframe already covers the rest.
+	if (head.atSec > 0 && !samePlacement(head.placement, defaultPlacement)) {
+		out.unshift({ atSec: 0, placement: { ...defaultPlacement } });
+	}
+	return out;
+}
+
+function samePlacement(a: CameraPlacement, b: CameraPlacement): boolean {
+	return (
+		Math.abs(a.x - b.x) < 1e-6 &&
+		Math.abs(a.y - b.y) < 1e-6 &&
+		Math.abs(a.width - b.width) < 1e-6 &&
+		Math.abs(a.height - b.height) < 1e-6
+	);
 }
 
 /** Insert or replace a keyframe at `atSec` (within `epsilon`), returning a new

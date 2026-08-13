@@ -100,7 +100,7 @@ import {
 	createTileProvider,
 	type TileProvider,
 } from "@recast/editor/lib/timeline/filmstrip-source";
-import { originalToOutput } from "@recast/editor/lib/timeline/time-map";
+import { originalToOutput, outputToOriginal } from "@recast/editor/lib/timeline/time-map";
 import { settingsHref } from "../../(app)/settings/settings-tabs";
 import { basename } from "./editor-page.logic";
 import { DEFAULT_LAYOUT, LAYOUT_KEY, parseLayout } from "@recast/editor/editor-shell.logic";
@@ -207,19 +207,16 @@ $effect(() => {
 });
 
 let previewContainerEl: HTMLElement | null = $state(null);
-let systemAudioEl: HTMLAudioElement | null = $state(null);
-let micAudioEl: HTMLAudioElement | null = $state(null);
 let videoSrc = $state("");
 let systemAudioSrc = $state("");
 let micAudioSrc = $state("");
-// Sample-accurate cut-aware audio for the WebCodecs preview (no seeking → no
-// drift). Falls back to the <audio> elements if it can't init/decode.
+// Sample-accurate cut-aware audio for BOTH preview paths (no seeking → no
+// drift). If it can't init/decode, the preview plays silent.
 let audioEngine: AudioTimelineEngine | null = $state(null);
 let audioEngineTried = false;
 // Bumped whenever the document changes or the editor is destroyed, so an
 // engine that finishes decoding afterwards knows it is stale.
 let audioEngineGen = 0;
-let audioEngineFailed = $state(false);
 let cursorPath = $state<string | null>(null);
 let cameraPath = $state<string | null>(null);
 // Why the camera track is or isn't there; the path alone can't tell the editor
@@ -391,9 +388,6 @@ function loopBackToStart(): boolean {
 	if (!videoEl) return false;
 	const start = store.trimStart || 0;
 	videoEl.currentTime = start;
-	for (const el of [systemAudioEl, micAudioEl]) {
-		if (el) el.currentTime = start;
-	}
 	// WebCodecs path: the picture clock is the transport and the <video> stays
 	// paused by design, so play()ing it just races that effect and rejects with
 	// AbortError. Publishing the position is the whole handoff — VideoPreview
@@ -429,22 +423,6 @@ function handleTimeUpdate() {
 				}
 			}
 		}
-		// Drift correction: catch audio up when it falls behind the picture, but
-		// never rewind it to chase a picture that stalled under load, because that
-		// replays a slice as a live echo. Picture catch-up is owned by the rAF
-		// sync loop (syncAudioToClock), so here we only nudge lagging audio.
-		const videoT = videoEl.currentTime;
-		for (const el of [systemAudioEl, micAudioEl]) {
-			if (!el || el.paused) continue;
-			const action = reconcileAvDrift({
-				audioTime: el.currentTime,
-				pictureTime: videoT,
-				isJump: false,
-				syncThreshold: 0.15,
-				maxLead: AUDIO_MAX_LEAD,
-			});
-			if (action === "resync-audio") el.currentTime = videoT;
-		}
 	}
 }
 
@@ -456,16 +434,15 @@ function handleVideoEnded(): boolean {
 		return loopBackToStart();
 	}
 	store.isPlaying = false;
-	systemAudioEl?.pause();
-	micAudioEl?.pause();
+	audioEngine?.pause();
 	return false;
 }
 
-// Slave the audio (full-recording WAVs) to the cut-aware picture clock so they
-// skip the same cuts. Normal playback stays locked at 1×; the only corrections
-// are one snap per cut boundary and per seek. Audio that falls behind by more
-// than this is nudged forward; audio that runs ahead of a stalled picture is
-// NOT rewound (that replays a slice as a live echo). See reconcileAvDrift.
+// Slave the audio engine to the cut-aware picture clock so it skips the same
+// cuts. Normal playback stays locked at 1×; the only corrections are one snap
+// per cut boundary and per seek. Audio that falls behind by more than this is
+// nudged forward; audio that runs ahead of a stalled picture is NOT rewound
+// (that replays a slice as a live echo). See reconcileAvDrift.
 const AUDIO_SYNC_THRESHOLD = 0.12;
 // A cut crossing or scrub jumps the playhead far past one publish quantum;
 // detecting it snaps audio exactly on cuts of any length, including short ones.
@@ -474,42 +451,45 @@ const AUDIO_JUMP = 0.12;
 // to catch up (a brief visual skip) instead of leaving the gap. Bounds the
 // lip-sync drift that a decode stall under load would otherwise accumulate.
 const AUDIO_MAX_LEAD = 0.5;
+// A reschedule tears down and restarts every source node. Correcting at rAF
+// rate would restart the graph 60×/s and stutter far worse than the drift.
+const RESYNC_COOLDOWN_MS = 250;
 let audioSyncRaf: number | null = null;
 let lastAudioTarget = -1;
+let lastResyncMs = 0;
+/**
+ * Legacy <video> path only. There the element is the master and ALREADY skips
+ * cuts (it jumps to cut.end at each boundary), so the engine is reconciled onto
+ * its clock. The WebCodecs path runs the other way — VideoPreview reads
+ * `audioPositionSec` — and is handled by the reschedule effect below.
+ */
 function syncAudioToClock() {
 	audioSyncRaf = requestAnimationFrame(syncAudioToClock);
-	if (!store.isPlaying) {
+	const eng = audioEngine;
+	if (!store.isPlaying || !eng || !videoEl) {
 		lastAudioTarget = -1;
 		return;
 	}
-	// WebCodecs path: the gapless output clock owns time. Legacy <video> path:
-	// the <video> element is the master and ALREADY skips cuts (it jumps to
-	// cut.end at each boundary), so tracking it here makes the <audio> elements
-	// skip the same cuts within a frame. Without this, the 4 Hz `timeupdate`
-	// drift-check left audio playing the removed region for up to ~250 ms.
-	const target = webcodecsActive ? store.currentTime : (videoEl?.currentTime ?? store.currentTime);
-	const jumped = lastAudioTarget < 0 || Math.abs(target - lastAudioTarget) > AUDIO_JUMP;
-	lastAudioTarget = target;
-	for (const el of [systemAudioEl, micAudioEl]) {
-		// CRITICAL: never stack a seek on an element that's still seeking (e.g.
-		// cold-start buffering). Each new currentTime= interrupts the last, so it
-		// never settles and the audio cuts out entirely. Wait for the current seek.
-		if (!el || el.paused || el.seeking || el.readyState < 2) continue;
-		// Snap on a cut/seek or when audio falls behind; when audio runs ahead of a
-		// stalled picture, advance the picture rather than rewind audio (a rewind
-		// replays a slice as a live echo, the record-while-previewing symptom).
-		const action = reconcileAvDrift({
-			audioTime: el.currentTime,
-			pictureTime: target,
-			isJump: jumped,
-			syncThreshold: AUDIO_SYNC_THRESHOLD,
-			maxLead: AUDIO_MAX_LEAD,
-		});
-		if (action === "resync-audio") {
-			el.currentTime = target;
-		} else if (action === "catch-picture" && videoEl) {
-			videoEl.currentTime = el.currentTime;
-		}
+	const audioOut = eng.positionOutputSec;
+	if (audioOut === null) return;
+	const pictureOut = originalToOutput(store.timeMap, videoEl.currentTime);
+	const jumped = lastAudioTarget < 0 || Math.abs(pictureOut - lastAudioTarget) > AUDIO_JUMP;
+	lastAudioTarget = pictureOut;
+	const action = reconcileAvDrift({
+		audioTime: audioOut,
+		pictureTime: pictureOut,
+		isJump: jumped,
+		syncThreshold: AUDIO_SYNC_THRESHOLD,
+		maxLead: AUDIO_MAX_LEAD,
+	});
+	if (action === "resync-audio") {
+		// A seek/cut snaps immediately; only slow drift waits out the cooldown.
+		const now = performance.now();
+		if (!jumped && now - lastResyncMs < RESYNC_COOLDOWN_MS) return;
+		lastResyncMs = now;
+		eng.reschedule(audioRegions(), pictureOut);
+	} else if (action === "catch-picture") {
+		videoEl.currentTime = outputToOriginal(store.timeMap, audioOut);
 	}
 }
 function startAudioClockSync() {
@@ -544,15 +524,12 @@ function audioRegions() {
 function outputNow() {
 	return originalToOutput(store.timeMap, store.currentTime);
 }
-// Lazily build the engine on first WebCodecs playback. Tried once; on failure
-// it's marked failed and the <audio> elements take over.
+// Lazily build the engine on first playback. Tried once; on failure the
+// preview plays silent rather than dragging a second audio path along.
 async function ensureAudioEngine() {
 	if (audioEngine || audioEngineTried) return;
 	audioEngineTried = true;
-	if (!systemAudioSrc && !micAudioSrc) {
-		audioEngineFailed = true;
-		return;
-	}
+	if (!systemAudioSrc && !micAudioSrc) return;
 	const gen = audioEngineGen;
 	try {
 		const eng = await AudioTimelineEngine.create([
@@ -578,57 +555,36 @@ async function ensureAudioEngine() {
 		void eng.setMusicClips(buildMusicSpecs());
 		audioEngine = eng;
 	} catch (err) {
-		console.warn("Web Audio engine unavailable; using <audio> fallback:", err);
-		audioEngineFailed = true;
+		console.warn("Web Audio engine unavailable; the preview will be silent:", err);
 	}
 }
 
-// Play/pause audio in lockstep with `isPlaying`. WebCodecs path drives the
-// Web Audio engine; the <audio> elements are the fallback / legacy path.
+// Play/pause the engine in lockstep with `isPlaying`, on both preview paths.
+// The rAF reconciler runs only on the legacy path, where the <video> element —
+// not the engine — is the clock.
 $effect(() => {
 	const playing = store.isPlaying;
 	const wc = webcodecsActive;
 	const eng = audioEngine;
-	const failed = audioEngineFailed;
 
-	if (wc && !failed) {
-		// Engine owns audio here: keep the <audio> elements and the seek loop off.
-		for (const el of [systemAudioEl, micAudioEl]) el?.pause();
-		stopAudioClockSync();
-		if (playing) {
-			void ensureAudioEngine();
-			if (eng) {
-				void eng.play(
-					untrack(() => audioRegions()),
-					untrack(() => outputNow()),
-				);
-			}
-		} else {
-			eng?.pause();
+	if (playing) {
+		void ensureAudioEngine();
+		// `outputNow()` reads store.currentTime, which the legacy path publishes
+		// only at 4 Hz; the element's own time is the current one.
+		const from = untrack(() =>
+			wc || !videoEl ? outputNow() : originalToOutput(store.timeMap, videoEl.currentTime),
+		);
+		if (eng) {
+			void eng.play(
+				untrack(() => audioRegions()),
+				from,
+			);
 		}
-		return;
+	} else {
+		eng?.pause();
 	}
 
-	// Fallback (engine failed) or legacy <video> path: slave the <audio>
-	// elements to the playhead, and make sure the engine is silent.
-	audioEngine?.pause();
-	const alignTo = untrack(() => (wc ? store.currentTime : (videoEl?.currentTime ?? 0)));
-	for (const el of [systemAudioEl, micAudioEl]) {
-		if (!el) continue;
-		if (playing) {
-			el.currentTime = alignTo;
-			void el.play().catch((err) => {
-				console.warn("Audio play failed:", err);
-			});
-		} else {
-			el.pause();
-		}
-	}
-	// Run the rAF sync whenever the <audio> elements are the audio source:
-	// both the legacy <video> path AND the engine-failed WebCodecs fallback.
-	// It keeps them locked to the master (video time / output clock) so cuts
-	// are skipped tightly, not just on the coarse `timeupdate` tick.
-	if (playing) startAudioClockSync();
+	if (playing && !wc) startAudioClockSync();
 	else stopAudioClockSync();
 });
 
@@ -657,38 +613,14 @@ $effect(() => {
 	if (jumped || editsChanged) eng.reschedule(regions, out);
 });
 
-// Legacy/fallback path: the <audio> elements are slaved to the <video> clock,
-// so they must share its per-segment clip speed or audio plays at 1× while the
-// picture speeds up. preservesPitch stays on (default), matching the export's
-// pitch-preserving atempo. On the WebCodecs path these elements are paused
-// (the Web Audio engine carries speed via the schedule), so this is a no-op.
-$effect(() => {
-	const segSpeed = store.segmentSpeedAtTime(store.currentTime);
-	if (systemAudioEl) systemAudioEl.playbackRate = segSpeed;
-	if (micAudioEl) micAudioEl.playbackRate = segSpeed;
-});
-
-// Apply volume/mute from the store's audio settings to both audio elements.
-// The master is the product of the per-track gains so the user can keep
-// system audio loud and mute just the mic, or vice versa. Master mute
-// still zeros both.
+// Apply volume/mute from the store's audio settings. The master is the product
+// of the per-track gains so the user can keep system audio loud and mute just
+// the mic, or vice versa. Master mute still zeros both.
 $effect(() => {
 	const settings = store.audioSettings;
 	// Detached audio: the monolithic source tracks are silenced (voice clips
 	// carry the recording audio); guards against double-playing the un-cut source.
 	const detached = store.audioDetached;
-	// Capped at 1 because HTMLMediaElement.volume is spec-bound to 0..1: boost
-	// above 100% only reproduces on the Web Audio path (and in the export).
-	const systemVol =
-		detached || settings.muted || settings.systemMuted
-			? 0
-			: Math.max(0, Math.min(1, (settings.volume * settings.systemVolume) / 10_000));
-	const micVol =
-		detached || settings.muted || settings.micMuted
-			? 0
-			: Math.max(0, Math.min(1, (settings.volume * settings.micVolume) / 10_000));
-	if (systemAudioEl) systemAudioEl.volume = systemVol;
-	if (micAudioEl) micAudioEl.volume = micVol;
 	audioEngine?.setMasterVolume(settings.volume, settings.muted);
 	audioEngine?.setTrackVolume(
 		"system",
@@ -737,9 +669,6 @@ $effect(() => {
 $effect(() => {
 	const off = store.registerSeekHandler((t) => {
 		if (videoEl) videoEl.currentTime = t;
-		for (const el of [systemAudioEl, micAudioEl]) {
-			if (el) el.currentTime = t;
-		}
 	});
 	return off;
 });
@@ -754,9 +683,8 @@ function handleVideoSeeked() {
 	// up on the next 4 Hz `timeupdate`, so captions/overlays (which key off
 	// `store.currentTime`) lagged the cut by up to ~250 ms. Snap them here.
 	store.currentTime = t;
-	for (const el of [systemAudioEl, micAudioEl]) {
-		if (el) el.currentTime = t;
-	}
+	// The rAF reconciler treats this as a jump and resnaps the engine; doing it
+	// here too would restart the graph twice for one seek.
 }
 
 // Frame-step on the OUTPUT axis so stepping across a cut lands on the next
@@ -916,15 +844,12 @@ async function loadDocument() {
 	cameraCapture = "legacy";
 	cameraSrc = "";
 	videoEl?.pause();
-	systemAudioEl?.pause();
-	micAudioEl?.pause();
 	// Tear down the previous file's engine; it rebuilds on first play. The bump
 	// also disowns one still decoding, which `dispose()` alone cannot reach.
 	audioEngineGen++;
 	audioEngine?.dispose();
 	audioEngine = null;
 	audioEngineTried = false;
-	audioEngineFailed = false;
 	store.metadata = null;
 	store.reset();
 	store.thumbnailStrip = [];
@@ -987,8 +912,6 @@ async function loadDocument() {
 		isLoading = false;
 		await tick();
 		videoEl?.load();
-		systemAudioEl?.load();
-		micAudioEl?.load();
 		// The preview now owns the main thread through its cold start. Defer the
 		// three heavy secondary decoders — the Rust thumbnail strip, the filmstrip
 		// tile decoder, and the cursor auto-zoom pass — to browser-idle. On a 4K
@@ -1986,29 +1909,6 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
       exportPanel={isExportFlowOpen ? exportRail : undefined}
       class="h-auto min-h-0 flex-1"
     />
-  {/if}
-
-  <!-- .recast stores system + mic audio as separate WAVs (the mp4 has no audio);
-       kept in lockstep with the video via the $effects above. -->
-  <!-- preload="metadata": the Web Audio engine decodes the WAVs itself, so these
-       fallback elements needn't buffer full PCM at open (~tens of MB each). -->
-  {#if systemAudioSrc}
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <audio
-      bind:this={systemAudioEl}
-      src={systemAudioSrc}
-      preload="metadata"
-      class="hidden"
-    ></audio>
-  {/if}
-  {#if micAudioSrc}
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <audio
-      bind:this={micAudioEl}
-      src={micAudioSrc}
-      preload="metadata"
-      class="hidden"
-    ></audio>
   {/if}
 
   {#if playTarget}

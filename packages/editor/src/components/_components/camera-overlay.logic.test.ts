@@ -7,6 +7,7 @@ import {
 	cameraFollowScaleAt,
 	cameraPlacementAt,
 	cameraShadowStyle,
+	keyframesFromMotionSegments,
 	MAX_CAMERA_SIZE,
 	MIN_CAMERA_SIZE,
 	resizeCameraSquare,
@@ -219,5 +220,62 @@ describe("applyZoomFollow", () => {
 		);
 		expect(r.width).toBeCloseTo(0.225, 6); // 0.15 * 1.5
 		expect(r.height).toBeCloseTo(r.width * aspect, 6); // square in pixels
+	});
+});
+
+describe("keyframesFromMotionSegments", () => {
+	const EASE_LIN = { x1: 0, y1: 0, x2: 1, y2: 1 };
+	const at = (t: number, x: number) => ({
+		start: t,
+		end: t + 1,
+		fromX: x,
+		fromY: 0,
+		fromWidth: 0.2,
+		fromHeight: 0.2,
+		toX: x + 0.1,
+		toY: 0,
+		toWidth: 0.2,
+		toHeight: 0.2,
+		easeIn: EASE_LIN,
+		easeOut: EASE_LIN,
+		source: "live-recorded" as const,
+	});
+	const dflt = { x: 0.1, y: 0, width: 0.2, height: 0.2 };
+
+	it("returns nothing for a recording with no moves", () => {
+		expect(keyframesFromMotionSegments([], dflt)).toEqual([]);
+	});
+
+	it("turns each move into its two endpoints", () => {
+		const kfs = keyframesFromMotionSegments([at(2, 0.1)], dflt);
+		expect(kfs.map((k) => k.atSec)).toEqual([2, 3]);
+		expect(kfs[0].placement.x).toBeCloseTo(0.1, 6);
+		expect(kfs[1].placement.x).toBeCloseTo(0.2, 6);
+	});
+
+	it("reproduces the recorded path when evaluated", () => {
+		// Two moves with a pause between: 0.1 → 0.2 over [2,3], hold, then
+		// 0.2 → 0.3 over [5,6]. This is what the segment walk used to describe
+		// and nothing rendered.
+		const kfs = keyframesFromMotionSegments([at(2, 0.1), at(5, 0.2)], dflt);
+		expect(cameraPlacementAt(dflt, kfs, 0, EASE_LIN).x).toBeCloseTo(0.1, 6);
+		expect(cameraPlacementAt(dflt, kfs, 2.5, EASE_LIN).x).toBeCloseTo(0.15, 6);
+		expect(cameraPlacementAt(dflt, kfs, 4, EASE_LIN).x).toBeCloseTo(0.2, 6);
+		expect(cameraPlacementAt(dflt, kfs, 5.5, EASE_LIN).x).toBeCloseTo(0.25, 6);
+		expect(cameraPlacementAt(dflt, kfs, 99, EASE_LIN).x).toBeCloseTo(0.3, 6);
+	});
+
+	it("collapses moves that meet at one instant, later wins", () => {
+		const kfs = keyframesFromMotionSegments([at(2, 0.1), at(3, 0.2)], dflt);
+		expect(kfs.map((k) => k.atSec)).toEqual([2, 3, 4]);
+		expect(kfs[1].placement.x).toBeCloseTo(0.2, 6);
+	});
+
+	it("pins the resting placement only when the first move starts elsewhere", () => {
+		const moved = keyframesFromMotionSegments([at(2, 0.5)], dflt);
+		expect(moved[0]).toEqual({ atSec: 0, placement: dflt });
+		// First move starts from the resting spot: no redundant keyframe.
+		const same = keyframesFromMotionSegments([at(2, dflt.x)], dflt);
+		expect(same[0].atSec).toBe(2);
 	});
 });
