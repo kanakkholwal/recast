@@ -470,11 +470,14 @@ function syncAudioToClock() {
 		lastAudioTarget = -1;
 		return;
 	}
+	// Track the picture even while the engine has no audible position yet, or the
+	// gap the picture covered during that window reads as a jump afterwards and
+	// triggers a reschedule the audio never needed.
+	const pictureOut = originalToOutput(store.timeMap, videoEl.currentTime);
+	const jumped = lastAudioTarget >= 0 && Math.abs(pictureOut - lastAudioTarget) > AUDIO_JUMP;
+	lastAudioTarget = pictureOut;
 	const audioOut = eng.positionOutputSec;
 	if (audioOut === null) return;
-	const pictureOut = originalToOutput(store.timeMap, videoEl.currentTime);
-	const jumped = lastAudioTarget < 0 || Math.abs(pictureOut - lastAudioTarget) > AUDIO_JUMP;
-	lastAudioTarget = pictureOut;
 	const action = reconcileAvDrift({
 		audioTime: audioOut,
 		pictureTime: pictureOut,
@@ -579,6 +582,10 @@ $effect(() => {
 				untrack(() => audioRegions()),
 				from,
 			);
+			// Seed the reconciler at the position we just started from. Left at -1
+			// it reads the first frame as a jump and reschedules the graph it is
+			// still starting.
+			lastAudioTarget = from;
 		}
 	} else {
 		eng?.pause();

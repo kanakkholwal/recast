@@ -8,9 +8,9 @@
  * on the audio hardware clock; the cuts are the gaps between chunks, silent and
  * exact, with no seeking during playback.
  *
- * Lifecycle mirrors the picture clock: `play`/`pause`/`reschedule`. Fallback-safe:
- * `create` throws if Web Audio is unavailable or nothing decodes, and the caller
- * drops back to the `<audio>`-element path.
+ * Lifecycle mirrors the picture clock: `play`/`pause`/`reschedule`. `create`
+ * throws if Web Audio is unavailable or nothing decodes; there is no second
+ * audio path any more, so the caller previews silent.
  *
  * Per-track volume: each track carries a `kind` (system or mic) and its own
  * `GainNode`. The engine exposes `setMasterVolume(volume, muted)` for the
@@ -121,19 +121,37 @@ export interface MusicClipSpec {
 	loop: boolean;
 }
 
-/** Source duration in seconds, from metadata only — no decode. */
+/** Give up probing after this and decode instead; a hung probe must not mute music. */
+const PROBE_TIMEOUT_MS = 4000;
+/** `HTMLMediaElement.HAVE_METADATA` — duration and seeking are usable. */
+const HAVE_METADATA = 1;
+
+/**
+ * Source duration in seconds, from metadata only — no decode. NEVER rejects:
+ * an unreadable duration means "unknown", which selects the buffered path, and
+ * a clip `<audio>` can't parse may still decode. Failing here would silently
+ * drop music that used to play.
+ */
 function probeMediaDuration(url: string): Promise<number> {
 	// No `Audio` outside a browser (unit tests): report unknown, which keeps the
 	// buffered path and the behaviour those tests pin.
 	if (typeof Audio === "undefined") return Promise.resolve(Number.NaN);
-	return new Promise((resolve, reject) => {
+	return new Promise((resolve) => {
 		const el = new Audio();
-		el.preload = "metadata";
-		el.onloadedmetadata = () => {
-			resolve(el.duration);
+		let settled = false;
+		const done = (value: number) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			el.onloadedmetadata = null;
+			el.onerror = null;
 			el.removeAttribute("src");
+			resolve(value);
 		};
-		el.onerror = () => reject(new Error(`music metadata load failed: ${url}`));
+		const timer = setTimeout(() => done(Number.NaN), PROBE_TIMEOUT_MS);
+		el.preload = "metadata";
+		el.onloadedmetadata = () => done(el.duration);
+		el.onerror = () => done(Number.NaN);
 		el.src = url;
 	});
 }
@@ -198,6 +216,8 @@ export class AudioTimelineEngine {
 	#musicActive: AudioBufferSourceNode[] = [];
 	/** Deferred start/stop for streamed clips; a media element has no `start(when)`. */
 	#musicTimers: Array<ReturnType<typeof setTimeout>> = [];
+	/** Bumped on every stop so a deferred streamed start knows it was superseded. */
+	#musicSchedule = 0;
 	// Streaming schedule-ahead state: schedule ~AUDIO_LOOKAHEAD_SEC of output
 	// time past the playhead and evict decoded chunks behind it, so a long
 	// recording never holds the whole file's PCM at once.
@@ -470,12 +490,20 @@ export class AudioTimelineEngine {
 		playDur: number,
 	): void {
 		const { el, spec } = entry;
+		// A deferred start must not fire after a stop/reschedule; timers are
+		// cleared there, but a pending `loadedmetadata` is not.
+		const schedule = this.#musicSchedule;
 		const begin = () => {
-			try {
-				el.currentTime = sourceStart;
-			} catch {
-				/* not seekable yet; play() still starts it from wherever it is */
+			if (schedule !== this.#musicSchedule) return;
+			// Seeking before metadata is a no-op, which would start the clip at 0
+			// instead of `sourceStart` — wrong for any clip with an offset or a
+			// mid-timeline start. The probe ran on a different element, so this one
+			// may still be loading.
+			if (el.readyState < HAVE_METADATA) {
+				el.addEventListener("loadedmetadata", begin, { once: true });
+				return;
 			}
+			el.currentTime = sourceStart;
 			void el.play().catch(() => {
 				/* autoplay blocked or torn down mid-schedule */
 			});
@@ -488,7 +516,15 @@ export class AudioTimelineEngine {
 			: null;
 		if (whenDelay <= 0.001) begin();
 		else this.#musicTimers.push(setTimeout(begin, whenDelay * 1000));
-		this.#musicTimers.push(setTimeout(() => el.pause(), (whenDelay + playDur) * 1000));
+		this.#musicTimers.push(
+			setTimeout(
+				() => {
+					el.removeEventListener("loadedmetadata", begin);
+					el.pause();
+				},
+				(whenDelay + playDur) * 1000,
+			),
+		);
 	}
 
 	#stopMusic(): void {
@@ -501,6 +537,7 @@ export class AudioTimelineEngine {
 			}
 		}
 		this.#musicActive = [];
+		this.#musicSchedule++;
 		for (const timer of this.#musicTimers) clearTimeout(timer);
 		this.#musicTimers = [];
 		for (const entry of this.#music) {
