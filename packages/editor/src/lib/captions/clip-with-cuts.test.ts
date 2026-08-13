@@ -205,6 +205,7 @@ describe("activeClippedSegment", () => {
 describe("activeClippedSegment lookup cost", () => {
 	const COUNT = 2000;
 	const long: TranscriptSegment[] = Array.from({ length: COUNT }, (_, i) => ({
+		id: `s${i}`,
 		start: i * 2,
 		end: i * 2 + 1.8,
 		text: `seg ${i}`,
@@ -242,8 +243,8 @@ describe("activeClippedSegment lookup cost", () => {
 
 	it("returns the first match when segments overlap, like the scan did", () => {
 		const overlapping: TranscriptSegment[] = [
-			{ start: 0, end: 10, text: "wide", words: [] },
-			{ start: 4, end: 6, text: "inner", words: [] },
+			{ id: "a", start: 0, end: 10, text: "wide", words: [] },
+			{ id: "b", start: 4, end: 6, text: "inner", words: [] },
 		];
 		const span: KeptSpan = { origStart: 0, origEnd: 10 };
 		expect(activeClippedSegment(overlapping, span, 5)?.segment.text).toBe("wide");
@@ -251,9 +252,9 @@ describe("activeClippedSegment lookup cost", () => {
 
 	it("handles a transcript that is not sorted by start", () => {
 		const unsorted: TranscriptSegment[] = [
-			{ start: 6, end: 8, text: "third", words: [] },
-			{ start: 0, end: 2, text: "first", words: [] },
-			{ start: 3, end: 5, text: "second", words: [] },
+			{ id: "c", start: 6, end: 8, text: "third", words: [] },
+			{ id: "d", start: 0, end: 2, text: "first", words: [] },
+			{ id: "e", start: 3, end: 5, text: "second", words: [] },
 		];
 		const span: KeptSpan = { origStart: 0, origEnd: 10 };
 		expect(activeClippedSegment(unsorted, span, 7)?.segment.text).toBe("third");

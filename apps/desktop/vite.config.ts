@@ -1,6 +1,6 @@
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vite";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import pkg from "./package.json" with { type: "json" };
 
 export default defineConfig({
@@ -17,6 +17,12 @@ export default defineConfig({
 		watch: {
 			// tell vite to ignore watching `src-tauri`
 			ignored: ["**/src-tauri/**"],
+		},
+		fs: {
+			// @recast/editor spawns workers via `new URL(..., import.meta.url)`, served
+			// as direct file requests from the sibling package's source — allow the
+			// workspace root so they resolve ("outside serving allow list" otherwise).
+			allow: [searchForWorkspaceRoot(process.cwd())],
 		},
 	},
 

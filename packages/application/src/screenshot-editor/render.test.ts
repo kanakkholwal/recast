@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ImageFilters, Shadow } from "./types";
+import type { ImageFilters, ImageStylePreset, Shadow } from "./types";
 import {
 	borderCss,
 	filtersCss,
@@ -85,28 +85,26 @@ describe("borderCss", () => {
 
 describe("transformCss", () => {
 	it("emits all three rotations and the scale", () => {
-		expect(transformCss({ rotateX: 5, rotateY: -10, rotateZ: 0, scale: 1.1 })).toBe(
-			"rotateX(5deg) rotateY(-10deg) rotateZ(0deg) scale(1.1)",
-		);
+		expect(
+			transformCss({ perspective: 1600, rotateX: 5, rotateY: -10, rotateZ: 0, scale: 1.1 }),
+		).toBe("rotateX(5deg) rotateY(-10deg) rotateZ(0deg) scale(1.1)");
 	});
 });
 
+const style = (preset: ImageStylePreset, opacity: number) => ({ preset, padding: 0, opacity });
+
 describe("styleFrameBackground", () => {
 	it("tints the glass presets with the style's own opacity", () => {
-		expect(styleFrameBackground({ preset: "glass-light", opacity: 0.2 })).toBe(
-			"rgba(255, 255, 255, 0.2)",
-		);
-		expect(styleFrameBackground({ preset: "glass-dark", opacity: 0.3 })).toBe("rgba(0, 0, 0, 0.3)");
+		expect(styleFrameBackground(style("glass-light", 0.2))).toBe("rgba(255, 255, 255, 0.2)");
+		expect(styleFrameBackground(style("glass-dark", 0.3))).toBe("rgba(0, 0, 0, 0.3)");
 	});
 
 	it("keeps the border presets solid, ignoring opacity", () => {
-		expect(styleFrameBackground({ preset: "border-light", opacity: 0.1 })).toBe(
-			"rgb(255, 255, 255)",
-		);
-		expect(styleFrameBackground({ preset: "border-dark", opacity: 0.1 })).toBe("rgb(26, 26, 26)");
+		expect(styleFrameBackground(style("border-light", 0.1))).toBe("rgb(255, 255, 255)");
+		expect(styleFrameBackground(style("border-dark", 0.1))).toBe("rgb(26, 26, 26)");
 	});
 
-	it("falls back to transparent for 'none'", () => {
-		expect(styleFrameBackground({ preset: "none", opacity: 0.5 })).toBe("transparent");
+	it("falls back to transparent for the default preset", () => {
+		expect(styleFrameBackground(style("default", 0.5))).toBe("transparent");
 	});
 });
