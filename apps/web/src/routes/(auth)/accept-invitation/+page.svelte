@@ -122,7 +122,7 @@ async function sendSignInLink() {
 			</p>
 		</div>
 
-		<div class="surface-lg mt-8 p-6 sm:p-7">
+		<div class="surface mt-8 p-6">
 			{#if data.invite.status !== "pending"}
 				<div class="flex flex-col items-center gap-3 text-center text-body-sm text-muted-foreground">
 					<AlertTriangle class="size-5 text-tag-tangerine" />

@@ -506,6 +506,18 @@ never a bordered card.
 `ACCENT_BACKDROP` stay for the in-shell `SectionError`, which still lives on the
 product system.
 
+### Auth pages
+
+One centred card on a plain canvas: no radial glow under it, no glass chip for
+the back link. `AuthCard` owns the shape (logo, display `h1`, `text-body-sm`
+subtitle, `.surface` body), so every route in `(auth)` changes together, and no
+page defines its own card.
+
+Status moments are a glyph, not a plate. The device-approved state was a
+`size-16` tinted tile with a `ping` ring; it is now the check itself at
+`size-10` in `tag-green`. Inline warnings are a hairline block on `bg-paper`,
+because a tinted amber card is a second colour system for one sentence.
+
 ### Interior pages
 
 Both were on the pre-Dub system: floating `rounded-2xl` cards, `blur-3xl` glow

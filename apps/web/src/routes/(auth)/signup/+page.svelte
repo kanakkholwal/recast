@@ -195,7 +195,7 @@ async function signUp(e: SubmitEvent) {
 							></span>
 						{/each}
 					</div>
-					<span class="w-14 text-right text-caption font-semibold uppercase tracking-wider text-muted-foreground">
+					<span class="w-14 text-right text-caption font-medium text-muted-foreground">
 						{STRENGTH_LABELS[passwordStrength]}
 					</span>
 				</div>

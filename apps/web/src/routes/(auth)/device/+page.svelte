@@ -159,7 +159,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 			</p>
 		</div>
 
-		<div class="surface-lg mt-8 p-6 sm:p-7">
+		<div class="surface mt-8 p-6">
 			{#if !data.userCode}
 				<!-- Manual code entry. We don't require sign-in to render this —
 				     the user might be writing the code down before they sign in.
@@ -174,7 +174,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 				>
 					<label
 						for="device-code-input"
-						class="text-caption font-semibold uppercase tracking-[0.15em] text-muted-foreground"
+						class="text-caption font-medium text-muted-foreground"
 					>
 						Device code
 					</label>

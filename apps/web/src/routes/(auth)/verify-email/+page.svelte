@@ -88,7 +88,7 @@ async function signOut() {
 			</p>
 		</div>
 
-		<div class="surface-lg mt-8 p-6 sm:p-7">
+		<div class="surface mt-8 p-6">
 			<div class="space-y-2.5">
 				<Button onclick={refresh} disabled={checking} class="group/cta w-full gap-2">
 					{#if checking}
