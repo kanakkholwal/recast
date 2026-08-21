@@ -1,40 +1,12 @@
 <script lang="ts">
-import { page } from "$app/state";
-import { platform } from "@tauri-apps/plugin-os";
-
-import { enumerateCameras, type BrowserCamera } from "@recast/editor/lib/camera/browser-devices";
-import { checkCapability, loadCapabilities } from "$lib/capabilities";
-import {
-	CAPTURE_INTENT_CHANGED_EVENT,
-	excludeWindowFromCapture,
-	getAudioDevices,
-	getCaptureIntent,
-	getDisplays,
-	getLastSource,
-	pauseRecording,
-	refreshTray,
-	resumeRecording,
-	setCaptureIntent,
-	setLastSource,
-	startRecording,
-	stopRecording,
-	validateCameraSource,
-	type AudioDeviceInfo,
-	type CameraValidationResult,
-	type CaptureIntentState,
-	type RecordingOptions,
-} from "$lib/ipc";
+import { type BrowserCamera, enumerateCameras } from "@recast/editor/lib/camera/browser-devices";
 import {
 	loadRecordingFps,
 	loadRecordingQuality,
+	type RecordingProfile,
 	resolveCamera,
 	resolveMic,
-	type RecordingProfile,
 } from "@recast/editor/lib/profiles";
-import { isBrowserDeviceId } from "$lib/runtime/device-id";
-import { profilesStore } from "$lib/stores/profiles.svelte";
-import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
-import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
 import {
 	AppWindow,
 	Camera,
@@ -60,19 +32,49 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { platform } from "@tauri-apps/plugin-os";
 import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { Tween } from "svelte/motion";
 import { fade, scale } from "svelte/transition";
+import { page } from "$app/state";
+import { checkCapability, loadCapabilities } from "$lib/capabilities";
 import {
+	type AudioDeviceInfo,
+	CAPTURE_INTENT_CHANGED_EVENT,
+	type CameraValidationResult,
+	type CaptureIntentState,
+	excludeWindowFromCapture,
+	getAudioDevices,
+	getCaptureIntent,
+	getDisplays,
+	getLastSource,
+	pauseRecording,
+	type RecordingOptions,
+	refreshTray,
+	resumeRecording,
+	setCaptureIntent,
+	setLastSource,
+	startRecording,
+	stopRecording,
+	validateCameraSource,
+} from "$lib/ipc";
+import { isBrowserDeviceId } from "$lib/runtime/device-id";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
+import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
+import {
+	buildCaptureIntent,
 	canonicalIntent,
 	clampFpsToDisplay,
+	deviceOutcome,
 	formatRecordingTimer,
 	intentToTargetType,
 	lastSourceToTarget,
+	sourceFromIntent,
+	type TargetSource,
 	targetToLastSource,
 	targetTypeToIntent,
-	type TargetSource,
 } from "./panel.logic";
 
 // The panel is too small for its own Toaster, so emit `ui:toast` for the main
@@ -221,48 +223,24 @@ const countdownSeconds = $derived(activeProfile?.countdown ?? recordingCountdown
 let lastIntent = $state<CaptureIntentState | null>(null);
 let intentSyncReady = $state(false);
 
-// Preserve fields the panel does not own (fps/quality/countdown/profile) from
-// the last intent; the panel only drives source + audio/mic/camera.
 function buildIntentFromPanel(): CaptureIntentState {
-	const base: CaptureIntentState = lastIntent ?? {
-		targetId: 0,
-		options: { systemAudio: true },
-	};
-	return {
-		...base,
-		targetType: selectedSource ? targetTypeToIntent(selectedSource.type) : null,
-		targetId: selectedSource?.id ?? 0,
-		region:
-			selectedSource?.type === "region" && selectedSource.region ? selectedSource.region : null,
-		options: {
-			...base.options,
-			systemAudio: systemAudioOn,
-			microphone: micOn,
-			microphoneDeviceId: micOn ? selectedMicId : null,
-			camera: cameraOn,
-			// Rust wants the DirectShow friendly name, matching startActualRecording.
-			cameraDeviceId: cameraOn ? selectedCameraName : null,
-		},
-	};
+	return buildCaptureIntent(lastIntent, {
+		source: selectedSource,
+		systemAudio: systemAudioOn,
+		micOn,
+		micDeviceId: selectedMicId,
+		cameraOn,
+		cameraName: selectedCameraName,
+	});
 }
 
 // Apply an externally-set intent (a CLI `select`/`set`) to the panel state.
 function applyIntentToPanel(intent: CaptureIntentState) {
-	const type = intentToTargetType(intent.targetType);
-	if (type) {
-		selectedSource = {
-			type,
-			id: intent.targetId,
-			label:
-				type === "window"
-					? `Window ${intent.targetId}`
-					: type === "region"
-						? "Region"
-						: `Display ${intent.targetId}`,
-			region: type === "region" ? (intent.region ?? undefined) : undefined,
-		};
+	const source = sourceFromIntent(intent);
+	if (source) {
+		selectedSource = source;
 		// Enrich a monitor with its real name + refresh for the label and fps cap.
-		if (type === "monitor") {
+		if (source.type === "monitor") {
 			const wantId = intent.targetId;
 			getDisplays()
 				.then((displays) => {
@@ -626,52 +604,33 @@ async function initDevicesAndProfile() {
 function applyProfile(profile: RecordingProfile) {
 	systemAudioOn = profile.systemAudio;
 
-	// - Microphone
-	const micResult = resolveMic(profile, mics);
-	if (micResult.kind === "matched") {
-		micOn = true;
-		selectedMicId = micResult.device.id;
-		selectedMicName = micResult.device.name;
-		micWarning = null;
-	} else if (micResult.kind === "fallback") {
-		micOn = true;
-		selectedMicId = micResult.device.id;
-		selectedMicName = micResult.device.name;
-		micWarning = `“${micResult.requestedLabel}” unavailable, using “${micResult.device.name}”`;
-	} else if (micResult.kind === "missing") {
-		micOn = false;
-		micWarning = `“${profile.name}” wants a mic but none is available`;
-	} else {
-		micOn = false;
-		micWarning = null;
+	const mic = deviceOutcome(resolveMic(profile, mics), profile.name, "mic", (d) => d.name);
+	micOn = mic.on;
+	micWarning = mic.warning;
+	if (mic.device) {
+		selectedMicId = mic.device.id;
+		selectedMicName = mic.device.name;
 	}
 
-	// - Camera
-	const camResult = resolveCamera(profile, cameras);
-	if (camResult.kind === "matched") {
-		cameraOn = true;
-		selectedCameraId = camResult.device.deviceId;
-		selectedCameraName = camResult.device.label;
-		cameraWarning = null;
-		void refreshCameraValidation(camResult.device.deviceId);
-		openCameraPreview(camResult.device.deviceId);
-	} else if (camResult.kind === "fallback") {
-		cameraOn = true;
-		selectedCameraId = camResult.device.deviceId;
-		selectedCameraName = camResult.device.label;
-		cameraWarning = `“${camResult.requestedLabel}” unavailable, using “${camResult.device.label}”`;
-		void refreshCameraValidation(camResult.device.deviceId);
-		openCameraPreview(camResult.device.deviceId);
-	} else if (camResult.kind === "missing") {
-		cameraOn = false;
-		cameraValidation = null;
-		cameraWarning = `“${profile.name}” wants a camera but none is available`;
-		closeCameraPreview();
+	const wasCameraOn = cameraOn;
+	const camera = deviceOutcome(
+		resolveCamera(profile, cameras),
+		profile.name,
+		"camera",
+		(d) => d.label,
+	);
+	cameraOn = camera.on;
+	cameraWarning = camera.warning;
+	if (camera.device) {
+		selectedCameraId = camera.device.deviceId;
+		selectedCameraName = camera.device.label;
+		void refreshCameraValidation(camera.device.deviceId);
+		openCameraPreview(camera.device.deviceId);
 	} else {
-		if (cameraOn) closeCameraPreview();
-		cameraOn = false;
 		cameraValidation = null;
-		cameraWarning = null;
+		// `missing` tears down unconditionally: the profile asked for a camera, so
+		// say so even if nothing was up. `none` only closes what was open.
+		if (camera.kind === "missing" || wasCameraOn) closeCameraPreview();
 	}
 
 	// The countdown follows the active profile live via the `countdownSeconds`

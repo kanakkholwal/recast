@@ -67,7 +67,7 @@ function onKeydown(e: KeyboardEvent) {
 		onpointerup={stop}
 		onpointercancel={stop}
 		onkeydown={onKeydown}
-		class="group relative aspect-video w-full cursor-ew-resize touch-pan-y overflow-hidden rounded-2xl border border-border-low bg-background ring-1 ring-border/40 outline-none select-none focus-visible:ring-2 focus-visible:ring-primary"
+		class="group relative aspect-video w-full cursor-ew-resize touch-pan-y overflow-hidden rounded-xl border border-border-low bg-background ring-1 ring-border/40 outline-none select-none focus-visible:ring-2 focus-visible:ring-primary"
 	>
 		<!-- svelte-ignore a11y_media_has_caption -->
 		<video

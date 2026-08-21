@@ -80,7 +80,7 @@ const glyph = {
 					</h2>
 				</Reveal>
 				<Reveal variant="up" delay={120} class="mt-4">
-					<p class="text-pretty text-body-md text-muted-foreground">
+					<p class="text-pretty text-body-lg text-muted-foreground">
 						{description}
 					</p>
 				</Reveal>

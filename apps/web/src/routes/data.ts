@@ -69,6 +69,11 @@ export const cloudFeatures = [
 		title: "Access controls",
 		description: "Per-viewer access, password gates, link expiry.",
 	},
+	{
+		icon: HardDrive,
+		title: "Bring your own storage",
+		description: "Google Drive today, S3 and R2 planned. Or let Recast host it.",
+	},
 ];
 
 // Storage tiers — Cloud is intentionally storage-agnostic. Free users
@@ -292,7 +297,6 @@ export const editorFeatures: Array<{
 	icon: typeof Target;
 	title: string;
 	description: string;
-	image: string | null;
 }> = [
 	{
 		kind: "auto",
@@ -300,14 +304,12 @@ export const editorFeatures: Array<{
 		title: "Smart zoom on clicks",
 		description:
 			"Reads clicks and dwell, then zooms toward the moment that matters. Zero keyframes.",
-		image: null,
 	},
 	{
 		kind: "auto",
 		icon: VolumeX,
 		title: "Silence trimming",
 		description: "Finds dead air (quiet audio, still cursor) and offers one-click cuts.",
-		image: "/screenshots/feat-silence-trim.png",
 	},
 	{
 		kind: "auto",
@@ -315,14 +317,12 @@ export const editorFeatures: Array<{
 		title: "Cursor smoothing",
 		description:
 			"Velocity-aware easing kills the jitter and lands the path where you meant to point.",
-		image: "/screenshots/feat-cursor-smoothing.png",
 	},
 	{
 		kind: "manual",
 		icon: Zap,
 		title: "Zoom regions on the timeline",
 		description: "Drag any moment to add a focus region. Position, scale and easing are all yours.",
-		image: "/screenshots/feat-zoom-regions.png",
 	},
 	{
 		kind: "manual",
@@ -330,7 +330,6 @@ export const editorFeatures: Array<{
 		title: "Annotations & blur",
 		description:
 			"Drop arrows, boxes, text or a privacy blur on the frame. Layers live on the timeline.",
-		image: "/screenshots/feat-annotations.png",
 	},
 	{
 		kind: "manual",
@@ -338,7 +337,6 @@ export const editorFeatures: Array<{
 		title: "Camera bubble",
 		description:
 			"A draggable camera bubble with shape, border and cursor-following motion. No second app.",
-		image: "/screenshots/feat-camera-bubble.png",
 	},
 ];
 

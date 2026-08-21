@@ -67,8 +67,6 @@ import Logo from "$lib/logo.svelte";
     </div>
   </Container>
 
-  <!-- Wordmark band. A hairline-weight tint of the canvas, not a photo: the
-       shape carries the brand, the surface stays paper. -->
   <div class="relative overflow-hidden px-4 pb-8 md:pb-10">
     <span
       class="block select-none text-center font-display text-[22vw] font-medium leading-[0.82] tracking-tight text-foreground/5"

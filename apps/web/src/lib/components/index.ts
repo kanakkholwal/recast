@@ -3,6 +3,7 @@ export { default as BeforeAfterSlider } from "./BeforeAfterSlider.svelte";
 export { default as Container } from "./Container.svelte";
 export { default as DevThemeToggle } from "./DevThemeToggle.svelte";
 export { default as ExportMock } from "./ExportMock.svelte";
+export { default as FeatureMarquee } from "./FeatureMarquee.svelte";
 export { default as Footer } from "./Footer.svelte";
 export { default as Hero } from "./Hero.svelte";
 export { default as HeroSteps } from "./HeroSteps.svelte";

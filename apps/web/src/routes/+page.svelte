@@ -4,6 +4,7 @@ import {
 	BeforeAfterSlider,
 	Container,
 	ExportMock,
+	FeatureMarquee,
 	Footer,
 	Hero,
 	MacWindow,
@@ -12,10 +13,8 @@ import {
 	RecordMock,
 	Reveal,
 	Section,
-	SectionHeader,
 	SectionLabel,
 	SeoMeta,
-	ShowcasePanel,
 } from "$lib/components";
 import { steps } from "$lib/components/Hero.logic";
 import { prefersReducedMotion } from "$lib/motion-core";
@@ -28,6 +27,7 @@ import {
 	HardDriveUpload,
 	KeyRound,
 	Minus,
+	Monitor,
 	Play,
 	Plus,
 	Share2,
@@ -52,14 +52,12 @@ import {
 	faqJsonLd,
 	faqs,
 	founderUse,
-	kindChip,
 	openSourceClaims,
 	platformDownloads,
 	polishColumns,
 	recordColumns,
 	shareColumns,
 	stabilityChip,
-	storageTiers,
 } from "./data";
 
 const reduced = $derived(prefersReducedMotion());
@@ -307,52 +305,52 @@ function dragScroll(node: HTMLElement) {
     </Container>
   </Section>
 
-  <!-- Contrast: your OS recorder stops at a file -->
   <Section id="why" class="mx-auto max-w-6xl border-t border-border-low">
     <Container>
-      <SectionHeader
-        eyebrow="Why not the built-in recorder"
-        title="Your OS recorder stops at a file."
-        description="Every laptop ships a screen recorder. None of them ship a demo. That gap is the whole job."
-        align="center"
-      />
+      <div class="max-w-lg">
+        <Reveal variant="up">
+          <SectionLabel icon={Monitor} label="Why not the built-in recorder" />
+        </Reveal>
+        <Reveal variant="up" delay={60} class="mt-5">
+          <h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
+            Your OS recorder stops at a file
+          </h2>
+        </Reveal>
+        <Reveal variant="up" delay={120} class="mt-4">
+          <p class="text-pretty text-body-lg text-muted-foreground">
+            Every laptop ships a screen recorder. None of them ship a demo.
+          </p>
+        </Reveal>
+      </div>
 
-      <div class="surface-lg relative mx-auto mt-14 max-w-3xl overflow-hidden">
-        <div class="relative z-10">
-          <div
-            class="grid grid-cols-2 border-b border-border-low bg-paper text-body-sm font-medium"
-          >
-            <div
-              class="flex items-center gap-2 px-6 py-4 text-muted-foreground"
-            >
-              <X class="size-3.5" /> Built-in recorder
-            </div>
-            <div
-              class="flex items-center gap-2 border-l border-border-low px-6 py-4 text-primary"
-            >
-              <Star class="size-3.5" /> Recast
-            </div>
+      <div class="mt-14 border-y border-border-low">
+        <!-- Column heads. The only place --primary appears in this section. -->
+        <div class="grid grid-cols-2 border-b border-border-low">
+          <div class="flex items-center gap-2 py-4 pr-6 text-body-sm font-medium text-muted-foreground">
+            <X class="size-3.5 shrink-0" />
+            Built-in recorder
           </div>
-          {#each contrast as row, i}
-            <Reveal variant={i % 2 === 0 ? "left" : "right"} delay={i * 70}>
-              <div
-                class="grid grid-cols-2 {i < contrast.length - 1
-                  ? 'border-b border-border-low'
-                  : ''}"
-              >
-                <div class="px-6 py-5 text-sm text-muted-foreground">
-                  {row.os}
-                </div>
-                <div
-                  class="flex items-start gap-2.5 border-l border-border-low bg-paper px-6 py-5 text-sm text-foreground"
-                >
-                  <Check class="mt-0.5 size-4 shrink-0 text-primary" />
-                  {row.recast}
-                </div>
-              </div>
-            </Reveal>
-          {/each}
+          <div class="flex items-center gap-2 border-l border-border-low py-4 pl-6 text-body-sm font-medium text-foreground">
+            <Star class="size-3.5 shrink-0 text-primary" />
+            Recast
+          </div>
         </div>
+
+        {#each contrast as row, i (row.os)}
+          <Reveal
+            variant="up"
+            delay={i * 60}
+            class="grid grid-cols-2 {i < contrast.length - 1 ? 'border-b border-border-low' : ''}"
+          >
+            <div class="py-5 pr-6 text-body-sm text-muted-foreground">
+              {row.os}
+            </div>
+            <div class="flex items-start gap-2.5 border-l border-border-low py-5 pl-6 text-body-sm text-foreground">
+              <Check class="mt-0.5 size-4 shrink-0 text-primary" />
+              {row.recast}
+            </div>
+          </Reveal>
+        {/each}
       </div>
     </Container>
   </Section>
@@ -412,139 +410,35 @@ function dragScroll(node: HTMLElement) {
     {/snippet}
   </PillarSection>
 
-  <Section id="editor" class="mx-auto max-w-6xl overflow-hidden border-t border-border-low">
+  <!-- Inside the editor. One slow horizontal loop rather than a rail the
+       visitor has to drag: the tour is ambient, and hovering parks it. -->
+  <Section id="editor" class="mx-auto max-w-6xl border-t border-border-low">
     <Container>
-      <SectionHeader
-        eyebrow="What's in the editor"
-        title="Every tool you need. None of the learning curve."
-        description="Smart defaults cover most of it. When you want to nudge something, the timeline is small and friendly."
-        align="center"
-      />
+      <div class="max-w-lg">
+        <Reveal variant="up">
+          <SectionLabel icon={Wand2} label="Inside the editor" accent="lavender" />
+        </Reveal>
+        <Reveal variant="up" delay={60} class="mt-5">
+          <h2 class="font-display text-balance text-heading md:text-heading-lg">
+            Every tool you need. None of the learning curve.
+          </h2>
+        </Reveal>
+        <Reveal variant="up" delay={120} class="mt-4">
+          <p class="text-pretty text-body-lg text-muted-foreground">
+            Smart defaults cover most of it. The timeline is there for the rest.
+          </p>
+        </Reveal>
+      </div>
     </Container>
 
-    <div class="relative mt-14">
-      <div
-        class="pointer-events-none absolute inset-y-0 left-0 z-20 w-16 bg-linear-to-r from-background to-transparent sm:w-28"
-      ></div>
-      <div
-        class="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-linear-to-l from-background to-transparent sm:w-28"
-      ></div>
+    <Reveal variant="up" delay={160} class="mt-12">
+      <FeatureMarquee items={editorFeatures} />
+    </Reveal>
 
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-      <div
-        use:dragScroll
-        tabindex="0"
-        role="group"
-        aria-label="Editor features, scroll horizontally to see all"
-        class="editor-rail flex snap-x snap-mandatory gap-5 overflow-x-auto py-10 outline-none ring-primary/50 focus-visible:ring-2 sm:gap-7"
-        style="--rail-inset: max(1.25rem, calc((100vw - 80rem) / 2 + 1.25rem)); padding-inline: var(--rail-inset);"
-      >
-        {#each editorFeatures as feature, i}
-          {@const Icon = feature.icon}
-          {@const chip = kindChip[feature.kind]}
-          <Reveal variant="morph" delay={i * 70} class="snap-center shrink-0">
-            <article
-              class="group/feat relative flex w-70 flex-col gap-5 sm:w-[320px]"
-            >
-              <!-- Tilted visual. 3D perspective on the wrapper, the inner
-							     plate carries the rotation so hover can soften it. -->
-              <div
-                class="relative h-52 overflow-hidden rounded-2xl border border-border-low bg-linear-to-br from-foreground/5 via-foreground/2 to-transparent shadow-craft-sm pointer-fine:transition-shadow pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:"
-                style="perspective: 1200px;"
-              >
-                <!-- Dot grid backdrop. Faint, decorative — the techy vibe. -->
-                <div
-                  aria-hidden="true"
-                  class="pointer-events-none absolute inset-0 opacity-50"
-                  style="background-image: radial-gradient(circle, color-mix(in srgb, var(--color-foreground) 8%, transparent) 1px, transparent 1px); background-size: 16px 16px;"
-                ></div>
-
-                <!-- Corner accents. Tiny CRT-ish brackets to frame the
-								     plate without surrounding it in a full border. -->
-                <span
-                  aria-hidden="true"
-                  class="pointer-events-none absolute left-3 top-3 size-3 border-l border-t border-foreground/30"
-                ></span>
-                <span
-                  aria-hidden="true"
-                  class="pointer-events-none absolute right-3 top-3 size-3 border-r border-t border-foreground/30"
-                ></span>
-                <span
-                  aria-hidden="true"
-                  class="pointer-events-none absolute bottom-3 left-3 size-3 border-b border-l border-foreground/30"
-                ></span>
-                <span
-                  aria-hidden="true"
-                  class="pointer-events-none absolute bottom-3 right-3 size-3 border-b border-r border-foreground/30"
-                ></span>
-
-                {#if feature.image && !editorImgErrored[feature.title]}
-                  <div
-                    class="absolute inset-6 origin-center overflow-hidden rounded-lg border border-border-low pointer-fine:transition-transform pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:scale-[1.02]"
-                    style="transform: perspective(900px) rotateX(6deg) rotateY(-10deg); transform-origin: 50% 70%;"
-                  >
-                    <Image
-                      src={feature.image}
-                      alt={feature.title}
-                      loading="lazy"
-                      decoding="async"
-                      class="block size-full object-cover"
-                      onerror={() => (editorImgErrored[feature.title] = true)}
-                    />
-                  </div>
-                {:else}
-                  <!-- Icon-as-hero placeholder. The feature's own glyph
-									     sits centred and tilted, so a card without a
-									     screenshot still carries identity instead of a "no
-									     image" hole. -->
-                  <div
-                    class="absolute inset-0 grid place-items-center"
-                    style="transform: perspective(900px) rotateX(8deg) rotateY(-10deg); transform-origin: 50% 70%;"
-                  >
-                    <Icon class="size-14 text-muted-foreground" />
-                  </div>
-                {/if}
-
-                <!-- Mono tag pinned bottom-left, like a chip label on a
-								     dev tool. Carries the feature kind for skimmability. -->
-                <span
-                  class={cn(
-                    "absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-background/70 px-2 py-0.5 font-mono text-caption font-medium uppercase ring-1 ring-inset backdrop-blur",
-                    chip.ring,
-                  )}
-                >
-                  <span class={cn("size-1.5 rounded-full", chip.dot)}></span>
-                  {chip.label}
-                </span>
-              </div>
-
-              <!-- Card content sits below the visual, no enclosing card.
-							     Lets the rail feel airier than a tile grid would. -->
-              <div class="flex flex-col gap-2 px-1">
-                <div class="flex items-center gap-2">
-                  <Icon class="size-4 shrink-0 text-muted-foreground" />
-                  <h3 class="text-body font-semibold text-foreground">
-                    {feature.title}
-                  </h3>
-                </div>
-                <p class="text-sm leading-relaxed text-muted-foreground">
-                  {feature.description}
-                </p>
-              </div>
-            </article>
-          </Reveal>
-        {/each}
-      </div>
-    </div>
-
-    <Container>
-      <Reveal variant="up" delay={150}>
-        <p
-          class="mx-auto mt-6 max-w-3xl text-center text-sm leading-relaxed text-muted-foreground"
-        >
-            Plus trim, padding, backgrounds and export presets. Nothing behind a "Pro" tier.
-          </p>
-      </Reveal>
+    <Container class="mt-12">
+      <p class="text-center text-body-sm text-muted-foreground">
+        Plus trim, padding, backgrounds and export presets. Nothing behind a "Pro" tier.
+      </p>
     </Container>
   </Section>
 
@@ -641,178 +535,86 @@ function dragScroll(node: HTMLElement) {
       </div>
     {/snippet}
   </PillarSection>
+<Section id="cloud" class="mx-auto max-w-6xl border-t border-border-low">
+    <Container>
+      <Reveal variant="up">
+        <div class="flex items-center gap-4 border-b border-border-low py-5">
+          <span class="font-display text-heading-sm leading-none tabular-nums text-border-strong">
+            04
+          </span>
+          <SectionLabel icon={Cloud} label="Recast Cloud" accent="green" />
+          <Button href="/pricing" variant="outline" size="sm" class="ml-auto shrink-0">
+            See pricing
+          </Button>
+        </div>
+      </Reveal>
 
-  <!-- Recast Cloud — the hosted offering. The Drive flow above is the free,
-	     user-owned default; this is for people who outgrow a raw Drive link. -->
-  <Section id="cloud" spacing="tight" class="mx-auto max-w-6xl border-t border-border-low">
-    <Container size="wide">
-      <ShowcasePanel tone="paper">
-        <div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
-          <div class="lg:col-span-5">
-            <span
-              class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground"
-            >
-              <span class="size-1.5 rounded-full bg-border-strong"></span>
-              Recast Cloud · live
-            </span>
-            <h2
-              class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display"
-            >
-              When a Drive link
-              <span class="block text-muted-foreground">isn't enough.</span>
+      <div class="grid gap-10 py-14 md:grid-cols-12 md:gap-12 md:py-16">
+        <div class="md:col-span-5">
+          <Reveal variant="up" delay={60}>
+            <h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
+              When a Drive link isn't enough
             </h2>
-            <p
-              class="text-pretty mt-6 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg"
-            >
-            Hosted demos with the controls in your hands: analytics, per-viewer access, link expiry.
-          </p>
+          </Reveal>
+          <Reveal variant="up" delay={120} class="mt-4">
+            <p class="text-pretty text-body-lg text-muted-foreground">
+              Hosted demos with the controls in your hands. Storage stays your call.
+            </p>
+          </Reveal>
+        </div>
 
-            <!-- Two beats only. The other two (team workspaces, custom player)
-						     moved to the pricing page so this section stays marketing-light. -->
-            <ul class="mt-10 space-y-5">
-              {#each cloudFeatures as f, i}
-                {@const Icon = f.icon}
-                <Reveal
-                  as="li"
-                  variant="left"
-                  delay={i * 70}
-                  class="flex items-start gap-4"
-                >
-                  <Icon
-                    class="mt-1 size-5 shrink-0 text-tag-green [fill-opacity:0.2]"
-                    fill="currentColor"
-                  />
-                  <span class="pt-1">
-                    <span class="block text-body font-semibold text-foreground"
-                      >{f.title}</span
-                    >
-                    <span
-                      class="mt-2 block text-body-sm leading-relaxed text-muted-foreground"
-                      >{f.description}</span
-                    >
-                  </span>
-                </Reveal>
-              {/each}
-            </ul>
-          </div>
-
-          <div class="lg:col-span-7">
-            <Reveal variant="morph">
-              <div class="surface-lg relative overflow-hidden p-6 sm:p-8">
-                <div class="relative">
-                  <span
-                    class="inline-flex items-center gap-2 rounded-full bg-paper px-3 py-1.5 text-body-sm font-medium text-foreground"
-                  >
-                    <Cloud class="size-3.5 text-muted-foreground" />
-                    Recast Cloud
-                    <span class="text-border-strong">·</span>
-                    <span class="size-1.5 rounded-full bg-border-strong"></span>
-                    open to everyone
-                  </span>
-
-                  <h3
-                    class="mt-6 text-heading-sm font-semibold text-foreground"
-                  >
-                    Storage-agnostic by design.
-                  </h3>
-                  <p class="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    A sharing + analytics layer that points at whichever storage
-                    you want. Yours or ours.
-                  </p>
-
-                  <!-- Storage tier mini-table. Free → BYO storage,
-									     Paid → Recast-hosted or your own bucket. -->
-                  <div class="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                    {#each storageTiers as t}
-                      <div
-                        class={cn(
-                          "flex flex-col gap-2 rounded-xl border p-4",
-                          t.tone === "primary"
-                            ? "border-foreground/20 bg-background/70"
-                            : "border-border-low bg-background/60",
-                        )}
-                      >
-                        <span
-                          class="text-caption font-semibold text-muted-foreground"
-                        >
-                          {t.tier}
-                        </span>
-                        <span
-                          class={cn(
-                            "text-sm font-semibold tracking-tight",
-                            t.tone === "primary"
-                              ? "text-foreground"
-                              : "text-foreground",
-                          )}
-                        >
-                          {t.label}
-                        </span>
-                        <ul
-                          class="space-y-1 text-caption leading-relaxed text-muted-foreground"
-                        >
-                          {#each t.lines as line}
-                            <li class="flex items-start gap-1.5">
-                              <span
-                                class="mt-1.5 size-1 shrink-0 rounded-full bg-foreground/40"
-                              ></span>
-                              <span>{line}</span>
-                            </li>
-                          {/each}
-                        </ul>
-                      </div>
-                    {/each}
-                  </div>
-
-                  <h4 class="mt-7 text-body font-semibold text-foreground">
-                    Ship your first hosted demo.
-                  </h4>
-                  <p class="mt-1 text-sm leading-relaxed text-muted-foreground">
-                    Drop your email, upload a take, send the link. Free tier, no
-                    card.
-                  </p>
-
-                  <form
-                    class="mt-7 flex flex-col gap-2.5 sm:flex-row"
-                    onsubmit={startWithEmail}
-                  >
-                    <label class="sr-only" for="home-cloud-email"
-                      >Work email</label
-                    >
-                    <input
-                      id="home-cloud-email"
-                      type="email"
-                      bind:value={email}
-                      autocomplete="email"
-                      placeholder="founder@startup.com"
-                      class="flex-1 rounded-lg border border-border-low bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30"
-                    />
-                    <Button
-                      type="submit"
-                      variant="dark"
-                      class="group/cta gap-2"
-                    >
-                      Start sharing free
-                      <ArrowRight
-                        class="size-4 transition-transform group-hover/cta:translate-x-0.5"
-                      />
-                    </Button>
-                  </form>
-
-                  <p class="mt-4 text-xs text-muted-foreground">
-                    Already have an account?
-                    <a
-                      href="/login"
-                      class="font-semibold text-foreground hover:text-primary"
-                      >Sign in</a
-                    >.
-                  </p>
-                </div>
+        <ul class="divide-y divide-border-low md:col-span-6 md:col-start-7">
+          {#each cloudFeatures as item, i (item.title)}
+            {@const Icon = item.icon}
+            <Reveal variant="up" delay={160 + i * 70} as="li" class="flex gap-4 py-5">
+              <Icon
+                class="mt-0.5 size-5 shrink-0 text-tag-green [fill-opacity:0.2]"
+                fill="currentColor"
+              />
+              <div class="min-w-0">
+                <h3 class="text-body font-semibold text-foreground">{item.title}</h3>
+                <p class="mt-1 text-body-sm text-muted-foreground">{item.description}</p>
               </div>
             </Reveal>
-          </div>
-        </div>
-      </ShowcasePanel>
+          {/each}
+        </ul>
+      </div>
     </Container>
+
+    <!-- One action, on its own band. Nothing competes with it. -->
+    <div class="border-y border-border-low bg-paper">
+      <Container class="py-14 md:py-16">
+        <Reveal variant="up" class="mx-auto max-w-xl text-center">
+          <h3 class="font-display text-heading-sm text-foreground">
+            Ship your first hosted demo
+          </h3>
+          <p class="mt-2 text-body-sm text-muted-foreground">
+            Drop your email, upload a take, send the link. Free tier, no card.
+          </p>
+
+          <form class="mt-7 flex flex-col gap-2.5 sm:flex-row" onsubmit={startWithEmail}>
+            <label class="sr-only" for="home-cloud-email">Work email</label>
+            <input
+              id="home-cloud-email"
+              type="email"
+              bind:value={email}
+              autocomplete="email"
+              placeholder="founder@startup.com"
+              class="flex-1 rounded-lg border border-border-low bg-card px-3.5 py-2.5 text-body-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+            <Button type="submit" variant="dark" class="group/cta gap-2">
+              Start sharing free
+              <ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+            </Button>
+          </form>
+
+          <p class="mt-4 text-caption text-muted-foreground">
+            Already have an account?
+            <a href="/login" class="font-medium text-foreground hover:text-primary">Sign in</a>.
+          </p>
+        </Reveal>
+      </Container>
+    </div>
   </Section>
 
   <!-- Built for solo founders -->
@@ -849,63 +651,57 @@ function dragScroll(node: HTMLElement) {
     </Container>
   </Section>
 
-  <!-- Pricing teaser — the recorder is free, sharing is your storage. -->
+  <!-- Pricing teaser. Two plans as one hairline-split row, not two floating
+       cards: they are the same object at two tiers, so a shared rule reads
+       truer than two containers sitting side by side. -->
   <Section id="pricing-teaser" class="mx-auto max-w-6xl border-t border-border-low">
     <Container>
-      <div class="grid gap-4 md:grid-cols-2">
-        <Reveal variant="left">
-          <article
-            class="flex h-full flex-col rounded-2xl border border-border-low bg-card p-8"
-          >
-            <span class="text-body-sm font-medium text-muted-foreground">
-              The app
-            </span>
-            <div class="mt-2 flex items-baseline gap-2">
-              <span class="text-heading-lg text-foreground">Free</span>
-              <span class="text-sm text-muted-foreground">forever</span>
-            </div>
-            <p class="mt-3 text-sm leading-relaxed text-muted-foreground">
+      <Reveal variant="up">
+        <div class="flex items-center gap-4 border-b border-border-low py-5">
+          <span class="font-display text-heading-sm leading-none tabular-nums text-border-strong">
+            05
+          </span>
+          <SectionLabel icon={Star} label="Pricing" />
+          <Button href="/pricing" variant="outline" size="sm" class="ml-auto shrink-0">
+            Full comparison
+          </Button>
+        </div>
+      </Reveal>
+
+      <div class="grid grid-cols-1 gap-px bg-border-low md:grid-cols-2">
+        <Reveal variant="up" delay={60} as="article" class="flex flex-col bg-background py-10 md:pr-10">
+          <span class="text-body-sm font-medium text-muted-foreground">The app</span>
+          <div class="mt-3 flex items-baseline gap-2">
+            <span class="font-display text-display text-foreground">Free</span>
+            <span class="text-body-sm text-muted-foreground">forever</span>
+          </div>
+          <p class="mt-3 max-w-sm text-body-sm text-muted-foreground">
             Record, polish, edit and export. Offline, no account, no asterisk.
           </p>
-            <div class="mt-7">
-              <Button href="/download" variant="dark" class="gap-2">
-                <Download class="size-4" />
-                Download
-              </Button>
-            </div>
-          </article>
+          <div class="mt-7">
+            <Button href="/download" variant="dark" class="gap-2">
+              <Download class="size-4" />
+              Download
+            </Button>
+          </div>
         </Reveal>
 
-        <Reveal variant="right" delay={80}>
-          <!-- Featured tier reads through a stronger border, not a lift: the
-					     Free card beside it has no hover, so an animated one broke the pair. -->
-          <article
-            class="relative flex h-full flex-col overflow-hidden rounded-2xl border border-foreground/15 bg-card p-8"
-          >
-            <span
-              class="relative text-body-sm font-medium text-muted-foreground"
-            >
-              Recast Cloud
-            </span>
-            <div class="relative mt-2 flex items-baseline gap-2">
-              <span class="text-heading-lg text-foreground">Hosted</span>
-              <span class="text-sm text-muted-foreground">+ controls</span>
-            </div>
-            <p
-              class="relative mt-3 text-sm leading-relaxed text-muted-foreground"
-            >
-            Watch analytics, per-viewer access, link expiry and team workspaces. Storage stays your call.
+        <Reveal variant="up" delay={140} as="article" class="flex flex-col bg-background py-10 md:pl-10">
+          <span class="text-body-sm font-medium text-muted-foreground">Recast Cloud</span>
+          <div class="mt-3 flex items-baseline gap-2">
+            <span class="font-display text-display text-foreground">Hosted</span>
+            <span class="text-body-sm text-muted-foreground">+ controls</span>
+          </div>
+          <p class="mt-3 max-w-sm text-body-sm text-muted-foreground">
+            Analytics, per-viewer access and link expiry. Storage stays your call.
           </p>
-            <div class="relative mt-7 flex flex-wrap items-center gap-3">
-              <Button href="/signup" variant="dark" class="group/cta gap-2">
-                Start free
-                <ArrowRight
-                  class="size-4 transition-transform group-hover/cta:translate-x-0.5"
-                />
-              </Button>
-              <Button href="/pricing" variant="light">See pricing</Button>
-            </div>
-          </article>
+          <div class="mt-7 flex flex-wrap items-center gap-3">
+            <Button href="/signup" variant="dark" class="group/cta gap-2">
+              Start free
+              <ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+            </Button>
+            <Button href="/pricing" variant="outline">See pricing</Button>
+          </div>
         </Reveal>
       </div>
     </Container>

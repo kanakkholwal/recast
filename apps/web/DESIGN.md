@@ -280,7 +280,8 @@ rhythm read; a page where everything bleeds loses the rules entirely.
 3. **Proof** — paper band, before/after comparison.
 4. **Trust strip** — values row plus the open-source stack logos.
 5. **Spine sections** — Record, Polish, Share, each a `<ShowcasePanel>`.
-6. **Supporting beats** — extensions, Cloud, founders, pricing teaser.
+6. **Supporting beats** — the editor marquee, extensions, Cloud (chapter `04`,
+   same rhythm as the pillars), founders, pricing teaser.
 7. **FAQ** — sticky title left, single-open accordion right.
 8. **Closing CTA** — bookends the hero. The same notched shelf bridges into the
    page's one dark band, and the three-step spine is restated as a one-line
@@ -333,6 +334,28 @@ Scroll-in uses `<Reveal>`. **Never hand-roll an IntersectionObserver here** —
 Reveal falls back to visible when the observer is missing, resets itself under
 `prefers-reduced-motion`, and carries the one shared easing curve. A local copy
 leaves the whole section stuck at `opacity-0` when JS never runs.
+
+### FeatureMarquee
+
+[FeatureMarquee.svelte](src/lib/components/FeatureMarquee.svelte) — the editor
+tour as one slow horizontal loop (64s) rather than a rail the visitor has to
+drag. Ambient, not a carousel: there are no arrows and no dots.
+
+- The track holds the list **twice** and translates exactly `-50%`, so the seam
+  lands on an identical frame and the loop is invisible. The second copy is
+  `aria-hidden` — a screen reader should hear the tour once.
+- Both edges cross-fade via `mask-image`, so cards dissolve into the page
+  instead of being sliced by the container edge.
+- Hover or focus-within parks the animation, so a card can actually be read.
+- Placeholder glyphs carry a 5s `breathe` loop, staggered per card.
+
+**Reduced motion needs an explicit kill here.** The global guard collapses
+`animation-duration` to `0.01ms`, which would snap the track straight to its end
+frame. The component's own `@media (prefers-reduced-motion: reduce)` sets
+`animation: none` on both loops and turns the rail into an ordinary scroller.
+
+Badges are `Auto` / `Manual` at `text-caption` with a 4px dot — not the old
+mono, uppercase, letter-spaced `AUTOMATIC`.
 
 ### SectionLabel
 

@@ -64,6 +64,8 @@ export interface BranchSummary {
 	ops: number;
 	createdAtMs: number;
 	updatedAtMs: number;
+	/** Untouched long enough to flag to a reviewer. Never auto-deleted. */
+	stale: boolean;
 }
 
 /** One leaf that differs between the project and a branch. */

@@ -1,4 +1,5 @@
 <script lang="ts">
+import { Badge } from "@recast/ui/badge";
 import { Button } from "@recast/ui/button";
 import * as Popover from "@recast/ui/popover";
 import { Check, Eye, GitGraph, LoaderCircle, Trash2, TriangleAlert, Undo2 } from "@recast/icons";
@@ -109,6 +110,9 @@ async function apply(id: string) {
               </span>
               <span class="text-muted-foreground">
                 {branch.author} · {branch.ops} op{branch.ops === 1 ? "" : "s"}
+                {#if branch.stale}
+                  <Badge variant="outline" class="ml-1 h-4 px-1.5 text-[10px]">stale</Badge>
+                {/if}
               </span>
             </button>
           </li>
