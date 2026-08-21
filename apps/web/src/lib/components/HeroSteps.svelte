@@ -160,7 +160,7 @@ const accentClass = {
 						{:else}
 							<img
 								src={poster}
-								alt={`Recast — ${step.label}`}
+								alt={`Recast: ${step.label}`}
 								width="1920"
 								height="1080"
 								loading={i === 0 ? "eager" : "lazy"}

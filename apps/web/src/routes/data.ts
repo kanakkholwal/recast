@@ -219,8 +219,7 @@ export const recordingFeatures = [
 	{
 		icon: Layers,
 		title: "Recording profiles",
-		description:
-			"Save capture presets and switch with one shortcut. Investor demo, changelog clip, tutorial: pick the profile, hit record.",
+		description: "Save capture presets and switch with one shortcut. Pick a profile, hit record.",
 	},
 	{
 		icon: Pause,
@@ -267,8 +266,7 @@ export const extensionBeat = [
 	{
 		icon: ShieldCheck,
 		title: "Safe by design",
-		description:
-			"Every pack is a manifest plus static files. No code runs, every asset is hash-checked, and nothing asks for permission.",
+		description: "A manifest plus static files. No code runs and every asset is hash-checked.",
 	},
 ];
 
@@ -301,15 +299,14 @@ export const editorFeatures: Array<{
 		icon: Target,
 		title: "Smart zoom on clicks",
 		description:
-			"Recast watches your cursor, reads clicks and dwell, and zooms toward the moment that matters. You set zero keyframes.",
+			"Reads clicks and dwell, then zooms toward the moment that matters. Zero keyframes.",
 		image: null,
 	},
 	{
 		kind: "auto",
 		icon: VolumeX,
 		title: "Silence trimming",
-		description:
-			"Detects dead-air segments (quiet audio + still cursor) and offers them up as one-click cuts. Toggle them off any time.",
+		description: "Finds dead air (quiet audio, still cursor) and offers one-click cuts.",
 		image: "/screenshots/feat-silence-trim.png",
 	},
 	{
@@ -317,15 +314,14 @@ export const editorFeatures: Array<{
 		icon: MousePointer2,
 		title: "Cursor smoothing",
 		description:
-			"Velocity-aware easing kills the jitter, with optional snap-to-target so the path lands where you meant to point.",
+			"Velocity-aware easing kills the jitter and lands the path where you meant to point.",
 		image: "/screenshots/feat-cursor-smoothing.png",
 	},
 	{
 		kind: "manual",
 		icon: Zap,
 		title: "Zoom regions on the timeline",
-		description:
-			"Drag any moment to add a focus region. The auto picks are just a starting point. Every position, scale, and easing is yours to tweak.",
+		description: "Drag any moment to add a focus region. Position, scale and easing are all yours.",
 		image: "/screenshots/feat-zoom-regions.png",
 	},
 	{
@@ -333,7 +329,7 @@ export const editorFeatures: Array<{
 		icon: Highlighter,
 		title: "Annotations & blur",
 		description:
-			"Drop arrows, rectangles, text, or a privacy blur straight on the frame. Layers live on the timeline alongside everything else.",
+			"Drop arrows, boxes, text or a privacy blur on the frame. Layers live on the timeline.",
 		image: "/screenshots/feat-annotations.png",
 	},
 	{
@@ -341,7 +337,7 @@ export const editorFeatures: Array<{
 		icon: Camera,
 		title: "Camera bubble",
 		description:
-			"Record yourself in a draggable bubble with shape, border, and follow-the-cursor motion. No second app. No green screen.",
+			"A draggable camera bubble with shape, border and cursor-following motion. No second app.",
 		image: "/screenshots/feat-camera-bubble.png",
 	},
 ];
@@ -368,7 +364,7 @@ export const faqs: Array<{ q: string; a: string }> = [
 	},
 	{
 		q: "Is it really free? What costs money?",
-		a: "The app is free forever, no account needed. Recast Cloud (hosted sharing with analytics and access controls) is the paid add-on, coming soon. Today you can share straight to your own Google Drive.",
+		a: "The app is free forever, no account needed. Recast Cloud, the hosted sharing add-on, is coming soon. Today you share straight to your own Google Drive.",
 	},
 	{
 		q: "Can I record my camera and mic too?",

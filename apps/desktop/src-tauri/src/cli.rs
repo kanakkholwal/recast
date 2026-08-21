@@ -43,6 +43,8 @@ const CLI_VERBS: &[&str] = &[
     "project",
     "editor",
     "export",
+    "branch",
+    "mcp",
 ];
 
 /// True when argv[1] is a CLI verb or a help request. `main` uses this to pick
@@ -184,11 +186,16 @@ enum Command {
     /// script's `$TranscribeVerb` in the same commit. CI smoke tests will
     /// start failing otherwise — that is by design, not noise.
     Transcribe(TranscribeArgs),
-    /// Stream backend events (recording + selection + profiles) until interrupted.
+    /// Stream backend events until interrupted. Frames carry a `seq`; pass the
+    /// last one back as `--since` after a reconnect to replay what was missed.
     Watch {
-        /// Comma-separated event groups: `rec`, `selection`, `profiles` (default: all).
+        /// Comma-separated event groups: `rec`, `selection`, `profiles`,
+        /// `export`, `editor` (default: all).
         #[arg(long)]
         events: Option<String>,
+        /// Resume after this sequence number instead of streaming live only.
+        #[arg(long, value_name = "SEQ")]
+        since: Option<u64>,
     },
     /// Put `recast` on your PATH so it runs as a bare command in any terminal.
     Install,
@@ -218,6 +225,10 @@ enum Command {
         #[command(subcommand)]
         action: BranchAction,
     },
+    /// Serve MCP on stdin/stdout so an MCP client can drive Recast. Launched by
+    /// the client, not by hand. Exposes read verbs plus branch proposals only:
+    /// applying a branch stays a human action.
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -1004,18 +1015,8 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             }
             Ok(())
         }
-        Command::Watch { events } => {
-            let params = match events {
-                Some(list) => {
-                    let groups: Vec<&str> = list
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    json!({ "events": groups })
-                }
-                None => Value::Null,
-            };
+        Command::Watch { events, since } => {
+            let params = watch_params(events.as_deref(), *since);
             crate::control::watch(params, !cli.no_launch, cli.timeout_ms, |frame| {
                 let _ = emit(frame, cli.format);
             })
@@ -1027,6 +1028,7 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
         Command::Editor { action } => editor_dispatch(cli, action),
         Command::Export { action } => export_dispatch(cli, action),
         Command::Branch { action } => branch_dispatch(cli, action),
+        Command::Mcp => crate::mcp::serve(!cli.no_launch, cli.timeout_ms),
     }
 }
 
@@ -1458,6 +1460,28 @@ fn annotations_dispatch(cli: &Cli, action: &AnnotationsAction) -> Result<(), Str
             let path = path_for(path);
             send_and_emit(cli, "editor.annotations.list", json!({"path": path}))
         }
+    }
+}
+
+/// Build the `watch` request. An absent cursor streams live only; the server
+/// reads a missing `since` as "start from the current head".
+fn watch_params(events: Option<&str>, since: Option<u64>) -> Value {
+    let mut params = serde_json::Map::new();
+    if let Some(list) = events {
+        let groups: Vec<&str> = list
+            .split(',')
+            .map(str::trim)
+            .filter(|group| !group.is_empty())
+            .collect();
+        params.insert("events".into(), json!(groups));
+    }
+    if let Some(seq) = since {
+        params.insert("since".into(), json!(seq));
+    }
+    if params.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(params)
     }
 }
 
@@ -2045,6 +2069,69 @@ mod tests {
     #[test]
     fn the_argument_tree_is_well_formed() {
         Cli::command().debug_assert();
+    }
+
+    /// A subcommand missing from `CLI_VERBS` is not a parse error: `main` never
+    /// reaches the CLI at all and silently launches the GUI instead.
+    #[test]
+    fn every_subcommand_routes_to_the_headless_cli() {
+        let missing: Vec<String> = Cli::command()
+            .get_subcommands()
+            .map(|sub| sub.get_name().to_string())
+            .filter(|name| !CLI_VERBS.contains(&name.as_str()))
+            .collect();
+
+        assert!(missing.is_empty(), "not in CLI_VERBS: {missing:?}");
+    }
+
+    mod watch_params {
+        use super::*;
+
+        #[test]
+        fn no_flags_sends_no_params() {
+            assert_eq!(watch_params(None, None), Value::Null);
+        }
+
+        #[test]
+        fn splits_a_comma_separated_group_list() {
+            assert_eq!(
+                watch_params(Some("rec,editor"), None)["events"],
+                json!(["rec", "editor"])
+            );
+        }
+
+        #[test]
+        fn trims_whitespace_around_groups() {
+            assert_eq!(
+                watch_params(Some(" rec , editor "), None)["events"],
+                json!(["rec", "editor"])
+            );
+        }
+
+        #[test]
+        fn drops_empty_entries_from_a_trailing_comma() {
+            assert_eq!(watch_params(Some("rec,"), None)["events"], json!(["rec"]));
+        }
+
+        #[test]
+        fn carries_the_resume_cursor() {
+            assert_eq!(watch_params(None, Some(42))["since"], json!(42));
+        }
+
+        #[test]
+        fn a_zero_cursor_is_sent_rather_than_dropped() {
+            assert_eq!(watch_params(None, Some(0))["since"], json!(0));
+        }
+
+        #[test]
+        fn combines_groups_and_a_cursor() {
+            let params = watch_params(Some("editor"), Some(7));
+
+            assert_eq!(
+                (params["events"].clone(), params["since"].clone()),
+                (json!(["editor"]), json!(7))
+            );
+        }
     }
 
     mod branch_ops_json {

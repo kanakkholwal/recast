@@ -139,12 +139,13 @@ happened.
 
 ## Typography
 
-- **Display (h1, h2):** Satoshi, weight **500**, letter-spacing **normal**.
+- **Display (h1, h2):** Satoshi, weight **700**, letter-spacing **-0.01em**.
 - **Everything else:** Inter — body, UI labels, h3–h6 (weight 600, `-0.011em`).
 - **Mono:** Geist Mono, for code, file names, and stat numbers.
 
-Weight 500 is the signature. Headings are confident because of the letterforms,
-not because they are bolded or tracked tight. `font-bold` on a heading is a bug.
+Satoshi ships 400 / 500 / 700 — there is no 600. 500 read too light at display
+sizes next to the reference, so display type is Bold. Everything below 30px is
+Inter and never uses the display face.
 
 Satoshi is **not on Fontsource** — no `@fontsource/satoshi` package exists. The
 ITF-Free-Font-License woff2 files are vendored in
@@ -166,8 +167,8 @@ pairing, so `text-body` sets both and no call site needs a `leading-` utility.
 | `text-subheading` | 20px | 1.4 |
 | `text-heading-sm` | 24px | 1.33 |
 | `text-heading` | 30px | 1.25 |
-| `text-heading-lg` | 36px | 1.11 |
-| `text-display` | 48px | 1.04 |
+| `text-heading-lg` | 36px | 1.11 |  ← section h2
+| `text-display` | 48px | 1.04 |  ← hero h1 only
 | `text-display-lg` | 60px | 1.02 |
 
 16px is the canonical body size. **No ad-hoc `text-[Npx]`.** The page previously
@@ -195,9 +196,8 @@ Five radii. Nothing else.
 | Cards | 12px | `.surface` |
 | Feature surfaces, mockups | 16px | `.surface-lg` / `.mockup-frame` |
 
-The one exception is the hero shelf's 32px concave fillet, which is a *shape
-constant* (it must equal the shelf's own bottom radius) rather than a component
-radius. It is documented in [HeroSteps.svelte](src/lib/components/HeroSteps.svelte).
+The one exception is the notched shelf's wings, which are an SVG path rather
+than a radius. See **NotchedShelf** below.
 
 **Deviation from the reference:** buttons sit at 12px (`--radius-lg`) rather than
 8px, because the radius scale is derived from `--radius` and an 8px button step
@@ -250,6 +250,20 @@ five-stop gradient wash just to keep the headline readable.
 
 ## Layout
 
+### Column rules and bleed
+
+Two hairlines run the full viewport height at the content column's edges
+(`+layout.svelte`), so the page reads as one ruled sheet. What crosses them is
+a hard rule:
+
+| Section has | Width |
+| --- | --- |
+| A tonal background (`bg-paper`) | **Full-bleed** to the viewport |
+| No background | **Bounded** — `mx-auto max-w-6xl` so it sits inside the rules |
+
+The closing CTA's dark band is full-bleed. Mixing the two is what makes the
+rhythm read; a page where everything bleeds loses the rules entirely.
+
 - **Container:** `<Container>` — `max-w-6xl` default, `narrow` (3xl), `wide` (7xl).
 - **Section:** `<Section spacing="default | tight | loose | none">` — default is
   `py-16 md:py-24`. Roughly 64–96px, down from the previous 96–128px.
@@ -291,6 +305,51 @@ spine steps that hangs out of the white hero into the paper band below.
   cheapest way to make a landing page stutter.
 - Per-step `src` falls back to a shared take, so the cross-fade is wired before
   the three clips exist.
+
+### PillarSection
+
+[PillarSection.svelte](src/lib/components/PillarSection.svelte) is the template
+for Record / Polish / Share. Left-aligned label + h2 + description + one
+outlined action in a `max-w-lg` block, then a full-bleed `bg-paper` band holding
+the visual, closed by `<FeatureColumns>`.
+
+Left-aligned on purpose: a centred stack reads as a slide, this reads as a page.
+
+Scroll-in uses `<Reveal>`. **Never hand-roll an IntersectionObserver here** —
+Reveal falls back to visible when the observer is missing, resets itself under
+`prefers-reduced-motion`, and carries the one shared easing curve. A local copy
+leaves the whole section stuck at `opacity-0` when JS never runs.
+
+### FeatureColumns
+
+The three-up row closing a pillar. One column is lit at a time (accent rule on
+its edge, `text-foreground` title, accent link); hover or focus moves the light.
+Descriptions stay `text-muted-foreground` in **both** states — dimming body copy
+to `text-border-strong` reads as broken, not de-emphasised, and fails 4.5:1.
+
+### SectionLabel
+
+Duotone glyph in the section's accent hue plus a plain label. No pill, no
+tinted tile behind the icon, no uppercase tracking. Duotone is
+`fill="currentColor"` plus `[fill-opacity:0.2]`.
+
+### NotchedShelf
+
+[NotchedShelf.svelte](src/lib/components/NotchedShelf.svelte) — the shape that
+bridges two surfaces, used by the hero step shelf and the closing CTA.
+
+Two mirrored S-curve SVG wings (85×64) with a `grow` bar between them. An
+S-curve, not a circular fillet: a quarter-circle meets the straight edge at a
+visible corner, the S-curve eases out of it.
+
+Two traps, both hit once already:
+
+- `fill` is a **Tailwind text-colour class** (`text-background`), not a CSS
+  value. The wings and bar are all `currentColor`. Passing a raw `var(...)`
+  lands as an invalid class and the shelf paints nothing.
+- Never put a text colour on the bar itself — it is `bg-current`, so
+  `text-foreground` there repaints the bar near-black. The content's colour
+  reset belongs on a nested element.
 
 ### Navbar
 
@@ -372,7 +431,9 @@ the honest social proof, rendered in a muted neutral via Simple Icons.
 - Don't use `uppercase` + letter-spaced eyebrows; use the sentence-case pill.
 - Don't put a photo behind a headline.
 - Don't italicise section headings.
-- Don't invert the theme mid-page. The site is one surface.
+- Don't invert the theme mid-page. The one exception is the closing CTA band,
+  which is `data-theme="dark"` by design; its notched shelf must stay outside
+  that subtree or `--color-background` resolves dark and the bridge vanishes.
 
 ---
 

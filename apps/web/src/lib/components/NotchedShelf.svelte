@@ -41,10 +41,15 @@ const WING =
   </svg>
 
 
+  <!-- `bg-current` must inherit the shelf's own fill colour, so the content's
+       colour reset has to live on a nested element: setting text-foreground
+       here would repaint the bar itself near-black. -->
   <div
     class="relative z-10 flex h-[calc(100%+1px)] min-w-0 grow items-center justify-center bg-current"
   >
-    {@render children?.()}
+    <div class="flex items-center justify-center gap-2 text-foreground">
+      {@render children?.()}
+    </div>
   </div>
   <svg
     viewBox="0 0 85 64"

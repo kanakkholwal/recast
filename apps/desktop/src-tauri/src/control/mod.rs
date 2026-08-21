@@ -11,6 +11,8 @@
 //! the socket/pipe ACL; the token is defense in depth. Phase 2 is synchronous
 //! request/response only; the event stream (`watch`) lands later.
 
+mod events;
+
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
@@ -69,7 +71,37 @@ pub fn spawn_server(app: tauri::AppHandle) {
         });
 }
 
+/// The process-wide event log. Built on first use so tests and headless CLI
+/// paths never need one.
+fn event_log(app: &tauri::AppHandle) -> std::sync::Arc<events::EventLog> {
+    use tauri::Manager;
+    if let Some(log) = app.try_state::<std::sync::Arc<events::EventLog>>() {
+        return std::sync::Arc::clone(&log);
+    }
+    let log = std::sync::Arc::new(events::EventLog::default());
+    app.manage(std::sync::Arc::clone(&log));
+    log
+}
+
+/// Mirror every watchable Tauri event into the log, once for the process.
+///
+/// Listening here rather than per connection is what makes replay possible: a
+/// watcher that was not connected still finds the events waiting.
+fn feed_event_log(app: &tauri::AppHandle) {
+    use tauri::Listener;
+    let log = event_log(app);
+    for name in all_event_names() {
+        let log = std::sync::Arc::clone(&log);
+        let event_name = name.clone();
+        app.listen(name, move |event| {
+            let data: Value = serde_json::from_str(event.payload()).unwrap_or(Value::Null);
+            log.push(event_name.clone(), data);
+        });
+    }
+}
+
 fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
+    feed_event_log(app);
     let token = write_token()?;
     let name = SOCKET_NAME
         .to_ns_name::<GenericNamespaced>()
@@ -152,79 +184,103 @@ fn handle_conn(app: &tauri::AppHandle, stream: &mut Stream, token: &str) -> Resu
     write_response(stream, &response)
 }
 
-/// Resolve the requested event-group names (`rec`, `selection`) to concrete
-/// event names. Empty/absent selects everything.
-fn watch_event_names(params: &Value) -> Vec<String> {
-    const REC: &[&str] = &["recording:started", "recording:stopped"];
-    const SELECTION: &[&str] = &["capture-intent:changed"];
-    const PROFILES: &[&str] = &["recording-profiles:changed"];
-    const EXPORT: &[&str] = &["export-state", "export-jobs-changed"];
-    const EDITOR: &[&str] = &[
-        "editor-session:changed",
-        "editor-state:changed",
-        BRANCHES_CHANGED_EVENT,
-    ];
-    let mut out: Vec<String> = Vec::new();
-    match params.get("events").and_then(Value::as_array) {
-        Some(groups) if !groups.is_empty() => {
-            for group in groups {
-                match group.as_str() {
-                    Some("rec") => out.extend(REC.iter().map(|s| s.to_string())),
-                    Some("selection") => out.extend(SELECTION.iter().map(|s| s.to_string())),
-                    Some("profiles") => out.extend(PROFILES.iter().map(|s| s.to_string())),
-                    Some("export") => out.extend(EXPORT.iter().map(|s| s.to_string())),
-                    Some("editor") => out.extend(EDITOR.iter().map(|s| s.to_string())),
-                    _ => {}
-                }
-            }
-        }
-        _ => {
-            out.extend(REC.iter().map(|s| s.to_string()));
-            out.extend(SELECTION.iter().map(|s| s.to_string()));
-            out.extend(PROFILES.iter().map(|s| s.to_string()));
-            out.extend(EXPORT.iter().map(|s| s.to_string()));
-            out.extend(EDITOR.iter().map(|s| s.to_string()));
-        }
-    }
-    out.sort();
-    out.dedup();
-    out
+/// The `--events` groups a `watch` client can name, and what each expands to.
+const EVENT_GROUPS: &[(&str, &[&str])] = &[
+    ("rec", &["recording:started", "recording:stopped"]),
+    ("selection", &["capture-intent:changed"]),
+    ("profiles", &["recording-profiles:changed"]),
+    ("export", &["export-state", "export-jobs-changed"]),
+    (
+        "editor",
+        &[
+            "editor-session:changed",
+            "editor-state:changed",
+            BRANCHES_CHANGED_EVENT,
+        ],
+    ),
+];
+
+/// Every event the log records, so a watcher can replay a group it did not
+/// originally subscribe to.
+fn all_event_names() -> Vec<String> {
+    let mut names: Vec<String> = EVENT_GROUPS
+        .iter()
+        .flat_map(|(_, events)| events.iter().map(|event| (*event).to_string()))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
-/// Subscribe to the requested events and forward each as a `{event, data}` frame
-/// until the client hangs up. A 15s heartbeat (`{"event":"ping"}`) detects a
-/// disconnect during an idle stretch so the listeners get unregistered.
-fn handle_watch(app: &tauri::AppHandle, stream: &mut Stream, params: &Value) -> Result<(), String> {
-    use std::sync::mpsc::{channel, RecvTimeoutError};
-    use std::time::Duration;
-    use tauri::Listener;
-
-    let names = watch_event_names(params);
-    let (tx, rx) = channel::<String>();
-    let mut ids = Vec::new();
-    for name in &names {
-        let tx = tx.clone();
-        let event_name = name.clone();
-        let id = app.listen(name.clone(), move |event| {
-            let data: Value = serde_json::from_str(event.payload()).unwrap_or(Value::Null);
-            let _ = tx.send(json!({ "event": event_name, "data": data }).to_string());
-        });
-        ids.push(id);
+/// Resolve the requested event groups to concrete event names. Empty or absent
+/// selects everything; an unknown group contributes nothing.
+fn watch_event_names(params: &Value) -> Vec<String> {
+    let requested: Vec<&str> = params
+        .get("events")
+        .and_then(Value::as_array)
+        .map(|groups| groups.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if requested.is_empty() {
+        return all_event_names();
     }
-    drop(tx); // only the listener-held senders keep the channel open
+    let mut names: Vec<String> = EVENT_GROUPS
+        .iter()
+        .filter(|(group, _)| requested.contains(group))
+        .flat_map(|(_, events)| events.iter().map(|event| (*event).to_string()))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
 
-    let ready = json!({ "event": "watch.ready", "data": { "events": names } }).to_string();
-    let outcome = write_frame(stream, &ready).and_then(|()| loop {
-        match rx.recv_timeout(Duration::from_secs(15)) {
-            Ok(frame) => write_frame(stream, &frame)?,
-            Err(RecvTimeoutError::Timeout) => write_frame(stream, "{\"event\":\"ping\"}")?,
-            Err(RecvTimeoutError::Disconnected) => break Ok(()),
+/// Idle gap after which a keepalive goes out, so a dead client is noticed.
+const WATCH_KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Stream events as `{seq, event, data}` frames until the client hangs up.
+///
+/// `since` replays from a cursor a previous connection reported, so an agent
+/// that reconnects picks up where it dropped. A cursor older than the ring gets
+/// a `watch.lagged` frame first: an incomplete stream is worth saying out loud.
+fn handle_watch(app: &tauri::AppHandle, stream: &mut Stream, params: &Value) -> Result<(), String> {
+    let names = watch_event_names(params);
+    let log = event_log(app);
+    // No `since` means live-only, which is what a fresh client wants.
+    let mut cursor = params
+        .get("since")
+        .and_then(Value::as_u64)
+        .unwrap_or_else(|| log.head());
+
+    let ready = json!({
+        "event": "watch.ready",
+        "data": { "events": names, "cursor": cursor },
+    })
+    .to_string();
+
+    let outcome: Result<(), String> = write_frame(stream, &ready).and_then(|()| loop {
+        let replay = log.since(cursor, &names);
+        if replay.missed > 0 {
+            let lagged = json!({
+                "event": "watch.lagged",
+                "data": { "missed": replay.missed },
+            })
+            .to_string();
+            write_frame(stream, &lagged)?;
+        }
+        for event in &replay.events {
+            write_frame(
+                stream,
+                &serde_json::to_string(event).map_err(|e| e.to_string())?,
+            )?;
+        }
+        cursor = replay.cursor;
+
+        if !log.wait_past(cursor, WATCH_KEEPALIVE) {
+            write_frame(
+                stream,
+                &json!({ "event": "ping", "cursor": cursor }).to_string(),
+            )?;
         }
     });
-
-    for id in ids {
-        app.unlisten(id);
-    }
     // A write error just means the client hung up; not a server error.
     let _ = outcome;
     Ok(())
@@ -1833,5 +1889,72 @@ mod tests {
             watch_event_names(&json!({"events":["profiles"]})),
             vec!["recording-profiles:changed".to_string()]
         );
+    }
+
+    mod watch_event_names {
+        use super::*;
+
+        #[test]
+        fn no_events_key_selects_everything() {
+            assert_eq!(super::watch_event_names(&json!({})), all_event_names());
+        }
+
+        #[test]
+        fn an_empty_list_selects_everything() {
+            assert_eq!(
+                super::watch_event_names(&json!({ "events": [] })),
+                all_event_names()
+            );
+        }
+
+        #[test]
+        fn an_unknown_group_selects_nothing() {
+            assert!(super::watch_event_names(&json!({ "events": ["nope"] })).is_empty());
+        }
+
+        #[test]
+        fn two_groups_are_merged() {
+            let names = super::watch_event_names(&json!({ "events": ["profiles", "selection"] }));
+
+            assert_eq!(
+                names,
+                vec![
+                    "capture-intent:changed".to_string(),
+                    "recording-profiles:changed".to_string()
+                ]
+            );
+        }
+
+        #[test]
+        fn the_editor_group_carries_branch_changes() {
+            let names = super::watch_event_names(&json!({ "events": ["editor"] }));
+
+            assert!(
+                names.contains(&BRANCHES_CHANGED_EVENT.to_string()),
+                "got: {names:?}"
+            );
+        }
+
+        #[test]
+        fn every_group_name_resolves_to_at_least_one_event() {
+            for (group, _) in EVENT_GROUPS {
+                let names = super::watch_event_names(&json!({ "events": [group] }));
+                assert!(!names.is_empty(), "group '{group}' resolved to nothing");
+            }
+        }
+
+        #[test]
+        fn all_event_names_covers_every_group() {
+            let everything = all_event_names();
+
+            for (group, _) in EVENT_GROUPS {
+                for name in super::watch_event_names(&json!({ "events": [group] })) {
+                    assert!(
+                        everything.contains(&name),
+                        "'{name}' missing from the log feed"
+                    );
+                }
+            }
+        }
     }
 }

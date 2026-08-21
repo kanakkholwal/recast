@@ -4,7 +4,7 @@ import { footerCols as cols, footerSocials as socials } from "$lib/components/na
 import Logo from "$lib/logo.svelte";
 </script>
 
-<footer class="relative border-t border-border-low bg-paper">
+<footer class="relative border-t border-border-low bg-paper rounded-t-4xl">
   <Container class="relative pt-20 pb-10 md:pt-24 md:pb-12" as="div">
     <div class="grid gap-14 md:grid-cols-12">
       <div class="md:col-span-5">

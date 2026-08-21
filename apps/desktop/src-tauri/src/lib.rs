@@ -14,6 +14,7 @@ pub mod ffmpeg;
 mod fonts;
 #[cfg(windows)]
 mod jumplist;
+mod mcp;
 // On-device OCR for screen understanding (agent automation). The plumbing always
 // compiles; only the ocrs engine seam is behind the `ocr` feature, so a
 // `--no-default-features` build still exposes the command and reports that the
