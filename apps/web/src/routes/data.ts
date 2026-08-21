@@ -24,6 +24,7 @@ import {
 	Terminal,
 	UserX,
 	VolumeX,
+	Wand2,
 	Zap,
 } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
@@ -407,3 +408,74 @@ export const kindChip: Record<FeatureKind, { label: string; dot: string; ring: s
 		ring: "text-foreground/70 ring-border-low/60",
 	},
 };
+
+// Three-up detail rows closing each pillar section. Deliberately separate from
+// the longer `recordingFeatures` / `polishFeatures` / `shareFeatures` copy: this
+// row is scanned, not read, so each line is one claim.
+export const recordColumns = [
+	{
+		icon: Monitor,
+		title: "Region, window, or screen",
+		description: "One shortcut starts the capture. No project, no codec picker, no account.",
+		href: "/features",
+		linkLabel: "See capture",
+	},
+	{
+		icon: Layers,
+		title: "Recording profiles",
+		description:
+			"Save capture presets and switch with one shortcut between demo, clip, and tutorial.",
+		href: "/features",
+	},
+	{
+		icon: Pause,
+		title: "Pause and resume",
+		description: "A knock at the door no longer means re-recording. Paused spans trim out cleanly.",
+		href: "/features",
+	},
+];
+
+export const polishColumns = [
+	{
+		icon: Zap,
+		title: "Smart zoom",
+		description: "Recast pushes in toward the action so viewers never miss the point.",
+		href: "/features",
+	},
+	{
+		icon: MousePointer2,
+		title: "Cursor refinement",
+		description: "Velocity smoothing kills twitchy paths and snaps the pointer to its target.",
+		href: "/features",
+	},
+	{
+		icon: VolumeX,
+		title: "Silence cuts",
+		description:
+			"Dead air is detected and trimmed, so the finished take lands shorter than the raw one.",
+		href: "/features",
+	},
+];
+
+export const shareColumns = [
+	{
+		icon: HardDriveUpload,
+		title: "Straight to your Drive",
+		description: "Connect once. Exports upload to your own account, not to a server we own.",
+		href: "/pricing",
+	},
+	{
+		icon: Link2,
+		title: "Link in one click",
+		description: "The share link is ready the moment the upload finishes. No second tab.",
+		href: "/pricing",
+	},
+	{
+		icon: BarChart3,
+		title: "Watch analytics",
+		description:
+			"Recast Cloud adds view counts, per-viewer access, and link expiry when a raw link stops being enough.",
+		href: "/pricing",
+		linkLabel: "See Cloud",
+	},
+];

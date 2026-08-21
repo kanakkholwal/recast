@@ -27,6 +27,7 @@ import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
 import { agentSession, Editor } from "@recast/editor";
 import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
+import BranchReviewPanel from "@recast/editor/components/BranchReviewPanel.svelte";
 import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-session.tauri";
 import EditorToolbar from "@recast/editor/components/EditorToolbar.svelte";
 import ExportDialog from "@recast/editor/components/ExportDialog.svelte";
@@ -318,6 +319,19 @@ function stopAutosave() {
 // agent that patches this project while it's open is refused rather than
 // silently racing the autosave above.
 const editorWriterId = `ui:${crypto.randomUUID().slice(0, 8)}`;
+
+/** Re-read the saved edits after a branch lands, so the editor shows what was
+ *  actually written rather than the pre-apply state. */
+async function reloadRenderStateFromDisk() {
+	if (!documentPath) return;
+	try {
+		const document = await loadEditorDocument(documentPath);
+		store.loadRenderState(document.renderState);
+		store.markSaved(Date.now());
+	} catch (err) {
+		log.warn("editor", "reload after branch apply failed", { err: String(err) });
+	}
+}
 
 $effect(() => {
 	const path = documentPath;
@@ -1814,6 +1828,17 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
       />
     </div>
     <AgentSessionBadge />
+    {#if documentPath}
+      <BranchReviewPanel
+        projectPath={documentPath}
+        writerId={editorWriterId}
+        onPreview={(state) => {
+          store.pushUndoState();
+          store.loadRenderState(state);
+        }}
+        onApplied={() => void reloadRenderStateFromDisk()}
+      />
+    {/if}
   </CustomTitlebar>
 
   <!-- Foreground upload dialogs (cloud share + Drive), reopened by clicking an

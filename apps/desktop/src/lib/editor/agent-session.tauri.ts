@@ -4,7 +4,15 @@
  * which one is installed.
  */
 
-import type { AgentSessionDriver, AgentSessionEvent, AgentSessionSnapshot } from "@recast/editor";
+import type {
+	AgentSessionDriver,
+	AgentSessionEvent,
+	AgentSessionSnapshot,
+	ApplyReport,
+	BranchDriver,
+	BranchSummary,
+	FieldChange,
+} from "@recast/editor";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { loadEditorDocument } from "$lib/ipc";
@@ -13,9 +21,24 @@ import { loadEditorDocument } from "$lib/ipc";
 const SESSION_EVENT = "editor-session:changed";
 /** Emitted by `patch_render_state` after an agent writes edits to disk. */
 const STATE_EVENT = "editor-state:changed";
+/** Emitted by `BranchService` on every journal create/append/discard. */
+const BRANCHES_EVENT = "editor-branches:changed";
+
+const branches: BranchDriver = {
+	list: (projectPath) => invoke<BranchSummary[]>("list_branches", { projectPath }),
+	diff: (projectPath, branch) => invoke<FieldChange[]>("diff_branch", { projectPath, branch }),
+	materialize: (projectPath, branch) =>
+		invoke<Record<string, unknown>>("materialize_branch", { projectPath, branch }),
+	discard: (projectPath, branch) => invoke<void>("discard_branch", { projectPath, branch }),
+	apply: (projectPath, branch, writerId) =>
+		invoke<ApplyReport>("apply_branch", { projectPath, branch, writerId }),
+	truncate: (projectPath, branch, seq) =>
+		invoke<BranchSummary>("truncate_branch", { projectPath, branch, seq }),
+};
 
 export const tauriAgentSessionDriver: AgentSessionDriver = {
 	mode: "desktop",
+	branches,
 
 	async subscribe(sink: (event: AgentSessionEvent) => void) {
 		const offSession = await listen<AgentSessionSnapshot>(SESSION_EVENT, ({ payload }) => {
@@ -28,9 +51,14 @@ export const tauriAgentSessionDriver: AgentSessionDriver = {
 				sink({ type: "state-changed", projectPath: payload.path, summary: payload.summary });
 			},
 		);
+		const offBranches = await listen<{ path: string }>(BRANCHES_EVENT, ({ payload }) => {
+			if (!payload?.path) return;
+			sink({ type: "branches-changed", projectPath: payload.path });
+		});
 		return () => {
 			offSession();
 			offState();
+			offBranches();
 		};
 	},
 

@@ -33,6 +33,18 @@ export type {
 	AgentSessionSnapshot,
 	AgentWriter,
 } from "./lib/agent/types";
+export { default as BranchReviewPanel } from "./components/BranchReviewPanel.svelte";
+export { branchReview } from "./lib/agent/branch-store.svelte";
+export { changeGroup, describeChange, EDIT_OP_TAGS, groupChanges } from "./lib/agent/branches";
+export type {
+	AppendReport,
+	ApplyReport,
+	BranchDriver,
+	BranchSummary,
+	EditOp,
+	EditOpTag,
+	FieldChange,
+} from "./lib/agent/branches";
 export { createAudioEngineHost } from "./lib/playback/audio-engine-host.svelte";
 export type { AudioEngineHolder } from "./lib/playback/audio-engine-host.svelte";
 export { AudioTimelineEngine } from "./lib/playback/audio-engine";

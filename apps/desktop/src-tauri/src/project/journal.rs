@@ -167,6 +167,11 @@ impl Append {
             Self::Recorded { seq } | Self::AlreadyApplied { seq } => seq,
         }
     }
+
+    /// `false` when the idem key was already on the branch.
+    pub fn is_recorded(self) -> bool {
+        matches!(self, Self::Recorded { .. })
+    }
 }
 
 impl Branch {

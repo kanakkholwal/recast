@@ -1,5 +1,6 @@
 pub(crate) mod assets;
 pub(crate) mod auth;
+pub(crate) mod branches;
 pub(crate) mod cloud;
 mod editor;
 pub(crate) mod editor_session;
@@ -19,6 +20,7 @@ pub(crate) mod types;
 
 pub use assets::*;
 pub use auth::*;
+pub use branches::*;
 pub use cloud::*;
 pub use editor::*;
 pub(crate) use editor_session::*;

@@ -218,8 +218,10 @@
 	[data-site="marketing"] h1,
 	[data-site="marketing"] h2 {
 		font-family: var(--font-display);
-		font-weight: 500;
-		letter-spacing: normal;
+		/* Satoshi ships 400/500/700 — no 600. 500 read too light at display sizes
+		   against the reference, so display type is Bold. */
+		font-weight: 700;
+		letter-spacing: -0.01em;
 		@apply text-foreground;
 	}
 

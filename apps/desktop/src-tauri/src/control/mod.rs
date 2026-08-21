@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::Emitter;
 
-use crate::commands::now_ms;
-use crate::project::journal::{self, Append, Branch, BranchId, BranchStore, StateHash};
+use crate::commands::{BranchService, BranchSummary, BRANCHES_CHANGED_EVENT};
+use crate::project::journal::BranchId;
 use crate::render::graph::RenderState;
 use crate::render::ops::{apply_op, Op};
 use crate::render::scene_anim::SceneAnimSpec;
@@ -29,9 +29,6 @@ use crate::render::scene_anim::SceneAnimSpec;
 /// Namespaced socket name. Maps to `\\.\pipe\<name>` on Windows and an abstract
 /// or temp-dir socket on Unix. One app per user, so a fixed name is fine.
 const SOCKET_NAME: &str = "com.kanakkholwal.recast.cli.sock";
-
-/// Emitted whenever a branch journal is created, appended to or removed.
-const BRANCHES_CHANGED_EVENT: &str = "editor-branches:changed";
 
 /// Path to the auth token file. Both server and client compute it without an
 /// `AppHandle`, so the headless CLI can find it too.
@@ -249,36 +246,11 @@ fn branch_id(params: &Value, method: &str) -> Result<BranchId, String> {
     BranchId::new(require_str(params, "branch", method)?).map_err(stringify)
 }
 
-/// Journals live under the app data dir rather than beside the `.recast`: they
-/// are pending work, so the temp-dir sweeper must not reclaim them.
-fn branch_store(app: &tauri::AppHandle, project_path: &str) -> Result<BranchStore, String> {
-    use tauri::Manager;
-    let root = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("app_data_dir unavailable: {e}"))?;
-    Ok(BranchStore::new(root.join("branches").join(
-        journal::project_key(std::path::Path::new(project_path)),
-    )))
-}
-
-fn load_render_state(project_path: &str) -> Result<RenderState, String> {
-    tauri::async_runtime::block_on(crate::commands::load_editor_document(
-        project_path.to_string(),
-    ))
-    .map(|doc| doc.render_state)
-    .map_err(stringify)
-}
-
-fn load_branch(
-    app: &tauri::AppHandle,
-    params: &Value,
-    project_path: &str,
-    method: &str,
-) -> Result<Branch, String> {
-    branch_store(app, project_path)?
-        .load(&branch_id(params, method)?)
-        .map_err(stringify)
+fn branches<'a>(
+    app: &'a tauri::AppHandle,
+    state: &'a crate::commands::types::AppState,
+) -> BranchService<'a> {
+    BranchService::new(app, state)
 }
 
 /// Run one [`Op`] through the shared lock/validate/persist cycle.
@@ -1155,51 +1127,29 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "branch.create" => {
-            let path_str = require_str(&params, "path", method)?;
-            let id = branch_id(&params, method)?;
-            let author = require_str(&params, "author", method)?;
-            let base = StateHash::of(&load_render_state(&path_str)?).map_err(stringify)?;
-            let branch = Branch::new(
-                id,
-                base,
-                author,
-                params
-                    .get("label")
-                    .and_then(Value::as_str)
-                    .map(str::to_string),
-                now_ms(),
-            );
-            branch_store(app, &path_str)?
-                .save(&branch)
+            let project = require_str(&params, "path", method)?;
+            let branch = branches(app, state.inner())
+                .create(
+                    &project,
+                    branch_id(&params, method)?,
+                    require_str(&params, "author", method)?,
+                    params
+                        .get("label")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                )
                 .map_err(stringify)?;
-            serde_json::to_value(&branch).map_err(stringify)
+            serde_json::to_value(BranchSummary::from(&branch)).map_err(stringify)
         }
         "branch.list" => {
-            let path_str = require_str(&params, "path", method)?;
-            let store = branch_store(app, &path_str)?;
-            let summaries: Vec<Value> = store
-                .list()
-                .iter()
-                .filter_map(|id| store.load(id).ok())
-                .map(|branch| {
-                    json!({
-                        "id": branch.id,
-                        "author": branch.author,
-                        "label": branch.label,
-                        "base": branch.base.to_string(),
-                        "seq": branch.next_seq() - 1,
-                        "ops": branch.op_count(),
-                        "createdAtMs": branch.created_at_ms,
-                        "updatedAtMs": branch.updated_at_ms,
-                    })
-                })
-                .collect();
-            Ok(Value::Array(summaries))
+            let project = require_str(&params, "path", method)?;
+            let summaries = branches(app, state.inner())
+                .list(&project)
+                .map_err(stringify)?;
+            serde_json::to_value(summaries).map_err(stringify)
         }
         "branch.append" => {
-            let path_str = require_str(&params, "path", method)?;
-            let id = branch_id(&params, method)?;
-            let idem_key = require_str(&params, "idemKey", method)?;
+            let project = require_str(&params, "path", method)?;
             let ops: Vec<Op> = serde_json::from_value(
                 params
                     .get("ops")
@@ -1207,93 +1157,60 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                     .ok_or_else(|| format!("{method} requires ops"))?,
             )
             .map_err(|e| format!("{method}: invalid ops: {e}"))?;
-            let expect_seq = params.get("expectSeq").and_then(Value::as_u64);
-
-            let store = branch_store(app, &path_str)?;
-            let mut branch = store.load(&id).map_err(stringify)?;
-            let outcome = branch
-                .append(idem_key, ops, expect_seq, now_ms())
+            let report = branches(app, state.inner())
+                .append(
+                    &project,
+                    &branch_id(&params, method)?,
+                    require_str(&params, "idemKey", method)?,
+                    ops,
+                    params.get("expectSeq").and_then(Value::as_u64),
+                )
                 .map_err(stringify)?;
-            // Replay before persisting, so an op that cannot apply is rejected
-            // now rather than at review time.
-            let base = load_render_state(&path_str)?;
-            branch.materialize(&base).map_err(stringify)?;
-            let compacted = branch.needs_compaction();
-            if compacted {
-                branch.compact(&base, now_ms()).map_err(stringify)?;
-            }
-            store.save(&branch).map_err(stringify)?;
-            let _ = app.emit(BRANCHES_CHANGED_EVENT, json!({ "path": path_str }));
-            Ok(json!({
-                "seq": outcome.seq(),
-                "recorded": matches!(outcome, Append::Recorded { .. }),
-                "compacted": compacted,
-            }))
+            serde_json::to_value(report).map_err(stringify)
         }
         "branch.truncate" => {
-            let path_str = require_str(&params, "path", method)?;
-            let id = branch_id(&params, method)?;
+            let project = require_str(&params, "path", method)?;
             let seq = params
                 .get("seq")
                 .and_then(Value::as_u64)
                 .ok_or_else(|| format!("{method} requires seq"))?;
-            let store = branch_store(app, &path_str)?;
-            let mut branch = store.load(&id).map_err(stringify)?;
-            branch.truncate_after(seq, now_ms());
-            store.save(&branch).map_err(stringify)?;
-            let _ = app.emit(BRANCHES_CHANGED_EVENT, json!({ "path": path_str }));
-            Ok(json!({ "seq": branch.next_seq() - 1, "ops": branch.op_count() }))
+            let summary = branches(app, state.inner())
+                .truncate(&project, &branch_id(&params, method)?, seq)
+                .map_err(stringify)?;
+            serde_json::to_value(summary).map_err(stringify)
         }
         "branch.materialize" => {
-            let path_str = require_str(&params, "path", method)?;
-            let branch = load_branch(app, &params, &path_str, method)?;
-            let state = branch
-                .materialize(&load_render_state(&path_str)?)
+            let project = require_str(&params, "path", method)?;
+            let render_state = branches(app, state.inner())
+                .materialize(&project, &branch_id(&params, method)?)
                 .map_err(stringify)?;
-            serde_json::to_value(state).map_err(stringify)
+            serde_json::to_value(render_state).map_err(stringify)
         }
         "branch.diff" => {
-            let path_str = require_str(&params, "path", method)?;
-            let branch = load_branch(app, &params, &path_str, method)?;
-            let base = load_render_state(&path_str)?;
-            let proposed = branch.materialize(&base).map_err(stringify)?;
-            let changes = journal::diff(&base, &proposed).map_err(stringify)?;
+            let project = require_str(&params, "path", method)?;
+            let changes = branches(app, state.inner())
+                .diff(&project, &branch_id(&params, method)?)
+                .map_err(stringify)?;
             serde_json::to_value(changes).map_err(stringify)
         }
         "branch.discard" => {
-            let path_str = require_str(&params, "path", method)?;
+            let project = require_str(&params, "path", method)?;
             let id = branch_id(&params, method)?;
-            branch_store(app, &path_str)?
-                .remove(&id)
+            branches(app, state.inner())
+                .discard(&project, &id)
                 .map_err(stringify)?;
-            let _ = app.emit(BRANCHES_CHANGED_EVENT, json!({ "path": path_str }));
             Ok(json!({ "discarded": id }))
         }
         "branch.apply" => {
-            let path_str = require_str(&params, "path", method)?;
-            let writer_id = require_str(&params, "writerId", method)?;
-            let id = branch_id(&params, method)?;
-            let store = branch_store(app, &path_str)?;
-            let branch = store.load(&id).map_err(stringify)?;
-
-            // Materializing against the state the lock just loaded is what makes
-            // this fast-forward only: a moved base surfaces as `BaseMoved`.
-            let applied = crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                &path_str,
-                &writer_id,
-                |current| {
-                    let proposed = branch.materialize(current).map_err(stringify)?;
-                    let changes = journal::diff(current, &proposed).map_err(stringify)?.len();
-                    *current = proposed;
-                    Ok(json!({ "applied": true, "changes": changes }))
-                },
-            )?;
-
-            store.remove(&id).map_err(stringify)?;
-            let _ = app.emit(BRANCHES_CHANGED_EVENT, json!({ "path": path_str }));
-            Ok(applied)
+            let project = require_str(&params, "path", method)?;
+            let report = branches(app, state.inner())
+                .apply(
+                    &project,
+                    &branch_id(&params, method)?,
+                    &require_str(&params, "writerId", method)?,
+                )
+                .map_err(stringify)?;
+            serde_json::to_value(report).map_err(stringify)
         }
         "export.start" => {
             let path_str = params

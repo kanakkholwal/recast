@@ -7,7 +7,8 @@ import {
 	Footer,
 	Hero,
 	MacWindow,
-	PolishGrid,
+	NotchedShelf,
+	PillarSection,
 	RecordMock,
 	Reveal,
 	Section,
@@ -27,7 +28,10 @@ import {
 	Minus,
 	Play,
 	Plus,
+	Share2,
 	Star,
+	Video,
+	Wand2,
 	X,
 } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
@@ -49,9 +53,9 @@ import {
 	kindChip,
 	openSourceClaims,
 	platformDownloads,
-	polishFeatures,
-	recordingFeatures,
-	shareFeatures,
+	polishColumns,
+	recordColumns,
+	shareColumns,
 	stabilityChip,
 	stabilityChipOnFill,
 	storageTiers,
@@ -338,114 +342,57 @@ function dragScroll(node: HTMLElement) {
 	</Section>
 
 	<!-- Step 1 — Record -->
-	<Section id="record" spacing="tight" class="border-t border-border-low">
-		<Container size="wide">
-			<ShowcasePanel tone="paper">
-				<div class="grid items-center gap-16 lg:grid-cols-12 lg:gap-24">
-					<!-- Text column: 6/12 so the body copy and feature titles
-					     have real horizontal room instead of hugging a narrow
-					     rail. The visual (MacWindow) keeps the other half. -->
-					<div class="lg:col-span-6">
-						<span class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
-							<span class="size-1.5 rounded-full bg-tag-tangerine"></span>
-							Step 1 · Record
-						</span>
-						<h2 class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display">
-							Hit record.
-							<span class="block text-muted-foreground">That's the whole setup.</span>
-						</h2>
-						<p class="text-pretty mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-							Region, window, or full screen. One shortcut starts the capture. No projects, no codecs, no account.
-						</p>
+	<PillarSection
+		id="record"
+		icon={Video}
+		label="Recast Record"
+		accent="tangerine"
+		title="It starts with a take"
+		description="Region, window, or full screen. One shortcut starts the capture, and the polishing starts before you stop."
+		ctaHref="/download"
+		ctaLabel="Download free"
+		features={recordColumns}
+	>
+		{#snippet visual()}
+			<MacWindow title="Recast" class="mx-auto max-w-4xl">
+				<RecordMock />
+			</MacWindow>
+		{/snippet}
+	</PillarSection>
 
-						<!-- Recording-side differentiators. Two beats only — both
-						     features are usually paywalled in SaaS recorders; here
-						     they're in the free local app. -->
-						<ul class="mt-12 space-y-6">
-							{#each recordingFeatures as f, i}
-								{@const Icon = f.icon}
-								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
-									<span class="pill mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground">
-										<Icon class="size-5" />
-									</span>
-									<span class="pt-1">
-										<span class="block text-body font-semibold text-foreground">{f.title}</span>
-										<span class="mt-2 block text-body-sm leading-relaxed text-muted-foreground">{f.description}</span>
-									</span>
-								</Reveal>
-							{/each}
-						</ul>
-
-						<div class="mt-12 flex items-center gap-3">
-							<Button href="/download" variant="dark" class="gap-2">
-								<Download class="size-4" />
-								Download free
-							</Button>
-						</div>
+	<!-- Step 2 — Polish -->
+	<PillarSection
+		id="polish"
+		icon={Wand2}
+		label="Recast Polish"
+		accent="lavender"
+		title="The editing happens while you record"
+		description="Smart zoom, cursor smoothing, silence cuts and padding apply as you go. The timeline is there when you want it, and most of the time you won't."
+		ctaHref="/features"
+		ctaLabel="Explore the editor"
+		features={polishColumns}
+	>
+		{#snippet visual()}
+			<figure class="mx-auto max-w-5xl">
+				<MacWindow title="Recast · Editor">
+					<div class="p-1.5">
+						<Image
+							src="/product_preview_hero.webp"
+							alt="Recast editor"
+							width="1920"
+							height="1080"
+							loading="lazy"
+							decoding="async"
+							class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
+						/>
 					</div>
-
-					<div class="lg:col-span-6">
-						<Reveal variant="morph">
-							<MacWindow
-								title="Recast"
-								class="transition-[transform,box-shadow] duration-300 hover:"
-							>
-								<RecordMock />
-							</MacWindow>
-						</Reveal>
-					</div>
-				</div>
-			</ShowcasePanel>
-		</Container>
-	</Section>
-
-	<!-- Step 2 — Auto-polish -->
-	<Section id="polish" spacing="tight" class="border-t border-border-low">
-		<Container size="wide">
-			<ShowcasePanel tone="paper">
-				<!-- Header: spans the full panel width so the headline and body
-				     can breathe. PolishGrid below gets the full panel width too,
-				     so each 4-up tile has room to actually fit its title and
-				     description on a single line each. -->
-				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
-					<span class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
-						<span class="size-1.5 rounded-full bg-tag-lavender"></span>
-						Step 2 · Auto-polish
-					</span>
-					<h2 class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display">
-						The editing happens
-						<span class="block text-muted-foreground">while you record.</span>
-					</h2>
-					<p class="text-pretty mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-						Smart zoom, cursor smoothing, silence cuts, and padding apply as you record. By the time you stop, the demo is mostly done.
-					</p>
-				</div>
-
-				<PolishGrid features={polishFeatures} />
-
-				<Reveal variant="up" class="mt-14">
-					<figure class="mx-auto max-w-5xl">
-						<MacWindow title="Recast · Editor" class="">
-							<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
-								<Image
-									src="/product_preview_hero.webp"
-									alt="Recast editor"
-									width="1920"
-									height="1080"
-									loading="lazy"
-									decoding="async"
-									class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
-								/>
-							</div>
-						</MacWindow>
-						<figcaption class="mt-5 text-center text-caption leading-relaxed text-muted-foreground">
-							The full editor: timeline, zoom regions, annotations, and export presets in one window.
-						</figcaption>
-					</figure>
-				</Reveal>
-			</ShowcasePanel>
-		</Container>
-	</Section>
+				</MacWindow>
+				<figcaption class="mt-5 text-center text-body-sm text-muted-foreground">
+					Timeline, zoom regions, annotations and export presets in one window.
+				</figcaption>
+			</figure>
+		{/snippet}
+	</PillarSection>
 
 	<!-- Inside-the-editor tour. Horizontal scroll rail (not a grid) so each
 	     feature gets full-width attention; the screenshots/icons are tilted
@@ -670,76 +617,40 @@ function dragScroll(node: HTMLElement) {
 		</Container>
 	</Section>
 
-	<!-- Step 3 — Share (Google Drive, user-owned) -->
-	<Section id="share" spacing="tight" class="border-t border-border-low">
-		<Container size="wide">
-			<ShowcasePanel tone="paper">
-				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
-					<div class="lg:col-span-5">
-						<span class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
-							<span class="size-1.5 rounded-full bg-tag-green"></span>
-							Step 3 · Share
-						</span>
-						<h2 class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display">
-							Ship a link.
-							<span class="block text-muted-foreground">To your Drive.</span>
-						</h2>
-						<p class="text-pretty mt-5 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
-							Connect Drive once. Exports upload straight to your account and hand you a share link. Your video, your storage.
-						</p>
-
-						<ul class="mt-10 space-y-5">
-							{#each shareFeatures as f, i}
-								{@const Icon = f.icon}
-								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
-									<span class="pill mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground">
-										<Icon class="size-5" />
-									</span>
-									<span class="pt-1">
-										<span class="block text-body font-semibold text-foreground">{f.title}</span>
-										<span class="mt-2 block text-body-sm leading-relaxed text-muted-foreground">{f.description}</span>
-									</span>
-								</Reveal>
-							{/each}
-						</ul>
-					</div>
-
-					<div class="lg:col-span-7">
-						<Reveal variant="morph">
-							<div class="surface-lg relative overflow-hidden p-6 sm:p-8">
-								<div class="relative">
-									<span class="pill inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-caption font-medium text-foreground">
-										<HardDriveUpload class="size-3 text-muted-foreground" />
-										Google Drive · built in
-									</span>
-
-									<h3 class="mt-6 text-heading-sm font-semibold text-foreground">
-										Export → upload → share. In one click.
-									</h3>
-									<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
-										Live upload progress in the success card. The moment it's done, "Copy link" is right there. No second tab, no Recast servers in the middle.
-									</p>
-
-									<!-- Mock of the export-success card. Mirrors the real
-									     desktop UI (and now loops the upload flow) so the
-								     section reads as "this is what you'll actually see",
-								     not aspirational marketing. -->
-								<div class="mt-7">
-									<ExportMock />
-								</div>
-
-								<p class="mt-5 inline-flex items-center gap-2 text-xs text-muted-foreground">
-									<KeyRound class="size-3.5 text-muted-foreground" />
-									OAuth scoped to files Recast uploads. Revoke any time from your Google account.
-								</p>
-							</div>
-						</div>
-					</Reveal>
+	<!-- Step 3 — Share -->
+	<PillarSection
+		id="share"
+		icon={Share2}
+		label="Recast Share"
+		accent="green"
+		title="Ship a link, not a file"
+		description="Connect Drive once and every export uploads to your own account with the share link in hand. Recast Cloud adds analytics and access controls when a raw link stops being enough."
+		ctaHref="/pricing"
+		ctaLabel="See sharing"
+		features={shareColumns}
+	>
+		{#snippet visual()}
+			<div class="surface-lg mx-auto max-w-3xl p-6 sm:p-8">
+				<span class="pill inline-flex items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
+					<HardDriveUpload class="size-3.5 text-tag-green [fill-opacity:0.2]" fill="currentColor" />
+					Google Drive · built in
+				</span>
+				<h3 class="mt-5 text-heading-sm font-semibold text-foreground">
+					Export, upload and share in one click.
+				</h3>
+				<p class="mt-2 text-body-sm text-muted-foreground">
+					Live upload progress in the success card, then "Copy link" is right there. No second tab, no Recast servers in the middle.
+				</p>
+				<div class="mt-6">
+					<ExportMock />
 				</div>
+				<p class="mt-5 inline-flex items-center gap-2 text-caption text-muted-foreground">
+					<KeyRound class="size-3.5" />
+					OAuth scoped to files Recast uploads. Revoke any time from your Google account.
+				</p>
 			</div>
-			</ShowcasePanel>
-		</Container>
-	</Section>
+		{/snippet}
+	</PillarSection>
 
 	<!-- Recast Cloud — the hosted offering. The Drive flow above is the free,
 	     user-owned default; this is for people who outgrow a raw Drive link. -->
@@ -1033,108 +944,78 @@ function dragScroll(node: HTMLElement) {
 		</Container>
 	</Section>
 
-	<!-- Final CTA. Closing bookend. No photo backdrop here — the editorial
-	     rule is "no two consecutive photo bands", and the Footer that
-	     follows already has one. The CTA carries its presence with a subtle
-	     showcase panel + staggered reveals. Each beat lands ~70ms after the
-	     previous so the visitor reads chip → headline → body → buttons as
-	     one confident breath instead of a single scale-burst. -->
-	<Section id="cta" spacing="tight" class="border-t border-border-low">
-		<Container size="wide">
-			<ShowcasePanel tone="paper" padding="loose">
-				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
-					<Reveal variant="scale" duration={420}>
-						<div class="pill inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-body-sm font-medium text-foreground">
-							<span class="size-1.5 rounded-full bg-border-strong"></span>
-							Ready when you are
-						</div>
-					</Reveal>
+	<!-- Closing CTA. The one dark band on the page, bridged to the white above it
+	     by the same notched shelf the hero uses — the shape is what ties the two
+	     ends of the page together. -->
+	<section id="cta" class="relative">
+		<!-- The shelf stays OUTSIDE the dark subtree: inside it,
+		     var(--color-background) resolves to the dark canvas and the bridge
+		     would vanish into the band it is supposed to bridge. -->
+		<NotchedShelf fill="var(--color-background)" class="h-10 sm:h-12 sm:px-32" />
 
-					<Reveal variant="up" delay={70} duration={520}>
-						<h2 class="text-balance mt-7 text-heading-lg sm:text-display md:text-display-lg">
-							A demo, not a project.
-							<span class="block text-muted-foreground">Ship it the same day.</span>
-						</h2>
-					</Reveal>
+		<div data-theme="dark" class="-mt-10 bg-canvas pt-10 text-ink sm:-mt-12 sm:pt-12">
+		<Container class="pt-14 pb-20 md:pt-16 md:pb-24">
+			<div class="mx-auto flex max-w-2xl flex-col items-center text-center">
+				<Reveal variant="up" duration={520}>
+					<h2 class="font-display text-balance text-heading-lg text-ink md:text-display">
+						A demo, not a project. Ship it the same day.
+					</h2>
+				</Reveal>
 
-					<Reveal variant="up" delay={140} duration={520}>
-						<p class="text-pretty mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-							Free forever. No account. Windows is daily-driver stable, macOS and Linux are in active beta.
-						</p>
-					</Reveal>
-				</div>
+				<Reveal variant="up" delay={70} duration={520}>
+					<p class="text-pretty mt-5 max-w-xl text-body-lg text-ink-muted">
+						Free forever, no account needed to record. Windows is daily-driver stable; macOS and Linux are in active beta.
+					</p>
+				</Reveal>
 
-				<!--
-				  Platform downloads as a clean 3-col grid. Stacks on mobile.
-				  Windows is the primary, with a small "Recommended" pill
-				  above the button; macOS / Linux are equal-weight dark
-				  secondaries. Stability chip stays inside the button so
-				  the badge never reads as the headline of the row.
-				-->
-				<div class="mt-10 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
-					{#each platformDownloads as p, i}
-						{@const Icon = p.icon}
-						{@const chip = stabilityChip[p.stability]}
-						<Reveal variant="up" delay={210 + i * 70} duration={460} class="h-full">
-							<div class="flex h-full flex-col items-stretch gap-2">
-								{#if p.stability === "stable"}
-									<span class="self-center inline-flex items-center gap-1 rounded-full border border-border-low bg-card px-2.5 py-0.5 text-caption font-medium text-muted-foreground">
-										Recommended
-									</span>
-								{:else}
-									<span aria-hidden="true" class="h-5 self-center"></span>
-								{/if}
-								<Button
-									href={p.href}
-									size="lg"
-									variant={p.variant}
-									class="group/dl w-full justify-center gap-2.5"
-								>
-									<Icon class="size-4" />
-									Download for {p.os}
-									<span
-										class={cn(
-											"ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-caption font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
-											stabilityChipOnFill,
-										)}
-									>
-										{chip.label}
-									</span>
-								</Button>
-							</div>
-						</Reveal>
-					{/each}
-				</div>
-
-				<!-- Second door out of this section: the desktop app needs no account,
-				     but sharing and analytics live behind one, so the CTA row has to
-				     offer both instead of only the download. -->
-				<Reveal variant="up" delay={420} duration={460} class="mt-9">
-					<div class="flex flex-col items-center gap-3">
-						<p class="text-sm text-muted-foreground">
-							Want hosted sharing, watch analytics, and a team workspace?
-						</p>
-						<div class="flex flex-wrap items-center justify-center gap-3">
-							<Button href="/signup" variant="light" class="group/cta gap-2">
-								Share your first demo
-								<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
-							</Button>
-							<Button href="/login" variant="ghost" class="text-muted-foreground">
-								Sign in
-							</Button>
-						</div>
-						<a
-							href="/download"
-							class="group/cta mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
-						>
-							All downloads and checksums
-							<ArrowRight class="size-3.5 transition-transform group-hover/cta:translate-x-0.5" />
-						</a>
+				<Reveal variant="up" delay={140} duration={460}>
+					<div class="mt-9 flex flex-wrap items-center justify-center gap-3">
+						<Button href="/download" variant="light" size="lg" class="gap-2">
+							<Download class="size-4" />
+							Download free
+						</Button>
+						<Button href="/signup" size="lg" class="group/cta gap-2 border-transparent bg-ink/10 text-ink hover:bg-ink/15">
+							Share your first demo
+							<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+						</Button>
 					</div>
 				</Reveal>
-			</ShowcasePanel>
+			</div>
+
+			<!-- Per-platform downloads. Equal weight, one hairline card each: the
+			     stability chip carries the difference instead of three button
+			     variants doing it. -->
+			<div class="mt-12 grid grid-cols-1 gap-3 sm:grid-cols-3">
+				{#each platformDownloads as p, i}
+					{@const Icon = p.icon}
+					{@const chip = stabilityChip[p.stability]}
+					<Reveal variant="up" delay={210 + i * 70} duration={460} class="h-full">
+						<a
+							href={p.href}
+							class="flex h-full items-center gap-3 rounded-xl border border-ink/15 bg-ink/5 px-5 py-4 transition-colors hover:border-ink/30 hover:bg-ink/10"
+						>
+							<Icon class="size-5 shrink-0 text-ink" />
+							<span class="flex flex-col text-left">
+								<span class="text-body-sm font-semibold text-ink">Download for {p.os}</span>
+								<span class="text-caption text-ink-muted">{chip.label}</span>
+							</span>
+						</a>
+					</Reveal>
+				{/each}
+			</div>
+
+			<Reveal variant="up" delay={420} duration={460} class="mt-8">
+				<p class="text-center text-body-sm text-ink-muted">
+					<a href="/download" class="font-medium text-ink underline-offset-4 hover:underline">
+						All downloads and checksums
+					</a>
+					·
+					<a href="/login" class="font-medium text-ink underline-offset-4 hover:underline">Sign in</a>
+				</p>
+			</Reveal>
 		</Container>
-	</Section>
+		</div>
+	</section>
 
 	<Footer />
 </main>

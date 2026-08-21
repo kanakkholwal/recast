@@ -87,9 +87,12 @@ $effect(() => {
 <ImpersonationBanner />
 
 {#if !isChromeless}
+  <!-- Column guides. Two hairlines at the content column's edges running the
+       full viewport height, so every section reads as sitting on one ruled
+       page rather than floating independently. -->
   <div
     aria-hidden="true"
-    class="bg-grid bg-grid-fade pointer-events-none fixed inset-0 -z-10 opacity-70"
+    class="pointer-events-none fixed inset-y-0 left-1/2 -z-10 w-full max-w-6xl -translate-x-1/2 border-x border-border-low"
   ></div>
 
   <Navbar />

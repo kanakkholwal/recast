@@ -7,28 +7,19 @@
 
 import type { EditorStore } from "../../stores/editor-store.svelte";
 import type { EditorRenderState } from "../editor/render-state";
+import { getAgentSessionDriver, setAgentSessionDriver } from "./driver";
 import { planReconcile } from "./reconcile";
 import {
 	type AgentActivity,
-	type AgentSessionDriver,
 	type AgentSessionEvent,
 	type AgentSessionMode,
 	type AgentSessionSnapshot,
 	IDLE_SESSION,
 } from "./types";
 
+export { setAgentSessionDriver };
+
 const MAX_ACTIVITY = 25;
-
-let driver: AgentSessionDriver | null = null;
-
-/** Install the host's transport. Returns a restore fn so tests don't leak. */
-export function setAgentSessionDriver(next: AgentSessionDriver | null): () => void {
-	const previous = driver;
-	driver = next;
-	return () => {
-		driver = previous;
-	};
-}
 
 export interface BindOptions {
 	store: EditorStore;
@@ -63,6 +54,7 @@ function createAgentSession() {
 	 */
 	async function reconcile(opts: BindOptions) {
 		const { store, projectPath, onConflict } = opts;
+		const driver = getAgentSessionDriver();
 		if (!driver || reconciling) return;
 		reconciling = true;
 		try {
@@ -89,7 +81,7 @@ function createAgentSession() {
 
 	return {
 		get mode(): AgentSessionMode | null {
-			return driver?.mode ?? null;
+			return getAgentSessionDriver()?.mode ?? null;
 		},
 		get active() {
 			return active;
@@ -102,16 +94,17 @@ function createAgentSession() {
 		},
 		/** True when the user can evict the holder. */
 		get canTakeOver() {
-			return active && typeof driver?.releaseControl === "function";
+			return active && typeof getAgentSessionDriver()?.releaseControl === "function";
 		},
 
 		async takeOver() {
-			await driver?.releaseControl?.();
+			await getAgentSessionDriver()?.releaseControl?.();
 			note("You took over from the agent");
 		},
 
 		/** Subscribe for one project. Returns a cleanup fn for `$effect`. */
 		bind(opts: BindOptions): () => void {
+			const driver = getAgentSessionDriver();
 			if (!driver) return () => {};
 			let disposed = false;
 			let unsubscribe: (() => void) | undefined;
@@ -121,17 +114,20 @@ function createAgentSession() {
 					session = event.session;
 					return;
 				}
+				// A branch change touches the journal, never the project, so
+				// reconciling on it would pull the state we already have.
+				if (event.type !== "state-changed") return;
 				if (event.projectPath !== opts.projectPath) return;
 				if (event.summary) note(event.summary);
 				void reconcile(opts);
 			};
 
 			void (async () => {
-				const off = await driver!.subscribe(onEvent);
+				const off = await driver.subscribe(onEvent);
 				if (disposed) off();
 				else unsubscribe = off;
 				try {
-					session = await driver!.getSession();
+					session = await driver.getSession();
 				} catch {
 					// A backend that can't answer leaves us idle rather than blocking
 					// the editor behind a lock we can't see.

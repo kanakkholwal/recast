@@ -954,6 +954,56 @@ mod tests {
     mod wire_shape {
         use super::*;
 
+        fn sample_of_every_variant() -> Vec<Op> {
+            vec![
+                Op::Replace {
+                    state: Box::new(state()),
+                },
+                Op::Trim {
+                    start: 0.0,
+                    end: 1.0,
+                },
+                Op::CutAdd {
+                    start: 0.0,
+                    end: 1.0,
+                },
+                Op::CutRemove {
+                    index: Some(0),
+                    start: None,
+                    end: None,
+                },
+                Op::ZoomAdd {
+                    region: zoom(0.0, 1.0),
+                },
+                Op::ZoomRemove { index: 0 },
+                Op::SplitPointAdd { at: 1.0 },
+                Op::SplitPointRemove { at: 1.0 },
+                Op::SpeedSet {
+                    segment_start: 0.0,
+                    rate: 1.0,
+                },
+                Op::SpeedRemove { segment_start: 0.0 },
+                Op::AnnotationAdd {
+                    annotation: Box::new(annotation("a1")),
+                },
+                Op::AnnotationUpdate {
+                    id: "a1".into(),
+                    patch: Map::new(),
+                },
+                Op::AnnotationRemove { id: "a1".into() },
+                Op::AnimationAdd {
+                    start: 0.0,
+                    anim_in: None,
+                    anim_out: None,
+                },
+                Op::AnimationRemove { start: 0.0 },
+                Op::Set {
+                    field: "trimStart".into(),
+                    value: json!(0.0),
+                },
+            ]
+        }
+
         #[test]
         fn variants_serialize_under_a_camel_case_tag() {
             let wire = serde_json::to_value(Op::SplitPointAdd { at: 1.0 }).unwrap();
@@ -970,6 +1020,43 @@ mod tests {
             .unwrap();
 
             assert_eq!(wire["segmentStart"], json!(1.0));
+        }
+
+        /// The tag set is the TS/Rust bridge contract. `packages/editor`'s
+        /// `EDIT_OP_TAGS` lists the same names; renaming one fails both sides.
+        #[test]
+        fn every_variant_tag_is_accounted_for() {
+            let tags: Vec<String> = sample_of_every_variant()
+                .iter()
+                .map(|op| {
+                    serde_json::to_value(op).unwrap()["op"]
+                        .as_str()
+                        .unwrap()
+                        .to_string()
+                })
+                .collect();
+
+            assert_eq!(
+                tags,
+                [
+                    "replace",
+                    "trim",
+                    "cutAdd",
+                    "cutRemove",
+                    "zoomAdd",
+                    "zoomRemove",
+                    "splitPointAdd",
+                    "splitPointRemove",
+                    "speedSet",
+                    "speedRemove",
+                    "annotationAdd",
+                    "annotationUpdate",
+                    "annotationRemove",
+                    "animationAdd",
+                    "animationRemove",
+                    "set",
+                ]
+            );
         }
 
         #[test]

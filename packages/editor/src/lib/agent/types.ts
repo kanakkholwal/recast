@@ -5,6 +5,7 @@
  */
 
 import type { EditorRenderState } from "../editor/render-state";
+import type { BranchDriver } from "./branches";
 
 /** Which host is feeding the listener. Web is reserved; no driver ships yet. */
 export type AgentSessionMode = "desktop" | "web";
@@ -42,7 +43,8 @@ export interface AgentActivity {
 
 export type AgentSessionEvent =
 	| { type: "session"; session: AgentSessionSnapshot }
-	| { type: "state-changed"; projectPath: string; summary?: string };
+	| { type: "state-changed"; projectPath: string; summary?: string }
+	| { type: "branches-changed"; projectPath: string };
 
 /**
  * Host-supplied transport. Omitting the driver leaves the listener permanently
@@ -58,4 +60,6 @@ export interface AgentSessionDriver {
 	readRenderState(projectPath: string): Promise<Partial<EditorRenderState>>;
 	/** Evict the current holder so the user can take over. */
 	releaseControl?(): Promise<void>;
+	/** Branch review. Omitted by hosts without a journal backend. */
+	readonly branches?: BranchDriver;
 }

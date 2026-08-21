@@ -1,5 +1,6 @@
 <script lang="ts">
 import { prefersReducedMotion } from "$lib/motion-core";
+import NotchedShelf from "./NotchedShelf.svelte";
 import { buttonVariants } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
 import type { HeroStep } from "./Hero.logic";
@@ -83,9 +84,7 @@ const accentClass = {
 	onfocusout={() => (paused = false)}
 >
 	
-	<div
-		class="shelf relative z-10 mx-auto w-[calc(100%-2.5rem)] rounded-b-[20px] bg-background px-2 pb-4 sm:w-fit sm:rounded-b-[40px] sm:px-12 sm:pb-5 lg:px-24"
-	>
+	<NotchedShelf>
 		<div
 			role="tablist"
 			tabindex="-1"
@@ -130,7 +129,7 @@ const accentClass = {
 				</button>
 			{/each}
 		</div>
-	</div>
+	</NotchedShelf>
 
 	<div class="mx-auto w-full max-w-6xl px-6 pt-8 pb-12 sm:px-8 lg:px-10">
 		<div class="mockup-frame overflow-hidden p-2 sm:p-2.5">
@@ -179,51 +178,3 @@ const accentClass = {
 		</p>
 	</div>
 </section>
-
-<style>
-	/* Concave fillets joining the shelf back to the hero's bottom edge, drawn as
-	   pseudo-elements of the shelf so they are flush by construction.
-
-	   Each is a box sitting beside the shelf, painted with a radial gradient whose
-	   circle is centred on the box's OUTER bottom corner: inside that circle is the
-	   band showing through, outside it is hero white. That is the fillet.
-
-	   Deliberately literal values rather than a --notch custom property: a var()
-	   inside a gradient's radius is the one part of this that silently degrades to
-	   an unpainted box. Box is 1px wider than its offset so it laps the shelf and
-	   the shared vertical edge carries no antialiasing seam. */
-	.shelf::before,
-	.shelf::after {
-		content: "";
-		position: absolute;
-		top: 0;
-		z-index: -1;
-		width: 21px;
-		height: 20px;
-		pointer-events: none;
-	}
-	.shelf::before {
-		left: -20px;
-		background-image: radial-gradient(circle 20px at 0 20px, transparent 19.5px, var(--color-background) 20px);
-	}
-	.shelf::after {
-		right: -20px;
-		background-image: radial-gradient(circle 20px at 21px 20px, transparent 19.5px, var(--color-background) 20px);
-	}
-
-	@media (min-width: 40rem) {
-		.shelf::before,
-		.shelf::after {
-			width: 41px;
-			height: 40px;
-		}
-		.shelf::before {
-			left: -40px;
-			background-image: radial-gradient(circle 40px at 0 40px, transparent 39.5px, var(--color-background) 40px);
-		}
-		.shelf::after {
-			right: -40px;
-			background-image: radial-gradient(circle 40px at 41px 40px, transparent 39.5px, var(--color-background) 40px);
-		}
-	}
-</style>
