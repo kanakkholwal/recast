@@ -533,6 +533,30 @@ Status moments are a glyph, not a plate. The device-approved state was a
 `size-10` in `tag-green`. Inline warnings are a hairline block on `bg-paper`,
 because a tinted amber card is a second colour system for one sentence.
 
+### Dashboard shell
+
+The product routes keep their own tokens (the dashboard is not under
+`[data-site="marketing"]`), but the shell now uses the same structural language
+as the site:
+
+- **Flush rail, not a floating panel.** `Sidebar.Root` is `variant="sidebar"`,
+  so the rail sits in its own tonal column with a hairline edge instead of an
+  inset card with `m-2`, rounding and a shadow.
+- **The header is opaque.** `bg-background/80` + `backdrop-blur-xl` reads as a
+  different design system sitting on top of a hairline shell. It is a solid bar
+  on a full-strength `border-border-low` rule, and it no longer needs the
+  `md:top-2 md:rounded-t-xl` fudge that matched the inset panel's corners.
+- **One moving object marks the active row.** The row fill still crossfades
+  between entries; the `ring-1 ring-inset` chip and the separate `bg-primary`
+  left pill are gone. Two markers for one state is one too many.
+- Type comes off the scale (`text-[12.5px]`, `text-[10px]` uppercase and
+  `text-[15px]` are gone), group labels are sentence case, and the primary
+  action is `variant="dark"` like every other primary on the site. The GitHub
+  nudge in the footer drops to `outline` so the rail has one filled button.
+
+The same component backs the admin shell through its flat `nav` prop, so both
+shells moved together.
+
 ### Interior pages
 
 Both were on the pre-Dub system: floating `rounded-2xl` cards, `blur-3xl` glow

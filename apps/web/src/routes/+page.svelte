@@ -735,7 +735,7 @@ function dragScroll(node: HTMLElement) {
       <Container class="pt-16 pb-20 md:pt-20 md:pb-24">
         <div class="mx-auto flex max-w-2xl flex-col items-center text-center">
                   <Reveal variant="up" delay={70} duration={520} class="mt-7">
-            <h2 class="font-display font-semibold text-balance text-heading-lg md:text-display">
+            <h2 class="text-neutral-100 font-display font-semibold text-balance text-heading-lg md:text-display">
               A demo, not a project. Ship it the same day.
             </h2>
           </Reveal>
