@@ -1,12 +1,10 @@
 <script lang="ts">
 import { goto, invalidateAll } from "$app/navigation";
 import { authClient } from "$lib/auth/client";
-import Logo from "$lib/logo.svelte";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { ArrowRight, LoaderCircle, LogOut, MailCheck, RefreshCw } from "@recast/icons";
-import { cubicOut } from "svelte/easing";
-import { fly } from "svelte/transition";
 
 let { data } = $props();
 
@@ -61,36 +59,14 @@ async function signOut() {
 	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
-<div class="w-full max-w-md" in:fly={{ y: 16, duration: 520, easing: cubicOut }}>
-		<div class="flex flex-col items-center text-center">
-			<a href="/" class="group/logo flex items-center gap-2.5" aria-label="Recast home">
-				<span
-					class="grid size-9 place-items-center rounded-xl bg-foreground p-1 text-background shadow-craft-sm transition-transform group-hover/logo:rotate-[-4deg]"
-				>
-					<Logo size="22" color="transparent" fill="currentColor" />
-				</span>
-				<span class="text-body-lg font-semibold tracking-tight text-foreground">Recast</span>
-			</a>
-
-			<span class="pill mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-body-sm font-medium text-primary">
-				<MailCheck class="size-3" />
-				One step left
-			</span>
-
-			<h1 class="text-balance mt-5 text-heading font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
-				Verify your email
-			</h1>
-			<p class="text-pretty mt-3 max-w-sm text-body-sm leading-relaxed text-muted-foreground">
-				We sent a confirmation link to
-				<span class="font-mono font-medium text-foreground">{data.email}</span>.
-				Click it and you'll land on your dashboard. Until then, your
-				dashboard stays read-only.
-			</p>
-		</div>
-
-		<div class="surface mt-8 p-6">
+<AuthCard
+	eyebrowIcon={MailCheck}
+	eyebrow="One step left"
+	title="Verify your email"
+	description={`We sent a confirmation link to ${data.email}. Until you click it, your dashboard stays read-only.`}
+>
 			<div class="space-y-2.5">
-				<Button onclick={refresh} disabled={checking} class="group/cta w-full gap-2">
+				<Button onclick={refresh} disabled={checking} variant="dark" class="group/cta w-full gap-2">
 					{#if checking}
 						<LoaderCircle class="size-4 animate-spin" />
 					{:else}
@@ -112,7 +88,7 @@ async function signOut() {
 					{sending ? "Sending…" : sentOnce ? "Send another link" : "Resend verification email"}
 				</Button>
 			</div>
-			<p class="mt-5 text-center text-caption text-muted-foreground">
+			<p class="mt-5 text-caption text-muted-foreground">
 				Wrong email?
 				<button
 					type="button"
@@ -123,5 +99,4 @@ async function signOut() {
 					Sign out
 				</button>
 			</p>
-		</div>
-	</div>
+</AuthCard>

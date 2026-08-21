@@ -1,15 +1,21 @@
 <script lang="ts">
-import Logo from "$lib/logo.svelte";
+import type { IconComponent } from "@recast/icons";
 import type { Snippet } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 
+// Heading block for every (auth) route. No card and no logo: the pane is the
+// surface and the layout header owns the mark.
 let {
+	eyebrow,
+	eyebrowIcon,
 	title,
 	description,
 	footer,
 	children,
 }: {
+	eyebrow?: string;
+	eyebrowIcon?: IconComponent;
 	title: string;
 	description?: string;
 	footer?: Snippet;
@@ -17,38 +23,32 @@ let {
 } = $props();
 </script>
 
-<div class="w-full max-w-sm" in:fly={{ y: 16, duration: 600, easing: cubicOut }}>
-	<div class="flex flex-col items-center text-center">
-		<a
-			href="/"
-			class="group/logo flex items-center gap-2.5"
-			aria-label="Recast home"
-		>
-			<span
-				class="grid size-9 place-items-center rounded-xl bg-foreground p-1 text-background shadow-craft-sm transition-transform group-hover/logo:rotate-[-4deg]"
-			>
-				<Logo size="22" color="transparent" fill="currentColor" />
-			</span>
-			<span class="font-display text-body-lg font-medium text-foreground">
-				Recast
-			</span>
-		</a>
-		<h1 class="mt-7 font-display text-heading-sm text-foreground">
-			{title}
-		</h1>
-		{#if description}
-			<p class="mt-2 text-pretty text-body-sm text-muted-foreground">
-				{description}
-			</p>
-		{/if}
-	</div>
+<div in:fly={{ y: 12, duration: 480, easing: cubicOut }}>
+	{#if eyebrow}
+		{@const Icon = eyebrowIcon}
+		<span class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground">
+			{#if Icon}
+				<Icon class="size-4" />
+			{/if}
+			{eyebrow}
+		</span>
+	{/if}
 
-	<div class="surface mt-8 p-6">
+	<h1 class="mt-4 font-display text-balance text-heading text-foreground">
+		{title}
+	</h1>
+	{#if description}
+		<p class="mt-3 text-pretty text-body-sm text-muted-foreground">
+			{description}
+		</p>
+	{/if}
+
+	<div class="mt-8">
 		{@render children()}
 	</div>
 
 	{#if footer}
-		<div class="mt-6 text-center text-body-sm text-muted-foreground">
+		<div class="mt-6 text-body-sm text-muted-foreground">
 			{@render footer()}
 		</div>
 	{/if}

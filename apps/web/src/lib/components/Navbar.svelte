@@ -8,26 +8,15 @@ import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
 import { slide } from "svelte/transition";
 
-// Minimal top bar: logo left, links centred, two-button cluster right. A
-// hairline bottom border does the separating, so the bar needs no blur, no
-// shadow, and no floating pill.
 let open = $state(false);
 const reduced = $derived(prefersReducedMotion());
 const close = () => (open = false);
 
-// The bar is invisible over the hero and only materialises once content is
-// behind it. A permanent hairline reads as a frame around the page.
 let scrolled = $state(false);
 
-// Signed-in visitors get "Dashboard" where signed-out ones get "Sign in". The
-// signed-out pair is also what renders while the session resolves — it's the
-// common case, and both slots are the same width, so the swap doesn't shift
-// the bar.
 const session = authClient.useSession();
 const signedIn = $derived(Boolean($session.data?.user));
 
-// whitespace-nowrap is load-bearing: without it "Sign in" wraps to two lines
-// and the whole bar grows a row as soon as the viewport tightens.
 const linkClass =
 	"inline-flex items-center whitespace-nowrap rounded-full px-4 py-2 text-body-sm font-medium text-muted-foreground transition-colors hover:text-foreground";
 </script>
@@ -58,7 +47,7 @@ const linkClass =
       >
         <Logo size="20" color="transparent" fill="currentColor" />
       </span>
-      <span class="whitespace-nowrap text-body font-semibold text-foreground">
+      <span class="whitespace-nowrap text-lg font-display tracking-wide font-semibold text-foreground">
         Recast
       </span>
     </a>

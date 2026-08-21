@@ -87,10 +87,11 @@ async function submit(e: SubmitEvent) {
 					autocomplete="email"
 					bind:value={email}
 					placeholder="you@startup.com"
-					class="h-10"
+					class="h-10 border-border-low bg-background"
 				/>
 			</Label>
 			<Button
+				variant="dark"
 				type="submit"
 				disabled={loading}
 				class="group/cta mt-1 w-full gap-2"

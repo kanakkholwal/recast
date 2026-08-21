@@ -139,7 +139,7 @@ async function signUp(e: SubmitEvent) {
 				autocomplete="name"
 				bind:value={name}
 				placeholder="Jane Founder"
-				class="h-10"
+				class="h-10 border-border-low bg-background"
 			/>
 		</Label>
 
@@ -151,7 +151,7 @@ async function signUp(e: SubmitEvent) {
 				autocomplete="email"
 				bind:value={email}
 				placeholder="you@startup.com"
-				class="h-10"
+				class="h-10 border-border-low bg-background"
 			/>
 		</Label>
 
@@ -164,7 +164,7 @@ async function signUp(e: SubmitEvent) {
 					autocomplete="new-password"
 					bind:value={password}
 					placeholder="At least 8 characters"
-					class="h-10 pr-9"
+					class="h-10 border-border-low bg-background pr-9"
 				/>
 				<button
 					type="button"
@@ -211,7 +211,7 @@ async function signUp(e: SubmitEvent) {
 				bind:value={confirmPassword}
 				placeholder="Type it again"
 				aria-invalid={!matches}
-				class="h-10"
+				class="h-10 border-border-low bg-background"
 			/>
 			{#if !matches}
 				<span
@@ -235,6 +235,7 @@ async function signUp(e: SubmitEvent) {
 		</Label>
 
 		<Button
+			variant="dark"
 			type="submit"
 			disabled={loading || !canSubmit}
 			class="group/cta mt-2 w-full gap-2"

@@ -1,8 +1,8 @@
 <script lang="ts">
 import { goto, invalidateAll } from "$app/navigation";
 import { authClient } from "$lib/auth/client";
-import Logo from "$lib/logo.svelte";
 import { isInviteBlocked } from "./invitation.logic";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { AlertTriangle, ArrowRight, Check, LoaderCircle, MailCheck, Wand2, X } from "@recast/icons";
@@ -98,33 +98,14 @@ async function sendSignInLink() {
 	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
-<div class="w-full max-w-md" in:fly={{ y: 16, duration: 520, easing: cubicOut }}>
-		<div class="flex flex-col items-center text-center">
-			<a href="/" class="group/logo flex items-center gap-2.5" aria-label="Recast home">
-				<span
-					class="grid size-9 place-items-center rounded-xl bg-foreground p-1 text-background shadow-craft-sm transition-transform group-hover/logo:rotate-[-4deg]"
-				>
-					<Logo size="22" color="transparent" fill="currentColor" />
-				</span>
-				<span class="text-body-lg font-semibold tracking-tight text-foreground">Recast</span>
-			</a>
-
-			<span class="pill mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-body-sm font-medium text-primary">
-				<MailCheck class="size-3" />
-				Team invitation
-			</span>
-
-			<h1 class="text-balance mt-5 text-heading font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
-				Join {data.invite.orgName}
-			</h1>
-			<p class="text-pretty mt-3 max-w-sm text-body-sm leading-relaxed text-muted-foreground">
-				You'll join as <span class="font-medium text-foreground">{data.invite.role}</span>.
-			</p>
-		</div>
-
-		<div class="surface mt-8 p-6">
+<AuthCard
+	eyebrowIcon={MailCheck}
+	eyebrow="Team invitation"
+	title={`Join ${data.invite.orgName}`}
+	description={`You will join as ${data.invite.role}.`}
+>
 			{#if data.invite.status !== "pending"}
-				<div class="flex flex-col items-center gap-3 text-center text-body-sm text-muted-foreground">
+				<div class="flex flex-col gap-3 text-body-sm text-muted-foreground">
 					<AlertTriangle class="size-5 text-tag-tangerine" />
 					<span>
 						This invitation has already been
@@ -132,7 +113,7 @@ async function sendSignInLink() {
 					</span>
 				</div>
 			{:else if data.invite.expired}
-				<div class="flex flex-col items-center gap-3 text-center text-body-sm text-muted-foreground">
+				<div class="flex flex-col gap-3 text-body-sm text-muted-foreground">
 					<AlertTriangle class="size-5 text-tag-tangerine" />
 					<span>This invitation has expired. Ask the team owner to resend it.</span>
 				</div>
@@ -143,7 +124,7 @@ async function sendSignInLink() {
 				     row server-side, so the link will go through. -->
 				{#if linkSent}
 					<div
-						class="flex flex-col items-center gap-3 text-center text-body-sm"
+						class="flex flex-col gap-3 text-body-sm"
 						in:fly={{ y: 6, duration: 280, easing: cubicOut }}
 					>
 						<span class="pill grid size-11 place-items-center rounded-xl text-primary">
@@ -166,7 +147,7 @@ async function sendSignInLink() {
 							to accept this invitation. We'll email you a one-time link, no
 							password needed.
 						</p>
-						<Button onclick={sendSignInLink} disabled={sendingLink} class="group/cta w-full gap-2">
+						<Button onclick={sendSignInLink} disabled={sendingLink} variant="dark" class="group/cta w-full gap-2">
 							{#if sendingLink}
 								<LoaderCircle class="size-4 animate-spin" />
 							{:else}
@@ -174,7 +155,7 @@ async function sendSignInLink() {
 							{/if}
 							{sendingLink ? "Sending…" : "Email me a sign-in link"}
 						</Button>
-						<p class="text-center text-caption text-muted-foreground">
+						<p class="text-caption text-muted-foreground">
 							Already have a password?
 							<a
 								href={`/login?next=${encodeURIComponent(`/accept-invitation?id=${data.invite.id}`)}`}
@@ -209,7 +190,7 @@ async function sendSignInLink() {
 				</div>
 			{:else}
 				<div class="flex flex-col gap-2.5">
-					<Button onclick={accept} disabled={busy || blocked} class="group/cta w-full gap-2">
+					<Button onclick={accept} disabled={busy || blocked} variant="dark" class="group/cta w-full gap-2">
 						{accepting ? "Joining…" : "Accept invitation"}
 						{#if accepting}
 							<LoaderCircle class="size-4 animate-spin" />
@@ -231,9 +212,9 @@ async function sendSignInLink() {
 						{rejecting ? "Declining…" : "Decline"}
 					</Button>
 				</div>
-				<p class="mt-4 text-center text-caption text-muted-foreground">
+				<p class="mt-4 text-caption text-muted-foreground">
 					Signed in as <span class="font-medium text-foreground">{data.viewer.email}</span>
 			</p>
 		{/if}
-	</div>
-</div>
+	
+</AuthCard>

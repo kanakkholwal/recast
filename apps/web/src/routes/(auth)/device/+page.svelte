@@ -1,7 +1,6 @@
 <script lang="ts">
 import { goto, invalidateAll } from "$app/navigation";
 import { authClient } from "$lib/auth/client";
-import Logo from "$lib/logo.svelte";
 import { formatUserCode, normalizeUserCode } from "./device-code.logic";
 import {
 	AlertTriangle,
@@ -12,6 +11,7 @@ import {
 	Monitor,
 	X,
 } from "@recast/icons";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { cubicOut } from "svelte/easing";
@@ -101,6 +101,30 @@ async function deny() {
 // is what we transition into right after the user clicks Approve (the
 // load function re-runs via invalidateAll); "denied" means rejected.
 const deviceStatus = $derived((data.device as { status?: string } | null)?.status ?? null);
+
+const deviceTitle = $derived(
+	!data.userCode
+		? "Enter your device code"
+		: data.error
+			? "Code not recognized"
+			: deviceStatus === "approved"
+				? "You're all set"
+				: deviceStatus === "denied"
+					? "Sign-in denied"
+					: "Sign in to Recast Desktop?",
+);
+
+const deviceBody = $derived(
+	!data.userCode
+		? "Type the code shown in your Recast Desktop app."
+		: data.error
+			? data.error
+			: deviceStatus === "approved"
+				? "Your Recast Desktop is signed in. Hop back over, cloud sync is ready."
+				: deviceStatus === "denied"
+					? "The desktop request was rejected. Start a new sign-in from the app if this was a mistake."
+					: "Approving links this account to the desktop so it can sync your recordings.",
+);
 </script>
 
 <svelte:head>
@@ -113,53 +137,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 	by `(auth)/+layout.svelte`. Don't re-add it here — the root layout already
 	excludes `/device` from the marketing chrome via the chromelessPaths set.
 -->
-<div class="w-full max-w-md" in:fly={{ y: 16, duration: 520, easing: cubicOut }}>
-		<div class="flex flex-col items-center text-center">
-			<a href="/" class="group/logo flex items-center gap-2.5" aria-label="Recast home">
-				<span
-					class="grid size-9 place-items-center rounded-xl bg-foreground p-1 text-background shadow-craft-sm transition-transform group-hover/logo:rotate-[-4deg]"
-				>
-					<Logo size="22" color="transparent" fill="currentColor" />
-				</span>
-				<span class="text-body-lg font-semibold tracking-tight text-foreground">Recast</span>
-			</a>
-
-			<span
-				class="pill mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-body-sm font-medium text-primary"
-			>
-				<Monitor class="size-3" />
-				Authorize device
-			</span>
-
-			<h1 class="text-balance mt-5 text-heading font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
-				{#if !data.userCode}
-					Enter your device code
-				{:else if data.error}
-					Code not recognized
-				{:else if deviceStatus === "approved"}
-					You're all set
-				{:else if deviceStatus === "denied"}
-					Sign-in denied
-				{:else}
-					Sign in to Recast Desktop?
-				{/if}
-			</h1>
-			<p class="text-pretty mt-3 max-w-sm text-body-sm leading-relaxed text-muted-foreground">
-				{#if !data.userCode}
-					Type the code shown in your Recast Desktop app.
-				{:else if data.error}
-					{data.error}
-				{:else if deviceStatus === "approved"}
-					Your Recast Desktop is signed in. Hop back over; cloud sync is ready.
-				{:else if deviceStatus === "denied"}
-					The desktop request was rejected. Start a new sign-in from the app if this was a mistake.
-				{:else}
-					Approving links this account to the desktop so it can sync your recordings.
-				{/if}
-			</p>
-		</div>
-
-		<div class="surface mt-8 p-6">
+<AuthCard eyebrowIcon={Monitor} eyebrow="Authorize device" title={deviceTitle} description={deviceBody}>
 			{#if !data.userCode}
 				<!-- Manual code entry. We don't require sign-in to render this —
 				     the user might be writing the code down before they sign in.
@@ -194,6 +172,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 						/>
 					</div>
 					<Button
+						variant="dark"
 						type="submit"
 						disabled={manualSubmitting || manualCode.trim().length === 0}
 						class="group/cta w-full gap-2"
@@ -208,7 +187,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 					</Button>
 				</form>
 			{:else if data.error}
-				<div class="flex flex-col items-center gap-3 text-center text-body-sm text-muted-foreground">
+				<div class="flex flex-col gap-3 text-body-sm text-muted-foreground">
 					<AlertTriangle class="size-5 text-tag-tangerine" />
 					<span>{data.error}</span>
 					<Button href="/device" variant="outline" size="sm" class="mt-2">
@@ -217,7 +196,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 				</div>
 			{:else if deviceStatus === "approved"}
 				<div
-					class="flex flex-col items-center gap-5 text-center"
+					class="flex flex-col gap-5"
 					in:fly={{ y: 8, duration: 360, easing: cubicOut }}
 				>
 					<Check class="size-10 text-tag-green" stroke={1.75} />
@@ -241,7 +220,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 				</div>
 			{:else if deviceStatus === "denied"}
 				<div
-					class="flex flex-col items-center gap-5 text-center"
+					class="flex flex-col gap-5"
 					in:fly={{ y: 8, duration: 360, easing: cubicOut }}
 				>
 					<X class="size-10 text-destructive" stroke={1.75} />
@@ -270,12 +249,12 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 							{formatUserCode(data.userCode)}
 						</div>
 					</div>
-					<p class="text-center text-caption text-muted-foreground">
+					<p class="text-caption text-muted-foreground">
 						Make sure this matches the code shown in your Recast Desktop app
 						before approving.
 					</p>
 					<div class="flex flex-col gap-2.5">
-						<Button onclick={approve} disabled={busy} class="group/cta w-full gap-2">
+						<Button onclick={approve} disabled={busy} variant="dark" class="group/cta w-full gap-2">
 							{#if approving}
 								<LoaderCircle class="size-4 animate-spin" />
 							{:else}
@@ -297,10 +276,9 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 							{denying ? "Denying…" : "Deny"}
 						</Button>
 					</div>
-					<p class="text-center text-caption text-muted-foreground">
+					<p class="text-caption text-muted-foreground">
 						Signed in as <span class="font-medium text-foreground">{data.viewer?.email ?? ""}</span>
 					</p>
 				</div>
 			{/if}
-		</div>
-	</div>
+</AuthCard>

@@ -508,10 +508,25 @@ product system.
 
 ### Auth pages
 
-One centred card on a plain canvas: no radial glow under it, no glass chip for
-the back link. `AuthCard` owns the shape (logo, display `h1`, `text-body-sm`
-subtitle, `.surface` body), so every route in `(auth)` changes together, and no
-page defines its own card.
+A split, not a floating card. `(auth)/+layout.svelte` is a 12-column grid: the
+form pane (7) carries a hairline header (mark, back link) and a hairline footer
+(legal, download), and the brand pane (5) sits on `bg-paper` with the
+Record/Polish/Share spine read straight from `Hero.logic`. Auth is the first
+screen many people see; it should say what the product is.
+
+The brand pane is `hidden lg:flex`, not a stacked block. On a phone the form is
+the only thing worth the viewport.
+
+`AuthCard` is a heading block, not a card: eyebrow, display `h1`, one line of
+body, then the form. The pane is already the surface, so a bordered card inside
+it is the card-in-card mistake again, and the layout header owns the logo. Every
+route in `(auth)` uses it, including the three that used to hand-roll their own
+header and card (`accept-invitation`, `device`, `verify-email`).
+
+Everything is left-aligned, like every other page. Fields are hairline
+(`border-border-low bg-background`) rather than the filled `bg-input` default,
+and the primary action is `variant="dark"`, so an auth screen and a marketing
+page agree about what a form and a button look like.
 
 Status moments are a glyph, not a plate. The device-approved state was a
 `size-16` tinted tile with a `ping` ring; it is now the check itself at

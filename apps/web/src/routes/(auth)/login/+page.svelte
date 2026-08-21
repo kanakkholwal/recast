@@ -250,10 +250,11 @@ async function signInWithPassword(e: SubmitEvent) {
 							autocomplete="email"
 							bind:value={email}
 							placeholder="you@startup.com"
-							class="h-10"
+							class="h-10 border-border-low bg-background"
 						/>
 					</Label>
 					<Button
+						variant="dark"
 						type="submit"
 						disabled={loading}
 						class="group/cta mt-1 w-full gap-2"
@@ -265,7 +266,7 @@ async function signInWithPassword(e: SubmitEvent) {
 							<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 						{/if}
 					</Button>
-					<p class="text-center text-caption text-muted-foreground">
+					<p class="text-caption text-muted-foreground">
 						No password needed. We'll email you a one-time link.
 					</p>
 				</form>
@@ -281,7 +282,7 @@ async function signInWithPassword(e: SubmitEvent) {
 							autocomplete="email"
 							bind:value={email}
 							placeholder="you@startup.com"
-							class="h-10"
+							class="h-10 border-border-low bg-background"
 						/>
 					</Label>
 
@@ -302,7 +303,7 @@ async function signInWithPassword(e: SubmitEvent) {
 								autocomplete="current-password"
 								bind:value={password}
 								placeholder="••••••••"
-								class="h-10 pr-9"
+								class="h-10 border-border-low bg-background pr-9"
 							/>
 							<button
 								type="button"
@@ -327,6 +328,7 @@ async function signInWithPassword(e: SubmitEvent) {
 					</Label>
 
 					<Button
+						variant="dark"
 						type="submit"
 						disabled={loading}
 						class="group/cta mt-1 w-full gap-2"
