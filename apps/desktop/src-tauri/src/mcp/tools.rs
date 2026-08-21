@@ -34,6 +34,16 @@ pub const TOOLS: &[Tool] = &[
         schema: no_args,
     },
     Tool {
+        name: "recast_project_list",
+        description: concat!(
+            "Recordings in the user's library, newest first, with the absolute path of each. ",
+            "Start here: every other tool needs a project path, and this is the only way to learn one. ",
+            "`needsMigration` marks a project the user must update in the editor before it can be edited."
+        ),
+        verb: "project.list",
+        schema: no_args,
+    },
+    Tool {
         name: "recast_project_show",
         description: "Read a project's saved edits (its full render state).",
         verb: "editor.show",
@@ -54,8 +64,10 @@ pub const TOOLS: &[Tool] = &[
     },
     Tool {
         name: "recast_branch_create",
-        description:
-            "Fork a branch from the project's current state. Edits are proposed here, not applied.",
+        description: concat!(
+            "Fork a branch from the project's current state. Edits are proposed here, not applied. ",
+            "Reusing the id of a branch that already holds edits is refused rather than overwriting it."
+        ),
         verb: "branch.create",
         schema: branch_create_schema,
     },
@@ -64,7 +76,8 @@ pub const TOOLS: &[Tool] = &[
         description: concat!(
             "Record edit operations onto a branch as one atomic entry. ",
             "Re-sending an idemKey already on the branch is a no-op. ",
-            "Ops are replayed immediately, so one that cannot apply is rejected here."
+            "Ops are replayed and validated immediately, so a bad edit is rejected here, ",
+            "with the offending field, and the branch is left unchanged."
         ),
         verb: "branch.append",
         schema: branch_append_schema,
@@ -273,6 +286,18 @@ mod tests {
                 tool.verb
             );
         }
+    }
+
+    /// Without an argument-free way in, an agent can only work on a path a human
+    /// pasted, and the whole surface is unreachable on its own.
+    #[test]
+    fn a_project_path_is_discoverable_without_already_having_one() {
+        let discovery = TOOLS
+            .iter()
+            .find(|tool| tool.verb == "project.list")
+            .expect("a discovery tool");
+
+        assert_eq!((discovery.schema)()["required"], json!([]));
     }
 
     #[test]

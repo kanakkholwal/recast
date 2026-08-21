@@ -3,6 +3,8 @@ import { Badge } from "@recast/ui/badge";
 import { Button } from "@recast/ui/button";
 import * as Popover from "@recast/ui/popover";
 import { Check, Eye, GitGraph, LoaderCircle, Trash2, TriangleAlert, Undo2 } from "@recast/icons";
+import { prefersReducedMotion } from "svelte/motion";
+import { scale } from "svelte/transition";
 import { branchReview } from "../lib/agent/branch-store.svelte";
 import type { EditorRenderState } from "../lib/editor/render-state";
 import { relativeAge, summariseChanges, toSections } from "./branch-review.logic";
@@ -23,6 +25,18 @@ let open = $state(false);
 // Sampled once per open: a live clock would rerender the list every second for
 // a label that only reads "5m ago".
 let openedAtMs = $state(Date.now());
+// Discarding deletes an agent's proposed work outright, so it asks once. Inline
+// rather than a dialog: a modal over this popover would hide the list behind it.
+let pendingDiscard = $state<string | null>(null);
+// Preview swaps the branch into the editor. The host stacks an undo state first,
+// which is worth saying rather than leaving the reader to find the way back.
+let previewedId = $state<string | null>(null);
+
+// The badge appears the moment an agent proposes something, mid-edit. Fading it
+// in reads as arriving; popping in reads as a glitch.
+const entrance = $derived(
+	prefersReducedMotion.current ? { duration: 0 } : { duration: 180, start: 0.95, opacity: 0 },
+);
 
 $effect(() => branchReview.bind(projectPath));
 
@@ -31,20 +45,39 @@ const summary = $derived(summariseChanges(branchReview.changes));
 
 function onOpenChange(next: boolean) {
 	open = next;
+	pendingDiscard = null;
 	if (next) {
 		openedAtMs = Date.now();
 		void branchReview.refresh();
 	}
 }
 
+function select(id: string | null) {
+	pendingDiscard = null;
+	void branchReview.select(id);
+}
+
 async function preview(id: string) {
 	const state = await branchReview.preview(id);
-	if (state) onPreview?.(state);
+	if (!state) return;
+	onPreview?.(state);
+	previewedId = id;
+}
+
+async function discard(id: string) {
+	if (pendingDiscard !== id) {
+		pendingDiscard = id;
+		return;
+	}
+	pendingDiscard = null;
+	if (previewedId === id) previewedId = null;
+	await branchReview.discard(id);
 }
 
 async function apply(id: string) {
 	const report = await branchReview.apply(id, writerId);
 	if (!report) return;
+	previewedId = null;
 	onApplied?.();
 	open = false;
 }
@@ -57,6 +90,7 @@ async function apply(id: string) {
         <button
           {...props as Record<string, unknown>}
           type="button"
+          in:scale={entrance}
           class="flex items-center gap-1.5 rounded-full border bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           aria-label="{branchReview.count} proposed change set{branchReview.count === 1 ? '' : 's'} to review"
         >
@@ -100,7 +134,7 @@ async function apply(id: string) {
               class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-[11px] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:bg-muted/60"
               class:bg-muted={active}
               aria-current={active ? "true" : undefined}
-              onclick={() => branchReview.select(active ? null : branch.id)}
+              onclick={() => select(active ? null : branch.id)}
             >
               <span class="flex w-full items-baseline justify-between gap-2">
                 <span class="font-medium">{branch.label || branch.id}</span>
@@ -158,6 +192,14 @@ async function apply(id: string) {
           {/if}
         </div>
 
+        {#if previewedId === selected.id}
+          <p class="px-3 pb-1 text-[11px] text-muted-foreground">
+            Previewing in the editor. Undo puts your own edit back.
+          </p>
+        {/if}
+
+        <!-- The branch-shaping actions group left; Apply owns the right edge
+             alone, so the button next to Discard is never the one that writes. -->
         <div class="flex items-center gap-1.5 px-3 py-2">
           <Button
             variant="ghost"
@@ -184,16 +226,18 @@ async function apply(id: string) {
           <Button
             variant="ghost"
             size="sm"
-            class="ml-auto h-7 px-2 text-[11px]"
+            class="h-7 px-2 text-[11px] {pendingDiscard === selected.id
+              ? 'text-destructive hover:text-destructive'
+              : ''}"
             disabled={branchReview.busy}
-            onclick={() => branchReview.discard(selected.id)}
+            onclick={() => discard(selected.id)}
           >
             <Trash2 class="size-3" aria-hidden="true" />
-            Discard
+            {pendingDiscard === selected.id ? "Confirm discard" : "Discard"}
           </Button>
           <Button
             size="sm"
-            class="h-7 px-2 text-[11px]"
+            class="ml-auto h-7 px-2 text-[11px]"
             disabled={branchReview.busy || branchReview.changes.length === 0}
             onclick={() => apply(selected.id)}
           >

@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::editor::ValidationIssue;
 use super::editor_session::now_ms;
 use super::error::{AppError, AppResult};
 use super::types::AppState;
@@ -86,9 +87,12 @@ impl<'a> BranchService<'a> {
         Self { app, state }
     }
 
+    /// Fork a branch from the project's current state.
+    ///
     /// # Errors
-    /// [`AppError`] if the app data directory is unavailable or the project
-    /// cannot be read.
+    /// [`AppError`] if the app data directory is unavailable, the project cannot
+    /// be read, the id already holds proposed edits, or the project is at
+    /// [`journal::MAX_BRANCHES_PER_PROJECT`].
     pub fn create(
         &self,
         project: &str,
@@ -96,9 +100,11 @@ impl<'a> BranchService<'a> {
         author: String,
         label: Option<String>,
     ) -> AppResult<Branch> {
-        let base = StateHash::of(&load_render_state(project)?).map_err(AppError::msg)?;
+        let base = StateHash::of(&load_project(project)?.render).map_err(AppError::msg)?;
         let branch = Branch::new(id, base, author, label, now_ms());
-        self.store(project)?.save(&branch).map_err(AppError::msg)?;
+        self.store(project)?
+            .create(&branch)
+            .map_err(AppError::msg)?;
         self.announce(project);
         Ok(branch)
     }
@@ -127,12 +133,15 @@ impl<'a> BranchService<'a> {
         self.store(project)?.load(id).map_err(AppError::msg)
     }
 
-    /// Record `ops` as one atomic entry, replaying the branch before persisting
-    /// so an op that cannot apply is rejected now rather than at review time.
+    /// Record `ops` as one atomic entry, replaying and validating the branch
+    /// before persisting so a bad proposal is rejected here, where the author
+    /// can still fix it, rather than at apply time in front of the reviewer.
+    ///
+    /// A rejected append leaves the journal on disk untouched.
     ///
     /// # Errors
-    /// [`AppError`] wrapping a stale `expect_seq`, an op that no longer fits, or
-    /// a failed write.
+    /// [`AppError`] wrapping a stale `expect_seq`, an op that no longer fits, a
+    /// resulting state that violates an invariant, or a failed write.
     pub fn append(
         &self,
         project: &str,
@@ -147,11 +156,20 @@ impl<'a> BranchService<'a> {
             .append(idem_key, ops, expect_seq, now_ms())
             .map_err(AppError::msg)?;
 
-        let base = load_render_state(project)?;
-        branch.materialize(&base).map_err(AppError::msg)?;
+        let base = load_project(project)?;
+        let proposed = branch.materialize(&base.render).map_err(AppError::msg)?;
+        // A retried idem key proposes nothing new, so re-judging it would let a
+        // project edited out of band turn a settled no-op into a failure.
+        if outcome.is_recorded() {
+            if let Err(issues) = super::validate_render_state(&proposed, base.duration) {
+                return Err(rejected(id, &issues));
+            }
+        }
         let compacted = branch.needs_compaction();
         if compacted {
-            branch.compact(&base, now_ms()).map_err(AppError::msg)?;
+            branch
+                .compact(&base.render, now_ms())
+                .map_err(AppError::msg)?;
         }
 
         store.save(&branch).map_err(AppError::msg)?;
@@ -176,13 +194,13 @@ impl<'a> BranchService<'a> {
     /// The render state the branch would produce.
     pub fn materialize(&self, project: &str, id: &BranchId) -> AppResult<RenderState> {
         self.load(project, id)?
-            .materialize(&load_render_state(project)?)
+            .materialize(&load_project(project)?.render)
             .map_err(AppError::msg)
     }
 
     /// Leaf-level changes the branch would make, in path order.
     pub fn diff(&self, project: &str, id: &BranchId) -> AppResult<Vec<FieldChange>> {
-        let base = load_render_state(project)?;
+        let base = load_project(project)?.render;
         let proposed = self
             .load(project, id)?
             .materialize(&base)
@@ -247,9 +265,32 @@ pub fn branch_store(app: &AppHandle, project_path: &str) -> AppResult<BranchStor
     )))
 }
 
-fn load_render_state(project_path: &str) -> AppResult<RenderState> {
-    tauri::async_runtime::block_on(super::load_editor_document(project_path.to_string()))
-        .map(|doc| doc.render_state)
+/// The project's saved edits plus the source duration validation needs.
+struct Project {
+    render: RenderState,
+    duration: f64,
+}
+
+fn load_project(project_path: &str) -> AppResult<Project> {
+    tauri::async_runtime::block_on(super::load_editor_document(project_path.to_string())).map(
+        |doc| Project {
+            render: doc.render_state,
+            duration: doc.metadata.duration,
+        },
+    )
+}
+
+/// Phrased as instructions: this reaches a model as tool output, and the useful
+/// next move is a corrected op rather than an apology.
+fn rejected(id: &BranchId, issues: &[ValidationIssue]) -> AppError {
+    let detail = issues
+        .iter()
+        .map(|issue| format!("{} ({})", issue.field, issue.reason))
+        .collect::<Vec<_>>()
+        .join(", ");
+    AppError::msg(format!(
+        "not appended: the state branch '{id}' would produce is invalid at {detail}.          The branch is unchanged. Correct the op and append again."
+    ))
 }
 
 /// Run `job` off the UI thread, handing it the service.

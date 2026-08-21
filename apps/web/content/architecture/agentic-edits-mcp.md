@@ -22,7 +22,7 @@ invariants:
   - "apply_op must stay pure and deterministic; anything generated at edit time is resolved at the dispatch edge and baked into the op."
   - "No MCP tool writes the project. Apply is a human action, and a test asserts the mutating verbs are absent."
   - "The operation names are a wire contract stored inside journals, so renaming a variant invalidates every journal on disk."
-  - "A branch carrying work is never deleted automatically, however old it is."
+  - "A branch carrying work is never deleted automatically, however old it is, and re-creating its id is refused rather than overwriting it."
 ---
 
 ## Overview
@@ -60,8 +60,8 @@ flowchart LR
   cli["recast branch …"] --> svc
   gui["Review panel<br/>(editor GUI)"] --> svc
 
-  svc["BranchService<br/>commands/branches.rs:79"] --> journal[("&lt;app_data&gt;/branches/&lt;key&gt;/&lt;id&gt;.json")]
-  svc --> ops["apply_op<br/>render/ops.rs:139"]
+  svc["BranchService<br/>commands/branches.rs"] --> journal[("&lt;app_data&gt;/branches/&lt;key&gt;/&lt;id&gt;.json")]
+  svc --> ops["apply_op<br/>render/ops.rs"]
 
   journal -->|"replay onto base"| materialized["materialize → RenderState"]
   materialized --> diff["journal::diff → Vec&lt;FieldChange&gt;"]
@@ -110,7 +110,8 @@ sequenceDiagram
 | `BranchService` | `commands/branches.rs` | The shared layer: 8 methods, called by socket dispatch, Tauri commands, and MCP |
 | `BranchService::apply` | `commands/branches.rs` | Materializes *inside* `patch_render_state`'s closure, so the fold is one atomic bundle write |
 | `Server::handle` | `mcp/protocol.rs` | Pure `(&Value, &impl ToolHost) -> Option<Value>`; testable with no socket and no process |
-| `TOOLS` | `mcp/tools.rs` | 10 branch-scoped tool descriptors, each a closed JSON Schema |
+| `TOOLS` | `mcp/tools.rs` | 11 tool descriptors, each a closed JSON Schema: one to discover projects, the rest read-only or branch-scoped |
+| `resources/*` | `mcp/protocol.rs` | Each project as a `recast://project/<encoded path>` resource, so a client can attach state without spending a tool call |
 
 ## Control / data flow
 
@@ -124,13 +125,22 @@ pub enum Op { /* … */ }
 Those names are serialized into journals on disk. Renaming a variant or a field
 invalidates every journal that exists.
 
-**Append validates immediately.** `BranchService::append` replays the incoming
-ops onto a materialized clone before writing the entry, so a bad op comes back
-while the agent is still in the loop rather than surfacing at review time:
+**Append validates twice, immediately.** `BranchService::append` replays the
+incoming ops onto a materialized clone, then runs `validate_render_state` over
+the result, before writing the entry. The first catches an op that cannot apply:
 
 ```rust
 Err(JournalError::Replay { branch, seq, source: OpError::CutIndexOutOfRange { .. } })
 ```
+
+The second catches an op that applies cleanly and still produces nonsense, such
+as a trim past the end of the source. Both return before `store.save`, so a
+rejected append leaves the journal on disk untouched and the agent can correct
+the op and retry. Without the second check the failure surfaced at apply time,
+in front of the reviewer, who could do nothing about it.
+
+A retried `idem_key` skips validation. It proposes nothing new, so re-judging it
+would let a project edited out of band turn a settled no-op into a failure.
 
 **Concurrency is optimistic, retries are idempotent.** `expect_seq` rejects a
 stale writer with `SeqMismatch { expected, actual }`; an `idem_key` already on
@@ -168,6 +178,23 @@ of band. On success the journal is deleted: a branch is consumed, not archived.
   and the reviewer decides. Unreadable journals are left alone, because we
   cannot tell whether they hold work. It runs from `list`, the one call every
   surface makes, rather than a background timer.
+- **Discovery is the entry point.** `recast_project_list` is the only tool that
+  takes no arguments, and every other project tool needs a path. Without it an
+  agent could work only on a path a human pasted, which made the whole surface
+  unreachable on its own. `a_project_path_is_discoverable_without_already_having_one`
+  (`mcp/tools.rs`) pins that there is always such a way in.
+- **`create` refuses rather than overwrites.** Reusing the id of a branch that
+  holds ops returns `BranchExists`; reusing one that holds none re-forks it, so
+  an agent that crashed between create and its first append can simply retry.
+  The unguarded `BranchStore::save` still exists for writing back a branch that
+  was loaded, but forking goes through `BranchStore::create`.
+- **The branch cap bounds the reviewer, not the disk.** Journals are KB-scale.
+  `MAX_BRANCHES_PER_PROJECT` (32) exists so a looping agent cannot bury a human
+  under a review list, and it sweeps abandoned empty branches before it counts,
+  so the cap measures live work.
+- **Listing resources never fails.** A client calls `resources/list` on connect;
+  an unreachable app answers with an empty library rather than an error, which
+  would read as a broken server.
 - **No MCP tool writes.** `branch.apply`, the `editor.*` mutators, `rec.*` and
   `export.*` are absent from `TOOLS`, and `no_tool_writes_the_project_directly`
   (`mcp/tools.rs`) asserts it. Failing verbs return `isError: true` with the
