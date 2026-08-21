@@ -1,7 +1,7 @@
 ---
 kind: post
 title: "Bringing Recast to macOS and Linux"
-description: "Recast started as a Windows app. Here is what it took to run it natively on macOS and Linux: the two decisions that kept it from becoming a mess, the freeze that only happened on a Mac, and exactly where each platform stands today."
+description: "Porting a Windows recorder to three platforms found two bugs that had been in the Windows build the whole time: a synchronous Tauri command that froze WKWebView, and an FFmpeg stderr pipe nobody was draining."
 slug: bringing-recast-to-macos-and-linux
 date: 2026-06-27
 author: Kanak
@@ -9,48 +9,78 @@ tags: [engineering, cross-platform, desktop, tauri, rust]
 published: true
 ---
 
-Most of the work in making one app run well on three operating systems is not writing platform code. It is finding out which of your assumptions were really just Windows in disguise.
+Recast was a Windows app because that was the machine in front of me, not because anyone decided it. Porting it to macOS and Linux turned up two bugs that had been in the Windows build the whole time. Neither is a platform bug. Windows was just hiding both.
 
-Recast started as a Windows app. That was a default more than a decision. You build on the machine in front of you, and the shortest path to record a screen, polish it, and share it ran through the Windows capture and audio APIs. But a recorder that only runs on one operating system is a demo, not a product. So we set out to make Recast run natively on macOS and Linux too, with the same record, polish, and share loop on whatever you happen to be using.
+## The shape that made the port cheap
 
-Here is what that took, and, because we would rather be straight with you than sell you a roadmap, where each platform actually stands.
+Two structural choices, made early for other reasons, did most of the work.
 
-## Two decisions that kept it from becoming a swamp
+**One module per capability, per platform, behind a trait.** Capture is a folder of files that each implement `CaptureSource` (`capture/mod.rs:13`):
 
-Cross-platform native code has a reputation for being miserable to write. Ours was not, and the reason comes down to two decisions we made early without fully understanding how much they would pay off.
+```rust
+pub trait CaptureSource: Send {
+    fn capture_next(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>>;
+    fn width(&self) -> u32;
+    fn height(&self) -> u32;
+    fn set_target_fps(&mut self, _fps: u32) {}
+}
+```
 
-The first is a platform module per capability. Screen capture, audio, camera, and cursor tracking are each a folder of small files, one per operating system, behind a single interface and a compile-time switch. Adding macOS screen capture did not mean touching the Windows path. It meant writing one new file that satisfied the same contract. Every gap was additive and isolated, so there was no large refactor and no day where everything was broken at once.
+Four implementations sit behind it: Windows Graphics Capture per window and DXGI duplication per monitor (`capture/platform/windows.rs`), a long-lived FFmpeg avfoundation child streaming BGRA to a reader thread (`macos.rs`), xcb `GetImage` on the root window (`linux_x11.rs`), and xdg-desktop-portal plus PipeWire (`linux_wayland.rs`). Audio has the same shape: `windows.rs` for WASAPI loopback, `macos_sckit.rs` for ScreenCaptureKit, `ffmpeg_unix.rs` for PulseAudio.
 
-The second is FFmpeg as the shared layer. Underneath the platform-specific capture front ends, every operating system hands raw frames and audio samples to the same FFmpeg based encode and format pipeline. The Windows capture API, AVFoundation on macOS, and PipeWire and X11 on Linux are four different ways to get pixels, and they all feed one encoder. The hard, platform-specific part shrinks to one job: get me frames. Everything after that is shared.
+Adding macOS capture meant writing one file that satisfied the trait. It did not mean touching the Windows path, so there was never a day where all three were broken at once.
 
-With that shape, the macOS and Linux build out went faster than we expected. Screen capture, system audio, microphone, camera, cursor tracking, and device pickers are implemented on all three, and they compile on every push in CI.
+`set_target_fps` is the one place the abstraction leaks on purpose, and it is worth reading the comment on it. WGC delivers a frame on every window repaint, not on every encoder tick, and each frame costs a GPU→CPU readback that maps GPU memory and stalls the GPU. DXGI and xcb only produce a frame when the screen actually changes, so they ignore the hint. One method, two completely different reasons for existing.
 
-## The bug that only existed on a Mac
+**FFmpeg as the shared floor.** Every platform hands BGRA to the same encoder pipeline. WGC, AVFoundation, xcb and PipeWire are four ways to get pixels; below that line there is one code path. The platform-specific surface shrinks to "get me frames", and everything downstream, the pacer, the encoder, the muxer, is written once.
 
-The most useful bug of the whole effort never reproduced on Windows.
+## The freeze that only happened on a Mac
 
-A macOS tester reported that the app froze the moment a recording finished. The window stopped responding and clicks went nowhere. On Windows the same build was fine. We had two obvious suspects, a UI library quirk and an FFmpeg subprocess, and both were wrong.
+A tester reported the window locking up the moment a recording stopped. Clicks went nowhere until it came back. The same build on Windows was fine.
 
-The real cause was one missing keyword. The command that stops a recording was a synchronous function, and inside it the app did real work: flushing the encoder, finalizing the file, and sometimes a re-encode that takes a few seconds. On Windows that is invisible, because Windows runs the web interface in a separate process that keeps painting no matter what the backend is doing. macOS and Linux run the interface on the same main thread the command runs on. Block that thread and the whole window locks up until the work finishes.
+`stop_recording` was a synchronous `#[tauri::command]`, and inside it the app flushed the encoder, finalized the container, and sometimes re-encoded a camera track. Seconds of real work.
 
-The fix was to move the heavy work onto a background thread so the interface thread stays free. The larger lesson was that this was not one bug. We went back through the rest of the recording code looking for the same pattern and found more of it: listing audio devices, listing recordings, revealing a file in its folder. Each was a freeze waiting to happen that Windows had been quietly hiding for us. We found a related one too. On a long recording, FFmpeg's own progress output could fill an operating-system pipe buffer that nothing was draining, which stalled the encode partway through capture. None of these were macOS bugs. They were our bugs, and macOS and Linux were just honest enough to show them.
+That is invisible on Windows because WebView2 runs the web content in its own process, which keeps painting no matter what the Rust side is doing. macOS runs WKWebView in-process, on the same main thread Tauri dispatches a synchronous command on. Block that thread and the window is frozen for the duration.
 
-That is the pattern of going cross-platform. Other operating systems do not only run your code. They check it.
+The fix is one keyword and a wrapper:
+
+```rust
+#[tauri::command]
+pub async fn stop_recording(/* … */) -> AppResult<RecordingStopResult> {
+    tauri::async_runtime::spawn_blocking(move || { /* the real work */ }).await?
+}
+```
+
+The interesting part was not the fix. It was that this could not be a single bug, because nothing about `stop_recording` made it special. Walking the rest of the command surface found the same pattern in the device enumerators, the library scan, and reveal-in-folder. Each one was a freeze waiting for a slow disk. The rule is now written down where the commands are registered, and heavy commands are `async` plus `spawn_blocking` without exception, including the startup work that used to run inline in `setup()` and hold the splash window for up to a second.
+
+## The pipe nobody was draining
+
+The second one is a genuine deadlock, and it was in the Windows build too.
+
+The encoder pipes raw BGRA into a long-lived FFmpeg child on stdin. FFmpeg writes its banner and a `frame=… fps=…` progress line to stderr. Nothing was reading stderr.
+
+An OS pipe has a fixed buffer, around 64KB. Once it fills, FFmpeg blocks in `write()` on stderr. A blocked process stops reading stdin. The encoder thread's `stdin.write_all` then blocks forever, and capture freezes mid-recording with no error anywhere.
+
+macOS and Linux default to smaller pipe buffers than Windows, so they hit it sooner. That is the entire difference: the same bug, reached in minutes instead of hours.
+
+`pump_stderr_tail` (`encoder/mod.rs:38`) drains it on a side thread into a bounded ring, which also means the `child.wait()` on every error path can no longer hang waiting for a stderr-blocked process to exit. Keeping the tail is a side benefit; the drain itself is the fix.
+
+## What the other two platforms actually check for you
+
+A later parity audit across the three backends found the rest of the same class:
+
+- The X11 path applied its crop against the wrong origin on a multi-monitor desktop, because it read the root window rather than the target monitor's offset.
+- A failed audio session reported success and produced silence. A recording that is silent for a real reason and one that is silent because capture died looked identical to the app, which is the worst possible failure mode for a recorder.
+- FFmpeg children had no `Drop`, so an early return could orphan a process that kept holding the file.
+
+None of these are macOS or Linux bugs. They are ours. Windows was the only platform we ran, so it was also the only platform whose tolerances we had accidentally written to.
 
 ## Where each platform stands
 
-We would rather tell you the truth than show you a wall of green checkmarks.
+Windows is the reference platform: shipped, in use, verified on real hardware.
 
-Windows is done. It is the reference platform, it is in people's hands, and it is verified.
+macOS is code complete and in a tester pass. The honest gaps are hardware verification of the permissions flow, Retina and multi-monitor behaviour, and signing plus notarization. System audio is the awkward one: macOS has no loopback device the way Windows does, so `macos_sckit.rs` goes through ScreenCaptureKit instead of asking the OS for a mirror of the output.
 
-macOS has all of its capture code written and a tester pass underway. The honest gaps are hardware verification of the permissions flow and of Retina and multi-monitor behavior, the system-audio default, and signing. System audio is the awkward one. macOS has no built-in loopback the way Windows does, so capturing the sound coming out of the speakers needs a different approach than the other platforms, and we are finishing that path. Signing and notarization are the difference between an app you have to right-click past Gatekeeper and one that just opens, and that is a grind of its own.
+Linux is code complete and waiting on its first hardware pass. Wayland (portal plus PipeWire) and X11 are both written and have been through the audit above, but nothing gets a checkmark from us until it has run on a real GNOME, KDE and X11 session.
 
-Linux is code complete and waiting on its first real hardware pass. Wayland, through the desktop portal and PipeWire, and X11 are both written and have already been through a round of audit fixes, but nothing earns a checkmark from us until it has actually run on a real GNOME, KDE, and X11 session.
-
-The short version: Windows ships today, macOS is a focused round of verification and signing away from a public preview, and Linux is one hardware bring-up behind that.
-
-## Why we are showing the middle
-
-Most "now on macOS and Linux" posts go up the day everything is finished. We are writing this one earlier on purpose. Recast is founder built, and we would rather show you the actual engineering, the abstractions, the war stories, and the honest gaps, than a press release. The code is written. The remaining distance is a person sitting in front of a Mac and a Linux machine, doing the unglamorous work of proving each path on real hardware.
-
-If you are on macOS or Linux and want to help us get there sooner, that kind of early feedback is exactly what moves a platform from written to verified. We will have preview builds to share soon.
+The cost of the port was not writing platform code. It was that two other operating systems read our Windows code more carefully than we had.

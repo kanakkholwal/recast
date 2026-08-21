@@ -1,12 +1,15 @@
 import { type IconComponent, Share2, Video, Wand2 } from "@recast/icons";
 import { cubicOut } from "svelte/easing";
 
-// Concrete artifacts the committed audience (solo founders + dev teams /
-// DevRel) actually ships. Narrowed from five to three: opens on the broadest
-// noun (demo), then the two on-message outputs both segments make (launch
-// video, changelog clip). Dropped "investor walkthrough" (pure founder) and
-// "onboarding tour" (support) so the loop stops chasing every market at once.
-export const words = ["demo.", "launch video.", "changelog clip."];
+export const words = [
+	"launch video.",
+	"demo.",
+	"changelog clip.",
+	"screen recording.",
+	"screencast.",
+	"tutorial.",
+	"presentation.",
+];
 
 export const platforms = ["macOS", "Windows", "Linux"];
 

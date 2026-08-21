@@ -128,12 +128,12 @@ function onKeydown(e: KeyboardEvent) {
 		<!-- Duration delta: the polished cut lands shorter once silence is trimmed.
 		     Surfaced as proof rather than hidden. -->
 		<span
-			class="pointer-events-none absolute bottom-3 left-3 rounded-md bg-black/55 px-1.5 py-0.5 font-mono text-caption font-semibold text-white/80 ring-1 ring-inset ring-white/15 backdrop-blur"
+			class="pointer-events-none absolute bottom-3 left-3 rounded-md bg-black/55 px-1.5 py-0.5 text-caption font-semibold text-white/80 ring-1 ring-inset ring-white/15 backdrop-blur"
 		>
 			{raw.durationLabel}
 		</span>
 		<span
-			class="pointer-events-none absolute bottom-3 right-3 rounded-md bg-primary/15 px-1.5 py-0.5 font-mono text-caption font-semibold text-primary ring-1 ring-inset ring-primary/30 backdrop-blur"
+			class="pointer-events-none absolute bottom-3 right-3 rounded-md bg-primary/15 px-1.5 py-0.5 text-caption font-semibold text-primary ring-1 ring-inset ring-primary/30 backdrop-blur"
 		>
 			{polished.durationLabel}
 		</span>
@@ -172,7 +172,7 @@ function onKeydown(e: KeyboardEvent) {
 				<Film class="size-6" />
 			</span>
 			<div
-				class="font-mono text-caption font-semibold text-muted-foreground"
+				class="text-caption font-semibold text-muted-foreground"
 			>
 				Clip pending
 			</div>

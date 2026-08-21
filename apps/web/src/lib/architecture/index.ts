@@ -11,7 +11,7 @@ import type { ArchitectureMeta } from "./types";
 
 export interface ArchitecturePage {
 	meta: ArchitectureMeta;
-	/** docvia's compiled node tree — plain JSON, so it serializes to the client. */
+	/** docvia's compiled node tree: plain JSON, so it serializes to the client. */
 	content: DocNodes;
 }
 

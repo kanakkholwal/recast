@@ -112,7 +112,7 @@ const frontmatter = z.discriminatedUnion("kind", [post, architecture]);
  * docvia's `toPageMeta()` copies ONLY its built-in fields onto the `meta` that
  * each compiled page exports. Custom frontmatter is validated by the schema
  * above and then dropped, so `collection.getPage().data` would carry no `date`,
- * `author`, or `published` at runtime — the schema would typecheck a blog that
+ * `author`, or `published` at runtime, so the schema would typecheck a blog that
  * cannot render a byline.
  *
  * Until that is fixed upstream, wrap the Svelte adapter and re-emit `meta` with

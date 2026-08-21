@@ -1,5 +1,4 @@
 import {
-	Apple,
 	BarChart3,
 	Camera,
 	Code2,
@@ -75,11 +74,6 @@ export const cloudFeatures = [
 	},
 ];
 
-// Storage tiers — Cloud is intentionally storage-agnostic. Free users
-// bring their own (the Drive flow already shipping today, plus Cloudinary
-// and autorender.io as additional BYO destinations on the roadmap).
-// Paid users get Recast-hosted storage and the option to point uploads
-// at their own S3 / R2 / Azure / GCP bucket.
 export const storageTiers = [
 	{
 		tier: "Free with Cloud",

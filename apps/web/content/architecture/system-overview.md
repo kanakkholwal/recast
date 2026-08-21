@@ -1,11 +1,11 @@
 ---
 kind: architecture
 title: "System overview"
-description: "How Recast is put together: a Rust recorder, a Svelte editor engine, and one WebGL2 compositor that draws both the preview and the export."
+description: "A Rust recorder, a Svelte editor engine, and one WebGL2 compositor that draws both the preview and the export."
 position: 0
 status: production
 domain: platform
-summary: "One compositor draws both the preview and the export, so the two cannot drift. Recording is Rust, editing is the browser, and FFmpeg is a muxer rather than a second renderer."
+summary: "One compositor draws the preview and the export, so the two cannot drift."
 inputs:
   - "A screen, window, or region selection"
   - "Microphone and system audio"

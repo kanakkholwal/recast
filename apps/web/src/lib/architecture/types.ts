@@ -10,6 +10,13 @@ export type ArchitectureDomain =
 	| "cloud"
 	| "agent";
 
+/** A `##` heading, for the on-page contents rail. */
+export interface DocHeading {
+	depth: number;
+	text: string;
+	id: string;
+}
+
 /** One subsystem page: its prose lives in markdown, these facts in frontmatter. */
 export interface ArchitectureMeta {
 	slug: string;
@@ -28,6 +35,8 @@ export interface ArchitectureMeta {
 	entrypoints: string[];
 	/** Rules the subsystem breaks at its peril. The highest-value field here. */
 	invariants: string[];
+	/** Derived by docvia from the markdown, not written by hand. */
+	headings: DocHeading[];
 }
 
 /** A page plus its compiled markdown tree. */
@@ -55,6 +64,23 @@ export const DOMAIN_LABEL: Record<ArchitectureDomain, string> = {
 	platform: "Platform",
 	cloud: "Cloud",
 	agent: "Agents",
+};
+
+/**
+ * Hue per domain, following the landing page's Record → Polish → Share spine.
+ * Platform and agents are neutral: they are not a step in it.
+ */
+export const DOMAIN_ACCENT: Record<
+	ArchitectureDomain,
+	"tangerine" | "lavender" | "green" | "neutral"
+> = {
+	capture: "tangerine",
+	editor: "lavender",
+	render: "lavender",
+	pipeline: "green",
+	cloud: "green",
+	platform: "neutral",
+	agent: "neutral",
 };
 
 export const STATUS_LABEL: Record<ArchitectureStatus, string> = {

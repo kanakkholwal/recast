@@ -1,11 +1,11 @@
 ---
 kind: architecture
 title: "Preview and RenderCore"
-description: "The WebGL2 compositor that draws one output frame, the free-running playback clock, and the pass list shared by preview and export."
+description: "The WebGL2 compositor, the free-running playback clock, and the pass list shared with the export."
 position: 3
 status: production
 domain: render
-summary: "A scene plus a moment in time is evaluated into a flat uniform set and painted in one pass list, and the offline export runs the identical code."
+summary: "One pass list paints every frame, and the export runs the identical code."
 inputs:
   - "EditorStore scene: segments, zoom, cursor, background, shadow, animations"
   - "Decoded frames from the texture ring"
@@ -32,7 +32,7 @@ scene at a moment in time, evaluates it into a flat uniform set, and paints
 into a WebGL2 canvas. The same code path renders every frame the offline
 export encodes. That is the load-bearing design choice: **there is one
 compositor** (`RenderCore` over `WebGL2Backend`), so preview and export
-cannot diverge — a visual bug is fixed once, and parity is structural rather
+cannot diverge, a visual bug is fixed once, and parity is structural rather
 than tested after the fact.
 
 Two things are deliberately decoupled:
@@ -50,7 +50,7 @@ Two things are deliberately decoupled:
   (`VideoPreview.svelte:139-164`, `882-901`).
 
 The pure scene→uniforms evaluator (`computeFrameParams`, `frame-params.ts:157`)
-is DOM-free, GL-free, store-free — it unit-tests in plain Node and is the
+is DOM-free, GL-free and store-free, so it unit-tests in plain Node and is the
 single definition shared by preview, the render worker, and export.
 
 ## Diagram
@@ -62,7 +62,7 @@ flowchart TD
   store["EditorStore<br/>(segments, zoom, cursor,<br/>background, shadow, anims)"]
   clock["PlaybackClock<br/>(output time)"]
   ring["FrameTextureRing<br/>(decoded frames as textures)"]
-  video["&lt;video&gt; element<br/>(fallback / audio transport)"]
+  video["video element<br/>(fallback, audio transport)"]
 
   clock -->|"outputToOriginal"| playbackTime
   store --> fi["buildFrameInput → FrameInput<br/>VideoPreview.svelte:621"]
@@ -78,7 +78,7 @@ flowchart TD
   rc --> main["backend.renderMain<br/>(single program, full-screen quad)"]
   main --> passes["overlay passes<br/>(export: sprite cursor, camera, anno/caption)"]
   passes --> canvas["WebGL2 canvas → screen"]
-  params -.->|"svgCursor (non-dot)"| domimg["HTML &lt;img&gt; cursor overlay"]
+  params -.->|"svgCursor (non-dot)"| domimg["HTML img cursor overlay"]
 ```
 
 Ordered pass list (`RenderCore.applyFrameParams`, `render-core.ts:59`):
@@ -86,7 +86,7 @@ Ordered pass list (`RenderCore.applyFrameParams`, `render-core.ts:59`):
 ```mermaid
 flowchart TD
   begin["beginFrame<br/>viewport + clear to opaque black<br/>webgl2-backend.ts:124"]
-  main["MAIN PASS — renderMain<br/>background + video card + zoom + motion blur<br/>+ rounded mask + drop shadow + DOT cursor + click highlight<br/>(all in one fragment shader) webgl2-backend.ts:135"]
+  main["MAIN PASS, renderMain<br/>background + video card + zoom + motion blur<br/>+ rounded mask + drop shadow + DOT cursor + click highlight<br/>(all in one fragment shader) webgl2-backend.ts:135"]
   after["afterMain hook<br/>(export only: build annotation+caption 2D layer,<br/>blur samples the just-composited frame) render-core.ts:71"]
   anno["annotation-layer pass (export)<br/>drawSprite(annotationTex) offscreen-export.ts:261"]
   cursor["cursor-sprite pass (export)<br/>drawSprite(sprite, hotspot rect) cursor-overlay-export.ts:80"]
@@ -96,7 +96,7 @@ flowchart TD
   begin --> main --> after --> anno --> cursor --> camera --> result
 ```
 
-Preview registers **no** overlay passes — its pass array is empty. The dot
+Preview registers **no** overlay passes, its pass array is empty. The dot
 cursor and click highlight are drawn inside the main shader; the sprite cursor
 and camera bubble are DOM overlays over the canvas. Export registers the pass
 list, so the same overlays are folded into GL for pixel parity.
@@ -117,13 +117,13 @@ list, so the same overlays are folded into GL for pixel parity.
 | `resolveAvSync` | `lib/playback/av-sync.ts:78` | Pure drift policy: audio is master, re-anchor the picture past 60 ms drift. |
 | `RenderWorkerClient` / `render-worker` | `lib/playback/render-worker-client.ts:30`, `render-worker.ts:167` | Phase-3 off-thread compositor: worker owns GL on its own `OffscreenCanvas`, transfers an `ImageBitmap` back, presented via `bitmaprenderer`. Same `WebGL2Backend`+`RenderCore`. |
 | `renderTimelineToVideo` | `lib/export/offscreen-export.ts:217` | Offline export: composites every frame through `RenderCore` and WebCodecs-encodes to mp4. |
-| `cursorOverlayFactory` | `lib/export/cursor-overlay-export.ts:56` | Export sprite-cursor pass — GL twin of the preview's DOM `<img>`. |
+| `cursorOverlayFactory` | `lib/export/cursor-overlay-export.ts:56` | Export sprite-cursor pass, GL twin of the preview's DOM `<img>`. |
 
 ## Control / data flow
 
 **rAF draw loop (per frame).** `startVideoFrameLoop` drives `draw()` off
 `requestAnimationFrame`, deliberately not the `<video>` element's
-`requestVideoFrameCallback` — rVFC stalls during the seek issued at a cut, the
+`requestVideoFrameCallback`, rVFC stalls during the seek issued at a cut, the
 exact moment painting must continue (`VideoPreview.svelte:962-989`). A bad
 frame is tolerated (logged once) rather than killing the loop. When paused,
 there is no loop; edits schedule a single coalesced redraw via `requestRedraw`
@@ -132,14 +132,14 @@ way out so a mid-playback change isn't stranded (`991-999`).
 
 **How `playbackTime` derives** (`draw()`, `VideoPreview.svelte:667-759`):
 
-- *MediaBunny + playing* — the picture clock is master. External scrubs
+- *MediaBunny + playing*, the picture clock is master. External scrubs
   re-seat the clock; audio drift is corrected via `resolveAvSync`; the end of
   the edited timeline asks the host (loop?) *before* stopping. `playbackTime =
   outputToOriginal(timeMap, picClock.time)`. `store.currentTime` is published
   at ~25 Hz (every-rAF fan-out starved frame delivery); the paused `<video>`
   is nudged to stay roughly aligned for a fallback handoff.
-- *MediaBunny + paused* — the store owns time: `playbackTime = store.currentTime`.
-- *Legacy `<video>` path* — the element owns time: `playbackTime =
+- *MediaBunny + paused*, the store owns time: `playbackTime = store.currentTime`.
+- *Legacy `<video>` path*, the element owns time: `playbackTime =
   videoEl.currentTime`; `handleSeeked` re-anchors the picture clock so resuming
   continues from the scrub (`VideoPreview.svelte:1426-1435`).
 
@@ -164,7 +164,7 @@ output frame calls `renderCore.renderFrame(frameInput, ctx, afterMain)`. It
 pulls decoded frames deterministically (`samplesAtTimestamps`, one decode per
 packet), uploads each to unit 0 via `backend.uploadFrame`, and reads the
 composited canvas into a WebCodecs `CanvasSource`. Same `computeFrameParams`,
-same shader, same uniforms — so what plays is what encodes. The `afterMain`
+same shader, same uniforms, so what plays is what encodes. The `afterMain`
 hook builds the annotation/caption 2D layer after the main pass so blur can
 sample the just-composited frame (`render-core.ts:71`, `offscreen-export.ts:377`).
 
@@ -185,7 +185,7 @@ sample the just-composited frame (`render-core.ts:71`, `offscreen-export.ts:377`
   (`offscreen-export.ts:226`).
 - **Suspend during browser export.** The play effect checks
   `exportActivity.renderingInBrowser` and suspends the continuous 60 fps decode
-  loop while an in-browser export runs — that loop is what starved the export's
+  loop while an in-browser export runs, that loop is what starved the export's
   shared GPU/decoder context. `isPlaying` is left untouched so playback
   auto-resumes; paused scrubs stay live (`VideoPreview.svelte:1393-1398`).
 - **The on-screen canvas is never `transferControlToOffscreen`-d.** The Phase-3
@@ -220,9 +220,9 @@ sample the just-composited frame (`render-core.ts:71`, `offscreen-export.ts:377`
 
 ## Related
 
-- `04-media-decode-and-workers.md` — MediaBunny source, decoder pool, the frame
+- `04-media-decode-and-workers.md`, MediaBunny source, decoder pool, the frame
   ring's decoder-starvation rationale, and worker ownership.
-- `05-timeline-model.md` — segments, cuts, `timeMap`, and `outputToOriginal`
+- `05-timeline-model.md`, segments, cuts, `timeMap`, and `outputToOriginal`
   that map the output clock to original media time.
-- `06-export-pipeline.md` — the offline export job, audio warp/mux, and the Rust
+- `06-export-pipeline.md`, the offline export job, audio warp/mux, and the Rust
   compositor twin the shader mirrors.

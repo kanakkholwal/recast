@@ -1,12 +1,12 @@
 <script lang="ts">
-import { Container, Footer, Section, SeoMeta } from "$lib/components";
-import { formatDate } from "$lib/blog/format";
-import { prefersReducedMotion } from "$lib/motion-core";
-import { Badge } from "@recast/ui/badge";
-import Prose from "$lib/docs/Prose.svelte";
 import { ArrowLeft, Clock } from "@recast/icons";
-import { fly } from "svelte/transition";
+import { Badge } from "@recast/ui/badge";
 import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { formatDate } from "$lib/blog/format";
+import { Container, Footer, Section, SeoMeta } from "$lib/components";
+import Prose from "$lib/docs/Prose.svelte";
+import { prefersReducedMotion } from "$lib/motion-core";
 import type { PageData } from "./$types";
 
 // Hero entrance: same 80ms stagger as the rest of the public pages.

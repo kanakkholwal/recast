@@ -1,11 +1,11 @@
 ---
 kind: architecture
 title: "State and the project format"
-description: "The Svelte 5 runes store that holds the whole document, the one-way flow rule, and the sectioned versioned .recast v2 bundle."
+description: "The runes store that holds the whole document, the one-way flow rule, and the sectioned .recast bundle."
 position: 8
 status: production
 domain: editor
-summary: "One reactive store is the single source of truth, the render engines read a snapshot and never write back, and Rust splits that snapshot into versioned sections inside a ZIP."
+summary: "One store is the truth. The engines read a snapshot and never write back."
 inputs:
   - "A loaded .recast bundle"
   - "User edits through store methods"
@@ -25,8 +25,8 @@ invariants:
 
 ## Overview
 
-The editor keeps its entire document in one reactive store — `createEditorStore()`
-in `packages/editor/src/stores/editor-store.svelte.ts:109` — built on Svelte 5
+The editor keeps its entire document in one reactive store, `createEditorStore()`
+in `packages/editor/src/stores/editor-store.svelte.ts:109`, built on Svelte 5
 runes. `$state`/`$state.raw` fields hold the raw document; `$derived`/`$derived.by`
 memos compute everything downstream of it (kept segments, the output time-map, the
 caption rescale, the current selection). Nothing outside the store writes those
@@ -35,7 +35,7 @@ fields except through the store's own methods.
 State flows **one way**. The store is the single source of truth; the preview and
 export engines *read* a snapshot of it (`FrameInput` params or an
 `EditorRenderState`) and composite frames, but never write back into the store.
-The document model itself is runes-free and Tauri-free — it lives in
+The document model itself is runes-free and Tauri-free; it lives in
 `packages/editor/src/lib/editor/render-state.ts` (`EditorRenderState`, all its
 types, defaults, and pure helpers) so the wire/IPC layer and unit tests can import
 the shape without pulling in reactivity (`render-state.ts:1`).
@@ -99,7 +99,7 @@ flowchart LR
 | Component | Location | Role |
 |---|---|---|
 | `createEditorStore()` | `editor-store.svelte.ts:109` | The reactive document store; returns getters/setters + methods |
-| `$state`/`$state.raw` fields | `editor-store.svelte.ts:110`–`373` | Raw document state; `.raw` for replace-only large arrays (`transcript:120`, `thumbnailStrip:135`, `cursorSamplesRaw:228`, undo stacks `:359`) |
+| `$state`/`$state.raw` fields | `editor-store.svelte.ts:110`-`373` | Raw document state; `.raw` for replace-only large arrays (`transcript:120`, `thumbnailStrip:135`, `cursorSamplesRaw:228`, undo stacks `:359`) |
 | `captureSettings()` | `editor-store.svelte.ts:378` | The exact set of **undoable** fields; must stay in sync with `applySnapshot` |
 | `pushUndoState` / `withoutUndo` / `pushUndoStateCoalesced` | `:419`, `:431`, `:455` | Undo history (`$state.raw` stacks, `$state.snapshot` clones, bound to 50); suppression + coalescing |
 | `cutsMemo` / `segmentsMemo` / `timeMapMemo` / `renderMap` | `:1380`, `:1393`, `:1411`, `:1436` | Memoized cut→segment→time-map chain; exposed via `effectiveCuts`/`segments`/`timeMap` getters |
@@ -122,17 +122,17 @@ flowchart LR
 
 1. A UI action calls a store method (e.g. `addCut`, `splitAt`, `updateZoomRegion`)
    or a setter. Mutating methods call `pushUndoState()` (or a coalesced/`withoutUndo`
-   variant) and reassign a `$state` field with a fresh array/object — never
+   variant) and reassign a `$state` field with a fresh array/object, never
    index-mutate (`editor-store.svelte.ts:1304`, `:606`).
 2. Reassigning a `$state` field invalidates every `$derived` memo that read it.
    The `cuts → cutsMemo → segmentsMemo → timeMapMemo` chain recomputes lazily on
    next read; the pure math (`deriveSegments`, `timeMapFromSegments`) is unchanged,
-   only re-run when an input actually changed (`:1380`–`1428`).
+   only re-run when an input actually changed (`:1380`-`1428`).
 3. `VideoPreview.svelte` reads store getters (`timeMap`, `zoomRegions`,
    `cameraOverlay`, `captionTranscript`, …) inside its draw effect, builds a
    `FrameInput` via `computeFrameParams`, and hands it to `RenderCore`
    (`components/render-core.ts`, driven by the render worker). The scene evaluators
-   (`lib/scenes/eval.ts`) are pure functions of that input — they hold no store
+   (`lib/scenes/eval.ts`) are pure functions of that input, they hold no store
    reference, so the engine cannot mutate state. This is the one-way boundary.
 4. Export takes the same path: `store.toRenderState()` → `buildExportBase` /
    `export-scene.ts` → the *same* `RenderCore`, so preview and export composite
@@ -159,7 +159,7 @@ flowchart LR
    thread, clears the autosave shadow, and returns the save timestamp
    (`commands/editor.rs:3124`).
 3. `update_project_edits` opens the existing v2 archive, **raw-copies** every
-   non-`edits/` entry (manifest, metadata, media — no decode/re-encode), rewrites
+   non-`edits/` entry (manifest, metadata, media, no decode/re-encode), rewrites
    only the `edits/` sections (`split_edits` + `canonicalize`), writes to a
    `.recast.tmp`, and atomically renames over the original (`writer.rs:127`).
 4. Back in JS, `store.markSaved(savedAt)` clears `isDirty`, records `lastSavedAt`,
@@ -175,7 +175,7 @@ JSON to a separate recovery shadow, gated on `isDirty`.
   `isTrimming:174`, selection ids) are still `$state` but are deliberately excluded
   from `captureSettings`/`toRenderState` so they neither undo nor persist. Large
   replace-only arrays use `$state.raw` (`transcript`, `thumbnailStrip`,
-  `cursorSamplesRaw`, undo stacks) — deep-proxying tens of thousands of entries is
+  `cursorSamplesRaw`, undo stacks): deep-proxying tens of thousands of entries is
   pure overhead; only array identity needs reactivity (`:132`).
 - **One-way flow: the engine never mutates the store.** `RenderCore` / the WebGL2
   backend / scene evaluators are pure over `FrameInput`/`EditorRenderState` and hold
@@ -189,7 +189,7 @@ JSON to a separate recovery shadow, gated on `isDirty`.
   `updateCameraOverlayLive:806`). Continuous gestures coalesce with
   `pushUndoStateCoalesced` so one drag is one undo (`:455`).
 - **`captureSettings` and `applySnapshot` must stay in lockstep.** Any undoable
-  field left out of `captureSettings` (`:378`) silently survives an undo — the user
+  field left out of `captureSettings` (`:378`) silently survives an undo, the user
   sees unrelated edits revert while their tweak stays put. Camera overlay was once
   captured but not restored, which destroyed camera edits on undo (fixed at `:562`).
 - **Serialization is a boundary, not the store.** `toRenderState` de-proxies via
@@ -207,7 +207,7 @@ JSON to a separate recovery shadow, gated on `isDirty`.
   (`canonicalize:146`).
 - **Atomic writes; never remove-before-rename.** Both `write_project` and
   `update_project_edits` write a `.recast.tmp`, `sync_all()`, then `fs::rename` over
-  the original — which already replaces atomically. Deleting the original first
+  the original, which already replaces atomically. Deleting the original first
   opens a window where a crash loses the project outright (`writer.rs:36`,
   reader mirrors this for extracted assets at `reader.rs:315`).
 - **Migration is dialog-gated and backed up.** `is_legacy_project` cheaply probes
@@ -219,6 +219,6 @@ JSON to a separate recovery shadow, gated on `isDirty`.
 
 ## Related
 
-- `03-preview-and-rendercore.md` — the read-only consumer of store state (`FrameInput` → `RenderCore`).
-- `05-timeline-model.md` — the cut/segment/time-map math the memos wrap.
-- `06-export-pipeline.md` — `toRenderState` → shared `RenderCore` → encoder.
+- `03-preview-and-rendercore.md`, the read-only consumer of store state (`FrameInput` → `RenderCore`).
+- `05-timeline-model.md`, the cut/segment/time-map math the memos wrap.
+- `06-export-pipeline.md`, `toRenderState` → shared `RenderCore` → encoder.

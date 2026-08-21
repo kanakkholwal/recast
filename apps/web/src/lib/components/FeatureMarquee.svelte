@@ -90,7 +90,7 @@ const badgeLabel = { auto: "Auto", manual: "Manual" } as const;
 							</span>
 						</div>
 
-						<h3 class="mt-4 text-body font-semibold text-foreground">{item.title}</h3>
+						<h3 class="mt-4 font-display text-body font-medium text-foreground">{item.title}</h3>
 						<p class="mt-1 text-body-sm text-muted-foreground">{item.description}</p>
 					</article>
 				{/each}

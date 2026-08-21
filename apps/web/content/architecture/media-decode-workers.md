@@ -1,11 +1,11 @@
 ---
 kind: architecture
 title: "Media decode and workers"
-description: "MediaBunny decoding into a GPU texture ring, the five Web Workers, and the ownership rule that keeps package-supplied workers resolvable."
+description: "MediaBunny decoding into a GPU texture ring, the five workers, and the rule that keeps them resolvable."
 position: 4
 status: production
 domain: render
-summary: "Video decodes off the main thread and uploads straight into a GPU texture, and nothing on the main thread ever holds a decoded frame."
+summary: "Frames decode off the main thread into a GPU texture, then close immediately."
 inputs:
   - "A media file path or blob"
   - "Requested presentation timestamps"
@@ -30,7 +30,7 @@ invariants:
 The editor preview decodes video frame-accurately off the main thread with
 [MediaBunny](https://mediabunny.dev) (WebCodecs under the hood), uploads each
 decoded `VideoFrame` straight into a GPU texture, and closes the frame in the
-same tick. Nothing on the main thread ever retains a decoded frame — that is the
+same tick. Nothing on the main thread ever retains a decoded frame; that is the
 load-bearing rule (`packages/media/src/playback/source.ts:22`,
 `packages/editor/src/lib/playback/frame-textures.ts:1`).
 
@@ -54,7 +54,7 @@ element (`packages/media/src/playback/source.ts:145`,
 
 ```mermaid
 flowchart TB
-  subgraph host["apps/desktop — host owns every new Worker()"]
+  subgraph host["apps/desktop, host owns every new Worker()"]
     idx["workers/index.ts<br/>WorkerHost.create(name)"]
   end
 
@@ -65,7 +65,7 @@ flowchart TB
     fsp["MediabunnyTileProvider"]
     csm["CursorSmoother"]
     ewc["runExportJobInWorker"]
-    video["&lt;video&gt; fallback element"]
+    video["video element fallback"]
   end
 
   subgraph workers["Web Workers (bodies live in packages)"]
@@ -102,7 +102,7 @@ flowchart TB
 ```mermaid
 flowchart TD
   a["createMediabunnySource(src, {durationSec, fps})"] --> b{"Worker &amp;&amp; VideoFrame<br/>in this WebView?"}
-  b -->|no| fb["throw → &lt;video&gt; fallback"]
+  b -->|no| fb["throw, video element fallback"]
   b -->|yes| c{"ext in<br/>UNSUPPORTED_FORMATS?"}
   c -->|yes| fb
   c -->|no| d["spawn worker → init"]
@@ -144,8 +144,7 @@ The no-op default throws loudly if a host installs nothing
    containers via `isUnsupportedContainer(ext)`, then spawns the host worker and
    posts `init` (`packages/media/src/playback/source.ts:149`).
 3. The worker builds `Input({ source: mediaRefSource(src), formats: ALL_FORMATS })`,
-   asserts `canRead()` and a primary video track, then gates on `track.canDecode()`
-   — parsing proves nothing (HEVC parses then throws on first decode). It picks
+   asserts `canRead()` and a primary video track, then gates on `track.canDecode()`, parsing proves nothing (HEVC parses then throws on first decode). It picks
    `prefer-hardware` only when `VideoDecoder.isConfigSupported` confirms it, builds
    a `VideoSampleSink`, and posts `ready` with `{width,height,durationSec,fps}`
    (`packages/media/src/playback/worker.ts:199`).
@@ -159,7 +158,7 @@ The no-op default throws loudly if a host installs nothing
    `lookaheadSec` (a frame count derived from the texture ring, not a fixed
    duration) ahead of the playhead (`packages/media/src/playback/worker.ts:295`).
 6. `#onMessage` hands the frame to `onFrameDecoded(frame, tsUs)` and closes it in
-   a `finally` — same tick. The consumer (`VideoPreview`) forwards it to
+   a `finally`, same tick. The consumer (`VideoPreview`) forwards it to
    `RenderWorkerClient.putFrame` (which `clone()`s + transfers a copy over the
    frame `MessagePort`, since the source closes the original), or uploads directly
    into a main-thread `FrameTextureRing.put` when there is no render worker
@@ -169,7 +168,7 @@ The no-op default throws loudly if a host installs nothing
 7. The render worker uploads into its own ring and composites (reusing the same
    `WebGL2Backend`+`RenderCore` as the on-screen path), then transfers an
    `ImageBitmap` the client presents via a `bitmaprenderer` (`alpha:false`)
-   context — latest-wins mailbox so a slow frame never queues lag
+   context, latest-wins mailbox so a slow frame never queues lag
    (`packages/editor/src/lib/playback/render-worker-client.ts:49`,`:108`).
 
 ### `<video>` fallback
@@ -186,7 +185,7 @@ GPU reset gets a bounded auto-rebuild, a permanent codec failure falls back to
 
 ## Invariants & gotchas
 
-- **HIGHEST VALUE — the desktop Vite config must accommodate source-shipping
+- **HIGHEST VALUE: the desktop Vite config must accommodate source-shipping
   worker packages (dev only; the prod build emits worker chunks fine):**
   - **`optimizeDeps.exclude` must list `@recast/editor` and `@recast/media`**
     (`apps/desktop/vite.config.ts:32`). If esbuild pre-bundles them, the
@@ -195,7 +194,7 @@ GPU reset gets a bounded auto-rebuild, a permanent codec failure falls back to
   - **`server.fs.allow` must cover the workspace root**, or the dev server refuses
     to serve a sibling package's worker source ("outside serving allow list").
     ⚠️ In this repo `apps/desktop/vite.config.ts` does **not** set `server.fs.allow`
-    explicitly — the `@sveltejs/kit/vite` plugin auto-allows the workspace root, so
+    explicitly, the `@sveltejs/kit/vite` plugin auto-allows the workspace root, so
     the requirement is satisfied implicitly. A non-SvelteKit host (or one that
     tightens `fs.allow`) must add it by hand. See
     `docs/architecture/02-editor-forking-and-host-seam.md:81`.
@@ -214,17 +213,17 @@ GPU reset gets a bounded auto-rebuild, a permanent codec failure falls back to
   `apps/desktop/src/lib/workers/index.ts:3`).
 - **`classifyMbError` buckets diverge on purpose**
   (`packages/editor/src/components/video-preview.logic.ts:187`):
-  - `worker_failed` — "worker script failed to load" / "worker-died": a **build**
+  - `worker_failed`, "worker script failed to load" / "worker-died": a **build**
     problem (the Vite gotcha above), split out first so it doesn't masquerade as a
     codec issue and send devs chasing the user's video.
-  - `unsupported` — message mentions "unavailable" / "worker" / "videoframe": the
+  - `unsupported`, message mentions "unavailable" / "worker" / "videoframe": the
     WebView lacks the API surface, not a codec limitation.
-  - `codec_unsupported` — "codec" / "config" / "decoder": a **real** undecodable
+  - `codec_unsupported`, "codec" / "config" / "decoder": a **real** undecodable
     codec (e.g. HEVC on a Windows box without the extension), caught by
     `track.canDecode()`.
 - **Post the real presentation timestamp, not the requested one.** The ring/cache
   key on `sample.timestamp` and read nearest-at-or-before; the `floorUs` argument
-  is load-bearing — it stops a cut boundary from stepping the picture back into
+  is load-bearing: it stops a cut boundary from stepping the picture back into
   deleted content (`packages/media/src/playback/worker.ts:309`,
   `packages/editor/src/lib/playback/frame-textures.ts:30`).
 - **Supersede before waking.** A decode run parked on backpressure only re-checks
@@ -235,11 +234,23 @@ GPU reset gets a bounded auto-rebuild, a permanent codec failure falls back to
   re-`texImage2D`-ing every frame (which re-specified 33 MB per 4K frame)
   (`packages/editor/src/lib/playback/frame-textures.ts:108`).
 
+### The cache cap is load-bearing
+
+Every `VideoFrame` needs exactly one close path, and that path is LRU eviction
+in the media cache plus the bulk clear and replace calls. This is not
+hypothetical: the cache shipped with **no in-memory cap at all**. Nothing was
+ever closed, and the disposal path deliberately kept frames. It survived three
+reviews because the performance test asserting the cap never imported any
+package code.
+
+If you touch the cache, add a test that inserts past the cap and asserts the
+frames were closed.
+
 ## Related
 
-- [03-preview-and-rendercore.md](/architecture/preview-rendercore) — the shared
+- [03-preview-and-rendercore.md](/architecture/preview-rendercore): the shared
   `WebGL2Backend`/`RenderCore` compositor the render + export workers reuse
-- [05-timeline-model.md](/architecture/timeline-model) — cuts/segments and the `floorUs`
+- [05-timeline-model.md](/architecture/timeline-model): cuts/segments and the `floorUs`
   the decode path honors; filmstrip virtualization
-- [06-export-pipeline.md](/architecture/export-pipeline) — the export-render worker and why
+- [06-export-pipeline.md](/architecture/export-pipeline): the export-render worker and why
   `exportActivity` stays host-side

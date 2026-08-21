@@ -4,7 +4,7 @@ import { footerCols as cols, footerSocials as socials } from "$lib/components/na
 import Logo from "$lib/logo.svelte";
 </script>
 
-<footer class="relative border-t border-border-low bg-paper rounded-t-4xl">
+<footer class="relative border-t border-border-low bg-paper">
   <Container class="relative pt-20 pb-10 md:pt-24 md:pb-12" as="div">
     <div class="grid gap-14 md:grid-cols-12">
       <div class="md:col-span-5">
@@ -69,9 +69,50 @@ import Logo from "$lib/logo.svelte";
 
   <div class="relative overflow-hidden px-4 pb-8 md:pb-10">
     <span
-      class="block select-none text-center font-display text-[22vw] font-medium leading-[0.82] tracking-tight text-foreground/5"
+      class="wordmark block select-none text-center font-display text-[22vw] font-medium leading-[0.82] tracking-tight"
     >
       Recast
     </span>
   </div>
 </footer>
+
+<style>
+	/* Foreground-to-neutral fill with a highlight band that drifts across it. */
+	.wordmark {
+		background-image: linear-gradient(
+			100deg,
+			color-mix(in oklab, var(--color-foreground) 4%, transparent) 0%,
+			color-mix(in oklab, var(--color-foreground) 26%, transparent) 20%,
+			color-mix(in oklab, var(--color-foreground) 80%, transparent) 50%,
+			color-mix(in oklab, var(--color-foreground) 26%, transparent) 80%,
+			color-mix(in oklab, var(--color-foreground) 4%, transparent) 100%
+		);
+		background-size: 260% 100%;
+		background-clip: text;
+		-webkit-background-clip: text;
+		color: transparent;
+		animation: wordmark-sheen 9s linear infinite;
+	}
+
+	@keyframes wordmark-sheen {
+		from {
+			background-position: 160% 0;
+		}
+		to {
+			background-position: -60% 0;
+		}
+	}
+
+	/* The global guard collapses duration to 0.01ms, which would park the sheen
+	   mid-sweep; kill it outright and hold the flat fill. */
+	@media (prefers-reduced-motion: reduce) {
+		.wordmark {
+			animation: none;
+			background-image: linear-gradient(
+				100deg,
+				color-mix(in oklab, var(--color-foreground) 5%, transparent) 0%,
+				color-mix(in oklab, var(--color-foreground) 12%, transparent) 100%
+			);
+		}
+	}
+</style>

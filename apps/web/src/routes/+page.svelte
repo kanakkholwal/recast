@@ -1,57 +1,61 @@
 <script lang="ts">
 import { goto } from "$app/navigation";
 import {
-  BeforeAfterSlider,
-  Container,
-  ExportMock,
-  FeatureMarquee,
-  Footer,
-  Hero,
-  MacWindow,
-  NotchedShelf,
-  PillarSection,
-  RecordMock,
-  Reveal,
-  Section,
-  SectionLabel,
-  SeoMeta,
+	BeforeAfterSlider,
+	Container,
+	ExportMock,
+	FaqList,
+	FeatureMarquee,
+	Footer,
+	Hero,
+	MacWindow,
+	NotchedShelf,
+	PillarSection,
+	PolishMock,
+	RecordMock,
+	Reveal,
+	Section,
+	SectionLabel,
+	SeoMeta,
 } from "$lib/components";
 import { steps } from "$lib/components/Hero.logic";
 import { prefersReducedMotion } from "$lib/motion-core";
 import {
-  ArrowRight,
-  Check,
-  Cloud,
-  Compass,
-  Download,
-  HardDriveUpload,
-  KeyRound,
-  Monitor,
-  Play,
-  Share2,
-  Star,
-  Video,
-  Wand2,
-  X
+	ArrowRight,
+	Check,
+	CircleHelp,
+	Cloud,
+	Compass,
+	Download,
+	HardDriveUpload,
+	KeyRound,
+	Monitor,
+	Play,
+	Share2,
+	Star,
+	Video,
+	Wand2,
+	X,
 } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
 import { Image } from "@unpic/svelte";
 
 import {
-  beforeAfterClips,
-  cloudFeatures,
-  contrast,
-  editorFeatures,
-  extensionBeat,
-  faqJsonLd,
-  founderUse,
-  openSourceClaims,
-  platformDownloads,
-  polishColumns,
-  recordColumns,
-  shareColumns,
-  stabilityChip
+	beforeAfterClips,
+	cloudFeatures,
+	contrast,
+	editorFeatures,
+	extensionBeat,
+	faqJsonLd,
+	faqs,
+	founderUse,
+	openSourceClaims,
+	platformDownloads,
+	polishColumns,
+	recordColumns,
+	shareColumns,
+	stabilityChip,
 } from "./data";
 
 const reduced = $derived(prefersReducedMotion());
@@ -199,7 +203,7 @@ function dragScroll(node: HTMLElement) {
               See it work
             </span>
             <h2
-              class="text-balance font-medium text-heading sm:text-heading-lg md:text-display"
+              class="font-display text-balance font-medium text-heading sm:text-heading-lg md:text-display"
             >
               Same take.
               <span class="block text-muted-foreground"> Polished demo. </span>
@@ -258,7 +262,7 @@ function dragScroll(node: HTMLElement) {
       </Reveal>
     </Container>
 
-    <Reveal variant="up" delay={100}>
+    <Reveal variant="up" delay={100} class="hidden">
       <div class="border-t border-border-low">
         <p class="pt-10 text-center text-body-sm text-muted-foreground">
           Built on tools makers trust
@@ -384,22 +388,12 @@ function dragScroll(node: HTMLElement) {
     features={polishColumns}
   >
     {#snippet visual()}
-      <figure class="mx-auto max-w-5xl">
+      <figure class="mx-auto max-w-4xl">
         <MacWindow title="Recast · Editor">
-          <div class="p-1.5">
-            <Image
-              src="/product_preview_hero.webp"
-              alt="Recast editor"
-              width="1920"
-              height="1080"
-              loading="lazy"
-              decoding="async"
-              class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
-            />
-          </div>
+          <PolishMock />
         </MacWindow>
         <figcaption class="mt-5 text-center text-body-sm text-muted-foreground">
-          Timeline, zoom regions, annotations and export presets in one window.
+          Zoom, silence cuts and cursor smoothing, applied as the take lands.
         </figcaption>
       </figure>
     {/snippet}
@@ -479,7 +473,7 @@ function dragScroll(node: HTMLElement) {
           {@const Icon = item.icon}
           <Reveal variant="up" delay={i * 70} as="article" class="flex h-full flex-col bg-background px-6 py-8">
             <Icon class="size-5 text-tag-lavender [fill-opacity:0.2]" fill="currentColor" />
-            <h3 class="mt-4 text-body font-semibold text-foreground">{item.title}</h3>
+            <h3 class="mt-4 font-display text-body font-medium text-foreground">{item.title}</h3>
             <p class="mt-2 text-body-sm text-muted-foreground">{item.description}</p>
           </Reveal>
         {/each}
@@ -501,9 +495,9 @@ function dragScroll(node: HTMLElement) {
     features={shareColumns}
   >
     {#snippet visual()}
-      <div class="surface-lg mx-auto max-w-3xl p-6 sm:p-8">
+      <figure class="mx-auto max-w-3xl">
         <span
-          class="pill inline-flex items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground"
+          class="pill mx-auto flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground"
         >
           <HardDriveUpload
             class="size-3.5 text-tag-green [fill-opacity:0.2]"
@@ -511,23 +505,16 @@ function dragScroll(node: HTMLElement) {
           />
           Google Drive · built in
         </span>
-        <h3 class="mt-5 text-heading-sm font-semibold text-foreground">
-          Export, upload and share in one click.
-        </h3>
-        <p class="mt-2 text-body-sm text-muted-foreground">
-            Live progress, then "Copy link" is right there. No second tab, no Recast servers in between.
-          </p>
-        <div class="mt-6">
+        <MacWindow title="Recast · Share" class="mt-6">
           <ExportMock />
-        </div>
-        <p
-          class="mt-5 inline-flex items-center gap-2 text-caption text-muted-foreground"
+        </MacWindow>
+        <figcaption
+          class="mt-5 flex items-center justify-center gap-2 text-caption text-muted-foreground"
         >
           <KeyRound class="size-3.5" />
-          OAuth scoped to files Recast uploads. Revoke any time from your Google
-          account.
-        </p>
-      </div>
+          OAuth scoped to files Recast uploads. Revoke any time.
+        </figcaption>
+      </figure>
     {/snippet}
   </PillarSection>
 <Section id="cloud" class="mx-auto max-w-6xl border-t border-border-low">
@@ -567,7 +554,7 @@ function dragScroll(node: HTMLElement) {
                 fill="currentColor"
               />
               <div class="min-w-0">
-                <h3 class="text-body font-semibold text-foreground">{item.title}</h3>
+                <h3 class="font-display text-body font-medium text-foreground">{item.title}</h3>
                 <p class="mt-1 text-body-sm text-muted-foreground">{item.description}</p>
               </div>
             </Reveal>
@@ -638,7 +625,7 @@ function dragScroll(node: HTMLElement) {
           {@const Icon = item.icon}
           <Reveal variant="up" delay={i * 70} as="article" class="flex h-full flex-col bg-background px-6 py-8">
             <Icon class="size-5 text-muted-foreground" />
-            <h3 class="mt-4 text-body font-semibold text-foreground">{item.title}</h3>
+            <h3 class="mt-4 font-display text-body font-medium text-foreground">{item.title}</h3>
             <p class="mt-2 text-body-sm text-muted-foreground">{item.description}</p>
           </Reveal>
         {/each}
@@ -646,9 +633,7 @@ function dragScroll(node: HTMLElement) {
     </Container>
   </Section>
 
-  <!-- Pricing teaser. Two plans as one hairline-split row, not two floating
-       cards: they are the same object at two tiers, so a shared rule reads
-       truer than two containers sitting side by side. -->
+
   <Section id="pricing-teaser" class="mx-auto max-w-6xl border-t border-border-low">
     <Container>
       <Reveal variant="up">
@@ -702,14 +687,33 @@ function dragScroll(node: HTMLElement) {
     </Container>
   </Section>
 
-  <!-- Closing CTA. Bookends the hero: the same notched shelf bridges into the
-       page's one dark band, and it carries the three-step spine the hero shelf
-       opened with, so the two ends of the page rhyme. -->
+  <Section id="faq" class="mx-auto max-w-6xl border-t border-border-low">
+    <Container>
+      <div class="grid gap-10 md:grid-cols-12 md:gap-12">
+        <div class="md:col-span-4">
+          <Reveal variant="up">
+            <SectionLabel icon={CircleHelp} label="Questions" />
+          </Reveal>
+          <Reveal variant="up" delay={60} class="mt-5">
+            <h2 class="font-display text-balance text-heading md:text-heading-lg">
+              Before you download
+            </h2>
+          </Reveal>
+          <Reveal variant="up" delay={120} class="mt-4">
+            <p class="text-pretty text-body-sm text-muted-foreground">
+              Everything people ask first, answered without a sales detour.
+            </p>
+          </Reveal>
+        </div>
+        <Reveal variant="up" delay={160} class="md:col-span-8">
+          <FaqList items={faqs} />
+        </Reveal>
+      </div>
+    </Container>
+  </Section>
+
   <section id="cta" class="relative bg-background">
-    <!-- The shelf stays OUTSIDE the dark subtree: inside it,
-         var(--color-background) resolves to the dark canvas and the bridge
-         would vanish into the band it is supposed to bridge. -->
-    <NotchedShelf fill="text-background" class="h-14 sm:h-16">
+     <NotchedShelf fill="text-background" class="h-14 sm:h-16">
       <ol class="flex items-center gap-2.5 text-caption font-medium text-muted-foreground sm:gap-3 sm:text-body-sm">
         {#each steps as step, i (step.id)}
           {@const Icon = step.icon}
@@ -744,15 +748,15 @@ function dragScroll(node: HTMLElement) {
 
           <Reveal variant="up" delay={210} duration={460} class="mt-9">
             <div class="flex flex-wrap items-center justify-center gap-3">
-              <Button href="/download" variant="light" size="lg" class="gap-2">
+              <Button href="/download" variant="raw" size="lg" class="gap-2 bg-white text-black">
                 <Download class="size-4" />
                 Download free
               </Button>
               <Button
                 href="/signup"
-                variant="outline"
+                variant="ghost"
                 size="lg"
-                class="group/cta band-divide gap-2 bg-transparent text-current hover:bg-white/10"
+                class="group/cta band-rule gap-2 bg-transparent text-current hover:bg-current/10"
               >
                 Share your first demo
                 <ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
@@ -764,7 +768,7 @@ function dragScroll(node: HTMLElement) {
         <!-- Per-platform row as a hairline grid, not three floating cards: the
              stability label carries the difference, so the cards do not need to. -->
         <Reveal variant="up" delay={280} duration={460} class="mt-14">
-          <div class="band-divide grid grid-cols-1 gap-px border-y sm:grid-cols-3">
+          <div class="band-gap band-rule grid grid-cols-1 gap-px border-y sm:grid-cols-3">
             {#each platformDownloads as p (p.os)}
               {@const Icon = p.icon}
               {@const chip = stabilityChip[p.stability]}

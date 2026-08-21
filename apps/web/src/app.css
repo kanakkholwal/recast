@@ -80,13 +80,21 @@
 [data-site="marketing"].dark,
 [data-site="marketing"][data-theme="dark"] {
 	--background: oklch(14.5% 0 0);
-	--card: oklch(17.5% 0 0);
-	--paper: oklch(20.5% 0 0);
+	/* Card matches the canvas, as it does in light: the hairline is what makes a
+	   container, so a card on a paper band reads by its border, not by a lift. */
+	--card: oklch(14.5% 0 0);
+	--paper: oklch(18.5% 0 0);
 	--foreground: oklch(96% 0 0);
 	--ink-strong: oklch(100% 0 0);
-	--muted-foreground: oklch(64% 0 0);
-	--border: oklch(26.9% 0 0);
-	--border-emphasis: oklch(33% 0 0);
+	--muted-foreground: oklch(68% 0 0);
+	--border: oklch(30% 0 0);
+	--border-emphasis: oklch(42% 0 0);
+
+	/* Accents are lifted for dark: the light-mode hues sit at 54-64% L and go
+	   muddy against a 14.5% canvas. */
+	--color-tag-tangerine: oklch(74% 0.155 48);
+	--color-tag-lavender: oklch(74% 0.135 291);
+	--color-tag-green: oklch(75% 0.16 152);
 }
 
 @theme {
@@ -225,7 +233,15 @@
 		@apply text-foreground;
 	}
 
-	[data-site="marketing"] h3,
+	/* Subheads stay on the display face too, at 500: Satoshi has no 600, and 700
+	   is too heavy at body size. */
+	[data-site="marketing"] h3 {
+		font-family: var(--font-display);
+		font-weight: 500;
+		letter-spacing: -0.008em;
+		@apply text-foreground;
+	}
+
 	[data-site="marketing"] h4,
 	[data-site="marketing"] h5,
 	[data-site="marketing"] h6 {
@@ -311,8 +327,13 @@
 		color: var(--band-muted);
 	}
 
-	.band-dark .band-divide {
+	/* Split deliberately: a grid needs the line as a background (gap-px), a
+	   button needs it as a border. One class doing both gives the button a fill. */
+	.band-dark .band-rule {
 		border-color: var(--band-line);
+	}
+
+	.band-dark .band-gap {
 		background-color: var(--band-line);
 	}
 
@@ -320,6 +341,13 @@
 	   the gap-px hairline colour floods the whole cell. */
 	.band-dark .band-surface {
 		background-color: oklch(14.5% 0 0);
+	}
+
+	/* In dark mode the canvas is already 14.5%, so the band needs to go lower or
+	   it stops reading as a band at all. */
+	:where(.dark, [data-theme="dark"]) .band-dark,
+	:where(.dark, [data-theme="dark"]) .band-dark .band-surface {
+		background-color: oklch(10.5% 0 0);
 	}
 
 	/* Dub's dotted-grid signature: a blueprint texture at very low opacity. */

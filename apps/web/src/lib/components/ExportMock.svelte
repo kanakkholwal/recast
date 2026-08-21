@@ -1,21 +1,15 @@
 <script lang="ts">
 import { prefersReducedMotion } from "$lib/motion-core";
-import { Check, HardDriveUpload, Link2, Video } from "@recast/icons";
+import { Check, FileVideo, FolderOpen, Link2 } from "@recast/icons";
+import { buttonVariants } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
 
-// Export → upload → link, as the three-stop journey it actually is.
-//
-// The old mock was a success toast with a progress bar bolted under it, so the
-// payoff (a link you can paste) was the smallest thing on screen. Here the rail
-// fills top to bottom and the link row is the destination: the last stop is the
-// only one that gets a surface and an action.
-//
-// Reduced motion renders the finished state — all three stops done, link
-// present — because that is the meaningful end, not a frozen spinner.
+// Export, upload, link: three hairline stages under one file, ending in the
+// only thing the visitor actually wants, a link they can paste.
 const reduced = $derived(prefersReducedMotion());
 
-const STEP_MS = 1500;
-const HOLD_MS = 2600;
+const STEP_MS = 1600;
+const HOLD_MS = 2800;
 const LOOP_MS = STEP_MS * 3 + HOLD_MS;
 
 let elapsed = $state(0);
@@ -28,92 +22,94 @@ $effect(() => {
 	return () => clearInterval(id);
 });
 
-const stops = [
-	{ icon: Video, label: "Export complete", meta: "launch-demo.mp4 · 12.4 MB" },
-	{ icon: HardDriveUpload, label: "Uploaded to Drive", meta: "My Drive / Recast" },
-	{ icon: Link2, label: "Link ready", meta: "recast.li/d/8fk2a" },
-] as const;
-
-// How many stops are done, and how far the rail has filled into the next one.
 const done = $derived(reduced ? 3 : Math.min(3, Math.floor(elapsed / STEP_MS)));
 const partial = $derived(reduced ? 0 : Math.min(1, (elapsed % STEP_MS) / STEP_MS));
+const percent = $derived(
+	reduced ? 100 : Math.min(100, Math.round(((done + (done < 3 ? partial : 0)) / 3) * 100)),
+);
 
-// Rail fill as a percentage of its full height. Each stop owns a third.
-const fill = $derived(reduced ? 100 : Math.min(100, ((done + (done < 3 ? partial : 0)) / 3) * 100));
+const stages = [
+	{ label: "Export", pending: "Queued", running: "Encoding", complete: "1080p" },
+	{ label: "Upload", pending: "Waiting", running: "Sending", complete: "12.4 MB" },
+	{ label: "Link", pending: "Waiting", running: "Signing", complete: "Ready" },
+] as const;
+
+const linkReady = $derived(done >= 3);
 </script>
 
-<div class="rounded-xl border border-border-low bg-card p-4">
-	<div class="relative">
-		<!-- Rail. One track, one fill — the fill is the progress indicator, so no
-		     stop needs a bar of its own. -->
-		<div
-			aria-hidden="true"
-			class="absolute left-3.25 top-3 bottom-3 w-px bg-border-low"
-		></div>
-		<div
-			aria-hidden="true"
-			class="absolute left-3.25 top-3 w-px bg-tag-green transition-[height] duration-100 ease-linear motion-reduce:transition-none"
-			style={`height: calc((100% - 1.5rem) * ${fill} / 100)`}
-		></div>
+<div class="p-4">
+	<div class="flex items-center gap-2.5 pb-3">
+		<FileVideo class="size-4 shrink-0 text-tag-green [fill-opacity:0.2]" fill="currentColor" />
+		<span class="min-w-0 flex-1 truncate text-body-sm font-medium text-foreground">
+			launch-demo.mp4
+		</span>
+		<span class="shrink-0 text-caption tabular-nums text-muted-foreground">
+			{percent}%
+		</span>
+	</div>
 
-		<ol class="relative space-y-3.5">
-			{#each stops as stop, i (stop.label)}
-				{@const complete = done > i}
-				{@const active = done === i}
-				{@const Icon = stop.icon}
-				<li class="flex items-start gap-3">
+	<!-- One hairline track carries the whole transfer; no stage gets a bar of its own. -->
+	<div aria-hidden="true" class="h-px w-full bg-border-low">
+		<div
+			class="h-px bg-tag-green transition-[width] duration-100 ease-linear motion-reduce:transition-none"
+			style={`width:${percent}%`}
+		></div>
+	</div>
+
+	<ol class="mt-px grid grid-cols-3 gap-px border-b border-border-low bg-border-low">
+		{#each stages as stage, i (stage.label)}
+			{@const complete = done > i}
+			{@const running = done === i}
+			<li class="bg-card px-3 py-2.5">
+				<div class="flex items-center gap-1.5">
 					<span
 						class={cn(
-							"relative z-10 grid size-7 shrink-0 place-items-center rounded-full border bg-card transition-colors duration-300 motion-reduce:transition-none",
-							complete
-								? "border-tag-green text-tag-green"
-								: active
-									? "border-border-strong text-foreground"
-									: "border-border-low text-border-strong",
+							"size-1.5 shrink-0 rounded-full transition-colors duration-300 motion-reduce:transition-none",
+							complete ? "bg-tag-green" : running ? "bg-foreground" : "bg-border-strong",
+						)}
+					></span>
+					<span
+						class={cn(
+							"truncate text-caption font-medium transition-colors duration-300 motion-reduce:transition-none",
+							complete || running ? "text-foreground" : "text-muted-foreground",
 						)}
 					>
-						{#if complete}
-							<Check class="size-3.5" />
-						{:else}
-							<Icon class="size-3.5" />
-						{/if}
+						{stage.label}
 					</span>
-
-					<div class="min-w-0 flex-1 pt-0.5">
-						<div
-							class={cn(
-								"text-caption font-semibold transition-colors duration-300 motion-reduce:transition-none",
-								complete || active ? "text-foreground" : "text-border-strong",
-							)}
-						>
-							{stop.label}
-						</div>
-						<div
-							class={cn(
-								"mt-0.5 truncate font-mono text-caption transition-colors duration-300 motion-reduce:transition-none",
-								complete || active ? "text-muted-foreground" : "text-border-strong",
-							)}
-						>
-							{stop.meta}
-						</div>
-					</div>
-
-					<!-- Only the destination carries an action. -->
-					{#if i === 2}
-						<span
-							class={cn(
-								"mt-0.5 inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-caption font-medium transition-all duration-300 motion-reduce:transition-none",
-								complete
-									? "border-border-low bg-background text-foreground opacity-100"
-									: "border-transparent text-transparent opacity-0",
-							)}
-						>
-							<Link2 class="size-3 text-muted-foreground" />
-							Copy link
-						</span>
+					{#if complete}
+						<Check class="ml-auto size-3 shrink-0 text-tag-green" />
 					{/if}
-				</li>
-			{/each}
-		</ol>
+				</div>
+				<div class="mt-1 truncate text-caption text-muted-foreground">
+					{complete ? stage.complete : running ? stage.running : stage.pending}
+				</div>
+			</li>
+		{/each}
+	</ol>
+
+	<!-- Destination and link. Always rendered so nothing shifts when it resolves. -->
+	<div class="flex items-center gap-2.5 pt-3">
+		<FolderOpen class="size-4 shrink-0 text-muted-foreground" />
+		<span class="shrink-0 text-caption text-muted-foreground">My Drive / Recast</span>
+		<span
+			class={cn(
+				"min-w-0 flex-1 truncate text-right text-caption tracking-tight transition-colors duration-300 motion-reduce:transition-none",
+				linkReady ? "text-foreground" : "text-border-strong",
+			)}
+		>
+			{linkReady ? "recast.li/d/8fk2a" : "Generating link"}
+		</span>
+		<!-- Inert: a mock control must not take focus. -->
+		<span
+			aria-hidden="true"
+			class={cn(
+				buttonVariants({ variant: "outline", size: "xs" }),
+				"pointer-events-none shrink-0 transition-opacity duration-300 motion-reduce:transition-none",
+				linkReady ? "opacity-100" : "opacity-40",
+			)}
+		>
+			<Link2 class="size-3" />
+			Copy link
+		</span>
 	</div>
 </div>

@@ -96,7 +96,7 @@ const glyph = {
 							fill="currentColor"
 						/>
 						<div class="min-w-0">
-							<h3 class="text-body font-semibold text-foreground">{item.title}</h3>
+							<h3 class="font-display text-body font-medium text-foreground">{item.title}</h3>
 							<p class="mt-1 text-body-sm text-muted-foreground">{item.description}</p>
 							{#if item.href}
 								<a

@@ -8,6 +8,12 @@ requirements, not suggestions.
 
 > Per-area `AGENTS.md` files may refine (never contradict) this one.
 
+**How the system is built:** one page per subsystem in
+[`apps/web/content/architecture/`](apps/web/content/architecture/), rendered at
+`/architecture`. Each page's frontmatter states its inputs, outputs, entrypoints,
+and invariants — read those before changing a subsystem, and update them when you
+do. There is no second copy anywhere.
+
 ---
 
 ## 1. Stack & layout

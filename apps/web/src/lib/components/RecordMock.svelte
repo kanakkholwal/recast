@@ -121,7 +121,7 @@ const elapsedLabel = $derived.by(() => {
 
 				<!-- Size readout, pinned inside the box's top-left. -->
 				<span
-					class="absolute left-1.5 top-1.5 rounded bg-foreground px-1.5 py-0.5 font-mono text-caption font-medium text-background tabular-nums"
+					class="absolute left-1.5 top-1.5 rounded bg-foreground px-1.5 py-0.5 text-caption font-medium text-background tabular-nums"
 				>
 					{px.w} × {px.h}
 				</span>
@@ -161,8 +161,15 @@ const elapsedLabel = $derived.by(() => {
 </div>
 
 <style>
+	/* Dimming must darken in both themes: a foreground-tinted scrim brightens
+	   the excluded area in dark mode. */
 	.scrim {
 		position: absolute;
-		background-color: color-mix(in srgb, var(--color-foreground) 8%, transparent);
+		background-color: oklch(0% 0 0 / 0.1);
+	}
+
+	:global(.dark) .scrim,
+	:global([data-theme="dark"]) .scrim {
+		background-color: oklch(0% 0 0 / 0.5);
 	}
 </style>

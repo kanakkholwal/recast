@@ -1,19 +1,18 @@
 <script lang="ts">
-// Mermaid is ~500KB, so it is imported dynamically and only on mount. A post
+// Mermaid is ~500KB, so it is imported dynamically and only on mount. A page
 // with no diagram never pays for it, and it stays out of the SSR pass (it
 // wants a DOM). Until it resolves, the source renders as a code block, which
 // is also what a reader with no JS sees.
-import { prefersReducedMotion } from "$lib/motion-core";
+
+import { MERMAID_THEME_VARIABLES } from "./mermaid-theme";
 
 let { source }: { source: string } = $props();
 
 let svg = $state<string | null>(null);
 let failed = $state(false);
-let host = $state<HTMLDivElement | null>(null);
 
 // Diagram ids must be unique per page or mermaid's internal <defs> collide.
-let seq = 0;
-const uid = `mermaid-${Math.random().toString(36).slice(2, 9)}-${seq++}`;
+const uid = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
 
 $effect(() => {
 	let cancelled = false;
@@ -25,28 +24,15 @@ $effect(() => {
 			const mermaid = (await import("mermaid")).default;
 			mermaid.initialize({
 				startOnLoad: false,
-				// Diagrams are read as part of the article, so they inherit the
-				// article's ink rather than mermaid's own palette.
 				theme: "base",
-				themeVariables: {
-					fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-					fontSize: "14px",
-					primaryColor: "transparent",
-					primaryTextColor: "currentColor",
-					primaryBorderColor: "currentColor",
-					lineColor: "currentColor",
-					secondaryColor: "transparent",
-					tertiaryColor: "transparent",
-				},
-				flowchart: { curve: "basis", htmlLabels: true },
+				themeVariables: { ...MERMAID_THEME_VARIABLES },
+				flowchart: { curve: "basis" },
 				securityLevel: "strict",
-				// Honour the OS setting; mermaid animates edges otherwise.
-				...(prefersReducedMotion() ? { theme: "base" } : {}),
 			});
 			const rendered = await mermaid.render(uid, diagram);
 			if (!cancelled) svg = rendered.svg;
 		} catch (err) {
-			// A malformed diagram must not take the article down with it; the
+			// A malformed diagram must not take the page down with it; the
 			// fallback below keeps the source readable.
 			console.error("mermaid render failed", err);
 			if (!cancelled) failed = true;
@@ -60,7 +46,7 @@ $effect(() => {
 </script>
 
 {#if svg && !failed}
-	<div class="mermaid" bind:this={host} role="img">
+	<div class="mermaid" role="img">
 		<!-- Built from our own markdown at author time, rendered by mermaid in
 		     `strict` mode, which strips scripts and inline handlers. -->
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -74,13 +60,12 @@ $effect(() => {
 	.mermaid {
 		margin: 0 0 1.6em;
 		padding: 1.25em;
-		border: 1px solid var(--border);
+		border: 1px solid var(--color-border-low);
 		border-radius: 12px;
-		background: color-mix(in oklab, var(--muted) 35%, transparent);
+		background: var(--color-paper);
 		/* Diagrams are wider than the prose column on narrow screens; scroll the
 		   diagram rather than the page. */
 		overflow-x: auto;
-		color: var(--muted-foreground);
 	}
 
 	.mermaid :global(svg) {
@@ -90,41 +75,54 @@ $effect(() => {
 		height: auto;
 	}
 
-	/* Mermaid writes `fill`/`stroke` attributes from its theme; these take the
-	   node text and edges back to the article's own tokens in both themes. */
+	/* Mermaid writes fill and stroke attributes from its own palette; these take
+	   every mark back to a design token, in both themes. */
 	.mermaid :global(.nodeLabel),
 	.mermaid :global(.edgeLabel),
-	.mermaid :global(.label) {
-		color: var(--foreground);
-		fill: var(--foreground);
+	.mermaid :global(.label),
+	.mermaid :global(.messageText),
+	.mermaid :global(.loopText),
+	.mermaid :global(text.actor) {
+		color: var(--color-foreground);
+		fill: var(--color-foreground);
 	}
 	.mermaid :global(.edgeLabel) {
-		background: var(--background);
+		background: var(--color-paper);
 	}
 	.mermaid :global(.node rect),
 	.mermaid :global(.node circle),
 	.mermaid :global(.node polygon),
-	.mermaid :global(.node path) {
-		stroke: color-mix(in oklab, var(--primary) 55%, var(--border));
-		fill: color-mix(in oklab, var(--muted) 60%, transparent);
+	.mermaid :global(.node path),
+	.mermaid :global(rect.actor),
+	.mermaid :global(.note) {
+		stroke: var(--color-border-strong);
+		fill: var(--color-card);
+	}
+	.mermaid :global(.cluster rect) {
+		stroke: var(--color-border-low);
+		fill: transparent;
 	}
 	.mermaid :global(.edgePath path),
-	.mermaid :global(.flowchart-link) {
-		stroke: var(--muted-foreground);
+	.mermaid :global(.flowchart-link),
+	.mermaid :global(line.messageLine0),
+	.mermaid :global(line.messageLine1),
+	.mermaid :global(line.actor-line) {
+		stroke: var(--color-muted-foreground);
 	}
-	.mermaid :global(marker path) {
-		fill: var(--muted-foreground);
-		stroke: var(--muted-foreground);
+	.mermaid :global(marker path),
+	.mermaid :global(.marker) {
+		fill: var(--color-muted-foreground);
+		stroke: var(--color-muted-foreground);
 	}
 
 	.mermaid-fallback {
 		margin: 0 0 1.6em;
 		padding: 1.1em 1.25em;
-		border: 1px solid var(--border);
+		border: 1px solid var(--color-border-low);
 		border-radius: 12px;
 		overflow-x: auto;
 		font-size: 0.9em;
 		line-height: 1.6;
-		background: color-mix(in oklab, var(--muted) 35%, transparent);
+		background: var(--color-paper);
 	}
 </style>

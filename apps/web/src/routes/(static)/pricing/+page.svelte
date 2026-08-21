@@ -1,56 +1,134 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { Container, Footer, Reveal, Section, SectionHeader, SeoMeta } from "$lib/components";
-import { prefersReducedMotion } from "$lib/motion-core";
 import { PLANS } from "$lib/billing/catalog";
 import {
-	ArrowRight,
-	Building2,
+	Container,
+	FaqList,
+	Footer,
+	Reveal,
+	Section,
+	SectionLabel,
+	SeoMeta,
+} from "$lib/components";
+import type { IconComponent } from "@recast/icons";
+import {
+	BarChart3,
 	Check,
 	Cloud,
 	Download,
+	Gauge,
+	Globe,
 	HardDriveUpload,
+	KeyRound,
+	Link2,
+	Lock,
 	Mail,
-	Minus,
+	Server,
 	ShieldCheck,
 	Tag,
+	Timer,
 	Users,
+	Video,
+	Wand2,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import { cubicOut } from "svelte/easing";
-import { fly } from "svelte/transition";
+import { cn } from "@recast/ui/utils";
 import { extraSeatPrice, formatUsd, gb, LOOM, proPrice, teamComparison } from "./pricing.logic";
-
-// Hero entrance: same 80ms stagger as the rest of the public pages.
-const reduced = $derived(prefersReducedMotion());
-const heroStagger = 80;
-const riseM = (delay: number) =>
-	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
 let annual = $state(false);
 const pro = $derived(proPrice(annual));
 const extraSeat = $derived(extraSeatPrice(annual));
 const teams = $derived(teamComparison(annual));
 
-// Upgrading is a workspace action, so Pro can't be bought from here — the
-// CTA creates the account and Polar checkout runs from settings/billing.
-let email = $state("");
-const signupHref = $derived(
-	email.trim()
-		? `/signup?email=${encodeURIComponent(email.trim())}&source=pricing`
-		: "/signup?source=pricing",
-);
-function startWithEmail(e: SubmitEvent) {
-	e.preventDefault();
-	goto(signupHref);
-}
+const free = PLANS.free;
+const proPlan = PLANS.pro;
+const enterprise = PLANS.enterprise;
+
+type PlanCard = {
+	id: string;
+	name: string;
+	badge?: string;
+	price: string;
+	unit: string;
+	description: string;
+	cta: { label: string; href: string; icon: IconComponent; variant: "dark" | "outline" };
+	listHeading: string;
+	features: Array<{ icon: IconComponent; label: string }>;
+	featured?: boolean;
+};
+
+const plans = $derived<PlanCard[]>([
+	{
+		id: "free",
+		name: "Free",
+		price: "$0",
+		unit: "forever",
+		description: "The whole desktop app, plus hosted sharing with sensible caps.",
+		cta: { label: "Download free", href: "/download", icon: Download, variant: "outline" },
+		listHeading: "Key features:",
+		features: [
+			{ icon: Video, label: "Record, edit and export offline" },
+			{ icon: Wand2, label: "Smart zoom, cursor smoothing, silence cuts" },
+			{ icon: Link2, label: `${free.limits.activeRecasts} active share links` },
+			{ icon: Server, label: `${gb(free.limits.storageBytes)} hosted storage` },
+			{ icon: Gauge, label: "720p playback, 10-minute recordings" },
+			{ icon: BarChart3, label: "Basic watch analytics" },
+		],
+	},
+	{
+		id: "pro",
+		name: "Pro",
+		badge: "Best value",
+		price: formatUsd(pro),
+		unit: annual ? "per month, billed annually" : "per month",
+		description: `Covers your first ${proPlan.seats.included} creators, then ${formatUsd(extraSeat)} a head.`,
+		cta: { label: "Start free", href: "/signup?source=pricing", icon: Cloud, variant: "dark" },
+		listHeading: "Everything in Free, plus:",
+		features: [
+			{ icon: Users, label: `Up to ${proPlan.seats.max} creators` },
+			{
+				icon: Server,
+				label: `${gb(proPlan.limits.storageBytes)} storage, ${gb(proPlan.limits.deliveryBytesPerMonth)} delivered a month`,
+			},
+			{ icon: Gauge, label: "4K playback, 4-hour recordings" },
+			{ icon: BarChart3, label: "Full watch analytics" },
+			{ icon: Lock, label: "Password protection and link expiry" },
+			{ icon: Globe, label: "Custom branding and your own domain" },
+		],
+		featured: true,
+	},
+	{
+		id: "enterprise",
+		name: "Enterprise",
+		price: "Custom",
+		unit: "annual billing",
+		description: "For orgs that need single sign-on, audit trails and data residency.",
+		cta: {
+			label: "Contact sales",
+			href: "mailto:hello@recast.li?subject=Recast%20Enterprise",
+			icon: Mail,
+			variant: "outline",
+		},
+		listHeading: "Everything in Pro, plus:",
+		features: [
+			{ icon: Users, label: `Up to ${enterprise.seats.max} creators` },
+			{ icon: KeyRound, label: "SSO, SAML and SCIM provisioning" },
+			{ icon: ShieldCheck, label: "Audit log and access controls" },
+			{ icon: HardDriveUpload, label: "Your own S3, R2, Azure or GCP bucket" },
+			{ icon: Globe, label: "Data residency control" },
+			{ icon: Timer, label: "Dedicated success manager and SLAs" },
+		],
+	},
+]);
+
+const guarantees = [
+	{ icon: ShieldCheck, label: "No telemetry" },
+	{ icon: HardDriveUpload, label: "Bring your own storage" },
+	{ icon: Tag, label: "No card to start" },
+];
 
 type Cell = boolean | string;
 type Row = { label: string; desktop: Cell; cloudFree: Cell; cloudPro: Cell; enterprise: Cell };
 type RowGroup = { heading: string; rows: Row[] };
-
-const free = PLANS.free;
-const proPlan = PLANS.pro;
 
 const groups: RowGroup[] = [
 	{
@@ -101,25 +179,25 @@ const groups: RowGroup[] = [
 				desktop: "No account",
 				cloudFree: `${free.seats.included}`,
 				cloudPro: `${proPlan.seats.included} included, then ${formatUsd(proPlan.seats.monthlyUsd)}`,
-				enterprise: `Up to ${PLANS.enterprise.seats.max}`,
+				enterprise: `Up to ${enterprise.seats.max}`,
 			},
 			{
 				label: "Active share links",
-				desktop: "—",
+				desktop: "Not applicable",
 				cloudFree: `${free.limits.activeRecasts}`,
 				cloudPro: `${proPlan.limits.activeRecasts}`,
 				enterprise: "By agreement",
 			},
 			{
 				label: "Hosted storage",
-				desktop: "—",
+				desktop: "Not applicable",
 				cloudFree: gb(free.limits.storageBytes),
 				cloudPro: gb(proPlan.limits.storageBytes),
 				enterprise: "By agreement",
 			},
 			{
 				label: "Monthly delivery to viewers",
-				desktop: "—",
+				desktop: "Not applicable",
 				cloudFree: gb(free.limits.deliveryBytesPerMonth),
 				cloudPro: gb(proPlan.limits.deliveryBytesPerMonth),
 				enterprise: "By agreement",
@@ -243,60 +321,96 @@ const groups: RowGroup[] = [
 ];
 
 type ColKey = "desktop" | "cloudFree" | "cloudPro" | "enterprise";
-const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foreground" }[] = [
-	{ key: "desktop", label: "Desktop", tone: "foreground" },
-	{ key: "cloudFree", label: "Cloud Free", tone: "muted" },
-	{ key: "cloudPro", label: "Cloud Pro", tone: "primary" },
-	{ key: "enterprise", label: "Enterprise", tone: "foreground" },
+const columns: { key: ColKey; label: string; featured?: boolean }[] = [
+	{ key: "desktop", label: "Desktop" },
+	{ key: "cloudFree", label: "Cloud Free" },
+	{ key: "cloudPro", label: "Cloud Pro", featured: true },
+	{ key: "enterprise", label: "Enterprise" },
 ];
+
+const faqs = [
+	{
+		q: "Is the desktop app really free?",
+		a: "Yes. Record, polish, edit and export offline with no account and no card. Cloud is the only paid part.",
+	},
+	{
+		q: "Do you charge per creator?",
+		a: `Pro covers ${proPlan.seats.included} creators for ${formatUsd(proPrice(false))} a month, then ${formatUsd(proPlan.seats.monthlyUsd)} a head. Loom bills every creator from the first one.`,
+	},
+	{
+		q: "What happens when I hit a Cloud limit?",
+		a: "Nothing gets billed behind your back. Links stop being served until you upgrade, retire an old link, or point Recast at your own bucket.",
+	},
+	{
+		q: "Can I use my own storage?",
+		a: "Every plan can bring its own bucket. Choosing a named provider (S3, R2, Azure, GCP) and controlling residency are Pro and Enterprise features.",
+	},
+	{
+		q: "Is there a trial, and can I cancel?",
+		a: "There is no trial clock. Cloud Free needs no card, you upgrade when you outgrow it, and cancelling stops billing at the end of the period.",
+	},
+	{
+		q: "What happens to my recordings if I stop paying?",
+		a: "They stay on your machine, because that is where they were made. Only hosted links stop being served.",
+	},
+];
+
+const faqJsonLd = JSON.stringify({
+	"@context": "https://schema.org",
+	"@type": "FAQPage",
+	mainEntity: faqs.map((f) => ({
+		"@type": "Question",
+		name: f.q,
+		acceptedAnswer: { "@type": "Answer", text: f.a },
+	})),
+});
 </script>
 
 <SeoMeta
 	title="Pricing without the per-seat tax"
-	description="Recast Desktop is free forever and runs offline. Recast Cloud Pro is $12/mo for your first three creators — Loom charges $18 each."
+	description="Recast Desktop is free forever and runs offline. Recast Cloud Pro is $12/mo for your first three creators, where Loom charges $18 each."
 	eyebrow="Pricing"
 />
 
+<svelte:head>
+	{@html `<script type="application/ld+json">${faqJsonLd}<\/script>`}
+</svelte:head>
+
 <main class="text-foreground">
-	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
-		<Container class="relative">
-			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<span
-					in:fly={riseM(heroStagger * 0)}
-					class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
-				>
-					<span class="size-1.5 rounded-full bg-primary"></span>
-					Pricing
-				</span>
-				<h1
-					in:fly={riseM(heroStagger * 1)}
-					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
-				>
-					No per-seat
-					<span class="block font-medium italic text-muted-foreground">tax.</span>
+	<section class="mx-auto w-full max-w-6xl border-b border-border-low pt-32 md:pt-40">
+		<Container class="pb-12">
+			<Reveal variant="up">
+				<SectionLabel icon={Tag} label="Pricing" />
+			</Reveal>
+			<Reveal variant="up" delay={60} class="mt-5">
+				<h1 class="max-w-2xl font-display font-semibold text-balance text-heading-lg md:text-display">
+					Plans that don't tax your team
 				</h1>
-				<p
-					in:fly={riseM(heroStagger * 2)}
-					class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg"
-				>
-					The desktop recorder and editor is free forever and runs offline. Cloud adds hosted
-					sharing for {formatUsd(pro)} a month — covering your first {proPlan.seats.included}
-					creators, not one.
+			</Reveal>
+			<Reveal variant="up" delay={120} class="mt-4">
+				<p class="max-w-xl text-pretty text-body-lg text-muted-foreground">
+					The recorder and editor are free forever and run offline. Cloud adds hosted sharing for
+					{formatUsd(pro)} a month, covering your first {proPlan.seats.included} creators.
 				</p>
-				<div class="mt-2 inline-flex flex-wrap items-center justify-center gap-2 text-caption font-medium text-muted-foreground">
-					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low">
-						<ShieldCheck class="size-3.5 text-foreground" /> No telemetry
-					</span>
-					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low">
-						<HardDriveUpload class="size-3.5 text-foreground" /> Bring your own storage
-					</span>
-					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low">
-						<Tag class="size-3.5 text-foreground" /> No card to start
-					</span>
-				</div>
+			</Reveal>
+		</Container>
+
+		<Container class="border-t border-border-low">
+			<div class="flex flex-wrap items-center justify-between gap-4 py-4">
+				<ul class="flex flex-wrap items-center divide-x divide-border-low">
+					{#each guarantees as item (item.label)}
+						{@const Icon = item.icon}
+						<li
+							class="inline-flex items-center gap-2 pr-4 text-body-sm text-muted-foreground not-first:pl-4"
+						>
+							<Icon class="size-4 shrink-0" />
+							{item.label}
+						</li>
+					{/each}
+				</ul>
 
 				<div
-					class="mt-2 inline-flex items-center gap-1 rounded-full border border-border-low bg-card/50 p-1"
+					class="inline-flex items-center gap-1 rounded-lg border border-border-low bg-paper p-1"
 					role="group"
 					aria-label="Billing period"
 				>
@@ -304,9 +418,12 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 						type="button"
 						aria-pressed={!annual}
 						onclick={() => (annual = false)}
-						class="rounded-full px-4 py-1.5 text-xs font-semibold transition-colors {annual
-							? 'text-muted-foreground hover:text-foreground'
-							: 'bg-foreground text-background'}"
+						class={cn(
+							"rounded-md px-3 py-1.5 text-body-sm font-medium transition-colors motion-reduce:transition-none",
+							annual
+								? "text-muted-foreground hover:text-foreground"
+								: "bg-background text-foreground shadow-craft-sm",
+						)}
 					>
 						Monthly
 					</button>
@@ -314,301 +431,255 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 						type="button"
 						aria-pressed={annual}
 						onclick={() => (annual = true)}
-						class="rounded-full px-4 py-1.5 text-xs font-semibold transition-colors {annual
-							? 'bg-foreground text-background'
-							: 'text-muted-foreground hover:text-foreground'}"
+						class={cn(
+							"inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-body-sm font-medium transition-colors motion-reduce:transition-none",
+							annual
+								? "bg-background text-foreground shadow-craft-sm"
+								: "text-muted-foreground hover:text-foreground",
+						)}
 					>
 						Annual
-						<span class="ml-1 text-caption font-bold text-primary">−17%</span>
+						<span
+							class="rounded-full bg-tag-green/12 px-1.5 py-0.5 text-caption font-medium text-tag-green"
+						>
+							Save 17%
+						</span>
 					</button>
 				</div>
 			</div>
 		</Container>
-	</Section>
+	</section>
 
-	<!-- Plan cards: Free (hosted or BYO), Pro (featured), Enterprise -->
-	<Section spacing="tight">
+
+	<section class="mx-auto w-full max-w-6xl border-b border-border-low">
 		<Container>
-			<div class="grid gap-4 lg:grid-cols-3">
-				<!-- Cloud Free -->
-				<Reveal variant="left" id="plan-free">
-					<article class="bg-card flex h-full flex-col rounded-2xl p-7 sm:p-8">
-						<div class="flex items-center justify-between">
-							<span class="text-body-sm font-medium text-muted-foreground">
-								Free
-							</span>
-							<span class="pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-semibold text-muted-foreground">
-								<Cloud class="size-3" />
-								No card
-							</span>
-						</div>
-						<div class="mt-3 flex items-baseline gap-2">
-							<span class="text-5xl font-semibold tracking-tight text-foreground">$0</span>
-							<span class="text-sm text-muted-foreground">forever</span>
-						</div>
-						<p class="mt-4 text-sm leading-relaxed text-muted-foreground">
-							The full desktop app, plus hosted sharing with sensible caps. No card, no trial clock.
-						</p>
-						<ul class="mt-6 space-y-3">
-							{#each [
-								"Everything in the desktop recorder and editor",
-								`${free.limits.activeRecasts} active share links, ${free.seats.included} creators`,
-								`${gb(free.limits.storageBytes)} hosted storage, ${gb(free.limits.deliveryBytesPerMonth)} delivered a month`,
-								"720p playback, 10-minute recordings",
-								"Basic watch analytics",
-								"Or bring your own bucket and lift every storage cap",
-							] as point}
-								<li class="flex items-start gap-2.5 text-sm text-foreground">
-									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
-									{point}
-								</li>
-							{/each}
-						</ul>
-						<div class="mt-8 pt-2">
-							<Button href="/download" size="lg" variant="dark" class="w-full">
-								<Download class="size-4" />
-								Download free
-							</Button>
-						</div>
-					</article>
-				</Reveal>
-
-				<!-- Cloud Pro -->
-				<Reveal variant="up" delay={80} id="plan-cloud-pro">
-					<article class="surface-lg relative flex h-full flex-col overflow-hidden p-7 ring-1 ring-primary/25 sm:p-8">
-						<div
-							aria-hidden="true"
-							class="pointer-events-none absolute -right-12 -top-12 size-56 rounded-full bg-primary/10 blur-3xl"
-						></div>
-						<div class="relative flex items-center justify-between">
-							<span class="text-body-sm font-medium text-primary">
-								Pro
-							</span>
-							<span class="pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-semibold text-foreground">
-								<Cloud class="size-3 text-primary" />
-								Most popular
-							</span>
-						</div>
-						<div class="relative mt-3 flex items-baseline gap-2">
-							<span class="text-5xl font-semibold tracking-tight text-foreground">
-								{formatUsd(pro)}
-							</span>
-							<span class="text-sm text-muted-foreground">
-								/ month{annual ? ", billed annually" : ""}
-							</span>
-						</div>
-						<p class="relative mt-4 text-sm leading-relaxed text-muted-foreground">
-							Covers your first {proPlan.seats.included} creators. Each extra creator is
-							{formatUsd(extraSeat)} a month — Loom charges {formatUsd(
-								annual ? LOOM.annualMonthlyUsd : LOOM.monthlyUsd,
-							)} for every single one.
-						</p>
-						<div class="relative mt-5 inline-flex items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/8 px-3 py-1 text-caption font-medium text-foreground">
-							<Users class="size-3.5 text-primary" />
-							Up to {proPlan.seats.max} creators
-						</div>
-						<ul class="relative mt-6 space-y-3">
-							{#each [
-								`${proPlan.limits.activeRecasts} active links, ${gb(proPlan.limits.storageBytes)} storage`,
-								`${gb(proPlan.limits.deliveryBytesPerMonth)} delivered a month`,
-								"4K playback, 4-hour recordings",
-								"Full watch analytics — who watched, how far",
-								"Password protection, link expiry, per-viewer access",
-								"Custom branding, your own domain, or your own bucket",
-							] as point}
-								<li class="flex items-start gap-2.5 text-sm text-foreground">
-									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
-									{point}
-								</li>
-							{/each}
-						</ul>
-
-						<div class="relative mt-8 pt-2">
-							<form class="flex flex-col gap-2.5" onsubmit={startWithEmail}>
-								<label class="sr-only" for="pricing-email">Email address</label>
-								<input
-									id="pricing-email"
-									type="email"
-									bind:value={email}
-									autocomplete="email"
-									placeholder="founder@startup.com"
-									class="w-full rounded-lg border border-border-low bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60"
-								/>
-								<Button type="submit" size="lg" class="group/cta gap-2">
-									Start free, upgrade anytime
-									<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
-								</Button>
-							</form>
-						</div>
-					</article>
-				</Reveal>
-
-				<!-- Enterprise -->
-				<Reveal variant="right" delay={160}>
-					<article class="bg-card flex h-full flex-col rounded-2xl p-7 sm:p-8">
-						<div class="flex items-center justify-between">
-							<span class="text-body-sm font-medium text-muted-foreground">
-								Enterprise
-							</span>
-							<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low px-2.5 py-1 text-caption font-semibold text-muted-foreground">
-								<Building2 class="size-3" />
-								Talk to us
-							</span>
-						</div>
-						<div class="mt-3 flex items-baseline gap-2">
-							<span class="text-5xl font-semibold tracking-tight text-foreground">Custom</span>
-						</div>
-						<p class="mt-4 text-sm leading-relaxed text-muted-foreground">
-							For orgs that need single sign-on, audit trails, and data-residency guarantees.
-							Provisioned per agreement, not self-serve.
-						</p>
-						<ul class="mt-6 space-y-3">
-							{#each [
-								`Everything in Pro, up to ${PLANS.enterprise.seats.max} creators`,
-								"SSO / SAML and SCIM provisioning",
-								"Audit log and access controls",
-								"Your own S3, R2, Azure or GCP bucket",
-								"Data residency control",
-								"Dedicated success manager and SLAs",
-							] as point}
-								<li class="flex items-start gap-2.5 text-sm text-foreground">
-									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
-									{point}
-								</li>
-							{/each}
-						</ul>
-						<div class="mt-8 pt-2">
+			<div class="grid grid-cols-1 gap-px bg-border-low lg:grid-cols-3">
+				{#each plans as plan, i (plan.id)}
+					{@const CtaIcon = plan.cta.icon}
+					<Reveal
+						variant="up"
+						delay={i * 80}
+						as="article"
+						class="flex h-full flex-col bg-background"
+					>
+						<div class={cn("p-6 sm:p-8", plan.featured && "bg-paper")}>
+							<div class="flex items-center gap-2">
+								<h2 class="font-display text-subheading font-medium text-foreground">
+									{plan.name}
+								</h2>
+								{#if plan.badge}
+									<span
+										class="rounded-full bg-tag-green/12 px-2 py-0.5 text-caption font-medium text-tag-green"
+									>
+										{plan.badge}
+									</span>
+								{/if}
+							</div>
+							<div class="mt-3 flex items-baseline gap-2">
+								<span class="font-display font-semibold text-heading-lg tabular-nums text-foreground">
+									{plan.price}
+								</span>
+								<span class="text-body-sm text-muted-foreground">{plan.unit}</span>
+							</div>
+							<p class="mt-3 min-h-10 text-pretty text-body-sm text-muted-foreground">
+								{plan.description}
+							</p>
 							<Button
-								href="mailto:hello@recast.li?subject=Recast%20Enterprise"
-								variant="dark"
+								href={plan.cta.href}
+								variant={plan.cta.variant}
 								size="lg"
-								class="w-full gap-2"
+								class="mt-6 w-full gap-2"
 							>
-								<Mail class="size-4" />
-								Contact sales
+								<CtaIcon class="size-4" />
+								{plan.cta.label}
 							</Button>
 						</div>
-					</article>
-				</Reveal>
+
+						<div class="border-t border-border-low p-6 sm:p-8">
+							<p class="text-body-sm font-medium text-foreground">{plan.listHeading}</p>
+							<ul class="mt-4 space-y-3">
+								{#each plan.features as feature (feature.label)}
+									{@const Icon = feature.icon}
+									<li class="flex items-start gap-2.5 text-body-sm text-muted-foreground">
+										<Icon class="mt-0.5 size-4 shrink-0 text-foreground" />
+										{feature.label}
+									</li>
+								{/each}
+							</ul>
+						</div>
+					</Reveal>
+				{/each}
+			</div>
+		</Container>
+	</section>
+
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<Reveal variant="up">
+				<div class="flex items-center gap-4 border-b border-border-low pb-5">
+					<SectionLabel icon={Users} label="Side by side" accent="green" />
+				</div>
+			</Reveal>
+
+			<div class="grid gap-10 py-10 md:grid-cols-12 md:gap-12">
+				<div class="md:col-span-5">
+					<Reveal variant="up" delay={60}>
+						<h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
+							What your team actually pays
+						</h2>
+					</Reveal>
+					<Reveal variant="up" delay={120} class="mt-4">
+						<p class="text-pretty text-body-lg text-muted-foreground">
+							Loom bills every creator. We bill the workspace, then {formatUsd(extraSeat)} a head past
+							{proPlan.seats.included}.
+						</p>
+					</Reveal>
+				</div>
+
+				<div class="md:col-span-6 md:col-start-7">
+					<Reveal variant="up" delay={160}>
+						<table class="w-full border-collapse text-left">
+							<thead>
+								<tr class="border-b border-border-low text-caption font-medium text-muted-foreground">
+									<th scope="col" class="py-3 pr-4 font-medium">Team</th>
+									<th scope="col" class="px-4 py-3 text-right font-medium text-foreground">
+										Recast Pro
+									</th>
+									<th scope="col" class="px-4 py-3 text-right font-medium">Loom</th>
+									<th scope="col" class="py-3 pl-4 text-right font-medium">You save</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each teams as row (row.seats)}
+									<tr class="border-b border-border-low">
+										<th scope="row" class="py-4 pr-4 text-body-sm font-medium text-foreground">
+											{row.label}
+											<span class="block text-caption font-normal text-muted-foreground">
+												{row.seats} {row.seats === 1 ? "person" : "people"}
+											</span>
+										</th>
+										<td
+											class="px-4 py-4 text-right text-body-sm font-medium tabular-nums text-foreground"
+										>
+											{formatUsd(row.recast)}
+										</td>
+										<td class="px-4 py-4 text-right text-body-sm tabular-nums text-muted-foreground">
+											{formatUsd(row.loom)}
+										</td>
+										<td
+											class="py-4 pl-4 text-right text-body-sm font-medium tabular-nums text-tag-green"
+										>
+											{row.savingPct}%
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					</Reveal>
+					<Reveal variant="up" delay={220} class="mt-5">
+						<p class="text-caption text-muted-foreground">
+							Loom Business is {formatUsd(LOOM.monthlyUsd)} per creator monthly, {formatUsd(
+								LOOM.annualMonthlyUsd,
+							)} annually (published rates, July 2026). Their filler-word and silence removal sits a
+							tier higher again. Recast does it offline, before you make an account.
+						</p>
+					</Reveal>
+				</div>
 			</div>
 		</Container>
 	</Section>
 
-	<!-- The comparison that actually closes: what a team of N pays. -->
-	<Section class="border-t border-border-low">
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
 		<Container>
-			<SectionHeader
-				eyebrow="Side by side"
-				title="What your team actually pays."
-				description="Loom bills every creator. We bill the workspace, then {formatUsd(extraSeat)} a head past {proPlan.seats.included}."
-			/>
-
-			<Reveal variant="up" class="mt-14">
-				<div class="overflow-x-auto rounded-2xl border border-border-low">
-					<table class="w-full min-w-140 border-collapse text-left">
-						<thead>
-							<tr class="border-b border-border-low bg-paper text-body-sm font-medium text-muted-foreground">
-								<th scope="col" class="px-5 py-3.5 font-semibold">Team size</th>
-								<th scope="col" class="px-5 py-3.5 text-right font-semibold text-primary">Recast Pro</th>
-								<th scope="col" class="px-5 py-3.5 text-right font-semibold">Loom Business</th>
-								<th scope="col" class="px-5 py-3.5 text-right font-semibold">You save</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each teams as row (row.seats)}
-								<tr class="border-b border-border-low last:border-0">
-									<th scope="row" class="px-5 py-4 text-sm font-medium text-foreground">
-										{row.label}
-										<span class="ml-1.5 text-xs font-normal text-muted-foreground">
-											· {row.seats} {row.seats === 1 ? "person" : "people"}
-										</span>
-									</th>
-									<td class="px-5 py-4 text-right text-sm font-semibold text-foreground">
-										{formatUsd(row.recast)}<span class="text-xs font-normal text-muted-foreground">/mo</span>
-									</td>
-									<td class="px-5 py-4 text-right text-sm text-muted-foreground">
-										{formatUsd(row.loom)}<span class="text-xs">/mo</span>
-									</td>
-									<td class="px-5 py-4 text-right text-sm font-semibold text-primary">
-										{row.savingPct}%
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+			<Reveal variant="up">
+				<div class="flex items-center gap-4 border-b border-border-low pb-5">
+					<SectionLabel icon={Cloud} label="Every limit, printed" />
+					<Button href="/download" variant="outline" size="sm" class="ml-auto shrink-0">
+						Download free
+					</Button>
 				</div>
 			</Reveal>
 
-			<Reveal variant="up" class="mt-6">
-				<p class="mx-auto max-w-2xl text-balance text-center text-xs leading-relaxed text-muted-foreground">
-					Loom Business is {formatUsd(LOOM.monthlyUsd)} per creator monthly,
-					{formatUsd(LOOM.annualMonthlyUsd)} annually (published rates, July 2026). Their filler-word
-					and silence removal sits on the {formatUsd(24)} tier — Recast does it free, offline,
-					before you make an account.
-				</p>
+			<Reveal variant="up" delay={60} class="mt-10">
+				<h2 class="max-w-lg  font-medium font-display text-balance text-heading md:text-heading-lg">
+					Compare plans
+				</h2>
+			</Reveal>
+
+			<Reveal variant="up" delay={120} class="mt-8 overflow-x-auto">
+				<div class="min-w-190">
+					<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-y border-border-low">
+						<div class="py-3 pr-4 text-caption font-medium text-muted-foreground">Feature</div>
+						{#each columns as col (col.key)}
+							<div
+								class={cn(
+									"px-4 py-3 text-center text-caption font-medium",
+									col.featured ? "text-foreground" : "text-muted-foreground",
+								)}
+							>
+								{col.label}
+							</div>
+						{/each}
+					</div>
+
+					{#each groups as group (group.heading)}
+						<div
+							class="border-b border-border-low bg-paper px-4 py-2 text-caption font-medium text-muted-foreground"
+						>
+							{group.heading}
+						</div>
+						{#each group.rows as row (row.label)}
+							<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border-low">
+								<div class="py-3.5 pr-4 text-body-sm text-foreground">{row.label}</div>
+								{#each columns as col (col.key)}
+									{@const cell = row[col.key]}
+									<div class="flex items-center justify-center px-4 py-3.5 text-center">
+										{#if cell === true}
+											<Check class="size-4 text-tag-green" />
+										{:else if cell === false}
+											<span
+												aria-label="Not included"
+												class="size-1.5 rounded-full bg-border-strong"
+											></span>
+										{:else}
+											<span class="text-caption text-foreground">{cell}</span>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/each}
+					{/each}
+				</div>
 			</Reveal>
 		</Container>
 	</Section>
 
-	<!-- Full feature matrix -->
-	<Section class="border-t border-border-low">
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
 		<Container>
-			<SectionHeader
-				eyebrow="Every limit, printed"
-				title="What you get, where."
-				description="Desktop does the work offline. Cloud adds the sharing surface, with storage you can swap."
-			/>
-
-			<Reveal variant="blur" class="mt-14">
-				<div class="overflow-x-auto rounded-2xl border border-border-low">
-					<div class="min-w-190">
-						<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border-low bg-paper text-body-sm font-medium">
-							<div class="px-5 py-3.5 text-muted-foreground">Feature</div>
-							{#each columns as col}
-								<div
-									class="border-l border-border-low px-5 py-3.5 text-center {col.tone === 'primary' ? 'text-primary' : col.tone === 'muted' ? 'text-muted-foreground' : 'text-foreground'}"
-								>
-									{col.label}
-								</div>
-							{/each}
-						</div>
-						{#each groups as group, gi}
-							<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border-low bg-paper">
-								<div class="col-span-5 px-5 py-2.5 text-body-sm font-medium text-muted-foreground/80">
-									{group.heading}
-								</div>
-							</div>
-							{#each group.rows as row, ri}
-								{@const isLast = gi === groups.length - 1 && ri === group.rows.length - 1}
-								<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] {isLast ? '' : 'border-b border-border-low'}">
-									<div class="px-5 py-3.5 text-sm text-foreground">{row.label}</div>
-									{#each columns as col}
-										{@const cell = row[col.key]}
-										<div class="flex items-center justify-center border-l border-border-low px-5 py-3.5 text-center text-sm">
-											{#if cell === true}
-												<Check class="size-4 text-primary" />
-											{:else if cell === false}
-												<Minus class="size-4 text-border-strong" />
-											{:else}
-												<span class="text-xs font-medium text-foreground">{cell}</span>
-											{/if}
-										</div>
-									{/each}
-								</div>
-							{/each}
-						{/each}
-					</div>
+			<div class="grid gap-10 md:grid-cols-12 md:gap-12">
+				<div class="md:col-span-4">
+					<Reveal variant="up">
+						<h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
+							Billing questions
+						</h2>
+					</Reveal>
+					<Reveal variant="up" delay={80} class="mt-4">
+						<p class="text-pretty text-body-sm text-muted-foreground">
+							Anything else, mail
+							<a
+								href="mailto:hello@recast.li"
+								class="text-foreground underline-offset-4 hover:underline"
+							>
+								hello@recast.li
+							</a>
+							and a human answers.
+						</p>
+					</Reveal>
 				</div>
-			</Reveal>
-
-			<Reveal variant="up" class="mt-8">
-				<p class="mx-auto max-w-2xl text-balance text-center text-xs leading-relaxed text-muted-foreground">
-					Cloud Free needs no card and no trial clock — upgrade to Pro at
-					{formatUsd(proPrice(false))} a month whenever you outgrow it.
-					Desktop is free forever, no card, no account.
-					<a href="mailto:hello@recast.li?subject=Recast%20Enterprise" class="text-foreground underline-offset-2 hover:underline">Talk to us</a> for Enterprise.
-				</p>
-			</Reveal>
+				<Reveal variant="up" delay={120} class="md:col-span-8">
+					<FaqList items={faqs} />
+				</Reveal>
+			</div>
 		</Container>
 	</Section>
 

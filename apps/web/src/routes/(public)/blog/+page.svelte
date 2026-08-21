@@ -1,11 +1,11 @@
 <script lang="ts">
+import { ArrowRight, Clock, PenLine } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 import { formatDate } from "$lib/blog/format";
 import { Container, Footer, Reveal, Section, SeoMeta } from "$lib/components";
 import { prefersReducedMotion } from "$lib/motion-core";
-import { ArrowRight, Clock, PenLine } from "@recast/icons";
-import { Badge } from "@recast/ui/badge";
-import { fly } from "svelte/transition";
-import { cubicOut } from "svelte/easing";
 import type { PageData } from "./$types";
 
 let { data }: { data: PageData } = $props();

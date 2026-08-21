@@ -4,7 +4,7 @@
 import Self from "./DocviaContent.svelte";
 import MermaidDiagram from "./MermaidDiagram.svelte";
 import { mermaidSourceOf } from "./mermaid";
-import { VOID_TAGS, type DocNodes } from "./render";
+import { type DocNodes, VOID_TAGS } from "./render";
 
 let { nodes }: { nodes: DocNodes } = $props();
 

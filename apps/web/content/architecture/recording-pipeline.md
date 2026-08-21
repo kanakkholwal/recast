@@ -1,11 +1,11 @@
 ---
 kind: architecture
 title: "Recording pipeline"
-description: "The Rust capture path: platform capture backends, the constant-frame-rate pacer, the FFmpeg encoder, and the cursor, audio, and camera tracks."
+description: "Capture backends, the constant-frame-rate pacer, the encoder, and the cursor, audio and camera tracks."
 position: 1
 status: production
 domain: capture
-summary: "Three joined threads (capture, encode, cursor) plus independent audio sessions turn a screen selection into the files the editor later opens."
+summary: "Three threads turn a screen selection into the files the editor opens."
 inputs:
   - "CaptureTarget: display, window, or region"
   - "System loopback and microphone audio"
@@ -47,7 +47,7 @@ capture thread pulls raw BGRA frames from a platform `CaptureSource`
 thread through a bounded `ArrayQueue` (`RecordingPipeline`). The encoder pipes
 those frames to a long-lived FFmpeg child for H.264 encoding. Audio (system
 loopback + microphone) is captured by independent OS sessions (`audio/`). The
-camera is *not* opened by Rust at all — it is recorded in a preview WebView via
+camera is *not* opened by Rust at all; it is recorded in a preview WebView via
 `getUserMedia` → `MediaRecorder` and delivered to disk before stop.
 
 The pipeline's central design constraint is **wall-clock ↔ video-PTS ↔
@@ -104,7 +104,7 @@ sequenceDiagram
     Mgr->>Cap: spawn_capture_loop (pacer)
     Mgr->>Enc: spawn_encoder_loop (FFmpeg)
     Mgr->>Cur: spawn_cursor_capture (125Hz)
-    Note over Cap: warmup — first frame sets<br/>first_frame_offset_us
+    Note over Cap: warmup, first frame sets<br/>first_frame_offset_us
     loop per tick
         Cap->>Enc: push BGRA frame (queue)
         Enc->>Enc: write frame + dup per pacer drop
@@ -151,16 +151,16 @@ sequenceDiagram
 
 1. `start_recording` resolves the output dir and pushes the entire blocking body
    onto `spawn_blocking` (sync commands run on the UI thread; on macOS/Linux the
-   WebView renders there, so inline work froze the window — `commands/recording.rs:37-45`).
+   WebView renders there, so inline work froze the window, `commands/recording.rs:37-45`).
 2. On Wayland the xdg-desktop-portal dialog is negotiated up front and its stream
    stashed for the capture thread; the portal dimensions are authoritative
    (`commands/recording.rs:59-90`). Elsewhere `CaptureTarget::resolve[_region]`
    enumerates monitors/windows via xcap and computes `source`/`crop`.
    `apply_device_scale` lifts logical coords to physical pixels (macOS Retina;
-   no-op at scale 1.0 on Windows/Linux — `recording/mod.rs:176`).
+   no-op at scale 1.0 on Windows/Linux, `recording/mod.rs:176`).
 3. `RecordingManager::start` checks screen-recording permission (macOS TCC),
    resolves fps (`24..=240`, default 60) and quality tier, sizes the frame queue
-   by a 256 MB BGRA budget clamped to 30–180 frames (`recording/mod.rs:842-847`),
+   by a 256 MB BGRA budget clamped to 30-180 frames (`recording/mod.rs:842-847`),
    then spawns the capture, encoder, and cursor threads and starts the
    system-audio and microphone OS sessions (each gated by its option toggle).
    Camera is recorded intent only (`camera_requested`); `camera_ready` is reset.
@@ -179,7 +179,7 @@ freeze/unfreeze the clock; all producer threads skip work while paused.
    emits `camera-flush`, then the worker waits (≤30s) on `wait_for_camera` for
    the MediaRecorder bytes to land (`finish_camera_flush` releases it early).
 2. `RecordingManager::stop` sets `stop_flag`, joins all three threads, and stops
-   the audio/mic sessions — **reaping everything before surfacing any error** so
+   the audio/mic sessions, **reaping everything before surfacing any error** so
    a failed thread never orphans an FFmpeg child or a held device
    (`recording/mod.rs:1062-1089`).
 3. The captured `CursorTrack` is re-based by `first_frame_offset_us` via
@@ -214,7 +214,7 @@ WebView). These are then packaged into the `.recast` project by `write_project`.
   (`encoder/mod.rs:272-360`; unit-tested `total_emitted == captured`).
 
 - **Cursor clock re-basing.** The cursor thread ticks from recording start, but
-  video frame 0 is whatever the capture-source warmup produced first — i.e.
+  video frame 0 is whatever the capture-source warmup produced first, i.e.
   video t=0 is wall-clock `first_frame_offset_us`, not 0. Without correction the
   whole cursor track (and clicks/highlights) runs ahead of the video by the
   warmup (~half a second). `stop()` subtracts the recorded offset via
@@ -243,14 +243,12 @@ WebView). These are then packaged into the `.recast` project by `write_project`.
 - **FFmpeg stderr must be drained continuously.** The encoder's `pump_stderr_tail`
   runs on its own thread for the whole child lifetime. If stderr isn't read, the
   ~64KB OS pipe buffer fills on a long recording, FFmpeg blocks on its stderr
-  write, stops reading stdin, and the encoder's `stdin.write_all` deadlocks —
-  freezing capture mid-recording. macOS/Linux hit it sooner (smaller pipe
+  write, stops reading stdin, and the encoder's `stdin.write_all` deadlocks, freezing capture mid-recording. macOS/Linux hit it sooner (smaller pipe
   buffers). The same reasoning applies to the macOS avfoundation capture child
   (`encoder/mod.rs:22-66`, `capture/platform/macos.rs:181`).
 
 - **`CaptureSource` contract: emit full-`source`-sized frames; the encoder
-  crops.** A backend must return `source`-dimensioned BGRA, never pre-cropped —
-  the encoder is configured for `source` dims and applies its own crop filter.
+  crops.** A backend must return `source`-dimensioned BGRA, never pre-cropped: the encoder is configured for `source` dims and applies its own crop filter.
   The X11 backend once pre-cropped, double-cropping and corrupting every
   region/window recording; there are regression tests pinning this
   (`capture/platform/linux_x11.rs:94-267`, `recording/mod.rs:1519-1537`).
@@ -272,15 +270,15 @@ WebView). These are then packaged into the `.recast` project by `write_project`.
 - **Shutdown reaping.** Quitting from the tray goes through `app.exit(0)` →
   `std::process::exit`, which runs no destructors. `abort_for_shutdown` must be
   called explicitly from the exit handler, and `Drop for RecordingManager` reaps
-  a session left live by a panicking owner — otherwise the audio/mic/camera
+  a session left live by a panicking owner, otherwise the audio/mic/camera
   children keep running and hold the device (`recording/mod.rs:560-626`).
 
 ## Related
 
-- [03-preview-and-rendercore.md](/architecture/preview-rendercore) — how the editor
+- [03-preview-and-rendercore.md](/architecture/preview-rendercore): how the editor
   previews `recording.mp4` and composites the stylized cursor / camera overlay
   from the sidecar tracks this pipeline writes.
-- [05-timeline-model.md](/architecture/timeline-model) — the render state and cursor /
+- [05-timeline-model.md](/architecture/timeline-model): the render state and cursor /
   zoom-trigger model the recording feeds into.
-- [06-export-pipeline.md](/architecture/export-pipeline) — where the separate camera
+- [06-export-pipeline.md](/architecture/export-pipeline): where the separate camera
   stream is composited and the final video is re-encoded.

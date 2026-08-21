@@ -1,11 +1,11 @@
 ---
 kind: architecture
 title: "Timeline model"
-description: "The pure arithmetic mapping original recording time to the output time a viewer sees: cuts, splits, ripple delete, per-segment speed, and the filmstrip."
+description: "The arithmetic mapping recording time to output time: cuts, splits, ripple delete and per-segment speed."
 position: 5
 status: production
 domain: editor
-summary: "Editing never touches media. It produces a piecewise-linear map from recording time to output time that the playhead, waveform, filmstrip, and export all resolve through."
+summary: "Editing never touches media. It builds a map from recording time to output time."
 inputs:
   - "Trim bounds"
   - "Removed original ranges (cuts)"
@@ -30,9 +30,9 @@ invariants:
 
 The timeline model is the pure arithmetic that maps between two axes:
 
-- **Original time** — seconds on the raw recording, the space cuts, splits, zoom
+- **Original time**: seconds on the raw recording, the space cuts, splits, zoom
   regions, and annotations all live in.
-- **Output time** — seconds the viewer actually sees after edits (trim + cuts +
+- **Output time**: seconds the viewer actually sees after edits (trim + cuts +
   per-segment speed) are applied.
 
 Editing never mutates media; it produces a piecewise-linear map. The model is
@@ -48,13 +48,13 @@ pinned to shared JSON fixtures.
 
 Layered structure:
 
-- `cuts.ts` — removed original ranges; translation-only original↔output map.
-- `segments.ts` — split + ripple-delete model; derives kept `Segment[]` and seams.
-- `segment-speed.ts` — per-segment speed overrides, anchored to a segment's
+- `cuts.ts`, removed original ranges; translation-only original↔output map.
+- `segments.ts`, split + ripple-delete model; derives kept `Segment[]` and seams.
+- `segment-speed.ts`, per-segment speed overrides, anchored to a segment's
   original start.
-- `time-map.ts` — the general piecewise map (cuts *and* speed). Reduces exactly
+- `time-map.ts`, the general piecewise map (cuts *and* speed). Reduces exactly
   to the `cuts.ts` translation map when every span is 1× (`time-map.ts:6-8`).
-- `storyboard.ts` / `filmstrip*.ts` — thumbnail generation on the output axis.
+- `storyboard.ts` / `filmstrip*.ts`, thumbnail generation on the output axis.
 
 ## Diagram
 
@@ -98,7 +98,7 @@ flowchart LR
 | `Segment`, `deriveSegments` | `segments.ts:17,43` | Kept `[trimStart,trimEnd]` minus cuts, sliced at split points; drops zero-length + stray splits. |
 | `Seam`, `deriveSeams` | `segments.ts:81,95` | Collapsed-cut markers between adjacent segments (touching splits yield none). |
 | `segmentAt`, `planSplit`, `planDeleteSegment` | `segments.ts:116,130,158` | Split/ripple-delete planning; delete becomes a `manual` cut. |
-| `SegmentSpeed`, `segmentSpeedAt(Time)` | `segment-speed.ts:18,30,43` | Speed anchored to a segment's original start; clamped 0.25–4× (`:12-13`). |
+| `SegmentSpeed`, `segmentSpeedAt(Time)` | `segment-speed.ts:18,30,43` | Speed anchored to a segment's original start; clamped 0.25-4× (`:12-13`). |
 | `buildSpeedOf`, `pruneSegmentSpeeds` | `segment-speed.ts:88,76` | Index→speed lookup for the time-map; drop orphaned anchors. |
 | `TimeMap`, `MappedSpan`, `buildTimeMap` | `time-map.ts:39,32,54` | Kept spans placed on both axes; `outputDuration` = Σ span_width/speed. |
 | `timeMapFromSegments` | `time-map.ts:71` | Playback/export map: kept segments + per-segment speed. |
@@ -127,11 +127,11 @@ flowchart LR
 3. The reverse `originalToOutput(map, t)` (`time-map.ts:161`) binary-searches the
    first span with `origEnd >= t` (spans are ordered/disjoint, so `origEnd` is
    monotone). A time in a removed gap collapses onto the next span's `outStart`
-   (the seam) — same semantics as the cut-only `cuts.ts:57`. Binary search was
+   (the seam): same semantics as the cut-only `cuts.ts:57`. Binary search was
    added because the waveform lane evaluates it per bucket over ~2000 buckets, so
    at high cut counts the linear scan dominated a zoom (`time-map.ts:162-166`).
 
-At all-1× the whole thing reduces to the `cuts.ts` translation map — proven by
+At all-1× the whole thing reduces to the `cuts.ts` translation map, proven by
 the parity fixtures (`time-map.ts:6-8`, `time-map.test.ts:193-212`).
 
 ### Same model feeds preview and export
@@ -144,8 +144,8 @@ the parity fixtures (`time-map.ts:6-8`, `time-map.test.ts:193-212`).
   `build_speed_segments` (`:110`, mirrors `deriveSegments` + anchoring) →
   `warped_output_duration` = `Σ (end-start)/speed` (`:159`, identical formula to
   `buildTimeMap`'s `outputDuration`). Cuts are applied **last** as a pure
-  frame-drop (`select`/`aselect`), so zoom/cursor/blur — computed on the
-  continuous post-trim timeline — stay correct (`cuts_speed.rs:63-70,260-266`).
+  frame-drop (`select`/`aselect`), so zoom/cursor/blur, computed on the
+  continuous post-trim timeline, stay correct (`cuts_speed.rs:63-70,260-266`).
   Speed slots in at the same tail point as a timing warp:
   `build_speed_setpts_expr` remaps survivor PTS onto the warped axis
   (`:188`), and audio is retimed per segment via `atrim`+`atempo`+`concat`
@@ -158,7 +158,7 @@ the parity fixtures (`time-map.ts:6-8`, `time-map.test.ts:193-212`).
    `planFilmstrip(blocks, viewport, opts)` (`filmstrip.ts:73`) emits only tiles
    intersecting the viewport + overscan. Tile count scales with block pixel width
    (`ceil(widthPx/tileTarget)`), and each tile's `sampleOriginalSec` is
-   interpolated across the block's **original** span — so speeding a segment
+   interpolated across the block's **original** span, so speeding a segment
    narrows its output width (fewer tiles) without moving sample times
    (`filmstrip.ts:1-15,89-99`).
 2. `MediabunnyTileProvider` (`filmstrip-source.ts:76`) batches requests once per
@@ -168,7 +168,7 @@ the parity fixtures (`time-map.ts:6-8`, `time-map.test.ts:193-212`).
 3. The worker (`filmstrip-worker.ts`) holds one MediaBunny `Input` +
    `CanvasSink`, range-streams the source (never buffers the whole file,
    `:54-64`), and drains all decodes through a **single `drain()` latch**
-   (`:133`) — `getCanvas` builds a fresh `VideoDecoder` per call, so overlapping
+   (`:133`): `getCanvas` builds a fresh `VideoDecoder` per call, so overlapping
    drains would mean one live hardware decoder per in-flight message. Newest batch
    drains first; the hover storyboard sprite (fixed 8×4 grid) builds only once no
    tiles are queued (`:143-159,174`). Frames are JPEG-encoded (quality 0.82) and
@@ -200,17 +200,17 @@ the parity fixtures (`time-map.ts:6-8`, `time-map.test.ts:193-212`).
   width, faster). A non-positive/non-finite speed falls back to 1 so a bad
   override can't make a zero-width or NaN span (`time-map.ts:62`,
   `segment-speed.ts:24`). Video warp is `setpts`; audio must match via chained
-  `atempo` — FFmpeg's `atempo` only accepts 0.5–2.0 per stage, so 0.25–4× is
+  `atempo`, FFmpeg's `atempo` only accepts 0.5-2.0 per stage, so 0.25-4× is
   covered by chaining (`cuts_speed.rs:213-230`, e.g. 4× → two `atempo=2.0`).
 - **Speed anchors are original-time.** An override is pinned to a segment's
   *original* start (stable under cuts/ripple-deletes, which never move original
-  times). A trim/split that orphans an anchor drops it silently — same forgiving
+  times). A trim/split that orphans an anchor drops it silently, same forgiving
   rule as stray splits (`segment-speed.ts:1-8`, `pruneSegmentSpeeds`). Setting
   speed back to ~1 removes the entry so the list stays sparse and serializes to
   nothing (`setSegmentSpeed`, `:62-73`).
 - **`displayTimeMap` vs resting map.** The resting/playback/export map is
   kept-only (`timeMapFromSegments`). `displayTimeMap` (`time-map.ts:108`) is used
-  *only transiently while dragging a trim handle* — it un-collapses the trimmed
+  *only transiently while dragging a trim handle*, it un-collapses the trimmed
   head/tail at 1× so the drag isn't degenerate at the clip's left edge. Never feed
   it to playback or export.
 - **`buildGapMap` is render-only.** It re-spaces cuts as visible gaps for the
@@ -237,7 +237,7 @@ the parity fixtures (`time-map.ts:6-8`, `time-map.test.ts:193-212`).
     (The fixture `_comment` still points at legacy `apps/desktop/src/lib/timeline/…`
     test paths; the live tests are in `packages/editor/src/lib/timeline/`.)
 - **`output_duration_cap`.** Export's `-t` cap is the warped output length, not
-  the raw trimmed span — otherwise the infinite background generators freeze the
+  the raw trimmed span, otherwise the infinite background generators freeze the
   last frame past content-end, and slow-motion (warped > raw) gets truncated. GIF
   keeps the raw span only for a cuts-only export (`cuts_speed.rs:163-182`).
 - **Single decoder latch.** The filmstrip worker's `draining` boolean is
@@ -249,9 +249,9 @@ the parity fixtures (`time-map.ts:6-8`, `time-map.test.ts:193-212`).
 
 ## Related
 
-- `03-preview-and-rendercore.md` — how the preview consumes the time-map for
+- `03-preview-and-rendercore.md`, how the preview consumes the time-map for
   playhead/scrub and the shared compositor.
-- `06-export-pipeline.md` — the Rust FFmpeg filtergraph that applies cuts + speed
+- `06-export-pipeline.md`, the Rust FFmpeg filtergraph that applies cuts + speed
   (`cuts_speed.rs`) and the export-side duration cap.
-- `08-state-and-project-format.md` — where cuts, split points, and segment-speed
+- `08-state-and-project-format.md`, where cuts, split points, and segment-speed
   overrides are stored and serialized in the `.recast` edit model.

@@ -54,15 +54,22 @@ hardcode hex.
 | Role | Light | Dark | Token |
 | --- | --- | --- | --- |
 | Canvas | `oklch(100% 0 0)` | `oklch(14.5% 0 0)` | `--background` |
-| Card | `oklch(100% 0 0)` | `oklch(17.5% 0 0)` | `--card` |
-| Paper (tonal band) | `oklch(97% 0 0)` | `oklch(20.5% 0 0)` | `--paper` → `bg-paper` |
-| Hairline | `oklch(92.2% 0 0)` | `oklch(26.9% 0 0)` | `--border` → `border-border-low` |
-| Emphasis border | `oklch(87% 0 0)` | `oklch(33% 0 0)` | `--border-emphasis` → `border-border-strong` |
+| Card | `oklch(100% 0 0)` | `oklch(14.5% 0 0)` | `--card` |
+| Paper (tonal band) | `oklch(97% 0 0)` | `oklch(18.5% 0 0)` | `--paper` → `bg-paper` |
+| Hairline | `oklch(92.2% 0 0)` | `oklch(30% 0 0)` | `--border` → `border-border-low` |
+| Emphasis border | `oklch(87% 0 0)` | `oklch(42% 0 0)` | `--border-emphasis` → `border-border-strong` |
 | Text | `oklch(20.5% 0 0)` | `oklch(96% 0 0)` | `--foreground` |
-| Muted text | `oklch(55.6% 0 0)` | `oklch(64% 0 0)` | `--muted-foreground` |
+| Muted text | `oklch(55.6% 0 0)` | `oklch(68% 0 0)` | `--muted-foreground` |
 
 Light-mode canvas is pure white and cards are pure white. They are told apart by
 the hairline, not by tone. That is the whole idea.
+
+**Dark mode mirrors that, and the mirror is the rule.** Card equals canvas in
+dark too, so a card on a `bg-paper` band reads by its border, not by a lift.
+Card sitting *between* canvas and paper (the old `17.5%`) made every panel on a
+band look sunken, which is what "dark mode feels muddy" actually was. The three
+tag hues also get lifted in dark (`74-75%` L) — the light-mode values sit at
+54-64% and go to mud on a 14.5% canvas.
 
 ### Accent
 
@@ -140,12 +147,17 @@ happened.
 ## Typography
 
 - **Display (h1, h2):** Satoshi, weight **700**, letter-spacing **-0.01em**.
-- **Everything else:** Inter — body, UI labels, h3–h6 (weight 600, `-0.011em`).
-- **Mono:** Geist Mono, for code, file names, and stat numbers.
+- **Subheads (h3):** Satoshi, weight **500**, letter-spacing **-0.008em**.
+- **Everything else:** Inter — body, UI labels, h4–h6 (weight 600, `-0.011em`).
+- **Mono:** Geist Mono, for code and architecture docs. **Not on the marketing
+  pages** — file names, timecodes and readouts inside product mocks use Inter
+  with `tabular-nums`.
 
 Satoshi ships 400 / 500 / 700 — there is no 600. 500 read too light at display
-sizes next to the reference, so display type is Bold. Everything below 30px is
-Inter and never uses the display face.
+sizes next to the reference, so display type is Bold; at body size 700 is too
+heavy, so h3 takes 500. Every heading on a marketing page is on the display
+face, and carries `font-display` in the markup as well as the base rule, so it
+is visible where the heading is written.
 
 Satoshi is **not on Fontsource** — no `@fontsource/satoshi` package exists. The
 ITF-Free-Font-License woff2 files are vendored in
@@ -233,6 +245,37 @@ dashboard; do not use them on marketing surfaces.
 `glass-card` / `glass-chip` / `glass-strong` are **legacy**. They still exist for
 `/dashboard`, `/admin` and `/share`, and are neutralised to border-first under
 `[data-site="marketing"]`. Do not author new marketing markup with them.
+
+### Nested surfaces and the @theme alias trap
+
+Tailwind v4 `@theme` aliases are declared once, on `:root`:
+
+```css
+@theme { --color-canvas: var(--canvas); }
+```
+
+The inner `var()` resolves **against `:root`**, not against the element using the
+utility. So a token overridden on a *nested* element can never reach an aliased
+utility. `<div data-theme="dark" class="bg-canvas">` mid-page stays light, and it
+fails silently — nothing errors, the colour just never changes.
+
+This is why the closing CTA does **not** use `bg-canvas` / `text-ink`. It uses
+`.band-dark`, which sets literal oklch values and its own local vars:
+
+| Class | Use |
+| --- | --- |
+| `.band-dark` | The always-dark surface. Sets `--band-ink`, `--band-muted`, `--band-line`. |
+| `.band-muted` | Secondary text on the band. |
+| `.band-rule` | Hairline as a **border** (buttons, `border-y`). |
+| `.band-gap` | Hairline as a **background** (a `gap-px` grid's separators). |
+| `.band-surface` | Restores the band's own fill on a cell inside a `gap-px` grid. |
+
+`band-rule` and `band-gap` are split on purpose: one class setting both would
+give an outlined button a filled background.
+
+The rule: **a surface that flips colour mid-page must carry literal values.**
+Aliased tokens only work when the override lands on `:root`, which for this site
+means `<html data-site="marketing">`.
 
 ### Backgrounds
 
@@ -362,17 +405,73 @@ mono, uppercase, letter-spaced `AUTOMATIC`.
 
 ### Product mocks
 
-`RecordMock` and friends are vector and CSS only; no new animation dependency.
-`gsap` is already in the app for `TextLoop`, and Svelte's own transitions cover
-the rest.
+`RecordMock`, `PolishMock` and `ExportMock` are one set, one per pillar. They
+are vector and CSS only; no new animation dependency. `gsap` is already in the
+app for `TextLoop`, and Svelte's own transitions cover the rest.
 
-The rule for a mock that loops: **move one object, don't cross-fade many.**
-`RecordMock` slides a single highlight between rows and retypes the query line
-to match the row it lands on. Three rows each swapping their own background
-reads as a flicker; one moving highlight reads as keyboard navigation.
+Rules that keep them consistent with the page rather than with each other:
+
+- **Framed by `MacWindow`, never by a card.** All three pillar visuals are the
+  same window chrome. A mock inside a `.surface-lg` that already has its own
+  heading is a card in a card, and it reads as a different design system.
+- **The mock carries no heading.** The pillar already states the claim on the
+  left column; repeating it inside the visual is duplicated copy and bulk.
+- **Hairlines, not tiles.** Status stages are `gap-px` cells over
+  `bg-border-low`, the same grid the extensions row uses. No rounded step
+  circles, no per-stage progress bars — one track for the whole transfer.
+- **One timeline drives everything.** A single `elapsed` counter derives every
+  phase so the parts can never disagree about which state they are in.
+- **Move one object, don't cross-fade many.** `RecordMock` drags one marquee;
+  `PolishMock` lands one edit at a time; `ExportMock` fills one rail.
+- **Inert controls.** A mock's "Copy link" uses `buttonVariants` for exact
+  parity with the real button but renders as an `aria-hidden` span: a mock
+  control must not take focus.
+- **Scrims darken in both themes.** A `foreground`-tinted scrim *brightens* the
+  excluded area in dark mode; dimming is always black at alpha.
 
 Every loop needs a `prefers-reduced-motion` branch that pins the mock to a
-finished state — first row selected, query already typed, caret hidden.
+finished state — selection made, all edits applied, link present.
+
+### FaqList
+
+One FAQ component for every page (`/`, `/pricing`). It is built on
+`@recast/ui/collapsible`, not `<details>`: the shared Collapsible animates real
+height through Svelte's `slide`, which native `<details>` cannot do at all.
+One row open at a time, first row open on load, plus/rotate as the only
+affordance. No card, no chevron column, just hairline-divided rows.
+
+Anything with a code block (the install troubleshooting on `/download`) uses
+`Collapsible` directly instead, since FaqList takes plain `{ q, a }` text.
+
+### Pricing and download pages
+
+Both were on the pre-Dub system: floating `rounded-2xl` cards, `blur-3xl` glow
+blobs, hardcoded `amber-500`/`emerald-500` state colours, mono labels and
+ad-hoc `text-5xl`/`text-sm` sizes. Rebuilt on the marketing system:
+
+- Plans are **one `gap-px` hairline grid**, not three floating cards. The
+  featured plan is marked by a `bg-paper` header block and a badge, never by a
+  coloured ring or a glow.
+- Every heading uses the display face; every number uses `tabular-nums`.
+- State colour comes from the tag hues (`tag-green` stable, `tag-tangerine`
+  caution). No palette colours; they had no dark-mode pairing.
+- Long tables stay hairline grids: `border-y` header, `bg-paper` group rows,
+  `Check` for yes and a neutral dot for no. A muted dot reads as "not included"
+  without the visual weight of a minus glyph in every empty cell.
+- Segmented controls (billing period, platform tabs) are one shape: a
+  `border-border-low` + `bg-paper` track with the active pill on `bg-background`
+  and `shadow-craft-sm`.
+
+### Footer wordmark
+
+The oversized "Recast" at the foot of the page is filled with a
+`foreground`-to-transparent gradient clipped to the text, with a brighter band
+that drifts across it on a 9s loop. Colour comes from `color-mix` on
+`--color-foreground`, so it inverts with the theme and stays token-driven.
+
+Reduced motion needs an explicit `animation: none` plus a flat gradient. The
+global guard only collapses duration to `0.01ms`, which parks the sheen
+mid-sweep instead of removing it.
 
 ### SectionLabel
 
@@ -407,6 +506,11 @@ canvas. A permanent border reads as a frame around the page.
 ### Buttons
 
 - Primary: `<Button variant="dark">` — near-black fill, white text. One per view.
+- On `.band-dark`: primary is `variant="light"`, secondary is `variant="outline"`
+  plus `band-rule` and `text-current`. Platform rows are Buttons too, not bare
+  anchors, so they inherit the system's sizing and focus ring.
+- OS marks come from `@recast/ui/brand-icons` (`WindowsBrand`, `AppleBrand`,
+  `LinuxBrand`) so the home page and `/download` show the same glyphs.
 - Secondary: `<Button variant="outline">` — white, hairline, border darkens on hover.
 - Press feedback is `active:scale-[0.99]`. There is no hover-grow and no
   radius-morph-on-press; both were removed from `@recast/ui` in this pass.
@@ -493,5 +597,28 @@ the honest social proof, rendered in a muted neutral via Simple Icons.
 | `/features` | pillars, supports, `#cta` |
 | `/download` | hero, `#all-platforms` |
 | `/changelog` | hero, release timeline |
+| `/architecture` | hero, system map, one section per domain |
+| `/architecture/[slug]` | header, facts panel, invariants, prose, pager |
 
 Keep navbar and footer links in sync. Stale anchors are silent UX bugs.
+
+---
+
+## Architecture pages
+
+`/architecture` is a reference surface, not a marketing one, and it borrows the
+marketing system rather than inventing a second. Three rules keep it honest:
+
+- **Facts before prose.** Every page opens with a four-panel band, what goes in,
+  what comes out, where to start reading, and the invariants, built from
+  frontmatter. A reader who stops there has still learned something.
+- **The system map is border-first like everything else.** Its nodes are a
+  hairline, a radius, and a 3px left edge in the phase's hue. Record is
+  tangerine, Polish lavender, Share green, and an artifact is neutral, so the map
+  reads as the same spine the landing page tells.
+- **Prose runs wider here** (`78ch`, `width="reference"`) than in an article
+  (`68ch`). Reference tables and diagrams need the measure; an essay does not.
+
+The map is `aria-hidden` and paired with a disclosure that lists the same graph
+as links. A node-graph is not navigable by keyboard or screen reader, so the
+list is the real content and the picture is the illustration.

@@ -1,5 +1,5 @@
-import { Mail as Mail } from "@recast/icons";
 import type { IconComponent } from "@recast/icons";
+import { Mail } from "@recast/icons";
 import { GithubBrand, XBrand } from "@recast/ui/brand-icons";
 
 // Single source of truth for the site chrome (Navbar + Footer). Both surfaces
@@ -29,6 +29,9 @@ void PLAYGROUND;
 const PRICING: NavLink = { label: "Pricing", href: "/pricing" };
 const CHANGELOG: NavLink = { label: "Changelog", href: "/changelog" };
 const BLOG: NavLink = { label: "Blog", href: "/blog" };
+// How the thing is built, one page per subsystem. A resource, not a product
+// offering, so it sits with the blog rather than in the top nav.
+const ARCHITECTURE: NavLink = { label: "Architecture", href: "/architecture" };
 
 // Inline top-nav links, always visible on desktop. Three max — the bar also
 // carries GitHub, Sign in and Download, and a fourth link pushed those into a
@@ -51,6 +54,7 @@ export const footerCols: { title: string; links: NavLink[] }[] = [
 		links: [
 			// TOOLS,
 			BLOG,
+			ARCHITECTURE,
 			{ label: "GitHub", href: GITHUB_URL, external: true },
 			{ label: "Releases", href: GITHUB_RELEASES_URL, external: true },
 			CHANGELOG,
