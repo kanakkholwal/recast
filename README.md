@@ -72,6 +72,13 @@ pnpm turbo run dev --filter=recast-web
 Prefer to set things up by hand? See the
 [manual setup steps in CONTRIBUTING.md](CONTRIBUTING.md#manual-setup).
 
+## Architecture
+
+One page per subsystem at **[recast.li/architecture](https://recast.li/architecture)**,
+written as markdown in [`apps/web/content/architecture/`](apps/web/content/architecture/).
+Each opens with what goes in, what comes out, which files to start at, and the
+invariants that subsystem cannot break.
+
 ## Contributing
 
 The [Contributing Guide](CONTRIBUTING.md) covers the codebase mental model,

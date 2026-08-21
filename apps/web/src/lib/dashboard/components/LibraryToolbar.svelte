@@ -1,71 +1,71 @@
 <script lang="ts">
-	import { focusOnMount } from "$lib/dashboard/focus";
-	import { isEditableTarget } from "$lib/dom/is-editable";
-	import { tagsStore } from "$lib/dashboard/library.svelte";
-	import { Chip } from "@recast/ui/chip";
-	import * as Select from "@recast/ui/select";
-	import { Plus, Search, Settings2, X } from "@recast/icons";
+import { focusOnMount } from "$lib/dashboard/focus";
+import { isEditableTarget } from "$lib/dom/is-editable";
+import { tagsStore } from "$lib/dashboard/library.svelte";
+import { Chip } from "@recast/ui/chip";
+import * as Select from "@recast/ui/select";
+import { Plus, Search, Settings2, X } from "@recast/icons";
 
-	// Library filter/search/sort toolbar. Bindable filter state lives here so the
-	// page stays orchestration-only; folder selection is the FolderRail's job, so
-	// the page passes the combined `filtersActive` + an `onclear` that also resets
-	// the folder.
-	let {
-		query = $bindable(""),
-		sortKey = $bindable("recent"),
-		selectedTagIds = $bindable([]),
-		total,
-		shown,
-		filtersActive,
-		onclear,
-		onmanagetags,
-		oncreatetag,
-	}: {
-		query?: string;
-		sortKey?: string;
-		selectedTagIds?: string[];
-		total: number;
-		shown: number;
-		filtersActive: boolean;
-		onclear: () => void;
-		onmanagetags: () => void;
-		oncreatetag: (name: string) => void;
-	} = $props();
+// Library filter/search/sort toolbar. Bindable filter state lives here so the
+// page stays orchestration-only; folder selection is the rail's job, so
+// the page passes the combined `filtersActive` + an `onclear` that also resets
+// the folder.
+let {
+	query = $bindable(""),
+	sortKey = $bindable("recent"),
+	selectedTagIds = $bindable([]),
+	total,
+	shown,
+	filtersActive,
+	onclear,
+	onmanagetags,
+	oncreatetag,
+}: {
+	query?: string;
+	sortKey?: string;
+	selectedTagIds?: string[];
+	total: number;
+	shown: number;
+	filtersActive: boolean;
+	onclear: () => void;
+	onmanagetags: () => void;
+	oncreatetag: (name: string) => void;
+} = $props();
 
-	let searchInput = $state<HTMLInputElement | null>(null);
-	let creatingTag = $state(false);
-	let newTagName = $state("");
+let searchInput = $state<HTMLInputElement | null>(null);
+let creatingTag = $state(false);
+let newTagName = $state("");
 
-	const sorts = [
-		{ label: "Newest first", value: "recent" },
-		{ label: "Oldest first", value: "oldest" },
-		{ label: "Name (A–Z)", value: "name" },
-		{ label: "Largest first", value: "largest" },
-	];
-	const sortLabel = $derived(sorts.find((s) => s.value === sortKey)?.label ?? "Sort");
+const sorts = [
+	{ label: "Newest first", value: "recent" },
+	{ label: "Oldest first", value: "oldest" },
+	{ label: "Name (A–Z)", value: "name" },
+	{ label: "Largest first", value: "largest" },
+];
+const sortLabel = $derived(sorts.find((s) => s.value === sortKey)?.label ?? "Sort");
 
-	function toggleTag(id: string) {
-		selectedTagIds = selectedTagIds.includes(id)
-			? selectedTagIds.filter((t) => t !== id)
-			: [...selectedTagIds, id];
+function toggleTag(id: string) {
+	selectedTagIds = selectedTagIds.includes(id)
+		? selectedTagIds.filter((t) => t !== id)
+		: [...selectedTagIds, id];
+}
+
+function submitTag() {
+	const name = newTagName.trim();
+	creatingTag = false;
+	newTagName = "";
+	if (name) oncreatetag(name);
+}
+
+// Keyboard-first: "/" focuses the search from anywhere on the page (unless
+// you're already typing); Escape clears it while focused.
+function onWindowKeydown(e: KeyboardEvent) {
+	if (e.key === "/" && !isEditableTarget(e.target)) {
+		e.preventDefault();
+		searchInput?.focus();
+		searchInput?.select();
 	}
-
-	function submitTag() {
-		const name = newTagName.trim();
-		creatingTag = false;
-		newTagName = "";
-		if (name) oncreatetag(name);
-	}
-
-	// Keyboard-first: "/" focuses the search from anywhere on the page (unless
-	// you're already typing); Escape clears it while focused.
-	function onWindowKeydown(e: KeyboardEvent) {
-		if (e.key === "/" && !isEditableTarget(e.target)) {
-			e.preventDefault();
-			searchInput?.focus();
-			searchInput?.select();
-		}
-	}
+}
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />

@@ -11,14 +11,14 @@ import {
 } from "$lib/ipc";
 import { commandPalette } from "$lib/stores/command-palette.svelte";
 import { chordLabel } from "$lib/shortcuts/registry.svelte";
-import { formatSize, relativeDate } from "$lib/format/files";
+import { formatSize, relativeDate } from "@recast/editor/lib/format/files";
 import { openInEditor as openEditorWindow } from "$lib/library/editor-window";
 import { recentSix } from "$lib/library/list";
 import { PlayerDialog } from "$components/recast";
 import { LibraryError } from "$components/library";
 import { createThumbnailLoader } from "$lib/library/thumbnails";
 import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
-import { motionDuration } from "$lib/motion.svelte";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import Logo from "$components/logo.svelte";
 import {
 	AppWindow,

@@ -112,22 +112,14 @@ fn read_manifest(app: &AppHandle) -> HashMap<String, CloudUploadRecord> {
     let Some(path) = manifest_path(app) else {
         return HashMap::new();
     };
-    let Ok(data) = std::fs::read_to_string(&path) else {
-        return HashMap::new();
-    };
-    serde_json::from_str(&data).unwrap_or_default()
+    crate::commands::system::read_json_manifest(&path)
 }
 
 fn write_manifest(app: &AppHandle, manifest: &HashMap<String, CloudUploadRecord>) {
     let Some(path) = manifest_path(app) else {
         return;
     };
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(data) = serde_json::to_string_pretty(manifest) {
-        let _ = std::fs::write(path, data);
-    }
+    crate::commands::system::write_json_manifest(&path, manifest);
 }
 
 fn record_upload(app: &AppHandle, local_path: &str, record: CloudUploadRecord) {

@@ -4,6 +4,12 @@ First off, thank you for considering contributing to Recast! It's people like yo
 
 ## 🧠 Codebase Mental Model
 
+> Going deeper than this section? The full architecture is one page per subsystem
+> at [recast.li/architecture](https://recast.li/architecture), written as markdown
+> in [`apps/web/content/architecture/`](apps/web/content/architecture/). Read the
+> page for the subsystem you are changing before you change it, and update its
+> `entrypoints` and `invariants` when you do.
+
 Recast is a highly-optimized monorepo relying on four core technical pillars:
 
 1. **Tauri & Rust:** All OS-level APIs, audio/video device management (camera, microphone, screens), cursor tracking, and high-performance FFmpeg rendering are natively handled in `apps/desktop/src-tauri/`.

@@ -1,4 +1,5 @@
 ---
+kind: post
 title: "Why you can't drag a clip in Recast's timeline"
 description: "The timeline looked like an NLE and behaved like a diagram. Fixing that meant admitting the video track has no position to drag to, working out which three edits it can actually express, and finding a unit mismatch that had been squaring pixels-per-second since the file was written."
 slug: why-you-cant-drag-a-clip

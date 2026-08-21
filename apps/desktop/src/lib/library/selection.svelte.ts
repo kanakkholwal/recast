@@ -4,7 +4,7 @@
  * reads through `has`/`count` stay reactive across this factory boundary.
  */
 
-import type { RecordingEntry } from "$lib/ipc-types";
+import type { RecordingEntry } from "$lib/recorder-types";
 import { toast } from "@recast/ui/sonner";
 import { SvelteSet } from "svelte/reactivity";
 
@@ -46,9 +46,7 @@ export function createSelection(config: SelectionConfig) {
 
 	async function bulkDelete() {
 		const paths = [...selected];
-		const results = await Promise.allSettled(
-			paths.map((p) => config.deleteFile(p)),
-		);
+		const results = await Promise.allSettled(paths.map((p) => config.deleteFile(p)));
 		const deleted = new Set<string>();
 		results.forEach((r, i) => {
 			if (r.status === "fulfilled") deleted.add(paths[i]);

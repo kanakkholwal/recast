@@ -6,8 +6,8 @@
  */
 
 import { autosaveProject, suggestZoomRegions } from "$lib/ipc";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { applyAutoZooms } from "$lib/zoom/auto-apply";
+import type { EditorStore } from "@recast/editor/stores/editor-store.svelte";
+import { applyAutoZooms } from "@recast/editor/lib/zoom/auto-apply";
 
 export interface AutoZoomOutcome {
 	/** Number of focus regions actually placed. */
@@ -55,10 +55,7 @@ export async function generateAutoZoom(
 
 	if (opts.documentPath) {
 		try {
-			await autosaveProject(
-				opts.documentPath,
-				JSON.stringify(store.toRenderState()),
-			);
+			await autosaveProject(opts.documentPath, JSON.stringify(store.toRenderState()));
 		} catch (err) {
 			console.warn("Auto-zoom autosave failed:", err);
 		}

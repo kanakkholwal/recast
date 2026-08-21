@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import type { KeptSpan } from '../lib/captions/clip-with-cuts';
+import { describe, expect, it } from "vitest";
+import type { KeptSpan } from "@recast/editor/lib/captions/clip-with-cuts";
 
 /**
  * Layer + annotation + fade timeline tests for the editor. These
@@ -10,8 +10,16 @@ import type { KeptSpan } from '../lib/captions/clip-with-cuts';
  * no AudioContext — so they run under Node in vitest.
  */
 
-import { outputToOriginal, spanAtOriginal, timeMapFromSegments } from '../lib/timeline/time-map';
-import { keptRegions, planAudioSchedule, type Region } from '../lib/playback/audio-schedule';
+import {
+	outputToOriginal,
+	spanAtOriginal,
+	timeMapFromSegments,
+} from "@recast/editor/lib/timeline/time-map";
+import {
+	keptRegions,
+	planAudioSchedule,
+	type Region,
+} from "@recast/editor/lib/playback/audio-schedule";
 
 const CUT = { start: 10, end: 12 };
 const RECORDING_SEC = 60;
@@ -23,7 +31,7 @@ const segments = (function () {
 })();
 const timeMap = timeMapFromSegments(segments);
 
-describe('layers and annotations: visibility across a cut', () => {
+describe("layers and annotations: visibility across a cut", () => {
 	// A layer is a UI element (shape, text, callout) anchored to original
 	// time. Editors expect the layer to be drawn only while the playhead
 	// is in the kept portion of the layer's window. Pre-cut-only layers
@@ -35,19 +43,19 @@ describe('layers and annotations: visibility across a cut', () => {
 		return end > start ? { start, end } : null;
 	}
 
-	it('a layer entirely inside the cut is invisible everywhere', () => {
+	it("a layer entirely inside the cut is invisible everywhere", () => {
 		const layer = { start: 10.5, end: 11.5 };
 		const post = { origStart: 12, origEnd: 60 };
 		expect(layerWindow(layer, post)).toBeNull();
 	});
 
-	it('a layer that starts before the cut and ends after the cut is visible only in the kept portion', () => {
+	it("a layer that starts before the cut and ends after the cut is visible only in the kept portion", () => {
 		const layer = { start: 9, end: 13 };
 		const post = { origStart: 12, origEnd: 60 };
 		expect(layerWindow(layer, post)).toEqual({ start: 12, end: 13 });
 	});
 
-	it('a layer entirely in the pre-cut kept span is invisible after the cut', () => {
+	it("a layer entirely in the pre-cut kept span is invisible after the cut", () => {
 		const layer = { start: 4, end: 6 };
 		const pre = { origStart: 0, origEnd: 10 };
 		const post = { origStart: 12, origEnd: 60 };
@@ -55,14 +63,14 @@ describe('layers and annotations: visibility across a cut', () => {
 		expect(layerWindow(layer, post)).toBeNull();
 	});
 
-	it('a layer that is entirely in the post-cut region is visible there only', () => {
+	it("a layer that is entirely in the post-cut region is visible there only", () => {
 		const layer = { start: 20, end: 30 };
 		const post = { origStart: 12, origEnd: 60 };
 		expect(layerWindow(layer, post)).toEqual({ start: 20, end: 30 });
 	});
 });
 
-describe('fade-in / fade-out: the fade envelope applies to the original window', () => {
+describe("fade-in / fade-out: the fade envelope applies to the original window", () => {
 	// The export pipeline applies fades to the SOURCE window; the editor's
 	// preview shows a pre-faded framebuffer (the source is just muted at
 	// the boundaries). Tests pin the contract: the fade envelope is in
@@ -86,7 +94,7 @@ describe('fade-in / fade-out: the fade envelope applies to the original window',
 		return volume;
 	}
 
-	it('a 1s fade-in on a 0.5s kept span is fully faded in (not partial)', () => {
+	it("a 1s fade-in on a 0.5s kept span is fully faded in (not partial)", () => {
 		// Boundary: the editor trims the fade to the visible window. A 0.5s
 		// kept span under a 1s fade is at the fade's tail.
 		const volume = applyFade(1.0, 1.0, 0.5, 12.0, 12.5);
@@ -94,14 +102,14 @@ describe('fade-in / fade-out: the fade envelope applies to the original window',
 		expect(volume).toBeLessThanOrEqual(1);
 	});
 
-	it('a 0s fade-in keeps the source volume at the window start', () => {
+	it("a 0s fade-in keeps the source volume at the window start", () => {
 		const volume = applyFade(0.7, 0, 0, 12.0, 13.0);
 		expect(volume).toBe(0.7);
 	});
 });
 
-describe('audio scheduling across a cut: kept regions + planAudioSchedule', () => {
-	it('the kept region map removes the cut and lays the surviving windows end-to-end', () => {
+describe("audio scheduling across a cut: kept regions + planAudioSchedule", () => {
+	it("the kept region map removes the cut and lays the surviving windows end-to-end", () => {
 		const regions = keptRegions(0, RECORDING_SEC, [CUT]);
 		expect(regions).toEqual([
 			{ start: 0, end: CUT.start },
@@ -109,7 +117,7 @@ describe('audio scheduling across a cut: kept regions + planAudioSchedule', () =
 		]);
 	});
 
-	it('schedule chunks at output 0 start with the pre-cut region', () => {
+	it("schedule chunks at output 0 start with the pre-cut region", () => {
 		const regions = keptRegions(0, RECORDING_SEC, [CUT]);
 		const chunks = planAudioSchedule(regions, 0);
 		expect(chunks[0]?.bufferOffset).toBe(0);
@@ -119,7 +127,7 @@ describe('audio scheduling across a cut: kept regions + planAudioSchedule', () =
 		expect(chunks[1]?.bufferOffset).toBe(CUT.end);
 	});
 
-	it('the cut collapses on the output axis (no silence gap)', () => {
+	it("the cut collapses on the output axis (no silence gap)", () => {
 		// A cut at source [5, 7] on a 60s recording produces 58s of output. The
 		// kept regions [0, 5] and [7, 60] are laid end-to-end on the output
 		// axis as [0, 5] and [5, 58]. There is NO gap — the cut is silent by
@@ -138,7 +146,7 @@ describe('audio scheduling across a cut: kept regions + planAudioSchedule', () =
 		expect(chunks[1]?.bufferOffset).toBe(CUT.end);
 	});
 
-	it('starts scheduling from a post-cut output time', () => {
+	it("starts scheduling from a post-cut output time", () => {
 		const regions = keptRegions(0, RECORDING_SEC, [CUT]);
 		// Output = 5 (inside the pre-cut region). The pre-cut chunk starts
 		// immediately at source 5 and runs for 5s. The post-cut chunk
@@ -153,7 +161,7 @@ describe('audio scheduling across a cut: kept regions + planAudioSchedule', () =
 	});
 });
 
-describe('timeMap integration: roundtrip output ↔ original across multiple cuts', () => {
+describe("timeMap integration: roundtrip output ↔ original across multiple cuts", () => {
 	// Stress the round-trip with several cuts; the timeMap should
 	// preserve monotonicity and span membership across all of them.
 	const cuts: Region[] = [
@@ -172,7 +180,7 @@ describe('timeMap integration: roundtrip output ↔ original across multiple cut
 	})();
 	const map = timeMapFromSegments(keptSegs);
 
-	it('keeps monotonicity: output always increases as original increases', () => {
+	it("keeps monotonicity: output always increases as original increases", () => {
 		let prevOrig = -Infinity;
 		let prevOut = -Infinity;
 		for (let t = 0; t < 60; t += 0.1) {
@@ -180,9 +188,7 @@ describe('timeMap integration: roundtrip output ↔ original across multiple cut
 			// In cut ranges, outputToOriginal collapses to the seam. Outside
 			// cuts, it's monotonic in t.
 			if (o >= prevOrig - 1e-6) {
-				const out = map.spans.find(
-					(s) => t >= s.outStart - 1e-6 && t <= s.outEnd + 1e-6,
-				);
+				const out = map.spans.find((s) => t >= s.outStart - 1e-6 && t <= s.outEnd + 1e-6);
 				if (out) {
 					expect(out.outStart).toBeGreaterThanOrEqual(prevOut - 1e-6);
 					prevOut = out.outStart;
@@ -192,7 +198,7 @@ describe('timeMap integration: roundtrip output ↔ original across multiple cut
 		}
 	});
 
-	it('every kept span is reachable from both directions', () => {
+	it("every kept span is reachable from both directions", () => {
 		for (const s of map.spans) {
 			// From a point inside the span, outputToOriginal should land in
 			// the same span.

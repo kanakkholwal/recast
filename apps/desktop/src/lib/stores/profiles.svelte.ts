@@ -27,7 +27,7 @@ import {
 	readLegacyProfiles,
 	reconcileProfileHydration,
 	type RecordingProfile,
-} from "$lib/profiles";
+} from "@recast/editor/lib/profiles";
 
 /** Stable-ish signature of a profile set, for the best-effort echo guard. */
 function signature(profiles: RecordingProfile[], enabled: boolean): string {
@@ -75,8 +75,11 @@ function createProfilesStore() {
 		try {
 			const snap = await getProfiles();
 			const legacy = readLegacyProfiles();
-			const { profiles: next, enabled: nextEnabled, push } =
-				reconcileProfileHydration(snap, legacy);
+			const {
+				profiles: next,
+				enabled: nextEnabled,
+				push,
+			} = reconcileProfileHydration(snap, legacy);
 			setState(next, nextEnabled);
 			if (push) pushToBackend();
 			// The backend is now authoritative; drop the pre-backend key so it
@@ -131,9 +134,7 @@ function createProfilesStore() {
 		 *  nudge, not to block saving. */
 		twinOf(next: RecordingProfile): RecordingProfile | null {
 			const sig = capSig(next);
-			return (
-				profiles.find((p) => p.id !== next.id && capSig(p) === sig) ?? null
-			);
+			return profiles.find((p) => p.id !== next.id && capSig(p) === sig) ?? null;
 		},
 
 		/** Insert a brand-new profile. */

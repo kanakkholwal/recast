@@ -11,12 +11,11 @@
  */
 
 export { MediaError } from "./errors";
-export type { MediaErrorCode } from "./errors";
 
 // input + conversion
 export { openInput } from "./input";
 export type { MediaSource } from "./input";
-export { mediaRefExtension, mediaRefKey, toMediaRef } from "./media-ref";
+export { mediaRefKey, toMediaRef } from "./media-ref";
 export type { MediaRef } from "./media-ref";
 export {
 	runConversion,
@@ -41,15 +40,6 @@ export type {
 	FromConvertWorker,
 } from "./protocol";
 
-// playback (worker-bridged)
-export {
-	cacheStats,
-	evictCache,
-	openMediaSource,
-	prefetchAround,
-	seekTo,
-} from "./playback";
-export type { PlaybackSource, PlaybackFrame, PlaybackEvent } from "./playback";
 export {
 	keptRegions,
 	missingRanges,
@@ -60,11 +50,6 @@ export {
 } from "./audio/schedule";
 export type { AudioChunk, Region, ScheduledChunk, SubPlay } from "./audio/schedule";
 
-// seek helpers
-export { snapToSeekTarget, nextCutWithin } from "./seek";
-
-// sources
-
 // small encoders
 export {
 	createGifWriter,
@@ -74,20 +59,16 @@ export {
 } from "./encoders";
 export type { GifWriter } from "./encoders";
 
-// decoded-frame cache
+// decoded-frame cache (in-memory only)
 export {
 	FrameCache,
 	getFrameCache,
-	setFrameCache,
-	setFrameStorage,
-	resetFrameCache,
 } from "./cache";
 export type { CacheStats, FrameCacheConfig } from "./cache";
-export { IndexedDBFrameStorage } from "./cache/indexeddb-storage";
 export { frameBudget, frameCacheCapBytes, textureRingFrames } from "./cache/frame-budget";
 export type { FrameBudget } from "./cache/frame-budget";
 export { estimateFrameBytes } from "./cache/storage";
-export type { CacheableFrame, FrameStorage } from "./cache/storage";
+export type { CachedFrame } from "./cache/storage";
 
 // Formats MediaBunny cannot decode; the preview falls back to <video>.
 export {

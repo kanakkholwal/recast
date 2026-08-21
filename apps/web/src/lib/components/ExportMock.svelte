@@ -1,76 +1,115 @@
 <script lang="ts">
-	import { prefersReducedMotion } from "$lib/motion-core";
-	import { Check, HardDriveUpload, Link2, LoaderCircle } from "@recast/icons";
+import { prefersReducedMotion } from "$lib/motion-core";
+import { Check, FileVideo, FolderOpen, Link2 } from "@recast/icons";
+import { buttonVariants } from "@recast/ui/button";
+import { cn } from "@recast/ui/utils";
 
-	// Step 3's export-success mock. Loops the real flow: the encode finishes, the
-	// upload progress fills, then it lands as "Uploaded to Drive" with Copy link,
-	// holds, and repeats. Reduced motion shows the finished state (the meaningful
-	// end), no spinner or progress animation. Same restrained cadence as Steps 1-2.
-	const reduced = $derived(prefersReducedMotion());
+// Export, upload, link: three hairline stages under one file, ending in the
+// only thing the visitor actually wants, a link they can paste.
+const reduced = $derived(prefersReducedMotion());
 
-	const UPLOAD_TICKS = 30; // ~1.8s filling
-	const TOTAL_TICKS = 72; // + ~2.5s holding on "done"
-	let tick = $state(0);
+const STEP_MS = 1600;
+const HOLD_MS = 2800;
+const LOOP_MS = STEP_MS * 3 + HOLD_MS;
 
-	$effect(() => {
-		if (reduced) return;
-		const id = setInterval(() => {
-			if (!document.hidden) tick = (tick + 1) % TOTAL_TICKS;
-		}, 60);
-		return () => clearInterval(id);
-	});
+let elapsed = $state(0);
 
-	const done = $derived(reduced || tick >= UPLOAD_TICKS);
-	const progress = $derived(
-		reduced ? 100 : Math.min(100, Math.round((tick / UPLOAD_TICKS) * 100)),
-	);
+$effect(() => {
+	if (reduced) return;
+	const id = setInterval(() => {
+		if (!document.hidden) elapsed = (elapsed + 50) % LOOP_MS;
+	}, 50);
+	return () => clearInterval(id);
+});
+
+const done = $derived(reduced ? 3 : Math.min(3, Math.floor(elapsed / STEP_MS)));
+const partial = $derived(reduced ? 0 : Math.min(1, (elapsed % STEP_MS) / STEP_MS));
+const percent = $derived(
+	reduced ? 100 : Math.min(100, Math.round(((done + (done < 3 ? partial : 0)) / 3) * 100)),
+);
+
+const stages = [
+	{ label: "Export", pending: "Queued", running: "Encoding", complete: "1080p" },
+	{ label: "Upload", pending: "Waiting", running: "Sending", complete: "12.4 MB" },
+	{ label: "Link", pending: "Waiting", running: "Signing", complete: "Ready" },
+] as const;
+
+const linkReady = $derived(done >= 3);
 </script>
 
-<div
-	class="rounded-xl border border-border-low/70 bg-background/80 p-4 shadow-craft-inset"
->
-	<div class="flex items-start gap-3">
-		<span
-			class="grid size-9 shrink-0 place-items-center rounded-lg border border-success/30 bg-success/10 text-success"
-		>
-			<Check class="size-4" />
+<div class="p-4">
+	<div class="flex items-center gap-2.5 pb-3">
+		<FileVideo class="size-4 shrink-0 text-tag-green [fill-opacity:0.2]" fill="currentColor" />
+		<span class="min-w-0 flex-1 truncate text-body-sm font-medium text-foreground">
+			launch-demo.mp4
 		</span>
-		<div class="min-w-0 flex-1">
-			<div class="text-[13px] font-semibold tracking-tight text-foreground">
-				Export complete
-			</div>
-			<div class="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-				~/Recordings/launch-demo.mp4
-			</div>
-		</div>
+		<span class="shrink-0 text-caption tabular-nums text-muted-foreground">
+			{percent}%
+		</span>
 	</div>
 
-	<div class="mt-3 rounded-lg border border-border-low/60 bg-foreground/2 px-3 py-2">
-		{#if done}
-			<div class="flex items-center gap-2">
-				<HardDriveUpload class="size-3.5 shrink-0 text-success" />
-				<span class="text-[11.5px] font-medium text-foreground">Uploaded to Drive</span>
-				<span
-					class="ml-auto inline-flex items-center gap-1 rounded-md border border-border-low/60 bg-background px-1.5 py-0.5 text-[10px] font-semibold text-foreground"
-				>
-					<Link2 class="size-3 text-muted-foreground" />
-					Copy link
-				</span>
-			</div>
-		{:else}
-			<div class="flex items-center gap-2">
-				<LoaderCircle class="size-3.5 shrink-0 animate-spin text-primary" />
-				<span class="text-[11.5px] font-medium text-foreground">Uploading to Drive…</span>
-				<span class="ml-auto font-mono text-[10px] font-semibold text-muted-foreground">
-					{progress}%
-				</span>
-			</div>
-			<div class="mt-2 h-1 overflow-hidden rounded-full bg-border-low/60">
-				<div
-					class="h-full rounded-full bg-primary transition-[width] duration-100"
-					style={`width: ${progress}%;`}
-				></div>
-			</div>
-		{/if}
+	<!-- One hairline track carries the whole transfer; no stage gets a bar of its own. -->
+	<div aria-hidden="true" class="h-px w-full bg-border-low">
+		<div
+			class="h-px bg-tag-green transition-[width] duration-100 ease-linear motion-reduce:transition-none"
+			style={`width:${percent}%`}
+		></div>
+	</div>
+
+	<ol class="mt-px grid grid-cols-3 gap-px border-b border-border-low bg-border-low">
+		{#each stages as stage, i (stage.label)}
+			{@const complete = done > i}
+			{@const running = done === i}
+			<li class="bg-card px-3 py-2.5">
+				<div class="flex items-center gap-1.5">
+					<span
+						class={cn(
+							"size-1.5 shrink-0 rounded-full transition-colors duration-300 motion-reduce:transition-none",
+							complete ? "bg-tag-green" : running ? "bg-foreground" : "bg-border-strong",
+						)}
+					></span>
+					<span
+						class={cn(
+							"truncate text-caption font-medium transition-colors duration-300 motion-reduce:transition-none",
+							complete || running ? "text-foreground" : "text-muted-foreground",
+						)}
+					>
+						{stage.label}
+					</span>
+					{#if complete}
+						<Check class="ml-auto size-3 shrink-0 text-tag-green" />
+					{/if}
+				</div>
+				<div class="mt-1 truncate text-caption text-muted-foreground">
+					{complete ? stage.complete : running ? stage.running : stage.pending}
+				</div>
+			</li>
+		{/each}
+	</ol>
+
+	<!-- Destination and link. Always rendered so nothing shifts when it resolves. -->
+	<div class="flex items-center gap-2.5 pt-3">
+		<FolderOpen class="size-4 shrink-0 text-muted-foreground" />
+		<span class="shrink-0 text-caption text-muted-foreground">My Drive / Recast</span>
+		<span
+			class={cn(
+				"min-w-0 flex-1 truncate text-right text-caption tracking-tight transition-colors duration-300 motion-reduce:transition-none",
+				linkReady ? "text-foreground" : "text-border-strong",
+			)}
+		>
+			{linkReady ? "recast.li/d/8fk2a" : "Generating link"}
+		</span>
+		<!-- Inert: a mock control must not take focus. -->
+		<span
+			aria-hidden="true"
+			class={cn(
+				buttonVariants({ variant: "outline", size: "xs" }),
+				"pointer-events-none shrink-0 transition-opacity duration-300 motion-reduce:transition-none",
+				linkReady ? "opacity-100" : "opacity-40",
+			)}
+		>
+			<Link2 class="size-3" />
+			Copy link
+		</span>
 	</div>
 </div>

@@ -16,16 +16,11 @@
  *   analytics.capture("app_opened");
  */
 
+// The consent predicates and the scrubbers are deliberately NOT re-exported.
+// `createAnalytics` applies both on every path; publishing them would offer a
+// caller a way around the gate, and no consumer has ever wanted one.
 export { createAnalytics, type CreateAnalyticsOptions } from "./core";
 export { createPostHogBrowserProvider } from "./providers/posthog-browser";
-export { noopProvider } from "./providers/noop";
-export { scrubError, redact } from "./scrub";
-export {
-	DEFAULT_CONSENT,
-	canCapture,
-	canReportErrors,
-	anyConsent,
-} from "./consent";
 export {
 	ANALYTICS_EVENTS,
 	type AnalyticsEvent,

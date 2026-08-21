@@ -22,7 +22,6 @@ import { onMount } from "svelte";
 import { fade } from "svelte/transition";
 import type {
 	RecastPlayerApi,
-	RecastPlayerBranding,
 	RecastPlayerControls,
 	RecastPlayerMarker,
 	RecastPlayerProps,
@@ -44,13 +43,7 @@ import {
 	type TranscriptWord,
 } from "@recast/captions";
 import CaptionBox from "@recast/captions/box";
-import {
-	EngagementTracker,
-	markerLeftPct,
-	RECAST_BRANDING,
-	resolveDownloadPlan,
-	volumeLevel,
-} from "./player.logic";
+import { EngagementTracker, markerLeftPct, resolveDownloadPlan, volumeLevel } from "./player.logic";
 
 // Minimal by default: play, time, then speed / volume / fullscreen. The +-10s
 // jog buttons and PiP are opt-in — the scrubber covers the same intent and a
@@ -87,7 +80,6 @@ let {
 	markers = [],
 	controls = {},
 	keyboardShortcuts = true,
-	branding = null,
 	aspectRatio = null,
 	autohide = null,
 	objectFit = "contain",
@@ -218,10 +210,6 @@ $effect(() => {
 	};
 });
 
-const resolvedBranding = $derived.by(() => {
-	if (branding === null) return null;
-	return { ...RECAST_BRANDING, ...branding };
-});
 const resolvedAspectRatio = $derived.by(() => {
 	if (typeof aspectRatio === "number" && aspectRatio > 0) return `${aspectRatio}`;
 	if (typeof aspectRatio === "string" && aspectRatio.trim()) return aspectRatio.trim();
@@ -687,44 +675,6 @@ $effect(() => {
 		</div>
 	{/if}
 
-	{#if resolvedBranding?.src}
-		{#if resolvedBranding.href}
-			<a
-				class={`recast-branding ${resolvedBranding.className ?? ""}`}
-				href={resolvedBranding.href}
-				target="_blank"
-				rel="noreferrer"
-			>
-				<span class="recast-branding-mark">
-					<img
-						src={resolvedBranding.src}
-						alt=""
-						width={resolvedBranding.width}
-						height={resolvedBranding.height}
-					/>
-				</span>
-				{#if resolvedBranding.name}
-					<span class="recast-branding-name">{resolvedBranding.name}</span>
-				{/if}
-				<span class="recast-sr-only">{resolvedBranding.alt} (opens in a new tab)</span>
-			</a>
-		{:else}
-			<div class={`recast-branding ${resolvedBranding.className ?? ""}`} aria-hidden="true">
-				<span class="recast-branding-mark">
-					<img
-						src={resolvedBranding.src}
-						alt=""
-						width={resolvedBranding.width}
-						height={resolvedBranding.height}
-					/>
-				</span>
-				{#if resolvedBranding.name}
-					<span class="recast-branding-name">{resolvedBranding.name}</span>
-				{/if}
-			</div>
-		{/if}
-	{/if}
-
 	{#if mergedControls.bigPlay && !mediaError}
 		<media-play-button class="recast-big-play">
 			<span slot="play" class="recast-icon recast-icon-big">
@@ -956,79 +906,11 @@ $effect(() => {
 		background: rgba(255, 255, 255, 0.16);
 	}
 
-	.recast-branding {
-		position: absolute;
-		top: 14px;
-		left: 14px;
-		z-index: 3;
-		display: inline-flex;
-		align-items: center;
-		gap: 0;
-		min-height: 40px;
-		padding: 6px;
-		border-radius: 999px;
-		background: rgba(15, 15, 14, 0.42);
-		color: rgba(255, 255, 255, 0.96);
-		backdrop-filter: blur(16px) saturate(145%);
-		-webkit-backdrop-filter: blur(16px) saturate(145%);
-		box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
-		text-decoration: none;
-		transition:
-			padding 180ms ease,
-			gap 180ms ease,
-			background-color 180ms ease;
-	}
 
-	.recast-branding-mark {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		flex: 0 0 auto;
-		width: 28px;
-		height: 28px;
-		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.14);
-		overflow: hidden;
-	}
 
-	.recast-branding img {
-		display: block;
-		height: auto;
-		width: 18px;
-		max-width: 18px;
-		max-height: 18px;
-		object-fit: contain;
-	}
 
-	.recast-branding-name {
-		max-width: 0;
-		overflow: hidden;
-		opacity: 0;
-		transform: translateX(-4px);
-		transition:
-			max-width 180ms ease,
-			opacity 160ms ease,
-			transform 180ms ease;
-		font-size: 12px;
-		font-weight: 600;
-		line-height: 1;
-		letter-spacing: 0;
-		white-space: nowrap;
-	}
 
-	.recast-branding:hover,
-	.recast-branding:focus-visible {
-		gap: 10px;
-		padding-right: 12px;
-		background: rgba(15, 15, 14, 0.5);
-	}
 
-	.recast-branding:hover .recast-branding-name,
-	.recast-branding:focus-visible .recast-branding-name {
-		max-width: 120px;
-		opacity: 1;
-		transform: translateX(0);
-	}
 
 	.recast-ui-tooltip {
 		position: absolute;

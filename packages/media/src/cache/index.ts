@@ -1,38 +1,19 @@
-import { IndexedDBFrameStorage } from './indexeddb-storage';
-import {
-	type CacheableFrame,
-	type CachedFrame,
-	estimateFrameBytes,
-	type FrameStorage,
-	isPersistable,
-} from './storage';
-
-/**
- * Tunables. The persistent cap is configurable in Settings (REQUIREMENTS.md §3).
- */
-const DEFAULT_PERSISTENT_CAP_BYTES = 2 * 1024 * 1024 * 1024;
+import { type CachedFrame, estimateFrameBytes } from "./storage";
 
 // REQUIREMENTS.md §3. Each frame holds a GPU surface, so an uncapped Map is
 // a leak, not a cache.
 const DEFAULT_MEMORY_CAP_BYTES = 512 * 1024 * 1024;
 
 export interface FrameCacheConfig {
-	storage: FrameStorage;
-	/** Optional cap override (bytes). Defaults to the storage's own cap. */
-	capBytes?: number;
-	/** In-memory hot-layer cap (bytes). Defaults to 512 MB. */
+	/** Cap in bytes. Defaults to 512 MB; `frameCacheCapBytes` sizes it per source. */
 	memoryCapBytes?: number;
 }
 
 export interface CacheStats {
 	entryCount: number;
 	bytes: number;
-	capBytes: number;
 	oldestEntryAgeMs: number;
-	/** In-memory hot-layer bytes only (excludes the persistent store). */
-	memoryBytes: number;
-	/** In-memory hot-layer cap. */
-	memoryCapBytes: number;
+	capBytes: number;
 	/** Frames closed by LRU eviction since the cache was created. */
 	evictions: number;
 }
@@ -43,95 +24,12 @@ interface InMemoryEntry {
 	size: number;
 }
 
-/**
- * Singleton holder. Tests reset this via `resetFrameCache()`.
- */
+/** Singleton holder. Tests reset this via `resetFrameCache()`. */
 let current: FrameCache | null = null;
 
-/**
- * Build the default cache. IndexedDB is the standard offline-state mechanism
- * for both browsers and Tauri webviews (WebView2 / WebKit / WebKitGTK). The
- * orchestrator auto-detects availability and falls back to an in-memory
- * no-op store if `indexedDB` is absent (Node tests).
- */
-function createDefaultCache(): FrameCache {
-	const hasIndexedDB = typeof globalThis !== 'undefined' && 'indexedDB' in globalThis;
-	if (!hasIndexedDB) {
-		// Tests / non-browser environments: ship a no-op storage so the
-		// orchestrator still works. Real consumers in apps/desktop will get
-		// the IDB path.
-		return new FrameCache({
-			storage: makeInMemoryStorage(),
-			capBytes: DEFAULT_PERSISTENT_CAP_BYTES,
-		});
-	}
-	return new FrameCache({
-		storage: new IndexedDBFrameStorage({ capBytes: DEFAULT_PERSISTENT_CAP_BYTES }),
-	});
-}
-
-/**
- * No-op storage used when `indexedDB` is unavailable (Node tests).
- * In-memory only; resets when the cache instance is GC'd.
- */
-function makeInMemoryStorage(): FrameStorage {
-	const map = new Map<number, { frame: CacheableFrame; size: number; lastUsedUs: number }>();
-	let bytes = 0;
-	let cap = DEFAULT_PERSISTENT_CAP_BYTES;
-	return {
-		name: 'memory',
-		async open() {
-			/* no-op */
-		},
-		async get(key) {
-			return map.get(key)?.frame ?? null;
-		},
-		async put(key, frame, lastUsedUs) {
-			const size = estimateFrameBytes(frame);
-			map.set(key, { frame, size, lastUsedUs });
-			bytes += size;
-		},
-		async deleteRange(start, end) {
-			for (const key of [...map.keys()]) {
-				if (key >= start && key < end) {
-					const entry = map.get(key);
-					if (entry) {
-						map.delete(key);
-						bytes -= entry.size;
-					}
-				}
-			}
-		},
-		async clear() {
-			map.clear();
-			bytes = 0;
-		},
-		async size() {
-			return bytes;
-		},
-		async close() {
-			/* no-op */
-		},
-		get capBytes() {
-			return cap;
-		},
-		set capBytes(v: number) {
-			cap = v;
-		},
-	};
-}
-
 export function getFrameCache(): FrameCache {
-	if (!current) current = createDefaultCache();
+	if (!current) current = new FrameCache();
 	return current;
-}
-
-export function setFrameStorage(storage: FrameStorage): void {
-	if (current) {
-		current.replaceStorage(storage);
-		return;
-	}
-	current = new FrameCache({ storage });
 }
 
 export function setFrameCache(cache: FrameCache): void {
@@ -142,6 +40,12 @@ export function resetFrameCache(): void {
 	current = null;
 }
 
+/**
+ * In-memory decoded-frame cache, capped in bytes and evicted by distance from
+ * the playhead. Memory only: a `VideoFrame` is not structured-cloneable, so
+ * every frame the preview decodes was rejected by the persistent layer that
+ * used to sit behind this — that layer is gone.
+ */
 export class FrameCache {
 	#memory = new Map<number, InMemoryEntry>();
 	/** Keys of `#memory`, ascending. Backs `readNearest`'s binary search. */
@@ -149,14 +53,11 @@ export class FrameCache {
 	/** Last timestamp asked for; eviction keeps frames near it. */
 	#lastReadUs = -1;
 	#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: 0 };
-	#storage: FrameStorage;
 	#memoryCap: number;
 	#scope: string | null = null;
 
-	constructor(config: FrameCacheConfig) {
-		this.#storage = config.storage;
+	constructor(config: FrameCacheConfig = {}) {
 		this.#memoryCap = config.memoryCapBytes ?? DEFAULT_MEMORY_CAP_BYTES;
-		if (config.capBytes !== undefined) this.#storage.capBytes = config.capBytes;
 	}
 
 	/**
@@ -166,15 +67,7 @@ export class FrameCache {
 	setScope(scope: string): void {
 		if (this.#scope === scope) return;
 		this.#scope = scope;
-		for (const entry of this.#memory.values()) entry.frame.close();
-		this.#memory.clear();
-		this.#sorted = [];
-		this.#stats = {
-			entryCount: 0,
-			bytes: 0,
-			oldestEntryUs: -1,
-			evictions: this.#stats.evictions,
-		};
+		this.#dropAll();
 	}
 
 	/** Currently-bound source, or null before the first `setScope`. */
@@ -182,7 +75,7 @@ export class FrameCache {
 		return this.#scope;
 	}
 
-	/** In-memory hot-layer cap (bytes). Lowering it evicts on the next write. */
+	/** Cap in bytes. Lowering it evicts on the next write. */
 	get memoryCapBytes(): number {
 		return this.#memoryCap;
 	}
@@ -192,26 +85,9 @@ export class FrameCache {
 		this.#evictMemoryUntilFits(0);
 	}
 
-	replaceStorage(storage: FrameStorage): void {
-		void this.#storage.close().catch(() => {
-			/* best-effort */
-		});
-		// Close before dropping the Map, or every held surface leaks.
-		for (const entry of this.#memory.values()) entry.frame.close();
-		this.#memory.clear();
-		this.#sorted = [];
-		this.#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: 0 };
-		this.#storage = storage;
-	}
-
-	get storage(): FrameStorage {
-		return this.#storage;
-	}
-
 	/**
-	 * Read a frame from the in-memory cache (fast path). Returns null on
-	 * miss; callers fall through to the persistent store or a worker
-	 * decode.
+	 * Read a frame by exact timestamp. Returns null on miss; callers fall
+	 * through to a worker decode.
 	 */
 	readMemory(tsUs: number): CachedFrame | null {
 		const entry = this.#memory.get(tsUs);
@@ -284,85 +160,56 @@ export class FrameCache {
 		if (this.#sorted[at] === key) this.#sorted.splice(at, 1);
 	}
 
-	/**
-	 * Read from the persistent store and warm the in-memory cache on hit.
-	 */
-	async readPersisted(tsUs: number, signal?: AbortSignal): Promise<CacheableFrame | null> {
-		const bitmap = await this.#storage.get(tsUs, signal);
-		if (!bitmap) return null;
-		// Warm the in-memory cache so the next read is instant.
-		this.#memoryInsert(tsUs, bitmap);
-		return bitmap;
-	}
-
-	/**
-	 * Store a frame both in memory and on disk. The persistent write is
-	 * best-effort and isolated from the read path: failures are logged
-	 * and the in-memory entry still wins for the current session.
-	 */
-	write(tsUs: number, frame: CachedFrame, persist = true): void {
+	write(tsUs: number, frame: CachedFrame): void {
 		this.#memoryInsert(tsUs, frame);
-		if (!persist) return;
-		// `VideoFrame` isn't structured-cloneable; persisting it throws
-		// DataCloneError. Hot layer still serves it this session.
-		if (!isPersistable(frame)) return;
-		// Fire and forget — the orchestrator awaits this when callers need
-		// durability (e.g. before opening another recording).
-		void this.#storage.put(tsUs, frame, performance.now() * 1000).catch((err) => {
-			console.warn('[recast/media] persist frame failed:', err);
-		});
 	}
 
-	/** Delete a single key from both stores. */
-	async evict(tsUs: number): Promise<void> {
+	/** Delete a single key. */
+	evict(tsUs: number): void {
 		const entry = this.#memory.get(tsUs);
-		if (entry) {
-			entry.frame.close();
-			this.#memory.delete(tsUs);
-			this.#indexRemove(tsUs);
-			this.#recomputeStats();
-		}
-		try {
-			await this.#storage.deleteRange(tsUs, tsUs + 1);
-		} catch {
-			/* best-effort */
-		}
+		if (!entry) return;
+		entry.frame.close();
+		this.#memory.delete(tsUs);
+		this.#indexRemove(tsUs);
+		this.#recomputeStats();
 	}
 
-	/** Clear every entry in both stores. Used by Settings → reset cache. */
-	async clear(): Promise<void> {
-		for (const entry of this.#memory.values()) entry.frame.close();
-		this.#memory.clear();
-		this.#sorted = [];
-		this.#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: this.#stats.evictions };
-		await this.#storage.clear();
+	/** Clear every entry. Used by Settings → reset cache. */
+	clear(): void {
+		this.#dropAll();
 	}
 
 	/**
 	 * Explicit eviction hook. Called by `evictCache` (REQUIREMENTS.md §2)
-	 * and by idle-callback GC in the editor.
+	 * and by idle-callback GC in the editor. Returns the entries dropped.
 	 */
-	async evictCache(): Promise<number> {
+	evictCache(): number {
 		const before = this.#memory.size;
-		for (const entry of this.#memory.values()) entry.frame.close();
-		this.#memory.clear();
-		this.#sorted = [];
-		await this.#storage.clear();
-		this.#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: this.#stats.evictions };
+		this.#dropAll();
 		return before;
 	}
 
-	async cacheStats(): Promise<CacheStats> {
-		const bytes = this.#stats.bytes + (await this.#storage.size());
+	cacheStats(): CacheStats {
 		const oldest = this.#stats.oldestEntryUs;
 		const ageMs = oldest > 0 ? (performance.now() * 1000 - oldest) / 1000 : 0;
 		return {
 			entryCount: this.#stats.entryCount,
-			bytes,
-			capBytes: this.#storage.capBytes,
+			bytes: this.#stats.bytes,
 			oldestEntryAgeMs: ageMs,
-			memoryBytes: this.#stats.bytes,
-			memoryCapBytes: this.#memoryCap,
+			capBytes: this.#memoryCap,
+			evictions: this.#stats.evictions,
+		};
+	}
+
+	/** Close every held surface. Dropping the Map alone leaks all of them. */
+	#dropAll(): void {
+		for (const entry of this.#memory.values()) entry.frame.close();
+		this.#memory.clear();
+		this.#sorted = [];
+		this.#stats = {
+			entryCount: 0,
+			bytes: 0,
+			oldestEntryUs: -1,
 			evictions: this.#stats.evictions,
 		};
 	}
@@ -394,10 +241,6 @@ export class FrameCache {
 	}
 
 	/**
-	 * Evict LRU entries until `incomingSize` fits under the cap, closing each.
-	 * The GC will not reclaim a decoded frame's GPU surface promptly.
-	 */
-	/**
 	 * Eviction cost, highest goes first. Distance from the playhead, with frames
 	 * BEHIND it penalised — forward playback never needs those again.
 	 *
@@ -412,12 +255,16 @@ export class FrameCache {
 		return delta >= 0 ? delta : -delta * 4;
 	}
 
+	/**
+	 * Evict until `incomingSize` fits under the cap, closing each frame.
+	 * The GC will not reclaim a decoded frame's GPU surface promptly.
+	 */
 	#evictMemoryUntilFits(incomingSize: number): void {
 		if (this.#stats.bytes + incomingSize <= this.#memoryCap) return;
-		const byAge = [...this.#memory.entries()].sort(
+		const byCost = [...this.#memory.entries()].sort(
 			(a, b) => this.#evictionCost(b[0]) - this.#evictionCost(a[0]),
 		);
-		for (const [key, entry] of byAge) {
+		for (const [key, entry] of byCost) {
 			if (this.#stats.bytes + incomingSize <= this.#memoryCap) break;
 			entry.frame.close();
 			this.#memory.delete(key);

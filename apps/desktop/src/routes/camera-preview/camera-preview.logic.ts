@@ -1,6 +1,6 @@
 /** Geometry + preview-state kernels for the camera-preview window. */
 
-import type { CameraPreviewState } from "$lib/ipc-types";
+import type { CameraPreviewState } from "$lib/recorder-types";
 
 /** Preferred → fallback MediaRecorder container/codec for the camera track.
  *  H.264/MP4 first (WebView2/Chromium supports it and the editor stream-copies

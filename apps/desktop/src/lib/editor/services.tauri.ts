@@ -6,6 +6,7 @@
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
+	cancelTranscription,
 	captionCapabilities,
 	deleteCaptionModel,
 	detectSilence,
@@ -41,6 +42,16 @@ function resolveAssetUrl(ref: string): string {
 	if (!ref) return ref;
 	if (/^(data|blob|https?|asset|tauri):/i.test(ref)) return ref;
 	return convertFileSrc(ref);
+}
+
+/** The view's bytes as a standalone `ArrayBuffer`, copying only when it really
+ *  is a window onto a larger buffer. An export mp4 is GBs; an unconditional
+ *  `slice` doubled peak memory to no purpose. */
+function exactBuffer(view: Uint8Array): ArrayBuffer {
+	if (view.byteOffset === 0 && view.byteLength === view.buffer.byteLength) {
+		return view.buffer as ArrayBuffer;
+	}
+	return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
 }
 
 async function pickFile(opts: PickFileOptions): Promise<string | null> {
@@ -81,6 +92,7 @@ export const tauriEditorServices: EditorServices = {
 		deleteModel: deleteCaptionModel,
 		hasTranscribableAudio,
 		transcribe: transcribeProject,
+		cancel: cancelTranscription,
 	},
 	analysis: {
 		detectSilence: (a) => detectSilence(a.audioPath, a.microphonePath, a.cursorPath, a.options),
@@ -107,10 +119,7 @@ export const tauriEditorServices: EditorServices = {
 	exportSink: {
 		// Rust muxes the audio into this video-only mp4 (`-c:v copy`), so the
 		// bytes land in a temp file rather than coming back as a Blob.
-		deliver: (bytes) =>
-			saveBrowserExportVideo(
-				bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-			),
+		deliver: (bytes) => saveBrowserExportVideo(exactBuffer(bytes)),
 		enqueue: (job) => enqueueExport(job as Parameters<typeof enqueueExport>[0]),
 	},
 	shell: {

@@ -20,28 +20,27 @@ import { Spinner } from "@recast/ui/spinner";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
-import { cubicOut } from "svelte/easing";
-import { fade, slide } from "svelte/transition";
+import { fade } from "svelte/transition";
 import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
 import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
+import { agentSession, Editor } from "@recast/editor";
+import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
+import BranchReviewPanel from "@recast/editor/components/BranchReviewPanel.svelte";
+import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-session.tauri";
 import EditorToolbar from "@recast/editor/components/EditorToolbar.svelte";
 import ExportDialog from "@recast/editor/components/ExportDialog.svelte";
 import ExportPanel, { type ExportPanelPhase } from "@recast/editor/components/ExportPanel.svelte";
 import ExportStageLoader from "@recast/editor/components/ExportStageLoader.svelte";
-import PropertiesPanel from "@recast/editor/components/properity-panel/PropertiesPanel.svelte";
-import Timeline from "@recast/editor/components/Timeline.svelte";
-import VideoPlayerControls from "@recast/editor/components/VideoPlayerControls.svelte";
-import VideoPreview from "@recast/editor/components/VideoPreview.svelte";
 import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
 import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
 import PlayerDialog from "$components/recast/PlayerDialog.svelte";
 import RecastMark from "$components/recast-mark.svelte";
 import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
-import { clipAssetPath } from "$lib/audio/music";
+import { clipAssetPath } from "@recast/editor/lib/audio/music";
 import { type DestinationTile, destinationTile, uploadForPath } from "$lib/cloud/destination-tile";
-import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
+import { activatesOnSpace, isOverlayOpen } from "@recast/editor/lib/dom/keyboard";
 import {
 	boolParam,
 	PANEL_PARAM,
@@ -50,25 +49,18 @@ import {
 	SIDEBAR_PARAM,
 	TIMELINE_PARAM,
 	withEditorParams,
-} from "$lib/editor/editor-url";
-import { setEditorServices } from "$lib/editor/services";
+} from "@recast/editor/lib/editor/editor-url";
+import { setEditorServices } from "@recast/editor/lib/editor/services";
 import { tauriEditorServices } from "$lib/editor/services.tauri";
-import {
-	clampTimelineHeight,
-	TIMELINE_DEFAULT_HEIGHT_PX,
-	TIMELINE_MIN_HEIGHT_PX,
-	timelineMaxHeight,
-} from "$lib/editor/panel-size";
-import { formatClock, frameStepOutput } from "$lib/editor/time";
-import { buildExportJob } from "$lib/export/build-export-job";
+import { formatClock, frameStepOutput } from "@recast/editor/lib/editor/time";
+import { buildExportJob } from "@recast/editor/lib/export/build-export-job";
 import {
 	browserExportBlockedReason,
 	resolveExportFps,
-} from "$lib/export/browser-export-eligibility";
-import type { ExportQuality } from "$lib/export/browser-export-plan";
-import { chooseExportEngine } from "$lib/export/choose-export-engine";
-import { probeBrowserExportCapability } from "$lib/export/export-capability";
-import { BROWSER_EXPORT_ENABLED } from "$lib/feature-flags";
+} from "@recast/editor/lib/export/browser-export-eligibility";
+import type { ExportQuality } from "@recast/editor/lib/export/browser-export-plan";
+import { chooseExportEngine } from "@recast/editor/lib/export/choose-export-engine";
+import { probeBrowserExportCapability } from "@recast/editor/lib/export/export-capability";
 import type { RecordingEntry } from "$lib/ipc";
 import {
 	autosaveProject,
@@ -84,11 +76,11 @@ import {
 	openFileLocation,
 	saveProjectEdits,
 } from "$lib/ipc";
-import type { CameraCapture } from "$lib/ipc-types";
+import type { CameraCapture } from "@recast/editor/lib/wire-types";
 import { log } from "$lib/logger";
-import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
-import { reconcileAvDrift } from "$lib/playback/av-drift";
-import { decoderBudget } from "$lib/playback/decoder-budget";
+import { AudioTimelineEngine, type MusicClipSpec } from "@recast/editor/lib/playback/audio-engine";
+import { reconcileAvDrift } from "@recast/editor/lib/playback/av-drift";
+import { decoderBudget } from "@recast/editor/lib/playback/decoder-budget";
 import { generateAutoZoom } from "$lib/services/analysis";
 import {
 	buildCaptionExport,
@@ -96,20 +88,24 @@ import {
 	buildExportRenderState,
 	findMissingImageAnnotations,
 	hasBlurUnderZoom,
-} from "$lib/services/export";
+} from "@recast/editor/lib/services/export";
 import { isShareSupported, shareRecording } from "$lib/share";
 import { shareTargetFor } from "$lib/share-target";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
-import { createEditorStore, type VideoMetadata } from "$lib/stores/editor-store.svelte";
-import { experimentalStore } from "$lib/stores/experimental.svelte";
+import { createEditorStore, type VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
+import { experimentalStore } from "@recast/editor/stores/experimental.svelte";
 import { exportActivity, type ExportTelemetry } from "$lib/stores/exportActivity.svelte";
 import { gdrive } from "$lib/stores/gdrive.svelte";
-import { createTileProvider, type TileProvider } from "$lib/timeline/filmstrip-source";
-import { originalToOutput } from "$lib/timeline/time-map";
+import {
+	createTileProvider,
+	type TileProvider,
+} from "@recast/editor/lib/timeline/filmstrip-source";
+import { originalToOutput, outputToOriginal } from "@recast/editor/lib/timeline/time-map";
 import { settingsHref } from "../../(app)/settings/settings-tabs";
-import { basename, parseLayout } from "./editor-page.logic";
-import { exportEtaMs as computeExportEtaMs, formatElapsed } from "$lib/format/time";
+import { basename } from "./editor-page.logic";
+import { DEFAULT_LAYOUT, LAYOUT_KEY, parseLayout } from "@recast/editor/editor-shell.logic";
+import { exportEtaMs as computeExportEtaMs, formatElapsed } from "@recast/editor/lib/format/time";
 
 interface Props {
 	data: {
@@ -139,9 +135,8 @@ let captureFrame = $state<(() => Promise<Blob | null>) | undefined>(undefined);
 let loopEnabled = $state(false);
 
 // Persisted sidebar/timeline visibility; missing or malformed falls back to all visible.
-const LAYOUT_KEY = "recast-editor-layout";
 function loadLayout(): { sidebar: boolean; timeline: boolean } {
-	if (!browser) return { sidebar: true, timeline: true };
+	if (!browser) return { ...DEFAULT_LAYOUT };
 	return parseLayout(localStorage.getItem(LAYOUT_KEY));
 }
 const initialLayout = loadLayout();
@@ -212,177 +207,17 @@ $effect(() => {
 	);
 });
 
-// Resizable properties panel. Width is user-set (drag the splitter or arrow
-// keys) and persisted, so a chosen width survives reopening the editor. The
-// floor is the panel's old fixed width (w-88, 352px): the dense panels were
-// already tight there, so we never let it shrink below it, only grow.
-const SIDEBAR_WIDTH_KEY = "recast-editor-sidebar-width";
-const SIDEBAR_MIN = 352;
-const SIDEBAR_MAX = 600;
-const SIDEBAR_DEFAULT = 384;
-const clampSidebar = (w: number) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
-function loadSidebarWidth(): number {
-	if (!browser) return SIDEBAR_DEFAULT;
-	const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-	return Number.isFinite(raw) && raw > 0 ? clampSidebar(raw) : SIDEBAR_DEFAULT;
-}
-let sidebarWidth = $state(loadSidebarWidth());
-let resizingSidebar = $state(false);
-$effect(() => {
-	if (!browser) return;
-	try {
-		localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
-	} catch {
-		// Best-effort, same as the layout prefs above.
-	}
-});
-
-// The panel is docked right, so dragging the splitter left widens it: width
-// grows as the pointer's x decreases.
-function startSidebarResize(e: PointerEvent) {
-	if (e.button !== 0) return;
-	e.preventDefault();
-	resizingSidebar = true;
-	const startX = e.clientX;
-	const startW = sidebarWidth;
-	document.body.style.cursor = "col-resize";
-	(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-	const onMove = (ev: PointerEvent) => {
-		sidebarWidth = clampSidebar(startW - (ev.clientX - startX));
-	};
-	const onUp = () => {
-		resizingSidebar = false;
-		document.body.style.cursor = "";
-		window.removeEventListener("pointermove", onMove);
-		window.removeEventListener("pointerup", onUp);
-		window.removeEventListener("pointercancel", onUp);
-	};
-	window.addEventListener("pointermove", onMove);
-	window.addEventListener("pointerup", onUp);
-	window.addEventListener("pointercancel", onUp);
-}
-
-// Keyboard resize (window-splitter pattern): Left widens, Right narrows, since
-// Left moves the splitter toward the panel's growing edge. Home/End jump to the
-// bounds. Shift takes a coarser step.
-function onSidebarHandleKey(e: KeyboardEvent) {
-	const step = e.shiftKey ? 48 : 16;
-	switch (e.key) {
-		case "ArrowLeft":
-			e.preventDefault();
-			sidebarWidth = clampSidebar(sidebarWidth + step);
-			break;
-		case "ArrowRight":
-			e.preventDefault();
-			sidebarWidth = clampSidebar(sidebarWidth - step);
-			break;
-		case "Home":
-			e.preventDefault();
-			sidebarWidth = SIDEBAR_MAX;
-			break;
-		case "End":
-			e.preventDefault();
-			sidebarWidth = SIDEBAR_MIN;
-			break;
-	}
-}
-
-// Resizable timeline panel. Same splitter idiom as the sidebar, on the other
-// axis. Bounded at BOTH ends: the floor keeps the ruler, clip bar and one lane
-// on screen, and the ceiling is a share of the editor column so the timeline can
-// never take the preview's space (which is what made this necessary — every lane
-// visible at once left the video a strip).
-const TIMELINE_HEIGHT_KEY = "recast-editor-timeline-height";
-let editorColumnH = $state(0);
-let timelineHeight = $state(TIMELINE_DEFAULT_HEIGHT_PX);
-let resizingTimeline = $state(false);
-
-const timelineMax = $derived(timelineMaxHeight(editorColumnH));
-const clampTimeline = (h: number) => clampTimelineHeight(h, editorColumnH);
-
-if (browser) {
-	const raw = Number(localStorage.getItem(TIMELINE_HEIGHT_KEY));
-	if (Number.isFinite(raw) && raw > 0) timelineHeight = raw;
-}
-// Re-clamp when the window (and so the ceiling) changes, so a height saved on a
-// big display doesn't swallow the preview on a laptop. Depends on the CEILING
-// only; reading the height tracked would make the effect depend on its own write.
-$effect(() => {
-	const max = timelineMax;
-	untrack(() => {
-		if (timelineHeight > max) timelineHeight = max;
-		else if (timelineHeight < TIMELINE_MIN_HEIGHT_PX) timelineHeight = TIMELINE_MIN_HEIGHT_PX;
-	});
-});
-$effect(() => {
-	if (!browser) return;
-	try {
-		localStorage.setItem(TIMELINE_HEIGHT_KEY, String(timelineHeight));
-	} catch {
-		// Best-effort, same as the layout prefs above.
-	}
-});
-
-// Docked bottom, so dragging the splitter UP grows it: height rises as y falls.
-function startTimelineResize(e: PointerEvent) {
-	if (e.button !== 0) return;
-	e.preventDefault();
-	resizingTimeline = true;
-	const startY = e.clientY;
-	const startH = timelineHeight;
-	document.body.style.cursor = "row-resize";
-	(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-	const onMove = (ev: PointerEvent) => {
-		timelineHeight = clampTimeline(startH - (ev.clientY - startY));
-	};
-	const onUp = () => {
-		resizingTimeline = false;
-		document.body.style.cursor = "";
-		window.removeEventListener("pointermove", onMove);
-		window.removeEventListener("pointerup", onUp);
-		window.removeEventListener("pointercancel", onUp);
-	};
-	window.addEventListener("pointermove", onMove);
-	window.addEventListener("pointerup", onUp);
-	window.addEventListener("pointercancel", onUp);
-}
-
-function onTimelineHandleKey(e: KeyboardEvent) {
-	const step = e.shiftKey ? 48 : 16;
-	switch (e.key) {
-		case "ArrowUp":
-			e.preventDefault();
-			timelineHeight = clampTimeline(timelineHeight + step);
-			break;
-		case "ArrowDown":
-			e.preventDefault();
-			timelineHeight = clampTimeline(timelineHeight - step);
-			break;
-		case "Home":
-			e.preventDefault();
-			timelineHeight = timelineMax;
-			break;
-		case "End":
-			e.preventDefault();
-			timelineHeight = TIMELINE_MIN_HEIGHT_PX;
-			break;
-	}
-}
-
-let previewContainerEl: HTMLDivElement | null = $state(null);
-let systemAudioEl: HTMLAudioElement | null = $state(null);
-let micAudioEl: HTMLAudioElement | null = $state(null);
+let previewContainerEl: HTMLElement | null = $state(null);
 let videoSrc = $state("");
 let systemAudioSrc = $state("");
 let micAudioSrc = $state("");
-// Sample-accurate cut-aware audio for the WebCodecs preview (no seeking → no
-// drift). Falls back to the <audio> elements if it can't init/decode.
+// Sample-accurate cut-aware audio for BOTH preview paths (no seeking → no
+// drift). If it can't init/decode, the preview plays silent.
 let audioEngine: AudioTimelineEngine | null = $state(null);
 let audioEngineTried = false;
 // Bumped whenever the document changes or the editor is destroyed, so an
 // engine that finishes decoding afterwards knows it is stale.
 let audioEngineGen = 0;
-let audioEngineFailed = $state(false);
 let cursorPath = $state<string | null>(null);
 let cameraPath = $state<string | null>(null);
 // Why the camera track is or isn't there; the path alone can't tell the editor
@@ -438,6 +273,11 @@ let migrationDone = false;
 const AUTOSAVE_INTERVAL_MS = 30_000;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 
+// Sonner dedupes on id, so a disk-full autosave retrying every 30s shows one
+// persistent toast rather than a stream of them.
+const AUTOSAVE_TOAST_ID = "autosave-failed";
+let autosaveFailing = false;
+
 function startAutosave() {
 	stopAutosave();
 	autosaveTimer = setInterval(async () => {
@@ -449,8 +289,21 @@ function startAutosave() {
 		try {
 			const editsJson = JSON.stringify(store.toRenderState());
 			await autosaveProject(documentPath, editsJson);
+			if (autosaveFailing) {
+				autosaveFailing = false;
+				toast.dismiss(AUTOSAVE_TOAST_ID);
+			}
 		} catch (err) {
+			// Autosave is the only thing protecting 30s of edits, so a disk-full
+			// or locked file must not fail in the console alone.
 			console.warn("Autosave failed:", err);
+			autosaveFailing = true;
+			toast.error("Autosave isn't working", {
+				id: AUTOSAVE_TOAST_ID,
+				description: `${(err as Error)?.message ?? err} — save manually to keep your edits.`,
+				duration: Number.POSITIVE_INFINITY,
+				action: { label: "Save now", onClick: () => void handleSave() },
+			});
 		}
 	}, AUTOSAVE_INTERVAL_MS);
 }
@@ -461,6 +314,58 @@ function stopAutosave() {
 		autosaveTimer = null;
 	}
 }
+
+// Project write-lock + agent listener. The GUI is a first-class holder, so an
+// agent that patches this project while it's open is refused rather than
+// silently racing the autosave above.
+const editorWriterId = `ui:${crypto.randomUUID().slice(0, 8)}`;
+
+/** Re-read the saved edits after a branch lands, so the editor shows what was
+ *  actually written rather than the pre-apply state. */
+async function reloadRenderStateFromDisk() {
+	if (!documentPath) return;
+	try {
+		const document = await loadEditorDocument(documentPath);
+		store.loadRenderState(document.renderState);
+		store.markSaved(Date.now());
+	} catch (err) {
+		log.warn("editor", "reload after branch apply failed", { err: String(err) });
+	}
+}
+
+$effect(() => {
+	const path = documentPath;
+	if (!path) return;
+	let cancelled = false;
+
+	acquireEditorWrite(path, editorWriterId).catch((err) => {
+		// An agent already holds it: stay read-only rather than pretending we own
+		// the project. `agentSession.active` drives the banner + inert panels.
+		if (!cancelled) log.warn("editor", "write-lock unavailable", { err: String(err) });
+	});
+
+	const unbind = agentSession.bind({
+		store,
+		projectPath: path,
+		// Refuse-by-default: unsaved edits are never discarded without a choice.
+		onConflict: () =>
+			new Promise<boolean>((resolve) => {
+				toast.warning("The agent changed this project", {
+					description: "You have unsaved edits, so its version wasn't loaded.",
+					duration: 15_000,
+					action: { label: "Load agent version", onClick: () => resolve(true) },
+					onDismiss: () => resolve(false),
+					onAutoClose: () => resolve(false),
+				});
+			}),
+	});
+
+	return () => {
+		cancelled = true;
+		unbind();
+		void releaseEditorWrite(editorWriterId).catch(() => {});
+	};
+});
 
 // Tell the export store a panel-hosting editor is on screen. A fresh editor
 // never has the panel open yet, so clear any stale foreground left by an
@@ -497,9 +402,6 @@ function loopBackToStart(): boolean {
 	if (!videoEl) return false;
 	const start = store.trimStart || 0;
 	videoEl.currentTime = start;
-	for (const el of [systemAudioEl, micAudioEl]) {
-		if (el) el.currentTime = start;
-	}
 	// WebCodecs path: the picture clock is the transport and the <video> stays
 	// paused by design, so play()ing it just races that effect and rejects with
 	// AbortError. Publishing the position is the whole handoff — VideoPreview
@@ -535,22 +437,6 @@ function handleTimeUpdate() {
 				}
 			}
 		}
-		// Drift correction: catch audio up when it falls behind the picture, but
-		// never rewind it to chase a picture that stalled under load, because that
-		// replays a slice as a live echo. Picture catch-up is owned by the rAF
-		// sync loop (syncAudioToClock), so here we only nudge lagging audio.
-		const videoT = videoEl.currentTime;
-		for (const el of [systemAudioEl, micAudioEl]) {
-			if (!el || el.paused) continue;
-			const action = reconcileAvDrift({
-				audioTime: el.currentTime,
-				pictureTime: videoT,
-				isJump: false,
-				syncThreshold: 0.15,
-				maxLead: AUDIO_MAX_LEAD,
-			});
-			if (action === "resync-audio") el.currentTime = videoT;
-		}
 	}
 }
 
@@ -562,16 +448,15 @@ function handleVideoEnded(): boolean {
 		return loopBackToStart();
 	}
 	store.isPlaying = false;
-	systemAudioEl?.pause();
-	micAudioEl?.pause();
+	audioEngine?.pause();
 	return false;
 }
 
-// Slave the audio (full-recording WAVs) to the cut-aware picture clock so they
-// skip the same cuts. Normal playback stays locked at 1×; the only corrections
-// are one snap per cut boundary and per seek. Audio that falls behind by more
-// than this is nudged forward; audio that runs ahead of a stalled picture is
-// NOT rewound (that replays a slice as a live echo). See reconcileAvDrift.
+// Slave the audio engine to the cut-aware picture clock so it skips the same
+// cuts. Normal playback stays locked at 1×; the only corrections are one snap
+// per cut boundary and per seek. Audio that falls behind by more than this is
+// nudged forward; audio that runs ahead of a stalled picture is NOT rewound
+// (that replays a slice as a live echo). See reconcileAvDrift.
 const AUDIO_SYNC_THRESHOLD = 0.12;
 // A cut crossing or scrub jumps the playhead far past one publish quantum;
 // detecting it snaps audio exactly on cuts of any length, including short ones.
@@ -580,42 +465,48 @@ const AUDIO_JUMP = 0.12;
 // to catch up (a brief visual skip) instead of leaving the gap. Bounds the
 // lip-sync drift that a decode stall under load would otherwise accumulate.
 const AUDIO_MAX_LEAD = 0.5;
+// A reschedule tears down and restarts every source node. Correcting at rAF
+// rate would restart the graph 60×/s and stutter far worse than the drift.
+const RESYNC_COOLDOWN_MS = 250;
 let audioSyncRaf: number | null = null;
 let lastAudioTarget = -1;
+let lastResyncMs = 0;
+/**
+ * Legacy <video> path only. There the element is the master and ALREADY skips
+ * cuts (it jumps to cut.end at each boundary), so the engine is reconciled onto
+ * its clock. The WebCodecs path runs the other way — VideoPreview reads
+ * `audioPositionSec` — and is handled by the reschedule effect below.
+ */
 function syncAudioToClock() {
 	audioSyncRaf = requestAnimationFrame(syncAudioToClock);
-	if (!store.isPlaying) {
+	const eng = audioEngine;
+	if (!store.isPlaying || !eng || !videoEl) {
 		lastAudioTarget = -1;
 		return;
 	}
-	// WebCodecs path: the gapless output clock owns time. Legacy <video> path:
-	// the <video> element is the master and ALREADY skips cuts (it jumps to
-	// cut.end at each boundary), so tracking it here makes the <audio> elements
-	// skip the same cuts within a frame. Without this, the 4 Hz `timeupdate`
-	// drift-check left audio playing the removed region for up to ~250 ms.
-	const target = webcodecsActive ? store.currentTime : (videoEl?.currentTime ?? store.currentTime);
-	const jumped = lastAudioTarget < 0 || Math.abs(target - lastAudioTarget) > AUDIO_JUMP;
-	lastAudioTarget = target;
-	for (const el of [systemAudioEl, micAudioEl]) {
-		// CRITICAL: never stack a seek on an element that's still seeking (e.g.
-		// cold-start buffering). Each new currentTime= interrupts the last, so it
-		// never settles and the audio cuts out entirely. Wait for the current seek.
-		if (!el || el.paused || el.seeking || el.readyState < 2) continue;
-		// Snap on a cut/seek or when audio falls behind; when audio runs ahead of a
-		// stalled picture, advance the picture rather than rewind audio (a rewind
-		// replays a slice as a live echo, the record-while-previewing symptom).
-		const action = reconcileAvDrift({
-			audioTime: el.currentTime,
-			pictureTime: target,
-			isJump: jumped,
-			syncThreshold: AUDIO_SYNC_THRESHOLD,
-			maxLead: AUDIO_MAX_LEAD,
-		});
-		if (action === "resync-audio") {
-			el.currentTime = target;
-		} else if (action === "catch-picture" && videoEl) {
-			videoEl.currentTime = el.currentTime;
-		}
+	// Track the picture even while the engine has no audible position yet, or the
+	// gap the picture covered during that window reads as a jump afterwards and
+	// triggers a reschedule the audio never needed.
+	const pictureOut = originalToOutput(store.timeMap, videoEl.currentTime);
+	const jumped = lastAudioTarget >= 0 && Math.abs(pictureOut - lastAudioTarget) > AUDIO_JUMP;
+	lastAudioTarget = pictureOut;
+	const audioOut = eng.positionOutputSec;
+	if (audioOut === null) return;
+	const action = reconcileAvDrift({
+		audioTime: audioOut,
+		pictureTime: pictureOut,
+		isJump: jumped,
+		syncThreshold: AUDIO_SYNC_THRESHOLD,
+		maxLead: AUDIO_MAX_LEAD,
+	});
+	if (action === "resync-audio") {
+		// A seek/cut snaps immediately; only slow drift waits out the cooldown.
+		const now = performance.now();
+		if (!jumped && now - lastResyncMs < RESYNC_COOLDOWN_MS) return;
+		lastResyncMs = now;
+		eng.reschedule(audioRegions(), pictureOut);
+	} else if (action === "catch-picture") {
+		videoEl.currentTime = outputToOriginal(store.timeMap, audioOut);
 	}
 }
 function startAudioClockSync() {
@@ -650,15 +541,12 @@ function audioRegions() {
 function outputNow() {
 	return originalToOutput(store.timeMap, store.currentTime);
 }
-// Lazily build the engine on first WebCodecs playback. Tried once; on failure
-// it's marked failed and the <audio> elements take over.
+// Lazily build the engine on first playback. Tried once; on failure the
+// preview plays silent rather than dragging a second audio path along.
 async function ensureAudioEngine() {
 	if (audioEngine || audioEngineTried) return;
 	audioEngineTried = true;
-	if (!systemAudioSrc && !micAudioSrc) {
-		audioEngineFailed = true;
-		return;
-	}
+	if (!systemAudioSrc && !micAudioSrc) return;
 	const gen = audioEngineGen;
 	try {
 		const eng = await AudioTimelineEngine.create([
@@ -684,57 +572,40 @@ async function ensureAudioEngine() {
 		void eng.setMusicClips(buildMusicSpecs());
 		audioEngine = eng;
 	} catch (err) {
-		console.warn("Web Audio engine unavailable; using <audio> fallback:", err);
-		audioEngineFailed = true;
+		console.warn("Web Audio engine unavailable; the preview will be silent:", err);
 	}
 }
 
-// Play/pause audio in lockstep with `isPlaying`. WebCodecs path drives the
-// Web Audio engine; the <audio> elements are the fallback / legacy path.
+// Play/pause the engine in lockstep with `isPlaying`, on both preview paths.
+// The rAF reconciler runs only on the legacy path, where the <video> element —
+// not the engine — is the clock.
 $effect(() => {
 	const playing = store.isPlaying;
 	const wc = webcodecsActive;
 	const eng = audioEngine;
-	const failed = audioEngineFailed;
 
-	if (wc && !failed) {
-		// Engine owns audio here: keep the <audio> elements and the seek loop off.
-		for (const el of [systemAudioEl, micAudioEl]) el?.pause();
-		stopAudioClockSync();
-		if (playing) {
-			void ensureAudioEngine();
-			if (eng) {
-				void eng.play(
-					untrack(() => audioRegions()),
-					untrack(() => outputNow()),
-				);
-			}
-		} else {
-			eng?.pause();
+	if (playing) {
+		void ensureAudioEngine();
+		// `outputNow()` reads store.currentTime, which the legacy path publishes
+		// only at 4 Hz; the element's own time is the current one.
+		const from = untrack(() =>
+			wc || !videoEl ? outputNow() : originalToOutput(store.timeMap, videoEl.currentTime),
+		);
+		if (eng) {
+			void eng.play(
+				untrack(() => audioRegions()),
+				from,
+			);
+			// Seed the reconciler at the position we just started from. Left at -1
+			// it reads the first frame as a jump and reschedules the graph it is
+			// still starting.
+			lastAudioTarget = from;
 		}
-		return;
+	} else {
+		eng?.pause();
 	}
 
-	// Fallback (engine failed) or legacy <video> path: slave the <audio>
-	// elements to the playhead, and make sure the engine is silent.
-	audioEngine?.pause();
-	const alignTo = untrack(() => (wc ? store.currentTime : (videoEl?.currentTime ?? 0)));
-	for (const el of [systemAudioEl, micAudioEl]) {
-		if (!el) continue;
-		if (playing) {
-			el.currentTime = alignTo;
-			void el.play().catch((err) => {
-				console.warn("Audio play failed:", err);
-			});
-		} else {
-			el.pause();
-		}
-	}
-	// Run the rAF sync whenever the <audio> elements are the audio source:
-	// both the legacy <video> path AND the engine-failed WebCodecs fallback.
-	// It keeps them locked to the master (video time / output clock) so cuts
-	// are skipped tightly, not just on the coarse `timeupdate` tick.
-	if (playing) startAudioClockSync();
+	if (playing && !wc) startAudioClockSync();
 	else stopAudioClockSync();
 });
 
@@ -763,38 +634,14 @@ $effect(() => {
 	if (jumped || editsChanged) eng.reschedule(regions, out);
 });
 
-// Legacy/fallback path: the <audio> elements are slaved to the <video> clock,
-// so they must share its per-segment clip speed or audio plays at 1× while the
-// picture speeds up. preservesPitch stays on (default), matching the export's
-// pitch-preserving atempo. On the WebCodecs path these elements are paused
-// (the Web Audio engine carries speed via the schedule), so this is a no-op.
-$effect(() => {
-	const segSpeed = store.segmentSpeedAtTime(store.currentTime);
-	if (systemAudioEl) systemAudioEl.playbackRate = segSpeed;
-	if (micAudioEl) micAudioEl.playbackRate = segSpeed;
-});
-
-// Apply volume/mute from the store's audio settings to both audio elements.
-// The master is the product of the per-track gains so the user can keep
-// system audio loud and mute just the mic, or vice versa. Master mute
-// still zeros both.
+// Apply volume/mute from the store's audio settings. The master is the product
+// of the per-track gains so the user can keep system audio loud and mute just
+// the mic, or vice versa. Master mute still zeros both.
 $effect(() => {
 	const settings = store.audioSettings;
 	// Detached audio: the monolithic source tracks are silenced (voice clips
 	// carry the recording audio); guards against double-playing the un-cut source.
 	const detached = store.audioDetached;
-	// Capped at 1 because HTMLMediaElement.volume is spec-bound to 0..1: boost
-	// above 100% only reproduces on the Web Audio path (and in the export).
-	const systemVol =
-		detached || settings.muted || settings.systemMuted
-			? 0
-			: Math.max(0, Math.min(1, (settings.volume * settings.systemVolume) / 10_000));
-	const micVol =
-		detached || settings.muted || settings.micMuted
-			? 0
-			: Math.max(0, Math.min(1, (settings.volume * settings.micVolume) / 10_000));
-	if (systemAudioEl) systemAudioEl.volume = systemVol;
-	if (micAudioEl) micAudioEl.volume = micVol;
 	audioEngine?.setMasterVolume(settings.volume, settings.muted);
 	audioEngine?.setTrackVolume(
 		"system",
@@ -843,9 +690,6 @@ $effect(() => {
 $effect(() => {
 	const off = store.registerSeekHandler((t) => {
 		if (videoEl) videoEl.currentTime = t;
-		for (const el of [systemAudioEl, micAudioEl]) {
-			if (el) el.currentTime = t;
-		}
 	});
 	return off;
 });
@@ -860,9 +704,8 @@ function handleVideoSeeked() {
 	// up on the next 4 Hz `timeupdate`, so captions/overlays (which key off
 	// `store.currentTime`) lagged the cut by up to ~250 ms. Snap them here.
 	store.currentTime = t;
-	for (const el of [systemAudioEl, micAudioEl]) {
-		if (el) el.currentTime = t;
-	}
+	// The rAF reconciler treats this as a jump and resnaps the engine; doing it
+	// here too would restart the graph twice for one seek.
 }
 
 // Frame-step on the OUTPUT axis so stepping across a cut lands on the next
@@ -1022,15 +865,12 @@ async function loadDocument() {
 	cameraCapture = "legacy";
 	cameraSrc = "";
 	videoEl?.pause();
-	systemAudioEl?.pause();
-	micAudioEl?.pause();
 	// Tear down the previous file's engine; it rebuilds on first play. The bump
 	// also disowns one still decoding, which `dispose()` alone cannot reach.
 	audioEngineGen++;
 	audioEngine?.dispose();
 	audioEngine = null;
 	audioEngineTried = false;
-	audioEngineFailed = false;
 	store.metadata = null;
 	store.reset();
 	store.thumbnailStrip = [];
@@ -1093,8 +933,6 @@ async function loadDocument() {
 		isLoading = false;
 		await tick();
 		videoEl?.load();
-		systemAudioEl?.load();
-		micAudioEl?.load();
 		// The preview now owns the main thread through its cold start. Defer the
 		// three heavy secondary decoders — the Rust thumbnail strip, the filmstrip
 		// tile decoder, and the cursor auto-zoom pass — to browser-idle. On a 4K
@@ -1153,7 +991,7 @@ async function maybeRunAutoZoom() {
 	await runAutoZoom({ silentEmpty: true });
 }
 
-async function runAutoZoom(opts: { silentEmpty?: boolean } = {}) {
+async function runAutoZoom(opts: { silentEmpty?: boolean; undoOnError?: boolean } = {}) {
 	if (autoZoomRunning) return;
 	if (!cursorPath) return;
 	autoZoomRunning = true;
@@ -1179,15 +1017,26 @@ async function runAutoZoom(opts: { silentEmpty?: boolean } = {}) {
 		}
 	} catch (err) {
 		console.warn("Auto-zoom failed:", err);
+		// Analysis throws before it mutates anything, so on a regenerate the only
+		// change is the caller's clear — which `clearAutoZooms` pushed undo for.
+		toast.error("Couldn't generate focus moments", {
+			description: opts.undoOnError
+				? "Your previous focus moments were removed. Undo to bring them back."
+				: undefined,
+			action: opts.undoOnError ? { label: "Undo", onClick: () => store.undo() } : undefined,
+		});
 	} finally {
 		autoZoomRunning = false;
 	}
 }
 
 function regenerateAutoZoom() {
+	// Only offer Undo if the clear actually pushed an undo entry, otherwise the
+	// button would revert whatever unrelated edit came before it.
+	const hadAuto = store.zoomRegions.some((z) => z.source === "auto");
 	store.clearAutoZooms();
 	store.autoZoomApplied = false;
-	void runAutoZoom({ silentEmpty: false });
+	void runAutoZoom({ silentEmpty: false, undoOnError: hadAuto });
 }
 
 // Export lifecycle UI. The exportActivity store owns the queue + run; this
@@ -1288,14 +1137,12 @@ async function handleExport() {
 
 	try {
 		// Resolve the export engine FIRST — it decides whether the render state needs
-		// its visual half. Browser export is on when the master flag is set OR the user
-		// opted into the beta; otherwise Rust. The resolver still falls back per
-		// capability/eligibility, and `forceLegacy` is the (later) default-on opt-out.
-		const wantBrowser = BROWSER_EXPORT_ENABLED || experimentalStore.isEnabled("browserExportBeta");
+		// its visual half. The beta toggle IS the gate; the resolver still falls back
+		// per capability/eligibility.
+		const wantBrowser = experimentalStore.isEnabled("browserExportBeta");
 		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
 		const engine = chooseExportEngine({
 			masterEnabled: wantBrowser,
-			forceLegacy: false,
 			blockedReason: browserExportBlockedReason(store),
 			capabilitySupported: capability?.supported ?? false,
 		});
@@ -1963,19 +1810,35 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
   class="fixed inset-0 flex min-h-screen w-full flex-col overflow-hidden bg-background text-foreground"
 >
   <CustomTitlebar wrapperClass="h-9">
-    <EditorToolbar
-      {store}
-      filename={data.filename}
-      onexport={onExportButton}
-      exportMode={exportButtonMode}
-      exportRunning={myItem?.status === "running"}
-      onsave={handleSave}
-      {isSaving}
-      {showSidebar}
-      {showTimeline}
-      onToggleSidebar={() => (showSidebar = !showSidebar)}
-      onToggleTimeline={() => (showTimeline = !showTimeline)}
-    />
+    <!-- `inert` (not per-control `disabled`) so a future toolbar action can't
+         silently miss the gate: it blocks pointer + tab + a11y tree in one. -->
+    <div class="flex min-w-0 flex-1 items-center" inert={agentSession.active}>
+      <EditorToolbar
+        {store}
+        filename={data.filename}
+        onexport={onExportButton}
+        exportMode={exportButtonMode}
+        exportRunning={myItem?.status === "running"}
+        onsave={handleSave}
+        {isSaving}
+        {showSidebar}
+        {showTimeline}
+        onToggleSidebar={() => (showSidebar = !showSidebar)}
+        onToggleTimeline={() => (showTimeline = !showTimeline)}
+      />
+    </div>
+    <AgentSessionBadge />
+    {#if documentPath}
+      <BranchReviewPanel
+        projectPath={documentPath}
+        writerId={editorWriterId}
+        onPreview={(state) => {
+          store.pushUndoState();
+          store.loadRenderState(state);
+        }}
+        onApplied={() => void reloadRenderStateFromDisk()}
+      />
+    {/if}
   </CustomTitlebar>
 
   <!-- Foreground upload dialogs (cloud share + Drive), reopened by clicking an
@@ -2044,177 +1907,63 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
       </div>
     </div>
   {:else}
-    <div class="flex min-h-0 flex-1 overflow-hidden">
-      <!-- Preview + playback + timeline -->
-      <!-- Measured so the timeline's maximum height stays a share of the space
-           actually available, not a fixed number that overwhelms a short window. -->
-      <div
-        bind:clientHeight={editorColumnH}
-        class="flex min-h-0 flex-1 flex-col overflow-hidden"
-      >
-        <div
-          bind:this={previewContainerEl}
-          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background px-2 pt-1.5 pb-1"
-        >
-          <div
-            class="flex-1 flex min-h-0 w-full items-center justify-center relative"
-          >
-            <VideoPreview
-              {store}
-              bind:videoEl
-              bind:captureFrame
-              bind:webcodecsActive
-              {videoSrc}
-              {cursorPath}
-              {cameraSrc}
-              onTimeUpdate={handleTimeUpdate}
-              onEnded={handleVideoEnded}
-              onLoadedMetadata={handleVideoLoadedMetadata}
-              onReady={handleVideoReady}
-              onError={handleVideoError}
-              onSeeked={handleVideoSeeked}
-              audioPositionSec={() => audioEngine?.positionOutputSec ?? null}
-            />
-          </div>
-          <VideoPlayerControls
-            {store}
-            {videoEl}
-            {captureFrame}
-            bind:loopEnabled
-            fullscreenTargetEl={previewContainerEl}
-            showScrubber={!showTimeline}
-          />
-        </div>
-
-        <!-- `slide` (axis:y) animates the wrapper height to 0 while the inner
-             keeps its height, so the preview reclaims space smoothly. Timeline
-             folds away in export mode so the preview owns the full height. -->
-        {#if showTimeline && !isExportFlowOpen}
-          <div
-            class="shrink-0 overflow-hidden"
-            transition:slide={{ axis: "y", duration: 280, easing: cubicOut }}
-          >
-            <!-- Height on the INNER div: `slide` animates the wrapper's own
-                 height, so the two would fight over the same property. -->
-            <div class="relative" style="height: {timelineHeight}px;">
-              <!-- Splitter: drag or arrow-key to resize the panel. Sits in the
-                   timeline's top padding so it never overlaps the toolbar.
-                   Modelled as a horizontal slider (aria-valuenow = height), the
-                   same idiom as the properties-panel splitter. -->
-              <div
-                role="slider"
-                tabindex="0"
-                aria-orientation="horizontal"
-                aria-label="Resize timeline"
-                aria-valuemin={TIMELINE_MIN_HEIGHT_PX}
-                aria-valuemax={timelineMax}
-                aria-valuenow={timelineHeight}
-                onpointerdown={startTimelineResize}
-                onkeydown={onTimelineHandleKey}
-                class="group absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize focus-visible:outline-none"
-              >
-                <div
-                  class="my-auto h-px w-full bg-border/50 transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary {resizingTimeline
-                    ? 'bg-primary!'
-                    : ''}"
-                ></div>
-              </div>
-              <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
-            </div>
-          </div>
-        {/if}
-      </div>
-
-      <!-- Right rail. Editing shows the properties panel; entering export swaps
-           it for the export surface. Both slide on the x-axis with the SAME
-           duration/easing so the leaving and entering widths cancel to a
-           monotonic reflow (no mid-swap wobble). The inner fixed-width div lets
-           `slide` clip cleanly instead of reflowing container queries. -->
-      {#if isExportFlowOpen}
-        <aside
-          class="min-h-0 shrink-0 overflow-hidden border-l border-border/60"
-          transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
-        >
-          <div class="h-full w-[26rem]">
-            <ExportPanel
-              phase={exportPhase}
-              onEscape={handleExportEscape}
-              {options}
-              {queued}
-              {progress}
-              {success}
-              {cancelled}
-              error={errorPanel}
-            />
-          </div>
-        </aside>
-      {:else if showSidebar}
-        <aside
-          class="relative min-h-0 shrink-0 overflow-hidden border-l border-border/60"
-          transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
-        >
-          <!-- Splitter: drag or arrow-key to resize the panel. Sits in the left
-               padding gutter so it never overlaps a tab. Modelled as a vertical
-               slider (aria-valuenow = width), the same interactive-role idiom the
-               timeline's trim/resize handles use. -->
-          <div
-            role="slider"
-            tabindex="0"
-            aria-orientation="vertical"
-            aria-label="Resize properties panel"
-            aria-valuemin={SIDEBAR_MIN}
-            aria-valuemax={SIDEBAR_MAX}
-            aria-valuenow={sidebarWidth}
-            onpointerdown={startSidebarResize}
-            onkeydown={onSidebarHandleKey}
-            class="group absolute inset-y-0 left-0 z-20 w-1.5 cursor-col-resize focus-visible:outline-none"
-          >
-            <div
-              class="mx-auto h-full w-px bg-border/50 transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary {resizingSidebar
-                ? 'bg-primary!'
-                : ''}"
-            ></div>
-          </div>
-          <div class="h-full" style="width: {sidebarWidth}px;">
-            <PropertiesPanel
-              {store}
-              {cameraPath}
-              {cameraCapture}
-              onRegenerateAutoZoom={regenerateAutoZoom}
-            />
-          </div>
-        </aside>
-      {/if}
-    </div>
-  {/if}
-
-  <!-- .recast stores system + mic audio as separate WAVs (the mp4 has no audio);
-       kept in lockstep with the video via the $effects above. -->
-  <!-- preload="metadata": the Web Audio engine decodes the WAVs itself, so these
-       fallback elements needn't buffer full PCM at open (~tens of MB each). -->
-  {#if systemAudioSrc}
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <audio
-      bind:this={systemAudioEl}
-      src={systemAudioSrc}
-      preload="metadata"
-      class="hidden"
-    ></audio>
-  {/if}
-  {#if micAudioSrc}
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <audio
-      bind:this={micAudioEl}
-      src={micAudioSrc}
-      preload="metadata"
-      class="hidden"
-    ></audio>
+    <!-- h-auto drops Editor's own h-full via tailwind-merge: this is a flex
+         child sharing the column with the titlebar, so flex-1 owns its height. -->
+    <Editor
+      {store}
+      services={tauriEditorServices}
+      {videoSrc}
+      {cursorPath}
+      {cameraSrc}
+      {cameraPath}
+      {cameraCapture}
+      {audioEngine}
+      {tileProvider}
+      {filmstripVersion}
+      bind:showSidebar
+      bind:showTimeline
+      bind:videoEl
+      bind:previewContainerEl
+      bind:captureFrame
+      bind:webcodecsActive
+      bind:loopEnabled
+      onTimeUpdate={handleTimeUpdate}
+      onEnded={handleVideoEnded}
+      onLoadedMetadata={handleVideoLoadedMetadata}
+      onReady={handleVideoReady}
+      onError={handleVideoError}
+      onSeeked={handleVideoSeeked}
+      audioPositionSec={() => audioEngine?.positionOutputSec ?? null}
+      onRegenerateAutoZoom={regenerateAutoZoom}
+      timelineReadOnly={agentSession.active}
+      panelReadOnly={agentSession.active}
+      toolbar={hostOwnsToolbar}
+      exportPanel={isExportFlowOpen ? exportRail : undefined}
+      class="h-auto min-h-0 flex-1"
+    />
   {/if}
 
   {#if playTarget}
     <PlayerDialog entry={playTarget} onclose={() => (playTarget = null)} />
   {/if}
 </div>
+
+<!-- Renders nothing on purpose: this window's toolbar lives in the native
+     CustomTitlebar above the shell, so Editor must not draw its default one. -->
+{#snippet hostOwnsToolbar()}{/snippet}
+
+{#snippet exportRail()}
+  <ExportPanel
+    phase={exportPhase}
+    onEscape={handleExportEscape}
+    {options}
+    {queued}
+    {progress}
+    {success}
+    {cancelled}
+    error={errorPanel}
+  />
+{/snippet}
 
 {#snippet options()}
   <ExportDialog

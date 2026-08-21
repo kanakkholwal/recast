@@ -1,3 +1,4 @@
+import { listDocs } from "$lib/architecture";
 import { listPosts } from "$lib/blog";
 import { getPublicEnv } from "$lib/env/public";
 import { TOOLS } from "$lib/tools/registry";
@@ -15,6 +16,7 @@ const STATIC_PATHS = [
 	"/download",
 	"/changelog",
 	"/blog",
+	"/architecture",
 	"/privacy-policy",
 	"/terms-of-service",
 	"/tools",
@@ -39,10 +41,12 @@ export const GET: RequestHandler = async ({ url }) => {
 	// Only published posts: `listPosts` drops drafts in production, so an
 	// unfinished article is never advertised to a crawler.
 	const posts = await listPosts();
+	const architecture = await listDocs();
 	const paths = [
 		...STATIC_PATHS,
 		...TOOLS.map((t) => `/tools/${t.slug}`),
 		...posts.map((post) => post.url),
+		...architecture.map((doc) => `/architecture/${doc.slug}`),
 	];
 	const urls = paths
 		.map((p) => `  <url>\n    <loc>${origin}${p === "/" ? "" : p}</loc>\n  </url>`)

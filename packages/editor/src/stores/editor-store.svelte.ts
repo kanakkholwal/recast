@@ -8,6 +8,7 @@
 
 import { type CaptionStyle, DEFAULT_CAPTION_STYLE } from "@recast/captions";
 import { backgroundNeedsShadow, migrateBackgroundValue } from "@recast/design/backgrounds";
+import { keyframesFromMotionSegments } from "../components/_components/camera-overlay.logic";
 import { scaleTranscript, transcriptTimeScale } from "../lib/captions/normalize";
 import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
 import {
@@ -94,7 +95,6 @@ import {
 	type Transcript,
 	type VideoMetadata,
 	WALLPAPERS,
-	type WatermarkSettings,
 	type ZoomRegion,
 	cameraPlacementFromPreset,
 	clampFramePaddingPercent,
@@ -305,16 +305,6 @@ export function createEditorStore() {
 	// Music / extra-audio clips laid on the output timeline (mixed in at export).
 	let musicClips = $state<AudioClip[]>([]);
 
-	// Watermark settings
-	let watermarkSettings = $state<WatermarkSettings>({
-		enabled: false,
-		imagePath: "",
-		imageSrc: "",
-		opacity: 70,
-		scale: 18,
-		position: "bottom-right",
-		inset: 24,
-	});
 	// Camera overlay defaults, Phase 1 spec:
 	// - Bottom-right corner at 16% size, 1:1 aspect
 	// - Rounded shape (16% corner radius)
@@ -406,7 +396,6 @@ export function createEditorStore() {
 			annotations,
 			cursorSettings,
 			audioSettings,
-			watermarkSettings,
 			cameraOverlay,
 			layoutMode,
 			outputAspect,
@@ -570,7 +559,6 @@ export function createEditorStore() {
 		} else {
 			audioSettings = audioSettings;
 		}
-		watermarkSettings = s.watermarkSettings ? { ...s.watermarkSettings } : watermarkSettings;
 		// Camera overlay was previously captured in the snapshot but not
 		// restored here, which silently destroyed camera-overlay edits on
 		// undo. Deep-copy so subsequent mutations don't alias the snapshot.
@@ -714,10 +702,6 @@ export function createEditorStore() {
 	function updateAudioSettings(updates: Partial<AudioSettings>) {
 		audioSettings = { ...audioSettings, ...updates };
 		log.debounced("audio-settings", "audio", "settings_changed", { ...updates });
-	}
-
-	function updateWatermarkSettings(updates: Partial<WatermarkSettings>) {
-		watermarkSettings = { ...watermarkSettings, ...updates };
 	}
 
 	function updateShadow(updates: Partial<ShadowSettings>) {
@@ -1124,13 +1108,15 @@ export function createEditorStore() {
 		log.info("annotation", "removed", { id });
 	}
 
-	/** Sorted view by (zIndex, insertion-order). Higher z draws later. */
-	function annotationsByZ(): Annotation[] {
-		return [...annotations]
+	/** Sorted view by (zIndex, insertion-order). Higher z draws later.
+	 *  Memoized: the overlay reads this twice per drawn frame, and as a plain
+	 *  function every read allocated two arrays and re-sorted. */
+	const annotationsByZOrdered = $derived.by(() =>
+		[...annotations]
 			.map((a, idx) => ({ a, idx, z: a.zIndex ?? idx }))
 			.sort((a, b) => a.z - b.z || a.idx - b.idx)
-			.map((e) => e.a);
-	}
+			.map((e) => e.a),
+	);
 
 	function toggleAnnotationLock(id: string) {
 		pushUndoState();
@@ -1190,7 +1176,7 @@ export function createEditorStore() {
 	 * skip over multiple neighbours.
 	 */
 	function reorderAnnotation(id: string, direction: 1 | -1) {
-		const ordered = annotationsByZ();
+		const ordered = annotationsByZOrdered;
 		const idx = ordered.findIndex((a) => a.id === id);
 		if (idx === -1) return;
 		const targetIdx = idx + direction;
@@ -1284,15 +1270,6 @@ export function createEditorStore() {
 			fadeIn: 0,
 			fadeOut: 0,
 			normalizeLoudness: false,
-		};
-		watermarkSettings = {
-			enabled: false,
-			imagePath: "",
-			imageSrc: "",
-			opacity: 70,
-			scale: 18,
-			position: "bottom-right",
-			inset: 24,
 		};
 		cameraOverlay = {
 			enabled: false,
@@ -1751,7 +1728,6 @@ export function createEditorStore() {
 			musicClips: musicClips.map((c) => ({ ...c, source: { ...c.source } })),
 			transcript,
 			captionStyle: { ...captionStyle },
-			watermarkSettings: { ...watermarkSettings },
 			cameraOverlay: {
 				...cameraOverlay,
 				defaultPlacement: { ...cameraOverlay.defaultPlacement },
@@ -1858,12 +1834,36 @@ export function createEditorStore() {
 		captionStyle = state.captionStyle
 			? { ...DEFAULT_CAPTION_STYLE, ...state.captionStyle }
 			: { ...DEFAULT_CAPTION_STYLE };
-		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
 		// Camera overlay defaults match the Phase 1 spec: bottom-right at
 		// 16% size. Older projects stored top-right at 22%; the explicit
 		// `?? `-fallbacks below preserve those if present, only swapping in
 		// the new defaults when the field is absent on the loaded state.
 		const fallbackPlacement = cameraPlacementFromPreset("bottom-right");
+		const loadedPlacement = {
+			x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
+			y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
+			width: state.cameraOverlay?.defaultPlacement?.width ?? fallbackPlacement.width,
+			height: state.cameraOverlay?.defaultPlacement?.height ?? fallbackPlacement.height,
+		};
+		const loadedKeyframes = (state.cameraOverlay?.keyframes ?? []).map((k) => ({
+			atSec: k.atSec,
+			placement: { ...k.placement },
+		}));
+		// Camera moves made during the recording arrive as `motionSegments`, which
+		// nothing evaluates. Fold them into the keyframes both the preview and the
+		// export already read, then drop them — authored keyframes win, since the
+		// user has since edited the path by hand.
+		const recordedKeyframes =
+			loadedKeyframes.length > 0
+				? loadedKeyframes
+				: keyframesFromMotionSegments(
+						(state.cameraOverlay?.motionSegments ?? []).map((segment) => ({
+							...segment,
+							easeIn: segment.easeIn ?? { ...EASE },
+							easeOut: segment.easeOut ?? { ...EASE },
+						})),
+						loadedPlacement,
+					);
 		cameraOverlay = {
 			enabled: state.cameraOverlay?.enabled ?? false,
 			mirror: state.cameraOverlay?.mirror ?? true,
@@ -1876,35 +1876,13 @@ export function createEditorStore() {
 			zoomFollowEasing: state.cameraOverlay?.zoomFollowEasing
 				? { ...state.cameraOverlay.zoomFollowEasing }
 				: { ...EASE_IN_OUT },
-			keyframes: (state.cameraOverlay?.keyframes ?? []).map((k) => ({
-				atSec: k.atSec,
-				placement: { ...k.placement },
-			})),
+			keyframes: recordedKeyframes,
 			keyframeEasing: state.cameraOverlay?.keyframeEasing
 				? { ...state.cameraOverlay.keyframeEasing }
 				: { ...EASE_IN_OUT },
 			shadow: state.cameraOverlay?.shadow ?? 0.35,
-			defaultPlacement: {
-				x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
-				y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
-				width: state.cameraOverlay?.defaultPlacement?.width ?? fallbackPlacement.width,
-				height: state.cameraOverlay?.defaultPlacement?.height ?? fallbackPlacement.height,
-			},
-			motionSegments: (state.cameraOverlay?.motionSegments ?? []).map((segment) => ({
-				start: segment.start,
-				end: segment.end,
-				fromX: segment.fromX,
-				fromY: segment.fromY,
-				fromWidth: segment.fromWidth,
-				fromHeight: segment.fromHeight,
-				toX: segment.toX,
-				toY: segment.toY,
-				toWidth: segment.toWidth,
-				toHeight: segment.toHeight,
-				easeIn: segment.easeIn ?? { ...EASE },
-				easeOut: segment.easeOut ?? { ...EASE },
-				source: segment.source ?? "manual",
-			})),
+			defaultPlacement: loadedPlacement,
+			motionSegments: [],
 		};
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		layoutMode = state.layoutMode ?? layoutMode;
@@ -2360,7 +2338,7 @@ export function createEditorStore() {
 			return annotations;
 		},
 		get annotationsByZ() {
-			return annotationsByZ();
+			return annotationsByZOrdered;
 		},
 		get selectedAnnotationId() {
 			return selectedAnnotationId;
@@ -2439,13 +2417,6 @@ export function createEditorStore() {
 		updateCaptionStyle(updates: Partial<CaptionStyle>) {
 			captionStyle = { ...captionStyle, ...updates };
 			isDirty = true;
-		},
-
-		get watermarkSettings() {
-			return watermarkSettings;
-		},
-		set watermarkSettings(v: WatermarkSettings) {
-			watermarkSettings = v;
 		},
 
 		get cameraOverlay() {
@@ -2558,7 +2529,6 @@ export function createEditorStore() {
 		setCursorMotionEasingLive,
 		updateCursorSettings,
 		updateAudioSettings,
-		updateWatermarkSettings,
 		updateShadow,
 		updateCameraOverlay,
 		updateCameraOverlayLive,

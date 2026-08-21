@@ -1,3 +1,5 @@
+import { formatBytes as formatBytesBase } from "@recast/editor/lib/format/bytes";
+
 export type DeliveryView = {
 	usedBytes: number;
 	capBytes: number | null;
@@ -14,19 +16,9 @@ export type SeatView = {
 	billable: number;
 };
 
-const UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
-
-/** Byte count as a short human string. `null` renders as unlimited. */
+/** Byte count as a short human string. An absent cap renders as unlimited. */
 export function formatBytes(bytes: number | null | undefined): string {
-	if (bytes == null || !Number.isFinite(bytes)) return "Unlimited";
-	if (bytes <= 0) return "0 GB";
-	let value = bytes;
-	let unit = 0;
-	while (value >= 1024 && unit < UNITS.length - 1) {
-		value /= 1024;
-		unit += 1;
-	}
-	return `${value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${UNITS[unit]}`;
+	return formatBytesBase(bytes, { zeroLabel: "0 GB", emptyLabel: "Unlimited" });
 }
 
 export function formatUsd(value: number | null | undefined): string {

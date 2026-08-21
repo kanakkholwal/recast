@@ -11,7 +11,7 @@ import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { exportActivity, type ExportItem } from "$lib/stores/exportActivity.svelte";
 import { gdrive } from "$lib/stores/gdrive.svelte";
 import { encodeEditorPath } from "$lib/library/editor-window";
-import { exportEtaMs, formatElapsed } from "$lib/format/time";
+import { exportEtaMs, formatElapsed } from "@recast/editor/lib/format/time";
 import RecastMark from "$components/recast-mark.svelte";
 import {
 	CheckCircle2,

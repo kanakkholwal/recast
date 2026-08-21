@@ -4,8 +4,12 @@
 // result (the smoothed sample array) however they like.
 
 import { smoothCursorPath, type CursorSampleLike, type SmoothingOptions } from "./smoothing";
+import { createEditorWorker } from "../host-hooks";
 
-type ResultMsg = { id: number; samples: CursorSampleLike[] };
+type ResultMsg =
+	| { id: number; samples: CursorSampleLike[] }
+	| { type: "loaded" }
+	| { type: "loadFailed"; message: string };
 type Listener = (samples: CursorSampleLike[]) => void;
 
 // Coalesce slider drags; long enough to skip intermediate values, short enough
@@ -22,11 +26,19 @@ export class CursorSmoother {
 	constructor(onResult: Listener) {
 		this.#onResult = onResult;
 		try {
-			this.#worker = new Worker(new URL("./smoothing-worker", import.meta.url), { type: "module" });
+			this.#worker = createEditorWorker("smoothing");
 			this.#worker.onmessage = (e: MessageEvent<ResultMsg>) => {
+				const msg = e.data;
+				if ("type" in msg) {
+					// The worker couldn't read the URL itself (asset-protocol access is
+					// the host's business, not ours) — fall back to shipping the array.
+					if (msg.type === "loadFailed")
+						this.#worker?.postMessage({ type: "load", raw: this.#raw });
+					return;
+				}
 				// Drop superseded results: only the latest request matters.
-				if (e.data.id !== this.#reqId) return;
-				this.#onResult(e.data.samples);
+				if (msg.id !== this.#reqId) return;
+				this.#onResult(msg.samples);
 			};
 			this.#worker.onerror = () => {
 				this.#worker?.terminate();
@@ -37,10 +49,17 @@ export class CursorSmoother {
 		}
 	}
 
-	/** Replace the raw track; shipped to the worker once so later requests are cheap. */
-	load(raw: CursorSampleLike[]) {
+	/**
+	 * Replace the raw track. Pass `url` and the worker re-reads the track itself:
+	 * a 30-min recording is ~225k samples, and posting that array costs the main
+	 * thread a full structured clone of every object at editor open. `raw` is
+	 * still kept here for the no-worker fallback and for the `loadFailed` retry.
+	 */
+	load(raw: CursorSampleLike[], url?: string) {
 		this.#raw = raw;
-		this.#worker?.postMessage({ type: "load", raw });
+		if (!this.#worker) return;
+		if (url) this.#worker.postMessage({ type: "loadUrl", url });
+		else this.#worker.postMessage({ type: "load", raw });
 	}
 
 	/** Compute a smoothed path for `opts`, off-thread when possible. */

@@ -43,6 +43,8 @@ const CLI_VERBS: &[&str] = &[
     "project",
     "editor",
     "export",
+    "branch",
+    "mcp",
 ];
 
 /// True when argv[1] is a CLI verb or a help request. `main` uses this to pick
@@ -184,11 +186,16 @@ enum Command {
     /// script's `$TranscribeVerb` in the same commit. CI smoke tests will
     /// start failing otherwise — that is by design, not noise.
     Transcribe(TranscribeArgs),
-    /// Stream backend events (recording + selection + profiles) until interrupted.
+    /// Stream backend events until interrupted. Frames carry a `seq`; pass the
+    /// last one back as `--since` after a reconnect to replay what was missed.
     Watch {
-        /// Comma-separated event groups: `rec`, `selection`, `profiles` (default: all).
+        /// Comma-separated event groups: `rec`, `selection`, `profiles`,
+        /// `export`, `editor` (default: all).
         #[arg(long)]
         events: Option<String>,
+        /// Resume after this sequence number instead of streaming live only.
+        #[arg(long, value_name = "SEQ")]
+        since: Option<u64>,
     },
     /// Put `recast` on your PATH so it runs as a bare command in any terminal.
     Install,
@@ -211,6 +218,86 @@ enum Command {
     Export {
         #[command(subcommand)]
         action: ExportAction,
+    },
+    /// Propose edits without touching the project. Ops are journalled against
+    /// the state they forked from; a human reviews the diff and applies.
+    Branch {
+        #[command(subcommand)]
+        action: BranchAction,
+    },
+    /// Serve MCP on stdin/stdout so an MCP client can drive Recast. Launched by
+    /// the client, not by hand. Exposes read verbs plus branch proposals only:
+    /// applying a branch stays a human action.
+    Mcp,
+}
+
+#[derive(Subcommand)]
+enum BranchAction {
+    /// Fork a branch from the project's current state.
+    Create {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        /// Who is proposing, e.g. `agent:claude`.
+        #[arg(long, value_name = "ID")]
+        author: String,
+        #[arg(long, value_name = "TEXT")]
+        label: Option<String>,
+    },
+    /// Open branches for a project.
+    List { path: String },
+    /// Record ops onto a branch as one atomic entry.
+    Append {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        /// Retry-safe key. Re-sending one already on the branch is a no-op.
+        #[arg(long, value_name = "KEY")]
+        idem_key: String,
+        /// JSON array of ops, e.g. `[{"op":"cutAdd","start":1,"end":2}]`.
+        #[arg(long, value_name = "JSON")]
+        ops: Option<String>,
+        /// Read the ops array from stdin instead of `--ops`.
+        #[arg(long)]
+        from_stdin: bool,
+        /// Reject unless the branch is at this sequence number.
+        #[arg(long, value_name = "N")]
+        expect_seq: Option<u64>,
+    },
+    /// Field-level changes the branch would make.
+    Diff {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+    },
+    /// The full render state the branch would produce.
+    Show {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+    },
+    /// Drop every entry after a sequence number.
+    Truncate {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        #[arg(long, value_name = "N")]
+        seq: u64,
+    },
+    /// Delete a branch without applying it.
+    Discard {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+    },
+    /// Write the branch into the project. Takes the write-lock and is
+    /// fast-forward only: a project edited since the fork is rejected.
+    Apply {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
     },
 }
 
@@ -279,7 +366,7 @@ enum EditorAction {
     },
     /// Universal mutator. Set any scalar/struct field in RenderState by
     /// dotted-path JSON pointer; e.g. `borderRadius`, `cursorSize`,
-    /// `audioSettings.volume`, `watermarkSettings.opacity`. Pair with
+    /// `audioSettings.volume`, `cursorSettings.size`. Pair with
     /// `--value <JSON>` (string for strings, number, true/false,
     /// array, object). For array fields where you want to add or
     /// remove entries use the targeted verbs (cut/zoom/split-point/
@@ -288,7 +375,7 @@ enum EditorAction {
         path: String,
         /// Dotted JSON pointer inside `RenderState`, e.g.
         /// `borderRadius`, `cursorSize`, `audioSettings.volume`,
-        /// `watermarkSettings.opacity`, `annotations.0.fill`.
+        /// `cursorSettings.size`, `annotations.0.fill`.
         #[arg(long, value_name = "DOTTED.PATH")]
         field: String,
         /// JSON value to set. Strings need quoting inside `--value`;
@@ -928,18 +1015,8 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             }
             Ok(())
         }
-        Command::Watch { events } => {
-            let params = match events {
-                Some(list) => {
-                    let groups: Vec<&str> = list
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    json!({ "events": groups })
-                }
-                None => Value::Null,
-            };
+        Command::Watch { events, since } => {
+            let params = watch_params(events.as_deref(), *since);
             crate::control::watch(params, !cli.no_launch, cli.timeout_ms, |frame| {
                 let _ = emit(frame, cli.format);
             })
@@ -950,6 +1027,8 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
         Command::Project { action } => project_dispatch(cli, action),
         Command::Editor { action } => editor_dispatch(cli, action),
         Command::Export { action } => export_dispatch(cli, action),
+        Command::Branch { action } => branch_dispatch(cli, action),
+        Command::Mcp => crate::mcp::serve(!cli.no_launch, cli.timeout_ms),
     }
 }
 
@@ -1381,6 +1460,121 @@ fn annotations_dispatch(cli: &Cli, action: &AnnotationsAction) -> Result<(), Str
             let path = path_for(path);
             send_and_emit(cli, "editor.annotations.list", json!({"path": path}))
         }
+    }
+}
+
+/// Build the `watch` request. An absent cursor streams live only; the server
+/// reads a missing `since` as "start from the current head".
+fn watch_params(events: Option<&str>, since: Option<u64>) -> Value {
+    let mut params = serde_json::Map::new();
+    if let Some(list) = events {
+        let groups: Vec<&str> = list
+            .split(',')
+            .map(str::trim)
+            .filter(|group| !group.is_empty())
+            .collect();
+        params.insert("events".into(), json!(groups));
+    }
+    if let Some(seq) = since {
+        params.insert("since".into(), json!(seq));
+    }
+    if params.is_empty() {
+        Value::Null
+    } else {
+        Value::Object(params)
+    }
+}
+
+fn branch_dispatch(cli: &Cli, action: &BranchAction) -> Result<(), String> {
+    let path_for = |p: &str| {
+        crate::commands::screenshot::absolutize(std::path::PathBuf::from(p))
+            .to_string_lossy()
+            .into_owned()
+    };
+    match action {
+        BranchAction::Create {
+            path,
+            branch,
+            author,
+            label,
+        } => send_and_emit(
+            cli,
+            "branch.create",
+            json!({"path": path_for(path), "branch": branch, "author": author, "label": label}),
+        ),
+        BranchAction::List { path } => {
+            send_and_emit(cli, "branch.list", json!({ "path": path_for(path) }))
+        }
+        BranchAction::Append {
+            path,
+            branch,
+            idem_key,
+            ops,
+            from_stdin,
+            expect_seq,
+        } => {
+            let ops = read_ops_json(ops.as_deref(), *from_stdin)?;
+            let mut params = json!({
+                "path": path_for(path),
+                "branch": branch,
+                "idemKey": idem_key,
+                "ops": ops,
+            });
+            if let Some(seq) = expect_seq {
+                params["expectSeq"] = json!(seq);
+            }
+            send_and_emit(cli, "branch.append", params)
+        }
+        BranchAction::Diff { path, branch } => send_and_emit(
+            cli,
+            "branch.diff",
+            json!({"path": path_for(path), "branch": branch}),
+        ),
+        BranchAction::Show { path, branch } => send_and_emit(
+            cli,
+            "branch.materialize",
+            json!({"path": path_for(path), "branch": branch}),
+        ),
+        BranchAction::Truncate { path, branch, seq } => send_and_emit(
+            cli,
+            "branch.truncate",
+            json!({"path": path_for(path), "branch": branch, "seq": seq}),
+        ),
+        BranchAction::Discard { path, branch } => send_and_emit(
+            cli,
+            "branch.discard",
+            json!({"path": path_for(path), "branch": branch}),
+        ),
+        BranchAction::Apply {
+            path,
+            branch,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "branch.apply",
+            json!({"path": path_for(path), "branch": branch, "writerId": writer_id}),
+        ),
+    }
+}
+
+/// Load the ops array for `branch append` from `--ops` or stdin.
+fn read_ops_json(ops: Option<&str>, from_stdin: bool) -> Result<Value, String> {
+    let text = match (ops, from_stdin) {
+        (Some(_), true) => return Err("--ops and --from-stdin are mutually exclusive".into()),
+        (Some(text), false) => text.to_string(),
+        (None, true) => {
+            let mut buffer = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut buffer)
+                .map_err(|e| format!("read stdin: {e}"))?;
+            buffer
+        }
+        (None, false) => return Err("branch append requires --ops <JSON> or --from-stdin".into()),
+    };
+    let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("parse ops: {e}"))?;
+    if parsed.is_array() {
+        Ok(parsed)
+    } else {
+        Err("ops must be a JSON array".into())
     }
 }
 
@@ -1867,7 +2061,149 @@ fn attach_parent_console() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
     use serde_json::json;
+
+    /// Catches a malformed clap tree (duplicate flags, bad defaults) that would
+    /// otherwise only panic the first time a user reached that subcommand.
+    #[test]
+    fn the_argument_tree_is_well_formed() {
+        Cli::command().debug_assert();
+    }
+
+    /// A subcommand missing from `CLI_VERBS` is not a parse error: `main` never
+    /// reaches the CLI at all and silently launches the GUI instead.
+    #[test]
+    fn every_subcommand_routes_to_the_headless_cli() {
+        let missing: Vec<String> = Cli::command()
+            .get_subcommands()
+            .map(|sub| sub.get_name().to_string())
+            .filter(|name| !CLI_VERBS.contains(&name.as_str()))
+            .collect();
+
+        assert!(missing.is_empty(), "not in CLI_VERBS: {missing:?}");
+    }
+
+    mod watch_params {
+        use super::*;
+
+        #[test]
+        fn no_flags_sends_no_params() {
+            assert_eq!(watch_params(None, None), Value::Null);
+        }
+
+        #[test]
+        fn splits_a_comma_separated_group_list() {
+            assert_eq!(
+                watch_params(Some("rec,editor"), None)["events"],
+                json!(["rec", "editor"])
+            );
+        }
+
+        #[test]
+        fn trims_whitespace_around_groups() {
+            assert_eq!(
+                watch_params(Some(" rec , editor "), None)["events"],
+                json!(["rec", "editor"])
+            );
+        }
+
+        #[test]
+        fn drops_empty_entries_from_a_trailing_comma() {
+            assert_eq!(watch_params(Some("rec,"), None)["events"], json!(["rec"]));
+        }
+
+        #[test]
+        fn carries_the_resume_cursor() {
+            assert_eq!(watch_params(None, Some(42))["since"], json!(42));
+        }
+
+        #[test]
+        fn a_zero_cursor_is_sent_rather_than_dropped() {
+            assert_eq!(watch_params(None, Some(0))["since"], json!(0));
+        }
+
+        #[test]
+        fn combines_groups_and_a_cursor() {
+            let params = watch_params(Some("editor"), Some(7));
+
+            assert_eq!(
+                (params["events"].clone(), params["since"].clone()),
+                (json!(["editor"]), json!(7))
+            );
+        }
+    }
+
+    mod branch_ops_json {
+        use super::*;
+
+        #[test]
+        fn accepts_an_array() {
+            assert!(read_ops_json(Some(r#"[{"op":"cutAdd","start":1,"end":2}]"#), false).is_ok());
+        }
+
+        #[test]
+        fn rejects_a_bare_object() {
+            assert!(read_ops_json(Some(r#"{"op":"cutAdd"}"#), false).is_err());
+        }
+
+        #[test]
+        fn rejects_unparseable_json() {
+            assert!(read_ops_json(Some("[not json"), false).is_err());
+        }
+
+        #[test]
+        fn rejects_both_sources_at_once() {
+            assert!(read_ops_json(Some("[]"), true).is_err());
+        }
+
+        #[test]
+        fn rejects_neither_source() {
+            assert!(read_ops_json(None, false).is_err());
+        }
+    }
+
+    mod branch_cli {
+        use super::*;
+
+        fn parse(args: &[&str]) -> Cli {
+            Cli::try_parse_from(args).expect("parse")
+        }
+
+        #[test]
+        fn append_reads_the_expected_seq_guard() {
+            let cli = parse(&[
+                "recast",
+                "branch",
+                "append",
+                "p.recast",
+                "--branch",
+                "a1",
+                "--idem-key",
+                "k1",
+                "--ops",
+                "[]",
+                "--expect-seq",
+                "3",
+            ]);
+
+            let Command::Branch {
+                action: BranchAction::Append { expect_seq, .. },
+            } = cli.command
+            else {
+                panic!("expected branch append");
+            };
+            assert_eq!(expect_seq, Some(3));
+        }
+
+        #[test]
+        fn apply_requires_a_writer_id() {
+            let result =
+                Cli::try_parse_from(["recast", "branch", "apply", "p.recast", "--branch", "a1"]);
+
+            assert!(result.is_err());
+        }
+    }
 
     #[test]
     fn duration_parsing() {

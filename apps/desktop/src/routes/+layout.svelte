@@ -6,10 +6,12 @@ import "../app.css";
 import "@recast/player/styles.css";
 
 import { onNavigate } from "$app/navigation";
-import { page } from "$app/state";
+import { navigating, page } from "$app/state";
 import { handleDeepLink } from "$lib/deepLink";
-import { setEditorHostHooks, setLogSink } from "@recast/editor";
-import { setEditorServicesForApp } from "$lib/editor/services";
+import { setAgentSessionDriver, setEditorHostHooks, setLogSink } from "@recast/editor";
+import { tauriAgentSessionDriver } from "$lib/editor/agent-session.tauri";
+import { workerHost } from "$lib/workers";
+import { setEditorServicesForApp } from "@recast/editor/lib/editor/services";
 import { chordLabel, registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { tauriEditorServices } from "$lib/editor/services.tauri";
@@ -27,9 +29,13 @@ setEditorServicesForApp(tauriEditorServices);
 // telemetry, shortcut chords and the export-render pause keep working.
 setEditorHostHooks({
 	analytics,
+	workers: workerHost,
 	shortcuts: { chordLabel, registerShortcutHandlers },
 	exportActivity,
 });
+// Lets the editor observe agent edits + the project write-lock. Without a
+// driver installed the listener stays idle, which is the web build's behaviour.
+setAgentSessionDriver(tauriAgentSessionDriver);
 setLogSink(log);
 
 // First-run privacy prompt, shown once in the main window only.
@@ -98,8 +104,8 @@ import { dispatchShortcut } from "$lib/shortcuts/registry.svelte";
 import FirstRunConsent from "$components/FirstRunConsent.svelte";
 import { analytics } from "$lib/analytics/client";
 import { desktopConsent } from "$lib/stores/consent.svelte";
-import { initAssets } from "$lib/assets";
-import { initExtensions } from "$lib/extensions";
+import { initAssets } from "@recast/editor/lib/assets";
+import { initExtensions } from "@recast/editor/lib/extensions";
 import { NavProgress } from "@recast/ui/nav-progress";
 import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
 import { isOverlayRoute } from "$lib/runtime/overlay-routes";
@@ -347,7 +353,7 @@ $effect(() => {
 />
 
 <TooltipProvider>
-  <NavProgress />
+  <NavProgress active={navigating.to !== null} />
   <ModeWatcher />
   <!-- Gate the Toaster out of overlay windows (too small to host a Sonner card);
        toast.* becomes a no-op there. -->

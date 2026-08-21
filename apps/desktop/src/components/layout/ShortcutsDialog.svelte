@@ -1,6 +1,6 @@
 <script lang="ts">
 import * as Dialog from "@recast/ui/dialog";
-import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
+import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
 import { cn } from "@recast/ui/utils";
 import { Kbd } from "@recast/ui/kbd";
 import { Keyboard } from "@recast/icons";

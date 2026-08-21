@@ -1,4 +1,5 @@
 ---
+kind: post
 title: "Rebuilding Recast's editor preview on WebCodecs"
 description: "We replaced the editor's video element with a decode pipeline we control: WebCodecs for video, a second decoder to hide cut latency, resolution-aware caching, range-based loading for large recordings, and a Web Audio engine that keeps sound aligned with cuts."
 slug: rebuilding-editor-preview-on-webcodecs
@@ -12,7 +13,7 @@ An HTML video element is very good at playing a video file. It is the wrong tool
 
 Recast's editor lets you cut sections out of a recording and play the result back before you export it. For a long time the preview that played that edited timeline was an ordinary HTML `<video>` element. It worked fine until you actually made a cut. Play across the gap and the picture froze for somewhere between half a second and a few seconds, then snapped back into motion. On a 4K screen recording the freeze was long enough that the feature felt broken.
 
-This post is about fixing that, which turned into a rewrite of how the preview decodes video and plays audio. It covers the move from a `<video>` element to WebCodecs, a second decoder that hides the cost of crossing a cut, caching that adapts to resolution, a loading path for multi-gigabyte recordings, and a Web Audio engine that keeps audio lined up with the cuts. A few of these we got wrong the first time, and I will be specific about where.
+Fixing it meant rewriting how the preview decodes video and plays audio: WebCodecs instead of the element, a second decoder to hide the cost of crossing a cut, a cache sized against resolution, and a Web Audio engine that stays on the edited timeline rather than the source one. Several of these we got wrong the first time, and I will say where.
 
 ## Why a video tag cannot do this
 

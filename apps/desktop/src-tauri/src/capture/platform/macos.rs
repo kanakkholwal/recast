@@ -51,7 +51,7 @@
 //!   but is a cross-platform optimization, not a macOS-specific one.
 
 use std::io::Read;
-use std::process::{Child, ChildStderr, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::{Arc, OnceLock};
 use std::thread;
@@ -176,7 +176,9 @@ impl MacosCaptureSource {
             .stdout
             .take()
             .ok_or_else(|| anyhow!("avfoundation FFmpeg stdout pipe missing"))?;
-        let mut stderr = child.stderr.take();
+        // Drained continuously rather than only at EOF: this child lives for the
+        // whole recording, and a full stderr pipe stalls it mid-capture.
+        let stderr = child.stderr.take().map(crate::ffmpeg::StderrTail::spawn);
 
         // Small bounded buffer: the pacer drains several frames per tick, so a
         // depth of 2 keeps the freshest pixels available without letting a
@@ -207,7 +209,7 @@ impl MacosCaptureSource {
                                     // stop (Drop killed it), but surface stderr
                                     // either way so a permission denial that
                                     // prints-then-exits isn't swallowed.
-                                    let msg = read_stderr(&mut stderr);
+                                    let msg = read_stderr(stderr.as_ref());
                                     if read != 0 {
                                         *error.lock() = Some(format!(
                                             "avfoundation capture exited mid-frame \
@@ -329,15 +331,19 @@ impl Drop for MacosCaptureSource {
     }
 }
 
-fn read_stderr(stderr: &mut Option<ChildStderr>) -> String {
-    let mut s = String::new();
-    if let Some(ref mut e) = stderr {
-        let _ = e.read_to_string(&mut s);
+fn read_stderr(tail: Option<&crate::ffmpeg::StderrTail>) -> String {
+    let s = tail.map(|t| t.snapshot()).unwrap_or_default();
+    if s.len() <= 500 {
+        return s;
     }
-    if s.len() > 500 {
-        s.truncate(500);
+    // Keep the END — the failure reason is the last thing FFmpeg printed, not
+    // the banner. Back off to a char boundary; lossy decoding can leave a
+    // multi-byte char straddling the cut.
+    let mut cut = s.len() - 500;
+    while cut < s.len() && !s.is_char_boundary(cut) {
+        cut += 1;
     }
-    s
+    s[cut..].to_string()
 }
 
 /// Ordinal (0-based position in `CGGetActiveDisplayList`) of the display with

@@ -1,6 +1,7 @@
 /** Pure mappers + fps/timer math for the recording panel window. */
 
-import type { CaptureIntentState, LastSource } from "$lib/ipc-types";
+import type { DeviceResolution } from "@recast/editor/lib/profiles";
+import type { CaptureIntentState, LastSource } from "$lib/recorder-types";
 
 export type TargetSource = {
 	type: "monitor" | "window" | "region";
@@ -34,18 +35,11 @@ export function clampFpsToDisplay(
 /** Persisted `LastSource` → the panel's in-memory selected source. */
 export function lastSourceToTarget(last: LastSource): TargetSource {
 	return {
-		type:
-			last.kind === "window"
-				? "window"
-				: last.kind === "region"
-					? "region"
-					: "monitor",
+		type: last.kind === "window" ? "window" : last.kind === "region" ? "region" : "monitor",
 		id: last.id,
 		label: last.label,
 		region:
-			last.kind === "region" &&
-			last.regionWidth != null &&
-			last.regionHeight != null
+			last.kind === "region" && last.regionWidth != null && last.regionHeight != null
 				? {
 						x: last.regionX ?? 0,
 						y: last.regionY ?? 0,
@@ -59,12 +53,7 @@ export function lastSourceToTarget(last: LastSource): TargetSource {
 /** Selected source → the `LastSource` payload persisted for next launch. */
 export function targetToLastSource(source: TargetSource): LastSource {
 	return {
-		kind:
-			source.type === "monitor"
-				? "monitor"
-				: source.type === "window"
-					? "window"
-					: "region",
+		kind: source.type === "monitor" ? "monitor" : source.type === "window" ? "window" : "region",
 		id: source.id,
 		label: source.label,
 		regionX: source.region?.x ?? null,
@@ -81,9 +70,7 @@ export function targetTypeToIntent(type: TargetSource["type"]): string {
 }
 
 /** `CaptureIntent.targetType` → the panel's source type, or null if unset. */
-export function intentToTargetType(
-	t: string | null | undefined,
-): TargetSource["type"] | null {
+export function intentToTargetType(t: string | null | undefined): TargetSource["type"] | null {
 	if (t === "display") return "monitor";
 	if (t === "window" || t === "region") return t;
 	return null;
@@ -125,4 +112,104 @@ export function formatRecordingTimer(elapsedSeconds: number): string {
 		.padStart(2, "0");
 	const ss = (s % 60).toString().padStart(2, "0");
 	return `${mm}:${ss}`;
+}
+
+/** The panel's half of a capture intent: everything it actually drives. */
+export interface PanelSelection {
+	source: TargetSource | null;
+	systemAudio: boolean;
+	micOn: boolean;
+	micDeviceId: string | null;
+	cameraOn: boolean;
+	/** Rust wants the DirectShow friendly name, not the browser device id. */
+	cameraName: string | null;
+}
+
+/**
+ * Fold the panel's selection into an intent, preserving the fields it does not
+ * own (fps, quality, countdown, profile) from `base`.
+ */
+export function buildCaptureIntent(
+	base: CaptureIntentState | null,
+	selection: PanelSelection,
+): CaptureIntentState {
+	const previous: CaptureIntentState = base ?? { targetId: 0, options: { systemAudio: true } };
+	const { source } = selection;
+	return {
+		...previous,
+		targetType: source ? targetTypeToIntent(source.type) : null,
+		targetId: source?.id ?? 0,
+		region: source?.type === "region" && source.region ? source.region : null,
+		options: {
+			...previous.options,
+			systemAudio: selection.systemAudio,
+			microphone: selection.micOn,
+			microphoneDeviceId: selection.micOn ? selection.micDeviceId : null,
+			camera: selection.cameraOn,
+			cameraDeviceId: selection.cameraOn ? selection.cameraName : null,
+		},
+	};
+}
+
+/** Placeholder label for a source named by an intent, before enrichment. */
+export function intentSourceLabel(type: TargetSource["type"], targetId: number): string {
+	if (type === "window") return `Window ${targetId}`;
+	if (type === "region") return "Region";
+	return `Display ${targetId}`;
+}
+
+/** The source an externally-set intent names, or `null` if it names none. */
+export function sourceFromIntent(intent: CaptureIntentState): TargetSource | null {
+	const type = intentToTargetType(intent.targetType);
+	if (!type) return null;
+	return {
+		type,
+		id: intent.targetId,
+		label: intentSourceLabel(type, intent.targetId),
+		region: type === "region" ? (intent.region ?? undefined) : undefined,
+	};
+}
+
+/** What a resolved device means for the panel's toggle and its warning line. */
+export interface DeviceOutcome<T> {
+	/** Carried through so a caller can still tell "none requested" from
+	 *  "requested but unavailable"; the two differ in teardown. */
+	kind: DeviceResolution<T>["kind"];
+	on: boolean;
+	device: T | null;
+	warning: string | null;
+}
+
+/**
+ * Turn a [`DeviceResolution`] into the panel's on/off + warning.
+ *
+ * `describe` names the device for the fallback message; `noun` names the class
+ * of device for the missing one.
+ */
+export function deviceOutcome<T>(
+	resolution: DeviceResolution<T>,
+	profileName: string,
+	noun: string,
+	describe: (device: T) => string,
+): DeviceOutcome<T> {
+	switch (resolution.kind) {
+		case "matched":
+			return { kind: "matched", on: true, device: resolution.device, warning: null };
+		case "fallback":
+			return {
+				kind: "fallback",
+				on: true,
+				device: resolution.device,
+				warning: `“${resolution.requestedLabel}” unavailable, using “${describe(resolution.device)}”`,
+			};
+		case "missing":
+			return {
+				kind: "missing",
+				on: false,
+				device: null,
+				warning: `“${profileName}” wants a ${noun} but none is available`,
+			};
+		default:
+			return { kind: "none", on: false, device: null, warning: null };
+	}
 }

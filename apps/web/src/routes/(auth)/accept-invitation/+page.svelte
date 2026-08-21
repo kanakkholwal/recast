@@ -106,34 +106,34 @@ async function sendSignInLink() {
 				>
 					<Logo size="22" color="transparent" fill="currentColor" />
 				</span>
-				<span class="text-lg font-semibold tracking-tight text-foreground">Recast</span>
+				<span class="text-body-lg font-semibold tracking-tight text-foreground">Recast</span>
 			</a>
 
-			<span class="glass-chip mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+			<span class="pill mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-body-sm font-medium text-primary">
 				<MailCheck class="size-3" />
 				Team invitation
 			</span>
 
-			<h1 class="text-balance mt-5 text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
+			<h1 class="text-balance mt-5 text-heading font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
 				Join {data.invite.orgName}
 			</h1>
-			<p class="text-pretty mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
+			<p class="text-pretty mt-3 max-w-sm text-body-sm leading-relaxed text-muted-foreground">
 				You'll join as <span class="font-medium text-foreground">{data.invite.role}</span>.
 			</p>
 		</div>
 
-		<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
+		<div class="surface mt-8 p-6">
 			{#if data.invite.status !== "pending"}
-				<div class="flex flex-col items-center gap-3 text-center text-sm text-muted-foreground">
-					<AlertTriangle class="size-5 text-amber-500" />
+				<div class="flex flex-col items-center gap-3 text-center text-body-sm text-muted-foreground">
+					<AlertTriangle class="size-5 text-tag-tangerine" />
 					<span>
 						This invitation has already been
 						<span class="font-medium text-foreground">{data.invite.status}</span>.
 					</span>
 				</div>
 			{:else if data.invite.expired}
-				<div class="flex flex-col items-center gap-3 text-center text-sm text-muted-foreground">
-					<AlertTriangle class="size-5 text-amber-500" />
+				<div class="flex flex-col items-center gap-3 text-center text-body-sm text-muted-foreground">
+					<AlertTriangle class="size-5 text-tag-tangerine" />
 					<span>This invitation has expired. Ask the team owner to resend it.</span>
 				</div>
 			{:else if !data.viewer}
@@ -143,15 +143,15 @@ async function sendSignInLink() {
 				     row server-side, so the link will go through. -->
 				{#if linkSent}
 					<div
-						class="flex flex-col items-center gap-3 text-center text-sm"
+						class="flex flex-col items-center gap-3 text-center text-body-sm"
 						in:fly={{ y: 6, duration: 280, easing: cubicOut }}
 					>
-						<span class="glass-chip grid size-11 place-items-center rounded-xl text-primary">
+						<span class="pill grid size-11 place-items-center rounded-xl text-primary">
 							<MailCheck class="size-5" />
 						</span>
 						<div>
 							<p class="font-semibold text-foreground">Check your inbox</p>
-							<p class="mt-1 text-xs text-muted-foreground">
+							<p class="mt-1 text-caption text-muted-foreground">
 								We sent a one-time sign-in link to
 								<span class="font-mono font-semibold text-foreground">{data.invite.email}</span>.
 								Click it and you'll land back here to accept.
@@ -159,7 +159,7 @@ async function sendSignInLink() {
 						</div>
 					</div>
 				{:else}
-					<div class="space-y-3 text-sm">
+					<div class="space-y-3 text-body-sm">
 						<p class="text-muted-foreground">
 							Sign in as
 							<span class="font-mono font-semibold text-foreground">{data.invite.email}</span>
@@ -174,7 +174,7 @@ async function sendSignInLink() {
 							{/if}
 							{sendingLink ? "Sending…" : "Email me a sign-in link"}
 						</Button>
-						<p class="text-center text-[11px] text-muted-foreground">
+						<p class="text-center text-caption text-muted-foreground">
 							Already have a password?
 							<a
 								href={`/login?next=${encodeURIComponent(`/accept-invitation?id=${data.invite.id}`)}`}
@@ -186,9 +186,9 @@ async function sendSignInLink() {
 					</div>
 				{/if}
 			{:else if !data.viewer.emailMatches}
-				<div class="space-y-3 text-sm text-muted-foreground">
-					<div class="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5">
-						<AlertTriangle class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+				<div class="space-y-3 text-body-sm text-muted-foreground">
+					<div class="flex items-start gap-2.5 rounded-lg border border-border-low bg-paper p-3.5">
+						<AlertTriangle class="mt-0.5 size-4 shrink-0 text-tag-tangerine" />
 						<span>
 							This invitation is for
 							<span class="font-mono font-semibold text-foreground">{data.invite.email}</span>,
@@ -231,7 +231,7 @@ async function sendSignInLink() {
 						{rejecting ? "Declining…" : "Decline"}
 					</Button>
 				</div>
-				<p class="mt-4 text-center text-[11px] text-muted-foreground">
+				<p class="mt-4 text-center text-caption text-muted-foreground">
 					Signed in as <span class="font-medium text-foreground">{data.viewer.email}</span>
 			</p>
 		{/if}

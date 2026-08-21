@@ -8,12 +8,16 @@ import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
 import { slide } from "svelte/transition";
 
-// Minimal inline nav: brand left, links centered, Download primary right, with
-// a compact disclosure on mobile. Replaces the old hamburger-collapse menu so
-// the links are always visible, matching the refined hero direction.
+// Minimal top bar: logo left, links centred, two-button cluster right. A
+// hairline bottom border does the separating, so the bar needs no blur, no
+// shadow, and no floating pill.
 let open = $state(false);
 const reduced = $derived(prefersReducedMotion());
 const close = () => (open = false);
+
+// The bar is invisible over the hero and only materialises once content is
+// behind it. A permanent hairline reads as a frame around the page.
+let scrolled = $state(false);
 
 // Signed-in visitors get "Dashboard" where signed-out ones get "Sign in". The
 // signed-out pair is also what renders while the session resolves — it's the
@@ -25,37 +29,42 @@ const signedIn = $derived(Boolean($session.data?.user));
 // whitespace-nowrap is load-bearing: without it "Sign in" wraps to two lines
 // and the whole bar grows a row as soon as the viewport tightens.
 const linkClass =
-	"inline-flex items-center whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground";
+	"inline-flex items-center whitespace-nowrap rounded-full px-4 py-2 text-body-sm font-medium text-muted-foreground transition-colors hover:text-foreground";
 </script>
 
 <svelte:window
   onkeydown={(e) => {
     if (e.key === "Escape") close();
   }}
+  onscroll={() => (scrolled = window.scrollY > 8)}
 />
 
-<div class="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
+<div
+  class="fixed inset-x-0 top-0 z-50 border-b transition-colors duration-200 {scrolled || open
+    ? 'border-border-low bg-background'
+    : 'border-transparent bg-transparent'}"
+>
   <nav
     aria-label="Primary"
-    class="glass-strong border-border-subtle flex w-full max-w-3xl items-center gap-2 rounded-xl p-1.5"
+    class="mx-auto flex h-16 w-full max-w-6xl items-center gap-2 px-6 sm:px-8 lg:px-10"
   >
     <a
       href="/"
-      class="group/logo flex shrink-0 items-center gap-2.5 rounded-xl px-2 py-1 transition-transform active:scale-[0.97]"
+      class="group/logo flex shrink-0 items-center gap-2.5 rounded-lg py-1 pr-2"
       aria-label="Recast home"
     >
       <span
-        class="grid size-7 place-items-center rounded-lg bg-foreground p-1 text-background shadow-craft-sm transition-transform group-hover/logo:rotate-[-4deg]"
+        class="grid size-7 place-items-center rounded-lg bg-foreground p-1 text-background"
       >
         <Logo size="20" color="transparent" fill="currentColor" />
       </span>
-      <span class="text-[15px] font-semibold tracking-tight whitespace-nowrap text-foreground">
+      <span class="whitespace-nowrap text-body font-semibold text-foreground">
         Recast
       </span>
     </a>
 
     <!-- Inline links, centered (desktop only). -->
-    <ul class="hidden flex-1 items-center justify-center gap-0.5 md:flex">
+    <ul class="hidden flex-1 items-center justify-center gap-1 md:flex">
       {#each navLinks as link (link.href)}
         <li>
           <a href={link.href} class={linkClass}>{link.label}</a>
@@ -63,13 +72,13 @@ const linkClass =
       {/each}
     </ul>
 
-    <div class="ml-auto flex shrink-0 items-center gap-1.5 md:ml-0">
+    <div class="ml-auto flex shrink-0 items-center gap-2 md:ml-0">
       <a
         href={GITHUB_URL}
         target="_blank"
         rel="noopener noreferrer"
         aria-label="Recast on GitHub"
-        class="hidden size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground md:grid"
+        class="hidden size-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:text-foreground md:grid"
       >
         <GithubBrand class="size-4" />
       </a>
@@ -81,16 +90,14 @@ const linkClass =
       {:else}
         <a href="/login" class="hidden {linkClass} md:inline-flex">Sign in</a>
       {/if}
-      <Button href="/download" size="sm" variant="dark" class="gap-1.5">
-        Download
-      </Button>
+      <Button href="/download" size="sm" variant="dark">Download</Button>
       <button
         type="button"
         onclick={() => (open = !open)}
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? "Close menu" : "Open menu"}
-        class="grid size-9 place-items-center rounded-lg text-foreground transition-colors hover:bg-foreground/5 md:hidden"
+        class="grid size-9 place-items-center rounded-lg text-foreground transition-colors hover:bg-paper md:hidden"
       >
         {#if open}
           <X class="size-5" />
@@ -113,7 +120,7 @@ const linkClass =
   ></button>
   <div
     id="mobile-nav"
-    class="glass-strong fixed inset-x-4 top-19 z-50 rounded-2xl p-2 md:hidden"
+    class="fixed inset-x-4 top-18 z-50 rounded-xl border border-border-low bg-card p-2 md:hidden"
     transition:slide={{ duration: reduced ? 0 : 200 }}
   >
     <ul class="flex flex-col">
@@ -122,7 +129,7 @@ const linkClass =
           <a
             href={link.href}
             onclick={close}
-            class="block rounded-lg px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 hover:text-foreground"
+            class="block rounded-lg px-3 py-2.5 text-body-sm font-medium text-foreground transition-colors hover:bg-paper"
           >
             {link.label}
           </a>
@@ -134,19 +141,19 @@ const linkClass =
           target="_blank"
           rel="noopener noreferrer"
           onclick={close}
-          class="block rounded-lg px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 hover:text-foreground"
+          class="block rounded-lg px-3 py-2.5 text-body-sm font-medium text-foreground transition-colors hover:bg-paper"
         >
           GitHub
         </a>
       </li>
     </ul>
 
-    <div class="mt-2 border-t border-border-low/60 pt-2">
+    <div class="mt-2 border-t border-border-low pt-2">
       {#if signedIn}
         <a
           href="/dashboard"
           onclick={close}
-          class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-foreground/5"
+          class="block rounded-lg px-3 py-2.5 text-body-sm font-semibold text-foreground transition-colors hover:bg-paper"
         >
           Go to dashboard
         </a>
@@ -154,14 +161,14 @@ const linkClass =
         <a
           href="/login"
           onclick={close}
-          class="block rounded-lg px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 hover:text-foreground"
+          class="block rounded-lg px-3 py-2.5 text-body-sm font-medium text-foreground transition-colors hover:bg-paper"
         >
           Sign in
         </a>
         <a
           href="/signup"
           onclick={close}
-          class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-foreground/5"
+          class="block rounded-lg px-3 py-2.5 text-body-sm font-semibold text-foreground transition-colors hover:bg-paper"
         >
           Start free
         </a>

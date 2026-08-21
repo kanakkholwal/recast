@@ -9,12 +9,27 @@ interface Props {
 	 *  instead of only the playhead. */
 	timeMode: TimeMode;
 	fps: number;
+	/** Visible scroll window in px. Ticks are built only for this slice — a
+	 *  30-min project at 0.25s spacing is 7,200 tick nodes, and they used to all
+	 *  live in the layout tree at once regardless of what was on screen. */
+	viewportLeftPx?: number;
+	viewportWidthPx?: number;
 }
 
-let { duration, pixelsPerSecond, timeMode, fps }: Props = $props();
+let { duration, pixelsPerSecond, timeMode, fps, viewportLeftPx, viewportWidthPx }: Props = $props();
 
-const timeMarkers = $derived(buildTimeMarkers(duration, pixelsPerSecond, timeMode, fps));
-const minorTicks = $derived(buildMinorTicks(duration, pixelsPerSecond));
+// One screen of overscan each side so a scroll doesn't reveal a bare edge
+// before the next frame builds the ticks.
+const window_ = $derived.by(() => {
+	if (viewportLeftPx === undefined || !viewportWidthPx || pixelsPerSecond <= 0) return undefined;
+	return {
+		startSec: Math.max(0, (viewportLeftPx - viewportWidthPx) / pixelsPerSecond),
+		endSec: (viewportLeftPx + viewportWidthPx * 2) / pixelsPerSecond,
+	};
+});
+
+const timeMarkers = $derived(buildTimeMarkers(duration, pixelsPerSecond, timeMode, fps, window_));
+const minorTicks = $derived(buildMinorTicks(duration, pixelsPerSecond, window_));
 </script>
 
 <div class="relative h-7 border-b border-border/60 bg-muted/20">

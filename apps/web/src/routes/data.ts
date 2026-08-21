@@ -1,5 +1,4 @@
 import {
-	Apple,
 	BarChart3,
 	Camera,
 	Code2,
@@ -26,7 +25,7 @@ import {
 	VolumeX,
 	Zap,
 } from "@recast/icons";
-import { GithubBrand } from "@recast/ui/brand-icons";
+import { AppleBrand, GithubBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
 
 export type BeforeAfterTone = "raw" | "polished";
 export const beforeAfterClips: Array<{
@@ -68,13 +67,13 @@ export const cloudFeatures = [
 		title: "Access controls",
 		description: "Per-viewer access, password gates, link expiry.",
 	},
+	{
+		icon: HardDrive,
+		title: "Bring your own storage",
+		description: "Google Drive today, S3 and R2 planned. Or let Recast host it.",
+	},
 ];
 
-// Storage tiers — Cloud is intentionally storage-agnostic. Free users
-// bring their own (the Drive flow already shipping today, plus Cloudinary
-// and autorender.io as additional BYO destinations on the roadmap).
-// Paid users get Recast-hosted storage and the option to point uploads
-// at their own S3 / R2 / Azure / GCP bucket.
 export const storageTiers = [
 	{
 		tier: "Free with Cloud",
@@ -119,38 +118,32 @@ export const founderUse = [
 	},
 ];
 
-// Open-source values strip. Sits between the proof shot and the
-// tech-stack logo row. Different signal: the logos say "what we're
-// built on", this strip says "what that buys you as a user".
 export const openSourceClaims = [
 	{ icon: GithubBrand, label: "GPLv3 open source" },
 	{ icon: Cpu, label: "Tauri + Rust" },
-	{ icon: EyeOff, label: "No telemetry" },
+	{ icon: EyeOff, label: "No telemetry without consent" },
 	{ icon: HardDrive, label: "Files never leave your machine" },
 	{ icon: UserX, label: "No account required" },
 ];
 
-// Platform-split download buttons for the final CTA. Mirrors the
-// stability semantics in /download so the marketing voice never
-// over-promises the macOS or Linux builds.
 export const platformDownloads = [
 	{
 		os: "Windows",
-		icon: Monitor,
+		icon: WindowsBrand,
 		href: "/download?os=windows",
 		variant: "default" as const,
 		stability: "stable" as const,
 	},
 	{
 		os: "macOS",
-		icon: Apple,
+		icon: AppleBrand,
 		href: "/download?os=macos",
 		variant: "dark" as const,
 		stability: "beta" as const,
 	},
 	{
 		os: "Linux",
-		icon: Terminal,
+		icon: LinuxBrand,
 		href: "/download?os=linux",
 		variant: "dark" as const,
 		stability: "beta" as const,
@@ -168,10 +161,6 @@ export const stabilityChip: Record<"stable" | "beta", { label: string; cls: stri
 	},
 };
 
-// `cls` above assumes a page/card surface. Inside a filled button the chip
-// sits on primary or foreground, where emerald-600 and amber-600 both fail
-// contrast — so there it derives from the button's own ink instead, and the
-// label is what distinguishes stable from beta.
 export const stabilityChipOnFill = "bg-current/20 ring-current/35";
 
 // "OS recorder stops at a file" — contrast rows
@@ -218,8 +207,7 @@ export const recordingFeatures = [
 	{
 		icon: Layers,
 		title: "Recording profiles",
-		description:
-			"Save capture presets and switch with one shortcut. Investor demo, changelog clip, tutorial: pick the profile, hit record.",
+		description: "Save capture presets and switch with one shortcut. Pick a profile, hit record.",
 	},
 	{
 		icon: Pause,
@@ -266,8 +254,7 @@ export const extensionBeat = [
 	{
 		icon: ShieldCheck,
 		title: "Safe by design",
-		description:
-			"Every pack is a manifest plus static files. No code runs, every asset is hash-checked, and nothing asks for permission.",
+		description: "A manifest plus static files. No code runs and every asset is hash-checked.",
 	},
 ];
 
@@ -293,55 +280,46 @@ export const editorFeatures: Array<{
 	icon: typeof Target;
 	title: string;
 	description: string;
-	image: string | null;
 }> = [
 	{
 		kind: "auto",
 		icon: Target,
 		title: "Smart zoom on clicks",
 		description:
-			"Recast watches your cursor, reads clicks and dwell, and zooms toward the moment that matters. You set zero keyframes.",
-		image: null,
+			"Reads clicks and dwell, then zooms toward the moment that matters. Zero keyframes.",
 	},
 	{
 		kind: "auto",
 		icon: VolumeX,
 		title: "Silence trimming",
-		description:
-			"Detects dead-air segments (quiet audio + still cursor) and offers them up as one-click cuts. Toggle them off any time.",
-		image: "/screenshots/feat-silence-trim.png",
+		description: "Finds dead air (quiet audio, still cursor) and offers one-click cuts.",
 	},
 	{
 		kind: "auto",
 		icon: MousePointer2,
 		title: "Cursor smoothing",
 		description:
-			"Velocity-aware easing kills the jitter, with optional snap-to-target so the path lands where you meant to point.",
-		image: "/screenshots/feat-cursor-smoothing.png",
+			"Velocity-aware easing kills the jitter and lands the path where you meant to point.",
 	},
 	{
 		kind: "manual",
 		icon: Zap,
 		title: "Zoom regions on the timeline",
-		description:
-			"Drag any moment to add a focus region. The auto picks are just a starting point. Every position, scale, and easing is yours to tweak.",
-		image: "/screenshots/feat-zoom-regions.png",
+		description: "Drag any moment to add a focus region. Position, scale and easing are all yours.",
 	},
 	{
 		kind: "manual",
 		icon: Highlighter,
 		title: "Annotations & blur",
 		description:
-			"Drop arrows, rectangles, text, or a privacy blur straight on the frame. Layers live on the timeline alongside everything else.",
-		image: "/screenshots/feat-annotations.png",
+			"Drop arrows, boxes, text or a privacy blur on the frame. Layers live on the timeline.",
 	},
 	{
 		kind: "manual",
 		icon: Camera,
 		title: "Camera bubble",
 		description:
-			"Record yourself in a draggable bubble with shape, border, and follow-the-cursor motion. No second app. No green screen.",
-		image: "/screenshots/feat-camera-bubble.png",
+			"A draggable camera bubble with shape, border and cursor-following motion. No second app.",
 	},
 ];
 
@@ -367,7 +345,7 @@ export const faqs: Array<{ q: string; a: string }> = [
 	},
 	{
 		q: "Is it really free? What costs money?",
-		a: "The app is free forever, no account needed. Recast Cloud (hosted sharing with analytics and access controls) is the paid add-on, coming soon. Today you can share straight to your own Google Drive.",
+		a: "The app is free forever, no account needed. Recast Cloud, the hosted sharing add-on, is coming soon. Today you share straight to your own Google Drive.",
 	},
 	{
 		q: "Can I record my camera and mic too?",
@@ -407,3 +385,74 @@ export const kindChip: Record<FeatureKind, { label: string; dot: string; ring: s
 		ring: "text-foreground/70 ring-border-low/60",
 	},
 };
+
+// Three-up detail rows closing each pillar section. Deliberately separate from
+// the longer `recordingFeatures` / `polishFeatures` / `shareFeatures` copy: this
+// row is scanned, not read, so each line is one claim.
+export const recordColumns = [
+	{
+		icon: Monitor,
+		title: "Region, window, or screen",
+		description: "One shortcut starts the capture. No project, no codec picker, no account.",
+		href: "/features",
+		linkLabel: "See capture",
+	},
+	{
+		icon: Layers,
+		title: "Recording profiles",
+		description:
+			"Save capture presets and switch with one shortcut between demo, clip, and tutorial.",
+		href: "/features",
+	},
+	{
+		icon: Pause,
+		title: "Pause and resume",
+		description: "A knock at the door no longer means re-recording. Paused spans trim out cleanly.",
+		href: "/features",
+	},
+];
+
+export const polishColumns = [
+	{
+		icon: Zap,
+		title: "Smart zoom",
+		description: "Recast pushes in toward the action so viewers never miss the point.",
+		href: "/features",
+	},
+	{
+		icon: MousePointer2,
+		title: "Cursor refinement",
+		description: "Velocity smoothing kills twitchy paths and snaps the pointer to its target.",
+		href: "/features",
+	},
+	{
+		icon: VolumeX,
+		title: "Silence cuts",
+		description:
+			"Dead air is detected and trimmed, so the finished take lands shorter than the raw one.",
+		href: "/features",
+	},
+];
+
+export const shareColumns = [
+	{
+		icon: HardDriveUpload,
+		title: "Straight to your Drive",
+		description: "Connect once. Exports upload to your own account, not to a server we own.",
+		href: "/pricing",
+	},
+	{
+		icon: Link2,
+		title: "Link in one click",
+		description: "The share link is ready the moment the upload finishes. No second tab.",
+		href: "/pricing",
+	},
+	{
+		icon: BarChart3,
+		title: "Watch analytics",
+		description:
+			"Recast Cloud adds view counts, per-viewer access, and link expiry when a raw link stops being enough.",
+		href: "/pricing",
+		linkLabel: "See Cloud",
+	},
+];

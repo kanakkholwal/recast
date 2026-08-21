@@ -1,5 +1,6 @@
 # Turborepo internal cache
 .turbo
+.scratch
 
 node_modules
 
@@ -33,3 +34,6 @@ Thumbs.db
 */.turbo
 
 *.turbo/turbo-build.log
+
+# Local scratch (audit reports, working notes) — never committed
+.scratch/

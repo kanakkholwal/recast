@@ -1,11 +1,12 @@
 ---
+kind: post
 title: "Teaching Recast to read its own recordings"
 description: "We want an agent to understand what happened in a screen recording, frame by frame, even when there is no narration to lean on. This is the research behind that feature: why we anchor on pixels instead of audio, why we picked a text-first pipeline over feeding screenshots to a vision model, and the two things I had backwards before I looked them up."
 slug: teaching-recast-to-read-its-recordings
 date: 2026-07-13
 author: Kanak
 tags: [engineering, desktop, ocr, agents, research, video, tauri]
-published: true
+published: false
 ---
 
 Recast is heading toward automation. The plan is that you can drive it from a command line, and eventually let an agent drive it for you: record this, trim that, export with these settings. For any of that to be more than a remote control, the agent has to understand what is on the screen. Not the file, the screen. What window is open, what text is showing, what the user just clicked.

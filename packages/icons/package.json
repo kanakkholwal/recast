@@ -1,35 +1,40 @@
 {
-  "name": "@recast/icons",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "echo \"no build step — direct TS export\""
-  },
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
-    },
-    "./tabler": {
-      "types": "./src/tabler/index.ts",
-      "default": "./src/tabler/index.ts"
-    },
-    "./ai": {
-      "types": "./src/ai/index.ts",
-      "default": "./src/ai/index.ts"
-    },
-    "./types": {
-      "types": "./src/types.ts",
-      "default": "./src/types.ts"
-    }
-  },
-  "peerDependencies": {
-    "svelte": "^5.56.1"
-  },
-  "dependencies": {
-    "@phosphor-icons/core": "2.1.1",
-    "@tabler/icons-svelte": "^3.44.0",
-    "clsx": "^2.1.1"
-  }
+	"name": "@recast/icons",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "echo \"no build step — direct TS export\"",
+		"check": "svelte-check --tsconfig ./tsconfig.json --threshold error"
+	},
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./tabler": {
+			"types": "./src/tabler/index.ts",
+			"default": "./src/tabler/index.ts"
+		},
+		"./ai": {
+			"types": "./src/ai/index.ts",
+			"default": "./src/ai/index.ts"
+		},
+		"./types": {
+			"types": "./src/types.ts",
+			"default": "./src/types.ts"
+		}
+	},
+	"peerDependencies": {
+		"svelte": "^5.56.1"
+	},
+	"dependencies": {
+		"@phosphor-icons/core": "2.1.1",
+		"@tabler/icons-svelte": "^3.44.0",
+		"clsx": "^2.1.1"
+	},
+	"devDependencies": {
+		"svelte-check": "^4.4.2",
+		"typescript": "^5.9.3"
+	}
 }

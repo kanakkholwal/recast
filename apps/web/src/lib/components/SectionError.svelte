@@ -49,7 +49,7 @@ const StatusIcon = $derived(pickStatusIcon(status, isServerError));
 			<StatusIcon class="size-5" />
 		</span>
 
-		<p class="mt-5 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+		<p class="mt-5 text-caption font-medium text-muted-foreground">
 			{copy.eyebrow}
 		</p>
 		<h1 class="text-balance mt-2 text-xl font-semibold tracking-tight text-foreground">

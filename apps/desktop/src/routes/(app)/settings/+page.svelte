@@ -36,7 +36,7 @@ import {
 	persistRecordingFps,
 	persistRecordingQuality,
 	type RecordingQuality,
-} from "$lib/profiles";
+} from "@recast/editor/lib/profiles";
 import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
 import {
 	DEFAULT_SETTINGS_TAB,
@@ -90,7 +90,7 @@ import {
 	FLAG_META,
 	experimentalStore,
 	type ExperimentalFlag,
-} from "$lib/stores/experimental.svelte";
+} from "@recast/editor/stores/experimental.svelte";
 import { LAYOUT_MODES, layoutMode, type LayoutMode } from "$lib/stores/layout-mode.svelte";
 import { profilesStore } from "$lib/stores/profiles.svelte";
 import { recordingCountdown, type CountdownSeconds } from "$lib/stores/recording-countdown.svelte";
@@ -793,7 +793,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
 
         <Tabs.Content value="cloud" class="flex min-w-0 flex-col gap-8">
               <!-- Optional. Cloud unlocks the Loom-style sharing layer. Free
-                   tier = 10 active links + watermark; paid removes both. -->
+                   tier = 10 active links; paid lifts the cap. -->
               <SectionCard
                 id="settings-cloud"
                 label="Recast Cloud"

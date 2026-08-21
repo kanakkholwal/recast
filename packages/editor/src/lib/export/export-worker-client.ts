@@ -7,6 +7,7 @@
 import { collectTransferables, type ExportJob } from "./export-job";
 import type { ExportRuntime } from "./run-export-job";
 import type { FromExportWorker, ToExportWorker } from "./export-worker-protocol";
+import { createEditorWorker } from "../host-hooks";
 
 /** Whether this runtime can host the export worker (dedicated Worker + OffscreenCanvas). */
 export function exportWorkerSupported(): boolean {
@@ -27,9 +28,7 @@ export function runExportJobInWorker(
 			reject(new DOMException("export cancelled", "AbortError"));
 			return;
 		}
-		const worker = new Worker(new URL("./export-render.worker", import.meta.url), {
-			type: "module",
-		});
+		const worker = createEditorWorker("exportRender");
 		const onAbort = () => post({ type: "cancel" });
 		const cleanup = () => {
 			runtime.signal?.removeEventListener("abort", onAbort);

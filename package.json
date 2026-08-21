@@ -5,10 +5,10 @@
 		"sharp": "^0.34.5"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.5",
-		"@changesets/cli": "^2.31.0",
+		"@biomejs/biome": "^2.5.9",
+		"@changesets/cli": "^2.31.1",
 		"husky": "^9.1.7",
-		"turbo": "^2.9.16"
+		"turbo": "^2.10.11"
 	},
 	"scripts": {
 		"prepare": "husky",
@@ -20,7 +20,7 @@
 		"build:desktop": "turbo build --filter=recast-desktop",
 		"build:web": "turbo build --filter=recast-web",
 		"build:packages": "turbo build --filter=@recast/*",
-		"check": "turbo check",
+		"check": "node scripts/verify-package-scripts.mjs && turbo check",
 		"fmt": "pnpm fmt:rust && pnpm fmt:js",
 		"fmt:check": "pnpm fmt:rust:check && pnpm fmt:js:check",
 		"fmt:rust": "turbo fmt",
@@ -29,9 +29,12 @@
 		"fmt:js:check": "biome format .",
 		"lint": "turbo lint",
 		"lint:fix": "turbo lint:fix",
-		"test": "pnpm test:captions && pnpm test:media && pnpm test:web && pnpm test:desktop && pnpm test:rust",
+		"test": "pnpm test:captions && pnpm test:media && pnpm test:editor && pnpm test:player && pnpm test:render && pnpm test:application && pnpm test:web && pnpm test:desktop && pnpm test:rust",
 		"test:captions": "pnpm --filter @recast/captions test:unit",
 		"test:media": "pnpm --filter @recast/media test:unit",
+		"test:editor": "pnpm --filter @recast/editor test:unit",
+		"test:player": "pnpm --filter @recast/player test:unit",
+		"test:render": "pnpm --filter @recast/render test:unit",
 		"test:web": "pnpm --filter recast-web test:unit",
 		"test:desktop": "pnpm --filter recast-desktop test:unit",
 		"test:rust": "pnpm --filter recast-desktop test:rust",
@@ -42,7 +45,9 @@
 		"changeset": "changeset",
 		"changeset:status": "changeset status --verbose",
 		"release:prepare": "node scripts/release-prepare.mjs",
-		"sync:changelog": "node scripts/sync-desktop-changelog.mjs"
+		"sync:changelog": "node scripts/sync-desktop-changelog.mjs",
+		"test:application": "pnpm --filter @recast/application test:unit",
+		"verify:package-scripts": "node scripts/verify-package-scripts.mjs"
 	},
 	"packageManager": "pnpm@11.13.0"
 }

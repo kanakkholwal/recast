@@ -15,6 +15,7 @@ import {
 	type FromRenderWorker,
 	type ToRenderWorker,
 } from "./render-worker-protocol";
+import { createEditorWorker } from "../host-hooks";
 
 export interface RenderWorkerClientOptions {
 	canvas: HTMLCanvasElement;
@@ -47,7 +48,7 @@ export class RenderWorkerClient {
 		// alpha blending on every present (MDN canvas-optimization guidance).
 		this.#present = opts.canvas.getContext("bitmaprenderer", { alpha: false });
 		if (!this.#present) throw new Error("bitmaprenderer context unavailable");
-		this.#worker = new Worker(new URL("./render-worker", import.meta.url), { type: "module" });
+		this.#worker = createEditorWorker("render");
 		this.#worker.onmessage = (e: MessageEvent<FromRenderWorker>) => this.#onMessage(e.data);
 		this.#worker.postMessage({
 			type: "init",
@@ -140,9 +141,23 @@ export class RenderWorkerClient {
 	}
 
 	/** Hand a caller-owned fallback frame (e.g. `new VideoFrame(videoEl)`) to the
-	 *  worker via the control channel — ordered before the next render, and the
-	 *  worker takes ownership (transferred), so the caller must NOT close it. */
+	 *  worker via the control channel — ordered before the next render. Ownership
+	 *  moves here either way (transferred, or closed on the drop below), so the
+	 *  caller must NOT close it. */
 	putFallbackFrame(frame: VideoFrame, tsUs: number): void {
+		// The control channel has no mailbox, unlike `renderFrame`. With a render
+		// already in flight its successor is coalesced away, so posting this would
+		// queue a surface the worker never composites — ~12 MB each, 60/s at 4K.
+		// Drop it instead; the ring keeps the previous frame and the render's
+		// `bind`/`bindLast` still finds one.
+		// Before `ready` the worker has no GL context, so `ring.put` is a no-op and
+		// it closes the frame on arrival — posting is pure transfer cost. This is
+		// the widest window in practice: the fallback path runs during MediaBunny
+		// init, which is exactly when the render worker is still starting.
+		if (!this.#ready || this.#inFlight) {
+			frame.close();
+			return;
+		}
 		this.#worker.postMessage({ type: "fallbackFrame", frame, tsUs } satisfies ToRenderWorker, [
 			frame,
 		]);

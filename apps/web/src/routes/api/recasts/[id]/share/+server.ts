@@ -4,13 +4,7 @@ import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
-import {
-	organization,
-	recast,
-	share,
-	shareMember,
-	user,
-} from "$lib/db/schema";
+import { organization, recast, share, shareMember, user } from "$lib/db/schema";
 import { publicEnv } from "$lib/env/public";
 import { hashSharePassword, verifySharePassword } from "$lib/share/password";
 import { emailField } from "$lib/validation/email";
@@ -26,9 +20,7 @@ const generateSlug = customAlphabet(slugAlphabet, 10);
 
 const BodySchema = z
 	.object({
-		visibility: z
-			.enum(["private", "workspace", "selected", "public"])
-			.default("workspace"),
+		visibility: z.enum(["private", "workspace", "selected", "public"]).default("workspace"),
 		// Optional bcrypt-style password — hashed before persist. Empty
 		// string = no password.
 		password: z
@@ -70,7 +62,6 @@ const BodySchema = z
  *     can fill it in.
  *   - The owner is implicitly allowed; don't include them.
  *
- * Watermark: hard-coded `true` for free workspaces, `false` for pro.
  * Looked up via `subscription.plan` for the owner (workspaces inherit
  * the owner's plan in v1 — team-level billing comes later).
  *
@@ -117,7 +108,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 	// Fall back to `private` if somehow missing rather than 500.
 	const orgId = body.visibility === "workspace" ? row.workspaceId : null;
 
-	// Plan gate for watermark + forced expiry. Read the recast's workspace plan
+	// Plan gate for forced expiry. Read the recast's workspace plan
 	// (same source as the quota snapshot) so it stays consistent, and treat both
 	// paid tiers as Pro — `=== "pro"` alone wrongly demoted Enterprise to free.
 	const [org] = await db
@@ -185,7 +176,6 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 			slug: c.slug,
 			shareUrl: `${base}/share/${c.slug}`,
 			visibility: body.visibility,
-			watermark: !isPro,
 			commentsEnabled: body.commentsEnabled,
 			deduped: true,
 		});
@@ -212,10 +202,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 	// `shareMember.userId` for already-registered users. Unregistered
 	// emails get null and will be claimed when they sign in via magic
 	// link (follow-up unlock flow).
-	const resolvedInvitees =
-		invitees.length > 0
-			? await resolveInvitees(invitees, db)
-			: [];
+	const resolvedInvitees = invitees.length > 0 ? await resolveInvitees(invitees, db) : [];
 
 	await db.transaction(async (tx) => {
 		await tx.insert(share).values({
@@ -226,7 +213,6 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 			visibility: body.visibility,
 			passwordHash,
 			expiresAt,
-			watermark: !isPro,
 			commentsEnabled: body.commentsEnabled,
 		});
 
@@ -249,7 +235,6 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 		slug,
 		shareUrl: `${base}/share/${slug}`,
 		visibility: body.visibility,
-		watermark: !isPro,
 		commentsEnabled: body.commentsEnabled,
 	});
 };
@@ -284,7 +269,6 @@ export const GET: RequestHandler = async ({ params, request }) => {
 			organizationId: share.organizationId,
 			hasPassword: share.passwordHash,
 			expiresAt: share.expiresAt,
-			watermark: share.watermark,
 			viewsCount: share.viewsCount,
 			createdAt: share.createdAt,
 		})
@@ -318,4 +302,3 @@ async function resolveInvitees(
 		userId: byEmail.get(inv.email.toLowerCase()) ?? null,
 	}));
 }
-

@@ -19,6 +19,7 @@ import {
 	LANE_PADDING_PX,
 	ROW_HEIGHT_PX,
 } from "./timeline-stack";
+import { frameStep } from "./timeline-helpers";
 
 // Hosts cut bands. Drag empty lane space to carve a cut; drag a band's edges or body to adjust it.
 //
@@ -31,9 +32,10 @@ interface Props {
 	store: EditorStore;
 	pixelsPerSecond: number;
 	duration: number;
+	fps: number;
 }
 
-let { store, pixelsPerSecond, duration }: Props = $props();
+let { store, pixelsPerSecond, duration, fps }: Props = $props();
 
 // Cuts shorter than this are dropped. A sub-100ms removal reads as a glitch.
 const MIN_CUT = 0.1;
@@ -221,6 +223,29 @@ function remove(e: Event, id: string) {
 	e.stopPropagation();
 	store.removeCut(id);
 }
+
+// Keyboard equivalent of dragging the band and its two grips. Mirrors
+// ZoomLayerCard: Shift = 1s, plain = one frame, Alt resizes the trailing edge.
+function onBandKeydown(e: KeyboardEvent, cut: TimelineCut) {
+	if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+	if (duration <= 0) return;
+	e.preventDefault();
+	e.stopPropagation();
+
+	store.pushUndoStateCoalesced(`nudge-cut-${cut.id}`, 600);
+	const delta = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 1 : frameStep(fps));
+	const next = e.altKey
+		? clampCutResize({
+				edge: "r",
+				originStart: cut.start,
+				originEnd: cut.end,
+				delta,
+				duration,
+				minCut: MIN_CUT,
+			})
+		: clampCutMove({ originStart: cut.start, originEnd: cut.end, delta, duration });
+	store.updateCut(cut.id, next.start, next.end);
+}
 </script>
 
 <div
@@ -305,14 +330,16 @@ function remove(e: Event, id: string) {
         tabindex="0"
         data-selectable
         aria-pressed={isSel}
-        aria-label={`Removed section, ${(cut.end - cut.start).toFixed(2)} seconds. Drag to move; press Delete to restore.`}
+        aria-label={`Removed section, ${(cut.end - cut.start).toFixed(2)} seconds. Arrow keys move it, Alt+Arrow resizes it; press Delete to restore.`}
         onpointerdown={(e) => onBandDown(e, cut, "move")}
         onfocus={() => (store.selectedCutId = cut.id)}
         onkeydown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             store.selectedCutId = cut.id;
+            return;
           }
+          onBandKeydown(e, cut);
         }}
         title="Removed section · {(cut.end - cut.start).toFixed(2)}s"
         class="group/cut absolute cursor-grab active:cursor-grabbing {CLIP_BASE} {CLIP_FOCUS} {surface.fill} {isSel

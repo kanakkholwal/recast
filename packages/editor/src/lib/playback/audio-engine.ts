@@ -8,9 +8,9 @@
  * on the audio hardware clock; the cuts are the gaps between chunks, silent and
  * exact, with no seeking during playback.
  *
- * Lifecycle mirrors the picture clock: `play`/`pause`/`reschedule`. Fallback-safe:
- * `create` throws if Web Audio is unavailable or nothing decodes, and the caller
- * drops back to the `<audio>`-element path.
+ * Lifecycle mirrors the picture clock: `play`/`pause`/`reschedule`. `create`
+ * throws if Web Audio is unavailable or nothing decodes; there is no second
+ * audio path any more, so the caller previews silent.
  *
  * Per-track volume: each track carries a `kind` (system or mic) and its own
  * `GainNode`. The engine exposes `setMasterVolume(volume, muted)` for the
@@ -92,6 +92,23 @@ export function musicFadeFactor(
 	return Math.max(0, Math.min(1, f));
 }
 
+/**
+ * Music longer than this streams through a media element instead of being
+ * decoded to PCM. 120 s of 48 kHz stereo float is ~46 MB; a 30-min import
+ * decodes to 691 MB and stayed resident for the whole session.
+ */
+export const MUSIC_BUFFER_MAX_SEC = 120;
+
+/**
+ * How a music source is played back given its length. Buffered playback is
+ * sample-accurate; streaming trades a few ms of start jitter — inaudible for a
+ * background bed — for O(1) memory.
+ */
+export function musicPlaybackMode(sourceDurationSec: number): "buffer" | "stream" {
+	if (!Number.isFinite(sourceDurationSec) || sourceDurationSec <= 0) return "buffer";
+	return sourceDurationSec > MUSIC_BUFFER_MAX_SEC ? "stream" : "buffer";
+}
+
 /** A music/extra-audio clip resolved for playback (url already asset-resolved). */
 export interface MusicClipSpec {
 	url: string;
@@ -102,6 +119,49 @@ export interface MusicClipSpec {
 	fadeIn: number;
 	fadeOut: number;
 	loop: boolean;
+}
+
+/** Give up probing after this and decode instead; a hung probe must not mute music. */
+const PROBE_TIMEOUT_MS = 4000;
+/** `HTMLMediaElement.HAVE_METADATA` — duration and seeking are usable. */
+const HAVE_METADATA = 1;
+
+/**
+ * Source duration in seconds, from metadata only — no decode. NEVER rejects:
+ * an unreadable duration means "unknown", which selects the buffered path, and
+ * a clip `<audio>` can't parse may still decode. Failing here would silently
+ * drop music that used to play.
+ */
+function probeMediaDuration(url: string): Promise<number> {
+	// No `Audio` outside a browser (unit tests): report unknown, which keeps the
+	// buffered path and the behaviour those tests pin.
+	if (typeof Audio === "undefined") return Promise.resolve(Number.NaN);
+	return new Promise((resolve) => {
+		const el = new Audio();
+		let settled = false;
+		const done = (value: number) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			el.onloadedmetadata = null;
+			el.onerror = null;
+			el.removeAttribute("src");
+			resolve(value);
+		};
+		const timer = setTimeout(() => done(Number.NaN), PROBE_TIMEOUT_MS);
+		el.preload = "metadata";
+		el.onloadedmetadata = () => done(el.duration);
+		el.onerror = () => done(Number.NaN);
+		el.src = url;
+	});
+}
+
+/** Playback element for a streamed clip. Never enters the DOM — Web Audio doesn't need it. */
+function makeMusicElement(url: string): HTMLAudioElement {
+	const el = new Audio();
+	el.preload = "auto";
+	el.src = url;
+	return el;
 }
 
 export type AudioTrackKind = "system" | "mic";
@@ -125,6 +185,11 @@ const AUDIO_LOOKAHEAD_SEC = 12;
 const AUDIO_BEHIND_SEC = 4;
 const TOPUP_INTERVAL_MS = 2000;
 
+type MusicEntry = { spec: MusicClipSpec; gain: GainNode; duration: number } & (
+	| { mode: "buffer"; buffer: AudioBuffer }
+	| { mode: "stream"; el: HTMLAudioElement }
+);
+
 export class AudioTimelineEngine {
 	#ctx: AudioContext;
 	#tracks: AudioTrack[] = [];
@@ -147,8 +212,12 @@ export class AudioTimelineEngine {
 	// Music/extra-audio clips on the output timeline, each with its own gain
 	// (routed straight to destination — the master fade applies to the recording
 	// only, matching the export where music is amixed AFTER the source's fade).
-	#music: Array<{ spec: MusicClipSpec; buffer: AudioBuffer; gain: GainNode }> = [];
+	#music: MusicEntry[] = [];
 	#musicActive: AudioBufferSourceNode[] = [];
+	/** Deferred start/stop for streamed clips; a media element has no `start(when)`. */
+	#musicTimers: Array<ReturnType<typeof setTimeout>> = [];
+	/** Bumped on every stop so a deferred streamed start knows it was superseded. */
+	#musicSchedule = 0;
 	// Streaming schedule-ahead state: schedule ~AUDIO_LOOKAHEAD_SEC of output
 	// time past the playhead and evict decoded chunks behind it, so a long
 	// recording never holds the whole file's PCM at once.
@@ -290,18 +359,51 @@ export class AudioTimelineEngine {
 	async setMusicClips(clips: ReadonlyArray<MusicClipSpec>): Promise<void> {
 		const gen = ++this.#musicGen;
 		this.#disposeMusic();
+		// One decode per distinct URL. `AudioBuffer`s are shareable across source
+		// nodes, so the same track placed twice used to cost two full decodes and
+		// two resident copies of its PCM.
+		const decoded = new Map<string, Promise<AudioBuffer>>();
+		const decode = (url: string): Promise<AudioBuffer> => {
+			const existing = decoded.get(url);
+			if (existing) return existing;
+			const pending = fetch(url).then(async (res) => {
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				return this.#ctx.decodeAudioData(await res.arrayBuffer());
+			});
+			decoded.set(url, pending);
+			return pending;
+		};
+		const probed = new Map<string, Promise<number>>();
+		const probe = (url: string): Promise<number> => {
+			const existing = probed.get(url);
+			if (existing) return existing;
+			const pending = probeMediaDuration(url);
+			probed.set(url, pending);
+			return pending;
+		};
 		for (const spec of clips) {
 			if (spec.gain <= 0) continue;
 			try {
-				const res = await fetch(spec.url);
-				if (!res.ok) continue;
-				const buffer = await this.#ctx.decodeAudioData(await res.arrayBuffer());
+				// Metadata first: decoding to find out the file was 30 minutes long
+				// is the cost we're avoiding.
+				const duration = await probe(spec.url);
+				const mode = musicPlaybackMode(duration);
+				const el = mode === "stream" ? makeMusicElement(spec.url) : null;
+				const buffer = mode === "buffer" ? await decode(spec.url) : null;
 				// A newer call took over while we were decoding — drop this result
 				// (its #disposeMusic already ran) so we don't double up or leak a gain.
-				if (gen !== this.#musicGen) return;
+				if (gen !== this.#musicGen) {
+					el?.removeAttribute("src");
+					return;
+				}
 				const gain = this.#ctx.createGain();
 				gain.connect(this.#ctx.destination);
-				this.#music.push({ spec, buffer, gain });
+				if (el) {
+					this.#ctx.createMediaElementSource(el).connect(gain);
+					this.#music.push({ spec, gain, duration, mode: "stream", el });
+				} else if (buffer) {
+					this.#music.push({ spec, gain, duration: buffer.duration, mode: "buffer", buffer });
+				}
 			} catch {
 				// Skip a clip that won't fetch/decode.
 			}
@@ -314,7 +416,8 @@ export class AudioTimelineEngine {
 		this.#stopMusic();
 		const now = this.#ctx.currentTime;
 		const outDur = this.#outputDuration;
-		for (const { spec, buffer, gain } of this.#music) {
+		for (const entry of this.#music) {
+			const { spec, gain } = entry;
 			const play =
 				spec.durationSec > 0 ? spec.durationSec : Math.max(0, outDur - spec.startOutputSec);
 			if (play <= 0) continue;
@@ -327,7 +430,7 @@ export class AudioTimelineEngine {
 			const whenDelay = heardStart - from;
 			const intoClip = heardStart - spec.startOutputSec;
 			const remaining = clipEnd - heardStart;
-			const bufDur = buffer.duration;
+			const bufDur = entry.duration;
 			const region = Math.max(0.001, bufDur - spec.offsetSec);
 			let sourceStart: number;
 			if (spec.loop) {
@@ -339,21 +442,25 @@ export class AudioTimelineEngine {
 					continue;
 				}
 			}
-			const node = this.#ctx.createBufferSource();
-			node.buffer = buffer;
-			if (spec.loop) {
-				node.loop = true;
-				node.loopStart = spec.offsetSec;
-				node.loopEnd = bufDur;
-			}
-			node.connect(gain);
 			const playDur = spec.loop ? remaining : Math.min(remaining, bufDur - sourceStart);
-			node.onended = () => {
-				const i = this.#musicActive.indexOf(node);
-				if (i >= 0) this.#musicActive.splice(i, 1);
-			};
-			node.start(now + whenDelay, sourceStart, playDur);
-			this.#musicActive.push(node);
+			if (entry.mode === "stream") {
+				this.#startStreamedClip(entry, sourceStart, whenDelay, playDur);
+			} else {
+				const node = this.#ctx.createBufferSource();
+				node.buffer = entry.buffer;
+				if (spec.loop) {
+					node.loop = true;
+					node.loopStart = spec.offsetSec;
+					node.loopEnd = bufDur;
+				}
+				node.connect(gain);
+				node.onended = () => {
+					const i = this.#musicActive.indexOf(node);
+					if (i >= 0) this.#musicActive.splice(i, 1);
+				};
+				node.start(now + whenDelay, sourceStart, playDur);
+				this.#musicActive.push(node);
+			}
 			// Base gain + clip fades on the output clock.
 			const base = Math.max(0, Math.min(2, spec.gain / 100));
 			const g = gain.gain;
@@ -371,6 +478,55 @@ export class AudioTimelineEngine {
 		}
 	}
 
+	/**
+	 * Start a streamed clip. A media element has no `start(when, offset, dur)`,
+	 * so the window is bracketed with timers and the loop region is re-seeked on
+	 * `ended` (element `loop` restarts the file, ignoring `offsetSec`).
+	 */
+	#startStreamedClip(
+		entry: Extract<MusicEntry, { mode: "stream" }>,
+		sourceStart: number,
+		whenDelay: number,
+		playDur: number,
+	): void {
+		const { el, spec } = entry;
+		// A deferred start must not fire after a stop/reschedule; timers are
+		// cleared there, but a pending `loadedmetadata` is not.
+		const schedule = this.#musicSchedule;
+		const begin = () => {
+			if (schedule !== this.#musicSchedule) return;
+			// Seeking before metadata is a no-op, which would start the clip at 0
+			// instead of `sourceStart` — wrong for any clip with an offset or a
+			// mid-timeline start. The probe ran on a different element, so this one
+			// may still be loading.
+			if (el.readyState < HAVE_METADATA) {
+				el.addEventListener("loadedmetadata", begin, { once: true });
+				return;
+			}
+			el.currentTime = sourceStart;
+			void el.play().catch(() => {
+				/* autoplay blocked or torn down mid-schedule */
+			});
+		};
+		el.onended = spec.loop
+			? () => {
+					el.currentTime = spec.offsetSec;
+					void el.play().catch(() => {});
+				}
+			: null;
+		if (whenDelay <= 0.001) begin();
+		else this.#musicTimers.push(setTimeout(begin, whenDelay * 1000));
+		this.#musicTimers.push(
+			setTimeout(
+				() => {
+					el.removeEventListener("loadedmetadata", begin);
+					el.pause();
+				},
+				(whenDelay + playDur) * 1000,
+			),
+		);
+	}
+
 	#stopMusic(): void {
 		for (const node of this.#musicActive) {
 			try {
@@ -381,6 +537,14 @@ export class AudioTimelineEngine {
 			}
 		}
 		this.#musicActive = [];
+		this.#musicSchedule++;
+		for (const timer of this.#musicTimers) clearTimeout(timer);
+		this.#musicTimers = [];
+		for (const entry of this.#music) {
+			if (entry.mode !== "stream") continue;
+			entry.el.onended = null;
+			entry.el.pause();
+		}
 	}
 
 	#disposeMusic(): void {
@@ -391,6 +555,8 @@ export class AudioTimelineEngine {
 			} catch {
 				/* already gone */
 			}
+			// Drop the source or the element keeps its network/decode buffers alive.
+			if (m.mode === "stream") m.el.removeAttribute("src");
 		}
 		this.#music = [];
 	}
@@ -482,7 +648,11 @@ export class AudioTimelineEngine {
 				this.#scheduledUpToOutput = windowEnd;
 			}
 			const behind = outputToSource(this.#regions, Math.max(0, heard - AUDIO_BEHIND_SEC));
-			for (const track of this.#tracks) track.store.evictBefore(behind);
+			// Bound the FORWARD side too. Source time is monotonic in output time
+			// (cuts only remove), so a single source range covers the kept window;
+			// a cut spanned by it is over-retained, which is bounded and harmless.
+			const ahead = outputToSource(this.#regions, windowEnd + AUDIO_BEHIND_SEC);
+			for (const track of this.#tracks) track.store.evictOutside(behind, ahead);
 		} catch (err) {
 			console.error("audio streaming top-up failed:", err);
 		} finally {

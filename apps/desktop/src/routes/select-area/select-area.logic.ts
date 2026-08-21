@@ -1,6 +1,6 @@
 /** Drag-rect + toolbar geometry for the region-picker overlay. */
 
-import type { RegionRect } from "$lib/ipc-types";
+import type { RegionRect } from "$lib/recorder-types";
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
@@ -9,12 +9,7 @@ export const TOOLBAR_W = 240;
 export const TOOLBAR_H = 36;
 
 /** Normalise two pointer corners into a top-left origin + positive size. */
-export function rectFromPoints(
-	x0: number,
-	y0: number,
-	x1: number,
-	y1: number,
-): Rect {
+export function rectFromPoints(x0: number, y0: number, x1: number, y1: number): Rect {
 	return {
 		x: Math.min(x0, x1),
 		y: Math.min(y0, y1),
@@ -48,16 +43,9 @@ export function toRegionPayload(
  * selection lands near the bottom or right edge. Drops above the rect when it
  * would overflow the bottom.
  */
-export function clampToolbar(
-	rect: Rect,
-	vw: number,
-	vh: number,
-): { left: number; top: number } {
+export function clampToolbar(rect: Rect, vw: number, vh: number): { left: number; top: number } {
 	const desiredTop = rect.y + rect.h + 6;
-	const top =
-		desiredTop + TOOLBAR_H + 8 > vh
-			? Math.max(8, rect.y - TOOLBAR_H - 6)
-			: desiredTop;
+	const top = desiredTop + TOOLBAR_H + 8 > vh ? Math.max(8, rect.y - TOOLBAR_H - 6) : desiredTop;
 	const left = Math.max(8, Math.min(rect.x, vw - TOOLBAR_W - 8));
 	return { left, top };
 }

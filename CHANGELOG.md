@@ -8,21 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This file is the **canonical source for both** the GitHub release notes and
 the in-app "What's new" panel:
 
-- **Releases** — `Release Desktop App` workflow runs
+- **Releases**: the `Release Desktop App` workflow runs
   `scripts/extract-changelog.mjs <tag>` and uses the matching
   `## [<version>]` section as the release body.
-- **Desktop in-app** —
+- **Desktop in-app**:
   [`apps/desktop/src/constants/changelog.ts`](apps/desktop/src/constants/changelog.ts)
   is **regenerated** from this file by `pnpm sync:changelog` (and
   automatically before each `pnpm dev` / `pnpm build` of the desktop app).
-  Don't edit the `RELEASES` array directly — it lives between
+  Don't edit the `RELEASES` array directly. It lives between
   `RELEASES:START` / `RELEASES:END` markers and will be overwritten.
-- **Web** — `apps/web/src/routes/changelog/+page.ts` reads from the
+- **Web**: `apps/web/src/routes/changelog/+page.ts` reads from the
   GitHub Releases REST API at runtime, which means the same curated section
   surfaces there too as soon as the release publishes.
 
-Headings must follow the literal form `## [<version>] — <date>` (em-dash) so
-both the extractor and the desktop sync can find them. Subsections use
+Headings must follow the literal form `## [<version>] - <date>` so both the
+extractor and the desktop sync can find them. Subsections use
 `### Added`, `### Changed`, `### Fixed`, `### Deprecated`. An optional
 `### Highlights` block above those is rendered as the "punchy" bullet row in
 the desktop dialog.
@@ -40,9 +40,26 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 `pnpm release:prepare <version>` consumes pending changesets and the current
 `[Unreleased]` block into a new dated section.
 
+### How an entry should read
+
+These lines are read by someone deciding whether to update, in a release-notes
+page and a small in-app dialog. Write for that.
+
+- **Lead with the change, then stop.** One sentence. A second sentence only
+  when the reader has to do something differently because of it.
+- **Cut the justification tail.** "…, so the list reads at a glance instead of
+  showing three near-identical clouds" is the author explaining their work. The
+  reader wants "Share destinations now show their own logos."
+- **Name what the user sees**, not the module. "Frame-stepping kept audio in
+  sync" beats "the AV drift resync path now fires on seek".
+- **A `Fixed` entry says what was broken**, in the words someone would use to
+  report it. Skip the cause unless it changes what they should do.
+- **No em dashes, no emoji.** A comma, a colon, or a full stop.
+- **`Highlights` is at most three lines**, and each one is a reason to update.
+
 ## [Unreleased]
 
-## [0.4.5] — 2026-08-01
+## [0.4.5] - 2026-08-01
 
 ### Highlights
 - One design across every dialog, from renaming a file to uploading one, replacing the three styles they had drifted into.
@@ -69,7 +86,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Links meant to open in your browser did nothing when clicked inside the app window.
 - Keyboard shortcuts were written with the macOS Command symbol on Windows and Linux.
 
-## [0.4.4] — 2026-07-30
+## [0.4.4] - 2026-07-30
 
 ### Highlights
 - Roll, slide, and slip editing on the video track, so you can move a cut point or shift footage inside its slot without dragging both neighbours by hand.
@@ -104,7 +121,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - The preview had no scrubber at all in fullscreen when the timeline was open.
 - Very short blocks were nearly impossible to grab by the edge to resize.
 
-## [0.4.3] — 2026-07-27
+## [0.4.3] - 2026-07-27
 
 ### Highlights
 - Record your webcam alongside your screen and drop it in as a floating bubble you can move, resize, shape, and style. It grows and drifts out of the way when you zoom in.
@@ -124,7 +141,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 ### Changed
 - Rebuilt the preview's media pipeline. Frames are cached and reused instead of re-decoded, heavy work is deferred until the editor is idle, and a failed decode now recovers on its own rather than leaving the preview stuck on a stale frame.
 
-## [0.4.2] — 2026-07-18
+## [0.4.2] - 2026-07-18
 
 ### Added
 - Command-line control of projects and exports, on top of the existing recording verbs, so Recast can be driven from a script. Settings has a toggle for installing the `recast` command automatically.
@@ -138,7 +155,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 ### Fixed
 - On macOS, the FFmpeg binaries Recast downloads are cleared of the Apple quarantine flag. Without it macOS blocked them, and Recast silently fell back to whatever FFmpeg happened to be on your PATH, or to none at all.
 
-## [0.4.1] — 2026-07-16
+## [0.4.1] - 2026-07-16
 
 ### Highlights
 - Redesigned the editor's properties panel: sections now live in a compact, grouped vertical rail with a clear active state, and you can drag the panel wider.
@@ -167,7 +184,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Exporting burned-in captions with an FFmpeg build that lacks the subtitle filters now fails with a message that says so, instead of producing a video with no captions in it.
 - The bundled FFmpeg is verified to ship those subtitle filters at build time, so that case should not reach you in the first place.
 
-## [0.4.0] — 2026-07-11
+## [0.4.0] - 2026-07-11
 
 ### Highlights
 - Control recording from any app with global shortcuts, and never lose a take to the screen going to sleep.
@@ -198,7 +215,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Double-clicking a .recast file opens it on macOS, which previously worked only on Windows and Linux.
 - Burned-in captions now match the editor preview: correct size (they were rendering smaller because libass scales by the font's window metrics, not the em box, up to nearly half size for some display fonts), proper kerning, and the correct font at non-standard weights (a semibold previously fell back to a system face). Single-line captions get an exact rounded pill at export.
 
-## [0.3.1] — 2026-07-05
+## [0.3.1] - 2026-07-05
 
 ### Highlights
 - Scene animations: give any clip an entrance and exit (fade, slide, scale, pop, shrink, or rotate) that plays in the preview and renders in the exported video.
@@ -219,7 +236,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - The export dialog names each prep step, rendering the cursor and annotation layer and then encoding, so it never sits on a blank "Preparing…".
 - Redesigned the on-canvas annotation selection to match the recording area-select: real handles, a selection ring, and a live width-by-height badge. Hold Shift to lock aspect while resizing, snap a new shape to a square, or snap an arrow to 45 degrees. Moving an annotation snaps its own edges and center to the guides.
 - New annotations take the current theme color instead of a fixed blue.
-- Blur annotations can now be moved and duplicated, and they honor rounded corners in the export the same way the preview does. Corner radius across rectangles, blur, and images now uses a single 0–100% scale.
+- Blur annotations can now be moved and duplicated, and they honor rounded corners in the export the same way the preview does. Corner radius across rectangles, blur, and images now uses a single 0-100% scale.
 - Refreshed the Profiles page layout and accessibility.
 - Copy cleanups across the editor panels, Settings, the sidebar, and the website.
 
@@ -232,7 +249,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Scaled image annotations are smoothed instead of blocky, and a single corrupt annotation is skipped instead of failing the whole export.
 - Export now warns, without blocking, when an image annotation can't be loaded or a blur sits under a zoom, since both would otherwise export silently wrong.
 
-## [0.3.0] — 2026-07-01
+## [0.3.0] - 2026-07-01
 
 ### Highlights
 - Animated captions: highlight the word being spoken, pop words in one at a time, or reveal short phrases.
@@ -251,7 +268,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Caption fonts now render in exported video, not just the preview.
 - Exporting a recording that has cuts or speed changes no longer holds the last frame for several seconds or produces a file longer than the edit.
 
-## [0.2.9] — 2026-06-29
+## [0.2.9] - 2026-06-29
 
 ### Added
 - Update older recordings to the current project format in bulk from the library, or one at a time from a recording's menu. Recordings that still use the old format are marked so you can see which need updating.
@@ -266,7 +283,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Recording a selected region on a Retina display captured the wrong area, because the selection was measured in points and the capture in pixels.
 - Buttons went sticky and double-clicks were swallowed on macOS, caused by window drag regions overlapping the controls beneath them.
 
-## [0.2.8] — 2026-06-28
+## [0.2.8] - 2026-06-28
 
 ### Highlights
 - **Camera and microphone work on macOS again.** Fixed a permissions problem that stopped macOS from capturing your camera and mic.
@@ -279,7 +296,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Corrected the Loom and Cap comparison on the Features page. Dropped a "pause and resume is paid in Loom" row (it is free), changed Cap's "share to your own storage" from "Not supported" to "Pro only" (Cap Pro supports custom S3 and Google Drive), and relabelled per-seat pricing.
 - Fix camera and microphone permissions not working on macOS
 
-## [0.2.7] — 2026-06-28
+## [0.2.7] - 2026-06-28
 
 ### Highlights
 - **Editing feels faster on every new recording.** Recordings now capture a keyframe about twice a second, so seeking, scrubbing, and cutting no longer pause to re-decode several seconds of video.
@@ -295,7 +312,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 ### Fixed
 - Website SEO: removed duplicate page metadata (the default social card was leaking onto pages that set their own, so scrapers picked the generic one), added a sitemap and a proper robots.txt, marked non-public pages `noindex`, gave the privacy and terms pages their own canonical and social cards, and added site-wide brand structured data.
 
-## [0.2.6] — 2026-06-10
+## [0.2.6] - 2026-06-10
 
 ### Highlights
 - **Recording quality and frame rate are yours to set.** Capture at Balanced, High, or Pristine fidelity and pick a frame rate your display can actually deliver, instead of the previous fixed defaults.
@@ -304,7 +321,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 
 ### Added
 - Recording quality tiers (Balanced / High / Pristine) in Settings → Recording. Balanced reproduces the previous output exactly, so existing recordings are unchanged; High and Pristine trade real-time headroom for higher fidelity.
-- Recording frame-rate selection (24–240 fps) in Settings → Recording, offering only the rates your monitor can produce based on its detected refresh rate. The chosen rate is now stored in the project, so high-refresh recordings are handled correctly throughout the editor and export.
+- Recording frame-rate selection (24-240 fps) in Settings → Recording, offering only the rates your monitor can produce based on its detected refresh rate. The chosen rate is now stored in the project, so high-refresh recordings are handled correctly throughout the editor and export.
 - Export frame-rate control for MP4 and WebM: keep the original source rate (the default) or step down to a lower rate for a smaller file.
 - New extension packs: Material and Windows 11 cursor styles, a cursor-smoothing preset pack, a motion-easing preset pack, a gradient collection, and a "Waves" wallpaper set.
 
@@ -316,7 +333,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 ### Fixed
 - Exports of high-frame-rate recordings no longer judder or "shake". A generated background (solid colour, gradient, or image) defaulted FFmpeg to 25 fps and dragged the whole export down to it, frame-dropping 60 fps footage into juddery motion (most visible under a zoom). Generated backgrounds and looped image inputs are now pinned to the recording's frame rate.
 
-## [0.2.5] — 2026-06-09
+## [0.2.5] - 2026-06-09
 
 ### Fixed
 - Exported videos no longer open to a black screen stuck on "media loading" in the in-app player on release builds. The player now streams the file from the start instead of waiting on a tail fetch that never completed, so exports play back immediately.
@@ -325,7 +342,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Long recordings could freeze mid-capture: the encoder's FFmpeg progress output filled an OS pipe buffer that was never drained, stalling the encoder and the recording. Its output is now drained continuously.
 - A recording that fails to start partway through no longer leaves orphaned capture/encoder processes running in the background.
 
-## [0.2.4] — 2026-06-07
+## [0.2.4] - 2026-06-07
 
 ### Highlights
 - **Extensions arrive.** Browse and install community asset packs (cursors, backgrounds, gradients, colours, and easing/smoothing presets) from a new Extensions tab. Packs are code-free and verified by HTTPS-only downloads with per-asset SHA-256 pinning.
@@ -342,7 +359,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Harden extension-pack installation: untrusted pack SVGs are rendered as images instead of inlined markup, asset paths and URL schemes are validated more strictly, and installed packs hydrate in a stable order.
 - Development builds no longer send crash telemetry, so running the app locally never pollutes production analytics.
 
-## [0.2.3] — 2026-06-06
+## [0.2.3] - 2026-06-06
 
 ### Highlights
 - **Desktop diagnostics are now first-class.** A user-facing verbose-logging toggle plus log-management controls capture real diagnostic data on demand instead of asking users to reproduce issues blind.
@@ -359,7 +376,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 ### Fixed
 - Tooltip positioning in the properties panel now avoids the previous clipping / overlap cases, making the labels readable around tighter panel layouts.
 
-## [0.2.2] — 2026-06-05
+## [0.2.2] - 2026-06-05
 
 ### Highlights
 - **Recast Cloud management got broader and sharper.** Uploads, shares, poster replacement, engagement tracking, and dashboard-side performance views all moved forward together.
@@ -380,7 +397,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 ### Fixed
 - Thumbnails and waveform data can now be cached to disk, cutting down repeated processing and improving responsiveness when reopening projects.
 
-## [0.2.1] — 2026-06-03
+## [0.2.1] - 2026-06-03
 
 ### Highlights
 - **Recast Cloud arrived in earnest.** Uploads, share links, password protection, expiry, workspace-aware routing, and self-host configuration all landed across web and desktop.
@@ -401,7 +418,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Shared recast pages picked up release-process and SEO improvements, and the pricing table layout was adjusted to hold up better at narrower widths.
 - The Windows recording window now respects aspect-ratio locking while resizing, making capture setup less fussy.
 
-## [0.2.0] — 2026-05-30
+## [0.2.0] - 2026-05-30
 
 ### Highlights
 - A single **morphing export dialog** that flows Options → Encoding → Success / Cancelled / Error without ever closing. Width and height ease between phases, and content cross-fades on top.
@@ -426,7 +443,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - No more visual "snap" when switching the export format between MP4/WebM and GIF. The GIF settings panel mounts inline and the wrapper morphs to the new natural size in one motion.
 - Focus is re-routed back into the dialog on every phase change, so screen readers re-announce and keyboard navigation stays inside the modal as content swaps under the user.
 
-## [0.1.10] — 2026-05-28
+## [0.1.10] - 2026-05-28
 
 ### Highlights
 - **Google Drive uploads** straight from the export success card, with per-upload progress, history, and cancel/retry. The first "send it somewhere" target after local files.
@@ -468,7 +485,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Contact email updated to the new address in Footer and Navbar.
 - Various button + UI fixes: prevent text selection on `<Button>`, button hover regressions, and a Vercel deploy workflow tweak so install no longer fails on lockfile drift.
 
-## [0.1.9] — 2026-05-23
+## [0.1.9] - 2026-05-23
 
 ### Added
 - Inline playback for recordings: tapping a card on the exports page now
@@ -486,7 +503,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
   `Sheet` fix from 0.1.6), so a closed menu or popover can no longer leave
   `pointer-events: none` on the document body and freeze the window.
 
-## [0.1.8] — 2026-05-22
+## [0.1.8] - 2026-05-22
 
 ### Added
 - Pause and resume during recording with controls in the recording panel and
@@ -530,7 +547,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Closing the recorder window while a recording is in flight no longer
   drops the capture; the app prompts and resolves the save first.
 
-## [0.1.7] — 2026-05-16
+## [0.1.7] - 2026-05-16
 
 ### Added
 - Bulk-select mode for recordings and exports, with a floating action bar
@@ -551,7 +568,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Hero CTA region: removed an unused background layer that was painting a
   stray gradient behind the headline on some viewport widths.
 
-## [0.1.6] — 2026-05-10
+## [0.1.6] - 2026-05-10
 
 ### Added
 - Version-sync release scripts: every build manifest validates against the
@@ -571,7 +588,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Version placeholders unified across files so dev and release builds no
   longer disagree about who they are.
 
-## [0.1.5] — 2026-05-09
+## [0.1.5] - 2026-05-09
 
 ### Added
 - Linux screen capture: a Wayland-native pipeline using
@@ -596,7 +613,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
   elevation shadows) layered on top of the existing shadcn tokens.
   Primary colour and font stack preserved.
 
-## [0.1.4] — 2026-05-08
+## [0.1.4] - 2026-05-08
 
 ### Added
 - Camera overlay in the editor: composite the recorded camera track over
@@ -612,7 +629,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
   carry the chosen aspect end-to-end (preview, composite, drop-shadow)
   without per-call ad-hoc math.
 
-## [0.1.3-beta] — 2026-05-07
+## [0.1.3-beta] - 2026-05-07
 
 ### Added
 - Active-preset chip in the editor toolbar with a reset-to-source affordance.
@@ -637,7 +654,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Quick action no longer opens the camera preview inside the recording
   panel window.
 
-## [0.1.2-beta] — 2026-05-06
+## [0.1.2-beta] - 2026-05-06
 
 ### Added
 - Timeline workspace: clip bar, playhead, ruler, toolbar, and zoom lane components.
@@ -659,7 +676,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 ### Fixed
 - Reverted erroneous app version bump; settings layout regressions cleaned up.
 
-## [0.1.0-beta] — Initial beta
+## [0.1.0-beta] - Initial beta
 
 - First public beta of Recast: offline-first desktop screen recorder and editor
   built on Tauri v2, Svelte 5, and Rust.

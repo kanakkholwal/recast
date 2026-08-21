@@ -12,6 +12,7 @@
 //! Full design: `apps/desktop/docs/captions-transcription-plan.md`.
 
 mod audio;
+mod cancel;
 mod capabilities;
 mod engine;
 // The on-device engine (transcribe.cpp / ggml). On by default; absent in a
@@ -456,6 +457,7 @@ pub async fn transcribe_project(
     language: Option<String>,
     on_phase: Channel<TranscribeProgress>,
 ) -> AppResult<Transcript> {
+    cancel::begin();
     let model = models::find(&app, &model_id)
         .ok_or_else(|| AppError::msg(format!("unknown caption model: {model_id}")))?;
 
@@ -511,6 +513,11 @@ pub async fn transcribe_project(
     .await
     .map_err(|e| AppError::msg(format!("audio extract task panicked: {e}")))??;
 
+    // Extract runs as one ffmpeg call, so this is the first point it can stop.
+    if cancel::is_requested() {
+        return Err(AppError::from(cancel::CANCELLED_MSG));
+    }
+
     let _ = on_phase.send(TranscribeProgress {
         phase: "transcribing".into(),
     });
@@ -537,10 +544,22 @@ pub async fn transcribe_project(
         }
     };
 
+    // The remote path can't be interrupted mid-request; drop its result rather
+    // than overwrite a transcript the user asked to stop replacing.
+    if cancel::is_requested() {
+        return Err(AppError::from(cancel::CANCELLED_MSG));
+    }
+
     let _ = on_phase.send(TranscribeProgress {
         phase: "done".into(),
     });
     Ok(transcript)
+}
+
+/// Ask the in-flight transcription to stop. No-op when nothing is running.
+#[tauri::command]
+pub fn cancel_transcription() {
+    cancel::request();
 }
 
 /// Path-aware counterpart to [`transcribe_project`]. Identical pipeline

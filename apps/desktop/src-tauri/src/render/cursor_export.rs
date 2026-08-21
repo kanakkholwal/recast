@@ -272,6 +272,10 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         .spawn()
         .context("failed to start ffmpeg for cursor overlay encode")?;
 
+    // The frame loop below blocks on stdin, so an undrained stderr pipe filling
+    // up deadlocks the whole export with no watchdog covering it.
+    let stderr_tail = child.stderr.take().map(crate::ffmpeg::StderrTail::spawn);
+
     let mut stdin = child
         .stdin
         .take()
@@ -322,6 +326,10 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     }
     let cursor_sprite_active = image_cache.contains_key(CURSOR_SPRITE_KEY_REST);
 
+    // Z-order is immutable for the whole render; sorting it per frame cost two
+    // allocations + a sort 54,000× on a 30-min export.
+    let ordered_annotations = sorted_visible_annotations(&request.render_state.annotations);
+
     // Renders frame `i` into its own buffer. Pure function of `i` over the
     // precomputed, read-only state above (smoothed path, press events, zoom
     // LUT, idle periods, image cache), so it's safe to call concurrently.
@@ -342,8 +350,8 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         // Render in z-order so stacking is deterministic; skip hidden so the
         // user-toggled visibility flag matches the preview. `z_index` defaults
         // to 0 for v1 projects, which preserves insertion order via the stable
-        // sort below.
-        for annotation in sorted_visible_annotations(&request.render_state.annotations) {
+        // sort in `sorted_visible_annotations`.
+        for annotation in ordered_annotations.iter().copied() {
             draw_annotation(
                 &mut frame,
                 canvas_w,
@@ -695,15 +703,19 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let chunk = threads.clamp(1, max_inflight);
 
     let mut next = 0u64;
-    while next < frame_count {
+    let mut write_err: Option<anyhow::Error> = None;
+    'write_frames: while next < frame_count {
         let end = (next + chunk as u64).min(frame_count);
         // Render this window of frames concurrently, preserving order in the
         // collected Vec so the sequential write below stays in frame order.
         let frames: Vec<Vec<u8>> = (next..end).into_par_iter().map(&render_one).collect();
         for f in &frames {
-            stdin
-                .write_all(f)
-                .context("failed to write cursor frame to ffmpeg stdin")?;
+            if let Err(e) = stdin.write_all(f) {
+                write_err = Some(
+                    anyhow::Error::new(e).context("failed to write cursor frame to ffmpeg stdin"),
+                );
+                break 'write_frames;
+            }
         }
         next = end;
     }
@@ -711,12 +723,19 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     // Close stdin so FFmpeg can finalize the overlay.
     drop(stdin);
 
-    let output = child
-        .wait_with_output()
+    if let Some(err) = write_err {
+        // Reap the child rather than returning with it still running.
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(err);
+    }
+
+    let status = child
+        .wait()
         .context("failed to wait for ffmpeg cursor encode")?;
 
-    if !output.status.success() {
-        let stderr_text = String::from_utf8_lossy(&output.stderr);
+    if !status.success() {
+        let stderr_text = stderr_tail.map(|t| t.collect()).unwrap_or_default();
         return Err(anyhow!(
             "ffmpeg cursor overlay encode failed: {stderr_text}"
         ));

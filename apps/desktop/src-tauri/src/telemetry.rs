@@ -215,14 +215,6 @@ pub fn capture_exception(app: &AppHandle, name: &str, message: &str, stack: Opti
     });
 }
 
-/// Report a non-fatal Rust error (command-site `Result::Err`). Fire-and-forget.
-/// Available for use at `log::warn!/error!` sites; the panic hook is the main
-/// coverage.
-#[allow(dead_code)]
-pub fn report_error(app: &AppHandle, context: &str, err: &str) {
-    capture_exception(app, "RustError", &format!("{context}: {err}"), None);
-}
-
 /// Install the global panic hook. Always logs through the existing
 /// `tauri-plugin-log` pipeline; additionally sends a scrubbed `$exception` to
 /// PostHog when the user consents. Chains to the previous hook so default

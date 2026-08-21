@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -50,10 +51,13 @@ pub fn save_autosave(project_path: &Path, edits_json: &str) -> Result<()> {
     let save_path = dir.join(&filename);
     let temp_path = dir.join(format!("{filename}.tmp"));
 
-    // Atomic write: temp file → rename.
-    fs::write(&temp_path, serde_json::to_string_pretty(&state)?)?;
-    if save_path.exists() {
-        let _ = fs::remove_file(&save_path);
+    // Atomic write: temp file → fsync → rename. `fs::rename` replaces the old
+    // file in one step; deleting it first would leave a window with no
+    // recoverable state at all, which defeats the point of crash recovery.
+    {
+        let mut file = fs::File::create(&temp_path)?;
+        file.write_all(serde_json::to_string_pretty(&state)?.as_bytes())?;
+        file.sync_all()?;
     }
     fs::rename(&temp_path, &save_path)?;
     Ok(())

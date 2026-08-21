@@ -1,5 +1,7 @@
 /** Display formatters for the dashboard — pure, no side effects. */
 
+import { formatBytes as formatBytesBase } from "@recast/editor/lib/format/bytes";
+
 /** `252` → `"4:12"`, `3870` → `"1:04:30"`. */
 export function formatDuration(totalSec: number): string {
 	const s = Math.max(0, Math.round(totalSec));
@@ -10,17 +12,9 @@ export function formatDuration(totalSec: number): string {
 	return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
 }
 
-/** `191000000` → `"182 MB"`. */
+/** `191000000` → `"182 MB"`. Storage cells read better empty as "0 MB" than "0 B". */
 export function formatBytes(bytes: number): string {
-	if (bytes <= 0) return "0 MB";
-	const units = ["B", "KB", "MB", "GB", "TB"];
-	const i = Math.min(
-		units.length - 1,
-		Math.floor(Math.log(bytes) / Math.log(1024)),
-	);
-	const val = bytes / 1024 ** i;
-	const rounded = val >= 100 || i <= 1 ? Math.round(val) : Math.round(val * 10) / 10;
-	return `${rounded} ${units[i]}`;
+	return formatBytesBase(bytes, { zeroLabel: "0 MB" });
 }
 
 /** `1747000000000` → `"May 17, 2026"`. */

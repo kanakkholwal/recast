@@ -5,6 +5,7 @@ import {
 	clickHighlightAt,
 	pressStateAt,
 	smoothStep01,
+	type PressEvent,
 	type PressSample,
 } from "./cursor-animation.logic";
 
@@ -97,5 +98,53 @@ describe("pressStateAt", () => {
 	});
 	it("snaps scale below 1 right at the click frame (punch)", () => {
 		expect(pressStateAt(events, 1_000_000).scale).toBeLessThan(1);
+	});
+});
+
+describe("press lookups near the end of a long timeline", () => {
+	function click(i: number, holdUs = 50_000): PressEvent {
+		const downUs = i * 1_000_000;
+		return { downUs, upUs: downUs + holdUs, downX: i, downY: i, right: false, dragged: false };
+	}
+	// 30 min at one click a second.
+	const events = Array.from({ length: 1800 }, (_, i) => click(i));
+	const LATE = 1_500_000_000;
+
+	function counting(list: PressEvent[]) {
+		let reads = 0;
+		const proxy = new Proxy(list, {
+			get(target, prop, recv) {
+				if (typeof prop === "string" && /^\d+$/.test(prop)) reads++;
+				return Reflect.get(target, prop, recv);
+			},
+		});
+		return { proxy, reads: () => reads, reset: () => void (reads = 0) };
+	}
+
+	it("does not rescan the whole track per frame", () => {
+		const { proxy, reads, reset } = counting(events);
+		// First call pays the one-time index build; steady state is what matters.
+		clickAnchorAt(proxy, LATE);
+		clickHighlightAt(proxy, LATE);
+		pressStateAt(proxy, LATE);
+		reset();
+
+		clickAnchorAt(proxy, LATE);
+		clickHighlightAt(proxy, LATE);
+		pressStateAt(proxy, LATE);
+
+		expect(reads()).toBeLessThan(20);
+	});
+
+	it("still finds the click under the playhead", () => {
+		expect(clickAnchorAt(events, LATE)?.x).toBe(1500);
+		expect(clickHighlightAt(events, LATE)?.x).toBe(1500);
+		expect(pressStateAt(events, LATE).pressedSprite).toBe(true);
+	});
+
+	it("still finds a press held since long before the playhead", () => {
+		const held = [click(0, 100_000_000), ...Array.from({ length: 200 }, (_, i) => click(i + 200))];
+		expect(pressStateAt(held, 100_100_000).pressedSprite).toBe(true);
+		expect(clickHighlightAt(held, 100_100_000)?.x).toBe(0);
 	});
 });

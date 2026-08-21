@@ -1,17 +1,4 @@
-import type { RecastPlayerBranding, RecastPlayerEngagement } from "./types";
-
-/**
- * Recast's own watermark. Off unless a surface opts in — only the logged-out
- * share page needs to say whose player this is.
- */
-export const RECAST_BRANDING: RecastPlayerBranding = {
-	src: "/logo.svg",
-	alt: "Recast",
-	name: "Recast",
-	width: 118,
-	height: 28,
-	className: "",
-};
+import type { RecastPlayerEngagement } from "./types";
 
 /** Keys `<media-controller>` claims for itself (media-chrome `ButtonPressedKeys`). */
 export const MEDIA_CHROME_HOTKEYS = [

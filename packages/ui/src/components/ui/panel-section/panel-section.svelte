@@ -1,36 +1,36 @@
 <script lang="ts" module>
-	import type { Snippet } from "svelte";
+import type { Snippet } from "svelte";
 
-	export interface PanelSectionProps {
-		/** Section title — small uppercase label. Omit for header-less group. */
-		title?: string;
-		/** Tooltip content shown next to the title. Rendered via `hint` snippet
-		 * if provided, otherwise as a `title` attribute on the label. */
-		hint?: string;
-		/** Custom hint renderer (e.g. an info icon with popover). */
-		hintSlot?: Snippet;
-		/** Right-aligned action slot (button, toggle, badge, count). */
-		action?: Snippet;
-		/** Body content. Optional — header-only sections are valid. */
-		children?: Snippet;
-		/** When true, child layout sets its own spacing. Default wraps body in
-		 * a `space-y-2.5` group. */
-		flush?: boolean;
-		/** Make the section header click-to-toggle. Adds a chevron. */
-		collapsible?: boolean;
-		/** Initial open state when `collapsible`. Default true. */
-		defaultOpen?: boolean;
-		/** Controlled open state. When provided, overrides `defaultOpen`. */
-		open?: boolean;
-		/** Fired whenever the section toggles open/closed. */
-		onOpenChange?: (open: boolean) => void;
-		class?: string;
-	}
+export interface PanelSectionProps {
+	/** Section title — small uppercase label. Omit for header-less group. */
+	title?: string;
+	/** Tooltip content shown next to the title. Rendered via `hint` snippet
+	 * if provided, otherwise as a `title` attribute on the label. */
+	hint?: string;
+	/** Custom hint renderer (e.g. an info icon with popover). */
+	hintSlot?: Snippet;
+	/** Right-aligned action slot (button, toggle, badge, count). */
+	action?: Snippet;
+	/** Body content. Optional — header-only sections are valid. */
+	children?: Snippet;
+	/** When true, child layout sets its own spacing. Default wraps body in
+	 * a `space-y-2.5` group. */
+	flush?: boolean;
+	/** Make the section header click-to-toggle. Adds a chevron. */
+	collapsible?: boolean;
+	/** Initial open state when `collapsible`. Default true. */
+	defaultOpen?: boolean;
+	/** Controlled open state. When provided, overrides `defaultOpen`. */
+	open?: boolean;
+	/** Fired whenever the section toggles open/closed. */
+	onOpenChange?: (open: boolean) => void;
+	class?: string;
+}
 </script>
 
 <script lang="ts">
 	import { ChevronDown } from "@recast/icons";
-	import { Spring } from "svelte/motion";
+	import { prefersReducedMotion, Spring } from "svelte/motion";
 	import { slide } from "svelte/transition";
 	import { cubicOut } from "svelte/easing";
 	import { cn } from "@recast/ui/utils";
@@ -67,8 +67,10 @@
 		damping: 0.62,
 	});
 
+	// Both the spring and the body's slide run on JS/WAAPI, which the CSS
+	// reduced-motion override in app.css never reaches.
 	$effect(() => {
-		chevronRotation.set(isOpen ? 0 : -90);
+		chevronRotation.set(isOpen ? 0 : -90, { instant: prefersReducedMotion.current });
 	});
 
 	function toggle() {
@@ -144,7 +146,10 @@
 		{#if collapsible}
 			{#if isOpen}
 				<div
-					transition:slide={{ duration: 220, easing: cubicOut }}
+					transition:slide={{
+					duration: prefersReducedMotion.current ? 0 : 220,
+					easing: cubicOut,
+				}}
 					style="clip-path: inset(0 -20px);"
 				>
 					{#if flush}

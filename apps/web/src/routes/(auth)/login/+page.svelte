@@ -156,10 +156,10 @@ async function signInWithPassword(e: SubmitEvent) {
 
 	{#if preflight}
 		<div
-			class="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5 text-xs"
+			class="mb-4 flex items-start gap-2.5 rounded-lg border border-border-low bg-paper p-3.5 text-caption"
 			in:fly={{ y: 6, duration: 280, easing: cubicOut }}
 		>
-			<AlertCircle class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+			<AlertCircle class="mt-0.5 size-4 shrink-0 text-tag-tangerine" />
 			<div class="min-w-0 flex-1">
 				{#if preflight.reason === "unknown"}
 					<p class="font-medium text-foreground">
@@ -205,12 +205,12 @@ async function signInWithPassword(e: SubmitEvent) {
 			class="flex flex-col items-center gap-3 text-center"
 			in:fly={{ y: 8, duration: 360, easing: cubicOut }}
 		>
-			<span class="glass-chip grid size-11 place-items-center rounded-xl text-primary">
+			<span class="pill grid size-11 place-items-center rounded-xl text-primary">
 				<MailCheck class="size-5" />
 			</span>
 			<div>
-				<h2 class="text-sm font-semibold text-foreground">Check your inbox</h2>
-				<p class="mt-1 text-xs text-muted-foreground">
+				<h2 class="text-body-sm font-semibold text-foreground">Check your inbox</h2>
+				<p class="mt-1 text-caption text-muted-foreground">
 					We've sent a sign-in link to
 					<span class="font-medium text-foreground">{email}</span>.
 					It expires in 10 minutes.
@@ -243,7 +243,7 @@ async function signInWithPassword(e: SubmitEvent) {
 			<Tabs.Content value="link">
 				<form class="flex flex-col gap-3.5" onsubmit={signInWithLink}>
 					<Label class="flex flex-col items-stretch gap-1.5">
-						<span class="text-xs font-semibold text-foreground/85">Email</span>
+						<span class="text-caption font-semibold text-foreground">Email</span>
 						<Input
 							type="email"
 							required
@@ -265,7 +265,7 @@ async function signInWithPassword(e: SubmitEvent) {
 							<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 						{/if}
 					</Button>
-					<p class="text-center text-[11px] text-muted-foreground">
+					<p class="text-center text-caption text-muted-foreground">
 						No password needed. We'll email you a one-time link.
 					</p>
 				</form>
@@ -274,7 +274,7 @@ async function signInWithPassword(e: SubmitEvent) {
 			<Tabs.Content value="password">
 				<form class="flex flex-col gap-3.5" onsubmit={signInWithPassword}>
 					<Label class="flex flex-col items-stretch gap-1.5">
-						<span class="text-xs font-semibold text-foreground/85">Email</span>
+						<span class="text-caption font-semibold text-foreground">Email</span>
 						<Input
 							type="email"
 							required
@@ -286,7 +286,7 @@ async function signInWithPassword(e: SubmitEvent) {
 					</Label>
 
 					<Label class="flex flex-col items-stretch gap-1.5">
-						<span class="flex items-center justify-between text-xs font-semibold text-foreground/85">
+						<span class="flex items-center justify-between text-caption font-semibold text-foreground">
 							<span>Password</span>
 							<a
 								href="/forgot-password"
@@ -308,7 +308,7 @@ async function signInWithPassword(e: SubmitEvent) {
 								type="button"
 								onclick={() => (showPassword = !showPassword)}
 								aria-label={showPassword ? "Hide password" : "Show password"}
-								class="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+								class="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-paper hover:text-foreground"
 							>
 								{#if showPassword}
 									<EyeOff class="size-3.5" />
@@ -321,7 +321,7 @@ async function signInWithPassword(e: SubmitEvent) {
 
 					<Label class="flex items-center gap-2">
 						<Checkbox bind:checked={rememberMe} id="remember" />
-						<span class="text-xs font-medium text-foreground/85">
+						<span class="text-caption font-medium text-foreground">
 							Remember me on this device
 						</span>
 					</Label>

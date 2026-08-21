@@ -73,7 +73,14 @@ export interface TranscriptionService {
 		language?: string | null;
 		onPhase?: (p: TranscribeProgress) => void;
 	}): Promise<Transcript>;
+	/** Stop the in-flight `transcribe`, which then rejects with
+	 *  {@link TRANSCRIBE_CANCELLED}. Omit ⇒ no cancel affordance. */
+	cancel?(): Promise<void>;
 }
+
+/** Rejection message a host uses to report a user cancel rather than a failure.
+ *  Mirrored by `CANCELLED_MSG` in `transcription/cancel.rs`. */
+export const TRANSCRIBE_CANCELLED = "transcription cancelled";
 
 export interface AnalysisService {
 	detectSilence(args: {

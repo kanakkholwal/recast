@@ -101,6 +101,68 @@ pub(crate) fn write_atomic(tmp: &Path, dest: &Path, bytes: &[u8]) -> std::io::Re
     fs::rename(tmp, dest)
 }
 
+/// Temp + rename for derived state written from async code (lockfiles, toggle
+/// state). No fsync: these are rebuildable, so the truncate window is the only
+/// thing worth closing.
+pub(crate) async fn write_replace_async(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = dest.with_extension("json.tmp");
+    if let Err(e) = tokio::fs::write(&tmp, bytes).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(e);
+    }
+    match tokio::fs::rename(&tmp, dest).await {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&tmp).await;
+            Err(e)
+        }
+    }
+}
+
+/// Read a JSON manifest, quarantining an unparseable one to `*.corrupt.json`.
+/// Callers write the value straight back, so silently defaulting on a parse
+/// error would make one torn write permanently destroy every record it held.
+pub(crate) fn read_json_manifest<T: serde::de::DeserializeOwned + Default>(path: &Path) -> T {
+    let Ok(data) = fs::read_to_string(path) else {
+        return T::default();
+    };
+    match serde_json::from_str(&data) {
+        Ok(value) => value,
+        Err(e) => {
+            let quarantine = path.with_extension("corrupt.json");
+            log::error!(
+                "manifest {} is unreadable ({e}); moved to {} and starting empty",
+                path.display(),
+                quarantine.display()
+            );
+            let _ = fs::rename(path, &quarantine);
+            T::default()
+        }
+    }
+}
+
+/// Atomic counterpart to [`read_json_manifest`].
+pub(crate) fn write_json_manifest<T: serde::Serialize>(path: &Path, value: &T) {
+    if let Some(parent) = path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            log::warn!("failed to create manifest dir {}: {e}", parent.display());
+            return;
+        }
+    }
+    let data = match serde_json::to_vec_pretty(value) {
+        Ok(data) => data,
+        Err(e) => {
+            log::error!("failed to serialize manifest {}: {e}", path.display());
+            return;
+        }
+    };
+    let tmp = path.with_extension("json.tmp");
+    if let Err(e) = write_atomic(&tmp, path, &data) {
+        log::warn!("failed to persist manifest {}: {e}", path.display());
+        let _ = fs::remove_file(&tmp);
+    }
+}
+
 pub fn get_active_output_dir(state: &State<'_, AppState>) -> PathBuf {
     let config = state.config.read();
     if let Some(dir) = &config.output_dir {
@@ -1121,6 +1183,58 @@ fn probe_camera_device_health(device_id: &str) -> Option<(String, Option<String>
 }
 
 #[cfg(test)]
+mod manifest_tests {
+    use super::{read_json_manifest, write_json_manifest};
+    use std::collections::HashMap;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("recast-manifest-test-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("manifest.json")
+    }
+
+    #[test]
+    fn round_trips_through_an_atomic_write() {
+        let path = scratch("roundtrip");
+        let mut map = HashMap::new();
+        map.insert("a".to_string(), 1u32);
+        write_json_manifest(&path, &map);
+
+        let back: HashMap<String, u32> = read_json_manifest(&path);
+        assert_eq!(back, map);
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "the temp file must not survive a successful write"
+        );
+    }
+
+    #[test]
+    fn quarantines_a_corrupt_manifest_instead_of_discarding_it() {
+        let path = scratch("corrupt");
+        std::fs::write(&path, b"{ this is not json").unwrap();
+
+        let back: HashMap<String, u32> = read_json_manifest(&path);
+
+        assert!(back.is_empty(), "an unreadable manifest reads as empty");
+        let quarantine = path.with_extension("corrupt.json");
+        assert!(
+            quarantine.exists(),
+            "the corrupt bytes must be preserved for recovery, not dropped"
+        );
+        assert!(!path.exists(), "the corrupt file is moved, not copied");
+    }
+
+    #[test]
+    fn a_missing_manifest_is_not_quarantined() {
+        let path = scratch("missing");
+        let back: HashMap<String, u32> = read_json_manifest(&path);
+        assert!(back.is_empty());
+        assert!(!path.with_extension("corrupt.json").exists());
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::{classify_camera_name, parse_camera_devices};
 
@@ -1254,17 +1368,23 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
 
 /// Move a file to the OS recycle bin / trash.
 /// Validates the path exists and is a file before deleting.
+///
+/// `trash::delete` is a COM shell round-trip on Windows and a Finder/DBus one
+/// elsewhere, so it must not run on the main thread (macOS WKWebView freeze).
 #[tauri::command]
-pub fn delete_file(path: String) -> AppResult<()> {
-    let target = std::path::Path::new(&path);
-    if !target.exists() {
-        return Err(AppError::from("File not found"));
-    }
-    if !target.is_file() {
-        return Err(AppError::from("Path is not a file"));
-    }
-    trash::delete(target).map_err(|e| AppError::msg(format!("Could not move to trash: {e}")))?;
-    Ok(())
+pub async fn delete_file(path: String) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || {
+        let target = std::path::Path::new(&path);
+        if !target.exists() {
+            return Err(AppError::from("File not found"));
+        }
+        if !target.is_file() {
+            return Err(AppError::from("Path is not a file"));
+        }
+        trash::delete(target).map_err(|e| AppError::msg(format!("Could not move to trash: {e}")))
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("delete task panicked: {e}")))?
 }
 
 /// Rename a file in place (same directory, new filename).
@@ -1618,15 +1738,23 @@ pub fn cli_install_status() -> crate::path_install::InstallStatus {
 }
 
 /// Put `recast` on the user's PATH (the in-app "Install command line tool").
+///
+/// Async + `spawn_blocking`: this copies the whole release binary (tens of MB
+/// with ggml + ocr linked) and edits the registry / shell rc. A sync command
+/// runs on the main thread, which freezes the macOS WKWebView.
 #[tauri::command]
-pub fn install_cli() -> AppResult<String> {
-    crate::path_install::install().map_err(AppError::msg)
+pub async fn install_cli() -> AppResult<String> {
+    tokio::task::spawn_blocking(|| crate::path_install::install().map_err(AppError::msg))
+        .await
+        .map_err(|e| AppError::msg(format!("install task panicked: {e}")))?
 }
 
 /// Remove `recast` from the user's PATH.
 #[tauri::command]
-pub fn uninstall_cli() -> AppResult<String> {
-    crate::path_install::uninstall().map_err(AppError::msg)
+pub async fn uninstall_cli() -> AppResult<String> {
+    tokio::task::spawn_blocking(|| crate::path_install::uninstall().map_err(AppError::msg))
+        .await
+        .map_err(|e| AppError::msg(format!("uninstall task panicked: {e}")))?
 }
 
 #[derive(Debug, Serialize)]

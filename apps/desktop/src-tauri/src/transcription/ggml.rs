@@ -12,7 +12,9 @@
 
 use std::path::Path;
 
-use transcribe_cpp::{Model, RunOptions};
+use transcribe_cpp::{CancelToken, Model, RunOptions};
+
+use super::cancel;
 
 use super::words::{RawSeg, RawWord};
 use super::Transcript;
@@ -37,9 +39,20 @@ pub(crate) fn transcribe_gguf(
         ..Default::default()
     };
 
-    let result = session
-        .run(samples, &opts)
-        .map_err(|e| format!("ggml transcription failed: {e}"))?;
+    // The native abort callback is the only thing that can interrupt inference
+    // part-way; without it Cancel would just hide a run still burning the CPU.
+    let token = CancelToken::new();
+    session.set_cancel_token(&token);
+    cancel::install(&token);
+    let run = session.run(samples, &opts);
+    cancel::uninstall();
+    let result = run.map_err(|e| {
+        if token.is_cancelled() {
+            cancel::CANCELLED_MSG.to_string()
+        } else {
+            format!("ggml transcription failed: {e}")
+        }
+    })?;
 
     // Shape varies by family (Whisper: many segments; Parakeet: one segment +
     // per-word times). Logged so a missing-timing report can be diagnosed.

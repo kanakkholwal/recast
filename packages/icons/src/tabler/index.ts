@@ -294,6 +294,15 @@ export { IconXFilled as XFilled } from "@tabler/icons-svelte";
 // only correct for that product — never reach for one as a generic glyph.
 // (`Apple` above is Tabler's fruit; `BrandApple` is the company.)
 export { IconBrandGoogleDrive as BrandGoogleDrive } from "@tabler/icons-svelte";
+export { IconBrandSlack as BrandSlack } from "@tabler/icons-svelte";
+export { IconBrandNotion as BrandNotion } from "@tabler/icons-svelte";
+export { IconBrandYoutube as BrandYoutube } from "@tabler/icons-svelte";
+export { IconBrandDropbox as BrandDropbox } from "@tabler/icons-svelte";
+export { IconBrandOnedrive as BrandOnedrive } from "@tabler/icons-svelte";
+export { IconBrandVimeo as BrandVimeo } from "@tabler/icons-svelte";
+export { IconBrandTeams as BrandTeams } from "@tabler/icons-svelte";
+export { IconBrandDiscord as BrandDiscord } from "@tabler/icons-svelte";
+export { IconBrandFigma as BrandFigma } from "@tabler/icons-svelte";
 export { IconBrandWindows as BrandWindows } from "@tabler/icons-svelte";
 export { IconBrandApple as BrandApple } from "@tabler/icons-svelte";
 

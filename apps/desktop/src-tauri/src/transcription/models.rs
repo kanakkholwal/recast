@@ -204,8 +204,9 @@ pub enum TimestampGranularity {
 }
 
 impl TimestampGranularity {
-    /// Whether this model can drive captions at all. The registry guard test
-    /// enforces it across every built-in.
+    /// Whether this model can drive captions at all. Consumed by the registry
+    /// guard test, which enforces it across every built-in.
+    #[allow(dead_code)]
     pub fn usable_for_captions(self) -> bool {
         !matches!(self, TimestampGranularity::None)
     }

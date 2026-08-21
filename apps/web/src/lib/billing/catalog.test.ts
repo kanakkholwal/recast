@@ -21,7 +21,7 @@ describe("plan resolution", () => {
 	});
 
 	// Regression: `plan === "pro"` alone silently demoted Enterprise workspaces
-	// to Free, forcing a watermark and link expiry on the top tier.
+	// to Free, forcing link expiry on the top tier.
 	it("treats enterprise as paid", () => {
 		expect(isPaidPlan("enterprise")).toBe(true);
 		expect(isPaidPlan("pro")).toBe(true);
@@ -106,10 +106,7 @@ describe("infra cost basis", () => {
 	});
 
 	it("computes cost from both dimensions", () => {
-		expect(infraCostUsd(GB, GB)).toBeCloseTo(
-			INFRA.storagePerGbMonth + INFRA.egressPerGb,
-			4,
-		);
+		expect(infraCostUsd(GB, GB)).toBeCloseTo(INFRA.storagePerGbMonth + INFRA.egressPerGb, 4);
 	});
 });
 
@@ -149,18 +146,12 @@ describe("negotiated workspace overrides", () => {
 
 describe("plan ladder", () => {
 	it("never loosens a limit as the tier drops", () => {
-		expect(PLANS.pro.limits.storageBytes).toBeGreaterThan(
-			PLANS.free.limits.storageBytes,
-		);
+		expect(PLANS.pro.limits.storageBytes).toBeGreaterThan(PLANS.free.limits.storageBytes);
 		expect(PLANS.pro.limits.deliveryBytesPerMonth).toBeGreaterThan(
 			PLANS.free.limits.deliveryBytesPerMonth,
 		);
-		expect(PLANS.pro.limits.activeRecasts).toBeGreaterThan(
-			PLANS.free.limits.activeRecasts,
-		);
-		expect(PLANS.enterprise.limits.storageBytes).toBeGreaterThan(
-			PLANS.pro.limits.storageBytes,
-		);
+		expect(PLANS.pro.limits.activeRecasts).toBeGreaterThan(PLANS.free.limits.activeRecasts);
+		expect(PLANS.enterprise.limits.storageBytes).toBeGreaterThan(PLANS.pro.limits.storageBytes);
 		expect(PLANS.enterprise.seats.max).toBeGreaterThan(PLANS.pro.seats.max);
 	});
 
@@ -175,11 +166,5 @@ describe("plan ladder", () => {
 			expect(Number.isFinite(limits.activeRecasts)).toBe(true);
 			expect(Number.isFinite(limits.maxDurationSec)).toBe(true);
 		}
-	});
-
-	it("watermarks only the free tier", () => {
-		expect(PLANS.free.features.watermark).toBe(true);
-		expect(PLANS.pro.features.watermark).toBe(false);
-		expect(PLANS.enterprise.features.watermark).toBe(false);
 	});
 });

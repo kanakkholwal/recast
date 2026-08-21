@@ -63,10 +63,7 @@ pub(crate) fn read_endpoints(app: &AppHandle) -> Vec<RemoteEndpoint> {
     let Some(path) = endpoints_path(app) else {
         return Vec::new();
     };
-    let Ok(data) = std::fs::read_to_string(&path) else {
-        return Vec::new();
-    };
-    serde_json::from_str(&data).unwrap_or_default()
+    crate::commands::system::read_json_manifest(&path)
 }
 
 fn write_endpoints(app: &AppHandle, endpoints: &[RemoteEndpoint]) -> Result<(), String> {
@@ -75,7 +72,11 @@ fn write_endpoints(app: &AppHandle, endpoints: &[RemoteEndpoint]) -> Result<(), 
         std::fs::create_dir_all(parent).map_err(|e| format!("create dir: {e}"))?;
     }
     let json = serde_json::to_string_pretty(endpoints).map_err(|e| format!("serialize: {e}"))?;
-    std::fs::write(&path, json).map_err(|e| format!("write endpoints: {e}"))
+    let tmp = path.with_extension("json.tmp");
+    crate::commands::system::write_atomic(&tmp, &path, json.as_bytes()).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("write endpoints: {e}")
+    })
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────

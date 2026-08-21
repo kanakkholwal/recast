@@ -1,7 +1,7 @@
 /** Search, sort, and size maths for the recordings/exports/activity listings. */
 
-import { getExtension } from "$lib/format/files";
-import type { RecordingEntry } from "$lib/ipc-types";
+import { getExtension } from "@recast/editor/lib/format/files";
+import type { RecordingEntry } from "$lib/recorder-types";
 
 export type LibrarySort = "recent" | "name" | "size";
 
@@ -19,20 +19,15 @@ export function filterEntries(
 	return entries.filter(
 		(e) =>
 			e.filename.toLowerCase().includes(q) ||
-			(!!opts.matchExtension &&
-				getExtension(e.filename).toLowerCase().includes(q)),
+			(!!opts.matchExtension && getExtension(e.filename).toLowerCase().includes(q)),
 	);
 }
 
 /** Sorted copy: newest-first, A→Z, or largest-first. */
-export function sortEntries(
-	entries: RecordingEntry[],
-	sort: LibrarySort,
-): RecordingEntry[] {
+export function sortEntries(entries: RecordingEntry[], sort: LibrarySort): RecordingEntry[] {
 	const list = entries.slice();
 	if (sort === "recent") list.sort((a, b) => b.created - a.created);
-	else if (sort === "name")
-		list.sort((a, b) => a.filename.localeCompare(b.filename));
+	else if (sort === "name") list.sort((a, b) => a.filename.localeCompare(b.filename));
 	else if (sort === "size") list.sort((a, b) => b.sizeBytes - a.sizeBytes);
 	return list;
 }

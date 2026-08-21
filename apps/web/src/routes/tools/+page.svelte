@@ -1,55 +1,55 @@
 <script lang="ts">
-  import { Container, Footer, HeroBackdrop, Section, SeoMeta } from "$lib/components";
-  import { TOOLS } from "$lib/tools/registry";
-  import { toolIcon } from "$lib/tools/tool-icons";
-  import {
-    ArrowRight,
-    Download,
-    Image,
-    MousePointerClick,
-    ShieldCheck,
-    Upload,
-    UserX,
-    WifiOff,
-  } from "@recast/icons";
-  import { Cutout } from "@recast/ui/cutout";
-  import { LocalIcon } from "@recast/ui/local-icon";
-  import { prefersReducedMotion } from "$lib/motion-core";
-  import { fly } from "svelte/transition";
-  import { cubicOut } from "svelte/easing";
+import { Container, Footer, Section, SeoMeta } from "$lib/components";
+import { TOOLS } from "$lib/tools/registry";
+import { toolIcon } from "$lib/tools/tool-icons";
+import {
+	ArrowRight,
+	Download,
+	Image,
+	MousePointerClick,
+	ShieldCheck,
+	Upload,
+	UserX,
+	WifiOff,
+} from "@recast/icons";
+import { Cutout } from "@recast/ui/cutout";
+import { LocalIcon } from "@recast/ui/local-icon";
+import { prefersReducedMotion } from "$lib/motion-core";
+import { fly } from "svelte/transition";
+import { cubicOut } from "svelte/easing";
 
-  // Same hero entrance pattern as the rest of the public pages: 80ms
-  // stagger across the eyebrow, headline, body, and CTA. 460ms per
-  // element lands each in well under a second; the total ladder ends
-  // around 400ms after first paint.
-  const reduced = $derived(prefersReducedMotion());
-  const heroStagger = 80;
-  const riseM = (delay: number) =>
-    reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+// Same hero entrance pattern as the rest of the public pages: 80ms
+// stagger across the eyebrow, headline, body, and CTA. 460ms per
+// element lands each in well under a second; the total ladder ends
+// around 400ms after first paint.
+const reduced = $derived(prefersReducedMotion());
+const heroStagger = 80;
+const riseM = (delay: number) =>
+	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
-  const steps = [
-    {
-      icon: MousePointerClick,
-      title: "Pick a tool",
-      body: "Convert, trim, compress, or mute. Each tool is a single focused page.",
-    },
-    {
-      icon: Upload,
-      title: "Drop your file",
-      body: "It loads into your browser's own video engine. Nothing is uploaded.",
-    },
-    {
-      icon: Download,
-      title: "Save the result",
-      body: "Download the output instantly. No watermark, no account, no wait.",
-    },
-  ];
+const steps = [
+	{
+		icon: MousePointerClick,
+		title: "Pick a tool",
+		body: "Convert, trim, compress, or mute. Each tool is a single focused page.",
+	},
+	{
+		icon: Upload,
+		title: "Drop your file",
+		body: "It loads into your browser's own video engine. Nothing is uploaded.",
+	},
+	{
+		icon: Download,
+		title: "Save the result",
+		body: "Download the output instantly. No watermark, no account, no wait.",
+	},
+];
 
-  const privacy = [
-    { icon: WifiOff, label: "Runs offline", body: "Works after the page loads." },
-    { icon: ShieldCheck, label: "No upload", body: "Files never leave your device." },
-    { icon: UserX, label: "No account", body: "No sign-up, no email, no limits." },
-  ];
+const privacy = [
+	{ icon: WifiOff, label: "Runs offline", body: "Works after the page loads." },
+	{ icon: ShieldCheck, label: "No upload", body: "Files never leave your device." },
+	{ icon: UserX, label: "No account", body: "No sign-up, no email, no limits." },
+];
 </script>
 
 <SeoMeta
@@ -62,12 +62,11 @@
   <!-- Hero. Same stagger as the rest of the public pages so the entrance
        reads as one design language across the site. -->
   <Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-24">
-    <HeroBackdrop src="/background-footer.webp" tone="subtle" />
     <Container size="wide" class="relative">
       <div class="relative z-10 mx-auto flex max-w-2xl flex-col items-center gap-6 text-center">
         <span
           in:fly={riseM(heroStagger * 0)}
-          class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+          class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
         >
           <span class="size-1.5 rounded-full bg-primary"></span>
           Tools
@@ -77,7 +76,7 @@
           class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
         >
           Free video tools.
-          <span class="block font-medium italic text-foreground/40">Your files stay on your device.</span>
+          <span class="block font-medium italic text-muted-foreground">Your files stay on your device.</span>
         </h1>
         <p
           in:fly={riseM(heroStagger * 2)}
@@ -86,11 +85,11 @@
           Quick conversions that run entirely in your browser. Nothing is uploaded, no watermark, no account.
         </p>
         <div in:fly={riseM(heroStagger * 3)} class="mt-1 flex flex-wrap items-center justify-center gap-2">
-          <span class="inline-flex items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-body-sm font-medium text-muted-foreground">
             <ShieldCheck class="size-3 text-foreground/60" />
             No upload
           </span>
-          <span class="inline-flex items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-body-sm font-medium text-muted-foreground">
             <UserX class="size-3 text-foreground/60" />
             No account
           </span>
@@ -104,7 +103,7 @@
   <Container size="wide" class="mb-5">
     <a
       href="/tools/screenshot-editor"
-      class="group border-border/50 bg-card relative flex flex-col gap-3 overflow-hidden rounded-2xl border p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-border hover:shadow-md sm:flex-row sm:items-center sm:gap-6"
+      class="group border-border-low bg-card relative flex flex-col gap-3 overflow-hidden rounded-2xl border p-6 shadow-sm transition-all duration-300 hover:border-border hover:shadow-md sm:flex-row sm:items-center sm:gap-6"
     >
       <Cutout
         corner="tr"
@@ -112,7 +111,7 @@
         radius={14}
         class="flex items-center pt-2 pr-3 pb-4 pl-4"
       >
-        <span class="text-primary text-[10px] font-bold tracking-[0.12em] uppercase">
+        <span class="text-primary text-caption font-bold tracking-[0.12em] uppercase">
           Editor
         </span>
       </Cutout>
@@ -144,7 +143,7 @@
       {#each TOOLS as tool (tool.slug)}
         <a
           href={`/tools/${tool.slug}`}
-          class="group relative flex h-full flex-col gap-3 overflow-hidden rounded-2xl border border-border/50 bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-border hover:shadow-md"
+          class="group relative flex h-full flex-col gap-3 overflow-hidden rounded-2xl border border-border-low bg-card p-6 shadow-sm transition-all duration-300 hover:border-border hover:shadow-md"
         >
           <Cutout
             corner="tr"
@@ -153,7 +152,7 @@
             class="flex items-center pb-4 pl-4 pr-3 pt-2"
           >
             <span
-              class="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground"
+              class="text-caption font-bold font-medium text-muted-foreground"
             >
               {tool.outputLabel}
             </span>
@@ -187,7 +186,7 @@
   <Container size="wide" class="mt-20">
     <div class="mx-auto mb-8 max-w-xl text-center">
       <span
-        class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground"
+        class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
       >
         <span class="size-1.5 rounded-full bg-primary"></span>
         How it works
@@ -200,7 +199,7 @@
     <div class="grid gap-5 sm:grid-cols-3">
       {#each steps as step, i (step.title)}
         <article
-          class="group relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-border/50 bg-card p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
+          class="group relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-border-low bg-card p-6 shadow-sm transition-all duration-300 hover:shadow-md"
         >
           <Cutout
             corner="tr"
@@ -208,7 +207,7 @@
             radius={14}
             class="flex items-center justify-center pb-4 pl-4 pr-3 pt-2"
           >
-            <span class="text-[11px] font-bold tabular-nums text-muted-foreground">
+            <span class="text-caption font-bold tabular-nums text-muted-foreground">
               0{i + 1}
             </span>
           </Cutout>
@@ -228,10 +227,10 @@
   <!-- Privacy panel — one cutout-tagged surface -->
   <Container size="wide" class="mt-16">
     <div
-      class="relative overflow-hidden rounded-3xl border border-border/50 bg-card shadow-sm"
+      class="relative overflow-hidden rounded-2xl border border-border-low bg-card shadow-sm"
     >
       <Cutout corner="tl" surface="background" radius={14} class="pb-3.5 pl-3 pr-4 pt-2.5">
-        <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+        <span class="text-caption font-semibold text-primary">
           Private by default
         </span>
       </Cutout>
@@ -240,13 +239,13 @@
         {#each privacy as item (item.label)}
           <div class="flex items-start gap-3">
             <span
-              class="grid size-9 shrink-0 place-items-center rounded-lg bg-foreground/5 text-foreground"
+              class="grid size-9 shrink-0 place-items-center rounded-lg bg-paper text-foreground"
             >
               <item.icon class="size-4.5" />
             </span>
             <div>
               <p class="text-sm font-semibold tracking-tight">{item.label}</p>
-              <p class="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">
+              <p class="mt-0.5 text-body-sm leading-relaxed text-muted-foreground">
                 {item.body}
               </p>
             </div>
@@ -259,10 +258,10 @@
   <!-- CTA -->
   <Container size="wide" class="mt-16">
     <div
-      class="relative overflow-hidden rounded-3xl border border-border/50 bg-card px-6 py-10 text-center shadow-sm sm:px-10"
+      class="relative overflow-hidden rounded-2xl border border-border-low bg-card px-6 py-10 text-center shadow-sm sm:px-10"
     >
       <Cutout corner="tr" surface="background" radius={12} class="pb-3 pl-3.5 pr-3.5 pt-1.5">
-        <span class="text-[11px] font-bold tracking-wide text-foreground">Free forever</span>
+        <span class="text-caption font-bold tracking-wide text-foreground">Free forever</span>
       </Cutout>
 
       <div class="mx-auto max-w-xl">
@@ -275,7 +274,7 @@
         </p>
         <a
           href="/download"
-          class="mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-craft-sm transition-transform hover:-translate-y-0.5"
+          class="mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-craft-sm transition-transform"
         >
           Download Recast
           <ArrowRight class="size-4" />

@@ -15,6 +15,7 @@
 import { type MediaRef, toMediaRef } from "@recast/media";
 import { type FilmstripTile, LruCache } from "./filmstrip";
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
+import { createEditorWorker } from "../host-hooks";
 
 /** A built storyboard sprite: one image of `cols`×`rows` cells (`cellW`×`cellH`
  *  each) holding `count` frames evenly spaced across `durationSec`. Cell `i`
@@ -92,6 +93,7 @@ class MediabunnyTileProvider implements TileProvider {
 	/** Built storyboard sprite, and whether its one-time build is requested. */
 	#storyboard: Storyboard | undefined;
 	#storyboardRequested = false;
+	#storyboardQueued = false;
 
 	private constructor(worker: Worker, onChange: () => void) {
 		this.#worker = worker;
@@ -111,9 +113,7 @@ class MediabunnyTileProvider implements TileProvider {
 		// lazily, so the main thread never holds the whole recording. That
 		// whole-file buffer (~600MB, doubled by the worker's Blob copy) was the
 		// single largest allocation when opening a 4K clip.
-		const worker = new Worker(new URL("./filmstrip-worker", import.meta.url), {
-			type: "module",
-		});
+		const worker = createEditorWorker("filmstrip");
 		try {
 			await new Promise<void>((resolve, reject) => {
 				worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) => {
@@ -174,10 +174,20 @@ class MediabunnyTileProvider implements TileProvider {
 		// First request kicks off the one-time build; the reply lands in #onMessage.
 		if (!this.#storyboard && !this.#storyboardRequested) {
 			this.#storyboardRequested = true;
-			const msg: ToFilmstripWorker = { type: "storyboard" };
-			this.#worker.postMessage(msg);
+			this.#storyboardQueued = true;
+			this.#maybeSendStoryboard();
 		}
 		return this.#storyboard;
+	}
+
+	/** The storyboard is 32 decodes. It used to post straight past `#flush`, so
+	 *  the shared `DecoderBudget` lease never applied to it and it ran against the
+	 *  preview's own cold init. Held until decoding is allowed. */
+	#maybeSendStoryboard(): void {
+		if (this.#disposed || !this.#storyboardQueued || this.#decodePaused) return;
+		this.#storyboardQueued = false;
+		const msg: ToFilmstripWorker = { type: "storyboard" };
+		this.#worker.postMessage(msg);
 	}
 
 	#scheduleFlush(): void {
@@ -191,7 +201,10 @@ class MediabunnyTileProvider implements TileProvider {
 		if (this.#decodePaused === paused) return;
 		this.#decodePaused = paused;
 		// Resuming: drain whatever queued up while paused.
-		if (!paused) this.#scheduleFlush();
+		if (!paused) {
+			this.#scheduleFlush();
+			this.#maybeSendStoryboard();
+		}
 	}
 
 	#flush(): void {
@@ -211,16 +224,27 @@ class MediabunnyTileProvider implements TileProvider {
 		this.#worker.postMessage(msg);
 	}
 
+	/** Clear a request from in-flight and return its cache key. Every reply path
+	 *  must go through this or the tile wedges and the id maps grow unbounded. */
+	#release(id: number): string | undefined {
+		const cacheKey = this.#idToKey.get(id);
+		this.#idToKey.delete(id);
+		if (cacheKey !== undefined) this.#inflight.delete(cacheKey);
+		return cacheKey;
+	}
+
 	#onMessage(msg: FromFilmstripWorker): void {
 		if (msg.type === "error") {
 			console.error("filmstrip worker:", msg.message);
 			// A per-request decode error carries its id: release it so the tile can
 			// be re-requested and #idToKey/#inflight don't grow without bound.
-			if (msg.id !== undefined) {
-				const cacheKey = this.#idToKey.get(msg.id);
-				this.#idToKey.delete(msg.id);
-				if (cacheKey !== undefined) this.#inflight.delete(cacheKey);
-			}
+			if (msg.id !== undefined) this.#release(msg.id);
+			return;
+		}
+		if (msg.type === "drop") {
+			// Evicted, not failed — release it so it can be re-requested when it
+			// scrolls back in, and stay quiet.
+			this.#release(msg.id);
 			return;
 		}
 		if (msg.type === "storyboard") {
@@ -238,11 +262,8 @@ class MediabunnyTileProvider implements TileProvider {
 			return;
 		}
 		if (msg.type !== "tile") return;
-		const cacheKey = this.#idToKey.get(msg.id);
-		this.#idToKey.delete(msg.id);
-		if (cacheKey === undefined) return;
-		this.#inflight.delete(cacheKey);
-		if (this.#disposed) return;
+		const cacheKey = this.#release(msg.id);
+		if (cacheKey === undefined || this.#disposed) return;
 		const target = cacheKey.startsWith("hover:") ? this.#hoverCache : this.#cache;
 		target.set(cacheKey, URL.createObjectURL(msg.blob));
 		this.#onChange();

@@ -8,6 +8,7 @@ import {
 	DeviceComputerCamera,
 	ImageIcon,
 	Info,
+	Lock,
 	MousePointer,
 	Pencil,
 	ScanText,
@@ -42,6 +43,8 @@ interface Props {
 	/** Sections this host can serve. Omit ⇒ all of them. A section the host
 	 *  can't back is hidden rather than shown broken. */
 	panels?: readonly PanelTab[];
+	/** Someone else holds the write lock (agent session): look, don't touch. */
+	readOnly?: boolean;
 }
 
 // A section is one of three kinds. The rail groups by kind (thin dividers
@@ -165,6 +168,7 @@ let {
 	cameraCapture = "legacy",
 	onRegenerateAutoZoom,
 	panels,
+	readOnly = false,
 }: Props = $props();
 
 const visibleTabs = $derived(panels ? TABS.filter((t) => panels.includes(t.id)) : TABS);
@@ -263,15 +267,27 @@ const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-tran
 
   <div class="flex min-w-0 flex-1 flex-col">
     <header class="shrink-0 border-b border-border/60 px-3 py-2.5">
-      <h2 class="text-[13px] font-semibold leading-none text-foreground">
+      <h2
+        class="flex items-center gap-1.5 text-[13px] font-semibold leading-none text-foreground"
+      >
         {activeTab.label}
+        {#if readOnly}
+          <Lock class="size-3 text-muted-foreground" aria-hidden="true" />
+        {/if}
       </h2>
       <p class="mt-1 truncate text-[11px] leading-none text-muted-foreground">
-        {activeTab.hint}
+        {readOnly ? "Read-only while the agent is editing." : activeTab.hint}
       </p>
     </header>
 
-    <div class={tabContentClass} role="tabpanel" aria-label={activeTab.label}>
+    <!-- `inert` covers the controls only: the rail, the header and Info stay
+         live so a locked panel is still readable and navigable. -->
+    <div
+      class={tabContentClass}
+      role="tabpanel"
+      aria-label={activeTab.label}
+      inert={readOnly && activeTab.id !== "info"}
+    >
       {#if store.activePanel === "clip"}
         <ClipPanel {store} />
       {:else if store.activePanel === "background"}

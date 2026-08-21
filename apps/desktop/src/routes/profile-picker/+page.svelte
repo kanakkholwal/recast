@@ -1,83 +1,83 @@
 <script lang="ts">
-  import {
-    Camera,
-    Check,
-    Mic,
-    SlidersHorizontal as SlidersIcon,
-    Star,
-    Volume2,
-    X,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { cn } from "@recast/ui/utils";
-  import { emit } from "@tauri-apps/api/event";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { onMount } from "svelte";
+import {
+	Camera,
+	Check,
+	Mic,
+	SlidersHorizontal as SlidersIcon,
+	Star,
+	Volume2,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { cn } from "@recast/ui/utils";
+import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { onMount } from "svelte";
 
-  import type { RecordingProfile } from "$lib/profiles";
-  import { profilesStore } from "$lib/stores/profiles.svelte";
-  import { wrapIndex } from "$lib/util/wrap-index";
-  import { parseSelectedParam, summarize } from "./profile-picker.logic";
+import type { RecordingProfile } from "@recast/editor/lib/profiles";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import { wrapIndex } from "$lib/util/wrap-index";
+import { parseSelectedParam, summarize } from "./profile-picker.logic";
 
-  const initialSelected = parseSelectedParam(window.location.search);
+const initialSelected = parseSelectedParam(window.location.search);
 
-  let highlightedId = $state<string | null>(initialSelected);
+let highlightedId = $state<string | null>(initialSelected);
 
-  onMount(() => {
-    // Profiles load from the backend now (async); highlight the default once
-    // they arrive rather than reading synchronously on mount.
-    void profilesStore.hydrate().then(() => {
-      if (!highlightedId) {
-        const def = profilesStore.default();
-        if (def) highlightedId = def.id;
-      }
-    });
-  });
+onMount(() => {
+	// Profiles load from the backend now (async); highlight the default once
+	// they arrive rather than reading synchronously on mount.
+	void profilesStore.hydrate().then(() => {
+		if (!highlightedId) {
+			const def = profilesStore.default();
+			if (def) highlightedId = def.id;
+		}
+	});
+});
 
-  function selectProfile(profile: RecordingProfile) {
-    void emit("profile-selected", { id: profile.id });
-    getCurrentWindow().close();
-  }
+function selectProfile(profile: RecordingProfile) {
+	void emit("profile-selected", { id: profile.id });
+	getCurrentWindow().close();
+}
 
-  function closeWindow() {
-    getCurrentWindow().close();
-  }
+function closeWindow() {
+	getCurrentWindow().close();
+}
 
-  function moveHighlight(delta: 1 | -1) {
-    const list = profilesStore.profiles;
-    if (list.length === 0) return;
-    const idx = list.findIndex((p) => p.id === highlightedId);
-    const next = list[wrapIndex(idx + delta, list.length)];
-    highlightedId = next.id;
-  }
+function moveHighlight(delta: 1 | -1) {
+	const list = profilesStore.profiles;
+	if (list.length === 0) return;
+	const idx = list.findIndex((p) => p.id === highlightedId);
+	const next = list[wrapIndex(idx + delta, list.length)];
+	highlightedId = next.id;
+}
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      closeWindow();
-      return;
-    }
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      moveHighlight(1);
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      moveHighlight(-1);
-    } else if (e.key === "Enter" && highlightedId) {
-      const target = profilesStore.findById(highlightedId);
-      if (target) {
-        e.preventDefault();
-        selectProfile(target);
-      }
-    } else if ((e.metaKey || e.ctrlKey) && /^[1-8]$/.test(e.key)) {
-      const idx = parseInt(e.key, 10) - 1;
-      const target = profilesStore.profiles[idx];
-      if (target) {
-        e.preventDefault();
-        selectProfile(target);
-      }
-    }
-  }
+function handleKeydown(e: KeyboardEvent) {
+	if (e.key === "Escape") {
+		e.preventDefault();
+		closeWindow();
+		return;
+	}
+	if (e.key === "ArrowDown") {
+		e.preventDefault();
+		moveHighlight(1);
+	} else if (e.key === "ArrowUp") {
+		e.preventDefault();
+		moveHighlight(-1);
+	} else if (e.key === "Enter" && highlightedId) {
+		const target = profilesStore.findById(highlightedId);
+		if (target) {
+			e.preventDefault();
+			selectProfile(target);
+		}
+	} else if ((e.metaKey || e.ctrlKey) && /^[1-8]$/.test(e.key)) {
+		const idx = parseInt(e.key, 10) - 1;
+		const target = profilesStore.profiles[idx];
+		if (target) {
+			e.preventDefault();
+			selectProfile(target);
+		}
+	}
+}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />

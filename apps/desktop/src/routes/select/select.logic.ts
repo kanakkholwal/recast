@@ -1,6 +1,6 @@
 /** Source-list mappers + filters for the source-selector window. */
 
-import type { DisplayInfo, LastSource, WindowInfo } from "$lib/ipc-types";
+import type { DisplayInfo, LastSource, WindowInfo } from "$lib/recorder-types";
 
 export type TargetSource = {
 	type: "monitor" | "window" | "region";
@@ -20,10 +20,7 @@ export type TargetSource = {
 };
 
 /** Displays + non-empty-titled windows → a flat, tabbable source list. */
-export function buildSources(
-	displays: DisplayInfo[],
-	windows: WindowInfo[],
-): TargetSource[] {
+export function buildSources(displays: DisplayInfo[], windows: WindowInfo[]): TargetSource[] {
 	const next: TargetSource[] = [];
 	displays.forEach((d, i) =>
 		next.push({
@@ -71,12 +68,7 @@ export function regionEventToSource(ev: {
 /** Persisted `LastSource` → the "remembered" region tile, or null if not a
  *  fully-specified region. */
 export function lastRegionToSource(last: LastSource | null): TargetSource | null {
-	if (
-		!last ||
-		last.kind !== "region" ||
-		!last.regionWidth ||
-		!last.regionHeight
-	) {
+	if (!last || last.kind !== "region" || !last.regionWidth || !last.regionHeight) {
 		return null;
 	}
 	return {
@@ -94,17 +86,11 @@ export function lastRegionToSource(last: LastSource | null): TargetSource | null
 	};
 }
 
-export function filterByType(
-	sources: TargetSource[],
-	type: TargetSource["type"],
-): TargetSource[] {
+export function filterByType(sources: TargetSource[], type: TargetSource["type"]): TargetSource[] {
 	return sources.filter((s) => s.type === type);
 }
 
 /** Identity match on (type, id): a source is "selected" when both agree. */
-export function isSameSource(
-	selected: TargetSource | null,
-	source: TargetSource,
-): boolean {
+export function isSameSource(selected: TargetSource | null, source: TargetSource): boolean {
 	return selected?.id === source.id && selected?.type === source.type;
 }

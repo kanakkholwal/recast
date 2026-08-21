@@ -88,12 +88,15 @@ recast profile { list | show <id> | use <id> }
 recast screenshot { display N | window N | app } [--out PATH] [--max PX] [--full] [--base64]
 recast screen-read <PATH>          # on-device OCR of a video → structured timeline
 recast transcribe --input X --model Y [--language Z] [--out PATH]
-recast watch [--events rec,selection,profiles,editor,export]
+recast watch [--events rec,selection,profiles,editor,export] [--since SEQ]
 recast install / recast uninstall    # install the CLI to PATH
 
 recast project { open | show | timeline | zoom-regions | annotations
                | lock | unlock | patch } <PATH> ...
 recast editor ...                    # see "Editor control" below
+recast branch { create | list | append | diff | show
+              | truncate | discard | apply } <PATH> ...   # propose edits for review
+recast mcp                          # MCP server on stdio (launched by the client)
 recast export { list | show | start | cancel | wait } ...
 recast --help                       # all of the above + global flags
 ```
@@ -468,6 +471,60 @@ commit.
 
 ---
 
+## Branches — propose edits without touching the project
+
+`recast editor …` writes straight into the `.recast`. `recast branch …`
+instead journals typed ops against the render state they forked from,
+so an agent can propose a whole edit without holding the lock, without
+rewriting the bundle per op, and without a human losing their work.
+
+```
+recast branch create  <PATH> --branch a1 --author agent:claude [--label "tighten intro"]
+recast branch list    <PATH>
+recast branch append  <PATH> --branch a1 --idem-key k1 --ops '<JSON array>' [--expect-seq N]
+recast branch append  <PATH> --branch a1 --idem-key k1 --from-stdin
+recast branch diff    <PATH> --branch a1        # field-level changes
+recast branch show    <PATH> --branch a1        # the full render state it would produce
+recast branch truncate <PATH> --branch a1 --seq 3   # drop everything after seq 3
+recast branch discard <PATH> --branch a1
+recast branch apply   <PATH> --branch a1 --writer-id ui:me
+```
+
+### Ops
+
+`--ops` takes a JSON array of the same operations the targeted verbs
+perform. The `op` tag is the camelCase verb name:
+
+```json
+[
+  { "op": "trim", "start": 1.0, "end": 30.0 },
+  { "op": "cutAdd", "start": 4.0, "end": 5.0 },
+  { "op": "zoomRemove", "index": 0 },
+  { "op": "speedSet", "segmentStart": 12.0, "rate": 1.5 },
+  { "op": "annotationRemove", "id": "rect-1" },
+  { "op": "set", "field": "borderRadius", "value": 12 }
+]
+```
+
+Every op in one `append` lands together or not at all.
+
+### Guarantees
+
+| Concern | Behaviour |
+|---------|-----------|
+| Retry after a dropped socket | Re-sending the same `--idem-key` is a no-op; the response has `"recorded": false` and the original `seq` |
+| Another writer got in first | `--expect-seq` mismatch is rejected before anything is recorded |
+| An op that cannot apply | Rejected at `append` time (the branch is replayed first), not at review time |
+| Project edited since the fork | `branch apply` fails with `branch forked from <hash> but the project is now at <hash>` |
+| A branch that grows unbounded | Auto-compacts to a single `replace` op past 512 entries; the fork point is preserved |
+| Bundle rewrites | One, on `apply`. Never on `append` |
+
+Journals live under `<app_data_dir>/branches/<project-key>/<branch>.json`,
+not beside the `.recast`, so the temp-dir sweeper cannot reclaim pending
+work. Listen for changes with `recast watch --events editor`.
+
+---
+
 ## Export
 
 The export queue lives in SQLite (`export_jobs`) and feeds a single
@@ -575,11 +632,10 @@ the verb or any flag and update
 
 ## Streaming (`recast watch`)
 
-Opens a long-lived JSONL stream of backend events on stdout until
-interrupted (Ctrl-C).
-
-```bash
-recast watch --events rec,selection,profiles,editor,export
+```
+recast watch                                  # every group, live
+recast watch --events editor,export           # only these groups
+recast watch --events editor --since 128      # replay from a cursor
 ```
 
 | Group | Events |
@@ -587,18 +643,100 @@ recast watch --events rec,selection,profiles,editor,export
 | `rec` | `recording:started`, `recording:stopped` |
 | `selection` | `capture-intent:changed` |
 | `profiles` | `recording-profiles:changed` |
-| `editor` | `editor-session:changed`, `editor-state:changed` |
+| `editor` | `editor-session:changed`, `editor-state:changed`, `editor-branches:changed` |
 | `export` | `export-state`, `export-jobs-changed` |
 
-Each frame is one JSON object per line:
+An unknown group matches nothing rather than erroring, so a newer CLI talking to
+an older app degrades to silence instead of failing.
 
-```json
-{"event":"recording:started","data":{}}
-{"event":"editor-state:changed","data":{"path":"/path/foo.recast"}}
+### Frames
+
+Every frame is one JSON line.
+
+| Frame | Meaning |
+|-------|---------|
+| `{"event":"watch.ready","data":{"events":[…],"cursor":N}}` | First frame. `cursor` is where this stream starts |
+| `{"seq":N,"event":"…","data":{…}}` | An app event. `seq` is monotonic across all groups |
+| `{"event":"watch.lagged","data":{"missed":N}}` | `--since` was older than the buffer; `N` events are gone |
+| `{"event":"ping","cursor":N}` | 15 s keepalive during an idle stretch |
+
+### Resuming
+
+The app keeps the last 1024 events in memory and stamps each with a `seq`.
+Record the highest `seq` you processed; on reconnect pass it as `--since` and
+the stream replays from there:
+
+```bash
+recast watch --events editor --since "$LAST_SEQ"
 ```
 
-A heartbeat `{"event":"ping"}` fires every 15s; ignore it (or use as
-a liveness probe).
+Without `--since` the stream is live-only, which is what a fresh client wants.
+A `watch.lagged` frame means the gap was bigger than the buffer: re-read state
+with `recast project show` rather than assuming continuity.
+
+The log is fed by one listener set for the life of the process, so events that
+happened while nothing was connected are still there to replay. `seq` restarts
+at 1 when the app restarts, so treat a `cursor` larger than the reported one as
+a restart and re-snapshot.
+
+---
+
+## MCP — `recast mcp`
+
+Serves the [Model Context Protocol](https://modelcontextprotocol.io) on
+stdin/stdout so an MCP client can drive Recast. The client launches it; you
+never run it by hand.
+
+```json
+{
+  "mcpServers": {
+    "recast": { "command": "recast", "args": ["mcp"] }
+  }
+}
+```
+
+Or, for Claude Code: `claude mcp add recast -- recast mcp`.
+
+### What it exposes
+
+| Tool | Reads / writes |
+|------|----------------|
+| `recast_status` | Is the app running, is it recording |
+| `recast_project_show` | A project's saved edits |
+| `recast_project_timeline` | Trim window, cuts, kept segments with speeds |
+| `recast_branch_list` | Open proposals for a project |
+| `recast_branch_create` | Fork a branch from the project's current state |
+| `recast_branch_append` | Record ops onto a branch, atomically |
+| `recast_branch_diff` | Field-level changes a branch would make |
+| `recast_branch_show` | The render state a branch would produce |
+| `recast_branch_truncate` | Undo the tail of a branch |
+| `recast_branch_discard` | Delete a branch |
+
+### What it deliberately does not expose
+
+**Applying a branch, editing a project directly, recording, and exporting.**
+
+An MCP agent can propose any edit and inspect the result, but the write itself
+is a human action: `branch apply` in the CLI, or Apply in the editor's proposed
+changes panel. This is structural, not a policy toggle — the tool table has no
+verb that writes the project, and a test asserts it stays that way.
+
+### Shape of a session
+
+```
+recast_branch_create   path=…/demo.recast branch=agent-1 author=agent:claude
+recast_branch_append   branch=agent-1 idemKey=k1 ops=[{"op":"trim","start":1,"end":30}]
+recast_branch_diff     branch=agent-1        # check it did what you meant
+→ tell the user to review and apply it
+```
+
+The adapter holds no state of its own, so a client that restarts it loses
+nothing. It talks to the running app over the same control socket the CLI uses,
+and starts the app if it is not already running.
+
+A verb that fails comes back as a tool result with `isError: true` and the
+message intact (`editor_locked: …`, `branch forked from …`), so the model can
+read the reason and adjust rather than seeing a transport failure.
 
 ---
 
@@ -631,6 +769,13 @@ activity for `EditorSession::TTL_MS` = 60s) auto-reclaims.
 |--------|------------------------|
 | GUI user holds write | CLI mutate verbs return `editor_locked: … held by 'ui:<user>' (acquired Nms ago)` |
 | Agent holds write | GUI shows banner *"Agent `<writer_id>` is editing this project — your edits are paused"* + disables mutating inputs (preview scrubbing + watch still work) |
+
+Re-acquiring is free for the writer that already holds the lock: the
+same `writer_id` refreshes the activity stamp and keeps the original
+`acquired_at_ms`, so a multi-step agent edit never blocks on itself.
+Only a *different* `writer_id` sees `editor_locked`.
+
+`recast branch …` never takes the lock. Only `branch apply` does.
 
 Crash safety:
 - Every successful acquire / release / mutation persists the snapshot

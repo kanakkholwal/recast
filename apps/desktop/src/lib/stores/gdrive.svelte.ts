@@ -1,4 +1,4 @@
-import { createRateTracker } from "$lib/format/transfer-rate";
+import { createRateTracker } from "@recast/editor/lib/format/transfer-rate";
 import { isTauriApp } from "$lib/runtime/tauri";
 import { toast } from "@recast/ui/sonner";
 import {
@@ -33,7 +33,8 @@ export type GdriveUpload = {
 	/** Smoothed transfer rate (bytes/sec) for the ETA readout; unset until sampled. */
 	bytesPerSec?: number;
 	status: GdriveUploadStatus;
-	webViewLink?: string;
+	/** Null when Drive returned no link (Rust sends `Option<String>` as null). */
+	webViewLink?: string | null;
 	error?: string;
 };
 
@@ -144,7 +145,10 @@ function createGdriveStore() {
 		try {
 			await gdriveDisconnect();
 		} catch (e) {
+			// Clearing state here would claim the account is disconnected while the
+			// token is still on disk. Sibling `connect()` rethrows for the same reason.
 			console.error("[gdrive] disconnect failed", e);
+			throw e;
 		}
 		connected = false;
 		email = null;
@@ -252,6 +256,11 @@ function createGdriveStore() {
 			await gdriveCancelUpload(uploadId);
 		} catch (e) {
 			console.error("[gdrive] cancel failed", e);
+			// The transfer is still running. Leaving it "cancelled" makes
+			// `runUpload`'s catch swallow whatever really happens to it.
+			const now = uploads[uploadId];
+			if (now?.status === "cancelled") uploads[uploadId] = { ...now, status: "uploading" };
+			toast.error(`Couldn't cancel the upload: ${(e as Error)?.message ?? e}`);
 		}
 	}
 

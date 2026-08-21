@@ -770,7 +770,6 @@ fn spoken_word_count(words: &[TranscriptWord], t: f64) -> usize {
 
 /// Greedy line break by character count. Mirrors `breakIntoLines`: never splits
 /// inside a word, caps at `max_lines`. Returns word-index groups.
-#[cfg_attr(not(test), allow(dead_code))]
 fn break_into_lines(words: &[TranscriptWord], max_chars: u32, max_lines: u32) -> Vec<Vec<usize>> {
     let limit = max_chars.max(1) as usize;
     let cap = max_lines.max(1) as usize;

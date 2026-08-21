@@ -15,7 +15,7 @@ use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
     append_cut_speed_stage, build_speed_segments, collect_export_cuts, has_speed_change,
-    output_duration_cap, warped_output_duration,
+    warped_output_duration,
 };
 use super::export::gif::{run_gif_palette_prepass, run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
@@ -25,8 +25,8 @@ use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
     append_output_filters_to_complex, build_annotation_blur_complex,
     build_gif_paletteuse_external_complex, build_output_scale_filter, has_audio,
-    probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayAnim,
-    CameraOverlayParams, CameraShadowOverlay, ExportSpeed, GifFilterOptions,
+    probe_video_metadata, resolve_export_profile, CameraOverlayAnim, CameraOverlayParams,
+    CameraShadowOverlay, ExportSpeed, GifFilterOptions,
 };
 use super::system::get_active_output_dir;
 use super::types::{
@@ -36,8 +36,8 @@ use crate::project::reader::ProjectOpenResult;
 #[allow(unused_imports)]
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
-use crate::render::mask_export::{render_border_radius_mask, MaskResult};
-use crate::render::node_types::{AnnotationAnchor, AnnotationKind, AudioSettings};
+use crate::render::mask_export::MaskResult;
+use crate::render::node_types::{AnnotationKind, AudioSettings};
 
 /// Filtergraph length past which we pass it via `-filter_complex_script <file>`
 /// rather than inline, to stay under Windows' ~32 KB command-line limit. Well
@@ -305,60 +305,6 @@ fn build_music_stage(
     Some((segments.join(";"), "[afinal]".into()))
 }
 
-/// Attribution lines the music clips' licenses require (CC-BY), deduped and
-/// joined for the output file's `comment` metadata so the credit travels with
-/// the exported video. None when nothing needs crediting.
-fn build_credits_comment(clips: &[crate::render::node_types::AudioClip]) -> Option<String> {
-    let mut seen: Vec<&str> = Vec::new();
-    for clip in clips {
-        if let Some(a) = clip.source.attribution() {
-            if !seen.contains(&a) {
-                seen.push(a);
-            }
-        }
-    }
-    if seen.is_empty() {
-        return None;
-    }
-    Some(format!("Music: {}", seen.join("; ")))
-}
-
-fn append_watermark_to_complex(
-    existing: Option<&str>,
-    current_video_map: &str,
-    watermark_input_index: usize,
-    settings: &crate::render::node_types::WatermarkSettings,
-    canvas_width: u32,
-    _canvas_height: u32,
-) -> (String, String) {
-    let normalized_current = if current_video_map.starts_with('[') {
-        current_video_map.to_string()
-    } else {
-        format!("[{current_video_map}]")
-    };
-    let scale_width = ((canvas_width as f64) * (settings.scale / 100.0).clamp(0.02, 1.0))
-        .round()
-        .max(1.0) as u32;
-    let opacity = (settings.opacity / 100.0).clamp(0.0, 1.0);
-    let inset = settings.inset.max(0.0).round() as i32;
-    let x = match settings.position.as_str() {
-        "top-left" | "bottom-left" => inset.to_string(),
-        _ => format!("W-w-{inset}"),
-    };
-    let y = match settings.position.as_str() {
-        "top-left" | "top-right" => inset.to_string(),
-        _ => format!("H-h-{inset}"),
-    };
-    let stage = format!(
-        "[{watermark_input_index}:v]format=rgba,scale={scale_width}:-1,colorchannelmixer=aa={opacity:.4}[wm];{normalized_current}[wm]overlay=x={x}:y={y}:format=auto[vwm]"
-    );
-    let complex = match existing {
-        Some(existing) if !existing.is_empty() => format!("{existing};{stage}"),
-        _ => stage,
-    };
-    (complex, "[vwm]".into())
-}
-
 #[tauri::command]
 pub async fn get_video_metadata(path: String) -> AppResult<VideoMetadata> {
     // ffprobe spawn off the main thread — see generate_thumbnails for context.
@@ -572,7 +518,8 @@ where
         path_buf,
         EditorWriterKind::Agent,
         writer_id.to_string(),
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
 
     let doc =
         tauri::async_runtime::block_on(crate::commands::load_editor_document(path.to_string()))
@@ -596,25 +543,11 @@ where
     .map_err(|e| e.to_string())?;
 
     crate::commands::record_activity(state);
-    crate::commands::persist(state, app);
+    // `commit` persists AND broadcasts the lock, so the GUI learns an agent took
+    // the project on the agent's first patch rather than only on the next poll.
+    crate::commands::editor_session::commit(state, app);
     let _ = app.emit("editor-state:changed", serde_json::json!({ "path": path }));
     Ok(result)
-}
-
-/// Apply the agent-supplied `value` at a dotted JSON pointer inside the
-/// JSON shape of `RenderState`. Walks the path, replaces the leaf, and
-/// reports a structured error if the path doesn't exist.
-pub(crate) fn apply_dotted_path_set(
-    state: &mut serde_json::Value,
-    field: &str,
-    value: serde_json::Value,
-) -> Result<(), String> {
-    let pointer = format!("/{}", field.replace('.', "/"));
-    let target = state
-        .pointer_mut(&pointer)
-        .ok_or_else(|| format!("no field at path '{field}'"))?;
-    *target = value;
-    Ok(())
 }
 
 /// Single invariant violation. The agent/CI/UI inspect `reason` to map to a
@@ -650,7 +583,7 @@ const VALIDATION_EPS: f64 = 1e-4;
 /// (empty = nothing needed repair). Run BEFORE `validate_render_state`.
 pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<String> {
     let mut repairs = Vec::new();
-    if !(source_duration > 0.0) {
+    if !source_duration.is_finite() || source_duration <= 0.0 {
         return repairs;
     }
     if s.trim_end.is_finite() && s.trim_end > source_duration + VALIDATION_EPS {
@@ -1107,9 +1040,11 @@ mod audio_mix_tests {
 
     #[test]
     fn per_source_gain_reaches_the_graph() {
-        let mut s = AudioSettings::default();
-        s.system_volume = 100.0;
-        s.mic_volume = 50.0;
+        let s = AudioSettings {
+            system_volume: 100.0,
+            mic_volume: 50.0,
+            ..AudioSettings::default()
+        };
         let (complex, map) = append_audio_to_complex(
             None,
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
@@ -1128,8 +1063,10 @@ mod audio_mix_tests {
 
     #[test]
     fn muted_source_is_dropped_from_the_mix() {
-        let mut s = AudioSettings::default();
-        s.mic_muted = true;
+        let s = AudioSettings {
+            mic_muted: true,
+            ..AudioSettings::default()
+        };
         let (complex, _map) = append_audio_to_complex(
             None,
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
@@ -1146,9 +1083,11 @@ mod audio_mix_tests {
 
     #[test]
     fn all_sources_muted_yields_no_audio() {
-        let mut s = AudioSettings::default();
-        s.system_muted = true;
-        s.mic_muted = true;
+        let s = AudioSettings {
+            system_muted: true,
+            mic_muted: true,
+            ..AudioSettings::default()
+        };
         assert!(append_audio_to_complex(
             None,
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
@@ -1161,8 +1100,10 @@ mod audio_mix_tests {
 
     #[test]
     fn normalize_appends_loudnorm_to_the_mix() {
-        let mut s = AudioSettings::default();
-        s.normalize_loudness = true;
+        let s = AudioSettings {
+            normalize_loudness: true,
+            ..AudioSettings::default()
+        };
         let (complex, map) = append_audio_to_complex(
             None,
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
@@ -1253,9 +1194,12 @@ mod audio_mix_tests {
 
     #[test]
     fn source_kind_uses_master_only() {
-        let mut s = AudioSettings::default();
-        s.volume = 50.0;
-        s.mic_volume = 0.0; // a per-source gain must not touch an embedded source track
+        // A per-source gain must not touch an embedded source track.
+        let s = AudioSettings {
+            volume: 50.0,
+            mic_volume: 0.0,
+            ..AudioSettings::default()
+        };
         let (complex, _) = append_audio_to_complex(None, &[(0, AudioKind::Source)], &s, 0.0, 10.0)
             .expect("source audio");
         assert!(complex.contains("volume=0.5000"));
@@ -1291,14 +1235,16 @@ mod audio_mix_tests {
             ..provider("l", None)
         };
         let line = "\"Sunrise\" by Nova (Jamendo)";
-        let comment = build_credits_comment(&[
+        let comment = crate::commands::export::tail::build_credits_comment(&[
             provider("1", Some(line)),
             provider("2", Some(line)), // same line → deduped
             local,                     // local → no credit
         ])
         .expect("comment");
         assert_eq!(comment, format!("Music: {line}"));
-        assert!(build_credits_comment(&[provider("3", None)]).is_none());
+        assert!(
+            crate::commands::export::tail::build_credits_comment(&[provider("3", None)]).is_none()
+        );
     }
 }
 
@@ -1979,8 +1925,27 @@ pub(crate) async fn run_mux_job(
         .unwrap_or_else(|| "Recast_export".to_string());
     let output_path = super::unique_path(&output_dir, &source_stem, "mp4");
 
+    // Same command-line-length guard as the main export path: a project with
+    // many music/voice clips builds a long adelay/amix graph, and Windows caps
+    // the command line at ~32 KB ("filename or extension is too long").
+    let mut mux_script_path: Option<PathBuf> = None;
     if let Some(ref fc) = filter_complex {
-        args.extend(["-filter_complex".to_string(), fc.clone()]);
+        if fc.len() > FILTER_COMPLEX_SCRIPT_THRESHOLD {
+            let path = std::env::temp_dir().join(format!("recast-mux-filtergraph-{export_id}.txt"));
+            std::fs::write(&path, fc).map_err(|e| {
+                AppError::msg(format!(
+                    "failed to write mux filter script {}: {e}",
+                    path.display()
+                ))
+            })?;
+            args.extend([
+                "-filter_complex_script".to_string(),
+                path.to_string_lossy().to_string(),
+            ]);
+            mux_script_path = Some(path);
+        } else {
+            args.extend(["-filter_complex".to_string(), fc.clone()]);
+        }
     }
     args.extend([
         "-map".to_string(),
@@ -2024,6 +1989,10 @@ pub(crate) async fn run_mux_job(
         )
     })
     .await;
+
+    if let Some(p) = mux_script_path.as_ref() {
+        let _ = std::fs::remove_file(p);
+    }
 
     match task_result {
         Ok(Ok(path)) => {
@@ -2299,117 +2268,26 @@ pub(crate) async fn run_export_job(
         .ok()
         .map(|base| base.join("assets"));
 
-    // Border-radius is stored as a 0..50 percentage of the shorter source edge.
-    // Generate a single-frame alpha mask at source dimensions; the export plan
-    // will alphamerge it onto the (zoomed) source video before background
-    // composition so the rounded corners cut through to the background.
-    let border_radius_pct = request.render_state.border_radius.clamp(0.0, 50.0);
-    let border_radius_px = border_radius_pct / 100.0 * metadata.width.min(metadata.height) as f64;
-    let border_radius_mask: Option<MaskResult> = if border_radius_px > 0.5 {
-        render_border_radius_mask(metadata.width, metadata.height, border_radius_px)
-            .map_err(|e| AppError::msg(format!("border-radius mask render failed: {e}")))?
-    } else {
-        None
-    };
-    let border_radius_mask_path = border_radius_mask.as_ref().map(|m| m.path.clone());
-
-    // Canvas geometry feeds the drop-shadow rasteriser, the cursor
-    // overlay PNG, and the FFmpeg filter graph. Compute once.
-    //
-    // Cursor and drop-shadow PNGs are rendered at COMP dims (= source +
-    // padding * 2), not the final canvas dims. They're composited at the
-    // comp's offset inside the canvas via FFmpeg overlay. Doing it the
-    // other way piped a 1984×3528 RGBA stream for a 9:16 of 1080p
-    // (~28 MB/frame at 60fps), which stalled the cursor sub-encode.
-    let canvas_geom = crate::render::graph::compute_canvas_geometry(
+    // Static layers (corner mask, drop shadow, gradient, pre-baked wallpaper).
+    // `layers` owns their temp-file guards, so it must stay alive until the
+    // encode below has read them.
+    let layers = crate::commands::export::raster::rasterize_static_layers(
+        &mut request,
         metadata.width,
         metadata.height,
-        request.render_state.padding,
-        request.render_state.output_aspect.as_deref(),
-    );
+        asset_cache_dir.as_deref(),
+        &static_root(),
+        prebake_static_background,
+    )?;
+    let canvas_geom = layers.geom;
     let canvas_width = canvas_geom.canvas_w;
     let canvas_height = canvas_geom.canvas_h;
     let canvas_padding = canvas_geom.padding_px;
     let comp_width = canvas_geom.comp_w;
     let comp_height = canvas_geom.comp_h;
-
-    // Drop-shadow PNG: rasterised once and overlaid on the background by the
-    // FFmpeg planner. Skipped when the user has disabled the effect or set
-    // opacity to 0 — those gates are also enforced inside
-    // `render_drop_shadow_mask`, but checking here saves the canvas-sized
-    // allocation.
-    let shadow_settings = &request.render_state.shadow;
-    let drop_shadow_mask: Option<MaskResult> =
-        if shadow_settings.enabled && shadow_settings.opacity > 0.0 {
-            crate::render::mask_export::render_drop_shadow_mask(
-                crate::render::mask_export::DropShadowRequest {
-                    canvas_width: comp_width,
-                    canvas_height: comp_height,
-                    video_width: metadata.width,
-                    video_height: metadata.height,
-                    padding: canvas_padding,
-                    video_border_radius: border_radius_px,
-                    blur: shadow_settings.blur,
-                    spread: shadow_settings.spread,
-                    offset_y: shadow_settings.offset_y,
-                    opacity: shadow_settings.opacity,
-                    color: shadow_settings.color.clone(),
-                },
-            )
-            .map_err(|e| AppError::msg(format!("drop-shadow mask render failed: {e}")))?
-        } else {
-            None
-        };
-    let drop_shadow_mask_path = drop_shadow_mask.as_ref().map(|m| m.path.clone());
-
-    // Gradient backgrounds are rasterised to a canvas-sized PNG so the export
-    // composites the exact multi-stop, angled gradient the WebGL preview shows.
-    // Without this the FFmpeg planner falls back to a single flat color. Held
-    // alive until the export finishes (the temp dir auto-cleans on drop).
-    let gradient_bg: Option<MaskResult> = if request.render_state.background_type == "gradient" {
-        crate::render::mask_export::render_gradient_background(
-            &request.render_state.background_value,
-            canvas_width,
-            canvas_height,
-        )
-        .map_err(|e| AppError::msg(format!("gradient background render failed: {e}")))?
-    } else {
-        None
-    };
-    let gradient_bg_path = gradient_bg.as_ref().map(|m| m.path.clone());
-
-    // Pre-bake a static wallpaper/image background once (canvas-sized + blurred)
-    // so the filter graph doesn't re-scale/re-blur it on every frame — a static
-    // background is identical each frame (measured ~19.5 ms/frame at 120 fps).
-    // Point the background at the baked PNG with blur 0; the graph then loops it as
-    // a near-no-op, pixel-identical to the per-frame path. Best-effort: on failure
-    // the render state is untouched and the live per-frame path runs as before. The
-    // guard keeps the PNG alive until the export finishes.
-    let _prebaked_bg = if matches!(
-        request.render_state.background_type.as_str(),
-        "wallpaper" | "image"
-    ) {
-        crate::render::graph::resolve_background_path(
-            &request.render_state.background_value,
-            &static_root(),
-            asset_cache_dir.as_deref(),
-        )
-        .and_then(|src| {
-            prebake_static_background(
-                &src,
-                canvas_width,
-                canvas_height,
-                request.render_state.background_blur,
-            )
-        })
-        .map(|(path, guard)| {
-            request.render_state.background_value = path.to_string_lossy().into_owned();
-            request.render_state.background_blur = 0.0;
-            guard
-        })
-    } else {
-        None
-    };
+    let border_radius_mask_path = layers.border_radius_mask.as_ref().map(|m| m.path.clone());
+    let drop_shadow_mask_path = layers.drop_shadow_mask.as_ref().map(|m| m.path.clone());
+    let gradient_bg_path = layers.gradient_bg.as_ref().map(|m| m.path.clone());
     // Rebuild the graph so the export plan sees the (possibly) pre-baked
     // background. `trim_start`/`trim_end` were already read above and the
     // background swap doesn't affect them.
@@ -2571,31 +2449,6 @@ pub(crate) async fn run_export_job(
         args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
     }
 
-    let watermark_path = if request.render_state.watermark_settings.enabled
-        && !request
-            .render_state
-            .watermark_settings
-            .image_path
-            .trim()
-            .is_empty()
-    {
-        let path = PathBuf::from(request.render_state.watermark_settings.image_path.trim());
-        path.exists().then_some(path)
-    } else {
-        None
-    };
-    let watermark_input_index = watermark_path
-        .as_ref()
-        .map(|_| 1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize);
-    if let Some(ref path) = watermark_path {
-        args.extend([
-            "-loop".to_string(),
-            "1".to_string(),
-            "-i".to_string(),
-            path.to_string_lossy().to_string(),
-        ]);
-    }
-
     //  Camera overlay
     //
     // Composite the project's `camera.mp4` onto the screen video at the
@@ -2645,18 +2498,15 @@ pub(crate) async fn run_export_job(
     };
     let camera_mask_path = camera_mask.as_ref().map(|m| m.path.clone());
 
-    let camera_input_index = camera_bubble.as_ref().map(|_| {
-        1 + export_plan.extra_inputs.len()
-            + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize
-    });
+    let camera_input_index = camera_bubble
+        .as_ref()
+        .map(|_| 1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize);
     if let Some((ref path, _, _, _, _)) = camera_bubble {
         args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
     }
     let camera_mask_input_index = camera_mask_path.as_ref().map(|_| {
         1 + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize
             + camera_input_index.is_some() as usize
     });
     if let Some(ref path) = camera_mask_path {
@@ -2710,7 +2560,6 @@ pub(crate) async fn run_export_job(
     let camera_shadow_input_index = camera_shadow_path.as_ref().map(|_| {
         1 + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize
             + camera_input_index.is_some() as usize
             + camera_mask_input_index.is_some() as usize
     });
@@ -2750,7 +2599,6 @@ pub(crate) async fn run_export_job(
         let mut next_audio_input_index = 1
             + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize
             + camera_input_index.is_some() as usize
             + camera_mask_input_index.is_some() as usize
             + camera_shadow_input_index.is_some() as usize;
@@ -2805,20 +2653,7 @@ pub(crate) async fn run_export_job(
             (initial_filter_complex, initial_video_map)
         };
 
-    if let Some(watermark_input_index) = watermark_input_index {
-        let (new_complex, new_map) = append_watermark_to_complex(
-            filter_complex_after_cursor.as_deref(),
-            &video_map_after_cursor,
-            watermark_input_index,
-            &request.render_state.watermark_settings,
-            canvas_width,
-            canvas_height,
-        );
-        filter_complex_after_cursor = Some(new_complex);
-        video_map_after_cursor = new_map;
-    }
-
-    // Camera overlay: composited after the watermark so the speaker bubble
+    // Camera overlay: composited after the cursor so the speaker bubble
     // sits on top of any branding mark and below the annotation blur (which
     // a user might want to apply over their own face).
     if let (Some(cam_idx), Some((_, bx, by, bw, bh))) = (camera_input_index, camera_bubble.as_ref())
@@ -2873,81 +2708,11 @@ pub(crate) async fn run_export_job(
     // Annotation blur regions — applied AFTER the cursor overlay so the blur
     // sits over the composited cursor too (same z-order as in the preview),
     // but BEFORE GIF palettization so the palette captures the blurred pixels.
-    let blur_regions: Vec<BlurRegion> = request
-        .render_state
-        .annotations
-        .iter()
-        .filter(|a| !a.hidden)
-        .filter_map(|a| match &a.kind {
-            AnnotationKind::Blur {
-                x,
-                y,
-                w,
-                h,
-                strength,
-                variant,
-                tint_color,
-                radius: corner_frac,
-                ..
-            } => {
-                // UV → canvas-pixel rect, over the annotation's anchor rect:
-                // the video region (video anchor, matches preview) or the padded
-                // frame (frame anchor). Identical to the old full-canvas mapping
-                // when there's no padding. Static either way — FFmpeg can't
-                // follow a per-frame zoom, so a zoomed video-anchored blur holds
-                // its un-zoomed spot.
-                let (rx, ry, rw_ref, rh_ref) = match a.anchor {
-                    AnnotationAnchor::Frame => (
-                        canvas_geom.comp_x as f64,
-                        canvas_geom.comp_y as f64,
-                        comp_width as f64,
-                        comp_height as f64,
-                    ),
-                    AnnotationAnchor::Video => (
-                        canvas_geom.video_x as f64,
-                        canvas_geom.video_y as f64,
-                        canvas_geom.video_w as f64,
-                        canvas_geom.video_h as f64,
-                    ),
-                };
-                let cx = (rx + x * rw_ref).round() as i32;
-                let cy = (ry + y * rh_ref).round() as i32;
-                let cw = (w.abs() * rw_ref).round() as i32;
-                let ch = (h.abs() * rh_ref).round() as i32;
-                if cw < 4 || ch < 4 {
-                    return None;
-                }
-                // Strength 0..1 → kernel radius up to 12% of the shorter edge,
-                // clamped at FFmpeg boxblur's hard max of 127. Mirrors
-                // ffmpeg.rs::make_blur_region — both paths must agree so the
-                // export and editor previews match.
-                let max_dim = canvas_width.min(canvas_height) as f64 * 0.12;
-                let radius = (strength.clamp(0.0, 1.0) * max_dim)
-                    .round()
-                    .clamp(1.0, 127.0) as u32;
-                let tint_rgb =
-                    u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0x000000);
-                // Corner radius as a fraction (0..0.5) of the region's shorter
-                // side — same basis as the preview's `radius * min(w, h)`.
-                let corner_px = corner_frac.clamp(0.0, 0.5) * (cw.min(ch) as f64);
-                Some(BlurRegion {
-                    x: cx,
-                    y: cy,
-                    w: cw,
-                    h: ch,
-                    radius,
-                    start_secs: a.start - trim_start,
-                    end_secs: a.end - trim_start,
-                    variant: variant.as_str(),
-                    tint_rgb,
-                    opacity: a.opacity.clamp(0.0, 1.0),
-                    strength: strength.clamp(0.0, 1.0),
-                    corner_px,
-                })
-            }
-            _ => None,
-        })
-        .collect();
+    let blur_regions = crate::commands::export::blur::blur_regions(
+        &request.render_state.annotations,
+        &canvas_geom,
+        trim_start,
+    );
     if !blur_regions.is_empty() {
         let (new_complex, new_map) = build_annotation_blur_complex(
             filter_complex_after_cursor.as_deref(),
@@ -2989,10 +2754,8 @@ pub(crate) async fn run_export_job(
     let gif_settings: GifSettings = request.gif_settings.clone().unwrap_or_default();
     let mut palette_temp_path: Option<PathBuf> = None;
     let progress_band = if request.format == "gif" {
-        let palette_input_index = 1
-            + export_plan.extra_inputs.len()
-            + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize;
+        let palette_input_index =
+            1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize;
         let gif_out = run_gif_pass(GifPassParams {
             app: &app,
             export_id: &export_id,
@@ -3120,11 +2883,12 @@ pub(crate) async fn run_export_job(
     // ~32 KB command-line limit ("The filename or extension is too long",
     // os error 206). Above a threshold, pass it via `-filter_complex_script
     // <file>` (read from disk, no command-line cost) instead of inline. The
-    // file is removed after the encode finishes.
+    // file is removed after the encode finishes — and lives in temp, not the
+    // output dir, so a killed export leaves no junk beside the user's videos.
     let mut filter_script_path: Option<PathBuf> = None;
     if let Some(ref filter_complex) = filter_complex_after_cursor {
         if filter_complex.len() > FILTER_COMPLEX_SCRIPT_THRESHOLD {
-            let path = output_dir.join(format!("recast-filtergraph-{export_id}.txt"));
+            let path = std::env::temp_dir().join(format!("recast-filtergraph-{export_id}.txt"));
             std::fs::write(&path, filter_complex).map_err(|e| {
                 AppError::msg(format!(
                     "failed to write filter script {}: {e}",
@@ -3158,44 +2922,15 @@ pub(crate) async fn run_export_job(
         args.extend(["-vf".to_string(), output_filters.join(",")]);
     }
 
-    // The input-side `-t` above trims the source media, but filtergraph
-    // generators such as `color=...` are infinite by default. Add an
-    // output-side duration cap so background/composite exports stop after the
-    // requested timeline duration instead of encoding forever.
-    //
-    // Cap at the REAL post-edit length: cuts drop frames and per-segment speed
-    // warps them, so the edited stream is shorter (or, for slow-motion, longer)
-    // than the raw trimmed span. Because the background generators are infinite
-    // and `overlay` repeats the video's last frame past content-end, capping at
-    // the raw span would bake a frozen tail (the cut/sped-away time) onto the
-    // end — and would truncate a slowed clip. `warped_output_duration` is the
-    // length the select+setpts/atempo stage actually produces. GIF keeps the
-    // trimmed span (its cut/palette path differs and it loops).
-    let output_cap = output_duration_cap(&request.format, duration, &speed_segments);
-    if output_cap > 0.0 {
-        args.extend(["-t".to_string(), format!("{output_cap:.3}")]);
-    }
-    // The real length of the output file — the `-t` cap (cuts dropped + speed
-    // warped), not the raw trimmed span. This is the UI progress denominator and
-    // the completion-probe target; using the raw span made the bar stall short of
-    // (cuts/speed-up) or overshoot past (slow-motion) 100%.
-    let expected_output_secs = if output_cap > 0.0 {
-        output_cap
-    } else {
-        source_duration
-    };
-
-    if duration <= 0.0 && (!export_plan.extra_inputs.is_empty() || cursor_overlay_path.is_some()) {
-        args.push("-shortest".to_string());
-    }
-
-    // CC-BY music requires credit, so bake the attribution into the output's
-    // `comment` metadata (skipped for GIF — it carries no audio to credit).
-    if request.format != "gif" {
-        if let Some(comment) = build_credits_comment(&request.render_state.music_clips) {
-            args.extend(["-metadata".to_string(), format!("comment={comment}")]);
-        }
-    }
+    let expected_output_secs = crate::commands::export::tail::append_output_tail(
+        &mut args,
+        &request,
+        duration,
+        source_duration,
+        &speed_segments,
+        !export_plan.extra_inputs.is_empty() || cursor_overlay_path.is_some(),
+    )
+    .expected_output_secs;
 
     // Snapshot inputs+filter+maps before the codec tail so a hardware-encoder
     // crash can be re-run with software from the same base command.
@@ -3286,7 +3021,7 @@ pub(crate) async fn run_export_job(
         match first {
             Err(e)
                 if sw_retry_args.is_some()
-                    && parse_ffmpeg_exit_code(&e).map_or(false, is_ffmpeg_crash_code) =>
+                    && parse_ffmpeg_exit_code(&e).is_some_and(is_ffmpeg_crash_code) =>
             {
                 log::warn!(
                     "export[{retry_export_id}]: hardware encoder crashed ({e}); retrying with software x264"

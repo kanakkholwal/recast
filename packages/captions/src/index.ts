@@ -33,12 +33,7 @@ export { wordColor, wordScaled, type WordRenderInput } from "./word-render";
 // NOTE: CaptionBox.svelte is deliberately NOT re-exported here. This entry must
 // stay pure TS so it imports cleanly from a plain-Node test runner (the desktop
 // vitest has no Svelte plugin). Import the component from "@recast/captions/box".
-export {
-	serializeKaraokeVtt,
-	parseKaraokeCue,
-	formatVttTime,
-	parseVttTime,
-} from "./vtt";
+export { parseKaraokeCue, parseVttTime } from "./vtt";
 export {
 	captionHeightFrac,
 	captionTopFrac,

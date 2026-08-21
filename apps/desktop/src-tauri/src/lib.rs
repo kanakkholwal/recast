@@ -14,6 +14,7 @@ pub mod ffmpeg;
 mod fonts;
 #[cfg(windows)]
 mod jumplist;
+mod mcp;
 // On-device OCR for screen understanding (agent automation). The plumbing always
 // compiles; only the ocrs engine seam is behind the `ocr` feature, so a
 // `--no-default-features` build still exposes the command and reports that the
@@ -175,6 +176,36 @@ fn install_singleton_plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> ta
     // run its own windowed instance alongside any installed production
     // build. See the release-build variant above for the full rationale.
     builder
+}
+
+/// Delete entries directly under `root` (optionally only those named
+/// `prefix*`) that nothing has touched for an hour. Best-effort throughout: a
+/// dir still in use, or one we can't read, is simply left alone.
+fn sweep_stale_temp(root: PathBuf, prefix: Option<&str>) {
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return;
+    };
+    let Some(cutoff) =
+        std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(3600))
+    else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if let Some(prefix) = prefix {
+            if !entry.file_name().to_string_lossy().starts_with(prefix) {
+                continue;
+            }
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.modified().map(|m| m >= cutoff).unwrap_or(true) {
+            continue;
+        }
+        let _ = if meta.is_dir() {
+            std::fs::remove_dir_all(entry.path())
+        } else {
+            std::fs::remove_file(entry.path())
+        };
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -502,32 +533,20 @@ pub fn run() {
             // open yet, so no live editor can lose the assets under it.
             tauri::async_runtime::spawn_blocking(project::reader::sweep_cache);
 
-            // Sweep abandoned `recast-thumbnails/*` subdirs left behind by
-            // crashed/killed editor sessions. The thumbnail extractor
-            // best-effort-removes its own per-invocation dir, but a process
-            // crash mid-scrub leaks the directory — on a long-running install
-            // these can accumulate gigabytes of orphaned JPEGs. Anything
-            // older than ~1 hour is safe to drop (no live process is still
-            // writing into it).
+            // Sweep scratch dirs left behind by crashed/killed sessions. Both
+            // owners remove their own dir on the happy path, but `Drop` doesn't
+            // run on a kill or a quit-mid-export, so these accumulate gigabytes
+            // on a long-running install. Startup-only + single-instance means no
+            // live process is still writing into them.
             tauri::async_runtime::spawn_blocking(|| {
-                let thumb_root = std::env::temp_dir().join("recast-thumbnails");
-                let Ok(entries) = std::fs::read_dir(&thumb_root) else {
-                    return;
-                };
-                let cutoff =
-                    std::time::SystemTime::now().checked_sub(std::time::Duration::from_secs(3600));
-                for entry in entries.flatten() {
-                    let stale = entry
-                        .metadata()
-                        .and_then(|m| m.modified())
-                        .ok()
-                        .zip(cutoff)
-                        .map(|(modified, cutoff)| modified < cutoff)
-                        .unwrap_or(false);
-                    if stale {
-                        let _ = std::fs::remove_dir_all(entry.path());
-                    }
-                }
+                // `recast-thumbnails/*`: orphaned JPEGs from a crash mid-scrub.
+                sweep_stale_temp(std::env::temp_dir().join("recast-thumbnails"), None);
+                // `recast-export-{cursor,mask,shadow,cam-shadow,gradient,bg}-*`:
+                // TempDirGuard's territory. `cursor.mov` alone is lossless QTRLE
+                // at composite resolution for the whole timeline.
+                sweep_stale_temp(std::env::temp_dir(), Some("recast-export-"));
+                // Oversized `-filter_complex_script` files.
+                sweep_stale_temp(std::env::temp_dir(), Some("recast-filtergraph-"));
             });
 
             Ok(())
@@ -552,6 +571,18 @@ pub fn run() {
             commands::rename_file,
             commands::get_video_metadata,
             commands::load_editor_document,
+            commands::list_branches,
+            commands::create_branch,
+            commands::append_to_branch,
+            commands::diff_branch,
+            commands::materialize_branch,
+            commands::truncate_branch,
+            commands::discard_branch,
+            commands::apply_branch,
+            commands::get_editor_session,
+            commands::acquire_editor_write,
+            commands::release_editor_write,
+            commands::force_release_editor_write,
             commands::migrate_project,
             commands::generate_thumbnails,
             commands::cancel_export,
@@ -583,6 +614,7 @@ pub fn run() {
             transcription::download_caption_model,
             transcription::delete_caption_model,
             transcription::transcribe_project,
+            transcription::cancel_transcription,
             transcription::has_transcribable_audio,
             transcription::export_captions,
             transcription::list_remote_asr_endpoints,

@@ -173,55 +173,6 @@ pub struct AudioClip {
     pub ducking: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WatermarkSettings {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub image_path: String,
-    #[serde(default)]
-    pub image_src: String,
-    #[serde(default = "default_watermark_opacity")]
-    pub opacity: f64,
-    #[serde(default = "default_watermark_scale")]
-    pub scale: f64,
-    #[serde(default = "default_watermark_position")]
-    pub position: String,
-    #[serde(default = "default_watermark_inset")]
-    pub inset: f64,
-}
-
-impl Default for WatermarkSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            image_path: String::new(),
-            image_src: String::new(),
-            opacity: default_watermark_opacity(),
-            scale: default_watermark_scale(),
-            position: default_watermark_position(),
-            inset: default_watermark_inset(),
-        }
-    }
-}
-
-fn default_watermark_opacity() -> f64 {
-    70.0
-}
-
-fn default_watermark_scale() -> f64 {
-    18.0
-}
-
-fn default_watermark_position() -> String {
-    "bottom-right".into()
-}
-
-fn default_watermark_inset() -> f64 {
-    24.0
-}
-
 fn default_camera_shape() -> String {
     "rounded".into()
 }
@@ -314,6 +265,8 @@ pub struct CameraOverlaySettings {
     pub zoom_follow_easing: Easing,
     #[serde(default)]
     pub default_placement: CameraPlacement,
+    /// Camera moves recorded live. Write-only: `loadRenderState` folds them into
+    /// `keyframes` (the model preview and export both read) and clears this.
     #[serde(default)]
     pub motion_segments: Vec<CameraMotionSegment>,
     /// Per-cut position keyframes (original-time). Empty → static default_placement.
@@ -377,44 +330,9 @@ impl Default for CameraOverlaySettings {
     }
 }
 
-impl CameraOverlaySettings {
-    #[allow(dead_code)]
-    pub fn placement_at(&self, t: f64) -> CameraPlacement {
-        let mut current = self.default_placement.clone();
-        for segment in &self.motion_segments {
-            if t <= segment.start {
-                break;
-            }
-            if t >= segment.end {
-                current = CameraPlacement {
-                    x: segment.to_x,
-                    y: segment.to_y,
-                    width: segment.to_width,
-                    height: segment.to_height,
-                };
-                continue;
-            }
-
-            let duration = (segment.end - segment.start).max(1e-6);
-            let phase = ((t - segment.start) / duration).clamp(0.0, 1.0);
-            let eased = segment.ease_in.y(phase as f32) as f64;
-            return CameraPlacement {
-                x: segment.from_x + (segment.to_x - segment.from_x) * eased,
-                y: segment.from_y + (segment.to_y - segment.from_y) * eased,
-                width: segment.from_width + (segment.to_width - segment.from_width) * eased,
-                height: segment.from_height + (segment.to_height - segment.from_height) * eased,
-            };
-        }
-        current
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        Annotation, AnnotationAnchor, AnnotationKind, CameraMotionSegment, CameraOverlaySettings,
-        CameraPlacement,
-    };
+    use super::{Annotation, AnnotationAnchor, AnnotationKind};
 
     // Guards the IPC contract: the frontend sends camelCase keys, and the export
     // pipeline must read `anchor` + the image `radius`/`stroke` it sends. A key
@@ -531,62 +449,6 @@ mod tests {
             other => panic!("expected arrow, got {other:?}"),
         }
         assert_eq!(serde_json::to_value(&a).unwrap()["kind"]["headSize"], 0.3);
-    }
-
-    #[test]
-    fn camera_overlay_uses_default_placement_before_motion() {
-        let overlay = CameraOverlaySettings::default();
-        assert_eq!(overlay.placement_at(0.0), CameraPlacement::default());
-    }
-
-    #[test]
-    fn camera_overlay_interpolates_inside_motion_segment() {
-        let mut overlay = CameraOverlaySettings::default();
-        overlay.motion_segments.push(CameraMotionSegment {
-            start: 0.0,
-            end: 2.0,
-            from_x: 0.1,
-            from_y: 0.2,
-            from_width: 0.2,
-            from_height: 0.2,
-            to_x: 0.5,
-            to_y: 0.6,
-            to_width: 0.3,
-            to_height: 0.3,
-            ease_in: Default::default(),
-            ease_out: Default::default(),
-            source: "live-recorded".into(),
-        });
-
-        let at_mid = overlay.placement_at(1.0);
-        assert!(at_mid.x > 0.1 && at_mid.x < 0.5);
-        assert!(at_mid.y > 0.2 && at_mid.y < 0.6);
-        assert!(at_mid.width > 0.2 && at_mid.width < 0.3);
-    }
-
-    #[test]
-    fn camera_overlay_uses_last_segment_after_motion() {
-        let mut overlay = CameraOverlaySettings::default();
-        overlay.motion_segments.push(CameraMotionSegment {
-            start: 0.0,
-            end: 1.0,
-            from_x: 0.1,
-            from_y: 0.2,
-            from_width: 0.2,
-            from_height: 0.2,
-            to_x: 0.4,
-            to_y: 0.5,
-            to_width: 0.25,
-            to_height: 0.25,
-            ease_in: Default::default(),
-            ease_out: Default::default(),
-            source: "manual".into(),
-        });
-
-        let after = overlay.placement_at(3.0);
-        assert_eq!(after.x, 0.4);
-        assert_eq!(after.y, 0.5);
-        assert_eq!(after.width, 0.25);
     }
 }
 
@@ -934,7 +796,7 @@ pub struct Annotation {
     // v2 envelope — every field defaulted so v1 projects keep loading. Order
     // matches the TS `Annotation` interface in `editor-store.svelte.ts`.
     /// User-renamed label. Falls back to a kind-derived label in the UI.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     /// Stacking order; higher draws later (on top). v1 projects start at 0.
     #[serde(default)]
@@ -951,7 +813,7 @@ pub struct Annotation {
     /// Optional glow / soft shadow. Rendered in export for rect/ellipse
     /// (`draw_shape_shadow`) and image/text-as-image (`draw_image_shadow`);
     /// arrow glow is preview-only.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glow: Option<AnnotationGlow>,
     /// What the annotation is pinned to. `Video` (default) tracks the zoomed
     /// video content; `Frame` pins it to the output frame (no zoom).

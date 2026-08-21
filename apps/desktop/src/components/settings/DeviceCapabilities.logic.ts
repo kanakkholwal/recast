@@ -1,5 +1,5 @@
 /** Pure OS/encoder derivation + copy for DeviceCapabilities. */
-import type { EncoderAvailability } from "$lib/ipc-types";
+import type { EncoderAvailability } from "$lib/recorder-types";
 
 export const PLATFORM_LABEL: Record<string, string> = {
 	windows: "Windows",
@@ -16,11 +16,7 @@ export function windowsBuild(v: string): number | null {
 	return m ? Number(m[1]) : null;
 }
 
-export function deriveOsName(
-	platform: string,
-	osVersion: string,
-	osLabel: string,
-): string {
+export function deriveOsName(platform: string, osVersion: string, osLabel: string): string {
 	if (platform === "windows") {
 		const build = windowsBuild(osVersion);
 		if (build !== null) return build >= 22000 ? "Windows 11" : "Windows 10";

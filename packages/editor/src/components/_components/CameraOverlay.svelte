@@ -277,17 +277,20 @@ function onHandleUp(e: PointerEvent) {
       ></video>
     </div>
 
+    <!-- Not buttons: they had no onclick and four identical accessible names, so
+         they were four dead tab stops. Drag-only by nature; CameraPanel's "Bubble
+         size" slider and preset grid are the keyboard-complete equivalents. -->
     {#each CORNERS as c (c.id)}
-      <button
-        type="button"
-        aria-label="Resize camera"
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span
+        aria-hidden="true"
         class="absolute size-3 rounded-full border border-white/80 bg-primary opacity-0 shadow transition-opacity group-hover:opacity-100"
         style="{c.offset}; cursor: {c.cursor}; touch-action: none;"
         onpointerdown={(e) => onHandleDown(e, c.id)}
         onpointermove={(e) => onHandleMove(e, c.id)}
         onpointerup={onHandleUp}
         onpointercancel={onHandleUp}
-      ></button>
+      ></span>
     {/each}
   </div>
 {/if}

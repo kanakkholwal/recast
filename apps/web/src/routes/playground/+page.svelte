@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onDestroy, onMount, untrack } from "svelte";
+import { createAudioEngineHost } from "@recast/editor";
 import { pushState } from "$app/navigation";
 import { page } from "$app/state";
 import Logo from "$lib/logo.svelte";
@@ -72,6 +73,9 @@ async function mountEditor() {
 	loadError = false;
 	try {
 		const m = await import("@recast/editor");
+		// The package never spawns workers; this app owns every `new Worker`.
+		const { workerHost } = await import("$lib/workers");
+		m.setEditorHostHooks({ workers: workerHost });
 		const next = m.createEditorStore();
 		const meta = playgroundSession.metadata!;
 		next.metadata = { ...meta, codec: "", sizeBytes: playgroundSession.source!.file.size };
@@ -193,6 +197,9 @@ const audioTracks = $derived(
 		? [{ src: playgroundSession.videoRef, kind: "system" as const }]
 		: undefined,
 );
+// The editor no longer builds this: an AudioContext is host-owned so a host
+// driving its own transport can't race a second engine.
+const audio = createAudioEngineHost(() => audioTracks);
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} />
@@ -224,7 +231,7 @@ const audioTracks = $derived(
 				video={playgroundSession.videoRef ?? undefined}
 				cameraSrc={playgroundSession.camera?.objectUrl ?? ""}
 				cameraPath={playgroundSession.camera ? playgroundSession.camera.objectUrl : null}
-				{audioTracks}
+				audioEngine={audio.current}
 				{panels}
 				{tileProvider}
 				{filmstripVersion}

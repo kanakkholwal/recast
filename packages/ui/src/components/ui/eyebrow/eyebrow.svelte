@@ -1,22 +1,22 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from "tailwind-variants";
+import { tv, type VariantProps } from "tailwind-variants";
 
-	export const eyebrowVariants = tv({
-		base: "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] shadow-(--shadow-craft-inset) transition-colors",
-		variants: {
-			variant: {
-				default: "border-border/50 bg-card/60 text-foreground/80 backdrop-blur-md",
-				primary: "border-primary/20 bg-primary/8 text-primary",
-				muted: "border-border/40 bg-muted/60 text-muted-foreground",
-				outline: "border-border text-foreground/80 bg-transparent",
-			},
+export const eyebrowVariants = tv({
+	base: "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-body-sm font-medium transition-colors",
+	variants: {
+		variant: {
+			default: "border-border bg-card text-muted-foreground",
+			primary: "border-primary/25 bg-primary/8 text-primary",
+			muted: "border-border bg-paper text-muted-foreground",
+			outline: "border-border bg-transparent text-muted-foreground",
 		},
-		defaultVariants: {
-			variant: "default",
-		},
-	});
+	},
+	defaultVariants: {
+		variant: "default",
+	},
+});
 
-	export type EyebrowVariant = VariantProps<typeof eyebrowVariants>["variant"];
+export type EyebrowVariant = VariantProps<typeof eyebrowVariants>["variant"];
 </script>
 
 <script lang="ts">
@@ -50,7 +50,7 @@
 	{...rest}
 >
 	{#if Icon}
-		<Icon class="size-3" />
+		<Icon class="size-3.5" />
 	{/if}
 	{@render children()}
 </span>

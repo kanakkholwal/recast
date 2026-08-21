@@ -169,6 +169,9 @@ pub(crate) fn run_gif_palette_prepass(
             Ok(None) => {
                 if cancel_flag.load(Ordering::Acquire) {
                     let _ = child.kill();
+                    // Reap it: on Unix a killed child stays a zombie until
+                    // waited on, so a cancelled GIF export leaked one each time.
+                    let _ = child.wait();
                     break Err("export cancelled".to_string());
                 }
                 std::thread::sleep(Duration::from_millis(100));
@@ -361,7 +364,7 @@ pub(crate) async fn run_gif_pass(p: GifPassParams<'_>) -> Result<GifPassOutput, 
 
     // Wire the palette PNG in as the last FFmpeg input. GIF mode skips audio
     // inputs entirely, so input ordering up to this point is:
-    //   0=source, 1..=extra_inputs, [cursor], [watermark]
+    //   0=source, 1..=extra_inputs, [cursor]
     // Palette appends after that.
     let palette_input_args = ["-i".to_string(), palette_path.to_string_lossy().to_string()];
 

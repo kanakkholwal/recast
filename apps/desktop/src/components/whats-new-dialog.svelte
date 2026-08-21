@@ -5,7 +5,7 @@ import { whatsNew } from "$lib/stores/whats-new.svelte";
 import { ArrowRight, AiWand } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import * as Dialog from "@recast/ui/dialog";
-import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
+import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
 import { cn } from "@recast/ui/utils";
 import { Markdown } from "@recast/ui/markdown";
 

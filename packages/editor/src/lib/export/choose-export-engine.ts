@@ -12,10 +12,11 @@
 export type ExportEngine = "browser" | "rust";
 
 export interface ExportEngineInputs {
-	/** Master migration flag (feature-flags.ts). While false, everything is Rust. */
+	/** The `browserExportBeta` experimental flag. While false, everything is Rust. */
 	masterEnabled: boolean;
-	/** Buried Advanced setting forcing the legacy engine (support escape hatch). */
-	forceLegacy: boolean;
+	/** Support escape hatch for when browser export flips default-on. No producer
+	 *  yet, so omitting it is the normal case. */
+	forceLegacy?: boolean;
 	/** browserExportBlockedReason(store): non-null routes to Rust with the reason. */
 	blockedReason: string | null;
 	/** WebCodecs H.264 encode is usable in this WebView (probeBrowserExportCapability). */

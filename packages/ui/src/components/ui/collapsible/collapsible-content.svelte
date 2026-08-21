@@ -1,32 +1,37 @@
 <script lang="ts">
-	import { Collapsible as CollapsiblePrimitive } from "bits-ui";
-	import { cn } from "@recast/ui/utils";
-	import { cubicOut } from "svelte/easing";
-	import { slide } from "svelte/transition";
+import { Collapsible as CollapsiblePrimitive } from "bits-ui";
+import { cn } from "@recast/ui/utils";
+import { cubicOut } from "svelte/easing";
+import { prefersReducedMotion } from "svelte/motion";
+import { slide } from "svelte/transition";
 
-	/**
-	 * Collapsible content panel. Drives open/close with Svelte's native `slide`
-	 * transition (real height animation, not a CSS keyframe) so the surrounding
-	 * layout reflows smoothly as the content expands/collapses.
-	 *
-	 * Override `duration` / `easing` per call-site for hero panels; the defaults
-	 * are tuned for dense list rows (240ms, cubicOut).
-	 *
-	 * `hiddenUntilFound` is set to false because it overrides `forceMount` in
-	 * bits-ui, and we need forceMount so the `child` snippet keeps running and
-	 * `{#if open}` controls Svelte's transition lifecycle.
-	 */
-	let {
-		ref = $bindable(null),
-		class: className,
-		duration = 240,
-		easing = cubicOut,
-		children,
-		...restProps
-	}: CollapsiblePrimitive.ContentProps & {
-		duration?: number;
-		easing?: (t: number) => number;
-	} = $props();
+/**
+ * Collapsible content panel. Drives open/close with Svelte's native `slide`
+ * transition (real height animation, not a CSS keyframe) so the surrounding
+ * layout reflows smoothly as the content expands/collapses.
+ *
+ * Override `duration` / `easing` per call-site for hero panels; the defaults
+ * are tuned for dense list rows (240ms, cubicOut).
+ *
+ * `hiddenUntilFound` is set to false because it overrides `forceMount` in
+ * bits-ui, and we need forceMount so the `child` snippet keeps running and
+ * `{#if open}` controls Svelte's transition lifecycle.
+ */
+let {
+	ref = $bindable(null),
+	class: className,
+	duration = 240,
+	easing = cubicOut,
+	children,
+	...restProps
+}: CollapsiblePrimitive.ContentProps & {
+	duration?: number;
+	easing?: (t: number) => number;
+} = $props();
+
+// Svelte transitions run on WAAPI, which the CSS reduced-motion override in
+// app.css can't reach — this component leaked that to every call site.
+const slideMs = $derived(prefersReducedMotion.current ? 0 : duration);
 </script>
 
 <CollapsiblePrimitive.Content
@@ -40,7 +45,7 @@
 		{#if open}
 			<div
 				{...props}
-				transition:slide={{ duration, easing, axis: "y" }}
+				transition:slide={{ duration: slideMs, easing, axis: "y" }}
 				class={cn("overflow-hidden", className)}
 			>
 				{@render children?.()}

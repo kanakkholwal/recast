@@ -30,6 +30,10 @@ use super::error::{AppError, AppResult};
 /// kept opaque (`serde_json::Value`) — the frontend interprets the per-kind
 /// contribution shapes; Rust only validates the security-relevant envelope and
 /// downloads `assets`.
+fn empty_contributions() -> serde_json::Value {
+    serde_json::Value::Object(serde_json::Map::new())
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionManifest {
@@ -47,8 +51,11 @@ pub struct ExtensionManifest {
     /// Reserved for Ed25519 publisher signing (see [`verify_signature`]).
     #[serde(default)]
     pub signature: Option<String>,
-    /// Opaque per-kind contributions, interpreted frontend-side.
-    #[serde(default)]
+    /// Opaque per-kind contributions, interpreted frontend-side. Defaults to an
+    /// empty object, not `Value::Null`: TS declares `contributes` non-nullable
+    /// (`ExtensionContributions`), so a bare `default` wrote `null` over the
+    /// wire and every reader needed a `?? {}` guard.
+    #[serde(default = "empty_contributions")]
     pub contributes: serde_json::Value,
     pub assets: Vec<AssetEntry>,
 }
@@ -197,7 +204,7 @@ fn verify_signature(_manifest_bytes: &[u8], _signature: Option<&str>) -> Result<
 
 async fn write_state(dir: &Path, enabled: bool) {
     if let Ok(json) = serde_json::to_vec_pretty(&ExtState { enabled }) {
-        let _ = fs::write(dir.join("state.json"), json).await;
+        let _ = crate::commands::system::write_replace_async(&dir.join("state.json"), &json).await;
     }
 }
 
@@ -302,7 +309,7 @@ pub async fn install_extension(
 
     let lock_path = dir.join("extension.lock.json");
     if let Ok(json) = serde_json::to_vec_pretty(&manifest) {
-        fs::write(&lock_path, json)
+        crate::commands::system::write_replace_async(&lock_path, &json)
             .await
             .map_err(|e| AppError::msg(format!("write lock: {e}")))?;
     }
@@ -461,7 +468,7 @@ mod tests {
             kind: "asset-pack".into(),
             permissions: vec![],
             signature: None,
-            contributes: serde_json::Value::Null,
+            contributes: empty_contributions(),
             assets: vec![],
         };
         assert!(validate_manifest(&m).is_ok());

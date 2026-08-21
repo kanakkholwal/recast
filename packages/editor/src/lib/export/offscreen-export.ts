@@ -276,6 +276,9 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 	});
 	const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
 	let camInput: Input | null = null;
+	// Sample iterators to wind down in `finally`: abandoning one mid-iteration
+	// leaves its decoder and pre-decoded frames alive.
+	const iterators: AsyncGenerator<unknown, void, unknown>[] = [];
 
 	// A lost context can strand `source.add` (the encoder can't read the dead
 	// canvas), hanging the export forever at N%. Reject the encoder awaits the
@@ -317,6 +320,32 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 
 		const frames = exportFrameCount(opts.fps, opts.outputDurationSec);
 		const frameDur = opts.fps > 0 ? 1 / opts.fps : 0;
+
+		// `sink.getSample(t)` builds a FRESH VideoDecoder per call and decodes from
+		// the preceding keyframe, so calling it per frame re-decoded each GOP once
+		// per output frame in it (~15x at our GOP of fps/2, ~60x for imported
+		// footage). `samplesAtTimestamps` decodes each packet at most once.
+		//
+		// Both sinks walk the same timestamps, so the scene is evaluated once per
+		// frame and memoized; the sinks pre-decode ahead, so entries are dropped as
+		// the render loop passes them and only the lookahead window stays resident.
+		const scenes = new Map<number, { input: FrameInput; originalSec: number }>();
+		const sceneAt = (i: number) => {
+			let scene = scenes.get(i);
+			if (!scene) {
+				scene = opts.frameAt(i, exportFrameTime(i, opts.fps));
+				scenes.set(i, scene);
+			}
+			return scene;
+		};
+		function* sampleTimes(): Generator<number> {
+			for (let i = 0; i < frames; i++) yield Math.max(0, sceneAt(i).originalSec);
+		}
+		const mainSamples = sink.samplesAtTimestamps(sampleTimes());
+		const camSamples = camSink ? camSink.samplesAtTimestamps(sampleTimes()) : null;
+		// Releases the decoders when the loop exits early (abort, GPU loss).
+		iterators.push(mainSamples);
+		if (camSamples) iterators.push(camSamples);
 		// A layer draw that throws must NOT abort the whole export (which would
 		// silently fall back to the Rust path and drop the overlay with no signal).
 		// Log the first failure per layer and keep rendering the rest of the frame.
@@ -329,13 +358,18 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 			// Fail loudly instead so the export is retried, not silently corrupted.
 			if (gl.isContextLost()) throw new Error("export failed: GPU context lost mid-render");
 			const outputSec = exportFrameTime(i, opts.fps);
-			const { input: frameInput, originalSec } = opts.frameAt(i, outputSec);
-			const sample = await sink.getSample(Math.max(0, originalSec));
+			const { input: frameInput, originalSec } = sceneAt(i);
+			const sample = (await mainSamples.next()).value;
 			if (sample) {
 				const vf = sample.toVideoFrame();
-				backend.uploadFrame(vf);
-				vf.close();
-				sample.close();
+				try {
+					backend.uploadFrame(vf);
+				} finally {
+					// An upload throw (lost context is expected here) must not strand
+					// the frame — a retained VideoFrame silently starves the decoder.
+					vf.close();
+					sample.close();
+				}
 			}
 			// The annotation + caption layer is drawn in `afterMain` (after the GL
 			// main pass) so blur annotations can sample the just-composited frame.
@@ -368,26 +402,32 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 				ctx.annotationTex = backend.uploadAnnotation(annoCanvas);
 			});
 
-			if (opts.camera && camSink) {
-				const cs = await camSink.getSample(Math.max(0, originalSec));
+			if (opts.camera && camSamples) {
+				const cs = (await camSamples.next()).value;
 				if (cs) {
 					const cvf = cs.toVideoFrame();
-					const camTex = backend.uploadCamera(cvf);
-					const camAspect = cvf.displayHeight > 0 ? cvf.displayWidth / cvf.displayHeight : 1;
-					const placement = opts.camera.placementAt(originalSec);
-					const rect = cameraBubbleRect(placement, opts.camera.geom, opts.width, opts.height);
-					backend.drawSprite(camTex, rect, {
-						uvRect: coverUvRect(camAspect, opts.camera.mirror),
-						cornerRadiusPx: bubbleCornerRadiusPx(
-							opts.camera.shape,
-							opts.camera.cornerRadius,
-							rect.w,
-						),
-					});
-					cvf.close();
-					cs.close();
+					try {
+						const camTex = backend.uploadCamera(cvf);
+						const camAspect = cvf.displayHeight > 0 ? cvf.displayWidth / cvf.displayHeight : 1;
+						const placement = opts.camera.placementAt(originalSec);
+						const rect = cameraBubbleRect(placement, opts.camera.geom, opts.width, opts.height);
+						backend.drawSprite(camTex, rect, {
+							uvRect: coverUvRect(camAspect, opts.camera.mirror),
+							cornerRadiusPx: bubbleCornerRadiusPx(
+								opts.camera.shape,
+								opts.camera.cornerRadius,
+								rect.w,
+							),
+						});
+					} finally {
+						cvf.close();
+						cs.close();
+					}
 				}
 			}
+			// Both sinks have consumed this index by now; drop it so the memo tracks
+			// only the lookahead window rather than the whole timeline.
+			scenes.delete(i);
 
 			// Race the encoder awaits against context loss — the only awaits that hang
 			// when the GL canvas dies (the decoder awaits are WebCodecs, unaffected).
@@ -409,6 +449,7 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 	} finally {
 		rejectOnLost = () => {};
 		canvas.removeEventListener("webglcontextlost", onContextLost);
+		for (const it of iterators) await it.return(undefined).catch(() => {});
 		for (const o of overlays) o.dispose();
 		input.dispose();
 		camInput?.dispose();

@@ -16,6 +16,16 @@ export interface ShortcutHost {
 	registerShortcutHandlers(handlers: Record<string, () => void>): () => void;
 }
 
+/** Workers the editor needs. The HOST APP owns every `new Worker(...)` call:
+ *  a `new URL(…, import.meta.url)` inside this package resolves outside the
+ *  app root, which then only fails in dev — see
+ *  `packages/media/test/worker-resolution.test.ts`. */
+export type EditorWorkerName = "mediabunny" | "render" | "filmstrip" | "smoothing" | "exportRender";
+
+export interface WorkerHost {
+	create(name: EditorWorkerName): Worker;
+}
+
 export interface ExportActivityHost {
 	/** True while a browser export is compositing. The preview pauses its own
 	 *  decode/render while set, so the two don't fight over the GPU. */
@@ -24,12 +34,22 @@ export interface ExportActivityHost {
 
 interface HostHooks {
 	analytics: EditorAnalytics;
+	workers: WorkerHost;
 	shortcuts: ShortcutHost;
 	exportActivity: ExportActivityHost;
 }
 
 const noop: HostHooks = {
 	analytics: { capture: () => {} },
+	workers: {
+		create: (name) => {
+			// Loud on purpose: a silently-missing worker degrades to no decode.
+			throw new Error(
+				`No worker host installed: cannot create the "${name}" worker. ` +
+					"Call setEditorHostHooks({ workers }) from the app.",
+			);
+		},
+	},
 	shortcuts: { chordLabel: () => "", registerShortcutHandlers: () => () => {} },
 	exportActivity: { renderingInBrowser: false },
 };
@@ -59,3 +79,8 @@ export const exportActivity: ExportActivityHost = {
 		return hooks.exportActivity.renderingInBrowser;
 	},
 };
+
+/** Spawn a host-owned worker. Throws if the host installed no worker hook. */
+export function createEditorWorker(name: EditorWorkerName): Worker {
+	return hooks.workers.create(name);
+}

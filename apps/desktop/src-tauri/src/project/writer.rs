@@ -32,12 +32,10 @@ pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
 
     match result {
         Ok(()) => {
-            // Atomic rename: on Windows this is a replace operation.
-            // If the target exists, we overwrite it.
-            if request.output_path.exists() {
-                fs::remove_file(&request.output_path)
-                    .context("failed to remove old project file before atomic rename")?;
-            }
+            // `fs::rename` already replaces an existing target atomically
+            // (MOVEFILE_REPLACE_EXISTING on Windows, rename(2) elsewhere).
+            // Deleting first would open a window where the project exists only
+            // as the .tmp — a crash there loses it outright.
             fs::rename(&temp_path, &request.output_path)
                 .context("failed to atomically rename project file")?;
             Ok(request.output_path)
@@ -97,7 +95,9 @@ fn write_project_inner(path: &Path, request: &ProjectWriteRequest) -> Result<()>
         copy_file(cam_path, &mut writer)?;
     }
 
-    writer.finish()?;
+    // Flush to disk before the caller renames: without it, power loss can leave
+    // a renamed-into-place file that is partial or zero-length.
+    writer.finish()?.sync_all()?;
     Ok(())
 }
 
@@ -131,10 +131,8 @@ pub fn update_project_edits(project_path: &Path, edits_json: &str) -> Result<()>
 
     match result {
         Ok(()) => {
-            if project_path.exists() {
-                fs::remove_file(project_path)
-                    .context("failed to remove old project file before atomic rename")?;
-            }
+            // Replace in one step — see `write_project` for why the old file is
+            // not deleted first.
             fs::rename(&temp_path, project_path)
                 .context("failed to atomically rename project file")?;
             Ok(())
@@ -176,7 +174,7 @@ fn update_project_edits_inner(
 
     write_edit_sections(&mut writer, deflated, edits_json)?;
 
-    writer.finish()?;
+    writer.finish()?.sync_all()?;
     Ok(())
 }
 

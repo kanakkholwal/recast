@@ -286,6 +286,11 @@ fn run_pcm_capture(
         .spawn()
         .with_context(|| format!("failed to start FFmpeg {label} capture"))?;
 
+    // Alive for the whole recording: avfoundation/pulse emit periodic warnings,
+    // and a full stderr pipe stops FFmpeg emitting PCM — the track then
+    // truncates mid-take with no error anywhere.
+    let _stderr_tail = child.stderr.take().map(crate::ffmpeg::StderrTail::spawn);
+
     let stdout = child
         .stdout
         .take()

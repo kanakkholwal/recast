@@ -5,11 +5,12 @@
  * mp4box + WebCodecs pipeline to MediaBunny's `Input` + `CanvasSink` so the
  * project no longer depends on `mp4box`.
  *
- * The worker holds one `Input` and one `CanvasSink`. Decodes are FIFO;
- * a `decode` message queues timestamps, the worker drains them, and
- * replies with a JPEG blob per timestamp. A `storyboard` message builds
- * a single sprite image of all thumbnails in one frame, used for
- * instant hover-scrub.
+ * The worker holds one `Input` and one `CanvasSink`, and drains every decode
+ * through a single `drain()` loop — `getCanvas` builds a fresh `VideoDecoder`
+ * per call, so overlapping drains would mean one live hardware decoder per
+ * in-flight message. Newest batch drains first (a scroll shouldn't wait behind
+ * tiles that already left the viewport); the `storyboard` sprite for hover-scrub
+ * runs only once no tiles are queued.
  *
  * Why this beats the legacy pipeline:
  *   - No mp4box: MediaBunny's `Input` parses the file (mp4/mov/webm).
@@ -31,32 +32,10 @@
 // files in this package.
 import { ALL_FORMATS, CanvasSink, Input, mediaRefSource } from "@recast/media/mediabunny";
 import type { MediaRef } from "@recast/media";
-
-type InitMessage = { type: "init"; src: MediaRef; tileHeightPx: number; durationSec?: number };
-type DecodeMessage = {
-	type: "decode";
-	requests: Array<{ id: number; originalSec: number }>;
-};
-type StoryboardMessage = { type: "storyboard" };
-type DisposeMessage = { type: "dispose" };
-
-type ToFilmstripWorker = InitMessage | DecodeMessage | StoryboardMessage | DisposeMessage;
-
-type ReadyMessage = { type: "ready" };
-type TileMessage = { type: "tile"; id: number; blob: Blob; width: number; height: number };
-type StoryboardResultMessage = {
-	type: "storyboard";
-	blob: Blob;
-	cols: number;
-	rows: number;
-	cellW: number;
-	cellH: number;
-	count: number;
-	durationSec: number;
-};
-type ErrorMessage = { type: "error"; message: string; id?: number };
-
-type FromFilmstripWorker = ReadyMessage | TileMessage | StoryboardResultMessage | ErrorMessage;
+// One definition, shared with the provider. This file used to redeclare both
+// unions and they had already drifted (`ready` grew four fields here that the
+// worker never sent).
+import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -100,30 +79,87 @@ async function init(src: MediaRef, hPx: number, durationSec?: number): Promise<v
 	post({ type: "ready" });
 }
 
-async function decodeRequests(requests: Array<{ id: number; originalSec: number }>): Promise<void> {
-	if (!sink || disposed) return;
-	// Single sink: drain in order. MediaBunny's internal pool pre-decodes
-	// a few ahead, so back-to-back requests don't stall.
-	for (const req of requests) {
-		if (disposed) return;
-		try {
-			const wrapped = await sink.getCanvas(req.originalSec);
-			if (!wrapped || disposed) continue;
-			const src = wrapped.canvas as OffscreenCanvas;
-			const blob = await canvasToJpeg(src);
-			if (disposed) return;
-			// A Blob is structured-cloneable but NOT transferable; listing it
-			// throws and loses the whole tile.
-			post({ type: "tile", id: req.id, blob, width: src.width, height: src.height });
-		} catch (err) {
-			// Carry the request id so the provider clears it from in-flight;
-			// without it the tile is wedged forever and the id/inflight maps grow.
-			post({
-				type: "error",
-				id: req.id,
-				message: err instanceof Error ? err.message : String(err),
-			});
+type DecodeRequest = { id: number; originalSec: number };
+
+/** Ceiling on queued-but-undecoded tiles. A fast scroll can request faster than
+ *  the decoder drains; past this the oldest are furthest from the viewport and
+ *  not worth the decode. */
+const MAX_PENDING = 96;
+
+let pending: DecodeRequest[] = [];
+let storyboardQueued = false;
+let draining = false;
+
+function enqueueDecode(requests: readonly DecodeRequest[]): void {
+	// Newest batch first: it reflects where the user is now, so a scroll doesn't
+	// wait behind tiles that have already left the viewport.
+	pending = [...requests, ...pending];
+	if (pending.length > MAX_PENDING) {
+		for (const dropped of pending.splice(MAX_PENDING)) {
+			post({ type: "drop", id: dropped.id });
 		}
+	}
+	void drain();
+}
+
+async function decodeOne(req: DecodeRequest): Promise<void> {
+	if (!sink) return;
+	try {
+		const wrapped = await sink.getCanvas(req.originalSec);
+		if (!wrapped || disposed) return;
+		const src = wrapped.canvas as OffscreenCanvas;
+		const blob = await canvasToJpeg(src);
+		if (disposed) return;
+		// A Blob is structured-cloneable but NOT transferable; listing it
+		// throws and loses the whole tile.
+		post({ type: "tile", id: req.id, blob, width: src.width, height: src.height });
+	} catch (err) {
+		// Carry the request id so the provider clears it from in-flight;
+		// without it the tile is wedged forever and the id/inflight maps grow.
+		post({
+			type: "error",
+			id: req.id,
+			message: err instanceof Error ? err.message : String(err),
+		});
+	}
+}
+
+/**
+ * The ONLY place `sink.getCanvas` is driven. MediaBunny builds a fresh
+ * `VideoDecoder` per `getCanvas` call, so overlapping drains meant one live
+ * hardware decoder per in-flight message — tens of them during a scroll, each
+ * holding its own surface pool. The `draining` latch keeps that at exactly one.
+ */
+async function drain(): Promise<void> {
+	if (draining) return;
+	draining = true;
+	try {
+		while (!disposed && sink) {
+			const req = pending.shift();
+			if (req) {
+				await decodeOne(req);
+				continue;
+			}
+			// Visible tiles always win; the storyboard is hover-scrub polish and
+			// runs only once the strip has nothing left to fill.
+			if (storyboardQueued) {
+				storyboardQueued = false;
+				try {
+					await buildStoryboard();
+				} catch (err) {
+					// A throw here must not abandon queued tiles: they would never be
+					// answered, and the provider wedges them in-flight forever.
+					post({
+						type: "error",
+						message: err instanceof Error ? err.message : String(err),
+					});
+				}
+				continue;
+			}
+			break;
+		}
+	} finally {
+		draining = false;
 	}
 }
 
@@ -143,20 +179,20 @@ async function buildStoryboard(): Promise<void> {
 	const cellH = tileHeightPx;
 	const totalW = cellW * cols;
 	const totalH = cellH * rows;
-	const sprite = new OffscreenCanvas(totalW, totalH);
-	const ctx2d = sprite.getContext("2d", { alpha: false });
-	if (!ctx2d) {
-		post({ type: "error", message: "Filmstrip: cannot acquire 2D context for storyboard." });
-		return;
-	}
-	ctx2d.fillStyle = "#000";
-	ctx2d.fillRect(0, 0, totalW, totalH);
 	const count = cols * rows;
-	const timestamps: number[] = [];
-	for (let i = 0; i < count; i++) {
-		timestamps.push(((i + 0.5) / count) * videoDurationSec);
-	}
 	try {
+		const sprite = new OffscreenCanvas(totalW, totalH);
+		const ctx2d = sprite.getContext("2d", { alpha: false });
+		if (!ctx2d) {
+			post({ type: "error", message: "Filmstrip: cannot acquire 2D context for storyboard." });
+			return;
+		}
+		ctx2d.fillStyle = "#000";
+		ctx2d.fillRect(0, 0, totalW, totalH);
+		const timestamps: number[] = [];
+		for (let i = 0; i < count; i++) {
+			timestamps.push(((i + 0.5) / count) * videoDurationSec);
+		}
 		for (let i = 0; i < timestamps.length; i++) {
 			if (disposed) return;
 			const wrapped = await sink.getCanvas(timestamps[i] ?? 0);
@@ -187,6 +223,8 @@ async function buildStoryboard(): Promise<void> {
 
 function dispose(): void {
 	disposed = true;
+	pending = [];
+	storyboardQueued = false;
 	if (input) {
 		try {
 			input.dispose();
@@ -198,25 +236,30 @@ function dispose(): void {
 	sink = null;
 }
 
-ctx.onmessage = (e: MessageEvent<ToFilmstripWorker>) => {
-	const msg = e.data;
-	switch (msg.type) {
-		case "init":
-			void init(msg.src, msg.tileHeightPx, msg.durationSec).catch((err) => {
-				post({
-					type: "error",
-					message: err instanceof Error ? err.message : String(err),
+/** Install this worker's RPC on its global scope. Called by the host app's
+ *  entry module — this package never spawns a worker itself. */
+export function startFilmstripWorker(): void {
+	ctx.onmessage = (e: MessageEvent<ToFilmstripWorker>) => {
+		const msg = e.data;
+		switch (msg.type) {
+			case "init":
+				void init(msg.src, msg.tileHeightPx, msg.durationSec).catch((err) => {
+					post({
+						type: "error",
+						message: err instanceof Error ? err.message : String(err),
+					});
 				});
-			});
-			return;
-		case "decode":
-			void decodeRequests(msg.requests);
-			return;
-		case "storyboard":
-			void buildStoryboard();
-			return;
-		case "dispose":
-			dispose();
-			return;
-	}
-};
+				return;
+			case "decode":
+				enqueueDecode(msg.requests);
+				return;
+			case "storyboard":
+				storyboardQueued = true;
+				void drain();
+				return;
+			case "dispose":
+				dispose();
+				return;
+		}
+	};
+}

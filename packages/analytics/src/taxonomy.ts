@@ -78,7 +78,6 @@ export interface EventPropMap {
 		visibility: "private" | "workspace" | "selected" | "public";
 		has_password?: boolean;
 		has_expiry?: boolean;
-		watermark?: boolean;
 	};
 	share_viewed: {
 		visibility?: string;
@@ -94,12 +93,7 @@ export interface EventPropMap {
 	};
 	share_signup_cta_click: {
 		/** Which acquisition surface converted the viewer. */
-		placement?:
-			| "header"
-			| "end-card"
-			| "watermark"
-			| "mid-watch"
-			| "positioning-chip";
+		placement?: "header" | "end-card" | "mid-watch" | "positioning-chip";
 		visibility?: string;
 	};
 	share_play_started: {

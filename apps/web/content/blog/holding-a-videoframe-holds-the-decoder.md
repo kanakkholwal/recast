@@ -1,6 +1,7 @@
 ---
+kind: post
 title: "Holding a VideoFrame holds the decoder"
-description: "A 4K recording played for two seconds and froze. Then it crashed on open. Then exports were slow, but only sometimes. Every symptom hid a different wrong assumption — that a decoded frame is just a picture, that a slow load needs a faster engine, that variance is noise — and every real cause was found by measuring, not guessing."
+description: "A 4K recording played for two seconds and froze. Then it crashed on open. Then exports were slow, but only sometimes. Every symptom hid a different wrong assumption: that a decoded frame is just a picture, that a slow load needs a faster engine, that variance is noise, and every real cause was found by measuring, not guessing."
 slug: holding-a-videoframe-holds-the-decoder
 date: 2026-07-21
 author: Kanak
@@ -184,13 +185,13 @@ fails with `expected 20 to be less than or equal to 2`.
 
 ## The same engine, a different crash: opening the file
 
-Playback was fixed. Then a 4K screen recording — 600 MB, three minutes — started
+Playback was fixed. Then a 4K screen recording, 600 MB, three minutes, started
 crashing the moment you opened it in the editor. Not a freeze this time. The
 whole renderer process died with an out-of-memory abort. Smaller files opened
 fine, which is the same tell as before: the cause scales with something about the
 file, not with the code path.
 
-The instinct in the room was to reach for a bigger hammer — a faster decoder, a
+The instinct in the room was to reach for a bigger hammer, a faster decoder, a
 WebAssembly module, offload the work somewhere. All of that would have been
 wasted, because nothing here was too slow. The problem was that everything
 happened at the same instant.
@@ -198,7 +199,7 @@ happened at the same instant.
 When the editor opens a project, it kicks off the preview decoder, a second
 decoder for the timeline filmstrip, a native `<video>` element buffering the same
 file as a fallback, a scout decoder for cut-crossing, a Rust FFmpeg pass for the
-thumbnail strip, and a cursor-analysis pass — and until we looked, all of them
+thumbnail strip, and a cursor-analysis pass, and until we looked, all of them
 fired in the same tick. On a small clip each is cheap. On a 4K file each is
 heavy, and they landed on the same moment. Measured, the simultaneous peak was
 about **1.85 GB**, most of it plain process memory that cannot be reclaimed until
@@ -206,7 +207,7 @@ it settles. On a machine with a constrained page file, that is the crash.
 
 One allocation dominated, and it was the only one that scaled with *file size*
 rather than resolution: the timeline filmstrip read the entire 600 MB file into an
-ArrayBuffer, which the worker then copied into a Blob — about 1.2 GB transient,
+ArrayBuffer, which the worker then copied into a Blob, about 1.2 GB transient,
 600 MB resident for the whole session. That single line is why small files were
 fine and the 4K one was not. The fix was not to make it faster. It was to stop
 doing it: the filmstrip now range-streams the file through the same mechanism the
@@ -215,8 +216,7 @@ preview already used, and never holds it whole. That one change dropped roughly
 much faster now, almost as other files normally."
 
 Then the rest of the pile-up: the load is staggered so the preview gets the main
-thread first and the thumbnails, filmstrip, and cursor pass trickle in on idle —
-the pattern the waveform already used, just never applied to the decoders. And
+thread first and the thumbnails, filmstrip, and cursor pass trickle in on idle, the pattern the waveform already used, just never applied to the decoders. And
 the fallback `<video>` and `<audio>` elements dropped from `preload="auto"` to
 `"metadata"`, because they were eagerly buffering a file that was not even on
 screen. The spinner used to hide only when that `<video>` finished buffering, so
@@ -226,13 +226,13 @@ which is what it should have keyed on all along.
 ## The export that was sometimes fast
 
 The same "measure, don't reason" rule turned up a bug that had nothing to do with
-memory. Exports were slow — but only sometimes, and on the same machine. A job
+memory. Exports were slow, but only sometimes, and on the same machine. A job
 that took forty seconds one run took two minutes the next.
 
 Variance on identical hardware is a fingerprint. The export encoder is chosen by
 probing the GPU encoders once and caching the winner for the whole app session.
 The cache did not distinguish "this machine has no hardware encoder" from "the
-hardware encoder was busy for a moment" — and a consumer NVIDIA card only allows
+hardware encoder was busy for a moment", and a consumer NVIDIA card only allows
 a few simultaneous encoder sessions, so if a recording or preview was holding one
 when the probe ran, it fell back to the software encoder and pinned it for the
 rest of the session. Every export after that ran the CPU encoder at its slow
@@ -244,7 +244,7 @@ software fallback, and cap the software preset so a GPU-less machine stays usabl
 
 It is worth saying plainly, because the reflex is strong. None of these fixes was
 a WebAssembly problem, and we went looking for one honestly. There was no hot
-JavaScript number-crunching loop anywhere in the load or playback path — decode
+JavaScript number-crunching loop anywhere in the load or playback path, decode
 is the hardware decoder, compositing is one GPU draw call, the thumbnail and
 waveform passes are already native FFmpeg. A crash from doing everything at once
 is a *scheduling* problem, and scheduling is the one thing WebAssembly cannot
@@ -256,7 +256,7 @@ rewrite.
 
 The thread through all of it is the same as the decoder story. The expensive
 mistake is not the bug; it is the assumption that sends you looking in the wrong
-place — that a frame is a picture, that a slow load needs a faster engine, that
+place, that a frame is a picture, that a slow load needs a faster engine, that
 variance is noise. Every real cause here was found by measuring, and every one of
 them was cheaper to fix than the thing we would have built if we had trusted the
 first instinct.

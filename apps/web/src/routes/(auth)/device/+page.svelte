@@ -121,17 +121,17 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 				>
 					<Logo size="22" color="transparent" fill="currentColor" />
 				</span>
-				<span class="text-lg font-semibold tracking-tight text-foreground">Recast</span>
+				<span class="text-body-lg font-semibold tracking-tight text-foreground">Recast</span>
 			</a>
 
 			<span
-				class="glass-chip mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary"
+				class="pill mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-body-sm font-medium text-primary"
 			>
 				<Monitor class="size-3" />
 				Authorize device
 			</span>
 
-			<h1 class="text-balance mt-5 text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
+			<h1 class="text-balance mt-5 text-heading font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
 				{#if !data.userCode}
 					Enter your device code
 				{:else if data.error}
@@ -144,7 +144,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 					Sign in to Recast Desktop?
 				{/if}
 			</h1>
-			<p class="text-pretty mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
+			<p class="text-pretty mt-3 max-w-sm text-body-sm leading-relaxed text-muted-foreground">
 				{#if !data.userCode}
 					Type the code shown in your Recast Desktop app.
 				{:else if data.error}
@@ -159,7 +159,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 			</p>
 		</div>
 
-		<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
+		<div class="surface mt-8 p-6">
 			{#if !data.userCode}
 				<!-- Manual code entry. We don't require sign-in to render this —
 				     the user might be writing the code down before they sign in.
@@ -174,7 +174,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 				>
 					<label
 						for="device-code-input"
-						class="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground"
+						class="text-caption font-medium text-muted-foreground"
 					>
 						Device code
 					</label>
@@ -190,7 +190,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 							autocomplete="off"
 							spellcheck="false"
 							maxlength="12"
-							class="h-11 w-full rounded-lg border border-border bg-background pl-9 pr-3 font-mono text-base uppercase tracking-[0.2em] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary"
+							class="h-11 w-full rounded-lg border border-border bg-background pl-9 pr-3 font-mono text-body font-medium text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
 						/>
 					</div>
 					<Button
@@ -208,8 +208,8 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 					</Button>
 				</form>
 			{:else if data.error}
-				<div class="flex flex-col items-center gap-3 text-center text-sm text-muted-foreground">
-					<AlertTriangle class="size-5 text-amber-500" />
+				<div class="flex flex-col items-center gap-3 text-center text-body-sm text-muted-foreground">
+					<AlertTriangle class="size-5 text-tag-tangerine" />
 					<span>{data.error}</span>
 					<Button href="/device" variant="outline" size="sm" class="mt-2">
 						Enter a different code
@@ -220,20 +220,12 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 					class="flex flex-col items-center gap-5 text-center"
 					in:fly={{ y: 8, duration: 360, easing: cubicOut }}
 				>
-					<div
-						class="relative grid size-16 place-items-center rounded-2xl bg-emerald-500/10 text-emerald-600 ring-1 ring-inset ring-emerald-500/30 dark:text-emerald-400"
-					>
-						<span
-							aria-hidden="true"
-							class="absolute inset-0 rounded-2xl bg-emerald-500/20 animate-ping opacity-60"
-						></span>
-						<Check class="relative size-7" stroke={2.5} />
-					</div>
+					<Check class="size-10 text-tag-green" stroke={1.75} />
 					<div class="flex flex-col gap-1.5">
-						<p class="text-[15px] font-semibold text-foreground">
+						<p class="text-body font-semibold text-foreground">
 							Desktop signed in
 						</p>
-						<p class="text-[12.5px] leading-relaxed text-muted-foreground">
+						<p class="text-caption leading-relaxed text-muted-foreground">
 							{#if data.viewer?.email}
 								Linked to <span class="font-medium text-foreground">{data.viewer.email}</span>.
 							{/if}
@@ -252,16 +244,12 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 					class="flex flex-col items-center gap-5 text-center"
 					in:fly={{ y: 8, duration: 360, easing: cubicOut }}
 				>
-					<div
-						class="grid size-16 place-items-center rounded-2xl bg-destructive/10 text-destructive ring-1 ring-inset ring-destructive/30"
-					>
-						<X class="size-7" stroke={2.5} />
-					</div>
+					<X class="size-10 text-destructive" stroke={1.75} />
 					<div class="flex flex-col gap-1.5">
-						<p class="text-[15px] font-semibold text-foreground">
+						<p class="text-body font-semibold text-foreground">
 							Sign-in denied
 						</p>
-						<p class="text-[12.5px] leading-relaxed text-muted-foreground">
+						<p class="text-caption leading-relaxed text-muted-foreground">
 							The desktop won't be signed in. Start a new sign-in from your Recast Desktop app if this was a mistake.
 						</p>
 					</div>
@@ -271,18 +259,18 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 				     visual confirmation against the desktop screen. -->
 				<div class="flex flex-col gap-4">
 					<div
-						class="rounded-xl border border-border/60 bg-background/50 p-4 text-center"
+						class="rounded-xl border border-border-low bg-background/50 p-4 text-center"
 					>
-						<div class="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+						<div class="text-caption font-medium text-muted-foreground">
 							Code
 						</div>
 						<div
-							class="mt-1.5 font-mono text-2xl font-semibold tracking-[0.3em] text-foreground"
+							class="mt-1.5 font-mono text-heading-sm font-semibold tracking-[0.3em] text-foreground"
 						>
 							{formatUserCode(data.userCode)}
 						</div>
 					</div>
-					<p class="text-center text-xs text-muted-foreground">
+					<p class="text-center text-caption text-muted-foreground">
 						Make sure this matches the code shown in your Recast Desktop app
 						before approving.
 					</p>
@@ -309,7 +297,7 @@ const deviceStatus = $derived((data.device as { status?: string } | null)?.statu
 							{denying ? "Denying…" : "Deny"}
 						</Button>
 					</div>
-					<p class="text-center text-[11px] text-muted-foreground">
+					<p class="text-center text-caption text-muted-foreground">
 						Signed in as <span class="font-medium text-foreground">{data.viewer?.email ?? ""}</span>
 					</p>
 				</div>

@@ -3,7 +3,6 @@ import { analytics } from "../lib/host-hooks";
 import { computeCanvasGeometry } from "../lib/canvas-geometry";
 import { CursorSmoother } from "../lib/cursor/smoother";
 import { smoothingStrengthToSigmaMs } from "../lib/cursor/smoothing";
-import { CAMERA_OVERLAY_UI_ENABLED } from "../lib/feature-flags";
 import { PlaybackClock } from "../lib/playback/clock";
 import type { MediabunnyVideoSource } from "@recast/media/playback";
 import { createMediabunnySource } from "../lib/playback/mediabunny";
@@ -18,6 +17,7 @@ import { assetsStore } from "../stores/assets-store.svelte";
 import { exportActivity } from "../lib/host-hooks";
 import { type EditorStore } from "../stores/editor-store.svelte";
 import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
+import { Button } from "@recast/ui/button";
 import { Spinner } from "@recast/ui/spinner";
 import { toast } from "@recast/ui/sonner";
 import { getEditorServices } from "../lib/editor/services";
@@ -129,15 +129,12 @@ let lastBgKey = "";
 // render worker on an OffscreenCanvas; the main thread posts uniforms + relays
 // frames and presents the returned ImageBitmap. Old main-thread GL path is the
 // fallback when unsupported or if worker init throws.
-const RENDER_WORKER_ENABLED = true;
 let renderWorkerClient: RenderWorkerClient | null = null;
-const useRenderWorker =
-	RENDER_WORKER_ENABLED &&
-	renderWorkerCapable({
-		OffscreenCanvas: (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas,
-		VideoFrame: (globalThis as { VideoFrame?: unknown }).VideoFrame,
-		Worker: (globalThis as { Worker?: unknown }).Worker,
-	});
+const useRenderWorker = renderWorkerCapable({
+	OffscreenCanvas: (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas,
+	VideoFrame: (globalThis as { VideoFrame?: unknown }).VideoFrame,
+	Worker: (globalThis as { Worker?: unknown }).Worker,
+});
 
 // Preview engine: `MediabunnyVideoSource` runs in a Web Worker and
 // owns the MediaBunny Input + CanvasSink lifecycle. The composite samples
@@ -418,7 +415,9 @@ async function loadCursorTrackIfNeeded() {
 				requestRedraw();
 			});
 		}
-		smoother.load(cursorSamplesRaw);
+		// By URL: the worker re-reads the track itself rather than us paying a
+		// structured clone of ~225k sample objects on the main thread.
+		smoother.load(cursorSamplesRaw, url);
 		ensureSmoothingCurrent();
 	} catch (err) {
 		console.warn("Cursor track load failed:", err);
@@ -931,13 +930,23 @@ function draw() {
 }
 
 function requestRedraw() {
+	// While playing, `startVideoFrameLoop` already draws every rAF. This handle is
+	// separate from `wcRafHandle`, so without this guard the ~25Hz `currentTime`
+	// publish from inside draw() re-entered here and scheduled a SECOND full
+	// composite — ~85 draws/sec instead of 60. `stopVideoFrameLoop` paints once on
+	// the way out so a change made mid-playback isn't stranded.
+	if (wcRafHandle !== null) return;
 	if (rafHandle !== null) return;
 	rafHandle = requestAnimationFrame(() => {
 		rafHandle = null;
 		try {
 			draw();
+			if (paintFailed) paintFailed = false;
 		} catch (err) {
+			// Paused, a throw here leaves the last good frame on screen, so every
+			// later edit silently appears to do nothing. Say so instead.
 			console.error("preview draw() failed:", err);
+			paintFailed = true;
 		}
 	});
 }
@@ -947,6 +956,8 @@ function requestRedraw() {
 let wcRafHandle: number | null = null;
 // Consecutive draw() failures; a bad frame must not kill the loop.
 let drawErrors = 0;
+// The composite is stuck on a stale frame; surfaced in the template.
+let paintFailed = $state(false);
 
 function startVideoFrameLoop() {
 	// Drive the loop with rAF, not the <video> element's requestVideoFrameCallback:
@@ -960,6 +971,7 @@ function startVideoFrameLoop() {
 		try {
 			draw();
 			drawErrors = 0;
+			if (paintFailed) paintFailed = false;
 		} catch (err) {
 			// A bad frame must not kill the loop (a dead loop freezes the preview
 			// and reads as a crash). Log once, tolerate transients, stop if persistent.
@@ -967,6 +979,7 @@ function startVideoFrameLoop() {
 			if (drawErrors > 120) {
 				console.error("preview draw() failing persistently; stopping loop");
 				wcRafHandle = null;
+				paintFailed = true;
 				return;
 			}
 		}
@@ -979,6 +992,9 @@ function stopVideoFrameLoop() {
 	if (wcRafHandle !== null) {
 		cancelAnimationFrame(wcRafHandle);
 		wcRafHandle = null;
+		// Property changes during playback were swallowed by the guard in
+		// `requestRedraw`; paint once now so the paused frame is current.
+		requestRedraw();
 	}
 }
 
@@ -994,9 +1010,15 @@ function stopVideoFrameLoop() {
  */
 $effect(() => {
 	captureFrame = async () => {
-		if (!canvasEl || !gl || webgl2Unsupported) return null;
+		if (!canvasEl || webgl2Unsupported) return null;
+		// The render-worker path never assigns `gl` — guarding on it alone made
+		// screenshot/copy-frame return null on the DEFAULT path.
+		if (!gl && !renderWorkerClient) return null;
+		if (renderWorkerClient && !hasRenderedFrame) return null;
 		try {
-			draw();
+			// Worker path: the canvas already holds the last presented bitmap and
+			// its composite is async, so a draw() here would land after the copy.
+			if (gl) draw();
 			const w = canvasEl.width;
 			const h = canvasEl.height;
 			if (!w || !h) return null;
@@ -1006,7 +1028,8 @@ $effect(() => {
 			const ctx = copy.getContext("2d");
 			if (!ctx) return null;
 			// Same-task drawImage from a WebGL canvas captures the current
-			// front buffer even when preserveDrawingBuffer is false.
+			// front buffer even when preserveDrawingBuffer is false. On the
+			// bitmaprenderer canvas the bitmap persists, so no timing constraint.
 			ctx.drawImage(canvasEl, 0, 0);
 			return await new Promise<Blob | null>((resolve) => {
 				copy.toBlob((b) => resolve(b), "image/png");
@@ -1275,6 +1298,8 @@ $effect(() => {
 					max_av_drift_ms: Math.round(maxAvDriftSec * 1000),
 					max_upload_ms: Math.round((frameRing?.uploadStats.maxMs ?? 0) * 100) / 100,
 					avg_upload_ms: Math.round((frameRing?.uploadStats.avgMs ?? 0) * 100) / 100,
+					slow_upload_count: frameRing?.uploadStats.slowCount ?? 0,
+					slow_upload_pct: Math.round((frameRing?.uploadStats.slowPct ?? 0) * 10) / 10,
 					width: source.width,
 					height: source.height,
 					fps: Math.round(source.fps),
@@ -1450,6 +1475,21 @@ const isAnnotationActive = $derived(
 				</p>
 			</div>
 		{/if}
+		{#if paintFailed && !glLost && !webgl2Unsupported}
+			<!-- Without this the canvas keeps showing the last good frame, so
+			     every later edit reads as "the app ignored me". -->
+			<div
+				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background/95 p-6 text-center"
+				role="alert"
+			>
+				<div class="text-sm font-semibold text-foreground">Preview is out of date</div>
+				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
+					The preview couldn't redraw, so it's showing an older frame. Your edits are
+					saved and export is unaffected.
+				</p>
+				<Button variant="outline" size="sm" onclick={() => requestRedraw()}>Try again</Button>
+			</div>
+		{/if}
 		{#if webgl2Unsupported}
 			<!-- Actionable message instead of a blank canvas: reads as a
 			     graphics-driver issue, not a broken app. -->
@@ -1530,10 +1570,7 @@ const isAnnotationActive = $derived(
 			{/if}
 		{/if}
 		<!-- Above the cursor SVG so the bubble isn't clipped behind a cursor in
-		     its corner. Owns its own video element, synced via store.currentTime.
-		     TODO(camera-recording): gated behind CAMERA_OVERLAY_UI_ENABLED. See
-		     apps/desktop/docs/camera-recording-todo.md. -->
-		{#if CAMERA_OVERLAY_UI_ENABLED}
+		     its corner. Owns its own video element, synced via store.currentTime. -->
 		<CameraOverlay
 			{store}
 			{videoEl}
@@ -1541,7 +1578,6 @@ const isAnnotationActive = $derived(
 			targetEl={previewRectEl}
 			previewTime={smoothPreviewTime ?? 0}
 		/>
-		{/if}
 		<CaptionOverlay {store} previewTime={smoothPreviewTime ?? undefined} />
 	</div>
 

@@ -1,27 +1,21 @@
 <script lang="ts">
-	import { dev } from "$app/environment";
-	import { goto } from "$app/navigation";
-	import { page } from "$app/state";
-	import { Button } from "@recast/ui/button";
-	import { ArrowLeft, Home, RefreshCw, ScrollText } from "@recast/icons";
-	import { cubicOut } from "svelte/easing";
-	import { fade, fly } from "svelte/transition";
-	import {
-		ACCENT_BACKDROP,
-		ACCENT_RING,
-		errorCopy,
-		pickStatusIcon,
-		suggestions,
-	} from "$lib/error/error-copy";
+import { dev } from "$app/environment";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { Container, Reveal } from "$lib/components";
+import { ACCENT_TEXT, errorCopy, pickStatusIcon, suggestions } from "$lib/error/error-copy";
+import { ArrowLeft, ArrowRight, Home, RefreshCw } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { cn } from "@recast/ui/utils";
 
-	const status = $derived(page.status);
-	const message = $derived(page.error?.message ?? "");
-	const isServerError = $derived(status >= 500);
+const status = $derived(page.status);
+const message = $derived(page.error?.message ?? "");
+const isServerError = $derived(status >= 500);
 
-	const copyFor = $derived(errorCopy(status, message, isServerError));
-	const accentRing = $derived(ACCENT_RING[copyFor.accent]);
-	const accentBackdrop = $derived(ACCENT_BACKDROP[copyFor.accent]);
-	const StatusIcon = $derived(pickStatusIcon(status, isServerError));
+const copyFor = $derived(errorCopy(status, message, isServerError));
+// The status renders as its own numeral, so drop the "404 · " prefix here.
+const eyebrow = $derived(copyFor.eyebrow.replace(/^\d+\s*[·-]\s*/, ""));
+const StatusIcon = $derived(pickStatusIcon(status, isServerError));
 </script>
 
 <svelte:head>
@@ -29,112 +23,103 @@
 	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
-<div class="relative grid min-h-[80vh] place-items-center px-6 py-16 text-foreground">
-	<!-- Atmospheric accents, tinted to the status (primary / amber / destructive). -->
-	<div
-		aria-hidden="true"
-		class="pointer-events-none absolute inset-0 -z-10"
-		style="background: radial-gradient(ellipse 70% 50% at 50% 0%, {accentBackdrop}, transparent 72%);"
-	></div>
-	<div
-		aria-hidden="true"
-		class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 -z-10 opacity-30"
-	></div>
+<main class="text-foreground">
+	<section class="mx-auto w-full max-w-6xl border-b border-border-low pt-32 md:pt-40">
+		<Container class="pb-12">
+			<Reveal variant="up">
+				<div class="flex items-center gap-4 border-b border-border-low pb-5">
+					<span
+						class={cn(
+							"font-display text-heading-sm leading-none tabular-nums",
+							ACCENT_TEXT[copyFor.accent],
+						)}
+					>
+						{status}
+					</span>
+					<span class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground">
+						<StatusIcon class="size-4" />
+						{eyebrow}
+					</span>
+				</div>
+			</Reveal>
 
-	<div
-		class="w-full max-w-xl"
-		in:fly={{ y: 20, duration: 520, easing: cubicOut }}
-	>
-		<div class="flex flex-col items-center text-center">
-			<span
-				class="glass-chip grid size-14 place-items-center rounded-2xl ring-1 {accentRing}"
-				in:fade={{ duration: 360, delay: 80 }}
-			>
-				<StatusIcon class="size-6" />
-			</span>
+			<Reveal variant="up" delay={60} class="mt-10">
+				<h1 class="max-w-2xl font-display text-balance text-heading-lg md:text-display">
+					{copyFor.title}
+				</h1>
+			</Reveal>
+			<Reveal variant="up" delay={120} class="mt-4">
+				<p class="max-w-xl text-pretty text-body-lg text-muted-foreground">
+					{copyFor.body}
+				</p>
+			</Reveal>
 
-			<!-- The status itself, big and unmistakable — easier to skim than the title. -->
-			<div class="mt-6 flex items-baseline gap-3">
-				<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-					{copyFor.eyebrow}
-				</span>
-			</div>
-
-			<h1 class="text-balance mt-3 text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
-				{copyFor.title}
-			</h1>
-			<p class="text-pretty mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-				{copyFor.body}
-			</p>
-
-			<div class="mt-7 flex flex-wrap items-center justify-center gap-2.5">
-				<Button onclick={() => history.back()} variant="outline" class="gap-2">
-					<ArrowLeft class="size-4" />
-					Go back
-				</Button>
+			<Reveal variant="up" delay={180} class="mt-8 flex flex-wrap items-center gap-3">
 				{#if isServerError}
-					<Button onclick={() => location.reload()} class="gap-2">
+					<Button onclick={() => location.reload()} variant="dark" class="gap-2">
 						<RefreshCw class="size-4" />
 						Try again
 					</Button>
 				{:else}
-					<Button onclick={() => goto("/")} class="gap-2">
+					<Button onclick={() => goto("/")} variant="dark" class="gap-2">
 						<Home class="size-4" />
 						Back home
 					</Button>
 				{/if}
-			</div>
+				<Button onclick={() => history.back()} variant="outline" class="gap-2">
+					<ArrowLeft class="size-4" />
+					Go back
+				</Button>
+			</Reveal>
 
-			<!-- Dev-only stack/details. Production stays clean — surface the error
-			     via Sentry/PostHog (when wired) instead of leaking internals. -->
+			<!-- Dev-only detail. Production stays clean; the error is reported instead. -->
 			{#if dev && message}
-				<details
-					class="mt-7 w-full max-w-md rounded-xl border border-border-low/50 bg-foreground/2 p-4 text-left text-xs"
-				>
-					<summary class="cursor-pointer font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+				<details class="mt-8 max-w-2xl border-y border-border-low py-4">
+					<summary class="cursor-pointer text-body-sm font-medium text-muted-foreground">
 						Dev details
 					</summary>
-					<pre class="mt-3 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/85"><code>{message}</code></pre>
+					<pre
+						class="mt-3 overflow-x-auto whitespace-pre-wrap font-mono text-caption text-foreground"><code
+							>{message}</code
+						></pre>
 				</details>
 			{/if}
-		</div>
+		</Container>
 
-		<!-- Suggestions grid — keep it short, give users an obvious next move. -->
-		<div class="mt-10 grid gap-2.5 sm:grid-cols-3">
-			{#each suggestions as item, i}
-				{@const Icon = item.icon}
+		<!-- Three anchored next steps. A full site map here reads like a dead end. -->
+		<Container class="border-t border-border-low">
+			<ul class="grid grid-cols-1 gap-px bg-border-low sm:grid-cols-3">
+				{#each suggestions as item, i (item.href)}
+					{@const Icon = item.icon}
+					<Reveal variant="up" delay={220 + i * 70} as="li" class="bg-background">
+						<a href={item.href} class="group/sug flex h-full flex-col py-6 sm:px-6">
+							<Icon class="size-5 text-muted-foreground" />
+							<span class="mt-4 inline-flex items-center gap-1.5 font-display text-body font-medium text-foreground">
+								{item.label}
+								<ArrowRight
+									class="size-3.5 text-muted-foreground transition-transform duration-200 group-hover/sug:translate-x-0.5 motion-reduce:transition-none"
+								/>
+							</span>
+							<span class="mt-1 text-body-sm text-muted-foreground">{item.desc}</span>
+						</a>
+					</Reveal>
+				{/each}
+			</ul>
+		</Container>
+
+		<Container class="border-t border-border-low">
+			<p class="py-4 text-body-sm text-muted-foreground">
+				Still stuck?
 				<a
-					href={item.href}
-					class="group/sug glass-card flex flex-col gap-1.5 rounded-xl p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-craft-md"
-					in:fly={{ y: 10, duration: 360, delay: 180 + i * 60, easing: cubicOut }}
+					href="https://github.com/kanakkholwal/recast/issues/new"
+					target="_blank"
+					rel="noopener noreferrer"
+					class="text-foreground underline-offset-4 hover:underline"
 				>
-					<span class="glass-chip grid size-8 place-items-center rounded-lg text-foreground/70 transition-colors group-hover/sug:text-primary">
-						<Icon class="size-4" />
-					</span>
-					<div>
-						<div class="text-sm font-semibold tracking-tight text-foreground">
-							{item.label}
-						</div>
-						<div class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-							{item.desc}
-						</div>
-					</div>
+					Open an issue
 				</a>
-			{/each}
-		</div>
-
-		<p class="mt-8 text-center text-[11px] text-muted-foreground">
-			Still stuck?
-			<a
-				href="https://github.com/kanakkholwal/recast/issues/new"
-				target="_blank"
-				rel="noopener noreferrer"
-				class="inline-flex items-center gap-1 font-semibold text-foreground transition-colors hover:text-primary"
-			>
-				<ScrollText class="size-3" />
-				Open an issue
-			</a>
-			and we'll take a look.
-		</p>
-	</div>
-</div>
+				and we will take a look.
+			</p>
+		</Container>
+	</section>
+</main>

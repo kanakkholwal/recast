@@ -1,28 +1,29 @@
 <script lang="ts">
 import { dev } from "$app/environment";
-import { page } from "$app/state";
+import { navigating, page } from "$app/state";
 import { analytics } from "$lib/analytics/client";
 import { webConsent } from "$lib/analytics/consent.svelte";
 import { authClient } from "$lib/auth/client";
 import ImpersonationBanner from "$lib/auth/components/ImpersonationBanner.svelte";
 import { AppLoading, DevThemeToggle, Navbar, SeoMeta, ThemeShortcut } from "$lib/components";
-import { onMount } from "svelte";
 import ConsentBanner from "$lib/components/ConsentBanner.svelte";
 import { NavProgress } from "@recast/ui/nav-progress";
+import { onMount } from "svelte";
 
+import "@recast/application/styles.css";
+import "@recast/player/styles.css";
 import { Toaster } from "@recast/ui/sonner";
 import { ModeWatcher } from "@recast/ui/theme";
-import { buildSiteJsonLd, isChromeless as isChromelessPath, isIndexable } from "./layout.logic";
 import "../app.css";
-// Player theme — imported once at the root so any /share or dashboard
-// route that mounts <RecastPlayer> picks up the branded CSS variables.
-import "@recast/player/styles.css";
-import "@recast/application/styles.css";
+import {
+	buildSiteJsonLd,
+	isChromeless as isChromelessPath,
+	isIndexable,
+	isMarketing as isMarketingPath,
+} from "./layout.logic";
 
 let { children } = $props();
 
-// Retire the initial splash (rendered by app.html on product routes) once the
-// app has hydrated — fade via CSS, then drop it from the DOM.
 onMount(() => {
 	const el = document.getElementById("app-splash");
 	if (!el) return;
@@ -40,17 +41,15 @@ onMount(() => {
 });
 
 const isChromeless = $derived(isChromelessPath(page.url.pathname));
+// Gates the border-first token set in app.css. Product shells opt out.
+const marketing = $derived(isMarketingPath(page.url.pathname));
 const indexable = $derived(isIndexable(page.url.pathname));
 const siteJsonLd = $derived(buildSiteJsonLd(page.url.origin));
 
-// Returning visitor who already accepted → re-enable replay + persistent id
-// before any events fire this session.
 $effect(() => {
 	if (webConsent.hasAccepted) analytics.upgradePersistence();
 });
 
-// Tie events to the signed-in user (aliases the anonymous distinct id) and
-// drop the identity on sign-out. Gated by product consent inside the client.
 const session = authClient.useSession();
 let lastUserId: string | null = null;
 $effect(() => {
@@ -65,10 +64,6 @@ $effect(() => {
 });
 </script>
 
-<!-- Site-wide default social/SEO tags. Routes that need their own card (e.g.
-	 a shared recast) set `customSeo: true` in their load data and render their
-	 own <SeoMeta>; suppressing the default here keeps a single, authoritative
-	 set of og: tags instead of duplicates (scrapers take the first og:image). -->
 {#if !(page.data as { customSeo?: boolean }).customSeo}
   <SeoMeta
     title="Record. Polish. Share."
@@ -83,23 +78,21 @@ $effect(() => {
     <meta name="robots" content="noindex, nofollow" />
   {/if}
 </svelte:head>
-<NavProgress />
-<!-- Branded loading screen for navigations into product areas (/dashboard,
-     /share). The thin NavProgress bar still covers everything else. -->
+
+<NavProgress active={navigating.to !== null} />
 <AppLoading />
 <ModeWatcher />
-<!-- Cmd/Ctrl+Shift+L from any route toggles light↔dark. Runs in prod
-	 (DevThemeToggle's floating chip is still dev-only). -->
 <ThemeShortcut />
 
-<!-- Global impersonation indicator. Self-renders only when an admin is
-	 acting as another user; invisible otherwise. -->
 <ImpersonationBanner />
 
 {#if !isChromeless}
+  <!-- Column guides. Two hairlines at the content column's edges running the
+       full viewport height, so every section reads as sitting on one ruled
+       page rather than floating independently. -->
   <div
     aria-hidden="true"
-    class="bg-grid bg-grid-fade pointer-events-none fixed inset-0 -z-10 opacity-30"
+    class="pointer-events-none fixed inset-y-0 left-1/2 -z-10 w-full max-w-6xl -translate-x-1/2 border-x border-border-low"
   ></div>
 
   <Navbar />

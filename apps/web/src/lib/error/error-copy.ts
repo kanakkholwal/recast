@@ -29,15 +29,13 @@ export function errorCopy(status: number, message: string, isServerError: boolea
 		404: {
 			eyebrow: "404 · Lost in the timeline",
 			title: "We can't find that frame.",
-			body:
-				"The link is broken, the page moved, or the URL has a typo. Let's get you back to something useful.",
+			body: "The link is broken, the page moved, or the URL has a typo. Let's get you back to something useful.",
 			accent: "primary",
 		},
 		403: {
 			eyebrow: "403 · Locked",
 			title: "Not yours to see.",
-			body:
-				"You're signed in, but this corner isn't open to your account. If you think that's a mistake, ping support.",
+			body: "You're signed in, but this corner isn't open to your account. If you think that's a mistake, ping support.",
 			accent: "amber",
 		},
 		401: {
@@ -49,8 +47,7 @@ export function errorCopy(status: number, message: string, isServerError: boolea
 		500: {
 			eyebrow: "500 · Recast tripped",
 			title: "Something broke on our end.",
-			body:
-				"That's on us, not you. The error was logged. Try the page again in a moment, or head back to where you were.",
+			body: "That's on us, not you. The error was logged. Try the page again in a moment, or head back to where you were.",
 			accent: "destructive",
 		},
 	};
@@ -71,7 +68,14 @@ export const ACCENT_RING: Record<ErrorAccent, string> = {
 	destructive: "ring-destructive/30 bg-destructive/12 text-destructive",
 };
 
-/** Radial-gradient backdrop colour per accent. */
+/** Flat ink per accent, for the border-first marketing error page. */
+export const ACCENT_TEXT: Record<ErrorAccent, string> = {
+	primary: "text-primary",
+	amber: "text-tag-tangerine",
+	destructive: "text-destructive",
+};
+
+/** Radial-gradient backdrop colour per accent. Product shells only. */
 export const ACCENT_BACKDROP: Record<ErrorAccent, string> = {
 	primary: "color-mix(in srgb, var(--color-primary) 10%, transparent)",
 	amber: "color-mix(in srgb, oklch(72% 0.18 65) 10%, transparent)",

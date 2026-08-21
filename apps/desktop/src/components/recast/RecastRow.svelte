@@ -1,30 +1,30 @@
 <script lang="ts">
-	import { ChevronRight, Ellipsis } from "@recast/icons";
-	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import { cn } from "@recast/ui/utils";
-	import { accessoryClass } from "./accessory.logic";
-	import type { RecastAction, RecastListItem } from "./types";
+import { ChevronRight, Ellipsis } from "@recast/icons";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { cn } from "@recast/ui/utils";
+import { accessoryClass } from "./accessory.logic";
+import type { RecastAction, RecastListItem } from "@recast/editor/components/dialog/types";
 
-	interface Props {
-		item: RecastListItem;
-		onActivate: () => void;
+interface Props {
+	item: RecastListItem;
+	onActivate: () => void;
+}
+
+let { item, onActivate }: Props = $props();
+
+const primaryActions = $derived<RecastAction[]>(
+	item.actions?.filter((a) => a.variant !== "destructive") ?? [],
+);
+const destructiveActions = $derived<RecastAction[]>(
+	item.actions?.filter((a) => a.variant === "destructive") ?? [],
+);
+
+function onKeydown(e: KeyboardEvent) {
+	if (e.key === "Enter" || e.key === " ") {
+		e.preventDefault();
+		onActivate();
 	}
-
-	let { item, onActivate }: Props = $props();
-
-	const primaryActions = $derived<RecastAction[]>(
-		item.actions?.filter((a) => a.variant !== "destructive") ?? [],
-	);
-	const destructiveActions = $derived<RecastAction[]>(
-		item.actions?.filter((a) => a.variant === "destructive") ?? [],
-	);
-
-	function onKeydown(e: KeyboardEvent) {
-		if (e.key === "Enter" || e.key === " ") {
-			e.preventDefault();
-			onActivate();
-		}
-	}
+}
 </script>
 
 <div

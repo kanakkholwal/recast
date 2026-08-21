@@ -309,7 +309,14 @@ pub fn spawn_cursor_capture(
 
 /// Write a cursor track to a JSON file.
 pub fn write_cursor_track(path: &Path, track: &CursorTrack) -> Result<()> {
-    std::fs::write(path, serde_json::to_vec_pretty(track)?)?;
+    // Temp + fsync + rename: a truncated cursor.json makes the recording's
+    // cursor and zoom data unrecoverable.
+    let tmp = path.with_extension("json.tmp");
+    let bytes = serde_json::to_vec_pretty(track)?;
+    if let Err(e) = crate::commands::system::write_atomic(&tmp, path, &bytes) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
     Ok(())
 }
 

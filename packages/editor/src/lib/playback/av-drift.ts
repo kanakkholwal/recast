@@ -1,11 +1,13 @@
 /**
- * Audio/video drift reconciliation for the legacy `<video>`+`<audio>` preview
- * path (the WebCodecs engine path owns its own clock and doesn't use this).
+ * Audio/video drift reconciliation for the legacy `<video>` preview path, where
+ * the ELEMENT is the clock and the audio engine is reconciled onto it. The
+ * WebCodecs path runs the other way — the clock follows the engine — and does
+ * not use this.
  *
  * The recording mp4 has no audio, so the `<video>` element is muted and sound
- * comes from separate `<audio>` elements slaved to the video clock. Under load
- * (e.g. recording Recast while previewing) the *video* decode stalls while the
- * audio keeps playing, so the audio runs ahead of the lagging picture.
+ * comes from the separate WAV tracks the engine schedules. Under load (e.g.
+ * recording Recast while previewing) the *video* decode stalls while the audio
+ * keeps playing, so the audio runs ahead of the lagging picture.
  *
  * The old correction hard-seeked the audio *backward* to the stalled video
  * position, replaying the last slice repeatedly: an audible echo. Instead:
@@ -19,7 +21,7 @@
 export type AvDriftAction = "none" | "resync-audio" | "catch-picture";
 
 export function reconcileAvDrift(params: {
-	/** Current playback time of the `<audio>` element (seconds). */
+	/** Where the audio has actually reached (seconds, same axis as `pictureTime`). */
 	audioTime: number;
 	/** Current time of the picture clock, `<video>`.currentTime (seconds). */
 	pictureTime: number;

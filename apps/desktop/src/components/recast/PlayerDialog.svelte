@@ -1,5 +1,5 @@
 <script lang="ts">
-import { formatDateTime, formatSize, isImageFile } from "$lib/format/files";
+import { formatDateTime, formatSize, isImageFile } from "@recast/editor/lib/format/files";
 import type { RecordingEntry } from "$lib/ipc";
 import { captionSidecarVtt, openFileLocation } from "$lib/ipc";
 import { FolderOpen, Image as ImageIcon, Video } from "@recast/icons";

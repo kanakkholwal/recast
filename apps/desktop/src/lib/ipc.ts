@@ -5,19 +5,31 @@
 
 // Type-only: erased at runtime, so no ESM cycle with `$lib/profiles` (which
 // imports value bindings from here).
-import type { RecordingProfile } from "$lib/profiles";
-import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
+import type { RecordingProfile } from "@recast/editor/lib/profiles";
+import type { VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
 import type {
 	AssetInstallResult,
 	AudioDeviceInfo,
+	CaptionDownloadProgress,
+	CaptionModelInfo,
+	DeviceCapabilities,
+	HydratedAsset,
+	InstalledExtension,
+	OcrProgress,
+	SilenceDetectOptions,
+	SilenceSegment,
+	TranscribeProgress,
+	Transcript,
+	VideoTextTimeline,
+	ZoomSuggestion,
+} from "@recast/editor/lib/wire-types";
+import type {
 	AuthStartResult,
 	AuthStatus,
 	AutosaveState,
 	CameraDeviceInfo,
 	CameraPreviewState,
 	CameraValidationResult,
-	CaptionDownloadProgress,
-	CaptionModelInfo,
 	CaptureCapabilities,
 	CaptureIntent,
 	CaptureIntentState,
@@ -27,7 +39,6 @@ import type {
 	CloudShareResult,
 	CloudUploadEvent,
 	CloudUploadRecord,
-	DeviceCapabilities,
 	DisplayInfo,
 	EditorDocument,
 	EncoderAvailability,
@@ -39,10 +50,7 @@ import type {
 	GdriveUploadProgress,
 	GdriveUploadRecord,
 	GdriveUploadResult,
-	HydratedAsset,
-	InstalledExtension,
 	LastSource,
-	OcrProgress,
 	ProfilesSnapshot,
 	RecordingEntry,
 	RecordingOptions,
@@ -50,14 +58,8 @@ import type {
 	RegionRect,
 	RemoteAsrEndpoint,
 	RemoteAsrEndpointInfo,
-	SilenceDetectOptions,
-	SilenceSegment,
-	TranscribeProgress,
-	Transcript,
-	VideoTextTimeline,
 	WindowInfo,
-	ZoomSuggestion,
-} from "$lib/ipc-types";
+} from "$lib/recorder-types";
 import { analytics } from "$lib/analytics/client";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -75,6 +77,44 @@ export type {
 	AssetInstallFailure,
 	AssetInstallResult,
 	AudioDeviceInfo,
+	CaptionDownloadProgress,
+	CaptionEngine,
+	CaptionModelInfo,
+	CaptionModelSource,
+	CaptionRuntime,
+	DeviceCapabilities,
+	ExportGifSettings,
+	ExportSpeed,
+	ExtAssetPath,
+	ExtBackgroundContribution,
+	ExtCaptionPresetContribution,
+	ExtColorContribution,
+	ExtCursorContribution,
+	ExtEasingContribution,
+	ExtGradientContribution,
+	ExtSmoothingContribution,
+	ExtensionAssetEntry,
+	ExtensionContributions,
+	ExtensionManifest,
+	GpuInfo,
+	HydratedAsset,
+	InstalledExtension,
+	OcrPhase,
+	OcrProgress,
+	OcrStats,
+	ScreenElement,
+	ScreenStateSpan,
+	SilenceDetectOptions,
+	SilenceSegment,
+	TranscribeProgress,
+	Transcript,
+	TranscriptSegment,
+	TranscriptWord,
+	VideoTextTimeline,
+	ZoomSuggestion,
+	ZoomSuggestionReason,
+} from "@recast/editor/lib/wire-types";
+export type {
 	AuthPlan,
 	AuthStartResult,
 	AuthStatus,
@@ -84,13 +124,8 @@ export type {
 	CameraPreviewState,
 	CameraValidationResult,
 	CapabilityStatus,
-	CaptionDownloadProgress,
-	CaptionEngine,
 	CaptionModelContribution,
-	CaptionModelInfo,
 	CaptionModelPackFile,
-	CaptionModelSource,
-	CaptionRuntime,
 	CaptureCapabilities,
 	CaptureCapability,
 	CaptureIntent,
@@ -104,38 +139,18 @@ export type {
 	CloudUploadEvent,
 	CloudUploadRecord,
 	CloudWorkspace,
-	DeviceCapabilities,
 	DisplayInfo,
 	EditorDocument,
 	EncoderAvailability,
 	EnqueueExportRequest,
-	ExportGifSettings,
 	ExportJobDto,
-	ExportSpeed,
 	ExportStateEvent,
-	ExtAssetPath,
-	ExtBackgroundContribution,
-	ExtCaptionPresetContribution,
-	ExtColorContribution,
-	ExtCursorContribution,
-	ExtEasingContribution,
-	ExtGradientContribution,
-	ExtSmoothingContribution,
-	ExtensionAssetEntry,
-	ExtensionContributions,
-	ExtensionManifest,
 	FfmpegDiagnostics,
 	GdriveStatus,
 	GdriveUploadProgress,
 	GdriveUploadRecord,
 	GdriveUploadResult,
-	GpuInfo,
-	HydratedAsset,
-	InstalledExtension,
 	LastSource,
-	OcrPhase,
-	OcrProgress,
-	OcrStats,
 	ProfilesSnapshot,
 	RecordingEntry,
 	RecordingOptions,
@@ -143,19 +158,8 @@ export type {
 	RegionRect,
 	RemoteAsrEndpoint,
 	RemoteAsrEndpointInfo,
-	ScreenElement,
-	ScreenStateSpan,
-	SilenceDetectOptions,
-	SilenceSegment,
-	TranscribeProgress,
-	Transcript,
-	TranscriptSegment,
-	TranscriptWord,
-	VideoTextTimeline,
 	WindowInfo,
-	ZoomSuggestion,
-	ZoomSuggestionReason,
-} from "$lib/ipc-types";
+} from "$lib/recorder-types";
 
 // System commands
 
@@ -693,6 +697,12 @@ export function transcribeProject(args: {
 		language: args.language ?? null,
 		onPhase,
 	});
+}
+
+/** Stop the in-flight transcription. `transcribe_project` then rejects with
+ *  `TRANSCRIBE_CANCELLED` (see `@recast/editor/services`). */
+export function cancelTranscription(): Promise<void> {
+	return invoke("cancel_transcription");
 }
 
 // ---------------------------------------------------------------------------

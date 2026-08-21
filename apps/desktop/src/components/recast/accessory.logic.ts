@@ -1,6 +1,6 @@
 /** Shared accessory-badge styling for RecastCard and RecastRow. */
 
-import type { RecastAccessory } from "./types";
+import type { RecastAccessory } from "@recast/editor/components/dialog/types";
 
 const ACCESSORY_VARIANTS = {
 	default: "bg-muted/80 text-muted-foreground border-border/40",

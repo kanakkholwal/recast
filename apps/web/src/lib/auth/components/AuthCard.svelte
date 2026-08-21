@@ -29,26 +29,26 @@ let {
 			>
 				<Logo size="22" color="transparent" fill="currentColor" />
 			</span>
-			<span class="text-lg font-semibold tracking-tight text-foreground">
+			<span class="font-display text-body-lg font-medium text-foreground">
 				Recast
 			</span>
 		</a>
-		<h1 class="mt-7 text-2xl font-semibold tracking-tight text-foreground">
+		<h1 class="mt-7 font-display text-heading-sm text-foreground">
 			{title}
 		</h1>
 		{#if description}
-			<p class="mt-1.5 text-pretty text-sm text-muted-foreground">
+			<p class="mt-2 text-pretty text-body-sm text-muted-foreground">
 				{description}
 			</p>
 		{/if}
 	</div>
 
-	<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
+	<div class="surface mt-8 p-6">
 		{@render children()}
 	</div>
 
 	{#if footer}
-		<div class="mt-6 text-center text-sm text-muted-foreground">
+		<div class="mt-6 text-center text-body-sm text-muted-foreground">
 			{@render footer()}
 		</div>
 	{/if}

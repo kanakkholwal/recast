@@ -1,5 +1,5 @@
 /** Pure search/grouping/keyboard-chord helpers for RecastList. */
-import type { RecastAction, RecastListItem } from "./types";
+import type { RecastAction, RecastListItem } from "@recast/editor/components/dialog/types";
 
 /** `q` is expected pre-lowercased/trimmed by the caller. */
 export function matches(item: RecastListItem, q: string): boolean {
@@ -48,9 +48,7 @@ export function findActionByChord(
 	chord: string,
 ): RecastAction | undefined {
 	if (!actions) return undefined;
-	return actions.find(
-		(a) => a.shortcut && normalizeShortcut(a.shortcut) === chord,
-	);
+	return actions.find((a) => a.shortcut && normalizeShortcut(a.shortcut) === chord);
 }
 
 /** Primary dispatch: onSelect, else the first action. */
