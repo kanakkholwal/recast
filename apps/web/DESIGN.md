@@ -473,6 +473,39 @@ Never add a "Learn more" affordance to the dense grid unless every row has a
 real destination. The old catalog rendered one on all 17 cards, all pointing at
 `#`.
 
+### Two-pane index (changelog)
+
+A rail of entries beside the entry body. Rules that make it read as one object
+rather than a list next to a card:
+
+- **The rail is flush.** Rows run edge to edge inside their pane, divided by
+  hairlines, and selection is a `bg-paper` fill plus a marker growing from the
+  column rule. Rows inset with their own padding, radius and border read as
+  cards floating in a sidebar, which is a different design system.
+- The two panes are one `gap-px` grid, so the divider between them is the same
+  hairline as everything else.
+- Motion carries the selection: the marker scales from the rule, the arrow
+  slides in, and the body re-enters on `{#key}` with a short `fly`. Every one
+  has a `motion-reduce` branch.
+- Selection is addressable. The hash follows the selected entry and is read back
+  on load, so a release can be linked directly.
+- Arrow keys move the selection and move focus with it. A dense list should not
+  need the mouse.
+
+### Error pages
+
+`+error.svelte` is a marketing surface, so it follows the interior-hero shape:
+status numeral on the chapter rule, display heading, one line of body, then
+actions. No radial backdrop, no grid wash, no icon tile.
+
+Next steps stay at three, as a hairline grid. A full site map on an error page
+reads like a dead end. Dev-only detail sits behind a `<details>` on a hairline,
+never a bordered card.
+
+`ACCENT_TEXT` maps status to flat ink for this page; `ACCENT_RING` and
+`ACCENT_BACKDROP` stay for the in-shell `SectionError`, which still lives on the
+product system.
+
 ### Interior pages
 
 Both were on the pre-Dub system: floating `rounded-2xl` cards, `blur-3xl` glow

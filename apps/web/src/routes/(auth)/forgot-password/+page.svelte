@@ -59,8 +59,8 @@ async function submit(e: SubmitEvent) {
 				<MailCheck class="size-5" />
 			</span>
 			<div>
-				<h2 class="text-sm font-semibold text-foreground">Check your inbox</h2>
-				<p class="mt-1 text-xs text-muted-foreground">
+				<h2 class="text-body-sm font-semibold text-foreground">Check your inbox</h2>
+				<p class="mt-1 text-caption text-muted-foreground">
 					If <span class="font-medium text-foreground">{email}</span> matches an account,
 					you'll get a reset link shortly.
 				</p>
@@ -80,7 +80,7 @@ async function submit(e: SubmitEvent) {
 	{:else}
 		<form class="flex flex-col gap-3.5" onsubmit={submit}>
 			<Label class="flex flex-col items-stretch gap-1.5">
-				<span class="text-xs font-semibold text-foreground">Email</span>
+				<span class="text-caption font-semibold text-foreground">Email</span>
 				<Input
 					type="email"
 					required

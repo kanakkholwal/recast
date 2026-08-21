@@ -108,10 +108,10 @@ async function signUp(e: SubmitEvent) {
 
 	{#if existing}
 		<div
-			class="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5 text-xs"
+			class="mb-4 flex items-start gap-2.5 rounded-lg border border-border-low bg-paper p-3.5 text-caption"
 			in:fly={{ y: 6, duration: 280, easing: cubicOut }}
 		>
-			<AlertCircle class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+			<AlertCircle class="mt-0.5 size-4 shrink-0 text-tag-tangerine" />
 			<div class="min-w-0 flex-1">
 				<p class="font-medium text-foreground">
 					<span class="font-mono">{existing}</span> already has an account
@@ -132,7 +132,7 @@ async function signUp(e: SubmitEvent) {
 
 	<form class="flex flex-col gap-3.5" onsubmit={signUp}>
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground">Full name</span>
+			<span class="text-caption font-semibold text-foreground">Full name</span>
 			<Input
 				type="text"
 				required
@@ -144,7 +144,7 @@ async function signUp(e: SubmitEvent) {
 		</Label>
 
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground">Email</span>
+			<span class="text-caption font-semibold text-foreground">Email</span>
 			<Input
 				type="email"
 				required
@@ -156,7 +156,7 @@ async function signUp(e: SubmitEvent) {
 		</Label>
 
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground">Password</span>
+			<span class="text-caption font-semibold text-foreground">Password</span>
 			<div class="relative">
 				<Input
 					type={showPassword ? "text" : "password"}
@@ -203,7 +203,7 @@ async function signUp(e: SubmitEvent) {
 		</Label>
 
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground">Confirm password</span>
+			<span class="text-caption font-semibold text-foreground">Confirm password</span>
 			<Input
 				type={showPassword ? "text" : "password"}
 				required
@@ -226,7 +226,7 @@ async function signUp(e: SubmitEvent) {
 
 		<Label class="flex items-start gap-2">
 			<Checkbox bind:checked={agreed} id="terms" class="mt-0.5" />
-			<span class="text-xs font-medium text-foreground">
+			<span class="text-caption font-medium text-foreground">
 				I agree to Recast's
 				<a href="/terms-of-service" class="text-primary hover:underline">Terms</a>
 				and

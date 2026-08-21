@@ -6,7 +6,7 @@ slug: teaching-recast-to-read-its-recordings
 date: 2026-07-13
 author: Kanak
 tags: [engineering, desktop, ocr, agents, research, video, tauri]
-published: true
+published: false
 ---
 
 Recast is heading toward automation. The plan is that you can drive it from a command line, and eventually let an agent drive it for you: record this, trim that, export with these settings. For any of that to be more than a remote control, the agent has to understand what is on the screen. Not the file, the screen. What window is open, what text is showing, what the user just clicked.

@@ -59,7 +59,7 @@ async function submit(e: SubmitEvent) {
 >
 	<form class="flex flex-col gap-3.5" onsubmit={submit}>
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground">New password</span>
+			<span class="text-caption font-semibold text-foreground">New password</span>
 			<div class="relative">
 				<Input
 					type={showPassword ? "text" : "password"}
@@ -85,7 +85,7 @@ async function submit(e: SubmitEvent) {
 		</Label>
 
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground">Confirm new password</span>
+			<span class="text-caption font-semibold text-foreground">Confirm new password</span>
 			<Input
 				type={showPassword ? "text" : "password"}
 				required

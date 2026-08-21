@@ -69,7 +69,7 @@ async function signOut() {
 				>
 					<Logo size="22" color="transparent" fill="currentColor" />
 				</span>
-				<span class="text-lg font-semibold tracking-tight text-foreground">Recast</span>
+				<span class="text-body-lg font-semibold tracking-tight text-foreground">Recast</span>
 			</a>
 
 			<span class="pill mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-body-sm font-medium text-primary">
@@ -77,10 +77,10 @@ async function signOut() {
 				One step left
 			</span>
 
-			<h1 class="text-balance mt-5 text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
+			<h1 class="text-balance mt-5 text-heading font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
 				Verify your email
 			</h1>
-			<p class="text-pretty mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
+			<p class="text-pretty mt-3 max-w-sm text-body-sm leading-relaxed text-muted-foreground">
 				We sent a confirmation link to
 				<span class="font-mono font-medium text-foreground">{data.email}</span>.
 				Click it and you'll land on your dashboard. Until then, your
