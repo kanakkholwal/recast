@@ -1,13 +1,13 @@
 <script lang="ts">
 import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
 import {
-  ArrowDownToLine,
-  Check,
-  ChevronDown,
-  Download,
-  LifeBuoy,
-  ShieldCheck,
-  TriangleAlert,
+	ArrowDownToLine,
+	Check,
+	ChevronDown,
+	Download,
+	LifeBuoy,
+	ShieldCheck,
+	TriangleAlert,
 } from "@recast/icons";
 import { AppleBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
 import { Button, buttonVariants } from "@recast/ui/button";
@@ -18,12 +18,12 @@ import { cn } from "@recast/ui/utils";
 import type { PageData } from "./$types";
 import type { OS } from "./data";
 import {
-  ISSUES_URL,
-  installSteps,
-  platforms,
-  ships,
-  stabilityCopy,
-  systemRequirements,
+	ISSUES_URL,
+	installSteps,
+	platforms,
+	ships,
+	stabilityCopy,
+	systemRequirements,
 } from "./data";
 
 let { data }: { data: PageData } = $props();
@@ -91,7 +91,7 @@ const detectedIcon = $derived(
 			</Reveal>
 			<Reveal variant="up" delay={120} class="mt-4">
 				<p class="max-w-xl text-pretty text-body-lg text-muted-foreground">
-					Free during beta, no sign-up. The native recorder for makers who would rather ship than
+					Free during beta, no sign-up. The native recorder for people who would rather ship than
 					open a timeline.
 				</p>
 			</Reveal>
@@ -226,9 +226,8 @@ const detectedIcon = $derived(
 					</Reveal>
 					<Reveal variant="up" delay={120} class="mt-4">
 						<p class="text-pretty text-body-sm text-muted-foreground">
-							Recast probes NVIDIA, AMD and Intel at startup. If none initialise it falls back to
-							libx264 on the CPU, tuned for low-latency capture. Hardware encoders only let your CPU
-							breathe.
+							Recast probes NVIDIA, AMD and Intel at startup, then falls back to libx264 on the CPU.
+							A hardware encoder only saves your CPU, it is never required.
 						</p>
 					</Reveal>
 				</div>

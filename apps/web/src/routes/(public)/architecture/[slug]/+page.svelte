@@ -6,6 +6,7 @@ import { fly } from "svelte/transition";
 import { entrypointLabel } from "$lib/architecture/meta.logic";
 import { DOMAIN_ACCENT, DOMAIN_LABEL, STATUS_LABEL } from "$lib/architecture/types";
 import { Container, Footer, Section, SeoMeta } from "$lib/components";
+import DocToc from "$lib/docs/DocToc.svelte";
 import Prose from "$lib/docs/Prose.svelte";
 import { prefersReducedMotion } from "$lib/motion-core";
 import type { PageData } from "./$types";
@@ -131,25 +132,7 @@ const facts = $derived([
 					<Prose nodes={data.content} width="reference" />
 				</div>
 
-				{#if meta.headings.length > 1}
-					<nav aria-label="On this page" class="lg:w-52 lg:shrink-0">
-						<div class="lg:sticky lg:top-24">
-							<p class="text-caption font-medium text-muted-foreground">On this page</p>
-							<ul class="mt-2 flex flex-col gap-1.5 border-l border-border-low pl-3">
-								{#each meta.headings as heading (heading.id)}
-									<li>
-										<a
-											href="#{heading.id}"
-											class="text-body-sm text-muted-foreground transition-colors hover:text-foreground"
-										>
-											{heading.text}
-										</a>
-									</li>
-								{/each}
-							</ul>
-						</div>
-					</nav>
-				{/if}
+				<DocToc headings={meta.headings} />
 			</div>
 		</Container>
 	</Section>

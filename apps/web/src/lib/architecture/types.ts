@@ -1,3 +1,7 @@
+import type { DocHeading } from "$lib/docs/headings";
+
+export type { DocHeading };
+
 /** Mirrors the `architecture` branch of the frontmatter schema in `docvia.config.ts`. */
 export type ArchitectureStatus = "production" | "beta" | "planned";
 
@@ -9,13 +13,6 @@ export type ArchitectureDomain =
 	| "platform"
 	| "cloud"
 	| "agent";
-
-/** A `##` heading, for the on-page contents rail. */
-export interface DocHeading {
-	depth: number;
-	text: string;
-	id: string;
-}
 
 /** One subsystem page: its prose lives in markdown, these facts in frontmatter. */
 export interface ArchitectureMeta {

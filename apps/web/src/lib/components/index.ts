@@ -11,6 +11,7 @@ export { default as HeroSteps } from "./HeroSteps.svelte";
 export { default as NotchedShelf } from "./NotchedShelf.svelte";
 export { default as PillarSection } from "./PillarSection.svelte";
 export { default as SectionLabel } from "./SectionLabel.svelte";
+export { default as IntegrationGrid } from "./IntegrationGrid.svelte";
 export { default as MacWindow } from "./MacWindow.svelte";
 export { default as Navbar } from "./Navbar.svelte";
 export { default as PolishGrid } from "./PolishGrid.svelte";

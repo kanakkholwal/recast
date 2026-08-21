@@ -37,7 +37,7 @@ const riseM = (delay: number) =>
 				</span>
 				<h1
 					in:fly={riseM(heroStagger * 1)}
-					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
+					class="font-display text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl"
 				>
 					How Recast
 					<span class="mt-2 block font-medium italic text-muted-foreground">gets built.</span>
@@ -46,8 +46,7 @@ const riseM = (delay: number) =>
 					in:fly={riseM(heroStagger * 2)}
 					class="text-pretty max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
 				>
-					Long-form write-ups from inside the work. The problems we hit, the decisions we made, and
-					the ones we got wrong before we got them right.
+					The problems we hit, the decisions we made, and the ones we got wrong first.
 				</p>
 			</div>
 		</Container>
@@ -57,21 +56,21 @@ const riseM = (delay: number) =>
 		<Container size="narrow">
 			{#if data.posts.length === 0}
 				<div class="surface-lg p-10 text-center">
-					<h2 class="text-xl font-semibold tracking-tight text-foreground">Nothing published yet</h2>
+					<h2 class="font-display text-subheading font-bold tracking-tight text-foreground">Nothing published yet</h2>
 					<p class="mt-2 text-sm text-muted-foreground">
 						The first write-ups are on their way. Check back shortly.
 					</p>
 				</div>
 			{:else}
-				<ol class="space-y-6">
+				<ol class="space-y-4">
 					{#each data.posts as post, i (post.slug)}
 						<Reveal as="li" delay={i * 60}>
 							<a
 								href={post.url}
-								class="surface-lg group block p-7 transition-all hover:shadow-craft-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+								class="surface group block p-6 transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							>
 								<article>
-									<div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+									<div class="flex flex-wrap items-center gap-2.5 text-caption text-muted-foreground">
 										<time datetime={post.date}>{formatDate(post.date)}</time>
 										<span class="text-border-strong">·</span>
 										<span class="inline-flex items-center gap-1.5">
@@ -79,32 +78,27 @@ const riseM = (delay: number) =>
 											{post.readingMinutes} min read
 										</span>
 										{#if !post.published}
-											<Badge variant="outline" class="border-warning/30 text-warning">Draft</Badge>
+											<Badge variant="outline">Draft</Badge>
 										{/if}
 									</div>
 
-									<h2
-										class="mt-3 text-2xl font-semibold tracking-tight text-foreground transition-colors group-hover:text-primary"
-									>
-										{post.title}
-									</h2>
+									<div class="mt-3 flex items-start justify-between gap-4">
+										<h2 class="font-display text-heading-sm font-bold tracking-tight text-foreground">
+											{post.title}
+										</h2>
+										<ArrowRight
+											class="mt-1.5 size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
+										/>
+									</div>
 
-									<p class="text-pretty mt-3 text-sm leading-relaxed text-muted-foreground">
+									<p class="text-pretty mt-2 text-body-sm leading-relaxed text-muted-foreground">
 										{post.description}
 									</p>
 
-									<div class="mt-5 flex flex-wrap items-center gap-2">
+									<div class="mt-4 flex flex-wrap items-center gap-2">
 										{#each post.tags as tag (tag)}
 											<Badge variant="secondary" class="font-normal">{tag}</Badge>
 										{/each}
-										<span
-											class="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors group-hover:text-foreground"
-										>
-											Read
-											<ArrowRight
-												class="size-3.5 transition-transform group-hover:translate-x-0.5"
-											/>
-										</span>
 									</div>
 								</article>
 							</a>

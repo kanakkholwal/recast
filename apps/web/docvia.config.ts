@@ -2,6 +2,7 @@ import { defineConfig } from "@docvia/cli";
 import { shiki } from "@docvia/plugin-shiki";
 import { createSvelteRenderer } from "@docvia/renderer-svelte/node";
 import { z } from "zod";
+import { sourceUrl } from "./src/lib/docs/source-links";
 
 type Renderer = ReturnType<typeof createSvelteRenderer>;
 
@@ -96,6 +97,41 @@ const architecture = z.object({
 });
 
 /**
+ * Turn a file reference into a link to the source.
+ *
+ * Architecture pages cite real paths constantly. As inline code they are inert
+ * and read as noise; as links they are the fastest way into the code. Only
+ * unambiguous paths are linked (see `repoPath`), so a bare `mod.rs` stays code.
+ */
+function sourceLinks(): DocviaPlugin {
+	const link = (nodes: readonly IRNode[]): IRNode[] =>
+		nodes.map((node) => {
+			if (node.type === "inline-code") {
+				const href = sourceUrl(String(node.props.value ?? ""));
+				if (!href) return node;
+				return {
+					type: "link",
+					props: { href, title: null, class: "source-link" },
+					children: [node],
+				} as IRNode;
+			}
+			if (node.children.length > 0) return { ...node, children: link(node.children) };
+			return node;
+		});
+
+	return {
+		name: "recast/source-links",
+		version: "1.0.0",
+		phase: "post",
+		priority: 210,
+		cacheKey: () => "recast-source-links@1",
+		beforeRender(doc) {
+			return { ...doc, children: link(doc.children) };
+		},
+	};
+}
+
+/**
  * Fields beyond docvia's built-ins (title, description, tags, slug, order).
  * Validated at compile time, so a post that forgets its byline or an
  * architecture page that forgets its invariants fails the build.
@@ -185,5 +221,6 @@ export default defineConfig({
 		}),
 		// Must stay AFTER shiki: it rewrites shiki's unknown-language fallback.
 		mermaidBlocks(),
+		sourceLinks(),
 	],
 });

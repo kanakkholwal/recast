@@ -1,5 +1,6 @@
-import { dev } from "$app/environment";
 import { blog } from "virtual:docvia/source";
+import { dev } from "$app/environment";
+import { type DocHeading, docHeadings } from "$lib/docs/headings";
 import type { DocNodes } from "$lib/docs/render";
 
 /**
@@ -22,6 +23,8 @@ export interface PostMeta {
 	tags: string[];
 	published: boolean;
 	readingMinutes: number;
+	/** Derived by docvia from the markdown, for the contents rail. */
+	headings: DocHeading[];
 }
 
 /** A full article: its metadata plus the compiled render tree. */
@@ -85,6 +88,7 @@ function toMeta(
 		tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
 		published: data.published === true,
 		readingMinutes: readingMinutes(content),
+		headings: docHeadings(data.headings),
 	};
 }
 

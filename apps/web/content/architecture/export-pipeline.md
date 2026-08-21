@@ -106,59 +106,59 @@ sequenceDiagram
 
 | Component | File | Role |
 | --- | --- | --- |
-| `chooseExportEngine` | `packages/editor/src/lib/export/choose-export-engine.ts:34` | Pure resolver: browser vs rust, first-match precedence + telemetry reason |
-| `browserExportBlockedReason` / `resolveExportFps` | `packages/editor/src/lib/export/browser-export-eligibility.ts:33` / `:13` | Throughput gate (`SAFE_EXPORT_THROUGHPUT`, `:27`) + effective export fps |
-| `probeBrowserExportCapability` | `packages/editor/src/lib/export/export-capability.ts:31` | Cached WebCodecs H.264-encode probe |
-| `buildExportJob` | `packages/editor/src/lib/export/build-export-job.ts:176` | **Producer** (main thread): snapshot scene, rasterize DOM assets → serializable `ExportJob` |
-| `ExportJob` + bitmap helpers | `packages/editor/src/lib/export/export-job.ts:64` | Handoff contract; `collectTransferables` / `closeJobBitmaps` |
-| `runExportJob` | `packages/editor/src/lib/export/run-export-job.ts:86` | **Consumer** (DOM-free): rebuild per-frame callbacks, drive the renderer |
-| `renderTimelineToVideo` | `packages/editor/src/lib/export/offscreen-export.ts:217` | Offline `RenderCore` + WebCodecs loop → mp4 bytes |
-| `videoEncodingConfigFor` | `packages/editor/src/lib/export/browser-export-plan.ts:34` | Quality-tier → MediaBunny `VideoEncodingConfig` |
-| `runBrowserExport` / `renderToBytes` / `renderJobToBytes` | `packages/editor/src/lib/export/browser-export.ts:34` / `:60` / `:82` | Orchestrator + worker-vs-main-thread render + worker→main fallback |
-| `exportActivity` store | `apps/desktop/src/lib/stores/exportActivity.svelte.ts:132` | App-scoped serial render queue + read-model over the Rust queue |
-| `run_mux_job` / `mux_browser_gif` | `apps/desktop/src-tauri/src/commands/editor.rs:1773` / `:2017` | `-c:v copy` + audio mux; 2-pass GIF palette on the browser video |
-| `export_queue` commands + worker | `apps/desktop/src-tauri/src/commands/export_queue.rs:199` | Durable SQLite queue, serial worker, `save_browser_export_video`, reconcile/sweep |
+| `chooseExportEngine` | `packages/editor/src/lib/export/choose-export-engine.ts` | Pure resolver: browser vs rust, first-match precedence + telemetry reason |
+| `browserExportBlockedReason` / `resolveExportFps` | `packages/editor/src/lib/export/browser-export-eligibility.ts` /  | Throughput gate (`SAFE_EXPORT_THROUGHPUT`) + effective export fps |
+| `probeBrowserExportCapability` | `packages/editor/src/lib/export/export-capability.ts` | Cached WebCodecs H.264-encode probe |
+| `buildExportJob` | `packages/editor/src/lib/export/build-export-job.ts` | **Producer** (main thread): snapshot scene, rasterize DOM assets → serializable `ExportJob` |
+| `ExportJob` + bitmap helpers | `packages/editor/src/lib/export/export-job.ts` | Handoff contract; `collectTransferables` / `closeJobBitmaps` |
+| `runExportJob` | `packages/editor/src/lib/export/run-export-job.ts` | **Consumer** (DOM-free): rebuild per-frame callbacks, drive the renderer |
+| `renderTimelineToVideo` | `packages/editor/src/lib/export/offscreen-export.ts` | Offline `RenderCore` + WebCodecs loop → mp4 bytes |
+| `videoEncodingConfigFor` | `packages/editor/src/lib/export/browser-export-plan.ts` | Quality-tier → MediaBunny `VideoEncodingConfig` |
+| `runBrowserExport` / `renderToBytes` / `renderJobToBytes` | `packages/editor/src/lib/export/browser-export.ts` /  /  | Orchestrator + worker-vs-main-thread render + worker→main fallback |
+| `exportActivity` store | `apps/desktop/src/lib/stores/exportActivity.svelte.ts` | App-scoped serial render queue + read-model over the Rust queue |
+| `run_mux_job` / `mux_browser_gif` | `apps/desktop/src-tauri/src/commands/editor.rs` /  | `-c:v copy` + audio mux; 2-pass GIF palette on the browser video |
+| `export_queue` commands + worker | `apps/desktop/src-tauri/src/commands/export_queue.rs` | Durable SQLite queue, serial worker, `save_browser_export_video`, reconcile/sweep |
 | Rust composite fallback | `apps/desktop/src-tauri/src/commands/export/*.rs` | `run_export_job` full FFmpeg compositor (cuts/speed, captions, camera, blur, codec) |
 
 ## Control / data flow
 
 ### Browser export (the default path when eligible)
 
-1. **Decide**: `handleExport` (editor `+page.svelte:1121`) reads
+1. **Decide**: `handleExport` (editor `+page.svelte`) reads
    `browserExportBeta`, probes capability only if the flag is on, then calls
    `chooseExportEngine({ masterEnabled, blockedReason, capabilitySupported })`.
    First matching guard wins: disabled → `forceLegacy` → feature-blocked →
-   capability, else `browser` (`choose-export-engine.ts:34`).
+   capability, else `browser` (`choose-export-engine.ts`).
 2. **Build render state**: `buildExportRenderState(store, { skipVisualRaster:
-   engine === "browser" })` (`+page.svelte:1138`); the browser engine composites
+   engine === "browser" })` (`+page.svelte`); the browser engine composites
    visuals itself, so the Rust-side text→PNG / cursor pre-render is skipped.
-3. **Build the job**: `buildExportJob` (`build-export-job.ts:176`) snapshots the
+3. **Build the job**: `buildExportJob` (`build-export-job.ts`) snapshots the
    scene and rasterizes every DOM-bound asset (background bitmap, cursor SVG
    sprites, annotation images, caption webfont) to transferable `ImageBitmap`s,
    then de-proxies each store-sourced field with `toStatic` (`$state.snapshot`).
    The result is plain data + bitmaps, zero closures.
-4. **Enqueue render**: `exportActivity.enqueueBrowserExport` (`+page.svelte:1222`)
+4. **Enqueue render**: `exportActivity.enqueueBrowserExport`
    pushes an optimistic `queued` item (`hasRenderPhase: true`) and the job onto
-   the app-scoped `renderQueue`, then `pumpRenderQueue` (`exportActivity:323`).
+   the app-scoped `renderQueue`, then `pumpRenderQueue` (`exportActivity`).
 5. **Render**: `pumpRenderQueue` runs one job at a time via `renderJobToBytes`
-   (`browser-export.ts:82`): worker when supported, else main thread; a worker
+   (`browser-export.ts`): worker when supported, else main thread; a worker
    failure retries the same job main-thread. `renderTimelineToVideo`
-   (`offscreen-export.ts:217`) composites each output frame through `RenderCore`
+   (`offscreen-export.ts`) composites each output frame through `RenderCore`
    into a MediaBunny `CanvasSource` and WebCodecs-encodes to mp4. Render progress
    maps to `0..RENDER_MAX` (95).
-6. **Persist**: `saveBrowserExportVideo(exact)` (`exportActivity:359` →
-   `export_queue.rs:468`) writes the mp4 bytes to a temp file and returns its path.
+6. **Persist**: `saveBrowserExportVideo(exact)` (`exportActivity` →
+   `export_queue.rs`) writes the mp4 bytes to a temp file and returns its path.
 7. **Enqueue mux**: `enqueueExport({ ...params, browserVideoPath, exportId })`
-   (`exportActivity:361`) hands off to the durable Rust queue.
+   (`exportActivity`) hands off to the durable Rust queue.
 8. **Mux**: the worker sees `browser_video_path` and calls `run_mux_job`
-   (`export_queue.rs:257` → `editor.rs:1773`): input 0 is the browser video
-   (`-c:v copy`, `editor.rs:1957`); audio inputs (source/system/mic/music) are
+   (`export_queue.rs` → `editor.rs`): input 0 is the browser video
+   (`-c:v copy`, `editor.rs`); audio inputs (source/system/mic/music) are
    built, warped to the output timeline with `atempo`/cuts, AAC-encoded, and
    muxed. `+faststart`. The browser temp video is deleted on success
-   (`editor.rs:2005`). GIF instead runs `mux_browser_gif`, a 2-pass palette
+   (`editor.rs`). GIF instead runs `mux_browser_gif`, a 2-pass palette
    (`palettegen`→`paletteuse`) on the already-composited browser video, no audio.
 9. **Report**: the worker emits `export-state` (progress mapped onto the
-   `RENDER_MAX..100` tail, `exportActivity:286`) and `export-jobs-changed`;
+   `RENDER_MAX..100` tail, `exportActivity`) and `export-jobs-changed`;
    `finishFeedback` fires the success toast + telemetry once.
 
 ### Rust export (fallback)
@@ -166,13 +166,13 @@ sequenceDiagram
 Chosen when `chooseExportEngine` returns `rust`, **or** when a browser render
 throws (GPU context loss on a long/heavy source): `pumpRenderQueue`'s catch
 clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
-**without** `browserVideoPath` (`exportActivity:373`).
+**without** `browserVideoPath` (`exportActivity`).
 
-1. `enqueue_export` (`export_queue.rs:368`) probes source metadata, auto-repairs
+1. `enqueue_export` (`export_queue.rs`) probes source metadata, auto-repairs
    the render state (clamps stale `trim_end`), runs `validate_render_state`,
    then atomically writes the payload file + inserts a `queued` row and notifies
    `export_wake`.
-2. The serial worker (`spawn_export_worker:199`, own thread + current-thread
+2. The serial worker (`spawn_export_worker`, own thread + current-thread
    runtime) claims the oldest queued row (`claim_next_queued`) and, seeing no
    `browser_video_path`, calls `run_export_job`, the full FFmpeg
    `filter_complex` compositor under `commands/export/*.rs` (cuts/speed, burned
@@ -190,54 +190,54 @@ clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
   structured-cloneable or a transferable bitmap. Two specific traps:
   - Svelte `$state` proxies throw `DataCloneError` on `postMessage`, so every
     store-sourced field is run through `toStatic` (`$state.snapshot`) in the
-    producer (`build-export-job.ts:225`). `staticAnnotation` snapshots around the
-    bitmaps so it doesn't clone them (`:242`).
+    producer (`build-export-job.ts`). `staticAnnotation` snapshots around the
+    bitmaps so it doesn't clone them.
   - MediaBunny's `Quality` is a **branded** object that doesn't survive
     `postMessage`. Only the plain `ExportQuality` **tier** rides in the job; the
     consumer rebuilds the encoder config with `videoEncodingConfigFor(job.quality)`
-    (`run-export-job.ts:133`).
+    (`run-export-job.ts`).
 - **Context-loss handling.** A lost GL context turns uploads/draws into silent
   no-ops (a black-from-here mp4) and can strand `source.add` forever.
   `offscreen-export.ts` guards three ways: an `isContextLost()` check per frame
-  (`:359`), a `webglcontextlost` listener that rejects a `lostPromise` raced
-  against the encoder awaits (`:286`, `:434`), and a one-time
+  , a `webglcontextlost` listener that rejects a `lostPromise` raced
+  against the encoder awaits, and a one-time
   `unhandledrejection` guard swallowing MediaBunny's benign "closed codec"
-  double-close (`:139`). A layer-draw throw is caught per-layer so one bad
+  double-close. A layer-draw throw is caught per-layer so one bad
   annotation/caption frame doesn't abort (and silently fall back): it logs once
-  and keeps rendering (`:383`).
+  and keeps rendering.
 - **Decoder efficiency.** `sink.getSample(t)` builds a fresh `VideoDecoder` per
   call; the loop uses `samplesAtTimestamps` so each packet decodes at most once
-  (`offscreen-export.ts:344`). Retaining a `VideoFrame` silently starves the
-  decoder, every `toVideoFrame()` is `close()`d in a `finally` (`:365`).
+  (`offscreen-export.ts`). Retaining a `VideoFrame` silently starves the
+  decoder, every `toVideoFrame()` is `close()`d in a `finally`.
 - **Throughput gate routes heavy sources to Rust.** `width*height*fps >
   SAFE_EXPORT_THROUGHPUT` (`1920*1080*60`) → `blockedReason` → Rust
-  (`browser-export-eligibility.ts:27`). 1080p60 is the verified ceiling; 1080p120
+  (`browser-export-eligibility.ts`). 1080p60 is the verified ceiling; 1080p120
   and 4K land on the reliable Rust compositor.
 - **Browser-fail → Rust fallback is automatic and lossless to the user.** On a
   render throw (non-abort), `exportActivity` re-enqueues the same params without
   `browserVideoPath`; the Rust compositor rebuilds from scratch
-  (`exportActivity:373`). The worker-vs-main-thread layer also self-heals: a
+  (`exportActivity`). The worker-vs-main-thread layer also self-heals: a
   worker failure rebuilds a fresh job (bitmaps were transferred away) and retries
-  main-thread (`browser-export.ts:66`).
+  main-thread (`browser-export.ts`).
 - **Queue durability.** The heavy `ExportRequest` payload is a file under
   `export_queue/<id>.json`; the SQLite row holds only metadata + that path.
   Enqueue is atomic (`write_atomic`). A job survives closing its editor (the
   render queue is app-scoped, the mux queue is backend-owned) and an app restart, `reconcile_on_load` flips orphaned `running` rows to `interrupted`
-  (`export_queue.rs:288`); `sweep_stale_jobs` GCs terminal rows + orphan payloads
-  (`:327`). The render queue's own items are local-only until handoff, so
-  `refreshList` preserves them across reconciles (`exportActivity:200`).
+  (`export_queue.rs`); `sweep_stale_jobs` GCs terminal rows + orphan payloads
+  . The render queue's own items are local-only until handoff, so
+  `refreshList` preserves them across reconciles (`exportActivity`).
 - **`-c:v copy` ⇒ the browser must render at source-composition resolution.** The
   mux never re-scales video, so the browser renders at the canvas/comp resolution
   the output needs; only the audio graph is (re)built server-side. The browser
   video is already warped to the output timeline, so `run_mux_job` applies
-  cuts/speed to **audio only** (`editor.rs:1879`).
+  cuts/speed to **audio only** (`editor.rs`).
 - **Unified progress bar.** Browser render owns `0..RENDER_MAX` (95); the backend
   mux is the fast `RENDER_MAX..100` tail. `hasRenderPhase` is a local-only field
   carried across `refreshList` so the mapping and total-time telemetry stay
-  correct (`exportActivity:184`).
+  correct (`exportActivity`).
 - **`renderingInBrowser`** freezes the preview (it shares this GPU + decoder) so
-  it stops fighting the export (`exportActivity:422`; `store.isPlaying = false`
-  at `+page.svelte:1209`).
+  it stops fighting the export (`exportActivity`; `store.isPlaying = false`
+  at `+page.svelte`).
 
 ## Related
 

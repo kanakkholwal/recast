@@ -1,26 +1,15 @@
+import { docHeadings } from "$lib/docs/headings";
 import {
 	type ArchitectureDomain,
 	type ArchitectureMeta,
 	type ArchitectureStatus,
 	DOMAIN_ORDER,
-	type DocHeading,
 } from "./types";
 
 const STATUSES: readonly ArchitectureStatus[] = ["production", "beta", "planned"];
 
 function strings(value: unknown): string[] {
 	return Array.isArray(value) ? value.map(String).filter((entry) => entry.length > 0) : [];
-}
-
-/** Only `##` headings: `###` and deeper would turn the rail into a second document. */
-function headings(value: unknown): DocHeading[] {
-	if (!Array.isArray(value)) return [];
-	return value
-		.map((entry) => entry as Partial<DocHeading>)
-		.filter(
-			(entry) => Number(entry.depth) === 2 && typeof entry.id === "string" && entry.id.length > 0,
-		)
-		.map((entry) => ({ depth: 2, text: String(entry.text ?? ""), id: String(entry.id) }));
 }
 
 function status(value: unknown): ArchitectureStatus {
@@ -62,7 +51,7 @@ export function toArchitectureMeta(
 		outputs: strings(data.outputs),
 		entrypoints: strings(data.entrypoints),
 		invariants: strings(data.invariants),
-		headings: headings(data.headings),
+		headings: docHeadings(data.headings),
 	};
 }
 

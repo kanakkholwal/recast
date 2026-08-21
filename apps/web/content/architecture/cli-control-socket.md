@@ -28,18 +28,18 @@ invariants:
 ## Overview
 
 One binary is both the GUI and the CLI. `main` looks at `argv[1]`, and a verb in
-`CLI_VERBS` (`cli.rs:23`) takes the headless path; anything else opens a window.
+`CLI_VERBS` (`cli.rs`) takes the headless path; anything else opens a window.
 
 Tauri's single-instance plugin forwards argv to a running app, but that channel
 is one-way, so it cannot answer `recast project show`. A running app therefore
 hosts a server on an OS local socket, `\\.\pipe\com.kanakkholwal.recast.cli.sock`
-on Windows and a Unix socket elsewhere (`control/mod.rs:33`, via
+on Windows and a Unix socket elsewhere (`control/mod.rs`, via
 `interprocess`). The protocol is one JSON request line in, one response line
 out.
 
 Auth is two layers. The socket or pipe ACL gates it to the same OS user; on top
 of that `run_server` writes a random token to a 0600 file in the temp dir
-(`token_path`, `control/mod.rs:37`) that the CLI reads and echoes in every
+(`token_path`, `control/mod.rs`) that the CLI reads and echoes in every
 request. The token is defence in depth, not the boundary.
 
 The target consumer is an agent: introspect, edit through the branch layer,
@@ -70,19 +70,19 @@ flowchart LR
 
 ## Key components
 
-| Component | File:line | Responsibility |
+| Component | File | Responsibility |
 |---|---|---|
-| `CLI_VERBS` | `cli.rs:23` | The list `main` matches `argv[1]` against to stay headless. Hand-maintained, separate from clap |
-| `Command` | `cli.rs:109` | The clap tree: `select`, `set`, `project`, `editor`, `branch`, `export`, `screenshot`, `transcribe`, `watch`, `mcp`, `install` |
-| `run_server` | `control/mod.rs:103` | Binds the socket, writes the token, registers the event listeners **once** for the process |
-| `dispatch` | `control/mod.rs:383` | `(app, method, params) -> Result<Value, String>`; arms stay thin and delegate to shared services |
-| `EVENT_GROUPS` | `control/mod.rs:188` | One table mapping `rec`/`selection`/`profiles`/`editor`/`export` to event names; drives both the filter and the feed |
-| `handle_watch` | `control/mod.rs:244` | Cursor replay, group filter, 15s keepalive, lagged frame |
-| `EventLog` | `control/events.rs:51` | `Mutex<VecDeque<LoggedEvent>>` + `Condvar`, capacity `RING_CAPACITY` = 1024 |
-| `EventLog::since` | `control/events.rs:101` | Returns `Replay { events, cursor, missed }` for a cursor and a name filter |
-| `EventLog::wait_past` | `control/events.rs:123` | Blocks on the condvar until `seq > cursor` or the timeout fires |
-| `classify_claim` | `commands/editor_session.rs:137` | `Vacant` / `Reentrant` / `Expired` / `Held`; only `Held` is a refusal |
-| `EditorLockError` | `commands/editor_session.rs:115` | `thiserror`; the message names the holder, the age, and the remaining TTL |
+| `CLI_VERBS` | `cli.rs` | The list `main` matches `argv[1]` against to stay headless. Hand-maintained, separate from clap |
+| `Command` | `cli.rs` | The clap tree: `select`, `set`, `project`, `editor`, `branch`, `export`, `screenshot`, `transcribe`, `watch`, `mcp`, `install` |
+| `run_server` | `control/mod.rs` | Binds the socket, writes the token, registers the event listeners **once** for the process |
+| `dispatch` | `control/mod.rs` | `(app, method, params) -> Result<Value, String>`; arms stay thin and delegate to shared services |
+| `EVENT_GROUPS` | `control/mod.rs` | One table mapping `rec`/`selection`/`profiles`/`editor`/`export` to event names; drives both the filter and the feed |
+| `handle_watch` | `control/mod.rs` | Cursor replay, group filter, 15s keepalive, lagged frame |
+| `EventLog` | `control/events.rs` | `Mutex<VecDeque<LoggedEvent>>` + `Condvar`, capacity `RING_CAPACITY` = 1024 |
+| `EventLog::since` | `control/events.rs` | Returns `Replay { events, cursor, missed }` for a cursor and a name filter |
+| `EventLog::wait_past` | `control/events.rs` | Blocks on the condvar until `seq > cursor` or the timeout fires |
+| `classify_claim` | `commands/editor_session.rs` | `Vacant` / `Reentrant` / `Expired` / `Held`; only `Held` is a refusal |
+| `EditorLockError` | `commands/editor_session.rs` | `thiserror`; the message names the holder, the age, and the remaining TTL |
 
 ## Control / data flow
 
@@ -129,7 +129,7 @@ the reported one means a restart, and the client must re-snapshot.
 - **`CLI_VERBS` is not derived from clap.** A subcommand present in the clap
   tree but missing from that list makes `main` open the GUI instead of running.
   This silently broke `recast branch`;
-  `every_subcommand_routes_to_the_headless_cli` (`cli.rs:2074`) now walks the
+  `every_subcommand_routes_to_the_headless_cli` (`cli.rs`) now walks the
   clap tree and asserts the list covers it.
 - **One listener set, registered in `run_server`, not per connection.** Doing it
   per connection leaked N listeners per watch *and* made replay meaningless,

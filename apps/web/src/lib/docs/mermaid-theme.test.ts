@@ -22,7 +22,8 @@ describe("mermaid theme", () => {
 
 	/// Guards the real config against mermaid's own colour parser, which is where
 	/// the original failure surfaced rather than in any of our code.
-	it("initialises mermaid without a colour error", async () => {
+	// Importing mermaid is ~500KB of ESM; a cold run blows the default timeout.
+	it("initialises mermaid without a colour error", { timeout: 30_000 }, async () => {
 		const mermaid = (await import("mermaid")).default;
 		mermaid.initialize({
 			startOnLoad: false,

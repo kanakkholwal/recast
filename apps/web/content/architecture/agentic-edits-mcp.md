@@ -40,7 +40,7 @@ Three things forced this, all of them behind the ordinary
 2. `try_acquire_write_lock` had no same-writer check, so an agent's second edit
    inside the 60s TTL failed with `editor_locked` naming *itself* as the holder.
    Every multi-step agent edit was broken until `classify_claim`
-   (`commands/editor_session.rs:137`) landed.
+   (`commands/editor_session.rs`) landed.
 3. Undo lived only in the frontend store. Nothing outside the GUI could take an
    edit back.
 
@@ -92,25 +92,25 @@ sequenceDiagram
 
 ## Key components
 
-| Component | File:line | Responsibility |
+| Component | File | Responsibility |
 |---|---|---|
-| `Op` | `render/ops.rs:67` | 16 variants: trim, cuts, zoom, split points, speed, annotations, scene anims, generic `Set`, whole-state `Replace` |
-| `apply_op` | `render/ops.rs:139` | `(&mut RenderState, &Op) -> Result<Value, OpError>`; pure, no clock, no IO |
-| `apply_ops` | `render/ops.rs:290` | All-or-nothing batch over a clone; a mid-batch failure leaves the branch untouched |
-| `OpError` | `render/ops.rs:24` | `thiserror`; index-out-of-range, selector-missing, not-found, `FieldTypeMismatch` |
-| `StateHash` | `project/journal.rs:108` | `[u8; 32]` sha256 of the serialized `RenderState`, hex in JSON via `hex_bytes` |
-| `BranchId` | `project/journal.rs:80` | Client-chosen name, validated because it is also the journal's file stem |
-| `Entry` / `Branch` | `project/journal.rs:143,153` | `{seq, idem_key, ops, at_ms}` on one `base: StateHash` |
-| `Branch::append` | `project/journal.rs:236` | `expect_seq` check, idem-key replay, returns `Append::Recorded` or `AlreadyApplied` |
-| `Branch::materialize` | `project/journal.rs:282` | Replays entries onto the base; `JournalError::BaseMoved` if the hash shifted |
-| `Branch::compact` | `project/journal.rs:310` | Past `COMPACT_AFTER_ENTRIES` (512) collapses to one `Op::Replace`, **keeping the base** |
-| `Branch::truncate_after` | `project/journal.rs:269` | Server-side undo: drop every entry past `seq` |
-| `BranchStore` | `project/journal.rs:332` | One directory of `<id>.json`; `list` skips unparseable files so one corrupt journal cannot hide the rest |
-| `project_key` | `project/journal.rs:499` | Maps a `.recast` path to its journal directory name |
-| `BranchService` | `commands/branches.rs:79` | The shared layer: 8 methods, called by socket dispatch, Tauri commands, and MCP |
-| `BranchService::apply` | `commands/branches.rs:207` | Materializes *inside* `patch_render_state`'s closure, so the fold is one atomic bundle write |
-| `Server::handle` | `mcp/protocol.rs:63` | Pure `(&Value, &impl ToolHost) -> Option<Value>`; testable with no socket and no process |
-| `TOOLS` | `mcp/tools.rs:29` | 10 branch-scoped tool descriptors, each a closed JSON Schema |
+| `Op` | `render/ops.rs` | 16 variants: trim, cuts, zoom, split points, speed, annotations, scene anims, generic `Set`, whole-state `Replace` |
+| `apply_op` | `render/ops.rs` | `(&mut RenderState, &Op) -> Result<Value, OpError>`; pure, no clock, no IO |
+| `apply_ops` | `render/ops.rs` | All-or-nothing batch over a clone; a mid-batch failure leaves the branch untouched |
+| `OpError` | `render/ops.rs` | `thiserror`; index-out-of-range, selector-missing, not-found, `FieldTypeMismatch` |
+| `StateHash` | `project/journal.rs` | `[u8; 32]` sha256 of the serialized `RenderState`, hex in JSON via `hex_bytes` |
+| `BranchId` | `project/journal.rs` | Client-chosen name, validated because it is also the journal's file stem |
+| `Entry` / `Branch` | `project/journal.rs` | `{seq, idem_key, ops, at_ms}` on one `base: StateHash` |
+| `Branch::append` | `project/journal.rs` | `expect_seq` check, idem-key replay, returns `Append::Recorded` or `AlreadyApplied` |
+| `Branch::materialize` | `project/journal.rs` | Replays entries onto the base; `JournalError::BaseMoved` if the hash shifted |
+| `Branch::compact` | `project/journal.rs` | Past `COMPACT_AFTER_ENTRIES` (512) collapses to one `Op::Replace`, **keeping the base** |
+| `Branch::truncate_after` | `project/journal.rs` | Server-side undo: drop every entry past `seq` |
+| `BranchStore` | `project/journal.rs` | One directory of `<id>.json`; `list` skips unparseable files so one corrupt journal cannot hide the rest |
+| `project_key` | `project/journal.rs` | Maps a `.recast` path to its journal directory name |
+| `BranchService` | `commands/branches.rs` | The shared layer: 8 methods, called by socket dispatch, Tauri commands, and MCP |
+| `BranchService::apply` | `commands/branches.rs` | Materializes *inside* `patch_render_state`'s closure, so the fold is one atomic bundle write |
+| `Server::handle` | `mcp/protocol.rs` | Pure `(&Value, &impl ToolHost) -> Option<Value>`; testable with no socket and no process |
+| `TOOLS` | `mcp/tools.rs` | 10 branch-scoped tool descriptors, each a closed JSON Schema |
 
 ## Control / data flow
 
@@ -170,7 +170,7 @@ of band. On success the journal is deleted: a branch is consumed, not archived.
   surface makes, rather than a background timer.
 - **No MCP tool writes.** `branch.apply`, the `editor.*` mutators, `rec.*` and
   `export.*` are absent from `TOOLS`, and `no_tool_writes_the_project_directly`
-  (`mcp/tools.rs:251`) asserts it. Failing verbs return `isError: true` with the
+  (`mcp/tools.rs`) asserts it. Failing verbs return `isError: true` with the
   message intact so the model can read `editor_locked: …` and back off.
 - **`rmcp` is not used.** Its current release needs rustc 1.88 while this crate
   pins `rust-version = "1.82.0"`, so cargo silently resolves to 2.2.0 rather

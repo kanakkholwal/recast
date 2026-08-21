@@ -82,23 +82,23 @@ flowchart LR
 
 ## Key components
 
-| Component | File:line | Responsibility |
+| Component | File | Responsibility |
 |---|---|---|
-| `recast_cloud_upload` | `commands/cloud.rs:240` | The four-step flow; async command, streams progress on its own `Channel` |
-| `CloudUploadEvent` | `commands/cloud.rs:166` | `Phase { phase }` and `Progress { bytes_sent, total_bytes }`; one channel per upload, so no path correlation is needed |
-| `cloud_client` | `commands/cloud.rs:42` | 30s connect timeout, **no overall timeout** |
-| `fail` | `commands/cloud.rs:182` | Returns the message *and* emits `recast-cloud:error`, so the promise and a detached notification both learn |
-| `CloudUploadRecord` / `read_manifest` | `commands/cloud.rs:96,111` | Local record of what this machine has uploaded, keyed by local path |
-| `recast_cloud_update_share` | `commands/cloud.rs:524` | Visibility and expiry changes after the fact |
+| `recast_cloud_upload` | `commands/cloud.rs` | The four-step flow; async command, streams progress on its own `Channel` |
+| `CloudUploadEvent` | `commands/cloud.rs` | `Phase { phase }` and `Progress { bytes_sent, total_bytes }`; one channel per upload, so no path correlation is needed |
+| `cloud_client` | `commands/cloud.rs` | 30s connect timeout, **no overall timeout** |
+| `fail` | `commands/cloud.rs` | Returns the message *and* emits `recast-cloud:error`, so the promise and a detached notification both learn |
+| `CloudUploadRecord` / `read_manifest` | `commands/cloud.rs` | Local record of what this machine has uploaded, keyed by local path |
+| `recast_cloud_update_share` | `commands/cloud.rs` | Visibility and expiry changes after the fact |
 | `Files` wrapper | `apps/web/src/lib/storage/index.ts` | Provider chosen by `STORAGE_PROVIDER`; the adapter is required dynamically so unused providers need no peer dep |
-| `recastObjectKey` / `posterObjectKey` | `storage/index.ts:211,222` | The keys that get persisted |
-| `signUploadUrl` / `signDownloadUrl` | `storage/index.ts:273,289` | Sign on write and on read; the row stores the key, never a URL |
-| `statObject` | `storage/index.ts:302` | The HEAD that `uploads/complete` verifies with before publishing |
-| `install_extension` | `commands/extensions.rs:256` | Fetch, validate, hash-verify, write `extension.lock.json` and `state.json` |
-| `url_allowed` | `commands/extensions.rs:112` | HTTPS only; `http` allowed for `localhost`, `127.0.0.1`, `::1` |
-| `validate_manifest` | `commands/extensions.rs:171` | `kind == "asset-pack"`, **empty `permissions`**, safe id, safe filenames |
-| `RESERVED_NAMES` | `commands/extensions.rs:128` | The 22 Windows device names a pack filename may not be |
-| `verify_signature` | `commands/extensions.rs:199` | Reserved seam for Ed25519 publisher signing; currently accepts |
+| `recastObjectKey` / `posterObjectKey` | `storage/index.ts` | The keys that get persisted |
+| `signUploadUrl` / `signDownloadUrl` | `storage/index.ts` | Sign on write and on read; the row stores the key, never a URL |
+| `statObject` | `storage/index.ts` | The HEAD that `uploads/complete` verifies with before publishing |
+| `install_extension` | `commands/extensions.rs` | Fetch, validate, hash-verify, write `extension.lock.json` and `state.json` |
+| `url_allowed` | `commands/extensions.rs` | HTTPS only; `http` allowed for `localhost`, `127.0.0.1`, `::1` |
+| `validate_manifest` | `commands/extensions.rs` | `kind == "asset-pack"`, **empty `permissions`**, safe id, safe filenames |
+| `RESERVED_NAMES` | `commands/extensions.rs` | The 22 Windows device names a pack filename may not be |
+| `verify_signature` | `commands/extensions.rs` | Reserved seam for Ed25519 publisher signing; currently accepts |
 
 ## Control / data flow
 

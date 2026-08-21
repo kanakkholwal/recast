@@ -443,7 +443,37 @@ affordance. No card, no chevron column, just hairline-divided rows.
 Anything with a code block (the install troubleshooting on `/download`) uses
 `Collapsible` directly instead, since FaqList takes plain `{ q, a }` text.
 
-### Pricing and download pages
+### IntegrationGrid
+
+The share-destination field on `/features`. A `gap-px` grid where **the empty
+cells are load-bearing**: a full grid reads as a finished list, a sparse one
+reads as a set still filling up. Slot indices are fixed, never random, so the
+scatter is stable across renders and hydration.
+
+Marks sit directly in the cells with no coloured tile behind them. A shipped
+integration renders at full ink with a `tag-green` dot; everything else sits at
+`border-strong` and lifts to full ink on hover. That difference is the honesty
+in the section: today only Drive is live, and the grid says so rather than
+implying ten working integrations. Each cell carries an `sr-only` label with
+its status, since the mark alone is not an accessible name.
+
+Third-party marks come from `@recast/icons` as `Brand*` aliases. Add new ones to
+the Tabler barrel rather than importing `@tabler/icons-svelte` directly at a
+call site.
+
+### Spotlight rows
+
+Two-up hairline row of product mocks, each with a heading, one paragraph and an
+outline action, sitting above a denser 4-up grid of everything else. Use it when
+two features deserve a moving visual and the rest deserve a line. The mocks are
+the same `PolishMock` / `ExportMock` the home page uses, so the pages agree
+about what the product looks like.
+
+Never add a "Learn more" affordance to the dense grid unless every row has a
+real destination. The old catalog rendered one on all 17 cards, all pointing at
+`#`.
+
+### Interior pages
 
 Both were on the pre-Dub system: floating `rounded-2xl` cards, `blur-3xl` glow
 blobs, hardcoded `amber-500`/`emerald-500` state colours, mono labels and
@@ -461,6 +491,20 @@ ad-hoc `text-5xl`/`text-sm` sizes. Rebuilt on the marketing system:
 - Segmented controls (billing period, platform tabs) are one shape: a
   `border-border-low` + `bg-paper` track with the active pill on `bg-background`
   and `shadow-craft-sm`.
+
+**Every interior hero is the same shape**, and it is not the home page's hero:
+`SectionLabel`, display `h1` at `text-heading-lg md:text-display`, one
+`text-body-lg` line, then actions. Left-aligned in the `max-w-6xl` column, with
+a hairline rule under it carrying the page's one-line facts (guarantees on
+`/pricing`, build stability on `/download`, last-updated on the legal pages).
+Centred hero stacks with italic second lines and `lg:text-[5rem]` are gone.
+
+`/extensions` follows the home page's section grammar exactly: chapter rule,
+heading column, then a `gap-px` hairline grid. Its install steps use the same
+display-face `01` numerals as the home page pillars rather than icon tiles.
+
+Legal pages keep their `max-w-3xl` measure but sit **inside** the column rules
+rather than centred in the viewport, so the rules line up with every other page.
 
 ### Footer wordmark
 

@@ -15,7 +15,7 @@ Recast was a Windows app because that was the machine in front of me, not becaus
 
 Two structural choices, made early for other reasons, did most of the work.
 
-**One module per capability, per platform, behind a trait.** Capture is a folder of files that each implement `CaptureSource` (`capture/mod.rs:13`):
+**One module per capability, per platform, behind a trait.** Capture is a folder of files that each implement `CaptureSource` (`capture/mod.rs`):
 
 ```rust
 pub trait CaptureSource: Send {
@@ -30,7 +30,7 @@ Four implementations sit behind it: Windows Graphics Capture per window and DXGI
 
 Adding macOS capture meant writing one file that satisfied the trait. It did not mean touching the Windows path, so there was never a day where all three were broken at once.
 
-`set_target_fps` is the one place the abstraction leaks on purpose, and it is worth reading the comment on it. WGC delivers a frame on every window repaint, not on every encoder tick, and each frame costs a GPU→CPU readback that maps GPU memory and stalls the GPU. DXGI and xcb only produce a frame when the screen actually changes, so they ignore the hint. One method, two completely different reasons for existing.
+`set_target_fps` is the one place the abstraction leaks on purpose. WGC delivers a frame on every window repaint rather than on every encoder tick, and each frame costs a GPU→CPU readback that maps GPU memory and stalls the GPU, so it throttles down to the encode rate. DXGI and xcb only produce a frame when the screen actually changes, so they ignore the hint entirely.
 
 **FFmpeg as the shared floor.** Every platform hands BGRA to the same encoder pipeline. WGC, AVFoundation, xcb and PipeWire are four ways to get pixels; below that line there is one code path. The platform-specific surface shrinks to "get me frames", and everything downstream, the pacer, the encoder, the muxer, is written once.
 
@@ -63,7 +63,7 @@ An OS pipe has a fixed buffer, around 64KB. Once it fills, FFmpeg blocks in `wri
 
 macOS and Linux default to smaller pipe buffers than Windows, so they hit it sooner. That is the entire difference: the same bug, reached in minutes instead of hours.
 
-`pump_stderr_tail` (`encoder/mod.rs:38`) drains it on a side thread into a bounded ring, which also means the `child.wait()` on every error path can no longer hang waiting for a stderr-blocked process to exit. Keeping the tail is a side benefit; the drain itself is the fix.
+`pump_stderr_tail` (`encoder/mod.rs`) drains it on a side thread into a bounded ring, which also means the `child.wait()` on every error path can no longer hang waiting for a stderr-blocked process to exit. Keeping the tail is a side benefit; the drain itself is the fix.
 
 ## What the other two platforms actually check for you
 
@@ -83,4 +83,4 @@ macOS is code complete and in a tester pass. The honest gaps are hardware verifi
 
 Linux is code complete and waiting on its first hardware pass. Wayland (portal plus PipeWire) and X11 are both written and have been through the audit above, but nothing gets a checkmark from us until it has run on a real GNOME, KDE and X11 session.
 
-The cost of the port was not writing platform code. It was that two other operating systems read our Windows code more carefully than we had.
+Almost none of the cost was writing platform code. It was fixing what two stricter operating systems found in the code we already had.

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Container, Eyebrow, Footer, Reveal, Section, SeoMeta } from "$lib/components";
+import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
 import { ScrollText } from "@recast/icons";
 
 const lastUpdated = "May 30, 2026";
@@ -158,46 +158,50 @@ const sections: Section[] = [
 />
 
 <main class="text-foreground">
-	<Section spacing="none" class="relative overflow-hidden pt-36 pb-12 md:pt-48 md:pb-16">
-		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
-				<Eyebrow icon={ScrollText} variant="primary">Terms of Service</Eyebrow>
-				<h1 class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
-					The fine print,
-					<span class="mt-2 block font-medium italic text-muted-foreground">
-						in plain English.
-					</span>
+	<section class="mx-auto w-full max-w-6xl border-b border-border-low pt-32 md:pt-40">
+		<Container class="pb-12">
+			<Reveal variant="up">
+				<SectionLabel icon={ScrollText} label="Terms of Service" />
+			</Reveal>
+			<Reveal variant="up" delay={60} class="mt-5">
+				<h1 class="max-w-2xl font-display text-balance text-heading-lg md:text-display">
+					The fine print, in plain English
 				</h1>
-				<p class="text-pretty max-w-xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg" style="animation-delay: 120ms">
-					What you can expect from us, what we ask of you, and how we handle the edge cases. By using Recast, you agree to these Terms.
+			</Reveal>
+			<Reveal variant="up" delay={120} class="mt-4">
+				<p class="max-w-xl text-pretty text-body-lg text-muted-foreground">
+					What you can expect from us, what we ask of you, and how the edge cases are handled.
 				</p>
-				<p class="animate-fade-up text-xs font-semibold font-medium text-muted-foreground" style="animation-delay: 200ms">
-					Last updated · {lastUpdated}
-				</p>
-			</div>
+			</Reveal>
 		</Container>
-	</Section>
 
-	<Section spacing="tight" class="border-t border-border-low">
-		<Container size="narrow">
-			<div class="mx-auto max-w-3xl space-y-14">
+		<Container class="border-t border-border-low">
+			<p class="py-4 text-body-sm text-muted-foreground">
+				Last updated {lastUpdated}
+			</p>
+		</Container>
+	</section>
+
+	<Section spacing="tight" class="mx-auto max-w-6xl border-b border-border-low">
+		<Container>
+			<div class="max-w-3xl space-y-12">
 				{#each sections as section, i}
 					<Reveal as="section" delay={i * 40}>
-						<h2 class="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+						<h2 class="font-display text-heading-sm text-foreground md:text-heading">
 							{section.heading}
 						</h2>
 						{#if section.paragraphs}
-							<div class="mt-5 space-y-4 text-pretty text-sm leading-relaxed text-foreground sm:text-base">
+							<div class="mt-5 space-y-4 text-pretty text-body-sm text-foreground sm:text-body">
 								{#each section.paragraphs as p}
 									<p>{p}</p>
 								{/each}
 							</div>
 						{/if}
 						{#if section.bullets}
-							<ul class="mt-5 space-y-3.5 text-pretty text-sm leading-relaxed text-foreground sm:text-base">
+							<ul class="mt-5 space-y-3.5 text-pretty text-body-sm text-foreground sm:text-body">
 								{#each section.bullets as item}
 									<li class="flex gap-3">
-										<span class="mt-2.5 size-1.5 shrink-0 rounded-full bg-primary/70"></span>
+										<span class="mt-2.5 size-1.5 shrink-0 rounded-full bg-border-strong"></span>
 										<span>
 											{#if item.term}
 												<span class="font-semibold text-foreground">{item.term}.</span>

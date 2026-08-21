@@ -77,7 +77,7 @@ flowchart TB
 |-----------|------|----------------|
 | Editor engine | `packages/editor/src/**` | All editor UI + logic (Tauri-free), shipped as source via `exports` map |
 | Package entry | `packages/editor/package.json` `exports` | Subpath exports point at `./src/...` (`svelte`/`types`/`default`) |
-| Host wiring | `apps/desktop/src/routes/+layout.svelte:25-33` | Installs services + host-hooks + log sink once, app-scoped |
+| Host wiring | `apps/desktop/src/routes/+layout.svelte` | Installs services + host-hooks + log sink once, app-scoped |
 | Services contract | `packages/editor/src/lib/editor/services.ts` | `EditorServices` interface + `setEditorServicesForApp` / `getEditorServices` |
 | Tauri services impl | `apps/desktop/src/lib/editor/services.tauri.ts` | Real Tauri/IPC implementations of every `EditorServices` member |
 | Services injection point | `apps/desktop/src/lib/editor/services.ts` | Desktop-side adapter that installs `tauriEditorServices` |
@@ -85,7 +85,7 @@ flowchart TB
 | Re-export shims | e.g. `apps/desktop/src/lib/export/browser-export.ts` | `export * from "@recast/editor/lib/export/browser-export"`, keeps old `$lib` import paths working |
 | Store shim | `apps/desktop/src/lib/stores/editor-store.svelte.ts` | 2-line re-export of the package store (was ~3,400 lines) |
 | Export queue (NOT forked) | `apps/desktop/src/lib/stores/exportActivity.svelte.ts` | Tauri-coupled export queue, stays in the host by design |
-| Editor route | `apps/desktop/src/routes/editor/[file]/+page.svelte:36` | Imports editor components from `@recast/editor`; owns host-route logic |
+| Editor route | `apps/desktop/src/routes/editor/[file]/+page.svelte` | Imports editor components from `@recast/editor`; owns host-route logic |
 
 ## Control / data flow
 

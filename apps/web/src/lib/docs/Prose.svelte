@@ -85,6 +85,14 @@ let { nodes, width = "article" }: Props = $props();
 		text-decoration-color: var(--primary);
 	}
 
+	/* A file reference is a link to the source, so it reads as a link: primary,
+	   underlined, and without the code chip's background competing with it. */
+	.prose :global(a code) {
+		background: none;
+		padding: 0;
+		color: inherit;
+	}
+
 	.prose :global(ul),
 	.prose :global(ol) {
 		margin: 0 0 1.4em;
