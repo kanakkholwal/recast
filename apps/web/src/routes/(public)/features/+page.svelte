@@ -1,13 +1,5 @@
 <script lang="ts">
-import {
-	Container,
-	Footer,
-	HeroBackdrop,
-	Reveal,
-	Section,
-	SectionHeader,
-	SeoMeta,
-} from "$lib/components";
+import { Container, Footer, Reveal, Section, SectionHeader, SeoMeta } from "$lib/components";
 import { prefersReducedMotion, TextLoop } from "$lib/motion-core";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
@@ -41,12 +33,11 @@ import { cn } from "@recast/ui/utils";
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-24">
-		<HeroBackdrop src="/background-features.webp" tone="strong" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
 				<span
 					in:fly={riseM(heroStagger * 0)}
-					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+					class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
 				>
 					<span class="size-1.5 rounded-full bg-primary"></span>
 					Features
@@ -56,7 +47,7 @@ import { cn } from "@recast/ui/utils";
 					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
 				>
 					Everything Recast
-					<span class="mt-2 flex justify-center font-medium italic text-foreground/40">
+					<span class="mt-2 flex justify-center font-medium italic text-muted-foreground">
 						<span class="inline-grid overflow-hidden">
 							<TextLoop class="text-primary" texts={verbs} interval={2800} />
 						</span>
@@ -70,14 +61,14 @@ import { cn } from "@recast/ui/utils";
 				</p>
 
 				<!-- Platform chips: honest about per-platform maturity. -->
-				<ul class="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-semibold">
+				<ul class="mt-2 flex flex-wrap items-center justify-center gap-2 text-caption font-semibold">
 					{#each platforms as p (p.label)}
 						{@const Icon = p.icon}
 						{@const chip = stabilityChip[p.stability]}
-						<li class="inline-flex items-center gap-2 rounded-full border border-border-low/50 bg-card/40 px-3 py-1.5 text-foreground/85 ring-1 ring-inset ring-border-low/30">
+						<li class="inline-flex items-center gap-2 rounded-full border border-border-low bg-card/40 px-3 py-1.5 text-foreground ring-1 ring-inset ring-border-low">
 							<Icon class="size-3.5" />
 							{p.label}
-							<span class={cn("ml-0.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset", chip.cls)}>
+							<span class={cn("ml-0.5 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-caption font-bold font-medium ring-1 ring-inset", chip.cls)}>
 								{chip.label}
 							</span>
 						</li>
@@ -88,14 +79,14 @@ import { cn } from "@recast/ui/utils";
 	</Section>
 
 	<!-- Three pillars: lead with differentiators. -->
-	<Section spacing="tight" class="border-t border-border-low/60">
+	<Section spacing="tight" class="border-t border-border-low">
 		<Container>
 			<div class="grid gap-4 lg:grid-cols-3">
 				{#each pillars as pillar, i}
 					{@const Icon = pillar.icon}
 					<Reveal delay={i * 80}>
-						<article class="bg-card group relative flex h-full flex-col overflow-hidden rounded-2xl p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-md">
-							<span class="glass-chip grid size-12 place-items-center rounded-xl text-foreground/70 transition-all group-hover:scale-105 group-hover:text-primary">
+						<article class="bg-card group relative flex h-full flex-col overflow-hidden rounded-2xl p-8 transition-all duration-300 hover:">
+							<span class="pill grid size-12 place-items-center rounded-xl text-muted-foreground transition-all group-hover:scale-105 group-hover:text-primary">
 								<Icon class="size-5" />
 							</span>
 							<h3 class="mt-6 text-xl font-semibold tracking-tight text-foreground">
@@ -106,7 +97,7 @@ import { cn } from "@recast/ui/utils";
 							</p>
 							<ul class="mt-6 flex flex-wrap gap-2">
 								{#each pillar.tags as tag}
-									<li class="glass-chip rounded-full px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+									<li class="pill rounded-full px-2.5 py-1 text-caption font-medium text-muted-foreground">
 										{tag}
 									</li>
 								{/each}
@@ -121,7 +112,7 @@ import { cn } from "@recast/ui/utils";
 	<!-- "Free here, paid elsewhere." Concrete value-gap table. Compares
 	     against the two products we get compared to most, with conservative
 	     claims and a direct tone. -->
-	<Section class="border-t border-border-low/60">
+	<Section class="border-t border-border-low">
 		<Container>
 			<SectionHeader
 				eyebrow="Side by side"
@@ -131,27 +122,27 @@ import { cn } from "@recast/ui/utils";
 			/>
 
 			<Reveal variant="blur" class="mt-14">
-				<div class="overflow-x-auto rounded-2xl border border-border-low/50">
+				<div class="overflow-x-auto rounded-2xl border border-border-low">
 					<div class="min-w-160">
-						<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr] border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+						<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr] border-b border-border-low bg-paper text-body-sm font-medium">
 							<div class="px-5 py-3.5 text-muted-foreground">Feature</div>
-							<div class="border-l border-border-low/50 px-5 py-3.5 text-center text-primary">Recast</div>
-							<div class="border-l border-border-low/50 px-5 py-3.5 text-center text-foreground/80">Loom</div>
-							<div class="border-l border-border-low/50 px-5 py-3.5 text-center text-foreground/80">Cap</div>
+							<div class="border-l border-border-low px-5 py-3.5 text-center text-primary">Recast</div>
+							<div class="border-l border-border-low px-5 py-3.5 text-center text-foreground">Loom</div>
+							<div class="border-l border-border-low px-5 py-3.5 text-center text-foreground">Cap</div>
 						</div>
 						{#each gapRows as row, i}
-							<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr] {i < gapRows.length - 1 ? 'border-b border-border-low/40' : ''}">
-								<div class="px-5 py-3.5 text-sm text-foreground/85">{row.feature}</div>
-								<div class="flex items-center justify-center border-l border-border-low/40 bg-primary/4 px-5 py-3.5 text-center">
+							<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr] {i < gapRows.length - 1 ? 'border-b border-border-low' : ''}">
+								<div class="px-5 py-3.5 text-sm text-foreground">{row.feature}</div>
+								<div class="flex items-center justify-center border-l border-border-low bg-primary/4 px-5 py-3.5 text-center">
 									<span class="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
 										<Check class="size-3.5 text-primary" />
 										{row.recast}
 									</span>
 								</div>
-								<div class="flex items-center justify-center border-l border-border-low/40 px-5 py-3.5 text-center text-xs text-muted-foreground">
+								<div class="flex items-center justify-center border-l border-border-low px-5 py-3.5 text-center text-xs text-muted-foreground">
 									{row.loom}
 								</div>
-								<div class="flex items-center justify-center border-l border-border-low/40 px-5 py-3.5 text-center text-xs text-muted-foreground">
+								<div class="flex items-center justify-center border-l border-border-low px-5 py-3.5 text-center text-xs text-muted-foreground">
 									{row.cap}
 								</div>
 							</div>
@@ -180,7 +171,7 @@ import { cn } from "@recast/ui/utils";
 	  lays out horizontally (image left, text right); normal cards stack
 	  vertically. On mobile every card drops to 1 col.
 	-->
-	<Section class="border-t border-border-low/60">
+	<Section class="border-t border-border-low">
 		<Container>
 			<SectionHeader
 				eyebrow="Built in"
@@ -195,7 +186,7 @@ import { cn } from "@recast/ui/utils";
 					<Reveal delay={i * 35} class={isFeatured ? "lg:col-span-2" : ""}>
 						<article
 							class={cn(
-								"glass-card group relative flex h-full overflow-hidden rounded-2xl border border-border-low/40 bg-card/40 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-border-low hover:shadow-craft-sm motion-reduce:transition-none",
+								"surface-lg group relative flex h-full overflow-hidden border border-border-low bg-card/40 transition-[transform,box-shadow,border-color] duration-300 hover:border-border-low hover:shadow-craft-sm motion-reduce:transition-none",
 								isFeatured
 									? "flex-col p-0 lg:flex-row lg:items-stretch"
 									: "flex-col p-5",
@@ -211,7 +202,7 @@ import { cn } from "@recast/ui/utils";
 								class={cn(
 									"relative overflow-hidden",
 									isFeatured
-										? "aspect-4/3 shrink-0 border-b border-border-low/40 lg:aspect-auto lg:w-1/2 lg:border-b-0 lg:border-r"
+										? "aspect-4/3 shrink-0 border-b border-border-low lg:aspect-auto lg:w-1/2 lg:border-b-0 lg:border-r"
 										: "aspect-16/10 w-full",
 								)}
 							>
@@ -236,13 +227,13 @@ import { cn } from "@recast/ui/utils";
 									>
 										<div
 											class={cn(
-												"grid place-items-center rounded-2xl border border-border-low/40 bg-card/60 shadow-craft-sm",
+												"grid place-items-center rounded-2xl border border-border-low bg-card/60 shadow-craft-sm",
 												isFeatured ? "size-20" : "size-14",
 											)}
 										>
 											<Icon
 												class={cn(
-													"text-foreground/75",
+													"text-muted-foreground",
 													isFeatured ? "size-9" : "size-6",
 												)}
 											/>
@@ -256,7 +247,7 @@ import { cn } from "@recast/ui/utils";
 								  OpenAI" brand badges on the reference vendor layout.
 								-->
 								<span
-									class="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-full bg-foreground/85 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-background shadow-craft-sm"
+									class="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-full bg-foreground/85 px-1.5 py-0.5 text-caption font-semibold font-medium text-background shadow-craft-sm"
 								>
 									{item.tag}
 								</span>
@@ -295,7 +286,7 @@ import { cn } from "@recast/ui/utils";
 								<a
 									href={item.href}
 									class={cn(
-										"mt-auto inline-flex items-center gap-1 self-start text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/70 transition-colors hover:text-foreground",
+										"mt-auto inline-flex items-center gap-1 self-start text-body-sm font-medium text-muted-foreground transition-colors hover:text-foreground",
 										isFeatured ? "pt-2 text-xs" : "pt-1",
 									)}
 								>
@@ -311,17 +302,17 @@ import { cn } from "@recast/ui/utils";
 	</Section>
 
 	<!-- Final CTA: platform-split downloads, same pattern as the landing page. -->
-	<Section id="cta" class="border-t border-border-low/60">
+	<Section id="cta" class="border-t border-border-low">
 		<Container>
 			<Reveal>
 				<div
-					class="glass-card relative overflow-hidden rounded-[2rem] px-6 py-16 sm:px-14 sm:py-20 md:py-24"
+					class="surface-lg relative overflow-hidden rounded-[2rem] px-6 py-16 sm:px-14 sm:py-20 md:py-24"
 					style="box-shadow: inset 0 1px 0 0 color-mix(in srgb, white 12%, transparent), inset 0 -1px 0 0 color-mix(in srgb, var(--color-foreground) 4%, transparent);"
 				>
 			
 
 					<div class="relative mx-auto flex max-w-3xl flex-col items-center text-center">
-						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
+						<div class="pill inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-body-sm font-medium text-foreground">
 							<span class="relative flex size-1.5">
 								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
 								<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
@@ -331,7 +322,7 @@ import { cn } from "@recast/ui/utils";
 
 						<h2 class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]">
 							Skip the editor.
-							<span class="block font-medium italic text-foreground/40">Ship the demo.</span>
+							<span class="block font-medium italic text-muted-foreground">Ship the demo.</span>
 						</h2>
 
 						<p class="text-pretty mt-7 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
@@ -351,7 +342,7 @@ import { cn } from "@recast/ui/utils";
 								>
 									<Icon class="size-4" />
 									Download for {p.label}
-									<span class={cn("ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset", stabilityChipOnFill)}>
+									<span class={cn("ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-caption font-semibold ring-1 ring-inset", stabilityChipOnFill)}>
 										{chip.label}
 									</span>
 								</Button>

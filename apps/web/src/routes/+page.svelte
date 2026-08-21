@@ -207,29 +207,27 @@ function dragScroll(node: HTMLElement) {
 	<Hero previewSrc={beforeAfterClips[1].src} />
 
 	<!--
-	  Proof section. Permanently dark band regardless of site theme: the
-	  `data-theme="dark"` wrapper re-scopes the design tokens, so `bg-canvas`
-	  resolves to the dark surface and `text-ink` to the dark foreground. This
-	  is the landing anchor for the Hero's "Watch it work" CTA (#proof) so
-	  that button is never dead. Static-first: the preview is a plain image
-	  today, swappable for a <video> later without touching layout.
+	  Proof section. A tonal paper band, not a forced-dark one: the system is
+	  light and border-first, and a mid-page theme inversion reads as a
+	  different site. Landing anchor for the Hero's "Watch it work" CTA
+	  (#proof), so that button is never dead.
 	-->
-	<div data-theme="dark" id="proof" class="bg-canvas text-ink">
+	<div id="proof" class="border-y border-border-low bg-paper">
 		<Section spacing="tight" class="overflow-hidden">
 			<Container>
 				<Reveal variant="up">
 					<div class="mx-auto flex max-w-3xl flex-col items-center gap-5 text-center">
-						<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/80">
-							<Play class="size-3.5 text-ink/70" />
+						<span class="pill inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-body-sm font-medium text-muted-foreground">
+							<Play class="size-3.5 text-tag-tangerine" />
 							See it work
 						</span>
-						<h2 class="text-balance text-3xl font-semibold leading-[1.05] tracking-tight sm:text-4xl md:text-5xl">
+						<h2 class="text-balance text-heading sm:text-heading-lg md:text-display">
 							Same take.
-							<span class="block font-medium italic text-ink/50">
+							<span class="block text-muted-foreground">
 								Polished demo.
 							</span>
 						</h2>
-						<p class="text-pretty max-w-xl text-sm leading-relaxed text-ink-muted sm:text-base">
+						<p class="text-pretty max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
 							One with the OS recorder. One with Recast. Smart zoom, cursor smoothing, padding, and silence cuts already applied by the time you stop.
 						</p>
 					</div>
@@ -259,7 +257,7 @@ function dragScroll(node: HTMLElement) {
 							}}
 							applied={beforeAfterClips[1].applied}
 						/>
-						<p class="mt-4 text-center text-[12.5px] leading-relaxed text-ink-muted">
+						<p class="mt-4 text-center text-caption leading-relaxed text-muted-foreground">
 							Drag to compare. Both clips play at once; the polished cut lands shorter once silence is trimmed.
 						</p>
 					</div>
@@ -269,7 +267,7 @@ function dragScroll(node: HTMLElement) {
 	</div>
 
 	<!-- Trust strip -->
-	<Section spacing="tight" class="border-t border-border-low/60">
+	<Section spacing="tight" class="border-t border-border-low">
 		<Container>
 			<!--
 			  Open-source values strip. Renders first so the page-fold "trust"
@@ -283,8 +281,8 @@ function dragScroll(node: HTMLElement) {
 				<ul class="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-x-7 gap-y-3">
 					{#each openSourceClaims as claim (claim.label)}
 						{@const Icon = claim.icon}
-						<li class="inline-flex items-center gap-2 text-[13px] font-medium text-foreground/70">
-							<Icon class="size-4 text-foreground/40" />
+						<li class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
+							<Icon class="size-4 text-muted-foreground" />
 							{claim.label}
 						</li>
 					{/each}
@@ -292,8 +290,8 @@ function dragScroll(node: HTMLElement) {
 			</Reveal>
 
 			<Reveal variant="blur" delay={120}>
-				<div class="divider-soft mx-auto mt-14 w-24"></div>
-				<p class="mt-10 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+				<div class="mx-auto mt-14 h-px w-24 bg-border-low"></div>
+				<p class="mt-10 text-center text-body-sm font-medium text-muted-foreground">
 					Built on tools makers trust
 				</p>
 				<div class="mt-9 flex flex-wrap items-center justify-center gap-x-10 gap-y-7 sm:gap-x-14">
@@ -323,7 +321,7 @@ function dragScroll(node: HTMLElement) {
 								height="20"
 								class="h-5 w-5"
 							/>
-							<span class="text-sm font-semibold tracking-tight text-foreground/55 transition-colors group-hover:text-foreground/85">
+							<span class="text-sm font-semibold tracking-tight text-muted-foreground transition-colors group-hover:text-foreground">
 								{logo.name}
 							</span>
 						</a>
@@ -334,7 +332,7 @@ function dragScroll(node: HTMLElement) {
 	</Section>
 
 	<!-- Contrast: your OS recorder stops at a file -->
-	<Section id="why" class="border-t border-border-low/60">
+	<Section id="why" class="border-t border-border-low">
 		<Container>
 			<SectionHeader
 				eyebrow="Why not the built-in recorder"
@@ -343,21 +341,21 @@ function dragScroll(node: HTMLElement) {
 				align="center"
 			/>
 
-			<div class="glass-card relative mx-auto mt-14 max-w-3xl overflow-hidden rounded-3xl">
+			<div class="surface-lg relative mx-auto mt-14 max-w-3xl overflow-hidden">
 				<div class="relative z-10">
-					<div class="grid grid-cols-2 border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+					<div class="grid grid-cols-2 border-b border-border-low bg-paper text-body-sm font-medium">
 						<div class="flex items-center gap-2 px-6 py-4 text-muted-foreground">
 							<X class="size-3.5" /> Built-in recorder
 						</div>
-						<div class="flex items-center gap-2 border-l border-border-low/50 px-6 py-4 text-primary">
+						<div class="flex items-center gap-2 border-l border-border-low px-6 py-4 text-primary">
 							<Star class="size-3.5" /> Recast
 						</div>
 					</div>
 					{#each contrast as row, i}
 						<Reveal variant={i % 2 === 0 ? "left" : "right"} delay={i * 70}>
-							<div class="grid grid-cols-2 {i < contrast.length - 1 ? 'border-b border-border-low/30' : ''}">
+							<div class="grid grid-cols-2 {i < contrast.length - 1 ? 'border-b border-border-low' : ''}">
 								<div class="px-6 py-5 text-sm text-muted-foreground">{row.os}</div>
-								<div class="flex items-start gap-2.5 border-l border-border-low/30 bg-foreground/2 px-6 py-5 text-sm text-foreground">
+								<div class="flex items-start gap-2.5 border-l border-border-low bg-paper px-6 py-5 text-sm text-foreground">
 									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
 									{row.recast}
 								</div>
@@ -370,21 +368,21 @@ function dragScroll(node: HTMLElement) {
 	</Section>
 
 	<!-- Step 1 — Record -->
-	<Section id="record" spacing="tight" class="border-t border-border-low/60">
+	<Section id="record" spacing="tight" class="border-t border-border-low">
 		<Container size="wide">
-			<ShowcasePanel tone="neutral">
+			<ShowcasePanel tone="paper">
 				<div class="grid items-center gap-16 lg:grid-cols-12 lg:gap-24">
 					<!-- Text column: 6/12 so the body copy and feature titles
 					     have real horizontal room instead of hugging a narrow
 					     rail. The visual (MacWindow) keeps the other half. -->
 					<div class="lg:col-span-6">
-						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
-							<span class="size-1.5 rounded-full bg-primary"></span>
+						<span class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
+							<span class="size-1.5 rounded-full bg-tag-tangerine"></span>
 							Step 1 · Record
 						</span>
-						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+						<h2 class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display">
 							Hit record.
-							<span class="block font-medium italic text-foreground/45">That's the whole setup.</span>
+							<span class="block text-muted-foreground">That's the whole setup.</span>
 						</h2>
 						<p class="text-pretty mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
 							Region, window, or full screen. One shortcut starts the capture. No projects, no codecs, no account.
@@ -397,12 +395,12 @@ function dragScroll(node: HTMLElement) {
 							{#each recordingFeatures as f, i}
 								{@const Icon = f.icon}
 								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
-									<span class="glass-chip mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-foreground/70">
+									<span class="pill mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground">
 										<Icon class="size-5" />
 									</span>
 									<span class="pt-1">
-										<span class="block text-[15px] font-semibold tracking-tight text-foreground">{f.title}</span>
-										<span class="mt-2 block text-[14px] leading-relaxed text-muted-foreground">{f.description}</span>
+										<span class="block text-body font-semibold text-foreground">{f.title}</span>
+										<span class="mt-2 block text-body-sm leading-relaxed text-muted-foreground">{f.description}</span>
 									</span>
 								</Reveal>
 							{/each}
@@ -420,7 +418,7 @@ function dragScroll(node: HTMLElement) {
 						<Reveal variant="morph">
 							<MacWindow
 								title="Recast"
-								class="transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-craft-lg"
+								class="transition-[transform,box-shadow] duration-300 hover:"
 							>
 								<RecordMock />
 							</MacWindow>
@@ -432,21 +430,21 @@ function dragScroll(node: HTMLElement) {
 	</Section>
 
 	<!-- Step 2 — Auto-polish -->
-	<Section id="polish" spacing="tight" class="border-t border-border-low/60">
+	<Section id="polish" spacing="tight" class="border-t border-border-low">
 		<Container size="wide">
-			<ShowcasePanel tone="neutral">
+			<ShowcasePanel tone="paper">
 				<!-- Header: spans the full panel width so the headline and body
 				     can breathe. PolishGrid below gets the full panel width too,
 				     so each 4-up tile has room to actually fit its title and
 				     description on a single line each. -->
 				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
-					<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
-						<span class="size-1.5 rounded-full bg-primary"></span>
+					<span class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
+						<span class="size-1.5 rounded-full bg-tag-lavender"></span>
 						Step 2 · Auto-polish
 					</span>
-					<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+					<h2 class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display">
 						The editing happens
-						<span class="block font-medium italic text-foreground/45">while you record.</span>
+						<span class="block text-muted-foreground">while you record.</span>
 					</h2>
 					<p class="text-pretty mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
 						Smart zoom, cursor smoothing, silence cuts, and padding apply as you record. By the time you stop, the demo is mostly done.
@@ -457,7 +455,7 @@ function dragScroll(node: HTMLElement) {
 
 				<Reveal variant="up" class="mt-14">
 					<figure class="mx-auto max-w-5xl">
-						<MacWindow title="Recast · Editor" class="shadow-craft-xl">
+						<MacWindow title="Recast · Editor" class="">
 							<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
 								<Image
 									src="/product_preview_hero.webp"
@@ -470,7 +468,7 @@ function dragScroll(node: HTMLElement) {
 								/>
 							</div>
 						</MacWindow>
-						<figcaption class="mt-5 text-center text-[12.5px] leading-relaxed text-muted-foreground">
+						<figcaption class="mt-5 text-center text-caption leading-relaxed text-muted-foreground">
 							The full editor: timeline, zoom regions, annotations, and export presets in one window.
 						</figcaption>
 					</figure>
@@ -484,7 +482,7 @@ function dragScroll(node: HTMLElement) {
 	     in 3D space so the section reads as a tools showcase, not a spec
 	     sheet. Cards extend past the Container's max-width on both edges,
 	     fading into the background to suggest "scroll for more". -->
-	<Section id="editor" class="overflow-hidden border-t border-border-low/60">
+	<Section id="editor" class="overflow-hidden border-t border-border-low">
 		<Container>
 			<SectionHeader
 				eyebrow="What's in the editor"
@@ -533,7 +531,7 @@ function dragScroll(node: HTMLElement) {
 							<!-- Tilted visual. 3D perspective on the wrapper, the inner
 							     plate carries the rotation so hover can soften it. -->
 							<div
-								class="relative h-52 overflow-hidden rounded-2xl border border-border-low/50 bg-linear-to-br from-foreground/5 via-foreground/2 to-transparent shadow-craft-sm pointer-fine:transition-shadow pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:shadow-craft-md"
+								class="relative h-52 overflow-hidden rounded-2xl border border-border-low bg-linear-to-br from-foreground/5 via-foreground/2 to-transparent shadow-craft-sm pointer-fine:transition-shadow pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:"
 								style="perspective: 1200px;"
 							>
 								<!-- Dot grid backdrop. Faint, decorative — the techy vibe. -->
@@ -569,7 +567,7 @@ function dragScroll(node: HTMLElement) {
 									     asset falls back to the icon-hero branch below
 									     instead of rendering a broken-image glyph. -->
 									<div
-										class="absolute inset-6 origin-center overflow-hidden rounded-lg border border-border-low/60 shadow-craft-md pointer-fine:transition-transform pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:scale-[1.02]"
+										class="absolute inset-6 origin-center overflow-hidden rounded-lg border border-border-low pointer-fine:transition-transform pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:scale-[1.02]"
 										style="transform: perspective(900px) rotateX(6deg) rotateY(-10deg); transform-origin: 50% 70%;"
 									>
 										<Image
@@ -591,9 +589,9 @@ function dragScroll(node: HTMLElement) {
 										style="transform: perspective(900px) rotateX(8deg) rotateY(-10deg); transform-origin: 50% 70%;"
 									>
 										<div
-											class="relative grid size-28 place-items-center rounded-2xl border border-border-low/60 bg-card/40 shadow-craft-md backdrop-blur-sm"
+											class="relative grid size-28 place-items-center rounded-2xl border border-border-low bg-card/40 backdrop-blur-sm"
 										>
-											<Icon class="size-12 text-foreground/85" />
+											<Icon class="size-12 text-foreground" />
 										</div>
 									</div>
 								{/if}
@@ -602,7 +600,7 @@ function dragScroll(node: HTMLElement) {
 								     dev tool. Carries the feature kind for skimmability. -->
 								<span
 									class={cn(
-										"absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-background/70 px-2 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset backdrop-blur",
+										"absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-background/70 px-2 py-0.5 font-mono text-caption font-medium uppercase ring-1 ring-inset backdrop-blur",
 										chip.ring,
 									)}
 								>
@@ -616,11 +614,11 @@ function dragScroll(node: HTMLElement) {
 							<div class="flex flex-col gap-2 px-1">
 								<div class="flex items-center gap-2">
 									<span
-										class="glass-chip grid size-7 place-items-center rounded-md text-foreground/80 transition-colors group-hover/feat:text-foreground"
+										class="pill grid size-7 place-items-center rounded-md text-foreground transition-colors group-hover/feat:text-foreground"
 									>
 										<Icon class="size-3.5" />
 									</span>
-									<h3 class="text-[15px] font-semibold tracking-tight text-foreground">
+									<h3 class="text-body font-semibold text-foreground">
 										{feature.title}
 									</h3>
 								</div>
@@ -646,17 +644,17 @@ function dragScroll(node: HTMLElement) {
 	<!-- Make it yours — extensions as proof of the open, no-lock-in moat.
 	     A supporting beat (not a headline) that reinforces "free, offline,
 	     yours" rather than pivoting to a generic marketplace pitch. -->
-	<Section id="extensions" spacing="tight" class="border-t border-border-low/60">
+	<Section id="extensions" spacing="tight" class="border-t border-border-low">
 		<Container size="wide">
-			<ShowcasePanel tone="neutral" padding="tight">
+			<ShowcasePanel tone="paper" padding="tight">
 				<div class="mx-auto flex max-w-2xl flex-col items-center text-center">
-					<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
-						<span class="size-1.5 rounded-full bg-primary"></span>
+					<span class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
+						<span class="size-1.5 rounded-full bg-border-strong"></span>
 						Make it yours
 					</span>
-					<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+					<h2 class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display">
 						Open packs.
-						<span class="block font-medium italic text-foreground/45">No lock-in.</span>
+						<span class="block text-muted-foreground">No lock-in.</span>
 					</h2>
 					<p class="text-pretty mt-5 max-w-lg text-base leading-relaxed text-muted-foreground sm:text-lg">
 						Community packs install straight into the editor's pickers. Each one is a manifest and a few static files, hash-checked, with no code and no permissions.
@@ -670,13 +668,13 @@ function dragScroll(node: HTMLElement) {
 					{#each extensionBeat as item, i}
 						{@const Icon = item.icon}
 						<Reveal variant="up" delay={i * 70} class="h-full">
-							<article class="group relative flex h-full flex-col gap-3 rounded-2xl border border-border-low/40 bg-background/85 p-6 shadow-craft-sm transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-border-low hover:shadow-craft-lg motion-reduce:transition-none">
-								<span class="grid size-10 place-items-center rounded-xl bg-foreground/[0.04] text-foreground/75">
+							<article class="group relative flex h-full flex-col gap-3 rounded-2xl border border-border-low bg-background/85 p-6 shadow-craft-sm transition-[transform,box-shadow,border-color] duration-300 hover:border-border-low hover: motion-reduce:transition-none">
+								<span class="grid size-10 place-items-center rounded-xl bg-foreground/[0.04] text-muted-foreground">
 									<Icon class="size-5" />
 								</span>
 								<div>
-									<div class="text-[15px] font-semibold tracking-tight text-foreground">{item.title}</div>
-									<div class="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">{item.description}</div>
+									<div class="text-body font-semibold text-foreground">{item.title}</div>
+									<div class="mt-1.5 text-body-sm leading-relaxed text-muted-foreground">{item.description}</div>
 								</div>
 							</article>
 						</Reveal>
@@ -703,18 +701,18 @@ function dragScroll(node: HTMLElement) {
 	</Section>
 
 	<!-- Step 3 — Share (Google Drive, user-owned) -->
-	<Section id="share" spacing="tight" class="border-t border-border-low/60">
+	<Section id="share" spacing="tight" class="border-t border-border-low">
 		<Container size="wide">
-			<ShowcasePanel tone="neutral">
+			<ShowcasePanel tone="paper">
 				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
 					<div class="lg:col-span-5">
-						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
-							<span class="size-1.5 rounded-full bg-primary"></span>
+						<span class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
+							<span class="size-1.5 rounded-full bg-tag-green"></span>
 							Step 3 · Share
 						</span>
-						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+						<h2 class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display">
 							Ship a link.
-							<span class="block font-medium italic text-foreground/45">To your Drive.</span>
+							<span class="block text-muted-foreground">To your Drive.</span>
 						</h2>
 						<p class="text-pretty mt-5 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
 							Connect Drive once. Exports upload straight to your account and hand you a share link. Your video, your storage.
@@ -724,12 +722,12 @@ function dragScroll(node: HTMLElement) {
 							{#each shareFeatures as f, i}
 								{@const Icon = f.icon}
 								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
-									<span class="glass-chip mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-foreground/70">
+									<span class="pill mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground">
 										<Icon class="size-5" />
 									</span>
 									<span class="pt-1">
-										<span class="block text-[15px] font-semibold tracking-tight text-foreground">{f.title}</span>
-										<span class="mt-2 block text-[14px] leading-relaxed text-muted-foreground">{f.description}</span>
+										<span class="block text-body font-semibold text-foreground">{f.title}</span>
+										<span class="mt-2 block text-body-sm leading-relaxed text-muted-foreground">{f.description}</span>
 									</span>
 								</Reveal>
 							{/each}
@@ -738,14 +736,14 @@ function dragScroll(node: HTMLElement) {
 
 					<div class="lg:col-span-7">
 						<Reveal variant="morph">
-							<div class="glass-card relative overflow-hidden rounded-2xl p-7 sm:p-9">
+							<div class="surface-lg relative overflow-hidden p-6 sm:p-8">
 								<div class="relative">
-									<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
-										<HardDriveUpload class="size-3 text-foreground/70" />
+									<span class="pill inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-caption font-medium text-foreground">
+										<HardDriveUpload class="size-3 text-muted-foreground" />
 										Google Drive · built in
 									</span>
 
-									<h3 class="mt-6 text-2xl font-semibold tracking-tight text-foreground">
+									<h3 class="mt-6 text-heading-sm font-semibold text-foreground">
 										Export → upload → share. In one click.
 									</h3>
 									<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -761,7 +759,7 @@ function dragScroll(node: HTMLElement) {
 								</div>
 
 								<p class="mt-5 inline-flex items-center gap-2 text-xs text-muted-foreground">
-									<KeyRound class="size-3.5 text-foreground/70" />
+									<KeyRound class="size-3.5 text-muted-foreground" />
 									OAuth scoped to files Recast uploads. Revoke any time from your Google account.
 								</p>
 							</div>
@@ -775,18 +773,18 @@ function dragScroll(node: HTMLElement) {
 
 	<!-- Recast Cloud — the hosted offering. The Drive flow above is the free,
 	     user-owned default; this is for people who outgrow a raw Drive link. -->
-	<Section id="cloud" spacing="tight" class="border-t border-border-low/60">
+	<Section id="cloud" spacing="tight" class="border-t border-border-low">
 		<Container size="wide">
-			<ShowcasePanel tone="neutral">
+			<ShowcasePanel tone="paper">
 				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
 					<div class="lg:col-span-5">
-						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
-							<span class="size-1.5 rounded-full bg-primary"></span>
+						<span class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground">
+							<span class="size-1.5 rounded-full bg-border-strong"></span>
 							Recast Cloud · live
 						</span>
-						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+						<h2 class="text-balance mt-5 text-heading sm:text-heading-lg md:text-display">
 							When a Drive link
-							<span class="block font-medium italic text-foreground/45">isn't enough.</span>
+							<span class="block text-muted-foreground">isn't enough.</span>
 						</h2>
 						<p class="text-pretty mt-6 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
 							Loom-style hosted demos, with more of the controls in your hands. Watch analytics, per-viewer access, link expiry.
@@ -798,12 +796,12 @@ function dragScroll(node: HTMLElement) {
 							{#each cloudFeatures as f, i}
 								{@const Icon = f.icon}
 								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
-									<span class="glass-chip mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-foreground/70">
+									<span class="pill mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground">
 										<Icon class="size-5" />
 									</span>
 									<span class="pt-1">
-										<span class="block text-[15px] font-semibold tracking-tight text-foreground">{f.title}</span>
-										<span class="mt-2 block text-[14px] leading-relaxed text-muted-foreground">{f.description}</span>
+										<span class="block text-body font-semibold text-foreground">{f.title}</span>
+										<span class="mt-2 block text-body-sm leading-relaxed text-muted-foreground">{f.description}</span>
 									</span>
 								</Reveal>
 							{/each}
@@ -812,17 +810,17 @@ function dragScroll(node: HTMLElement) {
 
 					<div class="lg:col-span-7">
 						<Reveal variant="morph">
-							<div class="glass-card relative overflow-hidden rounded-2xl p-7 sm:p-9">
+							<div class="surface-lg relative overflow-hidden p-6 sm:p-8">
 								<div class="relative">
-									<span class="inline-flex items-center gap-2 rounded-full bg-foreground/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
-										<Cloud class="size-3.5 text-foreground/70" />
+									<span class="inline-flex items-center gap-2 rounded-full bg-paper px-3 py-1.5 text-body-sm font-medium text-foreground">
+										<Cloud class="size-3.5 text-muted-foreground" />
 										Recast Cloud
-										<span class="text-muted-foreground/40">·</span>
-										<span class="size-1.5 rounded-full bg-primary"></span>
+										<span class="text-border-strong">·</span>
+										<span class="size-1.5 rounded-full bg-border-strong"></span>
 										open to everyone
 									</span>
 
-									<h3 class="mt-6 text-2xl font-semibold tracking-tight text-foreground">
+									<h3 class="mt-6 text-heading-sm font-semibold text-foreground">
 										Storage-agnostic by design.
 									</h3>
 									<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -838,21 +836,21 @@ function dragScroll(node: HTMLElement) {
 													"flex flex-col gap-2 rounded-xl border p-4",
 													t.tone === "primary"
 														? "border-foreground/20 bg-background/70"
-														: "border-border-low/60 bg-background/60",
+														: "border-border-low bg-background/60",
 												)}
 											>
-												<span class="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+												<span class="text-caption font-semibold text-muted-foreground">
 													{t.tier}
 												</span>
 												<span
 													class={cn(
 														"text-sm font-semibold tracking-tight",
-														t.tone === "primary" ? "text-foreground" : "text-foreground/80",
+														t.tone === "primary" ? "text-foreground" : "text-foreground",
 													)}
 												>
 													{t.label}
 												</span>
-												<ul class="space-y-1 text-[11.5px] leading-relaxed text-muted-foreground">
+												<ul class="space-y-1 text-caption leading-relaxed text-muted-foreground">
 													{#each t.lines as line}
 														<li class="flex items-start gap-1.5">
 															<span class="mt-1.5 size-1 shrink-0 rounded-full bg-foreground/40"></span>
@@ -864,7 +862,7 @@ function dragScroll(node: HTMLElement) {
 										{/each}
 									</div>
 
-									<h4 class="mt-7 text-[13px] font-semibold tracking-tight text-foreground">
+									<h4 class="mt-7 text-body font-semibold text-foreground">
 										Ship your first hosted demo.
 									</h4>
 									<p class="mt-1 text-sm leading-relaxed text-muted-foreground">
@@ -879,7 +877,7 @@ function dragScroll(node: HTMLElement) {
 											bind:value={email}
 											autocomplete="email"
 											placeholder="founder@startup.com"
-											class="flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30"
+											class="flex-1 rounded-lg border border-border-low bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30"
 										/>
 										<Button type="submit" variant="dark" class="group/cta gap-2">
 											Start sharing free
@@ -902,7 +900,7 @@ function dragScroll(node: HTMLElement) {
 	</Section>
 
 	<!-- Built for solo founders -->
-	<Section id="founders" class="border-t border-border-low/60">
+	<Section id="founders" class="border-t border-border-low">
 		<Container>
 			<SectionHeader
 				eyebrow="Built for builders"
@@ -916,10 +914,10 @@ function dragScroll(node: HTMLElement) {
 					{@const Icon = item.icon}
 					<Reveal variant="up" delay={i * 70}>
 						<article class="flex h-full flex-col rounded-2xl border border-border-low bg-card p-7">
-							<span class="grid size-11 place-items-center rounded-xl bg-foreground/[0.04] text-foreground/70">
+							<span class="grid size-11 place-items-center rounded-xl bg-foreground/[0.04] text-muted-foreground">
 								<Icon class="size-5" />
 							</span>
-							<h3 class="mt-6 text-lg font-semibold tracking-tight text-foreground">
+							<h3 class="mt-6 text-subheading font-semibold text-foreground">
 								{item.title}
 							</h3>
 							<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
@@ -933,16 +931,16 @@ function dragScroll(node: HTMLElement) {
 	</Section>
 
 	<!-- Pricing teaser — the recorder is free, sharing is your storage. -->
-	<Section id="pricing-teaser" class="border-t border-border-low/60 ">
+	<Section id="pricing-teaser" class="border-t border-border-low ">
 		<Container>
 			<div class="grid gap-4 md:grid-cols-2">
 				<Reveal variant="left">
 					<article class="flex h-full flex-col rounded-2xl border border-border-low bg-card p-8">
-						<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+						<span class="text-body-sm font-medium text-muted-foreground">
 							The app
 						</span>
 						<div class="mt-2 flex items-baseline gap-2">
-							<span class="text-4xl font-semibold tracking-tight text-foreground">Free</span>
+							<span class="text-heading-lg text-foreground">Free</span>
 							<span class="text-sm text-muted-foreground">forever</span>
 						</div>
 						<p class="mt-3 text-sm leading-relaxed text-muted-foreground">
@@ -961,11 +959,11 @@ function dragScroll(node: HTMLElement) {
 					<!-- Featured tier reads through a stronger border, not a lift: the
 					     Free card beside it has no hover, so an animated one broke the pair. -->
 					<article class="relative flex h-full flex-col overflow-hidden rounded-2xl border border-foreground/15 bg-card p-8">
-						<span class="relative text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/70">
+						<span class="relative text-body-sm font-medium text-muted-foreground">
 							Recast Cloud
 						</span>
 						<div class="relative mt-2 flex items-baseline gap-2">
-							<span class="text-4xl font-semibold tracking-tight text-foreground">Hosted</span>
+							<span class="text-heading-lg text-foreground">Hosted</span>
 							<span class="text-sm text-muted-foreground">+ controls</span>
 						</div>
 						<p class="relative mt-3 text-sm leading-relaxed text-muted-foreground">
@@ -989,15 +987,15 @@ function dragScroll(node: HTMLElement) {
 	<!-- FAQ. Two-column: sticky title on the left, one-open accordion on the
 	     right. Answers only restate claims already made above, so the section
 	     never introduces a promise the product doesn't keep. -->
-	<Section id="faq" class="border-t border-border-low/60 bg-foreground/1.5 dark:bg-foreground/2">
+	<Section id="faq" class="border-t border-border-low bg-paper dark:bg-paper">
 		<Container>
 			<div class="grid gap-12 lg:grid-cols-12 lg:gap-16">
 				<div class="lg:col-span-4">
 					<div class="lg:sticky lg:top-28">
-						<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+						<span class="text-body-sm font-medium text-muted-foreground">
 							FAQ
 						</span>
-						<h2 class="text-balance mt-3 text-3xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-4xl">
+						<h2 class="text-balance mt-3 text-heading sm:text-heading-lg">
 							Frequently asked questions
 						</h2>
 						<p class="mt-4 text-sm leading-relaxed text-muted-foreground">
@@ -1023,8 +1021,8 @@ function dragScroll(node: HTMLElement) {
 									class={cn(
 										"overflow-hidden rounded-2xl border transition-colors",
 										open
-											? "border-border-low bg-foreground/3"
-											: "border-border-low/60 bg-background/50 hover:border-border-low",
+											? "border-border-low bg-paper"
+											: "border-border-low bg-background/50 hover:border-border-low",
 									)}
 								>
 									<button
@@ -1041,7 +1039,7 @@ function dragScroll(node: HTMLElement) {
 												<Plus class="size-4" />
 											{/if}
 										</span>
-										<span class="flex-1 text-[15px] font-semibold tracking-tight text-foreground sm:text-base">
+										<span class="flex-1 text-body font-semibold text-foreground sm:text-base">
 											{faq.q}
 										</span>
 									</button>
@@ -1071,21 +1069,21 @@ function dragScroll(node: HTMLElement) {
 	     showcase panel + staggered reveals. Each beat lands ~70ms after the
 	     previous so the visitor reads chip → headline → body → buttons as
 	     one confident breath instead of a single scale-burst. -->
-	<Section id="cta" spacing="tight" class="border-t border-border-low/60">
+	<Section id="cta" spacing="tight" class="border-t border-border-low">
 		<Container size="wide">
-			<ShowcasePanel tone="neutral" padding="loose">
+			<ShowcasePanel tone="paper" padding="loose">
 				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
 					<Reveal variant="scale" duration={420}>
-						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
-							<span class="size-1.5 rounded-full bg-primary"></span>
+						<div class="pill inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-body-sm font-medium text-foreground">
+							<span class="size-1.5 rounded-full bg-border-strong"></span>
 							Ready when you are
 						</div>
 					</Reveal>
 
 					<Reveal variant="up" delay={70} duration={520}>
-						<h2 class="text-balance mt-7 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4rem]">
+						<h2 class="text-balance mt-7 text-heading-lg sm:text-display md:text-display-lg">
 							A demo, not a project.
-							<span class="block font-medium italic text-foreground/40">Ship it the same day.</span>
+							<span class="block text-muted-foreground">Ship it the same day.</span>
 						</h2>
 					</Reveal>
 
@@ -1110,13 +1108,11 @@ function dragScroll(node: HTMLElement) {
 						<Reveal variant="up" delay={210 + i * 70} duration={460} class="h-full">
 							<div class="flex h-full flex-col items-stretch gap-2">
 								{#if p.stability === "stable"}
-									<span class="self-center inline-flex items-center gap-1 rounded-full bg-foreground/8 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-foreground/80 ring-1 ring-inset ring-foreground/15">
+									<span class="self-center inline-flex items-center gap-1 rounded-full border border-border-low bg-card px-2.5 py-0.5 text-caption font-medium text-muted-foreground">
 										Recommended
 									</span>
 								{:else}
-									<span class="self-center text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/0">
-										.
-									</span>
+									<span aria-hidden="true" class="h-5 self-center"></span>
 								{/if}
 								<Button
 									href={p.href}
@@ -1128,7 +1124,7 @@ function dragScroll(node: HTMLElement) {
 									Download for {p.os}
 									<span
 										class={cn(
-											"ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
+											"ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-caption font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
 											stabilityChipOnFill,
 										)}
 									>

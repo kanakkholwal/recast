@@ -1,13 +1,5 @@
 <script lang="ts">
-import {
-	Container,
-	Footer,
-	HeroBackdrop,
-	Reveal,
-	Section,
-	SectionHeader,
-	SeoMeta,
-} from "$lib/components";
+import { Container, Footer, Reveal, Section, SectionHeader, SeoMeta } from "$lib/components";
 import { prefersReducedMotion } from "$lib/motion-core";
 import { ArrowRight, Blocks, Check, Download, Image as ImageIcon } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
@@ -33,12 +25,11 @@ const riseM = (delay: number) =>
 <main class="text-foreground">
 	<!-- Hero -->
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
-		<HeroBackdrop src="/background-extensions.webp" tone="strong" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
 				<span
 					in:fly={riseM(heroStagger * 0)}
-					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+					class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
 				>
 					<span class="size-1.5 rounded-full bg-primary"></span>
 					Extensions
@@ -48,7 +39,7 @@ const riseM = (delay: number) =>
 					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
 				>
 					Make Recast yours.
-					<span class="block font-medium italic text-foreground/40">Open packs, no lock-in.</span>
+					<span class="block font-medium italic text-muted-foreground">Open packs, no lock-in.</span>
 				</h1>
 				<p
 					in:fly={riseM(heroStagger * 2)}
@@ -75,14 +66,14 @@ const riseM = (delay: number) =>
 	</Section>
 
 	<!-- What a pack can add -->
-	<Section id="kinds" class="border-t border-border-low/60 bg-foreground/1.5 dark:bg-foreground/2">
+	<Section id="kinds" class="border-t border-border-low bg-paper dark:bg-paper">
 		<Container>
 			<SectionHeader
 				eyebrow="What a pack adds"
 				title="It shows up where you already work."
 				description="A pack feeds the pickers you already use. Nothing new to learn."
 			/>
-			<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low bg-border-low/30 sm:grid-cols-2 lg:grid-cols-3">
 				{#each kinds as kind, i}
 					{@const Icon = kind.icon}
 					<Reveal variant="morph" delay={i * 70} class="h-full">
@@ -100,7 +91,7 @@ const riseM = (delay: number) =>
 	</Section>
 
 	<!-- How it works -->
-	<Section id="how" class="border-t border-border-low/60">
+	<Section id="how" class="border-t border-border-low">
 		<Container>
 			<SectionHeader
 				eyebrow="How it works"
@@ -111,12 +102,12 @@ const riseM = (delay: number) =>
 				{#each steps as step, i}
 					{@const Icon = step.icon}
 					<Reveal variant="up" delay={i * 80} class="h-full">
-						<div class="flex h-full flex-col gap-4 rounded-2xl border border-border-low/40 bg-background/50 p-7">
+						<div class="flex h-full flex-col gap-4 rounded-2xl border border-border-low bg-background/50 p-7">
 							<div class="flex items-center gap-3">
-								<span class="glass-chip grid size-9 shrink-0 place-items-center rounded-lg text-primary">
+								<span class="pill grid size-9 shrink-0 place-items-center rounded-lg text-primary">
 									<Icon class="size-4" />
 								</span>
-								<span class="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
+								<span class="text-caption font-semibold text-muted-foreground/70">
 									Step {i + 1}
 								</span>
 							</div>
@@ -132,14 +123,14 @@ const riseM = (delay: number) =>
 	</Section>
 
 	<!-- Safe by design -->
-	<Section id="safe" class="border-t border-border-low/60 bg-foreground/1.5 dark:bg-foreground/2">
+	<Section id="safe" class="border-t border-border-low bg-paper dark:bg-paper">
 		<Container>
 			<SectionHeader
 				eyebrow="Safe by design"
 				title="Installable, without the install-anything risk."
 				description="No code runs. A pack is just assets, so plugin supply-chain attacks don't apply."
 			/>
-			<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-2 lg:grid-cols-4">
+			<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low bg-border-low/30 sm:grid-cols-2 lg:grid-cols-4">
 				{#each trust as t, i}
 					{@const Icon = t.icon}
 					<Reveal variant="blur" delay={i * 70} class="h-full">
@@ -157,7 +148,7 @@ const riseM = (delay: number) =>
 	</Section>
 
 	<!-- Build & share -->
-	<Section id="build" class="border-t border-border-low/60">
+	<Section id="build" class="border-t border-border-low">
 		<Container>
 			<div class="grid items-center gap-14 lg:grid-cols-12 lg:gap-20">
 				<div class="lg:col-span-6">
@@ -174,7 +165,7 @@ const riseM = (delay: number) =>
 						] as f, i}
 							{@const Icon = f.icon}
 							<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-3.5">
-								<span class="glass-chip mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-primary">
+								<span class="pill mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-primary">
 									<Icon class="size-4" />
 								</span>
 								<span>
@@ -202,12 +193,12 @@ const riseM = (delay: number) =>
 
 				<div class="lg:col-span-6">
 					<Reveal variant="morph">
-						<div class="glass-card relative overflow-hidden rounded-2xl p-1.5">
-							<div class="flex h-9 items-center gap-2 rounded-t-xl border-b border-border-low/40 bg-white/5 px-4">
+						<div class="surface-lg relative overflow-hidden p-1.5">
+							<div class="flex h-9 items-center gap-2 rounded-t-xl border-b border-border-low bg-white/5 px-4">
 								<Blocks class="size-3.5 text-primary" />
-								<span class="text-[11px] font-medium text-muted-foreground">extension.json</span>
+								<span class="text-caption font-medium text-muted-foreground">extension.json</span>
 							</div>
-							<pre class="overflow-x-auto rounded-b-xl bg-background/60 p-5 text-[11.5px] leading-relaxed text-muted-foreground"><code>{`{
+							<pre class="overflow-x-auto rounded-b-xl bg-background/60 p-5 text-caption leading-relaxed text-muted-foreground"><code>{`{
   "id": "my-cursors",
   "name": "My Cursors",
   "version": "1.0.0",

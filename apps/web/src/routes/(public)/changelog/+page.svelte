@@ -1,43 +1,35 @@
 <script lang="ts">
-	import {
-	  Container,
-	  Footer,
-	  HeroBackdrop,
-	  Reveal,
-	  Section,
-	  SeoMeta
-	} from "$lib/components";
-	import { ArrowUpRight, ExternalLink, GitCommit } from "@recast/icons";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import { Markdown } from "@recast/ui/markdown";
-	import { prefersReducedMotion } from "$lib/motion-core";
-	import { fly } from "svelte/transition";
-	import { cubicOut } from "svelte/easing";
-	import type { PageData } from "./$types";
+import { Container, Footer, Reveal, Section, SeoMeta } from "$lib/components";
+import { ArrowUpRight, ExternalLink, GitCommit } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import { Markdown } from "@recast/ui/markdown";
+import { prefersReducedMotion } from "$lib/motion-core";
+import { fly } from "svelte/transition";
+import { cubicOut } from "svelte/easing";
+import type { PageData } from "./$types";
 
-	// Hero entrance: same 80ms stagger as the rest of the public pages.
-	// 460ms per element lands the whole ladder in well under a second.
-	const reduced = $derived(prefersReducedMotion());
-	const heroStagger = 80;
-	const riseM = (delay: number) =>
-		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+// Hero entrance: same 80ms stagger as the rest of the public pages.
+// 460ms per element lands the whole ladder in well under a second.
+const reduced = $derived(prefersReducedMotion());
+const heroStagger = 80;
+const riseM = (delay: number) =>
+	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
-	let { data }: { data: PageData } = $props();
+let { data }: { data: PageData } = $props();
 
-	function formatDate(iso: string | null) {
-		if (!iso) return "";
-		try {
-			return new Intl.DateTimeFormat("en-US", {
-				month: "short",
-				day: "numeric",
-				year: "numeric",
-			}).format(new Date(iso));
-		} catch {
-			return "";
-		}
+function formatDate(iso: string | null) {
+	if (!iso) return "";
+	try {
+		return new Intl.DateTimeFormat("en-US", {
+			month: "short",
+			day: "numeric",
+			year: "numeric",
+		}).format(new Date(iso));
+	} catch {
+		return "";
 	}
-
+}
 </script>
 
 <SeoMeta
@@ -48,12 +40,11 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
-		<HeroBackdrop src="/background-changelog.webp" tone="strong" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
 				<span
 					in:fly={riseM(heroStagger * 0)}
-					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+					class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
 				>
 					<GitCommit class="size-3 text-foreground/60" />
 					Changelog
@@ -63,7 +54,7 @@
 					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
 				>
 					Every release,
-					<span class="mt-2 block font-medium italic text-foreground/40">
+					<span class="mt-2 block font-medium italic text-muted-foreground">
 						in order.
 					</span>
 				</h1>
@@ -87,10 +78,10 @@
 		</Container>
 	</Section>
 
-	<Section spacing="tight" class="border-t border-border-low/60">
+	<Section spacing="tight" class="border-t border-border-low">
 		<Container size="narrow">
 			{#if data.releases.length === 0}
-				<div class="glass-card rounded-2xl p-10 text-center">
+				<div class="surface-lg p-10 text-center">
 					<h2 class="text-xl font-semibold tracking-tight text-foreground">
 						No releases yet
 					</h2>
@@ -99,13 +90,13 @@
 					</p>
 				</div>
 			{:else}
-				<ol class="relative space-y-12 border-l border-border-low/70 pl-6 sm:pl-10">
+				<ol class="relative space-y-12 border-l border-border-low pl-6 sm:pl-10">
 					{#each data.releases as release, i}
 						<Reveal as="li" delay={i * 60} class="relative">
-							<span class="glass-chip absolute -left-8.25 top-1.5 grid size-4 place-items-center rounded-full sm:-left-11">
+							<span class="pill absolute -left-8.25 top-1.5 grid size-4 place-items-center rounded-full sm:-left-11">
 								<span class="size-1.5 rounded-full bg-primary"></span>
 							</span>
-							<article class="glass-card rounded-2xl p-7 transition-all hover:-translate-y-0.5 hover:shadow-craft-sm">
+							<article class="surface-lg p-7 transition-all hover:shadow-craft-sm">
 								<header class="flex flex-wrap items-center gap-3">
 									<h2 class="text-2xl font-semibold tracking-tight text-foreground">
 										{release.name}
@@ -134,7 +125,7 @@
 										{release.tag}
 									</span>
 									{#if release.publishedAt}
-										<span class="text-muted-foreground/40">·</span>
+										<span class="text-border-strong">·</span>
 										<time datetime={release.publishedAt}>
 											{formatDate(release.publishedAt)}
 										</time>
@@ -144,7 +135,7 @@
 								{#if release.body}
 									<Markdown
 										source={release.body}
-										class="mt-6 text-sm leading-relaxed text-foreground/80"
+										class="mt-6 text-sm leading-relaxed text-foreground"
 									/>
 								{:else}
 									<p class="mt-6 text-sm italic text-muted-foreground">

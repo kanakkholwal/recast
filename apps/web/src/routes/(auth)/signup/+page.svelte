@@ -132,7 +132,7 @@ async function signUp(e: SubmitEvent) {
 
 	<form class="flex flex-col gap-3.5" onsubmit={signUp}>
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground/85">Full name</span>
+			<span class="text-xs font-semibold text-foreground">Full name</span>
 			<Input
 				type="text"
 				required
@@ -144,7 +144,7 @@ async function signUp(e: SubmitEvent) {
 		</Label>
 
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground/85">Email</span>
+			<span class="text-xs font-semibold text-foreground">Email</span>
 			<Input
 				type="email"
 				required
@@ -156,7 +156,7 @@ async function signUp(e: SubmitEvent) {
 		</Label>
 
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground/85">Password</span>
+			<span class="text-xs font-semibold text-foreground">Password</span>
 			<div class="relative">
 				<Input
 					type={showPassword ? "text" : "password"}
@@ -170,7 +170,7 @@ async function signUp(e: SubmitEvent) {
 					type="button"
 					onclick={() => (showPassword = !showPassword)}
 					aria-label={showPassword ? "Hide password" : "Show password"}
-					class="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+					class="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-paper hover:text-foreground"
 				>
 					{#if showPassword}
 						<EyeOff class="size-3.5" />
@@ -195,7 +195,7 @@ async function signUp(e: SubmitEvent) {
 							></span>
 						{/each}
 					</div>
-					<span class="w-14 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+					<span class="w-14 text-right text-caption font-semibold uppercase tracking-wider text-muted-foreground">
 						{STRENGTH_LABELS[passwordStrength]}
 					</span>
 				</div>
@@ -203,7 +203,7 @@ async function signUp(e: SubmitEvent) {
 		</Label>
 
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground/85">Confirm password</span>
+			<span class="text-xs font-semibold text-foreground">Confirm password</span>
 			<Input
 				type={showPassword ? "text" : "password"}
 				required
@@ -215,7 +215,7 @@ async function signUp(e: SubmitEvent) {
 			/>
 			{#if !matches}
 				<span
-					class="flex items-center gap-1 text-[11px] font-medium text-destructive"
+					class="flex items-center gap-1 text-caption font-medium text-destructive"
 					transition:slide={{ duration: 200, easing: cubicOut }}
 				>
 					<AlertCircle class="size-3" />
@@ -226,7 +226,7 @@ async function signUp(e: SubmitEvent) {
 
 		<Label class="flex items-start gap-2">
 			<Checkbox bind:checked={agreed} id="terms" class="mt-0.5" />
-			<span class="text-xs font-medium text-foreground/85">
+			<span class="text-xs font-medium text-foreground">
 				I agree to Recast's
 				<a href="/terms-of-service" class="text-primary hover:underline">Terms</a>
 				and

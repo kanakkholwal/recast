@@ -5,7 +5,7 @@ export { default as DevThemeToggle } from "./DevThemeToggle.svelte";
 export { default as ExportMock } from "./ExportMock.svelte";
 export { default as Footer } from "./Footer.svelte";
 export { default as Hero } from "./Hero.svelte";
-export { default as HeroBackdrop } from "./HeroBackdrop.svelte";
+export { default as HeroSteps } from "./HeroSteps.svelte";
 export { default as MacWindow } from "./MacWindow.svelte";
 export { default as Navbar } from "./Navbar.svelte";
 export { default as PolishGrid } from "./PolishGrid.svelte";

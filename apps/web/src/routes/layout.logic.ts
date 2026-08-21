@@ -36,6 +36,22 @@ export function isChromeless(pathname: string): boolean {
 	);
 }
 
+/**
+ * True on every surface that uses the border-first marketing design system.
+ * The complement is the product shells, which still rely on a tonal
+ * card-over-canvas lift and must keep the legacy glass tokens.
+ */
+export function isMarketing(pathname: string): boolean {
+	return !(
+		pathname.startsWith("/dashboard") ||
+		pathname.startsWith("/admin") ||
+		pathname.startsWith("/onboarding") ||
+		pathname.startsWith("/share/") ||
+		pathname.startsWith("/playground") ||
+		pathname.startsWith("/tools/screenshot-editor/edit")
+	);
+}
+
 // Product surfaces ("the app", not "the website") — these get the branded
 // splash + route loading screen. Keep in sync with the inline path check in
 // `app.html`, which can't import this (it runs before any bundle loads).

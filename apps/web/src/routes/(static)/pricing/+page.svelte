@@ -1,14 +1,6 @@
 <script lang="ts">
 import { goto } from "$app/navigation";
-import {
-	Container,
-	Footer,
-	HeroBackdrop,
-	Reveal,
-	Section,
-	SectionHeader,
-	SeoMeta,
-} from "$lib/components";
+import { Container, Footer, Reveal, Section, SectionHeader, SeoMeta } from "$lib/components";
 import { prefersReducedMotion } from "$lib/motion-core";
 import { PLANS } from "$lib/billing/catalog";
 import {
@@ -267,12 +259,11 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
-		<HeroBackdrop src="/background-pricing.webp" tone="subtle" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
 				<span
 					in:fly={riseM(heroStagger * 0)}
-					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+					class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
 				>
 					<span class="size-1.5 rounded-full bg-primary"></span>
 					Pricing
@@ -282,7 +273,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
 				>
 					No per-seat
-					<span class="block font-medium italic text-foreground/40">tax.</span>
+					<span class="block font-medium italic text-muted-foreground">tax.</span>
 				</h1>
 				<p
 					in:fly={riseM(heroStagger * 2)}
@@ -292,20 +283,20 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 					sharing for {formatUsd(pro)} a month — covering your first {proPlan.seats.included}
 					creators, not one.
 				</p>
-				<div class="mt-2 inline-flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-medium text-foreground/75">
-					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
+				<div class="mt-2 inline-flex flex-wrap items-center justify-center gap-2 text-caption font-medium text-muted-foreground">
+					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low">
 						<ShieldCheck class="size-3.5 text-foreground" /> No telemetry
 					</span>
-					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
+					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low">
 						<HardDriveUpload class="size-3.5 text-foreground" /> Bring your own storage
 					</span>
-					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
+					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low">
 						<Tag class="size-3.5 text-foreground" /> No card to start
 					</span>
 				</div>
 
 				<div
-					class="mt-2 inline-flex items-center gap-1 rounded-full border border-border-low/60 bg-card/50 p-1"
+					class="mt-2 inline-flex items-center gap-1 rounded-full border border-border-low bg-card/50 p-1"
 					role="group"
 					aria-label="Billing period"
 				>
@@ -328,7 +319,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 							: 'text-muted-foreground hover:text-foreground'}"
 					>
 						Annual
-						<span class="ml-1 text-[10px] font-bold text-primary">−17%</span>
+						<span class="ml-1 text-caption font-bold text-primary">−17%</span>
 					</button>
 				</div>
 			</div>
@@ -343,10 +334,10 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 				<Reveal variant="left" id="plan-free">
 					<article class="bg-card flex h-full flex-col rounded-2xl p-7 sm:p-8">
 						<div class="flex items-center justify-between">
-							<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							<span class="text-body-sm font-medium text-muted-foreground">
 								Free
 							</span>
-							<span class="glass-chip inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-foreground/70">
+							<span class="pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-semibold text-muted-foreground">
 								<Cloud class="size-3" />
 								No card
 							</span>
@@ -367,7 +358,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 								"Basic watch analytics",
 								"Or bring your own bucket and lift every storage cap",
 							] as point}
-								<li class="flex items-start gap-2.5 text-sm text-foreground/85">
+								<li class="flex items-start gap-2.5 text-sm text-foreground">
 									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
 									{point}
 								</li>
@@ -384,16 +375,16 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 
 				<!-- Cloud Pro -->
 				<Reveal variant="up" delay={80} id="plan-cloud-pro">
-					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-7 ring-1 ring-primary/25 sm:p-8">
+					<article class="surface-lg relative flex h-full flex-col overflow-hidden p-7 ring-1 ring-primary/25 sm:p-8">
 						<div
 							aria-hidden="true"
 							class="pointer-events-none absolute -right-12 -top-12 size-56 rounded-full bg-primary/10 blur-3xl"
 						></div>
 						<div class="relative flex items-center justify-between">
-							<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+							<span class="text-body-sm font-medium text-primary">
 								Pro
 							</span>
-							<span class="glass-chip inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-foreground/80">
+							<span class="pill inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption font-semibold text-foreground">
 								<Cloud class="size-3 text-primary" />
 								Most popular
 							</span>
@@ -412,7 +403,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 								annual ? LOOM.annualMonthlyUsd : LOOM.monthlyUsd,
 							)} for every single one.
 						</p>
-						<div class="relative mt-5 inline-flex items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/8 px-3 py-1 text-[11px] font-medium text-foreground/90">
+						<div class="relative mt-5 inline-flex items-center gap-2 self-start rounded-full border border-primary/30 bg-primary/8 px-3 py-1 text-caption font-medium text-foreground">
 							<Users class="size-3.5 text-primary" />
 							Up to {proPlan.seats.max} creators
 						</div>
@@ -425,7 +416,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 								"Password protection, link expiry, per-viewer access",
 								"Custom branding, your own domain, or your own bucket",
 							] as point}
-								<li class="flex items-start gap-2.5 text-sm text-foreground/85">
+								<li class="flex items-start gap-2.5 text-sm text-foreground">
 									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
 									{point}
 								</li>
@@ -441,7 +432,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 									bind:value={email}
 									autocomplete="email"
 									placeholder="founder@startup.com"
-									class="w-full rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+									class="w-full rounded-lg border border-border-low bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60"
 								/>
 								<Button type="submit" size="lg" class="group/cta gap-2">
 									Start free, upgrade anytime
@@ -456,10 +447,10 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 				<Reveal variant="right" delay={160}>
 					<article class="bg-card flex h-full flex-col rounded-2xl p-7 sm:p-8">
 						<div class="flex items-center justify-between">
-							<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							<span class="text-body-sm font-medium text-muted-foreground">
 								Enterprise
 							</span>
-							<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-foreground/70">
+							<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low px-2.5 py-1 text-caption font-semibold text-muted-foreground">
 								<Building2 class="size-3" />
 								Talk to us
 							</span>
@@ -480,7 +471,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 								"Data residency control",
 								"Dedicated success manager and SLAs",
 							] as point}
-								<li class="flex items-start gap-2.5 text-sm text-foreground/85">
+								<li class="flex items-start gap-2.5 text-sm text-foreground">
 									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
 									{point}
 								</li>
@@ -504,7 +495,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 	</Section>
 
 	<!-- The comparison that actually closes: what a team of N pays. -->
-	<Section class="border-t border-border-low/60">
+	<Section class="border-t border-border-low">
 		<Container>
 			<SectionHeader
 				eyebrow="Side by side"
@@ -513,10 +504,10 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 			/>
 
 			<Reveal variant="up" class="mt-14">
-				<div class="overflow-x-auto rounded-2xl border border-border-low/50">
+				<div class="overflow-x-auto rounded-2xl border border-border-low">
 					<table class="w-full min-w-140 border-collapse text-left">
 						<thead>
-							<tr class="border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							<tr class="border-b border-border-low bg-paper text-body-sm font-medium text-muted-foreground">
 								<th scope="col" class="px-5 py-3.5 font-semibold">Team size</th>
 								<th scope="col" class="px-5 py-3.5 text-right font-semibold text-primary">Recast Pro</th>
 								<th scope="col" class="px-5 py-3.5 text-right font-semibold">Loom Business</th>
@@ -525,8 +516,8 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 						</thead>
 						<tbody>
 							{#each teams as row (row.seats)}
-								<tr class="border-b border-border-low/40 last:border-0">
-									<th scope="row" class="px-5 py-4 text-sm font-medium text-foreground/85">
+								<tr class="border-b border-border-low last:border-0">
+									<th scope="row" class="px-5 py-4 text-sm font-medium text-foreground">
 										{row.label}
 										<span class="ml-1.5 text-xs font-normal text-muted-foreground">
 											· {row.seats} {row.seats === 1 ? "person" : "people"}
@@ -560,7 +551,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 	</Section>
 
 	<!-- Full feature matrix -->
-	<Section class="border-t border-border-low/60">
+	<Section class="border-t border-border-low">
 		<Container>
 			<SectionHeader
 				eyebrow="Every limit, printed"
@@ -569,37 +560,37 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 			/>
 
 			<Reveal variant="blur" class="mt-14">
-				<div class="overflow-x-auto rounded-2xl border border-border-low/50">
+				<div class="overflow-x-auto rounded-2xl border border-border-low">
 					<div class="min-w-190">
-						<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+						<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border-low bg-paper text-body-sm font-medium">
 							<div class="px-5 py-3.5 text-muted-foreground">Feature</div>
 							{#each columns as col}
 								<div
-									class="border-l border-border-low/50 px-5 py-3.5 text-center {col.tone === 'primary' ? 'text-primary' : col.tone === 'muted' ? 'text-muted-foreground' : 'text-foreground'}"
+									class="border-l border-border-low px-5 py-3.5 text-center {col.tone === 'primary' ? 'text-primary' : col.tone === 'muted' ? 'text-muted-foreground' : 'text-foreground'}"
 								>
 									{col.label}
 								</div>
 							{/each}
 						</div>
 						{#each groups as group, gi}
-							<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border-low/50 bg-foreground/1.5">
-								<div class="col-span-5 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80">
+							<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] border-b border-border-low bg-paper">
+								<div class="col-span-5 px-5 py-2.5 text-body-sm font-medium text-muted-foreground/80">
 									{group.heading}
 								</div>
 							</div>
 							{#each group.rows as row, ri}
 								{@const isLast = gi === groups.length - 1 && ri === group.rows.length - 1}
-								<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] {isLast ? '' : 'border-b border-border-low/40'}">
-									<div class="px-5 py-3.5 text-sm text-foreground/85">{row.label}</div>
+								<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr_1fr] {isLast ? '' : 'border-b border-border-low'}">
+									<div class="px-5 py-3.5 text-sm text-foreground">{row.label}</div>
 									{#each columns as col}
 										{@const cell = row[col.key]}
-										<div class="flex items-center justify-center border-l border-border-low/40 px-5 py-3.5 text-center text-sm">
+										<div class="flex items-center justify-center border-l border-border-low px-5 py-3.5 text-center text-sm">
 											{#if cell === true}
 												<Check class="size-4 text-primary" />
 											{:else if cell === false}
-												<Minus class="size-4 text-muted-foreground/40" />
+												<Minus class="size-4 text-border-strong" />
 											{:else}
-												<span class="text-xs font-medium text-foreground/80">{cell}</span>
+												<span class="text-xs font-medium text-foreground">{cell}</span>
 											{/if}
 										</div>
 									{/each}

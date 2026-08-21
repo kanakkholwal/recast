@@ -1,27 +1,27 @@
 <script lang="ts">
-	import { dev } from "$app/environment";
-	import { goto } from "$app/navigation";
-	import { page } from "$app/state";
-	import { Button } from "@recast/ui/button";
-	import { ArrowLeft, Home, RefreshCw, ScrollText } from "@recast/icons";
-	import { cubicOut } from "svelte/easing";
-	import { fade, fly } from "svelte/transition";
-	import {
-		ACCENT_BACKDROP,
-		ACCENT_RING,
-		errorCopy,
-		pickStatusIcon,
-		suggestions,
-	} from "$lib/error/error-copy";
+import { dev } from "$app/environment";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { Button } from "@recast/ui/button";
+import { ArrowLeft, Home, RefreshCw, ScrollText } from "@recast/icons";
+import { cubicOut } from "svelte/easing";
+import { fade, fly } from "svelte/transition";
+import {
+	ACCENT_BACKDROP,
+	ACCENT_RING,
+	errorCopy,
+	pickStatusIcon,
+	suggestions,
+} from "$lib/error/error-copy";
 
-	const status = $derived(page.status);
-	const message = $derived(page.error?.message ?? "");
-	const isServerError = $derived(status >= 500);
+const status = $derived(page.status);
+const message = $derived(page.error?.message ?? "");
+const isServerError = $derived(status >= 500);
 
-	const copyFor = $derived(errorCopy(status, message, isServerError));
-	const accentRing = $derived(ACCENT_RING[copyFor.accent]);
-	const accentBackdrop = $derived(ACCENT_BACKDROP[copyFor.accent]);
-	const StatusIcon = $derived(pickStatusIcon(status, isServerError));
+const copyFor = $derived(errorCopy(status, message, isServerError));
+const accentRing = $derived(ACCENT_RING[copyFor.accent]);
+const accentBackdrop = $derived(ACCENT_BACKDROP[copyFor.accent]);
+const StatusIcon = $derived(pickStatusIcon(status, isServerError));
 </script>
 
 <svelte:head>
@@ -47,7 +47,7 @@
 	>
 		<div class="flex flex-col items-center text-center">
 			<span
-				class="glass-chip grid size-14 place-items-center rounded-2xl ring-1 {accentRing}"
+				class="pill grid size-14 place-items-center rounded-2xl ring-1 {accentRing}"
 				in:fade={{ duration: 360, delay: 80 }}
 			>
 				<StatusIcon class="size-6" />
@@ -55,7 +55,7 @@
 
 			<!-- The status itself, big and unmistakable — easier to skim than the title. -->
 			<div class="mt-6 flex items-baseline gap-3">
-				<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+				<span class="text-body-sm font-medium text-muted-foreground">
 					{copyFor.eyebrow}
 				</span>
 			</div>
@@ -89,12 +89,12 @@
 			     via Sentry/PostHog (when wired) instead of leaking internals. -->
 			{#if dev && message}
 				<details
-					class="mt-7 w-full max-w-md rounded-xl border border-border-low/50 bg-foreground/2 p-4 text-left text-xs"
+					class="mt-7 w-full max-w-md rounded-xl border border-border-low bg-paper p-4 text-left text-xs"
 				>
-					<summary class="cursor-pointer font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+					<summary class="cursor-pointer font-mono text-body-sm font-medium text-muted-foreground">
 						Dev details
 					</summary>
-					<pre class="mt-3 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/85"><code>{message}</code></pre>
+					<pre class="mt-3 overflow-x-auto whitespace-pre-wrap font-mono text-caption leading-relaxed text-foreground"><code>{message}</code></pre>
 				</details>
 			{/if}
 		</div>
@@ -105,17 +105,17 @@
 				{@const Icon = item.icon}
 				<a
 					href={item.href}
-					class="group/sug glass-card flex flex-col gap-1.5 rounded-xl p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-craft-md"
+					class="group/sug surface-lg flex flex-col gap-1.5 rounded-xl p-4 transition-all duration-200 hover:"
 					in:fly={{ y: 10, duration: 360, delay: 180 + i * 60, easing: cubicOut }}
 				>
-					<span class="glass-chip grid size-8 place-items-center rounded-lg text-foreground/70 transition-colors group-hover/sug:text-primary">
+					<span class="pill grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors group-hover/sug:text-primary">
 						<Icon class="size-4" />
 					</span>
 					<div>
 						<div class="text-sm font-semibold tracking-tight text-foreground">
 							{item.label}
 						</div>
-						<div class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+						<div class="mt-0.5 text-caption leading-relaxed text-muted-foreground">
 							{item.desc}
 						</div>
 					</div>
@@ -123,7 +123,7 @@
 			{/each}
 		</div>
 
-		<p class="mt-8 text-center text-[11px] text-muted-foreground">
+		<p class="mt-8 text-center text-caption text-muted-foreground">
 			Still stuck?
 			<a
 				href="https://github.com/kanakkholwal/recast/issues/new"

@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { HeroBackdrop } from "$lib/components";
-	import { ArrowLeft } from "@recast/icons";
+import { ArrowLeft } from "@recast/icons";
 
-	let { children } = $props();
+let { children } = $props();
 </script>
 
 <!--
@@ -12,7 +11,6 @@
   without going back to the saturated pastels on the landing page.
 -->
 <div class="relative min-h-screen overflow-hidden text-foreground">
-	<HeroBackdrop src="/background-auth.webp" tone="subtle" />
 	<!--
 	  Soft primary glow under the auth card — anchors the form on the page
 	  without competing with the photo.
@@ -26,7 +24,7 @@
 	<!-- Back-to-site link: glass chip so it stays readable on the photo. -->
 	<a
 		href="/"
-		class="glass-chip absolute left-6 top-6 z-20 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-foreground/80 transition-colors hover:text-foreground"
+		class="pill absolute left-6 top-6 z-20 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:text-foreground"
 	>
 		<ArrowLeft class="size-3.5" />
 		Back to site

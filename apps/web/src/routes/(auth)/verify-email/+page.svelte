@@ -72,7 +72,7 @@ async function signOut() {
 				<span class="text-lg font-semibold tracking-tight text-foreground">Recast</span>
 			</a>
 
-			<span class="glass-chip mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+			<span class="pill mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-body-sm font-medium text-primary">
 				<MailCheck class="size-3" />
 				One step left
 			</span>
@@ -88,7 +88,7 @@ async function signOut() {
 			</p>
 		</div>
 
-		<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
+		<div class="surface-lg mt-8 p-6 sm:p-7">
 			<div class="space-y-2.5">
 				<Button onclick={refresh} disabled={checking} class="group/cta w-full gap-2">
 					{#if checking}
@@ -112,7 +112,7 @@ async function signOut() {
 					{sending ? "Sending…" : sentOnce ? "Send another link" : "Resend verification email"}
 				</Button>
 			</div>
-			<p class="mt-5 text-center text-[11px] text-muted-foreground">
+			<p class="mt-5 text-center text-caption text-muted-foreground">
 				Wrong email?
 				<button
 					type="button"

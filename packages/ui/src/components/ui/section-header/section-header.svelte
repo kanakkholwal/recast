@@ -1,24 +1,17 @@
 <script lang="ts">
-	import type { Snippet } from "svelte";
-	import { cn } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
+import { cn } from "@recast/ui/utils";
 
-	type Props = {
-		eyebrow?: string;
-		title: string;
-		description?: string;
-		align?: "left" | "center";
-		class?: string;
-		actions?: Snippet;
-	};
+type Props = {
+	eyebrow?: string;
+	title: string;
+	description?: string;
+	align?: "left" | "center";
+	class?: string;
+	actions?: Snippet;
+};
 
-	let {
-		eyebrow,
-		title,
-		description,
-		align = "left",
-		class: className,
-		actions,
-	}: Props = $props();
+let { eyebrow, title, description, align = "left", class: className, actions }: Props = $props();
 </script>
 
 <div
@@ -30,22 +23,22 @@
 	)}
 >
 	{#if eyebrow}
+		<!-- Sentence-case pill, not an uppercase micro-label. Uppercase +
+		     letter-spaced eyebrows read as a tic once a page carries more than
+		     one, and they cost legibility at 11px. -->
 		<span
-			class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground"
+			class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground"
 		>
-			<span class="size-1.5 rounded-full bg-primary"></span>
 			{eyebrow}
 		</span>
 	{/if}
-	<h2
-		class="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl"
-	>
+	<h2 class="text-balance text-heading sm:text-heading-lg md:text-display">
 		{title}
 	</h2>
 	{#if description}
 		<p
 			class={cn(
-				"text-pretty text-base text-muted-foreground sm:text-lg",
+				"text-pretty text-body text-muted-foreground sm:text-body-lg",
 				align === "center" ? "max-w-xl" : "max-w-2xl",
 			)}
 		>

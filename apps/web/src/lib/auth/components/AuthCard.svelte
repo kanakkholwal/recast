@@ -43,7 +43,7 @@ let {
 		{/if}
 	</div>
 
-	<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
+	<div class="surface-lg mt-8 p-6 sm:p-7">
 		{@render children()}
 	</div>
 

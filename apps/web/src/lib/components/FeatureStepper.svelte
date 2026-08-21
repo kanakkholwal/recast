@@ -1,95 +1,95 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import { untrack } from "svelte";
-	import { fly } from "svelte/transition";
-	import { cubicOut } from "svelte/easing";
+import { cn } from "@recast/ui/utils";
+import { untrack } from "svelte";
+import { fly } from "svelte/transition";
+import { cubicOut } from "svelte/easing";
 
-	type Feature = {
-		icon: any;
-		tag: string;
-		title: string;
-		description: string;
-		image: string | null;
-	};
+type Feature = {
+	icon: any;
+	tag: string;
+	title: string;
+	description: string;
+	image: string | null;
+};
 
-	let {
-		features,
-		class: className = "",
-	}: {
-		features: Feature[];
-		class?: string;
-	} = $props();
+let {
+	features,
+	class: className = "",
+}: {
+	features: Feature[];
+	class?: string;
+} = $props();
 
-	// Scroll-driven stepper.
-	//
-	// The outer section is `features.length × 100vh` tall. The inner content
-	// is `sticky top-0` and stays pinned for the whole scroll range. As the
-	// user scrolls, the active index tracks `window.scrollY` against the
-	// section's top edge:
-	//
-	//   - section top crossing viewport top  → first step
-	//   - one viewport per step             → each step owns a viewport
-	//   - section bottom crossing viewport bottom → last step
-	//
-	// Scrolling past the section releases the pin and the next section
-	// flows in normally; scrolling up reverses.
-	//
-	// Inside the sticky, the step list is a *sliding window* (3 steps
-	// visible at a time). As the active index advances, the inner list
-	// translates up so the active step is always vertically centered in
-	// the window and the previous/next steps peek above/below. The
-	// right panel morphs between icons with a slide-up transition so the
-	// visual matches the list motion.
-	let sectionEl: HTMLElement | undefined = $state();
-	let current = $state(0);
-	let progress = $state(0); // 0..1 across the whole section
+// Scroll-driven stepper.
+//
+// The outer section is `features.length × 100vh` tall. The inner content
+// is `sticky top-0` and stays pinned for the whole scroll range. As the
+// user scrolls, the active index tracks `window.scrollY` against the
+// section's top edge:
+//
+//   - section top crossing viewport top  → first step
+//   - one viewport per step             → each step owns a viewport
+//   - section bottom crossing viewport bottom → last step
+//
+// Scrolling past the section releases the pin and the next section
+// flows in normally; scrolling up reverses.
+//
+// Inside the sticky, the step list is a *sliding window* (3 steps
+// visible at a time). As the active index advances, the inner list
+// translates up so the active step is always vertically centered in
+// the window and the previous/next steps peek above/below. The
+// right panel morphs between icons with a slide-up transition so the
+// visual matches the list motion.
+let sectionEl: HTMLElement | undefined = $state();
+let current = $state(0);
+let progress = $state(0); // 0..1 across the whole section
 
-	// `visible` is how many steps show in the window. Three is the sweet
-	// spot the user asked for: one above, one active, one below. The
-	// window is `VISIBLE * stepH` tall, and each step is `stepH` tall, so
-	// the math falls out cleanly: `translateY(-current * stepH)` aligns
-	// step `current` with the center of the window.
-	const VISIBLE = 3;
-	const stepH = 80; // px per step inside the window (its visual height)
+// `visible` is how many steps show in the window. Three is the sweet
+// spot the user asked for: one above, one active, one below. The
+// window is `VISIBLE * stepH` tall, and each step is `stepH` tall, so
+// the math falls out cleanly: `translateY(-current * stepH)` aligns
+// step `current` with the center of the window.
+const VISIBLE = 3;
+const stepH = 80; // px per step inside the window (its visual height)
 
-	function recompute() {
-		const el = sectionEl;
-		if (!el) return;
-		const rect = el.getBoundingClientRect();
-		const sectionHeight = el.offsetHeight;
-		const viewport = window.innerHeight;
-		const scrollRange = sectionHeight - viewport;
-		if (scrollRange <= 0) {
-			progress = rect.top < 0 ? 1 : 0;
-		} else {
-			const scrolled = -rect.top;
-			progress = Math.max(0, Math.min(1, scrolled / scrollRange));
-		}
-		const n = features.length;
-		// Six features across six viewports: index = floor(progress * n).
-		// Clamp so the first and last step "stick" for a beat at the
-		// ends and don't pop early/late.
-		const raw = Math.floor(progress * n);
-		current = Math.max(0, Math.min(n - 1, raw));
+function recompute() {
+	const el = sectionEl;
+	if (!el) return;
+	const rect = el.getBoundingClientRect();
+	const sectionHeight = el.offsetHeight;
+	const viewport = window.innerHeight;
+	const scrollRange = sectionHeight - viewport;
+	if (scrollRange <= 0) {
+		progress = rect.top < 0 ? 1 : 0;
+	} else {
+		const scrolled = -rect.top;
+		progress = Math.max(0, Math.min(1, scrolled / scrollRange));
 	}
+	const n = features.length;
+	// Six features across six viewports: index = floor(progress * n).
+	// Clamp so the first and last step "stick" for a beat at the
+	// ends and don't pop early/late.
+	const raw = Math.floor(progress * n);
+	current = Math.max(0, Math.min(n - 1, raw));
+}
 
-	$effect(() => {
-		if (typeof window === "undefined") return;
-		untrack(() => recompute());
-		const onScroll = () => recompute();
-		const onResize = () => recompute();
-		window.addEventListener("scroll", onScroll, { passive: true });
-		window.addEventListener("resize", onResize);
-		return () => {
-			window.removeEventListener("scroll", onScroll);
-			window.removeEventListener("resize", onResize);
-		};
-	});
+$effect(() => {
+	if (typeof window === "undefined") return;
+	untrack(() => recompute());
+	const onScroll = () => recompute();
+	const onResize = () => recompute();
+	window.addEventListener("scroll", onScroll, { passive: true });
+	window.addEventListener("resize", onResize);
+	return () => {
+		window.removeEventListener("scroll", onScroll);
+		window.removeEventListener("resize", onResize);
+	};
+});
 
-	// The step list translates by one step-height per index step. With
-	// VISIBLE=3 and stepH=80px, the active step sits in the middle of
-	// the window (offset = 1 * stepH from the top of the window).
-	const translateY = $derived(`translateY(-${current * stepH}px)`);
+// The step list translates by one step-height per index step. With
+// VISIBLE=3 and stepH=80px, the active step sits in the middle of
+// the window (offset = 1 * stepH from the top of the window).
+const translateY = $derived(`translateY(-${current * stepH}px)`);
 </script>
 
 <section
@@ -137,7 +137,7 @@
 								>
 									<span
 										class={cn(
-											"mt-1 grid size-9 shrink-0 place-items-center rounded-full font-mono text-[11px] font-semibold tabular-nums transition-colors duration-500",
+											"mt-1 grid size-9 shrink-0 place-items-center rounded-full font-mono text-caption font-semibold tabular-nums transition-colors duration-500",
 											isActive
 												? "bg-foreground text-background"
 												: "bg-foreground/[0.04] text-foreground/50",
@@ -149,10 +149,10 @@
 										<div class="flex items-center gap-2">
 											<span
 												class={cn(
-													"inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] transition-colors duration-500",
+													"inline-flex items-center rounded-full px-1.5 py-0.5 text-caption font-semibold transition-colors duration-500",
 													isActive
-														? "bg-foreground/8 text-foreground/80"
-														: "bg-foreground/[0.03] text-foreground/40",
+														? "bg-paper text-foreground"
+														: "bg-foreground/[0.03] text-muted-foreground",
 												)}
 											>
 												{feature.tag}
@@ -168,7 +168,7 @@
 										</h3>
 										{#if isActive}
 											<p
-												class="mt-2 max-w-md text-pretty text-[15px] leading-relaxed text-muted-foreground"
+												class="mt-2 max-w-md text-pretty text-body leading-relaxed text-muted-foreground"
 												in:fly={{ y: 6, duration: 300, easing: cubicOut }}
 											>
 												{feature.description}
@@ -190,7 +190,7 @@
 				-->
 				<div class="relative hidden lg:col-span-5 lg:block">
 					<div
-						class="relative aspect-[4/3] overflow-hidden rounded-3xl border border-border-low/40 bg-card/40 shadow-craft-lg"
+						class="relative aspect-[4/3] overflow-hidden rounded-2xl border border-border-low bg-card/40"
 					>
 						{#each features as feature, i (feature.title)}
 							{@const Icon = feature.icon}
@@ -214,12 +214,12 @@
 											style="background: linear-gradient(160deg, color-mix(in srgb, var(--color-foreground) 7%, transparent) 0%, color-mix(in srgb, var(--color-foreground) 3%, transparent) 60%, transparent 100%);"
 										></div>
 										<div
-											class="grid size-24 place-items-center rounded-3xl border border-border-low/40 bg-card/60 shadow-craft-sm"
+											class="grid size-24 place-items-center rounded-2xl border border-border-low bg-card/60 shadow-craft-sm"
 										>
-											<Icon class="size-12 text-foreground/80" />
+											<Icon class="size-12 text-foreground" />
 										</div>
 										<div
-											class="rounded-full bg-foreground/85 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-background shadow-craft-sm"
+											class="rounded-full bg-foreground/85 px-2 py-0.5 text-caption font-semibold text-background shadow-craft-sm"
 										>
 											{feature.tag}
 										</div>

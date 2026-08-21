@@ -1,98 +1,85 @@
 <script lang="ts">
-  import {
-    Container,
-    Footer,
-    HeroBackdrop,
-    Reveal,
-    Section,
-    SectionHeader,
-    SeoMeta,
-  } from "$lib/components";
-  import { prefersReducedMotion } from "$lib/motion-core";
-  import {
-    ArrowDownToLine,
-    CheckCircle2,
-    ChevronDown,
-    Download,
-    Info,
-    LifeBuoy,
-    ShieldCheck,
-    TriangleAlert
-  } from "@recast/icons";
-  import { AppleBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
-  import { Button } from "@recast/ui/button";
-  import * as Collapsible from "@recast/ui/collapsible";
-  import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import * as Tabs from "@recast/ui/tabs";
-  import { cn } from "@recast/ui/utils";
-  import { cubicOut } from "svelte/easing";
-  import { fly } from "svelte/transition";
-  import type { PageData } from "./$types";
-  import type { OS } from "./data";
-  import { installSteps, ISSUES_URL, platforms, ships, stabilityCopy, systemRequirements } from "./data";
+import { Container, Footer, Reveal, Section, SectionHeader, SeoMeta } from "$lib/components";
+import { prefersReducedMotion } from "$lib/motion-core";
+import {
+	ArrowDownToLine,
+	CheckCircle2,
+	ChevronDown,
+	Download,
+	Info,
+	LifeBuoy,
+	ShieldCheck,
+	TriangleAlert,
+} from "@recast/icons";
+import { AppleBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import * as Collapsible from "@recast/ui/collapsible";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import * as Tabs from "@recast/ui/tabs";
+import { cn } from "@recast/ui/utils";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import type { PageData } from "./$types";
+import type { OS } from "./data";
+import {
+	installSteps,
+	ISSUES_URL,
+	platforms,
+	ships,
+	stabilityCopy,
+	systemRequirements,
+} from "./data";
 
-  let { data }: { data: PageData } = $props();
+let { data }: { data: PageData } = $props();
 
+let detectedOS = $state<OS>("Unknown");
 
-  let detectedOS = $state<OS>("Unknown");
+// Hero entrance: same 80ms stagger as the rest of the public pages.
+// 460ms per element lands the whole ladder in well under a second.
+const reduced = $derived(prefersReducedMotion());
+const heroStagger = 80;
+const riseM = (delay: number) =>
+	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
-  // Hero entrance: same 80ms stagger as the rest of the public pages.
-  // 460ms per element lands the whole ladder in well under a second.
-  const reduced = $derived(prefersReducedMotion());
-  const heroStagger = 80;
-  const riseM = (delay: number) =>
-    reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+$effect(() => {
+	const ua = window.navigator.userAgent;
+	if (ua.includes("Mac")) detectedOS = "macOS";
+	else if (ua.includes("Win")) detectedOS = "Windows";
+	else if (ua.includes("Linux")) detectedOS = "Linux";
+});
 
-  $effect(() => {
-    const ua = window.navigator.userAgent;
-    if (ua.includes("Mac")) detectedOS = "macOS";
-    else if (ua.includes("Win")) detectedOS = "Windows";
-    else if (ua.includes("Linux")) detectedOS = "Linux";
-  });
+type Asset = { link: string | null; label: string };
 
-  type Asset = { link: string | null; label: string };
+const platformAssets = $derived<Record<Exclude<OS, "Unknown">, Asset[]>>({
+	macOS: [
+		{ link: data.downloads.macosAppleSilicon, label: "Apple Silicon (.dmg)" },
+		{ link: data.downloads.macosIntel, label: "Intel (.dmg)" },
+	],
+	Windows: [
+		{ link: data.downloads.windowsExe, label: "Installer (.exe)" },
+		{ link: data.downloads.windowsMsi, label: "Installer (.msi)" },
+	],
+	Linux: [
+		{ link: data.downloads.linuxAppImage, label: "AppImage (universal)" },
+		{ link: data.downloads.linuxDeb, label: "Debian / Ubuntu (.deb)" },
+		{ link: data.downloads.linuxRpm, label: "Red Hat / Fedora (.rpm)" },
+	],
+});
 
-  const platformAssets = $derived<Record<Exclude<OS, "Unknown">, Asset[]>>({
-    macOS: [
-      { link: data.downloads.macosAppleSilicon, label: "Apple Silicon (.dmg)" },
-      { link: data.downloads.macosIntel, label: "Intel (.dmg)" },
-    ],
-    Windows: [
-      { link: data.downloads.windowsExe, label: "Installer (.exe)" },
-      { link: data.downloads.windowsMsi, label: "Installer (.msi)" },
-    ],
-    Linux: [
-      { link: data.downloads.linuxAppImage, label: "AppImage (universal)" },
-      { link: data.downloads.linuxDeb, label: "Debian / Ubuntu (.deb)" },
-      { link: data.downloads.linuxRpm, label: "Red Hat / Fedora (.rpm)" },
-    ],
-  });
+const primary = $derived(detectedOS !== "Unknown" ? platformAssets[detectedOS][0] : null);
+const secondary = $derived(detectedOS !== "Unknown" ? platformAssets[detectedOS].slice(1) : []);
 
-  const primary = $derived(
-    detectedOS !== "Unknown" ? platformAssets[detectedOS][0] : null,
-  );
-  const secondary = $derived(
-    detectedOS !== "Unknown" ? platformAssets[detectedOS].slice(1) : [],
-  );
+let activeTab = $derived(detectedOS !== "Unknown" ? detectedOS : "macOS");
 
-
-
- 
-
-
-  let activeTab = $derived(detectedOS !== "Unknown" ? detectedOS : "macOS");
-
-  const detectedIcon = $derived(
-    detectedOS === "macOS"
-      ? AppleBrand
-      : detectedOS === "Windows"
-        ? WindowsBrand
-        : detectedOS === "Linux"
-          ? LinuxBrand
-          : Download,
-  );
-
-
+const detectedIcon = $derived(
+	detectedOS === "macOS"
+		? AppleBrand
+		: detectedOS === "Windows"
+			? WindowsBrand
+			: detectedOS === "Linux"
+				? LinuxBrand
+				: Download,
+);
 </script>
 
 <SeoMeta
@@ -107,14 +94,13 @@
     spacing="none"
     class="dl-atmosphere relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24"
   >
-    <HeroBackdrop src="/background-download.webp" tone="strong" />
     <Container class="relative">
       <div
         class="relative z-10 mx-auto flex max-w-3xl flex-col items-center text-center"
       >
         <span
           in:fly={riseM(heroStagger * 0)}
-          class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+          class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
         >
           <Download class="size-3 text-foreground/60" />
           Latest release · {data.version}
@@ -125,7 +111,7 @@
           class="text-balance mt-7 text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
         >
           Get Recast for
-          <span class="mt-2 block font-medium italic text-foreground/40">
+          <span class="mt-2 block font-medium italic text-muted-foreground">
             {detectedOS !== "Unknown" ? detectedOS : "your desktop"}.
           </span>
         </h1>
@@ -142,7 +128,7 @@
           {#if primary?.link}
             {@const OSIcon = detectedIcon}
             <div
-              class="group/dl flex items-stretch overflow-hidden rounded-2xl bg-foreground text-background shadow-craft-sm ring-1 ring-foreground/10 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-craft-floating hover:bg-foreground/90 active:translate-y-0 motion-reduce:transition-none"
+              class="group/dl flex items-stretch overflow-hidden rounded-2xl bg-foreground text-background shadow-craft-sm ring-1 ring-foreground/10 transition-all duration-200 hover: hover:bg-foreground/90 active:translate-y-0 motion-reduce:transition-none"
             >
               <a
                 href={primary.link}
@@ -154,7 +140,7 @@
                     Download for {detectedOS}
                   </span>
                   <span
-                    class="mt-0.5 font-mono text-[11px] font-medium opacity-60"
+                    class="mt-0.5 font-mono text-caption font-medium opacity-60"
                   >
                     {primary.label}
                   </span>
@@ -176,10 +162,10 @@
                   <DropdownMenu.Content
                     align="end"
                     sideOffset={10}
-                    class="w-72 rounded-xl p-2 shadow-craft-lg"
+                    class="w-72 rounded-xl p-2"
                   >
                     <DropdownMenu.Label
-                      class="px-2.5 pt-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+                      class="px-2.5 pt-1 pb-2 text-caption font-medium text-muted-foreground"
                     >
                       Other builds for {detectedOS}
                     </DropdownMenu.Label>
@@ -193,16 +179,16 @@
                       >
                         <span class="flex items-center gap-2.5">
                           <span
-                            class="grid size-8 place-items-center rounded-lg bg-foreground/5 ring-1 ring-foreground/5 transition-colors duration-200 group-hover/item:bg-primary/10 group-hover/item:ring-primary/20"
+                            class="grid size-8 place-items-center rounded-lg bg-paper ring-1 ring-foreground/5 transition-colors duration-200 group-hover/item:bg-primary/10 group-hover/item:ring-primary/20"
                           >
                             <OSIcon
                               class="size-4 opacity-70 transition-opacity group-hover/item:opacity-100"
                             />
                           </span>
-                          <span class="text-foreground/85">{name}</span>
+                          <span class="text-foreground">{name}</span>
                         </span>
                         <span
-                          class="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80"
+                          class="font-mono text-caption font-medium text-muted-foreground/80"
                         >
                           {fmt}
                         </span>
@@ -211,7 +197,7 @@
                     <DropdownMenu.Separator class="my-1.5" />
                     <a
                       href="#all-platforms"
-                      class="flex items-center justify-between gap-3 rounded-lg px-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+                      class="flex items-center justify-between gap-3 rounded-lg px-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-paper hover:text-foreground"
                     >
                       <span>All platforms & checksums</span>
                       <ArrowDownToLine class="size-3.5 opacity-60" />
@@ -229,7 +215,7 @@
 
           <a
             href="#all-platforms"
-            class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:text-foreground"
+            class="text-body-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             Not on {detectedOS !== "Unknown" ? detectedOS : "this OS"}? See all
             platforms ↓
@@ -242,7 +228,7 @@
           {#if detectedOS === "macOS"}
             <a
               href="#macos-first-launch"
-              class="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-amber-600 transition-colors hover:text-amber-500 dark:text-amber-400"
+              class="mt-1 inline-flex items-center gap-1.5 text-caption font-medium font-medium text-amber-600 transition-colors hover:text-amber-500 dark:text-amber-400"
             >
               <TriangleAlert class="size-3" />
               macOS: install with Homebrew, or clear Gatekeeper with one Terminal
@@ -259,10 +245,10 @@
 			     there when they hit something. -->
       <Reveal>
         <div
-          class="mx-auto mt-16 flex max-w-3xl items-start gap-4 rounded-2xl border border-border-low/40 bg-card/40 p-5 shadow-craft-sm sm:p-6"
+          class="mx-auto mt-16 flex max-w-3xl items-start gap-4 rounded-2xl border border-border-low bg-card/40 p-5 shadow-craft-sm sm:p-6"
         >
           <span
-            class="grid size-10 shrink-0 place-items-center rounded-xl bg-foreground/[0.04] text-foreground/70 ring-1 ring-foreground/10"
+            class="grid size-10 shrink-0 place-items-center rounded-xl bg-foreground/[0.04] text-muted-foreground ring-1 ring-foreground/10"
           >
             <TriangleAlert class="size-4" />
           </span>
@@ -272,7 +258,7 @@
             </h3>
             <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
               Windows is the daily-driver build.
-              <span class="font-semibold text-foreground/85">
+              <span class="font-semibold text-foreground">
                 macOS and Linux are early ports
               </span>
               . Don't expect feature parity yet, reach for Windows if you have the
@@ -283,7 +269,7 @@
                 {@const s = stabilityCopy[p.stability]}
                 <span
                   class={cn(
-                    "inline-flex items-center gap-1.5 rounded-full bg-foreground/4 px-2.5 py-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-foreground/75 ring-1 ring-inset ring-foreground/10",
+                    "inline-flex items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 font-mono text-caption font-semibold font-medium text-muted-foreground ring-1 ring-inset ring-foreground/10",
                   )}
                 >
                   <span class={cn("size-1.5 rounded-full", s.dot)}></span>
@@ -310,7 +296,7 @@
       <!-- Ships with every build -->
       <Reveal>
         <div
-          class="mx-auto mt-12 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-4"
+          class="mx-auto mt-12 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border-low bg-border-low/30 sm:grid-cols-4"
         >
           {#each ships as ship}
             {@const Icon = ship.icon}
@@ -336,7 +322,7 @@
   <!-- System requirements. Surface the honest "works without a GPU" path
 	     alongside the recommended hardware so users on entry-level laptops
 	     don't bounce thinking they need a discrete GPU. -->
-  <Section id="system-requirements" class="border-t border-border-low/60">
+  <Section id="system-requirements" class="border-t border-border-low">
     <Container>
       <SectionHeader
         eyebrow="System requirements"
@@ -346,9 +332,9 @@
 
       <Reveal>
         <div class="mt-12 grid gap-4 lg:grid-cols-[1fr_2fr]">
-          <div class="glass-card flex flex-col gap-3 rounded-2xl p-6">
+          <div class="surface-lg flex flex-col gap-3 p-6">
             <span
-              class="glass-chip grid size-10 place-items-center rounded-xl text-foreground/70"
+              class="pill grid size-10 place-items-center rounded-xl text-muted-foreground"
             >
               <Info class="size-4" />
             </span>
@@ -365,22 +351,22 @@
             </p>
           </div>
 
-          <div class="glass-card overflow-hidden rounded-2xl">
+          <div class="surface-lg overflow-hidden">
             <div
-              class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-4 gap-y-0 border-b border-border-low/50 bg-foreground/2 px-5 py-3"
+              class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-4 gap-y-0 border-b border-border-low bg-paper px-5 py-3"
             >
               <span
-                class="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+                class="font-mono text-caption font-medium text-muted-foreground"
               >
                 Component
               </span>
               <span
-                class="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+                class="font-mono text-caption font-medium text-muted-foreground"
               >
                 Minimum
               </span>
               <span
-                class="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+                class="font-mono text-caption font-medium text-muted-foreground"
               >
                 Recommended
               </span>
@@ -389,11 +375,11 @@
               {#each systemRequirements as req}
                 {@const Icon = req.icon}
                 <li
-                  class="grid grid-cols-[auto_1fr_1fr] items-start gap-x-4 gap-y-1 border-b border-border-low/40 px-5 py-4 last:border-b-0"
+                  class="grid grid-cols-[auto_1fr_1fr] items-start gap-x-4 gap-y-1 border-b border-border-low px-5 py-4 last:border-b-0"
                 >
                   <span class="flex items-center gap-2.5 pt-0.5">
                     <span
-                      class="grid size-8 place-items-center rounded-lg bg-foreground/5 text-foreground/70 ring-1 ring-foreground/5"
+                      class="grid size-8 place-items-center rounded-lg bg-paper text-muted-foreground ring-1 ring-foreground/5"
                     >
                       <Icon class="size-4" />
                     </span>
@@ -406,7 +392,7 @@
                   <span class="text-sm leading-relaxed text-muted-foreground">
                     {req.minimum}
                   </span>
-                  <span class="text-sm leading-relaxed text-foreground/85">
+                  <span class="text-sm leading-relaxed text-foreground">
                     {req.recommended}
                   </span>
                 </li>
@@ -418,7 +404,7 @@
     </Container>
   </Section>
 
-  <Section id="all-platforms" class="border-t border-border-low/60">
+  <Section id="all-platforms" class="border-t border-border-low">
     <Container>
       <SectionHeader
         eyebrow="All platforms"
@@ -429,7 +415,7 @@
       <div class="mt-12">
         <Tabs.Root value={activeTab} class="w-full">
           <Tabs.List
-            class="glass-card grid w-full grid-cols-3 rounded-xl p-1 sm:max-w-md"
+            class="surface-lg grid w-full grid-cols-3 rounded-xl p-1 sm:max-w-md"
           >
             {#each platforms as p}
               {@const Icon = p.icon}
@@ -454,7 +440,7 @@
             <Tabs.Content value={p.id} class="mt-8">
               <Reveal>
                 <article
-                  class="glass-card relative overflow-hidden rounded-2xl p-8 sm:p-10"
+                  class="surface-lg relative overflow-hidden p-8 sm:p-10"
                 >
                   <div
                     class="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-primary/5 blur-3xl"
@@ -465,7 +451,7 @@
                   >
                     <div>
                       <span
-                        class="glass-chip grid size-12 place-items-center rounded-xl text-foreground/70"
+                        class="pill grid size-12 place-items-center rounded-xl text-muted-foreground"
                       >
                         <Icon class="size-5" />
                       </span>
@@ -475,7 +461,7 @@
                         </h3>
                         <span
                           class={cn(
-                            "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ring-1 ring-inset",
+                            "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-caption font-semibold font-medium ring-1 ring-inset",
                             stab.chip,
                           )}
                           title={p.stability === "stable"
@@ -519,7 +505,7 @@
                     >
                       <div class="flex items-center gap-2.5">
                         <span
-                          class="grid size-8 place-items-center rounded-lg bg-foreground/5 text-foreground/70 ring-1 ring-foreground/5"
+                          class="grid size-8 place-items-center rounded-lg bg-paper text-muted-foreground ring-1 ring-foreground/5"
                         >
                           <Info class="size-4" />
                         </span>
@@ -530,7 +516,7 @@
                         </h4>
                       </div>
                       <span
-                        class="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+                        class="font-mono text-caption font-medium text-muted-foreground"
                       >
                         {guide.steps.length} steps
                       </span>
@@ -544,10 +530,10 @@
                     <ol class="relative mt-6 space-y-3">
                       {#each guide.steps as step, idx}
                         <li
-                          class="group/step relative flex gap-4 rounded-2xl border border-border-low/50 bg-foreground/1.5 p-4 transition-colors hover:bg-foreground/3 sm:p-5"
+                          class="group/step relative flex gap-4 rounded-2xl border border-border-low bg-paper p-4 transition-colors hover:bg-paper sm:p-5"
                         >
                           <span
-                            class="relative z-10 grid size-8 shrink-0 place-items-center rounded-lg bg-foreground text-background font-mono text-[12px] font-semibold tabular-nums shadow-craft-sm"
+                            class="relative z-10 grid size-8 shrink-0 place-items-center rounded-lg bg-foreground text-background font-mono text-caption font-semibold tabular-nums shadow-craft-sm"
                           >
                             {idx + 1}
                           </span>
@@ -564,13 +550,13 @@
                             </p>
                             {#if step.code}
                               <pre
-                                class="overflow-x-auto rounded-lg border border-border-low/60 bg-foreground/4 px-3 py-2.5 font-mono text-xs leading-relaxed text-foreground"><code
+                                class="overflow-x-auto rounded-lg border border-border-low bg-paper px-3 py-2.5 font-mono text-xs leading-relaxed text-foreground"><code
                                   >{step.code}</code
                                 ></pre>
                             {/if}
                             {#if step.hint}
                               <p
-                                class="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground/80"
+                                class="flex items-start gap-1.5 text-caption leading-relaxed text-muted-foreground/80"
                               >
                                 <CheckCircle2
                                   class="mt-0.5 size-3 shrink-0 text-primary/70"
@@ -603,7 +589,7 @@
                         <div class="mt-4 grid gap-3 sm:grid-cols-2">
                           {#each guide.faqs as faq}
                             <Collapsible.Root
-                              class="group/faq rounded-xl border border-border-low/50 bg-foreground/1.5 p-4 transition-colors hover:bg-foreground/3 data-[state=open]:border-border-low/70"
+                              class="group/faq rounded-xl border border-border-low bg-paper p-4 transition-colors hover:bg-paper data-[state=open]:border-border-low"
                             >
                               <Collapsible.Trigger
                                 class="flex w-full cursor-pointer items-start justify-between gap-3 text-left"
@@ -626,7 +612,7 @@
                                   </p>
                                   {#if faq.code}
                                     <pre
-                                      class="overflow-x-auto rounded-lg border border-border-low/60 bg-foreground/4 px-3 py-2.5 font-mono text-xs leading-relaxed text-foreground"><code
+                                      class="overflow-x-auto rounded-lg border border-border-low bg-paper px-3 py-2.5 font-mono text-xs leading-relaxed text-foreground"><code
                                         >{faq.code}</code
                                       ></pre>
                                   {/if}
@@ -652,7 +638,7 @@
                           until we ship Apple notarization, the quarantine step above
                           is required on the .dmg path, or just install with Homebrew,
                           which clears it for you. Pasting
-                          <span class="font-mono text-foreground/85"
+                          <span class="font-mono text-foreground"
                             >"Recast is damaged"</span
                           >
                           into Google brought you here.
@@ -668,11 +654,11 @@
       </div>
 
       <div
-        class="glass-card mt-10 flex flex-col items-start gap-3 rounded-2xl p-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:p-6"
+        class="surface-lg mt-10 flex flex-col items-start gap-3 p-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:p-6"
       >
         <div class="flex items-center gap-2.5">
           <span
-            class="glass-chip grid size-8 place-items-center rounded-lg text-foreground/70"
+            class="pill grid size-8 place-items-center rounded-lg text-muted-foreground"
           >
             <ShieldCheck class="size-4" />
           </span>

@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { formatDate } from "$lib/blog/format";
-	import { Container, Footer, HeroBackdrop, Reveal, Section, SeoMeta } from "$lib/components";
-	import { prefersReducedMotion } from "$lib/motion-core";
-	import { ArrowRight, Clock, PenLine } from "@recast/icons";
-	import { Badge } from "@recast/ui/badge";
-	import { fly } from "svelte/transition";
-	import { cubicOut } from "svelte/easing";
-	import type { PageData } from "./$types";
+import { formatDate } from "$lib/blog/format";
+import { Container, Footer, Reveal, Section, SeoMeta } from "$lib/components";
+import { prefersReducedMotion } from "$lib/motion-core";
+import { ArrowRight, Clock, PenLine } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { fly } from "svelte/transition";
+import { cubicOut } from "svelte/easing";
+import type { PageData } from "./$types";
 
-	let { data }: { data: PageData } = $props();
+let { data }: { data: PageData } = $props();
 
-	// Hero entrance: same 80ms stagger as the rest of the public pages.
-	// 460ms per element lands the whole ladder in well under a second.
-	const reduced = $derived(prefersReducedMotion());
-	const heroStagger = 80;
-	const riseM = (delay: number) =>
-		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+// Hero entrance: same 80ms stagger as the rest of the public pages.
+// 460ms per element lands the whole ladder in well under a second.
+const reduced = $derived(prefersReducedMotion());
+const heroStagger = 80;
+const riseM = (delay: number) =>
+	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 </script>
 
 <SeoMeta
@@ -26,12 +26,11 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
-		<HeroBackdrop src="/background-blog.webp" tone="strong" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
 				<span
 					in:fly={riseM(heroStagger * 0)}
-					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+					class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
 				>
 					<PenLine class="size-3 text-foreground/60" />
 					Blog
@@ -41,7 +40,7 @@
 					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
 				>
 					How Recast
-					<span class="mt-2 block font-medium italic text-foreground/40">gets built.</span>
+					<span class="mt-2 block font-medium italic text-muted-foreground">gets built.</span>
 				</h1>
 				<p
 					in:fly={riseM(heroStagger * 2)}
@@ -54,10 +53,10 @@
 		</Container>
 	</Section>
 
-	<Section spacing="tight" class="border-t border-border-low/60">
+	<Section spacing="tight" class="border-t border-border-low">
 		<Container size="narrow">
 			{#if data.posts.length === 0}
-				<div class="glass-card rounded-2xl p-10 text-center">
+				<div class="surface-lg p-10 text-center">
 					<h2 class="text-xl font-semibold tracking-tight text-foreground">Nothing published yet</h2>
 					<p class="mt-2 text-sm text-muted-foreground">
 						The first write-ups are on their way. Check back shortly.
@@ -69,12 +68,12 @@
 						<Reveal as="li" delay={i * 60}>
 							<a
 								href={post.url}
-								class="glass-card group block rounded-2xl p-7 transition-all hover:-translate-y-0.5 hover:shadow-craft-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+								class="surface-lg group block p-7 transition-all hover:shadow-craft-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
 							>
 								<article>
 									<div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
 										<time datetime={post.date}>{formatDate(post.date)}</time>
-										<span class="text-muted-foreground/40">·</span>
+										<span class="text-border-strong">·</span>
 										<span class="inline-flex items-center gap-1.5">
 											<Clock class="size-3.5" />
 											{post.readingMinutes} min read

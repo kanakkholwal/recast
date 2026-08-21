@@ -1,24 +1,24 @@
 <script lang="ts">
-	import { Container, Footer, HeroBackdrop, Section, SeoMeta } from "$lib/components";
-	import { formatDate } from "$lib/blog/format";
-	import { prefersReducedMotion } from "$lib/motion-core";
-	import { Badge } from "@recast/ui/badge";
-	import DocviaContent from "$lib/blog/DocviaContent.svelte";
-	import { ArrowLeft, Clock } from "@recast/icons";
-	import { fly } from "svelte/transition";
-	import { cubicOut } from "svelte/easing";
-	import type { PageData } from "./$types";
+import { Container, Footer, Section, SeoMeta } from "$lib/components";
+import { formatDate } from "$lib/blog/format";
+import { prefersReducedMotion } from "$lib/motion-core";
+import { Badge } from "@recast/ui/badge";
+import DocviaContent from "$lib/blog/DocviaContent.svelte";
+import { ArrowLeft, Clock } from "@recast/icons";
+import { fly } from "svelte/transition";
+import { cubicOut } from "svelte/easing";
+import type { PageData } from "./$types";
 
-	// Hero entrance: same 80ms stagger as the rest of the public pages.
-	// 460ms per element lands the whole ladder in well under a second.
-	const reduced = $derived(prefersReducedMotion());
-	const heroStagger = 80;
-	const riseM = (delay: number) =>
-		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+// Hero entrance: same 80ms stagger as the rest of the public pages.
+// 460ms per element lands the whole ladder in well under a second.
+const reduced = $derived(prefersReducedMotion());
+const heroStagger = 80;
+const riseM = (delay: number) =>
+	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
-	let { data }: { data: PageData } = $props();
+let { data }: { data: PageData } = $props();
 
-	const meta = $derived(data.meta);
+const meta = $derived(data.meta);
 </script>
 
 <SeoMeta
@@ -30,7 +30,6 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-32 pb-10 md:pt-40 md:pb-14">
-		<HeroBackdrop src="/background-blog.webp" tone="strong" />
 		<Container size="narrow">
 			<a
 				href="/blog"
@@ -57,11 +56,11 @@
 
 				<div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
 					{#if meta.author}
-						<span class="font-semibold text-foreground/80">{meta.author}</span>
-						<span class="text-muted-foreground/40">·</span>
+						<span class="font-semibold text-foreground">{meta.author}</span>
+						<span class="text-border-strong">·</span>
 					{/if}
 					<time datetime={meta.date}>{formatDate(meta.date)}</time>
-					<span class="text-muted-foreground/40">·</span>
+					<span class="text-border-strong">·</span>
 					<span class="inline-flex items-center gap-1.5">
 						<Clock class="size-3.5" />
 						{meta.readingMinutes} min read
@@ -74,7 +73,7 @@
 		</Container>
 	</Section>
 
-	<Section spacing="tight" class="border-t border-border-low/60">
+	<Section spacing="tight" class="border-t border-border-low">
 		<Container size="narrow">
 			<!-- docvia compiled this to a plain node tree at build time, so there is no
 			     markdown parser or syntax highlighter in the browser bundle. -->
@@ -83,7 +82,7 @@
 			</article>
 
 			{#if meta.tags.length > 0}
-				<div class="mt-14 flex flex-wrap items-center gap-2 border-t border-border-low/60 pt-8">
+				<div class="mt-14 flex flex-wrap items-center gap-2 border-t border-border-low pt-8">
 					{#each meta.tags as tag (tag)}
 						<Badge variant="secondary" class="font-normal">{tag}</Badge>
 					{/each}

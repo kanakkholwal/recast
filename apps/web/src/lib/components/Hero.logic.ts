@@ -1,4 +1,4 @@
-import { MousePointer2, Share2, Video } from "@recast/icons";
+import { type IconComponent, Share2, Video, Wand2 } from "@recast/icons";
 import { cubicOut } from "svelte/easing";
 
 // Concrete artifacts the committed audience (solo founders + dev teams /
@@ -10,17 +10,42 @@ export const words = ["demo.", "launch video.", "changelog clip."];
 
 export const platforms = ["macOS", "Windows", "Linux"];
 
-// Editorial hero backdrop. Swap for a local `/hero-backdrop.webp` or any
-// Unsplash/Pexels landscape. If it fails to load, the base gradient behind it
-// shows through, so the hero never renders broken. Kept here (not inline) so
-// the one place to change the art is obvious.
-export const backdropUrl =
-	"/background-hero.webp";
+export type HeroStep = {
+	id: string;
+	label: string;
+	icon: IconComponent;
+	/** One accent per tag — never two hues on one component. */
+	accent: "tangerine" | "lavender" | "green";
+	/** Per-step clip. Falls back to the shared hero take until each is shot. */
+	src?: string;
+	caption: string;
+};
 
-export const steps = [
-	{ icon: Video, label: "Record" },
-	{ icon: MousePointer2, label: "Auto-polish" },
-	{ icon: Share2, label: "Share" },
+// The product's three beats, and the hero's tab shelf. Order is the spine of
+// the whole page (Record → Polish → Share), so it must not be re-sorted here
+// without re-sorting the sections below the fold.
+export const steps: HeroStep[] = [
+	{
+		id: "record",
+		label: "Record",
+		icon: Video,
+		accent: "tangerine",
+		caption: "Region, window, or full screen. One shortcut, no project setup.",
+	},
+	{
+		id: "polish",
+		label: "Polish",
+		icon: Wand2,
+		accent: "lavender",
+		caption: "Smart zoom, cursor smoothing, and silence cuts applied as you record.",
+	},
+	{
+		id: "share",
+		label: "Share",
+		icon: Share2,
+		accent: "green",
+		caption: "Export straight to your Drive or Recast Cloud and copy the link.",
+	},
 ];
 
 /**

@@ -109,7 +109,7 @@ async function sendSignInLink() {
 				<span class="text-lg font-semibold tracking-tight text-foreground">Recast</span>
 			</a>
 
-			<span class="glass-chip mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+			<span class="pill mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-body-sm font-medium text-primary">
 				<MailCheck class="size-3" />
 				Team invitation
 			</span>
@@ -122,7 +122,7 @@ async function sendSignInLink() {
 			</p>
 		</div>
 
-		<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
+		<div class="surface-lg mt-8 p-6 sm:p-7">
 			{#if data.invite.status !== "pending"}
 				<div class="flex flex-col items-center gap-3 text-center text-sm text-muted-foreground">
 					<AlertTriangle class="size-5 text-amber-500" />
@@ -146,7 +146,7 @@ async function sendSignInLink() {
 						class="flex flex-col items-center gap-3 text-center text-sm"
 						in:fly={{ y: 6, duration: 280, easing: cubicOut }}
 					>
-						<span class="glass-chip grid size-11 place-items-center rounded-xl text-primary">
+						<span class="pill grid size-11 place-items-center rounded-xl text-primary">
 							<MailCheck class="size-5" />
 						</span>
 						<div>
@@ -174,7 +174,7 @@ async function sendSignInLink() {
 							{/if}
 							{sendingLink ? "Sending…" : "Email me a sign-in link"}
 						</Button>
-						<p class="text-center text-[11px] text-muted-foreground">
+						<p class="text-center text-caption text-muted-foreground">
 							Already have a password?
 							<a
 								href={`/login?next=${encodeURIComponent(`/accept-invitation?id=${data.invite.id}`)}`}
@@ -231,7 +231,7 @@ async function sendSignInLink() {
 						{rejecting ? "Declining…" : "Decline"}
 					</Button>
 				</div>
-				<p class="mt-4 text-center text-[11px] text-muted-foreground">
+				<p class="mt-4 text-center text-caption text-muted-foreground">
 					Signed in as <span class="font-medium text-foreground">{data.viewer.email}</span>
 			</p>
 		{/if}

@@ -1,52 +1,52 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
-	import { page } from "$app/state";
-	import AuthCard from "$lib/auth/components/AuthCard.svelte";
-	import { authClient } from "$lib/auth/client";
-	import { canResetPassword, passwordsMatch } from "$lib/auth/password.logic";
-	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import { toast } from "@recast/ui/sonner";
-	import { cubicOut } from "svelte/easing";
-	import { slide } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import { authClient } from "$lib/auth/client";
+import { canResetPassword, passwordsMatch } from "$lib/auth/password.logic";
+import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import { toast } from "@recast/ui/sonner";
+import { cubicOut } from "svelte/easing";
+import { slide } from "svelte/transition";
 
-	// Real Better Auth reset flow passes a one-time token in the URL.
-	const token = $derived(page.url.searchParams.get("token") ?? "");
+// Real Better Auth reset flow passes a one-time token in the URL.
+const token = $derived(page.url.searchParams.get("token") ?? "");
 
-	let password = $state("");
-	let confirmPassword = $state("");
-	let showPassword = $state(false);
-	let loading = $state(false);
+let password = $state("");
+let confirmPassword = $state("");
+let showPassword = $state(false);
+let loading = $state(false);
 
-	const matches = $derived(passwordsMatch(password, confirmPassword));
-	const canSubmit = $derived(canResetPassword({ password, confirmPassword }));
+const matches = $derived(passwordsMatch(password, confirmPassword));
+const canSubmit = $derived(canResetPassword({ password, confirmPassword }));
 
-	async function submit(e: SubmitEvent) {
-		e.preventDefault();
-		if (!canSubmit || loading) return;
-		loading = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.resetPassword({
-						newPassword: password,
-						token,
-					});
-					if (error) throw new Error(error.message ?? "Couldn't reset your password.");
-				})(),
-				{
-					loading: "Updating your password…",
-					success: "Password updated. Sign in with your new password.",
-					error: (err) => (err as Error)?.message ?? "Couldn't reset your password.",
-				},
-			);
-			await goto("/login");
-		} finally {
-			loading = false;
-		}
+async function submit(e: SubmitEvent) {
+	e.preventDefault();
+	if (!canSubmit || loading) return;
+	loading = true;
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.resetPassword({
+					newPassword: password,
+					token,
+				});
+				if (error) throw new Error(error.message ?? "Couldn't reset your password.");
+			})(),
+			{
+				loading: "Updating your password…",
+				success: "Password updated. Sign in with your new password.",
+				error: (err) => (err as Error)?.message ?? "Couldn't reset your password.",
+			},
+		);
+		await goto("/login");
+	} finally {
+		loading = false;
 	}
+}
 </script>
 
 <svelte:head>
@@ -59,7 +59,7 @@
 >
 	<form class="flex flex-col gap-3.5" onsubmit={submit}>
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground/85">New password</span>
+			<span class="text-xs font-semibold text-foreground">New password</span>
 			<div class="relative">
 				<Input
 					type={showPassword ? "text" : "password"}
@@ -73,7 +73,7 @@
 					type="button"
 					onclick={() => (showPassword = !showPassword)}
 					aria-label={showPassword ? "Hide password" : "Show password"}
-					class="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+					class="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-paper hover:text-foreground"
 				>
 					{#if showPassword}
 						<EyeOff class="size-3.5" />
@@ -85,7 +85,7 @@
 		</Label>
 
 		<Label class="flex flex-col items-stretch gap-1.5">
-			<span class="text-xs font-semibold text-foreground/85">Confirm new password</span>
+			<span class="text-xs font-semibold text-foreground">Confirm new password</span>
 			<Input
 				type={showPassword ? "text" : "password"}
 				required
@@ -97,7 +97,7 @@
 			/>
 			{#if !matches}
 				<span
-					class="flex items-center gap-1 text-[11px] font-medium text-destructive"
+					class="flex items-center gap-1 text-caption font-medium text-destructive"
 					transition:slide={{ duration: 200, easing: cubicOut }}
 				>
 					<AlertCircle class="size-3" />
