@@ -94,6 +94,8 @@ recast install / recast uninstall    # install the CLI to PATH
 recast project { open | show | timeline | zoom-regions | annotations
                | lock | unlock | patch } <PATH> ...
 recast editor ...                    # see "Editor control" below
+recast branch { create | list | append | diff | show
+              | truncate | discard | apply } <PATH> ...   # propose edits for review
 recast export { list | show | start | cancel | wait } ...
 recast --help                       # all of the above + global flags
 ```
@@ -468,6 +470,60 @@ commit.
 
 ---
 
+## Branches — propose edits without touching the project
+
+`recast editor …` writes straight into the `.recast`. `recast branch …`
+instead journals typed ops against the render state they forked from,
+so an agent can propose a whole edit without holding the lock, without
+rewriting the bundle per op, and without a human losing their work.
+
+```
+recast branch create  <PATH> --branch a1 --author agent:claude [--label "tighten intro"]
+recast branch list    <PATH>
+recast branch append  <PATH> --branch a1 --idem-key k1 --ops '<JSON array>' [--expect-seq N]
+recast branch append  <PATH> --branch a1 --idem-key k1 --from-stdin
+recast branch diff    <PATH> --branch a1        # field-level changes
+recast branch show    <PATH> --branch a1        # the full render state it would produce
+recast branch truncate <PATH> --branch a1 --seq 3   # drop everything after seq 3
+recast branch discard <PATH> --branch a1
+recast branch apply   <PATH> --branch a1 --writer-id ui:me
+```
+
+### Ops
+
+`--ops` takes a JSON array of the same operations the targeted verbs
+perform. The `op` tag is the camelCase verb name:
+
+```json
+[
+  { "op": "trim", "start": 1.0, "end": 30.0 },
+  { "op": "cutAdd", "start": 4.0, "end": 5.0 },
+  { "op": "zoomRemove", "index": 0 },
+  { "op": "speedSet", "segmentStart": 12.0, "rate": 1.5 },
+  { "op": "annotationRemove", "id": "rect-1" },
+  { "op": "set", "field": "borderRadius", "value": 12 }
+]
+```
+
+Every op in one `append` lands together or not at all.
+
+### Guarantees
+
+| Concern | Behaviour |
+|---------|-----------|
+| Retry after a dropped socket | Re-sending the same `--idem-key` is a no-op; the response has `"recorded": false` and the original `seq` |
+| Another writer got in first | `--expect-seq` mismatch is rejected before anything is recorded |
+| An op that cannot apply | Rejected at `append` time (the branch is replayed first), not at review time |
+| Project edited since the fork | `branch apply` fails with `branch forked from <hash> but the project is now at <hash>` |
+| A branch that grows unbounded | Auto-compacts to a single `replace` op past 512 entries; the fork point is preserved |
+| Bundle rewrites | One, on `apply`. Never on `append` |
+
+Journals live under `<app_data_dir>/branches/<project-key>/<branch>.json`,
+not beside the `.recast`, so the temp-dir sweeper cannot reclaim pending
+work. Listen for changes with `recast watch --events editor`.
+
+---
+
 ## Export
 
 The export queue lives in SQLite (`export_jobs`) and feeds a single
@@ -631,6 +687,13 @@ activity for `EditorSession::TTL_MS` = 60s) auto-reclaims.
 |--------|------------------------|
 | GUI user holds write | CLI mutate verbs return `editor_locked: … held by 'ui:<user>' (acquired Nms ago)` |
 | Agent holds write | GUI shows banner *"Agent `<writer_id>` is editing this project — your edits are paused"* + disables mutating inputs (preview scrubbing + watch still work) |
+
+Re-acquiring is free for the writer that already holds the lock: the
+same `writer_id` refreshes the activity stamp and keeps the original
+`acquired_at_ms`, so a multi-step agent edit never blocks on itself.
+Only a *different* `writer_id` sees `editor_locked`.
+
+`recast branch …` never takes the lock. Only `branch apply` does.
 
 Crash safety:
 - Every successful acquire / release / mutation persists the snapshot

@@ -212,6 +212,82 @@ enum Command {
         #[command(subcommand)]
         action: ExportAction,
     },
+    /// Propose edits without touching the project. Ops are journalled against
+    /// the state they forked from; a human reviews the diff and applies.
+    Branch {
+        #[command(subcommand)]
+        action: BranchAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum BranchAction {
+    /// Fork a branch from the project's current state.
+    Create {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        /// Who is proposing, e.g. `agent:claude`.
+        #[arg(long, value_name = "ID")]
+        author: String,
+        #[arg(long, value_name = "TEXT")]
+        label: Option<String>,
+    },
+    /// Open branches for a project.
+    List { path: String },
+    /// Record ops onto a branch as one atomic entry.
+    Append {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        /// Retry-safe key. Re-sending one already on the branch is a no-op.
+        #[arg(long, value_name = "KEY")]
+        idem_key: String,
+        /// JSON array of ops, e.g. `[{"op":"cutAdd","start":1,"end":2}]`.
+        #[arg(long, value_name = "JSON")]
+        ops: Option<String>,
+        /// Read the ops array from stdin instead of `--ops`.
+        #[arg(long)]
+        from_stdin: bool,
+        /// Reject unless the branch is at this sequence number.
+        #[arg(long, value_name = "N")]
+        expect_seq: Option<u64>,
+    },
+    /// Field-level changes the branch would make.
+    Diff {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+    },
+    /// The full render state the branch would produce.
+    Show {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+    },
+    /// Drop every entry after a sequence number.
+    Truncate {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        #[arg(long, value_name = "N")]
+        seq: u64,
+    },
+    /// Delete a branch without applying it.
+    Discard {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+    },
+    /// Write the branch into the project. Takes the write-lock and is
+    /// fast-forward only: a project edited since the fork is rejected.
+    Apply {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -950,6 +1026,7 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
         Command::Project { action } => project_dispatch(cli, action),
         Command::Editor { action } => editor_dispatch(cli, action),
         Command::Export { action } => export_dispatch(cli, action),
+        Command::Branch { action } => branch_dispatch(cli, action),
     }
 }
 
@@ -1381,6 +1458,99 @@ fn annotations_dispatch(cli: &Cli, action: &AnnotationsAction) -> Result<(), Str
             let path = path_for(path);
             send_and_emit(cli, "editor.annotations.list", json!({"path": path}))
         }
+    }
+}
+
+fn branch_dispatch(cli: &Cli, action: &BranchAction) -> Result<(), String> {
+    let path_for = |p: &str| {
+        crate::commands::screenshot::absolutize(std::path::PathBuf::from(p))
+            .to_string_lossy()
+            .into_owned()
+    };
+    match action {
+        BranchAction::Create {
+            path,
+            branch,
+            author,
+            label,
+        } => send_and_emit(
+            cli,
+            "branch.create",
+            json!({"path": path_for(path), "branch": branch, "author": author, "label": label}),
+        ),
+        BranchAction::List { path } => {
+            send_and_emit(cli, "branch.list", json!({ "path": path_for(path) }))
+        }
+        BranchAction::Append {
+            path,
+            branch,
+            idem_key,
+            ops,
+            from_stdin,
+            expect_seq,
+        } => {
+            let ops = read_ops_json(ops.as_deref(), *from_stdin)?;
+            let mut params = json!({
+                "path": path_for(path),
+                "branch": branch,
+                "idemKey": idem_key,
+                "ops": ops,
+            });
+            if let Some(seq) = expect_seq {
+                params["expectSeq"] = json!(seq);
+            }
+            send_and_emit(cli, "branch.append", params)
+        }
+        BranchAction::Diff { path, branch } => send_and_emit(
+            cli,
+            "branch.diff",
+            json!({"path": path_for(path), "branch": branch}),
+        ),
+        BranchAction::Show { path, branch } => send_and_emit(
+            cli,
+            "branch.materialize",
+            json!({"path": path_for(path), "branch": branch}),
+        ),
+        BranchAction::Truncate { path, branch, seq } => send_and_emit(
+            cli,
+            "branch.truncate",
+            json!({"path": path_for(path), "branch": branch, "seq": seq}),
+        ),
+        BranchAction::Discard { path, branch } => send_and_emit(
+            cli,
+            "branch.discard",
+            json!({"path": path_for(path), "branch": branch}),
+        ),
+        BranchAction::Apply {
+            path,
+            branch,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "branch.apply",
+            json!({"path": path_for(path), "branch": branch, "writerId": writer_id}),
+        ),
+    }
+}
+
+/// Load the ops array for `branch append` from `--ops` or stdin.
+fn read_ops_json(ops: Option<&str>, from_stdin: bool) -> Result<Value, String> {
+    let text = match (ops, from_stdin) {
+        (Some(_), true) => return Err("--ops and --from-stdin are mutually exclusive".into()),
+        (Some(text), false) => text.to_string(),
+        (None, true) => {
+            let mut buffer = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut buffer)
+                .map_err(|e| format!("read stdin: {e}"))?;
+            buffer
+        }
+        (None, false) => return Err("branch append requires --ops <JSON> or --from-stdin".into()),
+    };
+    let parsed: Value = serde_json::from_str(&text).map_err(|e| format!("parse ops: {e}"))?;
+    if parsed.is_array() {
+        Ok(parsed)
+    } else {
+        Err("ops must be a JSON array".into())
     }
 }
 
@@ -1867,7 +2037,86 @@ fn attach_parent_console() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
     use serde_json::json;
+
+    /// Catches a malformed clap tree (duplicate flags, bad defaults) that would
+    /// otherwise only panic the first time a user reached that subcommand.
+    #[test]
+    fn the_argument_tree_is_well_formed() {
+        Cli::command().debug_assert();
+    }
+
+    mod branch_ops_json {
+        use super::*;
+
+        #[test]
+        fn accepts_an_array() {
+            assert!(read_ops_json(Some(r#"[{"op":"cutAdd","start":1,"end":2}]"#), false).is_ok());
+        }
+
+        #[test]
+        fn rejects_a_bare_object() {
+            assert!(read_ops_json(Some(r#"{"op":"cutAdd"}"#), false).is_err());
+        }
+
+        #[test]
+        fn rejects_unparseable_json() {
+            assert!(read_ops_json(Some("[not json"), false).is_err());
+        }
+
+        #[test]
+        fn rejects_both_sources_at_once() {
+            assert!(read_ops_json(Some("[]"), true).is_err());
+        }
+
+        #[test]
+        fn rejects_neither_source() {
+            assert!(read_ops_json(None, false).is_err());
+        }
+    }
+
+    mod branch_cli {
+        use super::*;
+
+        fn parse(args: &[&str]) -> Cli {
+            Cli::try_parse_from(args).expect("parse")
+        }
+
+        #[test]
+        fn append_reads_the_expected_seq_guard() {
+            let cli = parse(&[
+                "recast",
+                "branch",
+                "append",
+                "p.recast",
+                "--branch",
+                "a1",
+                "--idem-key",
+                "k1",
+                "--ops",
+                "[]",
+                "--expect-seq",
+                "3",
+            ]);
+
+            let Command::Branch {
+                action: BranchAction::Append { expect_seq, .. },
+            } = cli.command
+            else {
+                panic!("expected branch append");
+            };
+            assert_eq!(expect_seq, Some(3));
+        }
+
+        #[test]
+        fn apply_requires_a_writer_id() {
+            let result =
+                Cli::try_parse_from(["recast", "branch", "apply", "p.recast", "--branch", "a1"]);
+
+            assert!(result.is_err());
+        }
+    }
 
     #[test]
     fn duration_parsing() {

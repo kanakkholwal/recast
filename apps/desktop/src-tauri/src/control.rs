@@ -20,11 +20,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::Emitter;
 
+use crate::commands::now_ms;
+use crate::project::journal::{self, Append, Branch, BranchId, BranchStore, StateHash};
 use crate::render::graph::RenderState;
+use crate::render::ops::{apply_op, Op};
+use crate::render::scene_anim::SceneAnimSpec;
 
 /// Namespaced socket name. Maps to `\\.\pipe\<name>` on Windows and an abstract
 /// or temp-dir socket on Unix. One app per user, so a fixed name is fine.
 const SOCKET_NAME: &str = "com.kanakkholwal.recast.cli.sock";
+
+/// Emitted whenever a branch journal is created, appended to or removed.
+const BRANCHES_CHANGED_EVENT: &str = "editor-branches:changed";
 
 /// Path to the auth token file. Both server and client compute it without an
 /// `AppHandle`, so the headless CLI can find it too.
@@ -155,7 +162,11 @@ fn watch_event_names(params: &Value) -> Vec<String> {
     const SELECTION: &[&str] = &["capture-intent:changed"];
     const PROFILES: &[&str] = &["recording-profiles:changed"];
     const EXPORT: &[&str] = &["export-state", "export-jobs-changed"];
-    const EDITOR: &[&str] = &["editor-session:changed", "editor-state:changed"];
+    const EDITOR: &[&str] = &[
+        "editor-session:changed",
+        "editor-state:changed",
+        BRANCHES_CHANGED_EVENT,
+    ];
     let mut out: Vec<String> = Vec::new();
     match params.get("events").and_then(Value::as_array) {
         Some(groups) if !groups.is_empty() => {
@@ -220,6 +231,67 @@ fn handle_watch(app: &tauri::AppHandle, stream: &mut Stream, params: &Value) -> 
     // A write error just means the client hung up; not a server error.
     let _ = outcome;
     Ok(())
+}
+
+fn stringify(err: impl std::fmt::Display) -> String {
+    err.to_string()
+}
+
+fn require_str(params: &Value, key: &str, method: &str) -> Result<String, String> {
+    params
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| format!("{method} requires {key}"))
+}
+
+fn branch_id(params: &Value, method: &str) -> Result<BranchId, String> {
+    BranchId::new(require_str(params, "branch", method)?).map_err(stringify)
+}
+
+/// Journals live under the app data dir rather than beside the `.recast`: they
+/// are pending work, so the temp-dir sweeper must not reclaim them.
+fn branch_store(app: &tauri::AppHandle, project_path: &str) -> Result<BranchStore, String> {
+    use tauri::Manager;
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir unavailable: {e}"))?;
+    Ok(BranchStore::new(root.join("branches").join(
+        journal::project_key(std::path::Path::new(project_path)),
+    )))
+}
+
+fn load_render_state(project_path: &str) -> Result<RenderState, String> {
+    tauri::async_runtime::block_on(crate::commands::load_editor_document(
+        project_path.to_string(),
+    ))
+    .map(|doc| doc.render_state)
+    .map_err(stringify)
+}
+
+fn load_branch(
+    app: &tauri::AppHandle,
+    params: &Value,
+    project_path: &str,
+    method: &str,
+) -> Result<Branch, String> {
+    branch_store(app, project_path)?
+        .load(&branch_id(params, method)?)
+        .map_err(stringify)
+}
+
+/// Run one [`Op`] through the shared lock/validate/persist cycle.
+fn apply_edit(
+    app: &tauri::AppHandle,
+    state: &crate::commands::types::AppState,
+    path: &str,
+    writer_id: &str,
+    op: Op,
+) -> Result<Value, String> {
+    crate::commands::patch_render_state(state, app, path, writer_id, |render_state| {
+        apply_op(render_state, &op).map_err(|e| e.to_string())
+    })
 }
 
 /// Params for `rec.start`, mirroring `start_recording`'s arguments.
@@ -513,7 +585,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .and_then(Value::as_str)
                 .ok_or("editor.lock requires a writerId")?
                 .to_string();
-            crate::commands::try_acquire_write(state.inner(), path, kind, writer_id)?;
+            crate::commands::try_acquire_write(state.inner(), path, kind, writer_id)
+                .map_err(|e| e.to_string())?;
             let app_clone = app.clone();
             crate::commands::persist(state.inner(), &app_clone);
             let _ = app.emit("editor-session:changed", serde_json::json!({}));
@@ -551,55 +624,20 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.patch requires a path")?;
-            let path = std::path::PathBuf::from(path_str);
             let writer_id = params
                 .get("writerId")
                 .and_then(Value::as_str)
                 .ok_or("editor.patch requires a writerId")?
                 .to_string();
-            // Acquire (no-op if already held by the same caller).
-            crate::commands::try_acquire_write(
-                state.inner(),
-                path.clone(),
-                crate::commands::types::EditorWriterKind::Agent,
-                writer_id.clone(),
-            )?;
-            // Load + parse the new state.
-            let new_state: crate::render::graph::RenderState =
+            let new_state: RenderState =
                 serde_json::from_value(params.get("renderState").cloned().unwrap_or(Value::Null))
                     .map_err(|e| format!("editor.patch: invalid render state JSON: {e}"))?;
-            // Probe source metadata for validation.
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path_str.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
-            if let Err(issues) =
-                crate::commands::validate_render_state(&new_state, doc.metadata.duration)
-            {
-                return Err(format!(
-                    "validation failed: {}",
-                    serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}"))
-                ));
-            }
-            // Persist edits.json via the same path the GUI uses.
-            let edits_json = serde_json::to_string(&new_state).map_err(|e| e.to_string())?;
-            tauri::async_runtime::block_on(crate::commands::save_project_edits(
-                path_str.to_string(),
-                edits_json,
-            ))
-            .map_err(|e| e.to_string())?;
-            let app_clone = app.clone();
-            let _ = app.emit(
-                "editor-state:changed",
-                serde_json::json!({ "path": path_str }),
-            );
-            crate::commands::record_activity(state.inner());
-            crate::commands::persist(state.inner(), &app_clone);
-            Ok(serde_json::json!({ "applied": true }))
+            let op = Op::Replace {
+                state: Box::new(new_state),
+            };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.trim" => {
-            // Small targeted edit: load current state, apply trim change,
-            // validate, save.
             let path_str = params
                 .get("path")
                 .and_then(Value::as_str)
@@ -617,42 +655,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("trimEnd")
                 .and_then(Value::as_f64)
                 .ok_or("editor.trim requires trimEnd")?;
-            let path = std::path::PathBuf::from(path_str);
-            crate::commands::try_acquire_write(
-                state.inner(),
-                path.clone(),
-                crate::commands::types::EditorWriterKind::Agent,
-                writer_id.clone(),
-            )?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path_str.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
-            let mut new_state = doc.render_state;
-            new_state.trim_start = start;
-            new_state.trim_end = end;
-            if let Err(issues) =
-                crate::commands::validate_render_state(&new_state, doc.metadata.duration)
-            {
-                return Err(format!(
-                    "validation failed: {}",
-                    serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}"))
-                ));
-            }
-            let edits_json = serde_json::to_string(&new_state).map_err(|e| e.to_string())?;
-            tauri::async_runtime::block_on(crate::commands::save_project_edits(
-                path_str.to_string(),
-                edits_json,
-            ))
-            .map_err(|e| e.to_string())?;
-            crate::commands::record_activity(state.inner());
-            let app_clone = app.clone();
-            crate::commands::persist(state.inner(), &app_clone);
-            let _ = app.emit(
-                "editor-state:changed",
-                serde_json::json!({ "path": path_str }),
-            );
-            Ok(serde_json::json!({ "trimStart": start, "trimEnd": end }))
+            let op = Op::Trim { start, end };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.cut.add" => {
             let path_str = params
@@ -672,45 +676,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("end")
                 .and_then(Value::as_f64)
                 .ok_or("editor.cut.add requires end")?;
-            let path = std::path::PathBuf::from(path_str);
-            crate::commands::try_acquire_write(
-                state.inner(),
-                path,
-                crate::commands::types::EditorWriterKind::Agent,
-                writer_id.clone(),
-            )?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path_str.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
-            let mut new_state = doc.render_state;
-            new_state.cuts.push(crate::render::graph::CutRange {
-                start,
-                end,
-                extra: serde_json::Map::new(),
-            });
-            if let Err(issues) =
-                crate::commands::validate_render_state(&new_state, doc.metadata.duration)
-            {
-                return Err(format!(
-                    "validation failed: {}",
-                    serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}"))
-                ));
-            }
-            let edits_json = serde_json::to_string(&new_state).map_err(|e| e.to_string())?;
-            tauri::async_runtime::block_on(crate::commands::save_project_edits(
-                path_str.to_string(),
-                edits_json,
-            ))
-            .map_err(|e| e.to_string())?;
-            crate::commands::record_activity(state.inner());
-            let app_clone = app.clone();
-            crate::commands::persist(state.inner(), &app_clone);
-            let _ = app.emit(
-                "editor-state:changed",
-                serde_json::json!({ "path": path_str }),
-            );
-            Ok(serde_json::json!({ "added": { "start": start, "end": end } }))
+            let op = Op::CutAdd { start, end };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         // ---- Timeline: cuts, zoom regions, split points, segment speeds, scene animations, annotations.
         // The targeted verbs that follow each share the same shape:
@@ -764,37 +731,12 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             };
             let start_match = params.get("start").and_then(Value::as_f64);
             let end_match = params.get("end").and_then(Value::as_f64);
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    let pos = match target_index {
-                        Some(i) if i < new_state.cuts.len() => i,
-                        Some(_) => return Err("cut index out of range".to_string()),
-                        None => {
-                            let s = start_match.ok_or(
-                                "editor.cut.remove requires --index or (--start AND --end)",
-                            )?;
-                            let e = end_match.ok_or(
-                                "editor.cut.remove requires --index or (--start AND --end)",
-                            )?;
-                            new_state
-                                .cuts
-                                .iter()
-                                .position(|c| {
-                                    (c.start - s).abs() < 1e-4 && (c.end - e).abs() < 1e-4
-                                })
-                                .ok_or_else(|| format!("no cut matching start={s}, end={e}"))?
-                        }
-                    };
-                    let removed = new_state.cuts.remove(pos);
-                    Ok(serde_json::json!({
-                        "removed": { "start": removed.start, "end": removed.end }
-                    }))
-                },
-            )
+            let op = Op::CutRemove {
+                index: target_index,
+                start: start_match,
+                end: end_match,
+            };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.zoom.list" => {
             let path_str = params
@@ -850,32 +792,23 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("hidden")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    use crate::render::easing::Easing;
-                    let region = crate::render::node_types::ZoomRegion {
-                        start,
-                        end,
-                        scale,
-                        ease_in: Easing::default(),
-                        ease_out: Easing::default(),
-                        ramp_in,
-                        ramp_out,
-                        center_x,
-                        center_y,
-                        hidden,
-                        motion_blur: 0.0,
-                        extra: serde_json::Map::new(),
-                    };
-                    let index = new_state.zoom_regions.len();
-                    new_state.zoom_regions.push(region);
-                    Ok(serde_json::json!({ "index": index, "start": start, "end": end }))
-                },
-            )
+            let op = Op::ZoomAdd {
+                region: Box::new(crate::render::node_types::ZoomRegion {
+                    start,
+                    end,
+                    scale,
+                    ease_in: crate::render::easing::Easing::default(),
+                    ease_out: crate::render::easing::Easing::default(),
+                    ramp_in,
+                    ramp_out,
+                    center_x,
+                    center_y,
+                    hidden,
+                    motion_blur: 0.0,
+                    extra: serde_json::Map::new(),
+                }),
+            };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.zoom.remove" => {
             let path_str = params
@@ -891,21 +824,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("index")
                 .and_then(Value::as_u64)
                 .ok_or("editor.zoom.remove requires --index")? as usize;
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    if index >= new_state.zoom_regions.len() {
-                        return Err("zoom index out of range".to_string());
-                    }
-                    let removed = new_state.zoom_regions.remove(index);
-                    Ok(serde_json::json!({
-                        "removed": { "start": removed.start, "end": removed.end }
-                    }))
-                },
-            )
+            let op = Op::ZoomRemove { index };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.split-point.list" => {
             let path_str = params
@@ -932,21 +852,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("at")
                 .and_then(Value::as_f64)
                 .ok_or("editor.split-point.add requires --at")?;
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    if !new_state.split_points.contains(&at) {
-                        new_state.split_points.push(at);
-                        new_state
-                            .split_points
-                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                    }
-                    Ok(serde_json::json!({ "added": at }))
-                },
-            )
+            let op = Op::SplitPointAdd { at };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.split-point.remove" => {
             let path_str = params
@@ -962,20 +869,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("at")
                 .and_then(Value::as_f64)
                 .ok_or("editor.split-point.remove requires --at")?;
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    let before = new_state.split_points.len();
-                    new_state.split_points.retain(|x| (*x - at).abs() > 1e-4);
-                    if new_state.split_points.len() == before {
-                        return Err(format!("no split point at {at}"));
-                    }
-                    Ok(serde_json::json!({ "removed": at }))
-                },
-            )
+            let op = Op::SplitPointRemove { at };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.speed.list" => {
             let path_str = params
@@ -1006,28 +901,11 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("rate")
                 .and_then(Value::as_f64)
                 .ok_or("editor.speed.set requires --rate")?;
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    let pos = new_state
-                        .segment_speeds
-                        .iter()
-                        .position(|s| (s.start - segment_start).abs() < 1e-4);
-                    match pos {
-                        Some(i) => new_state.segment_speeds[i].speed = rate,
-                        None => new_state
-                            .segment_speeds
-                            .push(crate::render::graph::SegmentSpeed {
-                                start: segment_start,
-                                speed: rate,
-                            }),
-                    }
-                    Ok(serde_json::json!({ "segmentStart": segment_start, "rate": rate }))
-                },
-            )
+            let op = Op::SpeedSet {
+                segment_start,
+                rate,
+            };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.speed.remove" => {
             let path_str = params
@@ -1043,24 +921,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("segmentStart")
                 .and_then(Value::as_f64)
                 .ok_or("editor.speed.remove requires --segment-start")?;
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    let before = new_state.segment_speeds.len();
-                    new_state
-                        .segment_speeds
-                        .retain(|s| (s.start - segment_start).abs() > 1e-4);
-                    if new_state.segment_speeds.len() == before {
-                        return Err(format!(
-                            "no speed override at segment start {segment_start}"
-                        ));
-                    }
-                    Ok(serde_json::json!({ "removed": segment_start }))
-                },
-            )
+            let op = Op::SpeedRemove { segment_start };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.annotations.list" => {
             let path_str = params
@@ -1130,36 +992,28 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .and_then(Value::as_i64)
                 .map(|n| n as i32)
                 .unwrap_or(0);
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    let kind = build_annotation_kind(&kind_name, &geometry)?;
-                    let annotation = crate::render::node_types::Annotation {
-                        id: id.clone(),
-                        start,
-                        end,
-                        ramp_in: 0.2,
-                        ramp_out: 0.2,
-                        ease_in: Default::default(),
-                        ease_out: Default::default(),
-                        stroke: Default::default(),
-                        fill: "rgba(59,130,246,0.20)".into(),
-                        kind,
-                        name: name.clone(),
-                        z_index,
-                        locked: false,
-                        hidden: false,
-                        opacity,
-                        glow: None,
-                        anchor: crate::render::node_types::AnnotationAnchor::default(),
-                    };
-                    new_state.annotations.push(annotation);
-                    Ok(serde_json::json!({ "id": id }))
-                },
-            )
+            let op = Op::AnnotationAdd {
+                annotation: Box::new(crate::render::node_types::Annotation {
+                    id,
+                    start,
+                    end,
+                    ramp_in: 0.2,
+                    ramp_out: 0.2,
+                    ease_in: Default::default(),
+                    ease_out: Default::default(),
+                    stroke: Default::default(),
+                    fill: "rgba(59,130,246,0.20)".into(),
+                    kind: build_annotation_kind(&kind_name, &geometry)?,
+                    name,
+                    z_index,
+                    locked: false,
+                    hidden: false,
+                    opacity,
+                    glow: None,
+                    anchor: crate::render::node_types::AnnotationAnchor::default(),
+                }),
+            };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.annotations.update" => {
             let path_str = params
@@ -1181,32 +1035,11 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .and_then(Value::as_object)
                 .ok_or("editor.annotations.update requires --patch <JSON object>")?
                 .clone();
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    let pos = new_state
-                        .annotations
-                        .iter()
-                        .position(|a| a.id == id)
-                        .ok_or_else(|| format!("no annotation with id '{id}'"))?;
-                    let annotation_json = serde_json::to_value(&new_state.annotations[pos])
-                        .map_err(|e| format!("serialize: {e}"))?;
-                    let mut merged = annotation_json;
-                    if let Some(obj) = merged.as_object_mut() {
-                        for (k, v) in patch_obj.iter() {
-                            obj.insert(k.clone(), v.clone());
-                        }
-                    }
-                    let updated: crate::render::node_types::Annotation =
-                        serde_json::from_value(merged)
-                            .map_err(|e| format!("patch produced invalid annotation: {e}"))?;
-                    new_state.annotations[pos] = updated;
-                    Ok(serde_json::json!({ "id": id }))
-                },
-            )
+            let op = Op::AnnotationUpdate {
+                id,
+                patch: patch_obj,
+            };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.annotations.remove" => {
             let path_str = params
@@ -1223,20 +1056,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .and_then(Value::as_str)
                 .ok_or("editor.annotations.remove requires --id")?
                 .to_string();
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    let before = new_state.annotations.len();
-                    new_state.annotations.retain(|a| a.id != id);
-                    if new_state.annotations.len() == before {
-                        return Err(format!("no annotation with id '{id}'"));
-                    }
-                    Ok(serde_json::json!({ "removed": id }))
-                },
-            )
+            let op = Op::AnnotationRemove { id };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.animations.list" => {
             let path_str = params
@@ -1275,22 +1096,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("start")
                 .and_then(Value::as_f64)
                 .ok_or("editor.animations.remove requires --start")?;
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    let before = new_state.scene_animations.len();
-                    new_state
-                        .scene_animations
-                        .retain(|a| (a.start - start).abs() > 1e-4);
-                    if new_state.scene_animations.len() == before {
-                        return Err(format!("no scene animation at segment start {start}"));
-                    }
-                    Ok(serde_json::json!({ "removed": start }))
-                },
-            )
+            let op = Op::AnimationRemove { start };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         "editor.animations.add" => {
             let path_str = params
@@ -1306,47 +1113,20 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("start")
                 .and_then(Value::as_f64)
                 .ok_or("editor.animations.add requires --start")?;
-            let in_spec = params.get("in").cloned();
-            let out_spec = params.get("out").cloned();
-            crate::commands::patch_render_state(
-                state.inner(),
-                app,
-                path_str,
-                &writer_id,
-                |new_state| {
-                    // Replace any existing animation at this start; otherwise push.
-                    let anim_in: Option<crate::render::scene_anim::SceneAnimSpec> = match in_spec {
-                        Some(v) => Some(
-                            serde_json::from_value(v)
-                                .map_err(|e| format!("invalid --in spec: {e}"))?,
-                        ),
-                        None => None,
-                    };
-                    let anim_out: Option<crate::render::scene_anim::SceneAnimSpec> = match out_spec
-                    {
-                        Some(v) => Some(
-                            serde_json::from_value(v)
-                                .map_err(|e| format!("invalid --out spec: {e}"))?,
-                        ),
-                        None => None,
-                    };
-                    let anim = crate::render::scene_anim::SegmentAnim {
-                        start,
-                        anim_in,
-                        anim_out,
-                    };
-                    if let Some(pos) = new_state
-                        .scene_animations
-                        .iter()
-                        .position(|a| (a.start - start).abs() < 1e-4)
-                    {
-                        new_state.scene_animations[pos] = anim;
-                    } else {
-                        new_state.scene_animations.push(anim);
-                    }
-                    Ok(serde_json::json!({ "start": start }))
-                },
-            )
+            let parse_spec = |key: &str| -> Result<Option<SceneAnimSpec>, String> {
+                match params.get(key).cloned() {
+                    Some(v) => serde_json::from_value(v)
+                        .map(Some)
+                        .map_err(|e| format!("invalid --{key} spec: {e}")),
+                    None => Ok(None),
+                }
+            };
+            let op = Op::AnimationAdd {
+                start,
+                anim_in: parse_spec("in")?,
+                anim_out: parse_spec("out")?,
+            };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
         // Universal mutator: any scalar/struct field via dotted JSON pointer.
         // Used as the escape hatch for every field that doesn't get its own
@@ -1371,21 +1151,149 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("value")
                 .cloned()
                 .ok_or("editor.set requires --value")?;
-            crate::commands::patch_render_state(
+            let op = Op::Set { field, value };
+            apply_edit(app, state.inner(), path_str, &writer_id, op)
+        }
+        "branch.create" => {
+            let path_str = require_str(&params, "path", method)?;
+            let id = branch_id(&params, method)?;
+            let author = require_str(&params, "author", method)?;
+            let base = StateHash::of(&load_render_state(&path_str)?).map_err(stringify)?;
+            let branch = Branch::new(
+                id,
+                base,
+                author,
+                params
+                    .get("label")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                now_ms(),
+            );
+            branch_store(app, &path_str)?
+                .save(&branch)
+                .map_err(stringify)?;
+            serde_json::to_value(&branch).map_err(stringify)
+        }
+        "branch.list" => {
+            let path_str = require_str(&params, "path", method)?;
+            let store = branch_store(app, &path_str)?;
+            let summaries: Vec<Value> = store
+                .list()
+                .iter()
+                .filter_map(|id| store.load(id).ok())
+                .map(|branch| {
+                    json!({
+                        "id": branch.id,
+                        "author": branch.author,
+                        "label": branch.label,
+                        "base": branch.base.to_string(),
+                        "seq": branch.next_seq() - 1,
+                        "ops": branch.op_count(),
+                        "createdAtMs": branch.created_at_ms,
+                        "updatedAtMs": branch.updated_at_ms,
+                    })
+                })
+                .collect();
+            Ok(Value::Array(summaries))
+        }
+        "branch.append" => {
+            let path_str = require_str(&params, "path", method)?;
+            let id = branch_id(&params, method)?;
+            let idem_key = require_str(&params, "idemKey", method)?;
+            let ops: Vec<Op> = serde_json::from_value(
+                params
+                    .get("ops")
+                    .cloned()
+                    .ok_or_else(|| format!("{method} requires ops"))?,
+            )
+            .map_err(|e| format!("{method}: invalid ops: {e}"))?;
+            let expect_seq = params.get("expectSeq").and_then(Value::as_u64);
+
+            let store = branch_store(app, &path_str)?;
+            let mut branch = store.load(&id).map_err(stringify)?;
+            let outcome = branch
+                .append(idem_key, ops, expect_seq, now_ms())
+                .map_err(stringify)?;
+            // Replay before persisting, so an op that cannot apply is rejected
+            // now rather than at review time.
+            let base = load_render_state(&path_str)?;
+            branch.materialize(&base).map_err(stringify)?;
+            let compacted = branch.needs_compaction();
+            if compacted {
+                branch.compact(&base, now_ms()).map_err(stringify)?;
+            }
+            store.save(&branch).map_err(stringify)?;
+            let _ = app.emit(BRANCHES_CHANGED_EVENT, json!({ "path": path_str }));
+            Ok(json!({
+                "seq": outcome.seq(),
+                "recorded": matches!(outcome, Append::Recorded { .. }),
+                "compacted": compacted,
+            }))
+        }
+        "branch.truncate" => {
+            let path_str = require_str(&params, "path", method)?;
+            let id = branch_id(&params, method)?;
+            let seq = params
+                .get("seq")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| format!("{method} requires seq"))?;
+            let store = branch_store(app, &path_str)?;
+            let mut branch = store.load(&id).map_err(stringify)?;
+            branch.truncate_after(seq, now_ms());
+            store.save(&branch).map_err(stringify)?;
+            let _ = app.emit(BRANCHES_CHANGED_EVENT, json!({ "path": path_str }));
+            Ok(json!({ "seq": branch.next_seq() - 1, "ops": branch.op_count() }))
+        }
+        "branch.materialize" => {
+            let path_str = require_str(&params, "path", method)?;
+            let branch = load_branch(app, &params, &path_str, method)?;
+            let state = branch
+                .materialize(&load_render_state(&path_str)?)
+                .map_err(stringify)?;
+            serde_json::to_value(state).map_err(stringify)
+        }
+        "branch.diff" => {
+            let path_str = require_str(&params, "path", method)?;
+            let branch = load_branch(app, &params, &path_str, method)?;
+            let base = load_render_state(&path_str)?;
+            let proposed = branch.materialize(&base).map_err(stringify)?;
+            let changes = journal::diff(&base, &proposed).map_err(stringify)?;
+            serde_json::to_value(changes).map_err(stringify)
+        }
+        "branch.discard" => {
+            let path_str = require_str(&params, "path", method)?;
+            let id = branch_id(&params, method)?;
+            branch_store(app, &path_str)?
+                .remove(&id)
+                .map_err(stringify)?;
+            let _ = app.emit(BRANCHES_CHANGED_EVENT, json!({ "path": path_str }));
+            Ok(json!({ "discarded": id }))
+        }
+        "branch.apply" => {
+            let path_str = require_str(&params, "path", method)?;
+            let writer_id = require_str(&params, "writerId", method)?;
+            let id = branch_id(&params, method)?;
+            let store = branch_store(app, &path_str)?;
+            let branch = store.load(&id).map_err(stringify)?;
+
+            // Materializing against the state the lock just loaded is what makes
+            // this fast-forward only: a moved base surfaces as `BaseMoved`.
+            let applied = crate::commands::patch_render_state(
                 state.inner(),
                 app,
-                path_str,
+                &path_str,
                 &writer_id,
-                |new_state| {
-                    let mut state_json =
-                        serde_json::to_value(&*new_state).map_err(|e| e.to_string())?;
-                    crate::commands::apply_dotted_path_set(&mut state_json, &field, value)?;
-                    let updated: RenderState = serde_json::from_value(state_json)
-                        .map_err(|e| format!("set: invalid value at '{field}': {e}"))?;
-                    *new_state = updated;
-                    Ok(serde_json::json!({ "applied": true, "field": field }))
+                |current| {
+                    let proposed = branch.materialize(current).map_err(stringify)?;
+                    let changes = journal::diff(current, &proposed).map_err(stringify)?.len();
+                    *current = proposed;
+                    Ok(json!({ "applied": true, "changes": changes }))
                 },
-            )
+            )?;
+
+            store.remove(&id).map_err(stringify)?;
+            let _ = app.emit(BRANCHES_CHANGED_EVENT, json!({ "path": path_str }));
+            Ok(applied)
         }
         "export.start" => {
             let path_str = params
@@ -1471,7 +1379,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 path_buf,
                 crate::commands::types::EditorWriterKind::Agent,
                 writer_id_for_lock,
-            )?;
+            )
+            .map_err(|e| e.to_string())?;
             let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
                 path_str.to_string(),
             ))

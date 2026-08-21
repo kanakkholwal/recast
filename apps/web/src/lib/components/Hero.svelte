@@ -7,16 +7,9 @@ import { Button } from "@recast/ui/button";
 import { fly } from "svelte/transition";
 import { heroStagger, platforms, rise, steps, words } from "./Hero.logic";
 
-// The desktop app needs no account; Cloud sharing does. The secondary CTA
-// carries that second door, and points at the dashboard once you're in so a
-// signed-in visitor isn't asked to sign up again.
 const session = authClient.useSession();
 const signedIn = $derived(Boolean($session.data?.user));
 
-// Svelte transitions use WAAPI, which the CSS reduced-motion guard can't
-// reach; gate the mount choreography here so a reduced-motion visitor gets
-// the hero fully-formed instead of a staggered fly-in. `duration: 0` keeps
-// the directive attached (no markup branching) while removing the motion.
 const reduced = $derived(prefersReducedMotion());
 const riseM = (delay: number) => (reduced ? { duration: 0 } : rise(delay));
 
@@ -25,21 +18,20 @@ let { previewSrc = "" }: { previewSrc?: string } = $props();
 </script>
 
 <Section spacing="none" class="relative">
-  <div class="relative pt-32 pb-14 md:pt-40 md:pb-16">
+  <div class="relative pt-28 pb-14 md:pt-32 md:pb-16">
     <Container class="relative z-10">
-      <div class="mx-auto flex max-w-4xl flex-col items-center text-center">
-        <!-- Split announcement pill: the claim on the left, the way in on the
-             right, one hairline between them. -->
+      <div class="mx-auto flex max-w-3xl flex-col items-center text-center">
+       
         <a
           href="/changelog"
-          class="pill group inline-flex items-center overflow-hidden text-body-sm"
+          class="pill group inline-flex items-center h-7 overflow-hidden text-xs leading-none"
           in:fly={riseM(heroStagger * 0)}
         >
-          <span class="py-1.5 pl-4 pr-3 font-medium text-foreground">
+          <span class="py-3 pl-4 pr-3 font-medium text-foreground whitespace-nowrap">
             What's new in Recast
           </span>
           <span
-            class="inline-flex items-center gap-1 self-stretch border-l border-border-low py-1.5 pl-3 pr-4 text-muted-foreground transition-colors group-hover:text-foreground"
+            class="inline-flex items-center gap-1 self-stretch whitespace-nowrap border-l border-border-low py-2 pl-3 pr-4 text-muted-foreground transition-colors group-hover:text-foreground"
           >
             Read more
             <ArrowUpRight class="size-3.5" />
@@ -47,16 +39,13 @@ let { previewSrc = "" }: { previewSrc?: string } = $props();
         </a>
 
         <h1
-          class="text-balance mt-8 text-heading-lg leading-[1.05] sm:text-display lg:text-display-lg"
+          class="text-balance mt-7 text-heading-lg leading-[1.05] sm:text-heading-lg md:text-display font-display font-semibold"
           in:fly={riseM(heroStagger * 1)}
         >
           Record once.
-          <span class="mt-2 flex justify-center italic text-muted-foreground">
+          <span class="mt-1 flex justify-center italic text-muted-foreground">
             <span class="whitespace-nowrap">Ship a&nbsp;</span>
-            <!-- The rotating output is framed as a selected/editable object:
-					     the box tracks TextLoop's width tween and its handles sit
-					     outside TextLoop's own clip, so nothing gets cropped. -->
-            <SelectionWord>
+             <SelectionWord>
               <span class="inline-grid overflow-hidden">
                 <TextLoop class="text-primary" texts={words} interval={3000} />
               </span>
@@ -65,7 +54,7 @@ let { previewSrc = "" }: { previewSrc?: string } = $props();
         </h1>
 
         <p
-          class="text-pretty mt-7 max-w-2xl text-body text-muted-foreground sm:text-body-lg"
+          class="text-pretty mt-6 max-w-xl text-body text-muted-foreground sm:text-body-lg"
           in:fly={riseM(heroStagger * 2)}
         >
           Smart zoom, cursor smoothing, and silence cuts happen while you record.
@@ -94,7 +83,7 @@ let { previewSrc = "" }: { previewSrc?: string } = $props();
         </div>
 
         <div
-          class="mt-8 flex flex-wrap items-center justify-center gap-2 text-caption text-muted-foreground"
+          class="mt-7 flex flex-wrap items-center justify-center gap-2 text-caption text-muted-foreground"
           in:fly={riseM(heroStagger * 4)}
         >
           Free forever · No account needed to record
@@ -112,7 +101,5 @@ let { previewSrc = "" }: { previewSrc?: string } = $props();
     </Container>
   </div>
 
-  <!-- Full-bleed paper band. The shelf hangs out of the white canvas above it,
-       so this must sit outside the Container. -->
   <HeroSteps {steps} fallbackSrc={previewSrc} />
 </Section>

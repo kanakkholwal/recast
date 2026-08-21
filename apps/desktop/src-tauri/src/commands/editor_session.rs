@@ -47,7 +47,7 @@ struct PersistedEditorSession {
     holder_pid: u32,
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -99,8 +99,52 @@ pub(crate) fn try_acquire_write(
     project_path: PathBuf,
     kind: EditorWriterKind,
     writer_id: String,
-) -> Result<(), String> {
+) -> Result<(), EditorLockError> {
     try_acquire_write_lock(&state.editor_session, project_path, kind, writer_id)
+}
+
+/// The project is held by a different writer whose lock has not yet expired.
+///
+/// `Display` is a wire contract: the CLI and the GUI both branch on the
+/// `editor_locked:` prefix.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "editor_locked: project '{project}' held by '{holder}' (acquired {held_for_ms} ms ago); \
+     use `recast project unlock --force` to reclaim or wait {ttl_secs}s for TTL."
+)]
+pub(crate) struct EditorLockError {
+    project: String,
+    holder: String,
+    held_for_ms: i64,
+    ttl_secs: i64,
+}
+
+impl From<EditorLockError> for super::error::AppError {
+    fn from(err: EditorLockError) -> Self {
+        Self::msg(err)
+    }
+}
+
+/// How a claim on the write-lock relates to whoever currently holds it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Claim {
+    Vacant,
+    Reentrant,
+    Expired,
+    Held,
+}
+
+fn classify_claim(session: &EditorSession, writer_id: &str, now_ms: i64) -> Claim {
+    if session.writer.is_none() {
+        return Claim::Vacant;
+    }
+    if now_ms - session.last_activity_at_ms > EditorSession::TTL_MS {
+        return Claim::Expired;
+    }
+    if session.writer_id == writer_id {
+        return Claim::Reentrant;
+    }
+    Claim::Held
 }
 
 /// Try to acquire the project write-lock against a bare `RwLock`. Pure; no
@@ -110,32 +154,30 @@ pub(crate) fn try_acquire_write_lock(
     project_path: PathBuf,
     kind: EditorWriterKind,
     writer_id: String,
-) -> Result<(), String> {
+) -> Result<(), EditorLockError> {
     let mut session = lock.write();
     let now = now_ms();
 
-    let stale_holder =
-        session.writer.is_some() && (now - session.last_activity_at_ms) > EditorSession::TTL_MS;
-
-    if session.writer.is_some() && !stale_holder {
-        return Err(format!(
-            "editor_locked: project '{}' held by '{}' (acquired {} ms ago); \
-             use `recast project unlock --force` to reclaim or wait {}s for TTL.",
-            session
-                .project_path
-                .as_ref()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_default(),
-            session.writer_id,
-            now - session.acquired_at_ms,
-            EditorSession::TTL_MS / 1000,
-        ));
+    match classify_claim(&session, &writer_id, now) {
+        Claim::Held => {
+            return Err(EditorLockError {
+                project: session
+                    .project_path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_default(),
+                holder: session.writer_id.clone(),
+                held_for_ms: now - session.acquired_at_ms,
+                ttl_secs: EditorSession::TTL_MS / 1000,
+            })
+        }
+        Claim::Reentrant => {}
+        Claim::Vacant | Claim::Expired => session.acquired_at_ms = now,
     }
 
     session.project_path = Some(project_path);
     session.writer = Some(kind);
     session.writer_id = writer_id;
-    session.acquired_at_ms = now;
     session.last_activity_at_ms = now;
     Ok(())
 }
@@ -326,6 +368,8 @@ fn remove_file(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     fn fresh() -> RwLock<EditorSession> {
@@ -355,8 +399,7 @@ mod tests {
         assert!(lock.read().project_path.is_none());
     }
 
-    #[test]
-    fn second_writer_blocks_with_holder_name() {
+    fn held_by_a_then_claimed_by_b() -> EditorLockError {
         let lock = fresh();
         try_acquire_write_lock(
             &lock,
@@ -365,15 +408,91 @@ mod tests {
             "agent:a".into(),
         )
         .unwrap();
-        let err = try_acquire_write_lock(
+        try_acquire_write_lock(
             &lock,
             PathBuf::from("/tmp/foo.recast"),
             EditorWriterKind::Agent,
             "agent:b".into(),
         )
-        .unwrap_err();
-        assert!(err.contains("editor_locked"), "got: {err}");
-        assert!(err.contains("agent:a"), "got: {err}");
+        .unwrap_err()
+    }
+
+    #[test]
+    fn second_writer_is_rejected_naming_the_holder() {
+        assert_eq!(held_by_a_then_claimed_by_b().holder, "agent:a");
+    }
+
+    #[test]
+    fn rejection_keeps_the_editor_locked_wire_prefix() {
+        let message = held_by_a_then_claimed_by_b().to_string();
+
+        assert!(
+            message.starts_with("editor_locked:"),
+            "prefix is a wire contract, got: {message}"
+        );
+    }
+
+    #[test]
+    fn same_writer_reacquiring_the_same_project_succeeds() {
+        let lock = fresh();
+        let acquire = |writer_id: &str| {
+            try_acquire_write_lock(
+                &lock,
+                PathBuf::from("/tmp/foo.recast"),
+                EditorWriterKind::Agent,
+                writer_id.into(),
+            )
+        };
+        acquire("agent:a").unwrap();
+
+        let result = acquire("agent:a");
+
+        assert!(result.is_ok(), "re-acquire rejected: {:?}", result.err());
+    }
+
+    #[test]
+    fn reacquiring_preserves_the_original_acquired_at() {
+        let lock = fresh();
+        let acquire = || {
+            try_acquire_write_lock(
+                &lock,
+                PathBuf::from("/tmp/foo.recast"),
+                EditorWriterKind::Agent,
+                "agent:a".into(),
+            )
+        };
+        acquire().unwrap();
+        let first = lock.read().acquired_at_ms;
+        lock.write().acquired_at_ms = first - 5_000;
+
+        acquire().unwrap();
+
+        assert_eq!(lock.read().acquired_at_ms, first - 5_000);
+    }
+
+    #[test]
+    fn same_writer_switching_project_moves_the_lock() {
+        let lock = fresh();
+        try_acquire_write_lock(
+            &lock,
+            PathBuf::from("/tmp/foo.recast"),
+            EditorWriterKind::Agent,
+            "agent:a".into(),
+        )
+        .unwrap();
+
+        try_acquire_write_lock(
+            &lock,
+            PathBuf::from("/tmp/bar.recast"),
+            EditorWriterKind::Agent,
+            "agent:a".into(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            lock.read().project_path.as_deref(),
+            Some(Path::new("/tmp/bar.recast"))
+        );
     }
 
     #[test]

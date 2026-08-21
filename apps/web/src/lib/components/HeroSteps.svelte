@@ -1,12 +1,9 @@
 <script lang="ts">
 import { prefersReducedMotion } from "$lib/motion-core";
+import { buttonVariants } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
 import type { HeroStep } from "./Hero.logic";
 
-// Record → Polish → Share as a tab shelf that hangs down out of the white
-// hero into the paper band, joined by two concave fillets. One clip per step;
-// until each step has its own take they all fall back to `fallbackSrc`, so the
-// cross-fade is already wired when the assets land.
 let {
 	steps,
 	fallbackSrc = "",
@@ -70,9 +67,9 @@ function onKeydown(e: KeyboardEvent) {
 
 // One accent per tag, never two on one component.
 const accentClass = {
-	tangerine: "bg-tag-tangerine/12 text-tag-tangerine",
-	lavender: "bg-tag-lavender/12 text-tag-lavender",
-	green: "bg-tag-green/12 text-tag-green",
+	tangerine: "text-tag-tangerine",
+	lavender: "text-tag-lavender",
+	green: "text-tag-green",
 } as const;
 </script>
 
@@ -85,17 +82,15 @@ const accentClass = {
 	onfocusin={() => (paused = true)}
 	onfocusout={() => (paused = false)}
 >
-	<!-- Shelf. Same white as the hero canvas above, so it reads as the hero
-	     bulging downward rather than as a bar dropped onto the band. -->
-	<div class="shelf relative z-10 mx-auto w-fit rounded-b-[28px] bg-background px-3 pb-3">
-		<span aria-hidden="true" class="notch notch-l"></span>
-		<span aria-hidden="true" class="notch notch-r"></span>
-
+	
+	<div
+		class="shelf relative z-10 mx-auto w-[calc(100%-2.5rem)] rounded-b-[20px] bg-background px-2 pb-4 sm:w-fit sm:rounded-b-[40px] sm:px-12 sm:pb-5 lg:px-24"
+	>
 		<div
 			role="tablist"
 			tabindex="-1"
 			aria-label="Recast workflow steps"
-			class="flex items-center gap-1"
+			class="flex items-center justify-center gap-1"
 			onkeydown={onKeydown}
 		>
 			{#each steps as step, i (step.id)}
@@ -111,23 +106,33 @@ const accentClass = {
 					tabindex={on ? 0 : -1}
 					onclick={() => (active = i)}
 					class={cn(
-						"inline-flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-body-sm font-medium transition-colors duration-200",
-						"focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
-						on
-							? "border border-border-low bg-card text-foreground shadow-craft-sm"
-							: "border border-transparent text-muted-foreground hover:text-foreground",
+						buttonVariants({ variant: "ghost", size: "default" }),
+						"relative isolate border-transparent bg-transparent hover:bg-transparent",
+						// Button padding from `sm` up; tightened below it so three tabs plus
+						// both fillets still fit a 320px viewport without a scroller.
+						"gap-1.5 px-2 text-xs sm:gap-2 sm:px-5 sm:text-sm",
+						on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
 					)}
 				>
-					<span class={cn("grid size-5 shrink-0 place-items-center rounded-md", accentClass[step.accent])}>
-						<Icon class="size-3.5" />
-					</span>
+					<!-- Selected skin cross-fades in underneath the label instead of the
+					     background tweening through an in-between grey. Unselected is bare:
+					     on a white shelf a resting fill only adds noise. -->
+					<span
+						aria-hidden="true"
+						class="absolute inset-0 -z-10 rounded-lg bg-card shadow-craft-sm transition-opacity duration-300 motion-reduce:transition-none"
+						style={`opacity:${on ? 1 : 0}`}
+					></span>
+					<Icon
+						class={cn("size-4 shrink-0 [fill-opacity:0.2] sm:size-4.5", accentClass[step.accent])}
+						fill="currentColor"
+					/>
 					{step.label}
 				</button>
 			{/each}
 		</div>
 	</div>
 
-	<div class="mx-auto w-full max-w-6xl px-6 pt-10 pb-16 sm:px-8 lg:px-10">
+	<div class="mx-auto w-full max-w-6xl px-6 pt-8 pb-12 sm:px-8 lg:px-10">
 		<div class="mockup-frame overflow-hidden p-2 sm:p-2.5">
 			<div class="relative aspect-video w-full overflow-hidden rounded-xl border border-border-low bg-paper">
 				{#each steps as step, i (step.id)}
@@ -169,32 +174,56 @@ const accentClass = {
 			</div>
 		</div>
 
-		<p class="mt-5 text-center text-body-sm text-muted-foreground">
+		<p class="mt-4 text-center text-body-sm text-muted-foreground">
 			{steps[active]?.caption}
 		</p>
 	</div>
 </section>
 
 <style>
-	/* Concave fillets joining the shelf back to the hero's bottom edge. The mask
-	   keeps the outer corner opaque and removes the quarter-disc nearest the
-	   shelf, which is what turns a butt joint into a notch. Radius is a shape
-	   constant, not a component radius, so it sits outside the 8/12/16 set. */
-	.notch {
+	/* Concave fillets joining the shelf back to the hero's bottom edge, drawn as
+	   pseudo-elements of the shelf so they are flush by construction.
+
+	   Each is a box sitting beside the shelf, painted with a radial gradient whose
+	   circle is centred on the box's OUTER bottom corner: inside that circle is the
+	   band showing through, outside it is hero white. That is the fillet.
+
+	   Deliberately literal values rather than a --notch custom property: a var()
+	   inside a gradient's radius is the one part of this that silently degrades to
+	   an unpainted box. Box is 1px wider than its offset so it laps the shelf and
+	   the shared vertical edge carries no antialiasing seam. */
+	.shelf::before,
+	.shelf::after {
+		content: "";
 		position: absolute;
 		top: 0;
-		width: 40px;
-		height: 40px;
-		background-color: var(--color-background);
+		z-index: -1;
+		width: 21px;
+		height: 20px;
+		pointer-events: none;
 	}
-	.notch-l {
-		left: -40px;
-		-webkit-mask-image: radial-gradient(circle 40px at 0 100%, transparent 39.5px, #000 40px);
-		mask-image: radial-gradient(circle 40px at 0 100%, transparent 39.5px, #000 40px);
+	.shelf::before {
+		left: -20px;
+		background-image: radial-gradient(circle 20px at 0 20px, transparent 19.5px, var(--color-background) 20px);
 	}
-	.notch-r {
-		right: -40px;
-		-webkit-mask-image: radial-gradient(circle 40px at 100% 100%, transparent 39.5px, #000 40px);
-		mask-image: radial-gradient(circle 40px at 100% 100%, transparent 39.5px, #000 40px);
+	.shelf::after {
+		right: -20px;
+		background-image: radial-gradient(circle 20px at 21px 20px, transparent 19.5px, var(--color-background) 20px);
+	}
+
+	@media (min-width: 40rem) {
+		.shelf::before,
+		.shelf::after {
+			width: 41px;
+			height: 40px;
+		}
+		.shelf::before {
+			left: -40px;
+			background-image: radial-gradient(circle 40px at 0 40px, transparent 39.5px, var(--color-background) 40px);
+		}
+		.shelf::after {
+			right: -40px;
+			background-image: radial-gradient(circle 40px at 41px 40px, transparent 39.5px, var(--color-background) 40px);
+		}
 	}
 </style>

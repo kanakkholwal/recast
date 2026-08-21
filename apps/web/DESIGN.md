@@ -1,23 +1,32 @@
 # Recast Web — Design System
 
-The marketing site for Recast. This document captures the design language, voice,
-and component patterns so every page lands consistently.
+The marketing site for Recast: a border-first, near-monochrome editorial surface
+with one accent hue and a small vocabulary of coloured feature tags.
 
-> **Stay opinionated.** Recast is a tool for people who'd rather ship than fiddle.
-> The site should feel the same way: confident, clean, and never overwrought.
+> **Borders, not depth.** A container is a 1px hairline and a radius. If a surface
+> needs blur or a drop shadow to read, it needs better spacing instead.
+
+This document replaces the glass-and-atmosphere system that preceded it. That
+system defined containers with `backdrop-filter: blur(24px)` plus four-layer
+shadows, then diluted its own hairline into `/30`–`/70` opacities that measured
+**1.03:1** and drew nothing. Structure now comes from one border used at full
+strength, everywhere.
+
+Scope: `[data-site="marketing"]`, set on `<html>` by
+[+layout.svelte](src/routes/+layout.svelte) via `isMarketing()` in
+[layout.logic.ts](src/routes/layout.logic.ts). `/dashboard`, `/admin`, `/share`,
+`/onboarding` and `/playground` opt out and keep the tonal card-over-canvas
+system, so the two can coexist.
 
 ---
 
 ## Audience
 
-Primary readers, in order of priority:
-
 1. **Solo founders** — building, demoing, and pitching weekly.
-2. **Indie hackers** — shipping launch videos, changelog clips, and Twitter cuts on their own schedule.
+2. **Indie hackers** — launch videos, changelog clips, Twitter cuts.
 3. **Product engineers** — demoing PRs, explaining bugs, documenting APIs.
 
-Every headline, microcopy line, and CTA should serve at least one of these readers.
-If a sentence reads as if it's targeting an enterprise procurement team, rewrite it.
+If a sentence reads as if it targets an enterprise procurement team, rewrite it.
 
 ---
 
@@ -25,71 +34,83 @@ If a sentence reads as if it's targeting an enterprise procurement team, rewrite
 
 | Do | Don't |
 | --- | --- |
-| Direct, opinionated, founder-to-founder. | Marketing-speak ("solutions", "synergy", "leverage"). |
+| Direct, opinionated, founder-to-founder. | Marketing-speak ("solutions", "leverage"). |
 | Concrete verbs ("ship", "record", "trim"). | Vague abstractions ("empower", "transform"). |
-| Punchy, balanced two-line headlines. | Long paragraph hero copy. |
-| Emphasize *outcomes* the audience cares about (looking expensive, shipping fast). | Generic feature lists without a clear "so what?". |
-| Use "Skip the editor. Ship the demo." as the through-line. | Compete on feature checklists with kitchen-sink editors. |
+| Punchy two-line headlines. | Long paragraph hero copy. |
+| Emphasise outcomes (looking expensive, shipping fast). | Feature lists with no "so what?". |
 
-**Headline pattern:** *[Aspiration] that look [outcome word].*
-
-- Demos that look **expensive.**
-- Demos that look **cinematic.**
-- Demos that look **intentional.**
-- Demos that look **effortless.**
-- Demos that look **hand-edited.**
-
-The rotating word is always italic, lower opacity, primary-tinted, and lives on its
-**own line** (see "TextLoop" below) so the headline never reflows.
+**Through-line:** Record → Polish → Share.
 
 ---
 
-## Color & Theme
+## Colour
 
-Tokens live in [`@recast/design`](../../packages/design/src/index.css). Always use
-CSS variables — never hardcode colors.
+Tokens live in [`@recast/design`](../../packages/design/src/index.css); the
+marketing overrides live in [app.css](src/app.css). Everything is oklch. Never
+hardcode hex.
 
-| Token | Use |
-| --- | --- |
-| `--background` / `--foreground` | Page background and primary text. |
-| `--card` / `--card-foreground` | Surface containers (glass cards, mockups). |
-| `--primary` (indigo) | The one accent. CTA, selection, focus ring, active route, toggle-on, primary chart series. |
-| `--muted-foreground` | Secondary copy, microlabels. |
-| `--border` / `--border-low` / `--border-strong` | Decorative separators and dividers. |
-| `--border-control` | Boundaries that *identify* a control — inputs, selects, checkboxes. |
-| `--destructive` / `--success` / `--warning` | Status only — never decorative. |
+### Surfaces & ink
+
+| Role | Light | Dark | Token |
+| --- | --- | --- | --- |
+| Canvas | `oklch(100% 0 0)` | `oklch(14.5% 0 0)` | `--background` |
+| Card | `oklch(100% 0 0)` | `oklch(17.5% 0 0)` | `--card` |
+| Paper (tonal band) | `oklch(97% 0 0)` | `oklch(20.5% 0 0)` | `--paper` → `bg-paper` |
+| Hairline | `oklch(92.2% 0 0)` | `oklch(26.9% 0 0)` | `--border` → `border-border-low` |
+| Emphasis border | `oklch(87% 0 0)` | `oklch(33% 0 0)` | `--border-emphasis` → `border-border-strong` |
+| Text | `oklch(20.5% 0 0)` | `oklch(96% 0 0)` | `--foreground` |
+| Muted text | `oklch(55.6% 0 0)` | `oklch(64% 0 0)` | `--muted-foreground` |
+
+Light-mode canvas is pure white and cards are pure white. They are told apart by
+the hairline, not by tone. That is the whole idea.
+
+### Accent
+
+`--primary` is `oklch(0.52 0.20 264)` on light, `oklch(0.70 0.155 264)` on dark.
+It measures **5.52:1** on white; the reference system's `#2563eb` measures
+**5.17:1** and sits at `oklch(54.6% 0.2152 262.9)`. The two are the same colour
+within measurement noise, so the existing token stays — it is already CVD-validated
+against `--destructive` and documented in the design package.
+
+**`--primary` is reserved for:**
+
+1. The single main CTA on a view.
+2. Links inside body copy.
+3. The sidebar active-route indicator.
+4. The primary data series in a chart.
+5. Selection and drag-drop targets.
+6. Toggle "on" states.
+7. Plan / upgrade affordances.
+8. Focus rings and active-input borders (`--ring` is `--primary`).
+
+**Never** a decorative tint. The old landing page carried 31 `bg-primary` dots as
+eyebrow bullets; they are now neutral or a feature-tag hue.
+
+The primary *filled* action is near-black (`variant="dark"` = `bg-foreground`),
+not blue. Blue highlights, black commits.
+
+### Feature-tag accents
+
+One hue per tag, never two on one component. Used on the hero step shelf and on
+section eyebrows for the three spine steps.
+
+| Tag | Value | Token |
+| --- | --- | --- |
+| Tangerine (Record) | `oklch(64.6% 0.1943 41.1)` | `--color-tag-tangerine` |
+| Lavender (Polish) | `oklch(54.1% 0.2466 293)` | `--color-tag-lavender` |
+| Green (Share) | `oklch(62.7% 0.1699 149.2)` | `--color-tag-green` |
+
+Icons render **duotone**: `fill="currentColor"` plus `[fill-opacity:0.2]`, so the
+glyph carries a translucent fill under a full-strength stroke in one hue. No
+tinted background tile behind the icon.
 
 ### Colour ratio (60/30/10)
 
-Every surface budgets colour the same way. This is a hard rule, not a vibe:
-
 | Share | Role | Tokens |
 | --- | --- | --- |
-| **60%** | Canvas. The page ground. | `--background`, `--canvas` |
-| **30%** | Structure. Surfaces, borders, secondary text, chart neutrals — everything that builds hierarchy. | `glass-card`, `bg-foreground/5-10`, `--border*`, `--muted-foreground`, `--foreground` |
-| **10%** | Accent. `--primary` only. | see the reserved list below |
-
-**`--primary` is reserved for these, and nothing else:**
-
-1. The single main CTA on a view (default `<Button>`).
-2. The sidebar active-route indicator.
-3. The primary data series in a chart.
-4. Selection and drag-drop targets (checkboxes, drop zones, the upload dropzone).
-5. Toggle "on" states.
-6. Plan / upgrade affordances (the `Crown` surfaces) — the monetization signal.
-7. Focus rings and active-input borders (`--ring` is `--primary`).
-
-**Never** use `--primary` as a decorative tint. Section-header icons, `glass-chip`
-contents, avatars, play buttons, progress fills, tab underlines, and hover text
-are all **neutral**. If an icon just labels a heading, it takes
-`text-muted-foreground` — or no colour class at all, inheriting from its row.
-
-There is exactly one accent hue. If a surface seems to need a second, it needs
-hierarchy instead — weight, size, or spacing.
-
-Progress and meter fills are neutral (`bg-foreground/30-60`) and escalate to
-`--warning` / `--destructive` only on real thresholds, so a bar's colour always
-means something. See [UsageMeter.logic.ts](src/lib/dashboard/components/UsageMeter.logic.ts).
+| **60%** | Canvas. | `--background` |
+| **30%** | Structure: hairlines, paper bands, muted text. | `--border`, `--paper`, `--muted-foreground` |
+| **10%** | Accent: `--primary` plus the three tag hues. | see the reserved list above |
 
 ### Contrast floors
 
@@ -101,201 +122,233 @@ Non-negotiable, and cheaper to check than to relitigate:
 | Focus ring, control boundary, meaningful icon | 3:1 |
 | Two controls distinguished by colour | 3:1 **luminance**, never hue alone |
 
-This section exists because the old lime `--primary` measured **1.95:1** as a
-focus ring in light mode. Hue-wheel distance is *not* colour-blind distance: red
-and green sit far apart on the wheel and collapse under deuteranopia, so lane and
-status identity must always be carried by label or shape as well as colour.
+Four measured failures were repaired in this pass. Do not reintroduce them:
 
-### Dark mode
+| Element | Was | Now |
+| --- | --- | --- |
+| h2 second line `text-foreground/45` (×6) | `#959595` **2.86:1** | `text-muted-foreground` 4.6:1 |
+| Final CTA h2 `text-foreground/40` | `#a0a0a0` **2.49:1** | `text-muted-foreground` 4.6:1 |
+| Email placeholder `text-muted-foreground/70` | `#969ba5` **2.68:1** | `text-muted-foreground` 4.6:1 |
+| `border-border-low/30` | ~**1.03:1** | `border-border-low` (full strength) |
 
-`--primary` is defined per mode and holds its hue across both — `oklch(0.52 0.20
-264)` on light, `oklch(0.70 0.155 264)` on dark. Test new sections in both modes.
-The old lime could not do this: to stay legible on white it had to drop to L0.55,
-where sRGB's gamut collapses its chroma and it reads as olive rather than lime.
+**Never fade a text token with an opacity modifier.** If copy should be quieter,
+it takes `text-muted-foreground`. Opacity on text is how the four failures above
+happened.
 
 ---
 
 ## Typography
 
-- **Sans / display:** `Geist Variable`. Tight tracking (`-0.02em`), `font-feature-settings: "ss01", "cv11"`.
-- **Mono:** `Geist Mono Variable`. Use for code blocks, file names, stat numbers.
+- **Display (h1, h2):** Satoshi, weight **500**, letter-spacing **normal**.
+- **Everything else:** Inter — body, UI labels, h3–h6 (weight 600, `-0.011em`).
+- **Mono:** Geist Mono, for code, file names, and stat numbers.
+
+Weight 500 is the signature. Headings are confident because of the letterforms,
+not because they are bolded or tracked tight. `font-bold` on a heading is a bug.
+
+Satoshi is **not on Fontsource** — no `@fontsource/satoshi` package exists. The
+ITF-Free-Font-License woff2 files are vendored in
+[static/fonts](static/fonts) and declared with `@font-face` in
+[app.css](src/app.css). Inter and Geist Mono come from Fontsource as normal.
+Licence terms are recorded in [THIRD-PARTY-LICENSES.md](../../THIRD-PARTY-LICENSES.md).
 
 ### Scale
 
-| Use | Size |
-| --- | --- |
-| Hero h1 | `text-5xl … lg:text-[5.25rem]`, `font-semibold`, `leading-[1.02]` |
-| Section h2 | `text-3xl … md:text-5xl`, `font-semibold`, `tracking-tight` |
-| Card h3 | `text-lg … text-xl`, `font-semibold`, `tracking-tight` |
-| Body | `text-base … sm:text-lg`, `leading-relaxed`, `text-muted-foreground` |
-| Eyebrow | `text-[11px]`, `font-semibold`, `uppercase`, `tracking-[0.18em]`, `text-muted-foreground` |
-| Microlabel | `text-[10px]`, `font-bold`, `uppercase`, `tracking-[0.16em]` |
+Nine steps. Line height rides along via Tailwind v4's `--text-*--line-height`
+pairing, so `text-body` sets both and no call site needs a `leading-` utility.
 
-Use `text-balance` on every headline. Use `text-pretty` on every body paragraph.
+| Token | Size | Line height |
+| --- | --- | --- |
+| `text-caption` | 11px | 1.5 |
+| `text-body-sm` | 14px | 1.43 |
+| `text-body` | **16px** | 1.5 |
+| `text-body-lg` | 18px | 1.56 |
+| `text-subheading` | 20px | 1.4 |
+| `text-heading-sm` | 24px | 1.33 |
+| `text-heading` | 30px | 1.25 |
+| `text-heading-lg` | 36px | 1.11 |
+| `text-display` | 48px | 1.04 |
+| `text-display-lg` | 60px | 1.02 |
+
+16px is the canonical body size. **No ad-hoc `text-[Npx]`.** The page previously
+carried 13 arbitrary sizes including 7px, 8px, 9.5px, 10.5px, 11.5px and 12.5px.
+
+Use `text-balance` on every headline, `text-pretty` on every body paragraph.
+
+### Eyebrows
+
+Sentence-case pills, not uppercase micro-labels. The old system had 140
+`uppercase` and 117 `tracking-[0.Xem]` declarations; at 11px that costs legibility
+and, repeated, reads as a tic. `<SectionHeader eyebrow="…">` renders the pill.
+
+---
+
+## Shape
+
+Five radii. Nothing else.
+
+| Element | Value | Utility |
+| --- | --- | --- |
+| Tags, badges, pills | 9999px | `rounded-full` / `.pill` |
+| Inputs | 6px | `rounded-sm` |
+| Buttons | 8–12px | `rounded-lg` |
+| Cards | 12px | `.surface` |
+| Feature surfaces, mockups | 16px | `.surface-lg` / `.mockup-frame` |
+
+The one exception is the hero shelf's 32px concave fillet, which is a *shape
+constant* (it must equal the shelf's own bottom radius) rather than a component
+radius. It is documented in [HeroSteps.svelte](src/lib/components/HeroSteps.svelte).
+
+**Deviation from the reference:** buttons sit at 12px (`--radius-lg`) rather than
+8px, because the radius scale is derived from `--radius` and an 8px button step
+would add a sixth value for no gain.
+
+---
+
+## Elevation
+
+Borders define containers. Shadows are allowed in exactly three places:
+
+| Use | Value |
+| --- | --- |
+| Filled button lift | `--shadow-craft-sm` = `0 1px 2px 0 rgba(0,0,0,.05)` |
+| Selected state in the hero shelf | `--shadow-craft-sm` |
+| Product mockup frame | `--shadow-craft-floating` = `0 0 0 4px` foreground @6% |
+
+Everything else is a hairline. `shadow-craft-md/lg/xl` still exist for the
+dashboard; do not use them on marketing surfaces.
+
+---
+
+## Surfaces
+
+| Class | Use |
+| --- | --- |
+| `.surface` | Cards. White, 1px hairline, 12px. |
+| `.surface-lg` | Feature and showcase panels. White, 1px hairline, 16px. |
+| `.surface-alt` | Nested tonal panel. Paper, no border, 16px. |
+| `.pill` | Tags, badges, eyebrows. White, 1px hairline, 9999px. |
+| `.mockup-frame` | Product screenshots. White, hairline, 16px, 4px ring. |
+
+`glass-card` / `glass-chip` / `glass-strong` are **legacy**. They still exist for
+`/dashboard`, `/admin` and `/share`, and are neutralised to border-first under
+`[data-site="marketing"]`. Do not author new marketing markup with them.
+
+### Backgrounds
+
+The canvas is white. The only textures are:
+
+- A faint 56px line grid, applied once globally in the root layout with a radial
+  fade. This is the blueprint signature.
+- `bg-paper` bands for tonal section separation.
+
+`bg-aurora`, `bg-ambient`, and the full-bleed photo backdrops (`HeroBackdrop`,
+now deleted) are gone. They carried real contrast cost: the hero photo forced a
+five-stop gradient wash just to keep the headline readable.
 
 ---
 
 ## Layout
 
-- **Container:** `<Container>` — `max-w-6xl` default, `narrow` (3xl), `wide` (7xl), `full`.
-- **Section:** `<Section spacing="default | tight | loose | none">` — `py-24 md:py-32` default.
-- Pages always end with `<Footer />`.
-- Section dividers: `border-t border-border-low/60`. No solid horizontal rules.
+- **Container:** `<Container>` — `max-w-6xl` default, `narrow` (3xl), `wide` (7xl).
+- **Section:** `<Section spacing="default | tight | loose | none">` — default is
+  `py-16 md:py-24`. Roughly 64–96px, down from the previous 96–128px.
+- Section dividers: `border-t border-border-low`. No solid rules, no gradients.
+- Pages end with `<Footer />`.
 
 ### Page rhythm
 
-A marketing page composes top to bottom in roughly this order:
-
-1. **Hero** — atmospheric background, eyebrow chip, two-line headline (with rotating word on its own line), one-paragraph subhead targeting the audience, primary + outline CTAs, beta line, then a glass-card preview screenshot with floating chips.
-2. **Trust strip** — short uppercase eyebrow ("Built on tools makers trust") plus the tech-stack logo row (see "Trust strip" below). Honest credibility for a beta product — never fake customer logos.
-3. **Triad cards** — three audience-targeted cards, each with a mini visual.
-4. **Conversion section** — two columns: checklist of outcomes + a product preview screenshot with floating chips.
-5. **Dual feature cards** — side-by-side mockup cards (e.g. command palette + activity bars).
-6. **Big showcase** — single hero screenshot with a wash of primary glow behind it.
-7. **Format / code section** — two columns: bullet list + code/config snippet styled like a tabbed editor.
-8. **Intelligent features** — triptych mockup row, then a 4-cell feature row.
-9. **Final CTA** — full-width glass card with eyebrow chip, hero-scale headline (with italic emphasis on second line), description, dual CTAs.
-10. **Footer**.
-
-Not every page needs every section, but ordering and visual rhythm must match.
+1. **Hero** — split announcement pill, two-line headline with the rotating word
+   on its own line, one-paragraph subhead, filled + outlined CTA pair, meta line.
+2. **Step shelf** — full-bleed paper band; the white hero bulges down into it
+   through two concave fillets, carrying the Record / Polish / Share tabs and the
+   product mockup.
+3. **Proof** — paper band, before/after comparison.
+4. **Trust strip** — values row plus the open-source stack logos.
+5. **Spine sections** — Record, Polish, Share, each a `<ShowcasePanel>`.
+6. **Supporting beats** — extensions, Cloud, founders, pricing teaser.
+7. **FAQ** — sticky title left, single-open accordion right.
+8. **Final CTA**, then **Footer**.
 
 ---
 
 ## Components
 
-### Glass surfaces
+### Hero step shelf
 
-| Class | Use |
-| --- | --- |
-| `glass-card` | Feature cards, mockup containers, CTA cards. |
-| `glass-chip` | Floating labels, status pills, icon containers. |
-| `glass` / `glass-strong` | Navbar-style overlays. |
+[HeroSteps.svelte](src/lib/components/HeroSteps.svelte). A `tablist` of the three
+spine steps that hangs out of the white hero into the paper band below.
 
-Glass surfaces always sit on top of an atmospheric or grid background — never
-flat. Pair with `shadow-craft-md`, `shadow-craft-lg`, or `shadow-craft-xl` for
-depth, plus `rounded-2xl` (cards) or `rounded-[2rem]` (CTA hero card).
+- Geometry: shelf `rounded-b-[32px]`, two 32px masked fillets. The fillet radius
+  **must** track the shelf's bottom radius or the joint reads as two shapes.
+- Tabs take their sizing and focus treatment from `buttonVariants({ variant:
+  "ghost" })` so they cannot drift from the button system.
+- Selected state cross-fades a white skin in underneath the label. Unselected is
+  bare — no resting fill, no border.
+- Auto-advances every 5.2s; pauses on hover and focus; pinned under
+  `prefers-reduced-motion`.
+- Only the visible clip decodes. Three concurrent `<video>` decodes is the
+  cheapest way to make a landing page stutter.
+- Per-step `src` falls back to a shared take, so the cross-fade is wired before
+  the three clips exist.
 
-### Eyebrows
+### Navbar
 
-```svelte
-<Eyebrow icon={Sparkles} variant="primary">v0.2 beta · what's new</Eyebrow>
-```
-
-Always lead a section with an eyebrow chip when the section has a header.
-
-### Section header
-
-```svelte
-<SectionHeader
-  eyebrow="Built for modern makers"
-  title="A recorder shaped to your workflow."
-  description="…"
-  align="left | center"
-/>
-```
+Minimal top bar: logo left, links centred, ghost sign-in + filled dark Download
+right. **Transparent with no border until scrolled** past 8px, then hairline +
+canvas. A permanent border reads as a frame around the page.
 
 ### Buttons
 
-- Primary CTA: `<Button size="lg" class="gap-2.5">` with a leading icon.
-- Secondary CTA: `<Button variant="outline" size="lg">` with a trailing arrow.
-- **Avoid** `variant="ghost"` next to a solid button — visual weight is too uneven.
-- Trailing arrows use `transition-transform group-hover/cta:translate-x-0.5`.
+- Primary: `<Button variant="dark">` — near-black fill, white text. One per view.
+- Secondary: `<Button variant="outline">` — white, hairline, border darkens on hover.
+- Press feedback is `active:scale-[0.99]`. There is no hover-grow and no
+  radius-morph-on-press; both were removed from `@recast/ui` in this pass.
 
-### Reveal
-
-Wrap any content that should fade-up on scroll in `<Reveal delay={i * 60}>`.
-Stagger lists by ~60–80ms per item. Use `as="li"` when wrapping list items.
-
-### Motion vocabulary
-
-Recast has **one motion ease**: `cubic-bezier(0.625, 0.05, 0, 1)`, exported as
-`CRAFT_EASE` from `@recast/ui/utils`. It's snappy at the start and lands gently —
-the same curve the FloatingMenu uses for its open/close timeline.
-
-| Use | Duration | Notes |
-| --- | --- | --- |
-| Hover state changes | `duration-200` | bg/text/opacity shifts on buttons, links, chips |
-| Overlay enter (dropdown, popover, tooltip, hover-card, dialog) | `duration-200` | via `CRAFT_OVERLAY_ANIMATION` |
-| Overlay exit | `duration-150` | slightly faster than enter — feels responsive |
-| Sheet enter | `duration-300` | longer feels intentional for full-edge surfaces |
-| Backdrop fade | `duration-200` enter / `150` exit | via `CRAFT_OVERLAY_BACKDROP_ANIMATION` |
-
-**Subtlety rules:**
-- Scale: `0.98` (2% delta) — never `0.95` or smaller; that reads as "popping".
-- Slide: 4px (`slide-in-from-X-1`) for popovers, 24px (`slide-in-from-X-6`) for sheets.
-- Avoid `ease-in-out` and `ease-linear` for state transitions — use `CRAFT_EASE`.
-
-**For new bits-ui Content components**, import `CRAFT_OVERLAY_ANIMATION` from
-`@recast/ui/utils` and prepend it to the class list. Don't hand-roll `data-open:`
-animation classes per component — they will drift.
-
-```svelte
-<script>
-  import { CRAFT_OVERLAY_ANIMATION, cn } from "@recast/ui/utils";
-</script>
-
-<Primitive.Content class={cn(CRAFT_OVERLAY_ANIMATION, "rounded-lg ...", className)} />
-```
-
-**Svelte transitions** (`fly`, `fade`, `slide` from `svelte/transition`) are
-preferred for any in-app component you control directly. Use bits-ui's
-data-state CSS animations only for portal-mounted overlays where Svelte's
-`transition:` directives can't reach.
-
-### TextLoop (rotating word)
-
-Layout-shift safe pattern:
+### TextLoop (rotating word) — brand identity, do not change
 
 ```svelte
 <h1>
-  Demos that look
-  <span class="mt-2 flex justify-center font-medium italic text-foreground/40">
-    <span class="inline-grid overflow-hidden">
-      <TextLoop class="text-primary" texts={words} interval={3000} />
-    </span>
+  Record once.
+  <span class="mt-1 flex justify-center italic text-muted-foreground">
+    <span class="whitespace-nowrap">Ship a&nbsp;</span>
+    <SelectionWord>
+      <span class="inline-grid overflow-hidden">
+        <TextLoop class="text-primary" texts={words} interval={3000} />
+      </span>
+    </SelectionWord>
   </span>
 </h1>
 ```
 
-The rotating word **must** sit on its own block-level line (a `flex` row works);
-GSAP animates the inner width but the outer line is independent so the rest of
-the headline never reflows.
+The rotating word **must** sit on its own block-level line; GSAP animates the
+inner width and the outer line stays independent so the headline never reflows.
+The italic here is deliberate and is the one place italic is allowed — it frames
+the rotating output as an editable object. Section h2s do **not** get it.
+
+### Reveal
+
+Wrap scroll-in content in `<Reveal delay={i * 70}>`. Stagger lists 60–80ms.
+
+### Motion
+
+One ease: `cubic-bezier(0.625, 0.05, 0, 1)`, exported as `CRAFT_EASE`.
+
+| Use | Duration |
+| --- | --- |
+| Hover / state colour change | 200ms |
+| Cross-fade (shelf skin, clip swap) | 300–420ms |
+| Overlay enter / exit | 200 / 150ms |
+| Sheet enter | 300ms |
+
+Scale deltas are 2% (`0.98`), never smaller. Svelte `transition:` directives use
+WAAPI and **bypass the CSS reduced-motion guard** — gate them in JS with
+`prefersReducedMotion()`.
 
 ### Trust strip
 
-Recast is in beta — **don't fabricate customer logos**. Use the open-source tech
-stack as honest social proof. Logos render via [Simple Icons CDN](https://simpleicons.org)
-in a muted neutral (`9ca3af`) tone so they read as a strip, not a competing focal point.
-
-Each entry links to the project, has hover opacity transition, and shows a
-text label next to the icon for readers who don't recognize the mark.
-
-If you want to show real users in the future, switch the heading to
-"Loved by teams at" and use **only** companies that have explicitly opted in.
-
-### Atmospheric backgrounds
-
-Never use solid color section backgrounds. Use one of:
-
-- `bg-aurora` — radial primary glows, top-weighted.
-- `bg-ambient` — softer, multi-corner radial wash.
-- `bg-grid bg-grid-fade` — subtle 56px grid with radial mask.
-- `bg-dots` — 20px dot pattern.
-
-Hero sections layer: aurora + clouds + grid (in that z-order) for depth.
-
----
-
-## CTA pattern
-
-The "Skip the editor. Ship the demo." CTA is the canonical end-of-page card.
-Reuse this exact structure on every page that needs a closing CTA:
-
-- Pulsing beta chip ("v0.2 beta · ready when you are")
-- Hero-scale h2 with italic emphasis on the second line
-- One-line supporting copy ("Free during beta. No account required. Three platforms. One opinionated tool.")
-- Solid primary CTA (`Download Recast`) + outline CTA (`See what's new` / `Explore features`)
-- Top-positioned radial primary glow (~22% opacity) + 1px hairline gradient on top edge
+Recast is in beta. **Do not fabricate customer logos.** The open-source stack is
+the honest social proof, rendered in a muted neutral via Simple Icons.
 
 ---
 
@@ -303,20 +356,23 @@ Reuse this exact structure on every page that needs a closing CTA:
 
 **Do**
 
-- Use markdown link syntax (`[file.svelte](src/lib/components/file.svelte)`) when referencing code.
-- Use [Lucide icons](https://lucide.dev) only.
-- Reference design tokens via Tailwind utilities (`bg-primary`, `text-muted-foreground`).
-- Reach for `glass-card` + `shadow-craft-*` for elevated surfaces.
-- Test new sections in **both** light and dark — primary saturation differs dramatically.
+- Define containers with `border-border-low` at full strength.
+- Use the nine-step type scale and the five-radius vocabulary.
+- Keep Satoshi for h1/h2 only; Inter handles everything at 30px and below.
+- Give each feature tag exactly one hue, rendered duotone.
+- Reserve `--primary` to the listed roles; commit actions are near-black.
+- Test new sections in both light and dark.
 
 **Don't**
 
-- Hardcode hex/rgb colors. Use CSS variables and `color-mix()` in `srgb`.
-- Use a different icon library mixed with Lucide.
-- Stack absolute-positioned cards inside a fixed-height container — they create
-  dead space and z-stack confusion with the next section. Use a grid instead.
-- Use `variant="ghost"` for a secondary CTA next to a solid one — pairs badly.
-- Let TextLoop animate inside an inline flow — it will shift adjacent text.
+- Don't fade text with an opacity modifier — use `text-muted-foreground`.
+- Don't dilute the hairline (`border-border-low/40` and friends).
+- Don't add `backdrop-filter` or `shadow-craft-md`+ to a marketing surface.
+- Don't write `text-[13px]` or any other ad-hoc size.
+- Don't use `uppercase` + letter-spaced eyebrows; use the sentence-case pill.
+- Don't put a photo behind a headline.
+- Don't italicise section headings.
+- Don't invert the theme mid-page. The site is one surface.
 
 ---
 
@@ -324,15 +380,10 @@ Reuse this exact structure on every page that needs a closing CTA:
 
 | Route | Sections |
 | --- | --- |
-| `/` | `#why`, `#record`, `#polish`, `#share`, `#founders`, `#pricing-teaser`, `#cta` |
-| `/pricing` | hero, plan cards (Free / Cloud waitlist), comparison table |
-| `/gamers` | hero, flow, use cases, why-vs-OBS, `#cta` |
+| `/` | `#proof`, `#why`, `#record`, `#polish`, `#editor`, `#extensions`, `#share`, `#cloud`, `#founders`, `#pricing-teaser`, `#faq`, `#cta` |
+| `/pricing` | hero, plan cards, comparison table |
 | `/features` | pillars, supports, `#cta` |
 | `/download` | hero, `#all-platforms` |
 | `/changelog` | hero, release timeline |
 
-The homepage spine is **Record → Auto-polish → Share** (see `POSITIONING.md`).
-Recast Cloud is not shipped — the `#share` section and `/pricing` Cloud card
-sell a waitlist, never a live product.
-
-Keep navbar/footer links in sync with these anchors. Stale anchors are silent UX bugs.
+Keep navbar and footer links in sync. Stale anchors are silent UX bugs.

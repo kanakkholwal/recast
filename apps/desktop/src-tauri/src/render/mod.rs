@@ -4,4 +4,5 @@ pub mod easing;
 pub mod graph;
 pub mod mask_export;
 pub mod node_types;
+pub mod ops;
 pub mod scene_anim;

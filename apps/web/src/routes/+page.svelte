@@ -57,14 +57,8 @@ import {
 	storageTiers,
 } from "./data";
 
-// Svelte transitions bypass the CSS reduced-motion guard (WAAPI), so gate
-// the FAQ expand + waitlist reveal in JS. See motion-core/reduced-motion.
 const reduced = $derived(prefersReducedMotion());
 
-// Recast Cloud — the hosted tier. Drive sharing stays the free user-owned
-// path; Cloud adds the workspace, analytics, and access controls a raw Drive
-// link can't express. Sign-ups are open, so the email field hands off to
-// /signup prefilled rather than capturing a waitlist row.
 let email = $state("");
 const signupHref = $derived(
 	email.trim()
@@ -76,25 +70,10 @@ function startWithEmail(e: SubmitEvent) {
 	goto(signupHref);
 }
 
-// Per-feature error flag. Flipped by the <img>'s onerror handler when the
-// asset file isn't there yet — the rail card then falls back to its icon
-// hero, so a half-produced screenshot batch never shows broken images.
 let editorImgErrored = $state<Record<string, boolean>>({});
 
 let openFaq = $state<number | null>(0);
 
-// Drag-to-scroll for the editor rail with flick-to-fling momentum. Pointer
-// tracks 1:1 while the button is held; on release we measure the last few
-// moves as velocity, then animate a decaying rAF loop until the rail
-// either settles or hits a bound. Snap is suspended during the drag (so
-// the pointer never fights the snap), then restored so the rail settles
-// to the nearest card on release. Keyboard users get the same reach via
-// the rail's tabindex (native arrow-key scroll on a focused scroll
-// container). Touch users pan natively — the rail only intercepts
-// mouse/pen, so a finger flick never conflicts.
-//
-// Tuned so a quick 200px flick decays over ~700ms (4px initial velocity
-// → ~0). Reduced motion keeps the action direct (no inertia).
 function dragScroll(node: HTMLElement) {
 	const reduced =
 		typeof window !== "undefined" &&
@@ -144,9 +123,6 @@ function dragScroll(node: HTMLElement) {
 		}
 		if (reduced) return;
 
-		// Velocity = Δx / Δt over the recent sample window. Negative because
-		// the rail scrolls opposite the pointer (drag right → rail moves
-		// leftward in scroll coordinates).
 		const first = samples[0];
 		const last = samples[samples.length - 1];
 		if (!first || !last || first === last) return;
@@ -197,8 +173,7 @@ function dragScroll(node: HTMLElement) {
 	pageTitle="Recast - Record. Polish. Share."
 />
 
-<!-- FAQ rich result. Generated from the same `faqs` array rendered below, so
-     the markup never drifts from the on-page copy. -->
+
 <svelte:head>
 	{@html `<script type="application/ld+json">${faqJsonLd}<\/script>`}
 </svelte:head>
@@ -206,13 +181,8 @@ function dragScroll(node: HTMLElement) {
 <main class="text-foreground">
 	<Hero previewSrc={beforeAfterClips[1].src} />
 
-	<!--
-	  Proof section. A tonal paper band, not a forced-dark one: the system is
-	  light and border-first, and a mid-page theme inversion reads as a
-	  different site. Landing anchor for the Hero's "Watch it work" CTA
-	  (#proof), so that button is never dead.
-	-->
-	<div id="proof" class="border-y border-border-low bg-paper">
+	
+	<div id="proof" class="border-y border-border-low">
 		<Section spacing="tight" class="overflow-hidden">
 			<Container>
 				<Reveal variant="up">

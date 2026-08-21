@@ -18,6 +18,10 @@ fn cap_software_x264_preset(preset: &str) -> &str {
 
 /// Append the codec/output tail to `args` for the requested `format`. Mirrors the
 /// former inline `match request.format` in `export_video` verbatim.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one call site; grouping these into a struct would only move the argument list"
+)]
 pub(crate) fn append_codec_args(
     args: &mut Vec<String>,
     format: &str,
@@ -26,8 +30,7 @@ pub(crate) fn append_codec_args(
     speed: ExportSpeed,
     has_audio_map: bool,
     output_path: &Path,
-    // Force the software x264 encoder even when a hardware one is available — the
-    // retry path after a hardware encoder (NVENC/AMF/QSV) crashes mid-encode.
+    // Retry path after a hardware encoder (NVENC/AMF/QSV) crashes mid-encode.
     force_software: bool,
 ) {
     match format {

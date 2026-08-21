@@ -157,9 +157,14 @@ Needing individual attention:
 - **[gsap](https://gsap.com/standard-license)** (GSAP Standard "no charge" licence) —
   used by `apps/web` only, not the desktop app. Free for this use, but it is a
   bespoke licence with conditions, not an OSI one.
-- **Fonts** (OFL-1.1): Geist, Geist Mono, Google Sans, Instrument Sans, via
+- **Fonts** (OFL-1.1): Geist, Geist Mono, Google Sans, Inter, via
   [Fontsource](https://fontsource.org). OFL permits bundling and embedding; the fonts
   must keep their names and cannot be sold on their own.
+- **[Satoshi](https://www.fontshare.com/fonts/satoshi)** (ITF Free Font License) —
+  display face for `apps/web`, vendored as woff2 in `apps/web/static/fonts` because
+  Fontshare faces are not published to Fontsource. The ITF FFL permits free
+  commercial use and webfont embedding; the files may not be resold or redistributed
+  as a font product, and the name must be preserved.
 - **@polar-sh/better-auth**, **@polar-sh/sdk**, **spawndamnit** declare no licence
   field. ⚠ **Needs review** — check their repos before a release build.
 

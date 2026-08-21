@@ -518,7 +518,8 @@ where
         path_buf,
         EditorWriterKind::Agent,
         writer_id.to_string(),
-    )?;
+    )
+    .map_err(|e| e.to_string())?;
 
     let doc =
         tauri::async_runtime::block_on(crate::commands::load_editor_document(path.to_string()))
@@ -547,22 +548,6 @@ where
     crate::commands::editor_session::commit(state, app);
     let _ = app.emit("editor-state:changed", serde_json::json!({ "path": path }));
     Ok(result)
-}
-
-/// Apply the agent-supplied `value` at a dotted JSON pointer inside the
-/// JSON shape of `RenderState`. Walks the path, replaces the leaf, and
-/// reports a structured error if the path doesn't exist.
-pub(crate) fn apply_dotted_path_set(
-    state: &mut serde_json::Value,
-    field: &str,
-    value: serde_json::Value,
-) -> Result<(), String> {
-    let pointer = format!("/{}", field.replace('.', "/"));
-    let target = state
-        .pointer_mut(&pointer)
-        .ok_or_else(|| format!("no field at path '{field}'"))?;
-    *target = value;
-    Ok(())
 }
 
 /// Single invariant violation. The agent/CI/UI inspect `reason` to map to a
@@ -598,7 +583,7 @@ const VALIDATION_EPS: f64 = 1e-4;
 /// (empty = nothing needed repair). Run BEFORE `validate_render_state`.
 pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<String> {
     let mut repairs = Vec::new();
-    if !(source_duration > 0.0) {
+    if !source_duration.is_finite() || source_duration <= 0.0 {
         return repairs;
     }
     if s.trim_end.is_finite() && s.trim_end > source_duration + VALIDATION_EPS {
@@ -1055,9 +1040,11 @@ mod audio_mix_tests {
 
     #[test]
     fn per_source_gain_reaches_the_graph() {
-        let mut s = AudioSettings::default();
-        s.system_volume = 100.0;
-        s.mic_volume = 50.0;
+        let s = AudioSettings {
+            system_volume: 100.0,
+            mic_volume: 50.0,
+            ..AudioSettings::default()
+        };
         let (complex, map) = append_audio_to_complex(
             None,
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
@@ -1076,8 +1063,10 @@ mod audio_mix_tests {
 
     #[test]
     fn muted_source_is_dropped_from_the_mix() {
-        let mut s = AudioSettings::default();
-        s.mic_muted = true;
+        let s = AudioSettings {
+            mic_muted: true,
+            ..AudioSettings::default()
+        };
         let (complex, _map) = append_audio_to_complex(
             None,
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
@@ -1094,9 +1083,11 @@ mod audio_mix_tests {
 
     #[test]
     fn all_sources_muted_yields_no_audio() {
-        let mut s = AudioSettings::default();
-        s.system_muted = true;
-        s.mic_muted = true;
+        let s = AudioSettings {
+            system_muted: true,
+            mic_muted: true,
+            ..AudioSettings::default()
+        };
         assert!(append_audio_to_complex(
             None,
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
@@ -1109,8 +1100,10 @@ mod audio_mix_tests {
 
     #[test]
     fn normalize_appends_loudnorm_to_the_mix() {
-        let mut s = AudioSettings::default();
-        s.normalize_loudness = true;
+        let s = AudioSettings {
+            normalize_loudness: true,
+            ..AudioSettings::default()
+        };
         let (complex, map) = append_audio_to_complex(
             None,
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
@@ -1201,9 +1194,12 @@ mod audio_mix_tests {
 
     #[test]
     fn source_kind_uses_master_only() {
-        let mut s = AudioSettings::default();
-        s.volume = 50.0;
-        s.mic_volume = 0.0; // a per-source gain must not touch an embedded source track
+        // A per-source gain must not touch an embedded source track.
+        let s = AudioSettings {
+            volume: 50.0,
+            mic_volume: 0.0,
+            ..AudioSettings::default()
+        };
         let (complex, _) = append_audio_to_complex(None, &[(0, AudioKind::Source)], &s, 0.0, 10.0)
             .expect("source audio");
         assert!(complex.contains("volume=0.5000"));
@@ -3025,7 +3021,7 @@ pub(crate) async fn run_export_job(
         match first {
             Err(e)
                 if sw_retry_args.is_some()
-                    && parse_ffmpeg_exit_code(&e).map_or(false, is_ffmpeg_crash_code) =>
+                    && parse_ffmpeg_exit_code(&e).is_some_and(is_ffmpeg_crash_code) =>
             {
                 log::warn!(
                     "export[{retry_export_id}]: hardware encoder crashed ({e}); retrying with software x264"
