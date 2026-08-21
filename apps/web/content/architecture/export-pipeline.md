@@ -1,4 +1,28 @@
-# Export Pipeline
+---
+kind: architecture
+title: "Export pipeline"
+description: "Browser compositing to a video-only temp mp4, the Rust mux tail, the durable SQLite export queue, and the automatic FFmpeg fallback."
+position: 6
+status: production
+domain: pipeline
+summary: "The browser renders every output frame through the preview's own compositor and WebCodecs-encodes it, and Rust only muxes the audio in with a stream copy."
+inputs:
+  - "An EditorRenderState snapshot"
+  - "Source media from the .recast bundle"
+  - "Export settings: format, resolution, fps"
+outputs:
+  - "An .mp4 or .gif on disk"
+  - "Progress and ETA on a request-scoped channel"
+entrypoints:
+  - "packages/editor/src/lib/export/"
+  - "apps/desktop/src/lib/stores/exportActivity.svelte.ts"
+  - "apps/desktop/src-tauri/src/commands/export/"
+invariants:
+  - "The Rust FFmpeg compositor is an automatic fallback, never a user-facing choice."
+  - "A video stream copy means the browser must render at source-composition resolution."
+  - "Two serial queues cooperate: an app-scoped render queue, and a durable Rust queue that survives restart."
+  - "A browser-path failure falls back to Rust without the user losing the job."
+---
 
 ## Overview
 
@@ -218,10 +242,10 @@ clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
 
 ## Related
 
-- [03-preview-and-rendercore.md](./03-preview-and-rendercore.md) — the shared
+- [03-preview-and-rendercore.md](/architecture/preview-rendercore) — the shared
   `RenderCore`/`WebGL2Backend` that composites both preview and export frames.
-- [04-media-decode-and-workers.md](./04-media-decode-and-workers.md) — MediaBunny
+- [04-media-decode-and-workers.md](/architecture/media-decode-workers) — MediaBunny
   decode, `samplesAtTimestamps`, and the render-worker ownership pattern.
-- [07-ipc-and-tauri-boundary.md](./07-ipc-and-tauri-boundary.md) — the
+- [07-ipc-and-tauri-boundary.md](/architecture/ipc-tauri-boundary) — the
   `export-state` / `export-jobs-changed` event streams, `AppError` boundary, and
   the raw-bytes `save_browser_export_video` invoke.

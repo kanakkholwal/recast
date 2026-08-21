@@ -1,4 +1,5 @@
 ---
+kind: post
 title: "Bringing Recast to macOS and Linux"
 description: "Recast started as a Windows app. Here is what it took to run it natively on macOS and Linux: the two decisions that kept it from becoming a mess, the freeze that only happened on a Mac, and exactly where each platform stands today."
 slug: bringing-recast-to-macos-and-linux

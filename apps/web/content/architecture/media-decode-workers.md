@@ -1,4 +1,29 @@
-# Media Decode & Workers
+---
+kind: architecture
+title: "Media decode and workers"
+description: "MediaBunny decoding into a GPU texture ring, the five Web Workers, and the ownership rule that keeps package-supplied workers resolvable."
+position: 4
+status: production
+domain: render
+summary: "Video decodes off the main thread and uploads straight into a GPU texture, and nothing on the main thread ever holds a decoded frame."
+inputs:
+  - "A media file path or blob"
+  - "Requested presentation timestamps"
+outputs:
+  - "GPU textures in a frame ring"
+  - "Filmstrip tiles"
+  - "Smoothed cursor paths"
+  - "Encoded export chunks"
+entrypoints:
+  - "packages/media/src/playback/source.ts"
+  - "packages/media/src/playback/worker.ts"
+  - "apps/desktop/src/lib/workers/index.ts"
+invariants:
+  - "Never retain a decoded VideoFrame or a superseded decode run, or the decoder silently stops."
+  - "The host app spawns every worker and the package only exports the body, because new URL inside a package resolves against the package."
+  - "Post the real presentation timestamp, not the requested one."
+  - "MediaBunny's getSample and getCanvas build a fresh VideoDecoder per call, so callers must serialize."
+---
 
 ## Overview
 
@@ -212,9 +237,9 @@ GPU reset gets a bounded auto-rebuild, a permanent codec failure falls back to
 
 ## Related
 
-- [03-preview-and-rendercore.md](03-preview-and-rendercore.md) — the shared
+- [03-preview-and-rendercore.md](/architecture/preview-rendercore) — the shared
   `WebGL2Backend`/`RenderCore` compositor the render + export workers reuse
-- [05-timeline-model.md](05-timeline-model.md) — cuts/segments and the `floorUs`
+- [05-timeline-model.md](/architecture/timeline-model) — cuts/segments and the `floorUs`
   the decode path honors; filmstrip virtualization
-- [06-export-pipeline.md](06-export-pipeline.md) — the export-render worker and why
+- [06-export-pipeline.md](/architecture/export-pipeline) — the export-render worker and why
   `exportActivity` stays host-side

@@ -339,7 +339,7 @@ leaves the whole section stuck at `opacity-0` when JS never runs.
 
 [FeatureMarquee.svelte](src/lib/components/FeatureMarquee.svelte) — the editor
 tour as one slow horizontal loop (64s) rather than a rail the visitor has to
-drag. Ambient, not a carousel: there are no arrows and no dots.
+drag. Ambient, not a carousel: no arrows, no dots.
 
 - The track holds the list **twice** and translates exactly `-50%`, so the seam
   lands on an identical frame and the loop is invisible. The second copy is
@@ -347,15 +347,32 @@ drag. Ambient, not a carousel: there are no arrows and no dots.
 - Both edges cross-fade via `mask-image`, so cards dissolve into the page
   instead of being sliced by the container edge.
 - Hover or focus-within parks the animation, so a card can actually be read.
-- Placeholder glyphs carry a 5s `breathe` loop, staggered per card.
+- **Card art is vector only.** Screenshots in a 64s loop are a lot of bytes for
+  something that scrolls past, and they age with every UI change. Each card is a
+  duotone glyph on `bg-paper` over two SVG rings that ping outward, staggered per
+  card. `editorFeatures` no longer carries an `image` field.
 
 **Reduced motion needs an explicit kill here.** The global guard collapses
 `animation-duration` to `0.01ms`, which would snap the track straight to its end
 frame. The component's own `@media (prefers-reduced-motion: reduce)` sets
-`animation: none` on both loops and turns the rail into an ordinary scroller.
+`animation: none` on every loop and turns the rail into an ordinary scroller.
 
 Badges are `Auto` / `Manual` at `text-caption` with a 4px dot — not the old
 mono, uppercase, letter-spaced `AUTOMATIC`.
+
+### Product mocks
+
+`RecordMock` and friends are vector and CSS only; no new animation dependency.
+`gsap` is already in the app for `TextLoop`, and Svelte's own transitions cover
+the rest.
+
+The rule for a mock that loops: **move one object, don't cross-fade many.**
+`RecordMock` slides a single highlight between rows and retypes the query line
+to match the row it lands on. Three rows each swapping their own background
+reads as a flicker; one moving highlight reads as keyboard navigation.
+
+Every loop needs a `prefers-reduced-motion` branch that pins the mock to a
+finished state — first row selected, query already typed, caret hidden.
 
 ### SectionLabel
 

@@ -1,4 +1,27 @@
-# IPC & Tauri Boundary
+---
+kind: architecture
+title: "IPC and the Tauri boundary"
+description: "How the WebView talks to the Rust core: typed invoke wrappers, AppError, request-scoped progress channels, and service injection."
+position: 7
+status: production
+domain: platform
+summary: "Every Tauri call funnels through typed wrappers in one desktop module, so the editor package stays platform-free and the Rust command surface stays one list."
+inputs:
+  - "Typed command calls from the desktop ipc module"
+  - "Channel handles for progress"
+outputs:
+  - "Command results or an AppError"
+  - "Streamed progress events scoped to one invoke"
+entrypoints:
+  - "apps/desktop/src/lib/ipc.ts"
+  - "apps/desktop/src-tauri/src/lib.rs"
+  - "apps/desktop/src-tauri/src/commands/error.rs"
+invariants:
+  - "Sync Tauri commands run on the main thread and freeze the macOS WKWebView, so heavy commands are async plus spawn_blocking."
+  - "AppError carries a machine code but serializes to a plain string for back-compat."
+  - "Long-running progress rides a request-scoped channel, not a global event."
+  - "Local media is served through convertFileSrc and the asset protocol, never read into JSON."
+---
 
 ## Overview
 
@@ -92,6 +115,6 @@ The editor package cannot import Tauri. Instead:
 
 ## Related
 
-- [02-editor-forking-and-host-seam.md](02-editor-forking-and-host-seam.md) — the package/host split this boundary enforces
-- [06-export-pipeline.md](06-export-pipeline.md) — export queue, `enqueue_export`, and `export-state` events
-- [08-state-and-project-format.md](08-state-and-project-format.md) — project load/save commands and the `.recast` format
+- [02-editor-forking-and-host-seam.md](/architecture/editor-host-seam) — the package/host split this boundary enforces
+- [06-export-pipeline.md](/architecture/export-pipeline) — export queue, `enqueue_export`, and `export-state` events
+- [08-state-and-project-format.md](/architecture/state-project-format) — project load/save commands and the `.recast` format

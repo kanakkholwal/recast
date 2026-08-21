@@ -1,4 +1,28 @@
-# Captions & Transcription
+---
+kind: architecture
+title: "Captions and transcription"
+description: "On-device ASR, the shared caption model driving preview, burn-in and sidecars, and Silero VAD silence detection on the tract runtime."
+position: 9
+status: production
+domain: pipeline
+summary: "Audio becomes a transcript on-device, one pure caption model drives three surfaces that must agree, and a voice-activity model suggests silent ranges to cut."
+inputs:
+  - "A clip's audio decoded to 16 kHz mono"
+  - "Caption style and animation settings"
+outputs:
+  - "A transcript with per-word timings"
+  - "Preview overlay, export burn-in, and SRT or VTT sidecars"
+  - "Silence cut suggestions"
+entrypoints:
+  - "apps/desktop/src-tauri/src/transcription/mod.rs"
+  - "packages/captions/src/"
+  - "apps/desktop/src-tauri/src/transcription/silence.rs"
+invariants:
+  - "Captions split at real cut boundaries across preview, burn-in, and sidecars, but not at every split or speed boundary."
+  - "The caption style and animation shapes are mirrored in TS and Rust with no shared source, and a guard test asserts the defaults match."
+  - "The voice-activity model is fetched at runtime rather than bundled."
+  - "Silence detection produces suggestions, never automatic cuts."
+---
 
 ## Overview
 
@@ -124,6 +148,6 @@ flowchart LR
 
 ## Related
 
-- [`05-timeline-model.md`](./05-timeline-model.md) — time-map, cuts, per-segment speed; the kept-span math captions clip against.
-- [`06-export-pipeline.md`](./06-export-pipeline.md) — FFmpeg graph, ASS burn-in stage ordering, sidecar writing.
-- [`03-preview-and-rendercore.md`](./03-preview-and-rendercore.md) — preview compositor + the browser RenderCore export path the browser caption layer plugs into.
+- [`05-timeline-model.md`](/architecture/timeline-model) — time-map, cuts, per-segment speed; the kept-span math captions clip against.
+- [`06-export-pipeline.md`](/architecture/export-pipeline) — FFmpeg graph, ASS burn-in stage ordering, sidecar writing.
+- [`03-preview-and-rendercore.md`](/architecture/preview-rendercore) — preview compositor + the browser RenderCore export path the browser caption layer plugs into.

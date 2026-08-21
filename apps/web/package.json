@@ -66,6 +66,7 @@
 		"@tabler/icons-svelte": "^3.46.0",
 		"@takumi-rs/wasm": "^1.8.7",
 		"@unpic/svelte": "^1.0.1",
+		"@xyflow/svelte": "^1.6.3",
 		"aws4fetch": "^1.0.20",
 		"better-auth": "^1.7.1",
 		"bits-ui": "^2.19.0",

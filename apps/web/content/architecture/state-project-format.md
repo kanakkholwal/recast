@@ -1,4 +1,27 @@
-# State & Project Format
+---
+kind: architecture
+title: "State and the project format"
+description: "The Svelte 5 runes store that holds the whole document, the one-way flow rule, and the sectioned versioned .recast v2 bundle."
+position: 8
+status: production
+domain: editor
+summary: "One reactive store is the single source of truth, the render engines read a snapshot and never write back, and Rust splits that snapshot into versioned sections inside a ZIP."
+inputs:
+  - "A loaded .recast bundle"
+  - "User edits through store methods"
+outputs:
+  - "Render-state snapshots for preview and export"
+  - "An atomically written .recast v2 bundle"
+entrypoints:
+  - "packages/editor/src/stores/editor-store.svelte.ts"
+  - "packages/editor/src/lib/editor/render-state.ts"
+  - "apps/desktop/src-tauri/src/project/"
+invariants:
+  - "State flows one way: the engine reads the store and never mutates it."
+  - "An effect that writes store state must untrack and run without undo, or every field becomes an undo dependency."
+  - "All writes are atomic, temp file then rename, and never remove before rename."
+  - "captureSettings and applySnapshot must stay in lockstep or undo silently drops a field."
+---
 
 ## Overview
 

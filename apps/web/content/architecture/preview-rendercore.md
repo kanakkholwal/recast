@@ -1,4 +1,28 @@
-# Preview & RenderCore
+---
+kind: architecture
+title: "Preview and RenderCore"
+description: "The WebGL2 compositor that draws one output frame, the free-running playback clock, and the pass list shared by preview and export."
+position: 3
+status: production
+domain: render
+summary: "A scene plus a moment in time is evaluated into a flat uniform set and painted in one pass list, and the offline export runs the identical code."
+inputs:
+  - "EditorStore scene: segments, zoom, cursor, background, shadow, animations"
+  - "Decoded frames from the texture ring"
+  - "Output time from PlaybackClock"
+outputs:
+  - "A composited frame in the on-screen WebGL2 canvas"
+  - "The same frames, encoded, during export"
+entrypoints:
+  - "packages/editor/src/lib/render/frame-params.ts"
+  - "packages/editor/src/components/VideoPreview.svelte"
+  - "packages/render/src/"
+invariants:
+  - "The picture clock is master; a video element's currentTime stalls during its own seek and freezes the picture at every cut."
+  - "computeFrameParams stays DOM-free, GL-free, and store-free so it unit-tests in plain Node."
+  - "The dot cursor lives in the shader; every other cursor style is an overlay quad."
+  - "Preview suspends during a browser export so two encoders never contend for the GPU."
+---
 
 ## Overview
 

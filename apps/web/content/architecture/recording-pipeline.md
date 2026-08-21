@@ -1,4 +1,32 @@
-# Recording Pipeline
+---
+kind: architecture
+title: "Recording pipeline"
+description: "The Rust capture path: platform capture backends, the constant-frame-rate pacer, the FFmpeg encoder, and the cursor, audio, and camera tracks."
+position: 1
+status: production
+domain: capture
+summary: "Three joined threads (capture, encode, cursor) plus independent audio sessions turn a screen selection into the files the editor later opens."
+inputs:
+  - "CaptureTarget: display, window, or region"
+  - "System loopback and microphone audio"
+  - "OS cursor position sampled at 125 Hz"
+outputs:
+  - "recording.mp4 (H.264)"
+  - "cursor.json"
+  - "audio.wav and mic.wav"
+  - "camera.mp4"
+entrypoints:
+  - "apps/desktop/src-tauri/src/recording/mod.rs"
+  - "apps/desktop/src-tauri/src/recording/pipeline.rs"
+  - "apps/desktop/src-tauri/src/encoder/mod.rs"
+  - "apps/desktop/src-tauri/src/capture/"
+invariants:
+  - "One real second equals one second of video PTS equals one second of cursor time."
+  - "The pacer is count-based CFR, and dropped frames are compensated so duration never shifts."
+  - "Every FFmpeg spawn goes through configure_silent_command, or Windows flashes a console and steals focus."
+  - "A long-lived FFmpeg child's stderr must be drained on a side thread or the pipe fills and stdin deadlocks."
+  - "Rust never opens the camera; a preview WebView records it via getUserMedia."
+---
 
 ## Overview
 
@@ -249,10 +277,10 @@ WebView). These are then packaged into the `.recast` project by `write_project`.
 
 ## Related
 
-- [03-preview-and-rendercore.md](03-preview-and-rendercore.md) — how the editor
+- [03-preview-and-rendercore.md](/architecture/preview-rendercore) — how the editor
   previews `recording.mp4` and composites the stylized cursor / camera overlay
   from the sidecar tracks this pipeline writes.
-- [05-timeline-model.md](05-timeline-model.md) — the render state and cursor /
+- [05-timeline-model.md](/architecture/timeline-model) — the render state and cursor /
   zoom-trigger model the recording feeds into.
-- [06-export-pipeline.md](06-export-pipeline.md) — where the separate camera
+- [06-export-pipeline.md](/architecture/export-pipeline) — where the separate camera
   stream is composited and the final video is re-encoded.

@@ -1,4 +1,5 @@
 ---
+kind: post
 title: "Holding a VideoFrame holds the decoder"
 description: "A 4K recording played for two seconds and froze. Then it crashed on open. Then exports were slow, but only sometimes. Every symptom hid a different wrong assumption — that a decoded frame is just a picture, that a slow load needs a faster engine, that variance is noise — and every real cause was found by measuring, not guessing."
 slug: holding-a-videoframe-holds-the-decoder

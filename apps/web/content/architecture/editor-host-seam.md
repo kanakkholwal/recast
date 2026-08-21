@@ -1,4 +1,25 @@
-# Editor Forking & Host Seam
+---
+kind: architecture
+title: "Editor forking and the host seam"
+description: "How the editor engine was extracted into @recast/editor, and the two contracts the desktop host uses to inject native capability without the package importing Tauri."
+position: 2
+status: production
+domain: editor
+summary: "The editor is a portable package and the desktop app is a thin host that installs real implementations of two interfaces at startup."
+inputs:
+  - "EditorServices implementations from the host"
+  - "Host hooks for analytics, shortcuts, and the export-render flag"
+outputs:
+  - "An editor tree that mounts in both the desktop app and the web app"
+entrypoints:
+  - "packages/editor/src/lib/editor/services.ts"
+  - "packages/editor/src/lib/host-hooks.ts"
+  - "apps/desktop/src/lib/editor/services.tauri.ts"
+invariants:
+  - "Edit the package, not the desktop shim: most desktop lib modules are two-line re-exports."
+  - "The package must never import @tauri-apps directly; capability arrives through the seam."
+  - "The Tauri export queue is host code and stays in apps/desktop."
+---
 
 ## Overview
 
@@ -78,12 +99,12 @@ flowchart TB
 - **Edit the package, not the shim.** `apps/desktop/src/lib/**` editor modules are 2-line re-export shims or were deleted; the canonical source is `packages/editor/src`. Editing a shim edits dead code.
 - **The package must not import `@tauri-apps` directly** — every native call goes through `EditorServices`; every optional host capability goes through host-hooks. A default no-op means the feature silently degrades, not crashes, when a host forgets to install it.
 - **The export queue is host code and stays in the desktop.** `exportActivity.svelte.ts` calls `enqueueExport` (Tauri IPC) + Tauri event listeners; it cannot live in a Tauri-free package. It feeds the package only a thin `renderingInBrowser` flag through host-hooks.
-- **`@recast/*` packages ship SOURCE** (`exports` → `./src`), so the consuming app compiles their `.svelte`/`.ts`. Two consequences bit real builds: source-shipping worker-spawning packages must be in Vite `optimizeDeps.exclude` **and** covered by `server.fs.allow` (see [04-media-decode-and-workers.md](04-media-decode-and-workers.md)); and Rust tests that `include_str!` shared TS↔Rust parity fixtures had to be repointed into `packages/editor` (crate-root-anchored via `env!("CARGO_MANIFEST_DIR")`).
+- **`@recast/*` packages ship SOURCE** (`exports` → `./src`), so the consuming app compiles their `.svelte`/`.ts`. Two consequences bit real builds: source-shipping worker-spawning packages must be in Vite `optimizeDeps.exclude` **and** covered by `server.fs.allow` (see [04-media-decode-and-workers.md](/architecture/media-decode-workers)); and Rust tests that `include_str!` shared TS↔Rust parity fixtures had to be repointed into `packages/editor` (crate-root-anchored via `env!("CARGO_MANIFEST_DIR")`).
 - **Green ≠ runtime-verified.** The fork type-checked, unit-tested, and bundled clean while three cross-boundary path references were runtime-broken (two Vite, one Rust) — all only surfaced by actually running the app / `cargo check --all-targets`.
 
 ## Related
 
-- [07-ipc-and-tauri-boundary.md](07-ipc-and-tauri-boundary.md) — the `EditorServices` contract + Tauri command surface behind it
-- [04-media-decode-and-workers.md](04-media-decode-and-workers.md) — the Vite worker gotcha the fork exposed
-- [06-export-pipeline.md](06-export-pipeline.md) — why `exportActivity` stays host-side
-- [08-state-and-project-format.md](08-state-and-project-format.md) — the editor store that moved into the package
+- [07-ipc-and-tauri-boundary.md](/architecture/ipc-tauri-boundary) — the `EditorServices` contract + Tauri command surface behind it
+- [04-media-decode-and-workers.md](/architecture/media-decode-workers) — the Vite worker gotcha the fork exposed
+- [06-export-pipeline.md](/architecture/export-pipeline) — why `exportActivity` stays host-side
+- [08-state-and-project-format.md](/architecture/state-project-format) — the editor store that moved into the package

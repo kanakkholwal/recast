@@ -1,4 +1,5 @@
 ---
+kind: post
 title: "Rebuilding Recast's editor preview on WebCodecs"
 description: "We replaced the editor's video element with a decode pipeline we control: WebCodecs for video, a second decoder to hide cut latency, resolution-aware caching, range-based loading for large recordings, and a Web Audio engine that keeps sound aligned with cuts."
 slug: rebuilding-editor-preview-on-webcodecs

@@ -293,6 +293,35 @@
 		box-shadow: var(--shadow-craft-floating);
 	}
 
+	/* --- Always-dark band ---
+	   The closing CTA is dark in both themes. It cannot use `bg-canvas`/`text-ink`
+	   with a mid-page `data-theme="dark"`: Tailwind's @theme aliases resolve
+	   `--color-canvas: var(--canvas)` once, at :root, so a token overridden on an
+	   inner element never reaches the utility. Literal values are the only way a
+	   nested surface can flip. */
+	.band-dark {
+		--band-ink: oklch(96% 0 0);
+		--band-muted: oklch(72% 0 0);
+		--band-line: oklch(100% 0 0 / 0.14);
+		background-color: oklch(14.5% 0 0);
+		color: var(--band-ink);
+	}
+
+	.band-dark .band-muted {
+		color: var(--band-muted);
+	}
+
+	.band-dark .band-divide {
+		border-color: var(--band-line);
+		background-color: var(--band-line);
+	}
+
+	/* Cells sitting on a band-divide grid need the band's own surface back, or
+	   the gap-px hairline colour floods the whole cell. */
+	.band-dark .band-surface {
+		background-color: oklch(14.5% 0 0);
+	}
+
 	/* Dub's dotted-grid signature: a blueprint texture at very low opacity. */
 	.bg-dots {
 		background-image: radial-gradient(

@@ -1,63 +1,57 @@
 <script lang="ts">
 import { goto } from "$app/navigation";
 import {
-	BeforeAfterSlider,
-	Container,
-	ExportMock,
-	FeatureMarquee,
-	Footer,
-	Hero,
-	MacWindow,
-	NotchedShelf,
-	PillarSection,
-	RecordMock,
-	Reveal,
-	Section,
-	SectionLabel,
-	SeoMeta,
+  BeforeAfterSlider,
+  Container,
+  ExportMock,
+  FeatureMarquee,
+  Footer,
+  Hero,
+  MacWindow,
+  NotchedShelf,
+  PillarSection,
+  RecordMock,
+  Reveal,
+  Section,
+  SectionLabel,
+  SeoMeta,
 } from "$lib/components";
 import { steps } from "$lib/components/Hero.logic";
 import { prefersReducedMotion } from "$lib/motion-core";
 import {
-	ArrowRight,
-	Check,
-	Cloud,
-	Compass,
-	Download,
-	HardDriveUpload,
-	KeyRound,
-	Minus,
-	Monitor,
-	Play,
-	Plus,
-	Share2,
-	Star,
-	Video,
-	Wand2,
-	X,
+  ArrowRight,
+  Check,
+  Cloud,
+  Compass,
+  Download,
+  HardDriveUpload,
+  KeyRound,
+  Monitor,
+  Play,
+  Share2,
+  Star,
+  Video,
+  Wand2,
+  X
 } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
 import { Image } from "@unpic/svelte";
 
-import { cn } from "@recast/ui/utils";
-import { cubicOut } from "svelte/easing";
-import { slide } from "svelte/transition";
 import {
-	beforeAfterClips,
-	cloudFeatures,
-	contrast,
-	editorFeatures,
-	extensionBeat,
-	faqJsonLd,
-	faqs,
-	founderUse,
-	openSourceClaims,
-	platformDownloads,
-	polishColumns,
-	recordColumns,
-	shareColumns,
-	stabilityChip,
+  beforeAfterClips,
+  cloudFeatures,
+  contrast,
+  editorFeatures,
+  extensionBeat,
+  faqJsonLd,
+  founderUse,
+  openSourceClaims,
+  platformDownloads,
+  polishColumns,
+  recordColumns,
+  shareColumns,
+  stabilityChip
 } from "./data";
 
 const reduced = $derived(prefersReducedMotion());
@@ -246,64 +240,65 @@ function dragScroll(node: HTMLElement) {
   </div>
 
   <!-- Trust strip -->
-  <Section spacing="tight" class="border-t border-border-low">
+  <!-- Trust strip. Values as one hairline-divided row and the stack as a logo
+       grid: a beta product's honest proof is what it is built on, so it reads
+       as a roster rather than a wrapping cloud of pills. -->
+  <section class="mx-auto w-full max-w-6xl border-t border-border-low">
     <Container>
-      <Reveal variant="blur">
-        <!-- Values as a clean editorial row (was pill chips): quieter and
-				     more considered, icons muted so nothing competes with the CTA. -->
-        <ul
-          class="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-x-7 gap-y-3"
-        >
+      <Reveal variant="up">
+        <ul class="flex flex-wrap items-center justify-center divide-x divide-border-low py-8">
           {#each openSourceClaims as claim (claim.label)}
             {@const Icon = claim.icon}
-            <li
-              class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground"
-            >
-              <Icon class="size-4 text-muted-foreground" />
+            <li class="inline-flex items-center gap-2 px-5 py-1 text-body-sm text-muted-foreground">
+              <Icon class="size-4 shrink-0" />
               {claim.label}
             </li>
           {/each}
         </ul>
       </Reveal>
+    </Container>
 
-      <Reveal variant="blur" delay={120}>
-        <div class="mx-auto mt-14 h-px w-24 bg-border-low"></div>
-        <p
-          class="mt-10 text-center text-body-sm font-medium text-muted-foreground"
-        >
+    <Reveal variant="up" delay={100}>
+      <div class="border-t border-border-low">
+        <p class="pt-10 text-center text-body-sm text-muted-foreground">
           Built on tools makers trust
         </p>
-        <div
-          class="mt-9 flex flex-wrap items-center justify-center gap-x-10 gap-y-7 sm:gap-x-14"
-        >
-          {#each [{ name: "Tauri", slug: "tauri", href: "https://tauri.app" }, { name: "Rust", slug: "rust", href: "https://www.rust-lang.org" }, { name: "Svelte", slug: "svelte", href: "https://svelte.dev" }, { name: "TypeScript", slug: "typescript", href: "https://www.typescriptlang.org" }, { name: "Vite", slug: "vite", href: "https://vitejs.dev" }, { name: "FFmpeg", slug: "ffmpeg", href: "https://ffmpeg.org" }, { name: "Tailwind CSS", slug: "tailwindcss", href: "https://tailwindcss.com" }, { name: "GitHub", slug: "github", href: "https://github.com/kanakkholwal/recast" }] as logo}
-            <a
-              href={logo.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="group flex items-center gap-2 opacity-50 transition-opacity duration-200 hover:opacity-90"
-              title={logo.name}
-            >
-              <Image
-                src="https://cdn.simpleicons.org/{logo.slug}/9ca3af"
-                alt="{logo.name} logo"
-                loading="lazy"
-                decoding="async"
-                width="20"
-                height="20"
-                class="h-5 w-5"
-              />
-              <span
-                class="text-sm font-semibold tracking-tight text-muted-foreground transition-colors group-hover:text-foreground"
+        <Container>
+          <div class="grid grid-cols-2 gap-px pt-8 pb-2 sm:grid-cols-4">
+            {#each [
+              { name: "Tauri", slug: "tauri", href: "https://tauri.app" },
+              { name: "Rust", slug: "rust", href: "https://www.rust-lang.org" },
+              { name: "Svelte", slug: "svelte", href: "https://svelte.dev" },
+              { name: "TypeScript", slug: "typescript", href: "https://www.typescriptlang.org" },
+              { name: "Vite", slug: "vite", href: "https://vitejs.dev" },
+              { name: "FFmpeg", slug: "ffmpeg", href: "https://ffmpeg.org" },
+              { name: "Tailwind CSS", slug: "tailwindcss", href: "https://tailwindcss.com" },
+              { name: "GitHub", slug: "github", href: "https://github.com/kanakkholwal/recast" },
+            ] as logo (logo.slug)}
+              <a
+                href={logo.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={logo.name}
+                class="group flex items-center justify-center gap-2.5 py-7 text-muted-foreground transition-colors hover:text-foreground"
               >
-                {logo.name}
-              </span>
-            </a>
-          {/each}
-        </div>
-      </Reveal>
-    </Container>
-  </Section>
+                <Image
+                  src="https://cdn.simpleicons.org/{logo.slug}/9ca3af"
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  width="20"
+                  height="20"
+                  class="h-5 w-5 opacity-70 transition-opacity group-hover:opacity-100"
+                />
+                <span class="text-body-sm font-medium">{logo.name}</span>
+              </a>
+            {/each}
+          </div>
+        </Container>
+      </div>
+    </Reveal>
+  </section>
 
   <Section id="why" class="mx-auto max-w-6xl border-t border-border-low">
     <Container>
@@ -585,14 +580,14 @@ function dragScroll(node: HTMLElement) {
     <div class="border-y border-border-low bg-paper">
       <Container class="py-14 md:py-16">
         <Reveal variant="up" class="mx-auto max-w-xl text-center">
-          <h3 class="font-display text-heading-sm text-foreground">
+          <h3 class="font-display font-medium text-heading-sm text-foreground">
             Ship your first hosted demo
           </h3>
           <p class="mt-2 text-body-sm text-muted-foreground">
             Drop your email, upload a take, send the link. Free tier, no card.
           </p>
 
-          <form class="mt-7 flex flex-col gap-2.5 sm:flex-row" onsubmit={startWithEmail}>
+          <form class="mt-7 flex flex-col items-center gap-2.5 sm:flex-row" onsubmit={startWithEmail}>
             <label class="sr-only" for="home-cloud-email">Work email</label>
             <input
               id="home-cloud-email"
@@ -707,138 +702,42 @@ function dragScroll(node: HTMLElement) {
     </Container>
   </Section>
 
-  <!-- FAQ. Two-column: sticky title on the left, one-open accordion on the
-	     right. Answers only restate claims already made above, so the section
-	     never introduces a promise the product doesn't keep. -->
-  <Section id="faq" class="border-y border-border-low bg-paper">
-    <Container>
-      <div class="grid gap-12 lg:grid-cols-12 lg:gap-16">
-        <div class="lg:col-span-4">
-          <div class="lg:sticky lg:top-28">
-            <span class="text-body-sm font-medium text-muted-foreground">
-              FAQ
-            </span>
-            <h2 class="text-balance mt-3 text-heading sm:text-heading-lg">
-              Frequently asked questions
-            </h2>
-            <p class="mt-4 text-sm leading-relaxed text-muted-foreground">
-              Still wondering something?
-              <a
-                href="https://github.com/kanakkholwal/recast/discussions"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="font-semibold text-primary hover:underline"
-              >
-                Ask on GitHub
-              </a>.
-            </p>
-          </div>
-        </div>
-
-        <div class="lg:col-span-8">
-          <ul class="space-y-3">
-            {#each faqs as faq, i (faq.q)}
-              {@const open = openFaq === i}
-              <li>
-                <div
-                  class={cn(
-                    "overflow-hidden rounded-2xl border transition-colors",
-                    open
-                      ? "border-border-low bg-paper"
-                      : "border-border-low bg-background/50 hover:border-border-low",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onclick={() => (openFaq = open ? null : i)}
-                    aria-expanded={open}
-                    aria-controls={`faq-panel-${i}`}
-                    class="group flex w-full items-start gap-3.5 px-5 py-4 text-left"
-                  >
-                    <span
-                      aria-hidden="true"
-                      class="mt-0.5 shrink-0 text-muted-foreground"
-                    >
-                      {#if open}
-                        <Minus class="size-4" />
-                      {:else}
-                        <Plus class="size-4" />
-                      {/if}
-                    </span>
-                    <span
-                      class="flex-1 text-body font-semibold text-foreground sm:text-base"
-                    >
-                      {faq.q}
-                    </span>
-                  </button>
-                  {#if open}
-                    <div
-                      id={`faq-panel-${i}`}
-                      transition:slide={{
-                        duration: reduced ? 0 : 220,
-                        easing: cubicOut,
-                      }}
-                      class="overflow-hidden"
-                    >
-                      <p
-                        class="pb-5 pl-12 pr-5 text-sm leading-relaxed text-muted-foreground"
-                      >
-                        {faq.a}
-                      </p>
-                    </div>
-                  {/if}
-                </div>
-              </li>
-            {/each}
-          </ul>
-        </div>
-      </div>
-    </Container>
-  </Section>
-
   <!-- Closing CTA. Bookends the hero: the same notched shelf bridges into the
-       page's one dark band, and the three-step spine is restated as a compact
-       recap so the page ends where it began. -->
+       page's one dark band, and it carries the three-step spine the hero shelf
+       opened with, so the two ends of the page rhyme. -->
   <section id="cta" class="relative bg-background">
     <!-- The shelf stays OUTSIDE the dark subtree: inside it,
          var(--color-background) resolves to the dark canvas and the bridge
          would vanish into the band it is supposed to bridge. -->
-    <NotchedShelf fill="text-background" class="h-12 text-body-sm font-medium sm:h-14">
-      <Download class="size-4" />
-      Download free
+    <NotchedShelf fill="text-background" class="h-14 sm:h-16">
+      <ol class="flex items-center gap-2.5 text-caption font-medium text-muted-foreground sm:gap-3 sm:text-body-sm">
+        {#each steps as step, i (step.id)}
+          {@const Icon = step.icon}
+          <li class="inline-flex items-center gap-1.5">
+            <Icon
+              class="size-3.5 shrink-0 [fill-opacity:0.2] {stepGlyph[step.accent]}"
+              fill="currentColor"
+            />
+            <span class="text-foreground">{step.label}</span>
+          </li>
+          {#if i < steps.length - 1}
+            <li aria-hidden="true" class="text-border-strong">→</li>
+          {/if}
+        {/each}
+      </ol>
     </NotchedShelf>
 
-    <div data-theme="dark" class="-mt-12 bg-canvas pt-12 text-ink sm:-mt-14 sm:pt-14">
+    <div class="band-dark -mt-14 pt-14 sm:-mt-16 sm:pt-16">
       <Container class="pt-16 pb-20 md:pt-20 md:pb-24">
         <div class="mx-auto flex max-w-2xl flex-col items-center text-center">
-          <!-- Spine recap. The same three steps, same three hues as the hero
-               shelf, reduced to a single line. -->
-          <Reveal variant="up" duration={460}>
-            <ol class="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-body-sm text-ink-muted">
-              {#each steps as step, i (step.id)}
-                {@const Icon = step.icon}
-                <li class="inline-flex items-center gap-2">
-                  <Icon
-                    class="size-4 shrink-0 [fill-opacity:0.2] {stepGlyph[step.accent]}"
-                    fill="currentColor"
-                  />
-                  {step.label}
-                </li>
-                {#if i < steps.length - 1}
-                  <li aria-hidden="true" class="text-ink/30">→</li>
-                {/if}
-              {/each}
-            </ol>
-          </Reveal>
-
-          <Reveal variant="up" delay={70} duration={520} class="mt-7">
-            <h2 class="font-display text-balance text-heading-lg text-ink md:text-display">
+                  <Reveal variant="up" delay={70} duration={520} class="mt-7">
+            <h2 class="font-display font-semibold text-balance text-heading-lg md:text-display">
               A demo, not a project. Ship it the same day.
             </h2>
           </Reveal>
 
           <Reveal variant="up" delay={140} duration={520} class="mt-5">
-            <p class="text-pretty text-body-lg text-ink-muted">
+            <p class="band-muted text-pretty text-body-lg">
               Free forever, no account needed. Windows is stable; macOS and Linux are in beta.
             </p>
           </Reveal>
@@ -851,8 +750,9 @@ function dragScroll(node: HTMLElement) {
               </Button>
               <Button
                 href="/signup"
+                variant="outline"
                 size="lg"
-                class="group/cta gap-2 border-ink/20 bg-transparent text-ink hover:bg-ink/10"
+                class="group/cta band-divide gap-2 bg-transparent text-current hover:bg-white/10"
               >
                 Share your first demo
                 <ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
@@ -864,34 +764,36 @@ function dragScroll(node: HTMLElement) {
         <!-- Per-platform row as a hairline grid, not three floating cards: the
              stability label carries the difference, so the cards do not need to. -->
         <Reveal variant="up" delay={280} duration={460} class="mt-14">
-          <div class="grid grid-cols-1 gap-px border-y border-ink/15 bg-ink/15 sm:grid-cols-3">
+          <div class="band-divide grid grid-cols-1 gap-px border-y sm:grid-cols-3">
             {#each platformDownloads as p (p.os)}
               {@const Icon = p.icon}
               {@const chip = stabilityChip[p.stability]}
-              <a
+              <Button
                 href={p.href}
-                class="group/dl flex items-center gap-3 bg-canvas px-6 py-6 transition-colors hover:bg-ink/5"
+                variant="outline"
+                size="lg"
+                class="group/dl band-surface h-auto w-full justify-start gap-3 rounded-none border-0 px-6 py-5 text-current hover:brightness-125"
               >
-                <Icon class="size-5 shrink-0 text-ink" />
-                <span class="flex min-w-0 flex-col text-left">
-                  <span class="text-body-sm font-semibold text-ink">Download for {p.os}</span>
-                  <span class="text-caption text-ink-muted">{chip.label}</span>
+                <Icon class="size-5 shrink-0" />
+                <span class="flex min-w-0 flex-col items-start text-left">
+                  <span class="text-body-sm font-semibold">Download for {p.os}</span>
+                  <span class="band-muted text-caption font-normal">{chip.label}</span>
                 </span>
                 <ArrowRight
-                  class="ml-auto size-4 shrink-0 text-ink-muted transition-transform group-hover/dl:translate-x-0.5"
+                  class="ml-auto size-4 shrink-0 transition-transform group-hover/dl:translate-x-0.5"
                 />
-              </a>
+              </Button>
             {/each}
           </div>
         </Reveal>
 
         <Reveal variant="up" delay={350} duration={460} class="mt-8">
-          <p class="text-center text-body-sm text-ink-muted">
-            <a href="/download" class="font-medium text-ink underline-offset-4 hover:underline">
+          <p class="band-muted text-center text-body-sm">
+            <a href="/download" class="font-medium text-current underline-offset-4 hover:underline">
               All downloads and checksums
             </a>
             ·
-            <a href="/login" class="font-medium text-ink underline-offset-4 hover:underline">Sign in</a>
+            <a href="/login" class="font-medium text-current underline-offset-4 hover:underline">Sign in</a>
           </p>
         </Reveal>
       </Container>
@@ -900,21 +802,3 @@ function dragScroll(node: HTMLElement) {
 
   <Footer />
 </main>
-
-<style>
-  /* Editor-tour rail: hide the scrollbar (edge fades + drag cursor already
-	   telegraph scrollability) and lean on grab/grabbing cursors so the rail
-	   reads as draggable on first encounter. */
-  .editor-rail {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    cursor: grab;
-    scroll-behavior: smooth;
-  }
-  .editor-rail::-webkit-scrollbar {
-    display: none;
-  }
-  .editor-rail:active {
-    cursor: grabbing;
-  }
-</style>

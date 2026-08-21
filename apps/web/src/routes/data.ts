@@ -24,10 +24,9 @@ import {
 	Terminal,
 	UserX,
 	VolumeX,
-	Wand2,
 	Zap,
 } from "@recast/icons";
-import { GithubBrand } from "@recast/ui/brand-icons";
+import { AppleBrand, GithubBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
 
 export type BeforeAfterTone = "raw" | "polished";
 export const beforeAfterClips: Array<{
@@ -125,38 +124,32 @@ export const founderUse = [
 	},
 ];
 
-// Open-source values strip. Sits between the proof shot and the
-// tech-stack logo row. Different signal: the logos say "what we're
-// built on", this strip says "what that buys you as a user".
 export const openSourceClaims = [
 	{ icon: GithubBrand, label: "GPLv3 open source" },
 	{ icon: Cpu, label: "Tauri + Rust" },
-	{ icon: EyeOff, label: "No telemetry" },
+	{ icon: EyeOff, label: "No telemetry without consent" },
 	{ icon: HardDrive, label: "Files never leave your machine" },
 	{ icon: UserX, label: "No account required" },
 ];
 
-// Platform-split download buttons for the final CTA. Mirrors the
-// stability semantics in /download so the marketing voice never
-// over-promises the macOS or Linux builds.
 export const platformDownloads = [
 	{
 		os: "Windows",
-		icon: Monitor,
+		icon: WindowsBrand,
 		href: "/download?os=windows",
 		variant: "default" as const,
 		stability: "stable" as const,
 	},
 	{
 		os: "macOS",
-		icon: Apple,
+		icon: AppleBrand,
 		href: "/download?os=macos",
 		variant: "dark" as const,
 		stability: "beta" as const,
 	},
 	{
 		os: "Linux",
-		icon: Terminal,
+		icon: LinuxBrand,
 		href: "/download?os=linux",
 		variant: "dark" as const,
 		stability: "beta" as const,
@@ -174,10 +167,6 @@ export const stabilityChip: Record<"stable" | "beta", { label: string; cls: stri
 	},
 };
 
-// `cls` above assumes a page/card surface. Inside a filled button the chip
-// sits on primary or foreground, where emerald-600 and amber-600 both fail
-// contrast — so there it derives from the button's own ink instead, and the
-// label is what distinguishes stable from beta.
 export const stabilityChipOnFill = "bg-current/20 ring-current/35";
 
 // "OS recorder stops at a file" — contrast rows

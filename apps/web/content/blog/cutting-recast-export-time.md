@@ -1,4 +1,5 @@
 ---
+kind: post
 title: "Cutting Recast's export from nearly six minutes to under two"
 description: "A 46-second recording took five minutes and forty-two seconds to export on a machine with a hardware encoder. This is how we found the real cause, threw out a confident wrong guess about threading on the way, and got it down to a minute and a half."
 slug: cutting-recast-export-time

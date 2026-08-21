@@ -1,6 +1,6 @@
 import { dev } from "$app/environment";
 import { blog } from "virtual:docvia/source";
-import type { DocNodes } from "./render";
+import type { DocNodes } from "$lib/docs/render";
 
 /**
  * Blog data access. Server-only on purpose: importing the docvia collection
@@ -69,7 +69,12 @@ function readingMinutes(content: unknown): number {
 	return Math.max(1, Math.round(countWords(content) / 220));
 }
 
-function toMeta(slug: string, url: string, data: Record<string, unknown>, content: unknown): PostMeta {
+function toMeta(
+	slug: string,
+	url: string,
+	data: Record<string, unknown>,
+	content: unknown,
+): PostMeta {
 	return {
 		slug,
 		url,
@@ -98,7 +103,12 @@ export async function listPosts(): Promise<PostMeta[]> {
 		entries.map(async (entry) => {
 			const page = await blog.getPage(entry.slugs);
 			if (!page) return null;
-			return toMeta(entry.slugs.join("/"), entry.url, page.data as Record<string, unknown>, page.content);
+			return toMeta(
+				entry.slugs.join("/"),
+				entry.url,
+				page.data as Record<string, unknown>,
+				page.content,
+			);
 		}),
 	);
 

@@ -1,4 +1,30 @@
-# Timeline Model
+---
+kind: architecture
+title: "Timeline model"
+description: "The pure arithmetic mapping original recording time to the output time a viewer sees: cuts, splits, ripple delete, per-segment speed, and the filmstrip."
+position: 5
+status: production
+domain: editor
+summary: "Editing never touches media. It produces a piecewise-linear map from recording time to output time that the playhead, waveform, filmstrip, and export all resolve through."
+inputs:
+  - "Trim bounds"
+  - "Removed original ranges (cuts)"
+  - "Split points"
+  - "Per-segment speed overrides"
+outputs:
+  - "Kept segments on the output axis"
+  - "A time map in both directions"
+  - "Filmstrip and storyboard tiles"
+entrypoints:
+  - "packages/editor/src/lib/timeline/time-map.ts"
+  - "packages/editor/src/lib/timeline/segments.ts"
+  - "apps/desktop/src-tauri/src/commands/export/cuts_speed.rs"
+invariants:
+  - "The model is output-axis first: removed time collapses to a zero-width seam."
+  - "Boundary epsilon is 1e-4 on both sides, in TS and in Rust."
+  - "Rust re-implements the identical math and both sides are pinned to shared JSON fixtures."
+  - "Speed anchors are original-time, so a segment keeps its rate when an upstream edit moves it."
+---
 
 ## Overview
 
