@@ -282,7 +282,10 @@ rhythm read; a page where everything bleeds loses the rules entirely.
 5. **Spine sections** — Record, Polish, Share, each a `<ShowcasePanel>`.
 6. **Supporting beats** — extensions, Cloud, founders, pricing teaser.
 7. **FAQ** — sticky title left, single-open accordion right.
-8. **Final CTA**, then **Footer**.
+8. **Closing CTA** — bookends the hero. The same notched shelf bridges into the
+   page's one dark band, and the three-step spine is restated as a one-line
+   recap in the same three hues, so the page ends where it began.
+9. **Footer**.
 
 ---
 
@@ -308,24 +311,28 @@ spine steps that hangs out of the white hero into the paper band below.
 
 ### PillarSection
 
-[PillarSection.svelte](src/lib/components/PillarSection.svelte) is the template
-for Record / Polish / Share. Left-aligned label + h2 + description + one
-outlined action in a `max-w-lg` block, then a full-bleed `bg-paper` band holding
-the visual, closed by `<FeatureColumns>`.
+[PillarSection.svelte](src/lib/components/PillarSection.svelte) renders Record /
+Polish / Share as **numbered chapters**. The page's spine is three ordered
+steps, so each pillar opens on a chapter rule: the index numeral in the display
+face, the product label, and the section's one action, all on a single hairline
+across the column.
 
-Left-aligned on purpose: a centred stack reads as a slide, this reads as a page.
+Below it, a 5/6 split: headline and description on the left, the step's details
+stacked down the right, divided by hairlines. A two-column spread reads
+editorial; a centred stack reads like a slide.
+
+Colour appears exactly once per section, on the duotone detail glyphs. There is
+**no accent rule and no lit/unlit state** — three details of equal weight are
+three facts, not a control that needs a selection. (The earlier version lit one
+column with a coloured left border on hover; it read as a selected tab that
+wasn't selectable, and dimming the unlit copy failed 4.5:1.)
+
+The visual sits in a full-bleed `bg-paper` band below.
 
 Scroll-in uses `<Reveal>`. **Never hand-roll an IntersectionObserver here** —
 Reveal falls back to visible when the observer is missing, resets itself under
 `prefers-reduced-motion`, and carries the one shared easing curve. A local copy
 leaves the whole section stuck at `opacity-0` when JS never runs.
-
-### FeatureColumns
-
-The three-up row closing a pillar. One column is lit at a time (accent rule on
-its edge, `text-foreground` title, accent link); hover or focus moves the light.
-Descriptions stay `text-muted-foreground` in **both** states — dimming body copy
-to `text-border-strong` reads as broken, not de-emphasised, and fails 4.5:1.
 
 ### SectionLabel
 

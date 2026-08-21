@@ -30,6 +30,18 @@ pub struct BranchSummary {
     pub ops: usize,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
+    /// Untouched long enough to be worth flagging to a reviewer. Never a reason
+    /// to delete: the branch holds proposed work.
+    pub stale: bool,
+}
+
+impl BranchSummary {
+    fn of(branch: &Branch, now_ms: i64) -> Self {
+        Self {
+            stale: branch.is_stale(now_ms),
+            ..Self::from(branch)
+        }
+    }
 }
 
 impl From<&Branch> for BranchSummary {
@@ -43,6 +55,7 @@ impl From<&Branch> for BranchSummary {
             ops: branch.op_count(),
             created_at_ms: branch.created_at_ms,
             updated_at_ms: branch.updated_at_ms,
+            stale: false,
         }
     }
 }
@@ -92,13 +105,21 @@ impl<'a> BranchService<'a> {
 
     /// Journals that will not parse are skipped, so one corrupt file cannot
     /// hide the rest.
+    ///
+    /// Sweeps abandoned empty branches first: listing is the one call every
+    /// surface makes, and housekeeping on a background timer would be a thread
+    /// for a job that costs a directory read.
     pub fn list(&self, project: &str) -> AppResult<Vec<BranchSummary>> {
         let store = self.store(project)?;
+        let now = now_ms();
+        if !store.sweep(now).is_empty() {
+            self.announce(project);
+        }
         Ok(store
             .list()
             .iter()
             .filter_map(|id| store.load(id).ok())
-            .map(|branch| BranchSummary::from(&branch))
+            .map(|branch| BranchSummary::of(&branch, now))
             .collect())
     }
 
@@ -145,10 +166,11 @@ impl<'a> BranchService<'a> {
     pub fn truncate(&self, project: &str, id: &BranchId, seq: u64) -> AppResult<BranchSummary> {
         let store = self.store(project)?;
         let mut branch = store.load(id).map_err(AppError::msg)?;
-        branch.truncate_after(seq, now_ms());
+        let now = now_ms();
+        branch.truncate_after(seq, now);
         store.save(&branch).map_err(AppError::msg)?;
         self.announce(project);
-        Ok(BranchSummary::from(&branch))
+        Ok(BranchSummary::of(&branch, now))
     }
 
     /// The render state the branch would produce.

@@ -11,12 +11,13 @@ import {
 	PillarSection,
 	RecordMock,
 	Reveal,
-	SectionLabel,
 	Section,
 	SectionHeader,
+	SectionLabel,
 	SeoMeta,
 	ShowcasePanel,
 } from "$lib/components";
+import { steps } from "$lib/components/Hero.logic";
 import { prefersReducedMotion } from "$lib/motion-core";
 import {
 	ArrowRight,
@@ -62,6 +63,14 @@ import {
 } from "./data";
 
 const reduced = $derived(prefersReducedMotion());
+
+// Same three hues the hero shelf uses, so the closing recap reads as the
+// same spine rather than a new set of tags.
+const stepGlyph = {
+	tangerine: "text-tag-tangerine",
+	lavender: "text-tag-lavender",
+	green: "text-tag-green",
+} as const;
 
 let email = $state("");
 const signupHref = $derived(
@@ -351,6 +360,7 @@ function dragScroll(node: HTMLElement) {
   <!-- Step 1 — Record -->
   <PillarSection
     id="record"
+    index="01"
     icon={Video}
     label="Recast Record"
     accent="tangerine"
@@ -370,6 +380,7 @@ function dragScroll(node: HTMLElement) {
   <!-- Step 2 — Polish -->
   <PillarSection
     id="polish"
+    index="02"
     icon={Wand2}
     label="Recast Polish"
     accent="lavender"
@@ -537,17 +548,14 @@ function dragScroll(node: HTMLElement) {
     </Container>
   </Section>
 
-  <!-- Make it yours — extensions as proof of the open, no-lock-in moat.
-	     A supporting beat (not a headline) that reinforces "free, offline,
-  <!-- Make it yours — extensions as proof of the open, no-lock-in moat. -->
-  <Section id="extensions" class="mx-auto max-w-6xl border-t border-border-low">
+<Section id="extensions" class="mx-auto max-w-6xl border-t border-border-low">
     <Container>
       <div class="max-w-lg">
         <Reveal variant="up">
           <SectionLabel icon={Compass} label="Recast Extensions" accent="lavender" />
         </Reveal>
         <Reveal variant="up" delay={60} class="mt-5">
-          <h2 class="font-display text-balance text-heading md:text-heading-lg">
+          <h2 class="font-display font-semibold text-balance text-heading md:text-heading-lg">
             Open packs. No lock-in.
           </h2>
         </Reveal>
@@ -593,6 +601,7 @@ function dragScroll(node: HTMLElement) {
   <!-- Step 3 — Share -->
   <PillarSection
     id="share"
+    index="03"
     icon={Share2}
     label="Recast Share"
     accent="green"
@@ -991,31 +1000,55 @@ function dragScroll(node: HTMLElement) {
     </Container>
   </Section>
 
+  <!-- Closing CTA. Bookends the hero: the same notched shelf bridges into the
+       page's one dark band, and the three-step spine is restated as a compact
+       recap so the page ends where it began. -->
   <section id="cta" class="relative bg-background">
+    <!-- The shelf stays OUTSIDE the dark subtree: inside it,
+         var(--color-background) resolves to the dark canvas and the bridge
+         would vanish into the band it is supposed to bridge. -->
     <NotchedShelf fill="text-background" class="h-12 text-body-sm font-medium sm:h-14">
       <Download class="size-4" />
       Download free
     </NotchedShelf>
 
     <div data-theme="dark" class="-mt-12 bg-canvas pt-12 text-ink sm:-mt-14 sm:pt-14">
-      <Container class="pt-14 pb-20 md:pt-16 md:pb-24">
+      <Container class="pt-16 pb-20 md:pt-20 md:pb-24">
         <div class="mx-auto flex max-w-2xl flex-col items-center text-center">
-          <Reveal variant="up" duration={520}>
-            <h2
-              class="font-display text-balance text-heading-lg text-ink md:text-display"
-            >
+          <!-- Spine recap. The same three steps, same three hues as the hero
+               shelf, reduced to a single line. -->
+          <Reveal variant="up" duration={460}>
+            <ol class="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-body-sm text-ink-muted">
+              {#each steps as step, i (step.id)}
+                {@const Icon = step.icon}
+                <li class="inline-flex items-center gap-2">
+                  <Icon
+                    class="size-4 shrink-0 [fill-opacity:0.2] {stepGlyph[step.accent]}"
+                    fill="currentColor"
+                  />
+                  {step.label}
+                </li>
+                {#if i < steps.length - 1}
+                  <li aria-hidden="true" class="text-ink/30">→</li>
+                {/if}
+              {/each}
+            </ol>
+          </Reveal>
+
+          <Reveal variant="up" delay={70} duration={520} class="mt-7">
+            <h2 class="font-display text-balance text-heading-lg text-ink md:text-display">
               A demo, not a project. Ship it the same day.
             </h2>
           </Reveal>
 
-          <Reveal variant="up" delay={70} duration={520}>
-            <p class="text-pretty mt-5 max-w-xl text-body-lg text-ink-muted">
+          <Reveal variant="up" delay={140} duration={520} class="mt-5">
+            <p class="text-pretty text-body-lg text-ink-muted">
               Free forever, no account needed. Windows is stable; macOS and Linux are in beta.
             </p>
           </Reveal>
 
-          <Reveal variant="up" delay={140} duration={460}>
-            <div class="mt-9 flex flex-wrap items-center justify-center gap-3">
+          <Reveal variant="up" delay={210} duration={460} class="mt-9">
+            <div class="flex flex-wrap items-center justify-center gap-3">
               <Button href="/download" variant="light" size="lg" class="gap-2">
                 <Download class="size-4" />
                 Download free
@@ -1023,60 +1056,46 @@ function dragScroll(node: HTMLElement) {
               <Button
                 href="/signup"
                 size="lg"
-                class="group/cta gap-2 border-transparent bg-ink/10 text-ink hover:bg-ink/15"
+                class="group/cta gap-2 border-ink/20 bg-transparent text-ink hover:bg-ink/10"
               >
                 Share your first demo
-                <ArrowRight
-                  class="size-4 transition-transform group-hover/cta:translate-x-0.5"
-                />
+                <ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
               </Button>
             </div>
           </Reveal>
         </div>
 
-        <!-- Per-platform downloads. Equal weight, one hairline card each: the
-			     stability chip carries the difference instead of three button
-			     variants doing it. -->
-        <div class="mt-12 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {#each platformDownloads as p, i}
-            {@const Icon = p.icon}
-            {@const chip = stabilityChip[p.stability]}
-            <Reveal
-              variant="up"
-              delay={210 + i * 70}
-              duration={460}
-              class="h-full"
-            >
+        <!-- Per-platform row as a hairline grid, not three floating cards: the
+             stability label carries the difference, so the cards do not need to. -->
+        <Reveal variant="up" delay={280} duration={460} class="mt-14">
+          <div class="grid grid-cols-1 gap-px border-y border-ink/15 bg-ink/15 sm:grid-cols-3">
+            {#each platformDownloads as p (p.os)}
+              {@const Icon = p.icon}
+              {@const chip = stabilityChip[p.stability]}
               <a
                 href={p.href}
-                class="flex h-full items-center gap-3 rounded-xl border border-ink/15 bg-ink/5 px-5 py-4 transition-colors hover:border-ink/30 hover:bg-ink/10"
+                class="group/dl flex items-center gap-3 bg-canvas px-6 py-6 transition-colors hover:bg-ink/5"
               >
                 <Icon class="size-5 shrink-0 text-ink" />
-                <span class="flex flex-col text-left">
-                  <span class="text-body-sm font-semibold text-ink"
-                    >Download for {p.os}</span
-                  >
+                <span class="flex min-w-0 flex-col text-left">
+                  <span class="text-body-sm font-semibold text-ink">Download for {p.os}</span>
                   <span class="text-caption text-ink-muted">{chip.label}</span>
                 </span>
+                <ArrowRight
+                  class="ml-auto size-4 shrink-0 text-ink-muted transition-transform group-hover/dl:translate-x-0.5"
+                />
               </a>
-            </Reveal>
-          {/each}
-        </div>
+            {/each}
+          </div>
+        </Reveal>
 
-        <Reveal variant="up" delay={420} duration={460} class="mt-8">
+        <Reveal variant="up" delay={350} duration={460} class="mt-8">
           <p class="text-center text-body-sm text-ink-muted">
-            <a
-              href="/download"
-              class="font-medium text-ink underline-offset-4 hover:underline"
-            >
+            <a href="/download" class="font-medium text-ink underline-offset-4 hover:underline">
               All downloads and checksums
             </a>
             ·
-            <a
-              href="/login"
-              class="font-medium text-ink underline-offset-4 hover:underline"
-              >Sign in</a
-            >
+            <a href="/login" class="font-medium text-ink underline-offset-4 hover:underline">Sign in</a>
           </p>
         </Reveal>
       </Container>

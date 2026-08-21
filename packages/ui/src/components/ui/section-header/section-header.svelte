@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
 import { cn } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
 
 type Props = {
 	eyebrow?: string;
@@ -23,16 +23,13 @@ let { eyebrow, title, description, align = "left", class: className, actions }: 
 	)}
 >
 	{#if eyebrow}
-		<!-- Sentence-case pill, not an uppercase micro-label. Uppercase +
-		     letter-spaced eyebrows read as a tic once a page carries more than
-		     one, and they cost legibility at 11px. -->
 		<span
 			class="pill inline-flex w-fit items-center gap-2 px-3 py-1 text-body-sm font-medium text-muted-foreground"
 		>
 			{eyebrow}
 		</span>
 	{/if}
-	<h2 class="text-balance text-heading sm:text-heading-lg md:text-display">
+	<h2 class="text-balance font-medium text-heading sm:text-heading-lg md:text-display">
 		{title}
 	</h2>
 	{#if description}

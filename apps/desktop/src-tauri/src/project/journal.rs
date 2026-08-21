@@ -20,6 +20,14 @@ use crate::render::ops::{apply_ops, Op, OpError};
 /// Ops past which a journal should be compacted onto a fresh base.
 pub const COMPACT_AFTER_ENTRIES: usize = 512;
 
+/// How long an empty branch survives before it is treated as a crashed agent's
+/// leftover. Nothing was ever proposed on it, so there is no work to lose.
+pub const EMPTY_BRANCH_MAX_AGE_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// How long a branch with ops goes untouched before it is *marked* stale.
+/// Never deleted: it is pending human review, and the reviewer decides.
+pub const STALE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+
 #[derive(Debug, thiserror::Error)]
 pub enum JournalError {
     #[error("branch '{0}' does not exist")]
@@ -202,6 +210,16 @@ impl Branch {
         self.entries.iter().map(|entry| entry.ops.len()).sum()
     }
 
+    /// Created but never appended to, so discarding it loses nothing.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Untouched long enough to be worth flagging in a review list.
+    pub fn is_stale(&self, now_ms: i64) -> bool {
+        now_ms - self.updated_at_ms > STALE_AFTER_MS
+    }
+
     pub fn needs_compaction(&self) -> bool {
         self.entries.len() >= COMPACT_AFTER_ENTRIES
     }
@@ -372,6 +390,25 @@ impl BranchStore {
         crate::commands::system::write_atomic(&tmp, &path, &bytes).map_err(write)
     }
 
+    /// Discard branches that are provably worthless: created, never appended to,
+    /// and older than [`EMPTY_BRANCH_MAX_AGE_MS`].
+    ///
+    /// A branch carrying ops is never touched, however old. It is pending human
+    /// review, and quietly deleting someone's proposed edits is worse than the
+    /// few KB a stale journal costs. Unreadable journals are left alone too: we
+    /// cannot tell whether they hold work.
+    pub fn sweep(&self, now_ms: i64) -> Vec<BranchId> {
+        self.list()
+            .into_iter()
+            .filter(|id| {
+                self.load(id).is_ok_and(|branch| {
+                    branch.is_empty() && now_ms - branch.created_at_ms > EMPTY_BRANCH_MAX_AGE_MS
+                })
+            })
+            .filter(|id| self.remove(id).is_ok())
+            .collect()
+    }
+
     /// Removing a branch that is already gone succeeds.
     pub fn remove(&self, id: &BranchId) -> Result<(), JournalError> {
         let path = self.path_for(id);
@@ -498,6 +535,20 @@ mod tests {
 
     fn cut(start: f64, end: f64) -> Op {
         Op::CutAdd { start, end }
+    }
+
+    /// Scratch store in a per-run temp dir, matching `project::reader`'s test
+    /// idiom rather than pulling in a dev-dependency.
+    fn temp_store() -> BranchStore {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static N: AtomicU32 = AtomicU32::new(0);
+
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        BranchStore::new(
+            std::env::temp_dir()
+                .join(format!("recast-journal-{}-{n}", std::process::id()))
+                .join("branches"),
+        )
     }
 
     mod branch_id {
@@ -802,23 +853,129 @@ mod tests {
         }
     }
 
-    mod store {
+    mod sweep {
         use super::*;
 
-        use std::sync::atomic::{AtomicU32, Ordering};
+        const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
-        static N: AtomicU32 = AtomicU32::new(0);
+        fn store_with(branches: &[Branch]) -> BranchStore {
+            let store = temp_store();
+            for branch in branches {
+                store.save(branch).unwrap();
+            }
+            store
+        }
 
-        /// Scratch store in a per-run temp dir, matching `project::reader`'s
-        /// test idiom rather than pulling in a dev-dependency.
-        fn temp_store() -> BranchStore {
-            let n = N.fetch_add(1, Ordering::Relaxed);
-            BranchStore::new(
-                std::env::temp_dir()
-                    .join(format!("recast-journal-{}-{n}", std::process::id()))
-                    .join("branches"),
+        fn empty_branch(id: &str, created_at_ms: i64) -> Branch {
+            Branch::new(
+                branch_id(id),
+                StateHash::of(&state(0.0)).unwrap(),
+                "agent:test",
+                None,
+                created_at_ms,
             )
         }
+
+        fn working_branch(id: &str, created_at_ms: i64) -> Branch {
+            let mut branch = empty_branch(id, created_at_ms);
+            branch
+                .append("k1", vec![cut(1.0, 2.0)], None, created_at_ms)
+                .unwrap();
+            branch
+        }
+
+        #[test]
+        fn discards_an_empty_branch_a_crashed_agent_left_behind() {
+            let store = store_with(&[empty_branch("abandoned", NOW)]);
+
+            let removed = store.sweep(NOW + 2 * DAY_MS);
+
+            assert_eq!(removed, vec![branch_id("abandoned")]);
+        }
+
+        #[test]
+        fn keeps_a_fresh_empty_branch_an_agent_is_still_filling() {
+            let store = store_with(&[empty_branch("in-progress", NOW)]);
+
+            store.sweep(NOW + 1000);
+
+            assert_eq!(store.list(), vec![branch_id("in-progress")]);
+        }
+
+        /// Proposed edits are pending human review; age is not consent to delete.
+        #[test]
+        fn never_discards_a_branch_carrying_ops_however_old() {
+            let store = store_with(&[working_branch("proposed", NOW)]);
+
+            store.sweep(NOW + 365 * DAY_MS);
+
+            assert_eq!(store.list(), vec![branch_id("proposed")]);
+        }
+
+        #[test]
+        fn leaves_an_unreadable_journal_alone() {
+            let store = store_with(&[]);
+            std::fs::create_dir_all(&store.dir).unwrap();
+            std::fs::write(store.path_for(&branch_id("broken")), b"{ not json").unwrap();
+
+            store.sweep(NOW + 365 * DAY_MS);
+
+            assert!(store.path_for(&branch_id("broken")).exists());
+        }
+
+        #[test]
+        fn reports_nothing_when_there_is_nothing_to_discard() {
+            let store = store_with(&[working_branch("proposed", NOW)]);
+
+            assert!(store.sweep(NOW + 365 * DAY_MS).is_empty());
+        }
+    }
+
+    mod staleness {
+        use super::*;
+
+        #[test]
+        fn a_branch_touched_today_is_not_stale() {
+            let branch = branch_on(&state(0.0));
+
+            assert!(!branch.is_stale(NOW));
+        }
+
+        #[test]
+        fn a_branch_untouched_past_the_window_is_stale() {
+            let branch = branch_on(&state(0.0));
+
+            assert!(branch.is_stale(NOW + STALE_AFTER_MS + 1));
+        }
+
+        #[test]
+        fn appending_clears_staleness() {
+            let mut branch = branch_on(&state(0.0));
+            let later = NOW + STALE_AFTER_MS + 1;
+
+            branch
+                .append("k1", vec![cut(1.0, 2.0)], None, later)
+                .unwrap();
+
+            assert!(!branch.is_stale(later));
+        }
+
+        #[test]
+        fn a_branch_with_no_entries_reports_empty() {
+            assert!(branch_on(&state(0.0)).is_empty());
+        }
+
+        #[test]
+        fn a_branch_with_an_entry_does_not() {
+            let mut branch = branch_on(&state(0.0));
+            branch.append("k1", vec![cut(1.0, 2.0)], None, NOW).unwrap();
+
+            assert!(!branch.is_empty());
+        }
+    }
+
+    mod store {
+        use super::*;
 
         #[test]
         fn saves_and_reloads_a_branch() {
@@ -1003,5 +1160,294 @@ mod tests {
                 super::project_key(Path::new("/a/demo.recast"))
             );
         }
+    }
+}
+
+/// The branch cycle against a real `.recast` on disk.
+///
+/// The unit tests above prove the journal folds correctly in memory. These prove
+/// the part that only shows up on disk: that a branch saved, reloaded and
+/// materialized against a freshly-opened project still lands the right edits in
+/// the bundle, and that its fork point stops matching once it has.
+#[cfg(test)]
+mod disk_roundtrip_tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use serde_json::json;
+
+    use super::*;
+    use crate::project::reader::open_project;
+    use crate::project::writer::{self, ProjectWriteRequest};
+    use crate::project::ProjectMetadata;
+    use crate::render::ops::Op;
+
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    const NOW: i64 = 1_700_000_000_000;
+
+    fn workspace() -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("recast-branch-{}-{n}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("workspace");
+        dir
+    }
+
+    fn fixture_metadata() -> ProjectMetadata {
+        serde_json::from_value(json!({
+            "schemaVersion": 1,
+            "createdAtUnixMs": 1_700_000_000_000u64,
+            "captureTarget": {
+                "kind": "display",
+                "id": 1,
+                "label": "Display 1",
+                "source": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+                "crop": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+                "displayId": 1,
+                "scaleFactor": 1.0
+            },
+            "stats": {
+                "capturedFrames": 600, "encodedFrames": 600, "droppedFrames": 0,
+                "durationMs": 10000, "nominalFps": 60
+            },
+            "video": { "width": 1920, "height": 1080, "fps": 60, "durationMs": 10000 }
+        }))
+        .expect("fixture metadata")
+    }
+
+    /// A v2 bundle whose edits are `RenderState::default()` trimmed to 10s.
+    fn write_fixture_project(ws: &Path) -> PathBuf {
+        let recording = ws.join("rec.mp4");
+        let cursor = ws.join("cursor.json");
+        fs::write(&recording, b"video-bytes").expect("recording");
+        fs::write(&cursor, br#"{"samples":[]}"#).expect("cursor");
+
+        let state = RenderState {
+            trim_end: 10.0,
+            ..RenderState::default()
+        };
+        let out = ws.join("project.recast");
+        writer::write_project(ProjectWriteRequest {
+            output_path: out.clone(),
+            metadata: fixture_metadata(),
+            recording_path: recording,
+            cursor_path: cursor,
+            audio_path: None,
+            microphone_path: None,
+            camera_path: None,
+            edits_json: serde_json::to_string(&state).expect("serialize"),
+        })
+        .expect("write v2");
+        out
+    }
+
+    fn read_state(project: &Path) -> RenderState {
+        let opened = open_project(project).expect("open");
+        serde_json::from_str(&fs::read_to_string(&opened.edits_path).expect("edits"))
+            .expect("parse edits")
+    }
+
+    fn save_edits(project: &Path, state: &RenderState) {
+        writer::update_project_edits(project, &serde_json::to_string(state).expect("serialize"))
+            .expect("save edits");
+    }
+
+    /// Create a branch on the project's current state and record two ops.
+    fn proposed_branch(store: &BranchStore, project: &Path) -> Branch {
+        let base = StateHash::of(&read_state(project)).expect("hash");
+        let mut branch = Branch::new(
+            BranchId::new("agent-1").expect("id"),
+            base,
+            "agent:test",
+            Some("tighten the intro".into()),
+            NOW,
+        );
+        branch
+            .append(
+                "k1",
+                vec![Op::Trim {
+                    start: 1.0,
+                    end: 9.0,
+                }],
+                None,
+                NOW,
+            )
+            .expect("trim");
+        branch
+            .append(
+                "k2",
+                vec![Op::CutAdd {
+                    start: 3.0,
+                    end: 4.0,
+                }],
+                None,
+                NOW,
+            )
+            .expect("cut");
+        store.save(&branch).expect("save branch");
+        branch
+    }
+
+    /// Reload from disk on both sides, then apply, as `branch.apply` does.
+    fn apply_from_disk(store: &BranchStore, project: &Path) -> RenderState {
+        let branch = store
+            .load(&BranchId::new("agent-1").expect("id"))
+            .expect("load");
+        let applied = branch
+            .materialize(&read_state(project))
+            .expect("materialize");
+        save_edits(project, &applied);
+        applied
+    }
+
+    #[test]
+    fn a_branch_written_to_disk_reloads_with_its_ops() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let store = BranchStore::new(ws.join("branches"));
+        proposed_branch(&store, &project);
+
+        let reloaded = store
+            .load(&BranchId::new("agent-1").expect("id"))
+            .expect("load");
+
+        assert_eq!(reloaded.op_count(), 2);
+    }
+
+    #[test]
+    fn applying_a_branch_writes_the_edits_into_the_bundle() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let store = BranchStore::new(ws.join("branches"));
+        proposed_branch(&store, &project);
+
+        apply_from_disk(&store, &project);
+
+        assert_eq!(read_state(&project).cuts.len(), 1);
+    }
+
+    #[test]
+    fn applying_a_branch_carries_every_op_not_just_the_last() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let store = BranchStore::new(ws.join("branches"));
+        proposed_branch(&store, &project);
+
+        apply_from_disk(&store, &project);
+
+        assert_eq!(read_state(&project).trim_start, 1.0);
+    }
+
+    #[test]
+    fn the_applied_state_passes_the_validator() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let store = BranchStore::new(ws.join("branches"));
+        proposed_branch(&store, &project);
+
+        let applied = apply_from_disk(&store, &project);
+
+        assert!(
+            crate::commands::validate_render_state(&applied, 10.0).is_ok(),
+            "{:?}",
+            crate::commands::validate_render_state(&applied, 10.0)
+        );
+    }
+
+    /// Fast-forward only: once the project has moved, the branch cannot land again.
+    #[test]
+    fn a_branch_cannot_be_applied_twice() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let store = BranchStore::new(ws.join("branches"));
+        proposed_branch(&store, &project);
+        apply_from_disk(&store, &project);
+
+        let branch = store
+            .load(&BranchId::new("agent-1").expect("id"))
+            .expect("load");
+        let second = branch.materialize(&read_state(&project));
+
+        assert!(
+            matches!(second, Err(JournalError::BaseMoved { .. })),
+            "got: {second:?}"
+        );
+    }
+
+    /// The whole reason the journal exists: proposing costs no bundle rewrite.
+    #[test]
+    fn proposing_edits_leaves_the_bundle_untouched() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let before = fs::read(&project).expect("read bundle");
+        let store = BranchStore::new(ws.join("branches"));
+
+        proposed_branch(&store, &project);
+
+        assert_eq!(fs::read(&project).expect("read bundle"), before);
+    }
+
+    #[test]
+    fn an_edit_landing_between_fork_and_apply_is_caught() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let store = BranchStore::new(ws.join("branches"));
+        proposed_branch(&store, &project);
+
+        // Someone saves in the GUI while the branch is waiting for review.
+        let mut moved = read_state(&project);
+        moved.trim_start = 5.0;
+        save_edits(&project, &moved);
+
+        let branch = store
+            .load(&BranchId::new("agent-1").expect("id"))
+            .expect("load");
+
+        assert!(
+            matches!(
+                branch.materialize(&read_state(&project)),
+                Err(JournalError::BaseMoved { .. })
+            ),
+            "a moved base must be rejected"
+        );
+    }
+
+    #[test]
+    fn discarding_a_branch_leaves_the_project_as_it_was() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let store = BranchStore::new(ws.join("branches"));
+        proposed_branch(&store, &project);
+
+        store
+            .remove(&BranchId::new("agent-1").expect("id"))
+            .expect("discard");
+
+        assert_eq!(read_state(&project).trim_start, 0.0);
+    }
+
+    #[test]
+    fn the_diff_matches_what_applying_actually_changes() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let store = BranchStore::new(ws.join("branches"));
+        let branch = proposed_branch(&store, &project);
+        let base = read_state(&project);
+        let proposed = branch.materialize(&base).expect("materialize");
+        let predicted: Vec<String> = super::diff(&base, &proposed)
+            .expect("diff")
+            .into_iter()
+            .map(|change| change.field)
+            .collect();
+
+        let applied = apply_from_disk(&store, &project);
+        let actual: Vec<String> = super::diff(&base, &applied)
+            .expect("diff")
+            .into_iter()
+            .map(|change| change.field)
+            .collect();
+
+        assert_eq!(predicted, actual);
     }
 }

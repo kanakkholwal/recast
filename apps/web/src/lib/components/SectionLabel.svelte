@@ -2,9 +2,6 @@
 import type { IconComponent } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 
-// The small product label above a section heading. A duotone glyph in the
-// section's accent hue plus a plain label — no pill, no tinted tile behind the
-// icon, no uppercase tracking.
 let {
 	icon: Icon,
 	label,
