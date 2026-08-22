@@ -536,26 +536,34 @@ because a tinted amber card is a second colour system for one sentence.
 ### Dashboard shell
 
 The product routes keep their own tokens (the dashboard is not under
-`[data-site="marketing"]`), but the shell now uses the same structural language
-as the site:
+`[data-site="marketing"]`) and their own shape: `Sidebar.Root` stays
+`variant="inset"`, because the floating panel is the shell's identity. What
+changed is everything the token system covers:
 
-- **Flush rail, not a floating panel.** `Sidebar.Root` is `variant="sidebar"`,
-  so the rail sits in its own tonal column with a hairline edge instead of an
-  inset card with `m-2`, rounding and a shadow.
-- **The header is opaque.** `bg-background/80` + `backdrop-blur-xl` reads as a
-  different design system sitting on top of a hairline shell. It is a solid bar
-  on a full-strength `border-border-low` rule, and it no longer needs the
-  `md:top-2 md:rounded-t-xl` fudge that matched the inset panel's corners.
-- **One moving object marks the active row.** The row fill still crossfades
-  between entries; the `ring-1 ring-inset` chip and the separate `bg-primary`
-  left pill are gone. Two markers for one state is one too many.
-- Type comes off the scale (`text-[12.5px]`, `text-[10px]` uppercase and
-  `text-[15px]` are gone), group labels are sentence case, and the primary
-  action is `variant="dark"` like every other primary on the site. The GitHub
-  nudge in the footer drops to `outline` so the rail has one filled button.
+- **No glass.** The header was `bg-background/80` + `backdrop-blur-xl`; it is
+  opaque on a full-strength `border-border-low` rule. Same for the search
+  trigger, which was a `bg-card/70 backdrop-blur` inset card and is now a
+  hairline field.
+- **No dilutions.** `border-border-low/60`, `/70`, `border-border/30`,
+  `text-muted-foreground/40` and `bg-foreground/5` all resolve to the real
+  tokens (`border-border-low`, `bg-paper`).
+- **Type on the scale.** `text-[15px]`, `text-[12.5px]`, `text-[12px]`,
+  `text-[11px]`, `text-[10px]`, `text-[9px]` are gone; group labels are sentence
+  case rather than uppercase and tracked.
+- **One filled button per surface.** "New Recast" is `variant="dark"` like every
+  other primary; the GitHub nudge in the footer drops to `outline`.
 
-The same component backs the admin shell through its flat `nav` prop, so both
-shells moved together.
+**The search field carries a fill.** `bg-paper` against the header's
+`bg-background`, because an outline alone on the same colour as its surroundings
+does not read as a field. Below `sm` it collapses to its icon at `size-9`: a
+full-width bar costs more than a phone header has to spend.
+
+**Header search stays centred** in its `mx-auto max-w-md` box, with the empty
+spacer kept on `/dashboard` (where the hero owns search) so the profile menu
+holds its right-edge anchor.
+
+The same sidebar component backs the admin shell through its flat `nav` prop, so
+both shells moved together.
 
 ### Interior pages
 

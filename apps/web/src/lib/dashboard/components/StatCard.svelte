@@ -1,27 +1,23 @@
 <script lang="ts">
-	import type { IconComponent } from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
 
-	let {
-		icon: Icon,
-		label,
-		value,
-	}: {
-		icon: IconComponent;
-		label: string;
-		value: string;
-	} = $props();
+let {
+	icon: Icon,
+	label,
+	value,
+}: {
+	icon: IconComponent;
+	label: string;
+	value: string;
+} = $props();
 </script>
 
-<div class="glass-card flex items-center gap-3.5 rounded-xl p-4">
-	<span class="glass-chip grid size-10 place-items-center rounded-lg text-muted-foreground">
-		<Icon class="size-4" />
-	</span>
-	<div>
-		<div class="text-lg font-semibold tabular-nums tracking-tight text-foreground">
+<div class="surface flex items-center gap-3.5 p-4">
+	<Icon class="size-5 shrink-0 text-muted-foreground" />
+	<div class="min-w-0">
+		<div class="text-subheading font-medium tabular-nums text-foreground">
 			{value}
 		</div>
-		<div class="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-			{label}
-		</div>
+		<div class="truncate text-caption text-muted-foreground">{label}</div>
 	</div>
 </div>
