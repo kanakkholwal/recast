@@ -565,6 +565,31 @@ holds its right-edge anchor.
 The same sidebar component backs the admin shell through its flat `nav` prop, so
 both shells moved together.
 
+### Dashboard home
+
+Same token pass as the shell, and deliberately **no change to what is on the
+page or where**: greeting, hero search, Upload/Analytics actions, the metric
+strip, library counts, activity, usage and recent recasts all stay in place and
+in order. A dashboard people already know is not the place to move the furniture.
+
+- `glass-card` → `.surface`, `glass-chip` icon tiles → the glyph on its own.
+  A 40px tinted plate behind a 16px icon is the thing the marketing pages
+  dropped first; the dashboard had one on every card header, empty state and
+  activity row.
+- The greeting was `bg-clip-text` over a `to-foreground/60` gradient, which
+  fades a page's one `h1` into the background. Solid display type now.
+- The metric strip sits between two hairlines instead of floating, so it reads
+  as one object rather than five stray numbers.
+- Labels drop uppercase tracking for sentence-case `text-caption`; every
+  `text-[9px]`…`text-[11px]` goes to the scale; `font-mono` readouts become
+  `tabular-nums`.
+- Upload is `variant="dark"` (the page's conversion action), Analytics stays
+  outline: one filled button per surface.
+- Dilutions resolve to tokens: `divide-border-low/40`, `ring-border-low/40`,
+  `bg-foreground/5`, `bg-foreground/8` → `border-border-low`, `bg-paper`. The
+  one surviving alpha is the play-overlay scrim on a poster, where dimming an
+  image is the actual job.
+
 ### Interior pages
 
 Both were on the pre-Dub system: floating `rounded-2xl` cards, `blur-3xl` glow

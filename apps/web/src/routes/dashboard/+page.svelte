@@ -26,9 +26,7 @@
 	const firstName = $derived(settingsStore.value.profile.name.split(/\s+/)[0] ?? "there");
 	const activity = $derived(data.activity);
 
-	// Hero — performance summary. All figures are real: lifetime total views
-	// from the recast rows, and a genuine last-7-days trend from the recent
-	// activity slice (no fabricated deltas).
+
 	const totalViews = $derived(recastsStore.items.reduce((s, r) => s + r.views, 0));
 	const spark14 = $derived(viewsByDay(activity, 14));
 	const last7 = $derived(spark14.slice(7).reduce((s, b) => s + b.views, 0));
@@ -64,12 +62,8 @@
 	onNew={() => quickUpload.show()}
 />
 
-<!-- Library at a glance — orientation counts, kept visually subordinate to the
-	 hero above but surfaced high where they're actually useful. -->
 <section class="mt-6" in:fly={{ y: 12, duration: 480, delay: 160, easing: cubicOut }}>
-	<h2 class="mb-3 px-1 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
-		Library
-	</h2>
+	<h2 class="mb-3 px-1 text-caption font-medium text-muted-foreground">Library</h2>
 	<StatGrid stats={libraryStats} />
 </section>
 
