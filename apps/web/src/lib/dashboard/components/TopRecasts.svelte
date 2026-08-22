@@ -46,7 +46,7 @@ const top = $derived(ranked[0]?.views ?? 0);
 						href="/dashboard/recasts/{rec.id}"
 						class="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-paper motion-reduce:transition-none"
 					>
-						<span class="w-4 shrink-0 font-display text-body-sm tabular-nums text-border-strong">
+						<span class="w-4 shrink-0 font-display font-medium text-body-sm tabular-nums text-border-strong">
 							{i + 1}
 						</span>
 						<span class="min-w-0 flex-1">

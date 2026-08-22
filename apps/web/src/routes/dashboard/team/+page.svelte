@@ -135,7 +135,7 @@ function resetInviteForm() {
 	<title>Workspace - Recast Dashboard</title>
 </svelte:head>
 
-<div class="space-y-5" in:fly={{ y: 14, duration: 420, easing: cubicOut }}>
+<div class="space-y-4" in:fly={{ y: 14, duration: 420, easing: cubicOut }}>
 	<PageHeader icon={Users} title={data.org.name} subtitle="Manage people, roles, invitations, and workspace access.">
 		<div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
 			<!-- Your own access level, kept where identity belongs rather than
@@ -159,7 +159,7 @@ function resetInviteForm() {
 		</div>
 	</PageHeader>
 
-	<section class="grid grid-cols-1 gap-3 md:grid-cols-3">
+	<section class="grid grid-cols-1 gap-4 md:grid-cols-3">
 		{#await data.members}
 			{#each Array(2) as _, i (i)}
 				<Skeleton class="h-18 rounded-xl" />
@@ -190,10 +190,10 @@ function resetInviteForm() {
 	<!-- Seat capacity, stated before someone writes an invite they cannot send. -->
 	{#await data.members then members}
 		{@const cap = data.caps.members}
-		{#if Number.isFinite(cap)}
-			{@const pct = Math.min(100, Math.round((members.length / cap) * 100))}
-			{@const full = members.length >= cap}
-			<section class="surface p-5">
+		{@const pct = Number.isFinite(cap) ? Math.min(100, Math.round((members.length / cap) * 100)) : 0}
+		{@const full = members.length >= cap}
+		{#if Number.isFinite(cap) && (pct >= 50 || full)}
+			<section class="surface p-6">
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<h2 class="font-display text-body font-medium text-foreground">Seats</h2>
 					<span class="text-body-sm tabular-nums text-muted-foreground">
@@ -201,7 +201,7 @@ function resetInviteForm() {
 					</span>
 				</div>
 				<div
-					class="mt-3 h-1.5 overflow-hidden rounded-full bg-paper"
+					class="mt-4 h-1.5 overflow-hidden rounded-full bg-paper"
 					role="progressbar"
 					aria-label="Seats used"
 					aria-valuenow={pct}
@@ -212,15 +212,15 @@ function resetInviteForm() {
 						class="h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.625,0.05,0,1)] motion-reduce:transition-none {full
 							? 'bg-warning'
 							: 'bg-foreground'}"
-						style="width: {pct}%"
+						style="width: {Math.max(pct, members.length > 0 ? 2 : 0)}%"
 					></div>
 				</div>
-				<div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+				<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
 					<p class="text-body-sm text-muted-foreground">
 						{#if full}
 							Every seat on the {planLabel} plan is taken. Add seats to invite anyone else.
 						{:else}
-							Invites draw from this allowance, and pending ones do not hold a seat.
+							{seatsRemaining(cap, members.length)} left on the {planLabel} plan.
 						{/if}
 					</p>
 					{#if full && isOwner}
@@ -235,7 +235,7 @@ function resetInviteForm() {
 
 	<section class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
 		<div class="space-y-4">
-			<div class="surface p-5">
+			<div class="surface p-6">
 				<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 					<div class="flex min-w-0 items-center gap-4">
 						<div class="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-border-low bg-paper text-muted-foreground">
@@ -462,7 +462,11 @@ function resetInviteForm() {
 		</div>
 
 		<aside class="space-y-4 xl:sticky xl:top-24 xl:self-start">
-			<SettingsSection icon={Clock} title="Pending invitations" description="Invites awaiting acceptance.">
+			<SettingsSection
+				icon={Clock}
+				title="Pending invitations"
+				description="Awaiting acceptance. A pending invite does not hold a seat."
+			>
 				{#await data.invites}
 					<ul class="divide-y divide-border-low">
 						{#each Array(2) as _, i (i)}
@@ -640,20 +644,20 @@ function resetInviteForm() {
 			}}
 		>
 			<Label class="block">
-				<span class="mb-1 block text-xs font-semibold text-foreground/85">Email</span>
+				<span class="mb-1.5 block text-body-sm font-medium text-foreground">Email</span>
 				<Input
 					type="email"
 					name="email"
 					bind:value={inviteEmail}
 					placeholder="teammate@company.com"
 					required
-					class="h-9"
+					class="h-9 border-border-low bg-background"
 				/>
 			</Label>
 			<Label class="block">
-				<span class="mb-1 block text-xs font-semibold text-foreground/85">Role</span>
+				<span class="mb-1.5 block text-body-sm font-medium text-foreground">Role</span>
 				<Select.Root type="single" bind:value={inviteRole} name="role">
-					<Select.Trigger class="h-9 w-full capitalize">{capitalize(inviteRole)}</Select.Trigger>
+					<Select.Trigger class="h-9 w-full border-border-low bg-background capitalize">{capitalize(inviteRole)}</Select.Trigger>
 					<Select.Content>
 						<Select.Item value="member">Member</Select.Item>
 						<Select.Item value="admin">Admin</Select.Item>
@@ -672,7 +676,7 @@ function resetInviteForm() {
 				>
 					Cancel
 				</Button>
-				<Button type="submit" size="sm" disabled={inviting || !inviteEmail.trim()} class="gap-2">
+				<Button type="submit" size="sm" variant="dark" disabled={inviting || !inviteEmail.trim()} class="gap-2">
 					{#if inviting}
 						<LoaderCircle class="size-3.5 animate-spin" />
 					{:else}
@@ -701,7 +705,7 @@ function resetInviteForm() {
 		</Dialog.Header>
 		<Dialog.Footer>
 			<Button variant="outline" size="sm" onclick={() => (roleChangeTarget = null)}>Cancel</Button>
-			<Button size="sm" disabled={!roleChangeTarget} onclick={confirmRoleChange} class="gap-2">
+			<Button size="sm" variant="dark" disabled={!roleChangeTarget} onclick={confirmRoleChange} class="gap-2">
 				<ShieldCheck class="size-3.5" />
 				Change role
 			</Button>

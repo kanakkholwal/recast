@@ -621,10 +621,54 @@ Content changes, since the page was dense but not evenly useful:
   can see. It moved to a badge in the page header, where identity belongs.
 - **"Can manage" took its place** — how many owners and admins the workspace
   has, which is the number worth watching on a shared account.
-- **A seat-capacity bar** sits under the stats when the plan caps members. It
-  states the allowance before someone writes an invite they cannot send, and
-  when every seat is taken an owner gets "Add seats" inline. Pending invites do
-  not hold a seat, and the copy says so.
+- **A seat-capacity bar** appears when the allowance is actually in play, at
+  half full or above. On a 250-seat plan with one member it was a full-width
+  band showing an invisible sliver, so "Seats left" carries the number until it
+  matters. At the cap an owner gets "Add seats" inline. The fill floors at 2%
+  so a real value is never rendered as nothing.
+
+**A `font-display` heading always carries a weight.** Tailwind's preflight
+resets headings to `font-weight: inherit`, and the product routes are outside
+`[data-site="marketing"]`, so its `h1`/`h2` weight rules never reach them: a
+display heading with no weight class renders at body weight.
+
+### Settings and archive
+
+Both ran on the same pass. Two patterns worth naming, because they recur:
+
+**Inset panels inside a card were translucent.** `border-border-low/70` over
+`bg-background/55` on a card that is already `bg-card` gives a washed box inside
+a solid one. They are `border-border-low` on `bg-paper` now, which is the same
+relationship the marketing pages use for a nested block.
+
+**Semantic state came from the palette.** The unverified-email badge was
+`text-amber-600 dark:text-amber-400` and a usage bar filled `bg-amber-500`; both
+are `text-warning` / `bg-warning`, which is the token that already exists for
+exactly this. Included/excluded rows in the billing matrix moved off
+`text-foreground/60` and `text-muted-foreground/60` onto `text-success` and
+`text-border-strong`, so "included" reads as a state rather than as slightly
+darker text.
+
+Each page also gained the thing it was missing:
+
+- **Profile could not change anything.** It rendered your name and email as two
+  read-only panels, so "Settings → Profile" was a dead end. The name is an
+  editable field now (`authClient.updateUser`, then the local store and
+  `invalidateAll`, so the header, rail and greeting update with it). Email stays
+  fixed, because changing it is an auth flow rather than a text field.
+- **Preferences had no appearance control.** Theme lived only in the profile
+  menu, which is a strange omission on a page called Preferences. A three-way
+  Light / Dark / System control sits at the top of the rail, reading
+  `userPrefersMode` so "System" is a real state rather than a third button that
+  looks unselected.
+- **Billing sold Pro to people already on Pro.** The rail's upsell card now
+  switches on plan: subscribers get monthly total, creators billed, renewal or
+  cancellation date, and a portal link; free workspaces still get the pitch.
+
+Archive lost a duplication: every card repeated the page's own explanation
+("the file was removed after 14 days…"), so a screen of six cards said it seven
+times. The page says it once, on a hairline row that also carries the count,
+the total size and the purge window.
 
 ### Interior pages
 

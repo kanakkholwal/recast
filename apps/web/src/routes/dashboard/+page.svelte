@@ -91,7 +91,7 @@ const firstSteps = [
 		class="surface mt-6 p-6 sm:p-8"
 		in:fly={{ y: 12, duration: 480, delay: 160, easing: cubicOut }}
 	>
-		<h2 class="font-display text-heading-sm text-foreground">Start with one recording</h2>
+		<h2 class="font-display font-medium text-heading-sm text-foreground">Start with one recording</h2>
 		<p class="mt-2 max-w-md text-body-sm text-muted-foreground">
 			Everything on this page fills in from your first recast: usage, viewer activity and what
 			people actually watch.

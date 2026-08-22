@@ -106,10 +106,10 @@ async function openPortal() {
 			{/snippet}
 
 			<div class="grid gap-3 sm:grid-cols-3">
-				<div class="rounded-lg border border-border-low/70 bg-background/55 p-4">
-					<p class="text-xs font-medium text-muted-foreground">Workspace plan</p>
-					<p class="mt-1 text-lg font-semibold text-foreground">{plan.name}</p>
-					<p class="text-xs text-muted-foreground">
+				<div class="rounded-lg border border-border-low bg-paper p-4">
+					<p class="text-caption text-muted-foreground">Workspace plan</p>
+					<p class="mt-1 text-subheading font-medium text-foreground">{plan.name}</p>
+					<p class="text-body-sm text-muted-foreground">
 						{#if data.currentMonthlyUsd == null}
 							Billed by agreement
 						{:else}
@@ -117,12 +117,12 @@ async function openPortal() {
 						{/if}
 					</p>
 				</div>
-				<div class="rounded-lg border border-border-low/70 bg-background/55 p-4">
-					<p class="text-xs font-medium text-muted-foreground">Creators</p>
-					<p class="mt-1 text-lg font-semibold text-foreground">
+				<div class="rounded-lg border border-border-low bg-paper p-4">
+					<p class="text-caption text-muted-foreground">Creators</p>
+					<p class="mt-1 text-subheading font-medium text-foreground">
 						{seats.used} / {seats.max}
 					</p>
-					<p class="text-xs text-muted-foreground">
+					<p class="text-body-sm text-muted-foreground">
 						{#if seats.billable > 0}
 							{seats.included} included, {seats.billable} × {formatUsd(seats.extraUsd)}
 						{:else}
@@ -130,12 +130,12 @@ async function openPortal() {
 						{/if}
 					</p>
 				</div>
-				<div class="rounded-lg border border-border-low/70 bg-background/55 p-4">
-					<p class="text-xs font-medium text-muted-foreground">Billing status</p>
-					<p class="mt-1 text-lg font-semibold capitalize text-foreground">
+				<div class="rounded-lg border border-border-low bg-paper p-4">
+					<p class="text-caption text-muted-foreground">Billing status</p>
+					<p class="mt-1 text-subheading font-medium capitalize text-foreground">
 						{status === "none" ? "No subscription" : status}
 					</p>
-					<p class="text-xs text-muted-foreground">
+					<p class="text-body-sm text-muted-foreground">
 						{#if periodEndLabel}
 							{data.subscription?.cancelAtPeriodEnd ? "Ends" : "Renews"} {periodEndLabel}
 						{:else}
@@ -147,7 +147,7 @@ async function openPortal() {
 
 			<div class="mt-4 flex flex-wrap gap-2">
 				{#if isPaid && canUsePortal}
-					<Button onclick={openPortal} disabled={openingPortal} size="sm" class="gap-2">
+					<Button onclick={openPortal} disabled={openingPortal} size="sm" variant="dark" class="gap-2">
 						{#if openingPortal}
 							<LoaderCircle class="size-3.5 animate-spin" />
 						{:else}
@@ -160,6 +160,7 @@ async function openPortal() {
 						onclick={startCheckout}
 						disabled={checkingOut || !data.billingConfigured}
 						size="sm"
+						variant="dark"
 						class="gap-2"
 					>
 						{#if checkingOut}
@@ -174,15 +175,15 @@ async function openPortal() {
 			</div>
 
 			{#if !data.isOwner}
-				<p class="mt-3 text-xs text-muted-foreground">
+				<p class="mt-3 text-body-sm text-muted-foreground">
 					Only the workspace owner can change this plan.
 				</p>
 			{:else if !data.billingConfigured}
-				<p class="mt-3 text-xs text-muted-foreground">
+				<p class="mt-3 text-body-sm text-muted-foreground">
 					Checkout is disabled until Polar environment variables are configured.
 				</p>
 			{:else if !data.billingContactIsMe}
-				<p class="mt-3 text-xs text-muted-foreground">
+				<p class="mt-3 text-body-sm text-muted-foreground">
 					Another owner is the billing contact for this workspace.
 				</p>
 			{/if}
@@ -195,25 +196,25 @@ async function openPortal() {
 		>
 			<div class="space-y-4">
 				<div>
-					<div class="flex items-baseline justify-between gap-4 text-sm">
+					<div class="flex items-baseline justify-between gap-4 text-body-sm">
 						<span class="text-muted-foreground">Delivery</span>
 						<span class="font-medium text-foreground">
 							{formatBytes(delivery?.usedBytes ?? 0)} / {formatBytes(delivery?.capBytes)}
 						</span>
 					</div>
-					<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8">
+					<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-paper">
 						<div
 							class="h-full rounded-full transition-[width] duration-500 {meterTone(
 								delivery?.ratio ?? 0,
 							) === 'critical'
 								? 'bg-destructive'
 								: meterTone(delivery?.ratio ?? 0) === 'warning'
-									? 'bg-amber-500'
+									? 'bg-warning'
 									: 'bg-primary'}"
 							style="width: {deliveryPct}%"
 						></div>
 					</div>
-					<p class="mt-1.5 text-xs text-muted-foreground">
+					<p class="mt-1.5 text-caption text-muted-foreground">
 						{#if delivery?.capBytes == null}
 							Unlimited on this plan.
 						{:else if delivery.exceeded && !isPaid}
@@ -230,7 +231,7 @@ async function openPortal() {
 				</div>
 
 				<div>
-					<div class="flex items-baseline justify-between gap-4 text-sm">
+					<div class="flex items-baseline justify-between gap-4 text-body-sm">
 						<span class="text-muted-foreground">Storage</span>
 						<span class="font-medium text-foreground">
 							{formatBytes(data.quota?.usage.storageBytes ?? 0)} / {formatBytes(
@@ -238,7 +239,7 @@ async function openPortal() {
 							)}
 						</span>
 					</div>
-					<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8">
+					<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-paper">
 						<div
 							class="h-full rounded-full bg-primary transition-[width] duration-500"
 							style="width: {storagePct}%"
@@ -256,14 +257,14 @@ async function openPortal() {
 			<div class="grid gap-2 sm:grid-cols-2">
 				{#each featureRows as feature (feature.label)}
 					<div
-						class="flex items-center gap-2 rounded-lg border border-border-low/60 bg-background/45 px-3 py-2 text-sm {feature.on
+						class="flex items-center gap-2 rounded-lg border border-border-low bg-paper px-3 py-2 text-body-sm {feature.on
 							? 'text-foreground'
 							: 'text-muted-foreground'}"
 					>
 						{#if feature.on}
-							<Check class="size-3.5 shrink-0 text-foreground/60" aria-label="Included" />
+							<Check class="size-3.5 shrink-0 text-success" aria-label="Included" />
 						{:else}
-							<Minus class="size-3.5 shrink-0 text-muted-foreground/60" aria-label="Not included" />
+							<Minus class="size-3.5 shrink-0 text-border-strong" aria-label="Not included" />
 						{/if}
 						<span>{feature.label}</span>
 					</div>
@@ -273,12 +274,70 @@ async function openPortal() {
 	</div>
 
 	<div in:fly={{ y: 14, duration: 420, delay: 80, easing: cubicOut }}>
-		<SettingsSection icon={Crown} title="Pro" description="For teams sharing regularly." accent>
+		{#if isPaid}
+			<!-- Already paying: the rail answers "what am I on and when does it
+			     renew", not "why should I buy this". -->
+			<SettingsSection
+				icon={Crown}
+				title="Your subscription"
+				description="Seats bill with the workspace, not per account."
+				accent
+			>
+				{#snippet badge()}
+					<Badge variant="secondary">{plan.name}</Badge>
+				{/snippet}
+
+				<div class="space-y-3 text-body-sm">
+					<div class="flex items-center justify-between gap-4">
+						<span class="text-muted-foreground">Monthly total</span>
+						<span class="font-medium tabular-nums text-foreground">
+							{data.currentMonthlyUsd == null ? "By agreement" : `${formatUsd(data.currentMonthlyUsd)}/mo`}
+						</span>
+					</div>
+					<div class="flex items-center justify-between gap-4">
+						<span class="text-muted-foreground">Creators billed</span>
+						<span class="font-medium tabular-nums text-foreground">
+							{seats.used} of {seats.max}
+						</span>
+					</div>
+					<div class="flex items-center justify-between gap-4">
+						<span class="text-muted-foreground">
+							{data.subscription?.cancelAtPeriodEnd ? "Ends" : "Renews"}
+						</span>
+						<span class="font-medium text-foreground">{periodEndLabel ?? "Not scheduled"}</span>
+					</div>
+				</div>
+
+				{#if data.subscription?.cancelAtPeriodEnd}
+					<p class="mt-4 rounded-lg border border-border-low bg-paper px-3 py-2.5 text-body-sm text-muted-foreground">
+						Cancellation is scheduled. Shares keep working until {periodEndLabel}.
+					</p>
+				{:else if !data.billingContactIsMe}
+					<p class="mt-4 rounded-lg border border-border-low bg-paper px-3 py-2.5 text-body-sm text-muted-foreground">
+						Another owner is the billing contact, so the portal opens under their account.
+					</p>
+				{/if}
+
+				{#if canUsePortal}
+					<Button
+						onclick={openPortal}
+						disabled={openingPortal}
+						variant="outline"
+						size="sm"
+						class="mt-4 w-full gap-2"
+					>
+						<ArrowUpRight class="size-3.5" />
+						Invoices and payment method
+					</Button>
+				{/if}
+			</SettingsSection>
+		{:else}
+			<SettingsSection icon={Crown} title="Pro" description="For teams sharing regularly." accent>
 			{#snippet badge()}
 				<Badge variant="secondary">{formatUsd(data.proPlan.monthlyUsd)}/mo</Badge>
 			{/snippet}
 
-			<div class="space-y-3 text-sm">
+			<div class="space-y-3 text-body-sm">
 				<div class="flex items-center justify-between gap-4">
 					<span class="text-muted-foreground">Creators included</span>
 					<span class="font-medium text-foreground">{data.proPlan.seatsIncluded}</span>
@@ -298,14 +357,15 @@ async function openPortal() {
 			</div>
 
 			<div
-				class="mt-4 flex items-start gap-2 rounded-lg border border-primary/25 bg-primary/6 px-3 py-2.5 text-xs text-foreground/85"
+				class="mt-4 flex items-start gap-2 rounded-lg border border-border-low bg-paper px-3 py-2.5 text-body-sm text-muted-foreground"
 			>
 				<Users class="mt-0.5 size-3.5 shrink-0 text-primary" />
 				<span>
 					Loom bills {formatUsd(18)} per person. A five-person team pays them {formatUsd(90)}
 					a month and us {formatUsd(20)}.
 				</span>
-			</div>
-		</SettingsSection>
+				</div>
+			</SettingsSection>
+		{/if}
 	</div>
 </div>
