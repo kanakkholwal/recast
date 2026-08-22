@@ -1,5 +1,5 @@
 <script lang="ts">
-import { formatBytes } from "$lib/dashboard/format";
+import { barWidth, formatBytes } from "$lib/dashboard/format";
 import { quotaStore } from "$lib/dashboard/store.svelte";
 import { type UsageTone, usageView } from "./UsageMeter.logic";
 import { Gauge, HardDrive, Link2 } from "@recast/icons";
@@ -44,7 +44,7 @@ const barFill: Record<UsageTone, string> = {
 		>
 			<div
 				class="h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.625,0.05,0,1)] {barFill[view.storageTone]}"
-				style="width: {view.storagePct}%"
+				style="width: {barWidth(view.storagePct)}%"
 			></div>
 		</div>
 		<p class="mt-1.5 text-caption text-muted-foreground">
@@ -75,7 +75,7 @@ const barFill: Record<UsageTone, string> = {
 		>
 			<div
 				class="h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.625,0.05,0,1)] {barFill[view.deliveryTone]}"
-				style="width: {view.deliveryPct}%"
+				style="width: {barWidth(view.deliveryPct)}%"
 			></div>
 		</div>
 		<p class="mt-1.5 text-caption text-muted-foreground">
@@ -104,7 +104,7 @@ const barFill: Record<UsageTone, string> = {
 		>
 			<div
 				class="h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.625,0.05,0,1)] {barFill[view.linksTone]}"
-				style="width: {view.linksPct}%"
+				style="width: {barWidth(view.linksPct)}%"
 			></div>
 		</div>
 		<p class="mt-1.5 text-caption text-muted-foreground">

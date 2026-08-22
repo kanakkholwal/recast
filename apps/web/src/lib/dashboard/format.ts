@@ -66,3 +66,16 @@ export function formatExpiry(expiresAt: number): { expired: boolean; label: stri
 export function formatCount(n: number): string {
 	return n.toLocaleString("en-US");
 }
+
+/** `0.00098` → `"<1%"`. Raw ratios printed at float precision are noise. */
+export function formatPct(value: number | null | undefined): string {
+	const pct = Math.min(100, Math.max(0, value ?? 0));
+	if (pct === 0) return "0%";
+	return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}
+
+/** Bar width for a 0-100 value. Non-zero usage keeps a visible sliver. */
+export function barWidth(value: number | null | undefined): number {
+	const pct = Math.min(100, Math.max(0, value ?? 0));
+	return pct > 0 && pct < 2 ? 2 : Math.round(pct);
+}

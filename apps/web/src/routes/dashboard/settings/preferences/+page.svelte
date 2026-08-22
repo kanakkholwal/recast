@@ -1,6 +1,7 @@
 <script lang="ts">
 import { page } from "$app/state";
 import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
+import { barWidth, formatPct } from "$lib/dashboard/format";
 import { quotaStore } from "$lib/dashboard/store.svelte";
 import { Badge } from "@recast/ui/badge";
 import { Button } from "@recast/ui/button";
@@ -39,6 +40,8 @@ const planLabel = $derived(
 		: "Free",
 );
 
+const storagePct = $derived(quota?.storagePctUsed ?? 0);
+
 // Appearance belongs on the preferences page, not only in the profile menu.
 const themes = [
 	{ id: "light" as const, label: "Light", icon: Sun },
@@ -55,10 +58,29 @@ function formatLimit(value: number | null | undefined, unit = "") {
 	if (value == null) return "Unlimited";
 	return `${value.toLocaleString()}${unit}`;
 }
+
+const limitRows = $derived([
+	{
+		label: "Active recasts",
+		value: `${formatLimit(quota?.usage.activeRecastsCount ?? 0)} / ${formatLimit(quota?.limits.activeRecasts)}`,
+	},
+	{
+		label: "Members",
+		value: `${formatLimit(quota?.usage.membersCount ?? 0)} / ${formatLimit(quota?.limits.members)}`,
+	},
+	{
+		label: "Max recording",
+		value:
+			quota?.limits.maxDurationSec == null
+				? "Unlimited"
+				: formatLimit(Math.round(quota.limits.maxDurationSec / 60), " min"),
+	},
+]);
 </script>
 
-<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-	<div in:fly={{ y: 14, duration: 420, easing: cubicOut }}>
+<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+	<!-- Left column is what you set, the rail is what the plan gives you. -->
+	<div class="space-y-4" in:fly={{ y: 14, duration: 420, easing: cubicOut }}>
 		<SettingsSection
 			icon={Settings2}
 			title="Workspace defaults"
@@ -70,8 +92,12 @@ function formatLimit(value: number | null | undefined, unit = "") {
 						<Building2 class="size-3.5" />
 						Active workspace
 					</div>
-					<p class="mt-2 text-body-sm font-medium text-foreground">{activeOrganization?.name}</p>
-					<p class="mt-0.5 text-caption text-muted-foreground">/{activeOrganization?.slug}</p>
+					<p class="mt-2 truncate text-body-sm font-medium text-foreground">
+						{activeOrganization?.name}
+					</p>
+					<p class="mt-0.5 truncate text-caption text-muted-foreground">
+						/{activeOrganization?.slug}
+					</p>
 				</div>
 				<div class="rounded-lg border border-border-low bg-paper p-4">
 					<div class="flex items-center gap-2 text-caption text-muted-foreground">
@@ -79,7 +105,7 @@ function formatLimit(value: number | null | undefined, unit = "") {
 						Login default
 					</div>
 					<div class="mt-2 flex items-center justify-between gap-3">
-						<p class="text-body-sm font-medium text-foreground">
+						<p class="min-w-0 truncate text-body-sm font-medium text-foreground">
 							{activeOrganization?.isDefault ? "This workspace" : "Different workspace"}
 						</p>
 						{#if activeOrganization?.isDefault}
@@ -101,19 +127,13 @@ function formatLimit(value: number | null | undefined, unit = "") {
 				{/if}
 			</div>
 		</SettingsSection>
-	</div>
 
-	<div class="space-y-4" in:fly={{ y: 14, duration: 420, delay: 80, easing: cubicOut }}>
 		<SettingsSection
 			icon={Sun}
 			title="Appearance"
 			description="Applies to this browser. The desktop app keeps its own setting."
 		>
-			<div
-				class="grid grid-cols-3 gap-2"
-				role="radiogroup"
-				aria-label="Colour theme"
-			>
+			<div class="grid grid-cols-3 gap-2 sm:max-w-md" role="radiogroup" aria-label="Colour theme">
 				{#each themes as t (t.id)}
 					{@const active = (userPrefersMode.current ?? "system") === t.id}
 					{@const Icon = t.icon}
@@ -123,19 +143,21 @@ function formatLimit(value: number | null | undefined, unit = "") {
 						aria-checked={active}
 						onclick={() => chooseTheme(t.id)}
 						class={cn(
-							"flex flex-col items-center gap-2 rounded-lg border px-3 py-3 text-caption font-medium transition-colors duration-200 motion-reduce:transition-none",
+							"flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-body-sm font-medium transition-colors duration-200 motion-reduce:transition-none",
 							active
 								? "border-border-strong bg-paper text-foreground"
 								: "border-border-low text-muted-foreground hover:bg-paper hover:text-foreground",
 						)}
 					>
-						<Icon class="size-4" />
+						<Icon class="size-4 shrink-0" />
 						{t.label}
 					</button>
 				{/each}
 			</div>
 		</SettingsSection>
+	</div>
 
+	<div in:fly={{ y: 14, duration: 420, delay: 80, easing: cubicOut }}>
 		<SettingsSection
 			icon={HardDrive}
 			title="Workspace limits"
@@ -143,40 +165,28 @@ function formatLimit(value: number | null | undefined, unit = "") {
 		>
 			<div class="space-y-3 text-body-sm">
 				<div class="flex items-center justify-between gap-4">
-					<span class="text-muted-foreground">Storage used</span>
-					<span class="font-medium text-foreground">{quota?.storagePctUsed ?? 0}%</span>
+					<span class="whitespace-nowrap text-muted-foreground">Storage used</span>
+					<span class="font-medium tabular-nums text-foreground">{formatPct(storagePct)}</span>
 				</div>
 				<div
 					class="h-2 overflow-hidden rounded-full bg-paper"
 					role="progressbar"
 					aria-label="Storage used"
-					aria-valuenow={quota?.storagePctUsed ?? 0}
+					aria-valuenow={Math.round(storagePct)}
 					aria-valuemin={0}
 					aria-valuemax={100}
 				>
 					<div
 						class="h-full rounded-full bg-foreground transition-[width] duration-500 ease-[cubic-bezier(0.625,0.05,0,1)] motion-reduce:transition-none"
-						style:width={`${quota?.storagePctUsed ?? 0}%`}
+						style:width={`${barWidth(storagePct)}%`}
 					></div>
 				</div>
-				<div class="flex items-center justify-between gap-4">
-					<span class="text-muted-foreground">Active recasts</span>
-					<span class="font-medium text-foreground">
-						{quota?.usage.activeRecastsCount ?? 0} / {formatLimit(quota?.limits.activeRecasts)}
-					</span>
-				</div>
-				<div class="flex items-center justify-between gap-4">
-					<span class="text-muted-foreground">Members</span>
-					<span class="font-medium text-foreground">
-						{quota?.usage.membersCount ?? 0} / {formatLimit(quota?.limits.members)}
-					</span>
-				</div>
-				<div class="flex items-center justify-between gap-4">
-					<span class="text-muted-foreground">Max recording</span>
-					<span class="font-medium text-foreground">
-						{formatLimit(quota?.limits.maxDurationSec ? Math.round(quota.limits.maxDurationSec / 60) : quota?.limits.maxDurationSec, " min")}
-					</span>
-				</div>
+				{#each limitRows as row (row.label)}
+					<div class="flex items-center justify-between gap-4">
+						<span class="whitespace-nowrap text-muted-foreground">{row.label}</span>
+						<span class="text-right font-medium tabular-nums text-foreground">{row.value}</span>
+					</div>
+				{/each}
 			</div>
 		</SettingsSection>
 	</div>

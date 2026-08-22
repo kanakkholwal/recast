@@ -665,6 +665,31 @@ Each page also gained the thing it was missing:
   switches on plan: subscribers get monthly total, creators billed, renewal or
   cancellation date, and a portal link; free workspaces still get the pitch.
 
+A second pass fixed how these pages handle numbers and how a card header
+behaves in the 320px rail:
+
+- **Percentages were raw floats.** `storagePctUsed` returns an unrounded ratio,
+  and Preferences printed it: `0.0009770365977601614%`. `formatPct` buckets it
+  (`0%`, `<1%`, then rounded) and `barWidth` clamps a bar to 0-100 with a 2%
+  floor, so real-but-tiny usage stays visible instead of drawing nothing. Both
+  live in `$lib/dashboard/format` and are used by every meter.
+- **Enterprise read as broken.** A contract workspace has no Polar row, so
+  "Billing status" said *No subscription* and the rail said *Renews: Not
+  scheduled*. Status labels come from a map now (no `capitalize` over
+  `past_due`), an agreement shows *By agreement* / *Managed with your account
+  contact*, and the rail drops any row with nothing to say rather than filling
+  it with a placeholder. Seats only print `x $4` when the seat price is not
+  zero.
+- **A badge crushed the description.** `SettingsSection` put the badge in the
+  same flex row as the title *and* the description, so in the rail a
+  twelve-word description wrapped to three lines against a `Enterprise` chip.
+  The badge rides the title row; the description gets the full column.
+- **The plan name appeared three times** on billing (page header, plan card,
+  rail). The rail carries no badge.
+- **Preferences was lopsided**: one short card on the left, two on the right.
+  Split by kind instead: the left column is what you *set* (workspace defaults,
+  appearance), the rail is what the plan *gives you* (limits).
+
 Archive lost a duplication: every card repeated the page's own explanation
 ("the file was removed after 14 days…"), so a screen of six cards said it seven
 times. The page says it once, on a hairline row that also carries the count,

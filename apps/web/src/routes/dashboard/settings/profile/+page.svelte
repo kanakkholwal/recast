@@ -76,7 +76,7 @@ async function resendVerification() {
 	>
 		<!-- Editable, because a settings page that can only be read is a dead end.
 		     Email stays fixed: changing it is an auth flow, not a text field. -->
-		<form class="grid gap-4 sm:grid-cols-2" onsubmit={saveName}>
+		<form class="grid items-start gap-4 sm:grid-cols-2" onsubmit={saveName}>
 			<Label class="block">
 				<span class="mb-1.5 block text-body-sm font-medium text-foreground">Display name</span>
 				<Input
@@ -92,12 +92,13 @@ async function resendVerification() {
 				</span>
 			</Label>
 
-			<div class="rounded-lg border border-border-low bg-paper p-4">
-				<div class="flex items-start justify-between gap-3">
-					<div class="min-w-0">
-						<p class="text-caption text-muted-foreground">Email</p>
-						<p class="mt-1 truncate text-body-sm font-medium text-foreground">{accountEmail}</p>
-					</div>
+			<!-- Same shape as the field beside it, so the two rows line up. -->
+			<div>
+				<span class="mb-1.5 block text-body-sm font-medium text-foreground">Email</span>
+				<div
+					class="flex h-9 items-center justify-between gap-3 rounded-md border border-border-low bg-paper px-3"
+				>
+					<span class="min-w-0 truncate text-body-sm text-foreground">{accountEmail}</span>
 					{#if verified}
 						<Badge variant="outline" class="gap-1 text-success">
 							<BadgeCheck class="size-3" />
@@ -110,6 +111,9 @@ async function resendVerification() {
 						</Badge>
 					{/if}
 				</div>
+				<span class="mt-1.5 block text-caption text-muted-foreground">
+					Changing your email is an account recovery flow, not a text field.
+				</span>
 			</div>
 
 			<div class="sm:col-span-2">
