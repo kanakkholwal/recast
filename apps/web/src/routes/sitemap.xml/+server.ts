@@ -42,14 +42,20 @@ export const GET: RequestHandler = async ({ url }) => {
 	// unfinished article is never advertised to a crawler.
 	const posts = await listPosts();
 	const architecture = await listDocs();
-	const paths = [
-		...STATIC_PATHS,
-		...TOOLS.map((t) => `/tools/${t.slug}`),
-		...posts.map((post) => post.url),
-		...architecture.map((doc) => `/architecture/${doc.slug}`),
+	// `lastmod` only where we actually know it (posts carry a date); a fabricated
+	// date on every static page trains crawlers to ignore the signal.
+	const entries: Array<{ path: string; lastmod?: string }> = [
+		...STATIC_PATHS.map((path) => ({ path })),
+		...TOOLS.map((t) => ({ path: `/tools/${t.slug}` })),
+		...posts.map((post) => ({ path: post.url, lastmod: post.date.slice(0, 10) })),
+		...architecture.map((doc) => ({ path: `/architecture/${doc.slug}` })),
 	];
-	const urls = paths
-		.map((p) => `  <url>\n    <loc>${origin}${p === "/" ? "" : p}</loc>\n  </url>`)
+	const urls = entries
+		.map(({ path, lastmod }) => {
+			const loc = `    <loc>${origin}${path === "/" ? "" : path}</loc>`;
+			const mod = lastmod ? `\n    <lastmod>${lastmod}</lastmod>` : "";
+			return `  <url>\n${loc}${mod}\n  </url>`;
+		})
 		.join("\n");
 	const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 	return new Response(body, {

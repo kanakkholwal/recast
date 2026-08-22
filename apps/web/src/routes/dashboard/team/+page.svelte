@@ -1,128 +1,134 @@
 <script lang="ts">
-	import { enhance } from "$app/forms";
-	import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
-	import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
-	import StatCard from "$lib/dashboard/components/StatCard.svelte";
-	import { capitalize, initials, isManageable, seatsRemaining, seatsValue } from "$lib/dashboard/team.logic";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import * as Dialog from "@recast/ui/dialog";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import * as Select from "@recast/ui/select";
-	import { Skeleton } from "@recast/ui/skeleton";
-	import { toast } from "@recast/ui/sonner";
-	import {
-		Building2,
-		CalendarDays,
-		Clock,
-		Crown,
-		Link2,
-		LoaderCircle,
-		LogOut,
-		Mail,
-		Search,
-		ShieldCheck,
-		Trash2,
-		UserPlus,
-		Users,
-	} from "@recast/icons";
-	import { tick, untrack } from "svelte";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import { enhance } from "$app/forms";
+import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
+import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
+import StatCard from "$lib/dashboard/components/StatCard.svelte";
+import {
+	capitalize,
+	initials,
+	isManageable,
+	seatsRemaining,
+	seatsValue,
+} from "$lib/dashboard/team.logic";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import * as Select from "@recast/ui/select";
+import { Skeleton } from "@recast/ui/skeleton";
+import { toast } from "@recast/ui/sonner";
+import {
+	Building2,
+	CalendarDays,
+	Clock,
+	Crown,
+	Link2,
+	LoaderCircle,
+	LogOut,
+	Mail,
+	Search,
+	ShieldCheck,
+	Trash2,
+	UserPlus,
+	Users,
+} from "@recast/icons";
+import { tick, untrack } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
-	type TeamMember = {
-		id: string;
-		role: string;
-		createdAt: Date;
-		userId: string;
-		email: string;
-		name: string;
+type TeamMember = {
+	id: string;
+	role: string;
+	createdAt: Date;
+	userId: string;
+	email: string;
+	name: string;
+};
+
+type RoleChangeTarget = {
+	memberId: string;
+	name: string;
+	fromRole: string;
+	toRole: "member" | "admin";
+};
+
+import InlineError from "$lib/components/InlineError.svelte";
+
+let { data } = $props();
+
+let inviteEmail = $state("");
+let inviteRole = $state<"member" | "admin">("member");
+let inviteOpen = $state(false);
+
+let leaving = $state(false);
+let savingProfile = $state(false);
+let settingDefault = $state(false);
+let inviting = $state(false);
+let cancellingInviteId = $state<string | null>(null);
+let removing = $state(false);
+let updatingRoleMemberId = $state<string | null>(null);
+
+let removeTarget = $state<{ id: string; name: string } | null>(null);
+let roleChangeTarget = $state<RoleChangeTarget | null>(null);
+let leaveOpen = $state(false);
+
+let memberQuery = $state("");
+let roleFilter = $state<"all" | "owner" | "admin" | "member">("all");
+let pendingRole = $state<Record<string, string>>({});
+let roleForms = $state<Record<string, HTMLFormElement>>({});
+
+let teamName = $state(untrack(() => data.org.name));
+let teamSlug = $state(untrack(() => data.org.slug));
+
+const canManage = $derived(data.viewer.role === "owner" || data.viewer.role === "admin");
+const isOwner = $derived(data.viewer.role === "owner");
+const planLabel = $derived(capitalize(data.org.plan));
+const isDefaultWorkspace = $derived(data.viewer.defaultWorkspaceId === data.org.id);
+const createdLabel = $derived(
+	new Date(data.org.createdAt).toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	}),
+);
+const workspaceUrl = $derived(`/dashboard/recasts`);
+const roleLabel = $derived(capitalize(data.viewer.role));
+
+function filteredMembers(members: TeamMember[]): TeamMember[] {
+	const q = memberQuery.trim().toLowerCase();
+	return members.filter((member) => {
+		const matchesQuery =
+			!q || member.name.toLowerCase().includes(q) || member.email.toLowerCase().includes(q);
+		const matchesRole = roleFilter === "all" || member.role === roleFilter;
+		return matchesQuery && matchesRole;
+	});
+}
+
+function requestRoleChange(member: TeamMember, value: string) {
+	if (value !== "member" && value !== "admin") return;
+	if (value === member.role) return;
+	roleChangeTarget = {
+		memberId: member.id,
+		name: member.name,
+		fromRole: member.role,
+		toRole: value,
 	};
+}
 
-	type RoleChangeTarget = {
-		memberId: string;
-		name: string;
-		fromRole: string;
-		toRole: "member" | "admin";
-	};
+async function confirmRoleChange() {
+	const target = roleChangeTarget;
+	if (!target) return;
+	pendingRole = { ...pendingRole, [target.memberId]: target.toRole };
+	roleChangeTarget = null;
+	await tick();
+	roleForms[target.memberId]?.requestSubmit();
+}
 
-	import InlineError from "$lib/components/InlineError.svelte";
-
-	let { data } = $props();
-
-	let inviteEmail = $state("");
-	let inviteRole = $state<"member" | "admin">("member");
-	let inviteOpen = $state(false);
-
-	let leaving = $state(false);
-	let savingProfile = $state(false);
-	let settingDefault = $state(false);
-	let inviting = $state(false);
-	let cancellingInviteId = $state<string | null>(null);
-	let removing = $state(false);
-	let updatingRoleMemberId = $state<string | null>(null);
-
-	let removeTarget = $state<{ id: string; name: string } | null>(null);
-	let roleChangeTarget = $state<RoleChangeTarget | null>(null);
-	let leaveOpen = $state(false);
-
-	let memberQuery = $state("");
-	let roleFilter = $state<"all" | "owner" | "admin" | "member">("all");
-	let pendingRole = $state<Record<string, string>>({});
-	let roleForms = $state<Record<string, HTMLFormElement>>({});
-
-	let teamName = $state(untrack(() => data.org.name));
-	let teamSlug = $state(untrack(() => data.org.slug));
-
-	const canManage = $derived(data.viewer.role === "owner" || data.viewer.role === "admin");
-	const isOwner = $derived(data.viewer.role === "owner");
-	const planLabel = $derived(capitalize(data.org.plan));
-	const isDefaultWorkspace = $derived(data.viewer.defaultWorkspaceId === data.org.id);
-	const createdLabel = $derived(
-		new Date(data.org.createdAt).toLocaleDateString("en-US", {
-			month: "short",
-			day: "numeric",
-			year: "numeric",
-		}),
-	);
-	const workspaceUrl = $derived(`/dashboard/recasts`);
-	const roleLabel = $derived(capitalize(data.viewer.role));
-
-	function filteredMembers(members: TeamMember[]): TeamMember[] {
-		const q = memberQuery.trim().toLowerCase();
-		return members.filter((member) => {
-			const matchesQuery =
-				!q || member.name.toLowerCase().includes(q) || member.email.toLowerCase().includes(q);
-			const matchesRole = roleFilter === "all" || member.role === roleFilter;
-			return matchesQuery && matchesRole;
-		});
-	}
-
-	function requestRoleChange(member: TeamMember, value: string) {
-		if (value !== "member" && value !== "admin") return;
-		if (value === member.role) return;
-		roleChangeTarget = {
-			memberId: member.id,
-			name: member.name,
-			fromRole: member.role,
-			toRole: value,
-		};
-	}
-
-	async function confirmRoleChange() {
-		const target = roleChangeTarget;
-		if (!target) return;
-		pendingRole = { ...pendingRole, [target.memberId]: target.toRole };
-		roleChangeTarget = null;
-		await tick();
-		roleForms[target.memberId]?.requestSubmit();
-	}
-
-	function resetInviteForm() {
-		inviteEmail = "";
-		inviteRole = "member";
-	}
+function resetInviteForm() {
+	inviteEmail = "";
+	inviteRole = "member";
+}
 </script>
 
 <svelte:head>
@@ -132,8 +138,14 @@
 <div class="space-y-5" in:fly={{ y: 14, duration: 420, easing: cubicOut }}>
 	<PageHeader icon={Users} title={data.org.name} subtitle="Manage people, roles, invitations, and workspace access.">
 		<div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+			<!-- Your own access level, kept where identity belongs rather than
+			     occupying a metric slot. -->
+			<Badge variant="outline" class="gap-1.5">
+				<ShieldCheck class="size-3" />
+				{roleLabel}
+			</Badge>
 			{#if canManage}
-				<Button size="sm" onclick={() => (inviteOpen = true)} class="gap-2">
+				<Button size="sm" variant="dark" onclick={() => (inviteOpen = true)} class="gap-2">
 					<UserPlus class="size-3.5" />
 					Invite teammate
 				</Button>
@@ -147,7 +159,7 @@
 		</div>
 	</PageHeader>
 
-	<section class="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-4">
+	<section class="grid grid-cols-1 gap-3 md:grid-cols-3">
 		{#await data.members}
 			{#each Array(2) as _, i (i)}
 				<Skeleton class="h-18 rounded-xl" />
@@ -160,33 +172,82 @@
 				label="Seats left"
 				value={Number.isFinite(seatsLeft) ? String(seatsLeft) : "Unlimited"}
 			/>
+			<!-- Who can actually change things, which is the number worth watching
+			     on a shared workspace. Your own role is already legible from the
+			     rows and the controls you can see. -->
+			<StatCard
+				icon={ShieldCheck}
+				label="Can manage"
+				value={String(members.filter((m) => m.role === "owner" || m.role === "admin").length)}
+			/>
 		{:catch}
 			<StatCard icon={Users} label="Members" value="—" />
 			<StatCard icon={UserPlus} label="Seats left" value="—" />
+			<StatCard icon={ShieldCheck} label="Can manage" value="—" />
 		{/await}
-		{#await data.invites}{:then invites}
-			<StatCard icon={Clock} label="Pending invites" value={String(invites.length)} />
-		{:catch}
-			<StatCard icon={Clock} label="Pending invites" value="—" />
-		{/await}
-		<StatCard icon={ShieldCheck} label="Your role" value={roleLabel} />
 	</section>
+
+	<!-- Seat capacity, stated before someone writes an invite they cannot send. -->
+	{#await data.members then members}
+		{@const cap = data.caps.members}
+		{#if Number.isFinite(cap)}
+			{@const pct = Math.min(100, Math.round((members.length / cap) * 100))}
+			{@const full = members.length >= cap}
+			<section class="surface p-5">
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<h2 class="font-display text-body font-medium text-foreground">Seats</h2>
+					<span class="text-body-sm tabular-nums text-muted-foreground">
+						{members.length} of {cap} used
+					</span>
+				</div>
+				<div
+					class="mt-3 h-1.5 overflow-hidden rounded-full bg-paper"
+					role="progressbar"
+					aria-label="Seats used"
+					aria-valuenow={pct}
+					aria-valuemin={0}
+					aria-valuemax={100}
+				>
+					<div
+						class="h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.625,0.05,0,1)] motion-reduce:transition-none {full
+							? 'bg-warning'
+							: 'bg-foreground'}"
+						style="width: {pct}%"
+					></div>
+				</div>
+				<div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+					<p class="text-body-sm text-muted-foreground">
+						{#if full}
+							Every seat on the {planLabel} plan is taken. Add seats to invite anyone else.
+						{:else}
+							Invites draw from this allowance, and pending ones do not hold a seat.
+						{/if}
+					</p>
+					{#if full && isOwner}
+						<Button href="/dashboard/settings/billing" variant="dark" size="sm" class="shrink-0">
+							Add seats
+						</Button>
+					{/if}
+				</div>
+			</section>
+		{/if}
+	{/await}
 
 	<section class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
 		<div class="space-y-4">
-			<div class="glass-card rounded-xl p-5">
+			<div class="surface p-5">
 				<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 					<div class="flex min-w-0 items-center gap-4">
-						<div class="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-foreground/6 text-foreground/70 ring-1 ring-border/40">
+						<div class="grid size-14 shrink-0 place-items-center overflow-hidden rounded-xl border border-border-low bg-paper text-muted-foreground">
 							{#if data.org.logo}
 								<img src={data.org.logo} alt="" class="size-full object-cover" />
 							{:else}
-								<span class="text-base font-bold">{initials(data.org.name)}</span>
+								<span class="font-display text-body font-medium">{initials(data.org.name)}</span>
 							{/if}
 						</div>
 						<div class="min-w-0">
 							<div class="flex flex-wrap items-center gap-2">
-								<h2 class="truncate text-lg font-semibold tracking-tight text-foreground">
+								<h2 class="truncate font-display text-subheading font-medium text-foreground">
 									{data.org.name}
 								</h2>
 								<Badge variant={data.org.plan === "free" ? "outline" : "secondary"}>{planLabel} plan</Badge>
@@ -197,7 +258,7 @@
 									</Badge>
 								{/if}
 							</div>
-							<div class="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
+							<div class="mt-2 flex flex-wrap gap-3 text-body-sm text-muted-foreground">
 								<span class="inline-flex items-center gap-1.5">
 									<CalendarDays class="size-3.5" />
 									Created {createdLabel}
@@ -247,7 +308,7 @@
 
 			<SettingsSection icon={Users} title="Members" description="Search people, review access, and change roles.">
 				{#await data.members}
-					<ul class="divide-y divide-border-low/40">
+					<ul class="divide-y divide-border-low">
 						{#each Array(4) as _, i (i)}
 							<li class="flex items-center gap-3 py-3">
 								<Skeleton class="size-9 shrink-0 rounded-full" />
@@ -283,7 +344,7 @@
 									<Select.Item value="member">Member</Select.Item>
 								</Select.Content>
 							</Select.Root>
-							<Badge variant="outline" class="font-mono tabular-nums">{shownMembers.length}</Badge>
+							<Badge variant="outline" class="tabular-nums">{shownMembers.length}</Badge>
 						</div>
 					</div>
 
@@ -291,30 +352,30 @@
 						<div class="overflow-x-auto">
 							<table class="w-full text-sm">
 								<thead>
-									<tr class="border-b border-border-low/40 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-										<th class="py-2 pr-4 text-left font-semibold">Member</th>
-										<th class="px-4 py-2 text-left font-semibold">Role</th>
-										<th class="py-2 pl-4 text-right font-semibold">Actions</th>
+									<tr class="border-b border-border-low text-caption font-medium text-muted-foreground">
+										<th class="py-2 pr-4 text-left font-medium">Member</th>
+										<th class="px-4 py-2 text-left font-medium">Role</th>
+										<th class="py-2 pl-4 text-right font-medium">Actions</th>
 									</tr>
 								</thead>
 								<tbody>
 									{#each shownMembers as m (m.id)}
-										<tr class="border-b border-border-low/25 last:border-0">
+										<tr class="border-b border-border-low last:border-0">
 											<td class="max-w-0 py-3 pr-4">
 												<div class="flex min-w-56 items-center gap-3">
-													<span class="grid size-9 shrink-0 place-items-center rounded-full bg-foreground/6 text-[11px] font-bold text-foreground/70 ring-1 ring-border/40">
+													<span class="grid size-9 shrink-0 place-items-center rounded-full border border-border-low bg-paper text-caption font-medium text-muted-foreground">
 														{initials(m.name)}
 													</span>
 													<div class="min-w-0">
 														<div class="flex items-center gap-1.5">
 															<span class="truncate font-medium text-foreground">{m.name}</span>
 															{#if m.userId === data.viewer.userId}
-																<span class="rounded-full bg-foreground/8 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+																<span class="rounded-full border border-border-low px-1.5 py-0.5 text-caption font-medium text-muted-foreground">
 																	You
 																</span>
 															{/if}
 														</div>
-														<span class="block truncate text-xs text-muted-foreground">{m.email}</span>
+														<span class="block truncate text-body-sm text-muted-foreground">{m.email}</span>
 													</div>
 												</div>
 											</td>
@@ -403,7 +464,7 @@
 		<aside class="space-y-4 xl:sticky xl:top-24 xl:self-start">
 			<SettingsSection icon={Clock} title="Pending invitations" description="Invites awaiting acceptance.">
 				{#await data.invites}
-					<ul class="divide-y divide-border-low/40">
+					<ul class="divide-y divide-border-low">
 						{#each Array(2) as _, i (i)}
 							<li class="flex items-center justify-between gap-3 py-2">
 								<div class="min-w-0 flex-1 space-y-1.5">
@@ -416,12 +477,12 @@
 					</ul>
 				{:then invites}
 					{#if invites.length}
-						<ul class="divide-y divide-border-low/40">
+						<ul class="divide-y divide-border-low">
 							{#each invites as inv (inv.id)}
 								<li class="flex items-center justify-between gap-3 py-2.5">
 									<div class="min-w-0">
-										<span class="block truncate text-xs font-medium">{inv.email}</span>
-										<span class="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+										<span class="block truncate text-body-sm font-medium text-foreground">{inv.email}</span>
+										<span class="block text-caption text-muted-foreground">
 											{capitalize(inv.role)}
 										</span>
 									</div>
@@ -462,10 +523,8 @@
 						</ul>
 					{:else}
 						<div class="flex flex-col items-center gap-2 py-6 text-center">
-							<span class="glass-chip grid size-9 place-items-center rounded-lg text-muted-foreground">
-								<Mail class="size-4" />
-							</span>
-							<p class="text-xs text-muted-foreground">No pending invitations.</p>
+							<Mail class="size-6 text-border-strong" />
+							<p class="text-body-sm text-muted-foreground">No pending invitations.</p>
 						</div>
 					{/if}
 				{:catch}
@@ -499,22 +558,22 @@
 						<input type="hidden" name="logo" value={data.org.logo ?? ""} />
 
 						<Label class="block">
-							<span class="mb-1 block text-xs font-semibold text-foreground/85">Name</span>
-							<Input bind:value={teamName} name="name" class="h-9" required />
+							<span class="mb-1.5 block text-body-sm font-medium text-foreground">Name</span>
+							<Input bind:value={teamName} name="name" class="h-9 border-border-low bg-background" required />
 						</Label>
 
 						<Label class="block">
-							<span class="mb-1 block text-xs font-semibold text-foreground/85">Slug</span>
+							<span class="mb-1.5 block text-body-sm font-medium text-foreground">Slug</span>
 							<Input
 								bind:value={teamSlug}
 								name="slug"
-								class="h-9 font-mono lowercase"
+								class="h-9 border-border-low bg-background lowercase"
 								pattern="[a-z0-9][a-z0-9-]+[a-z0-9]"
 								required
 							/>
 						</Label>
 
-						<Button type="submit" size="sm" disabled={savingProfile} class="w-full gap-2">
+						<Button type="submit" size="sm" variant="dark" disabled={savingProfile} class="w-full gap-2">
 							{#if savingProfile}
 								<LoaderCircle class="size-3.5 animate-spin" />
 							{/if}
@@ -525,7 +584,7 @@
 			{/if}
 
 			<SettingsSection icon={ShieldCheck} title="Role permissions" description="What each access level can do.">
-				<ul class="space-y-3 text-xs">
+				<ul class="space-y-3 text-body-sm">
 					<li class="flex items-start gap-2">
 						<Crown class="mt-0.5 size-3.5 text-muted-foreground" />
 						<span class="text-muted-foreground">

@@ -590,6 +590,42 @@ in order. A dashboard people already know is not the place to move the furniture
   one surviving alpha is the play-overlay scrim on a poster, where dimming an
   image is the actual job.
 
+**Cards keep both the fill and the hairline here, and that is not redundant.**
+The product theme lifts `--card` above the panel, but the lift measures 1.5 L in
+light (imperceptible) against a 9 L border, and 6.65 L against a 5 L border in
+dark. Light mode is carried by the hairline, dark by both. Drop either and one
+theme loses the card edge. That is the difference from the marketing surface,
+where `card == canvas` and the hairline is the only differentiator.
+
+**An empty workspace gets one instruction, not five empty panels.** With no
+recasts, usage, activity and rankings all read zero and bury the only action
+that matters, so the page collapses to a single card: what fills in, three
+steps, and the two buttons. The hero stays, because search and Upload are still
+the point.
+
+### Team page
+
+Same pass, and the shared pieces moved with it: `PageHeader` (a `size-11`
+`glass-chip` plate behind a `size-5` glyph) and `SettingsSection` (`glass-card`
+plus `ring-1 ring-foreground/12` for its accent). Both are used across settings,
+team and library, so those routes inherit the fix.
+
+**The accent variant was a ring on a card.** A ring outside a border is two
+outlines on one box; emphasis is now `border-border-strong` on the hairline the
+card already has.
+
+Content changes, since the page was dense but not evenly useful:
+
+- **"Your role" left the stat row.** Your own access level is identity, not a
+  metric, and it is already legible from the rows and from which controls you
+  can see. It moved to a badge in the page header, where identity belongs.
+- **"Can manage" took its place** — how many owners and admins the workspace
+  has, which is the number worth watching on a shared account.
+- **A seat-capacity bar** sits under the stats when the plan caps members. It
+  states the allowance before someone writes an invite they cannot send, and
+  when every seat is taken an owner gets "Add seats" inline. Pending invites do
+  not hold a seat, and the copy says so.
+
 ### Interior pages
 
 Both were on the pre-Dub system: floating `rounded-2xl` cards, `blur-3xl` glow
