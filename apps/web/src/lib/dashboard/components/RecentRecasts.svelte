@@ -1,7 +1,7 @@
 <script lang="ts">
+import { Clock, Film, Play } from "@recast/icons";
 import { formatDuration, formatRelative } from "$lib/dashboard/format";
 import type { Recast } from "$lib/dashboard/store.svelte";
-import { Clock, Film, Play } from "@recast/icons";
 import EmptyState from "./EmptyState.svelte";
 
 // Visual recent-recasts rail for the home overview — poster thumbnails that

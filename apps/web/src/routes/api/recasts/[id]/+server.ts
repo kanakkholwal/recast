@@ -1,60 +1,14 @@
 import { error, json } from "@sveltejs/kit";
 import { and, eq, sql } from "drizzle-orm";
-import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
-import { folder, recast, user, workspaceUsage } from "$lib/db/schema";
+import { folder, recast, workspaceUsage } from "$lib/db/schema";
+import { authorizeRecast } from "$lib/server/recast-guard";
+import { deleteRecastObjects } from "$lib/storage/recast-objects";
 import { decrementUsageOnDelete } from "$lib/storage/quota";
-import { deleteObject } from "$lib/storage";
 import type { RequestHandler } from "./$types";
-
-type SessionShape = { user: { id: string; role?: string } };
 
 const MAX_TITLE = 200;
 const MAX_DESCRIPTION = 2000;
-
-/** Owner-or-admin gate shared by PATCH and DELETE. Returns the recast row. */
-async function authorizeRecast(
-	request: Request,
-	recastId: string,
-): Promise<{
-	id: string;
-	ownerId: string;
-	workspaceId: string;
-	videoUrl: string;
-	sizeBytes: number;
-	status: string;
-}> {
-	const session = (await getAuth()
-		.api.getSession({ headers: request.headers })
-		.catch(() => null)) as SessionShape | null;
-	if (!session?.user) error(401, "Sign in required");
-
-	const db = getDb();
-	const [row] = await db
-		.select({
-			id: recast.id,
-			ownerId: recast.ownerId,
-			workspaceId: recast.workspaceId,
-			videoUrl: recast.videoUrl,
-			sizeBytes: recast.sizeBytes,
-			status: recast.status,
-		})
-		.from(recast)
-		.where(eq(recast.id, recastId))
-		.limit(1);
-	if (!row) error(404, "Recast not found");
-
-	const isOwner = row.ownerId === session.user.id;
-	if (!isOwner) {
-		const [u] = await db
-			.select({ role: user.role })
-			.from(user)
-			.where(eq(user.id, session.user.id))
-			.limit(1);
-		if (u?.role !== "admin") error(403, "Not allowed to modify this recast");
-	}
-	return row;
-}
 
 /**
  * PATCH /api/recasts/[id]
@@ -64,7 +18,7 @@ async function authorizeRecast(
  *   - description : up to 2000 chars; empty string clears it (null)
  *   - folderId    : a folder id in the SAME workspace, or null to move to root
  *
- * Owner or global admin only.
+ * Creator, workspace owner/admin, or platform admin.
  */
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	const row = await authorizeRecast(request, params.id);
@@ -141,61 +95,23 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
  *   - `archived`  → blob already gone / size 0; decrement archived count
  *   - `draft`     → never bumped usage; nothing to reverse
  *
- * Owner or global admin only. Idempotent-ish: a second call 404s once the
- * row is gone. This is the desktop "delete cloud copy" action — it never
+ * Creator, workspace owner/admin, or platform admin. Idempotent-ish: a second
+ * call 404s once the
+ * row is gone. This is the desktop "delete cloud copy" action: it never
  * touches the local `.recast`, which remains the source of truth.
  */
 export const DELETE: RequestHandler = async ({ params, request }) => {
-	const session = (await getAuth()
-		.api.getSession({ headers: request.headers })
-		.catch(() => null)) as SessionShape | null;
-	if (!session?.user) error(401, "Sign in required");
-
+	const row = await authorizeRecast(request, params.id);
 	const db = getDb();
 
-	const [row] = await db
-		.select({
-			id: recast.id,
-			ownerId: recast.ownerId,
-			workspaceId: recast.workspaceId,
-			videoUrl: recast.videoUrl,
-			sizeBytes: recast.sizeBytes,
-			status: recast.status,
-		})
-		.from(recast)
-		.where(eq(recast.id, params.id))
-		.limit(1);
-	if (!row) error(404, "Recast not found");
-
-	// Authorize: owner OR global admin. Re-read the role so a role change
-	// takes effect immediately rather than waiting on session re-issue.
-	const isOwner = row.ownerId === session.user.id;
-	let isAdmin = false;
-	if (!isOwner) {
-		const [u] = await db
-			.select({ role: user.role })
-			.from(user)
-			.where(eq(user.id, session.user.id))
-			.limit(1);
-		isAdmin = u?.role === "admin";
-	}
-	if (!isOwner && !isAdmin) error(403, "Not allowed to delete this recast");
-
-	// Best-effort blob delete. Skip legacy/external absolute URLs (only bare
-	// object keys are ours to remove). Archived rows may already be blobless —
-	// a 404 from the provider is fine, so swallow errors and still drop the row
-	// rather than stranding it. A non-404 failure (e.g. an Azure/S3 auth or
-	// firewall 403) is logged with the key but still non-fatal: orphaning the
-	// blob is recoverable via the storage console; stranding the DB row isn't.
-	if (row.videoUrl && !/^https?:\/\//.test(row.videoUrl)) {
-		await deleteObject(row.videoUrl).catch((err) => {
-			console.error(
-				`[recasts/delete] blob delete failed for ${row.id} (key=${row.videoUrl}) — row still removed`,
-				err,
-			);
-		});
-	}
-
+	// The row goes first, and its objects after. A Postgres cascade removes the
+	// shares, views, comments, reactions and tag links inside this transaction,
+	// so the delete is all-or-nothing. Dropping the blobs first would leave a
+	// live row pointing at a missing object if the transaction then failed.
+	//
+	// Consumed delivery is deliberately NOT reversed: `deliveryBytesThisMonth`
+	// meters egress we have already paid for and billed. Only the state meters
+	// (stored bytes, active count) are reclaimed.
 	await db.transaction(async (tx) => {
 		await tx.delete(recast).where(eq(recast.id, row.id));
 		if (row.status === "published") {
@@ -211,6 +127,12 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 		}
 		// `draft` never bumped usage — nothing to reverse.
 	});
+
+	// Best-effort, post-commit. The poster used to be left behind on every
+	// delete, so we kept paying to store thumbnails for recasts that no longer
+	// existed. A failure here orphans an object (recoverable from the storage
+	// console) rather than stranding the row.
+	await deleteRecastObjects(row.id, [row.videoUrl, row.posterUrl]);
 
 	return json({ ok: true });
 };

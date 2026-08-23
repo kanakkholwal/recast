@@ -1,4 +1,9 @@
 <script lang="ts">
+import { ArrowRight, Cloud, Share2, Upload, Users, Video, Wand2 } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { untrack } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 import { avgWatchPct, completionRate, uniqueViewers, viewsByDay } from "$lib/dashboard/activity";
 import PerformanceHero from "$lib/dashboard/components/PerformanceHero.svelte";
 import RecentActivity from "$lib/dashboard/components/RecentActivity.svelte";
@@ -9,11 +14,6 @@ import UsageMeter from "$lib/dashboard/components/UsageMeter.svelte";
 import { mapRecastsForStore } from "$lib/dashboard/hydrate";
 import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 import { quotaStore, recastsStore, settingsStore } from "$lib/dashboard/store.svelte";
-import { ArrowRight, Cloud, Share2, Upload, Users, Video, Wand2 } from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import { untrack } from "svelte";
-import { cubicOut } from "svelte/easing";
-import { fly } from "svelte/transition";
 
 let { data } = $props();
 

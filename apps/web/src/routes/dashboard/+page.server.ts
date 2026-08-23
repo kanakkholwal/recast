@@ -1,8 +1,8 @@
 import { desc, eq } from "drizzle-orm";
-import { getDb } from "$lib/db";
-import { recast } from "$lib/db/schema";
 import { loadWorkspaceActivity } from "$lib/dashboard/activity.server";
+import { getDb } from "$lib/db";
 import { recastLatestShareSlugSql, recastViewsSql } from "$lib/db/recast-selectors";
+import { recast } from "$lib/db/schema";
 import { resolvePlaybackUrl } from "$lib/storage";
 import type { PageServerLoad } from "./$types";
 
@@ -21,20 +21,20 @@ export const load: PageServerLoad = async ({ parent }) => {
 
 	const [recasts, activity] = await Promise.all([
 		db
-		.select({
-			id: recast.id,
-			title: recast.title,
-			durationSec: recast.durationSec,
-			sizeBytes: recast.sizeBytes,
-			source: recast.source,
-			provider: recast.provider,
-			status: recast.status,
-			videoUrl: recast.videoUrl,
-			posterUrl: recast.posterUrl,
-			createdAt: recast.createdAt,
-			views: recastViewsSql(),
-			latestShareSlug: recastLatestShareSlugSql(),
-		})
+			.select({
+				id: recast.id,
+				title: recast.title,
+				durationSec: recast.durationSec,
+				sizeBytes: recast.sizeBytes,
+				source: recast.source,
+				provider: recast.provider,
+				status: recast.status,
+				videoUrl: recast.videoUrl,
+				posterUrl: recast.posterUrl,
+				createdAt: recast.createdAt,
+				views: recastViewsSql(),
+				latestShareSlug: recastLatestShareSlugSql(),
+			})
 			.from(recast)
 			.where(eq(recast.workspaceId, activeOrganization.id))
 			.orderBy(desc(recast.createdAt))
@@ -63,4 +63,3 @@ export const load: PageServerLoad = async ({ parent }) => {
 		activity,
 	};
 };
-

@@ -1,8 +1,8 @@
 <script lang="ts">
-import { commandPalette } from "$lib/dashboard/command-palette.svelte";
 import { Search } from "@recast/icons";
 import { Kbd } from "@recast/ui/kbd";
 import { cn } from "@recast/ui/utils";
+import { commandPalette } from "$lib/dashboard/command-palette.svelte";
 
 let {
 	variant = "compact",

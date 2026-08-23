@@ -1,9 +1,4 @@
 <script lang="ts">
-import { page } from "$app/state";
-import { GITHUB_URL } from "$lib/components/nav-data";
-import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
-import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
-import Logo from "$lib/logo.svelte";
 import { Archive, BarChart3, Film, LayoutDashboard, Plus, Users } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
@@ -13,6 +8,11 @@ import { cn } from "@recast/ui/utils";
 import type { ComponentProps } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { crossfade, fade } from "svelte/transition";
+import { page } from "$app/state";
+import { GITHUB_URL } from "$lib/components/nav-data";
+import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
+import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
+import Logo from "$lib/logo.svelte";
 import { isActive, resolveActiveOrg, resolveMemberships } from "./DashboardSidebar.logic";
 
 // A nav entry; the same shape powers both the dashboard and admin shells.

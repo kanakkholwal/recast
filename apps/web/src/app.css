@@ -101,6 +101,10 @@
 	--font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
 	--font-display: "Satoshi", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
 	--font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	/* @recast/design points font-heading at Geist, which the web app never
+	   loads, so every shared Dialog/Card/Sheet title fell back to plain sans.
+	   Same face as font-display here. Desktop keeps Geist. */
+	--font-heading: var(--font-display);
 
 	/* The hairline IS the structure. Full-strength by default — the old
 	   border-low/30..70 dilutions measured 1.03:1 and drew nothing. */

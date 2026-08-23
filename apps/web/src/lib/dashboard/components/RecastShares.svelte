@@ -1,12 +1,12 @@
 <script lang="ts" module>
-	export type ShareRow = {
-		slug: string;
-		visibility: string;
-		viewsCount: number;
-		hasPassword: boolean;
-		expiresAt: number | null;
-		createdAt: number;
-	};
+export type ShareRow = {
+	slug: string;
+	visibility: string;
+	viewsCount: number;
+	hasPassword: boolean;
+	expiresAt: number | null;
+	createdAt: number;
+};
 </script>
 
 <script lang="ts">
@@ -14,20 +14,21 @@
 	import { formatCount, formatExpiry } from "$lib/dashboard/format";
 	import { shareDialog } from "$lib/dashboard/share-dialog.svelte";
 	import {
-	  CalendarClock,
-	  Copy,
-	  ExternalLink,
-	  Globe,
-	  Link2,
-	  Lock,
-	  Plus,
-	  Share2,
-	  Trash2,
-	  UserCheck,
-	  Users,
+		CalendarClock,
+		Copy,
+		ExternalLink,
+		Globe,
+		Link2,
+		Lock,
+		Plus,
+		Share2,
+		Trash2,
+		UserCheck,
+		Users,
 	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
+	import EmptyState from "./EmptyState.svelte";
 
 	let {
 		shares,
@@ -60,14 +61,14 @@
 	}
 </script>
 
-<section class="glass-card rounded-xl p-5">
-	<header class="flex items-center justify-between">
+<section class="surface">
+	<header class="flex items-center justify-between gap-4 border-b border-border-low px-5 py-3.5">
 		<div class="flex items-center gap-2">
 			<Share2 class="size-4 text-muted-foreground" />
-			<h2 class="text-sm font-semibold text-foreground">Share links</h2>
+			<h2 class="font-display text-body font-medium text-foreground">Share links</h2>
 		</div>
 		{#if ordered.length > 0}
-			<Button  variant="default_soft" size="sm" class="gap-1.5" onclick={() => shareDialog.show(recastId)}>
+			<Button variant="outline" size="sm" class="gap-1.5" onclick={() => shareDialog.show(recastId)}>
 				<Plus class="size-3.5" />
 				New link
 			</Button>
@@ -75,55 +76,57 @@
 	</header>
 
 	{#if ordered.length === 0}
-		<div class="mt-4 flex flex-col items-start gap-2 rounded-lg border border-dashed border-border-low/70 bg-background/40 p-4">
-			<p class="text-xs text-muted-foreground">
-				Not shared yet. Choose who can see it, then create a link.
-			</p>
-			<Button size="sm" onclick={() => shareDialog.show(recastId)}>
-				<Link2/>
+		<EmptyState
+			bordered={false}
+			icon={Link2}
+			title="Not shared yet"
+			description="Choose who can see it, then create a link."
+		>
+			<Button size="sm" variant="dark" class="gap-2" onclick={() => shareDialog.show(recastId)}>
+				<Link2 class="size-3.5" />
 				Share this recast
 			</Button>
-		</div>
+		</EmptyState>
 	{:else}
-		<ul class="mt-4 space-y-1.5">
+		<ul class="divide-y divide-border-low">
 			{#each ordered as s (s.slug)}
 				{@const meta = accessMeta(s.visibility)}
 				{@const exp = s.expiresAt ? formatExpiry(s.expiresAt) : null}
-				<li
-					class="flex items-center gap-3 rounded-lg border border-border-low/50 bg-background/40 p-2.5 {exp?.expired
-						? 'opacity-60'
-						: ''}"
-				>
-					<span class="glass-chip grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground">
-						<meta.icon class="size-4" />
-					</span>
+				<li class="flex items-center gap-3 px-5 py-3 {exp?.expired ? 'opacity-60' : ''}">
+					<meta.icon class="size-4 shrink-0 text-muted-foreground" />
 					<div class="min-w-0 flex-1">
-						<div class="flex flex-wrap items-center gap-1.5">
-							<span class="truncate text-sm font-medium text-foreground">{meta.label}</span>
+						<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+							<span class="truncate text-body-sm font-medium text-foreground">{meta.label}</span>
 							{#if s.hasPassword}
-								<span class="inline-flex items-center gap-1 rounded bg-foreground/6 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+								<span class="inline-flex items-center gap-1 text-caption text-muted-foreground">
 									<Lock class="size-2.5" /> Password
 								</span>
 							{/if}
 							{#if exp}
 								<span
-									class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold {exp.expired
-										? 'bg-destructive/10 text-destructive'
-										: 'bg-foreground/6 font-medium text-muted-foreground'}"
+									class="inline-flex items-center gap-1 text-caption {exp.expired
+										? 'text-destructive'
+										: 'text-muted-foreground'}"
 								>
 									<CalendarClock class="size-2.5" />
 									{exp.label}
 								</span>
 							{/if}
 						</div>
-						<div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-							<span class="truncate font-mono">/share/{s.slug}</span>
+						<div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption text-muted-foreground">
+							<span class="truncate">/share/{s.slug}</span>
 							<span aria-hidden="true">·</span>
 							<span class="tabular-nums">{formatCount(s.viewsCount)} views</span>
 						</div>
 					</div>
 					<div class="flex shrink-0 items-center gap-1">
-						<Button variant="ghost" size="icon" class="size-8" aria-label="Copy link" onclick={() => copy(s.slug)}>
+						<Button
+							variant="ghost"
+							size="icon"
+							class="size-8"
+							aria-label="Copy link"
+							onclick={() => copy(s.slug)}
+						>
 							<Copy class="size-3.5" />
 						</Button>
 						<a
@@ -131,7 +134,7 @@
 							target="_blank"
 							rel="noreferrer"
 							aria-label="Open share page"
-							class="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+							class="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-paper hover:text-foreground motion-reduce:transition-none"
 						>
 							<ExternalLink class="size-3.5" />
 						</a>

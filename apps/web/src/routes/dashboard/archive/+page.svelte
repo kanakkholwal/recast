@@ -1,17 +1,21 @@
 <script lang="ts">
-import * as api from "$lib/dashboard/api";
-import { formatBytes } from "$lib/dashboard/format";
-import ArchivedCard, { type ArchivedRecast } from "$lib/dashboard/components/ArchivedCard.svelte";
-import EmptyState from "$lib/dashboard/components/EmptyState.svelte";
-import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
 import { Archive } from "@recast/icons";
 import { toast } from "@recast/ui/sonner";
 import { flip } from "svelte/animate";
 import { cubicOut } from "svelte/easing";
 import { fly, scale } from "svelte/transition";
+import * as api from "$lib/dashboard/api";
+import ArchivedCard, { type ArchivedRecast } from "$lib/dashboard/components/ArchivedCard.svelte";
+import ConfirmDialog from "$lib/dashboard/components/ConfirmDialog.svelte";
+import EmptyState from "$lib/dashboard/components/EmptyState.svelte";
+import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
+import { formatBytes } from "$lib/dashboard/format";
 
 let { data } = $props();
 let archived = $state<ArchivedRecast[]>([]);
+// Permanent, and the last copy of the metadata: worth one confirmation.
+let confirmDelete = $state<ArchivedRecast | null>(null);
+let deleting = $state(false);
 $effect(() => {
 	archived = data.archived;
 });
@@ -19,14 +23,19 @@ $effect(() => {
 const totalBytes = $derived(archived.reduce((sum, a) => sum + a.sizeBytes, 0));
 
 async function deleteArchived(rec: ArchivedRecast) {
+	if (deleting) return;
+	deleting = true;
 	const snapshot = archived;
 	archived = archived.filter((a) => a.id !== rec.id);
 	try {
 		await api.deleteRecast(rec.id);
+		confirmDelete = null;
 		toast.success(`"${rec.title}" deleted permanently.`);
 	} catch (e) {
 		archived = snapshot;
 		toast.error((e as Error)?.message ?? "Couldn't delete recast.");
+	} finally {
+		deleting = false;
 	}
 }
 </script>
@@ -61,7 +70,7 @@ async function deleteArchived(rec: ArchivedRecast) {
 					in:scale={{ start: 0.97, duration: 300, easing: cubicOut }}
 					out:scale={{ start: 0.97, duration: 170, easing: cubicOut }}
 				>
-					<ArchivedCard recast={rec} ondelete={() => deleteArchived(rec)} />
+					<ArchivedCard recast={rec} ondelete={() => (confirmDelete = rec)} />
 				</div>
 			{/each}
 		</div>
@@ -73,3 +82,12 @@ async function deleteArchived(rec: ArchivedRecast) {
 		/>
 	{/if}
 </div>
+
+<ConfirmDialog
+	bind:open={() => confirmDelete !== null, (v) => !v && (confirmDelete = null)}
+	title="Delete permanently?"
+	description={`“${confirmDelete?.title ?? ""}” and its viewer history are removed for good. The cloud file is already gone.`}
+	confirmLabel="Delete permanently"
+	busy={deleting}
+	onconfirm={() => confirmDelete && deleteArchived(confirmDelete)}
+/>

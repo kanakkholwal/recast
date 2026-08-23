@@ -1,12 +1,12 @@
 <script lang="ts">
+import { NavProgress } from "@recast/ui/nav-progress";
+import * as Sidebar from "@recast/ui/sidebar";
+import { onMount } from "svelte";
+import { navigating } from "$app/state";
 import DashboardHeader from "$lib/dashboard/components/DashboardHeader.svelte";
 import DashboardSidebar from "$lib/dashboard/components/DashboardSidebar.svelte";
 import QuickUploadDialog from "$lib/dashboard/components/QuickUploadDialog.svelte";
 import { quotaStore, settingsStore } from "$lib/dashboard/store.svelte";
-import { navigating } from "$app/state";
-import { NavProgress } from "@recast/ui/nav-progress";
-import * as Sidebar from "@recast/ui/sidebar";
-import { onMount } from "svelte";
 
 let { children, data } = $props();
 

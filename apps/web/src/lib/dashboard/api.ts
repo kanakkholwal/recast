@@ -88,9 +88,7 @@ export async function createFolder(input: {
 	parentId?: string | null;
 	color?: string | null;
 }): Promise<FolderDTO> {
-	const { folder } = await jsonOrThrow<{ folder: FolderDTO }>(
-		await post(`/api/folders`, input),
-	);
+	const { folder } = await jsonOrThrow<{ folder: FolderDTO }>(await post(`/api/folders`, input));
 	return folder;
 }
 export async function updateFolder(

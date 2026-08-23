@@ -1,9 +1,9 @@
 <script lang="ts">
-import { page } from "$app/state";
 import { CreditCard, Settings2, User } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { crossfade, fade } from "svelte/transition";
+import { page } from "$app/state";
 
 const tabs = [
 	{ label: "Profile", href: "/dashboard/settings/profile", icon: User },

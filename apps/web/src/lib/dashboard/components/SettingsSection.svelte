@@ -1,7 +1,7 @@
 <script lang="ts">
+import type { IconComponent } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
-import type { IconComponent } from "@recast/icons";
 
 let {
 	icon: Icon,

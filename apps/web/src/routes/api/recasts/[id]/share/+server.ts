@@ -2,15 +2,13 @@ import { error, json } from "@sveltejs/kit";
 import { and, eq, inArray } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
-import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { organization, recast, share, shareMember, user } from "$lib/db/schema";
 import { publicEnv } from "$lib/env/public";
+import { authorizeRecast } from "$lib/server/recast-guard";
 import { hashSharePassword, verifySharePassword } from "$lib/share/password";
 import { emailField } from "$lib/validation/email";
 import type { RequestHandler } from "./$types";
-
-type SessionShape = { user: { id: string } };
 
 // Lower-case alphanumeric only — URL-clean, double-click-selectable, no
 // homoglyph footguns. 10 chars × 36 alphabet = ~5.2e15 combos, plenty for
@@ -50,7 +48,8 @@ const BodySchema = z
 /**
  * POST /api/recasts/[id]/share
  *
- * Create a shareable link for an existing recast. Owner-only — every
+ * Create a shareable link for an existing recast. Creator, workspace
+ * owner/admin, or platform admin. Every
  * recast can have any number of shares (different visibilities, different
  * passwords, different selected lists), but all are owned by the original
  * recast owner.
@@ -68,11 +67,6 @@ const BodySchema = z
  * Returns `{ slug, shareUrl }`. Caller turns shareUrl into a clickable.
  */
 export const POST: RequestHandler = async ({ params, request, url }) => {
-	const session = (await getAuth()
-		.api.getSession({ headers: request.headers })
-		.catch(() => null)) as SessionShape | null;
-	if (!session?.user) error(401, "Sign in required");
-
 	let raw: unknown;
 	try {
 		raw = await request.json();
@@ -90,18 +84,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 
 	const db = getDb();
 
-	const [row] = await db
-		.select({
-			id: recast.id,
-			ownerId: recast.ownerId,
-			workspaceId: recast.workspaceId,
-			status: recast.status,
-		})
-		.from(recast)
-		.where(eq(recast.id, params.id))
-		.limit(1);
-	if (!row) error(404, "Recast not found");
-	if (row.ownerId !== session.user.id) error(403, "Not the owner");
+	const row = await authorizeRecast(request, params.id);
 	if (row.status === "archived") error(410, "Recast is archived");
 
 	// `workspace` visibility needs the recast's owning org as the gate.
@@ -224,7 +207,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 					email: inv.email,
 					userId: inv.userId,
 					role: inv.role,
-					invitedBy: session.user.id,
+					invitedBy: row.userId,
 				})),
 			);
 		}
@@ -242,25 +225,14 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 /**
  * GET /api/recasts/[id]/share
  *
- * List shares for a recast — owner only. Returns slug, visibility, view
+ * List shares for a recast. Returns slug, visibility, view
  * count, expiry, and whether each has a password set (the hash is never
  * returned). Used by the dashboard's share-management drawer.
  */
 export const GET: RequestHandler = async ({ params, request }) => {
-	const session = (await getAuth()
-		.api.getSession({ headers: request.headers })
-		.catch(() => null)) as SessionShape | null;
-	if (!session?.user) error(401, "Sign in required");
-
 	const db = getDb();
 
-	const [r] = await db
-		.select({ ownerId: recast.ownerId })
-		.from(recast)
-		.where(eq(recast.id, params.id))
-		.limit(1);
-	if (!r) error(404, "Recast not found");
-	if (r.ownerId !== session.user.id) error(403, "Not the owner");
+	await authorizeRecast(request, params.id);
 
 	const rows = await db
 		.select({

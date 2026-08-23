@@ -3,6 +3,7 @@ import type { IconComponent } from "@recast/icons";
 import type { Snippet } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+
 let {
 	icon: Icon,
 	title,

@@ -62,12 +62,72 @@ const DAY = 86_400_000;
 function seedRecordings(): Recast[] {
 	const now = Date.now();
 	return [
-		{ id: "rec_walkthrough", title: "Series A — product walkthrough", durationSec: 252, createdAt: now - 1 * DAY, sizeBytes: 191_000_000, source: "cloud", provider: "Cloudinary", views: 48, ...sample("BigBuckBunny") },
-		{ id: "rec_onboarding", title: "Onboarding flow v3", durationSec: 158, createdAt: now - 3 * DAY, sizeBytes: 101_000_000, source: "cloud", provider: "Cloudinary", views: 213, ...sample("ElephantsDream") },
-		{ id: "rec_changelog", title: "Changelog — sprint 22", durationSec: 64, createdAt: now - 4 * DAY, sizeBytes: 43_000_000, source: "local", provider: null, views: 0, ...sample("ForBiggerBlazes") },
-		{ id: "rec_bug", title: "Bug repro — export hang", durationSec: 52, createdAt: now - 6 * DAY, sizeBytes: 33_000_000, source: "local", provider: null, views: 0, ...sample("ForBiggerEscapes") },
-		{ id: "rec_teaser", title: "Launch teaser cut", durationSec: 31, createdAt: now - 9 * DAY, sizeBytes: 22_000_000, source: "cloud", provider: "Cloudinary", views: 1024, ...sample("ForBiggerFun") },
-		{ id: "rec_support", title: "Support reply — billing", durationSec: 107, createdAt: now - 13 * DAY, sizeBytes: 68_000_000, source: "local", provider: null, views: 0, ...sample("ForBiggerJoyrides") },
+		{
+			id: "rec_walkthrough",
+			title: "Series A — product walkthrough",
+			durationSec: 252,
+			createdAt: now - 1 * DAY,
+			sizeBytes: 191_000_000,
+			source: "cloud",
+			provider: "Cloudinary",
+			views: 48,
+			...sample("BigBuckBunny"),
+		},
+		{
+			id: "rec_onboarding",
+			title: "Onboarding flow v3",
+			durationSec: 158,
+			createdAt: now - 3 * DAY,
+			sizeBytes: 101_000_000,
+			source: "cloud",
+			provider: "Cloudinary",
+			views: 213,
+			...sample("ElephantsDream"),
+		},
+		{
+			id: "rec_changelog",
+			title: "Changelog — sprint 22",
+			durationSec: 64,
+			createdAt: now - 4 * DAY,
+			sizeBytes: 43_000_000,
+			source: "local",
+			provider: null,
+			views: 0,
+			...sample("ForBiggerBlazes"),
+		},
+		{
+			id: "rec_bug",
+			title: "Bug repro — export hang",
+			durationSec: 52,
+			createdAt: now - 6 * DAY,
+			sizeBytes: 33_000_000,
+			source: "local",
+			provider: null,
+			views: 0,
+			...sample("ForBiggerEscapes"),
+		},
+		{
+			id: "rec_teaser",
+			title: "Launch teaser cut",
+			durationSec: 31,
+			createdAt: now - 9 * DAY,
+			sizeBytes: 22_000_000,
+			source: "cloud",
+			provider: "Cloudinary",
+			views: 1024,
+			...sample("ForBiggerFun"),
+		},
+		{
+			id: "rec_support",
+			title: "Support reply — billing",
+			durationSec: 107,
+			createdAt: now - 13 * DAY,
+			sizeBytes: 68_000_000,
+			source: "local",
+			provider: null,
+			views: 0,
+			...sample("ForBiggerJoyrides"),
+		},
 	].map((r) => ({ folderId: null, tags: [] as string[], ...r })) as Recast[];
 }
 
@@ -142,17 +202,13 @@ class RecordingsStore {
 	}
 
 	rename(id: string, title: string) {
-		this.items = this.items.map((r) =>
-			r.id === id ? { ...r, title } : r,
-		);
+		this.items = this.items.map((r) => (r.id === id ? { ...r, title } : r));
 		this.persist();
 	}
 
 	setSource(id: string, source: RecordingSource) {
 		this.items = this.items.map((r) =>
-			r.id === id
-				? { ...r, source, provider: source === "cloud" ? "Cloudinary" : null }
-				: r,
+			r.id === id ? { ...r, source, provider: source === "cloud" ? "Cloudinary" : null } : r,
 		);
 		this.persist();
 	}
@@ -173,9 +229,7 @@ class RecordingsStore {
 	/** Cache a freshly-minted share slug so "Copy link" reuses it instead of
 	 *  creating a duplicate share on the next click. */
 	setShareSlug(id: string, slug: string) {
-		this.items = this.items.map((r) =>
-			r.id === id ? { ...r, latestShareSlug: slug } : r,
-		);
+		this.items = this.items.map((r) => (r.id === id ? { ...r, latestShareSlug: slug } : r));
 		this.persist();
 	}
 

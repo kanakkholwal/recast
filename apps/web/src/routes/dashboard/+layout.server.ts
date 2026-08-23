@@ -8,11 +8,7 @@ import {
 	organization as organizationTable,
 	user as userTable,
 } from "$lib/db/schema";
-import {
-	deliveryState,
-	getQuotaSnapshot,
-	storagePctUsed,
-} from "$lib/storage/quota";
+import { deliveryState, getQuotaSnapshot, storagePctUsed } from "$lib/storage/quota";
 import type { LayoutServerLoad } from "./$types";
 
 type SessionUser = {
@@ -69,10 +65,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 			plan: organizationTable.plan,
 		})
 		.from(memberTable)
-		.innerJoin(
-			organizationTable,
-			eq(memberTable.organizationId, organizationTable.id),
-		)
+		.innerJoin(organizationTable, eq(memberTable.organizationId, organizationTable.id))
 		.where(eq(memberTable.userId, session.user.id))
 		.orderBy(desc(memberTable.createdAt));
 
@@ -90,15 +83,9 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 			expiresAt: invitationTable.expiresAt,
 		})
 		.from(invitationTable)
-		.innerJoin(
-			organizationTable,
-			eq(invitationTable.organizationId, organizationTable.id),
-		)
+		.innerJoin(organizationTable, eq(invitationTable.organizationId, organizationTable.id))
 		.where(
-			and(
-				eq(invitationTable.email, session.user.email),
-				eq(invitationTable.status, "pending"),
-			),
+			and(eq(invitationTable.email, session.user.email), eq(invitationTable.status, "pending")),
 		);
 
 	// No memberships → onboarding. /onboarding/team is OUTSIDE /dashboard so
@@ -108,7 +95,10 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 	}
 
 	let activeOrganizationId = session.session?.activeOrganizationId ?? null;
-	if (!activeOrganizationId || !memberships.find((m) => m.organizationId === activeOrganizationId)) {
+	if (
+		!activeOrganizationId ||
+		!memberships.find((m) => m.organizationId === activeOrganizationId)
+	) {
 		// Session lost activeOrganizationId (or it points at a team the user
 		// no longer belongs to). Restore from the user's default workspace when
 		// possible, otherwise pick the most recent membership.
@@ -126,9 +116,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 		}
 	}
 
-	const activeMembership = memberships.find(
-		(m) => m.organizationId === activeOrganizationId,
-	)!;
+	const activeMembership = memberships.find((m) => m.organizationId === activeOrganizationId)!;
 
 	// Live quota snapshot for the active workspace — feeds the sidebar
 	// usage meter, the upload-button enable state, and the

@@ -695,6 +695,187 @@ Archive lost a duplication: every card repeated the page's own explanation
 times. The page says it once, on a hairline row that also carries the count,
 the total size and the purge window.
 
+### Recasts library and detail
+
+The whole route was still pre-Dub, and the pass turned up more than tokens.
+
+**The library was one card wrapping the page.** Folder cards, the toolbar and
+the grid all lived inside a single `glass-card`, so every real card sat in a
+card. The page is hairline sections now: a breadcrumb row, the folder grid, the
+toolbar, then the results. The drop-to-upload target is the region, not a box.
+
+**Folders were a tree rendered flat.** The store has `childrenOf`, `breadcrumb`
+and `subtreeIds`, and the page used none of them: it sorted every folder in the
+workspace into one 4-up grid, so a subfolder appeared beside its own parent, and
+opening the parent hid that subfolder's videos with no way to reach them. It
+browses one level at a time now, with a real breadcrumb, and an **Unfiled**
+bucket at the root. Search always scopes to the whole library and says so,
+because a search box that only looks inside the open folder is a search box that
+lies.
+
+**Duplicated and dead.** A second "Videos / N videos - M folders" header
+restated the page header; `archived` state, `deleteArchived` and
+`createRootFolder` were unreachable (archive is its own route); the list view
+printed file size twice, once under the title and once in the Size column. All
+gone. The view toggle moved next to Sort, where the other view controls are, and
+became icon-only.
+
+**Dialogs.** Rename and Manage tags were hand-rolled fixed overlays with their
+own scrim and no focus trap; both are `Dialog.*` now, like the team page. Share
+and Quick upload kept a hand-written `role="switch"` div each; both use the
+shared `Switch`. Every "Pro" gate in them reads from the same plan flags.
+
+**Access was wider than the API.** The library listed every recast in the
+workspace to every member, but `PATCH`/`DELETE` allowed only the creator or a
+platform admin, so a member saw rows they could not act on, while a workspace
+owner could not act on their own workspace's content. One predicate now backs
+all of it (`$lib/dashboard/access`): the creator, a workspace owner/admin, or a
+platform admin. The list is filtered by it, the detail loader enforces it, and
+the API honours it. An id you may not open returns **404, not 403** - a member
+has no business learning that it exists - and `recasts/+error.svelte` renders
+that as a real "Recast not found" page instead of the generic boundary.
+
+**The description was write-only.** You could edit it from the header and it
+only ever appeared to viewers. It renders under the player now.
+
+### Workspace analytics
+
+Audited against cognitive-load, Gestalt and Fitts guidance, then rebuilt. The
+page had eleven panels and about twenty numbers above the fold, well past
+7+/-2, and none of them could be judged.
+
+**No number had a baseline.** "Views 1,240" in "Last 7 days" is up or down
+against what? The dashboard *home* already computed a week-over-week trend; the
+page dedicated to analytics did not. Every headline metric now carries a delta
+against the equal-length window immediately before it, and "All time" shows no
+chip at all rather than a meaningless one. `deltaPct` returns `null` when the
+prior window is empty, so a single view never renders "+100%".
+
+**Two stat rows said the same thing in two visual languages.** A `StatGrid` row
+followed by a 3-up row of `glass-card` tiles with uppercase micro-labels and
+mono numerals. One row of four now: Views, Unique viewers, Avg watch,
+Completion. "Top recast" was a stat card naming an entity you could not click;
+the sortable table already ranks by views, so it went.
+
+**The range filter governed half the page.** It filtered `activity`, but the
+performance table and the comment total are lifetime SQL rollups, so "Last 7
+days" sat above an all-time table with nothing saying so. The table is labelled
+"All time, not the selected range" (comments only exist as a lifetime rollup),
+and "All time" is genuinely unbounded now instead of quietly meaning 365 days.
+
+**Charts stated no headline.** A retention curve is drawn to answer one
+question, so the section says it: "Half your viewers leave by 40% of the
+video". The trend chart names its busiest day.
+
+Added, from data already loaded: **returning viewers** (watched on more than one
+day), the signal a view count cannot give. The range picker is `RangeTabs`, the
+same control as the per-recast page, not a bespoke select. The activity feed
+left its sticky 22rem rail (lowest-value content in the highest-value column)
+for the foot of the page. An empty workspace gets one empty state instead of
+eleven zeroed panels. The sortable table gained `aria-sort`, a caption stating
+the current sort, and a line saying how many rows were capped.
+
+The loader shipped a 200-row recast list and a comment total the page never
+read; both are gone.
+
+### Dialogs
+
+**Every dialog title rendered in a font the web app does not load.** The shared
+`Dialog`/`Card`/`Sheet`/`Drawer` titles use `font-heading`, which
+`@recast/design` points at Geist. Desktop loads Geist; web loads Inter, Satoshi
+and Geist Mono, so `font-heading` fell back to plain sans. Web now maps
+`--font-heading` to `--font-display`, which fixes all four shared titles at once
+and leaves desktop on Geist.
+
+**Upload dialog.** Its stepper was `aria-hidden`, so the one progress indicator
+in the flow was invisible to assistive tech; it is a real list with an sr-only
+"Step 2 of 3". Progress showed a bare percentage, now bytes of total. The
+drag highlight flickered because `dragleave` fires when crossing into a child;
+it counts depth like the library does, and the drop target is the whole dialog
+body rather than just the button. "Change cover" was a 12px text link under the
+touch-target floor and is a button.
+
+**There was no way out of an upload and no error state.** A large upload could
+only be escaped by closing the tab, and a failure toasted and dumped you back at
+an empty picker with no idea what happened. `UploadHandlers` takes an
+`AbortSignal`, the PUT honours it, Cancel is offered throughout, and a failure
+renders in-dialog with the message and a retry. A cancel is not an error: it
+returns to the picker silently.
+
+### Deleting a recast
+
+**What the transaction covers.** The row delete and the usage reversal run in
+one `db.transaction`, and the Postgres cascade takes the shares, views,
+comments, reactions, share members and tag links with the row *inside* that
+same transaction, so a delete is all-or-nothing.
+
+**What is kept, deliberately.** `deliveryBytesThisMonth` is a counter that
+`recordDelivery` bumps per view, not a sum over `share_view`, so deleting
+content cannot erase egress we have already served and billed. Only the
+*state* meters are reclaimed: `storage_bytes` and `active_recasts_count` (and
+`archived_recasts_count` for an archived row). A `draft` never bumped usage, so
+nothing is reversed. That invariant is now written next to the code, because
+"decrement delivery too" looks like a missing line until you know why it isn't.
+
+**Order was wrong.** The blob was deleted *before* the transaction ran, so a
+failed transaction left a live row pointing at an object that no longer
+existed - broken playback with no way back. State commits first now, objects
+after: a failure there orphans an object, which the storage console can clean
+up, and the code still swallows the provider 404 an already-blobless archived
+row produces.
+
+**The poster was never deleted.** Only `videoUrl` was passed to `deleteObject`,
+so every delete left its thumbnail behind forever, on storage the workspace had
+just stopped being charged for. `deleteRecastObjects` takes every key a recast
+owns, skips absolute URLs (external/legacy, not ours), dedupes, and is
+unit-tested. Archive keeps the poster on purpose - the archive list renders it.
+
+**Five guards, five behaviours.** `PATCH`, `DELETE`, archive, poster, tags and
+share each carried their own copy: most were creator-or-platform-admin, share
+was owner-only, and none let a workspace owner manage their own workspace's
+content. All six call `authorizeRecast` from `$lib/server/recast-guard` now,
+which shares one predicate with the page loaders.
+
+**Nothing asked before destroying anything.** Delete was a single menu click, an
+optimistic removal and a toast - no confirmation, on an action that also takes
+every share link and all viewer history. Bulk delete did it for N recasts at
+once. `ConfirmDialog` now fronts single delete, bulk delete, archive (the video
+file goes) and permanent delete from the archive page, each naming what is lost.
+
+**Bulk delete lied on partial failure.** `Promise.all` rejects on the first
+error and the catch restored the whole pre-delete snapshot, so eight successful
+deletes reappeared in the list until a reload. It is `Promise.allSettled` +
+`invalidateAll()` now, reporting "N of M couldn't be deleted".
+
+### Free-plan analytics
+
+Free gets analytics that mean something and stops there: **views, unique
+viewers, completion rate, and a 7-day chart**. Everything else is one locked
+panel per section.
+
+The lock is real, not visual. `+page.server.ts` branches on
+`plan.features.analytics`: a free workspace runs two aggregate queries
+(`loadRecastBasicStats`) and never touches country, device, referrer, watch
+percentage, comments or reactions. So the blurred layer cannot be stand-in
+numbers - it is `SkeletonPreview` geometry, `aria-hidden`, with the real heading
+and Upgrade button in a legible overlay above it. Blurred *invented* figures
+would be worse than an empty state.
+
+**Charts across themes.** The panels were `bg-background/40` +
+`backdrop-blur-sm`, which reads muddy on the dark canvas; they are `.surface`.
+Series colours were already tokens (`var(--color-primary)`, `fill-primary`), so
+they follow the theme, but `THEMES` in the shadcn chart helper matched only
+`.dark` while `app.css` also themes on `[data-theme="dark"]` - a themed series
+would have stayed light there. It matches both selectors now. Breakdown bars
+went from `bg-foreground/30` on `bg-foreground/8` (nearly invisible in dark) to
+the app's standard `bg-foreground` on `bg-paper`.
+
+**Enterprise was offered an upgrade to Pro.** "Upgrade this workspace" was the
+`{:else}` of "can open the billing portal", and a contract workspace has no
+Polar customer, so it fell through to the upsell. Upgrade is gated on
+`!isPaid` now, and a contract shows "Your account contact handles plan changes"
+instead of a Compare-plans link to tiers below the one it is on.
+
 ### Interior pages
 
 Both were on the pre-Dub system: floating `rounded-2xl` cards, `blur-3xl` glow

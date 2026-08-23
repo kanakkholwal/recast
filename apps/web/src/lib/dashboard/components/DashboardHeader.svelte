@@ -1,9 +1,9 @@
 <script lang="ts">
+import * as Sidebar from "@recast/ui/sidebar";
 import { page } from "$app/state";
 import CommandPaletteHost from "$lib/dashboard/components/CommandPaletteHost.svelte";
 import SearchTrigger from "$lib/dashboard/components/SearchTrigger.svelte";
 import UserMenu from "$lib/dashboard/components/UserMenu.svelte";
-import * as Sidebar from "@recast/ui/sidebar";
 
 interface Props {
 	/** Label shown at the route root (e.g. "Home" for /dashboard). */

@@ -1,19 +1,21 @@
 <script lang="ts">
-import { focusOnMount } from "$lib/dashboard/focus";
-import { isEditableTarget } from "$lib/dom/is-editable";
-import { tagsStore } from "$lib/dashboard/library.svelte";
+import { Grid2X2, List, Plus, Search, Settings2, X } from "@recast/icons";
 import { Chip } from "@recast/ui/chip";
 import * as Select from "@recast/ui/select";
-import { Plus, Search, Settings2, X } from "@recast/icons";
+import { cn } from "@recast/ui/utils";
+import { focusOnMount } from "$lib/dashboard/focus";
+import { tagsStore } from "$lib/dashboard/library.svelte";
+import { isEditableTarget } from "$lib/dom/is-editable";
 
-// Library filter/search/sort toolbar. Bindable filter state lives here so the
-// page stays orchestration-only; folder selection is the rail's job, so
+// Library search/sort/tag/view toolbar. Bindable filter state lives here so the
+// page stays orchestration-only; folder selection is the breadcrumb's job, so
 // the page passes the combined `filtersActive` + an `onclear` that also resets
 // the folder.
 let {
 	query = $bindable(""),
 	sortKey = $bindable("recent"),
 	selectedTagIds = $bindable([]),
+	viewMode = $bindable("grid"),
 	total,
 	shown,
 	filtersActive,
@@ -24,6 +26,7 @@ let {
 	query?: string;
 	sortKey?: string;
 	selectedTagIds?: string[];
+	viewMode?: "grid" | "list";
 	total: number;
 	shown: number;
 	filtersActive: boolean;
@@ -39,10 +42,15 @@ let newTagName = $state("");
 const sorts = [
 	{ label: "Newest first", value: "recent" },
 	{ label: "Oldest first", value: "oldest" },
-	{ label: "Name (A–Z)", value: "name" },
+	{ label: "Name (A-Z)", value: "name" },
 	{ label: "Largest first", value: "largest" },
 ];
 const sortLabel = $derived(sorts.find((s) => s.value === sortKey)?.label ?? "Sort");
+
+const views = [
+	{ id: "grid" as const, label: "Grid", icon: Grid2X2 },
+	{ id: "list" as const, label: "List", icon: List },
+];
 
 function toggleTag(id: string) {
 	selectedTagIds = selectedTagIds.includes(id)
@@ -71,9 +79,11 @@ function onWindowKeydown(e: KeyboardEvent) {
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div class="flex flex-col gap-3">
-	<!-- Search + source filter + sort -->
+	<!-- Search + sort + view -->
 	<div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-		<div class="flex items-center gap-2 rounded-lg border border-border-low/70 bg-card/50 px-3 py-2 backdrop-blur-sm lg:w-72">
+		<div
+			class="flex h-9 items-center gap-2 rounded-lg border border-border-low bg-paper px-3 lg:w-72"
+		>
 			<Search class="size-4 shrink-0 text-muted-foreground" />
 			<input
 				bind:this={searchInput}
@@ -86,20 +96,29 @@ function onWindowKeydown(e: KeyboardEvent) {
 						e.currentTarget.blur();
 					}
 				}}
-				class="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70"
+				class="w-full bg-transparent text-body-sm text-foreground outline-none placeholder:text-muted-foreground"
 			/>
 			{#if query}
-				<button type="button" onclick={() => (query = "")} aria-label="Clear search" class="grid size-5 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground">
+				<button
+					type="button"
+					onclick={() => (query = "")}
+					aria-label="Clear search"
+					class="grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none"
+				>
 					<X class="size-3.5" />
 				</button>
 			{:else}
-				<kbd class="hidden shrink-0 rounded border border-border-low/60 bg-background/60 px-1.5 font-mono text-[10px] text-muted-foreground/70 lg:inline">/</kbd>
+				<kbd
+					class="hidden shrink-0 rounded border border-border-low bg-background px-1.5 text-caption text-muted-foreground lg:inline"
+				>
+					/
+				</kbd>
 			{/if}
 		</div>
 
 		<div class="flex items-center gap-2">
 			<Select.Root type="single" bind:value={sortKey}>
-				<Select.Trigger aria-label="Sort recasts" class="w-40 border-border-low/60 bg-card/40 text-xs font-semibold hover:border-border-low">
+				<Select.Trigger aria-label="Sort recasts" class="h-9 w-40 text-body-sm">
 					{sortLabel}
 				</Select.Trigger>
 				<Select.Content class="p-1">
@@ -108,6 +127,32 @@ function onWindowKeydown(e: KeyboardEvent) {
 					{/each}
 				</Select.Content>
 			</Select.Root>
+
+			<div
+				class="flex h-9 items-center gap-0.5 rounded-lg border border-border-low bg-paper p-0.5"
+				role="radiogroup"
+				aria-label="Layout"
+			>
+				{#each views as v (v.id)}
+					{@const active = viewMode === v.id}
+					{@const Icon = v.icon}
+					<button
+						type="button"
+						role="radio"
+						aria-checked={active}
+						aria-label={v.label}
+						onclick={() => (viewMode = v.id)}
+						class={cn(
+							"grid size-8 place-items-center rounded-md transition-colors duration-200 motion-reduce:transition-none",
+							active
+								? "bg-background text-foreground shadow-craft-sm"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						<Icon class="size-4" />
+					</button>
+				{/each}
+			</div>
 		</div>
 	</div>
 
@@ -134,14 +179,14 @@ function onWindowKeydown(e: KeyboardEvent) {
 						}
 					}}
 					placeholder="Tag name"
-					class="h-7 w-28 rounded-full border border-primary/50 bg-background px-2.5 text-xs outline-none placeholder:text-muted-foreground/60"
+					class="h-7 w-28 rounded-full border border-primary bg-background px-2.5 text-caption outline-none placeholder:text-muted-foreground"
 					use:focusOnMount
 				/>
 			{:else}
 				<button
 					type="button"
 					onclick={() => (creatingTag = true)}
-					class="inline-flex items-center gap-1 rounded-full border border-dashed border-border-low/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
+					class="inline-flex items-center gap-1 rounded-full border border-dashed border-border-low px-2.5 py-1 text-caption font-medium text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground motion-reduce:transition-none"
 				>
 					<Plus class="size-3" /> New tag
 				</button>
@@ -150,19 +195,23 @@ function onWindowKeydown(e: KeyboardEvent) {
 				<button
 					type="button"
 					onclick={onmanagetags}
-					class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+					class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-caption font-medium text-muted-foreground transition-colors hover:bg-paper hover:text-foreground motion-reduce:transition-none"
 				>
 					<Settings2 class="size-3" /> Manage
 				</button>
 			{/if}
 		</div>
 
-		<div class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-			<span class="font-mono tabular-nums">
+		<div class="flex shrink-0 items-center gap-2 text-caption text-muted-foreground">
+			<span class="tabular-nums">
 				{filtersActive ? `${shown} of ${total}` : `${total} recast${total === 1 ? "" : "s"}`}
 			</span>
 			{#if filtersActive}
-				<button type="button" onclick={onclear} class="font-medium text-muted-foreground transition-colors hover:text-foreground hover:underline">
+				<button
+					type="button"
+					onclick={onclear}
+					class="font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline motion-reduce:transition-none"
+				>
 					Clear filters
 				</button>
 			{/if}

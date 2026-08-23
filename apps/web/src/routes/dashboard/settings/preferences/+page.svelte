@@ -1,10 +1,4 @@
 <script lang="ts">
-import { page } from "$app/state";
-import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
-import { barWidth, formatPct } from "$lib/dashboard/format";
-import { quotaStore } from "$lib/dashboard/store.svelte";
-import { Badge } from "@recast/ui/badge";
-import { Button } from "@recast/ui/button";
 import {
 	Building2,
 	HardDrive,
@@ -15,10 +9,16 @@ import {
 	Sun,
 	Users,
 } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
 import { resetMode, setMode, userPrefersMode } from "@recast/ui/theme";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { page } from "$app/state";
+import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
+import { barWidth, formatPct } from "$lib/dashboard/format";
+import { quotaStore } from "$lib/dashboard/store.svelte";
 
 type LayoutData = {
 	activeOrganization?: {

@@ -1,8 +1,8 @@
 <script lang="ts">
+import { Gauge, HardDrive, Link2 } from "@recast/icons";
 import { barWidth, formatBytes } from "$lib/dashboard/format";
 import { quotaStore } from "$lib/dashboard/store.svelte";
 import { type UsageTone, usageView } from "./UsageMeter.logic";
-import { Gauge, HardDrive, Link2 } from "@recast/icons";
 
 // Reactive snapshot pulled from the layout-injected quota. Every plan has a
 // concrete cap, so all three bars read the same way on every tier.

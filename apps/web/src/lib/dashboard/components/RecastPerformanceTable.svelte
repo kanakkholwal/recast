@@ -1,54 +1,75 @@
 <script lang="ts">
-	import EmptyState from "./EmptyState.svelte";
-	import {
-		nextSort,
-		PERF_COLUMNS as cols,
-		sortRows,
-		type Row,
-		type SortKey,
-	} from "./RecastPerformanceTable.logic";
-	import { ArrowDown, ArrowUp, BarChart3, Crown, Film } from "@recast/icons";
+import { ArrowDown, ArrowUp, BarChart3, Crown, Film } from "@recast/icons";
+import EmptyState from "./EmptyState.svelte";
+import {
+	PERF_COLUMNS as cols,
+	nextSort,
+	type Row,
+	type SortKey,
+	sortRows,
+} from "./RecastPerformanceTable.logic";
 
-	// Sortable per-recast comparison table. Replaces the text-only "Top recasts"
-	// on the analytics page; each row drills into /dashboard/recasts/[id].
-	let { rows, limit = 25 }: { rows: Row[]; limit?: number } = $props();
+// Sortable per-recast comparison table. Each row drills into
+// /dashboard/recasts/[id].
+let { rows, limit = 25 }: { rows: Row[]; limit?: number } = $props();
 
-	let sortKey = $state<SortKey>("views");
-	let dir = $state<"asc" | "desc">("desc");
-	// Per-row poster load failures, so a broken cover falls back to the glyph.
-	let failed = $state<Record<string, boolean>>({});
+let sortKey = $state<SortKey>("views");
+let dir = $state<"asc" | "desc">("desc");
+// Per-row poster load failures, so a broken cover falls back to the glyph.
+let failed = $state<Record<string, boolean>>({});
 
-	const sorted = $derived(sortRows(rows, sortKey, dir, limit));
+const sorted = $derived(sortRows(rows, sortKey, dir, limit));
+const hidden = $derived(Math.max(0, rows.length - sorted.length));
 
-	function toggleSort(k: SortKey) {
-		({ key: sortKey, dir } = nextSort({ key: sortKey, dir }, k));
-	}
+function toggleSort(k: SortKey) {
+	({ key: sortKey, dir } = nextSort({ key: sortKey, dir }, k));
+}
 </script>
 
-<section class="glass-card flex h-full flex-col rounded-xl">
-	<header class="flex items-center gap-2 border-b border-border-low/50 px-5 py-3.5">
+<section class="surface flex h-full flex-col">
+	<header class="flex items-center gap-2 border-b border-border-low px-5 py-3.5">
 		<Crown class="size-4 text-muted-foreground" />
-		<h2 class="text-sm font-semibold text-foreground">Recast performance</h2>
+		<h2 class="font-display text-body font-medium text-foreground">Every recast</h2>
 	</header>
 
 	{#if rows.length === 0}
-		<EmptyState bordered={false} icon={BarChart3} title="No performance data yet" description="Share a recast to start gathering views." />
+		<EmptyState
+			bordered={false}
+			icon={BarChart3}
+			title="No performance data yet"
+			description="Share a recast to start gathering views."
+		/>
 	{:else}
 		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
+			<table class="w-full text-body-sm">
+				<caption class="sr-only">
+					Recasts ranked by {cols.find((c) => c.key === sortKey)?.label ?? "views"},
+					{dir === "desc" ? "highest first" : "lowest first"}.
+				</caption>
 				<thead>
-					<tr class="border-b border-border-low/40 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-						<th class="px-5 py-2 text-left font-semibold">Recast</th>
+					<tr class="border-b border-border-low bg-paper text-caption text-muted-foreground">
+						<th scope="col" class="px-5 py-2 text-left font-medium">Recast</th>
 						{#each cols as c (c.key)}
-							<th class="px-3 py-2 text-right font-semibold last:pr-5">
+							{@const active = sortKey === c.key}
+							<th
+								scope="col"
+								class="px-3 py-2 text-right font-medium last:pr-5"
+								aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
+							>
 								<button
 									type="button"
 									onclick={() => toggleSort(c.key)}
-									class="ml-auto inline-flex items-center gap-1 transition-colors hover:text-foreground {sortKey === c.key ? 'text-foreground' : ''}"
+									class="ml-auto inline-flex min-h-8 items-center gap-1 transition-colors hover:text-foreground motion-reduce:transition-none {active
+										? 'text-foreground'
+										: ''}"
 								>
 									{c.label}
-									{#if sortKey === c.key}
-										{#if dir === "desc"}<ArrowDown class="size-3" />{:else}<ArrowUp class="size-3" />{/if}
+									{#if active}
+										{#if dir === "desc"}
+											<ArrowDown class="size-3" aria-hidden="true" />
+										{:else}
+											<ArrowUp class="size-3" aria-hidden="true" />
+										{/if}
 									{/if}
 								</button>
 							</th>
@@ -57,14 +78,18 @@
 				</thead>
 				<tbody>
 					{#each sorted as r (r.id)}
-						<tr class="border-b border-border-low/20 transition-colors last:border-0 hover:bg-foreground/3">
+						<tr
+							class="border-b border-border-low transition-colors last:border-0 hover:bg-paper motion-reduce:transition-none"
+						>
 							<td class="max-w-0 px-5 py-2.5">
 								<a
 									href={`/dashboard/recasts/${r.id}`}
 									class="group/row flex min-w-0 items-center gap-3"
 									title={r.title}
 								>
-									<span class="relative h-9 w-16 shrink-0 overflow-hidden rounded-md bg-foreground/8 ring-1 ring-inset ring-border-low/40">
+									<span
+										class="relative h-9 w-16 shrink-0 overflow-hidden rounded-md border border-border-low bg-paper"
+									>
 										{#if r.posterUrl && !failed[r.id]}
 											<img
 												src={r.posterUrl}
@@ -75,17 +100,19 @@
 											/>
 										{:else}
 											<span class="grid h-full w-full place-items-center">
-												<Film class="size-3.5 text-muted-foreground/60" />
+												<Film class="size-3.5 text-border-strong" />
 											</span>
 										{/if}
 									</span>
-									<span class="min-w-0 truncate font-medium text-foreground transition-colors group-hover/row:underline">
+									<span
+										class="min-w-0 truncate font-medium text-foreground underline-offset-4 group-hover/row:underline"
+									>
 										{r.title}
 									</span>
 								</a>
 							</td>
 							{#each cols as c (c.key)}
-								<td class="px-3 py-2.5 text-right font-mono tabular-nums text-muted-foreground last:pr-5">
+								<td class="px-3 py-2.5 text-right tabular-nums text-muted-foreground last:pr-5">
 									{c.fmt(r)}
 								</td>
 							{/each}
@@ -94,5 +121,12 @@
 				</tbody>
 			</table>
 		</div>
+
+		{#if hidden > 0}
+			<!-- Say what was dropped: a silently capped table reads as the whole list. -->
+			<p class="border-t border-border-low px-5 py-2.5 text-caption text-muted-foreground">
+				Showing the top {sorted.length} of {rows.length} recasts.
+			</p>
+		{/if}
 	{/if}
 </section>

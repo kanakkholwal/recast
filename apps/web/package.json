@@ -4,8 +4,9 @@
 	"version": "0.1.0",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
-		"build": "vite build",
+		"sync:assets": "node ../../scripts/sync-screenshot-assets.mjs",
+		"dev": "pnpm sync:assets && vite dev",
+		"build": "pnpm sync:assets && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "docvia build && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

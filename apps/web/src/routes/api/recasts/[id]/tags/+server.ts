@@ -1,30 +1,9 @@
 import { error, json } from "@sveltejs/kit";
 import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "$lib/db";
-import { recast, recastTag, tag, user } from "$lib/db/schema";
-import { requireUser } from "$lib/workspace/guard";
+import { recastTag, tag } from "$lib/db/schema";
+import { authorizeRecast } from "$lib/server/recast-guard";
 import type { RequestHandler } from "./$types";
-
-/** Owner-or-admin gate; returns the recast's workspace for tag validation. */
-async function authorizeRecast(request: Request, recastId: string): Promise<{ workspaceId: string }> {
-	const u = await requireUser(request);
-	const db = getDb();
-	const [r] = await db
-		.select({ ownerId: recast.ownerId, workspaceId: recast.workspaceId })
-		.from(recast)
-		.where(eq(recast.id, recastId))
-		.limit(1);
-	if (!r) error(404, "Recast not found");
-	if (r.ownerId !== u.id) {
-		const [usr] = await db
-			.select({ role: user.role })
-			.from(user)
-			.where(eq(user.id, u.id))
-			.limit(1);
-		if (usr?.role !== "admin") error(403, "Not allowed to modify this recast");
-	}
-	return { workspaceId: r.workspaceId };
-}
 
 /** GET /api/recasts/[id]/tags — the recast's current tags. */
 export const GET: RequestHandler = async ({ params, request }) => {
@@ -71,9 +50,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 	await db.transaction(async (tx) => {
 		await tx.delete(recastTag).where(eq(recastTag.recastId, params.id));
 		if (unique.length > 0) {
-			await tx
-				.insert(recastTag)
-				.values(unique.map((tagId) => ({ recastId: params.id, tagId })));
+			await tx.insert(recastTag).values(unique.map((tagId) => ({ recastId: params.id, tagId })));
 		}
 	});
 

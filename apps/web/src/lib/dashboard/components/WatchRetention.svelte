@@ -1,37 +1,37 @@
 <script lang="ts">
-	import * as Chart from "$components/ui/chart/index.js";
-	import { TrendingDown } from "@recast/icons";
-	import { AreaChart } from "layerchart";
+import { TrendingDown } from "@recast/icons";
+import { AreaChart } from "layerchart";
+import * as Chart from "$components/ui/chart/index.js";
 
-	// Watch-retention survival curve: share of plays that reached each decile of
-	// the video. Shows WHERE viewers drop off, which an average watch % hides.
-	let {
-		data,
-	}: {
-		data: { pct: number; reached: number }[];
-	} = $props();
+// Watch-retention survival curve: share of plays that reached each decile of
+// the video. Shows WHERE viewers drop off, which an average watch % hides.
+let {
+	data,
+}: {
+	data: { pct: number; reached: number }[];
+} = $props();
 
-	// Retention is full at the very start of the video, so anchor the curve at
-	// (0%, 100%) when there are plays — the drop-off then reads from a full
-	// baseline, the way Instagram/YouTube retention graphs do.
-	const hasViews = $derived(data.some((d) => d.reached > 0));
-	const curve = $derived(hasViews ? [{ pct: 0, reached: 100 }, ...data] : data);
+// Retention is full at the very start of the video, so anchor the curve at
+// (0%, 100%) when there are plays — the drop-off then reads from a full
+// baseline, the way Instagram/YouTube retention graphs do.
+const hasViews = $derived(data.some((d) => d.reached > 0));
+const curve = $derived(hasViews ? [{ pct: 0, reached: 100 }, ...data] : data);
 
-	// The 50% mark is a useful "did they get past the intro" reference.
-	const midpoint = $derived(data.find((d) => d.pct === 50)?.reached ?? 0);
+// The 50% mark is a useful "did they get past the intro" reference.
+const midpoint = $derived(data.find((d) => d.pct === 50)?.reached ?? 0);
 
-	const chartConfig = {
-		reached: { label: "Viewers reached", color: "var(--color-primary)" },
-	} satisfies Chart.ChartConfig;
+const chartConfig = {
+	reached: { label: "Viewers reached", color: "var(--color-primary)" },
+} satisfies Chart.ChartConfig;
 </script>
 
-<div class="glass-card rounded-xl p-5">
-	<header class="flex items-center justify-between">
+<div class="surface h-full p-5">
+	<header class="flex items-center justify-between gap-4">
 		<div class="flex items-center gap-2">
 			<TrendingDown class="size-4 text-muted-foreground" />
-			<h2 class="text-sm font-semibold text-foreground">Watch retention</h2>
+			<h2 class="font-display text-body font-medium text-foreground">Watch retention</h2>
 		</div>
-		<span class="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+		<span class="shrink-0 text-caption tabular-nums text-muted-foreground">
 			{midpoint}% reach halfway
 		</span>
 	</header>
@@ -65,5 +65,5 @@
 
 {#snippet reachedRow({ value }: { value: unknown })}
 	<span class="text-muted-foreground">Reached</span>
-	<span class="ml-auto font-mono font-medium tabular-nums text-foreground">{value}%</span>
+	<span class="ml-auto font-medium tabular-nums text-foreground">{value}%</span>
 {/snippet}

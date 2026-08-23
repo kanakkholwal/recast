@@ -1,79 +1,114 @@
 <script lang="ts">
-	import { commandPalette } from "$lib/dashboard/command-palette.svelte";
-	import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
-	import {
-		Archive,
-		BarChart3,
-		CornerDownLeft,
-		CreditCard,
-		Film,
-		LayoutDashboard,
-		Plus,
-		Search,
-		Settings,
-		SlidersHorizontal,
-		User,
-		Users,
-	} from "@recast/icons";
-	import * as Dialog from "@recast/ui/dialog";
-	import { Kbd, KbdGroup } from "@recast/ui/kbd";
-	import { Command as CommandPrimitive } from "bits-ui";
+import {
+	Archive,
+	BarChart3,
+	CornerDownLeft,
+	CreditCard,
+	Film,
+	LayoutDashboard,
+	Plus,
+	Search,
+	Settings,
+	SlidersHorizontal,
+	User,
+	Users,
+} from "@recast/icons";
+import * as Dialog from "@recast/ui/dialog";
+import { Kbd, KbdGroup } from "@recast/ui/kbd";
+import { Command as CommandPrimitive } from "bits-ui";
+import { commandPalette } from "$lib/dashboard/command-palette.svelte";
+import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 
-	// The single command dialog + the global ⌘K binding. Mounted once (in the
-	// header); every trigger opens THIS. Styled to match the desktop palette —
-	// tall input, roomy rows, group headings, and a keyboard-hint footer — while
-	// bits-ui handles filtering + keyboard navigation.
+// The single command dialog + the global ⌘K binding. Mounted once (in the
+// header); every trigger opens THIS. Styled to match the desktop palette —
+// tall input, roomy rows, group headings, and a keyboard-hint footer — while
+// bits-ui handles filtering + keyboard navigation.
 
-	interface Entry {
-		title: string;
-		href?: string;
-		icon: typeof LayoutDashboard;
-		keywords?: string;
-		action?: () => void;
-	}
+interface Entry {
+	title: string;
+	href?: string;
+	icon: typeof LayoutDashboard;
+	keywords?: string;
+	action?: () => void;
+}
 
-	const groups: { heading: string; items: Entry[] }[] = [
-		{
-			heading: "Quick actions",
-			items: [
-				{
-					title: "New Recast",
-					icon: Plus,
-					keywords: "upload record video create",
-					action: () => {
-						commandPalette.hide();
-						quickUpload.show();
-					},
+const groups: { heading: string; items: Entry[] }[] = [
+	{
+		heading: "Quick actions",
+		items: [
+			{
+				title: "New Recast",
+				icon: Plus,
+				keywords: "upload record video create",
+				action: () => {
+					commandPalette.hide();
+					quickUpload.show();
 				},
-			],
-		},
-		{
-			heading: "Pages",
-			items: [
-				{ title: "Home", href: "/dashboard", icon: LayoutDashboard, keywords: "overview dashboard" },
-				{ title: "Recasts", href: "/dashboard/recasts", icon: Film, keywords: "videos library recordings" },
-				{ title: "Archive", href: "/dashboard/archive", icon: Archive, keywords: "archived videos library" },
-				{ title: "Analytics", href: "/dashboard/analytics", icon: BarChart3, keywords: "stats engagement views" },
-				{ title: "Team", href: "/dashboard/team", icon: Users, keywords: "members organization workspace" },
-			],
-		},
-		{
-			heading: "Settings",
-			items: [
-				{ title: "Settings", href: "/dashboard/settings", icon: Settings },
-				{ title: "Profile", href: "/dashboard/settings/profile", icon: User, keywords: "account name email" },
-				{ title: "Preferences", href: "/dashboard/settings/preferences", icon: SlidersHorizontal, keywords: "defaults workspace" },
-				{ title: "Plan & billing", href: "/dashboard/settings/billing", icon: CreditCard, keywords: "plan billing subscription" },
-			],
-		},
-	];
+			},
+		],
+	},
+	{
+		heading: "Pages",
+		items: [
+			{ title: "Home", href: "/dashboard", icon: LayoutDashboard, keywords: "overview dashboard" },
+			{
+				title: "Recasts",
+				href: "/dashboard/recasts",
+				icon: Film,
+				keywords: "videos library recordings",
+			},
+			{
+				title: "Archive",
+				href: "/dashboard/archive",
+				icon: Archive,
+				keywords: "archived videos library",
+			},
+			{
+				title: "Analytics",
+				href: "/dashboard/analytics",
+				icon: BarChart3,
+				keywords: "stats engagement views",
+			},
+			{
+				title: "Team",
+				href: "/dashboard/team",
+				icon: Users,
+				keywords: "members organization workspace",
+			},
+		],
+	},
+	{
+		heading: "Settings",
+		items: [
+			{ title: "Settings", href: "/dashboard/settings", icon: Settings },
+			{
+				title: "Profile",
+				href: "/dashboard/settings/profile",
+				icon: User,
+				keywords: "account name email",
+			},
+			{
+				title: "Preferences",
+				href: "/dashboard/settings/preferences",
+				icon: SlidersHorizontal,
+				keywords: "defaults workspace",
+			},
+			{
+				title: "Plan & billing",
+				href: "/dashboard/settings/billing",
+				icon: CreditCard,
+				keywords: "plan billing subscription",
+			},
+		],
+	},
+];
 
-	function onKeydown(e: KeyboardEvent) {
-		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-			e.preventDefault();
-			commandPalette.toggle();
-		}
+function onKeydown(e: KeyboardEvent) {
+	if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+		e.preventDefault();
+		commandPalette.toggle();
 	}
+}
 </script>
 
 <svelte:window onkeydown={onKeydown} />

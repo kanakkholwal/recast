@@ -1,9 +1,4 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { page } from "$app/state";
-import { authClient } from "$lib/auth/client";
-import { commandPalette } from "$lib/dashboard/command-palette.svelte";
-import { quotaStore, settingsStore } from "$lib/dashboard/store.svelte";
 import {
 	ChevronsUpDown,
 	Command,
@@ -21,6 +16,11 @@ import {
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { Kbd } from "@recast/ui/kbd";
 import { mode, toggleMode } from "@recast/ui/theme";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { authClient } from "$lib/auth/client";
+import { commandPalette } from "$lib/dashboard/command-palette.svelte";
+import { quotaStore, settingsStore } from "$lib/dashboard/store.svelte";
 
 const profile = $derived(settingsStore.value.profile);
 

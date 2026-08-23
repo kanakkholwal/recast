@@ -55,10 +55,7 @@ export function isStorageConfigured(): boolean {
 	switch (provider) {
 		case "r2":
 			return Boolean(
-				env.R2_ACCOUNT_ID &&
-					env.R2_ACCESS_KEY_ID &&
-					env.R2_SECRET_ACCESS_KEY &&
-					env.R2_BUCKET,
+				env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY && env.R2_BUCKET,
 			);
 		case "s3":
 			return Boolean(
@@ -77,9 +74,7 @@ export function isStorageConfigured(): boolean {
 			const hasInlineKey =
 				/(^|;)\s*AccountName=/i.test(account) && /(^|;)\s*AccountKey=/i.test(account);
 			return Boolean(
-				account &&
-					env.AZURE_BLOB_CONTAINER &&
-					(hasInlineKey || env.AZURE_STORAGE_KEY),
+				account && env.AZURE_BLOB_CONTAINER && (hasInlineKey || env.AZURE_STORAGE_KEY),
 			);
 		}
 		case "gcs":
@@ -219,11 +214,7 @@ export function recastObjectKey(workspaceId: string, recastId: string): string {
  * busts any CDN cache of the old poster and gives the replace flow an old key
  * to delete — overwriting in place would do neither.
  */
-export function posterObjectKey(
-	workspaceId: string,
-	recastId: string,
-	version?: string,
-): string {
+export function posterObjectKey(workspaceId: string, recastId: string, version?: string): string {
 	const v = version ? `.${version.replace(/[^a-z0-9]/gi, "")}` : "";
 	return `workspace/${workspaceId}/${recastId}.poster${v}.webp`;
 }
@@ -275,10 +266,14 @@ export async function signUploadUrl(opts: {
 	contentType?: string;
 	expiresInSeconds?: number;
 }): Promise<SignedUpload> {
-	const { files } = await get();
+	const { files, provider } = await get();
+	// Azure SAS never binds Content-Type into the signature, and files-sdk
+	// rejects the option rather than ignoring it, so passing it fails every
+	// signed upload on Azure. The client still sends the header on the PUT.
+	const contentType = provider === "azure" ? undefined : (opts.contentType ?? "video/mp4");
 	return files.signedUploadUrl(opts.key, {
 		expiresIn: opts.expiresInSeconds ?? 15 * 60,
-		contentType: opts.contentType ?? "video/mp4",
+		...(contentType ? { contentType } : {}),
 	});
 }
 
@@ -299,14 +294,11 @@ export async function signDownloadUrl(opts: {
  * server-side size. Used by /api/uploads/complete to reject calls that
  * never actually PUT anything. Returns `null` on 404.
  */
-export async function statObject(key: string): Promise<
-	| {
-			contentLength: number;
-			contentType: string | null;
-			etag: string | null;
-	  }
-	| null
-> {
+export async function statObject(key: string): Promise<{
+	contentLength: number;
+	contentType: string | null;
+	etag: string | null;
+} | null> {
 	const { files } = await get();
 	try {
 		const head = await files.head(key);
@@ -414,7 +406,11 @@ function isNotFoundError(err: unknown): boolean {
 	if (!err || typeof err !== "object") return false;
 	const e = err as { code?: unknown; name?: unknown; message?: unknown };
 	if (e.code === "NotFound") return true;
-	if (e.name === "FilesError" && typeof e.message === "string" && e.message.toLowerCase().includes("not found")) {
+	if (
+		e.name === "FilesError" &&
+		typeof e.message === "string" &&
+		e.message.toLowerCase().includes("not found")
+	) {
 		return true;
 	}
 	return false;

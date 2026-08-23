@@ -1,7 +1,7 @@
 <script lang="ts">
+import { BarChart3, Crown } from "@recast/icons";
 import { formatCount } from "$lib/dashboard/format";
 import type { Recast } from "$lib/dashboard/store.svelte";
-import { BarChart3, Crown } from "@recast/icons";
 import EmptyState from "./EmptyState.svelte";
 
 // What is actually working, ranked. Bars are relative to the leader, so the

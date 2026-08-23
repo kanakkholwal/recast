@@ -1,75 +1,73 @@
 <script lang="ts">
-	import type { Folder, Tag } from "$lib/dashboard/library.svelte";
-	import type { Recast } from "$lib/dashboard/store.svelte";
-	import {
-		formatBytes,
-		formatCount,
-		formatDuration,
-		formatRelative,
-	} from "$lib/dashboard/format";
-	import EmptyState from "./EmptyState.svelte";
-	import RecastCard from "./RecastCard.svelte";
-	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import { Button } from "@recast/ui/button";
-	import {
-		Archive,
-		BarChart3,
-		Check,
-		Film,
-		Link2,
-		MoreHorizontal,
-		Pencil,
-		Play,
-		Trash2,
-		Upload,
-	} from "@recast/icons";
-	import { goto } from "$app/navigation";
-	import { flip } from "svelte/animate";
-	import { cubicOut } from "svelte/easing";
-	import { scale } from "svelte/transition";
+import {
+	Archive,
+	BarChart3,
+	Check,
+	Film,
+	Link2,
+	MoreHorizontal,
+	Pencil,
+	Play,
+	Trash2,
+	Upload,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { flip } from "svelte/animate";
+import { cubicOut } from "svelte/easing";
+import { scale } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { formatBytes, formatCount, formatDuration, formatRelative } from "$lib/dashboard/format";
+import type { Folder, Tag } from "$lib/dashboard/library.svelte";
+import type { Recast } from "$lib/dashboard/store.svelte";
+import EmptyState from "./EmptyState.svelte";
+import RecastCard from "./RecastCard.svelte";
 
-	// Responsive recast grid + its three empty states (no recasts / no match /
-	// empty folder). Extracted from the library page so the page keeps only the
-	// data + handlers.
-	let {
-		recasts,
-		folders,
-		tags,
-		selectedIds = new Set<string>(),
-		selectionMode = false,
-		viewMode = "grid",
-		hasAnyRecasts,
-		filtersActive,
-		onrename,
-		oncopylink,
-		onchangeposter,
-		onmove,
-		ontoggletag,
-		onarchive,
-		ondelete,
-		onToggleSelect,
-		onupload,
-		onclearfilters,
-	}: {
-		recasts: Recast[];
-		folders: Folder[];
-		tags: Tag[];
-		selectedIds?: Set<string>;
-		selectionMode?: boolean;
-		viewMode?: "grid" | "list";
-		hasAnyRecasts: boolean;
-		filtersActive: boolean;
-		onrename: (rec: Recast) => void;
-		oncopylink: (rec: Recast) => void;
-		onchangeposter?: (rec: Recast) => void;
-		onmove: (rec: Recast, folderId: string | null) => void;
-		ontoggletag: (rec: Recast, tagId: string) => void;
-		onarchive?: (rec: Recast) => void;
-		ondelete: (rec: Recast) => void;
-		onToggleSelect: (rec: Recast) => void;
-		onupload: () => void;
-		onclearfilters: () => void;
+// Responsive recast grid + its three empty states (no recasts / no match /
+// empty folder). Extracted from the library page so the page keeps only the
+// data + handlers.
+let {
+	recasts,
+	folders,
+	tags,
+	selectedIds = new Set<string>(),
+	selectionMode = false,
+	viewMode = "grid",
+	hasAnyRecasts,
+	filtersActive,
+	onrename,
+	oncopylink,
+	onchangeposter,
+	onmove,
+	ontoggletag,
+	onarchive,
+	ondelete,
+	onToggleSelect,
+	onupload,
+	onclearfilters,
+}: {
+	recasts: Recast[];
+	folders: Folder[];
+	tags: Tag[];
+	selectedIds?: Set<string>;
+	selectionMode?: boolean;
+	viewMode?: "grid" | "list";
+	hasAnyRecasts: boolean;
+	filtersActive: boolean;
+	onrename: (rec: Recast) => void;
+	oncopylink: (rec: Recast) => void;
+	onchangeposter?: (rec: Recast) => void;
+	onmove: (rec: Recast, folderId: string | null) => void;
+	ontoggletag: (rec: Recast, tagId: string) => void;
+	onarchive?: (rec: Recast) => void;
+	ondelete: (rec: Recast) => void;
+	onToggleSelect: (rec: Recast) => void;
+	onupload: () => void;
+	onclearfilters: () => void;
 } = $props();
+
+const columns =
+	"grid-cols-[2rem_minmax(0,1fr)_7rem_3.5rem_2.5rem] md:grid-cols-[2rem_minmax(0,1fr)_7rem_6rem_4rem_2.5rem]";
 </script>
 
 {#if recasts.length > 0}
@@ -101,27 +99,33 @@
 			{/each}
 		</div>
 	{:else}
-		<div class="overflow-hidden rounded-xl border border-border-low/70 bg-background/55">
-			<div class="grid grid-cols-[2rem_minmax(0,1fr)_7rem_5rem_3rem] items-center border-b border-border-low/60 px-3 py-2 text-xs font-medium text-muted-foreground md:grid-cols-[2rem_minmax(0,1fr)_7rem_6rem_5rem_3rem]">
+		<div class="surface overflow-hidden">
+			<div
+				class="grid {columns} items-center border-b border-border-low bg-paper px-3 py-2 text-caption font-medium text-muted-foreground"
+			>
 				<span></span>
-				<span>Details</span>
+				<span>Title</span>
 				<span>Published</span>
 				<span class="hidden md:block">Size</span>
-				<span>Views</span>
+				<span class="text-right">Views</span>
 				<span></span>
 			</div>
 			{#each recasts as rec (rec.id)}
 				{@const selected = selectedIds.has(rec.id)}
 				<div
 					animate:flip={{ duration: 320, easing: cubicOut }}
-					class="grid min-h-16 grid-cols-[2rem_minmax(0,1fr)_7rem_5rem_3rem] items-center border-b border-border-low/50 px-3 py-2 last:border-b-0 md:grid-cols-[2rem_minmax(0,1fr)_7rem_6rem_5rem_3rem]"
+					class="grid {columns} min-h-16 items-center border-b border-border-low px-3 py-2 transition-colors last:border-b-0 hover:bg-paper motion-reduce:transition-none {selected
+						? 'bg-paper'
+						: ''}"
 				>
 					<button
 						type="button"
 						onclick={() => onToggleSelect(rec)}
 						aria-label={selected ? "Deselect recast" : "Select recast"}
 						aria-pressed={selected}
-						class="grid size-5 place-items-center rounded border transition-colors {selected ? 'border-primary bg-primary text-background' : 'border-border-low bg-background text-transparent hover:border-foreground/40'}"
+						class="grid size-5 place-items-center rounded border transition-colors motion-reduce:transition-none {selected
+							? 'border-primary bg-primary text-background'
+							: 'border-border-low bg-background text-transparent hover:border-border-strong'}"
 					>
 						<Check class="size-3" />
 					</button>
@@ -133,33 +137,39 @@
 								onToggleSelect(rec);
 							}
 						}}
-						class="flex min-w-0 items-center gap-3 text-left"
+						class="group/row flex min-w-0 items-center gap-3 text-left"
 					>
-						<span class="relative h-11 w-16 shrink-0 overflow-hidden rounded-md bg-foreground/8">
+						<span class="relative h-11 w-16 shrink-0 overflow-hidden rounded-md bg-paper">
 							{#if rec.posterUrl}
 								<img src={rec.posterUrl} alt="" loading="lazy" class="h-full w-full object-cover" />
 							{:else}
 								<span class="grid h-full w-full place-items-center">
-									<Film class="size-4 text-muted-foreground" />
+									<Film class="size-4 text-border-strong" />
 								</span>
 							{/if}
-							<span class="absolute inset-0 grid place-items-center bg-background/25 opacity-0 transition-opacity hover:opacity-100">
+							<span
+								class="absolute inset-0 grid place-items-center bg-background/40 opacity-0 transition-opacity group-hover/row:opacity-100 motion-reduce:transition-none"
+							>
 								<Play class="size-4 fill-current text-foreground" />
 							</span>
 						</span>
 						<span class="min-w-0">
-							<span class="block truncate text-sm font-semibold text-foreground">{rec.title}</span>
-							<span class="mt-0.5 block truncate text-xs text-muted-foreground">
-								{formatDuration(rec.durationSec)} · {formatBytes(rec.sizeBytes)}
+							<span class="block truncate text-body-sm font-medium text-foreground">{rec.title}</span>
+							<span class="mt-0.5 block text-caption tabular-nums text-muted-foreground">
+								{formatDuration(rec.durationSec)}
 							</span>
 						</span>
 					</a>
-					<span class="text-sm text-muted-foreground">{formatRelative(rec.createdAt)}</span>
-					<span class="hidden text-sm text-muted-foreground md:block">{formatBytes(rec.sizeBytes)}</span>
-					<span class="font-mono text-sm tabular-nums text-foreground">{formatCount(rec.views)}</span>
+					<span class="text-body-sm text-muted-foreground">{formatRelative(rec.createdAt)}</span>
+					<span class="hidden text-body-sm tabular-nums text-muted-foreground md:block">
+						{formatBytes(rec.sizeBytes)}
+					</span>
+					<span class="text-right text-body-sm tabular-nums text-foreground">
+						{formatCount(rec.views)}
+					</span>
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger
-							class="grid size-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/8 hover:text-foreground"
+							class="grid size-8 place-items-center justify-self-end rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground motion-reduce:transition-none"
 							aria-label="Recast options"
 						>
 							<MoreHorizontal class="size-4" />
@@ -196,16 +206,28 @@
 		</div>
 	{/if}
 {:else if !hasAnyRecasts}
-	<EmptyState icon={Film} title="No recasts yet" description="Upload an MP4, or capture and export one with the Recast desktop app.">
-		<Button size="sm" class="gap-2" onclick={onupload}>
+	<EmptyState
+		icon={Film}
+		title="No recasts yet"
+		description="Upload an MP4, or capture and export one with the Recast desktop app."
+	>
+		<Button size="sm" variant="dark" class="gap-2" onclick={onupload}>
 			<Upload class="size-3.5" />
 			Upload recast
 		</Button>
 	</EmptyState>
 {:else if filtersActive}
-	<EmptyState icon={Film} title="No recasts match" description="Nothing here matches your search, folder, and tag filters.">
+	<EmptyState
+		icon={Film}
+		title="No recasts match"
+		description="Nothing here matches your search, folder, and tag filters."
+	>
 		<Button variant="outline" size="sm" onclick={onclearfilters}>Clear filters</Button>
 	</EmptyState>
 {:else}
-	<EmptyState icon={Film} title="This folder is empty" description="Drag a recast onto it, or use “Move to” from a recast's menu." />
+	<EmptyState
+		icon={Film}
+		title="This folder is empty"
+		description="Drag a recast onto it, or use “Move to” from a recast's menu."
+	/>
 {/if}

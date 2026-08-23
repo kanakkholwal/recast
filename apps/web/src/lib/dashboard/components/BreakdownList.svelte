@@ -1,7 +1,5 @@
 <script lang="ts" module>
-	// Re-exported so existing `import { flagEmoji } from ".../BreakdownList.svelte"`
-	// callers keep working; the implementation lives in the co-located logic file.
-	export { flagEmoji } from "./BreakdownList.logic";
+export { flagEmoji } from "./BreakdownList.logic";
 </script>
 
 <script lang="ts">
@@ -9,8 +7,6 @@
 	import { formatCount } from "$lib/dashboard/format";
 	import type { IconComponent } from "@recast/icons";
 
-	// Generic ranked breakdown (audience by country / device): a labelled list
-	// with proportional bars. Shared so geography and device read identically.
 	let {
 		title,
 		icon: Icon,
@@ -27,7 +23,7 @@
 	} = $props();
 </script>
 
-<section class="glass-card flex flex-col rounded-xl p-5">
+<section class="surface flex flex-col rounded-xl p-5">
 	<header class="flex items-center gap-2">
 		<Icon class="size-4 text-muted-foreground" />
 		<h2 class="text-sm font-semibold text-foreground">{title}</h2>
@@ -45,14 +41,13 @@
 							{#if g}<span class="text-sm leading-none">{g}</span>{/if}
 							<span class="truncate font-medium">{r.label}</span>
 						</span>
-						<span class="shrink-0 font-mono tabular-nums text-muted-foreground">
-							{formatCount(r.count)}
-							<span class="text-muted-foreground/60">· {r.pct}%</span>
+						<span class="shrink-0 tabular-nums text-muted-foreground">
+							{formatCount(r.count)} · {r.pct}%
 						</span>
 					</div>
-					<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-foreground/8">
+					<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-paper">
 						<div
-							class="h-full rounded-full bg-foreground/30 transition-all duration-500 ease-[cubic-bezier(0.625,0.05,0,1)]"
+							class="h-full rounded-full bg-foreground transition-[width] duration-500 ease-[cubic-bezier(0.625,0.05,0,1)] motion-reduce:transition-none"
 							style="width: {Math.max(2, r.pct)}%"
 						></div>
 					</div>

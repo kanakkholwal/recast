@@ -1,16 +1,16 @@
 <script lang="ts">
-	import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
-	import SettingsTabs from "$lib/dashboard/components/SettingsTabs.svelte";
-	import { Badge } from "@recast/ui/badge";
-	import { Settings } from "@recast/icons";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import { Settings } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
+import SettingsTabs from "$lib/dashboard/components/SettingsTabs.svelte";
 
-	let { data, children } = $props();
+let { data, children } = $props();
 
-	const planLabel = $derived(
-		`${data.activeOrganization.plan.charAt(0).toUpperCase()}${data.activeOrganization.plan.slice(1)} plan`,
-	);
+const planLabel = $derived(
+	`${data.activeOrganization.plan.charAt(0).toUpperCase()}${data.activeOrganization.plan.slice(1)} plan`,
+);
 </script>
 
 <svelte:head>

@@ -1,23 +1,4 @@
 <script lang="ts">
-import { enhance } from "$app/forms";
-import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
-import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
-import StatCard from "$lib/dashboard/components/StatCard.svelte";
-import {
-	capitalize,
-	initials,
-	isManageable,
-	seatsRemaining,
-	seatsValue,
-} from "$lib/dashboard/team.logic";
-import { Badge } from "@recast/ui/badge";
-import { Button } from "@recast/ui/button";
-import * as Dialog from "@recast/ui/dialog";
-import { Input } from "@recast/ui/input";
-import { Label } from "@recast/ui/label";
-import * as Select from "@recast/ui/select";
-import { Skeleton } from "@recast/ui/skeleton";
-import { toast } from "@recast/ui/sonner";
 import {
 	Building2,
 	CalendarDays,
@@ -33,9 +14,28 @@ import {
 	UserPlus,
 	Users,
 } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import * as Select from "@recast/ui/select";
+import { Skeleton } from "@recast/ui/skeleton";
+import { toast } from "@recast/ui/sonner";
 import { tick, untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { enhance } from "$app/forms";
+import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
+import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
+import StatCard from "$lib/dashboard/components/StatCard.svelte";
+import {
+	capitalize,
+	initials,
+	isManageable,
+	seatsRemaining,
+	seatsValue,
+} from "$lib/dashboard/team.logic";
 
 type TeamMember = {
 	id: string;

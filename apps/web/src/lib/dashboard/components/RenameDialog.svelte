@@ -1,64 +1,56 @@
 <script lang="ts">
-	import type { Recast } from "$lib/dashboard/store.svelte";
-	import { Button } from "@recast/ui/button";
-	import { Check } from "@recast/icons";
-	import { untrack } from "svelte";
-	import { cubicOut } from "svelte/easing";
-	import { fade, scale } from "svelte/transition";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import { untrack } from "svelte";
+import type { Recast } from "$lib/dashboard/store.svelte";
 
-	let {
-		recast,
-		onclose,
-		onsave,
-	}: {
-		recast: Recast;
-		onclose: () => void;
-		onsave: (title: string) => void;
-	} = $props();
+let {
+	recast,
+	onclose,
+	onsave,
+}: {
+	recast: Recast;
+	onclose: () => void;
+	onsave: (title: string) => void;
+} = $props();
 
-	// Seed once — the dialog is freshly mounted per rename, so no need to react.
-	let value = $state(untrack(() => recast.title));
+// Seed once — the dialog is freshly mounted per rename, so no need to react.
+let value = $state(untrack(() => recast.title));
+const dirty = $derived(value.trim() !== "" && value.trim() !== recast.title);
 
-	function submit(e: SubmitEvent) {
-		e.preventDefault();
-		const title = value.trim();
-		if (title) onsave(title);
-		else onclose();
-	}
+function submit(e: SubmitEvent) {
+	e.preventDefault();
+	const title = value.trim();
+	if (title && title !== recast.title) onsave(title);
+	else onclose();
+}
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
-
-<div class="fixed inset-0 z-100 grid place-items-center p-4">
-	<button
-		type="button"
-		aria-label="Cancel"
-		onclick={onclose}
-		class="absolute inset-0 cursor-default bg-background/80 backdrop-blur-sm"
-		transition:fade={{ duration: 150 }}
-	></button>
-
-	<form
-		onsubmit={submit}
-		class="glass-card relative z-10 w-full max-w-sm rounded-2xl p-6 shadow-craft-xl"
-		transition:scale={{ start: 0.96, duration: 240, easing: cubicOut }}
-	>
-		<h2 class="text-sm font-semibold text-foreground">Rename recast</h2>
-		<!-- svelte-ignore a11y_autofocus -->
-		<input
-			type="text"
-			bind:value
-			autofocus
-			class="mt-4 w-full rounded-lg border border-border-low/70 bg-background/80 px-3 py-2.5 text-sm text-foreground outline-none transition-colors focus:border-primary/60"
-		/>
-		<div class="mt-5 flex justify-end gap-2">
-			<Button type="button" variant="ghost" size="sm" onclick={onclose}>
-				Cancel
-			</Button>
-			<Button type="submit" size="sm" class="gap-1.5">
-				<Check class="size-3.5" />
-				Save
-			</Button>
-		</div>
-	</form>
-</div>
+<Dialog.Root
+	open
+	onOpenChange={(next) => {
+		if (!next) onclose();
+	}}
+>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Rename recast</Dialog.Title>
+			<Dialog.Description>
+				The title shows on the share page and in every link preview.
+			</Dialog.Description>
+		</Dialog.Header>
+		<form onsubmit={submit} class="space-y-4">
+			<Label class="block">
+				<span class="mb-1.5 block text-body-sm font-medium text-foreground">Title</span>
+				<!-- svelte-ignore a11y_autofocus -->
+				<Input bind:value autofocus required class="h-9 border-border-low bg-background" />
+			</Label>
+			<Dialog.Footer>
+				<Button type="button" variant="outline" size="sm" onclick={onclose}>Cancel</Button>
+				<Button type="submit" size="sm" variant="dark" disabled={!dirty}>Save</Button>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>

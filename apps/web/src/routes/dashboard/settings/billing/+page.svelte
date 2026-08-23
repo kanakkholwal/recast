@@ -1,9 +1,4 @@
 <script lang="ts">
-import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
-import { authClient } from "$lib/auth/client";
-import { Badge } from "@recast/ui/badge";
-import { Button } from "@recast/ui/button";
-import { toast } from "@recast/ui/sonner";
 import {
 	ArrowUpRight,
 	Check,
@@ -16,8 +11,13 @@ import {
 	ShieldCheck,
 	Users,
 } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { authClient } from "$lib/auth/client";
+import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
 import { barWidth } from "$lib/dashboard/format";
 import { approxViews, formatBytes, formatUsd, meterTone, seatView } from "./billing.logic";
 
@@ -194,7 +194,7 @@ async function openPortal() {
 						{/if}
 						Manage billing
 					</Button>
-				{:else if data.isOwner}
+				{:else if !isPaid && data.isOwner}
 					<Button
 						onclick={startCheckout}
 						disabled={checkingOut || !data.billingConfigured}
@@ -210,14 +210,20 @@ async function openPortal() {
 						Upgrade this workspace
 					</Button>
 				{/if}
-				<Button href="/pricing" variant="outline" size="sm">Compare plans</Button>
+				{#if !isAgreement}
+					<Button href="/pricing" variant="outline" size="sm">Compare plans</Button>
+				{/if}
 			</div>
 
-			{#if !data.isOwner}
+			{#if isAgreement}
+				<p class="mt-3 text-body-sm text-muted-foreground">
+					This workspace is on a contract. Your account contact handles plan changes.
+				</p>
+			{:else if !data.isOwner}
 				<p class="mt-3 text-body-sm text-muted-foreground">
 					Only the workspace owner can change this plan.
 				</p>
-			{:else if !data.billingConfigured}
+			{:else if !isPaid && !data.billingConfigured}
 				<p class="mt-3 text-body-sm text-muted-foreground">
 					Checkout is disabled until Polar environment variables are configured.
 				</p>

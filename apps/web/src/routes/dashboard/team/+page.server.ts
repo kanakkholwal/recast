@@ -3,10 +3,10 @@ import { and, desc, eq } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import {
-	TEAM_PLAN_MEMBER_CAPS,
 	invitation as invitationTable,
 	member as memberTable,
 	organization as organizationTable,
+	TEAM_PLAN_MEMBER_CAPS,
 	user as userTable,
 } from "$lib/db/schema";
 import type { Actions, PageServerLoad } from "./$types";
@@ -28,12 +28,7 @@ async function loadActiveOrg(headers: Headers) {
 	const [me] = await db
 		.select({ role: memberTable.role })
 		.from(memberTable)
-		.where(
-			and(
-				eq(memberTable.organizationId, orgId),
-				eq(memberTable.userId, session.user.id),
-			),
-		)
+		.where(and(eq(memberTable.organizationId, orgId), eq(memberTable.userId, session.user.id)))
 		.limit(1);
 	if (!me) error(403, "Not a member of this team");
 
@@ -83,12 +78,7 @@ export const load: PageServerLoad = async ({ request }) => {
 	const invites = db
 		.select()
 		.from(invitationTable)
-		.where(
-			and(
-				eq(invitationTable.organizationId, orgId),
-				eq(invitationTable.status, "pending"),
-			),
-		)
+		.where(and(eq(invitationTable.organizationId, orgId), eq(invitationTable.status, "pending")))
 		.orderBy(desc(invitationTable.createdAt));
 
 	const memberCap = TEAM_PLAN_MEMBER_CAPS[org.plan] ?? TEAM_PLAN_MEMBER_CAPS.free!;
@@ -127,7 +117,9 @@ export const actions: Actions = {
 		}
 		const fd = await request.formData();
 		const name = String(fd.get("name") ?? "").trim();
-		const slug = String(fd.get("slug") ?? "").trim().toLowerCase();
+		const slug = String(fd.get("slug") ?? "")
+			.trim()
+			.toLowerCase();
 		const logoRaw = String(fd.get("logo") ?? "").trim();
 		const logo = logoRaw.length === 0 ? null : logoRaw;
 
@@ -165,7 +157,9 @@ export const actions: Actions = {
 		const { orgId, myRole } = await loadActiveOrg(request.headers);
 		if (!isManager(myRole)) return fail(403, { error: "Forbidden" });
 		const fd = await request.formData();
-		const email = String(fd.get("email") ?? "").trim().toLowerCase();
+		const email = String(fd.get("email") ?? "")
+			.trim()
+			.toLowerCase();
 		const role = String(fd.get("role") ?? "member") as "member" | "admin";
 		if (!email) return fail(400, { error: "Email required" });
 		if (role !== "member" && role !== "admin") {

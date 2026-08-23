@@ -1,7 +1,7 @@
 import type { Tooltip } from "layerchart";
 import { getContext, setContext, type Component, type Snippet } from "svelte";
 
-export const THEMES = { light: "", dark: ".dark" } as const;
+export const THEMES = { light: "", dark: ":is(.dark, [data-theme='dark'])" } as const;
 
 export type ChartConfig = {
 	[k in string]: {
@@ -23,7 +23,7 @@ export function getPayloadConfigFromPayload(
 	payload: TooltipPayload,
 	key: string,
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	data?: Record<string, any> | null
+	data?: Record<string, any> | null,
 ) {
 	if (typeof payload !== "object" || payload === null) return undefined;
 

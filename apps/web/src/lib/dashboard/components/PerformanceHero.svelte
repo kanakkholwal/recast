@@ -1,10 +1,10 @@
 <script lang="ts">
-import SearchTrigger from "$lib/dashboard/components/SearchTrigger.svelte";
-import { formatCount } from "$lib/dashboard/format";
 import { ArrowDownRight, ArrowUpRight, BarChart3, Upload } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import SearchTrigger from "$lib/dashboard/components/SearchTrigger.svelte";
+import { formatCount } from "$lib/dashboard/format";
 
 let {
 	firstName,

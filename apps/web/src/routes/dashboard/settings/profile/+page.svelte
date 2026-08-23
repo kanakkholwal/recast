@@ -1,9 +1,4 @@
 <script lang="ts">
-import { invalidateAll } from "$app/navigation";
-import { page } from "$app/state";
-import { authClient } from "$lib/auth/client";
-import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
-import { settingsStore } from "$lib/dashboard/store.svelte";
 import { BadgeCheck, LoaderCircle, MailWarning, RefreshCw, User } from "@recast/icons";
 import { Badge } from "@recast/ui/badge";
 import { Button } from "@recast/ui/button";
@@ -13,6 +8,11 @@ import { toast } from "@recast/ui/sonner";
 import { untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { invalidateAll } from "$app/navigation";
+import { page } from "$app/state";
+import { authClient } from "$lib/auth/client";
+import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
+import { settingsStore } from "$lib/dashboard/store.svelte";
 
 type LayoutData = { user?: { name: string; email: string; emailVerified?: boolean } };
 const layoutUser = $derived((page.data as LayoutData).user ?? null);

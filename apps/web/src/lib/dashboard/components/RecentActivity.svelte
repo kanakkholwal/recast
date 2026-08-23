@@ -1,8 +1,8 @@
 <script lang="ts">
+import { Activity as ActivityIcon } from "@recast/icons";
 import type { Activity } from "$lib/dashboard/activity";
 import { formatRelative } from "$lib/dashboard/format";
 import { kindMeta } from "./RecentActivity.logic";
-import { Activity as ActivityIcon } from "@recast/icons";
 
 let {
 	activity,

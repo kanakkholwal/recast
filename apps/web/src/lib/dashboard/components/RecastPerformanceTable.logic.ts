@@ -38,9 +38,7 @@ export const PERF_COLUMNS: PerfColumn[] = [
 
 /** Rows sorted by `key`/`dir`, capped at `limit`. Never mutates the input. */
 export function sortRows(rows: Row[], key: SortKey, dir: SortDir, limit: number): Row[] {
-	return [...rows]
-		.sort((a, b) => (a[key] - b[key]) * (dir === "asc" ? 1 : -1))
-		.slice(0, limit);
+	return [...rows].sort((a, b) => (a[key] - b[key]) * (dir === "asc" ? 1 : -1)).slice(0, limit);
 }
 
 /** Sort state after clicking column `k`: flip direction if already active,
