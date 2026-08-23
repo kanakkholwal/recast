@@ -3,7 +3,7 @@ import adapter from "@sveltejs/adapter-auto";
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
-import docviaConfig from "./docvia.config";
+import docviaConfig from "./docvia.config.ts";
 
 export default defineConfig({
 	plugins: [
