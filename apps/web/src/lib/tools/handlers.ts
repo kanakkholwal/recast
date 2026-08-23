@@ -5,4 +5,4 @@
  * the apps/web app should prefer the bare `@recast/media` import for
  * new code.
  */
-export { handlers } from '@recast/media';
+export { handlers } from "@recast/media";

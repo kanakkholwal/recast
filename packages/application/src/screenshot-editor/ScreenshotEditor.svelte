@@ -1,23 +1,23 @@
 <script lang="ts" module>
-  import type { EditorImage } from "./types";
+import type { EditorImage } from "./types";
 
-  export interface ScreenshotEditorProps {
-    /** Reuse an existing session, or let the editor own one. */
-    editor?: ScreenshotEditorState;
-    /** Native screen capture (desktop). Omit on web to offer upload/paste only. */
-    oncapture?: () => Promise<EditorImage | null>;
-    /** App hook for toasts; falls back to console on error. */
-    onnotify?: (message: string, kind: "success" | "error") => void;
-    class?: string;
-  }
+export interface ScreenshotEditorProps {
+	/** Reuse an existing session, or let the editor own one. */
+	editor?: ScreenshotEditorState;
+	/** Native screen capture (desktop). Omit on web to offer upload/paste only. */
+	oncapture?: () => Promise<EditorImage | null>;
+	/** App hook for toasts; falls back to console on error. */
+	onnotify?: (message: string, kind: "success" | "error") => void;
+	class?: string;
+}
 
-  /** Side-panel width bounds. The default IS the minimum: the controls are laid
-   * out for 240px and get cramped below it. The ceiling is a quarter of the
-   * viewport so the stage always keeps the majority of the screen. */
-  const PANEL_MIN = 240;
-  const PANEL_MAX_VW = 0.25;
-  /** Pixels per arrow-key press on a separator. */
-  const PANEL_STEP = 16;
+/** Side-panel width bounds. The default IS the minimum: the controls are laid
+ * out for 240px and get cramped below it. The ceiling is a quarter of the
+ * viewport so the stage always keeps the majority of the screen. */
+const PANEL_MIN = 240;
+const PANEL_MAX_VW = 0.25;
+/** Pixels per arrow-key press on a separator. */
+const PANEL_STEP = 16;
 </script>
 
 <script lang="ts">
@@ -46,7 +46,9 @@
     Wand2,
     X,
   } from "@recast/icons";
+  import { onMount } from "svelte";
   import { ScreenshotEditorState } from "./editor.svelte";
+  import { clearDraft, loadDraft, saveDraft } from "./persistence";
   import { canCopyImage, copyToClipboard } from "./export";
   import { imageFromDataTransfer, imageFromFile, imageFromSrc } from "./image-input";
   import { captureWebsite } from "./website";
@@ -63,10 +65,13 @@
   import CanvasControl from "./components/CanvasControl.svelte";
   import LayerControl from "./components/LayerControl.svelte";
   import PerspectiveControl from "./components/PerspectiveControl.svelte";
+  import TransformPad from "./components/TransformPad.svelte";
+  import TransformsGallery from "./components/TransformsGallery.svelte";
   import ShadowControl from "./components/ShadowControl.svelte";
   import AnimationControl from "./components/AnimationControl.svelte";
   import TextControl from "./components/TextControl.svelte";
   import ShapeControl from "./components/ShapeControl.svelte";
+  import OverlayControl from "./components/OverlayControl.svelte";
   import AspectControl from "./components/AspectControl.svelte";
   import ExportControl from "./components/ExportControl.svelte";
 
@@ -225,6 +230,61 @@
     editor.record();
   });
 
+  // Draft autosave: restore once on mount, then debounce-save the full snapshot
+  // (design + image) to IndexedDB on any change so a refresh never loses work.
+  let draftStatus = $state<"idle" | "saving" | "saved">("idle");
+  let draftLoaded = $state(false);
+
+  onMount(() => {
+    void loadDraft().then((snap) => {
+      if (snap?.image && !editor.hasImage) {
+        editor.loadSnapshot(snap);
+        draftStatus = "saved";
+      }
+      draftLoaded = true;
+    });
+  });
+
+  $effect(() => {
+    // Subscribe cheaply to every persisted top-level ref (patch* methods replace
+    // objects, so touching the ref catches nested edits) WITHOUT serializing on
+    // each change; the heavy snapshot happens once per debounce, in the timeout.
+    void editor.image;
+    void editor.slides;
+    void editor.activeSlide;
+    void editor.keyframes;
+    void editor.background;
+    void editor.backgroundId;
+    void editor.frame;
+    void editor.shadow;
+    void editor.imageStyle;
+    void editor.mockup;
+    void editor.transform;
+    void editor.aspect;
+    void editor.overlays;
+    void editor.filters;
+    void editor.imageScale;
+    void editor.imageOpacity;
+    void editor.backgroundBlur;
+    void editor.backgroundNoise;
+    void editor.canvasRadius;
+    void editor.exportFormat;
+    void editor.exportScale;
+    void editor.exportQuality;
+    if (!draftLoaded || !editor.hasImage) return;
+    draftStatus = "saving";
+    const id = setTimeout(() => {
+      void saveDraft(editor.toSnapshot()).then(() => (draftStatus = "saved"));
+    }, 800);
+    return () => clearTimeout(id);
+  });
+
+  function clearWorkspace() {
+    editor.clear();
+    void clearDraft();
+    draftStatus = "idle";
+  }
+
   // Animation playback clock: (re)starts whenever `playing` flips on.
   $effect(() => {
     if (!editor.playing) return;
@@ -294,7 +354,7 @@
   {:else}
     <!-- HEADER (h-14) — mirrors the React "Stage" EditorHeader IA -->
     <header
-      class="border-border/40 bg-card flex h-14 shrink-0 items-center justify-between border-b px-4"
+      class="border-border bg-card flex h-14 shrink-0 items-center justify-between border-b px-4"
     >
       <div class="flex items-center gap-1.5">
         <Button
@@ -314,7 +374,7 @@
         >
           <RotateCcw />
         </Button>
-        <div class="bg-border/60 mx-0.5 h-4 w-px"></div>
+        <div class="bg-border mx-0.5 h-4 w-px"></div>
         <Button
           variant="ghost"
           size="icon"
@@ -335,7 +395,7 @@
         >
           <Redo2 />
         </Button>
-        <div class="bg-border/60 mx-0.5 h-4 w-px"></div>
+        <div class="bg-border mx-0.5 h-4 w-px"></div>
         <Button
           variant={editor.showRulers ? "secondary" : "ghost"}
           size="icon"
@@ -346,6 +406,19 @@
         >
           <Ruler />
         </Button>
+        {#if editor.showRulers}
+          <select
+            class="border-border bg-card h-7 rounded-md border px-1.5 text-xs"
+            aria-label="Ruler interval"
+            title="Ruler interval"
+            value={String(editor.rulerInterval)}
+            onchange={(e) => editor.setRulerInterval(Number(e.currentTarget.value))}
+          >
+            {#each [25, 50, 100, 200] as step (step)}
+              <option value={String(step)}>{step}px</option>
+            {/each}
+          </select>
+        {/if}
         <Button
           variant={editor.showGrid ? "secondary" : "ghost"}
           size="icon"
@@ -405,8 +478,14 @@
           </Popover.Content>
         </Popover.Root>
 
-        <div class="bg-border/60 mx-0.5 h-5 w-px"></div>
-        <Button variant="ghost" size="sm" onclick={() => editor.clear()}>
+        {#if draftStatus !== "idle"}
+          <span class="text-muted-foreground hidden text-xs sm:inline" aria-live="polite">
+            {draftStatus === "saving" ? "Saving…" : "Saved"}
+          </span>
+        {/if}
+
+        <div class="bg-border mx-0.5 h-5 w-px"></div>
+        <Button variant="ghost" size="sm" onclick={clearWorkspace}>
           <Trash2 />
           Remove
         </Button>
@@ -418,7 +497,7 @@
     <div class="flex min-h-0 flex-1 flex-row">
       <!-- LEFT PANEL -->
       <aside
-        class="border-border/40 bg-card relative flex shrink-0 flex-col overflow-hidden border-r"
+        class="border-border bg-card relative flex shrink-0 flex-col overflow-hidden border-r"
         style:width={`${leftWidth}px`}
       >
         <div class="px-2.5 pt-2.5 pb-1">
@@ -432,7 +511,7 @@
             aria-label="Editor mode"
           />
         </div>
-        <div class="border-border/30 border-b px-2.5 py-2.5">
+        <div class="border-border border-b px-2.5 py-2.5">
           <Tabs.Root value={leftTab} onValueChange={(v) => (leftTab = v as typeof leftTab)}>
             <Tabs.List class="grid w-full grid-cols-3">
               <Tabs.Trigger value="edit"><SlidersHorizontal class="size-4" />Design</Tabs.Trigger>
@@ -450,8 +529,9 @@
               <BorderControl {editor} />
             {/if}
             <ShadowPresetControl {editor} />
-            <TextControl {editor} />
+            <OverlayControl {editor} />
             <ShapeControl {editor} />
+            <TextControl {editor} />
             <FilterControl {editor} />
             <CanvasControl {editor} />
           {:else if leftTab === "background"}
@@ -470,9 +550,9 @@
               : "pointer-events-none -translate-x-full opacity-0",
           )}
         >
-          <div class="border-border/30 flex items-center justify-between border-b px-3 py-3">
+          <div class="border-border flex items-center justify-between border-b px-3 py-3">
             <div class="flex items-center gap-2">
-              <Wand2 class="text-primary size-4" />
+              <Wand2 class="text-muted-foreground size-4" />
               <h2 class="text-foreground text-sm font-semibold">Templates</h2>
             </div>
             <Button variant="ghost" size="icon" aria-label="Close templates" onclick={() => (showTemplates = false)}>
@@ -528,11 +608,11 @@
           {#if !showMotion}
             <button
               type="button"
-              class="border-border/50 bg-card/90 text-muted-foreground hover:text-foreground hover:bg-card hover:border-border absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border px-5 py-2.5 shadow-lg backdrop-blur-md transition-all duration-200 ease-out hover:shadow-xl"
+              class="border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-200"
               onclick={() => (showMotion = true)}
             >
-              <Clapperboard class="text-primary size-4" />
-              <span class="text-sm font-medium">Animate</span>
+              <Clapperboard class="size-4" />
+              Animate
             </button>
           {/if}
         </div>
@@ -563,10 +643,10 @@
 
       <!-- RIGHT PANEL -->
       <aside
-        class="border-border/40 bg-card flex shrink-0 flex-col overflow-hidden border-l"
+        class="border-border bg-card flex shrink-0 flex-col overflow-hidden border-l"
         style:width={`${rightWidth}px`}
       >
-        <div class="border-border/30 border-b px-2.5 py-2.5">
+        <div class="border-border border-b px-2.5 py-2.5">
           <Tabs.Root value={rightTab} onValueChange={(v) => (rightTab = v as typeof rightTab)}>
             <Tabs.List class="grid w-full grid-cols-2">
               <Tabs.Trigger value="transforms"><Box class="size-4" />3D</Tabs.Trigger>
@@ -576,6 +656,8 @@
         </div>
         <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3">
           {#if rightTab === "transforms"}
+            <TransformPad {editor} />
+            <TransformsGallery {editor} />
             <PerspectiveControl {editor} />
             <ShadowControl {editor} />
           {:else}

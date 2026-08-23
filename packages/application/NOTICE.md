@@ -30,12 +30,27 @@ What we changed:
 - **Rendering is DOM-first, not Konva.** The original composites on a Konva canvas with a
   mirrored store. Our stage is a real DOM tree, and export snapshots that node with
   `modern-screenshot`, so the preview and the export are the same thing by construction.
-- **Different feature surface.** We do not port the R2-hosted background library, the tweet
-  import, or the code-snippet card. We add a `data-export-ignore` mechanism so editing
-  guides can never be baked into an export, and an MP4 path built on WebCodecs + `mp4-muxer`.
-- **Preset values were transcribed, not copied.** The shadow, style-frame, and default tables
-  mirror the upstream values so the output looks right; they are asserted against
-  hand-written fixtures in `apps/desktop/src/lib/screenshot-editor-parity.test.ts`.
+- **Different feature surface.** We do not port the tweet import, the code-snippet card, the
+  photoreal device-frame mockups (their PNGs are served remotely upstream), or a multi-track
+  keyframe timeline. We add a `data-export-ignore` mechanism so editing guides can never be
+  baked into an export, an MP4 path built on WebCodecs + `mp4-muxer`, and draft autosave.
+- **Preset values were transcribed, not copied.** The gradient/mesh/solid/magic background
+  tables, aspect ratios, the font library, and the shadow/style-frame/default tables mirror
+  the upstream values so the output looks right; they are transcribed into
+  `src/screenshot-editor/{backgrounds-data,fonts,defaults}.ts` and exercised by the package's
+  `render`/`animation`/`export` unit tests.
+
+### Bundled image assets
+
+We bundle a subset of the upstream image backgrounds and light/shadow overlays (the
+`radiant`, `mesh`, `pattern`, `paper`, and `overlay-shadow` sets). They live once in
+`packages/application/assets/screenshot-assets/` and are copied into each consuming
+app's `static/screenshot-assets/` at dev/build time (`scripts/sync-screenshot-assets.mjs`;
+the generated copies are gitignored so the repo keeps a single copy). These originate
+from the Screenshot Studio repository
+(Apache-2.0). We deliberately **do not** bundle the upstream `mac` (Apple) or `raycast`
+(Raycast) wallpaper packs, nor the large photographic `assets` set, because those are
+third-party works with their own copyrights; they remain out of this distribution.
 
 ### Licensing
 

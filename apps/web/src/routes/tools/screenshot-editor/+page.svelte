@@ -18,6 +18,7 @@ import {
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Image } from "@unpic/svelte";
+import { page } from "$app/state";
 import {
 	Container,
 	FaqList,
@@ -35,7 +36,7 @@ import {
 	UPSTREAM_URL,
 } from "$lib/tools/screenshot-editor";
 
-const jsonLd = buildEditorJsonLd();
+const jsonLd = $derived(buildEditorJsonLd(page.url.origin));
 
 // Stated once, on the rule under the hero. The old page also had a hero pill,
 // a three-up privacy panel and a line in the CTA saying the same thing.

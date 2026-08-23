@@ -57,7 +57,8 @@ export {
 	encodeMp3,
 	zipFiles,
 } from "./encoders";
-export type { GifWriter } from "./encoders";
+export type { GifWriter, GifWriterOptions } from "./encoders";
+export { ditherStrengthFor, orderedDither } from "./gif-dither";
 
 // decoded-frame cache (in-memory only)
 export {

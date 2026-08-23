@@ -2,6 +2,7 @@
 import { formatBytes } from "@recast/editor/lib/format/bytes";
 import {
 	ArrowLeft,
+	Bug,
 	Download,
 	FileArchive,
 	Music4,
@@ -20,6 +21,7 @@ import { SliderControl } from "@recast/ui/slider-control";
 import { Spinner } from "@recast/ui/spinner";
 import { onMount } from "svelte";
 import { browser } from "$app/environment";
+import { page } from "$app/state";
 import Container from "$lib/components/Container.svelte";
 import FaqList from "$lib/components/FaqList.svelte";
 import Footer from "$lib/components/Footer.svelte";
@@ -30,6 +32,7 @@ import { ConvertClientError, runConversion } from "$lib/tools/client";
 import { checkFileSize, inputBudget, type SizeBudget } from "$lib/tools/device";
 import type { ToolControl, ToolDef } from "$lib/tools/registry";
 import {
+	buildIssueUrl,
 	buildToolJsonLd,
 	buildToolOptions,
 	numberControlsOf,
@@ -197,7 +200,11 @@ const cancel = () => controller?.abort();
 const segmentedOptions = (c: ToolControl) =>
 	(c.options ?? []).map((o) => ({ value: o.value, label: o.label }));
 
-const jsonLd = $derived(buildToolJsonLd(tool));
+const jsonLd = $derived(buildToolJsonLd(tool, page.url.origin));
+
+// The report link carries the browser string, because "it didn't work" without
+// it is the one report we can never act on.
+const issueUrl = $derived(buildIssueUrl(tool, browser ? navigator.userAgent : ""));
 
 // --- Preview media + direct manipulation ---------------------------------
 // The registry gives no max for the trim bounds (it can't: it depends on the
@@ -552,6 +559,20 @@ $effect(() => {
 					Get the desktop app
 				</Button>
 			</div>
+
+			<!-- Pre-filled so a report arrives with the facts we would ask for. -->
+			<p class="mt-6 text-body-sm text-muted-foreground">
+				Something wrong with this tool?
+				<a
+					href={issueUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="inline-flex items-center gap-1 font-medium text-foreground underline-offset-4 hover:underline"
+				>
+					<Bug class="size-3.5" />
+					Report an issue
+				</a>
+			</p>
 		</Container>
 	</section>
 

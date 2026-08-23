@@ -86,8 +86,30 @@ describe("borderCss", () => {
 describe("transformCss", () => {
 	it("emits all three rotations and the scale", () => {
 		expect(
-			transformCss({ perspective: 1600, rotateX: 5, rotateY: -10, rotateZ: 0, scale: 1.1 }),
+			transformCss({
+				perspective: 1600,
+				rotateX: 5,
+				rotateY: -10,
+				rotateZ: 0,
+				scale: 1.1,
+				translateX: 0,
+				translateY: 0,
+			}),
 		).toBe("rotateX(5deg) rotateY(-10deg) rotateZ(0deg) scale(1.1)");
+	});
+
+	it("prepends a percent translate only when non-zero", () => {
+		expect(
+			transformCss({
+				perspective: 1600,
+				rotateX: 0,
+				rotateY: 0,
+				rotateZ: 0,
+				scale: 1,
+				translateX: 5,
+				translateY: -3,
+			}),
+		).toBe("translate(5%, -3%) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(1)");
 	});
 });
 

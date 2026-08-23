@@ -1,15 +1,15 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface BorderControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface BorderControlProps {
+	editor: ScreenshotEditorState;
+}
 
-  const RADIUS_PRESETS = [
-    { value: 0, label: "Sharp", preview: "0px" },
-    { value: 12, label: "Curved", preview: "6px" },
-    { value: 20, label: "Round", preview: "12px" },
-  ] as const;
+const RADIUS_PRESETS = [
+	{ value: 0, label: "Sharp", preview: "0px" },
+	{ value: 12, label: "Curved", preview: "6px" },
+	{ value: 20, label: "Round", preview: "12px" },
+] as const;
 </script>
 
 <script lang="ts">
@@ -44,10 +44,10 @@
         </span>
         <span
           class={cn(
-            "text-[10px] leading-tight transition-colors",
+            "text-xs leading-tight transition-colors",
             selected
               ? "text-foreground font-medium"
-              : "text-muted-foreground group-hover/border:text-foreground/70",
+              : "text-muted-foreground group-hover/border:text-foreground",
           )}
         >
           {preset.label}

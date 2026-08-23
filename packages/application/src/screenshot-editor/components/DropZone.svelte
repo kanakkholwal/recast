@@ -1,15 +1,15 @@
 <script lang="ts" module>
-  export interface DropZoneProps {
-    /** Whether native screen capture is available (desktop only). */
-    hasCapture: boolean;
-    /** Whether an image is currently being dragged over the editor. */
-    dragging: boolean;
-    /** Whether a URL capture is in flight. */
-    urlBusy: boolean;
-    onupload: () => void;
-    oncapture?: () => void;
-    onwebsite: (url: string) => void;
-  }
+export interface DropZoneProps {
+	/** Whether native screen capture is available (desktop only). */
+	hasCapture: boolean;
+	/** Whether an image is currently being dragged over the editor. */
+	dragging: boolean;
+	/** Whether a URL capture is in flight. */
+	urlBusy: boolean;
+	onupload: () => void;
+	oncapture?: () => void;
+	onwebsite: (url: string) => void;
+}
 </script>
 
 <script lang="ts">
@@ -50,10 +50,10 @@
     </Button>
   </div>
 
-  <p class="text-muted-foreground/80 mt-5 flex items-center gap-1.5 text-xs">
+  <p class="text-muted-foreground mt-5 flex items-center gap-1.5 text-xs">
     <Clipboard class="size-3.5" />
     or press
-    <kbd class="bg-muted rounded px-1.5 py-0.5 font-mono text-[11px]">Ctrl/Cmd + V</kbd>
+    <kbd class="bg-muted rounded px-1.5 py-0.5 font-mono text-xs">Ctrl/Cmd + V</kbd>
     to paste
   </p>
 

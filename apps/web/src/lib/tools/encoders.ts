@@ -6,10 +6,10 @@
  * new code.
  */
 
-export type { GifWriter } from '@recast/media';
+export type { GifWriter } from "@recast/media";
 export {
 	createGifWriter,
 	encodeMp3,
 	encodeWav,
 	zipFiles,
-} from '@recast/media';
+} from "@recast/media";

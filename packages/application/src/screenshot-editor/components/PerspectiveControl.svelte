@@ -1,15 +1,17 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface PerspectiveControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface PerspectiveControlProps {
+	editor: ScreenshotEditorState;
+}
 </script>
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
   import { SliderControl } from "@recast/ui/slider-control";
-  import { PERSPECTIVE_PRESETS } from "../presets";
+  import { Button } from "@recast/ui/button";
+  import { RotateCcw } from "@recast/icons";
+  import { DEFAULT_TRANSFORM, PERSPECTIVE_PRESETS } from "../presets";
 
   let { editor }: PerspectiveControlProps = $props();
 
@@ -24,7 +26,9 @@
       p.transform.rotateX === t.rotateX &&
       p.transform.rotateY === t.rotateY &&
       p.transform.rotateZ === t.rotateZ &&
-      p.transform.scale === t.scale
+      p.transform.scale === t.scale &&
+      p.transform.translateX === t.translateX &&
+      p.transform.translateY === t.translateY
     );
   }
 </script>
@@ -80,9 +84,10 @@
   <SliderControl
     label="Depth"
     value={editor.transform.perspective}
-    min={400}
-    max={2000}
-    step={50}
+    min={50}
+    max={1000}
+    step={10}
+    unit="px"
     onchange={(v) => editor.patchTransform({ perspective: v })}
   />
   <SliderControl
@@ -93,4 +98,31 @@
     step={0.01}
     onchange={(v) => editor.patchTransform({ scale: v })}
   />
+  <SliderControl
+    label="Translate X"
+    value={editor.transform.translateX}
+    min={-10}
+    max={10}
+    step={0.5}
+    unit="%"
+    onchange={(v) => editor.patchTransform({ translateX: v })}
+  />
+  <SliderControl
+    label="Translate Y"
+    value={editor.transform.translateY}
+    min={-10}
+    max={10}
+    step={0.5}
+    unit="%"
+    onchange={(v) => editor.patchTransform({ translateY: v })}
+  />
+  <Button
+    variant="ghost"
+    size="sm"
+    class="w-full justify-center gap-1.5"
+    onclick={() => editor.setTransform({ ...DEFAULT_TRANSFORM })}
+  >
+    <RotateCcw class="size-3.5" />
+    Reset 3D
+  </Button>
 </PanelSection>

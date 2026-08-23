@@ -21,17 +21,17 @@
  *  need a decoder, encode ops need a `VideoEncoder` (Chromium-first). */
 export type ToolOp =
 	// Tier A — container only (no WebCodecs): rewrap/copy streams.
-	| 'trim' // cut [start, end], keyframe-aligned stream copy
-	| 'mute' // drop the audio track
-	| 'extract-audio' // pull the audio track out as-is (no re-encode)
+	| "trim" // cut [start, end], keyframe-aligned stream copy
+	| "mute" // drop the audio track
+	| "extract-audio" // pull the audio track out as-is (no re-encode)
 	// Tier B — decode only: read frames/samples, encode with a small JS/WASM codec.
-	| 'video-to-gif'
-	| 'audio-to-mp3'
-	| 'extract-frames' // frames → PNG/JPG (zip or single)
+	| "video-to-gif"
+	| "audio-to-mp3"
+	| "extract-frames" // frames → PNG/JPG (zip or single)
 	// Tier C — encode (VideoEncoder): touch pixels and re-encode.
-	| 'transcode' // change codec/container (mp4 <-> webm, mov -> mp4)
-	| 'compress' // re-encode at a lower bitrate
-	| 'resize'; // scale dimensions
+	| "transcode" // change codec/container (mp4 <-> webm, mov -> mp4)
+	| "compress" // re-encode at a lower bitrate
+	| "resize"; // scale dimensions
 
 /** Per-op options. Loosely typed for now; each handler narrows what it needs. */
 export interface ToolOptions {
@@ -41,18 +41,22 @@ export interface ToolOptions {
 	/** video-to-gif / resize: target dimensions (height auto if omitted). */
 	width?: number;
 	height?: number;
+	/** video-to-gif: palette size per frame, 2-256. Fewer = smaller, more banding. */
+	gifColors?: number;
+	/** video-to-gif: ordered dithering. Defaults on; off looks posterised. */
+	gifDither?: boolean;
 	/** video-to-gif: output frame rate, e.g. 10–15. */
 	fps?: number;
 	/** transcode/compress: target container + codecs. */
-	container?: 'mp4' | 'webm';
+	container?: "mp4" | "webm";
 	videoCodec?: string;
 	audioCodec?: string;
 	/** compress: target average bitrate (bits/sec). */
 	videoBitrate?: number;
 	/** extract-audio / audio-to-mp3: output format. */
-	audioFormat?: 'mp3' | 'wav' | 'm4a';
+	audioFormat?: "mp3" | "wav" | "m4a";
 	/** extract-frames: still format + how many evenly-spaced frames. */
-	imageFormat?: 'png' | 'jpeg';
+	imageFormat?: "png" | "jpeg";
 	frameCount?: number;
 }
 
@@ -81,15 +85,15 @@ export interface JobContext {
  */
 export type ConvertErrorCode =
 	/** A required WebCodecs capability isn't available here. */
-	| 'unsupported'
+	| "unsupported"
 	/** Input exceeds this device's in-browser budget. */
-	| 'too-large'
+	| "too-large"
 	/** Couldn't demux/decode the file (unsupported container/codec). */
-	| 'bad-input'
+	| "bad-input"
 	/** Caller cancelled. */
-	| 'cancelled'
+	| "cancelled"
 	/** Programmer error in the package. */
-	| 'internal';
+	| "internal";
 
 /**
  * Thrown inside a handler to fail a job with a specific, user-facing code.
@@ -102,13 +106,13 @@ export class ConvertError extends Error {
 
 	constructor(code: ConvertErrorCode, message: string, options?: { cause?: unknown }) {
 		super(message, options);
-		this.name = 'ConvertError';
+		this.name = "ConvertError";
 		this.code = code;
 	}
 
 	/** True when the operation was cancelled by the caller (not a bug). */
 	get isCancelled(): boolean {
-		return this.code === 'cancelled';
+		return this.code === "cancelled";
 	}
 }
 
@@ -129,17 +133,17 @@ export type ConvertHandler = (job: ConvertJob, ctx: JobContext) => Promise<Handl
 /** Main thread -> worker. Generic "worker RPC" shape; lives here so any
  *  `@recast/media`-driven worker (web app today, future in-browser editor)
  *  can speak the same wire format. */
-export type ToConvertWorker = { type: 'run'; job: ConvertJob } | { type: 'cancel'; id: string };
+export type ToConvertWorker = { type: "run"; job: ConvertJob } | { type: "cancel"; id: string };
 
 /** Worker -> main thread. `progress` carries 0..1 + an optional stage label;
  *  terminal events are `result` or `error`. */
 export type FromConvertWorker =
-	| { type: 'progress'; id: string; ratio: number; stage?: string }
+	| { type: "progress"; id: string; ratio: number; stage?: string }
 	| {
-			type: 'result';
+			type: "result";
 			id: string;
 			blob: Blob;
 			filename: string;
 			mime: string;
 	  }
-	| { type: 'error'; id: string; code: ConvertErrorCode; message: string };
+	| { type: "error"; id: string; code: ConvertErrorCode; message: string };

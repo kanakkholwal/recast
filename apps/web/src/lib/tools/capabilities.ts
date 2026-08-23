@@ -14,7 +14,7 @@
  *   - encode:    needs VideoEncoder -> Chromium-first today.
  */
 
-export type CapabilityTier = 'container' | 'decode' | 'encode';
+export type CapabilityTier = "container" | "decode" | "encode";
 
 /** A codec + (for video) a representative size to probe. */
 export interface VideoCodecCheck {
@@ -44,15 +44,15 @@ export type CapabilityStatus = { supported: true } | { supported: false; reason:
 //  API presence (cheap, synchronous)
 
 const present = (name: string): boolean =>
-	typeof (globalThis as Record<string, unknown>)[name] !== 'undefined';
+	typeof (globalThis as Record<string, unknown>)[name] !== "undefined";
 
-export const hasVideoDecoder = (): boolean => present('VideoDecoder');
-export const hasVideoEncoder = (): boolean => present('VideoEncoder');
-export const hasAudioDecoder = (): boolean => present('AudioDecoder');
-export const hasAudioEncoder = (): boolean => present('AudioEncoder');
-export const hasImageDecoder = (): boolean => present('ImageDecoder');
+export const hasVideoDecoder = (): boolean => present("VideoDecoder");
+export const hasVideoEncoder = (): boolean => present("VideoEncoder");
+export const hasAudioDecoder = (): boolean => present("AudioDecoder");
+export const hasAudioEncoder = (): boolean => present("AudioEncoder");
+export const hasImageDecoder = (): boolean => present("ImageDecoder");
 /** Workers + transferable VideoFrames — the floor for any decode/encode tool. */
-export const hasWorkers = (): boolean => present('Worker');
+export const hasWorkers = (): boolean => present("Worker");
 
 //  Per-codec probes (async, authoritative)
 
@@ -122,7 +122,7 @@ export async function probeAudioEncode(c: AudioCodecCheck): Promise<boolean> {
  * first unmet requirement produces the reason string shown in the banner.
  */
 export async function evaluateTool(req: ToolRequirements): Promise<CapabilityStatus> {
-	if (req.tier === 'container') return { supported: true };
+	if (req.tier === "container") return { supported: true };
 
 	if (!hasWorkers()) {
 		return {

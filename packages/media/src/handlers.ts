@@ -18,11 +18,11 @@ import {
 	Mp4OutputFormat,
 	type VideoCodec,
 	WavOutputFormat,
-} from 'mediabunny';
-import { inputContainerKind, outputFormatFor, runConversion, withExtension } from './conversion';
-import { createGifWriter, encodeMp3, zipFiles } from './encoders';
-import { openInput } from './input';
-import { ConvertError, type ConvertHandler, type ConvertJob, type HandlerResult } from './protocol';
+} from "mediabunny";
+import { inputContainerKind, outputFormatFor, runConversion, withExtension } from "./conversion";
+import { createGifWriter, encodeMp3, zipFiles } from "./encoders";
+import { openInput } from "./input";
+import { ConvertError, type ConvertHandler, type ConvertJob, type HandlerResult } from "./protocol";
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
@@ -39,8 +39,8 @@ function result(
 	};
 }
 
-const videoMime = (kind: 'mp4' | 'webm') => (kind === 'webm' ? 'video/webm' : 'video/mp4');
-const cancelled = () => new ConvertError('cancelled', 'Cancelled.');
+const videoMime = (kind: "mp4" | "webm") => (kind === "webm" ? "video/webm" : "video/mp4");
+const cancelled = () => new ConvertError("cancelled", "Cancelled.");
 
 //  Tier A / C: MediaBunny Conversion
 
@@ -78,24 +78,24 @@ const mute: ConvertHandler = async (job, ctx) => {
 };
 
 const extractAudio: ConvertHandler = async (job, ctx) => {
-	const fmt = job.options.audioFormat ?? 'm4a';
-	if (fmt === 'mp3') return audioToMp3(job, ctx);
+	const fmt = job.options.audioFormat ?? "m4a";
+	if (fmt === "mp3") return audioToMp3(job, ctx);
 	const input = await openInput(job.file);
 	try {
 		if (!(await input.getPrimaryAudioTrack())) {
-			throw new ConvertError('bad-input', 'This video has no audio track.');
+			throw new ConvertError("bad-input", "This video has no audio track.");
 		}
-		if (fmt === 'wav') {
+		if (fmt === "wav") {
 			const bytes = await runConversion(
 				input,
 				{
 					outputFormat: new WavOutputFormat(),
 					video: { discard: true },
-					audio: { codec: 'pcm-s16' },
+					audio: { codec: "pcm-s16" },
 				},
 				ctx,
 			);
-			return result(bytes, job.file.name, 'wav', 'audio/wav');
+			return result(bytes, job.file.name, "wav", "audio/wav");
 		}
 		// m4a: copy the AAC track when possible (no re-encode).
 		const bytes = await runConversion(
@@ -103,15 +103,15 @@ const extractAudio: ConvertHandler = async (job, ctx) => {
 			{ outputFormat: new Mp4OutputFormat(), video: { discard: true } },
 			ctx,
 		);
-		return result(bytes, job.file.name, 'm4a', 'audio/mp4');
+		return result(bytes, job.file.name, "m4a", "audio/mp4");
 	} finally {
 		input.dispose();
 	}
 };
 
 const transcode: ConvertHandler = async (job, ctx) => {
-	const container = job.options.container ?? 'mp4';
-	const defaults = container === 'webm' ? { v: 'vp9', a: 'opus' } : { v: 'avc', a: 'aac' };
+	const container = job.options.container ?? "mp4";
+	const defaults = container === "webm" ? { v: "vp9", a: "opus" } : { v: "avc", a: "aac" };
 	const input = await openInput(job.file);
 	try {
 		const bytes = await runConversion(
@@ -155,7 +155,7 @@ const resize: ConvertHandler = async (job, ctx) => {
 			input,
 			{
 				outputFormat: outputFormatFor(kind),
-				video: { width: job.options.width, height: job.options.height, fit: 'contain' },
+				video: { width: job.options.width, height: job.options.height, fit: "contain" },
 			},
 			ctx,
 		);
@@ -169,15 +169,19 @@ const resize: ConvertHandler = async (job, ctx) => {
 
 const videoToGif: ConvertHandler = async (job, ctx) => {
 	const fps = clamp(job.options.fps ?? 12, 1, 30);
-	const width = clamp(job.options.width ?? 480, 16, 1920);
+	const width = clamp(job.options.width ?? 640, 16, 1920);
+	const colors = clamp(job.options.gifColors ?? 256, 2, 256);
 	const input = await openInput(job.file);
 	try {
 		const track = await input.getPrimaryVideoTrack();
-		if (!track) throw new ConvertError('bad-input', 'No video track found.');
+		if (!track) throw new ConvertError("bad-input", "No video track found.");
 		const duration = await input.computeDuration();
 		const frameCount = Math.max(1, Math.floor(duration * fps));
-		const sink = new CanvasSink(track, { width, fit: 'contain' });
-		const gif = createGifWriter();
+		// Only a width is set, so height follows the source aspect ratio and no
+		// `fit` mode applies. Resolution is the lever that matters here: a GIF
+		// scaled up from 480px is what reads as "pixelated".
+		const sink = new CanvasSink(track, { width, fit: "contain" });
+		const gif = createGifWriter({ maxColors: colors, dither: job.options.gifDither !== false });
 		const delayMs = 1000 / fps;
 
 		const timestamps = (function* () {
@@ -193,7 +197,7 @@ const videoToGif: ConvertHandler = async (job, ctx) => {
 			gif.addFrame(canvasRgba(canvas), canvas.width, canvas.height, delayMs);
 			ctx.onProgress(done / frameCount);
 		}
-		return result(gif.finish(), job.file.name, 'gif', 'image/gif');
+		return result(gif.finish(), job.file.name, "gif", "image/gif");
 	} finally {
 		input.dispose();
 	}
@@ -203,7 +207,7 @@ const audioToMp3: ConvertHandler = async (job, ctx) => {
 	const input = await openInput(job.file);
 	try {
 		const track = await input.getPrimaryAudioTrack();
-		if (!track) throw new ConvertError('bad-input', 'This file has no audio.');
+		if (!track) throw new ConvertError("bad-input", "This file has no audio.");
 		const duration = await input.computeDuration();
 		const sink = new AudioBufferSink(track);
 		const leftParts: Float32Array[] = [];
@@ -223,7 +227,7 @@ const audioToMp3: ConvertHandler = async (job, ctx) => {
 		const left = concatFloat(leftParts);
 		const channels = stereo ? [left, concatFloat(rightParts)] : [left];
 		const bytes = encodeMp3(channels, sampleRate, 192);
-		return result(bytes, job.file.name, 'mp3', 'audio/mpeg');
+		return result(bytes, job.file.name, "mp3", "audio/mpeg");
 	} finally {
 		input.dispose();
 	}
@@ -231,15 +235,15 @@ const audioToMp3: ConvertHandler = async (job, ctx) => {
 
 const extractFrames: ConvertHandler = async (job, ctx) => {
 	const count = clamp(job.options.frameCount ?? 10, 1, 50);
-	const fmt = job.options.imageFormat ?? 'png';
-	const ext = fmt === 'jpeg' ? 'jpg' : 'png';
+	const fmt = job.options.imageFormat ?? "png";
+	const ext = fmt === "jpeg" ? "jpg" : "png";
 	const input = await openInput(job.file);
 	try {
 		const track = await input.getPrimaryVideoTrack();
-		if (!track) throw new ConvertError('bad-input', 'No video track found.');
+		if (!track) throw new ConvertError("bad-input", "No video track found.");
 		const duration = await input.computeDuration();
 		const width = clamp(job.options.width ?? 1280, 16, 3840);
-		const sink = new CanvasSink(track, { width, fit: 'contain' });
+		const sink = new CanvasSink(track, { width, fit: "contain" });
 
 		const timestamps: number[] = [];
 		for (let k = 0; k < count; k++) timestamps.push((duration * (k + 0.5)) / count);
@@ -251,12 +255,12 @@ const extractFrames: ConvertHandler = async (job, ctx) => {
 			i++;
 			if (!w) continue;
 			const blob = await canvasToBlob(w.canvas, fmt);
-			files[`frame-${String(i).padStart(3, '0')}.${ext}`] = new Uint8Array(
+			files[`frame-${String(i).padStart(3, "0")}.${ext}`] = new Uint8Array(
 				await blob.arrayBuffer(),
 			);
 			ctx.onProgress(i / count);
 		}
-		return result(zipFiles(files), job.file.name, 'zip', 'application/zip');
+		return result(zipFiles(files), job.file.name, "zip", "application/zip");
 	} finally {
 		input.dispose();
 	}
@@ -265,22 +269,22 @@ const extractFrames: ConvertHandler = async (job, ctx) => {
 //  canvas / buffer helpers --
 
 function canvasRgba(canvas: HTMLCanvasElement | OffscreenCanvas): Uint8ClampedArray {
-	const ctx2d = canvas.getContext('2d') as
+	const ctx2d = canvas.getContext("2d") as
 		| CanvasRenderingContext2D
 		| OffscreenCanvasRenderingContext2D
 		| null;
-	if (!ctx2d) throw new ConvertError('internal', "Couldn't read frame pixels.");
+	if (!ctx2d) throw new ConvertError("internal", "Couldn't read frame pixels.");
 	return ctx2d.getImageData(0, 0, canvas.width, canvas.height).data;
 }
 
 async function canvasToBlob(
 	canvas: HTMLCanvasElement | OffscreenCanvas,
-	fmt: 'png' | 'jpeg',
+	fmt: "png" | "jpeg",
 ): Promise<Blob> {
-	const type = fmt === 'jpeg' ? 'image/jpeg' : 'image/png';
-	if ('convertToBlob' in canvas) return canvas.convertToBlob({ type });
+	const type = fmt === "jpeg" ? "image/jpeg" : "image/png";
+	if ("convertToBlob" in canvas) return canvas.convertToBlob({ type });
 	return new Promise<Blob>((res, rej) =>
-		canvas.toBlob((b) => (b ? res(b) : rej(new Error('toBlob failed'))), type),
+		canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), type),
 	);
 }
 
@@ -298,13 +302,13 @@ function concatFloat(parts: Float32Array[]): Float32Array {
 
 //  registry --
 
-export const handlers: Partial<Record<ConvertJob['op'], ConvertHandler>> = {
+export const handlers: Partial<Record<ConvertJob["op"], ConvertHandler>> = {
 	trim,
 	mute,
-	'extract-audio': extractAudio,
-	'video-to-gif': videoToGif,
-	'audio-to-mp3': audioToMp3,
-	'extract-frames': extractFrames,
+	"extract-audio": extractAudio,
+	"video-to-gif": videoToGif,
+	"audio-to-mp3": audioToMp3,
+	"extract-frames": extractFrames,
 	transcode,
 	compress,
 	resize,

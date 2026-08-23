@@ -1,9 +1,9 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface ShadowControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface ShadowControlProps {
+	editor: ScreenshotEditorState;
+}
 </script>
 
 <script lang="ts">
@@ -27,16 +27,25 @@
     label="Blur"
     value={editor.shadow.blur}
     min={0}
-    max={120}
+    max={50}
     step={1}
     unit="px"
     onchange={(v) => editor.patchShadow({ blur: v })}
   />
   <SliderControl
-    label="Distance"
+    label="H Offset"
+    value={editor.shadow.x}
+    min={-20}
+    max={20}
+    step={1}
+    unit="px"
+    onchange={(v) => editor.patchShadow({ x: v })}
+  />
+  <SliderControl
+    label="V Offset"
     value={editor.shadow.y}
-    min={0}
-    max={120}
+    min={-20}
+    max={20}
     step={1}
     unit="px"
     onchange={(v) => editor.patchShadow({ y: v })}
@@ -44,17 +53,15 @@
   <SliderControl
     label="Spread"
     value={editor.shadow.spread}
-    min={-40}
-    max={40}
+    min={-10}
+    max={20}
     step={1}
     unit="px"
     onchange={(v) => editor.patchShadow({ spread: v })}
   />
-  {#if editor.shadow.opacity > 0}
-    <ColorField
-      label="Shadow color"
-      value={editor.shadow.color}
-      oncommit={(c) => editor.patchShadow({ color: c })}
-    />
-  {/if}
+  <ColorField
+    label="Shadow color"
+    value={editor.shadow.color}
+    oncommit={(c) => editor.patchShadow({ color: c })}
+  />
 </PanelSection>

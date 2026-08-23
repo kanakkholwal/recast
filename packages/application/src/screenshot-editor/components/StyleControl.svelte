@@ -1,37 +1,37 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
-  import type { ImageStylePreset } from "../types";
+import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ImageStylePreset } from "../types";
 
-  export interface StyleControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface StyleControlProps {
+	editor: ScreenshotEditorState;
+}
 
-  const PRESETS: { value: ImageStylePreset; label: string }[] = [
-    { value: "default", label: "Default" },
-    { value: "glass-light", label: "Glass Light" },
-    { value: "glass-dark", label: "Glass Dark" },
-    { value: "outline", label: "Outline" },
-    { value: "border-light", label: "Border" },
-    { value: "border-dark", label: "Border Dark" },
-  ];
+const PRESETS: { value: ImageStylePreset; label: string }[] = [
+	{ value: "default", label: "Default" },
+	{ value: "glass-light", label: "Glass Light" },
+	{ value: "glass-dark", label: "Glass Dark" },
+	{ value: "outline", label: "Outline" },
+	{ value: "border-light", label: "Border" },
+	{ value: "border-dark", label: "Border Dark" },
+];
 
-  // Wrapper look for each mini preview tile (illustration chrome, fixed colors).
-  function wrapperStyle(preset: ImageStylePreset): string {
-    switch (preset) {
-      case "glass-light":
-        return "background:rgba(255,255,255,0.3);padding:3px;border-radius:7px;";
-      case "glass-dark":
-        return "background:rgba(0,0,0,0.35);padding:3px;border-radius:7px;";
-      case "outline":
-        return "background:rgba(255,255,255,0.4);padding:2px;border-radius:7px;";
-      case "border-light":
-        return "background:rgb(255,255,255);padding:4px;border-radius:8px;";
-      case "border-dark":
-        return "background:rgb(30,30,30);padding:4px;border-radius:8px;";
-      default:
-        return "";
-    }
-  }
+// Wrapper look for each mini preview tile (illustration chrome, fixed colors).
+function wrapperStyle(preset: ImageStylePreset): string {
+	switch (preset) {
+		case "glass-light":
+			return "background:rgba(255,255,255,0.3);padding:3px;border-radius:7px;";
+		case "glass-dark":
+			return "background:rgba(0,0,0,0.35);padding:3px;border-radius:7px;";
+		case "outline":
+			return "background:rgba(255,255,255,0.4);padding:2px;border-radius:7px;";
+		case "border-light":
+			return "background:rgb(255,255,255);padding:4px;border-radius:8px;";
+		case "border-dark":
+			return "background:rgb(30,30,30);padding:4px;border-radius:8px;";
+		default:
+			return "";
+	}
+}
 </script>
 
 <script lang="ts">
@@ -74,10 +74,10 @@
         </span>
         <span
           class={cn(
-            "text-[10px] leading-tight transition-colors",
+            "text-xs leading-tight transition-colors",
             selected
               ? "text-foreground font-medium"
-              : "text-muted-foreground group-hover/style:text-foreground/70",
+              : "text-muted-foreground group-hover/style:text-foreground",
           )}
         >
           {preset.label}

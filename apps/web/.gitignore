@@ -6,3 +6,6 @@
 docvia-env.d.ts
 .vercel
 .env*.local
+
+# Generated from packages/application/assets (see scripts/sync-screenshot-assets.mjs)
+/static/screenshot-assets/
