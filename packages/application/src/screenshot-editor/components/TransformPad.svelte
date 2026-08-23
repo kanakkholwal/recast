@@ -62,14 +62,14 @@ const SNAP: { x: number; y: number; label: string }[] = [
     <!-- Drag pad with a snap grid overlay. -->
     <div
       bind:this={padEl}
-      class="border-border/60 bg-muted/30 relative aspect-square w-28 shrink-0 cursor-crosshair touch-none rounded-lg border"
+      class="border-border bg-muted/30 relative aspect-square w-28 shrink-0 cursor-crosshair touch-none rounded-lg border"
       role="application"
       aria-label="Drag to tilt"
       onpointerdown={startDrag}
     >
       <div class="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3">
         {#each SNAP as _cell, i (i)}
-          <span class="border-border/25 border"></span>
+          <span class="border-border border"></span>
         {/each}
       </div>
       <div class="absolute inset-0 grid grid-cols-3 grid-rows-3">

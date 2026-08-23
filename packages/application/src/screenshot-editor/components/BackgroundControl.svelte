@@ -84,13 +84,13 @@ export interface BackgroundControlProps {
     cn(
       "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors",
       active
-        ? "border-primary/50 bg-primary/5 ring-primary/20 ring-1"
-        : "border-border/40 bg-muted/30 hover:bg-accent hover:border-border/60",
+        ? "border-primary bg-primary/5 ring-primary/20 ring-1"
+        : "border-border bg-muted/30 hover:bg-accent hover:border-border",
     );
 
   const swatchClass = (active: boolean) =>
     cn(
-      "border-border/30 aspect-square border transition-transform hover:scale-105",
+      "border-border aspect-square border transition-transform hover:scale-105",
       active ? "ring-primary rounded-full ring-2 ring-offset-1" : "rounded-lg",
     );
 </script>
@@ -111,7 +111,7 @@ export interface BackgroundControlProps {
       </span>
       <span
         class={cn(
-          "text-[10px] font-medium",
+          "text-xs font-medium",
           customType === "image" ? "text-foreground" : "text-muted-foreground",
         )}
       >
@@ -124,10 +124,10 @@ export interface BackgroundControlProps {
       class={tileClass(customType === "color")}
       onclick={() => chooseColor(currentColor)}
     >
-      <span class="border-border/50 size-7 rounded-lg border" style:background={currentColor}></span>
+      <span class="border-border size-7 rounded-lg border" style:background={currentColor}></span>
       <span
         class={cn(
-          "text-[10px] font-medium",
+          "text-xs font-medium",
           customType === "color" ? "text-foreground" : "text-muted-foreground",
         )}
       >
@@ -147,13 +147,13 @@ export interface BackgroundControlProps {
         )}
       >
         <span
-          class="border-border/50 size-3.5 rounded-full border"
+          class="border-border size-3.5 rounded-full border"
           style="background:repeating-conic-gradient(#808080 0% 25%, #fff 0% 50%) 50% / 6px 6px;"
         ></span>
       </span>
       <span
         class={cn(
-          "text-[10px] font-medium",
+          "text-xs font-medium",
           customType === "transparent" ? "text-foreground" : "text-muted-foreground",
         )}
       >
@@ -167,7 +167,7 @@ export interface BackgroundControlProps {
   {/if}
 
   {#if isImage}
-    <div class="border-border/40 bg-muted/50 relative aspect-video overflow-hidden rounded-lg">
+    <div class="border-border bg-muted/50 relative aspect-video overflow-hidden rounded-lg">
       <div class="size-full" style:background={imageCss}></div>
       <button
         type="button"
@@ -231,7 +231,7 @@ export interface BackgroundControlProps {
         <button
           type="button"
           class={cn(
-            "border-border/30 aspect-video overflow-hidden border transition-transform hover:scale-105",
+            "border-border aspect-video overflow-hidden border transition-transform hover:scale-105",
             editor.backgroundId === img.id ? "ring-primary rounded-lg ring-2 ring-offset-1" : "rounded-lg",
           )}
           aria-label={img.id}

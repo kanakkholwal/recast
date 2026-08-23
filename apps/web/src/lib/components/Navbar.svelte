@@ -1,5 +1,5 @@
 <script lang="ts">
-import { LayoutDashboard, Menu } from "@recast/icons";
+import { Menu } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
@@ -15,7 +15,12 @@ let scrolled = $state(false);
 
 const pathname = $derived(page.url.pathname);
 const session = authClient.useSession();
-const signedIn = $derived(Boolean($session.data?.user));
+const user = $derived($session.data?.user ?? null);
+const signedIn = $derived(Boolean(user));
+
+// A signed-in visitor gets their own initial, not another text link that looks
+// like navigation. It says "this is your account" the way no icon does.
+const initial = $derived((user?.name || user?.email || "?").trim().charAt(0).toUpperCase());
 
 // Navigating from inside the sheet should leave it closed.
 $effect(() => {
@@ -82,8 +87,21 @@ const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${
 				<GithubBrand class="size-4" />
 			</a>
 			{#if signedIn}
-				<a href="/dashboard" class={cn("hidden text-muted-foreground md:inline-flex", linkClass)}>
-					<LayoutDashboard class="mr-1.5 size-3.5" />
+				<a
+					href="/dashboard"
+					aria-label="Go to your dashboard"
+					class="hidden items-center gap-2 rounded-full border border-border-low py-1 pl-1 pr-3 text-body-sm font-medium text-foreground transition-colors hover:border-border-strong hover:bg-paper md:inline-flex motion-reduce:transition-none"
+				>
+					{#if user?.image}
+						<img src={user.image} alt="" class="size-7 shrink-0 rounded-full object-cover" />
+					{:else}
+						<span
+							class="grid size-7 shrink-0 place-items-center rounded-full bg-foreground text-caption font-medium text-background"
+							aria-hidden="true"
+						>
+							{initial}
+						</span>
+					{/if}
 					Dashboard
 				</a>
 			{:else}
@@ -105,4 +123,11 @@ const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${
 	</nav>
 </div>
 
-<MobileNav bind:open groups={menuGroups} links={navLinks} {signedIn} {pathname} />
+<MobileNav
+	bind:open
+	groups={menuGroups}
+	links={navLinks}
+	{signedIn}
+	accountLabel={user?.name || user?.email || ""}
+	{pathname}
+/>

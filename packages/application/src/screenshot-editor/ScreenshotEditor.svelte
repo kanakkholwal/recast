@@ -354,7 +354,7 @@ const PANEL_STEP = 16;
   {:else}
     <!-- HEADER (h-14) — mirrors the React "Stage" EditorHeader IA -->
     <header
-      class="border-border/40 bg-card flex h-14 shrink-0 items-center justify-between border-b px-4"
+      class="border-border bg-card flex h-14 shrink-0 items-center justify-between border-b px-4"
     >
       <div class="flex items-center gap-1.5">
         <Button
@@ -374,7 +374,7 @@ const PANEL_STEP = 16;
         >
           <RotateCcw />
         </Button>
-        <div class="bg-border/60 mx-0.5 h-4 w-px"></div>
+        <div class="bg-border mx-0.5 h-4 w-px"></div>
         <Button
           variant="ghost"
           size="icon"
@@ -395,7 +395,7 @@ const PANEL_STEP = 16;
         >
           <Redo2 />
         </Button>
-        <div class="bg-border/60 mx-0.5 h-4 w-px"></div>
+        <div class="bg-border mx-0.5 h-4 w-px"></div>
         <Button
           variant={editor.showRulers ? "secondary" : "ghost"}
           size="icon"
@@ -484,7 +484,7 @@ const PANEL_STEP = 16;
           </span>
         {/if}
 
-        <div class="bg-border/60 mx-0.5 h-5 w-px"></div>
+        <div class="bg-border mx-0.5 h-5 w-px"></div>
         <Button variant="ghost" size="sm" onclick={clearWorkspace}>
           <Trash2 />
           Remove
@@ -497,7 +497,7 @@ const PANEL_STEP = 16;
     <div class="flex min-h-0 flex-1 flex-row">
       <!-- LEFT PANEL -->
       <aside
-        class="border-border/40 bg-card relative flex shrink-0 flex-col overflow-hidden border-r"
+        class="border-border bg-card relative flex shrink-0 flex-col overflow-hidden border-r"
         style:width={`${leftWidth}px`}
       >
         <div class="px-2.5 pt-2.5 pb-1">
@@ -511,7 +511,7 @@ const PANEL_STEP = 16;
             aria-label="Editor mode"
           />
         </div>
-        <div class="border-border/30 border-b px-2.5 py-2.5">
+        <div class="border-border border-b px-2.5 py-2.5">
           <Tabs.Root value={leftTab} onValueChange={(v) => (leftTab = v as typeof leftTab)}>
             <Tabs.List class="grid w-full grid-cols-3">
               <Tabs.Trigger value="edit"><SlidersHorizontal class="size-4" />Design</Tabs.Trigger>
@@ -550,9 +550,9 @@ const PANEL_STEP = 16;
               : "pointer-events-none -translate-x-full opacity-0",
           )}
         >
-          <div class="border-border/30 flex items-center justify-between border-b px-3 py-3">
+          <div class="border-border flex items-center justify-between border-b px-3 py-3">
             <div class="flex items-center gap-2">
-              <Wand2 class="text-primary size-4" />
+              <Wand2 class="text-muted-foreground size-4" />
               <h2 class="text-foreground text-sm font-semibold">Templates</h2>
             </div>
             <Button variant="ghost" size="icon" aria-label="Close templates" onclick={() => (showTemplates = false)}>
@@ -608,11 +608,11 @@ const PANEL_STEP = 16;
           {#if !showMotion}
             <button
               type="button"
-              class="border-border/50 bg-card/90 text-muted-foreground hover:text-foreground hover:bg-card hover:border-border absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border px-5 py-2.5 shadow-lg backdrop-blur-md transition-all duration-200 ease-out hover:shadow-xl"
+              class="border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-200"
               onclick={() => (showMotion = true)}
             >
-              <Clapperboard class="text-primary size-4" />
-              <span class="text-sm font-medium">Animate</span>
+              <Clapperboard class="size-4" />
+              Animate
             </button>
           {/if}
         </div>
@@ -643,10 +643,10 @@ const PANEL_STEP = 16;
 
       <!-- RIGHT PANEL -->
       <aside
-        class="border-border/40 bg-card flex shrink-0 flex-col overflow-hidden border-l"
+        class="border-border bg-card flex shrink-0 flex-col overflow-hidden border-l"
         style:width={`${rightWidth}px`}
       >
-        <div class="border-border/30 border-b px-2.5 py-2.5">
+        <div class="border-border border-b px-2.5 py-2.5">
           <Tabs.Root value={rightTab} onValueChange={(v) => (rightTab = v as typeof rightTab)}>
             <Tabs.List class="grid w-full grid-cols-2">
               <Tabs.Trigger value="transforms"><Box class="size-4" />3D</Tabs.Trigger>

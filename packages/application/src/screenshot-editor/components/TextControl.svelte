@@ -81,7 +81,7 @@ const SWATCHES = [
   {#if selected}
     {@const sel = selected}
     <label class="flex flex-col gap-1">
-      <span class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">Font</span>
+      <span class="text-muted-foreground text-xs font-medium">Font</span>
       <select
         class="border-border bg-card focus-visible:ring-ring h-9 rounded-lg border px-2 text-sm focus-visible:ring-2 focus-visible:outline-none"
         style:font-family={fontCss(sel.fontFamily)}
@@ -100,7 +100,7 @@ const SWATCHES = [
 
     <div class="flex gap-2">
       <label class="flex flex-1 flex-col gap-1">
-        <span class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">Weight</span>
+        <span class="text-muted-foreground text-xs font-medium">Weight</span>
         <select
           class="border-border bg-card focus-visible:ring-ring h-9 rounded-lg border px-2 text-sm focus-visible:ring-2 focus-visible:outline-none"
           value={sel.fontWeight}
@@ -177,7 +177,7 @@ const SWATCHES = [
       onchange={(v) => update({ opacity: v / 100 })}
     />
 
-    <div class="border-border/60 flex flex-col gap-2 border-t pt-2">
+    <div class="border-border flex flex-col gap-2 border-t pt-2">
       <div class="flex items-center justify-between">
         <span class="text-muted-foreground text-xs">Text shadow</span>
         <SegmentedToggle

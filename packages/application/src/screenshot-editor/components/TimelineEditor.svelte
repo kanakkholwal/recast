@@ -155,7 +155,7 @@ const MIN_CLIP_MS = 200;
 <!-- Bottom timeline. Height mirrors the clone's 210px track editor. -->
 <div class="border-border bg-card flex h-[210px] shrink-0 flex-col border-t">
   <!-- Controls -->
-  <div class="border-border/40 flex h-11 shrink-0 items-center gap-2 border-b px-3">
+  <div class="border-border flex h-11 shrink-0 items-center gap-2 border-b px-3">
     <Button
       variant="default"
       size="icon"
@@ -233,10 +233,10 @@ const MIN_CLIP_MS = 200;
   <div class="flex min-h-0 flex-1">
     <!-- Labels -->
     <div
-      class="border-border/40 flex shrink-0 flex-col border-r"
+      class="border-border flex shrink-0 flex-col border-r"
       style:width={`${LABEL_WIDTH}px`}
     >
-      <div class="border-border/30 h-6 border-b"></div>
+      <div class="border-border h-6 border-b"></div>
       <div class="flex h-12 items-center gap-1.5 px-3">
         {#if editor.keyframeMode}
           <GitCommit class="text-muted-foreground size-3.5" />
@@ -253,7 +253,7 @@ const MIN_CLIP_MS = 200;
       <div class="relative" style:width={`${contentWidth}px`} style:min-width="100%">
         <!-- Time ruler: click/drag to scrub, arrows to step. -->
         <div
-          class="border-border/30 focus-visible:ring-primary/40 relative h-6 cursor-ew-resize border-b outline-none select-none focus-visible:ring-2"
+          class="border-border focus-visible:ring-primary/40 relative h-6 cursor-ew-resize border-b outline-none select-none focus-visible:ring-2"
           role="slider"
           tabindex="0"
           aria-label="Playhead"
@@ -269,11 +269,11 @@ const MIN_CLIP_MS = 200;
         >
           {#each ticks as t (t)}
             <span
-              class="bg-border/70 absolute top-0 h-2 w-px"
+              class="bg-border absolute top-0 h-2 w-px"
               style:left={`${t * 1000 * pxPerMs}px`}
             ></span>
             <span
-              class="text-muted-foreground absolute top-2 font-mono text-[9px] tabular-nums"
+              class="text-muted-foreground absolute top-2 font-mono text-xs tabular-nums"
               style:left={`${t * 1000 * pxPerMs + 3}px`}
             >
               {t}s
@@ -292,7 +292,7 @@ const MIN_CLIP_MS = 200;
                   "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-grab border outline-none focus-visible:ring-2",
                   editor.selectedKeyframeId === kf.id
                     ? "border-primary bg-primary ring-primary/40"
-                    : "border-primary/70 bg-background hover:bg-primary/30 focus-visible:ring-primary/40",
+                    : "border-primary bg-background hover:bg-primary/30 focus-visible:ring-primary/40",
                 )}
                 style:left={`${kf.time * pxPerMs}px`}
                 aria-label={`Keyframe at ${seconds(kf.time)}s. Arrow keys retime, Delete removes.`}
@@ -330,7 +330,7 @@ const MIN_CLIP_MS = 200;
                 onpointerup={endDrag}
                 onpointercancel={endDrag}
               >
-                <span class="truncate px-2 text-[11px] font-medium">
+                <span class="truncate px-2 text-xs font-medium">
                   {editor.animationPreset.name}
                 </span>
               </button>

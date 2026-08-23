@@ -46,7 +46,7 @@ function layerLabel(o: Overlay): string {
         <li
           class={cn(
             "group/layer flex items-center gap-1.5 rounded-md border px-1.5 py-1 transition-colors",
-            selected ? "border-primary bg-primary/5" : "border-border/50 hover:bg-muted/50",
+            selected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50",
           )}
         >
           <button

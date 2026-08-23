@@ -122,7 +122,7 @@ export interface OverlayControlProps {
     <button
       type="button"
       class={cn(
-        "border-border/40 text-muted-foreground flex aspect-square items-center justify-center rounded-lg border text-[10px] font-medium transition-colors",
+        "border-border text-muted-foreground flex aspect-square items-center justify-center rounded-lg border text-xs font-medium transition-colors",
         editor.shadowOverlay ? "hover:bg-muted" : "border-primary bg-primary/10 text-foreground",
       )}
       aria-pressed={!editor.shadowOverlay}
@@ -135,7 +135,7 @@ export interface OverlayControlProps {
       <button
         type="button"
         class={cn(
-          "border-border/30 bg-muted/40 aspect-square overflow-hidden rounded-lg border transition-transform hover:scale-105",
+          "border-border bg-muted/40 aspect-square overflow-hidden rounded-lg border transition-transform hover:scale-105",
           active && "ring-primary ring-2 ring-offset-1",
         )}
         aria-label={shadow.id}

@@ -45,7 +45,7 @@ export interface TransformsGalleryProps {
             "group/tile relative aspect-[4/3] overflow-hidden rounded-md border transition",
             isActive(preset.transform)
               ? "border-primary ring-foreground/20 ring-1"
-              : "border-border/40 hover:border-border",
+              : "border-border hover:border-border",
           )}
           title={preset.name}
           aria-label={preset.name}
@@ -66,13 +66,13 @@ export interface TransformsGalleryProps {
               />
             {:else}
               <span
-                class="border-foreground/10 bg-foreground/10 h-[80%] w-[80%] rounded-sm border"
+                class="border-border bg-foreground/10 h-[80%] w-[80%] rounded-sm border"
                 style:transform={transformCss(preset.transform)}
               ></span>
             {/if}
           </span>
           <span
-            class="bg-background/85 text-muted-foreground group-hover/tile:text-foreground absolute inset-x-0 bottom-0 truncate px-1 py-0.5 text-center text-[9px] font-medium opacity-0 transition-opacity group-hover/tile:opacity-100"
+            class="bg-background/85 text-muted-foreground group-hover/tile:text-foreground absolute inset-x-0 bottom-0 truncate px-1 py-0.5 text-center text-xs font-medium opacity-0 transition-opacity group-hover/tile:opacity-100"
             class:opacity-100={isActive(preset.transform)}
           >
             {preset.name}

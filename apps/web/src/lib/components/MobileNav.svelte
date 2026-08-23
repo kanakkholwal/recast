@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ArrowRight, ArrowUpRight, ChevronDown, LayoutDashboard } from "@recast/icons";
+import { ArrowRight, ArrowUpRight, ChevronDown } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
 import * as Collapsible from "@recast/ui/collapsible";
@@ -18,14 +18,19 @@ let {
 	groups,
 	links,
 	signedIn,
+	accountLabel = "",
 	pathname,
 }: {
 	open?: boolean;
 	groups: MenuGroup[];
 	links: NavLink[];
 	signedIn: boolean;
+	/** Name or email of the signed-in user, for the account row. */
+	accountLabel?: string;
 	pathname: string;
 } = $props();
+
+const initial = $derived((accountLabel || "?").trim().charAt(0).toUpperCase());
 
 // One section open at a time keeps the whole list within a thumb's reach.
 let openGroup = $state(0);
@@ -135,10 +140,25 @@ const close = () => (open = false);
 		<!-- scrolling back up. -->
 		<Sheet.Footer class="gap-2 border-t border-border-low px-5 py-4">
 			{#if signedIn}
-				<Button href="/dashboard" variant="dark" class="w-full gap-2" onclick={close}>
-					<LayoutDashboard class="size-4" />
-					Go to dashboard
-				</Button>
+				<a
+					href="/dashboard"
+					onclick={close}
+					class="flex min-h-12 w-full items-center gap-3 rounded-lg border border-border-low px-3 transition-colors hover:bg-paper motion-reduce:transition-none"
+				>
+					<span
+						class="grid size-8 shrink-0 place-items-center rounded-full bg-foreground text-body-sm font-medium text-background"
+						aria-hidden="true"
+					>
+						{initial}
+					</span>
+					<span class="min-w-0 flex-1 text-left">
+						<span class="block text-body-sm font-medium text-foreground">Dashboard</span>
+						{#if accountLabel}
+							<span class="block truncate text-caption text-muted-foreground">{accountLabel}</span>
+						{/if}
+					</span>
+					<ArrowRight class="size-4 shrink-0 text-muted-foreground" />
+				</a>
 			{:else}
 				<Button href="/download" variant="dark" class="group/cta w-full gap-2" onclick={close}>
 					Download Recast

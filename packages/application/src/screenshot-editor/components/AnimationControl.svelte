@@ -1,9 +1,9 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface AnimationControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface AnimationControlProps {
+	editor: ScreenshotEditorState;
+}
 </script>
 
 <script lang="ts">
@@ -25,7 +25,7 @@
 <!-- Status + transport for the selected motion. -->
 <PanelSection title="Motion" flush>
   <div
-    class="border-border/50 bg-muted/30 flex items-center gap-2 rounded-lg border px-2.5 py-2"
+    class="border-border bg-muted/30 flex items-center gap-2 rounded-lg border px-2.5 py-2"
   >
     {#if editor.animationPreset}
       <Button
@@ -39,7 +39,7 @@
       </Button>
       <div class="min-w-0 flex-1">
         <p class="text-foreground truncate text-xs font-medium">{editor.animationPreset.name}</p>
-        <p class="text-muted-foreground font-mono text-[10px] tabular-nums">
+        <p class="text-muted-foreground font-mono text-xs tabular-nums">
           {seconds(editor.playhead)}s / {seconds(editor.timelineDuration)}s
         </p>
       </div>
@@ -66,7 +66,7 @@
     <button
       type="button"
       class={cn(
-        "shrink-0 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+        "shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors",
         activeCategory === g.category
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:bg-muted",
@@ -85,7 +85,7 @@
     <button
       type="button"
       class={cn(
-        "rounded-lg border px-2 py-2 text-left text-[11px] font-medium transition-colors",
+        "rounded-lg border px-2 py-2 text-left text-xs font-medium transition-colors",
         selected
           ? "border-primary bg-primary text-primary-foreground"
           : "border-border bg-background hover:bg-muted text-foreground",
@@ -96,7 +96,7 @@
       <span class="block truncate">{p.name}</span>
       <span
         class={cn(
-          "font-mono text-[10px] tabular-nums",
+          "font-mono text-xs tabular-nums",
           selected ? "text-primary-foreground/75" : "text-muted-foreground",
         )}
       >

@@ -258,7 +258,7 @@ export interface ExportControlProps {
         <div class="relative">
           <button
             type="button"
-            class="border-border/40 aspect-video w-full overflow-hidden rounded-md border transition-transform hover:scale-105 {editor.activeSlide === i ? 'ring-primary ring-2 ring-offset-1' : ''}"
+            class="border-border aspect-video w-full overflow-hidden rounded-md border transition-transform hover:scale-105 {editor.activeSlide === i ? 'ring-primary ring-2 ring-offset-1' : ''}"
             aria-label={`Slide ${i + 1}`}
             aria-pressed={editor.activeSlide === i}
             onclick={() => editor.setActiveSlide(i)}

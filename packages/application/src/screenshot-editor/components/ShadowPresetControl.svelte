@@ -1,30 +1,30 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
-  import type { ShadowPreset } from "../types";
+import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ShadowPreset } from "../types";
 
-  export interface ShadowPresetControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface ShadowPresetControlProps {
+	editor: ScreenshotEditorState;
+}
 
-  // Preview-only box-shadow strings (match the clone's ShadowPreview tiles).
-  const PRESETS: { value: ShadowPreset; label: string; shadow: string }[] = [
-    { value: "none", label: "None", shadow: "none" },
-    {
-      value: "hug",
-      label: "Hug",
-      shadow: "rgba(0,0,0,0.2) 0px 2px 12px 0px, rgba(0,0,0,0.14) 0px 1px 4px 0px",
-    },
-    {
-      value: "soft",
-      label: "Soft",
-      shadow: "rgba(0,0,0,0.28) 0px 12px 48px 0px, rgba(0,0,0,0.18) 0px 4px 12px 0px",
-    },
-    {
-      value: "strong",
-      label: "Strong",
-      shadow: "rgba(0,0,0,0.45) 0px 24px 80px 0px, rgba(0,0,0,0.3) 0px 8px 24px 0px",
-    },
-  ];
+// Preview-only box-shadow strings (match the clone's ShadowPreview tiles).
+const PRESETS: { value: ShadowPreset; label: string; shadow: string }[] = [
+	{ value: "none", label: "None", shadow: "none" },
+	{
+		value: "hug",
+		label: "Hug",
+		shadow: "rgba(0,0,0,0.2) 0px 2px 12px 0px, rgba(0,0,0,0.14) 0px 1px 4px 0px",
+	},
+	{
+		value: "soft",
+		label: "Soft",
+		shadow: "rgba(0,0,0,0.28) 0px 12px 48px 0px, rgba(0,0,0,0.18) 0px 4px 12px 0px",
+	},
+	{
+		value: "strong",
+		label: "Strong",
+		shadow: "rgba(0,0,0,0.45) 0px 24px 80px 0px, rgba(0,0,0,0.3) 0px 8px 24px 0px",
+	},
+];
 </script>
 
 <script lang="ts">
@@ -59,10 +59,10 @@
         </span>
         <span
           class={cn(
-            "text-[10px] leading-tight transition-colors",
+            "text-xs leading-tight transition-colors",
             selected
               ? "text-foreground font-medium"
-              : "text-muted-foreground group-hover/shadow:text-foreground/70",
+              : "text-muted-foreground group-hover/shadow:text-foreground",
           )}
         >
           {preset.label}

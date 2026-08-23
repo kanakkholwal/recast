@@ -42,7 +42,7 @@ export interface TemplateControlProps {
         onclick={() => editor.applyTemplate(t)}
       >
         <span class="block h-10 w-full" style:background={t.swatch}></span>
-        <span class="text-muted-foreground group-hover:text-foreground bg-card px-1 py-1 text-[11px] font-medium">
+        <span class="text-muted-foreground group-hover:text-foreground bg-card px-1 py-1 text-xs font-medium">
           {t.label}
         </span>
       </button>
@@ -69,7 +69,7 @@ export interface TemplateControlProps {
   {:else}
     <ul class="flex flex-col gap-1">
       {#each custom as p (p.id)}
-        <li class="border-border/50 hover:bg-muted/50 flex items-center gap-1.5 rounded-md border px-1.5 py-1">
+        <li class="border-border hover:bg-muted/50 flex items-center gap-1.5 rounded-md border px-1.5 py-1">
           <button
             type="button"
             class="flex min-w-0 flex-1 items-center gap-2 text-left outline-none"

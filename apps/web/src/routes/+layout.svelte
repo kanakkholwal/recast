@@ -1,14 +1,21 @@
 <script lang="ts">
+import { NavProgress } from "@recast/ui/nav-progress";
+import { onMount } from "svelte";
 import { dev } from "$app/environment";
 import { navigating, page } from "$app/state";
 import { analytics } from "$lib/analytics/client";
 import { webConsent } from "$lib/analytics/consent.svelte";
 import { authClient } from "$lib/auth/client";
 import ImpersonationBanner from "$lib/auth/components/ImpersonationBanner.svelte";
-import { AppLoading, DevThemeToggle, Navbar, SeoMeta, ThemeShortcut } from "$lib/components";
+import {
+	AppLoading,
+	DevThemeToggle,
+	Navbar,
+	ScrollToTop,
+	SeoMeta,
+	ThemeShortcut,
+} from "$lib/components";
 import ConsentBanner from "$lib/components/ConsentBanner.svelte";
-import { NavProgress } from "@recast/ui/nav-progress";
-import { onMount } from "svelte";
 
 import "@recast/application/styles.css";
 import "@recast/player/styles.css";
@@ -105,6 +112,11 @@ $effect(() => {
 <Toaster position="bottom-right" duration={5000} />
 
 <ConsentBanner />
+
+<!-- Site chrome only: the dashboard and share player own their own scroll. -->
+{#if !isChromeless}
+  <ScrollToTop />
+{/if}
 
 {#if dev}
   <DevThemeToggle />
