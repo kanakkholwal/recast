@@ -43,8 +43,15 @@ const MIN_CLIP_MS = 200;
     return Math.max(0, Math.min(editor.timelineDuration, x / pxPerMs));
   }
 
+  // Grabbing anything on the timeline stops playback so the RAF advance doesn't
+  // fight the drag (which would make the playhead jitter).
+  function stopPlay() {
+    if (editor.playing) editor.playing = false;
+  }
+
   function startScrub(e: PointerEvent) {
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    stopPlay();
     drag = { kind: "scrub" };
     editor.seek(timeAt(e.clientX));
   }
@@ -52,18 +59,21 @@ const MIN_CLIP_MS = 200;
   function startMove(e: PointerEvent) {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    stopPlay();
     drag = { kind: "move", grabOffsetMs: timeAt(e.clientX) - editor.clipStart };
   }
 
   function startResize(e: PointerEvent) {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    stopPlay();
     drag = { kind: "resize" };
   }
 
   function startKeyframeDrag(e: PointerEvent, id: string) {
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    stopPlay();
     editor.selectKeyframe(id);
     drag = { kind: "keyframe", id };
   }

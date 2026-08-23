@@ -32,8 +32,17 @@ export interface EditorStageProps {
   const framedTransform = $derived(
     `${anim ? propsToTransform(anim) : transformCss(editor.transform)} scale(${editor.imageScale / 100})`,
   );
-  // Animation opacity composes with the persistent image opacity.
-  const framedOpacity = $derived((anim ? anim.opacity : 1) * editor.imageOpacity);
+  // Animation opacity composes with the persistent image opacity for a PRESET
+  // (the preset animates a 0..1 fade on top of the user's opacity). In keyframe
+  // mode the captured opacity already IS the user's imageOpacity, so use it
+  // directly to avoid squaring it.
+  const framedOpacity = $derived(
+    anim
+      ? editor.keyframeMode
+        ? anim.opacity
+        : anim.opacity * editor.imageOpacity
+      : editor.imageOpacity,
+  );
   const imageFilter = $derived(filtersCss(editor.filters));
 
   // Aspect ratio for the stage: an explicit preset, else the screenshot's own.
@@ -91,7 +100,9 @@ export interface EditorStageProps {
     ></div>
   {/if}
   {#if editor.backgroundNoise > 0}
-    <div class="recast-shot-noise" style:opacity={editor.backgroundNoise / 100}></div>
+    <!-- Softer curve: cap effective opacity ~0.5 so grain stays subtle (the
+         reference scales the noise variance, not just the layer opacity). -->
+    <div class="recast-shot-noise" style:opacity={(editor.backgroundNoise / 100) * 0.5}></div>
   {/if}
 
   {#if editor.image}

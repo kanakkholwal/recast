@@ -34,7 +34,7 @@ export const DEFAULT_PROPS: AnimatableProperties = {
 	scale: 1,
 	translateX: 0,
 	translateY: 0,
-	perspective: 1600,
+	perspective: 2400,
 	opacity: 1,
 };
 
@@ -171,7 +171,7 @@ export function propsAtTime(preset: AnimationPreset, time: number): AnimatablePr
 /** The CSS transform for a set of animated properties (perspective is applied
  * separately on the parent, so it's not included here). */
 export function propsToTransform(p: AnimatableProperties): string {
-	return `rotateX(${p.rotateX}deg) rotateY(${p.rotateY}deg) rotateZ(${p.rotateZ}deg) translate(${p.translateX}%, ${p.translateY}%) scale(${p.scale})`;
+	return `translate(${p.translateX}%, ${p.translateY}%) rotateX(${p.rotateX}deg) rotateY(${p.rotateY}deg) rotateZ(${p.rotateZ}deg) scale(${p.scale})`;
 }
 
 // --- Presets ----------------------------------------------------------------

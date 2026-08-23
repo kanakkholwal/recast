@@ -3,7 +3,8 @@ import { REF_ASPECTS, REF_GRADIENTS, REF_MAGIC, REF_MESH, REF_SOLIDS } from "./b
 import { FONT_FAMILIES } from "./fonts";
 import { TRANSFORM_PRESET_CATEGORIES } from "./transform-presets";
 import { IMAGE_BACKGROUND_CATEGORIES, OVERLAY_SHADOWS } from "./image-backgrounds";
-import { DEFAULT_PROPS, keyframesToPreset, propsAtTime } from "./animation";
+import { DEFAULT_PROPS, keyframesToPreset, propsAtTime, propsToTransform } from "./animation";
+import { filtersCss } from "./render";
 
 /** Counts transcribed from screenshot-studio. Asserting them as independent
  * literals means any accidental drift (a dropped preset, a bad regen) fails the
@@ -38,6 +39,28 @@ describe("data parity with screenshot-studio", () => {
 			const ids = new Set(table.map((p) => p.id));
 			expect(ids.size).toBe(table.length);
 		}
+	});
+});
+
+describe("render order parity", () => {
+	it("animated transform leads with translate (matches static transformCss + ref)", () => {
+		const s = propsToTransform({ ...DEFAULT_PROPS, translateX: 5, translateY: -3, rotateY: 10 });
+		expect(s.startsWith("translate(5%, -3%)")).toBe(true);
+		expect(s.indexOf("translate")).toBeLessThan(s.indexOf("rotateX"));
+	});
+
+	it("filter composes blur before invert (reference order)", () => {
+		const css = filtersCss({
+			brightness: 100,
+			contrast: 100,
+			saturate: 100,
+			grayscale: 0,
+			sepia: 0,
+			hueRotate: 0,
+			invert: 100,
+			blur: 4,
+		});
+		expect(css.indexOf("blur")).toBeLessThan(css.indexOf("invert"));
 	});
 });
 

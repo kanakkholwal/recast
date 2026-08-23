@@ -138,7 +138,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
       <!-- hidden overlay: not rendered, so it never reaches an export -->
     {:else if ov.type === "text"}
       <div
-        class="pointer-events-auto absolute cursor-move touch-none select-none whitespace-pre-wrap outline-none"
+        class="pointer-events-auto absolute cursor-move touch-none select-none whitespace-nowrap outline-none"
         class:ring-2={editor.selectedId === ov.id}
         class:ring-primary={editor.selectedId === ov.id}
         class:ring-offset-1={editor.selectedId === ov.id}
@@ -155,7 +155,6 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
         style:text-align={ov.align}
         style:writing-mode={ov.orientation === "vertical" ? "vertical-rl" : "horizontal-tb"}
         style:text-shadow={textShadowCss(ov.shadow)}
-        style:max-width="90%"
         onpointerdown={(e) => startDrag(e, ov)}
         ondblclick={() => {
           editor.selectOverlay(ov.id);
@@ -200,7 +199,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
         style:width={`${ov.w}%`}
         style:height={`${ov.h}%`}
         style:opacity={ov.opacity}
-        style:transform={`rotate(${ov.rotation}deg)`}
+        style:transform={`translate(-50%, -50%) rotate(${ov.rotation}deg)`}
         onpointerdown={(e) => startDrag(e, ov)}
         onkeydown={(e) => onKey(e, ov)}
       >

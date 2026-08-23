@@ -60,27 +60,39 @@ export interface ExportControlProps {
     const base = editor.image?.name || "screenshot";
     try {
       const entries = [];
+      let failed = 0;
       for (let i = 0; i < editor.slides.length; i++) {
-        editor.setActiveSlide(i);
-        await tick();
-        // Ensure the slide's image is decoded before snapshotting the stage.
-        const img = new Image();
-        img.src = editor.slides[i].src;
-        await img.decode().catch(() => {});
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const blob = await snapshot(node, {
-          format: editor.exportFormat,
-          scale: editor.exportScale,
-          quality: editor.exportQuality,
-        });
-        entries.push({
-          name: `${base}-${i + 1}.${ext(editor.exportFormat)}`,
-          data: new Uint8Array(await blob.arrayBuffer()),
-        });
+        // Per-slide try/catch: one bad slide can't abort the whole zip.
+        try {
+          editor.setActiveSlide(i);
+          await tick();
+          // Ensure the slide's image is decoded before snapshotting the stage.
+          const img = new Image();
+          img.src = editor.slides[i].src;
+          await img.decode().catch(() => {});
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          const blob = await snapshot(node, {
+            format: editor.exportFormat,
+            scale: editor.exportScale,
+            quality: editor.exportQuality,
+          });
+          // Index keeps names unique even if two slides share a filename.
+          const name = `${editor.slides[i].name || base}-${i + 1}`;
+          entries.push({
+            name: `${name}.${ext(editor.exportFormat)}`,
+            data: new Uint8Array(await blob.arrayBuffer()),
+          });
+        } catch {
+          failed++;
+        }
         batchProgress = (i + 1) / editor.slides.length;
       }
+      if (entries.length === 0) throw new Error("no slides could be exported");
       download(zipStore(entries), `${base}-batch.zip`);
-      onnotify?.(`Exported ${entries.length} images`, "success");
+      onnotify?.(
+        failed ? `Exported ${entries.length}, ${failed} failed` : `Exported ${entries.length} images`,
+        failed ? "error" : "success",
+      );
     } catch (e) {
       onnotify?.(e instanceof Error ? e.message : "Batch export failed", "error");
     } finally {
@@ -109,7 +121,11 @@ export interface ExportControlProps {
     videoProgress = 0;
     try {
       const encode = videoFormat === "webm" ? exportVideoWebM : exportVideo;
-      const blob = await encode(node, preset, 30, (p) => (videoProgress = p), editor.clipLength);
+      const blob = await encode(node, preset, 30, (p) => (videoProgress = p), {
+        duration: editor.timelineDuration,
+        clipStart: editor.clipStart,
+        clipLength: editor.clipLength,
+      });
       download(blob, `screenshot.${videoFormat}`);
       onnotify?.("Video saved", "success");
     } catch (e) {

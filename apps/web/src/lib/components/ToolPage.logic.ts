@@ -17,6 +17,7 @@ export const NUMERIC_KEYS = [
 	"endSec",
 	"frameCount",
 	"videoBitrate",
+	"gifColors",
 ];
 
 export const selectControlsOf = (tool: ToolDef): ToolControl[] =>
@@ -132,4 +133,41 @@ export function buildToolJsonLd(tool: ToolDef, origin = ""): string {
 			})),
 		},
 	]);
+}
+
+const ISSUE_BASE = "https://github.com/kanakkholwal/recast/issues/new";
+
+/**
+ * A pre-filled bug report for one tool. The template carries the facts we
+ * always end up asking for, so a report arrives usable instead of as
+ * "the converter is broken".
+ */
+export function buildIssueUrl(tool: ToolDef, browserInfo = ""): string {
+	const body = [
+		`**Tool:** ${tool.title} (\`/tools/${tool.slug}\`)`,
+		"",
+		"**What happened**",
+		"",
+		"",
+		"**What I expected**",
+		"",
+		"",
+		"**Input file**",
+		"Format, resolution and rough length:",
+		"",
+		"**Settings used**",
+		"",
+		"",
+		`**Browser:** ${browserInfo || "(please paste your browser and version)"}`,
+		"",
+		"<!-- These tools run entirely in your browser, so please do not attach",
+		"     anything confidential. A description is usually enough. -->",
+	].join("\n");
+
+	const params = new URLSearchParams({
+		title: `[tools] ${tool.title}: `,
+		labels: "tools",
+		body,
+	});
+	return `${ISSUE_BASE}?${params.toString()}`;
 }

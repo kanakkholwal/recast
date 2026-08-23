@@ -58,7 +58,7 @@ export interface ShapeControlProps {
       label="Blur amount"
       value={b.blurAmount}
       min={2}
-      max={40}
+      max={30}
       step={1}
       unit="px"
       onchange={(v) => editor.updateOverlay(b.id, { blurAmount: v })}
@@ -76,7 +76,7 @@ export interface ShapeControlProps {
       label="Stroke"
       value={sel.strokeWidth}
       min={1}
-      max={16}
+      max={24}
       step={1}
       unit="px"
       onchange={(v) => update({ strokeWidth: v })}

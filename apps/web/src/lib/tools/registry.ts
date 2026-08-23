@@ -103,10 +103,11 @@ export const TOOLS: ToolDef[] = [
 				key: "width",
 				label: "Width (px)",
 				type: "number",
-				default: 480,
+				default: 640,
 				min: 64,
 				max: 1280,
 				step: 16,
+				hint: "Match where it will be shown. Scaling a small GIF up is what makes it look blocky.",
 			},
 			{
 				key: "fps",
@@ -117,6 +118,18 @@ export const TOOLS: ToolDef[] = [
 				max: 24,
 				step: 1,
 				hint: "Lower fps = smaller file.",
+			},
+			{
+				key: "gifColors",
+				label: "Colours",
+				type: "select",
+				default: "256",
+				options: [
+					{ value: "256", label: "256 (best quality)" },
+					{ value: "128", label: "128 (smaller)" },
+					{ value: "64", label: "64 (smallest)" },
+				],
+				hint: "Each frame gets its own palette. Fewer colours shrink the file.",
 			},
 		],
 		faq: [

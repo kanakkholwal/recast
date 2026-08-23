@@ -29,8 +29,8 @@ export function filtersCss(f: ImageFilters): string {
 	if (f.grayscale !== 0) parts.push(`grayscale(${f.grayscale}%)`);
 	if (f.sepia !== 0) parts.push(`sepia(${f.sepia}%)`);
 	if (f.hueRotate !== 0) parts.push(`hue-rotate(${f.hueRotate}deg)`);
-	if (f.invert !== 0) parts.push(`invert(${f.invert}%)`);
 	if (f.blur !== 0) parts.push(`blur(${f.blur}px)`);
+	if (f.invert !== 0) parts.push(`invert(${f.invert}%)`);
 	return parts.length ? parts.join(" ") : "none";
 }
 

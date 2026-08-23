@@ -5,13 +5,21 @@
  * helper the handlers drive frame-by-frame or buffer-by-buffer.
  */
 
-import { Mp3Encoder } from '@breezystack/lamejs';
-import { zipSync } from 'fflate';
-import { applyPalette, GIFEncoder, quantize } from 'gifenc';
+import { Mp3Encoder } from "@breezystack/lamejs";
+import { zipSync } from "fflate";
+import { applyPalette, GIFEncoder, quantize } from "gifenc";
+import { ditherStrengthFor, orderedDither } from "./gif-dither";
 
 //  GIF -
 
-/** A GIF writer backed by gifenc. Quantizes each frame to a 256-colour palette. */
+export interface GifWriterOptions {
+	/** Palette size per frame, 2-256. Fewer colours = smaller file, more banding. */
+	maxColors?: number;
+	/** Ordered dithering. Off looks posterised on gradients. */
+	dither?: boolean;
+}
+
+/** A GIF writer backed by gifenc, with a per-frame adaptive palette. */
 export interface GifWriter {
 	/** Add one frame from RGBA pixels; `delayMs` is how long it shows. */
 	addFrame(
@@ -24,17 +32,25 @@ export interface GifWriter {
 	finish(): Uint8Array;
 }
 
-/** A GIF writer backed by gifenc. Quantizes each frame to a 256-colour palette. */
-export function createGifWriter(): GifWriter {
+export function createGifWriter(options: GifWriterOptions = {}): GifWriter {
+	const maxColors = Math.max(2, Math.min(256, Math.round(options.maxColors ?? 256)));
+	const dither = options.dither ?? true;
+	const strength = ditherStrengthFor(maxColors);
 	const enc = GIFEncoder();
+
 	return {
 		addFrame(rgba, width, height, delayMs) {
 			const data = rgba instanceof Uint8Array ? rgba : new Uint8Array(rgba.buffer);
-			const palette = quantize(data, 256);
-			const index = applyPalette(data, palette);
+			// Palette from the CLEAN frame, mapping from the dithered one: the
+			// dither should scatter quantisation error, not skew colour selection.
+			const palette = quantize(data, maxColors);
+			const source = dither ? orderedDither(data, width, height, strength) : data;
+			const index = applyPalette(source as unknown as Uint8Array, palette);
 			enc.writeFrame(index, width, height, {
 				palette,
-				delay: Math.max(20, Math.round(delayMs)),
+				// GIF stores delay in centiseconds. Rounding here rather than
+				// letting gifenc truncate keeps 12fps at 8cs instead of drifting.
+				delay: Math.max(20, Math.round(delayMs / 10) * 10),
 			});
 		},
 		finish() {
@@ -73,10 +89,10 @@ export function encodeWav(channels: Float32Array[], sampleRate: number): Uint8Ar
 		for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
 	};
 	const byteRate = sampleRate * numChannels * 2;
-	writeStr(0, 'RIFF');
+	writeStr(0, "RIFF");
 	view.setUint32(4, 36 + dataBytes, true);
-	writeStr(8, 'WAVE');
-	writeStr(12, 'fmt ');
+	writeStr(8, "WAVE");
+	writeStr(12, "fmt ");
 	view.setUint32(16, 16, true); // PCM chunk size
 	view.setUint16(20, 1, true); // PCM
 	view.setUint16(22, numChannels, true);
@@ -84,7 +100,7 @@ export function encodeWav(channels: Float32Array[], sampleRate: number): Uint8Ar
 	view.setUint32(28, byteRate, true);
 	view.setUint16(32, numChannels * 2, true); // block align
 	view.setUint16(34, 16, true); // bits per sample
-	writeStr(36, 'data');
+	writeStr(36, "data");
 	view.setUint32(40, dataBytes, true);
 	new Int16Array(buffer, 44).set(pcm);
 	return new Uint8Array(buffer);

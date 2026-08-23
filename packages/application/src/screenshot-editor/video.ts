@@ -1,7 +1,30 @@
 import { domToCanvas } from "modern-screenshot";
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 import { type AnimationPreset, propsAtTime, propsToTransform } from "./animation";
+import { clipTime } from "./defaults";
 import { exportFilter } from "./export";
+
+/** How the timeline maps to preset-local time, so the export matches the
+ * looping preview EXACTLY (full timeline length + hold frames before/after the
+ * clip). Omitted = sample the preset's own duration end-to-end. */
+export interface VideoTimeline {
+	duration: number; // total timeline length (ms)
+	clipStart: number; // ms where the clip begins
+	clipLength: number; // ms the clip spans (stretched)
+}
+
+/** Frame count + a frame->preset-time sampler for the given timeline. */
+function sampler(preset: AnimationPreset, fps: number, timeline?: VideoTimeline) {
+	const span = timeline && timeline.duration > 0 ? timeline.duration : preset.duration;
+	const total = Math.max(2, Math.round((span / 1000) * fps));
+	const timeAt = (i: number) => {
+		const playhead = (i / (total - 1)) * span;
+		return timeline
+			? clipTime(playhead, timeline.clipStart, timeline.clipLength, preset.duration)
+			: playhead;
+	};
+	return { total, timeAt };
+}
 
 /** True when this browser can encode H.264/MP4 via WebCodecs. */
 export function canExportVideo(): boolean {
@@ -62,9 +85,8 @@ export async function exportVideo(
 	preset: AnimationPreset,
 	fps: number,
 	onProgress?: (progress: number) => void,
-	/** Wall-clock length of the clip; defaults to the preset's natural duration.
-	 * A stretched timeline clip plays the same motion over a longer span. */
-	durationMs?: number,
+	/** Timeline mapping so the export matches the preview (length + holds). */
+	timeline?: VideoTimeline,
 ): Promise<Blob> {
 	if (!canExportVideo()) throw new Error("this browser can't encode video (needs WebCodecs)");
 
@@ -118,10 +140,9 @@ export async function exportVideo(
 		// Frame count comes from the clip's wall-clock length; the motion itself is
 		// always sampled across the preset's full range, so a stretched clip plays
 		// the same animation more slowly.
-		const clipMs = durationMs && durationMs > 0 ? durationMs : preset.duration;
-		const total = Math.max(2, Math.round((clipMs / 1000) * fps));
+		const { total, timeAt } = sampler(preset, fps, timeline);
 		for (let i = 0; i < total; i++) {
-			const time = (i / (total - 1)) * preset.duration;
+			const time = timeAt(i);
 			applyFrame(persp, tilt, preset, time);
 			const canvas = await domToCanvas(stage, { scale: 2, filter: exportFilter });
 			octx.clearRect(0, 0, width, height);
@@ -161,7 +182,7 @@ export async function exportVideoWebM(
 	preset: AnimationPreset,
 	fps: number,
 	onProgress?: (progress: number) => void,
-	durationMs?: number,
+	timeline?: VideoTimeline,
 ): Promise<Blob> {
 	if (!canExportWebM()) throw new Error("this browser can't record WebM");
 
@@ -183,12 +204,11 @@ export async function exportVideoWebM(
 		const probe = await domToCanvas(stage, { scale: 2, filter: exportFilter });
 		const { width, height } = outputDims(probe);
 
-		const clipMs = durationMs && durationMs > 0 ? durationMs : preset.duration;
-		const total = Math.max(2, Math.round((clipMs / 1000) * fps));
+		const { total, timeAt } = sampler(preset, fps, timeline);
 
 		// Phase 1: render every frame offline into an ImageBitmap (progress 0..0.6).
 		for (let i = 0; i < total; i++) {
-			const time = (i / (total - 1)) * preset.duration;
+			const time = timeAt(i);
 			applyFrame(persp, tilt, preset, time);
 			const canvas = await domToCanvas(stage, { scale: 2, filter: exportFilter });
 			bitmaps.push(await createImageBitmap(canvas));

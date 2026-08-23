@@ -180,15 +180,20 @@ export class ScreenshotEditorState {
 	}
 
 	removeSlide(i: number) {
+		if (i < 0 || i >= this.slides.length) return;
+		// Track the active slide by identity so removing one BEFORE it keeps the
+		// same slide active (index-clamping would shift to a different image).
+		const activeImg = this.slides[this.activeSlide];
 		const next = this.slides.filter((_, j) => j !== i);
 		this.slides = next;
 		if (next.length === 0) {
 			this.image = null;
 			this.activeSlide = 0;
-		} else {
-			this.activeSlide = Math.min(this.activeSlide, next.length - 1);
-			this.image = next[this.activeSlide];
+			return;
 		}
+		const keep = next.indexOf(activeImg);
+		this.activeSlide = keep >= 0 ? keep : Math.min(i, next.length - 1);
+		this.image = next[this.activeSlide];
 	}
 
 	clear() {
@@ -227,9 +232,14 @@ export class ScreenshotEditorState {
 		this.shadow = { ...SHADOW_PRESETS[preset] };
 	}
 
-	/** Apply a style-frame preset; seeds its padding/opacity from the clone map. */
+	/** Apply a style-frame preset; seeds its padding/opacity from the clone map.
+	 * Style frame and mockup are mutually exclusive (the clone models both as one
+	 * `imageBorder.type`), so a non-default style clears any active mockup. */
 	setImageStylePreset(preset: ImageStylePreset) {
 		this.imageStyle = { preset, ...STYLE_PRESETS[preset] };
+		if (preset !== "default" && this.mockup.kind !== "none") {
+			this.mockup = { ...this.mockup, kind: "none" };
+		}
 	}
 
 	patchImageStyle(patch: Partial<ImageStyle>) {
@@ -238,6 +248,10 @@ export class ScreenshotEditorState {
 
 	patchMockup(patch: Partial<Mockup>) {
 		this.mockup = { ...this.mockup, ...patch };
+		// Applying a mockup replaces the style frame (they are exclusive).
+		if (this.mockup.kind !== "none" && this.imageStyle.preset !== "default") {
+			this.imageStyle = { ...DEFAULT_STYLE };
+		}
 	}
 
 	patchTransform(patch: Partial<Transform3D>) {
@@ -305,14 +319,14 @@ export class ScreenshotEditorState {
 			rotation: 0,
 			opacity: 1,
 			isVisible: true,
-			text: "Double-click to edit",
-			fontSize: 32,
+			text: "Text",
+			fontSize: 24,
 			fontFamily: DEFAULT_FONT_ID,
-			fontWeight: "600",
+			fontWeight: "normal",
 			color: "#ffffff",
 			align: "center",
 			orientation: "horizontal",
-			shadow: { enabled: true, color: "#000000", blur: 4, offsetX: 0, offsetY: 2 },
+			shadow: { enabled: true, color: "rgba(0,0,0,0.5)", blur: 4, offsetX: 2, offsetY: 2 },
 		};
 		this.overlays = [...this.overlays, overlay];
 		this.selectedId = overlay.id;
@@ -351,6 +365,8 @@ export class ScreenshotEditorState {
 			x: Math.min(95, src.x + 4),
 			y: Math.min(95, src.y + 4),
 		} as Overlay;
+		// A duplicate is never the singleton light/shadow overlay.
+		if (copy.type === "image") copy.role = undefined;
 		this.overlays = [...this.overlays, copy];
 		this.selectedId = copy.id;
 		return copy.id;
@@ -400,7 +416,7 @@ export class ScreenshotEditorState {
 			rotation: 0,
 			opacity: 1,
 			isVisible: true,
-			blurAmount: 8,
+			blurAmount: 10,
 		};
 		this.overlays = [...this.overlays, overlay];
 		this.selectedId = overlay.id;
@@ -779,10 +795,24 @@ export class ScreenshotEditorState {
 		return JSON.parse(this.serialize());
 	}
 
-	/** Apply a saved design (from a custom preset), keeping the current image. */
+	/** Apply a saved custom preset. Like the reference, this applies only the
+	 * "look" (background/frame/shadow/style/mockup/3D/canvas/scale/opacity) and
+	 * PRESERVES the user's overlays, filters, keyframes, and aspect ratio. */
 	applyDesignObject(d: DesignObject) {
 		this._restoring = true;
-		this.applyDesign(d);
+		this.background = d.background;
+		this.backgroundId = d.backgroundId;
+		this.frame = d.frame;
+		this.shadow = d.shadow;
+		this.shadowPreset = d.shadowPreset ?? "soft";
+		this.imageStyle = d.imageStyle ?? { ...DEFAULT_STYLE };
+		this.mockup = d.mockup;
+		this.transform = d.transform;
+		this.imageScale = d.imageScale ?? 100;
+		this.imageOpacity = d.imageOpacity ?? 1;
+		this.backgroundBlur = d.backgroundBlur ?? 0;
+		this.backgroundNoise = d.backgroundNoise ?? 0;
+		this.canvasRadius = d.canvasRadius ?? DEFAULT_CANVAS_RADIUS;
 		this._lastSnap = this.serialize();
 		this._lastAt = Date.now();
 		this._restoring = false;

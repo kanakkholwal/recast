@@ -250,6 +250,9 @@ const PANEL_STEP = 16;
     // objects, so touching the ref catches nested edits) WITHOUT serializing on
     // each change; the heavy snapshot happens once per debounce, in the timeout.
     void editor.image;
+    void editor.slides;
+    void editor.activeSlide;
+    void editor.keyframes;
     void editor.background;
     void editor.backgroundId;
     void editor.frame;

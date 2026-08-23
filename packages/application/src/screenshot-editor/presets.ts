@@ -8,7 +8,7 @@ import type {
 } from "./types";
 
 export const DEFAULT_TRANSFORM: Transform3D = {
-	perspective: 1000,
+	perspective: 200, // clone perspective3D default (stronger foreshortening on tilt)
 	rotateX: 0,
 	rotateY: 0,
 	rotateZ: 0,
@@ -26,9 +26,11 @@ export function t3d(p: Partial<Transform3D>): Transform3D {
 /** One-click 3D tilts, ported from the reference app's perspective presets. */
 export const PERSPECTIVE_PRESETS: PerspectivePreset[] = [
 	tilt("flat", "Flat", {}),
-	tilt("left", "Left", { rotateX: 3, rotateY: -12 }),
-	tilt("right", "Right", { rotateX: 3, rotateY: 12 }),
-	tilt("up", "Up", { rotateX: 12 }),
+	// Pin perspective on the tilts so the new 200px resting default doesn't make
+	// these curated quick-looks extreme.
+	tilt("left", "Left", { perspective: 1000, rotateX: 3, rotateY: -12 }),
+	tilt("right", "Right", { perspective: 1000, rotateX: 3, rotateY: 12 }),
+	tilt("up", "Up", { perspective: 1000, rotateX: 12 }),
 	tilt("dynamic", "Dynamic", { perspective: 800, rotateX: 10, rotateY: -22 }),
 	tilt("dramatic", "Dramatic", { perspective: 900, rotateX: 28, rotateZ: -18, scale: 0.95 }),
 ];
