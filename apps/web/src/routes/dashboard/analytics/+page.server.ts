@@ -1,16 +1,16 @@
 import { and, desc, eq, ne } from "drizzle-orm";
-import { getDb } from "$lib/db";
-import { recast } from "$lib/db/schema";
 import { loadWorkspaceActivity, loadWorkspacePerformance } from "$lib/dashboard/activity.server";
+import { getDb } from "$lib/db";
 import { recastViewsSql } from "$lib/db/recast-selectors";
+import { recast } from "$lib/db/schema";
 import { resolvePlaybackUrl } from "$lib/storage";
 import type { PageServerLoad } from "./$types";
 
 /**
  * Analytics loader. Pulls real viewer events from `share_view` (via
- * `loadWorkspaceActivity`), the workspace's recasts with their cached view
- * totals, and the per-recast performance rollups that drive the comparison
- * table — all reflecting actual engagement.
+ * `loadWorkspaceActivity`) and the per-recast performance rollups behind the
+ * comparison table. The page derives every range, delta and breakdown from
+ * `activity` on the client, so changing the range costs no round-trip.
  */
 export const load: PageServerLoad = async ({ parent }) => {
 	const { activeOrganization } = await parent();
@@ -22,11 +22,6 @@ export const load: PageServerLoad = async ({ parent }) => {
 			.select({
 				id: recast.id,
 				title: recast.title,
-				durationSec: recast.durationSec,
-				sizeBytes: recast.sizeBytes,
-				source: recast.source,
-				provider: recast.provider,
-				createdAt: recast.createdAt,
 				posterUrl: recast.posterUrl,
 				views: recastViewsSql(),
 			})
@@ -60,22 +55,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 			comments: p?.comments ?? 0,
 		};
 	});
-	const commentsTotal = performance.reduce((s, p) => s + p.comments, 0);
-
-	return {
-		recasts: recasts.map((r) => ({
-			id: r.id,
-			title: r.title,
-			durationSec: r.durationSec,
-			sizeBytes: Number(r.sizeBytes),
-			source: r.source,
-			provider: r.provider,
-			views: Number(r.views ?? 0),
-			createdAt: r.createdAt.getTime(),
-			posterUrl: posterFor.get(r.id) ?? "",
-		})),
-		activity,
-		performance,
-		commentsTotal,
-	};
+	// Only `activity` + `performance` reach the page. The full recast list and a
+	// lifetime comment total used to ship too, unread.
+	return { activity, performance };
 };

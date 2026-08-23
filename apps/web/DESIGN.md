@@ -536,26 +536,345 @@ because a tinted amber card is a second colour system for one sentence.
 ### Dashboard shell
 
 The product routes keep their own tokens (the dashboard is not under
-`[data-site="marketing"]`), but the shell now uses the same structural language
-as the site:
+`[data-site="marketing"]`) and their own shape: `Sidebar.Root` stays
+`variant="inset"`, because the floating panel is the shell's identity. What
+changed is everything the token system covers:
 
-- **Flush rail, not a floating panel.** `Sidebar.Root` is `variant="sidebar"`,
-  so the rail sits in its own tonal column with a hairline edge instead of an
-  inset card with `m-2`, rounding and a shadow.
-- **The header is opaque.** `bg-background/80` + `backdrop-blur-xl` reads as a
-  different design system sitting on top of a hairline shell. It is a solid bar
-  on a full-strength `border-border-low` rule, and it no longer needs the
-  `md:top-2 md:rounded-t-xl` fudge that matched the inset panel's corners.
-- **One moving object marks the active row.** The row fill still crossfades
-  between entries; the `ring-1 ring-inset` chip and the separate `bg-primary`
-  left pill are gone. Two markers for one state is one too many.
-- Type comes off the scale (`text-[12.5px]`, `text-[10px]` uppercase and
-  `text-[15px]` are gone), group labels are sentence case, and the primary
-  action is `variant="dark"` like every other primary on the site. The GitHub
-  nudge in the footer drops to `outline` so the rail has one filled button.
+- **No glass.** The header was `bg-background/80` + `backdrop-blur-xl`; it is
+  opaque on a full-strength `border-border-low` rule. Same for the search
+  trigger, which was a `bg-card/70 backdrop-blur` inset card and is now a
+  hairline field.
+- **No dilutions.** `border-border-low/60`, `/70`, `border-border/30`,
+  `text-muted-foreground/40` and `bg-foreground/5` all resolve to the real
+  tokens (`border-border-low`, `bg-paper`).
+- **Type on the scale.** `text-[15px]`, `text-[12.5px]`, `text-[12px]`,
+  `text-[11px]`, `text-[10px]`, `text-[9px]` are gone; group labels are sentence
+  case rather than uppercase and tracked.
+- **One filled button per surface.** "New Recast" is `variant="dark"` like every
+  other primary; the GitHub nudge in the footer drops to `outline`.
 
-The same component backs the admin shell through its flat `nav` prop, so both
-shells moved together.
+**The search field carries a fill.** `bg-paper` against the header's
+`bg-background`, because an outline alone on the same colour as its surroundings
+does not read as a field. Below `sm` it collapses to its icon at `size-9`: a
+full-width bar costs more than a phone header has to spend.
+
+**Header search stays centred** in its `mx-auto max-w-md` box, with the empty
+spacer kept on `/dashboard` (where the hero owns search) so the profile menu
+holds its right-edge anchor.
+
+The same sidebar component backs the admin shell through its flat `nav` prop, so
+both shells moved together.
+
+### Dashboard home
+
+Same token pass as the shell, and deliberately **no change to what is on the
+page or where**: greeting, hero search, Upload/Analytics actions, the metric
+strip, library counts, activity, usage and recent recasts all stay in place and
+in order. A dashboard people already know is not the place to move the furniture.
+
+- `glass-card` → `.surface`, `glass-chip` icon tiles → the glyph on its own.
+  A 40px tinted plate behind a 16px icon is the thing the marketing pages
+  dropped first; the dashboard had one on every card header, empty state and
+  activity row.
+- The greeting was `bg-clip-text` over a `to-foreground/60` gradient, which
+  fades a page's one `h1` into the background. Solid display type now.
+- The metric strip sits between two hairlines instead of floating, so it reads
+  as one object rather than five stray numbers.
+- Labels drop uppercase tracking for sentence-case `text-caption`; every
+  `text-[9px]`…`text-[11px]` goes to the scale; `font-mono` readouts become
+  `tabular-nums`.
+- Upload is `variant="dark"` (the page's conversion action), Analytics stays
+  outline: one filled button per surface.
+- Dilutions resolve to tokens: `divide-border-low/40`, `ring-border-low/40`,
+  `bg-foreground/5`, `bg-foreground/8` → `border-border-low`, `bg-paper`. The
+  one surviving alpha is the play-overlay scrim on a poster, where dimming an
+  image is the actual job.
+
+**Cards keep both the fill and the hairline here, and that is not redundant.**
+The product theme lifts `--card` above the panel, but the lift measures 1.5 L in
+light (imperceptible) against a 9 L border, and 6.65 L against a 5 L border in
+dark. Light mode is carried by the hairline, dark by both. Drop either and one
+theme loses the card edge. That is the difference from the marketing surface,
+where `card == canvas` and the hairline is the only differentiator.
+
+**An empty workspace gets one instruction, not five empty panels.** With no
+recasts, usage, activity and rankings all read zero and bury the only action
+that matters, so the page collapses to a single card: what fills in, three
+steps, and the two buttons. The hero stays, because search and Upload are still
+the point.
+
+### Team page
+
+Same pass, and the shared pieces moved with it: `PageHeader` (a `size-11`
+`glass-chip` plate behind a `size-5` glyph) and `SettingsSection` (`glass-card`
+plus `ring-1 ring-foreground/12` for its accent). Both are used across settings,
+team and library, so those routes inherit the fix.
+
+**The accent variant was a ring on a card.** A ring outside a border is two
+outlines on one box; emphasis is now `border-border-strong` on the hairline the
+card already has.
+
+Content changes, since the page was dense but not evenly useful:
+
+- **"Your role" left the stat row.** Your own access level is identity, not a
+  metric, and it is already legible from the rows and from which controls you
+  can see. It moved to a badge in the page header, where identity belongs.
+- **"Can manage" took its place** — how many owners and admins the workspace
+  has, which is the number worth watching on a shared account.
+- **A seat-capacity bar** appears when the allowance is actually in play, at
+  half full or above. On a 250-seat plan with one member it was a full-width
+  band showing an invisible sliver, so "Seats left" carries the number until it
+  matters. At the cap an owner gets "Add seats" inline. The fill floors at 2%
+  so a real value is never rendered as nothing.
+
+**A `font-display` heading always carries a weight.** Tailwind's preflight
+resets headings to `font-weight: inherit`, and the product routes are outside
+`[data-site="marketing"]`, so its `h1`/`h2` weight rules never reach them: a
+display heading with no weight class renders at body weight.
+
+### Settings and archive
+
+Both ran on the same pass. Two patterns worth naming, because they recur:
+
+**Inset panels inside a card were translucent.** `border-border-low/70` over
+`bg-background/55` on a card that is already `bg-card` gives a washed box inside
+a solid one. They are `border-border-low` on `bg-paper` now, which is the same
+relationship the marketing pages use for a nested block.
+
+**Semantic state came from the palette.** The unverified-email badge was
+`text-amber-600 dark:text-amber-400` and a usage bar filled `bg-amber-500`; both
+are `text-warning` / `bg-warning`, which is the token that already exists for
+exactly this. Included/excluded rows in the billing matrix moved off
+`text-foreground/60` and `text-muted-foreground/60` onto `text-success` and
+`text-border-strong`, so "included" reads as a state rather than as slightly
+darker text.
+
+Each page also gained the thing it was missing:
+
+- **Profile could not change anything.** It rendered your name and email as two
+  read-only panels, so "Settings → Profile" was a dead end. The name is an
+  editable field now (`authClient.updateUser`, then the local store and
+  `invalidateAll`, so the header, rail and greeting update with it). Email stays
+  fixed, because changing it is an auth flow rather than a text field.
+- **Preferences had no appearance control.** Theme lived only in the profile
+  menu, which is a strange omission on a page called Preferences. A three-way
+  Light / Dark / System control sits at the top of the rail, reading
+  `userPrefersMode` so "System" is a real state rather than a third button that
+  looks unselected.
+- **Billing sold Pro to people already on Pro.** The rail's upsell card now
+  switches on plan: subscribers get monthly total, creators billed, renewal or
+  cancellation date, and a portal link; free workspaces still get the pitch.
+
+A second pass fixed how these pages handle numbers and how a card header
+behaves in the 320px rail:
+
+- **Percentages were raw floats.** `storagePctUsed` returns an unrounded ratio,
+  and Preferences printed it: `0.0009770365977601614%`. `formatPct` buckets it
+  (`0%`, `<1%`, then rounded) and `barWidth` clamps a bar to 0-100 with a 2%
+  floor, so real-but-tiny usage stays visible instead of drawing nothing. Both
+  live in `$lib/dashboard/format` and are used by every meter.
+- **Enterprise read as broken.** A contract workspace has no Polar row, so
+  "Billing status" said *No subscription* and the rail said *Renews: Not
+  scheduled*. Status labels come from a map now (no `capitalize` over
+  `past_due`), an agreement shows *By agreement* / *Managed with your account
+  contact*, and the rail drops any row with nothing to say rather than filling
+  it with a placeholder. Seats only print `x $4` when the seat price is not
+  zero.
+- **A badge crushed the description.** `SettingsSection` put the badge in the
+  same flex row as the title *and* the description, so in the rail a
+  twelve-word description wrapped to three lines against a `Enterprise` chip.
+  The badge rides the title row; the description gets the full column.
+- **The plan name appeared three times** on billing (page header, plan card,
+  rail). The rail carries no badge.
+- **Preferences was lopsided**: one short card on the left, two on the right.
+  Split by kind instead: the left column is what you *set* (workspace defaults,
+  appearance), the rail is what the plan *gives you* (limits).
+
+Archive lost a duplication: every card repeated the page's own explanation
+("the file was removed after 14 days…"), so a screen of six cards said it seven
+times. The page says it once, on a hairline row that also carries the count,
+the total size and the purge window.
+
+### Recasts library and detail
+
+The whole route was still pre-Dub, and the pass turned up more than tokens.
+
+**The library was one card wrapping the page.** Folder cards, the toolbar and
+the grid all lived inside a single `glass-card`, so every real card sat in a
+card. The page is hairline sections now: a breadcrumb row, the folder grid, the
+toolbar, then the results. The drop-to-upload target is the region, not a box.
+
+**Folders were a tree rendered flat.** The store has `childrenOf`, `breadcrumb`
+and `subtreeIds`, and the page used none of them: it sorted every folder in the
+workspace into one 4-up grid, so a subfolder appeared beside its own parent, and
+opening the parent hid that subfolder's videos with no way to reach them. It
+browses one level at a time now, with a real breadcrumb, and an **Unfiled**
+bucket at the root. Search always scopes to the whole library and says so,
+because a search box that only looks inside the open folder is a search box that
+lies.
+
+**Duplicated and dead.** A second "Videos / N videos - M folders" header
+restated the page header; `archived` state, `deleteArchived` and
+`createRootFolder` were unreachable (archive is its own route); the list view
+printed file size twice, once under the title and once in the Size column. All
+gone. The view toggle moved next to Sort, where the other view controls are, and
+became icon-only.
+
+**Dialogs.** Rename and Manage tags were hand-rolled fixed overlays with their
+own scrim and no focus trap; both are `Dialog.*` now, like the team page. Share
+and Quick upload kept a hand-written `role="switch"` div each; both use the
+shared `Switch`. Every "Pro" gate in them reads from the same plan flags.
+
+**Access was wider than the API.** The library listed every recast in the
+workspace to every member, but `PATCH`/`DELETE` allowed only the creator or a
+platform admin, so a member saw rows they could not act on, while a workspace
+owner could not act on their own workspace's content. One predicate now backs
+all of it (`$lib/dashboard/access`): the creator, a workspace owner/admin, or a
+platform admin. The list is filtered by it, the detail loader enforces it, and
+the API honours it. An id you may not open returns **404, not 403** - a member
+has no business learning that it exists - and `recasts/+error.svelte` renders
+that as a real "Recast not found" page instead of the generic boundary.
+
+**The description was write-only.** You could edit it from the header and it
+only ever appeared to viewers. It renders under the player now.
+
+### Workspace analytics
+
+Audited against cognitive-load, Gestalt and Fitts guidance, then rebuilt. The
+page had eleven panels and about twenty numbers above the fold, well past
+7+/-2, and none of them could be judged.
+
+**No number had a baseline.** "Views 1,240" in "Last 7 days" is up or down
+against what? The dashboard *home* already computed a week-over-week trend; the
+page dedicated to analytics did not. Every headline metric now carries a delta
+against the equal-length window immediately before it, and "All time" shows no
+chip at all rather than a meaningless one. `deltaPct` returns `null` when the
+prior window is empty, so a single view never renders "+100%".
+
+**Two stat rows said the same thing in two visual languages.** A `StatGrid` row
+followed by a 3-up row of `glass-card` tiles with uppercase micro-labels and
+mono numerals. One row of four now: Views, Unique viewers, Avg watch,
+Completion. "Top recast" was a stat card naming an entity you could not click;
+the sortable table already ranks by views, so it went.
+
+**The range filter governed half the page.** It filtered `activity`, but the
+performance table and the comment total are lifetime SQL rollups, so "Last 7
+days" sat above an all-time table with nothing saying so. The table is labelled
+"All time, not the selected range" (comments only exist as a lifetime rollup),
+and "All time" is genuinely unbounded now instead of quietly meaning 365 days.
+
+**Charts stated no headline.** A retention curve is drawn to answer one
+question, so the section says it: "Half your viewers leave by 40% of the
+video". The trend chart names its busiest day.
+
+Added, from data already loaded: **returning viewers** (watched on more than one
+day), the signal a view count cannot give. The range picker is `RangeTabs`, the
+same control as the per-recast page, not a bespoke select. The activity feed
+left its sticky 22rem rail (lowest-value content in the highest-value column)
+for the foot of the page. An empty workspace gets one empty state instead of
+eleven zeroed panels. The sortable table gained `aria-sort`, a caption stating
+the current sort, and a line saying how many rows were capped.
+
+The loader shipped a 200-row recast list and a comment total the page never
+read; both are gone.
+
+### Dialogs
+
+**Every dialog title rendered in a font the web app does not load.** The shared
+`Dialog`/`Card`/`Sheet`/`Drawer` titles use `font-heading`, which
+`@recast/design` points at Geist. Desktop loads Geist; web loads Inter, Satoshi
+and Geist Mono, so `font-heading` fell back to plain sans. Web now maps
+`--font-heading` to `--font-display`, which fixes all four shared titles at once
+and leaves desktop on Geist.
+
+**Upload dialog.** Its stepper was `aria-hidden`, so the one progress indicator
+in the flow was invisible to assistive tech; it is a real list with an sr-only
+"Step 2 of 3". Progress showed a bare percentage, now bytes of total. The
+drag highlight flickered because `dragleave` fires when crossing into a child;
+it counts depth like the library does, and the drop target is the whole dialog
+body rather than just the button. "Change cover" was a 12px text link under the
+touch-target floor and is a button.
+
+**There was no way out of an upload and no error state.** A large upload could
+only be escaped by closing the tab, and a failure toasted and dumped you back at
+an empty picker with no idea what happened. `UploadHandlers` takes an
+`AbortSignal`, the PUT honours it, Cancel is offered throughout, and a failure
+renders in-dialog with the message and a retry. A cancel is not an error: it
+returns to the picker silently.
+
+### Deleting a recast
+
+**What the transaction covers.** The row delete and the usage reversal run in
+one `db.transaction`, and the Postgres cascade takes the shares, views,
+comments, reactions, share members and tag links with the row *inside* that
+same transaction, so a delete is all-or-nothing.
+
+**What is kept, deliberately.** `deliveryBytesThisMonth` is a counter that
+`recordDelivery` bumps per view, not a sum over `share_view`, so deleting
+content cannot erase egress we have already served and billed. Only the
+*state* meters are reclaimed: `storage_bytes` and `active_recasts_count` (and
+`archived_recasts_count` for an archived row). A `draft` never bumped usage, so
+nothing is reversed. That invariant is now written next to the code, because
+"decrement delivery too" looks like a missing line until you know why it isn't.
+
+**Order was wrong.** The blob was deleted *before* the transaction ran, so a
+failed transaction left a live row pointing at an object that no longer
+existed - broken playback with no way back. State commits first now, objects
+after: a failure there orphans an object, which the storage console can clean
+up, and the code still swallows the provider 404 an already-blobless archived
+row produces.
+
+**The poster was never deleted.** Only `videoUrl` was passed to `deleteObject`,
+so every delete left its thumbnail behind forever, on storage the workspace had
+just stopped being charged for. `deleteRecastObjects` takes every key a recast
+owns, skips absolute URLs (external/legacy, not ours), dedupes, and is
+unit-tested. Archive keeps the poster on purpose - the archive list renders it.
+
+**Five guards, five behaviours.** `PATCH`, `DELETE`, archive, poster, tags and
+share each carried their own copy: most were creator-or-platform-admin, share
+was owner-only, and none let a workspace owner manage their own workspace's
+content. All six call `authorizeRecast` from `$lib/server/recast-guard` now,
+which shares one predicate with the page loaders.
+
+**Nothing asked before destroying anything.** Delete was a single menu click, an
+optimistic removal and a toast - no confirmation, on an action that also takes
+every share link and all viewer history. Bulk delete did it for N recasts at
+once. `ConfirmDialog` now fronts single delete, bulk delete, archive (the video
+file goes) and permanent delete from the archive page, each naming what is lost.
+
+**Bulk delete lied on partial failure.** `Promise.all` rejects on the first
+error and the catch restored the whole pre-delete snapshot, so eight successful
+deletes reappeared in the list until a reload. It is `Promise.allSettled` +
+`invalidateAll()` now, reporting "N of M couldn't be deleted".
+
+### Free-plan analytics
+
+Free gets analytics that mean something and stops there: **views, unique
+viewers, completion rate, and a 7-day chart**. Everything else is one locked
+panel per section.
+
+The lock is real, not visual. `+page.server.ts` branches on
+`plan.features.analytics`: a free workspace runs two aggregate queries
+(`loadRecastBasicStats`) and never touches country, device, referrer, watch
+percentage, comments or reactions. So the blurred layer cannot be stand-in
+numbers - it is `SkeletonPreview` geometry, `aria-hidden`, with the real heading
+and Upgrade button in a legible overlay above it. Blurred *invented* figures
+would be worse than an empty state.
+
+**Charts across themes.** The panels were `bg-background/40` +
+`backdrop-blur-sm`, which reads muddy on the dark canvas; they are `.surface`.
+Series colours were already tokens (`var(--color-primary)`, `fill-primary`), so
+they follow the theme, but `THEMES` in the shadcn chart helper matched only
+`.dark` while `app.css` also themes on `[data-theme="dark"]` - a themed series
+would have stayed light there. It matches both selectors now. Breakdown bars
+went from `bg-foreground/30` on `bg-foreground/8` (nearly invisible in dark) to
+the app's standard `bg-foreground` on `bg-paper`.
+
+**Enterprise was offered an upgrade to Pro.** "Upgrade this workspace" was the
+`{:else}` of "can open the billing portal", and a contract workspace has no
+Polar customer, so it fell through to the upsell. Upgrade is gated on
+`!isPaid` now, and a contract shows "Your account contact handles plan changes"
+instead of a Compare-plans link to tiers below the one it is on.
 
 ### Interior pages
 

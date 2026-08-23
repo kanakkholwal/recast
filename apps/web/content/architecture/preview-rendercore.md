@@ -65,15 +65,15 @@ flowchart TD
   video["video element<br/>(fallback, audio transport)"]
 
   clock -->|"outputToOriginal"| playbackTime
-  store --> fi["buildFrameInput → FrameInput<br/>VideoPreview.svelte:621"]
+  store --> fi["buildFrameInput → FrameInput<br/>VideoPreview.svelte"]
   playbackTime --> fi
-  fi --> cfp["computeFrameParams (pure)<br/>frame-params.ts:157"]
+  fi --> cfp["computeFrameParams (pure)<br/>frame-params.ts"]
   cfp --> params["FrameParams<br/>{uniforms, svgCursor, bindBackgroundImage}"]
 
   ring -->|"bind(tUs, floorUs) → unit 0"| tex0["TEXTURE0 = video frame"]
   video -->|"uploadVideoFrame (fallback)"| tex0
 
-  params --> rc["RenderCore.renderFrame<br/>render-core.ts:51"]
+  params --> rc["RenderCore.renderFrame<br/>render-core.ts"]
   tex0 --> rc
   rc --> main["backend.renderMain<br/>(single program, full-screen quad)"]
   main --> passes["overlay passes<br/>(export: sprite cursor, camera, anno/caption)"]
@@ -85,12 +85,12 @@ Ordered pass list (`RenderCore.applyFrameParams`, `render-core.ts`):
 
 ```mermaid
 flowchart TD
-  begin["beginFrame<br/>viewport + clear to opaque black<br/>webgl2-backend.ts:124"]
-  main["MAIN PASS, renderMain<br/>background + video card + zoom + motion blur<br/>+ rounded mask + drop shadow + DOT cursor + click highlight<br/>(all in one fragment shader) webgl2-backend.ts:135"]
-  after["afterMain hook<br/>(export only: build annotation+caption 2D layer,<br/>blur samples the just-composited frame) render-core.ts:71"]
-  anno["annotation-layer pass (export)<br/>drawSprite(annotationTex) offscreen-export.ts:261"]
-  cursor["cursor-sprite pass (export)<br/>drawSprite(sprite, hotspot rect) cursor-overlay-export.ts:80"]
-  camera["camera-bubble draw (export)<br/>drawSprite(camTex, cover-crop, rounded) offscreen-export.ts:405"]
+  begin["beginFrame<br/>viewport + clear to opaque black<br/>webgl2-backend.ts"]
+  main["MAIN PASS, renderMain<br/>background + video card + zoom + motion blur<br/>+ rounded mask + drop shadow + DOT cursor + click highlight<br/>(all in one fragment shader) webgl2-backend.ts"]
+  after["afterMain hook<br/>(export only: build annotation+caption 2D layer,<br/>blur samples the just-composited frame) render-core.ts"]
+  anno["annotation-layer pass (export)<br/>drawSprite(annotationTex) offscreen-export.ts"]
+  cursor["cursor-sprite pass (export)<br/>drawSprite(sprite, hotspot rect) cursor-overlay-export.ts"]
+  camera["camera-bubble draw (export)<br/>drawSprite(camTex, cover-crop, rounded) offscreen-export.ts"]
   result["FrameResult { svgCursor }"]
 
   begin --> main --> after --> anno --> cursor --> camera --> result

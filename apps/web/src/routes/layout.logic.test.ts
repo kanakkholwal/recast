@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isChromeless } from "./layout.logic";
+import { isChromeless, isIndexable } from "./layout.logic";
 
 describe("isChromeless", () => {
 	// The editor is full-height and ships the EditorToolbar; the marketing navbar
@@ -28,6 +28,39 @@ describe("isChromeless", () => {
 	it("keeps the chrome on marketing pages", () => {
 		for (const p of ["/", "/features", "/pricing", "/tools", "/tools/mp4-to-gif", "/blog"]) {
 			expect(isChromeless(p), p).toBe(false);
+		}
+	});
+});
+
+describe("isIndexable", () => {
+	it("indexes the public marketing, blog, and architecture trees", () => {
+		for (const p of [
+			"/",
+			"/features",
+			"/pricing",
+			"/download",
+			"/blog",
+			"/blog/screen-studio-for-windows",
+			"/architecture",
+			"/architecture/system-overview",
+			"/tools",
+			"/tools/mp4-to-gif",
+			"/playground",
+		]) {
+			expect(isIndexable(p), p).toBe(true);
+		}
+	});
+
+	it("noindexes app shells, auth, and client-only editors", () => {
+		for (const p of [
+			"/dashboard",
+			"/admin/users",
+			"/onboarding",
+			"/login",
+			"/share/abc",
+			"/tools/screenshot-editor/edit",
+		]) {
+			expect(isIndexable(p), p).toBe(false);
 		}
 	});
 });

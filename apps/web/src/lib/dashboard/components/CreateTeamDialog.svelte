@@ -1,65 +1,65 @@
 <script lang="ts">
-	import { invalidateAll } from "$app/navigation";
-	import { authClient } from "$lib/auth/client";
-	import { slugifyBase } from "./CreateTeamDialog.logic";
-	import { Button } from "@recast/ui/button";
-	import * as Dialog from "@recast/ui/dialog";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import { toast } from "@recast/ui/sonner";
-	import { ArrowRight, LoaderCircle, Plus } from "@recast/icons";
+import { ArrowRight, LoaderCircle, Plus } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import { toast } from "@recast/ui/sonner";
+import { invalidateAll } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import { slugifyBase } from "./CreateTeamDialog.logic";
 
-	/**
-	 * Inline "create another team" flow for users who already have at least
-	 * one team. /onboarding/team handles the zero-team case; this dialog
-	 * handles every subsequent create.
-	 *
-	 * Slug is auto-derived from the name plus a 6-char random suffix so the
-	 * unique index never collides.
-	 */
+/**
+ * Inline "create another team" flow for users who already have at least
+ * one team. /onboarding/team handles the zero-team case; this dialog
+ * handles every subsequent create.
+ *
+ * Slug is auto-derived from the name plus a 6-char random suffix so the
+ * unique index never collides.
+ */
 
-	let { open = $bindable(false) }: { open?: boolean } = $props();
+let { open = $bindable(false) }: { open?: boolean } = $props();
 
-	let name = $state("");
-	let creating = $state(false);
+let name = $state("");
+let creating = $state(false);
 
-	async function submit(e: SubmitEvent) {
-		e.preventDefault();
-		if (!name.trim() || creating) return;
-		creating = true;
-		const teamName = name.trim();
-		const slug = `${slugifyBase(teamName)}-${Math.random().toString(36).slice(2, 8)}`;
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.organization.create({
-						name: teamName,
-						slug,
-						keepCurrentActiveOrganization: false,
-					});
-					if (error) {
-						// Surface the real reason: cap reached, slug clash, etc.
-						console.error("[create team]", error);
-						throw new Error(error.message ?? "Couldn't create the team.");
-					}
-				})(),
-				{
-					loading: `Creating ${teamName}…`,
-					success: `Welcome to ${teamName}.`,
-					error: (err) => (err as Error)?.message ?? "Couldn't create the team.",
-				},
-			);
-			name = "";
-			open = false;
-			// Active org has been switched server-side by setActive — re-pull
-			// every loader so the sidebar swaps over to the new team.
-			await invalidateAll();
-		} finally {
-			// Always release so a thrown rejection (network drop, abort) can't
-			// strand the submit button in a disabled state.
-			creating = false;
-		}
+async function submit(e: SubmitEvent) {
+	e.preventDefault();
+	if (!name.trim() || creating) return;
+	creating = true;
+	const teamName = name.trim();
+	const slug = `${slugifyBase(teamName)}-${Math.random().toString(36).slice(2, 8)}`;
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.organization.create({
+					name: teamName,
+					slug,
+					keepCurrentActiveOrganization: false,
+				});
+				if (error) {
+					// Surface the real reason: cap reached, slug clash, etc.
+					console.error("[create team]", error);
+					throw new Error(error.message ?? "Couldn't create the team.");
+				}
+			})(),
+			{
+				loading: `Creating ${teamName}…`,
+				success: `Welcome to ${teamName}.`,
+				error: (err) => (err as Error)?.message ?? "Couldn't create the team.",
+			},
+		);
+		name = "";
+		open = false;
+		// Active org has been switched server-side by setActive — re-pull
+		// every loader so the sidebar swaps over to the new team.
+		await invalidateAll();
+	} finally {
+		// Always release so a thrown rejection (network drop, abort) can't
+		// strand the submit button in a disabled state.
+		creating = false;
 	}
+}
 </script>
 
 <Dialog.Root bind:open>

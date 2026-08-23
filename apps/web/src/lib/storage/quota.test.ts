@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { limitsFor, PLANS } from "$lib/billing/catalog";
-import {
-	currentDeliveryPeriodStart,
-	deliveryState,
-	type QuotaSnapshot,
-} from "./quota.logic";
+import { currentDeliveryPeriodStart, deliveryState, type QuotaSnapshot } from "./quota.logic";
 
 const GB = 1024 ** 3;
 
@@ -33,18 +29,14 @@ const JUNE_START = new Date(Date.UTC(2026, 5, 1));
 
 describe("currentDeliveryPeriodStart", () => {
 	it("returns the first UTC instant of the month", () => {
-		expect(currentDeliveryPeriodStart(JULY).toISOString()).toBe(
-			"2026-07-01T00:00:00.000Z",
-		);
+		expect(currentDeliveryPeriodStart(JULY).toISOString()).toBe("2026-07-01T00:00:00.000Z");
 	});
 
 	// A local-time month boundary would shift the reset by hours for users
 	// east of UTC, letting a workspace serve two "first days" in a row.
 	it("uses UTC, not local time, at a month edge", () => {
 		const edge = new Date("2026-08-01T00:30:00Z");
-		expect(currentDeliveryPeriodStart(edge).toISOString()).toBe(
-			"2026-08-01T00:00:00.000Z",
-		);
+		expect(currentDeliveryPeriodStart(edge).toISOString()).toBe("2026-08-01T00:00:00.000Z");
 	});
 });
 

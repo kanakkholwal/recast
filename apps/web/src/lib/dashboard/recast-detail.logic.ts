@@ -1,12 +1,12 @@
 /** Pure adapters + assembly for the recast detail page. */
 
 import {
+	type Activity,
 	avgWatchPct,
 	completionRate,
 	engagementRate,
 	uniqueViewers,
 	viewCount,
-	type Activity,
 } from "./activity";
 import { formatBytes, formatDuration, formatRelative } from "./format";
 import type { Recast } from "./store.svelte";

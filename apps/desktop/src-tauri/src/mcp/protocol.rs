@@ -93,6 +93,14 @@ impl Server {
                 Ok(result) => success(id, result),
                 Err(err) => error_response(id, err.code, err.message),
             },
+            "resources/list" => match list_resources(host) {
+                Ok(result) => success(id, result),
+                Err(err) => error_response(id, err.code, err.message),
+            },
+            "resources/read" => match read_resource(&params, host) {
+                Ok(result) => success(id, result),
+                Err(err) => error_response(id, err.code, err.message),
+            },
             other => error_response(id, METHOD_NOT_FOUND, format!("unknown method '{other}'")),
         })
     }
@@ -139,6 +147,77 @@ fn tool_result(value: &Value, is_error: bool) -> Value {
     })
 }
 
+/// Projects are resources as well as tool arguments, so a client can attach one
+/// to the conversation without spending a tool call on it.
+///
+/// The path is percent-encoded into the URI rather than appended raw: a Windows
+/// path carries `:` and `\`, and a recording title routinely carries a space.
+const RESOURCE_PREFIX: &str = "recast://project/";
+
+fn resource_uri(path: &str) -> String {
+    format!("{RESOURCE_PREFIX}{}", urlencoding::encode(path))
+}
+
+fn resource_path(uri: &str) -> Option<String> {
+    let encoded = uri.strip_prefix(RESOURCE_PREFIX)?;
+    urlencoding::decode(encoded)
+        .ok()
+        .map(|decoded| decoded.into_owned())
+}
+
+/// A failing host is an empty library rather than a protocol error: a client
+/// lists resources on connect, and refusing there reads as a broken server.
+fn list_resources(host: &impl ToolHost) -> Result<Value, CallError> {
+    let entries = host.call("project.list", json!({})).unwrap_or(json!([]));
+    let resources: Vec<Value> = entries
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|entry| {
+            let path = entry.get("path")?.as_str()?;
+            let name = entry
+                .get("filename")
+                .and_then(Value::as_str)
+                .unwrap_or(path);
+            Some(json!({
+                "uri": resource_uri(path),
+                "name": name,
+                "description": "Saved edits for this recording, as a RenderState.",
+                "mimeType": "application/json",
+            }))
+        })
+        .collect();
+    Ok(json!({ "resources": resources }))
+}
+
+fn read_resource(params: &Value, host: &impl ToolHost) -> Result<Value, CallError> {
+    let uri = params
+        .get("uri")
+        .and_then(Value::as_str)
+        .ok_or_else(|| CallError {
+            code: INVALID_PARAMS,
+            message: "resources/read requires a uri".into(),
+        })?;
+    let path = resource_path(uri).ok_or_else(|| CallError {
+        code: INVALID_PARAMS,
+        message: format!("'{uri}' is not a {RESOURCE_PREFIX} uri"),
+    })?;
+    let state = host
+        .call("editor.show", json!({ "path": path }))
+        .map_err(|message| CallError {
+            code: INVALID_PARAMS,
+            message,
+        })?;
+    Ok(json!({
+        "contents": [{
+            "uri": uri,
+            "mimeType": "application/json",
+            "text": serde_json::to_string_pretty(&state).unwrap_or_else(|_| state.to_string()),
+        }],
+    }))
+}
+
 fn tool_descriptors() -> Vec<Value> {
     tools::TOOLS.iter().map(tools::Tool::descriptor).collect()
 }
@@ -146,15 +225,19 @@ fn tool_descriptors() -> Vec<Value> {
 fn initialize_result() -> Value {
     json!({
         "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": { "tools": { "listChanged": false } },
+        "capabilities": {
+            "tools": { "listChanged": false },
+            "resources": { "subscribe": false, "listChanged": false },
+        },
         "serverInfo": {
             "name": "recast",
             "version": env!("CARGO_PKG_VERSION"),
         },
         "instructions": concat!(
-            "Recast edits are proposed on a branch, never written directly. ",
-            "Create a branch, append ops to it, then tell the user to review and ",
-            "apply it in the editor. Applying is deliberately not available here."
+            "Start with recast_project_list to find a project path; nothing else here ",
+            "discovers one. Recast edits are then proposed on a branch, never written ",
+            "directly: create a branch, append ops to it, then tell the user to review ",
+            "and apply it in the editor. Applying is deliberately not available here."
         ),
     })
 }
@@ -327,6 +410,13 @@ mod tests {
         }
 
         #[test]
+        fn advertises_the_resources_capability() {
+            let response = respond(&request(1, "initialize", json!({})), &FakeHost::default());
+
+            assert!(response["result"]["capabilities"]["resources"].is_object());
+        }
+
+        #[test]
         fn names_the_server() {
             let response = respond(&request(1, "initialize", json!({})), &FakeHost::default());
 
@@ -490,15 +580,131 @@ mod tests {
         }
     }
 
+    mod resources {
+        use super::*;
+
+        const WINDOWS_PATH: &str = r"C:\Users\kanak\Videos\demo take 2.recast";
+
+        fn library() -> FakeHost {
+            FakeHost::returning(json!([
+                { "path": WINDOWS_PATH, "filename": "demo take 2.recast" }
+            ]))
+        }
+
+        #[test]
+        fn lists_one_resource_per_project() {
+            let response = respond(&request(1, "resources/list", json!({})), &library());
+
+            assert_eq!(response["result"]["resources"].as_array().unwrap().len(), 1);
+        }
+
+        #[test]
+        fn names_a_resource_by_its_filename() {
+            let response = respond(&request(1, "resources/list", json!({})), &library());
+
+            assert_eq!(
+                response["result"]["resources"][0]["name"],
+                json!("demo take 2.recast")
+            );
+        }
+
+        /// A raw Windows path in a URI would carry a drive colon, backslashes
+        /// and, routinely, a space.
+        #[test]
+        fn encodes_the_path_into_the_uri() {
+            let response = respond(&request(1, "resources/list", json!({})), &library());
+            let uri = response["result"]["resources"][0]["uri"]
+                .as_str()
+                .unwrap()
+                .to_string();
+
+            assert!(!uri.contains(' '), "{uri}");
+        }
+
+        #[test]
+        fn a_uri_round_trips_back_to_the_path() {
+            assert_eq!(
+                resource_path(&resource_uri(WINDOWS_PATH)).as_deref(),
+                Some(WINDOWS_PATH)
+            );
+        }
+
+        /// A client lists resources on connect; erroring there reads as a broken
+        /// server rather than an empty library.
+        #[test]
+        fn an_unreachable_app_lists_nothing_rather_than_failing() {
+            let response = respond(
+                &request(1, "resources/list", json!({})),
+                &FakeHost::failing("recast is not running"),
+            );
+
+            assert_eq!(response["result"]["resources"], json!([]));
+        }
+
+        #[test]
+        fn reads_a_project_through_the_show_verb() {
+            let host = FakeHost::returning(json!({ "trimStart": 1.0 }));
+            let uri = resource_uri(WINDOWS_PATH);
+
+            respond(&request(1, "resources/read", json!({ "uri": uri })), &host);
+
+            assert_eq!(host.last_call().0, "editor.show");
+        }
+
+        #[test]
+        fn reads_the_project_the_uri_names() {
+            let host = FakeHost::returning(json!({ "trimStart": 1.0 }));
+            let uri = resource_uri(WINDOWS_PATH);
+
+            respond(&request(1, "resources/read", json!({ "uri": uri })), &host);
+
+            assert_eq!(host.last_call().1["path"], json!(WINDOWS_PATH));
+        }
+
+        #[test]
+        fn returns_the_state_as_json_text() {
+            let host = FakeHost::returning(json!({ "trimStart": 1.0 }));
+            let uri = resource_uri(WINDOWS_PATH);
+
+            let response = respond(&request(1, "resources/read", json!({ "uri": uri })), &host);
+
+            assert!(response["result"]["contents"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("trimStart"));
+        }
+
+        #[test]
+        fn rejects_a_uri_from_another_scheme() {
+            let response = respond(
+                &request(
+                    1,
+                    "resources/read",
+                    json!({ "uri": "file:///tmp/a.recast" }),
+                ),
+                &FakeHost::default(),
+            );
+
+            assert_eq!(response["error"]["code"], json!(INVALID_PARAMS));
+        }
+
+        #[test]
+        fn a_read_without_a_uri_is_rejected() {
+            let response = respond(
+                &request(1, "resources/read", json!({})),
+                &FakeHost::default(),
+            );
+
+            assert_eq!(response["error"]["code"], json!(INVALID_PARAMS));
+        }
+    }
+
     mod unknown_methods {
         use super::*;
 
         #[test]
         fn report_method_not_found() {
-            let response = respond(
-                &request(1, "resources/list", json!({})),
-                &FakeHost::default(),
-            );
+            let response = respond(&request(1, "prompts/list", json!({})), &FakeHost::default());
 
             assert_eq!(response["error"]["code"], json!(METHOD_NOT_FOUND));
         }

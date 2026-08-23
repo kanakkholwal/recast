@@ -1,85 +1,74 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
-	import { authClient } from "$lib/auth/client";
-	import CreateTeamDialog from "$lib/dashboard/components/CreateTeamDialog.svelte";
-	import { recastsStore } from "$lib/dashboard/store.svelte";
-	import {
-	  Building2,
-	  Check,
-	  ChevronsUpDown,
-	  Crown,
-	  LoaderCircle,
-	  Plus,
-	} from "@recast/icons";
-	import { Badge } from "@recast/ui/badge";
-	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import { useSidebar } from "@recast/ui/sidebar";
-	import { toast } from "@recast/ui/sonner";
-	import { cn } from "@recast/ui/utils";
-	import { initials } from "./OrgSwitcher.logic";
+import { Building2, Check, ChevronsUpDown, Crown, LoaderCircle, Plus } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { useSidebar } from "@recast/ui/sidebar";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { goto } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import CreateTeamDialog from "$lib/dashboard/components/CreateTeamDialog.svelte";
+import { recastsStore } from "$lib/dashboard/store.svelte";
+import { initials } from "./OrgSwitcher.logic";
 
-	/**
-	 * Team selector. Reads from /dashboard/+layout.server.ts so the list is
-	 * always fresh server-side; switching calls Better Auth's
-	 * `setActiveOrganization` then `invalidateAll()` so every loader re-runs
-	 * against the new active org.
-	 */
+/**
+ * Team selector. Reads from /dashboard/+layout.server.ts so the list is
+ * always fresh server-side; switching calls Better Auth's
+ * `setActiveOrganization` then `invalidateAll()` so every loader re-runs
+ * against the new active org.
+ */
 
-	type Membership = {
-		organizationId: string;
-		name: string;
-		role: string;
-		plan: string;
-	};
-	type Active = { id: string; name: string; plan: string; role: string };
+type Membership = {
+	organizationId: string;
+	name: string;
+	role: string;
+	plan: string;
+};
+type Active = { id: string; name: string; plan: string; role: string };
 
-	let {
-		memberships,
-		active,
-	}: { memberships: Membership[]; active: Active } = $props();
+let { memberships, active }: { memberships: Membership[]; active: Active } = $props();
 
-	const sidebar = useSidebar();
-	const open = $derived(sidebar.state === "expanded");
+const sidebar = useSidebar();
+const open = $derived(sidebar.state === "expanded");
 
-	let switching = $state<string | null>(null);
-	let createOpen = $state(false);
+let switching = $state<string | null>(null);
+let createOpen = $state(false);
 
-	async function setActive(id: string) {
-		if (switching || id === active.id) return;
-		switching = id;
-		const target = memberships.find((m) => m.organizationId === id);
-		const targetName = target?.name ?? "team";
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.organization.setActive({
-						organizationId: id,
-					});
-					if (error) throw new Error(error.message ?? "Couldn't switch team.");
-				})(),
-				{
-					loading: `Switching to ${targetName}…`,
-					success: `Switched to ${targetName}.`,
-					error: (err) => (err as Error)?.message ?? "Couldn't switch team.",
-				},
-			);
-			// Point the recast cache at the new team before reloading, so the
-			// fresh load restores its scope instead of flashing the old team's
-			// cached list. Then hard-reload the workspace home: a soft
-			// `invalidateAll()` left the previous team's data on screen because
-			// the client stores + any deep route tied to the old org don't fully
-			// reset. A full-document navigation guarantees the server re-resolves
-			// the new active org and every store re-inits from it.
-			recastsStore.hintWorkspace(id);
-			window.location.assign("/dashboard");
-		} finally {
-			// Always clear — a thrown rejection must not strand the row in
-			// the "switching…" pseudo-loading state. (On success the reload
-			// unloads the page before this matters.)
-			switching = null;
-		}
+async function setActive(id: string) {
+	if (switching || id === active.id) return;
+	switching = id;
+	const target = memberships.find((m) => m.organizationId === id);
+	const targetName = target?.name ?? "team";
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.organization.setActive({
+					organizationId: id,
+				});
+				if (error) throw new Error(error.message ?? "Couldn't switch team.");
+			})(),
+			{
+				loading: `Switching to ${targetName}…`,
+				success: `Switched to ${targetName}.`,
+				error: (err) => (err as Error)?.message ?? "Couldn't switch team.",
+			},
+		);
+		// Point the recast cache at the new team before reloading, so the
+		// fresh load restores its scope instead of flashing the old team's
+		// cached list. Then hard-reload the workspace home: a soft
+		// `invalidateAll()` left the previous team's data on screen because
+		// the client stores + any deep route tied to the old org don't fully
+		// reset. A full-document navigation guarantees the server re-resolves
+		// the new active org and every store re-inits from it.
+		recastsStore.hintWorkspace(id);
+		window.location.assign("/dashboard");
+	} finally {
+		// Always clear — a thrown rejection must not strand the row in
+		// the "switching…" pseudo-loading state. (On success the reload
+		// unloads the page before this matters.)
+		switching = null;
 	}
-
+}
 </script>
 
 <DropdownMenu.Root>

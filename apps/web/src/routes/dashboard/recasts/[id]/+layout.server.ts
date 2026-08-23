@@ -1,5 +1,6 @@
 import { error } from "@sveltejs/kit";
 import { and, desc, eq } from "drizzle-orm";
+import { canAccessRecast } from "$lib/dashboard/access";
 import { getDb } from "$lib/db";
 import { recast, share } from "$lib/db/schema";
 import { resolvePlaybackUrl } from "$lib/storage";
@@ -13,13 +14,14 @@ import type { LayoutServerLoad } from "./$types";
  * loaded lazily by the analytics sub-route so the overview stays light.
  */
 export const load: LayoutServerLoad = async ({ params, parent }) => {
-	const { activeOrganization } = await parent();
+	const { user, activeOrganization } = await parent();
 	const db = getDb();
 	const workspaceId = activeOrganization.id;
 
 	const [row] = await db
 		.select({
 			id: recast.id,
+			ownerId: recast.ownerId,
 			title: recast.title,
 			description: recast.description,
 			durationSec: recast.durationSec,
@@ -37,6 +39,16 @@ export const load: LayoutServerLoad = async ({ params, parent }) => {
 		.where(and(eq(recast.id, params.id), eq(recast.workspaceId, workspaceId)))
 		.limit(1);
 	if (!row) error(404, "Recast not found");
+
+	// 404 rather than 403: a member has no business learning that an id they
+	// cannot open exists in the workspace.
+	const allowed = canAccessRecast({
+		recastOwnerId: row.ownerId,
+		userId: user.id,
+		workspaceRole: activeOrganization.role,
+		platformRole: user.role,
+	});
+	if (!allowed) error(404, "Recast not found");
 
 	const [shareRows, videoUrl, posterUrl] = await Promise.all([
 		db

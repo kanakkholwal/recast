@@ -17,7 +17,5 @@ export function folderDepth(path: string): number {
 
 /** Full Tag objects for a recast's assigned tag ids, dropping any unknown ids. */
 export function resolveAssignedTags(recastTags: string[], tags: Tag[]): Tag[] {
-	return recastTags
-		.map((id) => tags.find((t) => t.id === id))
-		.filter((t): t is Tag => Boolean(t));
+	return recastTags.map((id) => tags.find((t) => t.id === id)).filter((t): t is Tag => Boolean(t));
 }

@@ -1,8 +1,4 @@
-import {
-	type PlanId,
-	type QuotaLimits,
-	USAGE_WARN_THRESHOLD,
-} from "$lib/billing/catalog";
+import { type PlanId, type QuotaLimits, USAGE_WARN_THRESHOLD } from "$lib/billing/catalog";
 
 export type PlanKey = PlanId;
 
@@ -119,13 +115,9 @@ export type DeliveryState = {
  * Delivery is the dominant infra cost, so it gets its own gate. A counter from
  * a previous month reads as zero — the row resets lazily on the next write.
  */
-export function deliveryState(
-	snapshot: QuotaSnapshot,
-	now = new Date(),
-): DeliveryState {
+export function deliveryState(snapshot: QuotaSnapshot, now = new Date()): DeliveryState {
 	const capBytes = snapshot.limits.deliveryBytesPerMonth;
-	const stale =
-		snapshot.usage.deliveryPeriodStart < currentDeliveryPeriodStart(now);
+	const stale = snapshot.usage.deliveryPeriodStart < currentDeliveryPeriodStart(now);
 	const usedBytes = stale ? 0 : snapshot.usage.deliveryBytesThisMonth;
 
 	if (!Number.isFinite(capBytes)) {

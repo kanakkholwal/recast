@@ -1,53 +1,65 @@
 <script lang="ts">
-	import * as Chart from "$components/ui/chart/index.js";
-	import { engagementHeatmap, type EngagementMoment } from "$lib/dashboard/activity";
-	import { formatDuration } from "$lib/dashboard/format";
-	import { Flame } from "@recast/icons";
-	import { BarChart } from "layerchart";
+import { Flame } from "@recast/icons";
+import { BarChart } from "layerchart";
+import * as Chart from "$components/ui/chart/index.js";
+import { type EngagementMoment, engagementHeatmap } from "$lib/dashboard/activity";
+import { formatDuration } from "$lib/dashboard/format";
 
-	// "Which moments did viewers actually react to" — reactions + comments
-	// bucketed across the video's runtime. The tallest bar is the moment people
-	// loved; hovering a bar shows its timestamp + split.
-	let {
-		moments,
-		durationSec,
-	}: {
-		moments: EngagementMoment[];
-		durationSec: number;
-	} = $props();
+// "Which moments did viewers actually react to" — reactions + comments
+// bucketed across the video's runtime. The tallest bar is the moment people
+// loved; hovering a bar shows its timestamp + split.
+let {
+	moments,
+	durationSec,
+}: {
+	moments: EngagementMoment[];
+	durationSec: number;
+} = $props();
 
-	const heat = $derived(engagementHeatmap(moments, durationSec, 24));
-	const totalReactions = $derived(moments.filter((m) => m.kind === "reaction").length);
-	const totalComments = $derived(moments.filter((m) => m.kind === "comment").length);
+const heat = $derived(engagementHeatmap(moments, durationSec, 24));
+const totalReactions = $derived(moments.filter((m) => m.kind === "reaction").length);
+const totalComments = $derived(moments.filter((m) => m.kind === "comment").length);
 
-	// Two hues, not two opacities of one: opacity alone is not a reliable way to
-	// tell stacked bands apart.
-	const series = [
-		{ key: "reactions", label: "Reactions", value: "reactions", color: "var(--color-primary)", props: { fillOpacity: 0.85 } },
-		{ key: "comments", label: "Comments", value: "comments", color: "var(--color-foreground)", props: { fillOpacity: 0.35 } },
-	];
+// Two hues, not two opacities of one: opacity alone is not a reliable way to
+// tell stacked bands apart.
+const series = [
+	{
+		key: "reactions",
+		label: "Reactions",
+		value: "reactions",
+		color: "var(--color-primary)",
+		props: { fillOpacity: 0.85 },
+	},
+	{
+		key: "comments",
+		label: "Comments",
+		value: "comments",
+		color: "var(--color-foreground)",
+		props: { fillOpacity: 0.35 },
+	},
+];
 
-	const chartConfig = {
-		reactions: { label: "Reactions", color: "var(--color-primary)" },
-		comments: { label: "Comments", color: "var(--color-foreground)" },
-	} satisfies Chart.ChartConfig;
+const chartConfig = {
+	reactions: { label: "Reactions", color: "var(--color-primary)" },
+	comments: { label: "Comments", color: "var(--color-foreground)" },
+} satisfies Chart.ChartConfig;
 </script>
 
-<section class="glass-card rounded-xl p-5">
-	<header class="flex items-center justify-between">
+<section class="surface p-5">
+	<header class="flex items-center justify-between gap-4">
 		<div class="flex items-center gap-2">
 			<Flame class="size-4 text-muted-foreground" />
-			<h2 class="text-sm font-semibold text-foreground">Engagement by moment</h2>
+			<h2 class="font-display text-body font-medium text-foreground">Engagement by moment</h2>
 		</div>
 		{#if heat.peakSec !== null && heat.max > 0}
-			<span class="font-mono text-[11px] text-muted-foreground">
-				Peak · <span class="font-semibold text-foreground">{formatDuration(heat.peakSec)}</span>
+			<span class="shrink-0 text-caption tabular-nums text-muted-foreground">
+				Peak <span class="font-medium text-foreground">{formatDuration(heat.peakSec)}</span>
 			</span>
 		{/if}
 	</header>
 
 	{#if heat.max === 0}
-		<p class="mt-4 text-xs text-muted-foreground">
+		<p class="mt-4 text-body-sm text-muted-foreground">
 			No reactions or comments yet. They'll show up here, pinned to when they happened.
 		</p>
 	{:else}
@@ -70,14 +82,14 @@
 			</BarChart>
 		</Chart.Container>
 
-		<div class="mt-3 flex items-center justify-between text-[10px] font-medium text-muted-foreground">
+		<div class="mt-3 flex items-center justify-between text-caption tabular-nums text-muted-foreground">
 			<span>0:00</span>
 			<div class="flex items-center gap-3">
 				<span class="flex items-center gap-1">
-					<span class="size-2 rounded-[2px] bg-primary/80"></span>{totalReactions} reactions
+					<span class="size-2 rounded-xs bg-primary"></span>{totalReactions} reactions
 				</span>
 				<span class="flex items-center gap-1">
-					<span class="size-2 rounded-[2px] bg-foreground/35"></span>{totalComments} comments
+					<span class="size-2 rounded-xs bg-foreground/40"></span>{totalComments} comments
 				</span>
 			</div>
 			<span>{formatDuration(durationSec)}</span>

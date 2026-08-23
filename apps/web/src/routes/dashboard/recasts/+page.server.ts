@@ -1,11 +1,12 @@
 import { and, desc, eq, ne } from "drizzle-orm";
+import { isWorkspaceManager } from "$lib/dashboard/access";
 import { getDb } from "$lib/db";
-import { folder, recast, tag } from "$lib/db/schema";
 import {
 	recastLatestShareSlugSql,
 	recastTagIdsSql,
 	recastViewsSql,
 } from "$lib/db/recast-selectors";
+import { folder, recast, tag } from "$lib/db/schema";
 import { resolvePlaybackUrl } from "$lib/storage";
 import type { PageServerLoad } from "./$types";
 
@@ -22,9 +23,13 @@ import type { PageServerLoad } from "./$types";
  * the hard-delete sweep purges them at `archivedAt + 16d`.
  */
 export const load: PageServerLoad = async ({ parent }) => {
-	const { activeOrganization } = await parent();
+	const { user, activeOrganization } = await parent();
 	const db = getDb();
 	const workspaceId = activeOrganization.id;
+	// Members only see what they made; the detail page enforces the same rule.
+	const scope = isWorkspaceManager(activeOrganization.role)
+		? undefined
+		: eq(recast.ownerId, user.id);
 
 	const [rows, folders, tags] = await Promise.all([
 		db
@@ -47,7 +52,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 				tags: recastTagIdsSql(),
 			})
 			.from(recast)
-			.where(and(eq(recast.workspaceId, workspaceId), ne(recast.status, "archived")))
+			.where(and(eq(recast.workspaceId, workspaceId), ne(recast.status, "archived"), scope))
 			.orderBy(desc(recast.createdAt))
 			.limit(200),
 		db

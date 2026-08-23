@@ -511,6 +511,13 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
         // `load_editor_document`/`list_export_jobs` paths the GUI uses; nothing
         // here mutates state, so the future `EditorSession` write-lock doesn't
         // need to be touched for v1.
+        // Where an agent starts. Without this it has no way to learn a project
+        // path, and every other project verb requires one.
+        "project.list" => {
+            let entries = tauri::async_runtime::block_on(crate::commands::list_recasts(state))
+                .map_err(stringify)?;
+            serde_json::to_value(entries).map_err(stringify)
+        }
         "editor.open" => {
             let path = params
                 .get("path")

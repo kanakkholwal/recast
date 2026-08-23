@@ -67,7 +67,7 @@ gap-free timeline across pause/resume.
 
 ```mermaid
 flowchart TD
-    CMD[start_recording command<br/>commands/recording.rs] --> RM[RecordingManager.start<br/>recording/mod.rs:788]
+    CMD[start_recording command<br/>commands/recording.rs] --> RM[RecordingManager.start<br/>recording/mod.rs]
     RM --> CT[CaptureTarget.resolve<br/>source/crop/scale_factor]
     RM --> CLOCK[RecordingClock<br/>pause-aware]
 

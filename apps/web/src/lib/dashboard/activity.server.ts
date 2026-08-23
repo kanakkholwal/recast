@@ -5,12 +5,18 @@
  * Home + Analytics surfaces render. Replaces the old deterministic mock.
  */
 
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { recast, share, shareComment, shareReaction, shareView } from "$lib/db/schema";
 import { reactionGlyph } from "$lib/share/reactions";
 import { deviceFromUA } from "$lib/share/ua";
-import type { Activity, EngagementMoment, RecastEngagement, RecastPerf } from "./activity";
+import type {
+	Activity,
+	EngagementMoment,
+	RecastBasicStats,
+	RecastEngagement,
+	RecastPerf,
+} from "./activity";
 
 let regionNames: Intl.DisplayNames | null = null;
 function viewerLabel(country: string | null): string {
@@ -77,10 +83,7 @@ const viewSelection = {
  * share-created events — newest first. `limit` caps each source independently;
  * the merged list is what the pages slice by date range.
  */
-export async function loadWorkspaceActivity(
-	workspaceId: string,
-	limit = 250,
-): Promise<Activity[]> {
+export async function loadWorkspaceActivity(workspaceId: string, limit = 250): Promise<Activity[]> {
 	const db = getDb();
 
 	const [viewRows, shareRows] = await Promise.all([
@@ -125,10 +128,7 @@ export async function loadWorkspaceActivity(
  * Same projection as `loadWorkspaceActivity` but scoped to a single recast —
  * powers the per-recast detail page's chart, retention curve, and feed.
  */
-export async function loadRecastActivity(
-	recastId: string,
-	limit = 500,
-): Promise<Activity[]> {
+export async function loadRecastActivity(recastId: string, limit = 500): Promise<Activity[]> {
 	const db = getDb();
 
 	const [viewRows, shareRows] = await Promise.all([
@@ -201,7 +201,11 @@ export async function loadRecastEngagement(recastId: string): Promise<RecastEnga
 	// Stored reaction values are registry ids; map to a display glyph (legacy
 	// rows that stored a bare emoji pass through unchanged).
 	const moments: EngagementMoment[] = [
-		...reactionRows.map((r) => ({ atSeconds: r.atSeconds, kind: "reaction" as const, emoji: reactionGlyph(r.emoji) })),
+		...reactionRows.map((r) => ({
+			atSeconds: r.atSeconds,
+			kind: "reaction" as const,
+			emoji: reactionGlyph(r.emoji),
+		})),
 		...commentRows.map((c) => ({ atSeconds: c.atSeconds, kind: "comment" as const })),
 	];
 
@@ -268,4 +272,59 @@ export async function loadWorkspacePerformance(
 		map.set(c.recastId, e);
 	}
 	return map;
+}
+
+/**
+ * Free-plan analytics: totals plus a day-bucketed view count, as two aggregate
+ * queries. Deliberately returns no country, device, referrer, watch-percent or
+ * engagement data — the gated dimensions are never read, not just never shown.
+ */
+export async function loadRecastBasicStats(recastId: string, days = 7): Promise<RecastBasicStats> {
+	const db = getDb();
+	const since = new Date(Date.now() - (days - 1) * 86_400_000);
+	since.setHours(0, 0, 0, 0);
+
+	const [[totals], daily] = await Promise.all([
+		db
+			.select({
+				views: sql<number>`count(*)`,
+				viewers: sql<number>`count(distinct ${shareView.sessionId})`,
+				completed: sql<number>`count(*) filter (where ${shareView.completed})`,
+			})
+			.from(shareView)
+			.innerJoin(share, eq(shareView.shareId, share.slug))
+			.where(eq(share.recastId, recastId)),
+		db
+			.select({
+				day: sql<string>`date_trunc('day', ${shareView.createdAt})::date::text`,
+				views: sql<number>`count(*)`,
+			})
+			.from(shareView)
+			.innerJoin(share, eq(shareView.shareId, share.slug))
+			.where(and(eq(share.recastId, recastId), gte(shareView.createdAt, since)))
+			.groupBy(sql`1`),
+	]);
+
+	const byDay = new Map(daily.map((d) => [d.day, Number(d.views)]));
+	const buckets: RecastBasicStats["byDay"] = [];
+	for (let i = days - 1; i >= 0; i--) {
+		const d = new Date();
+		d.setHours(0, 0, 0, 0);
+		d.setDate(d.getDate() - i);
+		const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+		buckets.push({
+			date: d.getTime(),
+			label: d.toLocaleDateString("en-US", { weekday: "short" }),
+			views: byDay.get(key) ?? 0,
+		});
+	}
+
+	const views = Number(totals?.views ?? 0);
+	const finished = Number(totals?.completed ?? 0);
+	return {
+		views,
+		viewers: Number(totals?.viewers ?? 0),
+		completionPct: views > 0 ? Math.round((finished / views) * 100) : 0,
+		byDay: buckets,
+	};
 }

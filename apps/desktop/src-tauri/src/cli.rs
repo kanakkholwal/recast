@@ -303,6 +303,9 @@ enum BranchAction {
 
 #[derive(Subcommand)]
 enum ProjectAction {
+    /// List the recordings in the library, newest first. The only verb that
+    /// takes no path, so it is where an agent with no project starts.
+    List,
     /// Open a `.recast` (or bare video) and print the full editor document.
     Open {
         /// Path to the `.recast` archive or source video.
@@ -1037,6 +1040,11 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
 /// explicitly. Phase B adds `lock`/`unlock`/`patch` on top of the read surface.
 fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
     match action {
+        ProjectAction::List => {
+            let value =
+                crate::control::send("project.list", json!({}), !cli.no_launch, cli.timeout_ms)?;
+            emit(&value, cli.format)
+        }
         ProjectAction::Open { path }
         | ProjectAction::Show { path }
         | ProjectAction::Timeline { path }

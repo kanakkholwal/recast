@@ -28,6 +28,11 @@ pub const EMPTY_BRANCH_MAX_AGE_MS: i64 = 24 * 60 * 60 * 1000;
 /// Never deleted: it is pending human review, and the reviewer decides.
 pub const STALE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
+/// Live branches one project may hold before [`BranchStore::create`] refuses.
+/// Journals are KB-scale, so this bounds a runaway agent and the reviewer's
+/// reading list, not disk.
+pub const MAX_BRANCHES_PER_PROJECT: usize = 32;
+
 #[derive(Debug, thiserror::Error)]
 pub enum JournalError {
     #[error("branch '{0}' does not exist")]
@@ -41,6 +46,10 @@ pub enum JournalError {
     },
     #[error("expected the branch at seq {expected}, but it is at {actual}")]
     SeqMismatch { expected: u64, actual: u64 },
+    #[error("branch '{0}' already exists and holds proposed edits")]
+    BranchExists(BranchId),
+    #[error("project already has {0} open branches; apply or discard one first")]
+    TooManyBranches(usize),
     #[error("replaying branch '{branch}' failed at seq {seq}")]
     Replay {
         branch: BranchId,
@@ -373,6 +382,38 @@ impl BranchStore {
             Err(source) => return Err(JournalError::Read { path, source }),
         };
         serde_json::from_slice(&bytes).map_err(|source| JournalError::Corrupt { path, source })
+    }
+
+    /// Persist a branch that does not exist yet, refusing to overwrite proposed
+    /// work. Every surface forks through here; [`Self::save`] is the unguarded
+    /// door an already-loaded branch is written back through.
+    ///
+    /// Re-forking an id that exists but holds no ops succeeds, so an agent that
+    /// crashed between create and its first append can simply retry.
+    ///
+    /// # Errors
+    /// [`JournalError::BranchExists`] when the id holds ops, and
+    /// [`JournalError::TooManyBranches`] at [`MAX_BRANCHES_PER_PROJECT`].
+    pub fn create(&self, branch: &Branch) -> Result<(), JournalError> {
+        match self.load(&branch.id) {
+            Ok(existing) if !existing.is_empty() => {
+                return Err(JournalError::BranchExists(branch.id.clone()))
+            }
+            Ok(_) => {}
+            Err(JournalError::NoSuchBranch(_)) => {
+                // Sweeping first is what makes the cap count live branches
+                // rather than crashed agents' leftovers.
+                self.sweep(branch.created_at_ms);
+                let open = self.list().len();
+                if open >= MAX_BRANCHES_PER_PROJECT {
+                    return Err(JournalError::TooManyBranches(open));
+                }
+            }
+            // A corrupt journal might hold work, so it blocks the id rather
+            // than being silently replaced.
+            Err(other) => return Err(other),
+        }
+        self.save(branch)
     }
 
     /// # Errors
@@ -1071,6 +1112,105 @@ mod tests {
         }
     }
 
+    mod create {
+        use super::*;
+
+        fn named(id: &str) -> Branch {
+            Branch::new(
+                branch_id(id),
+                StateHash::of(&state(0.0)).unwrap(),
+                "agent:test",
+                None,
+                NOW,
+            )
+        }
+
+        #[test]
+        fn writes_a_branch_that_does_not_exist_yet() {
+            let store = temp_store();
+
+            store.create(&named("agent-1")).unwrap();
+
+            assert_eq!(store.list(), vec![branch_id("agent-1")]);
+        }
+
+        /// A crashed agent retrying `create` must not be told its own id is taken.
+        #[test]
+        fn re_forks_an_existing_branch_that_holds_no_ops() {
+            let store = temp_store();
+            store.create(&named("agent-1")).unwrap();
+
+            assert!(store.create(&named("agent-1")).is_ok());
+        }
+
+        #[test]
+        fn refuses_to_overwrite_a_branch_holding_proposed_ops() {
+            let store = temp_store();
+            let mut branch = named("agent-1");
+            branch.append("k1", vec![cut(1.0, 2.0)], None, NOW).unwrap();
+            store.save(&branch).unwrap();
+
+            let error = store.create(&named("agent-1")).unwrap_err();
+
+            assert!(
+                matches!(error, JournalError::BranchExists(_)),
+                "got: {error}"
+            );
+        }
+
+        #[test]
+        fn leaves_the_proposed_ops_intact_after_refusing() {
+            let store = temp_store();
+            let mut branch = named("agent-1");
+            branch.append("k1", vec![cut(1.0, 2.0)], None, NOW).unwrap();
+            store.save(&branch).unwrap();
+
+            let _ = store.create(&named("agent-1"));
+
+            assert_eq!(store.load(&branch_id("agent-1")).unwrap().op_count(), 1);
+        }
+
+        #[test]
+        fn refuses_a_new_branch_once_the_project_is_at_the_cap() {
+            let store = temp_store();
+            for n in 0..MAX_BRANCHES_PER_PROJECT {
+                store.create(&named(&format!("agent-{n}"))).unwrap();
+            }
+
+            let error = store.create(&named("one-too-many")).unwrap_err();
+
+            assert!(
+                matches!(error, JournalError::TooManyBranches(_)),
+                "got: {error}"
+            );
+        }
+
+        /// The cap bounds live branches, so it must never block re-forking one
+        /// that already exists.
+        #[test]
+        fn re_forks_an_existing_branch_even_at_the_cap() {
+            let store = temp_store();
+            for n in 0..MAX_BRANCHES_PER_PROJECT {
+                store.create(&named(&format!("agent-{n}"))).unwrap();
+            }
+
+            assert!(store.create(&named("agent-0")).is_ok());
+        }
+
+        #[test]
+        fn reclaims_an_abandoned_empty_branch_before_reporting_the_cap() {
+            let store = temp_store();
+            let stale = NOW - EMPTY_BRANCH_MAX_AGE_MS - 1;
+            for n in 0..MAX_BRANCHES_PER_PROJECT {
+                let mut branch = named(&format!("agent-{n}"));
+                branch.created_at_ms = stale;
+                store.save(&branch).unwrap();
+            }
+
+            assert!(store.create(&named("fresh")).is_ok());
+        }
+    }
+
     mod diff {
         use super::*;
 
@@ -1353,6 +1493,38 @@ mod disk_roundtrip_tests {
             "{:?}",
             crate::commands::validate_render_state(&applied, 10.0)
         );
+    }
+
+    /// The rule `BranchService::append` enforces: materialize, then validate, so
+    /// a proposal that would not survive apply is refused while its author can
+    /// still fix it. A trim past a 10s source is the case that used to reach the
+    /// reviewer.
+    #[test]
+    fn a_trim_past_the_source_fails_validation_before_it_can_be_reviewed() {
+        let ws = workspace();
+        let project = write_fixture_project(&ws);
+        let mut branch = Branch::new(
+            BranchId::new("agent-1").expect("id"),
+            StateHash::of(&read_state(&project)).expect("hash"),
+            "agent:test",
+            None,
+            NOW,
+        );
+        branch
+            .append(
+                "k1",
+                vec![Op::Trim {
+                    start: 0.0,
+                    end: 60.0,
+                }],
+                None,
+                NOW,
+            )
+            .expect("trim");
+
+        let proposed = branch.materialize(&read_state(&project)).expect("replay");
+
+        assert!(crate::commands::validate_render_state(&proposed, 10.0).is_err());
     }
 
     /// Fast-forward only: once the project has moved, the branch cannot land again.

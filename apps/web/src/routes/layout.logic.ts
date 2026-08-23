@@ -67,6 +67,8 @@ const PUBLIC_PREFIXES = [
 	"/pricing",
 	"/download",
 	"/changelog",
+	"/blog",
+	"/architecture",
 	"/privacy-policy",
 	"/terms-of-service",
 	"/tools",
@@ -74,8 +76,13 @@ const PUBLIC_PREFIXES = [
 
 /** True on the home page and the public marketing/tool trees. */
 export function isIndexable(pathname: string): boolean {
+	// Client-only app surface: a real route, but an empty editor is thin content.
+	// `/tools` below would otherwise mark it indexable.
+	if (pathname.startsWith("/tools/screenshot-editor/edit")) return false;
 	return (
-		pathname === "/" || PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+		pathname === "/" ||
+		pathname === "/playground" ||
+		PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 	);
 }
 

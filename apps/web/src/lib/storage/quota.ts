@@ -3,11 +3,7 @@ import { limitsFor, planOf } from "$lib/billing/catalog";
 import { getDb } from "$lib/db";
 import { organization } from "$lib/db/schema/organization";
 import { workspaceUsage } from "$lib/db/schema/usage";
-import {
-	currentDeliveryPeriodStart,
-	type PlanKey,
-	type QuotaSnapshot,
-} from "./quota.logic";
+import { currentDeliveryPeriodStart, type PlanKey, type QuotaSnapshot } from "./quota.logic";
 
 export * from "./quota.logic";
 
@@ -19,9 +15,7 @@ type DbLike = Omit<ReturnType<typeof getDb>, "$client">;
  * Single-trip read of plan + usage. Returns `null` if the workspace doesn't
  * exist — caller decides whether that's a 404 or auto-init.
  */
-export async function getQuotaSnapshot(
-	workspaceId: string,
-): Promise<QuotaSnapshot | null> {
+export async function getQuotaSnapshot(workspaceId: string): Promise<QuotaSnapshot | null> {
 	const db = getDb();
 
 	const [org] = await db
@@ -55,8 +49,7 @@ export async function getQuotaSnapshot(
 			archivedRecastsCount: usage?.archivedRecastsCount ?? 0,
 			membersCount: usage?.membersCount ?? 1,
 			deliveryBytesThisMonth: usage?.deliveryBytesThisMonth ?? 0,
-			deliveryPeriodStart:
-				usage?.deliveryPeriodStart ?? currentDeliveryPeriodStart(),
+			deliveryPeriodStart: usage?.deliveryPeriodStart ?? currentDeliveryPeriodStart(),
 		},
 	};
 }

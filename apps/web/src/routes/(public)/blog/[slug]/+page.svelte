@@ -3,7 +3,9 @@ import { ArrowLeft, Clock } from "@recast/icons";
 import { Badge } from "@recast/ui/badge";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { page } from "$app/state";
 import { formatDate } from "$lib/blog/format";
+import { buildPostJsonLd } from "$lib/blog/jsonld";
 import { Container, Footer, Section, SeoMeta } from "$lib/components";
 import DocToc from "$lib/docs/DocToc.svelte";
 import Prose from "$lib/docs/Prose.svelte";
@@ -20,9 +22,26 @@ const riseM = (delay: number) =>
 let { data }: { data: PageData } = $props();
 
 const meta = $derived(data.meta);
+const postJsonLd = $derived(buildPostJsonLd(page.url.origin, meta));
 </script>
 
-<SeoMeta title={meta.title} description={meta.description} eyebrow="Blog" ogType="article" />
+<SeoMeta
+	title={meta.title}
+	description={meta.description}
+	eyebrow="Blog"
+	ogType="article"
+	article={{
+		publishedTime: meta.date,
+		modifiedTime: meta.date,
+		author: meta.author,
+		section: meta.tags[0] ?? "Blog",
+		tags: meta.tags,
+	}}
+/>
+
+<svelte:head>
+	{@html `<script type="application/ld+json">${postJsonLd}</` + `script>`}
+</svelte:head>
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-32 pb-10 md:pt-40 md:pb-14">

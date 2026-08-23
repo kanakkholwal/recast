@@ -54,14 +54,14 @@ flowchart LR
   end
 
   cli -->|"one JSON line + token"| sock{{"local socket<br/>named pipe / unix socket"}}
-  sock --> disp["dispatch<br/>control/mod.rs:383"]
+  sock --> disp["dispatch<br/>control/mod.rs"]
 
   disp --> session["editor_session<br/>write lock + reconcile"]
   disp --> branches["BranchService"]
   disp --> rec["RecordingManager"]
   disp --> exp["export queue"]
 
-  log["EventLog ring 1024<br/>control/events.rs:51"] -->|"{seq, event, data}"| watch["recast watch --since N"]
+  log["EventLog ring 1024<br/>control/events.rs"] -->|"{seq, event, data}"| watch["recast watch --since N"]
   rec --> log
   exp --> log
   session --> log
@@ -86,8 +86,13 @@ flowchart LR
 
 ## Control / data flow
 
-Verbs split into reads and writes. Reads (`project show`, `selection`,
-`export list`) take nothing. Writes take the editor write lock, edit, release.
+Verbs split into reads and writes. Reads (`project list`, `project show`,
+`selection`, `export list`) take nothing. Writes take the editor write lock,
+edit, release.
+
+`project list` is the one verb that needs no path, which is what makes the
+surface reachable on its own: every other project verb requires one, and until
+it existed an agent could only work on a path a human had pasted.
 An agent that wants several edits to land together uses the branch layer, which
 never takes the lock at all.
 

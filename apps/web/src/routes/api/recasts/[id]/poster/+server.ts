@@ -1,8 +1,8 @@
 import { error, json } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
-import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
-import { recast, user } from "$lib/db/schema";
+import { authorizeRecast } from "$lib/server/recast-guard";
+import { recast } from "$lib/db/schema";
 import {
 	deleteObject,
 	isStorageConfigured,
@@ -14,43 +14,12 @@ import {
 } from "$lib/storage";
 import type { RequestHandler } from "./$types";
 
-type SessionShape = { user: { id: string; role?: string } };
-
 /**
  * Owner-or-admin gate for poster mutations. Returns the fields the
  * replace flow needs (workspace for the key, the current poster so we can
  * delete it afterward). Mirrors the gate in `../+server.ts` — kept inline,
  * matching that file's own DELETE handler.
  */
-async function authorize(request: Request, recastId: string) {
-	const session = (await getAuth()
-		.api.getSession({ headers: request.headers })
-		.catch(() => null)) as SessionShape | null;
-	if (!session?.user) error(401, "Sign in required");
-
-	const db = getDb();
-	const [row] = await db
-		.select({
-			id: recast.id,
-			ownerId: recast.ownerId,
-			workspaceId: recast.workspaceId,
-			posterUrl: recast.posterUrl,
-		})
-		.from(recast)
-		.where(eq(recast.id, recastId))
-		.limit(1);
-	if (!row) error(404, "Recast not found");
-
-	if (row.ownerId !== session.user.id) {
-		const [u] = await db
-			.select({ role: user.role })
-			.from(user)
-			.where(eq(user.id, session.user.id))
-			.limit(1);
-		if (u?.role !== "admin") error(403, "Not allowed to modify this recast");
-	}
-	return row;
-}
 
 /** Short cache-busting token for the new poster key. */
 function newVersion(): string {
@@ -66,7 +35,7 @@ function newVersion(): string {
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	if (!isStorageConfigured()) error(503, "Cloud storage is not configured");
-	const row = await authorize(request, params.id);
+	const row = await authorizeRecast(request, params.id);
 
 	const version = newVersion();
 	const key = posterObjectKey(row.workspaceId, row.id, version);
@@ -91,7 +60,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
  */
 export const PUT: RequestHandler = async ({ params, request }) => {
 	if (!isStorageConfigured()) error(503, "Cloud storage is not configured");
-	const row = await authorize(request, params.id);
+	const row = await authorizeRecast(request, params.id);
 
 	let body: { version?: unknown } = {};
 	try {
@@ -117,10 +86,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 	// works regardless of whether a public CDN is configured/serving.
 	const posterUrl = key;
 	const db = getDb();
-	await db
-		.update(recast)
-		.set({ posterUrl, updatedAt: new Date() })
-		.where(eq(recast.id, row.id));
+	await db.update(recast).set({ posterUrl, updatedAt: new Date() }).where(eq(recast.id, row.id));
 
 	// Drop the previous poster blob. Skip when it's the same key (shouldn't
 	// happen — versions differ) or an external/legacy URL we don't own.

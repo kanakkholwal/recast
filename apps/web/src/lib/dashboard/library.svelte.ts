@@ -35,9 +35,7 @@ class FoldersStore {
 	subtreeIds(id: string): Set<string> {
 		const root = this.get(id);
 		if (!root) return new Set([id]);
-		return new Set(
-			this.items.filter((f) => f.path.startsWith(root.path)).map((f) => f.id),
-		);
+		return new Set(this.items.filter((f) => f.path.startsWith(root.path)).map((f) => f.id));
 	}
 
 	/** Breadcrumb names from root → folder, for the header trail. */

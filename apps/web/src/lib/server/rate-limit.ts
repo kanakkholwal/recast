@@ -59,10 +59,7 @@ export async function consumeRateLimit(
 
 	const count = row?.count ?? 1;
 	const expiresAt = row?.expiresAt ?? newExpiry;
-	const retryAfterSec = Math.max(
-		1,
-		Math.ceil((expiresAt.getTime() - now.getTime()) / 1000),
-	);
+	const retryAfterSec = Math.max(1, Math.ceil((expiresAt.getTime() - now.getTime()) / 1000));
 
 	return { ok: count <= limit, retryAfterSec };
 }

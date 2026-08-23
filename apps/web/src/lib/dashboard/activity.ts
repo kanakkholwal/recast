@@ -52,6 +52,14 @@ export type RecastEngagement = {
 	moments: EngagementMoment[];
 };
 
+/** Free-plan analytics payload. No per-viewer dimensions by construction. */
+export type RecastBasicStats = {
+	views: number;
+	viewers: number;
+	completionPct: number;
+	byDay: { date: number; label: string; views: number }[];
+};
+
 /** Per-recast performance metrics for the workspace comparison table. */
 export type RecastPerf = {
 	views: number;
@@ -128,9 +136,7 @@ export function viewCount(activity: Activity[]): number {
  * share of plays that reached at least that far. Surfaces WHERE viewers drop
  * off rather than collapsing everything to one average. `reached` is 0–100.
  */
-export function watchRetention(
-	activity: Activity[],
-): { pct: number; reached: number }[] {
+export function watchRetention(activity: Activity[]): { pct: number; reached: number }[] {
 	const views = viewEvents(activity);
 	const total = views.length;
 	const steps = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
@@ -171,11 +177,7 @@ export function geographyBreakdown(activity: Activity[], limit = 6): BreakdownRo
 		const code = (a.country ?? "").trim().toUpperCase() || "??";
 		counts.set(code, (counts.get(code) ?? 0) + 1);
 	}
-	return finishBreakdown(
-		counts,
-		(code) => (code === "??" ? "Unknown" : countryName(code)),
-		limit,
-	);
+	return finishBreakdown(counts, (code) => (code === "??" ? "Unknown" : countryName(code)), limit);
 }
 
 /**
@@ -223,7 +225,12 @@ function finishBreakdown(
 	const total = [...counts.values()].reduce((s, n) => s + n, 0);
 	if (total === 0) return [];
 	const rows = [...counts.entries()]
-		.map(([key, count]) => ({ key, label: label(key), count, pct: Math.round((count / total) * 100) }))
+		.map(([key, count]) => ({
+			key,
+			label: label(key),
+			count,
+			pct: Math.round((count / total) * 100),
+		}))
 		.sort((a, b) => b.count - a.count);
 	if (rows.length <= limit) return rows;
 	// Fold the long tail into one "Other" row so the bar list stays scannable.

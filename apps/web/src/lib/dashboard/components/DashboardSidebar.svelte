@@ -1,130 +1,119 @@
 <script lang="ts">
-  import { page } from "$app/state";
-  import { GITHUB_URL } from "$lib/components/nav-data";
-  import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
-  import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
-  import Logo from "$lib/logo.svelte";
-  import {
-    Archive,
-    BarChart3,
-    Film,
-    LayoutDashboard,
-    Plus,
-    Users,
-  } from "@recast/icons";
-  import { GithubBrand } from "@recast/ui/brand-icons";
-  import { Button } from "@recast/ui/button";
-  import * as Sidebar from "@recast/ui/sidebar";
-  import { useSidebar } from "@recast/ui/sidebar";
-  import { cn } from "@recast/ui/utils";
-  import type { ComponentProps } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { crossfade, fade } from "svelte/transition";
-  import {
-    isActive,
-    resolveActiveOrg,
-    resolveMemberships,
-  } from "./DashboardSidebar.logic";
+import { Archive, BarChart3, Film, LayoutDashboard, Plus, Users } from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import * as Sidebar from "@recast/ui/sidebar";
+import { useSidebar } from "@recast/ui/sidebar";
+import { cn } from "@recast/ui/utils";
+import type { ComponentProps } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { crossfade, fade } from "svelte/transition";
+import { page } from "$app/state";
+import { GITHUB_URL } from "$lib/components/nav-data";
+import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
+import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
+import Logo from "$lib/logo.svelte";
+import { isActive, resolveActiveOrg, resolveMemberships } from "./DashboardSidebar.logic";
 
-  // A nav entry; the same shape powers both the dashboard and admin shells.
-  // All Lucide icons share one component type, so `typeof LayoutDashboard`
-  // accepts any of them without `any`.
-  interface NavItem {
-    title: string;
-    href: string;
-    icon: typeof LayoutDashboard;
-    exact: boolean;
-  }
+// A nav entry; the same shape powers both the dashboard and admin shells.
+// All Lucide icons share one component type, so `typeof LayoutDashboard`
+// accepts any of them without `any`.
+interface NavItem {
+	title: string;
+	href: string;
+	icon: typeof LayoutDashboard;
+	exact: boolean;
+}
 
-  interface NavGroup {
-    label: string;
-    items: NavItem[];
-  }
+interface NavGroup {
+	label: string;
+	items: NavItem[];
+}
 
-  interface Props {
-    /** Grouped nav (dashboard). Takes precedence over `nav`. */
-    groups?: NavGroup[];
-    /** Flat nav rows (admin shell). Rendered as a single group. */
-    nav?: NavItem[];
-    /** Small label under the wordmark ("Dashboard" / "Admin"). */
-    subtitle?: string;
-    /** Section heading for the flat `nav` group. */
-    groupLabel?: string;
-    /** Where the wordmark links. */
-    homeHref?: string;
-    /** Show the org switcher + "New Recast" CTA (dashboard only). */
-    showOrgSwitcher?: boolean;
-  }
+interface Props {
+	/** Grouped nav (dashboard). Takes precedence over `nav`. */
+	groups?: NavGroup[];
+	/** Flat nav rows (admin shell). Rendered as a single group. */
+	nav?: NavItem[];
+	/** Small label under the wordmark ("Dashboard" / "Admin"). */
+	subtitle?: string;
+	/** Section heading for the flat `nav` group. */
+	groupLabel?: string;
+	/** Where the wordmark links. */
+	homeHref?: string;
+	/** Show the org switcher + "New Recast" CTA (dashboard only). */
+	showOrgSwitcher?: boolean;
+}
 
-  // Default dashboard nav, grouped like the Loom-style shell: primary
-  // workspace destinations up top, the media library below. Settings lives in
-  // the header profile menu + command palette, not the rail.
-  const defaultGroups: NavGroup[] = [
-    {
-      label: "Workspace",
-      items: [
-        {
-          title: "Dashboard",
-          href: "/dashboard",
-          icon: LayoutDashboard,
-          exact: true,
-        },
-        {
-          title: "Analytics",
-          href: "/dashboard/analytics",
-          icon: BarChart3,
-          exact: false,
-        },
-        { title: "Team", href: "/dashboard/team", icon: Users, exact: false },
-      ],
-    },
-    {
-      label: "Library",
-      items: [
-        {
-          title: "Recasts",
-          href: "/dashboard/recasts",
-          icon: Film,
-          exact: false,
-        },
-        {
-          title: "Archive",
-          href: "/dashboard/archive",
-          icon: Archive,
-          exact: false,
-        },
-      ],
-    },
-  ];
+// Default dashboard nav, grouped like the Loom-style shell: primary
+// workspace destinations up top, the media library below. Settings lives in
+// the header profile menu + command palette, not the rail.
+const defaultGroups: NavGroup[] = [
+	{
+		label: "Workspace",
+		items: [
+			{
+				title: "Dashboard",
+				href: "/dashboard",
+				icon: LayoutDashboard,
+				exact: true,
+			},
+			{
+				title: "Analytics",
+				href: "/dashboard/analytics",
+				icon: BarChart3,
+				exact: false,
+			},
+			{ title: "Team", href: "/dashboard/team", icon: Users, exact: false },
+		],
+	},
+	{
+		label: "Library",
+		items: [
+			{
+				title: "Recasts",
+				href: "/dashboard/recasts",
+				icon: Film,
+				exact: false,
+			},
+			{
+				title: "Archive",
+				href: "/dashboard/archive",
+				icon: Archive,
+				exact: false,
+			},
+		],
+	},
+];
 
-  let {
-    groups,
-    nav,
-    subtitle = "Dashboard",
-    groupLabel = "Menu",
-    homeHref = "/dashboard",
-    showOrgSwitcher = true,
-  }: Props = $props();
+let {
+	groups,
+	nav,
+	subtitle = "Dashboard",
+	groupLabel = "Menu",
+	homeHref = "/dashboard",
+	showOrgSwitcher = true,
+}: Props = $props();
 
-  const sidebar = useSidebar();
-  const open = $derived(sidebar.state === "expanded");
-  const currentPath = $derived(page.url.pathname);
+const sidebar = useSidebar();
+const open = $derived(sidebar.state === "expanded");
+const currentPath = $derived(page.url.pathname);
 
-  // Grouped nav wins; a flat `nav` becomes one group; otherwise the dashboard
-  // default. Keeps the admin shell (flat `nav`) working unchanged.
-  const resolvedGroups = $derived<NavGroup[]>(
-    groups ?? (nav ? [{ label: groupLabel, items: nav }] : defaultGroups),
-  );
+// Grouped nav wins; a flat `nav` becomes one group; otherwise the dashboard
+// default. Keeps the admin shell (flat `nav`) working unchanged.
+const resolvedGroups = $derived<NavGroup[]>(
+	groups ?? (nav ? [{ label: groupLabel, items: nav }] : defaultGroups),
+);
 
-  const memberships = $derived(resolveMemberships(page.data));
-  const activeOrg = $derived(resolveActiveOrg(page.data));
+const memberships = $derived(resolveMemberships(page.data));
+const activeOrg = $derived(resolveActiveOrg(page.data));
 
-  // Slides the active highlight between rows rather than cross-fading in place.
-  const [send, receive] = crossfade({
-    duration: 280,
-    easing: cubicOut,
-    fallback: (node) => fade(node, { duration: 120 }),
-  });
+// Slides the active highlight between rows rather than cross-fading in place.
+const [send, receive] = crossfade({
+	duration: 280,
+	easing: cubicOut,
+	fallback: (node) => fade(node, { duration: 120 }),
+});
 </script>
 
 <Sidebar.Root variant="inset" collapsible="icon">
@@ -144,21 +133,20 @@
       >
         <Logo size="20" color="transparent" fill="currentColor" />
       </span>
-      <!-- Always mounted: the label collapses its own width (and left margin)
-			     in sync with the sidebar width, so nothing snaps or clips on toggle. -->
+
       <span
         class={cn(
-          "flex flex-col overflow-hidden leading-none transition-[max-width,margin,opacity] duration-200 ease-linear",
+          "flex h-8 flex-col justify-center overflow-hidden leading-none transition-[max-width,margin,opacity] duration-200 ease-linear",
           open ? "ml-2.5 max-w-32 opacity-100" : "ml-0 max-w-0 opacity-0",
         )}
       >
         <span
-          class="truncate text-[15px] font-semibold tracking-tight text-foreground"
+          class="truncate font-display text-sm font-semibold text-foreground"
         >
           Recast
         </span>
         <span
-          class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground"
+          class="mt-0.5 truncate text-caption text-muted-foreground"
         >
           {subtitle}
         </span>
@@ -166,7 +154,7 @@
     </a>
 
     {#if showOrgSwitcher && activeOrg}
-      <div class="mt-1 border-t border-border/30 pt-2">
+      <div class="mt-1 pt-2">
         <OrgSwitcher
           memberships={memberships.map((m) => ({
             organizationId: m.organizationId,
@@ -183,6 +171,7 @@
       <Button
         type="button"
         size="sm"
+        variant="dark"
         onclick={() => quickUpload.show()}
         class={cn(
           "group/new h-9 w-full gap-2.5 overflow-hidden rounded-lg px-2.5",
@@ -196,7 +185,7 @@
         />
         <span
           class={cn(
-            "overflow-hidden text-[12px] font-semibold transition-[max-width,opacity] duration-200 ease-linear",
+            "overflow-hidden text-body-sm font-medium transition-[max-width,opacity] duration-200 ease-linear",
             open ? "max-w-32 opacity-100" : "max-w-0 opacity-0",
           )}
         >
@@ -209,11 +198,9 @@
   <Sidebar.Content class="scrollbar-hide">
     {#each resolvedGroups as group (group.label)}
       <Sidebar.Group>
-        <!-- Kept mounted: GroupLabel has a built-in collapse
-				     (`group-data-[collapsible=icon]:-mt-8 opacity-0`, transitioned), so
-				     it slides away smoothly instead of popping out of the DOM. -->
+    
         <Sidebar.GroupLabel
-          class="px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          class="px-2 text-caption font-medium text-muted-foreground"
         >
           {group.label}
         </Sidebar.GroupLabel>
@@ -234,7 +221,7 @@
                       {...props as Record<string, unknown>}
                       data-active={active}
                       class={cn(
-                        "group/item relative flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-2.5 text-[12.5px] font-medium transition-colors duration-200",
+                        "group/item relative flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-2.5 text-body-sm font-medium transition-colors duration-200",
                         active
                           ? "text-foreground"
                           : "text-muted-foreground hover:text-foreground",
@@ -244,7 +231,7 @@
                         <span
                           in:receive={{ key: "nav-active-bg" }}
                           out:send={{ key: "nav-active-bg" }}
-                          class="absolute inset-0 z-0 rounded-lg bg-foreground/6 ring-1 ring-inset ring-border/40"
+                          class="absolute inset-0 z-0 rounded-lg bg-paper ring-1 ring-inset ring-border-low"
                           aria-hidden="true"
                         ></span>
                         {#if open}
@@ -279,16 +266,14 @@
     {/each}
   </Sidebar.Content>
 
-  <Sidebar.Footer class="gap-1 border-t border-border/30 p-2">
-    <!-- Theme toggle lives in the profile menu; the rail's footer slot is a
-         quiet "star us on GitHub" nudge instead. -->
+  <Sidebar.Footer class="gap-1 p-2">
     <Button
       href={GITHUB_URL}
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Star Recast on GitHub"
       title="Star on GitHub"
-      variant="dark"
+      variant="outline"
       class={cn(
         "group/gh relative h-9 w-full gap-2.5 overflow-hidden rounded-lg px-2.5",
         open ? "justify-center" : "justify-start",

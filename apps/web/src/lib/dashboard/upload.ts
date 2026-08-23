@@ -22,6 +22,8 @@ export interface UploadHandlers {
 	onPhase?: (phase: UploadPhase) => void;
 	/** Byte progress 0–100 during the video PUT. */
 	onProgress?: (pct: number) => void;
+	/** Aborts the in-flight PUT. A long upload the user can't stop is a trap. */
+	signal?: AbortSignal;
 	share?: ShareOptions;
 	/**
 	 * When `false`, upload + publish only and skip minting the share link, the
@@ -73,9 +75,7 @@ export const UPLOAD_ACCEPT = "video/mp4,video/webm,.mp4,.webm";
 
 export function isUploadableVideo(file: File): boolean {
 	return (
-		file.type === "video/mp4" ||
-		file.type === "video/webm" ||
-		/\.(mp4|webm)$/i.test(file.name)
+		file.type === "video/mp4" || file.type === "video/webm" || /\.(mp4|webm)$/i.test(file.name)
 	);
 }
 
@@ -273,8 +273,7 @@ function scoreFrame(img: ImageData): { value: number; usable: boolean } {
 	const ybStd = Math.sqrt(Math.max(0, ybSq / n - ybMean * ybMean));
 	// Hasler–Süsstrunk colourfulness.
 	const colourfulness =
-		Math.sqrt(rgStd * rgStd + ybStd * ybStd) +
-		0.3 * Math.sqrt(rgMean * rgMean + ybMean * ybMean);
+		Math.sqrt(rgStd * rgStd + ybStd * ybStd) + 0.3 * Math.sqrt(rgMean * rgMean + ybMean * ybMean);
 
 	// Reject near-black, near-white, and flat/blank (no luminance spread).
 	const usable = meanLum > 18 && meanLum < 245 && stdLum > 8;
@@ -337,6 +336,14 @@ export async function pickBestPosterFrame(
 	return blob ? { blob, timeSec: chosen.time } : null;
 }
 
+/** Thrown when the caller aborts. Not a failure: the user asked for it. */
+export class UploadCancelled extends Error {
+	constructor() {
+		super("Upload cancelled.");
+		this.name = "UploadCancelled";
+	}
+}
+
 // ── signed PUT with progress (fetch has no upload progress) ────────────
 
 function putWithProgress(
@@ -344,15 +351,22 @@ function putWithProgress(
 	body: Blob,
 	contentTypeFallback: string,
 	onProgress?: (pct: number) => void,
+	signal?: AbortSignal,
 ): Promise<number> {
 	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new UploadCancelled());
+			return;
+		}
 		const xhr = new XMLHttpRequest();
 		xhr.open("PUT", envelope.url);
 
+		const onAbort = () => xhr.abort();
+		signal?.addEventListener("abort", onAbort, { once: true });
+		const done = () => signal?.removeEventListener("abort", onAbort);
+
 		const headers = envelope.headers ?? {};
-		const hasContentType = Object.keys(headers).some(
-			(k) => k.toLowerCase() === "content-type",
-		);
+		const hasContentType = Object.keys(headers).some((k) => k.toLowerCase() === "content-type");
 		for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
 		// Presigned PUTs sign the content-type; match what /init signed when the
 		// envelope didn't carry it explicitly.
@@ -363,9 +377,18 @@ function putWithProgress(
 				if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
 			};
 		}
-		xhr.onload = () => resolve(xhr.status);
-		xhr.onerror = () => reject(new Error("Upload failed, check your connection."));
-		xhr.onabort = () => reject(new Error("Upload was cancelled."));
+		xhr.onload = () => {
+			done();
+			resolve(xhr.status);
+		};
+		xhr.onerror = () => {
+			done();
+			reject(new Error("Upload failed, check your connection."));
+		};
+		xhr.onabort = () => {
+			done();
+			reject(new UploadCancelled());
+		};
 		xhr.send(body);
 	});
 }
@@ -442,7 +465,14 @@ export async function uploadRecastFile(
 
 		// 2. PUT the video
 		handlers.onPhase?.("uploading");
-		const status = await putWithProgress(videoUpload, file, contentType, handlers.onProgress);
+		handlers.signal?.throwIfAborted();
+		const status = await putWithProgress(
+			videoUpload,
+			file,
+			contentType,
+			handlers.onProgress,
+			handlers.signal,
+		);
 		if (status < 200 || status >= 300) {
 			throw new Error(`Upload rejected (${status}).`);
 		}
@@ -509,9 +539,7 @@ export async function createRecastShare(
 	});
 	const shareData = await readJson(shareRes);
 	if (!shareRes.ok || !shareData?.slug) {
-		throw new Error(
-			(shareData?.message as string) ?? "Couldn't create a share link.",
-		);
+		throw new Error((shareData?.message as string) ?? "Couldn't create a share link.");
 	}
 	return {
 		slug: shareData.slug as string,
