@@ -738,6 +738,108 @@ that as a real "Recast not found" page instead of the generic boundary.
 **The description was write-only.** You could edit it from the header and it
 only ever appeared to viewers. It renders under the player now.
 
+### Tools
+
+The whole `/tools` tree was the last holdout of the pre-Dub system: `Cutout`
+corner tags, floating `rounded-2xl` cards on `shadow-sm`, `bg-primary/10` tiles
+behind every glyph, `text-[10px]` uppercase labels, and a centred hero with an
+italic second line at `lg:text-[5rem]` - the exact shape the interior-hero rule
+says is gone. `Cutout` was used on these two pages and nowhere else.
+
+All three surfaces now run the standard grammar: back link, `SectionLabel`,
+display `h1`, one `text-body-lg` line, actions, then a hairline rule carrying
+the page's facts, with `gap-px` hairline grids below.
+
+**One promise, stated four times.** The index made the no-upload claim in the
+hero copy, in two hero pills, in the step bodies and again in a privacy panel.
+It is on the hero rule once; the panel is gone. Same on the editor page.
+
+**A 12th grid cell.** Eleven tools in a three-column `gap-px` grid leaves a
+border-coloured hole in the last row. Rather than pad it, the cell is a
+"Missing something?" link to a filed issue: it fills the row and it is the one
+thing worth asking on a page listing a short catalogue.
+
+**Tool pages had no way back and no footer.** They are entered straight from
+search, so the route out has to be on the page. Every tool page now opens with
+an "All tools" link and closes with the site footer, like every other page.
+
+**The FAQ is the page's SEO surface, so it got real answers.** Three questions
+per tool became six to eleven: the tool-specific ones first, then a shared block
+(free/no watermark, size ceiling, browser support, phones, offline, why the fan
+spins) appended rather than retyped. The JSON-LD grew a `BreadcrumbList` and a
+fuller `SoftwareApplication` alongside the existing `FAQPage`, and it now emits
+absolute URLs. Worth knowing: Google restricted FAQ rich results to health and
+government sites in 2023, so `FAQPage` is valid structured data rather than a
+route to dropdowns in search; breadcrumbs are the one here that still shows.
+
+`seo.test.ts` guards the shape: every tool has at least six answers, no
+duplicate questions, no stub answers, and the schema carries every on-page
+question so the two cannot drift.
+
+### GIF quality
+
+Reported as "very pixelated". Three causes, in order of effect:
+
+1. **The default width was 480px.** A GIF shown at any reasonable size is
+   scaled up from that, which is what reads as blocky. Default is 640 now, and
+   the control says why the number matters.
+2. **No dithering.** gifenc has none, so a 256-colour palette over a gradient
+   bands hard. `orderedDither` (8x8 Bayer) nudges each pixel by a sub-step
+   amount before the palette lookup. Ordered rather than Floyd-Steinberg
+   deliberately: one pass, no neighbour search, so it runs per frame without
+   stalling the worker, and being position-based it stays stable between frames
+   instead of crawling. The palette is still built from the *clean* frame and
+   only the mapping is dithered, so the dither scatters error without skewing
+   colour selection.
+3. **No way to trade quality for size.** A Colours control (256/128/64) is
+   exposed, with the dither strength scaling to the palette.
+
+The frame delay also rounds to whole centiseconds now, which is the only
+granularity GIF has; letting gifenc truncate drifted the frame rate.
+
+Not a cause, though it looked like one: `CanvasSink`'s `fit` mode only applies
+when both width and height are set, and only width is, so there was never any
+letterboxing to fix.
+
+**The worker was already right.** Every op already runs in one shared
+`convert-worker`, off the main thread, with progress and cancellation.
+
+### Before/after slider
+
+The feature chips claimed to describe the polished cut but were centred across
+the whole frame, so they sat over the raw footage too. Each side's chrome is
+clipped to the same geometry as its own video now, and the chips moved out of
+the frame entirely into a caption under it, where they can be read without
+competing with the video.
+
+Also fixed: `aria-valuetext` reported the handle position as "% polished
+revealed" when the polished side is the *complement* of it; the raw clip was
+being desaturated to make the polished side look better, which fabricates the
+difference the section is meant to prove; and two looping autoplay videos had no
+pause control, which WCAG 2.2.2 requires past five seconds. The play toggle is a
+sibling of the slider, not a child, because interactive content inside a
+`slider` role is not reliably exposed.
+
+### Navigation
+
+Four bare links meant everything else was reachable only from the footer. The
+row is three groups (Product, Tools, Resources) plus Pricing, opening into
+**one shared panel that resizes and slides between triggers** rather than a
+popover per item, so moving along the row reads as one object morphing rather
+than four separate menus. Size and offset are measured off the active panel and
+its trigger and animated; contents crossfade. Hover intent holds the panel open
+for 140ms so a diagonal path to it does not close it.
+
+It is a disclosure, not `role="menu"`: the contents are links to pages, so the
+browser's own link semantics are what should be announced. Escape closes and
+returns focus, ArrowDown moves into the panel, and reduced motion drops the
+size animation.
+
+Mobile was a floating card holding four links, which does not survive a dozen
+destinations. It is a full-height sheet with focus trapping, one accordion
+section open at a time, 48px rows, and the two actions worth a thumb pinned to
+the bottom so they never need a scroll back up.
+
 ### Workspace analytics
 
 Audited against cognitive-load, Gestalt and Fitts guidance, then rebuilt. The
