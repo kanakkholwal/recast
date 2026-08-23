@@ -1,287 +1,290 @@
 <script lang="ts">
-import { Container, Footer, Section, SeoMeta } from "$lib/components";
-import { TOOLS } from "$lib/tools/registry";
-import { toolIcon } from "$lib/tools/tool-icons";
 import {
 	ArrowRight,
 	Download,
 	Image,
+	MessageSquare,
 	MousePointerClick,
 	ShieldCheck,
 	Upload,
 	UserX,
 	WifiOff,
+	Wrench,
 } from "@recast/icons";
-import { Cutout } from "@recast/ui/cutout";
+import { Button } from "@recast/ui/button";
 import { LocalIcon } from "@recast/ui/local-icon";
-import { prefersReducedMotion } from "$lib/motion-core";
-import { fly } from "svelte/transition";
-import { cubicOut } from "svelte/easing";
+import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
+import { TOOLS } from "$lib/tools/registry";
+import { toolIcon } from "$lib/tools/tool-icons";
 
-// Same hero entrance pattern as the rest of the public pages: 80ms
-// stagger across the eyebrow, headline, body, and CTA. 460ms per
-// element lands each in well under a second; the total ladder ends
-// around 400ms after first paint.
-const reduced = $derived(prefersReducedMotion());
-const heroStagger = 80;
-const riseM = (delay: number) =>
-	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+const REQUEST_URL = "https://github.com/kanakkholwal/recast/issues/new";
+
+const heroFacts = [
+	{ icon: WifiOff, label: "Runs in your browser" },
+	{ icon: ShieldCheck, label: "Nothing is uploaded" },
+	{ icon: UserX, label: "No account" },
+];
 
 const steps = [
 	{
 		icon: MousePointerClick,
 		title: "Pick a tool",
-		body: "Convert, trim, compress, or mute. Each tool is a single focused page.",
+		body: "Convert, trim, compress, or mute. Each one is a single focused page.",
 	},
 	{
 		icon: Upload,
 		title: "Drop your file",
-		body: "It loads into your browser's own video engine. Nothing is uploaded.",
+		body: "It loads into your browser's own video engine.",
 	},
 	{
 		icon: Download,
 		title: "Save the result",
-		body: "Download the output instantly. No watermark, no account, no wait.",
+		body: "Download the output instantly. No watermark, no wait.",
 	},
-];
-
-const privacy = [
-	{ icon: WifiOff, label: "Runs offline", body: "Works after the page loads." },
-	{ icon: ShieldCheck, label: "No upload", body: "Files never leave your device." },
-	{ icon: UserX, label: "No account", body: "No sign-up, no email, no limits." },
 ];
 </script>
 
 <SeoMeta
-  title="Free Browser Video Tools"
-  description="Convert, trim, compress, and extract from video for free. Everything runs in your browser. Your files are never uploaded."
-  eyebrow="Tools"
+	title="Free Browser Video Tools"
+	description="Convert, trim, compress, and extract from video for free. Everything runs in your browser. Your files are never uploaded."
+	eyebrow="Tools"
 />
 
-<main class="flex flex-col pb-8">
-  <!-- Hero. Same stagger as the rest of the public pages so the entrance
-       reads as one design language across the site. -->
-  <Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-24">
-    <Container size="wide" class="relative">
-      <div class="relative z-10 mx-auto flex max-w-2xl flex-col items-center gap-6 text-center">
-        <span
-          in:fly={riseM(heroStagger * 0)}
-          class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
-        >
-          <span class="size-1.5 rounded-full bg-primary"></span>
-          Tools
-        </span>
-        <h1
-          in:fly={riseM(heroStagger * 1)}
-          class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
-        >
-          Free video tools.
-          <span class="block font-medium italic text-muted-foreground">Your files stay on your device.</span>
-        </h1>
-        <p
-          in:fly={riseM(heroStagger * 2)}
-          class="text-pretty max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
-        >
-          Quick conversions that run entirely in your browser. Nothing is uploaded, no watermark, no account.
-        </p>
-        <div in:fly={riseM(heroStagger * 3)} class="mt-1 flex flex-wrap items-center justify-center gap-2">
-          <span class="inline-flex items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-body-sm font-medium text-muted-foreground">
-            <ShieldCheck class="size-3 text-foreground/60" />
-            No upload
-          </span>
-          <span class="inline-flex items-center gap-1.5 rounded-full bg-paper px-2.5 py-1 text-body-sm font-medium text-muted-foreground">
-            <UserX class="size-3 text-foreground/60" />
-            No account
-          </span>
-        </div>
-      </div>
-    </Container>
-  </Section>
+<main class="text-foreground">
+	<section class="mx-auto w-full max-w-6xl border-b border-border-low pt-32 md:pt-40">
+		<Container class="pb-12">
+			<Reveal variant="up">
+				<SectionLabel icon={Wrench} label="Tools" accent="green" />
+			</Reveal>
+			<Reveal variant="up" delay={60} class="mt-5">
+				<h1 class="max-w-2xl font-display font-semibold text-balance text-heading-lg md:text-display">
+					Free video tools
+				</h1>
+			</Reveal>
+			<Reveal variant="up" delay={120} class="mt-4">
+				<p class="max-w-xl text-pretty text-body-lg text-muted-foreground">
+					Quick conversions that run entirely on your device. Pick one, drop a file, save the
+					result.
+				</p>
+			</Reveal>
+			<Reveal variant="up" delay={180} class="mt-8 flex flex-wrap items-center gap-3">
+				<Button href="#tools" variant="dark" class="group/cta gap-2">
+					Browse {TOOLS.length} tools
+					<ArrowRight
+						class="size-4 transition-transform group-hover/cta:translate-x-0.5 motion-reduce:transition-none"
+					/>
+				</Button>
+				<Button href="/tools/screenshot-editor" variant="outline" class="gap-2">
+					<Image class="size-4" />
+					Screenshot editor
+				</Button>
+			</Reveal>
+		</Container>
 
-  <!-- Featured: the screenshot editor is not a worker op, so it sits outside the
-       TOOLS registry and gets its own card. -->
-  <Container size="wide" class="mb-5">
-    <a
-      href="/tools/screenshot-editor"
-      class="group border-border-low bg-card relative flex flex-col gap-3 overflow-hidden rounded-2xl border p-6 shadow-sm transition-all duration-300 hover:border-border hover:shadow-md sm:flex-row sm:items-center sm:gap-6"
-    >
-      <Cutout
-        corner="tr"
-        surface="background"
-        radius={14}
-        class="flex items-center pt-2 pr-3 pb-4 pl-4"
-      >
-        <span class="text-primary text-caption font-bold tracking-[0.12em] uppercase">
-          Editor
-        </span>
-      </Cutout>
+		<Container class="border-t border-border-low">
+			<ul class="flex flex-wrap items-center divide-x divide-border-low py-4">
+				{#each heroFacts as fact (fact.label)}
+					{@const Icon = fact.icon}
+					<li
+						class="inline-flex items-center gap-2 pr-4 text-body-sm text-muted-foreground not-first:pl-4"
+					>
+						<Icon class="size-4 shrink-0" />
+						{fact.label}
+					</li>
+				{/each}
+			</ul>
+		</Container>
+	</section>
 
-      <span class="bg-primary/10 text-primary grid size-11 shrink-0 place-items-center rounded-xl">
-        <Image class="size-5" />
-      </span>
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<Reveal variant="up">
+				<a
+					href="/tools/screenshot-editor"
+					class="group/spot flex flex-col gap-6 border-y border-border-low py-8 transition-colors hover:bg-paper motion-reduce:transition-none sm:flex-row sm:items-center sm:px-6"
+				>
+					<Image
+						class="size-6 shrink-0 text-tag-green [fill-opacity:0.2]"
+						fill="currentColor"
+					/>
+					<div class="min-w-0 flex-1">
+						<h2 class="font-display text-heading-sm">Screenshot editor</h2>
+						<p class="mt-2 max-w-xl text-pretty text-body-sm text-muted-foreground">
+							Give a plain screenshot a gradient backdrop, a browser frame, a shadow and a 3D tilt,
+							then export at up to 4x.
+						</p>
+					</div>
+					<span
+						class="inline-flex shrink-0 items-center gap-1.5 text-body-sm font-medium text-foreground"
+					>
+						Open editor
+						<ArrowRight
+							class="size-3.5 transition-transform group-hover/spot:translate-x-0.5 motion-reduce:transition-none"
+						/>
+					</span>
+				</a>
+			</Reveal>
+		</Container>
+	</Section>
 
-      <div class="min-w-0 flex-1">
-        <h3 class="text-base font-semibold tracking-tight">Screenshot Editor</h3>
-        <p class="text-muted-foreground mt-1 text-sm leading-relaxed">
-          Give a plain screenshot a gradient backdrop, a browser frame, a shadow, and a
-          3D tilt, then export at up to 4x.
-        </p>
-      </div>
+	<Section id="tools" class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<Reveal variant="up">
+				<div class="flex items-center gap-4 border-b border-border-low pb-5">
+					<SectionLabel icon={Wrench} label="Every tool" accent="green" />
+					<span class="ml-auto shrink-0 text-body-sm tabular-nums text-muted-foreground">
+						{TOOLS.length} tools
+					</span>
+				</div>
+			</Reveal>
 
-      <span
-        class="text-primary inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold sm:pr-6"
-      >
-        Open editor
-        <ArrowRight class="size-3.5 transition-transform group-hover:translate-x-0.5" />
-      </span>
-    </a>
-  </Container>
+			<div class="max-w-lg py-10">
+				<Reveal variant="up" delay={60}>
+					<h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
+						One page, one job
+					</h2>
+				</Reveal>
+				<Reveal variant="up" delay={120} class="mt-4">
+					<p class="text-pretty text-body-lg text-muted-foreground">
+						No mode switcher, no settings tour. Each tool does the one conversion its name
+						promises.
+					</p>
+				</Reveal>
+			</div>
 
-  <!-- Tools grid -->
-  <Container size="wide">
-    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {#each TOOLS as tool (tool.slug)}
-        <a
-          href={`/tools/${tool.slug}`}
-          class="group relative flex h-full flex-col gap-3 overflow-hidden rounded-2xl border border-border-low bg-card p-6 shadow-sm transition-all duration-300 hover:border-border hover:shadow-md"
-        >
-          <Cutout
-            corner="tr"
-            surface="background"
-            radius={14}
-            class="flex items-center pb-4 pl-4 pr-3 pt-2"
-          >
-            <span
-              class="text-caption font-bold font-medium text-muted-foreground"
-            >
-              {tool.outputLabel}
-            </span>
-          </Cutout>
+			<div
+				class="grid grid-cols-1 gap-px border-y border-border-low bg-border-low sm:grid-cols-2 lg:grid-cols-3"
+			>
+				{#each TOOLS as tool, i (tool.slug)}
+					<Reveal
+						variant="up"
+						delay={Math.min(i, 6) * 50}
+						as="article"
+						class="flex h-full flex-col bg-background"
+					>
+						<a
+							href={`/tools/${tool.slug}`}
+							class="group/tool flex h-full flex-col px-6 py-8 transition-colors hover:bg-paper motion-reduce:transition-none"
+						>
+							<div class="flex items-start justify-between gap-3">
+								<LocalIcon iconNode={toolIcon(tool.slug)} class="size-5 text-muted-foreground" />
+								<span class="shrink-0 text-caption text-muted-foreground">{tool.outputLabel}</span>
+							</div>
+							<h3 class="mt-4 font-display text-body font-medium text-foreground">{tool.title}</h3>
+							<p class="mt-2 text-body-sm text-muted-foreground">{tool.tagline}</p>
+							<span
+								class="mt-auto inline-flex items-center gap-1.5 pt-6 text-body-sm font-medium text-foreground"
+							>
+								Open
+								<ArrowRight
+									class="size-3.5 transition-transform group-hover/tool:translate-x-0.5 motion-reduce:transition-none"
+								/>
+							</span>
+						</a>
+					</Reveal>
+				{/each}
 
-          <span
-            class="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"
-          >
-            <LocalIcon iconNode={toolIcon(tool.slug)} class="size-5" />
-          </span>
+				<Reveal
+					variant="up"
+					delay={350}
+					as="article"
+					class="flex h-full flex-col bg-background"
+				>
+					<a
+						href={REQUEST_URL}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="group/req flex h-full flex-col px-6 py-8 transition-colors hover:bg-paper motion-reduce:transition-none"
+					>
+						<MessageSquare class="size-5 text-muted-foreground" />
+						<h3 class="mt-4 font-display text-body font-medium text-foreground">
+							Missing something?
+						</h3>
+						<p class="mt-2 text-body-sm text-muted-foreground">
+							Tell us which conversion you need and we'll look at adding it.
+						</p>
+						<span
+							class="mt-auto inline-flex items-center gap-1.5 pt-6 text-body-sm font-medium text-foreground"
+						>
+							Request a tool
+							<ArrowRight
+								class="size-3.5 transition-transform group-hover/req:translate-x-0.5 motion-reduce:transition-none"
+							/>
+						</span>
+					</a>
+				</Reveal>
+			</div>
+		</Container>
+	</Section>
 
-          <h3 class="text-base font-semibold tracking-tight">{tool.title}</h3>
-          <p class="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
-            {tool.tagline}
-          </p>
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<Reveal variant="up">
+				<div class="flex items-center gap-4 border-b border-border-low pb-5">
+					<SectionLabel icon={MousePointerClick} label="How it works" accent="green" />
+				</div>
+			</Reveal>
 
-          <span
-            class="mt-auto inline-flex items-center gap-1.5 pt-4 text-xs font-semibold text-primary"
-          >
-            Open tool
-            <ArrowRight
-              class="size-3.5 transition-transform group-hover:translate-x-0.5"
-            />
-          </span>
-        </a>
-      {/each}
-    </div>
-  </Container>
+			<div class="max-w-lg py-10">
+				<Reveal variant="up" delay={60}>
+					<h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
+						Three steps, zero uploads
+					</h2>
+				</Reveal>
+			</div>
 
-  <!-- How it works — cutout step cards -->
-  <Container size="wide" class="mt-20">
-    <div class="mx-auto mb-8 max-w-xl text-center">
-      <span
-        class="inline-flex items-center gap-2 text-body-sm font-medium text-muted-foreground"
-      >
-        <span class="size-1.5 rounded-full bg-primary"></span>
-        How it works
-      </span>
-      <h2 class="mt-3 text-balance text-2xl font-semibold tracking-tight sm:text-3xl">
-        Three steps, zero uploads
-      </h2>
-    </div>
+			<div
+				class="grid grid-cols-1 gap-px border-y border-border-low bg-border-low md:grid-cols-3"
+			>
+				{#each steps as step, i (step.title)}
+					{@const Icon = step.icon}
+					<Reveal
+						variant="up"
+						delay={i * 80}
+						as="article"
+						class="flex h-full flex-col bg-background px-6 py-8"
+					>
+						<span class="font-display text-heading-sm leading-none tabular-nums text-border-strong">
+							{String(i + 1).padStart(2, "0")}
+						</span>
+						<Icon class="mt-5 size-5 text-muted-foreground" />
+						<h3 class="mt-4 font-display text-body font-medium text-foreground">{step.title}</h3>
+						<p class="mt-2 text-body-sm text-muted-foreground">{step.body}</p>
+					</Reveal>
+				{/each}
+			</div>
+		</Container>
+	</Section>
 
-    <div class="grid gap-5 sm:grid-cols-3">
-      {#each steps as step, i (step.title)}
-        <article
-          class="group relative flex flex-col gap-3 overflow-hidden rounded-2xl border border-border-low bg-card p-6 shadow-sm transition-all duration-300 hover:shadow-md"
-        >
-          <Cutout
-            corner="tr"
-            surface="background"
-            radius={14}
-            class="flex items-center justify-center pb-4 pl-4 pr-3 pt-2"
-          >
-            <span class="text-caption font-bold tabular-nums text-muted-foreground">
-              0{i + 1}
-            </span>
-          </Cutout>
+	<Section class="mx-auto max-w-6xl" spacing="tight">
+		<Container>
+			<div class="max-w-xl py-6">
+				<Reveal variant="up">
+					<h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
+						Want the full editor?
+					</h2>
+				</Reveal>
+				<Reveal variant="up" delay={60} class="mt-4">
+					<p class="text-pretty text-body-lg text-muted-foreground">
+						These tools are the quick path. Recast for desktop records, polishes and exports a
+						finished demo, offline and in one app.
+					</p>
+				</Reveal>
+				<Reveal variant="up" delay={120} class="mt-8 flex flex-wrap items-center gap-3">
+					<Button href="/download" variant="dark" class="gap-2">
+						<Download class="size-4" />
+						Download Recast
+					</Button>
+					<Button href="/features" variant="outline" class="group/cta gap-2">
+						See what it does
+						<ArrowRight
+							class="size-4 transition-transform group-hover/cta:translate-x-0.5 motion-reduce:transition-none"
+						/>
+					</Button>
+				</Reveal>
+			</div>
+		</Container>
+	</Section>
 
-          <span
-            class="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary"
-          >
-            <step.icon class="size-5" />
-          </span>
-          <h3 class="text-base font-semibold tracking-tight">{step.title}</h3>
-          <p class="text-sm leading-relaxed text-muted-foreground">{step.body}</p>
-        </article>
-      {/each}
-    </div>
-  </Container>
-
-  <!-- Privacy panel — one cutout-tagged surface -->
-  <Container size="wide" class="mt-16">
-    <div
-      class="relative overflow-hidden rounded-2xl border border-border-low bg-card shadow-sm"
-    >
-      <Cutout corner="tl" surface="background" radius={14} class="pb-3.5 pl-3 pr-4 pt-2.5">
-        <span class="text-caption font-semibold text-primary">
-          Private by default
-        </span>
-      </Cutout>
-
-      <div class="grid gap-6 p-6 pt-11 sm:grid-cols-3 sm:p-8 sm:pt-11">
-        {#each privacy as item (item.label)}
-          <div class="flex items-start gap-3">
-            <span
-              class="grid size-9 shrink-0 place-items-center rounded-lg bg-paper text-foreground"
-            >
-              <item.icon class="size-4.5" />
-            </span>
-            <div>
-              <p class="text-sm font-semibold tracking-tight">{item.label}</p>
-              <p class="mt-0.5 text-body-sm leading-relaxed text-muted-foreground">
-                {item.body}
-              </p>
-            </div>
-          </div>
-        {/each}
-      </div>
-    </div>
-  </Container>
-
-  <!-- CTA -->
-  <Container size="wide" class="mt-16">
-    <div
-      class="relative overflow-hidden rounded-2xl border border-border-low bg-card px-6 py-10 text-center shadow-sm sm:px-10"
-    >
-      <Cutout corner="tr" surface="background" radius={12} class="pb-3 pl-3.5 pr-3.5 pt-1.5">
-        <span class="text-caption font-bold tracking-wide text-foreground">Free forever</span>
-      </Cutout>
-
-      <div class="mx-auto max-w-xl">
-        <h2 class="text-balance text-2xl font-semibold tracking-tight sm:text-3xl">
-          Want the full editor?
-        </h2>
-        <p class="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground sm:text-base">
-          These tools are the quick path. Recast for desktop records, polishes,
-          and exports a finished demo, offline and in one app.
-        </p>
-        <a
-          href="/download"
-          class="mt-6 inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-craft-sm transition-transform"
-        >
-          Download Recast
-          <ArrowRight class="size-4" />
-        </a>
-      </div>
-    </div>
-  </Container>
-
-  <Footer />
+	<Footer />
 </main>

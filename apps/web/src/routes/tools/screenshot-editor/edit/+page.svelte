@@ -1,19 +1,19 @@
 <script lang="ts">
-  import { ScreenshotEditor } from "@recast/application/screenshot-editor";
-  import { toast } from "@recast/ui/sonner";
-  import { Button } from "@recast/ui/button";
-  import { GithubBrand } from "@recast/ui/brand-icons";
-  import { ArrowLeft, Download } from "@recast/icons";
-  import { SeoMeta } from "$lib/components";
-  import { GITHUB_URL } from "$lib/components/nav-data";
-  import Logo from "$lib/logo.svelte";
-  import { EDITOR_DESCRIPTION } from "$lib/tools/screenshot-editor";
+import { ScreenshotEditor } from "@recast/application/screenshot-editor";
+import { ArrowLeft, Download } from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { SeoMeta } from "$lib/components";
+import { GITHUB_URL } from "$lib/components/nav-data";
+import Logo from "$lib/logo.svelte";
+import { EDITOR_DESCRIPTION } from "$lib/tools/screenshot-editor";
 
-  // Web has no native screen capture; the editor falls back to upload/paste/drop.
-  function notify(message: string, kind: "success" | "error") {
-    if (kind === "success") toast.success(message);
-    else toast.error(message);
-  }
+// Web has no native screen capture; the editor falls back to upload/paste/drop.
+function notify(message: string, kind: "success" | "error") {
+	if (kind === "success") toast.success(message);
+	else toast.error(message);
+}
 </script>
 
 <!-- The landing page is the indexable one; this is the app. Point canonical at

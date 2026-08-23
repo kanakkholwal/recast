@@ -1,430 +1,371 @@
 <script lang="ts">
-  import { Container, Footer, SeoMeta } from "$lib/components";
-  import { Cutout } from "@recast/ui/cutout";
-  import {
-    AppWindow,
-    ArrowRight,
-    Blend,
-    Box,
-    Clapperboard,
-    Download,
-    ImageIcon,
-    Layers,
-    MousePointerClick,
-    Palette,
-    ShieldCheck,
-    Type,
-    UserX,
-    WifiOff,
-  } from "@recast/icons";
-  import {Image} from "@unpic/svelte"
-  import {
-    buildEditorJsonLd,
-    EDITOR_DESCRIPTION,
-    EDITOR_FAQ,
-    EDITOR_TITLE,
-    UPSTREAM_URL,
-  } from "$lib/tools/screenshot-editor";
+import {
+	AppWindow,
+	ArrowLeft,
+	ArrowRight,
+	Blend,
+	Box,
+	Clapperboard,
+	Download,
+	ImageIcon,
+	Layers,
+	MousePointerClick,
+	Palette,
+	ShieldCheck,
+	Type,
+	UserX,
+	WifiOff,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Image } from "@unpic/svelte";
+import {
+	Container,
+	FaqList,
+	Footer,
+	Reveal,
+	Section,
+	SectionLabel,
+	SeoMeta,
+} from "$lib/components";
+import {
+	buildEditorJsonLd,
+	EDITOR_DESCRIPTION,
+	EDITOR_FAQ,
+	EDITOR_TITLE,
+	UPSTREAM_URL,
+} from "$lib/tools/screenshot-editor";
 
-  const jsonLd = buildEditorJsonLd();
+const jsonLd = buildEditorJsonLd();
 
-  const features = [
-    {
-      icon: Palette,
-      title: "Backdrops that do the work",
-      body: "Gradients, mesh, patterns, solid colours, your own image, or transparent. Add blur and grain to taste.",
-    },
-    {
-      icon: AppWindow,
-      title: "Browser and device frames",
-      body: "Drop the shot into a Safari or Chrome window, light or dark, with your own URL. Phone and tablet frames too.",
-    },
-    {
-      icon: Box,
-      title: "3D tilt and perspective",
-      body: "Rotate and tilt the shot in real 3D space. Presets for a quick angle, sliders when you want it exact.",
-    },
-    {
-      icon: Layers,
-      title: "Glass and border styles",
-      body: "Wrap the shot in a frosted glass card or a clean solid border, with shadows from subtle to dramatic.",
-    },
-    {
-      icon: Type,
-      title: "Text and annotations",
-      body: "Add headings, arrows, boxes, and circles to point at the thing that matters.",
-    },
-    {
-      icon: Blend,
-      title: "Colour adjustments",
-      body: "Brightness, contrast, saturation, hue, grayscale, and blur, applied to the shot and not the backdrop.",
-    },
-    {
-      icon: Clapperboard,
-      title: "Motion, then MP4",
-      body: "Pick a motion preset, stretch the clip on the timeline, and export an MP4 for social.",
-    },
-    {
-      icon: Download,
-      title: "Export at up to 4x",
-      body: "PNG or JPG at retina resolution, or copy straight to your clipboard and paste it where you need it.",
-    },
-  ];
+// Stated once, on the rule under the hero. The old page also had a hero pill,
+// a three-up privacy panel and a line in the CTA saying the same thing.
+const heroFacts = [
+	{ icon: WifiOff, label: "Runs offline" },
+	{ icon: ShieldCheck, label: "Nothing is uploaded" },
+	{ icon: UserX, label: "No account, no watermark" },
+];
 
-  const steps = [
-    {
-      icon: ImageIcon,
-      title: "Drop your screenshot",
-      body: "Upload it, paste it, or drag it onto the page. It loads straight into your browser.",
-    },
-    {
-      icon: MousePointerClick,
-      title: "Make it look good",
-      body: "Pick a backdrop, round the corners, add a shadow, tilt it. A template gets you there in one click.",
-    },
-    {
-      icon: Download,
-      title: "Export or copy",
-      body: "Save a PNG at up to 4x, or copy to the clipboard and paste it into your post.",
-    },
-  ];
+const features = [
+	{
+		icon: Palette,
+		title: "Backdrops that do the work",
+		body: "Gradients, mesh, patterns, solid colours, your own image, or transparent. Add blur and grain to taste.",
+	},
+	{
+		icon: AppWindow,
+		title: "Browser and device frames",
+		body: "Drop the shot into a Safari or Chrome window, light or dark, with your own URL. Phone and tablet frames too.",
+	},
+	{
+		icon: Box,
+		title: "3D tilt and perspective",
+		body: "Rotate and tilt the shot in real 3D space. Presets for a quick angle, sliders when you want it exact.",
+	},
+	{
+		icon: Layers,
+		title: "Glass and border styles",
+		body: "Wrap the shot in a frosted glass card or a clean solid border, with shadows from subtle to dramatic.",
+	},
+	{
+		icon: Type,
+		title: "Text and annotations",
+		body: "Add headings, arrows, boxes, and circles to point at the thing that matters.",
+	},
+	{
+		icon: Blend,
+		title: "Colour adjustments",
+		body: "Brightness, contrast, saturation, hue, grayscale, and blur, applied to the shot and not the backdrop.",
+	},
+	{
+		icon: Clapperboard,
+		title: "Motion, then MP4",
+		body: "Pick a motion preset, stretch the clip on the timeline, and export an MP4 for social.",
+	},
+	{
+		icon: Download,
+		title: "Export at up to 4x",
+		body: "PNG or JPG at retina resolution, or copy straight to your clipboard.",
+	},
+];
 
-  const privacy = [
-    { icon: WifiOff, label: "Runs offline", body: "Works after the page loads." },
-    { icon: ShieldCheck, label: "No upload", body: "Your image never leaves your device." },
-    { icon: UserX, label: "No account", body: "No sign-up, no email, no watermark." },
-  ];
+const steps = [
+	{
+		icon: ImageIcon,
+		title: "Drop your screenshot",
+		body: "Upload it, paste it, or drag it onto the page. It loads straight into your browser.",
+	},
+	{
+		icon: MousePointerClick,
+		title: "Make it look good",
+		body: "Pick a backdrop, round the corners, add a shadow, tilt it. A template gets you there in one click.",
+	},
+	{
+		icon: Download,
+		title: "Export or copy",
+		body: "Save a PNG at up to 4x, or copy to the clipboard and paste it into your post.",
+	},
+];
 </script>
 
 <SeoMeta title={EDITOR_TITLE} description={EDITOR_DESCRIPTION} eyebrow="Tools" />
 
 <svelte:head>
-  {@html `<script type="application/ld+json">${jsonLd}</script>`}
+	{@html `<script type="application/ld+json">${jsonLd}</script>`}
 </svelte:head>
 
-<main class="flex flex-col pb-8">
-  <!-- Hero -->
-  <Container size="wide" class="pt-28 pb-10 sm:pt-32">
-    <header class="mx-auto max-w-2xl text-center">
-      <span
-        class="border-border/50 bg-card text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.16em] uppercase shadow-(--shadow-craft-inset)"
-      >
-        <ShieldCheck class="text-primary size-3.5" /> No upload · No account
-      </span>
-      <h1 class="mt-5 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-        Free screenshot editor
-      </h1>
-      <p class="text-muted-foreground mt-3 text-base leading-relaxed text-pretty">
-        A raw screenshot looks like a bug report. Give it a backdrop, a shadow, and a
-        tilt, and it looks like a product. Everything runs in your browser.
-      </p>
+<main class="text-foreground">
+	<section class="mx-auto w-full max-w-6xl border-b border-border-low pt-32 md:pt-40">
+		<Container class="pb-12">
+			<Reveal variant="up">
+				<a
+					href="/tools"
+					class="group/back inline-flex items-center gap-1.5 text-body-sm font-medium text-muted-foreground transition-colors hover:text-foreground motion-reduce:transition-none"
+				>
+					<ArrowLeft
+						class="size-3.5 transition-transform group-hover/back:-translate-x-0.5 motion-reduce:transition-none"
+					/>
+					All tools
+				</a>
+			</Reveal>
+			<Reveal variant="up" delay={40} class="mt-6">
+				<SectionLabel icon={ImageIcon} label="Screenshot editor" accent="green" />
+			</Reveal>
+			<Reveal variant="up" delay={100} class="mt-5">
+				<h1 class="max-w-2xl font-display text-balance text-heading-lg md:text-display">
+					Free screenshot editor
+				</h1>
+			</Reveal>
+			<Reveal variant="up" delay={160} class="mt-4">
+				<p class="max-w-xl text-pretty text-body-lg text-muted-foreground">
+					A raw screenshot looks like a bug report. Give it a backdrop, a shadow and a tilt, and it
+					looks like a product.
+				</p>
+			</Reveal>
+			<Reveal variant="up" delay={220} class="mt-8 flex flex-wrap items-center gap-3">
+				<Button href="/tools/screenshot-editor/edit" variant="dark" class="group/cta gap-2">
+					Open the editor
+					<ArrowRight
+						class="size-4 transition-transform group-hover/cta:translate-x-0.5 motion-reduce:transition-none"
+					/>
+				</Button>
+				<Button href="/download" variant="outline" class="gap-2">
+					<Download class="size-4" />
+					Get the desktop app
+				</Button>
+			</Reveal>
+		</Container>
 
-      <div class="mt-7 flex flex-wrap items-center justify-center gap-3">
-        <a
-          href="/tools/screenshot-editor/edit"
-          class="bg-primary text-primary-foreground shadow-craft-sm inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-0.5"
-        >
-          Open the editor
-          <ArrowRight class="size-4" />
-        </a>
-        <a
-          href="/download"
-          class="border-border/60 bg-card hover:border-border inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition-colors"
-        >
-          Get the desktop app
-        </a>
-      </div>
-    </header>
-  </Container>
+		<Container class="border-t border-border-low">
+			<ul class="flex flex-wrap items-center divide-x divide-border-low py-4">
+				{#each heroFacts as fact (fact.label)}
+					{@const Icon = fact.icon}
+					<li
+						class="inline-flex items-center gap-2 pr-4 text-body-sm text-muted-foreground not-first:pl-4"
+					>
+						<Icon class="size-4 shrink-0" />
+						{fact.label}
+					</li>
+				{/each}
+			</ul>
+		</Container>
+	</section>
 
-  <!-- Before / after. Pure CSS illustration: no asset to load, and it shows the
-       exact treatment the editor applies. -->
-  <Container size="wide" class="pb-4">
-    <div class="grid items-center gap-5 sm:grid-cols-[1fr_auto_1fr]">
-      <figure class="flex flex-col gap-3">
-        <div class="bg-muted/40 border-border/50 grid place-items-center rounded-2xl border p-6">
-          <div class="shot shot-plain" aria-hidden="true">
-            <span class="bar w-3/5"></span>
-            <span class="bar w-4/5"></span>
-            <span class="bar w-2/5"></span>
-          </div>
-        </div>
-        <figcaption
-          class="text-muted-foreground text-center text-[11px] font-bold tracking-[0.16em] uppercase"
-        >
-          Your screenshot
-        </figcaption>
-      </figure>
+	<!-- Before / after. The "before" is a CSS rendering of a bare screenshot, so
+	     there is no asset to load for the half nobody looks at twice. -->
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<Reveal variant="up">
+				<div
+					class="grid items-center gap-px border-y border-border-low bg-border-low sm:grid-cols-2"
+				>
+					<figure class="flex flex-col gap-4 bg-background px-6 py-8">
+						<div class="grid flex-1 place-items-center rounded-lg bg-paper p-8">
+							<div class="shot" aria-hidden="true">
+								<span class="bar w-3/5"></span>
+								<span class="bar w-4/5"></span>
+								<span class="bar w-2/5"></span>
+							</div>
+						</div>
+						<figcaption class="text-caption text-muted-foreground">Your screenshot</figcaption>
+					</figure>
 
-      <div class="text-muted-foreground hidden place-items-center sm:grid">
-        <ArrowRight class="size-5" />
-      </div>
+					<figure class="flex flex-col gap-4 bg-background px-6 py-8">
+						<div class="flex-1 overflow-hidden rounded-lg">
+							<Image
+								src="/screenshots/reshot_preview.webp"
+								alt="The same screenshot with a gradient backdrop, browser frame, shadow and 3D tilt"
+								height="400"
+								width="600"
+								class="h-full w-full object-cover"
+							/>
+						</div>
+						<figcaption class="text-caption font-medium text-foreground">
+							Thirty seconds later
+						</figcaption>
+					</figure>
+				</div>
+			</Reveal>
+		</Container>
+	</Section>
 
-      <figure class="flex flex-col gap-3">
-         <Image src="/screenshots/reshot_preview.webp" alt="reshot_preview" height="400" width="600" />
-         <figcaption
-          class="text-primary text-center text-[11px] font-bold tracking-[0.16em] uppercase"
-        >
-          Thirty seconds later
-        </figcaption>
-      </figure>
-    </div>
-  </Container>
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<Reveal variant="up">
+				<div class="flex items-center gap-4 border-b border-border-low pb-5">
+					<SectionLabel icon={Palette} label="What you get" accent="green" />
+					<Button
+						href="/tools/screenshot-editor/edit"
+						variant="outline"
+						size="sm"
+						class="ml-auto shrink-0"
+					>
+						Open the editor
+					</Button>
+				</div>
+			</Reveal>
 
-  <!-- Features -->
-  <Container size="wide" class="mt-20">
-    <div class="mx-auto mb-8 max-w-xl text-center">
-      <span
-        class="text-muted-foreground inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.18em] uppercase"
-      >
-        <span class="bg-primary size-1.5 rounded-full"></span>
-        What you get
-      </span>
-      <h2 class="mt-3 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-        Everything you need to make a screenshot presentable
-      </h2>
-    </div>
+			<div class="max-w-lg py-10">
+				<Reveal variant="up" delay={60}>
+					<h2 class="font-display text-balance text-heading md:text-heading-lg">
+						Everything a screenshot needs to look intentional
+					</h2>
+				</Reveal>
+			</div>
 
-    <div class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-      {#each features as feature (feature.title)}
-        <article
-          class="border-border/50 bg-card flex flex-col gap-3 rounded-2xl border p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
-        >
-          <span class="bg-primary/10 text-primary grid size-10 place-items-center rounded-xl">
-            <feature.icon class="size-5" />
-          </span>
-          <h3 class="text-base font-semibold tracking-tight">{feature.title}</h3>
-          <p class="text-muted-foreground text-sm leading-relaxed">{feature.body}</p>
-        </article>
-      {/each}
-    </div>
-  </Container>
+			<div
+				class="grid grid-cols-1 gap-px border-y border-border-low bg-border-low sm:grid-cols-2 lg:grid-cols-4"
+			>
+				{#each features as feature, i (feature.title)}
+					{@const Icon = feature.icon}
+					<Reveal
+						variant="up"
+						delay={Math.min(i, 4) * 60}
+						as="article"
+						class="flex h-full flex-col bg-background px-6 py-8"
+					>
+						<Icon class="size-5 text-tag-green [fill-opacity:0.2]" fill="currentColor" />
+						<h3 class="mt-4 font-display text-body font-medium text-foreground">{feature.title}</h3>
+						<p class="mt-2 text-body-sm text-muted-foreground">{feature.body}</p>
+					</Reveal>
+				{/each}
+			</div>
+		</Container>
+	</Section>
 
-  <!-- How it works -->
-  <Container size="wide" class="mt-20">
-    <div class="mx-auto mb-8 max-w-xl text-center">
-      <span
-        class="text-muted-foreground inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.18em] uppercase"
-      >
-        <span class="bg-primary size-1.5 rounded-full"></span>
-        How it works
-      </span>
-      <h2 class="mt-3 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-        Three steps, zero uploads
-      </h2>
-    </div>
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<Reveal variant="up">
+				<div class="flex items-center gap-4 border-b border-border-low pb-5">
+					<SectionLabel icon={MousePointerClick} label="How it works" accent="green" />
+				</div>
+			</Reveal>
 
-    <div class="grid gap-5 sm:grid-cols-3">
-      {#each steps as step, i (step.title)}
-        <article
-          class="border-border/50 bg-card relative flex flex-col gap-3 overflow-hidden rounded-2xl border p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md"
-        >
-          <Cutout
-            corner="tr"
-            surface="background"
-            radius={14}
-            class="flex items-center justify-center pt-2 pr-3 pb-4 pl-4"
-          >
-            <span class="text-muted-foreground text-[11px] font-bold tabular-nums">
-              0{i + 1}
-            </span>
-          </Cutout>
+			<div class="max-w-lg py-10">
+				<Reveal variant="up" delay={60}>
+					<h2 class="font-display text-balance text-heading md:text-heading-lg">
+						Three steps, zero uploads
+					</h2>
+				</Reveal>
+			</div>
 
-          <span class="bg-primary/10 text-primary grid size-10 place-items-center rounded-xl">
-            <step.icon class="size-5" />
-          </span>
-          <h3 class="text-base font-semibold tracking-tight">{step.title}</h3>
-          <p class="text-muted-foreground text-sm leading-relaxed">{step.body}</p>
-        </article>
-      {/each}
-    </div>
-  </Container>
+			<div class="grid grid-cols-1 gap-px border-y border-border-low bg-border-low md:grid-cols-3">
+				{#each steps as step, i (step.title)}
+					{@const Icon = step.icon}
+					<Reveal
+						variant="up"
+						delay={i * 80}
+						as="article"
+						class="flex h-full flex-col bg-background px-6 py-8"
+					>
+						<span class="font-display text-heading-sm leading-none tabular-nums text-border-strong">
+							{String(i + 1).padStart(2, "0")}
+						</span>
+						<Icon class="mt-5 size-5 text-muted-foreground" />
+						<h3 class="mt-4 font-display text-body font-medium text-foreground">{step.title}</h3>
+						<p class="mt-2 text-body-sm text-muted-foreground">{step.body}</p>
+					</Reveal>
+				{/each}
+			</div>
+		</Container>
+	</Section>
 
-  <!-- Privacy -->
-  <Container size="wide" class="mt-16">
-    <div class="border-border/50 bg-card relative overflow-hidden rounded-3xl border shadow-sm">
-      <Cutout corner="tl" surface="background" radius={14} class="pt-2.5 pr-4 pb-3.5 pl-3">
-        <span class="text-primary text-[10px] font-bold tracking-[0.18em] uppercase">
-          Private by default
-        </span>
-      </Cutout>
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<div class="max-w-2xl">
+				<h2 class="mb-6 font-display text-balance text-heading md:text-heading-lg">Questions</h2>
+				<FaqList items={EDITOR_FAQ} />
+			</div>
+		</Container>
+	</Section>
 
-      <div class="grid gap-6 p-6 pt-11 sm:grid-cols-3 sm:p-8 sm:pt-11">
-        {#each privacy as item (item.label)}
-          <div class="flex items-start gap-3">
-            <span
-              class="bg-foreground/5 text-foreground grid size-9 shrink-0 place-items-center rounded-lg"
-            >
-              <item.icon class="size-4.5" />
-            </span>
-            <div>
-              <p class="text-sm font-semibold tracking-tight">{item.label}</p>
-              <p class="text-muted-foreground mt-0.5 text-[13px] leading-relaxed">
-                {item.body}
-              </p>
-            </div>
-          </div>
-        {/each}
-      </div>
-    </div>
-  </Container>
+	<Section class="mx-auto max-w-6xl border-b border-border-low" spacing="tight">
+		<Container>
+			<div class="max-w-xl py-6">
+				<Reveal variant="up">
+					<h2 class="font-display text-balance text-heading md:text-heading-lg">
+						Make your next screenshot look intentional
+					</h2>
+				</Reveal>
+				<Reveal variant="up" delay={60} class="mt-4">
+					<p class="text-pretty text-body-lg text-muted-foreground">
+						Open it and drop an image in. Nothing to install, nothing to sign up for.
+					</p>
+				</Reveal>
+				<Reveal variant="up" delay={120} class="mt-8 flex flex-wrap items-center gap-3">
+					<Button href="/tools/screenshot-editor/edit" variant="dark" class="group/cta gap-2">
+						Open the editor
+						<ArrowRight
+							class="size-4 transition-transform group-hover/cta:translate-x-0.5 motion-reduce:transition-none"
+						/>
+					</Button>
+					<Button href="/tools" variant="outline">Browse all tools</Button>
+				</Reveal>
+			</div>
+		</Container>
+	</Section>
 
-  <!-- FAQ. Native <details> so the answers are crawlable text and keyboard
-       accessible without any JS. -->
-  <Container size="wide" class="mt-20">
-    <div class="mx-auto max-w-2xl">
-      <h2 class="mb-6 text-center text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-        Questions
-      </h2>
+	<!-- Credit. Their work shaped this, so say so where people can see it. -->
+	<Section class="mx-auto max-w-6xl sr-only" spacing="tight">
+		<Container>
+			<p class="max-w-2xl text-body-sm text-muted-foreground">
+				This editor is a Svelte port of
+				<a
+					href={UPSTREAM_URL}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="font-medium text-foreground underline-offset-4 hover:underline"
+				>
+					Screenshot Studio
+				</a>
+				by Kartik Labhshetwar, used under the Apache 2.0 license. It is a great tool and it shaped what
+				this one does.
+			</p>
+		</Container>
+	</Section>
 
-      <div class="flex flex-col gap-3">
-        {#each EDITOR_FAQ as item (item.q)}
-          <details
-            class="group border-border/50 bg-card rounded-2xl border px-5 py-4 shadow-sm"
-          >
-            <summary
-              class="focus-visible:ring-primary/40 flex cursor-pointer list-none items-center justify-between gap-4 rounded-sm text-sm font-semibold outline-none focus-visible:ring-2"
-            >
-              {item.q}
-              <ArrowRight
-                class="text-muted-foreground size-4 shrink-0 transition-transform group-open:rotate-90"
-              />
-            </summary>
-            <p class="text-muted-foreground mt-3 text-sm leading-relaxed">{item.a}</p>
-          </details>
-        {/each}
-      </div>
-    </div>
-  </Container>
-
-  <!-- CTA -->
-  <Container size="wide" class="mt-16">
-    <div
-      class="border-border/50 bg-card relative overflow-hidden rounded-3xl border px-6 py-10 text-center shadow-sm sm:px-10"
-    >
-      <Cutout corner="tr" surface="background" radius={12} class="pt-1.5 pr-3.5 pb-3 pl-3.5">
-        <span class="text-foreground text-[11px] font-bold tracking-wide">Free forever</span>
-      </Cutout>
-
-      <div class="mx-auto max-w-xl">
-        <h2 class="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-          Make your next screenshot look intentional
-        </h2>
-        <p class="text-muted-foreground mt-3 text-sm leading-relaxed text-pretty sm:text-base">
-          No sign-up, no watermark, no upload. Open it and drop an image in.
-        </p>
-        <a
-          href="/tools/screenshot-editor/edit"
-          class="bg-primary text-primary-foreground shadow-craft-sm mt-6 inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-0.5"
-        >
-          Open the editor
-          <ArrowRight class="size-4" />
-        </a>
-      </div>
-    </div>
-  </Container>
-
-  <!-- Credit. Their work shaped this, so say so where people can see it. -->
-  <Container size="wide" class="mt-10">
-    <p class="text-muted-foreground text-center text-xs leading-relaxed">
-      This editor is a Svelte port of
-      <a
-        href={UPSTREAM_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="text-foreground font-medium underline-offset-4 hover:underline"
-      >
-        Screenshot Studio
-      </a>
-      by Kartik Labhshetwar, used under the Apache 2.0 license. It is a great tool and it
-      shaped what this one does.
-    </p>
-  </Container>
-
-  <Footer />
+	<Footer />
 </main>
 
 <style>
-  /* Illustration only. These are literal renderings of the treatment the editor
-     applies (gradient backdrop, window chrome, traffic lights), so they are
-     fixed colours by design and do not follow the app theme, exactly like the
-     editor's own MockupFrame. */
-  .shot {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.55rem;
-    width: 100%;
-    max-width: 20rem;
-    aspect-ratio: 16 / 10;
-    padding: 1.1rem;
-    background: #ffffff;
-  }
+	/* Illustration only: a literal rendering of a bare, unstyled screenshot, so
+	   the colours are fixed by design and do not follow the app theme. */
+	.shot {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		gap: 0.55rem;
+		width: 100%;
+		max-width: 20rem;
+		aspect-ratio: 16 / 10;
+		padding: 1.1rem;
+		background: #ffffff;
+		border: 1px solid #dcdce1;
+		border-radius: 2px;
+	}
 
-  .shot .bar {
-    height: 0.5rem;
-    border-radius: 9999px;
-    background: #e4e4e9;
-  }
-
-  .shot-plain {
-    border: 1px solid #dcdce1;
-    border-radius: 2px;
-  }
-
-  .stage {
-    background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #ec4899 100%);
-    perspective: 1100px;
-  }
-
-  .tilt {
-    transform: rotateX(6deg) rotateY(-11deg) rotateZ(1deg) scale(0.94);
-    transform-style: preserve-3d;
-  }
-
-  .chrome {
-    width: 100%;
-    max-width: 20rem;
-    overflow: hidden;
-    border-radius: 10px;
-    background: #ffffff;
-    box-shadow:
-      0 24px 60px rgba(0, 0, 0, 0.35),
-      0 8px 20px rgba(0, 0, 0, 0.2);
-  }
-
-  .chrome-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    height: 1.6rem;
-    padding: 0 0.6rem;
-    background: #f2f2f4;
-    border-bottom: 1px solid #dcdce1;
-  }
-
-  .dot {
-    width: 0.5rem;
-    height: 0.5rem;
-    border-radius: 9999px;
-  }
-  .dot.r {
-    background: #ff5f57;
-  }
-  .dot.y {
-    background: #febc2e;
-  }
-  .dot.g {
-    background: #28c840;
-  }
-
-  .shot-framed {
-    aspect-ratio: 16 / 9;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .tilt {
-      transform: none;
-    }
-  }
+	.shot .bar {
+		height: 0.5rem;
+		border-radius: 9999px;
+		background: #e4e4e9;
+	}
 </style>
