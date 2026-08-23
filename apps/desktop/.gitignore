@@ -21,3 +21,6 @@ Thumbs.db
 .env.*
 !.env.example
 !.env.test
+
+# Generated from packages/application/assets (see scripts/sync-screenshot-assets.mjs)
+/static/screenshot-assets/

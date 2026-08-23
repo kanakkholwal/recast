@@ -11,7 +11,7 @@
  * fails cleanly with a clear message instead of hanging.
  */
 
-import { handlers } from './handlers';
+import { handlers } from "./handlers";
 import {
 	ConvertError,
 	type ConvertErrorCode,
@@ -19,7 +19,7 @@ import {
 	type FromConvertWorker,
 	type JobContext,
 	type ToConvertWorker,
-} from './worker-protocol';
+} from "./worker-protocol";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -40,9 +40,9 @@ function classify(
 	message: string;
 } {
 	if (err instanceof ConvertError) return { code: err.code, message: err.message };
-	if (aborted) return { code: 'cancelled', message: 'Cancelled.' };
+	if (aborted) return { code: "cancelled", message: "Cancelled." };
 	return {
-		code: 'internal',
+		code: "internal",
 		message: err instanceof Error ? err.message : String(err),
 	};
 }
@@ -53,18 +53,18 @@ async function run(job: ConvertJob): Promise<void> {
 	const jobCtx: JobContext = {
 		signal: controller.signal,
 		onProgress: (ratio, stage) =>
-			post({ type: 'progress', id: job.id, ratio: clamp01(ratio), stage }),
+			post({ type: "progress", id: job.id, ratio: clamp01(ratio), stage }),
 	};
 	try {
 		const handler = handlers[job.op];
 		if (!handler) {
-			throw new ConvertError('internal', `The "${job.op}" tool isn't available yet.`);
+			throw new ConvertError("internal", `The "${job.op}" tool isn't available yet.`);
 		}
 		const result = await handler(job, jobCtx);
-		if (controller.signal.aborted) throw new ConvertError('cancelled', 'Cancelled.');
+		if (controller.signal.aborted) throw new ConvertError("cancelled", "Cancelled.");
 		// Blobs are structured-cloned by reference (cheap), not transferred.
 		post({
-			type: 'result',
+			type: "result",
 			id: job.id,
 			blob: result.blob,
 			filename: result.filename,
@@ -72,7 +72,7 @@ async function run(job: ConvertJob): Promise<void> {
 		});
 	} catch (err) {
 		const { code, message } = classify(err, controller.signal.aborted);
-		post({ type: 'error', id: job.id, code, message });
+		post({ type: "error", id: job.id, code, message });
 	} finally {
 		controllers.delete(job.id);
 	}
@@ -80,6 +80,6 @@ async function run(job: ConvertJob): Promise<void> {
 
 ctx.onmessage = (e: MessageEvent<ToConvertWorker>) => {
 	const msg = e.data;
-	if (msg.type === 'run') void run(msg.job);
-	else if (msg.type === 'cancel') controllers.get(msg.id)?.abort();
+	if (msg.type === "run") void run(msg.job);
+	else if (msg.type === "cancel") controllers.get(msg.id)?.abort();
 };

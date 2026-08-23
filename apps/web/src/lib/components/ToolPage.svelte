@@ -20,6 +20,7 @@ import { SliderControl } from "@recast/ui/slider-control";
 import { Spinner } from "@recast/ui/spinner";
 import { onMount } from "svelte";
 import { browser } from "$app/environment";
+import { page } from "$app/state";
 import Container from "$lib/components/Container.svelte";
 import FaqList from "$lib/components/FaqList.svelte";
 import Footer from "$lib/components/Footer.svelte";
@@ -197,7 +198,7 @@ const cancel = () => controller?.abort();
 const segmentedOptions = (c: ToolControl) =>
 	(c.options ?? []).map((o) => ({ value: o.value, label: o.label }));
 
-const jsonLd = $derived(buildToolJsonLd(tool));
+const jsonLd = $derived(buildToolJsonLd(tool, page.url.origin));
 
 // --- Preview media + direct manipulation ---------------------------------
 // The registry gives no max for the trim bounds (it can't: it depends on the

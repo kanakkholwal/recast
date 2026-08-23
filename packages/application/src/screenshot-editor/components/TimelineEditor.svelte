@@ -1,21 +1,21 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface TimelineEditorProps {
-    editor: ScreenshotEditorState;
-    onclose: () => void;
-  }
+export interface TimelineEditorProps {
+	editor: ScreenshotEditorState;
+	onclose: () => void;
+}
 
-  /** Track geometry (mirrors the clone's timeline constants). */
-  const PIXELS_PER_SECOND = 105;
-  const LABEL_WIDTH = 120;
-  const MIN_CLIP_MS = 200;
+/** Track geometry (mirrors the clone's timeline constants). */
+const PIXELS_PER_SECOND = 105;
+const LABEL_WIDTH = 120;
+const MIN_CLIP_MS = 200;
 </script>
 
 <script lang="ts">
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import { Film, Pause, Play, Repeat, Trash2, X } from "@recast/icons";
+  import { Film, GitCommit, Pause, Play, Plus, Repeat, Trash2, X } from "@recast/icons";
 
   let { editor, onclose }: TimelineEditorProps = $props();
 
@@ -24,7 +24,8 @@
   type Drag =
     | { kind: "scrub" }
     | { kind: "move"; grabOffsetMs: number }
-    | { kind: "resize" };
+    | { kind: "resize" }
+    | { kind: "keyframe"; id: string };
   let drag = $state<Drag | null>(null);
 
   const pxPerMs = PIXELS_PER_SECOND / 1000;
@@ -60,6 +61,13 @@
     drag = { kind: "resize" };
   }
 
+  function startKeyframeDrag(e: PointerEvent, id: string) {
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    editor.selectKeyframe(id);
+    drag = { kind: "keyframe", id };
+  }
+
   function onPointerMove(e: PointerEvent) {
     if (!drag) return;
     const t = timeAt(e.clientX);
@@ -67,6 +75,8 @@
       editor.seek(t);
     } else if (drag.kind === "move") {
       editor.setClip(t - drag.grabOffsetMs, editor.clipLength);
+    } else if (drag.kind === "keyframe") {
+      editor.moveKeyframe(drag.id, t);
     } else {
       editor.setClip(editor.clipStart, Math.max(MIN_CLIP_MS, t - editor.clipStart));
     }
@@ -114,6 +124,22 @@
       editor.setClip(editor.clipStart, editor.clipLength + NUDGE);
     }
   }
+
+  function onKeyframeKey(e: KeyboardEvent, id: string, time: number) {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      editor.moveKeyframe(id, time - NUDGE);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      editor.moveKeyframe(id, time + NUDGE);
+    } else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      editor.removeKeyframe(id);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      editor.selectKeyframe(id);
+    }
+  }
 </script>
 
 <!-- Bottom timeline. Height mirrors the clone's 210px track editor. -->
@@ -125,10 +151,21 @@
       size="icon"
       class="size-7"
       aria-label={editor.playing ? "Pause" : "Play"}
-      disabled={!editor.animationId}
+      disabled={!editor.animationId && !editor.keyframeMode}
       onclick={() => editor.togglePlay()}
     >
       {#if editor.playing}<Pause class="size-3.5" />{:else}<Play class="size-3.5" />{/if}
+    </Button>
+
+    <Button
+      variant="secondary"
+      size="sm"
+      class="h-7 gap-1"
+      title="Capture the current 3D look as a keyframe at the playhead"
+      onclick={() => editor.addKeyframe()}
+    >
+      <Plus class="size-3.5" />
+      Key
     </Button>
 
     <span class="text-muted-foreground w-24 font-mono text-xs tabular-nums">
@@ -166,7 +203,12 @@
 
     <div class="flex-1"></div>
 
-    {#if editor.animationId}
+    {#if editor.keyframeMode}
+      <Button variant="ghost" size="sm" onclick={() => editor.clearKeyframes()}>
+        <Trash2 />
+        Clear keys
+      </Button>
+    {:else if editor.animationId}
       <Button variant="ghost" size="sm" onclick={() => editor.clearAnimation()}>
         <Trash2 />
         Clear
@@ -186,8 +228,13 @@
     >
       <div class="border-border/30 h-6 border-b"></div>
       <div class="flex h-12 items-center gap-1.5 px-3">
-        <Film class="text-muted-foreground size-3.5" />
-        <span class="text-muted-foreground text-xs font-medium">Animation</span>
+        {#if editor.keyframeMode}
+          <GitCommit class="text-muted-foreground size-3.5" />
+          <span class="text-muted-foreground text-xs font-medium">Keyframes</span>
+        {:else}
+          <Film class="text-muted-foreground size-3.5" />
+          <span class="text-muted-foreground text-xs font-medium">Animation</span>
+        {/if}
       </div>
     </div>
 
@@ -226,7 +273,33 @@
 
         <!-- Animation track -->
         <div class="bg-muted/20 relative h-12">
-          {#if editor.animationPreset}
+          {#if editor.keyframeMode}
+            <!-- Keyframe diamonds: drag to retime, click to edit, Delete to remove. -->
+            {#each editor.keyframes as kf (kf.id)}
+              <button
+                type="button"
+                class={cn(
+                  "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rotate-45 cursor-grab border outline-none focus-visible:ring-2",
+                  editor.selectedKeyframeId === kf.id
+                    ? "border-primary bg-primary ring-primary/40"
+                    : "border-primary/70 bg-background hover:bg-primary/30 focus-visible:ring-primary/40",
+                )}
+                style:left={`${kf.time * pxPerMs}px`}
+                aria-label={`Keyframe at ${seconds(kf.time)}s. Arrow keys retime, Delete removes.`}
+                onpointerdown={(e) => startKeyframeDrag(e, kf.id)}
+                onpointermove={onPointerMove}
+                onpointerup={endDrag}
+                onpointercancel={endDrag}
+                onkeydown={(e) => onKeyframeKey(e, kf.id, kf.time)}
+                onclick={() => editor.selectKeyframe(kf.id)}
+              ></button>
+            {/each}
+            {#if editor.keyframes.length < 2}
+              <p class="text-muted-foreground pointer-events-none px-3 py-3.5 text-xs">
+                Set a 3D look, then press <span class="text-foreground font-medium">Key</span> to add another keyframe.
+              </p>
+            {/if}
+          {:else if editor.animationPreset}
             <!-- Clip body and its resize handle are siblings (not nested), so
                  both stay keyboard-reachable and validly interactive. -->
             <div

@@ -35,9 +35,7 @@ export function buildToolOptions(
 ): ToolOptions {
 	const opts: Record<string, unknown> = { ...(tool.fixedOptions ?? {}) };
 	for (const c of selectControls) {
-		opts[c.key] = NUMERIC_KEYS.includes(c.key)
-			? Number(selectValues[c.key])
-			: selectValues[c.key];
+		opts[c.key] = NUMERIC_KEYS.includes(c.key) ? Number(selectValues[c.key]) : selectValues[c.key];
 	}
 	for (const c of numberControls) opts[c.key] = numberValues[c.key];
 	return opts as ToolOptions;
@@ -74,21 +72,59 @@ export function resolvePhase(
 					: "select";
 }
 
-/** SoftwareApplication + FAQPage JSON-LD for the tool's landing page. */
-export function buildToolJsonLd(tool: ToolDef): string {
+/**
+ * Structured data for a tool page: the app itself, its place in the site
+ * hierarchy, and the FAQ.
+ *
+ * `SoftwareApplication` and `BreadcrumbList` are the two that still earn a
+ * richer result for a page like this. `FAQPage` stays because it is valid and
+ * other engines read it, but Google restricted FAQ rich results to
+ * authoritative health and government sites in 2023, so do not expect the
+ * dropdowns to show in Google.
+ */
+export function buildToolJsonLd(tool: ToolDef, origin = ""): string {
+	const url = `${origin}/tools/${tool.slug}`;
+	const features = [
+		"Runs entirely in the browser",
+		"No file upload",
+		"No account required",
+		"No watermark",
+		`Outputs ${tool.outputLabel}`,
+	];
+
 	return JSON.stringify([
 		{
 			"@context": "https://schema.org",
 			"@type": "SoftwareApplication",
+			"@id": `${url}#app`,
 			name: tool.title,
+			url,
 			applicationCategory: "MultimediaApplication",
+			applicationSubCategory: "Video Converter",
 			operatingSystem: "Web",
-			offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+			browserRequirements: "Requires a browser with WebCodecs support, such as Chrome or Edge.",
+			// No install step and nothing to grant: worth stating, because it is
+			// the differentiator against every server-side converter.
+			permissions: "none",
+			isAccessibleForFree: true,
+			featureList: features,
 			description: tool.description,
+			offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+			publisher: { "@type": "Organization", name: "Recast", url: origin || undefined },
+		},
+		{
+			"@context": "https://schema.org",
+			"@type": "BreadcrumbList",
+			itemListElement: [
+				{ "@type": "ListItem", position: 1, name: "Home", item: origin || undefined },
+				{ "@type": "ListItem", position: 2, name: "Tools", item: `${origin}/tools` },
+				{ "@type": "ListItem", position: 3, name: tool.title, item: url },
+			],
 		},
 		{
 			"@context": "https://schema.org",
 			"@type": "FAQPage",
+			"@id": `${url}#faq`,
 			mainEntity: tool.faq.map((f) => ({
 				"@type": "Question",
 				name: f.q,

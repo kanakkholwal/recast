@@ -1,15 +1,17 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
-  import type { Overlay } from "../types";
+import type { ScreenshotEditorState } from "../editor.svelte";
+import type { Overlay } from "../types";
 
-  export interface LayerControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface LayerControlProps {
+	editor: ScreenshotEditorState;
+}
 
-  function layerLabel(o: Overlay): string {
-    if (o.type === "text") return o.text.trim() || "Text";
-    return o.shape.charAt(0).toUpperCase() + o.shape.slice(1);
-  }
+function layerLabel(o: Overlay): string {
+	if (o.type === "text") return o.text.trim() || "Text";
+	if (o.type === "image") return o.isCustom ? "Image" : "Overlay";
+	if (o.type === "blur") return "Blur";
+	return o.shape.charAt(0).toUpperCase() + o.shape.slice(1);
+}
 </script>
 
 <script lang="ts">
@@ -17,7 +19,7 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import { ArrowDown, ArrowUp, Circle, Square, Trash2, Type } from "@recast/icons";
+  import { ArrowDown, ArrowUp, Circle, Copy, Droplets, Eye, EyeOff, Image as ImageIcon, Square, Trash2, Type } from "@recast/icons";
   import type { ShapeOverlay, TextOverlay } from "../types";
 
   let { editor }: LayerControlProps = $props();
@@ -56,6 +58,10 @@
             <span class="text-muted-foreground flex size-5 shrink-0 items-center justify-center">
               {#if layer.type === "text"}
                 <Type class="size-3.5" />
+              {:else if layer.type === "image"}
+                <ImageIcon class="size-3.5" />
+              {:else if layer.type === "blur"}
+                <Droplets class="size-3.5" />
               {:else if layer.shape === "ellipse"}
                 <Circle class="size-3.5" />
               {:else}
@@ -66,6 +72,20 @@
           </button>
 
           <div class="flex shrink-0 items-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              class="size-6"
+              aria-label={layer.isVisible ? "Hide layer" : "Show layer"}
+              aria-pressed={!layer.isVisible}
+              onclick={() => editor.toggleOverlayVisible(layer.id)}
+            >
+              {#if layer.isVisible}
+                <Eye class="size-3.5" />
+              {:else}
+                <EyeOff class="text-muted-foreground size-3.5" />
+              {/if}
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -85,6 +105,15 @@
               onclick={() => editor.moveOverlay(layer.id, -1)}
             >
               <ArrowDown class="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              class="size-6"
+              aria-label="Duplicate layer"
+              onclick={() => editor.duplicateOverlay(layer.id)}
+            >
+              <Copy class="size-3.5" />
             </Button>
             <Button
               variant="ghost"
@@ -113,6 +142,15 @@
       step={1}
       unit="°"
       onchange={(v) => editor.updateOverlay(sel.id, { rotation: v })}
+    />
+    <SliderControl
+      label="Opacity"
+      value={Math.round(sel.opacity * 100)}
+      min={0}
+      max={100}
+      step={1}
+      unit="%"
+      onchange={(v) => editor.updateOverlay(sel.id, { opacity: v / 100 })}
     />
     {#if selText}
       {@const t = selText}

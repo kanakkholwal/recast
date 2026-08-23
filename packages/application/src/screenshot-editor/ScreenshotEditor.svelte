@@ -1,23 +1,23 @@
 <script lang="ts" module>
-  import type { EditorImage } from "./types";
+import type { EditorImage } from "./types";
 
-  export interface ScreenshotEditorProps {
-    /** Reuse an existing session, or let the editor own one. */
-    editor?: ScreenshotEditorState;
-    /** Native screen capture (desktop). Omit on web to offer upload/paste only. */
-    oncapture?: () => Promise<EditorImage | null>;
-    /** App hook for toasts; falls back to console on error. */
-    onnotify?: (message: string, kind: "success" | "error") => void;
-    class?: string;
-  }
+export interface ScreenshotEditorProps {
+	/** Reuse an existing session, or let the editor own one. */
+	editor?: ScreenshotEditorState;
+	/** Native screen capture (desktop). Omit on web to offer upload/paste only. */
+	oncapture?: () => Promise<EditorImage | null>;
+	/** App hook for toasts; falls back to console on error. */
+	onnotify?: (message: string, kind: "success" | "error") => void;
+	class?: string;
+}
 
-  /** Side-panel width bounds. The default IS the minimum: the controls are laid
-   * out for 240px and get cramped below it. The ceiling is a quarter of the
-   * viewport so the stage always keeps the majority of the screen. */
-  const PANEL_MIN = 240;
-  const PANEL_MAX_VW = 0.25;
-  /** Pixels per arrow-key press on a separator. */
-  const PANEL_STEP = 16;
+/** Side-panel width bounds. The default IS the minimum: the controls are laid
+ * out for 240px and get cramped below it. The ceiling is a quarter of the
+ * viewport so the stage always keeps the majority of the screen. */
+const PANEL_MIN = 240;
+const PANEL_MAX_VW = 0.25;
+/** Pixels per arrow-key press on a separator. */
+const PANEL_STEP = 16;
 </script>
 
 <script lang="ts">
@@ -46,7 +46,9 @@
     Wand2,
     X,
   } from "@recast/icons";
+  import { onMount } from "svelte";
   import { ScreenshotEditorState } from "./editor.svelte";
+  import { clearDraft, loadDraft, saveDraft } from "./persistence";
   import { canCopyImage, copyToClipboard } from "./export";
   import { imageFromDataTransfer, imageFromFile, imageFromSrc } from "./image-input";
   import { captureWebsite } from "./website";
@@ -63,10 +65,13 @@
   import CanvasControl from "./components/CanvasControl.svelte";
   import LayerControl from "./components/LayerControl.svelte";
   import PerspectiveControl from "./components/PerspectiveControl.svelte";
+  import TransformPad from "./components/TransformPad.svelte";
+  import TransformsGallery from "./components/TransformsGallery.svelte";
   import ShadowControl from "./components/ShadowControl.svelte";
   import AnimationControl from "./components/AnimationControl.svelte";
   import TextControl from "./components/TextControl.svelte";
   import ShapeControl from "./components/ShapeControl.svelte";
+  import OverlayControl from "./components/OverlayControl.svelte";
   import AspectControl from "./components/AspectControl.svelte";
   import ExportControl from "./components/ExportControl.svelte";
 
@@ -225,6 +230,58 @@
     editor.record();
   });
 
+  // Draft autosave: restore once on mount, then debounce-save the full snapshot
+  // (design + image) to IndexedDB on any change so a refresh never loses work.
+  let draftStatus = $state<"idle" | "saving" | "saved">("idle");
+  let draftLoaded = $state(false);
+
+  onMount(() => {
+    void loadDraft().then((snap) => {
+      if (snap?.image && !editor.hasImage) {
+        editor.loadSnapshot(snap);
+        draftStatus = "saved";
+      }
+      draftLoaded = true;
+    });
+  });
+
+  $effect(() => {
+    // Subscribe cheaply to every persisted top-level ref (patch* methods replace
+    // objects, so touching the ref catches nested edits) WITHOUT serializing on
+    // each change; the heavy snapshot happens once per debounce, in the timeout.
+    void editor.image;
+    void editor.background;
+    void editor.backgroundId;
+    void editor.frame;
+    void editor.shadow;
+    void editor.imageStyle;
+    void editor.mockup;
+    void editor.transform;
+    void editor.aspect;
+    void editor.overlays;
+    void editor.filters;
+    void editor.imageScale;
+    void editor.imageOpacity;
+    void editor.backgroundBlur;
+    void editor.backgroundNoise;
+    void editor.canvasRadius;
+    void editor.exportFormat;
+    void editor.exportScale;
+    void editor.exportQuality;
+    if (!draftLoaded || !editor.hasImage) return;
+    draftStatus = "saving";
+    const id = setTimeout(() => {
+      void saveDraft(editor.toSnapshot()).then(() => (draftStatus = "saved"));
+    }, 800);
+    return () => clearTimeout(id);
+  });
+
+  function clearWorkspace() {
+    editor.clear();
+    void clearDraft();
+    draftStatus = "idle";
+  }
+
   // Animation playback clock: (re)starts whenever `playing` flips on.
   $effect(() => {
     if (!editor.playing) return;
@@ -346,6 +403,19 @@
         >
           <Ruler />
         </Button>
+        {#if editor.showRulers}
+          <select
+            class="border-border bg-card h-7 rounded-md border px-1.5 text-xs"
+            aria-label="Ruler interval"
+            title="Ruler interval"
+            value={String(editor.rulerInterval)}
+            onchange={(e) => editor.setRulerInterval(Number(e.currentTarget.value))}
+          >
+            {#each [25, 50, 100, 200] as step (step)}
+              <option value={String(step)}>{step}px</option>
+            {/each}
+          </select>
+        {/if}
         <Button
           variant={editor.showGrid ? "secondary" : "ghost"}
           size="icon"
@@ -405,8 +475,14 @@
           </Popover.Content>
         </Popover.Root>
 
+        {#if draftStatus !== "idle"}
+          <span class="text-muted-foreground hidden text-xs sm:inline" aria-live="polite">
+            {draftStatus === "saving" ? "Saving…" : "Saved"}
+          </span>
+        {/if}
+
         <div class="bg-border/60 mx-0.5 h-5 w-px"></div>
-        <Button variant="ghost" size="sm" onclick={() => editor.clear()}>
+        <Button variant="ghost" size="sm" onclick={clearWorkspace}>
           <Trash2 />
           Remove
         </Button>
@@ -450,8 +526,9 @@
               <BorderControl {editor} />
             {/if}
             <ShadowPresetControl {editor} />
-            <TextControl {editor} />
+            <OverlayControl {editor} />
             <ShapeControl {editor} />
+            <TextControl {editor} />
             <FilterControl {editor} />
             <CanvasControl {editor} />
           {:else if leftTab === "background"}
@@ -576,6 +653,8 @@
         </div>
         <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 py-3">
           {#if rightTab === "transforms"}
+            <TransformPad {editor} />
+            <TransformsGallery {editor} />
             <PerspectiveControl {editor} />
             <ShadowControl {editor} />
           {:else}

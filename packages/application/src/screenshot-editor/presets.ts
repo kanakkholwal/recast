@@ -1,4 +1,4 @@
-import { BACKGROUND_COLORS, BACKGROUND_GRADIENTS } from "@recast/design/backgrounds";
+import { REF_ASPECTS, REF_GRADIENTS, REF_MAGIC, REF_MESH, REF_SOLIDS } from "./backgrounds-data";
 import type {
 	AspectPreset,
 	BackgroundPreset,
@@ -13,57 +13,34 @@ export const DEFAULT_TRANSFORM: Transform3D = {
 	rotateY: 0,
 	rotateZ: 0,
 	scale: 1,
+	translateX: 0,
+	translateY: 0,
 };
+
+/** Build a full transform from a partial, defaulting the rest (incl. the new
+ * translate fields) so preset/template literals stay terse. */
+export function t3d(p: Partial<Transform3D>): Transform3D {
+	return { ...DEFAULT_TRANSFORM, ...p };
+}
 
 /** One-click 3D tilts, ported from the reference app's perspective presets. */
 export const PERSPECTIVE_PRESETS: PerspectivePreset[] = [
-	tilt("flat", "Flat", { ...DEFAULT_TRANSFORM }),
-	tilt("left", "Left", { perspective: 1000, rotateX: 3, rotateY: -12, rotateZ: 0, scale: 1 }),
-	tilt("right", "Right", { perspective: 1000, rotateX: 3, rotateY: 12, rotateZ: 0, scale: 1 }),
-	tilt("up", "Up", { perspective: 1000, rotateX: 12, rotateY: 0, rotateZ: 0, scale: 1 }),
-	tilt("dynamic", "Dynamic", { perspective: 800, rotateX: 10, rotateY: -22, rotateZ: 0, scale: 1 }),
-	tilt("dramatic", "Dramatic", {
-		perspective: 900,
-		rotateX: 28,
-		rotateY: 0,
-		rotateZ: -18,
-		scale: 0.95,
-	}),
+	tilt("flat", "Flat", {}),
+	tilt("left", "Left", { rotateX: 3, rotateY: -12 }),
+	tilt("right", "Right", { rotateX: 3, rotateY: 12 }),
+	tilt("up", "Up", { rotateX: 12 }),
+	tilt("dynamic", "Dynamic", { perspective: 800, rotateX: 10, rotateY: -22 }),
+	tilt("dramatic", "Dramatic", { perspective: 900, rotateX: 28, rotateZ: -18, scale: 0.95 }),
 ];
 
-/** Curated gradient backdrops, shared with the video editor via
- * `@recast/design/backgrounds` so a name means one colour across the product. */
-// Ids are namespaced per list: `backgroundId` is matched across gradients,
-// patterns and solids, and the shared ramp reuses names like "coral" in both
-// the gradient and solid sets.
-export const GRADIENT_PRESETS: BackgroundPreset[] = BACKGROUND_GRADIENTS.map((p) =>
-	grad(`grad-${p.id}`, p.label, p.value),
-);
+/** Full classic-gradient set (102) transcribed from the reference app. */
+export const GRADIENT_PRESETS: BackgroundPreset[] = REF_GRADIENTS;
 
-/** Mesh gradients: layered radial blobs plus a base color, as one `background`
- * shorthand. Trendier, softer backdrops than a two-stop linear. */
-export const MESH_PRESETS: BackgroundPreset[] = [
-	mesh(
-		"aurora",
-		"Aurora",
-		"radial-gradient(at 15% 20%, #6366f1 0px, transparent 55%), radial-gradient(at 85% 10%, #ec4899 0px, transparent 50%), radial-gradient(at 75% 85%, #f59e0b 0px, transparent 45%), radial-gradient(at 10% 90%, #22d3ee 0px, transparent 50%), #4f46e5",
-	),
-	mesh(
-		"bloom",
-		"Bloom",
-		"radial-gradient(at 20% 25%, #f472b6 0px, transparent 50%), radial-gradient(at 80% 20%, #a855f7 0px, transparent 50%), radial-gradient(at 50% 90%, #60a5fa 0px, transparent 50%), #7c3aed",
-	),
-	mesh(
-		"reef",
-		"Reef",
-		"radial-gradient(at 10% 10%, #2dd4bf 0px, transparent 50%), radial-gradient(at 90% 30%, #0ea5e9 0px, transparent 50%), radial-gradient(at 50% 100%, #6366f1 0px, transparent 55%), #0891b2",
-	),
-	mesh(
-		"ember",
-		"Ember",
-		"radial-gradient(at 25% 15%, #fb7185 0px, transparent 50%), radial-gradient(at 85% 40%, #f59e0b 0px, transparent 50%), radial-gradient(at 40% 95%, #ef4444 0px, transparent 50%), #b91c1c",
-	),
-];
+/** Dark "magic" gradients (100): radial/conic/pattern glows on near-black. */
+export const MAGIC_PRESETS: BackgroundPreset[] = REF_MAGIC;
+
+/** Mesh gradients (12): soft layered radial blobs. */
+export const MESH_PRESETS: BackgroundPreset[] = REF_MESH;
 
 /** Tiling patterns built from repeating gradients plus a base color, sized per
  * layer via the shorthand `/ <size>`, so they also fit the `gradient` kind. */
@@ -90,28 +67,21 @@ export const PATTERN_PRESETS: BackgroundPreset[] = [
 	),
 ];
 
-/** Solid backdrops, shared with the video editor. */
-export const SOLID_PRESETS: BackgroundPreset[] = BACKGROUND_COLORS.map((p) =>
-	solid(`solid-${p.id}`, p.label, p.value),
-);
+/** Solid backdrops (33) transcribed from the reference app. */
+export const SOLID_PRESETS: BackgroundPreset[] = REF_SOLIDS;
 
 export const DEFAULT_BACKGROUND = GRADIENT_PRESETS[0];
 
-/** Output aspect ratios. `Auto` keeps the screenshot's own ratio. Social sizes
- * cover the common share targets without the user hunting for pixel dimensions. */
-export const ASPECT_PRESETS: AspectPreset[] = [
-	{ id: "auto", label: "Auto", ratio: null },
-	{ id: "16-9", label: "16:9", ratio: 16 / 9 },
-	{ id: "4-3", label: "4:3", ratio: 4 / 3 },
-	{ id: "1-1", label: "1:1", ratio: 1 },
-	{ id: "4-5", label: "4:5", ratio: 4 / 5 },
-	{ id: "191-1", label: "1.91:1", ratio: 1.91 },
-];
+/** Output aspect ratios (25 + Auto), transcribed from the reference so the
+ * social/app-store share targets match one-for-one. `Auto` keeps the
+ * screenshot's own ratio. */
+export const ASPECT_PRESETS: AspectPreset[] = REF_ASPECTS;
 
-export const DEFAULT_ASPECT = ASPECT_PRESETS[0];
+/** Reference opens at 4:3 ("Traditional"); fall back to the first entry. */
+export const DEFAULT_ASPECT = ASPECT_PRESETS.find((a) => a.id === "4_3") ?? ASPECT_PRESETS[0];
 
-function tilt(id: string, label: string, transform: Transform3D): PerspectivePreset {
-	return { id, label, transform };
+function tilt(id: string, label: string, transform: Partial<Transform3D>): PerspectivePreset {
+	return { id, label, transform: t3d(transform) };
 }
 
 const NO_BORDER = { width: 0, color: "#ffffff" };
@@ -135,7 +105,7 @@ export const TEMPLATE_PRESETS: Template[] = [
 	{
 		id: "vivid",
 		label: "Vivid",
-		backgroundId: "aurora",
+		backgroundId: MESH_PRESETS[0].id,
 		background: { kind: "gradient", css: MESH_PRESETS[0].swatch },
 		padding: 11,
 		radius: 16,
@@ -153,7 +123,7 @@ export const TEMPLATE_PRESETS: Template[] = [
 		radius: 12,
 		shadow: { x: 0, y: 26, blur: 60, spread: 0, opacity: 0.32, color: "#000000" },
 		mockup: { kind: "safari", theme: "light", url: "example.com" },
-		transform: { perspective: 1000, rotateX: 3, rotateY: -8, rotateZ: 0, scale: 1 },
+		transform: t3d({ perspective: 1000, rotateX: 3, rotateY: -8 }),
 		swatch: "linear-gradient(135deg, #57c0e6 0%, #2b7ec9 100%)",
 	},
 	{
@@ -168,7 +138,7 @@ export const TEMPLATE_PRESETS: Template[] = [
 		radius: 14,
 		shadow: { x: 0, y: 34, blur: 72, spread: 0, opacity: 0.42, color: "#000000" },
 		mockup: NO_MOCKUP,
-		transform: { perspective: 800, rotateX: 10, rotateY: -22, rotateZ: 0, scale: 1 },
+		transform: t3d({ perspective: 800, rotateX: 10, rotateY: -22 }),
 		swatch: "linear-gradient(135deg, #595883 0%, #263455 100%)",
 	},
 	{
@@ -186,31 +156,19 @@ export const TEMPLATE_PRESETS: Template[] = [
 	{
 		id: "bold",
 		label: "Bold",
-		backgroundId: "ember",
+		backgroundId: MESH_PRESETS[3].id,
 		background: { kind: "gradient", css: MESH_PRESETS[3].swatch },
 		padding: 13,
 		radius: 20,
 		shadow: { x: 0, y: 40, blur: 90, spread: 0, opacity: 0.45, color: "#000000" },
 		mockup: NO_MOCKUP,
-		transform: { perspective: 900, rotateX: 24, rotateY: 0, rotateZ: -14, scale: 0.96 },
+		transform: t3d({ perspective: 900, rotateX: 24, rotateZ: -14, scale: 0.96 }),
 		swatch: MESH_PRESETS[3].swatch,
 	},
 ];
 
-function grad(id: string, label: string, css: string): BackgroundPreset {
-	return { id, label, background: { kind: "gradient", css }, swatch: css };
-}
-
-// Mesh and pattern backdrops are also `gradient`-kind (a `background` shorthand);
-// the swatch reuses the same CSS so the picker preview matches the stage.
-function mesh(id: string, label: string, css: string): BackgroundPreset {
-	return { id, label, background: { kind: "gradient", css }, swatch: css };
-}
-
+// Pattern backdrops are `gradient`-kind (a `background` shorthand); the swatch
+// reuses the same CSS so the picker preview matches the stage.
 function patternBg(id: string, label: string, css: string): BackgroundPreset {
 	return { id, label, background: { kind: "gradient", css }, swatch: css };
-}
-
-function solid(id: string, label: string, color: string): BackgroundPreset {
-	return { id, label, background: { kind: "solid", color }, swatch: color };
 }

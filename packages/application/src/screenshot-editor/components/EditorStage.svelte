@@ -1,11 +1,11 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface EditorStageProps {
-    editor: ScreenshotEditorState;
-    /** The exportable node — bound out so the toolbar can snapshot it. */
-    stageEl?: HTMLElement | null;
-  }
+export interface EditorStageProps {
+	editor: ScreenshotEditorState;
+	/** The exportable node — bound out so the toolbar can snapshot it. */
+	stageEl?: HTMLElement | null;
+}
 </script>
 
 <script lang="ts">
@@ -16,11 +16,16 @@
 
   let { editor, stageEl = $bindable(null) }: EditorStageProps = $props();
 
-  // When an animation is selected, its interpolated properties drive the
-  // framed content (overriding the static 3D controls); else the static look.
-  const anim = $derived(
-    editor.animationPreset ? propsAtTime(editor.animationPreset, editor.animationTime) : null,
-  );
+  // When an animation is active, its interpolated properties drive the framed
+  // content (overriding the static 3D controls); else the static look. In
+  // keyframe mode the stage stays editable (static) while paused, so the user
+  // can set a look and capture it; playback still previews the animation.
+  const anim = $derived.by(() => {
+    const preset = editor.activePreset;
+    if (!preset) return null;
+    if (editor.keyframeMode && !editor.playing) return null;
+    return propsAtTime(preset, editor.animationTime);
+  });
   const perspective = $derived(anim ? anim.perspective : editor.transform.perspective);
   // The static/animated 3D transform, then the user's image-size multiplier so
   // "Scale" reads as resizing the shot within the padded stage.
@@ -47,6 +52,15 @@
 
   const shadow = $derived(shadowCss(editor.shadow));
   const border = $derived(borderCss(editor.frame.border));
+
+  // Ruler tick positions (px from the origin) at the configured interval. Capped
+  // so a tiny interval can't render thousands of labels; extras clip.
+  const rulerTicks = $derived.by(() => {
+    const step = Math.max(10, editor.rulerInterval);
+    const ticks: number[] = [];
+    for (let x = step; x <= step * 40; x += step) ticks.push(x);
+    return ticks;
+  });
 
   // Style-frame wrapper (glass/outline/solid card around the shot). When active,
   // the drop shadow moves to the wrapper so it hugs the card, not the raw image.
@@ -143,8 +157,16 @@
   {/if}
   {#if editor.showRulers}
     <div class="recast-shot-rulers" data-export-ignore>
-      <div class="ruler-h" style:background-size={`${editor.gridSize}px 100%`}></div>
-      <div class="ruler-v" style:background-size={`100% ${editor.gridSize}px`}></div>
+      <div class="ruler-h" style:background-size={`${editor.rulerInterval}px 100%`}>
+        {#each rulerTicks as tick (tick)}
+          <span class="ruler-label" style:left={`${tick}px`}>{tick}</span>
+        {/each}
+      </div>
+      <div class="ruler-v" style:background-size={`100% ${editor.rulerInterval}px`}>
+        {#each rulerTicks as tick (tick)}
+          <span class="ruler-label ruler-label-v" style:top={`${tick}px`}>{tick}</span>
+        {/each}
+      </div>
       <div class="ruler-corner"></div>
     </div>
   {/if}
@@ -226,12 +248,13 @@
     position: absolute;
     background-color: rgba(20, 20, 22, 0.55);
     background-repeat: repeat;
+    overflow: hidden;
   }
   .recast-shot-rulers .ruler-h {
     top: 0;
     left: 0;
     right: 0;
-    height: 14px;
+    height: 16px;
     background-image: linear-gradient(
       to right,
       rgba(255, 255, 255, 0.75) 1px,
@@ -242,20 +265,37 @@
     top: 0;
     bottom: 0;
     left: 0;
-    width: 14px;
+    width: 16px;
     background-image: linear-gradient(
       to bottom,
       rgba(255, 255, 255, 0.75) 1px,
       transparent 1px
     );
   }
+  .recast-shot-rulers .ruler-label {
+    position: absolute;
+    font-size: 8px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: rgba(255, 255, 255, 0.7);
+    pointer-events: none;
+  }
+  .recast-shot-rulers .ruler-h .ruler-label {
+    top: 3px;
+    transform: translateX(2px);
+  }
+  .recast-shot-rulers .ruler-v .ruler-label {
+    left: 2px;
+    transform: translateY(2px);
+  }
   .recast-shot-rulers .ruler-corner {
     position: absolute;
     top: 0;
     left: 0;
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     background: rgba(20, 20, 22, 0.8);
+    z-index: 1;
   }
 
   /* Perspective wrapper so the framed content can tilt in 3D; both layers fill

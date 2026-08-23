@@ -1,19 +1,28 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface BackgroundControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface BackgroundControlProps {
+	editor: ScreenshotEditorState;
+}
 </script>
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
   import { ColorPicker } from "@recast/ui/color-picker";
+  import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import { ImageUp, X } from "@recast/icons";
-  import { GRADIENT_PRESETS, MESH_PRESETS, PATTERN_PRESETS, SOLID_PRESETS } from "../presets";
+  import { ImageUp, Sparkles, X } from "@recast/icons";
+  import {
+    GRADIENT_PRESETS,
+    MAGIC_PRESETS,
+    MESH_PRESETS,
+    PATTERN_PRESETS,
+    SOLID_PRESETS,
+  } from "../presets";
   import { imageFromFile } from "../image-input";
+  import { IMAGE_BACKGROUND_CATEGORIES, imageBackgroundCss } from "../image-backgrounds";
   import type { BackgroundPreset } from "../types";
+  import type { ImageBackground } from "../image-backgrounds";
 
   let { editor }: BackgroundControlProps = $props();
 
@@ -21,6 +30,13 @@
   let lastColor = $state("#7dd4ad");
 
   const gradients = [...GRADIENT_PRESETS, ...MESH_PRESETS];
+
+  // Random magic gradient (the reference's Shuffle affordance).
+  function shuffleMagic() {
+    const pool = MAGIC_PRESETS.filter((p) => p.id !== editor.backgroundId);
+    const next = pool[Math.floor(Math.random() * pool.length)] ?? MAGIC_PRESETS[0];
+    pick(next);
+  }
 
   // Which of the three custom-background tiles reads as active. A preset swatch
   // selection leaves all three inactive.
@@ -41,6 +57,10 @@
 
   function pick(preset: BackgroundPreset) {
     editor.setBackground(preset.id, preset.background);
+  }
+
+  function pickImage(img: ImageBackground) {
+    editor.setBackground(img.id, { kind: "gradient", css: imageBackgroundCss(img.url) });
   }
 
   function chooseColor(next: string) {
@@ -178,8 +198,61 @@
   </div>
 </PanelSection>
 
+<!-- Magic gradients (100): dark radial/conic/pattern glows. Collapsed by default
+     so the heavy multi-layer swatches don't paint until the section is opened. -->
+<PanelSection title="Magic" collapsible defaultOpen={false}>
+  {#snippet action()}
+    <Button variant="ghost" size="xs" onclick={shuffleMagic}>
+      <Sparkles class="size-3.5" />
+      Shuffle
+    </Button>
+  {/snippet}
+  <div class="grid grid-cols-6 gap-2">
+    {#each MAGIC_PRESETS as preset (preset.id)}
+      <button
+        type="button"
+        class={swatchClass(editor.backgroundId === preset.id)}
+        style:background={preset.swatch}
+        title={preset.label}
+        aria-label={preset.label}
+        aria-pressed={editor.backgroundId === preset.id}
+        onclick={() => pick(preset)}
+      ></button>
+    {/each}
+  </div>
+</PanelSection>
+
+<!-- Bundled image wallpapers (radiant/mesh/pattern/paper). Each collapsed so its
+     thumbnails only fetch when opened; images lazy-load and decode async. -->
+{#each IMAGE_BACKGROUND_CATEGORIES as cat (cat.id)}
+  <PanelSection title={cat.label} collapsible defaultOpen={false}>
+    <div class="grid grid-cols-3 gap-2">
+      {#each cat.images as img (img.id)}
+        <button
+          type="button"
+          class={cn(
+            "border-border/30 aspect-video overflow-hidden border transition-transform hover:scale-105",
+            editor.backgroundId === img.id ? "ring-primary rounded-lg ring-2 ring-offset-1" : "rounded-lg",
+          )}
+          aria-label={img.id}
+          aria-pressed={editor.backgroundId === img.id}
+          onclick={() => pickImage(img)}
+        >
+          <img
+            src={img.url}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            class="size-full object-cover"
+          />
+        </button>
+      {/each}
+    </div>
+  </PanelSection>
+{/each}
+
 <!-- Patterns. -->
-<PanelSection title="Patterns" collapsible defaultOpen>
+<PanelSection title="CSS Patterns" collapsible defaultOpen>
   <div class="grid grid-cols-6 gap-2">
     {#each PATTERN_PRESETS as preset (preset.id)}
       <button
