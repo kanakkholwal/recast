@@ -59,7 +59,7 @@
 	},
 	"dependencies": {
 		"@choochmeque/tauri-plugin-sharekit-api": "^0.3.1",
-		"@fontsource-variable/geist-mono": "^5.2.7",
+		"@fontsource-variable/geist-mono": "^5.3.0",
 		"@fontsource-variable/google-sans": "^5.2.1",
 		"@phosphor-icons/core": "2.1.1",
 		"@recast/icons": "workspace:*",
