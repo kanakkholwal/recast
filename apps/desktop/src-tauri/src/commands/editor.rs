@@ -1934,7 +1934,18 @@ pub(crate) async fn run_mux_job(
                 (&project.audio_path, AudioKind::System),
                 (&project.microphone_path, AudioKind::Mic),
             ] {
-                let Some(path) = path.as_ref().filter(|p| p.exists()) else {
+                // `exists()` is not enough: a capture that never received a
+                // packet leaves a valid header-only WAV, and a zero-sample
+                // input makes FFmpeg abort the whole graph with "Invalid data
+                // found when processing input" once amix meets the concat
+                // speed warp. Carrying no audio, it has nothing to contribute.
+                let Some(path) = path
+                    .as_ref()
+                    .filter(|p| crate::audio::wav::wav_has_samples(p))
+                else {
+                    if let Some(p) = path.as_ref().filter(|p| p.exists()) {
+                        log::info!("export: skipping empty audio track {}", p.display());
+                    }
                     continue;
                 };
                 args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
@@ -2053,7 +2064,21 @@ pub(crate) async fn run_mux_job(
             "aac".to_string(),
             "-b:a".to_string(),
             "192k".to_string(),
+            // Pin the delivered format; see the note in export::codec.
+            "-ar".to_string(),
+            "48000".to_string(),
+            "-ac".to_string(),
+            "2".to_string(),
         ]);
+    }
+    // The browser video IS the output timeline (already composited and warped),
+    // so it defines the length. Without this the encode runs until every audio
+    // input is exhausted: a cut or sped-up edit left a tail of audio past the
+    // end of the picture, and a LOOPING music clip (`-stream_loop -1`) never
+    // ends at all, so the export only stopped when the watchdog killed it.
+    // `run_export_job` gets this from `append_output_tail`; this path never did.
+    if audio_map.is_some() {
+        args.push("-shortest".to_string());
     }
     args.extend([
         "-movflags".to_string(),
@@ -2714,7 +2739,16 @@ pub(crate) async fn run_export_job(
                 (&project.audio_path, AudioKind::System),
                 (&project.microphone_path, AudioKind::Mic),
             ] {
-                let Some(path) = path.as_ref().filter(|p| p.exists()) else {
+                // See the matching note in `run_mux_job`: a header-only WAV
+                // exists but carries no samples, and feeding one to the graph
+                // aborts the export.
+                let Some(path) = path
+                    .as_ref()
+                    .filter(|p| crate::audio::wav::wav_has_samples(p))
+                else {
+                    if let Some(p) = path.as_ref().filter(|p| p.exists()) {
+                        log::info!("export: skipping empty audio track {}", p.display());
+                    }
                     continue;
                 };
                 audio_input_indices.push((next_audio_input_index, kind));

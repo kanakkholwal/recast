@@ -10,7 +10,7 @@ use tauri::AppHandle;
 
 use super::progress::{is_ffmpeg_progress_key_line, parse_ffmpeg_progress_seconds, ProgressBand};
 use super::state::{emit_export_state, ExportStateEvent};
-use crate::commands::ffmpeg::{probe_video_metadata, summarize_ffmpeg_error};
+use crate::commands::ffmpeg::{probe_video_metadata, summarize_ffmpeg_failure};
 
 fn completed_export_looks_usable(path: &Path, expected_duration: f64) -> bool {
     if !path.exists() {
@@ -116,6 +116,13 @@ pub(crate) fn run_encode(
     // signals the encoder has finished and only the mux trailer remains.
     let stderr_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
     let stderr_buf_writer = stderr_buf.clone();
+    // Diagnostic lines are kept SEPARATELY from the rotating tail above.
+    // FFmpeg names the cause while opening its inputs and then prints
+    // kilobytes of stream listings and shutdown noise, so on any real export
+    // the cause had already been drained out of the 8 KB tail by the time the
+    // run failed — every failure reported its own epilogue instead.
+    let stderr_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let stderr_errors_writer = stderr_errors.clone();
     let stderr_last_progress = last_progress.clone();
     let stderr_last_progress_secs = last_progress_secs.clone();
     let stderr_app = app.clone();
@@ -250,8 +257,15 @@ pub(crate) fn run_encode(
                 if is_ffmpeg_progress_key_line(&line) {
                     continue;
                 }
-                // Everything else is real log output — append to the ring
-                // buffer so the failure path can surface it to the user.
+                // Everything else is real log output. Capture anything that
+                // names a cause first, so it survives regardless of where in
+                // the stream it appeared.
+                if crate::commands::ffmpeg::is_diagnostic_line(&line) {
+                    let mut errors = stderr_errors_writer.lock();
+                    if errors.len() < crate::commands::ffmpeg::MAX_RETAINED_ERRORS {
+                        errors.push(line.clone());
+                    }
+                }
                 let mut guard = stderr_buf_writer.lock();
                 guard.extend_from_slice(line.as_bytes());
                 guard.push(b'\n');
@@ -608,6 +622,21 @@ pub(crate) fn run_encode(
 
     if !status.success() {
         let stderr_bytes = stderr_buf.lock().clone();
+        // The toast only gets a summary; keep the WHOLE invocation and stderr in
+        // the log so a report that quotes the toast can still be traced back.
+        // Logged at ERROR because release builds default to Warn, which would
+        // drop the `info!` copy of the args written before the spawn.
+        log::error!(
+            "export: ffmpeg failed (status {:?})
+  args: {}
+  diagnostics: {:?}
+  stderr tail:
+{}",
+            status.code(),
+            args.join(" "),
+            stderr_errors.lock().as_slice(),
+            String::from_utf8_lossy(&stderr_bytes)
+        );
         let _ = std::fs::remove_file(&output_path_str);
         // Include the exit code: when stderr carries no diagnostic (e.g. ffmpeg was
         // killed by the OS, crashed, or aborted before logging), the code is the
@@ -619,7 +648,7 @@ pub(crate) fn run_encode(
             .unwrap_or_else(|| "terminated by signal".into());
         let err_msg = format!(
             "export failed (ffmpeg exit {code}):\n{}",
-            summarize_ffmpeg_error(&stderr_bytes)
+            summarize_ffmpeg_failure(&stderr_errors.lock(), &stderr_bytes)
         );
         emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
         return Err(err_msg);

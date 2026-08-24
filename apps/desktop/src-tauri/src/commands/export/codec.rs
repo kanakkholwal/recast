@@ -145,6 +145,13 @@ pub(crate) fn append_codec_args(
                     "aac".to_string(),
                     "-b:a".to_string(),
                     "192k".to_string(),
+                    // Pin the delivered format. Without this the output takes
+                    // whichever source survived the mix, so a session with only
+                    // a 16 kHz mono headset mic shipped a 16 kHz mono export.
+                    "-ar".to_string(),
+                    "48000".to_string(),
+                    "-ac".to_string(),
+                    "2".to_string(),
                 ]);
             } else {
                 args.push("-an".to_string());

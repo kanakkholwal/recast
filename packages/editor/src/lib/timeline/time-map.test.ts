@@ -309,3 +309,31 @@ describe("toRegions", () => {
 		expect(toRegions(timeMapFromSegments([]))).toEqual([]);
 	});
 });
+
+describe("kept axis vs trim-display axis", () => {
+	// The trim-drag axis intentionally re-exposes the trimmed head/tail so the
+	// handle can move across the whole source. Anything that PLAYS or EXPORTS
+	// must read the kept axis instead, or a trim held down while exporting
+	// puts the trimmed-off content back into the output.
+	const SHAPE = {
+		trimStart: 5,
+		trimEnd: 15,
+		cuts: [] as TimelineCut[],
+		splitPoints: [] as number[],
+	};
+	const DURATION = 30;
+
+	it("the display axis spans the whole recording during a trim drag", () => {
+		const segments = deriveSegments(SHAPE);
+		const display = displayTimeMap({ ...SHAPE, durationSec: DURATION, segments });
+		const regions = toRegions(display);
+		expect(regions[0].start).toBe(0);
+		expect(regions[regions.length - 1].end).toBe(DURATION);
+	});
+
+	it("the kept axis stays inside the trim no matter what the UI is doing", () => {
+		const kept = timeMapFromSegments(deriveSegments(SHAPE));
+		expect(toRegions(kept)).toEqual([{ start: 5, end: 15, speed: 1 }]);
+		expect(kept.outputDuration).toBe(10);
+	});
+});

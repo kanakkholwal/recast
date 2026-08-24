@@ -1103,6 +1103,7 @@ impl RecordingManager {
 
         // Resolve the system-audio path: the captured file, else a silence
         // fallback so downstream always has a track to mux.
+        let mut has_system_audio = has_system_audio;
         let audio_path = match audio_stop {
             Some(Ok(path)) => path,
             Some(Err(e)) => {
@@ -1118,6 +1119,21 @@ impl RecordingManager {
             }
         };
 
+        // WASAPI loopback delivers NOTHING while no application is rendering
+        // audio, so a session where nothing played leaves a valid but
+        // header-only WAV. That is not a captured track, and an empty input
+        // breaks the export's filter graph outright, so replace it with real
+        // silence of the right length and stop claiming system audio.
+        if !crate::audio::wav::wav_has_samples(&audio_path) {
+            let duration = session.clock.effective_elapsed().as_secs_f64();
+            log::info!(
+                "system audio captured no samples ({}s of silence written instead)",
+                duration.round()
+            );
+            crate::audio::wav::write_silence_wav(&audio_path, 48_000, 2, duration)?;
+            has_system_audio = false;
+        }
+
         // Non-fatal capture issues to surface to the user after the save. A
         // requested mic/camera track that failed (device in use, or on macOS
         // Camera/Microphone permission denied so the device produced no frames)
@@ -1126,7 +1142,15 @@ impl RecordingManager {
 
         // Microphone path if its capture succeeded.
         let microphone_path = match microphone_stop {
-            Some(Ok(path)) => Some(path),
+            Some(Ok(path)) if crate::audio::wav::wav_has_samples(&path) => Some(path),
+            Some(Ok(path)) => {
+                log::warn!("microphone produced no samples: {}", path.display());
+                warnings.push(
+                    "The microphone was selected but recorded no sound, so the                      recording has no mic track. Check it isn't muted or in use                      by another app."
+                        .to_string(),
+                );
+                None
+            }
             Some(Err(e)) => {
                 log::warn!("microphone capture stop failed: {e}");
                 warnings.push(

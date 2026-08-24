@@ -1408,12 +1408,19 @@ export function createEditorStore() {
 	 * closed to seams. `output 0 == inPoint`; the clip fills the track from the
 	 * left. Every lane, the playhead, and the preview clock position against this.
 	 * At all-1× speeds it's the cut translation map restricted to [inPoint,outPoint]. */
+	// The KEPT-only axis, whatever the UI is doing. Playback and export must
+	// position against this: `timeMapMemo` below swaps in the full-recording
+	// axis mid trim-drag, and replaying that would export the trimmed-off
+	// head and tail.
+	const keptTimeMapMemo = $derived.by(() =>
+		timeMapFromSegments(segmentsMemo, buildSpeedOf(segmentsMemo, segmentSpeeds)),
+	);
+
 	const timeMapMemo = $derived.by(() => {
-		const segs = segmentsMemo;
-		const speedOf = buildSpeedOf(segs, segmentSpeeds);
 		// While trimming, un-collapse onto the full recording so the handle can
 		// move across the whole source (and reveal/restore the trimmed head/tail).
 		if (isTrimming) {
+			const segs = segmentsMemo;
 			const { start, end } = clipBounds();
 			return displayTimeMap({
 				trimStart: start,
@@ -1421,10 +1428,10 @@ export function createEditorStore() {
 				durationSec: metadata?.duration ?? end,
 				segments: segs,
 				cuts: cutsMemo,
-				speedOf,
+				speedOf: buildSpeedOf(segs, segmentSpeeds),
 			});
 		}
-		return timeMapFromSegments(segs, speedOf);
+		return keptTimeMapMemo;
 	});
 	function currentTimeMap() {
 		return timeMapMemo;
@@ -2212,6 +2219,11 @@ export function createEditorStore() {
 		// recording while `isTrimming` so a trim drag can reveal the trimmed parts.
 		get timeMap() {
 			return currentTimeMap();
+		},
+		/** The kept axis, never the trim-drag display axis. What the export
+		 *  replays and what playback positions against. */
+		get keptTimeMap() {
+			return keptTimeMapMemo;
 		},
 		get renderMap() {
 			return renderMap;

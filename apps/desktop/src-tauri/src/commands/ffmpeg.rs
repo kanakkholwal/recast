@@ -1830,18 +1830,239 @@ pub fn summarize_ffmpeg_error(stderr: &[u8]) -> String {
         .collect();
 
     if lines.is_empty() {
-        "FFmpeg failed without returning a detailed error.".into()
-    } else {
-        lines
-            .iter()
-            .rev()
-            .take(12)
-            .copied()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join("\n")
+        return "FFmpeg failed without returning a detailed error.".into();
+    }
+
+    // Prefer the lines that actually say what went wrong. FFmpeg prints the
+    // real diagnostic FIRST and then a long epilogue (output stream listing,
+    // faststart pass, muxing overhead, "Conversion failed!"), so taking the
+    // tail reported the least informative 12 lines of every failure.
+    let diagnostics: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|line| is_diagnostic_line(line))
+        .take(MAX_SUMMARY_LINES)
+        .collect();
+    if !diagnostics.is_empty() {
+        return diagnostics.join(
+            "
+",
+        );
+    }
+
+    lines
+        .iter()
+        .rev()
+        .take(MAX_SUMMARY_LINES)
+        .copied()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
+}
+
+const MAX_SUMMARY_LINES: usize = 8;
+
+/// Most diagnostic lines to retain per run. Errors are rare, so this is only a
+/// runaway guard; a normal failure never reaches it.
+pub(crate) const MAX_RETAINED_ERRORS: usize = 32;
+
+/// The user-facing failure message: the diagnostic lines captured live, else a
+/// summary of whatever tail survived.
+///
+/// `errors` is collected as stderr streams precisely because the tail buffer
+/// rotates. FFmpeg states the cause while opening its inputs and then prints
+/// kilobytes of stream listings and shutdown noise, so on a long export the
+/// cause had always been evicted by the time the run failed.
+pub fn summarize_ffmpeg_failure(errors: &[String], stderr_tail: &[u8]) -> String {
+    if errors.is_empty() {
+        return summarize_ffmpeg_error(stderr_tail);
+    }
+    errors
+        .iter()
+        .take(MAX_SUMMARY_LINES)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
+}
+
+/// Whether a line names a cause, as opposed to restating that the run failed.
+/// The generic epilogue lines are excluded on purpose: they are exactly what
+/// used to fill the whole summary while the real message scrolled out of it.
+pub(crate) fn is_diagnostic_line(line: &str) -> bool {
+    const GENERIC: &[&str] = &[
+        "conversion failed",
+        "task finished with error code",
+        "terminating thread with return code",
+    ];
+    const CAUSES: &[&str] = &[
+        "error",
+        "invalid",
+        "failed",
+        "unable to",
+        "cannot",
+        "could not",
+        "no such",
+        "not found",
+        "unsupported",
+        "denied",
+        "does not contain",
+        "incorrect",
+        "no space left",
+        "out of memory",
+    ];
+    let lower = line.to_ascii_lowercase();
+    if GENERIC.iter().any(|g| lower.contains(g)) {
+        return false;
+    }
+    CAUSES.iter().any(|c| lower.contains(c))
+}
+
+#[cfg(test)]
+mod error_summary_tests {
+    use super::summarize_ffmpeg_error;
+
+    /// A real failing mux, trimmed to shape: the cause is near the top and the
+    /// boilerplate epilogue is what the tail-based summary used to return.
+    const REAL_FAILURE: &str = "[aist#1:0/pcm_s16le @ 000001c9] Error submitting packet to decoder: Invalid data found when processing input
+Input #1, wav, from 'session.audio.wav':
+  Duration: 00:01:07.00, bitrate: 1536 kb/s
+Output #0, mp4, to 'Recast_export.mp4':
+  Metadata:
+    creation_time   : 2026-08-24T19:22:17.000000Z
+    handler_name    : MediabunnyVideoHandler
+    encoder         : Mediabunny
+  Stream #0:1: Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 192 kb/s
+  Metadata:
+    encoder         : Lavc62.28.100 aac
+[fc#0 @ 000001c9] Task finished with error code: -1094995529 (Invalid data found when processing input)
+[fc#0 @ 000001c9] Terminating thread with return code -1094995529 (Invalid data found when processing input)
+[mp4 @ 000001c9] Starting second pass: moving the moov atom to the beginning of the file
+[out#0/mp4 @ 000001c9] video:796KiB audio:1576KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 3.169816%
+[aac @ 000001c9] Qavg: 57616.910
+Conversion failed!
+";
+
+    #[test]
+    fn surfaces_the_cause_not_the_epilogue() {
+        let summary = summarize_ffmpeg_error(REAL_FAILURE.as_bytes());
+        assert!(
+            summary.contains("Error submitting packet to decoder"),
+            "the actual cause must survive: {summary}"
+        );
+    }
+
+    #[test]
+    fn drops_the_lines_that_only_restate_the_failure() {
+        let summary = summarize_ffmpeg_error(REAL_FAILURE.as_bytes());
+        assert!(!summary.contains("Conversion failed!"), "{summary}");
+        assert!(!summary.contains("Qavg"), "{summary}");
+        assert!(!summary.contains("muxing overhead"), "{summary}");
+        assert!(
+            !summary.contains("Task finished with error code"),
+            "{summary}"
+        );
+    }
+
+    #[test]
+    fn keeps_the_summary_short_enough_to_read_in_a_toast() {
+        let summary = summarize_ffmpeg_error(REAL_FAILURE.as_bytes());
+        assert!(summary.lines().count() <= 8, "{summary}");
+    }
+
+    #[test]
+    fn falls_back_to_the_tail_when_nothing_looks_diagnostic() {
+        let bland = "Input #0, mov,mp4
+  Duration: 00:00:10.00
+  Stream #0:0: Video: h264
+";
+        let summary = summarize_ffmpeg_error(bland.as_bytes());
+        assert!(summary.contains("Stream #0:0"), "{summary}");
+    }
+
+    #[test]
+    fn reports_plainly_when_ffmpeg_said_nothing() {
+        assert_eq!(
+            summarize_ffmpeg_error(b""),
+            "FFmpeg failed without returning a detailed error."
+        );
+    }
+
+    #[test]
+    fn a_missing_input_is_reported_as_the_missing_input() {
+        let stderr = "[in#1 @ 0x1] Error opening input: No such file or directory
+Error opening input file session.microphone.wav.
+Error opening input files: No such file or directory
+";
+        let summary = summarize_ffmpeg_error(stderr.as_bytes());
+        assert!(summary.contains("session.microphone.wav"), "{summary}");
+    }
+
+    #[test]
+    fn a_cause_captured_live_beats_whatever_the_tail_holds() {
+        // The tail is pure epilogue, exactly as it arrives on a long export
+        // once the rotating buffer has drained the real message away.
+        let captured = vec![
+            "[aist#2:0/pcm_s16le @ 0x1] Error submitting packet to decoder: Invalid data found when processing input"
+                .to_string(),
+        ];
+        let summary = super::summarize_ffmpeg_failure(&captured, REAL_FAILURE.as_bytes());
+        assert!(
+            summary.contains("Error submitting packet to decoder"),
+            "{summary}"
+        );
+        assert!(!summary.contains("Qavg"), "{summary}");
+    }
+
+    #[test]
+    fn with_nothing_captured_it_still_summarizes_the_tail() {
+        let summary = super::summarize_ffmpeg_failure(&[], REAL_FAILURE.as_bytes());
+        assert!(
+            summary.contains("Error submitting packet to decoder"),
+            "{summary}"
+        );
+    }
+
+    #[test]
+    fn a_flood_of_captured_errors_stays_toast_sized() {
+        let captured: Vec<String> = (0..40)
+            .map(|i| format!("[aac @ 0x1] Invalid frame {i}"))
+            .collect();
+        let summary = super::summarize_ffmpeg_failure(&captured, b"");
+        assert_eq!(summary.lines().count(), 8);
+        // The FIRST errors are the root cause; later ones are consequences.
+        assert!(summary.contains("Invalid frame 0"), "{summary}");
+        assert!(!summary.contains("Invalid frame 9"), "{summary}");
+    }
+
+    #[test]
+    fn the_generic_epilogue_is_never_captured_as_a_cause() {
+        assert!(!super::is_diagnostic_line(
+            "[fc#0 @ 0x1] Task finished with error code: -1094995529 (Invalid data found when processing input)"
+        ));
+        assert!(!super::is_diagnostic_line("Conversion failed!"));
+        assert!(super::is_diagnostic_line(
+            "[aist#1:0/pcm_f32le @ 0x1] Error submitting packet to decoder: Invalid data found when processing input"
+        ));
+    }
+
+    #[test]
+    fn progress_blocks_never_reach_the_summary() {
+        let stderr = "frame=120
+fps=30
+out_time_us=4000000
+[aac @ 0x1] Invalid channel layout
+progress=continue
+";
+        let summary = summarize_ffmpeg_error(stderr.as_bytes());
+        assert_eq!(summary, "[aac @ 0x1] Invalid channel layout");
     }
 }
 

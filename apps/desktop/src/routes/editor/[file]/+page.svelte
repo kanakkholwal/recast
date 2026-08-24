@@ -536,11 +536,12 @@ onDestroy(() => {
 onDestroy(disposeTileProvider);
 
 // Kept audio regions and current OUTPUT time: what the Web Audio engine
-// schedules against. Read straight off the time map rather than rebuilt from
-// segments + a speed lookup, so the audio schedule cannot disagree with the
-// axis the picture clock and the export both use.
+// schedules against. Read straight off the kept time map rather than rebuilt
+// from segments + a speed lookup, so the audio schedule cannot disagree with
+// the axis the picture clock and the export both use. `keptTimeMap`, never
+// `timeMap`: the latter un-collapses to the whole recording mid trim-drag.
 function audioRegions() {
-	return toRegions(store.timeMap);
+	return toRegions(store.keptTimeMap);
 }
 function outputNow() {
 	return originalToOutput(store.timeMap, store.currentTime);
@@ -1213,8 +1214,10 @@ async function handleExport() {
 			captions: buildCaptionExport(store),
 			// The axis the preview just played. Sending it makes the backend
 			// replay this exact timeline rather than re-deriving one from cuts,
-			// splits and speed anchors and hoping the two agree.
-			timeMap: exportTimeMap(store.timeMap),
+			// splits and speed anchors and hoping the two agree. `keptTimeMap`,
+			// not `timeMap`: the latter un-collapses to the whole recording mid
+			// trim-drag, which would export the trimmed-off head and tail.
+			timeMap: exportTimeMap(store.keptTimeMap),
 		};
 
 		// Performance snapshot for the `export_completed` event — source metrics the

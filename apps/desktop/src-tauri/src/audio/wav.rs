@@ -156,6 +156,33 @@ fn build_wav_header(format: WavFormat, data_len: u32) -> Vec<u8> {
     header
 }
 
+/// Sample bytes a WAV's header claims, or `None` when the file is unreadable
+/// or is not a RIFF/WAVE at all.
+///
+/// Reads only the 44-byte header, so this is a stat-cost check rather than an
+/// ffprobe spawn.
+pub fn wav_data_bytes(path: &Path) -> Option<u64> {
+    use std::io::Read;
+    let mut file = File::open(path).ok()?;
+    let mut header = [0u8; HEADER_BYTES];
+    file.read_exact(&mut header).ok()?;
+    if &header[0..4] != b"RIFF" || &header[8..12] != b"WAVE" || &header[36..40] != b"data" {
+        return None;
+    }
+    Some(u32::from_le_bytes(header[40..44].try_into().ok()?) as u64)
+}
+
+/// Whether this track actually carries audio.
+///
+/// A capture that never received a packet still leaves a valid 44-byte
+/// header-only WAV behind. It is not merely useless downstream: feeding a
+/// zero-sample input into the export's `amix` alongside a `concat` speed warp
+/// makes FFmpeg abort the whole filter graph with "Invalid data found when
+/// processing input", so an empty track must never reach it.
+pub fn wav_has_samples(path: &Path) -> bool {
+    wav_data_bytes(path).is_some_and(|bytes| bytes > 0)
+}
+
 /// Write a silence WAV. Used when no audio device is reachable, so downstream
 /// muxing still has a track of the right length.
 pub fn write_silence_wav(
@@ -241,6 +268,53 @@ mod tests {
         // 0.5s @ 48kHz stereo 16-bit = 24000 frames * 4 bytes.
         assert_eq!(bytes.len(), HEADER_BYTES + 96_000);
         assert_eq!(u32_at(&bytes, 40), 96_000);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("recast-wav-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_header_only_wav_reports_no_samples() {
+        // Exactly what a capture that never received a packet leaves behind.
+        let path = temp_dir("empty").join("empty.wav");
+        let writer = WavWriter::new(&path, WavFormat::pcm16(48_000, 2)).unwrap();
+        writer.finish().unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), HEADER_BYTES as u64);
+        assert_eq!(wav_data_bytes(&path), Some(0));
+        assert!(!wav_has_samples(&path));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_wav_with_audio_reports_its_samples() {
+        let path = temp_dir("full").join("full.wav");
+        write_silence_wav(&path, 48_000, 2, 0.25).unwrap();
+        assert_eq!(wav_data_bytes(&path), Some(48_000 / 4 * 4));
+        assert!(wav_has_samples(&path));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_missing_or_non_wav_file_is_not_treated_as_audio() {
+        let dir = temp_dir("bogus");
+        assert!(!wav_has_samples(&dir.join("does-not-exist.wav")));
+        let junk = dir.join("junk.wav");
+        std::fs::write(&junk, b"not a wav file at all, just some bytes here ok").unwrap();
+        assert_eq!(wav_data_bytes(&junk), None);
+        assert!(!wav_has_samples(&junk));
+        let _ = std::fs::remove_file(&junk);
+    }
+
+    #[test]
+    fn a_file_shorter_than_a_header_is_rejected_rather_than_panicking() {
+        let path = temp_dir("short").join("short.wav");
+        std::fs::write(&path, b"RIFF").unwrap();
+        assert_eq!(wav_data_bytes(&path), None);
+        assert!(!wav_has_samples(&path));
         let _ = std::fs::remove_file(&path);
     }
 
