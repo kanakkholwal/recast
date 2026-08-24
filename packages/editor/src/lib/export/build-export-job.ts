@@ -31,6 +31,8 @@ export interface ExportJobInputs {
 	audio?: AudioExportInputs | null;
 	/** Camera stream URL, or empty/undefined when none. */
 	cameraUrl?: string;
+	/** Milliseconds the camera track lags video frame 0, measured at capture. */
+	cameraOffsetMs?: number;
 	quality: ExportQuality;
 	fps: number;
 }
@@ -64,6 +66,7 @@ function buildCameraData(
 	store: EditorStore,
 	cameraUrl: string | undefined,
 	geom: FrameGeometry,
+	offsetMs: number,
 ): CameraJob | null {
 	const cam = store.cameraOverlay;
 	if (!cameraUrl || !cam.enabled) return null;
@@ -74,6 +77,7 @@ function buildCameraData(
 		shape: cam.shape,
 		cornerRadius: cam.cornerRadius,
 		mirror: cam.mirror,
+		offsetMs,
 		placement: {
 			defaultPlacement: cam.defaultPlacement,
 			keyframes: cam.keyframes,
@@ -216,7 +220,7 @@ export async function buildExportJob(
 		pressEvents: buildPressEvents(cursorSamples),
 	});
 	const metaWH = { width: meta.width, height: meta.height };
-	const camera = buildCameraData(store, opts.cameraUrl, base.geom);
+	const camera = buildCameraData(store, opts.cameraUrl, base.geom, opts.cameraOffsetMs ?? 0);
 	const annotation = await buildAnnotationData(store, metaWH, base.canvasPxW, base.canvasPxH);
 	const caption = await buildCaptionData(store, metaWH, base.canvasPxW, base.canvasPxH);
 

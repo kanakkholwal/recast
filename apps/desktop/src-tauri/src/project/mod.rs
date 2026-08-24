@@ -115,6 +115,11 @@ pub struct ProjectMediaMetadata {
     /// which for them is indistinguishable from off anyway.
     #[serde(default)]
     pub camera_requested: bool,
+    /// Signed millisecond offsets of the audio / mic / camera tracks relative
+    /// to video frame 0. Absent on bundles written before offsets were
+    /// measured, which read as "assume aligned" (the old behaviour).
+    #[serde(default)]
+    pub track_offsets: crate::recording::TrackOffsets,
 }
 
 #[cfg(test)]

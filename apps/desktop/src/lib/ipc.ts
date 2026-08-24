@@ -356,6 +356,13 @@ export function saveRecordedCamera(buffer: ArrayBuffer): Promise<void> {
 	return invoke<void>("save_recorded_camera", buffer);
 }
 
+/** Report when the preview's MediaRecorder actually started capturing, so the
+ *  session can measure the camera track's offset from video frame 0. The camera
+ *  runs in its own webview, so nothing backend-side can observe this. */
+export function reportCameraStart(startedAtUnixMs: number): Promise<void> {
+	return invoke<void>("report_camera_start", { startedAtUnixMs: Math.round(startedAtUnixMs) });
+}
+
 /** Tell Rust the preview finished its flush attempt (releasing stop_recording's
  *  wait). `error` is a human message when no track could be delivered, logged
  *  backend-side so the reason is visible. */
@@ -537,6 +544,7 @@ export function enqueueExport(req: EnqueueExportRequest): Promise<string[]> {
 			burnCaptions: req.burnCaptions ?? false,
 			captionSidecar: req.captionSidecar ?? null,
 			browserVideoPath: req.browserVideoPath ?? null,
+			timeMap: req.timeMap ?? null,
 		},
 	});
 }

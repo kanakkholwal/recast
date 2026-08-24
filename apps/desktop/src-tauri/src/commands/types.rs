@@ -109,6 +109,9 @@ pub struct EditorDocument {
     pub camera_path: Option<String>,
     /// Why `camera_path` is (or isn't) there. Not inferable from the path alone.
     pub camera_capture: CameraCapture,
+    /// Measured lag of each companion track behind video frame 0, so the
+    /// preview lines them up the same way the export does.
+    pub track_offsets: crate::recording::TrackOffsets,
     pub metadata: VideoMetadata,
     pub render_state: RenderState,
     /// True when a legacy bundle must be migrated before the editor loads it.
@@ -354,6 +357,12 @@ pub struct ExportRequest {
     /// when the user chose no sidecar or there is no transcript.
     #[serde(default)]
     pub caption_sidecar: Option<CaptionSidecar>,
+    /// The editor's resolved kept-timeline (trim, cuts, splits and per-segment
+    /// speed already applied), in original-recording seconds. When present the
+    /// export replays it instead of re-deriving the same thing from the render
+    /// state; absent payloads (agent/MCP, older queued jobs) still derive.
+    #[serde(default)]
+    pub time_map: Option<Vec<crate::commands::export::cuts_speed::TimeSpanWire>>,
     /// Browser-rendered, already-composited video (Phase 4): when present the job
     /// takes the mux-only path (`-c:v copy` + audio) instead of the Rust
     /// filter_complex compositor. Absent = the classic full Rust export.

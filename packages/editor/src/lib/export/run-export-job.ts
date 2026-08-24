@@ -68,6 +68,7 @@ function reconstructCamera(c: CameraJob): CameraExportInputs {
 		shape: c.shape,
 		cornerRadius: c.cornerRadius,
 		mirror: c.mirror,
+		offsetMs: c.offsetMs,
 		placementAt: (t: number) => {
 			const b = cameraPlacementAt(p.defaultPlacement, p.keyframes, t, p.keyframeEasing);
 			if (!p.zoomFollow || !p.focusEnabled) return b;

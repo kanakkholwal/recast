@@ -1,3 +1,4 @@
+pub mod clock;
 pub mod pipeline;
 
 use std::path::{Path, PathBuf};
@@ -20,6 +21,7 @@ use crate::cursor::{
 use crate::encoder::h264::{self, EncodePurpose, H264Encoder};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
+pub use clock::{offset_ms_from_video, RecordingClock, TrackStart};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
 
 /// Frames per second emitted by the capture pacer and declared to the encoder.
@@ -29,65 +31,6 @@ use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
 /// invariant the cursor track (timestamped in wall-clock μs) relies on for
 /// sync.
 pub const RECORDING_FPS: u32 = 60;
-
-//  Pause-aware recording clock
-
-/// A wall-clock timer that can be paused. `effective_elapsed` reports elapsed
-/// time *minus* every interval spent paused, so all capture tracks (video
-/// pacer, cursor, audio) stay on one gap-free timeline across pause/resume.
-#[derive(Clone)]
-pub struct RecordingClock {
-    start: Instant,
-    /// Total time (µs) spent in completed pause intervals.
-    paused_total_us: Arc<AtomicU64>,
-    /// `Some(instant)` while a pause is currently in progress.
-    paused_since: Arc<Mutex<Option<Instant>>>,
-}
-
-impl RecordingClock {
-    fn new(start: Instant) -> Self {
-        Self {
-            start,
-            paused_total_us: Arc::new(AtomicU64::new(0)),
-            paused_since: Arc::new(Mutex::new(None)),
-        }
-    }
-
-    /// Wall-clock time since start, excluding all paused intervals.
-    pub fn effective_elapsed(&self) -> Duration {
-        let raw = self.start.elapsed();
-        let banked = Duration::from_micros(self.paused_total_us.load(Ordering::Acquire));
-        let live = self
-            .paused_since
-            .lock()
-            .map(|since| since.elapsed())
-            .unwrap_or_default();
-        raw.saturating_sub(banked).saturating_sub(live)
-    }
-
-    pub fn is_paused(&self) -> bool {
-        self.paused_since.lock().is_some()
-    }
-
-    /// Begin a pause interval. Idempotent — a second call while already
-    /// paused is a no-op.
-    fn pause(&self) {
-        let mut slot = self.paused_since.lock();
-        if slot.is_none() {
-            *slot = Some(Instant::now());
-        }
-    }
-
-    /// End the current pause interval, banking its duration. No-op if not
-    /// currently paused.
-    fn resume(&self) {
-        let mut slot = self.paused_since.lock();
-        if let Some(since) = slot.take() {
-            self.paused_total_us
-                .fetch_add(since.elapsed().as_micros() as u64, Ordering::AcqRel);
-        }
-    }
-}
 
 //  Shared types
 
@@ -434,6 +377,21 @@ pub struct RecordingStats {
     pub nominal_fps: u32,
 }
 
+/// Signed millisecond offsets of each companion track relative to video frame
+/// 0. Positive means the track started late and needs padding at its head;
+/// negative means it started early and its head must be trimmed. `None` means
+/// the track produced nothing, so consumers treat it as aligned.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackOffsets {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub microphone_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub camera_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone)]
 pub struct RecordingArtifacts {
     pub capture_target: CaptureTarget,
@@ -452,6 +410,10 @@ pub struct RecordingArtifacts {
     /// latter also pushes a warning, but the project has to remember it.
     pub camera_requested: bool,
     pub camera_overlay: CameraOverlaySettings,
+    /// Signed milliseconds each companion track starts after video frame 0.
+    /// Every capture device comes up at its own instant, so without these the
+    /// muxer lines all tracks up at 0 and bakes the skew into the export.
+    pub track_offsets: TrackOffsets,
     pub started_at_unix_ms: u64,
     pub stats: RecordingStats,
     /// Non-fatal issues to surface to the user after a successful stop, e.g. a
@@ -596,6 +558,16 @@ impl RecordingManager {
         self.camera_ready.store(true, Ordering::Release);
     }
 
+    /// Record when the preview WebView's MediaRecorder actually began, in Unix
+    /// milliseconds. The recorder lives in another webview, so it reports its
+    /// own start rather than being measured here; `stop()` turns it into an
+    /// offset against the session origin.
+    pub fn report_camera_start(&self, started_at_unix_ms: u64) {
+        if let Some(session) = self.session.lock().as_ref() {
+            session.mark_camera_start(started_at_unix_ms);
+        }
+    }
+
     /// Block until the camera track lands or `timeout` elapses; returns whether
     /// it landed. Polls (cheap) rather than a condvar so it composes with the
     /// existing lock discipline. Runs on a blocking worker, never the UI thread.
@@ -645,7 +617,9 @@ struct RecordingSession {
     first_frame_offset_us: Arc<AtomicU64>,
     audio_session: Option<AudioCaptureSession>,
     audio_path: PathBuf,
+    audio_start: TrackStart,
     microphone_session: Option<MicrophoneCaptureSession>,
+    microphone_start: TrackStart,
     /// Camera was requested this session. The track itself is recorded in the
     /// preview WebView (getUserMedia → MediaRecorder) and delivered to
     /// `write_camera_track` before stop — the Rust side never opens the device
@@ -662,9 +636,18 @@ struct RecordingSession {
     camera_overlay: CameraOverlayTracker,
     /// Capture rate this session was started at (pacer + encoder + metadata).
     recording_fps: u32,
+    camera_start: TrackStart,
 }
 
 impl RecordingSession {
+    /// Translate the preview recorder's Unix-ms start into a mark on the
+    /// session clock. Both stamps come from this machine and are taken within
+    /// microseconds of each other at `start()`, so the subtraction is sound.
+    fn mark_camera_start(&self, started_at_unix_ms: u64) {
+        let delay_ms = started_at_unix_ms.saturating_sub(self.started_at_unix_ms);
+        self.camera_start.mark_at(Duration::from_millis(delay_ms));
+    }
+
     /// Best-effort teardown for an abnormal shutdown (see `Drop for
     /// RecordingManager`). Mirrors the reaping half of `stop()` without
     /// assembling artifacts. `RecordingSession` deliberately does NOT implement
@@ -866,6 +849,11 @@ impl RecordingManager {
         }
 
         let first_frame_offset_us = Arc::new(AtomicU64::new(0));
+        // Each track marks its own first sample against `started_at`; stop()
+        // turns the differences into the offsets the muxer aligns by.
+        let audio_start = TrackStart::new(started_at);
+        let microphone_start = TrackStart::new(started_at);
+        let camera_start = TrackStart::new(started_at);
         let capture_handle = spawn_capture_loop(
             target.clone(),
             stop_flag.clone(),
@@ -966,6 +954,7 @@ impl RecordingManager {
             match AudioCaptureSession::start(AudioCaptureConfig {
                 output_path: audio_path.clone(),
                 pause_flag: pause_flag.clone(),
+                start: audio_start.clone(),
             }) {
                 Ok(session) => {
                     // System audio was requested, but on macOS without
@@ -998,6 +987,7 @@ impl RecordingManager {
                 output_path: microphone_path.clone(),
                 device_id: options.microphone_device_id.clone(),
                 pause_flag: pause_flag.clone(),
+                start: microphone_start.clone(),
             }) {
                 Ok(session) => Some(session),
                 Err(e) => {
@@ -1033,7 +1023,9 @@ impl RecordingManager {
             first_frame_offset_us,
             audio_session,
             audio_path,
+            audio_start,
             microphone_session,
+            microphone_start,
             camera_requested,
             camera_path,
             pipeline,
@@ -1048,6 +1040,7 @@ impl RecordingManager {
                 overlay: camera_overlay,
             },
             recording_fps,
+            camera_start,
         });
         Ok(warnings)
     }
@@ -1096,6 +1089,17 @@ impl RecordingManager {
         let cursor_offset_us = session.first_frame_offset_us.load(Ordering::Acquire);
         shift_cursor_track(&mut cursor_track, cursor_offset_us);
         write_cursor_track(&session.cursor_path, &cursor_track)?;
+
+        let track_offsets = TrackOffsets {
+            audio_ms: offset_ms_from_video(cursor_offset_us, &session.audio_start),
+            microphone_ms: offset_ms_from_video(cursor_offset_us, &session.microphone_start),
+            camera_ms: offset_ms_from_video(cursor_offset_us, &session.camera_start),
+        };
+        log::info!(
+            "track offsets vs video t0 ({}ms warmup): {:?}",
+            cursor_offset_us / 1000,
+            track_offsets
+        );
 
         // Resolve the system-audio path: the captured file, else a silence
         // fallback so downstream always has a track to mux.
@@ -1190,6 +1194,7 @@ impl RecordingManager {
             camera_path,
             camera_requested: session.camera_requested,
             camera_overlay: session.camera_overlay.overlay,
+            track_offsets,
             started_at_unix_ms: session.started_at_unix_ms,
             stats,
             warnings,

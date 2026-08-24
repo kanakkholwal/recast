@@ -9,7 +9,9 @@ import {
 	outputToOriginal,
 	spanAtOriginal,
 	timeMapFromSegments,
+	toRegions,
 } from "./time-map";
+import type { Segment } from "./segments";
 import parityFixtures from "./__fixtures__/cut-parity.json";
 
 function cut(start: number, end: number, id = `${start}-${end}`): TimelineCut {
@@ -269,5 +271,41 @@ describe("timeMapFromSegments warps a sped-up segment (kept axis)", () => {
 		expect(map.outputDuration).toBeCloseTo(7);
 		expect(originalToOutput(map, 4)).toBeCloseTo(4);
 		expect(originalToOutput(map, 10)).toBeCloseTo(7);
+	});
+});
+
+describe("toRegions", () => {
+	it("is the same list the old segments + speed-lookup derivation produced", () => {
+		const segments: Segment[] = [
+			{ start: 0, end: 4, index: 0 },
+			{ start: 6, end: 10, index: 1 },
+			{ start: 12, end: 13, index: 2 },
+		];
+		const speeds = [1, 2, 0.5];
+		const map = timeMapFromSegments(segments, (i) => speeds[i]);
+		// What `audioRegions()` in the editor page used to rebuild by hand.
+		const rebuiltByHand = segments.map((s) => ({
+			start: s.start,
+			end: s.end,
+			speed: speeds[s.index],
+		}));
+		expect(toRegions(map)).toEqual(rebuiltByHand);
+	});
+
+	it("carries the clamped speed, not the raw override", () => {
+		const map = timeMapFromSegments([{ start: 0, end: 4, index: 0 }], () => 0);
+		expect(toRegions(map)[0].speed).toBe(1);
+	});
+
+	it("drops zero-width segments the way the map does", () => {
+		const map = timeMapFromSegments([
+			{ start: 0, end: 4, index: 0 },
+			{ start: 4, end: 4, index: 1 },
+		]);
+		expect(toRegions(map)).toEqual([{ start: 0, end: 4, speed: 1 }]);
+	});
+
+	it("is empty for an empty map", () => {
+		expect(toRegions(timeMapFromSegments([]))).toEqual([]);
 	});
 });

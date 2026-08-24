@@ -2,6 +2,12 @@
 //! to post-trim ranges, derive kept segments, and build the FFmpeg
 //! select/setpts/atempo expressions. Split out of commands/editor.rs; the
 //! parity tests (against the shared speed-parity fixture) moved with it.
+//!
+//! The derivation here is now the FALLBACK. Normal exports carry the editor's
+//! resolved time map (`TimeSpanWire`) and this module formats it, so the two
+//! cannot drift; deriving is kept for payloads that arrive without one.
+
+use serde::{Deserialize, Serialize};
 
 /// Resolve the render state's silence/manual cuts into post-trim stream
 /// seconds (the input is seeked by `-ss trim_start`, so the filtergraph's `t`
@@ -143,6 +149,63 @@ pub(crate) fn build_speed_segments(
         segs.push(make_speed_segment(from, e, segment_speeds, trim_start));
     }
     segs
+}
+
+/// One kept span of the timeline exactly as the editor resolved it, in ORIGINAL
+/// recording seconds. Sent with the export so the encoder replays the editor's
+/// own axis rather than recomputing it from cuts + splits + speed anchors — the
+/// recomputation that had to be kept in step with the frontend by hand.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeSpanWire {
+    pub orig_start: f64,
+    pub orig_end: f64,
+    #[serde(default = "one")]
+    pub speed: f64,
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+/// Convert the editor's spans onto the post-trim timeline the FFmpeg graph
+/// works in. Spans outside `[trim_start, trim_start + duration]` are clipped
+/// away, so a stale map can shorten the export but never address time the
+/// trimmed stream does not have.
+fn segments_from_wire(spans: &[TimeSpanWire], duration: f64, trim_start: f64) -> Vec<SpeedSegment> {
+    spans
+        .iter()
+        .filter_map(|span| {
+            let start = (span.orig_start - trim_start).max(0.0);
+            let end = (span.orig_end - trim_start).min(duration);
+            (end - start > CUT_MERGE_EPS).then(|| SpeedSegment {
+                start,
+                end,
+                speed: clamp_segment_speed(span.speed),
+            })
+        })
+        .collect()
+}
+
+/// The kept segments to export. Prefers the editor's resolved time map; falls
+/// back to deriving it for payloads that carry none (agent/MCP requests, and
+/// projects queued by an older build).
+pub(crate) fn resolve_speed_segments(
+    time_map: Option<&Vec<TimeSpanWire>>,
+    duration: f64,
+    cuts: &[(f64, f64)],
+    split_points: &[f64],
+    segment_speeds: &[crate::render::graph::SegmentSpeed],
+    trim_start: f64,
+) -> Vec<SpeedSegment> {
+    if let Some(spans) = time_map {
+        let segs = segments_from_wire(spans, duration, trim_start);
+        if !segs.is_empty() {
+            return segs;
+        }
+        log::warn!("export time map resolved to nothing; deriving segments instead");
+    }
+    build_speed_segments(duration, cuts, split_points, segment_speeds, trim_start)
 }
 
 /// Any segment off 1× — the guard that keeps the no-speed export path unchanged.
@@ -375,13 +438,85 @@ pub(crate) fn append_audio_cut_speed(
 mod cut_export_tests {
     use super::{
         atempo_chain, build_cut_select_expr, build_speed_segments, build_speed_setpts_expr,
-        clamp_segment_speed, collect_export_cuts, output_duration_cap, warped_output_duration,
-        SpeedSegment,
+        clamp_segment_speed, collect_export_cuts, output_duration_cap, resolve_speed_segments,
+        warped_output_duration, SpeedSegment, TimeSpanWire,
     };
     use crate::render::graph::{CutRange, RenderState, SegmentSpeed};
 
     fn seg(start: f64, end: f64, speed: f64) -> SpeedSegment {
         SpeedSegment { start, end, speed }
+    }
+
+    fn span(orig_start: f64, orig_end: f64, speed: f64) -> TimeSpanWire {
+        TimeSpanWire {
+            orig_start,
+            orig_end,
+            speed,
+        }
+    }
+
+    fn shape(segs: &[SpeedSegment]) -> Vec<(f64, f64, f64)> {
+        segs.iter().map(|s| (s.start, s.end, s.speed)).collect()
+    }
+
+    #[test]
+    fn the_editors_time_map_reproduces_what_derivation_would_have_built() {
+        // Trim 2..14 with a cut at 6..8 and a split at 10, middle segment 2x.
+        let (trim_start, duration) = (2.0, 12.0);
+        let cuts = [(4.0, 6.0)];
+        let splits = [10.0];
+        let speeds = [SegmentSpeed {
+            start: 8.0,
+            speed: 2.0,
+        }];
+        let derived = build_speed_segments(duration, &cuts, &splits, &speeds, trim_start);
+        // The same kept spans the editor's time map holds, in ORIGINAL seconds.
+        let wire = vec![
+            span(2.0, 6.0, 1.0),
+            span(8.0, 10.0, 2.0),
+            span(10.0, 14.0, 1.0),
+        ];
+        let consumed =
+            resolve_speed_segments(Some(&wire), duration, &cuts, &splits, &speeds, trim_start);
+        assert_eq!(shape(&consumed), shape(&derived));
+    }
+
+    #[test]
+    fn a_payload_without_a_time_map_still_derives() {
+        let cuts = [(4.0, 6.0)];
+        let derived = build_speed_segments(12.0, &cuts, &[], &[], 2.0);
+        let resolved = resolve_speed_segments(None, 12.0, &cuts, &[], &[], 2.0);
+        assert_eq!(shape(&resolved), shape(&derived));
+    }
+
+    #[test]
+    fn wire_spans_are_clipped_to_the_trimmed_stream() {
+        // A stale map reaching past both edges must not address time the
+        // trimmed input does not contain.
+        let wire = vec![span(0.0, 20.0, 1.0)];
+        let segs = resolve_speed_segments(Some(&wire), 12.0, &[], &[], &[], 2.0);
+        assert_eq!(shape(&segs), vec![(0.0, 12.0, 1.0)]);
+    }
+
+    #[test]
+    fn an_empty_time_map_falls_back_rather_than_exporting_nothing() {
+        let wire: Vec<TimeSpanWire> = vec![];
+        let segs = resolve_speed_segments(Some(&wire), 12.0, &[], &[], &[], 0.0);
+        assert_eq!(shape(&segs), vec![(0.0, 12.0, 1.0)]);
+    }
+
+    #[test]
+    fn wire_speeds_are_clamped_like_derived_ones() {
+        let wire = vec![span(0.0, 4.0, 99.0), span(4.0, 8.0, -1.0)];
+        let segs = resolve_speed_segments(Some(&wire), 8.0, &[], &[], &[], 0.0);
+        assert_eq!(shape(&segs), vec![(0.0, 4.0, 4.0), (4.0, 8.0, 1.0)]);
+    }
+
+    #[test]
+    fn a_wire_map_and_its_derivation_warp_to_the_same_output_length() {
+        let wire = vec![span(0.0, 4.0, 1.0), span(6.0, 10.0, 2.0)];
+        let segs = resolve_speed_segments(Some(&wire), 10.0, &[], &[], &[], 0.0);
+        assert!((warped_output_duration(&segs) - 6.0).abs() < 1e-9);
     }
 
     #[test]

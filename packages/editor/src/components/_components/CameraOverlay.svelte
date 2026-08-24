@@ -1,5 +1,6 @@
 <script lang="ts">
 import { computeCanvasGeometry } from "../../lib/canvas-geometry";
+import { trackTimeAt } from "../../lib/editor/track-offsets";
 import type { EditorStore } from "../../stores/editor-store.svelte";
 import {
 	applyZoomFollow,
@@ -24,9 +25,12 @@ interface Props {
 	/** Per-frame picture time (unthrottled) so the zoom-follow grow is as smooth
 	 *  as the shader; falls back to store.currentTime when paused. */
 	previewTime?: number;
+	/** Milliseconds the camera track starts after video frame 0, measured at
+	 *  capture. 0 for projects recorded before it was measured. */
+	offsetMs?: number;
 }
 
-let { store, videoEl, targetEl, cameraSrc, previewTime = 0 }: Props = $props();
+let { store, videoEl, targetEl, cameraSrc, previewTime = 0, offsetMs = 0 }: Props = $props();
 
 let cameraVideoEl: HTMLVideoElement | null = $state(null);
 
@@ -126,13 +130,15 @@ $effect(() => {
 });
 
 // Keep the camera <video> within ~150ms of the screen video; the tolerance avoids
-// re-seeking on micro-jitter between the two HTMLVideoElement clocks.
+// re-seeking on micro-jitter between the two HTMLVideoElement clocks. The camera
+// recorder starts at its own instant, so `offsetMs` is what maps between them.
 $effect(() => {
 	void store.currentTime;
 	if (!cameraVideoEl || !videoEl) return;
 	if (Number.isNaN(videoEl.currentTime)) return;
-	if (Math.abs(cameraVideoEl.currentTime - videoEl.currentTime) > 0.15) {
-		cameraVideoEl.currentTime = videoEl.currentTime;
+	const want = trackTimeAt(videoEl.currentTime, offsetMs);
+	if (Math.abs(cameraVideoEl.currentTime - want) > 0.15) {
+		cameraVideoEl.currentTime = want;
 	}
 });
 
@@ -140,7 +146,7 @@ $effect(() => {
 	const playing = store.isPlaying;
 	if (!cameraVideoEl) return;
 	if (playing) {
-		if (videoEl) cameraVideoEl.currentTime = videoEl.currentTime;
+		if (videoEl) cameraVideoEl.currentTime = trackTimeAt(videoEl.currentTime, offsetMs);
 		void cameraVideoEl.play().catch((err) => {
 			console.warn("camera overlay play failed:", err);
 		});

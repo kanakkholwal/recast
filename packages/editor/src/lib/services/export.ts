@@ -244,6 +244,30 @@ export interface RunExportOptions {
 	/** Browser-rendered composited video temp path (Phase 4). When set, the job
 	 *  mux-copies it instead of running the Rust filter_complex compositor. */
 	browserVideoPath?: string;
+	/** The editor's resolved kept-timeline, from {@link exportTimeMap}. Sending
+	 *  it makes the backend REPLAY the editor's axis instead of re-deriving it
+	 *  from cuts + splits + speed anchors, which is what used to let the two
+	 *  disagree. Omit only from headless callers with no editor session. */
+	timeMap?: ExportTimeSpan[] | null;
+}
+
+/** One kept span of the timeline in original-recording seconds. Mirrors
+ *  `cuts_speed::TimeSpanWire` on the Rust side. */
+export interface ExportTimeSpan {
+	origStart: number;
+	origEnd: number;
+	speed: number;
+}
+
+/** The store's time map as the export wire format. */
+export function exportTimeMap(map: {
+	spans: ReadonlyArray<{ origStart: number; origEnd: number; speed: number }>;
+}): ExportTimeSpan[] {
+	return map.spans.map((s) => ({
+		origStart: s.origStart,
+		origEnd: s.origEnd,
+		speed: s.speed,
+	}));
 }
 
 /**
@@ -273,5 +297,6 @@ export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
 		burnCaptions: opts.captions?.burnCaptions ?? false,
 		captionSidecar: opts.captions?.sidecar ?? null,
 		browserVideoPath: opts.browserVideoPath ?? null,
+		timeMap: opts.timeMap ?? null,
 	});
 }

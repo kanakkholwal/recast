@@ -10,6 +10,8 @@
  * `@recast/editor/lib/wire-types`.
  */
 
+import type { TrackOffsetsWire } from "@recast/editor";
+import type { ExportTimeSpan } from "@recast/editor/lib/services/export";
 import type { RecordingProfile } from "@recast/editor/lib/profiles";
 import type {
 	CameraCapture,
@@ -83,6 +85,9 @@ export interface EditorDocument {
 	/** Why `cameraPath` is or isn't set. Absent on documents from an older
 	 *  backend, which the editor reads as `legacy` (unknowable, not "off"). */
 	cameraCapture?: CameraCapture;
+	/** Measured lag of each companion track behind video frame 0. Absent on
+	 *  bundles recorded before offsets were measured. */
+	trackOffsets?: TrackOffsetsWire;
 	metadata: VideoMetadata;
 	renderState: EditorRenderState;
 	/** True for a legacy bundle: migrate before loading the editor. */
@@ -307,6 +312,9 @@ export interface EnqueueExportRequest {
 	/** Path to a browser-rendered, already-composited video (Phase 4). When set,
 	 *  the job mux-copies it instead of running the Rust filter_complex compositor. */
 	browserVideoPath?: string | null;
+	/** The editor's resolved kept-timeline. The backend replays it instead of
+	 *  re-deriving one from cuts + splits + speed anchors. */
+	timeMap?: ExportTimeSpan[] | null;
 }
 
 /** A queue row as the backend reports it (source of truth for the activity UI). */

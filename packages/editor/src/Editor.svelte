@@ -25,6 +25,8 @@ export interface EditorProps {
 	/** Same source as a ref, when the host can stream it off a File. */
 	video?: MediaRef;
 	cameraSrc?: string;
+	/** Milliseconds the camera track lags video frame 0 (measured at capture). */
+	cameraOffsetMs?: number;
 	/** Path to the camera track, for the Camera panel's own controls. */
 	cameraPath?: string | null;
 	/** Why that path is or isn't set, so the panel can say which. */
@@ -125,6 +127,7 @@ let {
 	videoSrc,
 	video,
 	cameraSrc = "",
+	cameraOffsetMs = 0,
 	cameraPath = null,
 	cameraCapture = "legacy",
 	cursorPath = null,
@@ -369,6 +372,7 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 						{video}
 						{cursorPath}
 						{cameraSrc}
+						{cameraOffsetMs}
 						onTimeUpdate={handleTimeUpdate}
 						onEnded={handleEnded}
 						onLoadedMetadata={onLoadedMetadata ?? (() => {})}

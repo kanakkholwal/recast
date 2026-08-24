@@ -193,6 +193,17 @@ export function outputToOriginal(map: TimeMap, t: number): number {
 	return spans[spans.length - 1].origEnd;
 }
 
+/**
+ * The kept spans as `@recast/media` regions: the same intervals the preview
+ * scheduler and the browser export consume. This adapter exists so the map is
+ * the ONE place kept-content-with-speed is derived; anything that rebuilt the
+ * list from segments plus a speed lookup was a second implementation waiting to
+ * disagree with this one.
+ */
+export function toRegions(map: TimeMap): Array<{ start: number; end: number; speed: number }> {
+	return map.spans.map((s) => ({ start: s.origStart, end: s.origEnd, speed: s.speed }));
+}
+
 /** The kept span covering original time `t`, or null if `t` is removed. */
 export function spanAtOriginal(map: TimeMap, t: number): MappedSpan | null {
 	for (const s of map.spans) {

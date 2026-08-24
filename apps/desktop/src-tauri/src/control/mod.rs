@@ -1385,6 +1385,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 quality,
                 speed,
                 render_state,
+                // The CLI has no editor session, so there is no resolved time
+                // map to replay; the export derives it from the render state.
+                time_map: None,
                 gif_settings,
                 fps,
                 burn_captions,

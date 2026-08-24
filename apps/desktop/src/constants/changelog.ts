@@ -560,7 +560,7 @@ export const RELEASES: readonly ChangelogRelease[] = [
 			{
 				kind: "changed",
 				summary:
-					"Blur annotations can now be moved and duplicated, and they honor rounded corners in the export the same way the preview does. Corner radius across rectangles, blur, and images now uses a single 0–100% scale.",
+					"Blur annotations can now be moved and duplicated, and they honor rounded corners in the export the same way the preview does. Corner radius across rectangles, blur, and images now uses a single 0-100% scale.",
 			},
 			{ kind: "changed", summary: "Refreshed the Profiles page layout and accessibility." },
 			{
@@ -759,7 +759,7 @@ export const RELEASES: readonly ChangelogRelease[] = [
 			{
 				kind: "added",
 				summary:
-					"Recording frame-rate selection (24–240 fps) in Settings → Recording, offering only the rates your monitor can produce based on its detected refresh rate. The chosen rate is now stored in the project, so high-refresh recordings are handled correctly throughout the editor and export.",
+					"Recording frame-rate selection (24-240 fps) in Settings → Recording, offering only the rates your monitor can produce based on its detected refresh rate. The chosen rate is now stored in the project, so high-refresh recordings are handled correctly throughout the editor and export.",
 			},
 			{
 				kind: "added",

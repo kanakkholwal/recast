@@ -62,6 +62,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::recording::clock::TrackStart;
+
 #[cfg(feature = "sckit-loopback")]
 pub use enabled::ScKitLoopback;
 
@@ -83,7 +85,11 @@ mod disabled {
         /// chain next". The error message is informational; it lands in
         /// the log at `info` level (not `warn`), since this is the
         /// expected default-build behaviour, not a failure mode.
-        pub fn try_start(_output_path: PathBuf, _pause_flag: Arc<AtomicBool>) -> Result<Self> {
+        pub fn try_start(
+            _output_path: PathBuf,
+            _pause_flag: Arc<AtomicBool>,
+            _start: TrackStart,
+        ) -> Result<Self> {
             Err(anyhow!(
                 "ScreenCaptureKit loopback disabled (build with --features \
                  sckit-loopback to enable; requires Xcode with macOS 14.4+ SDK)"
@@ -115,7 +121,7 @@ mod enabled {
     // helper needs it for its function signature.
     use screencapturekit::AudioBufferList;
 
-    use crate::audio::wav::WavWriter;
+    use crate::audio::wav::{SampleFormat, WavFormat, WavWriter};
 
     const SAMPLE_RATE: u32 = 48_000;
     const CHANNELS: u16 = 2;
@@ -137,7 +143,11 @@ mod enabled {
 
     impl ScKitLoopback {
         /// Try to start a ScreenCaptureKit audio loopback session.
-        pub fn try_start(output_path: PathBuf, pause_flag: Arc<AtomicBool>) -> Result<Self> {
+        pub fn try_start(
+            output_path: PathBuf,
+            pause_flag: Arc<AtomicBool>,
+            start: TrackStart,
+        ) -> Result<Self> {
             // 1. Permission gate. `SCShareableContent::get` performs the TCC
             //    check; denial returns an error and we fall through to
             //    BlackHole detection.
@@ -170,14 +180,18 @@ mod enabled {
                 .with_channel_count(CHANNELS as i32);
 
             // 4. WAV writer.
-            let writer = WavWriter::new(&output_path, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE)
-                .context("failed to create WAV writer for SCKit loopback")?;
+            let writer = WavWriter::new(
+                &output_path,
+                WavFormat::new(SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE, SampleFormat::Int),
+            )
+            .context("failed to create WAV writer for SCKit loopback")?;
             let wav_writer = Arc::new(Mutex::new(Some(writer)));
 
             // 5. Build handlers and start the stream.
             let audio_handler = SckitAudioHandler {
                 wav_writer: wav_writer.clone(),
                 pause_flag: pause_flag.clone(),
+                start,
             };
             let mut stream = SCStream::new(&filter, &config);
             stream.add_output_handler(NoopScreenHandler, SCStreamOutputType::Screen);
@@ -215,6 +229,7 @@ mod enabled {
     struct SckitAudioHandler {
         wav_writer: Arc<Mutex<Option<WavWriter>>>,
         pause_flag: Arc<AtomicBool>,
+        start: TrackStart,
     }
 
     impl SCStreamOutputTrait for SckitAudioHandler {
@@ -234,6 +249,7 @@ mod enabled {
                 _ => return,
             };
 
+            self.start.mark();
             let mut guard = self.wav_writer.lock();
             if let Some(writer) = guard.as_mut() {
                 if let Err(e) = writer.write_samples(&s16_bytes) {

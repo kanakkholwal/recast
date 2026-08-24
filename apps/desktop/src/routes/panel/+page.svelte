@@ -993,6 +993,13 @@ async function startActualRecording() {
 		fps: clampFpsToDisplay(loadRecordingFps(), selectedSource),
 		quality: loadRecordingQuality(),
 	};
+	// Roll the camera BEFORE the backend starts, not after: start_recording
+	// blocks while capture/encoder/audio threads spin up, so emitting afterwards
+	// left the camera seconds behind the screen. Starting early makes the offset
+	// negative (extra head footage), which the session measures and trims.
+	if (cameraOn) {
+		emit("camera-recording-started", { startedAtUnixMs: Date.now() });
+	}
 	try {
 		const result = await startRecording(
 			selectedSource.type,
@@ -1012,9 +1019,6 @@ async function startActualRecording() {
 		// Flipping to the "recording" phase swaps in the compact transport; the
 		// ResizeObserver → Tween effect collapses the bar (centered in the fixed
 		// window) automatically. Nothing to do here.
-		if (cameraOn) {
-			emit("camera-recording-started", { startedAtUnixMs: now });
-		}
 		if (result.warnings.length > 0) {
 			notify("warning", result.warnings.join("\n"), 8000);
 		}

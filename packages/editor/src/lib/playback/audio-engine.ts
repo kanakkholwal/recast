@@ -23,6 +23,7 @@
 import type { MediaRef } from "@recast/media";
 import { AudioChunkStore } from "./audio-chunk-store";
 import { gainFromPercent } from "./audio-gain";
+import { timeStretch } from "./time-stretch";
 import {
 	outputToSource,
 	planAudioScheduleWindow,
@@ -176,6 +177,9 @@ export interface AudioTrackSpec {
 	/** Where to read + decode the audio from. `null`/`""` skips this slot. */
 	src: MediaRef | Blob | string | null;
 	kind: AudioTrackKind;
+	/** Seconds this track's first sample lands after video frame 0, as measured
+	 *  at capture. Omitted for sources with no measurement, which align at 0. */
+	offsetSec?: number;
 }
 
 // How far ahead of the playhead (output seconds) the streaming scheduler keeps
@@ -266,6 +270,7 @@ export class AudioTimelineEngine {
 			try {
 				const store = await AudioChunkStore.create(spec.src);
 				if (!store) continue;
+				store.setOffsetSec(spec.offsetSec ?? 0);
 				const gain = ctx.createGain();
 				gain.connect(fadeGain);
 				tracks.push({ store, gain, kind: spec.kind });
@@ -633,14 +638,24 @@ export class AudioTimelineEngine {
 								if (dur <= 1e-4) continue;
 							}
 							const node = this.#ctx.createBufferSource();
-							node.buffer = buf;
-							node.playbackRate.value = sub.rate;
+							// Off 1x, pre-stretch instead of riding playbackRate: the latter
+							// resamples, which raises pitch (the chipmunk voice on a sped-up clip).
+							const warped =
+								Math.abs(sub.rate - 1) > 1e-6
+									? this.#stretchSlice(buf, offset, dur, sub.rate)
+									: null;
+							if (warped) {
+								node.buffer = warped;
+								node.start(startAt, 0, warped.duration);
+							} else {
+								node.buffer = buf;
+								node.start(startAt, offset, dur);
+							}
 							node.connect(track.gain);
 							node.onended = () => {
 								const i = this.#active.indexOf(node);
 								if (i >= 0) this.#active.splice(i, 1);
 							};
-							node.start(startAt, offset, dur);
 							this.#active.push(node);
 						}
 					}
@@ -662,6 +677,28 @@ export class AudioTimelineEngine {
 			// waiting out the interval, so audio catches up right after the seek.
 			if (this.#scheduled && this.#generation !== gen) void this.#topUp();
 		}
+	}
+
+	/**
+	 * Slice `[offset, offset+dur]` source seconds out of `buf` and warp it to
+	 * `rate` pitch-preserving, ready to play back at playbackRate 1.
+	 */
+	#stretchSlice(buf: AudioBuffer, offset: number, dur: number, rate: number): AudioBuffer | null {
+		const sr = buf.sampleRate;
+		const from = Math.max(0, Math.floor(offset * sr));
+		const to = Math.min(buf.length, from + Math.ceil(dur * sr));
+		if (to - from < 2) return null;
+		const channels: Float32Array[] = [];
+		for (let c = 0; c < buf.numberOfChannels; c++) {
+			channels.push(timeStretch(buf.getChannelData(c).slice(from, to), rate, sr));
+		}
+		const length = channels[0]?.length ?? 0;
+		if (length < 1) return null;
+		const out = this.#ctx.createBuffer(channels.length, length, sr);
+		for (let c = 0; c < channels.length; c++) {
+			out.copyToChannel(channels[c] as Float32Array<ArrayBuffer>, c);
+		}
+		return out;
 	}
 
 	#stopTopUp(): void {

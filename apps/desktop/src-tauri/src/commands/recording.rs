@@ -223,6 +223,7 @@ pub async fn stop_recording(
                     has_microphone: artifacts.microphone_path.is_some(),
                     has_camera: artifacts.camera_path.is_some(),
                     camera_requested: artifacts.camera_requested,
+                    track_offsets: artifacts.track_offsets,
                 }),
             };
             let default_render_state = RenderState {
@@ -338,6 +339,18 @@ pub async fn save_recorded_camera(
     .await
     .map_err(|e| AppError::msg(format!("save_recorded_camera worker panicked: {e}")))??;
     log::info!("save_recorded_camera: wrote camera track");
+    Ok(())
+}
+
+/// Report the Unix-ms instant the preview WebView's MediaRecorder produced its
+/// first frame. The camera runs in another webview on its own start-up
+/// schedule, so this is the only way the session learns how far ahead of (or
+/// behind) video frame 0 the camera track begins.
+#[tauri::command]
+pub fn report_camera_start(started_at_unix_ms: u64, state: State<'_, AppState>) -> AppResult<()> {
+    state
+        .recording_manager
+        .report_camera_start(started_at_unix_ms);
     Ok(())
 }
 

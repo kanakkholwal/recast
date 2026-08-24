@@ -15,6 +15,7 @@ pub struct PlatformAudioSession {
 
 impl PlatformAudioSession {
     pub fn start(config: AudioCaptureConfig) -> Result<Self> {
+        config.start.mark();
         Ok(Self {
             config,
             started_at: Instant::now(),
@@ -45,6 +46,7 @@ pub struct PlatformMicrophoneSession {
 impl PlatformMicrophoneSession {
     pub fn start(config: MicrophoneCaptureConfig) -> Result<Self> {
         let _ = config.device_id.as_deref();
+        config.start.mark();
         Ok(Self {
             config,
             started_at: Instant::now(),

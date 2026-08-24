@@ -45,8 +45,9 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
 
-use crate::audio::wav::WavWriter;
+use crate::audio::wav::{SampleFormat, WavFormat, WavWriter};
 use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
+use crate::recording::clock::TrackStart;
 
 // Target PCM format we ask FFmpeg to emit + write into the WAV.
 // 48 kHz / 2 ch / 16-bit s16le is what every consumer of the
@@ -56,6 +57,14 @@ use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
 const PCM_SAMPLE_RATE: u32 = 48_000;
 const PCM_CHANNELS: u16 = 2;
 const PCM_BITS: u16 = 16;
+/// FFmpeg is told to emit exactly this (`-f s16le`), so the WAV header is a
+/// statement of fact rather than a guess about the device.
+const PCM_FORMAT: WavFormat = WavFormat {
+    sample_rate: PCM_SAMPLE_RATE,
+    channels: PCM_CHANNELS,
+    bits_per_sample: PCM_BITS,
+    format: SampleFormat::Int,
+};
 
 // -- System audio (loopback) -
 
@@ -95,7 +104,11 @@ impl PlatformAudioSession {
         {
             let sckit_path = config.output_path.clone();
             let sckit_pause = config.pause_flag.clone();
-            match super::macos_sckit::ScKitLoopback::try_start(sckit_path, sckit_pause) {
+            match super::macos_sckit::ScKitLoopback::try_start(
+                sckit_path,
+                sckit_pause,
+                config.start.clone(),
+            ) {
                 Ok(session) => {
                     return Ok(Self {
                         backend: LoopbackBackend::Sckit { session },
@@ -112,6 +125,7 @@ impl PlatformAudioSession {
 
         let output_path = config.output_path.clone();
         let pause_flag = config.pause_flag.clone();
+        let start = config.start.clone();
 
         match detect_loopback_source() {
             Some(source) => {
@@ -122,7 +136,14 @@ impl PlatformAudioSession {
                 let thread_handle = thread::Builder::new()
                     .name("recast-audio-loopback".into())
                     .spawn(move || {
-                        run_pcm_capture(output_path, source, pause_flag, flag_for_thread, label)
+                        run_pcm_capture(
+                            output_path,
+                            source,
+                            pause_flag,
+                            flag_for_thread,
+                            start,
+                            label,
+                        )
                     })
                     .context("failed to spawn loopback capture thread")?;
                 log::info!(
@@ -202,6 +223,7 @@ impl PlatformMicrophoneSession {
         let flag_for_thread = stop_flag.clone();
         let output_path = config.output_path.clone();
         let pause_flag = config.pause_flag.clone();
+        let start = config.start.clone();
         let source = resolve_microphone_source(&config.device_id);
 
         let source_summary = format!("{} '{}'", source.format, source.device);
@@ -213,6 +235,7 @@ impl PlatformMicrophoneSession {
                     source,
                     pause_flag,
                     flag_for_thread,
+                    start,
                     "microphone",
                 )
             })
@@ -255,6 +278,7 @@ fn run_pcm_capture(
     source: PcmSource,
     pause_flag: Arc<AtomicBool>,
     stop_flag: Arc<AtomicBool>,
+    start: TrackStart,
     label: &'static str,
 ) -> Result<PathBuf> {
     let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
@@ -296,7 +320,7 @@ fn run_pcm_capture(
         .take()
         .context("FFmpeg stdout pipe missing — cannot read PCM stream")?;
 
-    let mut writer = WavWriter::new(&output_path, PCM_SAMPLE_RATE, PCM_CHANNELS, PCM_BITS)
+    let mut writer = WavWriter::new(&output_path, PCM_FORMAT)
         .with_context(|| format!("failed to create {label} WAV writer"))?;
 
     // The child is owned by both threads (read loop + stop watcher) so
@@ -323,6 +347,7 @@ fn run_pcm_capture(
                 // blocks on a full output buffer; just suppress the
                 // WAV write to keep the file gap-free.
                 if !pause_flag.load(Ordering::Acquire) {
+                    start.mark();
                     if let Err(e) = writer.write_samples(&buf[..n]) {
                         log::error!("{label} WAV write failed: {e}");
                         break;

@@ -52,6 +52,8 @@ interface Props {
 	 *  camera was recorded. Forwarded to CameraOverlay; the overlay
 	 *  renders nothing when this is empty. */
 	cameraSrc?: string;
+	/** Milliseconds the camera track lags video frame 0 (measured at capture). */
+	cameraOffsetMs?: number;
 	onTimeUpdate: () => void;
 	/** Return `true` if the host looped (moved the transport) instead of stopping. */
 	onEnded: () => boolean | void;
@@ -85,6 +87,7 @@ let {
 	video,
 	cursorPath,
 	cameraSrc = "",
+	cameraOffsetMs = 0,
 	onTimeUpdate,
 	onEnded,
 	onLoadedMetadata,
@@ -1577,6 +1580,7 @@ const isAnnotationActive = $derived(
 			{cameraSrc}
 			targetEl={previewRectEl}
 			previewTime={smoothPreviewTime ?? 0}
+			offsetMs={cameraOffsetMs}
 		/>
 		<CaptionOverlay {store} previewTime={smoothPreviewTime ?? undefined} />
 	</div>

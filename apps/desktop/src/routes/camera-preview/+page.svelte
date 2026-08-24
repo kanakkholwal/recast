@@ -16,6 +16,7 @@ import { onMount } from "svelte";
 import { CameraNotFoundError, openCameraStream } from "@recast/editor/lib/camera/browser-devices";
 import {
 	finishCameraFlush,
+	reportCameraStart,
 	saveRecordedCamera,
 	setWindowAspectRatio,
 	updateCameraPreviewState,
@@ -228,6 +229,19 @@ function startRecorder() {
 	// take in one chunk (bounds memory on a long recording).
 	rec.start(1000);
 	mediaRecorder = rec;
+	reportRecorderStart();
+}
+
+// The camera track's t=0 is the first frame MediaRecorder actually encodes, not
+// the moment start() returned. rVFC lands on that frame; without it we fall back
+// to now, which is at most one frame interval early.
+function reportRecorderStart() {
+	const el = videoEl as (HTMLVideoElement & { requestVideoFrameCallback?: unknown }) | null;
+	if (el && typeof el.requestVideoFrameCallback === "function") {
+		el.requestVideoFrameCallback(() => void reportCameraStart(Date.now()).catch(() => {}));
+		return;
+	}
+	void reportCameraStart(Date.now()).catch(() => {});
 }
 
 // Stop the recorder, assemble the blob, and deliver it to Rust. ALWAYS calls

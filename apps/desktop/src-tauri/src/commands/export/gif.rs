@@ -9,8 +9,8 @@ use parking_lot::Mutex;
 use tauri::AppHandle;
 
 use super::cuts_speed::{
-    build_cut_select_expr, build_speed_segments, build_speed_setpts_expr, collect_export_cuts,
-    has_speed_change,
+    build_cut_select_expr, build_speed_setpts_expr, collect_export_cuts, has_speed_change,
+    resolve_speed_segments,
 };
 use super::progress::{is_ffmpeg_progress_key_line, parse_ffmpeg_progress_seconds, ProgressBand};
 use super::state::{emit_export_state, ExportStateEvent};
@@ -219,6 +219,8 @@ pub(crate) struct GifPassParams<'a> {
     pub duration: f64,
     pub source_duration: f64,
     pub render_state: &'a RenderState,
+    /// The editor's resolved kept-timeline, when the payload carried one.
+    pub time_map: Option<&'a Vec<super::cuts_speed::TimeSpanWire>>,
     pub gif_settings: &'a GifSettings,
     /// The profile's default GIF fps (used when the settings don't override it).
     pub gif_fps: u32,
@@ -274,7 +276,8 @@ pub(crate) async fn run_gif_pass(p: GifPassParams<'_>) -> Result<GifPassOutput, 
     // downstream `fps=` resamples the warped PTS to CFR.
     let gif_cut_select: Option<String> = {
         let export_cuts = collect_export_cuts(p.render_state, p.trim_start, p.trim_end);
-        let gif_speed_segments = build_speed_segments(
+        let gif_speed_segments = resolve_speed_segments(
+            p.time_map,
             p.duration,
             &export_cuts,
             &p.render_state.split_points,

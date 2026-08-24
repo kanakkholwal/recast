@@ -32,15 +32,41 @@ export function keepInWindow<T extends { startSec: number; durationSec: number }
 	return resident.filter((r) => r.startSec + r.durationSec > startSec && r.startSec < endSec);
 }
 
+/**
+ * File-time range to decode for a timeline-time range. `offsetSec` is how far
+ * this track's first sample sits after video frame 0, so file time is timeline
+ * time minus the offset, clamped at the start of the file.
+ */
+export function fileRangeFor(
+	fromSec: number,
+	toSec: number,
+	offsetSec: number,
+): { start: number; end: number } {
+	const shift = Number.isFinite(offsetSec) ? offsetSec : 0;
+	const start = Math.max(0, fromSec - shift);
+	return { start, end: Math.max(start, toSec - shift) };
+}
+
 export class AudioChunkStore {
 	#input: Input;
 	#sink: AudioBufferSink;
-	/** Resident decoded chunks, sorted by `startSec` (may have gaps). */
+	/** Resident decoded chunks in TIMELINE time, sorted by `startSec`. */
 	#resident: Resident[] = [];
+	/** Seconds this track's first sample lands after video frame 0. */
+	#offsetSec = 0;
 
 	private constructor(input: Input, sink: AudioBufferSink) {
 		this.#input = input;
 		this.#sink = sink;
+	}
+
+	/** Place this track on the timeline. Changing it invalidates what is
+	 *  resident, since chunks are stored already translated. */
+	setOffsetSec(offsetSec: number): void {
+		const next = Number.isFinite(offsetSec) ? offsetSec : 0;
+		if (next === this.#offsetSec) return;
+		this.#offsetSec = next;
+		this.#resident = [];
 	}
 
 	/** Open the source and its primary audio track. Null when there's no audio
@@ -73,9 +99,11 @@ export class AudioChunkStore {
 	/** Decode any part of source `[from, to]` not already resident. */
 	async ensureRange(from: number, to: number, signal?: AbortSignal): Promise<void> {
 		for (const gap of missingRanges(this.chunks(), from, to)) {
-			for await (const w of this.#sink.buffers(gap.start, gap.end)) {
+			const file = fileRangeFor(gap.start, gap.end, this.#offsetSec);
+			if (file.end <= file.start) continue;
+			for await (const w of this.#sink.buffers(file.start, file.end)) {
 				if (signal?.aborted) return;
-				this.#insert(w.timestamp, w.duration, w.buffer);
+				this.#insert(w.timestamp + this.#offsetSec, w.duration, w.buffer);
 			}
 		}
 	}

@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::recording::clock::TrackStart;
+
 /// Configuration for system/loopback audio capture.
 #[derive(Debug, Clone)]
 pub struct AudioCaptureConfig {
@@ -15,6 +17,9 @@ pub struct AudioCaptureConfig {
     /// When set, capture continues draining the device but stops writing
     /// samples — keeps the WAV gap-free across recording pauses.
     pub pause_flag: Arc<AtomicBool>,
+    /// Marked when the first PCM sample is written, so the muxer can align this
+    /// track against the video's own start instant.
+    pub start: TrackStart,
 }
 
 /// Handle to a running system audio capture session.
@@ -53,6 +58,8 @@ pub struct MicrophoneCaptureConfig {
     /// When set, capture continues draining the device but stops writing
     /// samples — keeps the WAV gap-free across recording pauses.
     pub pause_flag: Arc<AtomicBool>,
+    /// Marked when the first PCM sample is written; see [`AudioCaptureConfig::start`].
+    pub start: TrackStart,
 }
 
 /// Handle to a running microphone capture session.

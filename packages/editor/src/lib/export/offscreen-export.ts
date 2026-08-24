@@ -27,13 +27,7 @@ import {
 	type VideoEncodingConfig,
 } from "@recast/media/mediabunny";
 import { type MediaRef, type Region, toMediaRef } from "@recast/media";
-import {
-	type AudioSpan,
-	applyFade,
-	applyGain,
-	planAudioSpans,
-	resampleLinear,
-} from "./audio-export";
+import { type AudioSpan, applyFade, applyGain, planAudioSpans, timeStretch } from "./audio-export";
 import { RenderCore, type RenderPass, type RenderPassContext } from "../../components/render-core";
 import { WebGL2Backend } from "../../components/webgl2-backend";
 import type { FrameGeometry, FrameInput } from "../../components/frame-params";
@@ -74,6 +68,10 @@ export interface CameraExportInputs {
 	mirror: boolean;
 	/** Effective placement at original time `t` (base → keyframes → zoom-follow). */
 	placementAt: (originalSec: number) => CameraPlacement;
+	/** Milliseconds the camera track starts after video frame 0, measured at
+	 *  capture. Without it the bubble is sampled at the screen's timestamps and
+	 *  the face lags the action by however long the recorder took to come up. */
+	offsetMs?: number;
 }
 
 export interface OffscreenExportOptions {
@@ -189,7 +187,7 @@ async function encodeAudioSpans(
 				const channels: Float32Array[] = [];
 				for (let c = 0; c < buffer.numberOfChannels; c++) {
 					const raw = buffer.getChannelData(c).subarray(from, to);
-					const warped = resampleLinear(new Float32Array(raw), span.rate);
+					const warped = timeStretch(new Float32Array(raw), span.rate, buffer.sampleRate);
 					applyGain(warped, gain);
 					applyFade(warped, buffer.sampleRate, totalOutputSec, fadeIn, fadeOut, outCursor);
 					channels.push(warped);
@@ -338,11 +336,14 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 			}
 			return scene;
 		};
-		function* sampleTimes(): Generator<number> {
-			for (let i = 0; i < frames; i++) yield Math.max(0, sceneAt(i).originalSec);
+		function* sampleTimes(shiftSec = 0): Generator<number> {
+			for (let i = 0; i < frames; i++) {
+				yield Math.max(0, sceneAt(i).originalSec - shiftSec);
+			}
 		}
 		const mainSamples = sink.samplesAtTimestamps(sampleTimes());
-		const camSamples = camSink ? camSink.samplesAtTimestamps(sampleTimes()) : null;
+		const camShiftSec = (opts.camera?.offsetMs ?? 0) / 1000;
+		const camSamples = camSink ? camSink.samplesAtTimestamps(sampleTimes(camShiftSec)) : null;
 		// Releases the decoders when the loop exits early (abort, GPU loss).
 		iterators.push(mainSamples);
 		if (camSamples) iterators.push(camSamples);

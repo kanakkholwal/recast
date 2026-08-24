@@ -11,6 +11,7 @@ export { createEditorStore } from "./stores/editor-store.svelte";
 export type { EditorStore } from "./stores/editor-store.svelte";
 
 export * from "./lib/editor/render-state";
+export * from "./lib/editor/track-offsets";
 export * from "./lib/editor/services";
 export { PANEL_TABS, WEB_PANEL_TABS } from "./lib/editor/panel-tabs";
 export type { PanelTab } from "./lib/editor/panel-tabs";

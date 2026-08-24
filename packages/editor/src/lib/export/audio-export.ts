@@ -3,12 +3,14 @@
  * warps it onto the OUTPUT timeline with the same regions the preview plays —
  * trim, cuts and per-segment speed — so the two can't drift apart.
  *
- * Speed resamples rather than time-stretches, which shifts pitch. That is
- * deliberate: the preview does the same (`AudioBufferSourceNode.playbackRate`),
- * and matching it is the parity requirement.
+ * Speed is time-stretched pitch-preserving (see `timeStretch`), matching the
+ * preview and the FFmpeg export's `atempo`.
  */
 
 import type { Region } from "@recast/media";
+import { buildTimeMap } from "../timeline/time-map";
+
+export { resampleLinear, timeStretch } from "../playback/time-stretch";
 
 /** One contiguous stretch of source audio and where it lands in the output. */
 export interface AudioSpan {
@@ -21,48 +23,33 @@ export interface AudioSpan {
 
 const EPS = 1e-6;
 
-/** Lay the kept regions end to end on the output timeline. */
+/**
+ * Lay the kept regions end to end on the output timeline.
+ *
+ * A projection of `buildTimeMap`, not a second implementation: this used to lay
+ * out the output axis itself, which made it one of several places that had to
+ * agree about what speed does to duration.
+ */
 export function planAudioSpans(regions: readonly Region[]): AudioSpan[] {
-	const spans: AudioSpan[] = [];
-	let outCursor = 0;
-	for (const r of regions) {
-		const rate = r.speed && r.speed > 0 ? r.speed : 1;
-		const srcDur = Math.max(0, r.end - r.start);
-		if (srcDur <= EPS) continue;
-		const outDur = srcDur / rate;
-		spans.push({
-			sourceStart: r.start,
-			sourceEnd: r.end,
-			outputStart: outCursor,
-			outputEnd: outCursor + outDur,
-			rate,
-		});
-		outCursor += outDur;
-	}
-	return spans;
+	const map = buildTimeMap(
+		regions.map((r) => ({
+			origStart: r.start,
+			origEnd: r.end,
+			speed: r.speed ?? 1,
+		})),
+	);
+	return map.spans.map((s) => ({
+		sourceStart: s.origStart,
+		sourceEnd: s.origEnd,
+		outputStart: s.outStart,
+		outputEnd: s.outEnd,
+		rate: s.speed,
+	}));
 }
 
 /** Total output seconds the planned spans occupy. */
 export function audioOutputDuration(spans: readonly AudioSpan[]): number {
 	return spans.length === 0 ? 0 : spans[spans.length - 1].outputEnd;
-}
-
-/**
- * Resample `input` by `rate` with linear interpolation: `rate` 2 halves the
- * length (plays twice as fast). Mirrors `playbackRate`, pitch shift included.
- */
-export function resampleLinear(input: Float32Array, rate: number): Float32Array {
-	if (!(rate > 0) || Math.abs(rate - 1) < EPS) return input;
-	const outLength = Math.max(0, Math.floor(input.length / rate));
-	const out = new Float32Array(outLength);
-	for (let i = 0; i < outLength; i++) {
-		const pos = i * rate;
-		const i0 = Math.floor(pos);
-		const i1 = Math.min(i0 + 1, input.length - 1);
-		const frac = pos - i0;
-		out[i] = input[i0] * (1 - frac) + input[i1] * frac;
-	}
-	return out;
 }
 
 /**

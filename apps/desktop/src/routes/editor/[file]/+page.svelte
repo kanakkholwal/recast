@@ -25,7 +25,7 @@ import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
 import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
-import { agentSession, Editor } from "@recast/editor";
+import { agentSession, Editor, resolveTrackOffsets } from "@recast/editor";
 import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
 import BranchReviewPanel from "@recast/editor/components/BranchReviewPanel.svelte";
 import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-session.tauri";
@@ -86,6 +86,7 @@ import {
 	buildCaptionExport,
 	buildCloudCaptionTranscript,
 	buildExportRenderState,
+	exportTimeMap,
 	findMissingImageAnnotations,
 	hasBlurUnderZoom,
 } from "@recast/editor/lib/services/export";
@@ -101,7 +102,11 @@ import {
 	createTileProvider,
 	type TileProvider,
 } from "@recast/editor/lib/timeline/filmstrip-source";
-import { originalToOutput, outputToOriginal } from "@recast/editor/lib/timeline/time-map";
+import {
+	originalToOutput,
+	outputToOriginal,
+	toRegions,
+} from "@recast/editor/lib/timeline/time-map";
 import { settingsHref } from "../../(app)/settings/settings-tabs";
 import { basename } from "./editor-page.logic";
 import { DEFAULT_LAYOUT, LAYOUT_KEY, parseLayout } from "@recast/editor/editor-shell.logic";
@@ -223,6 +228,9 @@ let cameraPath = $state<string | null>(null);
 // Why the camera track is or isn't there; the path alone can't tell the editor
 // whether the camera was off or the project simply predates camera capture.
 let cameraCapture = $state<CameraCapture>("legacy");
+// Measured at capture: how far each companion track lags video frame 0. The
+// preview has to apply the same shift the export does or the two disagree.
+let trackOffsets = $state(resolveTrackOffsets(undefined));
 let cameraSrc = $state("");
 let documentPath = $state("");
 let isLoading = $state(true);
@@ -528,15 +536,11 @@ onDestroy(() => {
 onDestroy(disposeTileProvider);
 
 // Kept audio regions and current OUTPUT time: what the Web Audio engine
-// schedules against. Regions are the kept SEGMENTS (trim − cuts, split-bounded)
-// each carrying its clip speed, so audio speeds up/down with the segment.
-// Output time is the warped axis (store.timeMap), matching the picture clock.
+// schedules against. Read straight off the time map rather than rebuilt from
+// segments + a speed lookup, so the audio schedule cannot disagree with the
+// axis the picture clock and the export both use.
 function audioRegions() {
-	return store.segments.map((s) => ({
-		start: s.start,
-		end: s.end,
-		speed: store.segmentSpeedAt(s.start),
-	}));
+	return toRegions(store.timeMap);
 }
 function outputNow() {
 	return originalToOutput(store.timeMap, store.currentTime);
@@ -550,8 +554,8 @@ async function ensureAudioEngine() {
 	const gen = audioEngineGen;
 	try {
 		const eng = await AudioTimelineEngine.create([
-			{ src: systemAudioSrc, kind: "system" },
-			{ src: micAudioSrc, kind: "mic" },
+			{ src: systemAudioSrc, kind: "system", offsetSec: trackOffsets.audioMs / 1000 },
+			{ src: micAudioSrc, kind: "mic", offsetSec: trackOffsets.microphoneMs / 1000 },
 		]);
 		// Decoding both tracks takes seconds on a long recording, and the file can
 		// change or the editor close in that window. Adopting a stale engine
@@ -863,6 +867,7 @@ async function loadDocument() {
 	cursorPath = null;
 	cameraPath = null;
 	cameraCapture = "legacy";
+	trackOffsets = resolveTrackOffsets(undefined);
 	cameraSrc = "";
 	videoEl?.pause();
 	// Tear down the previous file's engine; it rebuilds on first play. The bump
@@ -924,6 +929,7 @@ async function loadDocument() {
 		waveformRequested = false;
 		systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
 		micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
+		trackOffsets = resolveTrackOffsets(document.trackOffsets);
 		cameraPath = document.cameraPath ?? null;
 		// Absent from an older backend: unknowable, so `legacy` — never "off".
 		cameraCapture = document.cameraCapture ?? "legacy";
@@ -1205,6 +1211,10 @@ async function handleExport() {
 			fps: store.exportFormat === "gif" ? undefined : store.exportFps,
 			// No-op unless a transcript exists and caption options are enabled.
 			captions: buildCaptionExport(store),
+			// The axis the preview just played. Sending it makes the backend
+			// replay this exact timeline rather than re-deriving one from cuts,
+			// splits and speed anchors and hoping the two agree.
+			timeMap: exportTimeMap(store.timeMap),
 		};
 
 		// Performance snapshot for the `export_completed` event — source metrics the
@@ -1237,6 +1247,7 @@ async function handleExport() {
 			const job = await buildExportJob(store, {
 				videoUrl: videoSrc,
 				cameraUrl: cameraSrc,
+				cameraOffsetMs: trackOffsets.cameraMs,
 				quality: store.exportQuality as ExportQuality,
 				fps: renderFps,
 			});
@@ -1915,6 +1926,7 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
       {videoSrc}
       {cursorPath}
       {cameraSrc}
+      cameraOffsetMs={trackOffsets.cameraMs}
       {cameraPath}
       {cameraCapture}
       {audioEngine}

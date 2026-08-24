@@ -10,12 +10,13 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::error::{AppError, AppResult};
+use super::export::align::{audio_align_filter, camera_input_offset_secs};
 use super::export::camera::{build_camera_follow_exprs, camera_bubble_rect, camera_shadow_geom};
 use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
     append_cut_speed_stage, build_speed_segments, collect_export_cuts, has_speed_change,
-    warped_output_duration,
+    resolve_speed_segments, warped_output_duration,
 };
 use super::export::gif::{run_gif_palette_prepass, run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
@@ -33,6 +34,7 @@ use super::types::{
     AppState, CameraCapture, EditorDocument, ExportRequest, GifSettings, VideoMetadata,
 };
 use crate::project::reader::ProjectOpenResult;
+use crate::recording::TrackOffsets;
 #[allow(unused_imports)]
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
@@ -130,6 +132,16 @@ enum AudioKind {
     Mic,
 }
 
+/// This track's measured lag behind video frame 0, or `None` when it was never
+/// measured (pre-offset bundles) or is already muxed into the source video.
+fn offset_for(kind: AudioKind, offsets: TrackOffsets) -> Option<i64> {
+    match kind {
+        AudioKind::Source => None,
+        AudioKind::System => offsets.audio_ms,
+        AudioKind::Mic => offsets.microphone_ms,
+    }
+}
+
 /// Effective linear gain for one input: master × its per-source gain, 0 when
 /// muted. Mirrors the preview's `effectiveTrackVolume` so preview and export
 /// apply the same mix.
@@ -153,6 +165,7 @@ fn append_audio_to_complex(
     settings: &AudioSettings,
     trim_start: f64,
     duration: f64,
+    offsets: TrackOffsets,
 ) -> Option<(String, String)> {
     if audio_inputs.is_empty() || settings.muted || settings.volume <= 0.0 {
         return None;
@@ -161,10 +174,10 @@ fn append_audio_to_complex(
     // Drop fully-silenced sources: leaving a muted input in the amix would let
     // it average the others back down. This is the fix for per-source mute/gain
     // being ignored at export.
-    let live: Vec<(usize, f64)> = audio_inputs
+    let live: Vec<(usize, f64, AudioKind)> = audio_inputs
         .iter()
-        .map(|&(idx, kind)| (idx, effective_audio_gain(settings, kind)))
-        .filter(|&(_, gain)| gain > 0.0)
+        .map(|&(idx, kind)| (idx, effective_audio_gain(settings, kind), kind))
+        .filter(|&(_, gain, _)| gain > 0.0)
         .collect();
     if live.is_empty() {
         return None;
@@ -177,13 +190,16 @@ fn append_audio_to_complex(
         .collect();
     let mut labels = Vec::new();
 
-    for (i, (input_index, gain)) in live.iter().enumerate() {
+    for (i, (input_index, gain, kind)) in live.iter().enumerate() {
         let label = if live.len() == 1 {
             "aout".to_string()
         } else {
             format!("aud{i}")
         };
         let mut filters = Vec::new();
+        if let Some(align) = audio_align_filter(offset_for(*kind, offsets)) {
+            filters.push(align);
+        }
         if duration > 0.0 {
             filters.push(format!(
                 "atrim=start={:.3}:duration={:.3}",
@@ -370,6 +386,12 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
                 Some(_) => CameraCapture::Off,
                 None => CameraCapture::Legacy,
             },
+            track_offsets: project
+                .metadata
+                .media
+                .as_ref()
+                .map(|m| m.track_offsets)
+                .unwrap_or_default(),
             metadata: VideoMetadata {
                 duration: media_duration,
                 width: project.metadata.video.width,
@@ -395,6 +417,7 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
         // A plain video opened directly: no camera was recorded for it, which is
         // what `Off` says. `Legacy` would claim it's an old Recast bundle.
         camera_capture: CameraCapture::Off,
+        track_offsets: Default::default(),
         metadata: metadata.clone(),
         render_state: RenderState {
             trim_end: metadata.duration,
@@ -1039,6 +1062,48 @@ mod audio_mix_tests {
     use crate::render::node_types::AudioSettings;
 
     #[test]
+    fn measured_track_offsets_align_each_source_before_it_is_trimmed() {
+        let s = AudioSettings::default();
+        let offsets = TrackOffsets {
+            audio_ms: Some(240),
+            microphone_ms: Some(-180),
+            camera_ms: None,
+        };
+        let (complex, _) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            2.0,
+            10.0,
+            offsets,
+        )
+        .expect("audio graph");
+        // A late loopback track is padded, an early mic track has its head cut.
+        assert!(complex.contains("adelay=240:all=1"), "{complex}");
+        assert!(complex.contains("atrim=start=0.180"), "{complex}");
+        // Alignment has to precede the edit trim: trim_start is video time, so
+        // trimming an unaligned track cuts the wrong samples.
+        let align = complex.find("adelay=240").expect("align");
+        let trim = complex.find("atrim=start=2.000").expect("edit trim");
+        assert!(align < trim, "alignment must come first: {complex}");
+    }
+
+    #[test]
+    fn an_unmeasured_project_keeps_the_pre_offset_graph() {
+        let s = AudioSettings::default();
+        let (complex, _) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0,
+            TrackOffsets::default(),
+        )
+        .expect("audio graph");
+        assert!(!complex.contains("adelay"), "{complex}");
+    }
+
+    #[test]
     fn per_source_gain_reaches_the_graph() {
         let s = AudioSettings {
             system_volume: 100.0,
@@ -1051,6 +1116,7 @@ mod audio_mix_tests {
             &s,
             0.0,
             10.0,
+            TrackOffsets::default(),
         )
         .expect("audio graph");
         assert_eq!(map, "[aout]");
@@ -1073,6 +1139,7 @@ mod audio_mix_tests {
             &s,
             0.0,
             10.0,
+            TrackOffsets::default(),
         )
         .expect("system still audible");
         // Only system survives → single branch, no amix, mic input absent.
@@ -1093,7 +1160,8 @@ mod audio_mix_tests {
             &[(1, AudioKind::System), (2, AudioKind::Mic)],
             &s,
             0.0,
-            10.0
+            10.0,
+            TrackOffsets::default(),
         )
         .is_none());
     }
@@ -1110,14 +1178,22 @@ mod audio_mix_tests {
             &s,
             0.0,
             10.0,
+            TrackOffsets::default(),
         )
         .expect("audio graph");
         assert!(complex.contains("loudnorm=I=-14"));
         assert_eq!(map, "[aoutn]"); // normalize retargets the map to the loudnorm output
                                     // Off by default: no loudnorm, map stays [aout].
         let off = AudioSettings::default();
-        let (c2, m2) = append_audio_to_complex(None, &[(1, AudioKind::System)], &off, 0.0, 10.0)
-            .expect("graph");
+        let (c2, m2) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System)],
+            &off,
+            0.0,
+            10.0,
+            TrackOffsets::default(),
+        )
+        .expect("graph");
         assert!(!c2.contains("loudnorm"));
         assert_eq!(m2, "[aout]");
     }
@@ -1200,8 +1276,15 @@ mod audio_mix_tests {
             mic_volume: 0.0,
             ..AudioSettings::default()
         };
-        let (complex, _) = append_audio_to_complex(None, &[(0, AudioKind::Source)], &s, 0.0, 10.0)
-            .expect("source audio");
+        let (complex, _) = append_audio_to_complex(
+            None,
+            &[(0, AudioKind::Source)],
+            &s,
+            0.0,
+            10.0,
+            TrackOffsets::default(),
+        )
+        .expect("source audio");
         assert!(complex.contains("volume=0.5000"));
     }
 
@@ -1810,6 +1893,13 @@ pub(crate) async fn run_mux_job(
     }
 
     let project = open_project_if_needed(&input_path)?;
+    // Measured at capture: how far each companion track lags video frame 0.
+    // Missing on pre-offset bundles, which then align at 0 as they always did.
+    let track_offsets = project
+        .as_ref()
+        .and_then(|p| p.metadata.media.as_ref())
+        .map(|m| m.track_offsets)
+        .unwrap_or_default();
     let source_video = project
         .as_ref()
         .map(|value| value.recording_path.clone())
@@ -1882,13 +1972,15 @@ pub(crate) async fn run_mux_job(
         &request.render_state.audio_settings,
         trim_start,
         duration,
+        track_offsets,
     )
     .map(|(complex, map)| {
         filter_complex = Some(complex);
         map
     });
     let export_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
-    let speed_segments = build_speed_segments(
+    let speed_segments = resolve_speed_segments(
+        request.time_map.as_ref(),
         duration,
         &export_cuts,
         &request.render_state.split_points,
@@ -2192,6 +2284,13 @@ pub(crate) async fn run_export_job(
 
     let input_path = PathBuf::from(&request.input_path);
     let project = open_project_if_needed(&input_path)?;
+    // Measured at capture: how far each companion track lags video frame 0.
+    // Missing on pre-offset bundles, which then align at 0 as they always did.
+    let track_offsets = project
+        .as_ref()
+        .and_then(|p| p.metadata.media.as_ref())
+        .map(|m| m.track_offsets)
+        .unwrap_or_default();
     let source_video = project
         .as_ref()
         .map(|value| value.recording_path.clone())
@@ -2301,7 +2400,8 @@ pub(crate) async fn run_export_job(
         None
     } else {
         let scene_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
-        let windows: Vec<(f64, f64)> = build_speed_segments(
+        let windows: Vec<(f64, f64)> = resolve_speed_segments(
+            request.time_map.as_ref(),
             duration,
             &scene_cuts,
             &request.render_state.split_points,
@@ -2502,6 +2602,13 @@ pub(crate) async fn run_export_job(
         .as_ref()
         .map(|_| 1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize);
     if let Some((ref path, _, _, _, _)) = camera_bubble {
+        // The webcam recorder starts in another webview, so its track begins at
+        // its own instant. Shift the whole input rather than patching both
+        // branches of the overlay graph; negative PTS frames are dropped, which
+        // is exactly the head-trim an early camera needs.
+        if let Some(shift) = camera_input_offset_secs(track_offsets.camera_ms) {
+            args.extend(["-itsoffset".to_string(), format!("{shift:.3}")]);
+        }
         args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
     }
     let camera_mask_input_index = camera_mask_path.as_ref().map(|_| {
@@ -2768,6 +2875,7 @@ pub(crate) async fn run_export_job(
             duration,
             source_duration,
             render_state: &request.render_state,
+            time_map: request.time_map.as_ref(),
             gif_settings: &gif_settings,
             gif_fps: profile.gif_fps,
             palette_input_index,
@@ -2814,6 +2922,7 @@ pub(crate) async fn run_export_job(
             &request.render_state.audio_settings,
             trim_start,
             duration,
+            track_offsets,
         )
         .map(|(new_complex, map)| {
             filter_complex_after_cursor = Some(new_complex);
@@ -2832,7 +2941,8 @@ pub(crate) async fn run_export_job(
     // Per-segment speed (Cap-style) warps the survivors' timing on top of the cut
     // drop — same tail-of-chain point, so upstream overlays stay correct. The
     // segments and their warped duration mirror the frontend time-map (parity).
-    let speed_segments = build_speed_segments(
+    let speed_segments = resolve_speed_segments(
+        request.time_map.as_ref(),
         duration,
         &export_cuts,
         &request.render_state.split_points,
