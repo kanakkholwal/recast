@@ -336,11 +336,21 @@ jobs:
       # and samples. Encode/decode timing bugs (frame drops, A/V drift, wrong
       # duration) are invisible to every other suite here. Uses the sidecars
       # downloaded above, so it costs no extra setup.
-      - name: Engine test harness (recast-testkit)
+      - name: Engine crates
         if: ${{ !matrix.platform.cross }}
         env:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
-        run: cargo test --manifest-path crates/Cargo.toml -p recast-testkit --release
+        run: cargo test --manifest-path crates/Cargo.toml --workspace --release
+
+      # The compositor and its leaf crates MUST keep compiling to wasm32: the
+      # whole plan rests on one compositor serving native and the browser
+      # preview. A dependency that pulls in std::fs or tokio breaks this and
+      # nothing else would notice until the preview cutover.
+      - name: Engine crates compile to wasm32
+        if: ${{ matrix.platform.name == 'windows-x64' }}
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -p recast-compositor -p recast-scene -p recast-color -p recast-time
 
       # Golden frames pin what the CURRENT export compositor renders, so the wgpu
       # rewrite has an exact target. Windows only: the fixtures are byte-compared,
@@ -358,3 +368,9 @@ jobs:
       - name: Clippy
         continue-on-error: true
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --target ${{ matrix.platform.rust_target }}
+
+      # The engine crates are new code held to a stricter bar than the app, so
+      # this one blocks.
+      - name: Clippy (engine crates)
+        if: ${{ !matrix.platform.cross }}
+        run: cargo clippy --manifest-path crates/Cargo.toml --workspace --all-targets -- -D warnings

@@ -9,7 +9,11 @@ edition = "2021"
 # Reflects the real minimum: the code uses APIs stabilized in 1.81/1.82
 # (PanicHookInfo, etc.). CI builds on stable, so this only documents the floor
 # and keeps clippy's `incompatible_msrv` honest.
-rust-version = "1.82.0"
+# The VERIFIED floor, not a minimised one: cargo checks each dependency's MSRV
+# against the installed rustc, and the tree already needs far newer than the
+# 1.82 this used to claim. Raise when a dependency forces it (kstring 2.0.4 is
+# pinned back at 2.0.2 for exactly that reason).
+rust-version = "1.93.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,6 +32,10 @@ path = "src/main.rs"
 
 [dev-dependencies]
 recast-testkit = { path = "../../../crates/recast-testkit" }
+# Both engines have to be reachable from one test binary to diff them.
+recast-compositor = { path = "../../../crates/recast-compositor" }
+recast-gpu = { path = "../../../crates/recast-gpu" }
+wgpu = { version = "=30.0.1", default-features = false, features = ["dx12", "wgsl"] }
 # Goldens are PNGs, not raw RGBA: 5.7 MB of committed binary per fixture set is
 # not worth the decode cost saved.
 image = "0.25.10"
