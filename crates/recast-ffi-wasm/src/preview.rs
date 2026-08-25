@@ -1,4 +1,6 @@
-use recast_compositor::{BackgroundImage, FrameInputs, LayerInput, Session, SourceGeometry};
+use recast_compositor::{
+    BackgroundImage, CursorSprite, FrameInputs, LayerInput, Session, SourceGeometry,
+};
 use recast_gpu::{GpuContext, GpuOptions, OUTPUT_FORMAT};
 use recast_scene::LayerId;
 use wasm_bindgen::prelude::*;
@@ -7,6 +9,7 @@ use crate::backend::{backend_name, backends_for};
 use crate::cursor_io::parse_track;
 use crate::ring::pick_slot;
 use crate::scene_io::parse_scene;
+use crate::slot::{parse_slot, slot_at};
 
 /// Slots per layer when the host has not sized the ring. Matches the WebGL
 /// render worker this replaces.
@@ -62,6 +65,10 @@ pub struct PreviewEngine {
     canvas_size: Option<(u32, u32)>,
     frames: Vec<(LayerId, LayerRing)>,
     background: Option<LayerTexture>,
+    /// Indexed by `CursorSlot::index`. An empty slot draws the dot instead.
+    cursor_sprites: [Option<LayerTexture>; 4],
+    /// Normalised hotspot per slot, parallel to `cursor_sprites`.
+    cursor_hotspots: [[f32; 2]; 4],
 }
 
 #[wasm_bindgen]
@@ -120,6 +127,8 @@ impl PreviewEngine {
             canvas_size: None,
             frames: Vec::new(),
             background: None,
+            cursor_sprites: [None, None, None, None],
+            cursor_hotspots: [[0.5, 0.5]; 4],
         })
     }
 
@@ -142,54 +151,36 @@ impl PreviewEngine {
     }
 
     /// Where the pointer sits at `output_time`, in CANVAS PIXELS, as
-    /// `[x, y, alpha, scale, pressed, right, dragging, hlX, hlY, hlAlpha]`, or
-    /// an empty array when there is nothing to draw.
+    /// `[x, y, alpha, spritePx, dotRadiusPx, slot, hlX, hlY, hlRadiusPx,
+    /// hlAlpha]`, or an empty array when there is nothing to draw.
     ///
-    /// Canvas pixels rather than source uv because the zoom and the card rect
-    /// are applied here, from the same numbers the shader uses; doing it in
-    /// JavaScript would be a second evaluator to keep in step.
+    /// The engine draws the pointer itself; this exists so the host can place a
+    /// DOM overlay on top (a tooltip, a hit target) without re-deriving the
+    /// position from the scene.
     #[wasm_bindgen(js_name = cursorAt)]
     pub fn cursor_at(&self, output_time: f64) -> Vec<f64> {
-        let params = self.session.evaluate(output_time);
-        let Some(cursor) = params.cursor else {
+        let Some(cursor) = self.session.evaluate(output_time).cursor_draw else {
             return Vec::new();
         };
-        let Some(screen) = self.session.screen_layer() else {
-            return Vec::new();
+        let (hl_x, hl_y, hl_radius, hl_alpha) = match cursor.highlight {
+            Some(h) => (
+                f64::from(h.x),
+                f64::from(h.y),
+                f64::from(h.radius_px),
+                f64::from(h.alpha),
+            ),
+            None => (0.0, 0.0, 0.0, 0.0),
         };
-        let Some(card) = params.layers.iter().find(|l| l.id == screen) else {
-            return Vec::new();
-        };
-        let Some(inverse) = card.transform.invert() else {
-            return Vec::new();
-        };
-
-        let place = |x: f64, y: f64| {
-            let (u, v) = inverse.apply(x as f32, y as f32);
-            (
-                f64::from(card.dest.x + u * card.dest.w),
-                f64::from(card.dest.y + v * card.dest.h),
-            )
-        };
-        let (x, y) = place(cursor.x, cursor.y);
-        let (hl_x, hl_y, hl_alpha) = match cursor.highlight {
-            Some(highlight) => {
-                let (x, y) = place(highlight.x, highlight.y);
-                (x, y, highlight.alpha)
-            }
-            None => (0.0, 0.0, 0.0),
-        };
-
         vec![
-            x,
-            y,
-            cursor.alpha,
-            cursor.scale,
-            f64::from(u8::from(cursor.pressed)),
-            f64::from(u8::from(cursor.right)),
-            f64::from(u8::from(cursor.dragging)),
+            f64::from(cursor.x),
+            f64::from(cursor.y),
+            f64::from(cursor.alpha),
+            f64::from(cursor.sprite_px),
+            f64::from(cursor.dot_radius_px),
+            cursor.slot.index() as f64,
             hl_x,
             hl_y,
+            hl_radius,
             hl_alpha,
         ]
     }
@@ -362,6 +353,62 @@ impl PreviewEngine {
         self.background = None;
     }
 
+    /// Uploads one pointer sprite. `slot` is "rest", "press", "rightPress" or
+    /// "drag"; a slot with no sprite draws the dot, which is how the host picks
+    /// a pointer style without another flag.
+    #[wasm_bindgen(js_name = setCursorSprite)]
+    pub fn set_cursor_sprite(
+        &mut self,
+        slot: &str,
+        image: &web_sys::ImageBitmap,
+        hotspot_x: f32,
+        hotspot_y: f32,
+    ) -> Result<(), JsValue> {
+        let slot = parse_slot(slot).map_err(|e| JsValue::from_str(&e))?;
+        let (width, height) = (image.width(), image.height());
+        if width == 0 || height == 0 {
+            return Err(JsValue::from_str("the cursor sprite has a zero dimension"));
+        }
+
+        let index = slot.index();
+        self.cursor_hotspots[index] = [hotspot_x.clamp(0.0, 1.0), hotspot_y.clamp(0.0, 1.0)];
+        let stale = matches!(&self.cursor_sprites[index], Some(t) if t.width != width || t.height != height);
+        if stale || self.cursor_sprites[index].is_none() {
+            self.cursor_sprites[index] = Some(self.new_texture(width, height));
+        }
+        let Some(texture) = &self.cursor_sprites[index] else {
+            return Err(JsValue::from_str("the sprite texture was just created"));
+        };
+
+        self.ctx.queue().copy_external_image_to_texture(
+            &wgpu::CopyExternalImageSourceInfo {
+                source: wgpu::ExternalImageSource::ImageBitmap(Clone::clone(image)),
+                origin: wgpu::Origin2d::ZERO,
+                flip_y: false,
+            },
+            wgpu::CopyExternalImageDestInfo {
+                texture: &texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: false,
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = clearCursorSprites)]
+    pub fn clear_cursor_sprites(&mut self) {
+        self.cursor_sprites = [None, None, None, None];
+        self.cursor_hotspots = [[0.5, 0.5]; 4];
+    }
+
     /// Renders `output_time` (gapless output-timeline seconds) to the canvas.
     /// Returns the layers drawn.
     #[wasm_bindgen]
@@ -411,6 +458,19 @@ impl PreviewEngine {
                 LayerInput {
                     view: &slot.view,
                     needs_srgb_decode: true,
+                },
+            );
+        }
+
+        for (index, sprite) in self.cursor_sprites.iter().enumerate() {
+            let (Some(sprite), Some(slot)) = (sprite, slot_at(index)) else {
+                continue;
+            };
+            inputs.set_cursor_sprite(
+                slot,
+                CursorSprite {
+                    view: &sprite.view,
+                    hotspot: self.cursor_hotspots[index],
                 },
             );
         }

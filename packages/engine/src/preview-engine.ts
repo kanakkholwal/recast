@@ -2,6 +2,7 @@ import { loadEngineModule } from "./load";
 import { detectBackend } from "./probe";
 import type {
 	CursorPlacement,
+	CursorSlot,
 	EngineBackend,
 	EngineModule,
 	NavigatorLike,
@@ -14,6 +15,9 @@ export interface PreviewEngineOptions {
 	loadModule?: (backend: EngineBackend) => Promise<EngineModule>;
 	navigator?: NavigatorLike;
 }
+
+/** Index order must match `CursorSlot::index` in `recast-compositor`. */
+const SLOTS: CursorSlot[] = ["rest", "press", "rightPress", "drag"];
 
 export class EngineDestroyedError extends Error {
 	constructor() {
@@ -144,6 +148,17 @@ export class PreviewEngine {
 		this.#live.setCursorTrack(typeof track === "string" ? track : JSON.stringify(track));
 	}
 
+	/** A slot with no sprite draws the dot, which is how a pointer style is
+	 *  chosen without a separate flag. `hotspot` is normalised 0..1 within the
+	 *  sprite and is the point that lands on the cursor position. */
+	setCursorSprite(slot: CursorSlot, image: ImageBitmap, hotspot: [number, number]): void {
+		this.#live.setCursorSprite(slot, image, hotspot[0], hotspot[1]);
+	}
+
+	clearCursorSprites(): void {
+		this.#live.clearCursorSprites();
+	}
+
 	/** Null when there is no cursor to draw. Crosses the boundary as a flat
 	 *  array because it is read every frame. */
 	cursorAt(outputTime: number): CursorPlacement | null {
@@ -153,11 +168,10 @@ export class PreviewEngine {
 			x: v[0],
 			y: v[1],
 			alpha: v[2],
-			scale: v[3],
-			pressed: v[4] === 1,
-			right: v[5] === 1,
-			dragging: v[6] === 1,
-			highlight: v[9] > 0 ? { x: v[7], y: v[8], alpha: v[9] } : null,
+			spritePx: v[3],
+			dotRadiusPx: v[4],
+			slot: SLOTS[v[5]] ?? "rest",
+			highlight: v[9] > 0 ? { x: v[6], y: v[7], radiusPx: v[8], alpha: v[9] } : null,
 		};
 	}
 

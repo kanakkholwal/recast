@@ -3,6 +3,7 @@ export { EngineDestroyedError, PreviewEngine } from "./preview-engine";
 export { detectBackend } from "./probe";
 export type {
 	CursorPlacement,
+	CursorSlot,
 	EngineBackend,
 	EngineModule,
 	NavigatorLike,

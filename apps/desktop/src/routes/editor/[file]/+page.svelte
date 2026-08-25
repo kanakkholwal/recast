@@ -2180,11 +2180,13 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
   </div>
 {/snippet}
 
+<!-- `hint?:` survives into the emitted snippet function as `hint?`, which is not
+     valid JavaScript: template types are not preprocessed the way script ones are. -->
 {#snippet destination(
   Icon: IconComponent,
   tile: DestinationTile,
   onclick: () => void,
-  hint?: string,
+  hint: string | undefined = undefined,
 )}
   <button
     type="button"

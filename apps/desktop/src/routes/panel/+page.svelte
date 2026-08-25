@@ -80,7 +80,7 @@ import {
 // The panel is too small for its own Toaster, so emit `ui:toast` for the main
 // window to render (see +layout.svelte). alert() is the fallback if emit throws.
 type ToastLevel = "error" | "warning" | "info" | "success";
-function notify(level: ToastLevel, message: string, duration?: number) {
+function notify(level: ToastLevel, message: string, duration: number | undefined = undefined) {
 	emit("ui:toast", { level, message, duration }).catch((err) => {
 		console.error("ui:toast emit failed, falling back to alert", err);
 		window.alert(message);
@@ -677,7 +677,10 @@ function handleGlobalShortcut(e: KeyboardEvent) {
 	}
 }
 
-function openSourceSelector(tab?: "monitor" | "window" | "region", autostart = false) {
+function openSourceSelector(
+	tab: "monitor" | "window" | "region" | undefined = undefined,
+	autostart = false,
+) {
 	if (isRecording) return;
 	const params = new URLSearchParams();
 	if (tab) params.set("tab", tab);

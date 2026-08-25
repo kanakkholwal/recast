@@ -22,6 +22,8 @@ export interface WasmPreviewEngine {
 	setBackgroundImage(image: ImageBitmap): void;
 	clearBackgroundImage(): void;
 	setCursorTrack(json: string): void;
+	setCursorSprite(slot: CursorSlot, image: ImageBitmap, hotspotX: number, hotspotY: number): void;
+	clearCursorSprites(): void;
 	cursorAt(outputTime: number): Float64Array;
 	render(outputTime: number): number;
 	outputWidth(): number;
@@ -35,17 +37,18 @@ export interface EngineModule {
 	};
 }
 
-/** Source UV before the zoom transform, because the sprite and the click
- *  highlight apply the zoom differently. */
+export type CursorSlot = "rest" | "press" | "rightPress" | "drag";
+
+/** Canvas pixels. The engine draws the pointer itself; this is for placing a DOM
+ *  overlay on top without re-deriving the position from the scene. */
 export interface CursorPlacement {
 	x: number;
 	y: number;
 	alpha: number;
-	scale: number;
-	pressed: boolean;
-	right: boolean;
-	dragging: boolean;
-	highlight: { x: number; y: number; alpha: number } | null;
+	spritePx: number;
+	dotRadiusPx: number;
+	slot: CursorSlot;
+	highlight: { x: number; y: number; radiusPx: number; alpha: number } | null;
 }
 
 export interface NavigatorLike {

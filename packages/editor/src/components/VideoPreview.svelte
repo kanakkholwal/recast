@@ -1,5 +1,4 @@
 <script lang="ts">
-import type { CursorPlacement } from "@recast/engine";
 import { type MediaRef, mediaRefKey, textureRingFrames } from "@recast/media";
 import type { MediabunnyVideoSource } from "@recast/media/playback";
 import { Button } from "@recast/ui/button";
@@ -14,6 +13,7 @@ import { analytics, exportActivity } from "../lib/host-hooks";
 import { AudioStallMonitor, resolveAvSync } from "../lib/playback/av-sync";
 import { PlaybackClock } from "../lib/playback/clock";
 import { PreviewEngineDriver } from "../lib/playback/engine-driver";
+import { loadCursorSprites } from "../lib/playback/cursor-sprites";
 import { FrameTextureRing } from "../lib/playback/frame-textures";
 import { createMediabunnySource } from "../lib/playback/mediabunny";
 import { RenderWorkerClient } from "../lib/playback/render-worker-client";
@@ -138,8 +138,37 @@ let renderWorkerClient: RenderWorkerClient | null = null;
 // Rust/wgpu compositor, behind the `wasmPreviewEngine` flag while DG-3 is open.
 // Runs INSTEAD of GL on its own canvas; the GL path is untouched so the two can
 // be compared on the same machine before either is deleted.
-let engineDriver: PreviewEngineDriver | null = null;
+let engineDriver = $state<PreviewEngineDriver | null>(null);
 let engineFailed = $state<string | null>(null);
+// One line per session so a wrong backend or an empty composite is visible
+// without turning on verbose logging.
+let loggedEngineFrame = false;
+let loggedFallbackFrameError = false;
+// Rolling composite times for the engine path, reported once per window while
+// playing. This is the second half of the WebGPU decision: whether it is
+// available, and whether it holds the frame budget at this resolution.
+let engineFrameMs: number[] = [];
+let engineWindowStartedAt = 0;
+
+/** WebGPU hides the adapter string from the page, so an empty name is the
+ *  browser being careful rather than a failed probe. */
+function describeAdapter(name: string): string {
+	return name.trim() === "" ? "adapter hidden by the browser" : name;
+}
+
+function reportEngineFrameTimes(now: number) {
+	if (engineFrameMs.length < 60 || now - engineWindowStartedAt < 5000) return;
+	const sorted = [...engineFrameMs].sort((a, b) => a - b);
+	const at = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+	const mean = sorted.reduce((sum, ms) => sum + ms, 0) / sorted.length;
+	console.info(
+		`preview engine composite over ${sorted.length} frames: ` +
+			`mean ${mean.toFixed(2)}ms, p50 ${at(0.5).toFixed(2)}ms, ` +
+			`p99 ${at(0.99).toFixed(2)}ms, max ${sorted[sorted.length - 1].toFixed(2)}ms`,
+	);
+	engineFrameMs = [];
+	engineWindowStartedAt = now;
+}
 const useEngine = experimentalStore.isEnabled("wasmPreviewEngine");
 const useRenderWorker = renderWorkerCapable({
 	OffscreenCanvas: (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas,
@@ -248,76 +277,12 @@ let svgCursor = $state<{
 // Signature of the inputs that drive smoothing. Recomputing only when this
 // changes keeps playback cheap even on long recordings.
 let smoothingSignature = "";
+/// Bumped on every write to `cursorSamples`. The engine keys its upload on this
+/// rather than on the smoothing signature, which changes when smoothing is
+/// requested rather than when the result lands.
+let cursorVersion = 0;
 
 let pressEvents: PressEvent[] = [];
-
-// Engine path only. The shader cursor pass is phase-2 work that is not built
-// yet, so the default `dot` style is drawn as a DOM circle here from the
-// engine's own placement. Same numbers, different surface.
-let engineDot = $state<{
-	visible: boolean;
-	xPct: number;
-	yPct: number;
-	sizePct: number;
-	alpha: number;
-	highlight: { xPct: number; yPct: number; alpha: number } | null;
-} | null>(null);
-
-/**
- * Splits the engine's placement between the sprite overlay and the dot. The
- * position is already in canvas pixels, evaluated in Rust with the same zoom
- * and card rect the shader used, so nothing here recomputes geometry.
- */
-function applyEngineCursor(placement: CursorPlacement | null) {
-	const geom = currentGeometry();
-	const meta = store.metadata;
-	if (!placement || !geom || !meta) {
-		engineDot = null;
-		updateSvgCursor(null);
-		return;
-	}
-	const cs = store.cursorSettings;
-	const highlight = placement.highlight
-		? {
-				xPct: (placement.highlight.x / geom.canvasW) * 100,
-				yPct: (placement.highlight.y / geom.canvasH) * 100,
-				alpha: placement.highlight.alpha,
-			}
-		: null;
-
-	if (cs.style !== "dot") {
-		engineDot = highlight
-			? { visible: false, xPct: 0, yPct: 0, sizePct: 0, alpha: 0, highlight }
-			: null;
-		updateSvgCursor({
-			visible: placement.alpha > 0,
-			alpha: placement.alpha,
-			styleId: cs.style,
-			pressed: placement.pressed,
-			right: placement.right,
-			dragging: placement.dragging,
-			scale: placement.scale,
-			canvasX: placement.x,
-			canvasY: placement.y,
-			compW: geom.canvasW,
-			compH: geom.canvasH,
-			spritePx: cs.size * 16,
-		});
-		return;
-	}
-
-	updateSvgCursor(null);
-	const sx = geom.videoW / Math.max(1, meta.width);
-	const diameterPx = Math.max(2, cs.size * 2 * sx * placement.scale) * 2;
-	engineDot = {
-		visible: placement.alpha > 0,
-		xPct: (placement.x / geom.canvasW) * 100,
-		yPct: (placement.y / geom.canvasH) * 100,
-		sizePct: (diameterPx / geom.canvasW) * 100,
-		alpha: placement.alpha,
-		highlight,
-	};
-}
 
 /**
  * (Re)build the texture ring for the live source. Sized from the source, so
@@ -431,7 +396,7 @@ function initGL() {
 
 //  Background loading
 async function loadBackgroundIfNeeded() {
-	if (!renderWorkerClient && (!gl || !bgTex)) return;
+	if (!engineDriver && !renderWorkerClient && (!gl || !bgTex)) return;
 	const type = store.backgroundType;
 	const value = store.backgroundValue;
 	// Including the resolved cache path in the key ensures the texture
@@ -512,6 +477,7 @@ async function loadCursorTrackIfNeeded() {
 			idlePeriods?: IdlePeriodJS[];
 		};
 		cursorSamplesRaw = json.samples ?? [];
+		cursorVersion++;
 		cursorSamples = cursorSamplesRaw;
 		idlePeriods = json.idlePeriods ?? [];
 		loadedCursorPath = cursorPath;
@@ -526,6 +492,7 @@ async function loadCursorTrackIfNeeded() {
 		pressEvents = buildPressEvents(cursorSamplesRaw);
 		if (!smoother) {
 			smoother = new CursorSmoother((samples) => {
+				cursorVersion++;
 				cursorSamples = samples;
 				requestRedraw();
 			});
@@ -537,6 +504,7 @@ async function loadCursorTrackIfNeeded() {
 	} catch (err) {
 		console.warn("Cursor track load failed:", err);
 		cursorSamplesRaw = [];
+		cursorVersion++;
 		cursorSamples = [];
 		idlePeriods = [];
 		pressEvents = [];
@@ -551,6 +519,7 @@ async function loadCursorTrackIfNeeded() {
 // there's nothing to compute.
 function ensureSmoothingCurrent() {
 	if (cursorSamplesRaw.length === 0) {
+		cursorVersion++;
 		cursorSamples = cursorSamplesRaw;
 		smoothingSignature = "";
 		return;
@@ -561,6 +530,7 @@ function ensureSmoothingCurrent() {
 	smoothingSignature = sig;
 	const sigmaMs = smoothingStrengthToSigmaMs(cs.smoothing);
 	if (sigmaMs <= 0) {
+		cursorVersion++;
 		cursorSamples = cursorSamplesRaw;
 		requestRedraw();
 		return;
@@ -948,12 +918,14 @@ function draw() {
 	}
 
 	if (engineDriver) {
+		const engineStartedAt = performance.now();
 		// The engine evaluates the scene itself, so it takes OUTPUT time; the
 		// original-axis `playbackTime` is only used to pick a decoded frame.
 		const outputTime = usingPicClock
 			? picClock.time
 			: originalToOutput(store.timeMap, playbackTime);
 		engineDriver.setCanvasSize(canvasEl.width, canvasEl.height);
+		syncEngineFrameInputs();
 
 		let bound = false;
 		if (mbSource && mbReady) {
@@ -974,7 +946,13 @@ function draw() {
 				engineDriver.putScreenFrame(frame, tUs);
 				bound = engineDriver.bindScreenFrame(tUs, 0);
 			} catch (err) {
-				console.warn("preview engine could not take the fallback frame:", err);
+				// The element reports readyState 2 before it holds a decodable
+				// frame, so this fires on every source change. Once per source is
+				// enough to notice a real failure.
+				if (!loggedFallbackFrameError) {
+					loggedFallbackFrameError = true;
+					console.warn("preview engine could not take the fallback frame:", err);
+				}
 			} finally {
 				frame?.close();
 			}
@@ -982,7 +960,16 @@ function draw() {
 		if (!bound && !hasRenderedFrame) return;
 
 		try {
-			engineDriver.render(outputTime);
+			const drawn = engineDriver.render(outputTime);
+			if (!loggedEngineFrame) {
+				loggedEngineFrame = true;
+				engineWindowStartedAt = performance.now();
+				const info = engineDriver.info;
+				console.info(
+					`preview engine: ${info.backend} on ${describeAdapter(info.adapter)}` +
+						`${info.software ? " (software)" : ""}, ${drawn} layer(s) drawn`,
+				);
+			}
 		} catch (err) {
 			engineFailed = err instanceof Error ? err.message : String(err);
 			console.error("preview engine render failed:", err);
@@ -990,8 +977,10 @@ function draw() {
 		}
 		hasRenderedFrame = true;
 		if (!isReady) isReady = true;
-		applyEngineCursor(engineDriver.cursorAt(outputTime));
 		syncBlurMirror();
+		const finishedAt = performance.now();
+		engineFrameMs.push(finishedAt - engineStartedAt);
+		reportEngineFrameTimes(finishedAt);
 		return;
 	}
 
@@ -1295,12 +1284,39 @@ $effect(() => {
 		if (!engineDriver) return;
 		if (meta?.width && meta?.height) engineDriver.setSourceSize(meta.width, meta.height);
 		engineDriver.syncScene(state);
-		if (mbSource)
-			engineDriver.setScreenRingCapacity(textureRingFrames(mbSource.width, mbSource.height));
+		requestRedraw();
+	});
+});
+
+/** Version of the cursor track last handed to the engine. Stringifying a
+ *  225-second track every frame would cost more than the composite. */
+let engineCursorSignature = "";
+
+function syncEngineFrameInputs() {
+	if (!engineDriver) return;
+	// The engine draws the pointer, so the GL overlay must stay hidden or two
+	// cursors appear.
+	if (svgCursor.visible) updateSvgCursor(null);
+	if (mbSource) {
+		engineDriver.setScreenRingCapacity(textureRingFrames(mbSource.width, mbSource.height));
+	}
+	if (engineCursorSignature !== String(cursorVersion)) {
+		engineCursorSignature = String(cursorVersion);
 		engineDriver.setCursorTrack(
 			cursorSamples.length > 0 ? { samples: cursorSamples, idlePeriods } : null,
 		);
-		requestRedraw();
+	}
+}
+
+// Pointer sprites for the engine path. A style with no sprite uploads nothing,
+// which is what leaves the engine drawing its dot.
+$effect(() => {
+	if (!engineDriver) return;
+	const style = store.cursorSettings.style;
+	untrack(() => {
+		void loadCursorSprites(style, resolveCursorDataUrl).then((sprites) => {
+			if (engineDriver?.setCursorSprites(style, sprites)) requestRedraw();
+		});
 	});
 });
 
@@ -1411,6 +1427,7 @@ $effect(() => {
 	loadedMbSrc = key;
 	mbReady = false;
 	mbFallbackNotified = false;
+	loggedFallbackFrameError = false;
 	webcodecsActive = false;
 	hasRenderedFrame = false;
 	lastPublishedTime = -1;
@@ -1731,36 +1748,6 @@ const isAnnotationActive = $derived(
 		<div class="contents transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-55">
 			<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
 		</div>
-		{#if engineDot?.highlight && engineDot.highlight.alpha > 0}
-			<!-- Click highlight. Pinned to the captured click, not the (lagging)
-			     smoothed cursor, so it marks where the click actually landed. -->
-			<div
-				class="pointer-events-none absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full"
-				style="
-					left: {engineDot.highlight.xPct}%;
-					top: {engineDot.highlight.yPct}%;
-					width: {engineDot.sizePct * 3}%;
-					background: {store.cursorSettings.highlightColor};
-					opacity: {engineDot.highlight.alpha};
-				"
-			></div>
-		{/if}
-
-		{#if engineDot?.visible}
-			<!-- Interim dot: the engine has no cursor sprite pass yet, so the
-			     default style is drawn here from the engine's own placement. -->
-			<div
-				class="pointer-events-none absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full bg-white"
-				style="
-					left: {engineDot.xPct}%;
-					top: {engineDot.yPct}%;
-					width: {engineDot.sizePct}%;
-					opacity: {engineDot.alpha};
-					box-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
-				"
-			></div>
-		{/if}
-
 		{#if svgCursor.visible}
 			{@const style = resolveCursorSprite(svgCursor.styleId)}
 			{@const stateKey = svgCursor.pressed

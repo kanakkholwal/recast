@@ -405,7 +405,7 @@ async function removeFolder(folderId: string) {
 	}
 }
 
-async function commitFolderDraft(folderId?: string) {
+async function commitFolderDraft(folderId: string | undefined = undefined) {
 	if (folderId) {
 		await renameFolder(folderId);
 		return;

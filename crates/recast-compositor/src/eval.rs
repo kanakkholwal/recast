@@ -79,6 +79,50 @@ impl Affine2 {
     }
 }
 
+/// Which sprite the pointer is showing. The host uploads whichever slots it
+/// has; a slot with no sprite falls back to the dot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CursorSlot {
+    Rest,
+    Press,
+    RightPress,
+    Drag,
+}
+
+impl CursorSlot {
+    pub fn index(self) -> usize {
+        match self {
+            Self::Rest => 0,
+            Self::Press => 1,
+            Self::RightPress => 2,
+            Self::Drag => 3,
+        }
+    }
+}
+
+/// The pointer in canvas pixels, ready to draw.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CursorDraw {
+    pub x: f32,
+    pub y: f32,
+    pub alpha: f32,
+    pub slot: CursorSlot,
+    /// Sprite edge in canvas pixels, press scale already applied.
+    pub sprite_px: f32,
+    /// Dot radius in canvas pixels, for when the slot has no sprite.
+    pub dot_radius_px: f32,
+    pub highlight: Option<HighlightDraw>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HighlightDraw {
+    pub x: f32,
+    pub y: f32,
+    pub radius_px: f32,
+    pub color: Srgba,
+    pub alpha: f32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum BackgroundParams {
     Solid(Srgba),
@@ -141,6 +185,9 @@ pub struct FrameParams {
     /// Where the pointer sits this frame, in SOURCE uv before the zoom. `None`
     /// when there is no cursor layer, no track, or the layer is disabled.
     pub cursor: Option<CursorPlacement>,
+    /// The same pointer, resolved onto the canvas. Computed once here so the
+    /// sprite pass and the host overlay cannot disagree about where it is.
+    pub cursor_draw: Option<CursorDraw>,
     /// In draw order. The card's shadow, then the camera bubble's.
     pub shadows: Vec<ShadowParams>,
     pub layers: Vec<LayerParams>,
@@ -261,6 +308,7 @@ impl Evaluator {
             geometry: self.geometry,
             background,
             background_blur,
+            cursor_draw: cursor.and_then(|c| self.cursor_draw(scene, c, card.0, card.1)),
             cursor,
             shadows,
             annotations: self.annotations(scene, source_time, card.0, card.1),
@@ -297,6 +345,60 @@ impl Evaluator {
             Some(easing) => track.resolve(ts_us, source, settings, |t| easing.y(t as f32) as f64),
             None => track.resolve(ts_us, source, settings, |t| t),
         }
+    }
+
+    /// Projects the pointer onto the canvas: the INVERSE of the card transform
+    /// (which maps a destination uv to the source uv it samples) and then the
+    /// card rect. Doing it anywhere else would be a second evaluator to keep in
+    /// step with the shader.
+    fn cursor_draw(
+        &self,
+        scene: &Scene,
+        cursor: CursorPlacement,
+        dest: DestRect,
+        transform: Affine2,
+    ) -> Option<CursorDraw> {
+        let inverse = transform.invert()?;
+        let place = |x: f64, y: f64| {
+            let (u, v) = inverse.apply(x as f32, y as f32);
+            (dest.x + u * dest.w, dest.y + v * dest.h)
+        };
+
+        let spec = scene.layers.iter().find_map(|l| match &l.source {
+            LayerSource::Cursor(spec) => Some(spec),
+            _ => None,
+        })?;
+        // Canvas pixels per source pixel, the same scale padding uses.
+        let sx = dest.w / self.source.width.max(1) as f32;
+
+        let (x, y) = place(cursor.x, cursor.y);
+        let slot = match (cursor.pressed, cursor.dragging, cursor.right) {
+            (true, true, _) => CursorSlot::Drag,
+            (true, false, true) => CursorSlot::RightPress,
+            (true, false, false) => CursorSlot::Press,
+            (false, _, _) => CursorSlot::Rest,
+        };
+        let size = spec.size as f32;
+
+        Some(CursorDraw {
+            x,
+            y,
+            alpha: cursor.alpha as f32,
+            slot,
+            sprite_px: size * 16.0 * sx * cursor.scale as f32,
+            dot_radius_px: (size * 2.0 * sx * cursor.scale as f32).max(2.0),
+            highlight: cursor.highlight.map(|h| {
+                let (hx, hy) = place(h.x, h.y);
+                HighlightDraw {
+                    x: hx,
+                    y: hy,
+                    // Three times the dot, matching the ring the preview drew.
+                    radius_px: (size * 6.0 * sx).max(6.0),
+                    color: parse_hex_or_blue(&spec.highlight_color),
+                    alpha: h.alpha as f32,
+                }
+            }),
+        })
     }
 
     fn annotations(
@@ -584,6 +686,12 @@ fn active_zoom<'a>(regions: &[&'a ZoomRegion], t: f64) -> Option<&'a ZoomRegion>
         }
     }
     best
+}
+
+/// The picker always writes a hex string, so a parse failure means corrupt
+/// state rather than a colour the user chose.
+fn parse_hex_or_blue(value: &str) -> Srgba {
+    recast_color::parse_hex(value).unwrap_or(Srgba::opaque(0x3b, 0x82, 0xf6))
 }
 
 fn blur_of(layer: &recast_scene::Layer) -> f32 {

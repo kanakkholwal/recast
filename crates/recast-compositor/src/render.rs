@@ -6,7 +6,9 @@ use recast_gpu::{GpuContext, GpuError, OUTPUT_FORMAT, WORKING_FORMAT};
 use recast_scene::LayerId;
 
 use crate::annotation::{AnnotationParams, AnnotationShape};
-use crate::eval::{BackgroundParams, FrameParams, LayerParams, ShadowParams};
+use crate::eval::{
+    BackgroundParams, CursorDraw, CursorSlot, FrameParams, LayerParams, ShadowParams,
+};
 
 const MAX_GRADIENT_STOPS: usize = 8;
 
@@ -25,6 +27,13 @@ struct BackgroundUniform {
     solid: [f32; 4],
     image: [f32; 4],
     stops: [[f32; 4]; MAX_GRADIENT_STOPS],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SpriteUniform {
+    rect: [f32; 4],
+    frame: [f32; 4],
 }
 
 #[repr(C)]
@@ -66,6 +75,18 @@ struct CardUniform {
 pub struct FrameInputs<'a> {
     views: HashMap<LayerId, LayerInput<'a>>,
     background: Option<BackgroundImage<'a>>,
+    /// Indexed by `CursorSlot::index`. A slot with no sprite draws the dot,
+    /// which is how the host chooses between the two without another flag.
+    cursor_sprites: [Option<CursorSprite<'a>>; 4],
+}
+
+/// A pointer sprite and the point on it that sits on the cursor position.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorSprite<'a> {
+    pub view: &'a wgpu::TextureView,
+    /// Normalised 0..1 within the sprite. `[0.5, 0.5]` centres it, which is
+    /// right for a dot and wrong for an arrow.
+    pub hotspot: [f32; 2],
 }
 
 /// The decoded wallpaper or image background. Separate from `LayerInput`
@@ -107,6 +128,15 @@ impl<'a> FrameInputs<'a> {
     pub fn background(&self) -> Option<&BackgroundImage<'a>> {
         self.background.as_ref()
     }
+
+    pub fn set_cursor_sprite(&mut self, slot: CursorSlot, sprite: CursorSprite<'a>) -> &mut Self {
+        self.cursor_sprites[slot.index()] = Some(sprite);
+        self
+    }
+
+    pub fn cursor_sprite(&self, slot: CursorSlot) -> Option<CursorSprite<'a>> {
+        self.cursor_sprites[slot.index()]
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -123,6 +153,7 @@ pub struct Compositor {
     shadow: ShadowPass,
     card: CardPass,
     shape: ShapePass,
+    sprite: SpritePass,
     present: PresentPass,
     working: Option<(u32, u32, wgpu::Texture)>,
 }
@@ -162,9 +193,17 @@ struct ShapePass {
     layout: wgpu::BindGroupLayout,
 }
 
+struct SpritePass {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+    uniform: wgpu::Buffer,
+    sampler: wgpu::Sampler,
+}
+
 struct PresentPass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
 }
 
 impl Compositor {
@@ -177,6 +216,7 @@ impl Compositor {
             shadow: ShadowPass::new(&device),
             card: CardPass::new(&device),
             shape: ShapePass::new(&device),
+            sprite: SpritePass::new(&device),
             present: PresentPass::new(&device),
             device,
             queue,
@@ -207,6 +247,7 @@ impl Compositor {
         self.draw_shadow(&mut encoder, &working_view, params);
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_annotations(&mut encoder, &working_view, params);
+        self.draw_cursor(&mut encoder, &working_view, params, inputs, width, height);
         self.present(&mut encoder, &working_view, target);
 
         self.queue.submit([encoder.finish()]);
@@ -601,6 +642,170 @@ impl Compositor {
         }
     }
 
+    /// The pointer, drawn last so it sits above the annotations. The highlight
+    /// ring is a filled ellipse through the shape pass; the pointer itself is a
+    /// sprite when the host uploaded one and the dot otherwise.
+    fn draw_cursor(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        params: &FrameParams,
+        inputs: &FrameInputs<'_>,
+        width: u32,
+        height: u32,
+    ) {
+        let Some(cursor) = params.cursor_draw else {
+            return;
+        };
+
+        if let Some(highlight) = cursor.highlight {
+            if highlight.alpha > 0.0 {
+                self.draw_ellipse(
+                    encoder,
+                    working,
+                    [
+                        highlight.x,
+                        highlight.y,
+                        highlight.radius_px,
+                        highlight.radius_px,
+                    ],
+                    highlight.color,
+                    highlight.alpha,
+                );
+            }
+        }
+
+        if cursor.alpha <= 0.0 {
+            return;
+        }
+        match inputs.cursor_sprite(cursor.slot) {
+            Some(sprite) => self.draw_sprite(encoder, working, &cursor, sprite, width, height),
+            None => self.draw_ellipse(
+                encoder,
+                working,
+                [
+                    cursor.x,
+                    cursor.y,
+                    cursor.dot_radius_px,
+                    cursor.dot_radius_px,
+                ],
+                Srgba::opaque(255, 255, 255),
+                cursor.alpha,
+            ),
+        }
+    }
+
+    fn draw_ellipse(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        geom: [f32; 4],
+        color: Srgba,
+        alpha: f32,
+    ) {
+        let uniform = ShapeUniform {
+            geom,
+            params: [1.0, 0.0, 0.0, alpha.clamp(0.0, 1.0)],
+            fill: srgba_parts(color),
+            stroke: [0.0; 4],
+        };
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cursor-shape"),
+            size: std::mem::size_of::<ShapeUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue
+            .write_buffer(&buffer, 0, bytemuck::bytes_of(&uniform));
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cursor-shape"),
+            layout: &self.shape.layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+        let mut pass = self.overlay_pass(encoder, working, "cursor-shape");
+        pass.set_pipeline(&self.shape.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
+    fn draw_sprite(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        cursor: &CursorDraw,
+        sprite: CursorSprite<'_>,
+        width: u32,
+        height: u32,
+    ) {
+        // The hotspot, not the centre, lands on the cursor position: an arrow
+        // points from its tip and a centred one would sit half a sprite low.
+        let uniform = SpriteUniform {
+            rect: [
+                cursor.x - sprite.hotspot[0] * cursor.sprite_px,
+                cursor.y - sprite.hotspot[1] * cursor.sprite_px,
+                cursor.sprite_px,
+                cursor.sprite_px,
+            ],
+            frame: [
+                width as f32,
+                height as f32,
+                cursor.alpha.clamp(0.0, 1.0),
+                1.0,
+            ],
+        };
+        self.queue
+            .write_buffer(&self.sprite.uniform, 0, bytemuck::bytes_of(&uniform));
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("cursor-sprite"),
+            layout: &self.sprite.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.sprite.uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(sprite.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sprite.sampler),
+                },
+            ],
+        });
+        let mut pass = self.overlay_pass(encoder, working, "cursor-sprite");
+        pass.set_pipeline(&self.sprite.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
+    fn overlay_pass<'a>(
+        &self,
+        encoder: &'a mut wgpu::CommandEncoder,
+        working: &'a wgpu::TextureView,
+        label: &'static str,
+    ) -> wgpu::RenderPass<'a> {
+        encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: working,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        })
+    }
+
     fn present(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -610,10 +815,16 @@ impl Compositor {
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("present"),
             layout: &self.present.layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(working),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(working),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.present.sampler),
+                },
+            ],
         });
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1121,6 +1332,32 @@ impl CardPass {
     }
 }
 
+impl SpritePass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = sampled_texture_layout(device, "sprite");
+        let pipeline = fullscreen_pipeline(
+            device,
+            "sprite",
+            include_str!("shaders/sprite.wgsl"),
+            &layout,
+            WORKING_FORMAT,
+            Some(PREMULTIPLIED),
+            "vs",
+        );
+        Self {
+            pipeline,
+            layout,
+            uniform: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("sprite-uniform"),
+                size: std::mem::size_of::<SpriteUniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            sampler: clamped_linear_sampler(device, "sprite"),
+        }
+    }
+}
+
 impl ShapePass {
     fn new(device: &wgpu::Device) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1153,16 +1390,24 @@ impl PresentPass {
     fn new(device: &wgpu::Device) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("present"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
-                count: None,
-            }],
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
         let pipeline = fullscreen_pipeline(
             device,
@@ -1173,7 +1418,11 @@ impl PresentPass {
             None,
             "vs",
         );
-        Self { pipeline, layout }
+        Self {
+            pipeline,
+            layout,
+            sampler: clamped_linear_sampler(device, "present"),
+        }
     }
 }
 

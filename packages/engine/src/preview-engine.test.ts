@@ -22,7 +22,9 @@ function wasmStub() {
 		setBackgroundImage: vi.fn(),
 		clearBackgroundImage: vi.fn(),
 		setCursorTrack: vi.fn(),
-		cursorAt: vi.fn(() => new Float64Array([0.25, 0.5, 1, 0.84, 1, 0, 0, 0.3, 0.6, 0.4])),
+		setCursorSprite: vi.fn(),
+		clearCursorSprites: vi.fn(),
+		cursorAt: vi.fn(() => new Float64Array([120, 80, 1, 48, 6, 2, 130, 90, 18, 0.4])),
 		render: vi.fn(() => 1),
 		outputWidth: vi.fn(() => 1920),
 		outputHeight: vi.fn(() => 1080),
@@ -123,14 +125,13 @@ describe("cursor", () => {
 	it("decodes the flat frame array into named fields", async () => {
 		const e = await engine("webgl2");
 		expect(e.cursorAt(1.5)).toEqual({
-			x: 0.25,
-			y: 0.5,
+			x: 120,
+			y: 80,
 			alpha: 1,
-			scale: 0.84,
-			pressed: true,
-			right: false,
-			dragging: false,
-			highlight: { x: 0.3, y: 0.6, alpha: 0.4 },
+			spritePx: 48,
+			dotRadiusPx: 6,
+			slot: "rightPress",
+			highlight: { x: 130, y: 90, radiusPx: 18, alpha: 0.4 },
 		});
 		expect(inner.cursorAt).toHaveBeenCalledWith(1.5);
 	});
@@ -141,9 +142,17 @@ describe("cursor", () => {
 		expect(e.cursorAt(0)).toBeNull();
 	});
 
+	/** An out-of-range slot index means the wire and `CursorSlot::index` have
+	 *  drifted; falling back to rest beats drawing nothing. */
+	it("falls back to the rest slot on an index it does not know", async () => {
+		inner.cursorAt.mockReturnValue(new Float64Array([0, 0, 1, 0, 6, 9, 0, 0, 0, 0]));
+		const e = await engine("webgl2");
+		expect(e.cursorAt(0)?.slot).toBe("rest");
+	});
+
 	/** A zero-alpha highlight is "no highlight this frame", not a black ring. */
 	it("drops a highlight whose alpha has faded to nothing", async () => {
-		inner.cursorAt.mockReturnValue(new Float64Array([0, 0, 1, 1, 0, 0, 0, 0.5, 0.5, 0]));
+		inner.cursorAt.mockReturnValue(new Float64Array([10, 10, 1, 0, 6, 0, 20, 20, 12, 0]));
 		const e = await engine("webgl2");
 		expect(e.cursorAt(0)?.highlight).toBeNull();
 	});
@@ -154,6 +163,11 @@ describe("cursor", () => {
 		expect(inner.setCursorTrack).toHaveBeenCalledWith('{"samples":[]}');
 		e.setCursorTrack('{"raw":1}');
 		expect(inner.setCursorTrack).toHaveBeenLastCalledWith('{"raw":1}');
+		const bitmap = {} as ImageBitmap;
+		e.setCursorSprite("press", bitmap, [0.1, 0.2]);
+		e.clearCursorSprites();
+		expect(inner.setCursorSprite).toHaveBeenCalledWith("press", bitmap, 0.1, 0.2);
+		expect(inner.clearCursorSprites).toHaveBeenCalled();
 	});
 });
 

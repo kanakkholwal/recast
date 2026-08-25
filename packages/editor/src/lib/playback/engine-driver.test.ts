@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PreviewEngineDriver } from "./engine-driver";
 import type { EditorRenderState } from "../editor/render-state";
+import { PreviewEngineDriver } from "./engine-driver";
 
 function engineStub() {
 	return {
@@ -19,6 +19,8 @@ function engineStub() {
 		setBackgroundImage: vi.fn(),
 		clearBackgroundImage: vi.fn(),
 		setCursorTrack: vi.fn(),
+		setCursorSprite: vi.fn(),
+		clearCursorSprites: vi.fn(),
 		setLayerRingCapacity: vi.fn(),
 		putLayerFrame: vi.fn(),
 		bindLayerFrame: vi.fn(() => true),
@@ -111,6 +113,40 @@ describe("frame ring", () => {
 		d.syncScene(state(4));
 		d.bindScreenFrame(5_000_000, 2_000_000);
 		expect(engine.bindLayerFrame).toHaveBeenCalledWith(3, 5_000_000, 2_000_000);
+	});
+});
+
+describe("cursor sprites", () => {
+	const sprite = (slot: "rest" | "press") => ({
+		slot,
+		image: {} as ImageBitmap,
+		hotspot: [0.25, 0.75] as [number, number],
+	});
+
+	it("uploads a set once and skips the same key", async () => {
+		const d = await driver();
+		expect(d.setCursorSprites("arrow", [sprite("rest"), sprite("press")])).toBe(true);
+		expect(d.setCursorSprites("arrow", [sprite("rest")])).toBe(false);
+		expect(engine.setCursorSprite).toHaveBeenCalledTimes(2);
+		expect(engine.setCursorSprite).toHaveBeenCalledWith("rest", expect.anything(), [0.25, 0.75]);
+	});
+
+	/** Slots are not overwritten in place, so a style with fewer states than the
+	 *  last one would keep showing the old sprite for the missing slots. */
+	it("clears the previous set before uploading a new one", async () => {
+		const d = await driver();
+		d.setCursorSprites("arrow", [sprite("rest"), sprite("press")]);
+		d.setCursorSprites("hand", [sprite("rest")]);
+		expect(engine.clearCursorSprites).toHaveBeenCalledTimes(2);
+		expect(engine.setCursorSprite).toHaveBeenCalledTimes(3);
+	});
+
+	it("clears back to the dot on an empty set", async () => {
+		const d = await driver();
+		d.setCursorSprites("arrow", [sprite("rest")]);
+		d.setCursorSprites("dot", []);
+		expect(engine.clearCursorSprites).toHaveBeenCalledTimes(2);
+		expect(engine.setCursorSprite).toHaveBeenCalledTimes(1);
 	});
 });
 

@@ -894,3 +894,253 @@ fn a_wallpaper_background_with_no_image_yet_renders_the_fallback_grey() {
     let corner = out.at(1, 1);
     assert!(close(corner, [17, 17, 17, 255], 3), "corner was {corner:?}");
 }
+
+/// Samples a second apart, so a query at 0.5 s lands mid-track. The two axes
+/// move in OPPOSITE directions on purpose: a symmetric path would land the
+/// pointer on the diagonal, where transposing x and y changes nothing.
+const CURSOR_TRACK: &str = r#"{
+    "samples": [
+        { "timestampUs": 0, "x": 0, "y": 32, "visible": true, "leftDown": false, "rightDown": false },
+        { "timestampUs": 1000000, "x": 32, "y": 16, "visible": true, "leftDown": false, "rightDown": false },
+        { "timestampUs": 2000000, "x": 64, "y": 0, "visible": true, "leftDown": false, "rightDown": false }
+    ]
+}"#;
+
+fn cursor_scene(extra: &str) -> Scene {
+    let mut scene = scene_with(&format!(
+        r#""cursorEnabled": true, "cursorSize": 3.0, "cursorSmoothing": 0.0, {extra}"#
+    ));
+    let track: recast_compositor::CursorTrack =
+        serde_json::from_str(CURSOR_TRACK).expect("cursor track");
+    let mut track = track;
+    track.rebuild_press_events();
+    scene.cursor_track = Some(track);
+    scene
+}
+
+fn render_cursor(ctx: &GpuContext, scene: &Scene, sprite: Option<&wgpu::Texture>) -> Rendered {
+    let ev = Evaluator::new(
+        scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(scene, 0.5);
+    let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
+
+    let mut compositor = Compositor::new(ctx).expect("compositor");
+    let target = compositor.output_texture(width, height);
+    let view = sprite.map(|t| t.create_view(&Default::default()));
+
+    let mut inputs = FrameInputs::new();
+    if let Some(view) = view.as_ref() {
+        inputs.set_cursor_sprite(
+            recast_compositor::CursorSlot::Rest,
+            recast_compositor::CursorSprite {
+                view,
+                hotspot: [0.5, 0.5],
+            },
+        );
+    }
+    compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+    Rendered {
+        pixels: read_back(ctx, &target, width, height),
+        width,
+        height,
+    }
+}
+
+/// Half a second into a two-second track the pointer is a quarter of the way
+/// across, so this pins the interpolation as well as the draw.
+const CURSOR_AT: (u32, u32) = (SRC_W / 4, SRC_H * 3 / 4);
+
+#[test]
+fn the_dot_cursor_is_drawn_where_the_track_says_it_is() {
+    let Some(ctx) = context() else { return };
+    let out = render_cursor(
+        &ctx,
+        &cursor_scene(r#""cursorHighlightClicks": false,"#),
+        None,
+    );
+    let on = out.at(CURSOR_AT.0, CURSOR_AT.1);
+    assert!(
+        close(on, [255, 255, 255, 255], 6),
+        "cursor pixel was {on:?}"
+    );
+    let away = out.at(SRC_W - 2, 2);
+    assert!(
+        close(away, [0, 0, 255, 255], 4),
+        "the far corner was {away:?}, so the cursor is not localised"
+    );
+}
+
+#[test]
+fn a_disabled_cursor_layer_leaves_the_frame_alone() {
+    let Some(ctx) = context() else { return };
+    let with_cursor = render_cursor(
+        &ctx,
+        &cursor_scene(r#""cursorHighlightClicks": false,"#),
+        None,
+    );
+    let without = render_cursor(&ctx, &scene_with(r#""cursorEnabled": false,"#), None);
+    assert_ne!(
+        with_cursor.at(CURSOR_AT.0, CURSOR_AT.1),
+        without.at(CURSOR_AT.0, CURSOR_AT.1)
+    );
+}
+
+/// An uploaded sprite must WIN over the dot, or the host has no way to choose a
+/// pointer style short of another flag.
+#[test]
+fn an_uploaded_sprite_replaces_the_dot() {
+    let Some(ctx) = context() else { return };
+    let sprite = banded_image(&ctx, 16, 16, |_| [255, 0, 255, 255]);
+    let scene = cursor_scene(r#""cursorHighlightClicks": false,"#);
+    let dot = render_cursor(&ctx, &scene, None);
+    let drawn = render_cursor(&ctx, &scene, Some(&sprite));
+
+    let on = drawn.at(CURSOR_AT.0, CURSOR_AT.1);
+    assert!(close(on, [255, 0, 255, 255], 6), "sprite pixel was {on:?}");
+    assert_ne!(dot.at(CURSOR_AT.0, CURSOR_AT.1), on);
+}
+
+/// The hotspot is what lands on the cursor position, so moving it must move the
+/// sprite. A centred arrow would sit half a sprite below where it points.
+#[test]
+fn the_hotspot_decides_where_the_sprite_sits() {
+    let Some(ctx) = context() else { return };
+    let sprite = banded_image(&ctx, 16, 16, |_| [255, 0, 255, 255]);
+    let scene = cursor_scene(r#""cursorHighlightClicks": false,"#);
+
+    let ev = Evaluator::new(
+        &scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(&scene, 0.5);
+    let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
+    let view = sprite.create_view(&Default::default());
+
+    let render_with = |hotspot: [f32; 2]| {
+        let mut compositor = Compositor::new(&ctx).expect("compositor");
+        let target = compositor.output_texture(width, height);
+        let mut inputs = FrameInputs::new();
+        inputs.set_cursor_sprite(
+            recast_compositor::CursorSlot::Rest,
+            recast_compositor::CursorSprite {
+                view: &view,
+                hotspot,
+            },
+        );
+        compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+        Rendered {
+            pixels: read_back(&ctx, &target, width, height),
+            width,
+            height,
+        }
+    };
+
+    // Hotspot at the top-left corner pushes the sprite down and right, so the
+    // pixel just above the cursor is no longer covered.
+    let centred = render_with([0.5, 0.5]);
+    let cornered = render_with([0.0, 0.0]);
+    let above = (CURSOR_AT.0, CURSOR_AT.1 - 8);
+    assert!(close(centred.at(above.0, above.1), [255, 0, 255, 255], 6));
+    assert!(!close(cornered.at(above.0, above.1), [255, 0, 255, 255], 6));
+}
+
+/// A fully transparent sprite must leave the frame untouched rather than
+/// punching a hole, which is what an unpremultiplied blend would do.
+#[test]
+fn a_transparent_sprite_does_not_erase_what_is_under_it() {
+    let Some(ctx) = context() else { return };
+    let clear = banded_image(&ctx, 16, 16, |_| [0, 0, 0, 0]);
+    let scene = cursor_scene(r#""cursorEnabled": false,"#);
+    let bare = render_cursor(&ctx, &scene, None);
+    let scene = cursor_scene(r#""cursorHighlightClicks": false,"#);
+    let over = render_cursor(&ctx, &scene, Some(&clear));
+
+    assert!(
+        close(
+            over.at(CURSOR_AT.0, CURSOR_AT.1),
+            bare.at(CURSOR_AT.0, CURSOR_AT.1),
+            3
+        ),
+        "transparent sprite changed {:?} to {:?}",
+        bare.at(CURSOR_AT.0, CURSOR_AT.1),
+        over.at(CURSOR_AT.0, CURSOR_AT.1)
+    );
+}
+
+/// The preview composites at full resolution and presents into a canvas sized to
+/// the pane, so the present pass has to SCALE. A 1:1 texel fetch instead shows
+/// the top-left corner of the composition, which reads as padding that only
+/// pushes the video down and right.
+#[test]
+fn presenting_into_a_smaller_target_scales_rather_than_cropping() {
+    let Some(ctx) = context() else { return };
+    // Padding puts background on every side, so a crop is visible as a missing
+    // border rather than as a shifted picture.
+    let scene = scene_with(r#""padding": 20.0,"#);
+    let ev = Evaluator::new(
+        &scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(&scene, 0.0);
+    let (comp_w, comp_h) = (params.geometry.canvas_w, params.geometry.canvas_h);
+    assert!(comp_w > SRC_W, "the fixture must actually pad");
+
+    let mut compositor = Compositor::new(&ctx).expect("compositor");
+    let source = source_texture(&ctx);
+    let source_view = source.create_view(&Default::default());
+    let screen = scene
+        .layers
+        .iter()
+        .find(|l| matches!(l.source, LayerSource::Screen))
+        .expect("screen layer");
+    let mut inputs = FrameInputs::new();
+    inputs.set(
+        screen.id,
+        LayerInput {
+            view: &source_view,
+            needs_srgb_decode: true,
+        },
+    );
+
+    // Half size, the same aspect the preview keeps.
+    let (out_w, out_h) = (comp_w / 2, comp_h / 2);
+    let target = compositor.output_texture(out_w, out_h);
+    compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+    let out = Rendered {
+        pixels: read_back(&ctx, &target, out_w, out_h),
+        width: out_w,
+        height: out_h,
+    };
+
+    // Background survives at BOTH ends. Under a crop the far corner would hold
+    // the middle of the video instead.
+    for corner in [
+        (1, 1),
+        (out_w - 2, 1),
+        (1, out_h - 2),
+        (out_w - 2, out_h - 2),
+    ] {
+        let pixel = out.at(corner.0, corner.1);
+        assert!(
+            close(pixel, [0, 0, 255, 255], 4),
+            "corner {corner:?} was {pixel:?}, expected the background"
+        );
+    }
+    // And the video is still in the middle.
+    let centre = out.at(out_w / 2, out_h / 2);
+    assert!(
+        !close(centre, [0, 0, 255, 255], 4),
+        "the centre was background, so nothing was drawn"
+    );
+}

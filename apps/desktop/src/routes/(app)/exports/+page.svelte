@@ -210,7 +210,7 @@ async function shareToCloud(entry: RecordingEntry) {
  * modal in the same tick makes bits-ui hand focus back and the new dialog never
  * appears, which read as "no dialog showed up".
  */
-function beginCloudShare(path: string, title: string, workspaceId?: string) {
+function beginCloudShare(path: string, title: string, workspaceId: string | undefined = undefined) {
 	void cloudShare.share(path, title, workspaceId).catch(() => {});
 	requestAnimationFrame(() => cloudShare.setForeground(path));
 }

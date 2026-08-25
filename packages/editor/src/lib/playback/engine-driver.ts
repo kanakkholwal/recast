@@ -1,4 +1,9 @@
-import { type CursorPlacement, type EngineBackend, PreviewEngine } from "@recast/engine";
+import {
+	type CursorPlacement,
+	type CursorSlot,
+	type EngineBackend,
+	PreviewEngine,
+} from "@recast/engine";
 import type { EditorRenderState } from "../editor/render-state";
 
 export interface EngineDriverOptions {
@@ -6,6 +11,13 @@ export interface EngineDriverOptions {
 	/** Overridden in tests; production resolves the real wasm artifact. */
 	create?: typeof PreviewEngine.create;
 	backend?: EngineBackend | "auto";
+}
+
+export interface CursorSpriteUpload {
+	slot: CursorSlot;
+	image: ImageBitmap;
+	/** Normalised 0..1 within the sprite. */
+	hotspot: [number, number];
 }
 
 export interface EngineDriverInfo {
@@ -27,6 +39,7 @@ export class PreviewEngineDriver {
 	#sourceSize = "";
 	#screenLayer: number | null = null;
 	#ringCapacity = 0;
+	#spriteKey = "";
 
 	private constructor(engine: PreviewEngine) {
 		this.#engine = engine;
@@ -100,6 +113,21 @@ export class PreviewEngineDriver {
 		if (json === this.#trackSignature) return;
 		this.#trackSignature = json;
 		this.#engine.setCursorTrack(json === "" ? '{"samples":[]}' : json);
+	}
+
+	/**
+	 * Replaces the pointer sprites. `key` identifies the set (the style id), so
+	 * rasterising and re-uploading only happens when the style actually changes.
+	 * An empty list clears them, which puts the engine back on the dot.
+	 */
+	setCursorSprites(key: string, sprites: CursorSpriteUpload[]): boolean {
+		if (key === this.#spriteKey) return false;
+		this.#spriteKey = key;
+		this.#engine.clearCursorSprites();
+		for (const sprite of sprites) {
+			this.#engine.setCursorSprite(sprite.slot, sprite.image, sprite.hotspot);
+		}
+		return true;
 	}
 
 	/** Sized by the host, which knows the resolution and the memory budget. */
