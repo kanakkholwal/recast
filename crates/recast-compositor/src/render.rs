@@ -5,7 +5,8 @@ use recast_color::Srgba;
 use recast_gpu::{GpuContext, GpuError, OUTPUT_FORMAT, WORKING_FORMAT};
 use recast_scene::LayerId;
 
-use crate::eval::{BackgroundParams, FrameParams, LayerParams};
+use crate::annotation::{AnnotationParams, AnnotationShape};
+use crate::eval::{BackgroundParams, FrameParams, LayerParams, ShadowParams};
 
 const MAX_GRADIENT_STOPS: usize = 8;
 
@@ -19,12 +20,30 @@ struct BackgroundUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct ShadowUniform {
+    rect: [f32; 4],
+    shape: [f32; 4],
+    tint: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ShapeUniform {
+    geom: [f32; 4],
+    params: [f32; 4],
+    fill: [f32; 4],
+    stroke: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct CardUniform {
     rect: [f32; 4],
     canvas: [f32; 4],
     affine_a: [f32; 4],
     affine_b: [f32; 4],
     flags: [f32; 4],
+    focus: [f32; 4],
 }
 
 /// Decoded source frames for one instant, addressed by layer.
@@ -65,7 +84,9 @@ pub struct Compositor {
     device: wgpu::Device,
     queue: wgpu::Queue,
     background: BackgroundPass,
+    shadow: ShadowPass,
     card: CardPass,
+    shape: ShapePass,
     present: PresentPass,
     working: Option<(u32, u32, wgpu::Texture)>,
 }
@@ -76,10 +97,20 @@ struct BackgroundPass {
     uniform: wgpu::Buffer,
 }
 
+struct ShadowPass {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+}
+
 struct CardPass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+}
+
+struct ShapePass {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
 }
 
 struct PresentPass {
@@ -93,7 +124,9 @@ impl Compositor {
         let queue = ctx.queue().clone();
         Ok(Self {
             background: BackgroundPass::new(&device),
+            shadow: ShadowPass::new(&device),
             card: CardPass::new(&device),
+            shape: ShapePass::new(&device),
             present: PresentPass::new(&device),
             device,
             queue,
@@ -120,7 +153,9 @@ impl Compositor {
             });
 
         self.draw_background(&mut encoder, &working_view, params, width, height);
+        self.draw_shadow(&mut encoder, &working_view, params);
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
+        self.draw_annotations(&mut encoder, &working_view, params);
         self.present(&mut encoder, &working_view, target);
 
         self.queue.submit([encoder.finish()]);
@@ -195,6 +230,60 @@ impl Compositor {
         pass.draw(0..3, 0..1);
     }
 
+    fn draw_shadow(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        params: &FrameParams,
+    ) {
+        if params.shadows.is_empty() {
+            return;
+        }
+        let mut buffers = Vec::with_capacity(params.shadows.len());
+        let mut bind_groups = Vec::with_capacity(params.shadows.len());
+        for shadow in &params.shadows {
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("shadow-uniform"),
+                size: std::mem::size_of::<ShadowUniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue
+                .write_buffer(&buffer, 0, bytemuck::bytes_of(&shadow_uniform(shadow)));
+            bind_groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("shadow"),
+                layout: &self.shadow.layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            }));
+            buffers.push(buffer);
+        }
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("shadow"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: working,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.shadow.pipeline);
+        for bind_group in &bind_groups {
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+    }
+
     fn draw_layers(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -218,7 +307,7 @@ impl Compositor {
                 continue;
             }
 
-            let uniform = card_uniform(layer, params, width, height, input.needs_srgb_decode);
+            let uniform = card_uniform(layer, width, height, input.needs_srgb_decode);
             let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("card-uniform"),
                 size: std::mem::size_of::<CardUniform>() as u64,
@@ -276,6 +365,60 @@ impl Compositor {
             pass.draw(0..6, 0..1);
         }
         stats
+    }
+
+    fn draw_annotations(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        params: &FrameParams,
+    ) {
+        if params.annotations.is_empty() {
+            return;
+        }
+        let mut buffers = Vec::with_capacity(params.annotations.len());
+        let mut bind_groups = Vec::with_capacity(params.annotations.len());
+        for annotation in &params.annotations {
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("shape-uniform"),
+                size: std::mem::size_of::<ShapeUniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue
+                .write_buffer(&buffer, 0, bytemuck::bytes_of(&shape_uniform(annotation)));
+            bind_groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("shape"),
+                layout: &self.shape.layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            }));
+            buffers.push(buffer);
+        }
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("annotations"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: working,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.shape.pipeline);
+        for bind_group in &bind_groups {
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
     }
 
     fn present(
@@ -375,27 +518,91 @@ fn background_uniform(background: &BackgroundParams, width: u32, height: u32) ->
     uniform
 }
 
+fn shadow_uniform(shadow: &ShadowParams) -> ShadowUniform {
+    ShadowUniform {
+        rect: [
+            shadow.center_x,
+            shadow.center_y,
+            shadow.half_w,
+            shadow.half_h,
+        ],
+        shape: [
+            shadow.blur_px,
+            shadow.spread_px,
+            shadow.offset_y_px,
+            shadow.radius_px,
+        ],
+        tint: [
+            shadow.color.r as f32 / 255.0,
+            shadow.color.g as f32 / 255.0,
+            shadow.color.b as f32 / 255.0,
+            shadow.opacity,
+        ],
+    }
+}
+
+fn srgba_parts(color: recast_color::Srgba) -> [f32; 4] {
+    [
+        color.r as f32 / 255.0,
+        color.g as f32 / 255.0,
+        color.b as f32 / 255.0,
+        color.alpha_f32(),
+    ]
+}
+
+fn shape_uniform(annotation: &AnnotationParams) -> ShapeUniform {
+    let (geom, kind, detail) = match annotation.shape {
+        AnnotationShape::Rect { x, y, w, h, radius } => ([x, y, w, h], 0.0, radius),
+        AnnotationShape::Ellipse { cx, cy, rx, ry } => ([cx, cy, rx, ry], 1.0, 0.0),
+        AnnotationShape::Arrow {
+            x1,
+            y1,
+            x2,
+            y2,
+            head,
+        } => ([x1, y1, x2, y2], 2.0, head),
+    };
+    ShapeUniform {
+        geom,
+        params: [kind, detail, annotation.stroke_width, annotation.alpha],
+        fill: srgba_parts(annotation.fill),
+        stroke: srgba_parts(annotation.stroke),
+    }
+}
+
 fn card_uniform(
     layer: &LayerParams,
-    params: &FrameParams,
     width: u32,
     height: u32,
     needs_srgb_decode: bool,
 ) -> CardUniform {
-    let g = params.geometry;
     let t = layer.transform;
+    let d = layer.dest;
     CardUniform {
-        rect: [
-            g.video_x as f32,
-            g.video_y as f32,
-            g.video_w as f32,
-            g.video_h as f32,
-        ],
+        rect: [d.x, d.y, d.w, d.h],
         canvas: [width as f32, height as f32, 0.0, 0.0],
         affine_a: [t.sx, t.shx, t.tx, t.shy],
         affine_b: [t.sy, t.ty, layer.opacity, layer.corner_radius],
-        flags: [if needs_srgb_decode { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
+        flags: [
+            if needs_srgb_decode { 1.0 } else { 0.0 },
+            layer.rotate,
+            streak_length(layer),
+            0.0,
+        ],
+        focus: [layer.zoom_center[0], layer.zoom_center[1], 0.0, 0.0],
     }
+}
+
+/// Streak length in source UV. Velocity-driven, so the blur fires during a ramp
+/// and vanishes on the hold; `MAX_STREAK` keeps a fast ramp from smearing the
+/// whole frame.
+fn streak_length(layer: &LayerParams) -> f32 {
+    const MAX_STREAK: f32 = 0.35;
+    const VELOCITY_SCALE: f32 = 0.08;
+    if layer.motion_blur <= 0.0 {
+        return 0.0;
+    }
+    (layer.motion_blur * layer.zoom_velocity.abs() * VELOCITY_SCALE).min(MAX_STREAK)
 }
 
 fn fullscreen_pipeline(
@@ -496,6 +703,34 @@ impl BackgroundPass {
     }
 }
 
+impl ShadowPass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shadow"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let pipeline = fullscreen_pipeline(
+            device,
+            "shadow",
+            include_str!("shaders/shadow.wgsl"),
+            &layout,
+            WORKING_FORMAT,
+            Some(PREMULTIPLIED),
+            "vs",
+        );
+        Self { pipeline, layout }
+    }
+}
+
 impl CardPass {
     fn new(device: &wgpu::Device) -> Self {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -553,6 +788,34 @@ impl CardPass {
             layout,
             sampler,
         }
+    }
+}
+
+impl ShapePass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shape"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let pipeline = fullscreen_pipeline(
+            device,
+            "shape",
+            include_str!("shaders/shape.wgsl"),
+            &layout,
+            WORKING_FORMAT,
+            Some(PREMULTIPLIED),
+            "vs",
+        );
+        Self { pipeline, layout }
     }
 }
 
@@ -638,9 +901,56 @@ mod tests {
         assert!((u.solid[0] - 17.0 / 255.0).abs() < 1e-6);
     }
 
+    fn layer(motion_blur: f32, zoom_velocity: f32) -> LayerParams {
+        LayerParams {
+            id: recast_scene::LayerId(0),
+            visible: true,
+            opacity: 1.0,
+            transform: crate::Affine2::IDENTITY,
+            dest: crate::eval::DestRect {
+                x: 0.0,
+                y: 0.0,
+                w: 100.0,
+                h: 100.0,
+            },
+            rotate: 0.0,
+            corner_radius: 0.0,
+            blur: 0.0,
+            motion_blur,
+            zoom_center: [0.5, 0.5],
+            zoom_velocity,
+        }
+    }
+
+    #[test]
+    fn no_authored_motion_blur_means_no_streak() {
+        assert_eq!(streak_length(&layer(0.0, 5.0)), 0.0);
+    }
+
+    /// The whole point of driving this from velocity: a held zoom is not moving,
+    /// so it must not smear. The old FFmpeg path had no equivalent at all and
+    /// the field was documented as preview-only.
+    #[test]
+    fn a_held_zoom_does_not_streak_however_strong_the_setting() {
+        assert_eq!(streak_length(&layer(1.0, 0.0)), 0.0);
+    }
+
+    #[test]
+    fn a_ramp_streaks_in_both_directions() {
+        let up = streak_length(&layer(1.0, 4.0));
+        let down = streak_length(&layer(1.0, -4.0));
+        assert!(up > 0.0);
+        assert_eq!(up, down);
+    }
+
+    #[test]
+    fn a_violent_ramp_is_capped_rather_than_smearing_the_whole_frame() {
+        assert!(streak_length(&layer(1.0, 10_000.0)) <= 0.35);
+    }
+
     #[test]
     fn the_uniforms_match_the_std140_sizes_the_shaders_declare() {
         assert_eq!(std::mem::size_of::<BackgroundUniform>(), 16 + 16 + 16 * 8);
-        assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 5);
+        assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 6);
     }
 }

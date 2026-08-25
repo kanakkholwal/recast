@@ -1,8 +1,11 @@
 use recast_color::{Gradient, Srgba};
-use recast_scene::v1::nodes::ZoomRegion;
+use recast_scene::v1::nodes::{ShadowSettings, ZoomRegion};
+use recast_scene::v1::SegmentAnim;
 use recast_scene::{Effect, LayerId, LayerSource, Scene};
-use recast_time::{output_to_original, TimeMap};
+use recast_time::{output_to_original, Segment, TimeMap};
 
+use crate::annotation::{annotation_params, sorted_visible, AnnotationParams};
+use crate::camera::{bubble_params, bubble_shadow};
 use crate::geometry::{canvas_geometry, CanvasGeometry};
 
 /// A 2x3 row-major affine, applied to normalised source UVs.
@@ -63,15 +66,47 @@ pub enum BackgroundParams {
     Asset { kind: String, value: String },
 }
 
+/// The card's destination rect in canvas pixels, after scene animation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DestRect {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShadowParams {
+    pub color: recast_color::Srgba,
+    /// 0..1, already divided out of the authored 0..100.
+    pub opacity: f32,
+    pub blur_px: f32,
+    pub spread_px: f32,
+    pub offset_y_px: f32,
+    pub center_x: f32,
+    pub center_y: f32,
+    pub half_w: f32,
+    pub half_h: f32,
+    pub radius_px: f32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayerParams {
     pub id: LayerId,
     pub visible: bool,
     pub opacity: f32,
     pub transform: Affine2,
+    /// Where the card lands on the canvas, after scene animation.
+    pub dest: DestRect,
+    /// Radians, about the card centre.
+    pub rotate: f32,
     /// Fraction of the shorter video edge, 0..0.5.
     pub corner_radius: f32,
     pub blur: f32,
+    /// Authored 0..1 strength of the dolly blur.
+    pub motion_blur: f32,
+    /// Zoom focus in source UV, which is the centre the radial blur streaks from.
+    pub zoom_center: [f32; 2],
     /// Signed rate of change of the zoom scale, in scale units per output
     /// second. Drives motion blur, which must fire during a ramp and not during
     /// the hold.
@@ -83,7 +118,11 @@ pub struct FrameParams {
     pub geometry: CanvasGeometry,
     pub background: BackgroundParams,
     pub background_blur: f32,
+    /// In draw order. The card's shadow, then the camera bubble's.
+    pub shadows: Vec<ShadowParams>,
     pub layers: Vec<LayerParams>,
+    /// In draw order: z-index, then insertion order.
+    pub annotations: Vec<AnnotationParams>,
     /// Where `output_time` lands on the original recording axis.
     pub source_time: f64,
 }
@@ -100,6 +139,7 @@ const VELOCITY_DT: f64 = 1.0 / 120.0;
 
 pub struct Evaluator {
     time_map: TimeMap,
+    segments: Vec<Segment>,
     geometry: CanvasGeometry,
 }
 
@@ -107,6 +147,7 @@ impl Evaluator {
     pub fn new(scene: &Scene, source: SourceGeometry) -> Self {
         Self {
             time_map: scene.timeline.time_map(),
+            segments: scene.timeline.segments(),
             geometry: canvas_geometry(
                 source.width,
                 source.height,
@@ -132,7 +173,17 @@ impl Evaluator {
 
         let mut background = BackgroundParams::Solid(Srgba::opaque(0x11, 0x11, 0x11));
         let mut background_blur = 0.0f32;
+        let mut shadows = Vec::new();
         let mut layers = Vec::with_capacity(scene.layers.len());
+        let mut card = (
+            DestRect {
+                x: 0.0,
+                y: 0.0,
+                w: 0.0,
+                h: 0.0,
+            },
+            Affine2::IDENTITY,
+        );
 
         for layer in &scene.layers {
             match &layer.source {
@@ -151,7 +202,32 @@ impl Evaluator {
                     };
                     background_blur = blur_of(layer);
                 }
-                _ => layers.push(self.layer_params(layer, source_time, output_time)),
+                LayerSource::Camera(settings) => {
+                    let mut params = self.layer_params(layer, source_time, output_time);
+                    if let Some(bubble) =
+                        bubble_params(settings, &scene.zoom_regions(), source_time, self.geometry)
+                    {
+                        params.dest = bubble.dest;
+                        params.corner_radius = bubble.corner_radius;
+                        params.transform = bubble.transform;
+                        if params.visible {
+                            shadows.extend(bubble_shadow(settings, &bubble));
+                        }
+                    } else {
+                        params.visible = false;
+                    }
+                    layers.push(params);
+                }
+                _ => {
+                    let params = self.layer_params(layer, source_time, output_time);
+                    if matches!(layer.source, LayerSource::Screen) {
+                        card = (params.dest, params.transform);
+                        if params.visible {
+                            shadows.extend(shadow_params(layer, &params, self.geometry));
+                        }
+                    }
+                    layers.push(params);
+                }
             }
         }
 
@@ -159,9 +235,27 @@ impl Evaluator {
             geometry: self.geometry,
             background,
             background_blur,
+            shadows,
+            annotations: self.annotations(scene, source_time, card.0, card.1),
             layers,
             source_time,
         }
+    }
+
+    fn annotations(
+        &self,
+        scene: &Scene,
+        source_time: f64,
+        dest: DestRect,
+        transform: Affine2,
+    ) -> Vec<AnnotationParams> {
+        let all = scene.annotations();
+        sorted_visible(&all)
+            .into_iter()
+            .filter_map(|index| {
+                annotation_params(all[index], source_time, self.geometry, dest, transform)
+            })
+            .collect()
     }
 
     fn layer_params(
@@ -188,16 +282,77 @@ impl Evaluator {
             ),
             None => Affine2::IDENTITY,
         };
+        let (motion_blur, zoom_center) = match zoom {
+            Some(region) => (
+                region.motion_blur.clamp(0.0, 1.0) as f32,
+                [region.center_x as f32, region.center_y as f32],
+            ),
+            None => (0.0, [0.5, 0.5]),
+        };
+
+        let anim = self.scene_anim(layer, source_time);
+        let (dest, rotate) = self.place(anim);
 
         LayerParams {
             id: layer.id,
             visible: !layer.hidden,
-            opacity: layer.opacity as f32,
+            opacity: layer.opacity as f32 * anim.opacity as f32,
             transform,
+            dest,
+            rotate,
             corner_radius: corner_radius_of(layer),
             blur: blur_of(layer),
+            motion_blur,
+            zoom_center,
             zoom_velocity: self.zoom_velocity(&zooms, output_time),
         }
+    }
+
+    /// The entrance/exit transform for whichever segment contains `source_time`,
+    /// or identity. Anchored to the segment's ORIGINAL start, so a cut or a trim
+    /// that orphans an anchor drops the animation instead of misplacing it.
+    fn scene_anim(&self, layer: &recast_scene::Layer, source_time: f64) -> AnimTransform {
+        let anims: Vec<&SegmentAnim> = layer
+            .effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::SceneAnim(a) => Some(&**a),
+                _ => None,
+            })
+            .collect();
+        if anims.is_empty() {
+            return AnimTransform::IDENTITY;
+        }
+        let Some(segment) = self
+            .segments
+            .iter()
+            .find(|s| source_time >= s.start - ANCHOR_EPS && source_time < s.end)
+        else {
+            return AnimTransform::IDENTITY;
+        };
+        let Some(anim) = anims
+            .iter()
+            .find(|a| (a.start - segment.start).abs() <= ANCHOR_EPS)
+        else {
+            return AnimTransform::IDENTITY;
+        };
+        eval_segment_anim(anim, source_time, segment.start, segment.end)
+    }
+
+    /// Translation is a fraction of the CANVAS, scale is about the card's own
+    /// centre. Both match the expressions the FFmpeg overlay path builds.
+    fn place(&self, anim: AnimTransform) -> (DestRect, f32) {
+        let g = self.geometry;
+        let (w, h) = (g.video_w as f64, g.video_h as f64);
+        let scaled_w = w * anim.scale;
+        let scaled_h = h * anim.scale;
+        let dest = DestRect {
+            x: (g.video_x as f64 + anim.tx * g.canvas_w as f64 - (scaled_w - w) / 2.0) as f32,
+            y: (g.video_y as f64 + anim.ty * g.canvas_h as f64 - (scaled_h - h) / 2.0) as f32,
+            w: scaled_w as f32,
+            h: scaled_h as f32,
+        };
+        (dest, anim.rotate.to_radians() as f32)
     }
 
     /// Differentiated on the OUTPUT axis, so a sped-up segment blurs harder for
@@ -216,6 +371,145 @@ impl Evaluator {
         let after = sample(output_time + VELOCITY_DT);
         ((after - before) / (2.0 * VELOCITY_DT)) as f32
     }
+}
+
+const ANCHOR_EPS: f64 = 1e-4;
+const MIN_ANIM_MS: f64 = 100.0;
+const MAX_ANIM_MS: f64 = 2000.0;
+const DEFAULT_ANIM_MS: f64 = 500.0;
+const DEFAULT_SLIDE: f64 = 0.6;
+const DEFAULT_SCALE_DELTA: f64 = 0.3;
+const DEFAULT_POP_DELTA: f64 = 0.35;
+const DEFAULT_ROTATE_DEG: f64 = 15.0;
+/// Anti-wobble guards: a segment shorter than this stays static, and each ramp
+/// caps to this fraction of the window, so aggressive silence cuts cannot leave
+/// a fragment in a permanent in-to-out oscillation.
+const MIN_ANIMATABLE_SEC: f64 = 0.2;
+const MAX_SIDE_FRACTION: f64 = 0.4;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AnimTransform {
+    pub tx: f64,
+    pub ty: f64,
+    pub scale: f64,
+    pub rotate: f64,
+    pub opacity: f64,
+}
+
+impl AnimTransform {
+    pub const IDENTITY: Self = Self {
+        tx: 0.0,
+        ty: 0.0,
+        scale: 1.0,
+        rotate: 0.0,
+        opacity: 1.0,
+    };
+}
+
+fn clamp_anim_ms(ms: f64) -> f64 {
+    if ms.is_finite() {
+        ms.clamp(MIN_ANIM_MS, MAX_ANIM_MS)
+    } else {
+        DEFAULT_ANIM_MS
+    }
+}
+
+/// `presence` 1 = resting, 0 = fully animated away. A bouncy easing may push it
+/// past either end, which is the overshoot that makes the motion read as physical.
+fn presence(spec: &recast_scene::v1::SceneAnimSpec, p: f64) -> AnimTransform {
+    let mut t = AnimTransform::IDENTITY;
+    match spec.kind.as_str() {
+        "fade" => t.opacity = p.clamp(0.0, 1.0),
+        "slide" => {
+            let d = spec.intensity.unwrap_or(DEFAULT_SLIDE);
+            let off = (1.0 - p) * d;
+            match spec.dir.as_deref().unwrap_or("left") {
+                "right" => t.tx = off,
+                "up" => t.ty = -off,
+                "down" => t.ty = off,
+                _ => t.tx = -off,
+            }
+        }
+        "scale" | "pop" => {
+            let amount = spec.intensity.unwrap_or(if spec.kind == "pop" {
+                DEFAULT_POP_DELTA
+            } else {
+                DEFAULT_SCALE_DELTA
+            });
+            let start = 1.0 - amount;
+            t.scale = start + (1.0 - start) * p;
+        }
+        "shrink" => {
+            let amount = spec.intensity.unwrap_or(DEFAULT_SCALE_DELTA);
+            let start = 1.0 + amount;
+            t.scale = start + (1.0 - start) * p;
+        }
+        "rotate" => t.rotate = (1.0 - p) * spec.intensity.unwrap_or(DEFAULT_ROTATE_DEG),
+        _ => {}
+    }
+    t
+}
+
+fn eval_segment_anim(anim: &SegmentAnim, t: f64, start: f64, end: f64) -> AnimTransform {
+    let window = (end - start).max(0.0);
+    if window < MIN_ANIMATABLE_SEC {
+        return AnimTransform::IDENTITY;
+    }
+    let max_side = window * MAX_SIDE_FRACTION;
+    if let Some(spec) = &anim.anim_in {
+        let d = (clamp_anim_ms(spec.duration_ms) / 1000.0).min(max_side);
+        if d > 0.0 && t < start + d {
+            let phase = ((t - start) / d).clamp(0.0, 1.0);
+            return presence(spec, spec.easing.y(phase as f32) as f64);
+        }
+    }
+    if let Some(spec) = &anim.anim_out {
+        let d = (clamp_anim_ms(spec.duration_ms) / 1000.0).min(max_side);
+        if d > 0.0 && t > end - d {
+            let phase = ((end - t) / d).clamp(0.0, 1.0);
+            return presence(spec, spec.easing.y(phase as f32) as f64);
+        }
+    }
+    AnimTransform::IDENTITY
+}
+
+/// The shadow is cast by the card's rect, so it follows scene animation. Mirrors
+/// `render_drop_shadow_mask`: SDF against the spread-expanded rect, coverage
+/// smoothstepped over the blur distance.
+fn shadow_params(
+    layer: &recast_scene::Layer,
+    params: &LayerParams,
+    geometry: CanvasGeometry,
+) -> Option<ShadowParams> {
+    let settings: &ShadowSettings = layer.effects.iter().find_map(|e| match e {
+        Effect::DropShadow(s) => Some(&**s),
+        _ => None,
+    })?;
+    if !settings.enabled || settings.opacity <= 0.0 {
+        return None;
+    }
+
+    let half_w = params.dest.w as f64 / 2.0;
+    let half_h = params.dest.h as f64 / 2.0;
+    let spread = settings.spread.max(0.0);
+    let radius_px = (params.corner_radius as f64 * params.dest.w.min(params.dest.h) as f64
+        + spread * 0.5)
+        .min((half_w + spread).min(half_h + spread))
+        .max(0.0);
+
+    Some(ShadowParams {
+        color: recast_color::parse_css_color(&settings.color).unwrap_or(Srgba::opaque(0, 0, 0)),
+        opacity: (settings.opacity / 100.0).clamp(0.0, 1.0) as f32,
+        blur_px: settings.blur.max(0.5) as f32,
+        spread_px: spread as f32,
+        offset_y_px: settings.offset_y as f32,
+        center_x: params.dest.x + half_w as f32,
+        center_y: params.dest.y + half_h as f32,
+        half_w: half_w as f32,
+        half_h: half_h as f32,
+        radius_px: radius_px as f32,
+    })
+    .filter(|_| geometry.canvas_w > 0 && geometry.canvas_h > 0)
 }
 
 /// The latest-STARTING region containing `t` wins, ties to the later entry.
@@ -474,6 +768,179 @@ mod tests {
             "zoom started early: {}",
             at(4.5)
         );
+    }
+
+    const SHADOW: &str = r##""shadow": {"enabled": true, "blur": 40.0, "spread": 4.0,
+        "offsetY": 24.0, "opacity": 50.0, "color": "#000000"},"##;
+
+    #[test]
+    fn a_disabled_shadow_produces_no_pass() {
+        let scene = scene_with("");
+        let params = Evaluator::new(&scene, source()).evaluate(&scene, 0.0);
+        assert!(params.shadows.is_empty());
+    }
+
+    #[test]
+    fn a_zero_opacity_shadow_produces_no_pass() {
+        let scene = scene_with(
+            r##""shadow": {"enabled": true, "blur": 40.0, "opacity": 0.0, "color": "#000000"},"##,
+        );
+        let params = Evaluator::new(&scene, source()).evaluate(&scene, 0.0);
+        assert!(params.shadows.is_empty());
+    }
+
+    #[test]
+    fn an_enabled_shadow_is_centred_on_the_card_and_normalises_its_opacity() {
+        let scene = scene_with(&format!(r#"{SHADOW} "padding": 10.0,"#));
+        let ev = Evaluator::new(&scene, source());
+        let params = ev.evaluate(&scene, 0.0);
+        let shadow = params.shadows[0];
+        let g = ev.geometry();
+
+        assert!((shadow.center_x - (g.video_x as f32 + g.video_w as f32 / 2.0)).abs() < 1e-3);
+        assert!((shadow.opacity - 0.5).abs() < 1e-6);
+        assert_eq!(shadow.offset_y_px, 24.0);
+        assert_eq!(shadow.spread_px, 4.0);
+    }
+
+    /// The old rasteriser floored blur at 0.5 because a zero-width smoothstep is
+    /// a division by zero in the shader.
+    #[test]
+    fn a_zero_blur_shadow_is_floored_rather_than_dividing_by_zero() {
+        let scene = scene_with(
+            r##""shadow": {"enabled": true, "blur": 0.0, "opacity": 50.0, "color": "#000000"},"##,
+        );
+        let shadow = Evaluator::new(&scene, source())
+            .evaluate(&scene, 0.0)
+            .shadows[0];
+        assert!(shadow.blur_px >= 0.5);
+    }
+
+    #[test]
+    fn the_shadow_radius_degrades_to_a_full_ellipse_rather_than_inverting() {
+        let scene = scene_with(&format!(r#"{SHADOW} "borderRadius": 50.0,"#));
+        let shadow = Evaluator::new(&scene, source())
+            .evaluate(&scene, 0.0)
+            .shadows[0];
+        assert!(shadow.radius_px <= shadow.half_h + shadow.spread_px + 1e-3);
+        assert!(shadow.radius_px >= 0.0);
+    }
+
+    #[test]
+    fn an_unanimated_card_sits_exactly_on_the_video_rect() {
+        let scene = scene_with(r#""padding": 10.0,"#);
+        let ev = Evaluator::new(&scene, source());
+        let g = ev.geometry();
+        let dest = screen_layer(&ev.evaluate(&scene, 0.0)).dest;
+        assert_eq!(dest.x, g.video_x as f32);
+        assert_eq!(dest.y, g.video_y as f32);
+        assert_eq!(dest.w, g.video_w as f32);
+        assert_eq!(dest.h, g.video_h as f32);
+    }
+
+    #[test]
+    fn a_slide_entrance_offsets_the_card_and_settles_back() {
+        let scene = scene_with(
+            r#""segmentAnims": [{"start": 0.0, "in": {"kind": "slide", "durationMs": 500.0, "dir": "left"}}],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        let g = ev.geometry();
+        let entering = screen_layer(&ev.evaluate(&scene, 0.0)).dest;
+        let settled = screen_layer(&ev.evaluate(&scene, 5.0)).dest;
+
+        assert!(
+            entering.x < g.video_x as f32,
+            "slide-from-left did not offset: {}",
+            entering.x
+        );
+        assert_eq!(settled.x, g.video_x as f32);
+    }
+
+    #[test]
+    fn a_scale_entrance_grows_about_the_card_centre() {
+        let scene = scene_with(
+            r#""segmentAnims": [{"start": 0.0, "in": {"kind": "scale", "durationMs": 500.0}}],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        let g = ev.geometry();
+        let entering = screen_layer(&ev.evaluate(&scene, 0.0)).dest;
+
+        assert!(
+            entering.w < g.video_w as f32,
+            "did not scale: {}",
+            entering.w
+        );
+        let centre = entering.x + entering.w / 2.0;
+        assert!(
+            (centre - (g.video_x as f32 + g.video_w as f32 / 2.0)).abs() < 1e-3,
+            "the card drifted off centre while scaling: {centre}"
+        );
+    }
+
+    #[test]
+    fn a_fade_entrance_drives_opacity_not_geometry() {
+        let scene = scene_with(
+            r#""segmentAnims": [{"start": 0.0, "in": {"kind": "fade", "durationMs": 500.0}}],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        let g = ev.geometry();
+        let params = ev.evaluate(&scene, 0.0);
+        let entering = screen_layer(&params);
+        assert!(entering.opacity < 0.05, "opacity {}", entering.opacity);
+        assert_eq!(entering.dest.x, g.video_x as f32);
+    }
+
+    #[test]
+    fn a_rotate_entrance_produces_radians() {
+        let scene = scene_with(
+            r#""segmentAnims": [{"start": 0.0, "in": {"kind": "rotate", "durationMs": 500.0}}],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        let entering = screen_layer(&ev.evaluate(&scene, 0.0)).rotate;
+        assert!(
+            (entering.abs() - DEFAULT_ROTATE_DEG.to_radians() as f32).abs() < 1e-3,
+            "rotate was {entering}"
+        );
+    }
+
+    /// A silence cut can leave a fragment shorter than the two ramps combined,
+    /// which without this guard sits in a permanent in-to-out oscillation.
+    #[test]
+    fn a_segment_shorter_than_the_guard_stays_static() {
+        let scene = scene_with(
+            r#""trimEnd": 0.1,
+               "segmentAnims": [{"start": 0.0, "in": {"kind": "slide", "durationMs": 500.0}}],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        let g = ev.geometry();
+        assert_eq!(
+            screen_layer(&ev.evaluate(&scene, 0.0)).dest.x,
+            g.video_x as f32
+        );
+    }
+
+    #[test]
+    fn an_animation_whose_anchor_no_longer_matches_a_segment_is_dropped() {
+        let scene = scene_with(
+            r#""segmentAnims": [{"start": 7.5, "in": {"kind": "slide", "durationMs": 500.0}}],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        let g = ev.geometry();
+        assert_eq!(
+            screen_layer(&ev.evaluate(&scene, 0.0)).dest.x,
+            g.video_x as f32
+        );
+    }
+
+    #[test]
+    fn each_ramp_caps_to_a_fraction_of_its_segment() {
+        let short = scene_with(
+            r#""trimEnd": 1.0,
+               "segmentAnims": [{"start": 0.0, "in": {"kind": "fade", "durationMs": 2000.0}}],"#,
+        );
+        let ev = Evaluator::new(&short, source());
+        // The ramp caps at 40% of a 1 s window, so 0.5 s in it has finished.
+        assert_eq!(screen_layer(&ev.evaluate(&short, 0.5)).opacity, 1.0);
     }
 
     #[test]
