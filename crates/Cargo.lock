@@ -672,10 +672,13 @@ dependencies = [
 name = "recast-compositor"
 version = "0.0.0"
 dependencies = [
+ "bytemuck",
  "recast-color",
+ "recast-gpu",
  "recast-scene",
  "recast-time",
  "serde_json",
+ "wgpu",
 ]
 
 [[package]]

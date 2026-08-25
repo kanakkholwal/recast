@@ -6,6 +6,9 @@ publish = false
 description = "The frame graph, the pure scene-to-uniforms evaluator, and the WGSL passes."
 
 [dependencies]
+recast-gpu = { path = "../recast-gpu" }
+wgpu = { version = "=30.0.1", default-features = false, features = ["wgsl"] }
+bytemuck = { version = "1.19", features = ["derive"] }
 recast-color = { path = "../recast-color" }
 recast-scene = { path = "../recast-scene" }
 recast-time = { path = "../recast-time", default-features = false, features = ["serde"] }
