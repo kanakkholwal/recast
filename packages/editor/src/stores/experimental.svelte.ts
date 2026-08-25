@@ -10,7 +10,8 @@ export type ExperimentalFlag =
 	| "silenceDetection"
 	| "selfHosting"
 	| "remoteTranscription"
-	| "browserExportBeta";
+	| "browserExportBeta"
+	| "wasmPreviewEngine";
 
 interface FlagMeta {
 	key: ExperimentalFlag;
@@ -38,6 +39,12 @@ export const FLAG_META: FlagMeta[] = [
 			"Transcribe captions through an OpenAI-compatible endpoint (LM Studio, a self-hosted server, or a third-party API) instead of an on-device model. Response formats vary between servers, so treat this as early.",
 	},
 	{
+		key: "wasmPreviewEngine",
+		label: "New preview engine (beta)",
+		description:
+			"Composite the preview with the new Rust engine on WebGPU instead of WebGL2. The same code renders the export, so what you see is what you get. Early — falls back to WebGL2 if your device has no WebGPU.",
+	},
+	{
 		key: "browserExportBeta",
 		label: "New export engine (beta)",
 		description:
@@ -50,6 +57,7 @@ const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	selfHosting: false,
 	remoteTranscription: false,
 	browserExportBeta: false,
+	wasmPreviewEngine: false,
 };
 
 const STORAGE_KEY = "recast-experimental-flags";

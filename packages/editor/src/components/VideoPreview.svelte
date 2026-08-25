@@ -1,44 +1,46 @@
 <script lang="ts">
-import { analytics } from "../lib/host-hooks";
+import type { CursorPlacement } from "@recast/engine";
+import { type MediaRef, mediaRefKey, textureRingFrames } from "@recast/media";
+import type { MediabunnyVideoSource } from "@recast/media/playback";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { Spinner } from "@recast/ui/spinner";
+import { onDestroy, onMount, untrack } from "svelte";
 import { computeCanvasGeometry } from "../lib/canvas-geometry";
 import { CursorSmoother } from "../lib/cursor/smoother";
 import { smoothingStrengthToSigmaMs } from "../lib/cursor/smoothing";
+import { getEditorServices } from "../lib/editor/services";
+import { analytics, exportActivity } from "../lib/host-hooks";
+import { AudioStallMonitor, resolveAvSync } from "../lib/playback/av-sync";
 import { PlaybackClock } from "../lib/playback/clock";
-import type { MediabunnyVideoSource } from "@recast/media/playback";
+import { PreviewEngineDriver } from "../lib/playback/engine-driver";
+import { FrameTextureRing } from "../lib/playback/frame-textures";
 import { createMediabunnySource } from "../lib/playback/mediabunny";
-import { cursorSpriteHotspot, resolveCursorDataUrl, resolveCursorSprite } from "../lib/registry";
-import { RenderCore } from "./render-core";
-import { resolveBackgroundSrc } from "./background-source";
-import { WebGL2Backend } from "./webgl2-backend";
 import { RenderWorkerClient } from "../lib/playback/render-worker-client";
 import { renderWorkerCapable } from "../lib/playback/render-worker-protocol";
-import { computeFrameParams, type FrameInput, type SvgCursorParams } from "./frame-params";
-import { assetsStore } from "../stores/assets-store.svelte";
-import { exportActivity } from "../lib/host-hooks";
-import { type EditorStore } from "../stores/editor-store.svelte";
+import { cursorSpriteHotspot, resolveCursorDataUrl, resolveCursorSprite } from "../lib/registry";
 import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
-import { Button } from "@recast/ui/button";
-import { Spinner } from "@recast/ui/spinner";
-import { toast } from "@recast/ui/sonner";
-import { getEditorServices } from "../lib/editor/services";
-import { onDestroy, onMount } from "svelte";
+import { assetsStore } from "../stores/assets-store.svelte";
+import { type EditorStore } from "../stores/editor-store.svelte";
+import { experimentalStore } from "../stores/experimental.svelte";
 import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 import CameraOverlay from "./_components/CameraOverlay.svelte";
 import CaptionOverlay from "./_components/CaptionOverlay.svelte";
 import FocusOverlay from "./_components/FocusOverlay.svelte";
 import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
+import { resolveBackgroundSrc } from "./background-source";
 import { buildPressEvents, type PressEvent } from "./cursor-animation.logic";
+import { computeFrameParams, type FrameInput, type SvgCursorParams } from "./frame-params";
 import { buildGradientUniforms } from "./gradient.logic";
+import { RenderCore } from "./render-core";
 import {
+	type CursorSampleJS,
 	classifyMbError,
+	type IdlePeriodJS,
 	resolutionTier,
 	shouldRecoverMbSource,
-	type CursorSampleJS,
-	type IdlePeriodJS,
 } from "./video-preview.logic";
-import { AudioStallMonitor, resolveAvSync } from "../lib/playback/av-sync";
-import { FrameTextureRing } from "../lib/playback/frame-textures";
-import { type MediaRef, mediaRefKey, textureRingFrames } from "@recast/media";
+import { WebGL2Backend } from "./webgl2-backend";
 
 interface Props {
 	store: EditorStore;
@@ -133,6 +135,12 @@ let lastBgKey = "";
 // frames and presents the returned ImageBitmap. Old main-thread GL path is the
 // fallback when unsupported or if worker init throws.
 let renderWorkerClient: RenderWorkerClient | null = null;
+// Rust/wgpu compositor, behind the `wasmPreviewEngine` flag while DG-3 is open.
+// Runs INSTEAD of GL on its own canvas; the GL path is untouched so the two can
+// be compared on the same machine before either is deleted.
+let engineDriver: PreviewEngineDriver | null = null;
+let engineFailed = $state<string | null>(null);
+const useEngine = experimentalStore.isEnabled("wasmPreviewEngine");
 const useRenderWorker = renderWorkerCapable({
 	OffscreenCanvas: (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas,
 	VideoFrame: (globalThis as { VideoFrame?: unknown }).VideoFrame,
@@ -243,12 +251,84 @@ let smoothingSignature = "";
 
 let pressEvents: PressEvent[] = [];
 
+// Engine path only. The shader cursor pass is phase-2 work that is not built
+// yet, so the default `dot` style is drawn as a DOM circle here from the
+// engine's own placement. Same numbers, different surface.
+let engineDot = $state<{
+	visible: boolean;
+	xPct: number;
+	yPct: number;
+	sizePct: number;
+	alpha: number;
+	highlight: { xPct: number; yPct: number; alpha: number } | null;
+} | null>(null);
+
+/**
+ * Splits the engine's placement between the sprite overlay and the dot. The
+ * position is already in canvas pixels, evaluated in Rust with the same zoom
+ * and card rect the shader used, so nothing here recomputes geometry.
+ */
+function applyEngineCursor(placement: CursorPlacement | null) {
+	const geom = currentGeometry();
+	const meta = store.metadata;
+	if (!placement || !geom || !meta) {
+		engineDot = null;
+		updateSvgCursor(null);
+		return;
+	}
+	const cs = store.cursorSettings;
+	const highlight = placement.highlight
+		? {
+				xPct: (placement.highlight.x / geom.canvasW) * 100,
+				yPct: (placement.highlight.y / geom.canvasH) * 100,
+				alpha: placement.highlight.alpha,
+			}
+		: null;
+
+	if (cs.style !== "dot") {
+		engineDot = highlight
+			? { visible: false, xPct: 0, yPct: 0, sizePct: 0, alpha: 0, highlight }
+			: null;
+		updateSvgCursor({
+			visible: placement.alpha > 0,
+			alpha: placement.alpha,
+			styleId: cs.style,
+			pressed: placement.pressed,
+			right: placement.right,
+			dragging: placement.dragging,
+			scale: placement.scale,
+			canvasX: placement.x,
+			canvasY: placement.y,
+			compW: geom.canvasW,
+			compH: geom.canvasH,
+			spritePx: cs.size * 16,
+		});
+		return;
+	}
+
+	updateSvgCursor(null);
+	const sx = geom.videoW / Math.max(1, meta.width);
+	const diameterPx = Math.max(2, cs.size * 2 * sx * placement.scale) * 2;
+	engineDot = {
+		visible: placement.alpha > 0,
+		xPct: (placement.x / geom.canvasW) * 100,
+		yPct: (placement.y / geom.canvasH) * 100,
+		sizePct: (diameterPx / geom.canvasW) * 100,
+		alpha: placement.alpha,
+		highlight,
+	};
+}
+
 /**
  * (Re)build the texture ring for the live source. Sized from the source, so
  * it must be rebuilt after a context restore too — the old handles belong to
  * the dead context and binding them fails silently.
  */
 function rebuildFrameRing(width: number, height: number) {
+	if (engineDriver) {
+		engineDriver.setScreenRingCapacity(textureRingFrames(width, height));
+		return;
+	}
 	frameRing?.dispose();
 	if (renderWorkerClient) {
 		renderWorkerClient.rebuildRing(textureRingFrames(width, height));
@@ -257,7 +337,28 @@ function rebuildFrameRing(width: number, height: number) {
 	frameRing = gl ? new FrameTextureRing(gl, textureRingFrames(width, height)) : null;
 }
 
+async function initEngine() {
+	if (!canvasEl || engineDriver) return;
+	try {
+		engineDriver = await PreviewEngineDriver.create({ canvas: canvasEl });
+		const info = engineDriver.info;
+		analytics.capture("wasm_preview_init", { ...info });
+		if (info.software) {
+			toast.warning("Preview is running on a software GPU", {
+				description: `No hardware adapter for ${info.backend}; playback will be slow.`,
+			});
+		}
+		requestRedraw();
+	} catch (err) {
+		engineFailed = err instanceof Error ? err.message : String(err);
+		console.error("preview engine failed to start:", err);
+	}
+}
+
 function initGL() {
+	// The engine owns the canvas surface; a WebGL2 context on the same element
+	// would fail, and both drawing to it would be worse.
+	if (useEngine) return;
 	if (canvasEl && useRenderWorker && !renderWorkerClient) {
 		try {
 			renderWorkerClient = new RenderWorkerClient({
@@ -347,11 +448,13 @@ async function loadBackgroundIfNeeded() {
 
 	if (type !== "wallpaper" && type !== "image") {
 		bgTexReady = false;
+		engineDriver?.setBackgroundImage(null);
 		return;
 	}
 
 	if (!value) {
 		bgTexReady = false;
+		engineDriver?.setBackgroundImage(null);
 		return;
 	}
 
@@ -369,7 +472,16 @@ async function loadBackgroundIfNeeded() {
 		img.src = resolvedSrc;
 		await img.decode();
 		if (lastBgKey !== key) return; // Superseded by another load
-		if (renderWorkerClient) {
+		if (engineDriver) {
+			const bmp = await createImageBitmap(img);
+			if (lastBgKey !== key) {
+				bmp.close();
+				return;
+			}
+			// Copied into a texture on the way in, so the bitmap is ours to close.
+			engineDriver.setBackgroundImage(bmp);
+			bmp.close();
+		} else if (renderWorkerClient) {
 			const bmp = await createImageBitmap(img);
 			if (lastBgKey !== key) {
 				bmp.close();
@@ -659,7 +771,7 @@ function updateSvgCursor(next: SvgCursorParams | null) {
 
 function draw() {
 	if (!canvasEl || !store.metadata) return;
-	if (!renderWorkerClient && (!gl || !renderCore)) return;
+	if (!engineDriver && !renderWorkerClient && (!gl || !renderCore)) return;
 	if (!resizeCanvas()) return;
 
 	// Refresh the smoothed cursor path if any of its inputs changed since
@@ -833,6 +945,54 @@ function draw() {
 		const lookaheadOrig = outputToOriginal(store.timeMap, picClock.time + WC_PREFETCH_LOOKAHEAD);
 		const upcoming = activeCuts.find((c) => c.start > playbackTime && c.start <= lookaheadOrig);
 		if (upcoming) mbSource.prefetch(upcoming.end);
+	}
+
+	if (engineDriver) {
+		// The engine evaluates the scene itself, so it takes OUTPUT time; the
+		// original-axis `playbackTime` is only used to pick a decoded frame.
+		const outputTime = usingPicClock
+			? picClock.time
+			: originalToOutput(store.timeMap, playbackTime);
+		engineDriver.setCanvasSize(canvasEl.width, canvasEl.height);
+
+		let bound = false;
+		if (mbSource && mbReady) {
+			let floorSec = 0;
+			for (const c of activeCuts) if (c.end <= playbackTime && c.end > floorSec) floorSec = c.end;
+			mbSource.advanceTo(Math.max(0, playbackTime));
+			bound = engineDriver.bindScreenFrame(
+				Math.max(0, Math.round(playbackTime * 1e6)),
+				Math.max(0, Math.round(floorSec * 1e6)),
+			);
+		} else if (frameEl && frameEl.readyState >= 2 && frameEl.videoWidth > 0) {
+			// `<video>` fallback: there is no decode stream to ring, so the frame
+			// is uploaded and bound in the same tick.
+			const tUs = Math.max(0, Math.round(playbackTime * 1e6));
+			let frame: VideoFrame | null = null;
+			try {
+				frame = new VideoFrame(frameEl, { timestamp: tUs });
+				engineDriver.putScreenFrame(frame, tUs);
+				bound = engineDriver.bindScreenFrame(tUs, 0);
+			} catch (err) {
+				console.warn("preview engine could not take the fallback frame:", err);
+			} finally {
+				frame?.close();
+			}
+		}
+		if (!bound && !hasRenderedFrame) return;
+
+		try {
+			engineDriver.render(outputTime);
+		} catch (err) {
+			engineFailed = err instanceof Error ? err.message : String(err);
+			console.error("preview engine render failed:", err);
+			return;
+		}
+		hasRenderedFrame = true;
+		if (!isReady) isReady = true;
+		applyEngineCursor(engineDriver.cursorAt(outputTime));
+		syncBlurMirror();
+		return;
 	}
 
 	if (renderWorkerClient) {
@@ -1124,9 +1284,30 @@ function onVisibilityChange() {
 	}
 }
 
+// Engine scene sync. Reads the whole render state, so this effect re-runs on
+// any store write; the driver drops an unchanged scene rather than rebuilding
+// the evaluator for nothing.
+$effect(() => {
+	if (!engineDriver) return;
+	const state = store.toRenderState();
+	const meta = store.metadata;
+	untrack(() => {
+		if (!engineDriver) return;
+		if (meta?.width && meta?.height) engineDriver.setSourceSize(meta.width, meta.height);
+		engineDriver.syncScene(state);
+		if (mbSource)
+			engineDriver.setScreenRingCapacity(textureRingFrames(mbSource.width, mbSource.height));
+		engineDriver.setCursorTrack(
+			cursorSamples.length > 0 ? { samples: cursorSamples, idlePeriods } : null,
+		);
+		requestRedraw();
+	});
+});
+
 //  Lifecycle & reactive wiring
 onMount(() => {
-	initGL();
+	if (useEngine) void initEngine();
+	else initGL();
 	canvasEl?.addEventListener("webglcontextlost", onContextLost);
 	canvasEl?.addEventListener("webglcontextrestored", onContextRestored);
 	document.addEventListener("visibilitychange", onVisibilityChange);
@@ -1153,6 +1334,8 @@ onDestroy(() => {
 	clearTimeout(mbRecoverTimer);
 	renderWorkerClient?.dispose();
 	renderWorkerClient = null;
+	engineDriver?.dispose();
+	engineDriver = null;
 	smoother?.dispose();
 	smoother = null;
 	mbSource?.dispose();
@@ -1247,7 +1430,8 @@ $effect(() => {
 			// Upload and hand back in the same tick. Holding decoded frames is
 			// what starved the decoder at 4K until it stopped emitting.
 			source.onFrameDecoded = (frame, tsUs) => {
-				if (renderWorkerClient) renderWorkerClient.putFrame(frame, tsUs);
+				if (engineDriver) engineDriver.putScreenFrame(frame, tsUs);
+				else if (renderWorkerClient) renderWorkerClient.putFrame(frame, tsUs);
 				else frameRing?.put(frame, tsUs);
 				// Frames flowing again after a recovery: clear the streak so a
 				// later, unrelated failure gets its full retry budget.
@@ -1493,6 +1677,22 @@ const isAnnotationActive = $derived(
 				<Button variant="outline" size="sm" onclick={() => requestRedraw()}>Try again</Button>
 			</div>
 		{/if}
+		{#if engineFailed}
+			<div
+				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/95 p-6 text-center"
+				role="alert"
+			>
+				<div class="text-sm font-semibold text-foreground">Preview engine didn't start</div>
+				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
+					{engineFailed}
+				</p>
+				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
+					Turn off "New preview engine" in Settings → Experimental to go back to the
+					previous preview.
+				</p>
+			</div>
+		{/if}
+
 		{#if webgl2Unsupported}
 			<!-- Actionable message instead of a blank canvas: reads as a
 			     graphics-driver issue, not a broken app. -->
@@ -1531,6 +1731,36 @@ const isAnnotationActive = $derived(
 		<div class="contents transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-55">
 			<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
 		</div>
+		{#if engineDot?.highlight && engineDot.highlight.alpha > 0}
+			<!-- Click highlight. Pinned to the captured click, not the (lagging)
+			     smoothed cursor, so it marks where the click actually landed. -->
+			<div
+				class="pointer-events-none absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full"
+				style="
+					left: {engineDot.highlight.xPct}%;
+					top: {engineDot.highlight.yPct}%;
+					width: {engineDot.sizePct * 3}%;
+					background: {store.cursorSettings.highlightColor};
+					opacity: {engineDot.highlight.alpha};
+				"
+			></div>
+		{/if}
+
+		{#if engineDot?.visible}
+			<!-- Interim dot: the engine has no cursor sprite pass yet, so the
+			     default style is drawn here from the engine's own placement. -->
+			<div
+				class="pointer-events-none absolute aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full bg-white"
+				style="
+					left: {engineDot.xPct}%;
+					top: {engineDot.yPct}%;
+					width: {engineDot.sizePct}%;
+					opacity: {engineDot.alpha};
+					box-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+				"
+			></div>
+		{/if}
+
 		{#if svgCursor.visible}
 			{@const style = resolveCursorSprite(svgCursor.styleId)}
 			{@const stateKey = svgCursor.pressed

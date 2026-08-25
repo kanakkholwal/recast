@@ -11,9 +11,13 @@ export interface WasmPreviewEngine {
 	isSoftware(): boolean;
 	setScene(json: string): void;
 	setSourceSize(width: number, height: number): void;
+	setCanvasSize(width: number, height: number): void;
 	screenLayerId(): number | undefined;
 	cameraLayerId(): number | undefined;
-	setLayerFrame(layerId: number, frame: VideoFrame): void;
+	setLayerRingCapacity(layerId: number, capacity: number): void;
+	putLayerFrame(layerId: number, frame: VideoFrame, timestampUs: number): void;
+	bindLayerFrame(layerId: number, timestampUs: number, floorUs: number): boolean;
+	hasBoundFrame(layerId: number): boolean;
 	clearLayerFrame(layerId: number): void;
 	setBackgroundImage(image: ImageBitmap): void;
 	clearBackgroundImage(): void;

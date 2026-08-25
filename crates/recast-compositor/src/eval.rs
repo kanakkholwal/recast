@@ -58,6 +58,25 @@ impl Affine2 {
     pub fn is_identity(&self) -> bool {
         *self == Self::IDENTITY
     }
+
+    /// The transform maps a DESTINATION uv to the SOURCE uv it samples, so
+    /// placing a known source point on the canvas needs the inverse. `None` for
+    /// a degenerate transform, which would put the point nowhere real.
+    pub fn invert(&self) -> Option<Self> {
+        let det = self.sx * self.sy - self.shx * self.shy;
+        if det.abs() < 1e-12 {
+            return None;
+        }
+        let inv = 1.0 / det;
+        Some(Self {
+            sx: self.sy * inv,
+            shx: -self.shx * inv,
+            tx: (self.shx * self.ty - self.sy * self.tx) * inv,
+            shy: -self.shy * inv,
+            sy: self.sx * inv,
+            ty: (self.shy * self.tx - self.sx * self.ty) * inv,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1129,5 +1148,57 @@ mod cursor_tests {
             curved.x,
             linear.x
         );
+    }
+}
+
+#[cfg(test)]
+mod affine_tests {
+    use super::*;
+
+    fn close(got: (f32, f32), want: (f32, f32)) {
+        assert!(
+            (got.0 - want.0).abs() < 1e-5 && (got.1 - want.1).abs() < 1e-5,
+            "got {got:?}, want {want:?}"
+        );
+    }
+
+    #[test]
+    fn inverting_the_identity_changes_nothing() {
+        let inv = Affine2::IDENTITY.invert().expect("invertible");
+        close(inv.apply(0.3, 0.7), (0.3, 0.7));
+    }
+
+    /// The zoom maps destination uv to the source uv it samples, so the inverse
+    /// is what places a known source point (the cursor) on the canvas.
+    #[test]
+    fn the_inverse_round_trips_a_zoom_back_to_where_it_started() {
+        let zoom = Affine2::zoom(2.5, 0.4, 0.6);
+        let inv = zoom.invert().expect("invertible");
+        for point in [(0.0, 0.0), (0.5, 0.5), (1.0, 1.0), (0.2, 0.9)] {
+            let (u, v) = zoom.apply(point.0, point.1);
+            close(inv.apply(u, v), point);
+        }
+    }
+
+    /// A 2x zoom centred on the frame puts the frame centre at the canvas centre
+    /// and pushes everything else outward by the scale.
+    #[test]
+    fn a_centred_zoom_pushes_a_source_point_outward_by_the_scale() {
+        let inv = Affine2::zoom(2.0, 0.5, 0.5).invert().expect("invertible");
+        close(inv.apply(0.5, 0.5), (0.5, 0.5));
+        close(inv.apply(0.375, 0.5), (0.25, 0.5));
+    }
+
+    #[test]
+    fn a_degenerate_transform_reports_no_inverse_rather_than_infinities() {
+        let flat = Affine2 {
+            sx: 0.0,
+            shx: 0.0,
+            tx: 0.0,
+            shy: 0.0,
+            sy: 0.0,
+            ty: 0.0,
+        };
+        assert!(flat.invert().is_none());
     }
 }

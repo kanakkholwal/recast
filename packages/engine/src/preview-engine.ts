@@ -98,10 +98,31 @@ export class PreviewEngine {
 		this.#live.setSourceSize(width, height);
 	}
 
+	/** The canvas backing-store size, so the composition is presented at display
+	 *  resolution rather than composited at its own. Aspect must match. */
+	setCanvasSize(width: number, height: number): void {
+		this.#live.setCanvasSize(width, height);
+	}
+
+	/** How many decoded frames this layer buffers. */
+	setLayerRingCapacity(layerId: number, capacity: number): void {
+		this.#live.setLayerRingCapacity(layerId, capacity);
+	}
+
 	/** The frame is copied into a GPU texture and not retained, so the caller
 	 *  still owns it and must close it. */
-	setLayerFrame(layerId: number, frame: VideoFrame): void {
-		this.#live.setLayerFrame(layerId, frame);
+	putLayerFrame(layerId: number, frame: VideoFrame, timestampUs: number): void {
+		this.#live.putLayerFrame(layerId, frame, timestampUs);
+	}
+
+	/** Chooses the frame the next `render` draws. False leaves the previous
+	 *  choice standing rather than blanking the layer. */
+	bindLayerFrame(layerId: number, timestampUs: number, floorUs: number): boolean {
+		return this.#live.bindLayerFrame(layerId, timestampUs, floorUs);
+	}
+
+	hasBoundFrame(layerId: number): boolean {
+		return this.#live.hasBoundFrame(layerId);
 	}
 
 	clearLayerFrame(layerId: number): void {

@@ -5,9 +5,14 @@ use wasm_bindgen::prelude::*;
 
 use crate::backend::{backend_name, backends_for};
 use crate::cursor_io::parse_track;
+use crate::ring::pick_slot;
 use crate::scene_io::parse_scene;
 
-/// A decoded frame parked for the next `render`. Held as a texture rather than a
+/// Slots per layer when the host has not sized the ring. Matches the WebGL
+/// render worker this replaces.
+const DEFAULT_RING_CAPACITY: usize = 6;
+
+/// A decoded frame parked for a later `render`. Held as a texture rather than a
 /// `VideoFrame`: retaining a `VideoFrame` past the decoder's expectations
 /// silently stops the decoder, which is the failure this project has already hit
 /// once on the TypeScript side.
@@ -16,6 +21,33 @@ struct LayerTexture {
     view: wgpu::TextureView,
     width: u32,
     height: u32,
+    /// Presentation timestamp in microseconds; negative when the slot is empty.
+    ts_us: i64,
+}
+
+/// Recently decoded frames for one layer. A ring rather than a single texture
+/// because frames arrive ahead of the playhead, so the draw loop has to choose
+/// which one belongs to this instant.
+struct LayerRing {
+    slots: Vec<LayerTexture>,
+    capacity: usize,
+    next: usize,
+    bound: Option<usize>,
+}
+
+impl LayerRing {
+    fn new(capacity: usize) -> Self {
+        Self {
+            slots: Vec::new(),
+            capacity: capacity.max(1),
+            next: 0,
+            bound: None,
+        }
+    }
+
+    fn timestamps(&self) -> Vec<i64> {
+        self.slots.iter().map(|s| s.ts_us).collect()
+    }
 }
 
 #[wasm_bindgen]
@@ -24,7 +56,11 @@ pub struct PreviewEngine {
     session: Session,
     surface: wgpu::Surface<'static>,
     surface_size: (u32, u32),
-    frames: Vec<(LayerId, LayerTexture)>,
+    /// What the canvas backing store is, when the host has told us. The preview
+    /// draws at DISPLAY resolution and lets the present pass scale the
+    /// composition down, so a 4K project in a small pane is not composited at 4K.
+    canvas_size: Option<(u32, u32)>,
+    frames: Vec<(LayerId, LayerRing)>,
     background: Option<LayerTexture>,
 }
 
@@ -81,6 +117,7 @@ impl PreviewEngine {
             session,
             surface,
             surface_size: (0, 0),
+            canvas_size: None,
             frames: Vec::new(),
             background: None,
         })
@@ -94,8 +131,7 @@ impl PreviewEngine {
     }
 
     /// The recorded pointer path, as the track file is written. Held on the
-    /// scene, so it survives `setScene` only if that scene carries one; the
-    /// editor calls this again after replacing the scene.
+    /// scene, so the editor calls this again after replacing the scene.
     #[wasm_bindgen(js_name = setCursorTrack)]
     pub fn set_cursor_track(&mut self, json: &str) -> Result<(), JsValue> {
         let track = parse_track(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
@@ -105,31 +141,56 @@ impl PreviewEngine {
         Ok(())
     }
 
-    /// Where the pointer sits at `output_time`, as
+    /// Where the pointer sits at `output_time`, in CANVAS PIXELS, as
     /// `[x, y, alpha, scale, pressed, right, dragging, hlX, hlY, hlAlpha]`, or
-    /// an empty array when there is nothing to draw. A flat array rather than an
-    /// object because this is read every frame.
+    /// an empty array when there is nothing to draw.
+    ///
+    /// Canvas pixels rather than source uv because the zoom and the card rect
+    /// are applied here, from the same numbers the shader uses; doing it in
+    /// JavaScript would be a second evaluator to keep in step.
     #[wasm_bindgen(js_name = cursorAt)]
     pub fn cursor_at(&self, output_time: f64) -> Vec<f64> {
-        let Some(cursor) = self.session.evaluate(output_time).cursor else {
+        let params = self.session.evaluate(output_time);
+        let Some(cursor) = params.cursor else {
             return Vec::new();
         };
-        let highlight = cursor.highlight.unwrap_or(recast_compositor::Highlight {
-            x: 0.0,
-            y: 0.0,
-            alpha: 0.0,
-        });
+        let Some(screen) = self.session.screen_layer() else {
+            return Vec::new();
+        };
+        let Some(card) = params.layers.iter().find(|l| l.id == screen) else {
+            return Vec::new();
+        };
+        let Some(inverse) = card.transform.invert() else {
+            return Vec::new();
+        };
+
+        let place = |x: f64, y: f64| {
+            let (u, v) = inverse.apply(x as f32, y as f32);
+            (
+                f64::from(card.dest.x + u * card.dest.w),
+                f64::from(card.dest.y + v * card.dest.h),
+            )
+        };
+        let (x, y) = place(cursor.x, cursor.y);
+        let (hl_x, hl_y, hl_alpha) = match cursor.highlight {
+            Some(highlight) => {
+                let (x, y) = place(highlight.x, highlight.y);
+                (x, y, highlight.alpha)
+            }
+            None => (0.0, 0.0, 0.0),
+        };
+
         vec![
-            cursor.x,
-            cursor.y,
+            x,
+            y,
             cursor.alpha,
             cursor.scale,
             f64::from(u8::from(cursor.pressed)),
             f64::from(u8::from(cursor.right)),
             f64::from(u8::from(cursor.dragging)),
-            highlight.x,
-            highlight.y,
-            highlight.alpha,
+            hl_x,
+            hl_y,
+            hl_alpha,
         ]
     }
 
@@ -139,6 +200,14 @@ impl PreviewEngine {
             width: width.max(1),
             height: height.max(1),
         });
+    }
+
+    /// The canvas backing-store size. Pass the same values written to
+    /// `canvas.width` / `canvas.height`; the aspect must match the composition
+    /// or the present pass stretches.
+    #[wasm_bindgen(js_name = setCanvasSize)]
+    pub fn set_canvas_size(&mut self, width: u32, height: u32) {
+        self.canvas_size = Some((width.max(1), height.max(1)));
     }
 
     #[wasm_bindgen(js_name = screenLayerId)]
@@ -151,13 +220,23 @@ impl PreviewEngine {
         self.session.camera_layer().map(|id| id.0)
     }
 
-    /// Uploads a decoded `VideoFrame` for `layer_id`. The frame is copied into a
-    /// GPU texture here and is NOT retained, so the caller must still close it.
-    #[wasm_bindgen(js_name = setLayerFrame)]
-    pub fn set_layer_frame(
+    /// How many decoded frames this layer buffers. Sizing is the host's call: it
+    /// knows the resolution and the memory budget.
+    #[wasm_bindgen(js_name = setLayerRingCapacity)]
+    pub fn set_layer_ring_capacity(&mut self, layer_id: u32, capacity: u32) {
+        let id = LayerId(layer_id);
+        self.frames.retain(|(slot_id, _)| *slot_id != id);
+        self.frames.push((id, LayerRing::new(capacity as usize)));
+    }
+
+    /// Uploads a decoded frame and hands ownership straight back: the pixels are
+    /// copied into a texture we own, so the caller must still close the frame.
+    #[wasm_bindgen(js_name = putLayerFrame)]
+    pub fn put_layer_frame(
         &mut self,
         layer_id: u32,
         frame: &web_sys::VideoFrame,
+        timestamp_us: f64,
     ) -> Result<(), JsValue> {
         let width = frame.display_width();
         let height = frame.display_height();
@@ -165,9 +244,14 @@ impl PreviewEngine {
             return Err(JsValue::from_str("VideoFrame has a zero dimension"));
         }
 
-        let id = LayerId(layer_id);
-        let index = self.slot_for(id, width, height);
-        let slot = &self.frames[index].1;
+        let index = self.slot_for(LayerId(layer_id), width, height);
+        let ring = &mut self.frames[index].1;
+        let slot_index = ring.next;
+        ring.next = (slot_index + 1) % ring.slots.len().max(1);
+        let slot = &mut ring.slots[slot_index];
+        slot.ts_us = timestamp_us.max(0.0) as i64;
+        let texture = slot.texture.clone();
+
         self.ctx.queue().copy_external_image_to_texture(
             &wgpu::CopyExternalImageSourceInfo {
                 // `VideoFrame::clone` is the JS method, which returns a Result;
@@ -177,7 +261,7 @@ impl PreviewEngine {
                 flip_y: false,
             },
             wgpu::CopyExternalImageDestInfo {
-                texture: &slot.texture,
+                texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -191,6 +275,36 @@ impl PreviewEngine {
             },
         );
         Ok(())
+    }
+
+    /// Chooses the frame `render` will draw: the newest at or before
+    /// `timestamp_us` that is not older than `floor_us`, the start of the current
+    /// segment. False when nothing qualifies yet, which leaves the previous
+    /// choice standing.
+    #[wasm_bindgen(js_name = bindLayerFrame)]
+    pub fn bind_layer_frame(&mut self, layer_id: u32, timestamp_us: f64, floor_us: f64) -> bool {
+        let Some((_, ring)) = self.frames.iter_mut().find(|(id, _)| id.0 == layer_id) else {
+            return false;
+        };
+        let picked = pick_slot(
+            &ring.timestamps(),
+            timestamp_us.max(0.0) as i64,
+            floor_us.max(0.0) as i64,
+        );
+        if picked.is_some() {
+            ring.bound = picked;
+        }
+        picked.is_some()
+    }
+
+    /// Whether a previously bound frame is still there to hold on to. True right
+    /// after a cut, while the post-cut GOP decodes: freezing the last frame beats
+    /// flashing the background.
+    #[wasm_bindgen(js_name = hasBoundFrame)]
+    pub fn has_bound_frame(&self, layer_id: u32) -> bool {
+        self.frames
+            .iter()
+            .any(|(id, ring)| id.0 == layer_id && ring.bound.is_some())
     }
 
     #[wasm_bindgen(js_name = clearLayerFrame)]
@@ -252,8 +366,14 @@ impl PreviewEngine {
     /// Returns the layers drawn.
     #[wasm_bindgen]
     pub fn render(&mut self, output_time: f64) -> Result<u32, JsValue> {
-        let size = self.session.output_size();
-        self.configure_surface(size.width, size.height);
+        let (width, height) = match self.canvas_size {
+            Some(size) => size,
+            None => {
+                let size = self.session.output_size();
+                (size.width, size.height)
+            }
+        };
+        self.configure_surface(width, height);
 
         // A dropped frame is a skip, not an error: the browser reports Timeout
         // and Occluded routinely, and turning either into a JS exception would
@@ -282,7 +402,10 @@ impl PreviewEngine {
                 needs_srgb_decode: true,
             });
         }
-        for (id, slot) in &self.frames {
+        for (id, ring) in &self.frames {
+            let Some(slot) = ring.bound.and_then(|index| ring.slots.get(index)) else {
+                continue;
+            };
             inputs.set(
                 *id,
                 LayerInput {
@@ -313,8 +436,8 @@ impl PreviewEngine {
         self.session.output_duration()
     }
 
-    /// The backend actually in use, for the preview to report. `"auto"` resolves
-    /// here, so this is the only honest answer to "did WebGPU work".
+    /// The backend actually in use. `"auto"` resolves here, so this is the only
+    /// honest answer to "did WebGPU work".
     #[wasm_bindgen]
     pub fn backend(&self) -> String {
         backend_name(self.ctx.info().backend).to_string()
@@ -337,20 +460,34 @@ impl PreviewEngine {
 }
 
 impl PreviewEngine {
-    /// Index into `frames`, not a borrow: returning a reference here would
-    /// hold `self` and block the queue access at the call site.
+    /// Index into `frames`, not a borrow: returning a reference would hold
+    /// `self` and block the queue access at the call site. A resolution change
+    /// reallocates the whole ring, because every slot is sized to the source.
     fn slot_for(&mut self, id: LayerId, width: u32, height: u32) -> usize {
-        if let Some(index) = self.frames.iter().position(|(slot_id, _)| *slot_id == id) {
-            let slot = &self.frames[index].1;
-            if slot.width == width && slot.height == height {
-                return index;
+        let index = match self.frames.iter().position(|(slot_id, _)| *slot_id == id) {
+            Some(index) => index,
+            None => {
+                self.frames
+                    .push((id, LayerRing::new(DEFAULT_RING_CAPACITY)));
+                self.frames.len() - 1
             }
-            self.frames.remove(index);
-        }
+        };
 
-        let slot = self.new_texture(width, height);
-        self.frames.push((id, slot));
-        self.frames.len() - 1
+        let ring = &self.frames[index].1;
+        let sized = ring
+            .slots
+            .first()
+            .is_some_and(|slot| slot.width == width && slot.height == height);
+        if !sized {
+            let slots = (0..ring.capacity)
+                .map(|_| self.new_texture(width, height))
+                .collect();
+            let ring = &mut self.frames[index].1;
+            ring.slots = slots;
+            ring.next = 0;
+            ring.bound = None;
+        }
+        index
     }
 
     fn new_texture(&self, width: u32, height: u32) -> LayerTexture {
@@ -376,6 +513,7 @@ impl PreviewEngine {
             view,
             width,
             height,
+            ts_us: -1,
         }
     }
 

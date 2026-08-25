@@ -51,6 +51,7 @@
 	"dependencies": {
 		"@recast/captions": "workspace:*",
 		"@recast/design": "workspace:*",
+		"@recast/engine": "workspace:*",
 		"@recast/icons": "workspace:*",
 		"@recast/media": "workspace:*",
 		"@recast/render": "workspace:*",

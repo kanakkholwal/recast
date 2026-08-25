@@ -11,9 +11,13 @@ function wasmStub() {
 		isSoftware: vi.fn(() => true),
 		setScene: vi.fn(),
 		setSourceSize: vi.fn(),
+		setCanvasSize: vi.fn(),
 		screenLayerId: vi.fn(() => 1),
 		cameraLayerId: vi.fn(() => 2),
-		setLayerFrame: vi.fn(),
+		setLayerRingCapacity: vi.fn(),
+		putLayerFrame: vi.fn(),
+		bindLayerFrame: vi.fn(() => true),
+		hasBoundFrame: vi.fn(() => true),
 		clearLayerFrame: vi.fn(),
 		setBackgroundImage: vi.fn(),
 		clearBackgroundImage: vi.fn(),
@@ -87,15 +91,22 @@ describe("marshalling", () => {
 	it("passes sizes, layers and frames straight down", async () => {
 		const e = await engine("webgl2");
 		e.setSourceSize(1280, 720);
+		e.setCanvasSize(960, 540);
 		const frame = {} as VideoFrame;
-		e.setLayerFrame(1, frame);
+		e.setLayerRingCapacity(1, 6);
+		e.putLayerFrame(1, frame, 1_500_000);
+		expect(e.bindLayerFrame(1, 1_500_000, 0)).toBe(true);
+		expect(e.hasBoundFrame(1)).toBe(true);
 		e.clearLayerFrame(1);
 		const bitmap = {} as ImageBitmap;
 		e.setBackgroundImage(bitmap);
 		e.clearBackgroundImage();
 		expect(e.render(2.5)).toBe(1);
 		expect(inner.setSourceSize).toHaveBeenCalledWith(1280, 720);
-		expect(inner.setLayerFrame).toHaveBeenCalledWith(1, frame);
+		expect(inner.setCanvasSize).toHaveBeenCalledWith(960, 540);
+		expect(inner.setLayerRingCapacity).toHaveBeenCalledWith(1, 6);
+		expect(inner.putLayerFrame).toHaveBeenCalledWith(1, frame, 1_500_000);
+		expect(inner.bindLayerFrame).toHaveBeenCalledWith(1, 1_500_000, 0);
 		expect(inner.clearLayerFrame).toHaveBeenCalledWith(1);
 		expect(inner.setBackgroundImage).toHaveBeenCalledWith(bitmap);
 		expect(inner.clearBackgroundImage).toHaveBeenCalled();
@@ -155,12 +166,14 @@ describe("lifecycle", () => {
 		expect(e.destroyed).toBe(true);
 		expect(() => e.render(0)).toThrow(EngineDestroyedError);
 		expect(() => e.setScene({})).toThrow(EngineDestroyedError);
-		expect(() => e.setLayerFrame(1, {} as VideoFrame)).toThrow(EngineDestroyedError);
+		expect(() => e.putLayerFrame(1, {} as VideoFrame, 0)).toThrow(EngineDestroyedError);
+		expect(() => e.bindLayerFrame(1, 0, 0)).toThrow(EngineDestroyedError);
 		expect(() => e.setBackgroundImage({} as ImageBitmap)).toThrow(EngineDestroyedError);
 		expect(() => e.cursorAt(0)).toThrow(EngineDestroyedError);
 		expect(() => e.backend).toThrow(EngineDestroyedError);
 		expect(() => e.outputWidth).toThrow(EngineDestroyedError);
 		expect(inner.render).not.toHaveBeenCalled();
+		expect(inner.putLayerFrame).not.toHaveBeenCalled();
 	});
 
 	it("frees exactly once however many times destroy is called", async () => {

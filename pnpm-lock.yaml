@@ -437,6 +437,9 @@ importers:
       '@recast/design':
         specifier: workspace:*
         version: link:../design
+      '@recast/engine':
+        specifier: workspace:*
+        version: link:../engine
       '@recast/icons':
         specifier: workspace:*
         version: link:../icons
