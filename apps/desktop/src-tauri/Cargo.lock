@@ -5325,10 +5325,18 @@ version = "0.0.0"
 dependencies = [
  "bytemuck",
  "recast-color",
+ "recast-cursor",
  "recast-gpu",
  "recast-scene",
  "recast-time",
  "wgpu",
+]
+
+[[package]]
+name = "recast-cursor"
+version = "0.0.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -5346,6 +5354,7 @@ name = "recast-scene"
 version = "0.0.0"
 dependencies = [
  "recast-color",
+ "recast-cursor",
  "recast-time",
  "serde",
  "serde_json",

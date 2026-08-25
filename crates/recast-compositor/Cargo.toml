@@ -10,6 +10,7 @@ recast-gpu = { path = "../recast-gpu" }
 wgpu = { version = "=30.0.1", default-features = false, features = ["wgsl"] }
 bytemuck = { version = "1.19", features = ["derive"] }
 recast-color = { path = "../recast-color" }
+recast-cursor = { path = "../recast-cursor" }
 recast-scene = { path = "../recast-scene" }
 recast-time = { path = "../recast-time", default-features = false, features = ["serde"] }
 

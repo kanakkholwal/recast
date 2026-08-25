@@ -17,6 +17,8 @@ function wasmStub() {
 		clearLayerFrame: vi.fn(),
 		setBackgroundImage: vi.fn(),
 		clearBackgroundImage: vi.fn(),
+		setCursorTrack: vi.fn(),
+		cursorAt: vi.fn(() => new Float64Array([0.25, 0.5, 1, 0.84, 1, 0, 0, 0.3, 0.6, 0.4])),
 		render: vi.fn(() => 1),
 		outputWidth: vi.fn(() => 1920),
 		outputHeight: vi.fn(() => 1080),
@@ -106,6 +108,44 @@ describe("marshalling", () => {
 	});
 });
 
+describe("cursor", () => {
+	it("decodes the flat frame array into named fields", async () => {
+		const e = await engine("webgl2");
+		expect(e.cursorAt(1.5)).toEqual({
+			x: 0.25,
+			y: 0.5,
+			alpha: 1,
+			scale: 0.84,
+			pressed: true,
+			right: false,
+			dragging: false,
+			highlight: { x: 0.3, y: 0.6, alpha: 0.4 },
+		});
+		expect(inner.cursorAt).toHaveBeenCalledWith(1.5);
+	});
+
+	it("reports no cursor rather than a zeroed one when the array is empty", async () => {
+		inner.cursorAt.mockReturnValue(new Float64Array([]));
+		const e = await engine("webgl2");
+		expect(e.cursorAt(0)).toBeNull();
+	});
+
+	/** A zero-alpha highlight is "no highlight this frame", not a black ring. */
+	it("drops a highlight whose alpha has faded to nothing", async () => {
+		inner.cursorAt.mockReturnValue(new Float64Array([0, 0, 1, 1, 0, 0, 0, 0.5, 0.5, 0]));
+		const e = await engine("webgl2");
+		expect(e.cursorAt(0)?.highlight).toBeNull();
+	});
+
+	it("stringifies a track object and passes a string through untouched", async () => {
+		const e = await engine("webgl2");
+		e.setCursorTrack({ samples: [] });
+		expect(inner.setCursorTrack).toHaveBeenCalledWith('{"samples":[]}');
+		e.setCursorTrack('{"raw":1}');
+		expect(inner.setCursorTrack).toHaveBeenLastCalledWith('{"raw":1}');
+	});
+});
+
 describe("lifecycle", () => {
 	/** Calling into a freed wasm object throws an opaque `null pointer passed to
 	 *  rust` from the glue, which is unactionable in a preview loop. */
@@ -117,6 +157,7 @@ describe("lifecycle", () => {
 		expect(() => e.setScene({})).toThrow(EngineDestroyedError);
 		expect(() => e.setLayerFrame(1, {} as VideoFrame)).toThrow(EngineDestroyedError);
 		expect(() => e.setBackgroundImage({} as ImageBitmap)).toThrow(EngineDestroyedError);
+		expect(() => e.cursorAt(0)).toThrow(EngineDestroyedError);
 		expect(() => e.backend).toThrow(EngineDestroyedError);
 		expect(() => e.outputWidth).toThrow(EngineDestroyedError);
 		expect(inner.render).not.toHaveBeenCalled();

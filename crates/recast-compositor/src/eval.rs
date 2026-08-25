@@ -1,4 +1,5 @@
 use recast_color::{Gradient, Srgba};
+use recast_cursor::{CursorPlacement, CursorSettings};
 use recast_scene::v1::nodes::{ShadowSettings, ZoomRegion};
 use recast_scene::v1::SegmentAnim;
 use recast_scene::{Effect, LayerId, LayerSource, Scene};
@@ -118,6 +119,9 @@ pub struct FrameParams {
     pub geometry: CanvasGeometry,
     pub background: BackgroundParams,
     pub background_blur: f32,
+    /// Where the pointer sits this frame, in SOURCE uv before the zoom. `None`
+    /// when there is no cursor layer, no track, or the layer is disabled.
+    pub cursor: Option<CursorPlacement>,
     /// In draw order. The card's shadow, then the camera bubble's.
     pub shadows: Vec<ShadowParams>,
     pub layers: Vec<LayerParams>,
@@ -141,6 +145,7 @@ pub struct Evaluator {
     time_map: TimeMap,
     segments: Vec<Segment>,
     geometry: CanvasGeometry,
+    source: SourceGeometry,
 }
 
 impl Evaluator {
@@ -154,6 +159,7 @@ impl Evaluator {
                 scene.output.padding,
                 scene.output.aspect.as_deref(),
             ),
+            source,
         }
     }
 
@@ -171,6 +177,7 @@ impl Evaluator {
     pub fn evaluate(&self, scene: &Scene, output_time: f64) -> FrameParams {
         let source_time = output_to_original(&self.time_map, output_time);
 
+        let cursor = self.cursor_placement(scene, source_time);
         let mut background = BackgroundParams::Solid(Srgba::opaque(0x11, 0x11, 0x11));
         let mut background_blur = 0.0f32;
         let mut shadows = Vec::new();
@@ -235,10 +242,41 @@ impl Evaluator {
             geometry: self.geometry,
             background,
             background_blur,
+            cursor,
             shadows,
             annotations: self.annotations(scene, source_time, card.0, card.1),
             layers,
             source_time,
+        }
+    }
+
+    /// The pointer for this frame. Every curve lives in `recast-cursor`, which
+    /// the TypeScript preview asserts against the same fixture, so preview and
+    /// export cannot drift.
+    fn cursor_placement(&self, scene: &Scene, source_time: f64) -> Option<CursorPlacement> {
+        let track = scene.cursor_track.as_ref()?;
+        let layer = scene
+            .layers
+            .iter()
+            .find(|l| matches!(l.source, LayerSource::Cursor(_)))?;
+        if layer.hidden {
+            return None;
+        }
+        let LayerSource::Cursor(spec) = &layer.source else {
+            return None;
+        };
+
+        let settings = CursorSettings {
+            hide_when_idle: spec.hide_when_idle,
+            idle_timeout: spec.idle_timeout,
+            highlight_clicks: spec.highlight_clicks,
+            highlight_opacity: spec.highlight_opacity,
+        };
+        let ts_us = (source_time * 1_000_000.0).round() as i64;
+        let source = (self.source.width, self.source.height);
+        match spec.motion_easing {
+            Some(easing) => track.resolve(ts_us, source, settings, |t| easing.y(t as f32) as f64),
+            None => track.resolve(ts_us, source, settings, |t| t),
         }
     }
 
@@ -973,5 +1011,123 @@ mod tests {
             .find(|l| !l.visible)
             .expect("the disabled cursor layer is still present");
         assert!(!cursor.visible);
+    }
+}
+
+#[cfg(test)]
+mod cursor_tests {
+    use super::*;
+    use recast_cursor::{CursorSample, CursorTrack};
+    use recast_scene::migrate::to_scene;
+    use recast_scene::v1::RenderState;
+
+    const BASE: &str = r##"{
+        "trimStart": 0.0, "trimEnd": 10.0,
+        "backgroundType": "color", "backgroundValue": "#0f172a", "backgroundBlur": 0.0,
+        "padding": 0.0, "cursorEnabled": true, "cursorSize": 3.0, "cursorSmoothing": 0.0,
+        "cursorHighlightClicks": false, "cursorHighlightColor": "#3b82f6",
+        "cursorHighlightOpacity": 40.0, "cursorHideWhenIdle": false, "cursorIdleTimeout": 3.0,
+        "zoomRegions": []
+    }"##;
+
+    fn source() -> SourceGeometry {
+        SourceGeometry {
+            width: 1000,
+            height: 500,
+        }
+    }
+
+    fn sample(us: u64, x: f64, y: f64) -> CursorSample {
+        CursorSample {
+            timestamp_us: us,
+            x,
+            y,
+            visible: true,
+            left_down: false,
+            right_down: false,
+        }
+    }
+
+    fn track() -> CursorTrack {
+        CursorTrack::new(
+            vec![
+                sample(0, 0.0, 0.0),
+                sample(1_000_000, 500.0, 250.0),
+                sample(2_000_000, 1000.0, 500.0),
+            ],
+            Vec::new(),
+        )
+    }
+
+    fn scene(extra: &str, with_track: bool) -> Scene {
+        let mut base: serde_json::Value = serde_json::from_str(BASE).expect("base json");
+        let fragment = extra.trim().trim_end_matches(',');
+        if !fragment.is_empty() {
+            let overrides: serde_json::Value =
+                serde_json::from_str(&format!("{{{fragment}}}")).expect("override json");
+            let (Some(base), Some(overrides)) = (base.as_object_mut(), overrides.as_object())
+            else {
+                panic!("fixtures must be JSON objects");
+            };
+            for (key, value) in overrides {
+                base.insert(key.clone(), value.clone());
+            }
+        }
+        let state: RenderState = serde_json::from_value(base).expect("render state");
+        let mut scene = to_scene(&state);
+        if with_track {
+            scene.cursor_track = Some(track());
+        }
+        scene
+    }
+
+    fn placement(scene: &Scene, output_time: f64) -> Option<CursorPlacement> {
+        Evaluator::new(scene, source())
+            .evaluate(scene, output_time)
+            .cursor
+    }
+
+    #[test]
+    fn a_scene_with_no_track_has_no_cursor_to_place() {
+        assert!(placement(&scene("", false), 0.5).is_none());
+    }
+
+    #[test]
+    fn a_disabled_cursor_layer_places_nothing_even_with_a_track() {
+        assert!(placement(&scene(r#""cursorEnabled": false,"#, true), 0.5).is_none());
+    }
+
+    #[test]
+    fn the_placement_is_source_uv_so_it_survives_a_canvas_resize() {
+        let placed = placement(&scene("", true), 1.0).expect("a placement");
+        assert!((placed.x - 0.5).abs() < 1e-9, "x was {}", placed.x);
+        assert!((placed.y - 0.5).abs() < 1e-9, "y was {}", placed.y);
+    }
+
+    /// The track is recorded on the ORIGINAL axis, so a cut before the playhead
+    /// must shift which sample the output time lands on. Sampling at output time
+    /// would leave the pointer behind the picture after every cut.
+    #[test]
+    fn a_cut_shifts_the_cursor_onto_the_original_axis_with_the_picture() {
+        let cut = r#""cuts": [{ "start": 0.25, "end": 0.75 }],"#;
+        let with_cut = placement(&scene(cut, true), 0.5).expect("a placement");
+        let without = placement(&scene("", true), 0.5).expect("a placement");
+        assert!((without.x - 0.25).abs() < 1e-6, "x was {}", without.x);
+        assert!((with_cut.x - 0.5).abs() < 1e-6, "x was {}", with_cut.x);
+    }
+
+    /// Cursor motion easing used to be a passthrough key, so the export ignored
+    /// it while the preview applied it.
+    #[test]
+    fn the_motion_easing_reshapes_the_path_between_two_captured_samples() {
+        let eased = r#""cursorMotionEasing": { "x1": 0.9, "y1": 0.0, "x2": 1.0, "y2": 0.1 },"#;
+        let linear = placement(&scene("", true), 0.5).expect("a placement");
+        let curved = placement(&scene(eased, true), 0.5).expect("a placement");
+        assert!(
+            curved.x < linear.x - 0.05,
+            "eased {} should lag linear {}",
+            curved.x,
+            linear.x
+        );
     }
 }

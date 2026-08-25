@@ -53,6 +53,9 @@ pub fn to_scene(state: &RenderState) -> Scene {
 
     Scene {
         schema: SCHEMA_VERSION,
+        // The v1 state never carried the pointer path: it lives in its own file
+        // and the editor attaches it after migrating.
+        cursor_track: None,
         output: OutputSpec {
             aspect: state.output_aspect.clone(),
             padding: state.padding,
@@ -136,6 +139,7 @@ fn cursor_spec(state: &RenderState) -> CursorSpec {
         size: state.cursor_size,
         smoothing: state.cursor_smoothing,
         snap_to_clicks: state.cursor_snap_to_clicks,
+        motion_easing: state.cursor_motion_easing,
         snap_window_ms: state.cursor_snap_window_ms,
         highlight_clicks: state.cursor_highlight_clicks,
         highlight_color: state.cursor_highlight_color.clone(),
@@ -248,6 +252,7 @@ fn apply_cursor(state: &mut RenderState, cursor: &CursorSpec) {
     state.cursor_size = cursor.size;
     state.cursor_smoothing = cursor.smoothing;
     state.cursor_snap_to_clicks = cursor.snap_to_clicks;
+    state.cursor_motion_easing = cursor.motion_easing;
     state.cursor_snap_window_ms = cursor.snap_window_ms;
     state.cursor_highlight_clicks = cursor.highlight_clicks;
     state.cursor_highlight_color = cursor.highlight_color.clone();
@@ -507,6 +512,7 @@ mod tests {
         "cursorSpriteHotspotRightPress": [0.5, 0.6],
         "cursorSpriteHotspotDrag": [0.7, 0.8],
         "cursorSpriteSizePx": 48.0,
+        "cursorMotionEasing": { "x1": 0.2, "y1": 0.1, "x2": 0.8, "y2": 0.9 },
         "zoomRegions": [{ "start": 1.0, "end": 3.0, "scale": 1.8, "id": "z1", "source": "auto" }],
         "cuts": [{ "start": 4.0, "end": 4.5, "id": "c1", "source": "silence" }],
         "splitPoints": [6.0],
@@ -548,7 +554,20 @@ mod tests {
             untouched.is_empty(),
             "these keys are still at their default, so the round-trip test cannot see them: {untouched:?}"
         );
+
+        // A `skip_serializing_if = "Option::is_none"` field that is None in both
+        // is in NEITHER object, so the comparison above cannot see it at all.
+        // The count is the tripwire: a new field means a new fixture value.
+        assert_eq!(
+            populated.len(),
+            RENDER_STATE_KEYS,
+            "give every new RenderState field a non-default value in FULLY_POPULATED, then bump this"
+        );
     }
+
+    /// Keys `fully_populated()` must emit. Bumped deliberately, never to make a
+    /// failing test pass.
+    const RENDER_STATE_KEYS: usize = 42;
 
     #[test]
     fn layer_ids_are_unique_and_next_id_does_not_collide() {

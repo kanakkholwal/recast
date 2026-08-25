@@ -1,10 +1,12 @@
 use recast_color::{Gradient, Srgba};
+use recast_cursor::CursorTrack;
 use recast_time::{
     build_time_map, clamp_speed, derive_segments, segment_speed_at, time_map_from_segments,
     ClipShape, Cut, Segment, SegmentSpeed, TimeMap, TimeSpan,
 };
 use serde::{Deserialize, Serialize};
 
+use crate::v1::easing::Easing;
 use crate::v1::nodes::{
     Annotation, AudioClip, AudioSettings, CameraOverlaySettings, ShadowSettings, ZoomRegion,
 };
@@ -24,6 +26,11 @@ pub struct Scene {
     pub timeline: Timeline,
     pub layers: Vec<Layer>,
     pub audio: AudioGraph,
+    /// The recorded pointer path. Kept out of the layer list because it is a
+    /// captured signal, not an authored one: the cursor LAYER holds the
+    /// settings, this holds the samples they are applied to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor_track: Option<CursorTrack>,
     /// Editor-owned keys the engine never reads. Carried so a round trip
     /// through the engine cannot reset a user's settings.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
@@ -38,6 +45,7 @@ impl Default for Scene {
             timeline: Timeline::default(),
             layers: Vec::new(),
             audio: AudioGraph::default(),
+            cursor_track: None,
             passthrough: serde_json::Map::new(),
         }
     }
@@ -229,6 +237,9 @@ pub struct CursorSpec {
     pub sprite_hotspot_drag: Option<[f64; 2]>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sprite_size_px: Option<f64>,
+    /// Reshapes the interpolation parameter between two captured samples.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion_easing: Option<Easing>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

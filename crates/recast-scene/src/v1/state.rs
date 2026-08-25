@@ -152,10 +152,13 @@ pub struct RenderState {
     pub cursor_sprite_hotspot_drag: Option<[f64; 2]>,
     #[serde(default)]
     pub cursor_sprite_size_px: Option<f64>,
-    /// Catch-all for any JS-only settings (e.g. `cursorStyle`,
-    /// `layoutMode`, `lastAppliedPresetId`, `cursorMotionEasing`,
-    /// `cursorSnapToClicks`, `cursorSnapWindowMs`, `autoZoomEnabled`,
-    /// `autoZoomApplied`) that JS owns but Rust never reads. The Rust
+    /// Reshapes the interpolation parameter between two captured samples. Was a
+    /// passthrough key, so the export ignored it while the preview applied it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor_motion_easing: Option<crate::v1::easing::Easing>,
+    /// Catch-all for any JS-only settings (e.g. `cursorStyle`, `layoutMode`,
+    /// `lastAppliedPresetId`, `autoZoomEnabled`, `autoZoomApplied`) that JS
+    /// owns but Rust never reads. The Rust
     /// load path deserialises `edits.json` through this struct and then
     /// re-serialises it back to JS — without this catch-all every field
     /// not declared above would be silently dropped on a project reopen,
@@ -211,6 +214,7 @@ impl Default for RenderState {
             cursor_sprite_hotspot_right_press: None,
             cursor_sprite_hotspot_drag: None,
             cursor_sprite_size_px: None,
+            cursor_motion_easing: None,
             passthrough: serde_json::Map::new(),
         }
     }

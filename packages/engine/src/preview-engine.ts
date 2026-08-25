@@ -1,6 +1,12 @@
 import { loadEngineModule } from "./load";
 import { detectBackend } from "./probe";
-import type { EngineBackend, EngineModule, NavigatorLike, WasmPreviewEngine } from "./types";
+import type {
+	CursorPlacement,
+	EngineBackend,
+	EngineModule,
+	NavigatorLike,
+	WasmPreviewEngine,
+} from "./types";
 
 export interface PreviewEngineOptions {
 	backend?: EngineBackend | "auto";
@@ -110,6 +116,28 @@ export class PreviewEngine {
 
 	clearBackgroundImage(): void {
 		this.#live.clearBackgroundImage();
+	}
+
+	/** The recorded pointer path, as the track file is written. */
+	setCursorTrack(track: unknown): void {
+		this.#live.setCursorTrack(typeof track === "string" ? track : JSON.stringify(track));
+	}
+
+	/** Null when there is no cursor to draw. Crosses the boundary as a flat
+	 *  array because it is read every frame. */
+	cursorAt(outputTime: number): CursorPlacement | null {
+		const v = this.#live.cursorAt(outputTime);
+		if (v.length === 0) return null;
+		return {
+			x: v[0],
+			y: v[1],
+			alpha: v[2],
+			scale: v[3],
+			pressed: v[4] === 1,
+			right: v[5] === 1,
+			dragging: v[6] === 1,
+			highlight: v[9] > 0 ? { x: v[7], y: v[8], alpha: v[9] } : null,
+		};
 	}
 
 	render(outputTime: number): number {

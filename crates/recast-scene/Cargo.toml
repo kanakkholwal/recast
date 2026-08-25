@@ -6,6 +6,7 @@ publish = false
 description = "The typed, versioned scene graph plus the v1 RenderState reader that migrates into it."
 
 [dependencies]
+recast-cursor = { path = "../recast-cursor" }
 recast-color = { path = "../recast-color" }
 recast-time = { path = "../recast-time", default-features = false, features = ["serde"] }
 serde = { version = "1.0.229", features = ["derive"] }

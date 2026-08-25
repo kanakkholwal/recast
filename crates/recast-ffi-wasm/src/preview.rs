@@ -4,6 +4,7 @@ use recast_scene::LayerId;
 use wasm_bindgen::prelude::*;
 
 use crate::backend::{backend_name, backends_for};
+use crate::cursor_io::parse_track;
 use crate::scene_io::parse_scene;
 
 /// A decoded frame parked for the next `render`. Held as a texture rather than a
@@ -90,6 +91,46 @@ impl PreviewEngine {
         let scene = parse_scene(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
         self.session.set_scene(scene);
         Ok(())
+    }
+
+    /// The recorded pointer path, as the track file is written. Held on the
+    /// scene, so it survives `setScene` only if that scene carries one; the
+    /// editor calls this again after replacing the scene.
+    #[wasm_bindgen(js_name = setCursorTrack)]
+    pub fn set_cursor_track(&mut self, json: &str) -> Result<(), JsValue> {
+        let track = parse_track(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let mut scene = self.session.scene().clone();
+        scene.cursor_track = Some(track);
+        self.session.set_scene(scene);
+        Ok(())
+    }
+
+    /// Where the pointer sits at `output_time`, as
+    /// `[x, y, alpha, scale, pressed, right, dragging, hlX, hlY, hlAlpha]`, or
+    /// an empty array when there is nothing to draw. A flat array rather than an
+    /// object because this is read every frame.
+    #[wasm_bindgen(js_name = cursorAt)]
+    pub fn cursor_at(&self, output_time: f64) -> Vec<f64> {
+        let Some(cursor) = self.session.evaluate(output_time).cursor else {
+            return Vec::new();
+        };
+        let highlight = cursor.highlight.unwrap_or(recast_compositor::Highlight {
+            x: 0.0,
+            y: 0.0,
+            alpha: 0.0,
+        });
+        vec![
+            cursor.x,
+            cursor.y,
+            cursor.alpha,
+            cursor.scale,
+            f64::from(u8::from(cursor.pressed)),
+            f64::from(u8::from(cursor.right)),
+            f64::from(u8::from(cursor.dragging)),
+            highlight.x,
+            highlight.y,
+            highlight.alpha,
+        ]
     }
 
     #[wasm_bindgen(js_name = setSourceSize)]

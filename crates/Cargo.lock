@@ -684,11 +684,20 @@ version = "0.0.0"
 dependencies = [
  "bytemuck",
  "recast-color",
+ "recast-cursor",
  "recast-gpu",
  "recast-scene",
  "recast-time",
  "serde_json",
  "wgpu",
+]
+
+[[package]]
+name = "recast-cursor"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -698,8 +707,10 @@ dependencies = [
  "console_error_panic_hook",
  "js-sys",
  "recast-compositor",
+ "recast-cursor",
  "recast-gpu",
  "recast-scene",
+ "serde",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -722,6 +733,7 @@ name = "recast-scene"
 version = "0.0.0"
 dependencies = [
  "recast-color",
+ "recast-cursor",
  "recast-time",
  "serde",
  "serde_json",
