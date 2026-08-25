@@ -669,6 +669,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-compositor"
+version = "0.0.0"
+dependencies = [
+ "recast-color",
+ "recast-scene",
+ "recast-time",
+ "serde_json",
+]
+
+[[package]]
 name = "recast-gpu"
 version = "0.0.0"
 dependencies = [

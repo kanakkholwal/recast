@@ -38,3 +38,14 @@ wgpu = { version = "=30.0.1", default-features = false, features = ["vulkan", "w
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wgpu = { version = "=30.0.1", default-features = false, features = ["webgpu", "webgl", "wgsl"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_System_Threading",
+] }
