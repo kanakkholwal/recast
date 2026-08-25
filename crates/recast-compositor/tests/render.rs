@@ -560,6 +560,93 @@ fn a_rect_annotation_fills_its_uv_box_and_leaves_the_rest_alone() {
     );
 }
 
+/// The blur annotation is the only one that reads what is already composited,
+/// so a strength that changes nothing means it never sampled the frame.
+#[test]
+fn a_blur_annotation_mixes_the_pixels_underneath_it() {
+    let Some(ctx) = context() else { return };
+    // Over the red|green seam, in the top band where neither side has any blue.
+    const BLUR: &str = r##""annotations": [{"id":"b1","start":0.0,"end":10.0,
+         "kind":{"kind":"blur","x":0.25,"y":0.0,"w":0.5,"h":0.5,"strength":0.6}}],"##;
+    let sharp = render(&ctx, &scene_with(""), 5.0, true);
+    let blurred = render(&ctx, &scene_with(BLUR), 5.0, true);
+
+    // One pixel left of the seam: pure red until green bleeds across.
+    let (x, y) = (SRC_W / 2 - 1, SRC_H / 4);
+    assert!(
+        close(sharp.at(x, y), [255, 0, 0, 255], 3),
+        "the fixture must be pure red there: {:?}",
+        sharp.at(x, y)
+    );
+    assert!(
+        blurred.at(x, y)[1] > 20,
+        "no green bled across the seam: {:?}",
+        blurred.at(x, y)
+    );
+}
+
+#[test]
+fn a_blur_annotation_leaves_everything_outside_its_rect_sharp() {
+    let Some(ctx) = context() else { return };
+    const BLUR: &str = r##""annotations": [{"id":"b1","start":0.0,"end":10.0,
+         "kind":{"kind":"blur","x":0.25,"y":0.0,"w":0.5,"h":0.5,"strength":1.0}}],"##;
+    let sharp = render(&ctx, &scene_with(""), 5.0, true);
+    let blurred = render(&ctx, &scene_with(BLUR), 5.0, true);
+
+    let (x, y) = (2, SRC_H / 4);
+    assert_eq!(
+        sharp.at(x, y),
+        blurred.at(x, y),
+        "the blur leaked outside its rect"
+    );
+}
+
+/// Draw order is what makes a blur a redaction: an annotation painted before it
+/// must be blurred, and one painted after it must stay sharp. Batching every
+/// shape into one pass and blurring around them would break both halves.
+#[test]
+fn a_blur_takes_in_what_was_drawn_before_it_and_not_after() {
+    let Some(ctx) = context() else { return };
+    let scene = |mark_z: i32| {
+        scene_with(&format!(
+            r##""annotations": [
+                 {{"id":"mark","start":0.0,"end":10.0,"zIndex":{mark_z},
+                   "fill":"#ff00ff","stroke":{{"width":0.0,"color":"transparent"}},
+                   "kind":{{"kind":"rect","x":0.0,"y":0.0,"w":0.5,"h":0.5}}}},
+                 {{"id":"b1","start":0.0,"end":10.0,"zIndex":5,
+                   "kind":{{"kind":"blur","x":0.0,"y":0.0,"w":1.0,"h":0.5,"strength":0.6}}}}],"##
+        ))
+    };
+    // Three pixels right of the mark's edge, inside the blur rect.
+    let (x, y) = (SRC_W / 2 + 3, SRC_H / 4);
+    let under = render(&ctx, &scene(1), 5.0, true).at(x, y);
+    let over = render(&ctx, &scene(9), 5.0, true).at(x, y);
+
+    assert!(
+        under[2] > 20,
+        "the mark under the blur did not bleed: {under:?}"
+    );
+    assert!(
+        over[2] <= 20,
+        "the mark drawn after the blur was blurred anyway: {over:?}"
+    );
+}
+
+#[test]
+fn a_white_blur_variant_washes_the_region_out() {
+    let Some(ctx) = context() else { return };
+    const BLUR: &str = r##""annotations": [{"id":"b1","start":0.0,"end":10.0,
+         "kind":{"kind":"blur","x":0.25,"y":0.0,"w":0.5,"h":0.5,
+                 "strength":1.0,"variant":"white"}}],"##;
+    let out = render(&ctx, &scene_with(BLUR), 5.0, true);
+    let (x, y) = (SRC_W / 2 - 4, SRC_H / 4);
+    let px = out.at(x, y);
+    assert!(
+        px[0] > 200 && px[1] > 200 && px[2] > 200,
+        "a full-strength white wash should redact, got {px:?}"
+    );
+}
+
 #[test]
 fn an_annotation_outside_its_time_window_draws_nothing() {
     let Some(ctx) = context() else { return };

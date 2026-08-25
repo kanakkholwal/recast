@@ -26,6 +26,20 @@ pub enum AnnotationShape {
         y2: f32,
         head: f32,
     },
+    /// Privacy blur over whatever is already composited underneath. `sigma_px`
+    /// is a Gaussian standard deviation, matching what CSS `blur()` means in
+    /// `paintBlur`, which the preview and the browser export share.
+    Blur {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radius: f32,
+        sigma_px: f32,
+        /// Wash laid over the blurred pixels. Transparent for a plain glass
+        /// blur below the redaction threshold.
+        tint: Srgba,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -114,9 +128,39 @@ pub fn annotation_alpha(annotation: &Annotation, source_time: f64) -> f64 {
     raw * annotation.opacity.clamp(0.0, 1.0)
 }
 
-/// `None` for a kind this pass cannot draw yet (image, text and blur all need
-/// something outside the shape shader: an uploaded asset, a shaped font run, or
-/// a copy of what is underneath).
+/// Gaussian sigma for a blur annotation, in canvas pixels. The 0.12 factor and
+/// the shorter-edge reference come from `paintBlur`, so the three renderers
+/// agree on how strong a given strength looks.
+fn blur_sigma_px(strength: f64, geometry: CanvasGeometry) -> f32 {
+    let shorter = geometry.canvas_w.min(geometry.canvas_h) as f64;
+    (strength.clamp(0.0, 1.0) * 0.12 * shorter) as f32
+}
+
+/// Mirrors `blurTint`. `glass` stays clear until strength passes 0.6, past which
+/// a grey wash turns it into a real redaction.
+fn blur_tint(variant: &str, tint_color: &str, strength: f64, opacity: f32) -> Srgba {
+    let s = strength.clamp(0.0, 1.0);
+    let o = opacity.clamp(0.0, 1.0) as f64;
+    let alpha = (0.15 + 0.8 * s) * o;
+    let with = |color: Srgba, alpha: f64| Srgba {
+        a: (alpha.clamp(0.0, 1.0) * 255.0).round() as u8,
+        ..color
+    };
+    match variant {
+        "white" => with(Srgba::opaque(255, 255, 255), alpha),
+        "black" => with(Srgba::opaque(0, 0, 0), alpha),
+        // An unparseable colour draws no wash rather than a black one.
+        "color" => match parse_css_color(tint_color) {
+            Some(color) => with(color, alpha),
+            None => recast_color::TRANSPARENT,
+        },
+        _ if s > 0.6 => with(Srgba::opaque(128, 128, 128), (s - 0.6) * 0.6 * o),
+        _ => recast_color::TRANSPARENT,
+    }
+}
+
+/// `None` for a kind this pass cannot draw (image and text both need an
+/// uploaded asset; text reaches the export pre-rasterised as an image).
 pub fn annotation_params(
     annotation: &Annotation,
     source_time: f64,
@@ -177,6 +221,30 @@ pub fn annotation_params(
                 x2: bx,
                 y2: by,
                 head: head_size.clamp(0.05, 0.4) as f32,
+            }
+        }
+        AnnotationKind::Blur {
+            x,
+            y,
+            w,
+            h,
+            strength,
+            variant,
+            tint_color,
+            radius,
+        } => {
+            let (left, top) = (x.min(x + w), y.min(y + h));
+            let (px, py) = to_canvas(left, top);
+            let (fx, fy) = to_canvas(left + w.abs(), top + h.abs());
+            let (bw, bh) = (fx - px, fy - py);
+            AnnotationShape::Blur {
+                x: px,
+                y: py,
+                w: bw,
+                h: bh,
+                radius: (*radius as f32) * bw.abs().min(bh.abs()),
+                sigma_px: blur_sigma_px(*strength, geometry),
+                tint: blur_tint(variant, tint_color, *strength, alpha as f32),
             }
         }
         _ => return None,
@@ -337,6 +405,87 @@ mod tests {
         }
     }
 
+    fn blur(extra: &str) -> Annotation {
+        annotation(&format!(
+            r#"{{"id":"b1","start":0.0,"end":10.0,
+                "kind":{{"kind":"blur","x":0.2,"y":0.3,"w":0.4,"h":0.2{extra}}}}}"#
+        ))
+    }
+
+    /// Sigma is a fraction of the SHORTER canvas edge, the same reference
+    /// `paintBlur` uses, so a given strength reads the same in all three
+    /// renderers instead of drifting with the aspect.
+    #[test]
+    fn blur_strength_becomes_a_sigma_on_the_shorter_edge() {
+        match params(&blur(r#","strength":0.5"#), 5.0)
+            .expect("params")
+            .shape
+        {
+            // The fixture canvas is 1000x500.
+            AnnotationShape::Blur { sigma_px, .. } => {
+                assert!((sigma_px - 30.0).abs() < 1e-3, "sigma {sigma_px}")
+            }
+            other => panic!("expected a blur, got {other:?}"),
+        }
+    }
+
+    /// The corner radius is a fraction of the RECT's shorter side, not the
+    /// canvas: a rounded redaction should keep its shape at any size.
+    #[test]
+    fn the_blur_corner_radius_follows_the_rect() {
+        match params(&blur(r#","radius":0.25"#), 5.0)
+            .expect("params")
+            .shape
+        {
+            AnnotationShape::Blur { w, h, radius, .. } => {
+                assert_eq!((w, h), (400.0, 100.0));
+                assert!((radius - 25.0).abs() < 1e-3, "radius {radius}");
+            }
+            other => panic!("expected a blur, got {other:?}"),
+        }
+    }
+
+    /// Glass is a clear blur until the strength slider is pushed into redaction
+    /// territory, where a grey wash starts building.
+    #[test]
+    fn glass_stays_clear_until_the_redaction_threshold() {
+        let tint = |extra: &str| match params(&blur(extra), 5.0).expect("params").shape {
+            AnnotationShape::Blur { tint, .. } => tint,
+            other => panic!("expected a blur, got {other:?}"),
+        };
+        assert_eq!(tint(r#","strength":0.6"#).a, 0);
+        assert!(tint(r#","strength":1.0"#).a > 0);
+    }
+
+    #[test]
+    fn a_white_wash_scales_its_alpha_with_strength() {
+        let tint = |extra: &str| match params(&blur(extra), 5.0).expect("params").shape {
+            AnnotationShape::Blur { tint, .. } => tint,
+            other => panic!("expected a blur, got {other:?}"),
+        };
+        let low = tint(r#","variant":"white","strength":0.0"#);
+        let high = tint(r#","variant":"white","strength":1.0"#);
+        assert_eq!((low.r, low.g, low.b), (255, 255, 255));
+        assert_eq!(low.a, 38, "0.15 of 255");
+        assert_eq!(high.a, 242, "0.95 of 255");
+    }
+
+    /// An unparseable tint draws no wash. Falling back to black would redact
+    /// the region the user asked to merely blur.
+    #[test]
+    fn an_unparseable_tint_colour_washes_nothing() {
+        match params(
+            &blur(r#","variant":"color","tintColor":"not-a-colour","strength":1.0"#),
+            5.0,
+        )
+        .expect("params")
+        .shape
+        {
+            AnnotationShape::Blur { tint, .. } => assert_eq!(tint.a, 0),
+            other => panic!("expected a blur, got {other:?}"),
+        }
+    }
+
     #[test]
     fn an_ellipse_becomes_a_centre_and_radii() {
         let a = annotation(
@@ -365,11 +514,10 @@ mod tests {
     }
 
     #[test]
-    fn image_text_and_blur_kinds_are_reported_as_undrawable_rather_than_drawn_wrong() {
+    fn image_and_text_kinds_are_reported_as_undrawable_rather_than_drawn_wrong() {
         for kind in [
             r#"{"kind":"image","x":0.1,"y":0.1,"w":0.2,"h":0.2,"path":"a.png"}"#,
             r#"{"kind":"text","x":0.1,"y":0.1,"w":0.2,"h":0.2,"content":"hi"}"#,
-            r#"{"kind":"blur","x":0.1,"y":0.1,"w":0.2,"h":0.2}"#,
         ] {
             let a = annotation(&format!(
                 r#"{{"id":"a1","start":0.0,"end":10.0,"kind":{kind}}}"#

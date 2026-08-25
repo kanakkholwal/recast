@@ -59,9 +59,20 @@ interface Props {
 	 *  paused and is only re-synced past a 0.25s tolerance), so reading it here
 	 *  ramped fades and tracked zoom up to a quarter-second off the picture. */
 	previewTime?: number;
+	/** True when the compositor already painted the annotation artwork. This
+	 *  canvas then owns only the editing affordances, or every annotation is
+	 *  drawn twice (and a blur is blurred twice). */
+	compositorPaintsArtwork?: boolean;
 }
 
-let { store, videoEl, targetEl, compositeCanvasEl = null, previewTime }: Props = $props();
+let {
+	store,
+	videoEl,
+	targetEl,
+	compositeCanvasEl = null,
+	previewTime,
+	compositorPaintsArtwork = false,
+}: Props = $props();
 
 let canvasEl: HTMLCanvasElement | null = $state(null);
 let rafHandle: number | null = null;
@@ -190,6 +201,12 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation, opacity: n
 	const isBlur = a.kind.kind === "blur";
 	const isSelected = a.id === store.selectedAnnotationId;
 	const editing = store.activePanel === "annotations";
+	// The compositor draws every annotation inside its own window, so the only
+	// thing left here is the ghost it cannot know about: the selected one being
+	// moved while the playhead sits outside its window.
+	if (compositorPaintsArtwork) {
+		if (!isSelected || !editing || (t >= a.start && t <= a.end)) return;
+	}
 	// Outside its time window an annotation is invisible. Keep showing the
 	// SELECTED one as a dim ghost while editing so moving/resizing it (its
 	// handles draw regardless of time) doesn't make it vanish under the cursor.

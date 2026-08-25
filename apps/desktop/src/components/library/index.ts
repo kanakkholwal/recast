@@ -1,3 +1,4 @@
+export { default as AssetCard } from "./AssetCard.svelte";
 export { default as LibraryEmpty } from "./LibraryEmpty.svelte";
 export { default as LibraryError } from "./LibraryError.svelte";
 export { default as LibrarySearch } from "./LibrarySearch.svelte";

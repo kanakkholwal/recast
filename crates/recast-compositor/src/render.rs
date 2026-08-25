@@ -61,6 +61,14 @@ struct ShapeUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct RegionUniform {
+    rect: [f32; 4],
+    params: [f32; 4],
+    tint: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct CardUniform {
     rect: [f32; 4],
     canvas: [f32; 4],
@@ -153,6 +161,7 @@ pub struct Compositor {
     shadow: ShadowPass,
     card: CardPass,
     shape: ShapePass,
+    region: RegionPass,
     sprite: SpritePass,
     present: PresentPass,
     working: Option<(u32, u32, wgpu::Texture)>,
@@ -173,6 +182,9 @@ struct BlurPass {
     layout: wgpu::BindGroupLayout,
     horizontal: wgpu::Buffer,
     vertical: wgpu::Buffer,
+    /// Zero taps: a plain copy through the blur pipeline, so a blur annotation
+    /// with no radius still gets its tint without a second pipeline.
+    identity: wgpu::Buffer,
     sampler: wgpu::Sampler,
     scratch: Option<(u32, u32, wgpu::Texture)>,
 }
@@ -191,6 +203,17 @@ struct CardPass {
 struct ShapePass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
+}
+
+/// Draws a pre-blurred copy of the composite back inside one rect. Separate
+/// from `ShapePass` because it samples the target it draws into, which a render
+/// pass cannot do without the copy.
+struct RegionPass {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    /// Holds the blurred composite. Only allocated once a blur is on screen.
+    blurred: Option<(u32, u32, wgpu::Texture)>,
 }
 
 struct SpritePass {
@@ -216,6 +239,7 @@ impl Compositor {
             shadow: ShadowPass::new(&device),
             card: CardPass::new(&device),
             shape: ShapePass::new(&device),
+            region: RegionPass::new(&device),
             sprite: SpritePass::new(&device),
             present: PresentPass::new(&device),
             device,
@@ -246,7 +270,7 @@ impl Compositor {
         self.blur_background(&mut encoder, &working_view, params, width, height);
         self.draw_shadow(&mut encoder, &working_view, params);
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
-        self.draw_annotations(&mut encoder, &working_view, params);
+        self.draw_annotations(&mut encoder, &working_view, params, width, height);
         self.draw_cursor(&mut encoder, &working_view, params, inputs, width, height);
         self.present(&mut encoder, &working_view, target);
 
@@ -377,6 +401,23 @@ impl Compositor {
         let scratch = self.blur_scratch(width, height);
         self.run_blur_axis(encoder, &self.blur.horizontal, working, &scratch);
         self.run_blur_axis(encoder, &self.blur.vertical, &scratch, working);
+    }
+
+    fn scratch_texture(&self, label: &str, width: u32, height: u32) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: WORKING_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
     }
 
     fn blur_scratch(&mut self, width: u32, height: u32) -> wgpu::TextureView {
@@ -588,18 +629,162 @@ impl Compositor {
         stats
     }
 
+    /// Draw order is `(z_index, insertion)`, so a blur has to interrupt the
+    /// batch rather than be hoisted: it must see everything painted before it
+    /// and nothing painted after.
     fn draw_annotations(
-        &self,
+        &mut self,
         encoder: &mut wgpu::CommandEncoder,
         working: &wgpu::TextureView,
         params: &FrameParams,
+        width: u32,
+        height: u32,
     ) {
-        if params.annotations.is_empty() {
+        let mut run: Vec<&AnnotationParams> = Vec::new();
+        for annotation in &params.annotations {
+            match annotation.shape {
+                AnnotationShape::Blur { .. } => {
+                    self.draw_shape_run(encoder, working, &run);
+                    run.clear();
+                    self.draw_blur_region(encoder, working, annotation, width, height);
+                }
+                _ => run.push(annotation),
+            }
+        }
+        self.draw_shape_run(encoder, working, &run);
+    }
+
+    /// Blurs the whole composite into a scratch, then paints the rect back from
+    /// it. Full-canvas because the blur must not run out of source at the rect's
+    /// edge; one pair of passes per blur annotation, which is the price of
+    /// keeping draw order.
+    fn draw_blur_region(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        annotation: &AnnotationParams,
+        width: u32,
+        height: u32,
+    ) {
+        let AnnotationShape::Blur {
+            x,
+            y,
+            w,
+            h,
+            radius,
+            sigma_px,
+            tint,
+        } = annotation.shape
+        else {
+            return;
+        };
+        if w <= 0.0 || h <= 0.0 {
             return;
         }
-        let mut buffers = Vec::with_capacity(params.annotations.len());
-        let mut bind_groups = Vec::with_capacity(params.annotations.len());
-        for annotation in &params.annotations {
+
+        let blurred = self.blurred_target(width, height);
+        match plan_from_sigma(sigma_px, width, height) {
+            Some(plan) => {
+                self.queue.write_buffer(
+                    &self.blur.horizontal,
+                    0,
+                    bytemuck::bytes_of(&BlurUniform {
+                        params: [plan.step_u, 0.0, plan.taps, plan.sigma_in_steps],
+                    }),
+                );
+                self.queue.write_buffer(
+                    &self.blur.vertical,
+                    0,
+                    bytemuck::bytes_of(&BlurUniform {
+                        params: [0.0, plan.step_v, plan.taps, plan.sigma_in_steps],
+                    }),
+                );
+                let scratch = self.blur_scratch(width, height);
+                self.run_blur_axis(encoder, &self.blur.horizontal, working, &scratch);
+                self.run_blur_axis(encoder, &self.blur.vertical, &scratch, &blurred);
+            }
+            // Strength 0 still draws, because the tint alone is a valid redaction.
+            None => self.run_blur_axis(encoder, &self.blur.identity, working, &blurred),
+        }
+
+        let uniform = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("region-uniform"),
+            size: std::mem::size_of::<RegionUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(
+            &uniform,
+            0,
+            bytemuck::bytes_of(&RegionUniform {
+                rect: [x, y, w, h],
+                params: [radius.max(0.0), 0.0, 0.0, 0.0],
+                tint: srgba_parts(tint),
+            }),
+        );
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("region"),
+            layout: &self.region.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&blurred),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.region.sampler),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("annotation-blur"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: working,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.region.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
+    fn blurred_target(&mut self, width: u32, height: u32) -> wgpu::TextureView {
+        let reuse = matches!(&self.region.blurred, Some((w, h, _)) if *w == width && *h == height);
+        if !reuse {
+            let texture = self.scratch_texture("recast-blur-region", width, height);
+            self.region.blurred = Some((width, height, texture));
+        }
+        match &self.region.blurred {
+            Some((_, _, texture)) => texture.create_view(&Default::default()),
+            None => unreachable!("the blurred target was just created"),
+        }
+    }
+
+    fn draw_shape_run(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        annotations: &[&AnnotationParams],
+    ) {
+        if annotations.is_empty() {
+            return;
+        }
+        let mut buffers = Vec::with_capacity(annotations.len());
+        let mut bind_groups = Vec::with_capacity(annotations.len());
+        for annotation in annotations {
             let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("shape-uniform"),
                 size: std::mem::size_of::<ShapeUniform>() as u64,
@@ -946,10 +1131,14 @@ struct BlurPlan {
     sigma_in_steps: f32,
 }
 
+fn blur_plan(amount: f32, width: u32, height: u32) -> Option<BlurPlan> {
+    plan_from_sigma(amount * BLUR_PX_PER_UNIT, width, height)
+}
+
 /// `None` when the radius is below half a pixel, where the two extra full-canvas
 /// passes would cost more than they change.
-fn blur_plan(amount: f32, width: u32, height: u32) -> Option<BlurPlan> {
-    let sigma = (amount * BLUR_PX_PER_UNIT).max(0.0);
+fn plan_from_sigma(sigma: f32, width: u32, height: u32) -> Option<BlurPlan> {
+    let sigma = sigma.max(0.0);
     if sigma < 0.5 {
         return None;
     }
@@ -1002,6 +1191,8 @@ fn shape_uniform(annotation: &AnnotationParams) -> ShapeUniform {
     let (geom, kind, detail) = match annotation.shape {
         AnnotationShape::Rect { x, y, w, h, radius } => ([x, y, w, h], 0.0, radius),
         AnnotationShape::Ellipse { cx, cy, rx, ry } => ([cx, cy, rx, ry], 1.0, 0.0),
+        // Blur goes through `RegionPass`, which never calls this.
+        AnnotationShape::Blur { .. } => ([0.0; 4], 0.0, 0.0),
         AnnotationShape::Arrow {
             x1,
             y1,
@@ -1185,6 +1376,7 @@ impl BlurPass {
             layout,
             horizontal: uniform("blur-horizontal"),
             vertical: uniform("blur-vertical"),
+            identity: uniform("blur-identity"),
             sampler: clamped_linear_sampler(device, "blur"),
             scratch: None,
         }
@@ -1383,6 +1575,27 @@ impl ShapePass {
             "vs",
         );
         Self { pipeline, layout }
+    }
+}
+
+impl RegionPass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = sampled_texture_layout(device, "region");
+        let pipeline = fullscreen_pipeline(
+            device,
+            "region",
+            include_str!("shaders/region.wgsl"),
+            &layout,
+            WORKING_FORMAT,
+            Some(PREMULTIPLIED),
+            "vs",
+        );
+        Self {
+            pipeline,
+            layout,
+            sampler: clamped_linear_sampler(device, "region"),
+            blurred: None,
+        }
     }
 }
 

@@ -756,6 +756,31 @@ impl RecordingSession {
     }
 }
 
+/// Sub-pixel jitter in the reported preview geometry is not a camera move.
+/// About two pixels on a 1080p frame.
+const CAMERA_MOVE_EPSILON: f64 = 0.002;
+
+/// One drag stays one segment; a stream of moves that never stops does not.
+/// A recorded segment replays as an eased glide between its endpoints, so an
+/// over-long one invents a movement that never happened.
+const MAX_MOTION_SEGMENT_SECS: f64 = 10.0;
+
+/// Compared against the last ACCEPTED position, so a drag slower than the dead
+/// zone accumulates instead of being filtered away tick by tick.
+fn camera_moved(from: &CameraPlacement, to: &CameraPlacement) -> bool {
+    (to.x - from.x).abs() > CAMERA_MOVE_EPSILON
+        || (to.y - from.y).abs() > CAMERA_MOVE_EPSILON
+        || (to.width - from.width).abs() > CAMERA_MOVE_EPSILON
+        || (to.height - from.height).abs() > CAMERA_MOVE_EPSILON
+}
+
+fn extends_current_move(segment: &CameraMotionSegment, last_at: f64, now: f64) -> bool {
+    segment.source == "live-recorded"
+        && (segment.end - last_at).abs() < 0.01
+        && now - last_at <= 0.45
+        && now - segment.start <= MAX_MOTION_SEGMENT_SECS
+}
+
 impl RecordingManager {
     pub fn update_camera_preview_state(&self, update: CameraPreviewUpdate) -> Result<()> {
         let placement = CameraPlacement {
@@ -782,16 +807,12 @@ impl RecordingManager {
             if let (Some(last), Some(last_at)) =
                 (tracker.last_placement.clone(), tracker.last_at_secs)
             {
-                if placement != last {
+                if camera_moved(&last, &placement) {
                     let can_extend = tracker
                         .overlay
                         .motion_segments
                         .last()
-                        .map(|segment| {
-                            segment.source == "live-recorded"
-                                && (segment.end - last_at).abs() < 0.01
-                                && now_secs - last_at <= 0.45
-                        })
+                        .map(|segment| extends_current_move(segment, last_at, now_secs))
                         .unwrap_or(false);
 
                     // Bound memory + serialized project size on long sessions
@@ -828,12 +849,16 @@ impl RecordingManager {
                             source: "live-recorded".into(),
                         });
                     }
+                    // Only an accepted move advances the reference, so a drag
+                    // slower than the dead zone accumulates rather than being
+                    // filtered away one tick at a time.
+                    tracker.last_placement = Some(placement);
                 }
             } else {
                 tracker.overlay.default_placement = placement.clone();
+                tracker.last_placement = Some(placement);
             }
 
-            tracker.last_placement = Some(placement);
             tracker.last_at_secs = Some(now_secs);
             return Ok(());
         }
@@ -1570,6 +1595,89 @@ mod scale_tests {
         // Crop stays inside the captured frame.
         assert!(t.crop.x + t.crop.width as i32 <= t.source.x + t.source.width as i32);
         assert!(t.crop.y + t.crop.height as i32 <= t.source.y + t.source.height as i32);
+    }
+}
+
+#[cfg(test)]
+mod camera_motion_tests {
+    use super::*;
+
+    fn place(x: f64, y: f64) -> CameraPlacement {
+        CameraPlacement {
+            x,
+            y,
+            width: 0.16,
+            height: 0.29,
+        }
+    }
+
+    fn segment(start: f64, end: f64) -> CameraMotionSegment {
+        CameraMotionSegment {
+            start,
+            end,
+            from_x: 1.0,
+            from_y: 0.86,
+            from_width: 0.16,
+            from_height: 0.29,
+            to_x: 0.79,
+            to_y: 0.5,
+            to_width: 0.16,
+            to_height: 0.29,
+            ease_in: Default::default(),
+            ease_out: Default::default(),
+            source: "live-recorded".into(),
+        }
+    }
+
+    /// The preview geometry jitters in the last few bits. Treating that as a
+    /// move let the coalescing window fold a whole take into ONE segment, which
+    /// replays as an eased glide across the entire recording.
+    #[test]
+    fn sub_pixel_jitter_is_not_a_move() {
+        assert!(!camera_moved(&place(1.0, 0.86), &place(1.0004, 0.8603)));
+        assert!(!camera_moved(&place(0.5, 0.5), &place(0.5, 0.5)));
+    }
+
+    #[test]
+    fn a_real_drag_is_a_move() {
+        assert!(camera_moved(&place(0.5, 0.5), &place(0.52, 0.5)));
+        assert!(camera_moved(&place(0.5, 0.5), &place(0.5, 0.52)));
+    }
+
+    /// Resizing counts too, or a pinch would record as no movement at all.
+    #[test]
+    fn a_size_change_alone_is_a_move() {
+        let mut bigger = place(0.5, 0.5);
+        bigger.width += 0.05;
+        assert!(camera_moved(&place(0.5, 0.5), &bigger));
+    }
+
+    #[test]
+    fn a_continuing_drag_extends_the_open_segment() {
+        assert!(extends_current_move(&segment(1.0, 1.4), 1.4, 1.5));
+    }
+
+    /// A pause between moves starts a new segment rather than gliding the
+    /// bubble across the gap.
+    #[test]
+    fn a_gap_longer_than_the_drag_window_starts_a_new_segment() {
+        assert!(!extends_current_move(&segment(1.0, 1.4), 1.4, 2.5));
+    }
+
+    /// The backstop for the whole-take segment: even an unbroken stream of
+    /// moves stops extending one segment eventually.
+    #[test]
+    fn a_segment_stops_growing_once_it_is_long_enough() {
+        let long = segment(0.15, 0.15 + MAX_MOTION_SEGMENT_SECS + 0.1);
+        let last_at = long.end;
+        assert!(!extends_current_move(&long, last_at, last_at + 0.1));
+    }
+
+    #[test]
+    fn an_authored_segment_is_never_extended_by_a_live_move() {
+        let mut authored = segment(1.0, 1.4);
+        authored.source = "manual".into();
+        assert!(!extends_current_move(&authored, 1.4, 1.5));
     }
 }
 

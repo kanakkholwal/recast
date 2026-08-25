@@ -647,7 +647,8 @@ const hasBlurAnnotation = $derived(
 );
 
 function syncBlurMirror() {
-	if (!hasBlurAnnotation || !canvasEl) return;
+	// The engine blurs in the compositor, so the mirror has no reader.
+	if (engineDriver || !hasBlurAnnotation || !canvasEl) return;
 	const w = canvasEl.width;
 	const h = canvasEl.height;
 	if (!w || !h) return;
@@ -1741,7 +1742,8 @@ const isAnnotationActive = $derived(
 			{store}
 			{videoEl}
 			targetEl={previewRectEl}
-			compositeCanvasEl={blurMirrorEl ?? canvasEl}
+			compositeCanvasEl={engineDriver ? null : (blurMirrorEl ?? canvasEl)}
+			compositorPaintsArtwork={!!engineDriver}
 			previewTime={smoothPreviewTime ?? undefined}
 		/>
 		<TextAnnotationLayer
