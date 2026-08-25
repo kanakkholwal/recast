@@ -27,17 +27,17 @@
 		"@breezystack/lamejs": "^1.2.7",
 		"fflate": "^0.8.3",
 		"gifenc": "^1.0.3",
-		"mediabunny": "^1.52.0"
+		"mediabunny": "^1.55.2"
 	},
 	"peerDependencies": {
 		"svelte": "^5.56.1"
 	},
 	"devDependencies": {
-		"@types/node": "^22.19.19",
-		"esbuild": "^0.28.1",
-		"svelte": "^5.56.1",
+		"@types/node": "^22.20.1",
+		"esbuild": "^0.28.2",
+		"svelte": "5.56.3",
 		"typescript": "^5.9.3",
-		"vitest": "^4.1.10"
+		"vitest": "^4.1.11"
 	},
 	"scripts": {
 		"build": "exit 0",

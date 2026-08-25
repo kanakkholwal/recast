@@ -41,3 +41,6 @@ Thumbs.db
 # Working notes / plans (never committed)
 .notes/
 crates/target/
+# Golden frames: the PNGs are local eyeball material, regenerated on demand.
+# tests/goldens/manifest.json is committed and is what actually gates CI.
+apps/desktop/src-tauri/tests/goldens/*.png

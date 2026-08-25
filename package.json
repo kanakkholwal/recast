@@ -5,7 +5,7 @@
 		"sharp": "^0.34.5"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.9",
+		"@biomejs/biome": "^2.5.10",
 		"@changesets/cli": "^2.31.1",
 		"husky": "^9.1.7",
 		"turbo": "^2.10.11"

@@ -3,7 +3,7 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"description": "The Recast non-linear video editor: store, timeline, WebGL preview, overlays and export compositor. Host-agnostic \u2014 capabilities come in via EditorServices.",
+	"description": "The Recast non-linear video editor: store, timeline, WebGL preview, overlays and export compositor. Host-agnostic — capabilities come in via EditorServices.",
 	"exports": {
 		".": {
 			"svelte": "./src/index.ts",
@@ -61,11 +61,11 @@
 		"svelte": "^5.56.1"
 	},
 	"devDependencies": {
-		"svelte": "^5.56.1",
-		"@types/node": "^22.19.19",
-		"svelte-check": "^4.4.2",
+		"@types/node": "^22.20.1",
+		"svelte": "5.56.3",
+		"svelte-check": "^4.7.6",
 		"typescript": "^5.9.3",
-		"vitest": "^4.1.10"
+		"vitest": "^4.1.11"
 	},
 	"scripts": {
 		"build": "exit 0",

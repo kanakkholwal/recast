@@ -25,7 +25,7 @@ mod permissions;
 mod power;
 mod project;
 mod recording;
-mod render;
+pub mod render;
 mod silence;
 mod telemetry;
 mod transcription;

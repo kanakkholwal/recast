@@ -46,6 +46,20 @@ pub fn frame_delta(a: &[u8], b: &[u8]) -> Option<FrameDelta> {
     })
 }
 
+/// FNV-1a over two lanes. Not cryptographic: this only has to notice that a
+/// rendered frame changed, and a dependency-free leaf crate is worth more here.
+pub fn digest_hex(bytes: &[u8]) -> String {
+    let mut lo: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut hi: u64 = 0x9e37_79b9_7f4a_7c15;
+    for (index, byte) in bytes.iter().enumerate() {
+        lo ^= *byte as u64;
+        lo = lo.wrapping_mul(0x1000_0000_01b3);
+        hi ^= (*byte as u64).rotate_left((index % 64) as u32);
+        hi = hi.wrapping_mul(0x8865_4321_0abc_def1);
+    }
+    format!("{lo:016x}{hi:016x}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,6 +93,25 @@ mod tests {
         let a = vec![10u8, 20, 30, 255];
         let b = vec![10u8, 20, 30, 0];
         assert_eq!(frame_delta(&a, &b).unwrap().max_channel, 255);
+    }
+
+    #[test]
+    fn a_one_byte_change_changes_the_digest() {
+        let a = vec![3u8; 1024];
+        let mut b = a.clone();
+        b[512] = 4;
+        assert_ne!(digest_hex(&a), digest_hex(&b));
+    }
+
+    #[test]
+    fn a_reordering_changes_the_digest() {
+        assert_ne!(digest_hex(&[1u8, 2, 3, 4]), digest_hex(&[4u8, 3, 2, 1]));
+    }
+
+    #[test]
+    fn the_digest_is_stable_across_calls() {
+        let buf: Vec<u8> = (0..255u8).collect();
+        assert_eq!(digest_hex(&buf), digest_hex(&buf));
     }
 
     #[test]

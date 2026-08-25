@@ -202,22 +202,22 @@
 	},
 	"dependencies": {
 		"@recast/icons": "workspace:*",
-		"@tabler/icons-svelte": "^3.44.0",
-		"bits-ui": "^2.18.1",
+		"@tabler/icons-svelte": "^3.46.0",
+		"bits-ui": "^2.19.0",
 		"clsx": "^2.1.1",
-		"dompurify": "^3.2.4",
-		"marked": "^15.0.7",
+		"dompurify": "^3.4.14",
+		"marked": "^15.0.12",
 		"mode-watcher": "^1.1.0",
-		"svelte-sonner": "^1.1.1",
+		"svelte-sonner": "^1.2.1",
 		"tailwind-merge": "^3.6.0",
-		"tailwind-variants": "^3.2.2",
+		"tailwind-variants": "^3.3.1",
 		"vaul-svelte": "1.0.0-next.7"
 	},
 	"devDependencies": {
-		"@internationalized/date": "^3.12.2",
-		"svelte": "^5.56.3",
-		"svelte-check": "^4.4.2",
-		"tailwindcss": "^4.3.1",
+		"@internationalized/date": "^3.12.3",
+		"svelte": "5.56.3",
+		"svelte-check": "^4.7.6",
+		"tailwindcss": "^4.3.3",
 		"typescript": "^5.9.3"
 	},
 	"scripts": {

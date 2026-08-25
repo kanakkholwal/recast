@@ -342,6 +342,16 @@ jobs:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
         run: cargo test --manifest-path crates/Cargo.toml -p recast-testkit --release
 
+      # Golden frames pin what the CURRENT export compositor renders, so the wgpu
+      # rewrite has an exact target. Windows only: the fixtures are byte-compared,
+      # and a different FFmpeg build / libx264 version / scaler rounding on another
+      # OS shifts pixels past the tolerance for reasons that are not regressions.
+      - name: Export golden frames (Windows only)
+        if: ${{ matrix.platform.name == 'windows-x64' }}
+        env:
+          RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test golden_frames
+
       # Clippy after the build so the compile gate above is the hard failure
       # signal; lint findings surface here without blocking until the team
       # decides to make them blocking (drop `continue-on-error` then).
