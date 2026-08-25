@@ -21,7 +21,7 @@ use crate::cursor::{
 use crate::encoder::h264::{self, EncodePurpose, H264Encoder};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
-pub use clock::{offset_ms_from_video, RecordingClock, TrackStart};
+pub use clock::{camera_offset_ms, offset_ms_from_video, RecordingClock, TrackStart};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
 
 /// Frames per second emitted by the capture pacer and declared to the encoder.
@@ -507,6 +507,10 @@ pub struct RecordingManager {
     /// landed on disk. `stop_recording` (every stop path) waits on this before
     /// finalizing so the camera file is present when the project is zipped.
     camera_ready: Arc<AtomicBool>,
+    /// Unix ms at which the preview WebView's recorder produced its first
+    /// frame. Held on the MANAGER because the preview is told to roll before
+    /// `start()` runs, so this usually arrives before a session exists.
+    camera_start_unix_ms: Mutex<Option<u64>>,
 }
 
 impl Default for RecordingManager {
@@ -515,6 +519,7 @@ impl Default for RecordingManager {
             session: Mutex::new(None),
             pending_camera_overlay: Mutex::new(CameraOverlaySettings::default()),
             camera_ready: Arc::new(AtomicBool::new(false)),
+            camera_start_unix_ms: Mutex::new(None),
         }
     }
 }
@@ -563,9 +568,13 @@ impl RecordingManager {
     /// own start rather than being measured here; `stop()` turns it into an
     /// offset against the session origin.
     pub fn report_camera_start(&self, started_at_unix_ms: u64) {
-        if let Some(session) = self.session.lock().as_ref() {
-            session.mark_camera_start(started_at_unix_ms);
-        }
+        // Deliberately NOT routed through the session. The panel tells the
+        // preview to roll BEFORE it calls `start_recording`, so this report
+        // normally arrives while `session` is still None; storing it on the
+        // session dropped it every time. Staleness is handled at stop by
+        // `camera_offset_ms`, which refuses a stamp outside this session.
+        *self.camera_start_unix_ms.lock() = Some(started_at_unix_ms);
+        log::info!("camera preview reported start at unix ms {started_at_unix_ms}");
     }
 
     /// Block until the camera track lands or `timeout` elapses; returns whether
@@ -636,18 +645,9 @@ struct RecordingSession {
     camera_overlay: CameraOverlayTracker,
     /// Capture rate this session was started at (pacer + encoder + metadata).
     recording_fps: u32,
-    camera_start: TrackStart,
 }
 
 impl RecordingSession {
-    /// Translate the preview recorder's Unix-ms start into a mark on the
-    /// session clock. Both stamps come from this machine and are taken within
-    /// microseconds of each other at `start()`, so the subtraction is sound.
-    fn mark_camera_start(&self, started_at_unix_ms: u64) {
-        let delay_ms = started_at_unix_ms.saturating_sub(self.started_at_unix_ms);
-        self.camera_start.mark_at(Duration::from_millis(delay_ms));
-    }
-
     /// Best-effort teardown for an abnormal shutdown (see `Drop for
     /// RecordingManager`). Mirrors the reaping half of `stop()` without
     /// assembling artifacts. `RecordingSession` deliberately does NOT implement
@@ -853,7 +853,6 @@ impl RecordingManager {
         // turns the differences into the offsets the muxer aligns by.
         let audio_start = TrackStart::new(started_at);
         let microphone_start = TrackStart::new(started_at);
-        let camera_start = TrackStart::new(started_at);
         let capture_handle = spawn_capture_loop(
             target.clone(),
             stop_flag.clone(),
@@ -1040,7 +1039,6 @@ impl RecordingManager {
                 overlay: camera_overlay,
             },
             recording_fps,
-            camera_start,
         });
         Ok(warnings)
     }
@@ -1093,7 +1091,14 @@ impl RecordingManager {
         let track_offsets = TrackOffsets {
             audio_ms: offset_ms_from_video(cursor_offset_us, &session.audio_start),
             microphone_ms: offset_ms_from_video(cursor_offset_us, &session.microphone_start),
-            camera_ms: offset_ms_from_video(cursor_offset_us, &session.camera_start),
+            camera_ms: self.camera_start_unix_ms.lock().and_then(|reported| {
+                camera_offset_ms(
+                    reported,
+                    session.started_at_unix_ms,
+                    cursor_offset_us,
+                    session.clock.effective_elapsed().as_millis() as u64,
+                )
+            }),
         };
         log::info!(
             "track offsets vs video t0 ({}ms warmup): {:?}",

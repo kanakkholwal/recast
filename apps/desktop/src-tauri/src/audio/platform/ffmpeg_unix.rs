@@ -45,7 +45,7 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
 
-use crate::audio::wav::{SampleFormat, WavFormat, WavWriter};
+use crate::audio::wav::{measured_sample_rate, SampleFormat, WavFormat, WavWriter};
 use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
 use crate::recording::clock::TrackStart;
 
@@ -339,6 +339,12 @@ fn run_pcm_capture(
     // watcher killing FFmpeg, or by FFmpeg exiting on its own).
     let mut reader = std::io::BufReader::new(stdout);
     let mut buf = vec![0u8; 8192];
+    // Wall-clock span the written samples cover, so the delivered rate can be
+    // checked against the declared one. See `measured_sample_rate`.
+    let mut first_write: Option<Instant> = None;
+    let mut last_write: Option<Instant> = None;
+    let mut paused_total = Duration::ZERO;
+    let mut paused_since: Option<Instant> = None;
     loop {
         match reader.read(&mut buf) {
             Ok(0) => break,
@@ -346,12 +352,20 @@ fn run_pcm_capture(
                 // Drain the pipe even when paused so FFmpeg never
                 // blocks on a full output buffer; just suppress the
                 // WAV write to keep the file gap-free.
-                if !pause_flag.load(Ordering::Acquire) {
+                if pause_flag.load(Ordering::Acquire) {
+                    paused_since.get_or_insert_with(Instant::now);
+                } else {
+                    if let Some(since) = paused_since.take() {
+                        paused_total += since.elapsed();
+                    }
                     start.mark();
                     if let Err(e) = writer.write_samples(&buf[..n]) {
                         log::error!("{label} WAV write failed: {e}");
                         break;
                     }
+                    let now = Instant::now();
+                    first_write.get_or_insert(now);
+                    last_write = Some(now);
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
@@ -372,10 +386,34 @@ fn run_pcm_capture(
         let _ = c.wait();
     }
 
+    if let Some(since) = paused_since.take() {
+        paused_total += since.elapsed();
+    }
+    let frames = writer.frames_written();
+    // Same correction the WASAPI backend applies: FFmpeg resamples by SAMPLE
+    // COUNT, so a device whose crystal runs off nominal still yields a track
+    // that drifts against the frame pacer for the whole take.
+    if let (Some(first), Some(last)) = (first_write, last_write) {
+        let span = last
+            .saturating_duration_since(first)
+            .saturating_sub(paused_total);
+        if let Some(rate) = measured_sample_rate(frames, span, writer.sample_rate()) {
+            log::warn!(
+                "{label} device clock drift: declared {}Hz, delivered {rate}Hz                  ({frames} frames over {:.3}s) — re-declaring so the track stays                  locked to the picture",
+                writer.sample_rate(),
+                span.as_secs_f64()
+            );
+            writer.set_sample_rate(rate);
+        }
+    }
+    let final_rate = writer.sample_rate();
     writer
         .finish()
         .with_context(|| format!("failed to finalise {label} WAV"))?;
-    log::info!("{label} capture finished: {}", output_path.display());
+    log::info!(
+        "{label} capture finished: {} ({frames} frames @ {final_rate}Hz)",
+        output_path.display()
+    );
     Ok(output_path)
 }
 

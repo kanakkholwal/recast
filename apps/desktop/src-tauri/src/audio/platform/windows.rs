@@ -2,14 +2,14 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use windows::core::HSTRING;
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::*;
 
-use crate::audio::wav::{SampleFormat, WavFormat, WavWriter};
+use crate::audio::wav::{measured_sample_rate, SampleFormat, WavFormat, WavWriter};
 use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
 use crate::recording::clock::TrackStart;
 
@@ -247,12 +247,13 @@ fn drain_packets(
     format: WavFormat,
     writing: bool,
     start: &TrackStart,
-) {
+) -> u64 {
     let block_align = format.block_align() as usize;
+    let mut written = 0u64;
     loop {
         let pending = unsafe { capture_client.GetNextPacketSize().unwrap_or(0) };
         if pending == 0 {
-            return;
+            return written;
         }
 
         let mut buffer_ptr = std::ptr::null_mut();
@@ -262,21 +263,22 @@ fn drain_packets(
             capture_client.GetBuffer(&mut buffer_ptr, &mut frames, &mut flags, None, None)
         };
         if acquired.is_err() {
-            return;
+            return written;
         }
 
         if frames > 0 && writing {
             start.mark();
             let byte_count = frames as usize * block_align;
             let silent = flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0;
-            let written = if silent || buffer_ptr.is_null() {
+            let wrote = if silent || buffer_ptr.is_null() {
                 writer.write_samples(&vec![0u8; byte_count])
             } else {
                 let data = unsafe { std::slice::from_raw_parts(buffer_ptr, byte_count) };
                 writer.write_samples(data)
             };
-            if let Err(e) = written {
-                log::warn!("WAV write failed (dropping packet): {e}");
+            match wrote {
+                Ok(()) => written += frames as u64,
+                Err(e) => log::warn!("WAV write failed (dropping packet): {e}"),
             }
         }
 
@@ -347,24 +349,65 @@ fn capture(
             .with_context(|| format!("failed to start {label} capture"))?;
     }
 
+    // Wall-clock span the written samples actually cover, so the delivered rate
+    // can be compared against the declared one. Paused spans are excluded
+    // because no samples are written across them.
+    let mut first_write: Option<Instant> = None;
+    let mut last_write: Option<Instant> = None;
+    let mut paused_total = Duration::ZERO;
+    let mut paused_since: Option<Instant> = None;
+
     while !stop_flag.load(Ordering::Acquire) {
         thread::sleep(POLL_INTERVAL);
         let writing = !pause_flag.load(Ordering::Acquire);
-        drain_packets(&capture_client, &mut writer, format, writing, &start);
+        if writing {
+            if let Some(since) = paused_since.take() {
+                paused_total += since.elapsed();
+            }
+        } else if paused_since.is_none() {
+            paused_since = Some(Instant::now());
+        }
+        if drain_packets(&capture_client, &mut writer, format, writing, &start) > 0 {
+            let now = Instant::now();
+            first_write.get_or_insert(now);
+            last_write = Some(now);
+        }
     }
 
     unsafe {
         let _ = audio_client.Stop();
     }
     // Whatever the device buffered between the last poll and the stop.
-    drain_packets(&capture_client, &mut writer, format, true, &start);
+    if drain_packets(&capture_client, &mut writer, format, true, &start) > 0 {
+        last_write = Some(Instant::now());
+    }
+    if let Some(since) = paused_since.take() {
+        paused_total += since.elapsed();
+    }
 
     let frames = writer.frames_written();
+    // Re-declare the rate when the device's own clock ran off the nominal one.
+    // The frame pacer holds the picture to wall clock exactly, so an uncorrected
+    // audio crystal drifts against it for the whole take instead of cancelling.
+    if let (Some(first), Some(last)) = (first_write, last_write) {
+        let span = last
+            .saturating_duration_since(first)
+            .saturating_sub(paused_total);
+        if let Some(rate) = measured_sample_rate(frames, span, format.sample_rate) {
+            log::warn!(
+                "{label} device clock drift: declared {}Hz, delivered {rate}Hz                  ({frames} frames over {:.3}s) — re-declaring so the track stays                  locked to the picture",
+                format.sample_rate,
+                span.as_secs_f64()
+            );
+            writer.set_sample_rate(rate);
+        }
+    }
+    let final_rate = writer.sample_rate();
     writer.finish()?;
     log::info!(
-        "{label} capture finished: {} ({:.2}s)",
+        "{label} capture finished: {} ({:.2}s, {frames} frames @ {final_rate}Hz)",
         output_path.display(),
-        frames as f64 / format.sample_rate as f64
+        frames as f64 / final_rate as f64
     );
     Ok(output_path)
 }

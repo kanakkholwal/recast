@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::Result;
 
@@ -109,6 +110,17 @@ impl WavWriter {
         Ok(())
     }
 
+    /// Re-declare the capture rate before finalizing. See
+    /// [`measured_sample_rate`] for why the declared rate can be wrong.
+    pub fn set_sample_rate(&mut self, sample_rate: u32) {
+        self.format.sample_rate = sample_rate.max(1);
+    }
+
+    /// The rate currently declared in the header.
+    pub fn sample_rate(&self) -> u32 {
+        self.format.sample_rate
+    }
+
     /// Whole samples written so far, per channel.
     pub fn frames_written(&self) -> u64 {
         let align = self.format.block_align() as u64;
@@ -154,6 +166,39 @@ fn build_wav_header(format: WavFormat, data_len: u32) -> Vec<u8> {
     header.extend_from_slice(b"data");
     header.extend_from_slice(&data_len.to_le_bytes());
     header
+}
+
+/// Rate difference below which correction is pointless. 0.02% is ~45 ms over a
+/// 4-minute take, well inside what a viewer can detect.
+const MIN_DRIFT_RATIO: f64 = 0.0002;
+/// Above this the measurement is not drift, it is a broken span (a stalled
+/// thread, a device reset). Correcting by it would wreck an otherwise fine take.
+const MAX_DRIFT_RATIO: f64 = 0.05;
+
+/// The sample rate the device ACTUALLY delivered, when it differs enough from
+/// the declared rate to matter.
+///
+/// A capture device runs on its own crystal. Writing `declared` into the header
+/// while the device delivers at a slightly different rate makes the track drift
+/// against the video for the whole recording — the picture stays locked to the
+/// frame pacer, so the error accumulates instead of cancelling. Re-declaring the
+/// measured rate makes the file play back over exactly the wall-clock span it
+/// was captured in; the pitch shift is the drift ratio, which at these
+/// magnitudes is far below audible.
+///
+/// `None` means keep the declared rate: too small to matter, or too large to
+/// believe.
+pub fn measured_sample_rate(frames: u64, span: Duration, declared: u32) -> Option<u32> {
+    let secs = span.as_secs_f64();
+    if frames == 0 || secs <= 0.0 || declared == 0 {
+        return None;
+    }
+    let actual = frames as f64 / secs;
+    let ratio = (actual - declared as f64).abs() / declared as f64;
+    if !(MIN_DRIFT_RATIO..=MAX_DRIFT_RATIO).contains(&ratio) {
+        return None;
+    }
+    Some(actual.round() as u32)
 }
 
 /// Sample bytes a WAV's header claims, or `None` when the file is unreadable
@@ -275,6 +320,102 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("recast-wav-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn a_device_running_true_needs_no_correction() {
+        // 48000 frames in exactly 1s: the declared rate is right.
+        assert_eq!(
+            measured_sample_rate(48_000, Duration::from_secs(1), 48_000),
+            None
+        );
+    }
+
+    #[test]
+    fn a_slow_device_clock_is_measured_and_corrected() {
+        // 0.2% slow: 225s of wall clock yielded 225s*47904 frames.
+        let frames = (47_904.0f64 * 225.0).round() as u64;
+        let rate = measured_sample_rate(frames, Duration::from_secs(225), 48_000);
+        assert_eq!(rate, Some(47_904));
+    }
+
+    #[test]
+    fn a_fast_device_clock_is_corrected_the_other_way() {
+        let frames = (48_120.0f64 * 100.0).round() as u64;
+        assert_eq!(
+            measured_sample_rate(frames, Duration::from_secs(100), 48_000),
+            Some(48_120)
+        );
+    }
+
+    #[test]
+    fn drift_too_small_to_hear_is_left_alone() {
+        // 0.01% over 225s is ~22ms; re-declaring buys nothing.
+        let frames = (48_005.0f64 * 225.0).round() as u64;
+        assert_eq!(
+            measured_sample_rate(frames, Duration::from_secs(225), 48_000),
+            None
+        );
+    }
+
+    #[test]
+    fn a_corrected_track_plays_back_over_the_span_it_was_captured_in() {
+        // The property that actually keeps audio locked to the picture: after
+        // correction, frames / declared_rate == the wall-clock span. The frame
+        // pacer holds the video to that same span exactly.
+        for drift in [0.998_f64, 0.9995, 1.0005, 1.002] {
+            let declared = 48_000u32;
+            let span = Duration::from_secs(200);
+            let frames = (declared as f64 * drift * span.as_secs_f64()).round() as u64;
+            let rate = measured_sample_rate(frames, span, declared).unwrap_or(declared);
+            let playback = frames as f64 / rate as f64;
+            assert!(
+                (playback - span.as_secs_f64()).abs() < 0.01,
+                "drift {drift}: plays {playback:.3}s over a {:.3}s capture",
+                span.as_secs_f64()
+            );
+        }
+    }
+
+    #[test]
+    fn an_uncorrected_track_would_have_drifted_measurably() {
+        // Same 0.2%-slow device WITHOUT correction: what the picture drifts against.
+        let span = 200.0_f64;
+        let frames = (48_000.0 * 0.998 * span).round() as u64;
+        let uncorrected = frames as f64 / 48_000.0;
+        assert!(
+            span - uncorrected > 0.3,
+            "expected >0.3s of drift to justify correcting, got {:.3}s",
+            span - uncorrected
+        );
+    }
+
+    #[test]
+    fn an_implausible_span_is_refused_rather_than_applied() {
+        // Half the expected frames is a stalled capture, not a drifting crystal.
+        assert_eq!(
+            measured_sample_rate(24_000, Duration::from_secs(1), 48_000),
+            None
+        );
+        assert_eq!(
+            measured_sample_rate(0, Duration::from_secs(10), 48_000),
+            None
+        );
+        assert_eq!(measured_sample_rate(48_000, Duration::ZERO, 48_000), None);
+    }
+
+    #[test]
+    fn a_re_declared_rate_reaches_the_header() {
+        let path = temp_dir("rate").join("rate.wav");
+        let mut w = WavWriter::new(&path, WavFormat::pcm16(48_000, 2)).unwrap();
+        w.write_samples(&[0u8; 400]).unwrap();
+        w.set_sample_rate(47_904);
+        w.finish().unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(u32_at(&bytes, 24), 47_904);
+        // Byte rate has to follow, or the file describes itself inconsistently.
+        assert_eq!(u32_at(&bytes, 28), 47_904 * 4);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
