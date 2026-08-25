@@ -31,6 +31,8 @@ pub struct Scene {
     /// settings, this holds the samples they are applied to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor_track: Option<CursorTrack>,
+    #[serde(default)]
+    pub flags: SceneFlags,
     /// Editor-owned keys the engine never reads. Carried so a round trip
     /// through the engine cannot reset a user's settings.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
@@ -46,9 +48,35 @@ impl Default for Scene {
             layers: Vec::new(),
             audio: AudioGraph::default(),
             cursor_track: None,
+            flags: SceneFlags::default(),
             passthrough: serde_json::Map::new(),
         }
     }
+}
+
+/// Lane master switches the editor owns. The effects stay authored while their
+/// lane is off, so these gate evaluation rather than dropping scene data.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneFlags {
+    /// The zoom lane. Also gates the camera bubble's zoom-follow.
+    #[serde(default = "enabled")]
+    pub focus: bool,
+    #[serde(default = "enabled")]
+    pub annotations: bool,
+}
+
+impl Default for SceneFlags {
+    fn default() -> Self {
+        Self {
+            focus: true,
+            annotations: true,
+        }
+    }
+}
+
+fn enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

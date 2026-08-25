@@ -179,6 +179,22 @@ export function cameraPlacementAt(
 }
 
 /**
+ * Keep a placement fully inside the frame. The drag path already clamps, but a
+ * recorded one does not: a live capture can write `x: 1`, which puts the whole
+ * bubble past the right edge until the glide happens to pull it back.
+ */
+export function clampPlacement(p: CameraPlacement): CameraPlacement {
+	const width = Math.max(0, Math.min(1, p.width));
+	const height = Math.max(0, Math.min(1, p.height));
+	return {
+		width,
+		height,
+		x: Math.max(0, Math.min(1 - width, p.x)),
+		y: Math.max(0, Math.min(1 - height, p.y)),
+	};
+}
+
+/**
  * Camera moves made DURING a recording, as keyframes.
  *
  * The recorder writes `motionSegments`; the preview and the export both read
@@ -201,14 +217,17 @@ export function keyframesFromMotionSegments(
 		else out.push({ atSec, placement });
 	};
 	for (const s of sorted) {
-		push(s.start, { x: s.fromX, y: s.fromY, width: s.fromWidth, height: s.fromHeight });
-		push(s.end, { x: s.toX, y: s.toY, width: s.toWidth, height: s.toHeight });
+		push(
+			s.start,
+			clampPlacement({ x: s.fromX, y: s.fromY, width: s.fromWidth, height: s.fromHeight }),
+		);
+		push(s.end, clampPlacement({ x: s.toX, y: s.toY, width: s.toWidth, height: s.toHeight }));
 	}
 	const head = out[0];
 	// The bubble sat at `defaultPlacement` until the first move. Only pin it when
 	// it actually differs — holding the first keyframe already covers the rest.
 	if (head.atSec > 0 && !samePlacement(head.placement, defaultPlacement)) {
-		out.unshift({ atSec: 0, placement: { ...defaultPlacement } });
+		out.unshift({ atSec: 0, placement: clampPlacement(defaultPlacement) });
 	}
 	return out;
 }

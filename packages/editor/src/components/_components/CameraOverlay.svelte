@@ -81,12 +81,14 @@ let outerEl: HTMLDivElement | null = $state(null);
 // it updates once per rAF in lockstep with the display — same cadence as the
 // zoom shader. `translateZ(0)` keeps the bubble on its own compositor layer.
 function followTransform(t: number): string {
-	// Reference = the LAYOUT box (bubbleStyle uses store.currentTime), so the
-	// transform is a pure delta on it. Only the grow is evaluated at the smooth
-	// clock `t` — the base is constant during a grow, so this stays crisp (the
-	// <video> rasterises at its base size) and exact.
-	const b = baseAt(store.currentTime);
-	if (b.width <= 0) return "translateZ(0)";
+	// Reference = the LAYOUT box, which tracks the ~25 Hz store clock so a moving
+	// bubble does not relayout every frame. The DRAWN placement is evaluated at
+	// the smooth clock and expressed as a delta on it: a live-recorded camera
+	// glides for the whole take, so sampling the base at the store clock stepped
+	// the bubble 25 times a second against a 60 Hz picture.
+	const layout = baseAt(store.currentTime);
+	if (layout.width <= 0) return "translateZ(0)";
+	const b = baseAt(t);
 	let e = b;
 	if (store.cameraOverlay.zoomFollow && store.focusEnabled) {
 		const zoom = cameraFollowScaleAt(
@@ -102,10 +104,10 @@ function followTransform(t: number): string {
 			videoAspect,
 		);
 	}
-	const s = e.width / b.width;
-	const baseH = Math.min(1, b.width * videoAspect);
-	const tx = ((e.x - b.x) / b.width) * 100;
-	const ty = baseH > 0 ? ((e.y - b.y) / baseH) * 100 : 0;
+	const s = e.width / layout.width;
+	const baseH = Math.min(1, layout.width * videoAspect);
+	const tx = ((e.x - layout.x) / layout.width) * 100;
+	const ty = baseH > 0 ? ((e.y - layout.y) / baseH) * 100 : 0;
 	return `translate(${tx.toFixed(4)}%, ${ty.toFixed(4)}%) scale(${s.toFixed(5)}) translateZ(0)`;
 }
 

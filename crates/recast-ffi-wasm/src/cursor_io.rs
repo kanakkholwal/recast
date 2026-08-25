@@ -46,6 +46,15 @@ mod tests {
         assert_eq!(track.press_events()[0].down_us, 1000);
     }
 
+    /// The editor's own idle-period type is `{ startUs, endUs }`, so requiring
+    /// a position would fail the whole track and leave no pointer at all.
+    #[test]
+    fn an_idle_period_without_a_position_still_parses() {
+        let track = parse_track(r#"{"samples":[],"idlePeriods":[{"startUs":0,"endUs":10}]}"#)
+            .expect("track");
+        assert_eq!(track.idle_periods.len(), 1);
+    }
+
     #[test]
     fn a_track_with_no_idle_periods_is_accepted() {
         let track = parse_track(r#"{"samples":[]}"#).expect("track");

@@ -143,6 +143,13 @@ export class PreviewEngine {
 		this.#live.clearBackgroundImage();
 	}
 
+	/** The host's resolved output axis. Pass null to derive it from the scene,
+	 *  which is only right when the host has no axis of its own. */
+	setTimeMap(map: unknown | null): void {
+		if (map === null) this.#live.setTimeMap("");
+		else this.#live.setTimeMap(typeof map === "string" ? map : JSON.stringify(map));
+	}
+
 	/** The recorded pointer path, as the track file is written. */
 	setCursorTrack(track: unknown): void {
 		this.#live.setCursorTrack(typeof track === "string" ? track : JSON.stringify(track));

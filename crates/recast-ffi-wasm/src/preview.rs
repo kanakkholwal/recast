@@ -63,6 +63,8 @@ pub struct PreviewEngine {
     /// draws at DISPLAY resolution and lets the present pass scale the
     /// composition down, so a 4K project in a small pane is not composited at 4K.
     canvas_size: Option<(u32, u32)>,
+    /// See `flush_uploads`.
+    defers_uploads: bool,
     frames: Vec<(LayerId, LayerRing)>,
     background: Option<LayerTexture>,
     /// Indexed by `CursorSlot::index`. An empty slot draws the dot instead.
@@ -118,6 +120,7 @@ impl PreviewEngine {
             },
         )
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let defers_uploads = ctx.adapter().get_info().backend == wgpu::Backend::Gl;
 
         Ok(Self {
             ctx,
@@ -125,6 +128,7 @@ impl PreviewEngine {
             surface,
             surface_size: (0, 0),
             canvas_size: None,
+            defers_uploads,
             frames: Vec::new(),
             background: None,
             cursor_sprites: [None, None, None, None],
@@ -139,14 +143,28 @@ impl PreviewEngine {
         Ok(())
     }
 
-    /// The recorded pointer path, as the track file is written. Held on the
-    /// scene, so the editor calls this again after replacing the scene.
+    /// The editor's resolved output axis, as `store.timeMap` serialises. The
+    /// editor's cut lanes and flags can drop a cut the scene still carries, so
+    /// deriving the axis here instead would put every effect at a different
+    /// instant from the picture. An empty string goes back to the scene's own.
+    #[wasm_bindgen(js_name = setTimeMap)]
+    pub fn set_time_map(&mut self, json: &str) -> Result<(), JsValue> {
+        let map = match json.is_empty() {
+            true => None,
+            false => {
+                Some(serde_json::from_str(json).map_err(|e| JsValue::from_str(&e.to_string()))?)
+            }
+        };
+        self.session.set_time_map(map);
+        Ok(())
+    }
+
+    /// The recorded pointer path, as the track file is written. Survives a
+    /// later `setScene`, which is what the editor pushes on any store write.
     #[wasm_bindgen(js_name = setCursorTrack)]
     pub fn set_cursor_track(&mut self, json: &str) -> Result<(), JsValue> {
         let track = parse_track(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
-        let mut scene = self.session.scene().clone();
-        scene.cursor_track = Some(track);
-        self.session.set_scene(scene);
+        self.session.set_cursor_track(Some(track));
         Ok(())
     }
 
@@ -265,6 +283,7 @@ impl PreviewEngine {
                 depth_or_array_layers: 1,
             },
         );
+        self.flush_uploads();
         Ok(())
     }
 
@@ -345,7 +364,17 @@ impl PreviewEngine {
                 depth_or_array_layers: 1,
             },
         );
+        self.flush_uploads();
         Ok(())
+    }
+
+    /// The WebGL backend records an external-image copy and runs it at the next
+    /// submit, by which point the caller has closed the frame or the bitmap.
+    /// WebGPU copies on the spot, so it is spared a submit per decoded frame.
+    fn flush_uploads(&self) {
+        if self.defers_uploads {
+            self.ctx.queue().submit(std::iter::empty());
+        }
     }
 
     #[wasm_bindgen(js_name = clearBackgroundImage)]
@@ -400,6 +429,7 @@ impl PreviewEngine {
                 depth_or_array_layers: 1,
             },
         );
+        self.flush_uploads();
         Ok(())
     }
 

@@ -7,6 +7,7 @@ import {
 	cameraFollowScaleAt,
 	cameraPlacementAt,
 	cameraShadowStyle,
+	clampPlacement,
 	keyframesFromMotionSegments,
 	MAX_CAMERA_SIZE,
 	MIN_CAMERA_SIZE,
@@ -277,5 +278,58 @@ describe("keyframesFromMotionSegments", () => {
 		// First move starts from the resting spot: no redundant keyframe.
 		const same = keyframesFromMotionSegments([at(2, dflt.x)], dflt);
 		expect(same[0].atSec).toBe(2);
+	});
+});
+
+describe("clampPlacement", () => {
+	/** A live capture wrote `x: 1` with a 0.16-wide bubble, which draws the whole
+	 *  thing past the right edge. The drag path clamps; recorded data did not. */
+	it("pulls a placement that starts off the right edge back inside", () => {
+		expect(clampPlacement({ x: 1, y: 0.86, width: 0.16, height: 0.29 })).toEqual({
+			x: 0.84,
+			y: 0.71,
+			width: 0.16,
+			height: 0.29,
+		});
+	});
+
+	it("leaves a placement that already fits alone", () => {
+		const p = { x: 0.2, y: 0.3, width: 0.16, height: 0.29 };
+		expect(clampPlacement(p)).toEqual(p);
+	});
+
+	it("clamps a negative origin to the top-left", () => {
+		expect(clampPlacement({ x: -0.4, y: -0.1, width: 0.2, height: 0.2 })).toEqual({
+			x: 0,
+			y: 0,
+			width: 0.2,
+			height: 0.2,
+		});
+	});
+});
+
+describe("recorded motion segments", () => {
+	it("clamps the recorded endpoints rather than gliding off-canvas", () => {
+		const frames = keyframesFromMotionSegments(
+			[
+				{
+					start: 0,
+					end: 10,
+					fromX: 1,
+					fromY: 0.86,
+					fromWidth: 0.16,
+					fromHeight: 0.29,
+					toX: 0.79,
+					toY: 0.5,
+					toWidth: 0.16,
+					toHeight: 0.29,
+					easeIn: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+					easeOut: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+				},
+			],
+			{ x: 0.5, y: 0.5, width: 0.16, height: 0.29 },
+		);
+		expect(frames[0].placement.x).toBeCloseTo(0.84, 6);
+		expect(frames[0].placement.y).toBeCloseTo(0.71, 6);
 	});
 });

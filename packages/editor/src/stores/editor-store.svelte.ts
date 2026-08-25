@@ -8,7 +8,10 @@
 
 import { type CaptionStyle, DEFAULT_CAPTION_STYLE } from "@recast/captions";
 import { backgroundNeedsShadow, migrateBackgroundValue } from "@recast/design/backgrounds";
-import { keyframesFromMotionSegments } from "../components/_components/camera-overlay.logic";
+import {
+	clampPlacement,
+	keyframesFromMotionSegments,
+} from "../components/_components/camera-overlay.logic";
 import { scaleTranscript, transcriptTimeScale } from "../lib/captions/normalize";
 import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
 import {
@@ -1846,12 +1849,13 @@ export function createEditorStore() {
 		// `?? `-fallbacks below preserve those if present, only swapping in
 		// the new defaults when the field is absent on the loaded state.
 		const fallbackPlacement = cameraPlacementFromPreset("bottom-right");
-		const loadedPlacement = {
+		// Clamped: a live capture can record a placement outside the frame.
+		const loadedPlacement = clampPlacement({
 			x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
 			y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
 			width: state.cameraOverlay?.defaultPlacement?.width ?? fallbackPlacement.width,
 			height: state.cameraOverlay?.defaultPlacement?.height ?? fallbackPlacement.height,
-		};
+		});
 		const loadedKeyframes = (state.cameraOverlay?.keyframes ?? []).map((k) => ({
 			atSec: k.atSec,
 			placement: { ...k.placement },

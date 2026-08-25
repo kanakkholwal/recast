@@ -21,6 +21,7 @@ export interface WasmPreviewEngine {
 	clearLayerFrame(layerId: number): void;
 	setBackgroundImage(image: ImageBitmap): void;
 	clearBackgroundImage(): void;
+	setTimeMap(json: string): void;
 	setCursorTrack(json: string): void;
 	setCursorSprite(slot: CursorSlot, image: ImageBitmap, hotspotX: number, hotspotY: number): void;
 	clearCursorSprites(): void;

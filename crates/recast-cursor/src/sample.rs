@@ -21,12 +21,16 @@ fn yes() -> bool {
 }
 
 /// A stretch where the cursor did not move, used to hide it when idle.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IdlePeriod {
     pub start_us: u64,
     pub end_us: u64,
+    /// Where it rested. Optional: the hide ramp needs only the span, and the
+    /// editor's own type carries no position.
+    #[serde(default)]
     pub x: f64,
+    #[serde(default)]
     pub y: f64,
 }
 

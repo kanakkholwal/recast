@@ -1280,9 +1280,14 @@ $effect(() => {
 	if (!engineDriver) return;
 	const state = store.toRenderState();
 	const meta = store.metadata;
+	const timeMap = store.timeMap;
 	untrack(() => {
 		if (!engineDriver) return;
 		if (meta?.width && meta?.height) engineDriver.setSourceSize(meta.width, meta.height);
+		// Before the scene: the axis is what output time MEANS, and a scene
+		// carrying a cut this map drops would otherwise resolve one frame on the
+		// old axis.
+		engineDriver.setTimeMap(timeMap);
 		engineDriver.syncScene(state);
 		requestRedraw();
 	});

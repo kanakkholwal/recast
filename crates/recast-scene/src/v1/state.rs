@@ -13,6 +13,11 @@ fn default_bounce_speed_ms() -> f64 {
 fn default_snap_to_clicks() -> bool {
     true
 }
+/// Lane master switches default on: a project saved before they existed had
+/// every lane applying.
+fn enabled() -> bool {
+    true
+}
 fn default_snap_window_ms() -> f64 {
     80.0
 }
@@ -90,6 +95,13 @@ pub struct RenderState {
     #[serde(default)]
     pub cursor_sway: f64,
     pub zoom_regions: Vec<ZoomRegion>,
+    /// The zoom lane's master switch. Off leaves the regions authored but
+    /// stops them applying, which is what the editor preview does.
+    #[serde(default = "enabled")]
+    pub focus_enabled: bool,
+    /// The annotation lane's master switch, same shape as `focus_enabled`.
+    #[serde(default = "enabled")]
+    pub annotations_enabled: bool,
     /// User-accepted silence/manual cuts removed from the timeline.
     #[serde(default)]
     pub cuts: Vec<CutRange>,
@@ -175,6 +187,8 @@ impl Default for RenderState {
         Self {
             trim_start: 0.0,
             trim_end: 0.0,
+            focus_enabled: true,
+            annotations_enabled: true,
             background_type: "color".into(),
             background_value: "#111111".into(),
             background_blur: 0.0,

@@ -1,8 +1,8 @@
 use recast_color::{parse_css_color, parse_gradient, serialize_gradient, Srgba};
 
 use crate::scene::{
-    AudioGraph, CursorSpec, Effect, Layer, LayerSource, OutputSpec, Scene, Timeline, TimelineCut,
-    SCHEMA_VERSION,
+    AudioGraph, CursorSpec, Effect, Layer, LayerSource, OutputSpec, Scene, SceneFlags, Timeline,
+    TimelineCut, SCHEMA_VERSION,
 };
 use crate::v1::{CutRange, RenderState};
 
@@ -56,6 +56,10 @@ pub fn to_scene(state: &RenderState) -> Scene {
         // The v1 state never carried the pointer path: it lives in its own file
         // and the editor attaches it after migrating.
         cursor_track: None,
+        flags: SceneFlags {
+            focus: state.focus_enabled,
+            annotations: state.annotations_enabled,
+        },
         output: OutputSpec {
             aspect: state.output_aspect.clone(),
             padding: state.padding,
@@ -178,6 +182,8 @@ pub fn to_render_state(scene: &Scene) -> RenderState {
                 extra: c.extra.clone(),
             })
             .collect(),
+        focus_enabled: scene.flags.focus,
+        annotations_enabled: scene.flags.annotations,
         split_points: scene.timeline.split_points.clone(),
         segment_speeds: scene.timeline.segment_speeds.clone(),
         audio_settings: scene.audio.settings.clone(),
@@ -484,6 +490,8 @@ mod tests {
     }
 
     const FULLY_POPULATED: &str = r##"{
+        "focusEnabled": false,
+        "annotationsEnabled": false,
         "backgroundType": "gradient",
         "backgroundValue": "linear-gradient(45deg, #ff0000 0%, #0000ff 100%)",
         "backgroundBlur": 18.0,
@@ -567,7 +575,7 @@ mod tests {
 
     /// Keys `fully_populated()` must emit. Bumped deliberately, never to make a
     /// failing test pass.
-    const RENDER_STATE_KEYS: usize = 42;
+    const RENDER_STATE_KEYS: usize = 44;
 
     #[test]
     fn layer_ids_are_unique_and_next_id_does_not_collide() {

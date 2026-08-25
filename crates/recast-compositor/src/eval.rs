@@ -216,8 +216,16 @@ pub struct Evaluator {
 
 impl Evaluator {
     pub fn new(scene: &Scene, source: SourceGeometry) -> Self {
+        Self::with_time_map(scene, source, None)
+    }
+
+    /// `time_map` replaces the one derived from the scene. The editor resolves
+    /// the axis itself (cut lanes and flags it owns can drop a cut the scene
+    /// still carries), so the preview hands its map over rather than letting
+    /// two authorities disagree about what output time means.
+    pub fn with_time_map(scene: &Scene, source: SourceGeometry, time_map: Option<TimeMap>) -> Self {
         Self {
-            time_map: scene.timeline.time_map(),
+            time_map: time_map.unwrap_or_else(|| scene.timeline.time_map()),
             segments: scene.timeline.segments(),
             geometry: canvas_geometry(
                 source.width,
@@ -244,6 +252,7 @@ impl Evaluator {
         let source_time = output_to_original(&self.time_map, output_time);
 
         let cursor = self.cursor_placement(scene, source_time);
+        let focus = scene.flags.focus;
         let mut background = BackgroundParams::Solid(Srgba::opaque(0x11, 0x11, 0x11));
         let mut background_blur = 0.0f32;
         let mut shadows = Vec::new();
@@ -276,9 +285,13 @@ impl Evaluator {
                     background_blur = blur_of(layer);
                 }
                 LayerSource::Camera(settings) => {
-                    let mut params = self.layer_params(layer, source_time, output_time);
+                    let mut params = self.layer_params(layer, source_time, output_time, focus);
+                    let follow: Vec<&ZoomRegion> = match focus {
+                        true => scene.zoom_regions(),
+                        false => Vec::new(),
+                    };
                     if let Some(bubble) =
-                        bubble_params(settings, &scene.zoom_regions(), source_time, self.geometry)
+                        bubble_params(settings, &follow, source_time, self.geometry)
                     {
                         params.dest = bubble.dest;
                         params.corner_radius = bubble.corner_radius;
@@ -292,7 +305,7 @@ impl Evaluator {
                     layers.push(params);
                 }
                 _ => {
-                    let params = self.layer_params(layer, source_time, output_time);
+                    let params = self.layer_params(layer, source_time, output_time, focus);
                     if matches!(layer.source, LayerSource::Screen) {
                         card = (params.dest, params.transform);
                         if params.visible {
@@ -311,7 +324,10 @@ impl Evaluator {
             cursor_draw: cursor.and_then(|c| self.cursor_draw(scene, c, card.0, card.1)),
             cursor,
             shadows,
-            annotations: self.annotations(scene, source_time, card.0, card.1),
+            annotations: match scene.flags.annotations {
+                true => self.annotations(scene, source_time, card.0, card.1),
+                false => Vec::new(),
+            },
             layers,
             source_time,
         }
@@ -422,15 +438,19 @@ impl Evaluator {
         layer: &recast_scene::Layer,
         source_time: f64,
         output_time: f64,
+        focus: bool,
     ) -> LayerParams {
-        let zooms: Vec<&ZoomRegion> = layer
-            .effects
-            .iter()
-            .filter_map(|e| match e {
-                Effect::Zoom(z) => Some(&**z),
-                _ => None,
-            })
-            .collect();
+        let zooms: Vec<&ZoomRegion> = match focus {
+            true => layer
+                .effects
+                .iter()
+                .filter_map(|e| match e {
+                    Effect::Zoom(z) => Some(&**z),
+                    _ => None,
+                })
+                .collect(),
+            false => Vec::new(),
+        };
 
         let zoom = active_zoom(&zooms, source_time);
         let transform = match zoom {
@@ -865,6 +885,50 @@ mod tests {
         let ev = Evaluator::new(&scene, source());
         let scale = 1.0 / screen_layer(&ev.evaluate(&scene, 5.0)).transform.sx;
         assert!(scale <= 3.0 + 1e-4, "regions stacked to {scale}");
+    }
+
+    /// The editor gates ALL zoom on the focus lane's switch. Without the same
+    /// gate the engine zooms where the editor shows none.
+    #[test]
+    fn the_focus_switch_turns_every_zoom_off() {
+        let on = scene_with(
+            r#""zoomRegions": [{"start":1.0,"end":5.0,"scale":2.0,"rampIn":0.0,"rampOut":0.0,"centerX":0.5,"centerY":0.5}],"#,
+        );
+        let off = scene_with(
+            r#""focusEnabled": false, "zoomRegions": [{"start":1.0,"end":5.0,"scale":2.0,"rampIn":0.0,"rampOut":0.0,"centerX":0.5,"centerY":0.5}],"#,
+        );
+        assert!(!off.flags.focus, "the fixture must turn focus off");
+        let at = |scene: &Scene| {
+            Evaluator::new(scene, source())
+                .evaluate(scene, 3.0)
+                .layers
+                .iter()
+                .find(|l| l.id == scene.screen_layer().expect("screen").id)
+                .expect("screen params")
+                .transform
+        };
+        assert_ne!(at(&on), Affine2::IDENTITY, "the fixture must zoom");
+        assert_eq!(at(&off), Affine2::IDENTITY);
+        // The regions stay authored, so turning the lane back on restores them.
+        assert_eq!(off.zoom_regions().len(), 1);
+    }
+
+    #[test]
+    fn the_annotation_switch_draws_none_of_them() {
+        let json = r#""annotations": [{"id":"a1","start":0.0,"end":9.0,"kind":{"kind":"rect","x":0.2,"y":0.3,"w":0.4,"h":0.2}}],"#;
+        let on = scene_with(json);
+        let off = scene_with(&(r#""annotationsEnabled": false, "#.to_string() + json));
+        assert!(
+            !Evaluator::new(&on, source())
+                .evaluate(&on, 1.0)
+                .annotations
+                .is_empty(),
+            "the fixture must draw one"
+        );
+        assert!(Evaluator::new(&off, source())
+            .evaluate(&off, 1.0)
+            .annotations
+            .is_empty());
     }
 
     #[test]

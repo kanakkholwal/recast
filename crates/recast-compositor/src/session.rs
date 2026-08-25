@@ -1,5 +1,7 @@
+use recast_cursor::CursorTrack;
 use recast_gpu::{GpuContext, GpuError};
 use recast_scene::{LayerId, LayerSource, Scene};
+use recast_time::TimeMap;
 
 use crate::eval::{Evaluator, FrameParams, SourceGeometry};
 use crate::render::{Compositor, FrameInputs, LayerInput, RenderStats};
@@ -9,6 +11,9 @@ use crate::render::{Compositor, FrameInputs, LayerInput, RenderStats};
 pub struct Session {
     scene: Scene,
     source: SourceGeometry,
+    /// The host's resolved output axis, when it sent one. See
+    /// `Evaluator::with_time_map`.
+    time_map: Option<TimeMap>,
     evaluator: Evaluator,
     compositor: Compositor,
 }
@@ -25,6 +30,7 @@ impl Session {
         Ok(Self {
             scene,
             source,
+            time_map: None,
             evaluator,
             compositor: Compositor::new(ctx)?,
         })
@@ -32,14 +38,35 @@ impl Session {
 
     /// Rebuilds the evaluator, because a scene edit can move the time map and
     /// the canvas geometry. Cheap: no GPU resources are touched.
-    pub fn set_scene(&mut self, scene: Scene) {
-        self.evaluator = Evaluator::new(&scene, self.source);
+    pub fn set_scene(&mut self, mut scene: Scene) {
+        // The pointer path arrives on its own channel, so a scene edit that does
+        // not carry one must not drop the one already loaded.
+        if scene.cursor_track.is_none() {
+            scene.cursor_track = self.scene.cursor_track.take();
+        }
+        self.evaluator = Evaluator::with_time_map(&scene, self.source, self.time_map.clone());
         self.scene = scene;
+    }
+
+    /// The evaluator reads the track off the scene per frame, so no rebuild.
+    pub fn set_cursor_track(&mut self, track: Option<CursorTrack>) {
+        self.scene.cursor_track = track;
     }
 
     pub fn set_source(&mut self, source: SourceGeometry) {
         self.source = source;
-        self.evaluator = Evaluator::new(&self.scene, source);
+        self.rebuild();
+    }
+
+    /// The axis the host resolved. `None` goes back to deriving it from the
+    /// scene. Survives a later `set_scene`, like the cursor track.
+    pub fn set_time_map(&mut self, time_map: Option<TimeMap>) {
+        self.time_map = time_map;
+        self.rebuild();
+    }
+
+    fn rebuild(&mut self) {
+        self.evaluator = Evaluator::with_time_map(&self.scene, self.source, self.time_map.clone());
     }
 
     pub fn scene(&self) -> &Scene {
@@ -147,6 +174,20 @@ mod tests {
         to_scene(&state)
     }
 
+    fn track() -> CursorTrack {
+        CursorTrack::new(
+            vec![recast_cursor::CursorSample {
+                timestamp_us: 0,
+                x: 320.0,
+                y: 180.0,
+                visible: true,
+                left_down: false,
+                right_down: false,
+            }],
+            Vec::new(),
+        )
+    }
+
     fn context() -> Option<GpuContext> {
         recast_gpu::GpuContext::new_blocking(recast_gpu::GpuOptions {
             require_hardware: false,
@@ -187,6 +228,101 @@ mod tests {
         session.set_scene(scene(r#""padding": 10.0, "trimEnd": 4.0,"#));
         assert_ne!(session.output_size(), before);
         assert!((session.output_duration() - 4.0).abs() < 1e-6);
+    }
+
+    /// The track is uploaded on its own channel and the editor pushes a fresh
+    /// scene on any store write, so a scene replace that drops it makes the
+    /// pointer vanish mid-session.
+    #[test]
+    fn replacing_the_scene_keeps_the_cursor_track() {
+        let Some(ctx) = context() else { return };
+        let mut session =
+            Session::new(&ctx, scene(r#""cursorEnabled": true,"#), source()).expect("session");
+        session.set_cursor_track(Some(track()));
+        assert!(session.evaluate(0.0).cursor.is_some());
+
+        session.set_scene(scene(r#""cursorEnabled": true, "padding": 5.0,"#));
+        assert!(session.evaluate(0.0).cursor.is_some());
+    }
+
+    /// Clearing has to survive too, or the pointer comes back on the next edit.
+    #[test]
+    fn clearing_the_cursor_track_is_not_undone_by_the_next_scene() {
+        let Some(ctx) = context() else { return };
+        let mut session =
+            Session::new(&ctx, scene(r#""cursorEnabled": true,"#), source()).expect("session");
+        session.set_cursor_track(Some(track()));
+        session.set_cursor_track(None);
+        assert!(session.evaluate(0.0).cursor.is_none());
+
+        session.set_scene(scene(r#""cursorEnabled": true, "padding": 5.0,"#));
+        assert!(session.evaluate(0.0).cursor.is_none());
+    }
+
+    fn host_map(output_duration: f64) -> TimeMap {
+        TimeMap {
+            spans: vec![recast_time::MappedSpan {
+                orig_start: 0.0,
+                orig_end: output_duration,
+                speed: 1.0,
+                out_start: 0.0,
+                out_end: output_duration,
+            }],
+            output_duration,
+        }
+    }
+
+    /// The editor drops cuts its own lane flags disable, so the scene can carry
+    /// a cut the host's axis does not. Two authorities for what output time
+    /// means puts every effect at the wrong instant.
+    #[test]
+    fn the_hosts_time_map_wins_over_the_one_derived_from_the_scene() {
+        let Some(ctx) = context() else { return };
+        let mut session = Session::new(
+            &ctx,
+            scene(r#""cuts": [{"start": 2.0, "end": 4.0}],"#),
+            source(),
+        )
+        .expect("session");
+        assert!(
+            (session.output_duration() - 8.0).abs() < 1e-6,
+            "the fixture must cut"
+        );
+
+        session.set_time_map(Some(host_map(10.0)));
+        assert!((session.output_duration() - 10.0).abs() < 1e-6);
+        // Output 5 is original 5 on the host axis; the cut map would say 7.
+        assert!((session.evaluate(5.0).source_time - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn replacing_the_scene_keeps_the_hosts_time_map() {
+        let Some(ctx) = context() else { return };
+        let mut session = Session::new(
+            &ctx,
+            scene(r#""cuts": [{"start": 2.0, "end": 4.0}],"#),
+            source(),
+        )
+        .expect("session");
+        session.set_time_map(Some(host_map(10.0)));
+        session.set_scene(scene(
+            r#""cuts": [{"start": 2.0, "end": 4.0}], "padding": 5.0,"#,
+        ));
+        assert!((session.output_duration() - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clearing_the_time_map_goes_back_to_the_scene() {
+        let Some(ctx) = context() else { return };
+        let mut session = Session::new(
+            &ctx,
+            scene(r#""cuts": [{"start": 2.0, "end": 4.0}],"#),
+            source(),
+        )
+        .expect("session");
+        session.set_time_map(Some(host_map(10.0)));
+        session.set_time_map(None);
+        assert!((session.output_duration() - 8.0).abs() < 1e-6);
     }
 
     #[test]

@@ -14,6 +14,7 @@ function engineStub() {
 		cameraLayerId: 4,
 		destroyed: false,
 		setScene: vi.fn(),
+		setTimeMap: vi.fn(),
 		setSourceSize: vi.fn(),
 		setCanvasSize: vi.fn(),
 		setBackgroundImage: vi.fn(),
@@ -57,6 +58,19 @@ describe("scene sync", () => {
 		expect(d.syncScene(state(4))).toBe(false);
 		expect(d.syncScene(state(8))).toBe(true);
 		expect(engine.setScene).toHaveBeenCalledTimes(2);
+	});
+
+	/** Thrown from the effect that calls this, a refused scene would strand the
+	 *  engine on the last one it took and silence every later edit. */
+	it("reports a refused scene rather than throwing into the effect", async () => {
+		const d = await driver();
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		engine.setScene.mockImplementation(() => {
+			throw new Error("missing field padding");
+		});
+		expect(d.syncScene(state(4))).toBe(false);
+		expect(error).toHaveBeenCalled();
+		error.mockRestore();
 	});
 
 	/** Layer ids are assigned during migration, so they can move whenever the
@@ -150,6 +164,30 @@ describe("cursor sprites", () => {
 	});
 });
 
+describe("time map", () => {
+	/** The editor drops cuts its own lane flags disable, so the engine must be
+	 *  told what output time means rather than deriving it from the scene. */
+	it("sends a map once and skips an identical one", async () => {
+		const d = await driver();
+		const map = {
+			spans: [{ origStart: 0, origEnd: 4, speed: 1, outStart: 0, outEnd: 4 }],
+			outputDuration: 4,
+		};
+		expect(d.setTimeMap(map)).toBe(true);
+		expect(d.setTimeMap({ ...map })).toBe(false);
+		expect(engine.setTimeMap).toHaveBeenCalledTimes(1);
+	});
+
+	/** A never-sent map and a cleared one are different states: the first frame
+	 *  must not be evaluated on an axis the host never agreed to. */
+	it("clears back to the scene's own axis", async () => {
+		const d = await driver();
+		expect(d.setTimeMap(null)).toBe(true);
+		expect(engine.setTimeMap).toHaveBeenCalledWith(null);
+		expect(d.setTimeMap(null)).toBe(false);
+	});
+});
+
 describe("size sync", () => {
 	it("sends each size once", async () => {
 		const d = await driver();
@@ -178,6 +216,19 @@ describe("background and cursor", () => {
 		d.setCursorTrack({ samples: [1] });
 		d.setCursorTrack({ samples: [1] });
 		expect(engine.setCursorTrack).toHaveBeenCalledTimes(1);
+	});
+
+	/** Called from the draw loop: a track the engine refuses must not take the
+	 *  whole preview down with it. */
+	it("warns rather than throwing when the engine refuses a track", async () => {
+		const d = await driver();
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		engine.setCursorTrack.mockImplementation(() => {
+			throw new Error("missing field x");
+		});
+		expect(() => d.setCursorTrack({ samples: [1] })).not.toThrow();
+		expect(warn).toHaveBeenCalled();
+		warn.mockRestore();
 	});
 
 	/** Clearing must reach the engine as an empty track, not as the string
