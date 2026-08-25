@@ -7,10 +7,12 @@ publish = false
 [dependencies]
 anyhow = "1"
 pollster = "0.4"
-wgpu = { version = "30", default-features = false, features = ["dx12", "wgsl"] }
+# Pinned exactly: wgpu-hal decides the `windows` version below, and a caret bump
+# would silently break COM type unification.
+wgpu = { version = "=30.0.1", default-features = false, features = ["dx12", "wgsl"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = [
+windows = { version = "=0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",

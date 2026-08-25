@@ -332,6 +332,16 @@ jobs:
         if: ${{ !matrix.platform.cross }}
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release ${{ matrix.platform.tauri_args }}
 
+      # The sync harness is the first test in this repo that decodes real frames
+      # and samples. Encode/decode timing bugs (frame drops, A/V drift, wrong
+      # duration) are invisible to every other suite here. Uses the sidecars
+      # downloaded above, so it costs no extra setup.
+      - name: Engine test harness (recast-testkit)
+        if: ${{ !matrix.platform.cross }}
+        env:
+          RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
+        run: cargo test --manifest-path crates/Cargo.toml -p recast-testkit --release
+
       # Clippy after the build so the compile gate above is the hard failure
       # signal; lint findings surface here without blocking until the team
       # decides to make them blocking (drop `continue-on-error` then).

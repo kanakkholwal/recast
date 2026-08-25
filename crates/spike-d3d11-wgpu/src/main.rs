@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 
 #[cfg(not(windows))]
 fn main() -> Result<()> {
@@ -17,25 +17,63 @@ fn expected_pixel(x: u32, y: u32) -> [u8; 4] {
 
 #[cfg(windows)]
 fn main() -> Result<()> {
+    println!("== S-1: D3D11 shared NT handle -> wgpu DX12 import ==");
+    let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
+    instance_desc.backends = wgpu::Backends::DX12;
+    let instance = wgpu::Instance::new(instance_desc);
+
+    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::DX12));
+    if adapters.is_empty() {
+        bail!("no DX12 adapters found");
+    }
+
+    let mut results = Vec::new();
+    for adapter in adapters {
+        let info = adapter.get_info();
+        let label = format!("{} [{:?}]", info.name, info.device_type);
+        println!();
+        println!(
+            "---- {label} (vendor {:#06x} device {:#06x}) ----",
+            info.vendor, info.device
+        );
+        match run_adapter(&adapter, &info) {
+            Ok(per_frame_ms) => {
+                println!("PASS  ({per_frame_ms:.3} ms/frame fence round trip)");
+                results.push((label, Ok(per_frame_ms)));
+            }
+            Err(e) => {
+                println!("FAIL  {e}");
+                results.push((label, Err(e.to_string())));
+            }
+        }
+    }
+
+    println!();
+    println!("== summary ==");
+    let mut any_pass = false;
+    for (label, outcome) in &results {
+        match outcome {
+            Ok(ms) => {
+                any_pass = true;
+                println!("  PASS  {label}  ({ms:.3} ms/frame)");
+            }
+            Err(e) => println!("  FAIL  {label}  {e}"),
+        }
+    }
+    if !any_pass {
+        bail!("zero-copy interop failed on every adapter");
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn run_adapter(adapter: &wgpu::Adapter, info: &wgpu::AdapterInfo) -> Result<f64> {
     use windows::core::Interface;
     use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
     use windows::Win32::Graphics::Direct3D11::*;
     use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
     use windows::Win32::Graphics::Dxgi::Common::*;
     use windows::Win32::Graphics::Dxgi::*;
-
-    println!("== S-1: D3D11 shared NT handle -> wgpu DX12 import ==");
-
-    let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
-    instance_desc.backends = wgpu::Backends::DX12;
-    let instance = wgpu::Instance::new(instance_desc);
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        ..Default::default()
-    }))
-    .map_err(|e| anyhow!("no DX12 adapter: {e}"))?;
-    let info = adapter.get_info();
-    println!("wgpu adapter: {} (vendor {:#06x} device {:#06x})", info.name, info.vendor, info.device);
 
     let (device, queue) =
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
@@ -87,7 +125,10 @@ fn main() -> Result<()> {
         MipLevels: 1,
         ArraySize: 1,
         Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+        SampleDesc: DXGI_SAMPLE_DESC {
+            Count: 1,
+            Quality: 0,
+        },
         Usage: D3D11_USAGE_DEFAULT,
         BindFlags: (D3D11_BIND_SHADER_RESOURCE.0 | D3D11_BIND_RENDER_TARGET.0) as u32,
         CPUAccessFlags: 0,
@@ -126,7 +167,11 @@ fn main() -> Result<()> {
             d3d12_resource,
             wgpu::TextureFormat::Bgra8Unorm,
             wgpu::TextureDimension::D2,
-            wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
             1,
             1,
         );
@@ -135,7 +180,11 @@ fn main() -> Result<()> {
             hal_texture,
             &wgpu::TextureDescriptor {
                 label: Some("imported-d3d11"),
-                size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width: WIDTH,
+                    height: HEIGHT,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
@@ -151,11 +200,10 @@ fn main() -> Result<()> {
     let linear = render_through_shader(&device, &queue, &imported)?;
     verify(&linear)?;
 
-    steady_state(&d3d11, &d3d11_context, &device, &queue, &imported)?;
+    let per_frame_ms = steady_state(&d3d11, &d3d11_context, &device, &queue, &imported)?;
 
     unsafe { windows::Win32::Foundation::CloseHandle(handle)? };
-    println!("\nS-1 PASS: zero-copy D3D11 -> wgpu import, sampled in a shader, read back correct.");
-    Ok(())
+    Ok(per_frame_ms)
 }
 
 #[cfg(windows)]
@@ -184,7 +232,11 @@ fn render_through_shader(
 ) -> Result<Vec<u8>> {
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("linear-target"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -294,7 +346,11 @@ fn render_through_shader(
                 rows_per_image: Some(HEIGHT),
             },
         },
-        wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit([encoder.finish()]);
 
@@ -324,7 +380,7 @@ fn f16_to_f32(bits: u16) -> f32 {
                 f <<= 1;
                 e -= 1;
             }
-            ((sign << 31) | (((127 + e - 14) as u32) << 23) | ((f & 0x3ff) << 13)) as u32
+            (sign << 31) | (((127 + e - 14) as u32) << 23) | ((f & 0x3ff) << 13)
         }
         0x1f => (sign << 31) | 0x7f80_0000 | (frac << 13),
         _ => (sign << 31) | ((exp + 112) << 23) | (frac << 13),
@@ -335,10 +391,20 @@ fn f16_to_f32(bits: u16) -> f32 {
 #[cfg(windows)]
 fn verify(linear: &[u8]) -> Result<()> {
     let mut checked = 0;
-    for &(x, y) in &[(0u32, 0u32), (1, 0), (255, 0), (0, 127), (128, 64), (200, 100)] {
+    for &(x, y) in &[
+        (0u32, 0u32),
+        (1, 0),
+        (255, 0),
+        (0, 127),
+        (128, 64),
+        (200, 100),
+    ] {
         let offset = ((y * WIDTH + x) * 8) as usize;
         let read = |i: usize| {
-            f16_to_f32(u16::from_le_bytes([linear[offset + i * 2], linear[offset + i * 2 + 1]]))
+            f16_to_f32(u16::from_le_bytes([
+                linear[offset + i * 2],
+                linear[offset + i * 2 + 1],
+            ]))
         };
         let want = expected_pixel(x, y);
         // The imported texture is BGRA, so channel 0 of the shader load is blue.
@@ -367,14 +433,14 @@ fn steady_state(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     imported: &wgpu::Texture,
-) -> Result<()> {
+) -> Result<f64> {
     use windows::core::Interface;
     use windows::Win32::Graphics::Direct3D11::*;
     use windows::Win32::Graphics::Direct3D12::ID3D12Fence;
 
     const GENERIC_ALL: u32 = 0x1000_0000;
 
-    println!("");
+    println!();
     println!("== steady state: shared fence, no per-frame flush ==");
 
     let device5: ID3D11Device5 = d3d11.cast()?;
@@ -389,14 +455,20 @@ fn steady_state(
             .as_hal::<wgpu::hal::api::Dx12>()
             .context("wgpu device is not DX12")?;
         let mut opened: Option<ID3D12Fence> = None;
-        hal_device.raw_device().OpenSharedHandle(fence_handle, &mut opened)?;
+        hal_device
+            .raw_device()
+            .OpenSharedHandle(fence_handle, &mut opened)?;
         opened.context("fence OpenSharedHandle returned nothing")?
     };
     println!("fence: shared D3D11 -> D3D12 fence opened");
 
     let scratch = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("scratch"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -429,7 +501,11 @@ fn steady_state(
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
         );
         queue.submit([encoder.finish()]);
     }
@@ -442,5 +518,5 @@ fn steady_state(
         elapsed.as_secs_f64() * 1000.0,
         elapsed.as_secs_f64() * 1000.0 / FRAMES as f64
     );
-    Ok(())
+    Ok(elapsed.as_secs_f64() * 1000.0 / FRAMES as f64)
 }
