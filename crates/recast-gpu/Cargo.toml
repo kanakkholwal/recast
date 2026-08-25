@@ -8,6 +8,10 @@ description = "wgpu device selection, the recycled texture pool, and the OS zero
 [features]
 default = []
 interop = []
+# The WebGL2 backend is roughly 1.1 MB gzipped, so the browser artifacts are
+# built one backend at a time and picked by a runtime probe.
+webgpu = ["wgpu/webgpu"]
+webgl2 = ["wgpu/webgl"]
 
 [dependencies]
 thiserror = "2.0"
@@ -37,7 +41,7 @@ wgpu = { version = "=30.0.1", default-features = false, features = ["metal", "wg
 wgpu = { version = "=30.0.1", default-features = false, features = ["vulkan", "wgsl"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wgpu = { version = "=30.0.1", default-features = false, features = ["webgpu", "webgl", "wgsl"] }
+wgpu = { version = "=30.0.1", default-features = false, features = ["wgsl"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 windows = { version = "=0.62.2", features = [

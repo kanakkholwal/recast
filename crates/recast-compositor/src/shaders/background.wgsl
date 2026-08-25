@@ -4,11 +4,15 @@ struct Background {
     // x = stop count (0 means solid), y = angle in radians, zw = canvas size.
     header: vec4<f32>,
     solid: vec4<f32>,
+    // x = 1 when an image is bound, yz = cover-fit UV scale, w = sRGB decode.
+    image: vec4<f32>,
     // rgb = the stop colour in sRGB-encoded 0..1, a = its position in 0..1.
     stops: array<vec4<f32>, MAX_STOPS>,
 }
 
 @group(0) @binding(0) var<uniform> bg: Background;
+@group(0) @binding(1) var image_tex: texture_2d<f32>;
+@group(0) @binding(2) var image_sampler: sampler;
 
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
@@ -62,6 +66,17 @@ fn sample_gradient(t: f32, count: u32) -> vec3<f32> {
 
 @fragment
 fn fs(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
+    if (bg.image.x > 0.5) {
+        // Cover fit, centred: the scale is below 1 on the axis being cropped.
+        let uv = (frag.xy / bg.header.zw - 0.5) * bg.image.yz + 0.5;
+        let texel = textureSample(image_tex, image_sampler, uv);
+        var rgb = texel.rgb;
+        if (bg.image.w > 0.5) {
+            rgb = srgb_to_linear(rgb);
+        }
+        return vec4<f32>(rgb, 1.0);
+    }
+
     let count = u32(bg.header.x);
     if (count == 0u) {
         return vec4<f32>(srgb_to_linear(bg.solid.rgb) * bg.solid.a, bg.solid.a);

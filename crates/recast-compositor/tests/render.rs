@@ -1,4 +1,6 @@
-use recast_compositor::{Compositor, Evaluator, FrameInputs, LayerInput, SourceGeometry};
+use recast_compositor::{
+    BackgroundImage, Compositor, Evaluator, FrameInputs, LayerInput, SourceGeometry,
+};
 use recast_gpu::{GpuContext, GpuOptions};
 use recast_scene::migrate::to_scene;
 use recast_scene::v1::RenderState;
@@ -685,4 +687,210 @@ fn a_camera_shadow_is_emitted_alongside_the_card_shadow() {
     )
     .evaluate(&scene, 5.0);
     assert_eq!(params.shadows.len(), 2);
+}
+
+fn banded_image(
+    ctx: &GpuContext,
+    width: u32,
+    height: u32,
+    band: impl Fn(u32) -> [u8; 4],
+) -> wgpu::Texture {
+    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    for y in 0..height {
+        for x in 0..width {
+            let offset = ((y * width + x) * 4) as usize;
+            pixels[offset..offset + 4].copy_from_slice(&band(x));
+        }
+    }
+    let texture = ctx.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some("background-image"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    ctx.queue().write_texture(
+        texture.as_image_copy(),
+        &pixels,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(width * 4),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    texture
+}
+
+fn render_background(
+    ctx: &GpuContext,
+    scene: &Scene,
+    image: Option<(&wgpu::Texture, u32, u32)>,
+) -> Rendered {
+    let ev = Evaluator::new(
+        scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(scene, 0.0);
+    let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
+
+    let mut compositor = Compositor::new(ctx).expect("compositor");
+    let target = compositor.output_texture(width, height);
+    let view = image.map(|(texture, _, _)| texture.create_view(&Default::default()));
+
+    let mut inputs = FrameInputs::new();
+    if let (Some(view), Some((_, w, h))) = (view.as_ref(), image) {
+        inputs.set_background(BackgroundImage {
+            view,
+            width: w,
+            height: h,
+            needs_srgb_decode: true,
+        });
+    }
+
+    compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+    Rendered {
+        pixels: read_back(ctx, &target, width, height),
+        width,
+        height,
+    }
+}
+
+fn wallpaper(blur: f64) -> Scene {
+    scene_with(&format!(
+        r#""backgroundType": "wallpaper", "backgroundValue": "C:/wall.png", "backgroundBlur": {blur},"#
+    ))
+}
+
+/// Stretching instead of cropping would put the first quarter of the image at
+/// the left edge; cover fit puts the second quarter there.
+#[test]
+fn a_wider_than_canvas_background_is_cropped_not_stretched() {
+    let Some(ctx) = context() else { return };
+    let quarters = |x: u32| match x * 4 / (SRC_W * 2) {
+        0 => [255, 0, 0, 255],
+        1 => [0, 255, 0, 255],
+        2 => [0, 0, 255, 255],
+        _ => [255, 255, 255, 255],
+    };
+    let image = banded_image(&ctx, SRC_W * 2, SRC_H, quarters);
+    let out = render_background(&ctx, &wallpaper(0.0), Some((&image, SRC_W * 2, SRC_H)));
+
+    let left = out.at(2, out.height / 2);
+    assert!(
+        close(left, [0, 255, 0, 255], 3),
+        "left edge was {left:?}; red there means the image was stretched"
+    );
+    let right = out.at(out.width - 3, out.height / 2);
+    assert!(
+        close(right, [0, 0, 255, 255], 3),
+        "right edge was {right:?}; white there means the image was stretched"
+    );
+}
+
+#[test]
+fn a_background_image_with_no_blur_keeps_its_edge_sharp() {
+    let Some(ctx) = context() else { return };
+    let edge = |x: u32| match x < SRC_W / 2 {
+        true => [255, 0, 0, 255],
+        false => [0, 0, 255, 255],
+    };
+    let image = banded_image(&ctx, SRC_W, SRC_H, edge);
+    let out = render_background(&ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
+
+    let mid = out.height / 2;
+    assert!(close(out.at(SRC_W / 2 - 3, mid), [255, 0, 0, 255], 3));
+    assert!(close(out.at(SRC_W / 2 + 2, mid), [0, 0, 255, 255], 3));
+}
+
+#[test]
+fn background_blur_softens_the_edge_it_is_pointed_at() {
+    let Some(ctx) = context() else { return };
+    let edge = |x: u32| match x < SRC_W / 2 {
+        true => [255, 0, 0, 255],
+        false => [0, 0, 255, 255],
+    };
+    let image = banded_image(&ctx, SRC_W, SRC_H, edge);
+    let sharp = render_background(&ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
+    let soft = render_background(&ctx, &wallpaper(20.0), Some((&image, SRC_W, SRC_H)));
+
+    let mid = sharp.height / 2;
+    let x = SRC_W / 2 - 3;
+    assert_eq!(
+        sharp.at(x, mid)[2],
+        0,
+        "the unblurred edge should hold no blue"
+    );
+    assert!(
+        soft.at(x, mid)[2] > 20,
+        "blurred pixel was {:?}; blue should have bled across the edge",
+        soft.at(x, mid)
+    );
+}
+
+/// The WebGL shader's 9-tap kernel sums to 1.076, so its blurred backgrounds are
+/// about 8% brighter than the source. A normalised kernel cannot do that.
+#[test]
+fn blurring_a_background_does_not_change_its_overall_brightness() {
+    let Some(ctx) = context() else { return };
+    let edge = |x: u32| match x < SRC_W / 2 {
+        true => [200, 60, 30, 255],
+        false => [30, 60, 200, 255],
+    };
+    let image = banded_image(&ctx, SRC_W, SRC_H, edge);
+    let sharp = render_background(&ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
+    let soft = render_background(&ctx, &wallpaper(60.0), Some((&image, SRC_W, SRC_H)));
+
+    // Averaged in linear light, because that is where the blur happens. The
+    // sRGB-encoded mean legitimately rises when a dark and a bright pixel are
+    // mixed linearly, so measuring there would fail on correct output.
+    let mean = |r: &Rendered| {
+        let total: f64 = r
+            .pixels
+            .chunks_exact(4)
+            .flat_map(|p| {
+                p[..3]
+                    .iter()
+                    .map(|c| recast_color::srgb_to_linear(*c as f32 / 255.0) as f64)
+            })
+            .sum();
+        total / (r.pixels.len() / 4) as f64
+    };
+    let (before, after) = (mean(&sharp), mean(&soft));
+    assert!(
+        (after - before).abs() < before * 0.02,
+        "linear mean went {before:.4} -> {after:.4}, which is more than rounding"
+    );
+}
+
+/// Blur is an image-only control, so a solid background must survive it exactly.
+#[test]
+fn blur_on_a_solid_background_is_a_no_op() {
+    let Some(ctx) = context() else { return };
+    let out = render_background(&ctx, &scene_with(r#""backgroundBlur": 100.0,"#), None);
+    let corner = out.at(1, 1);
+    assert!(close(corner, [0, 0, 255, 255], 2), "corner was {corner:?}");
+}
+
+/// An image that has not finished loading must not leave the canvas undefined.
+#[test]
+fn a_wallpaper_background_with_no_image_yet_renders_the_fallback_grey() {
+    let Some(ctx) = context() else { return };
+    let out = render_background(&ctx, &wallpaper(0.0), None);
+    let corner = out.at(1, 1);
+    assert!(close(corner, [17, 17, 17, 255], 3), "corner was {corner:?}");
 }

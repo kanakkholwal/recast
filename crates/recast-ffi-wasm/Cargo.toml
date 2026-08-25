@@ -8,6 +8,11 @@ description = "wasm-bindgen surface over the compositor: marshalling and lifecyc
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["webgpu", "webgl2"]
+webgpu = ["wgpu/webgpu", "recast-gpu/webgpu"]
+webgl2 = ["wgpu/webgl", "recast-gpu/webgl2"]
+
 [dependencies]
 recast-compositor = { path = "../recast-compositor" }
 recast-gpu = { path = "../recast-gpu" }
@@ -22,7 +27,8 @@ js-sys = "0.3"
 console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
+    "ImageBitmap",
     "OffscreenCanvas",
     "VideoFrame",
 ] }
-wgpu = { version = "=30.0.1", default-features = false, features = ["webgpu", "webgl", "wgsl"] }
+wgpu = { version = "=30.0.1", default-features = false, features = ["wgsl"] }

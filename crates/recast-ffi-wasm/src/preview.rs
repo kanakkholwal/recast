@@ -1,8 +1,9 @@
-use recast_compositor::{FrameInputs, LayerInput, Session, SourceGeometry};
+use recast_compositor::{BackgroundImage, FrameInputs, LayerInput, Session, SourceGeometry};
 use recast_gpu::{GpuContext, GpuOptions, OUTPUT_FORMAT};
 use recast_scene::LayerId;
 use wasm_bindgen::prelude::*;
 
+use crate::backend::{backend_name, backends_for};
 use crate::scene_io::parse_scene;
 
 /// A decoded frame parked for the next `render`. Held as a texture rather than a
@@ -23,6 +24,7 @@ pub struct PreviewEngine {
     surface: wgpu::Surface<'static>,
     surface_size: (u32, u32),
     frames: Vec<(LayerId, LayerTexture)>,
+    background: Option<LayerTexture>,
 }
 
 #[wasm_bindgen]
@@ -37,21 +39,31 @@ impl PreviewEngine {
         console_error_panic_hook::set_once();
 
         let target = surface_target(canvas)?;
-        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
-        descriptor.backends = backends_for(backend.as_deref());
-        let instance = wgpu::Instance::new(descriptor);
+        // The preview accepts a software adapter: a slow preview beats none.
+        let options = GpuOptions {
+            require_hardware: false,
+            label: "recast-preview",
+            backends: Some(
+                backends_for(
+                    backend.as_deref(),
+                    cfg!(feature = "webgpu"),
+                    cfg!(feature = "webgl2"),
+                )
+                .map_err(|e| JsValue::from_str(&e))?,
+            ),
+            ..Default::default()
+        };
+
+        // The surface must come from the instance the device is built on, so the
+        // instance is created here and handed to the context rather than the
+        // context making a second one of its own.
+        let instance = GpuContext::instance_for(&options);
         let surface = instance
             .create_surface(target)
             .map_err(|e| JsValue::from_str(&format!("create surface: {e}")))?;
-
-        // The preview accepts a software adapter: a slow preview beats none.
-        let ctx = GpuContext::new(GpuOptions {
-            require_hardware: false,
-            label: "recast-preview",
-            ..Default::default()
-        })
-        .await
-        .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let ctx = GpuContext::from_instance(instance, options, Some(&surface))
+            .await
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
         let session = Session::new(
             &ctx,
@@ -69,6 +81,7 @@ impl PreviewEngine {
             surface,
             surface_size: (0, 0),
             frames: Vec::new(),
+            background: None,
         })
     }
 
@@ -144,6 +157,56 @@ impl PreviewEngine {
         self.frames.retain(|(id, _)| id.0 != layer_id);
     }
 
+    /// Uploads the decoded wallpaper or image background. Cover-fitted against
+    /// the canvas in the shader, so the natural size is what must be passed and
+    /// the caller must not pre-scale.
+    #[wasm_bindgen(js_name = setBackgroundImage)]
+    pub fn set_background_image(&mut self, image: &web_sys::ImageBitmap) -> Result<(), JsValue> {
+        let width = image.width();
+        let height = image.height();
+        if width == 0 || height == 0 {
+            return Err(JsValue::from_str(
+                "the background image has a zero dimension",
+            ));
+        }
+
+        let stale =
+            matches!(&self.background, Some(slot) if slot.width != width || slot.height != height);
+        if stale || self.background.is_none() {
+            self.background = Some(self.new_texture(width, height));
+        }
+        let Some(slot) = &self.background else {
+            return Err(JsValue::from_str("the background texture was just created"));
+        };
+
+        self.ctx.queue().copy_external_image_to_texture(
+            &wgpu::CopyExternalImageSourceInfo {
+                source: wgpu::ExternalImageSource::ImageBitmap(Clone::clone(image)),
+                origin: wgpu::Origin2d::ZERO,
+                flip_y: false,
+            },
+            wgpu::CopyExternalImageDestInfo {
+                texture: &slot.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: false,
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = clearBackgroundImage)]
+    pub fn clear_background_image(&mut self) {
+        self.background = None;
+    }
+
     /// Renders `output_time` (gapless output-timeline seconds) to the canvas.
     /// Returns the layers drawn.
     #[wasm_bindgen]
@@ -170,6 +233,14 @@ impl PreviewEngine {
         let view = frame.texture.create_view(&Default::default());
 
         let mut inputs = FrameInputs::new();
+        if let Some(slot) = &self.background {
+            inputs.set_background(BackgroundImage {
+                view: &slot.view,
+                width: slot.width,
+                height: slot.height,
+                needs_srgb_decode: true,
+            });
+        }
         for (id, slot) in &self.frames {
             inputs.set(
                 *id,
@@ -201,6 +272,23 @@ impl PreviewEngine {
         self.session.output_duration()
     }
 
+    /// The backend actually in use, for the preview to report. `"auto"` resolves
+    /// here, so this is the only honest answer to "did WebGPU work".
+    #[wasm_bindgen]
+    pub fn backend(&self) -> String {
+        backend_name(self.ctx.info().backend).to_string()
+    }
+
+    #[wasm_bindgen(js_name = adapterName)]
+    pub fn adapter_name(&self) -> String {
+        self.ctx.info().name
+    }
+
+    #[wasm_bindgen(js_name = isSoftware)]
+    pub fn is_software(&self) -> bool {
+        self.ctx.is_software()
+    }
+
     #[wasm_bindgen]
     pub fn destroy(self) {
         drop(self);
@@ -211,49 +299,42 @@ impl PreviewEngine {
     /// Index into `frames`, not a borrow: returning a reference here would
     /// hold `self` and block the queue access at the call site.
     fn slot_for(&mut self, id: LayerId, width: u32, height: u32) -> usize {
-        let stale = self
-            .frames
-            .iter()
-            .position(|(slot_id, slot)| {
-                *slot_id == id && (slot.width != width || slot.height != height)
-            })
-            .is_some();
-        if stale {
-            self.frames.retain(|(slot_id, _)| *slot_id != id);
+        if let Some(index) = self.frames.iter().position(|(slot_id, _)| *slot_id == id) {
+            let slot = &self.frames[index].1;
+            if slot.width == width && slot.height == height {
+                return index;
+            }
+            self.frames.remove(index);
         }
 
-        if !self.frames.iter().any(|(slot_id, _)| *slot_id == id) {
-            let texture = self.ctx.device().create_texture(&wgpu::TextureDescriptor {
-                label: Some("recast-layer-frame"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_DST
-                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&Default::default());
-            self.frames.push((
-                id,
-                LayerTexture {
-                    texture,
-                    view,
-                    width,
-                    height,
-                },
-            ));
-        }
+        let slot = self.new_texture(width, height);
+        self.frames.push((id, slot));
+        self.frames.len() - 1
+    }
 
-        match self.frames.iter().position(|(slot_id, _)| *slot_id == id) {
-            Some(index) => index,
-            None => unreachable!("the slot was just inserted"),
+    fn new_texture(&self, width: u32, height: u32) -> LayerTexture {
+        let texture = self.ctx.device().create_texture(&wgpu::TextureDescriptor {
+            label: Some("recast-layer-frame"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        LayerTexture {
+            texture,
+            view,
+            width,
+            height,
         }
     }
 
@@ -277,14 +358,6 @@ impl PreviewEngine {
             },
         );
         self.surface_size = (width, height);
-    }
-}
-
-fn backends_for(backend: Option<&str>) -> wgpu::Backends {
-    match backend {
-        Some("webgpu") => wgpu::Backends::BROWSER_WEBGPU,
-        Some("webgl2") => wgpu::Backends::GL,
-        _ => wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL,
     }
 }
 

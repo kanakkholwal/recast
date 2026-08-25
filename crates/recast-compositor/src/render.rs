@@ -10,12 +10,27 @@ use crate::eval::{BackgroundParams, FrameParams, LayerParams, ShadowParams};
 
 const MAX_GRADIENT_STOPS: usize = 8;
 
+/// Taps per side of the separable Gaussian. Beyond this the stride grows
+/// instead, which trades a little aliasing for a bounded loop.
+const MAX_BLUR_TAPS: f32 = 24.0;
+
+/// The authored 0..100 slider in canvas pixels of sigma, matching what the
+/// WebGL preview has always shown (100 lands at 24 px).
+const BLUR_PX_PER_UNIT: f32 = 0.24;
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct BackgroundUniform {
     header: [f32; 4],
     solid: [f32; 4],
+    image: [f32; 4],
     stops: [[f32; 4]; MAX_GRADIENT_STOPS],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct BlurUniform {
+    params: [f32; 4],
 }
 
 #[repr(C)]
@@ -50,6 +65,17 @@ struct CardUniform {
 #[derive(Default)]
 pub struct FrameInputs<'a> {
     views: HashMap<LayerId, LayerInput<'a>>,
+    background: Option<BackgroundImage<'a>>,
+}
+
+/// The decoded wallpaper or image background. Separate from `LayerInput`
+/// because it is a static asset that is cover-fitted, so its own size matters
+/// and a decoded frame's never does.
+pub struct BackgroundImage<'a> {
+    pub view: &'a wgpu::TextureView,
+    pub width: u32,
+    pub height: u32,
+    pub needs_srgb_decode: bool,
 }
 
 pub struct LayerInput<'a> {
@@ -72,6 +98,15 @@ impl<'a> FrameInputs<'a> {
     pub fn get(&self, id: LayerId) -> Option<&LayerInput<'a>> {
         self.views.get(&id)
     }
+
+    pub fn set_background(&mut self, image: BackgroundImage<'a>) -> &mut Self {
+        self.background = Some(image);
+        self
+    }
+
+    pub fn background(&self) -> Option<&BackgroundImage<'a>> {
+        self.background.as_ref()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -84,6 +119,7 @@ pub struct Compositor {
     device: wgpu::Device,
     queue: wgpu::Queue,
     background: BackgroundPass,
+    blur: BlurPass,
     shadow: ShadowPass,
     card: CardPass,
     shape: ShapePass,
@@ -95,6 +131,19 @@ struct BackgroundPass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
     uniform: wgpu::Buffer,
+    sampler: wgpu::Sampler,
+    /// Bound whenever the background is not an image, so the layout stays
+    /// satisfied without a second pipeline.
+    placeholder: wgpu::TextureView,
+}
+
+struct BlurPass {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+    horizontal: wgpu::Buffer,
+    vertical: wgpu::Buffer,
+    sampler: wgpu::Sampler,
+    scratch: Option<(u32, u32, wgpu::Texture)>,
 }
 
 struct ShadowPass {
@@ -123,7 +172,8 @@ impl Compositor {
         let device = ctx.device().clone();
         let queue = ctx.queue().clone();
         Ok(Self {
-            background: BackgroundPass::new(&device),
+            background: BackgroundPass::new(&device, &queue),
+            blur: BlurPass::new(&device),
             shadow: ShadowPass::new(&device),
             card: CardPass::new(&device),
             shape: ShapePass::new(&device),
@@ -152,7 +202,8 @@ impl Compositor {
                 label: Some("recast-frame"),
             });
 
-        self.draw_background(&mut encoder, &working_view, params, width, height);
+        self.draw_background(&mut encoder, &working_view, params, inputs, width, height);
+        self.blur_background(&mut encoder, &working_view, params, width, height);
         self.draw_shadow(&mut encoder, &working_view, params);
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_annotations(&mut encoder, &working_view, params);
@@ -193,20 +244,39 @@ impl Compositor {
         encoder: &mut wgpu::CommandEncoder,
         working: &wgpu::TextureView,
         params: &FrameParams,
+        inputs: &FrameInputs<'_>,
         width: u32,
         height: u32,
     ) {
-        let uniform = background_uniform(&params.background, width, height);
+        let image = match params.background {
+            BackgroundParams::Asset { .. } => inputs.background(),
+            _ => None,
+        };
+        let uniform = background_uniform(&params.background, image, width, height);
         self.queue
             .write_buffer(&self.background.uniform, 0, bytemuck::bytes_of(&uniform));
 
+        let view = match image {
+            Some(image) => image.view,
+            None => &self.background.placeholder,
+        };
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("background"),
             layout: &self.background.layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.background.uniform.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.background.uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.background.sampler),
+                },
+            ],
         });
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -226,6 +296,116 @@ impl Compositor {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.background.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
+    /// Blurs whatever the background pass just drew. Only an image can show it:
+    /// a flat colour is unchanged and a linear gradient blurs to itself, which
+    /// is why the FFmpeg path skips gradients explicitly.
+    fn blur_background(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        params: &FrameParams,
+        width: u32,
+        height: u32,
+    ) {
+        if !matches!(params.background, BackgroundParams::Asset { .. }) {
+            return;
+        }
+        let Some(plan) = blur_plan(params.background_blur, width, height) else {
+            return;
+        };
+
+        self.queue.write_buffer(
+            &self.blur.horizontal,
+            0,
+            bytemuck::bytes_of(&BlurUniform {
+                params: [plan.step_u, 0.0, plan.taps, plan.sigma_in_steps],
+            }),
+        );
+        self.queue.write_buffer(
+            &self.blur.vertical,
+            0,
+            bytemuck::bytes_of(&BlurUniform {
+                params: [0.0, plan.step_v, plan.taps, plan.sigma_in_steps],
+            }),
+        );
+
+        let scratch = self.blur_scratch(width, height);
+        self.run_blur_axis(encoder, &self.blur.horizontal, working, &scratch);
+        self.run_blur_axis(encoder, &self.blur.vertical, &scratch, working);
+    }
+
+    fn blur_scratch(&mut self, width: u32, height: u32) -> wgpu::TextureView {
+        let reuse = matches!(&self.blur.scratch, Some((w, h, _)) if *w == width && *h == height);
+        if !reuse {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("recast-blur-scratch"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: WORKING_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            self.blur.scratch = Some((width, height, texture));
+        }
+        match &self.blur.scratch {
+            Some((_, _, texture)) => texture.create_view(&Default::default()),
+            None => unreachable!("the scratch texture was just created"),
+        }
+    }
+
+    fn run_blur_axis(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform: &wgpu::Buffer,
+        src: &wgpu::TextureView,
+        dst: &wgpu::TextureView,
+    ) {
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("blur"),
+            layout: &self.blur.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(src),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.blur.sampler),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blur"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: dst,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.blur.pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.draw(0..3, 0..1);
     }
@@ -484,10 +664,28 @@ fn linear_rgba(color: Srgba) -> [f32; 4] {
     ]
 }
 
-fn background_uniform(background: &BackgroundParams, width: u32, height: u32) -> BackgroundUniform {
+/// Centred cover fit: the axis that overflows is scaled below 1 so the sampled
+/// UV window is the visible crop. Stretching instead, which the WebGL preview
+/// does today, distorts every wallpaper that is not exactly the canvas aspect.
+fn cover_fit_scale(canvas: (u32, u32), image: (u32, u32)) -> [f32; 2] {
+    let canvas_aspect = canvas.0.max(1) as f32 / canvas.1.max(1) as f32;
+    let image_aspect = image.0.max(1) as f32 / image.1.max(1) as f32;
+    match image_aspect > canvas_aspect {
+        true => [canvas_aspect / image_aspect, 1.0],
+        false => [1.0, image_aspect / canvas_aspect],
+    }
+}
+
+fn background_uniform(
+    background: &BackgroundParams,
+    image: Option<&BackgroundImage<'_>>,
+    width: u32,
+    height: u32,
+) -> BackgroundUniform {
     let mut uniform = BackgroundUniform {
         header: [0.0, 0.0, width as f32, height as f32],
         solid: [0.0, 0.0, 0.0, 1.0],
+        image: [0.0; 4],
         stops: [[0.0; 4]; MAX_GRADIENT_STOPS],
     };
 
@@ -508,14 +706,53 @@ fn background_uniform(background: &BackgroundParams, width: u32, height: u32) ->
                 ];
             }
         }
-        // An asset background needs its image decoded and uploaded, which the
-        // media layer owns. Until that lands it renders as the fallback grey
-        // rather than as an undefined surface.
-        BackgroundParams::Asset { .. } => {
-            uniform.solid = linear_rgba(Srgba::opaque(0x11, 0x11, 0x11));
-        }
+        // An image that has not arrived yet renders as the fallback grey rather
+        // than as an undefined surface; the editor loads it asynchronously.
+        BackgroundParams::Asset { .. } => match image {
+            Some(image) => {
+                let scale = cover_fit_scale((width, height), (image.width, image.height));
+                uniform.image = [
+                    1.0,
+                    scale[0],
+                    scale[1],
+                    match image.needs_srgb_decode {
+                        true => 1.0,
+                        false => 0.0,
+                    },
+                ];
+            }
+            None => uniform.solid = linear_rgba(Srgba::opaque(0x11, 0x11, 0x11)),
+        },
     }
     uniform
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BlurPlan {
+    step_u: f32,
+    step_v: f32,
+    taps: f32,
+    sigma_in_steps: f32,
+}
+
+/// `None` when the radius is below half a pixel, where the two extra full-canvas
+/// passes would cost more than they change.
+fn blur_plan(amount: f32, width: u32, height: u32) -> Option<BlurPlan> {
+    let sigma = (amount * BLUR_PX_PER_UNIT).max(0.0);
+    if sigma < 0.5 {
+        return None;
+    }
+    // Widening the stride past MAX_BLUR_TAPS keeps the loop bounded; bilinear
+    // filtering hides the gap at these radii.
+    let stride = (sigma * 3.0 / MAX_BLUR_TAPS).max(1.0);
+    let sigma_in_steps = sigma / stride;
+    let taps = (sigma_in_steps * 3.0).ceil().clamp(1.0, MAX_BLUR_TAPS);
+    Some(BlurPlan {
+        step_u: stride / width.max(1) as f32,
+        step_v: stride / height.max(1) as f32,
+        taps,
+        sigma_in_steps,
+    })
 }
 
 fn shadow_uniform(shadow: &ShadowParams) -> ShadowUniform {
@@ -665,11 +902,11 @@ const PREMULTIPLIED: wgpu::BlendState = wgpu::BlendState {
     },
 };
 
-impl BackgroundPass {
-    fn new(device: &wgpu::Device) -> Self {
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("background"),
-            entries: &[wgpu::BindGroupLayoutEntry {
+fn sampled_texture_layout(device: &wgpu::Device, label: &str) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some(label),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
@@ -678,8 +915,74 @@ impl BackgroundPass {
                     min_binding_size: None,
                 },
                 count: None,
-            }],
-        });
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    })
+}
+
+fn clamped_linear_sampler(device: &wgpu::Device, label: &str) -> wgpu::Sampler {
+    device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some(label),
+        address_mode_u: wgpu::AddressMode::ClampToEdge,
+        address_mode_v: wgpu::AddressMode::ClampToEdge,
+        address_mode_w: wgpu::AddressMode::ClampToEdge,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+        ..Default::default()
+    })
+}
+
+impl BlurPass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = sampled_texture_layout(device, "blur");
+        let pipeline = fullscreen_pipeline(
+            device,
+            "blur",
+            include_str!("shaders/blur.wgsl"),
+            &layout,
+            WORKING_FORMAT,
+            None,
+            "vs",
+        );
+        let uniform = |label| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size: std::mem::size_of::<BlurUniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        Self {
+            pipeline,
+            layout,
+            horizontal: uniform("blur-horizontal"),
+            vertical: uniform("blur-vertical"),
+            sampler: clamped_linear_sampler(device, "blur"),
+            scratch: None,
+        }
+    }
+}
+
+impl BackgroundPass {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let layout = sampled_texture_layout(device, "background");
         let pipeline = fullscreen_pipeline(
             device,
             "background",
@@ -695,10 +998,37 @@ impl BackgroundPass {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let size = wgpu::Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        };
+        let placeholder = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("background-placeholder"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            placeholder.as_image_copy(),
+            &[0, 0, 0, 255],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            size,
+        );
         Self {
             pipeline,
             layout,
             uniform,
+            sampler: clamped_linear_sampler(device, "background"),
+            placeholder: placeholder.create_view(&Default::default()),
         }
     }
 }
@@ -856,6 +1186,7 @@ mod tests {
     fn a_solid_background_carries_its_colour_and_no_stops() {
         let u = background_uniform(
             &BackgroundParams::Solid(Srgba::opaque(255, 128, 0)),
+            None,
             100,
             50,
         );
@@ -869,7 +1200,12 @@ mod tests {
     #[test]
     fn a_gradient_carries_its_stops_and_angle_in_radians() {
         let gradient = parse_gradient("linear-gradient(90deg, #ff0000 0%, #0000ff 100%)");
-        let u = background_uniform(&BackgroundParams::Gradient(Box::new(gradient)), 10, 10);
+        let u = background_uniform(
+            &BackgroundParams::Gradient(Box::new(gradient)),
+            None,
+            10,
+            10,
+        );
         assert_eq!(u.header[0], 2.0);
         assert!((u.header[1] - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
         assert_eq!(u.stops[0][3], 0.0);
@@ -883,22 +1219,88 @@ mod tests {
             .map(|i| format!("#0000{:02x} {}%", i * 20, i * 9))
             .collect();
         let gradient = parse_gradient(&format!("linear-gradient(0deg, {})", stops.join(", ")));
-        let u = background_uniform(&BackgroundParams::Gradient(Box::new(gradient)), 10, 10);
-        assert_eq!(u.header[0], MAX_GRADIENT_STOPS as f32);
-    }
-
-    #[test]
-    fn an_asset_background_renders_the_fallback_rather_than_an_undefined_surface() {
         let u = background_uniform(
-            &BackgroundParams::Asset {
-                kind: "wallpaper".into(),
-                value: "C:/nope.jpg".into(),
-            },
+            &BackgroundParams::Gradient(Box::new(gradient)),
+            None,
             10,
             10,
         );
+        assert_eq!(u.header[0], MAX_GRADIENT_STOPS as f32);
+    }
+
+    fn asset() -> BackgroundParams {
+        BackgroundParams::Asset {
+            kind: "wallpaper".into(),
+            value: "C:/nope.jpg".into(),
+        }
+    }
+
+    #[test]
+    fn an_asset_background_with_no_image_yet_renders_the_fallback_grey() {
+        let u = background_uniform(&asset(), None, 10, 10);
         assert_eq!(u.header[0], 0.0);
+        assert_eq!(u.image[0], 0.0);
         assert!((u.solid[0] - 17.0 / 255.0).abs() < 1e-6);
+    }
+
+    /// The WebGL preview samples the image at the raw canvas UV, which stretches
+    /// any wallpaper whose aspect is not the canvas aspect. The export crops.
+    /// This engine crops, so the two agree.
+    #[test]
+    fn a_wide_image_is_cropped_horizontally_rather_than_squashed() {
+        let scale = cover_fit_scale((1000, 1000), (2000, 1000));
+        assert!((scale[0] - 0.5).abs() < 1e-6);
+        assert_eq!(scale[1], 1.0);
+    }
+
+    #[test]
+    fn a_tall_image_is_cropped_vertically() {
+        let scale = cover_fit_scale((1000, 1000), (1000, 2000));
+        assert_eq!(scale[0], 1.0);
+        assert!((scale[1] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn an_image_that_already_matches_the_canvas_aspect_is_not_cropped_at_all() {
+        assert_eq!(cover_fit_scale((1920, 1080), (3840, 2160)), [1.0, 1.0]);
+    }
+
+    #[test]
+    fn a_degenerate_size_does_not_divide_by_zero() {
+        let scale = cover_fit_scale((0, 0), (0, 0));
+        assert!(scale[0].is_finite() && scale[1].is_finite());
+    }
+
+    /// Blurring is skipped below half a pixel: two full-canvas passes would cost
+    /// more than they change.
+    #[test]
+    fn a_blur_too_small_to_see_is_not_run_at_all() {
+        assert_eq!(blur_plan(0.0, 100, 100), None);
+        assert_eq!(blur_plan(2.0, 100, 100), None);
+        assert!(blur_plan(4.0, 100, 100).is_some());
+    }
+
+    #[test]
+    fn the_tap_count_stays_bounded_however_large_the_radius() {
+        for amount in [10.0, 100.0, 1_000.0, 100_000.0] {
+            let plan = blur_plan(amount, 1920, 1080).expect("a plan");
+            assert!(
+                plan.taps <= MAX_BLUR_TAPS,
+                "{amount} gave {} taps",
+                plan.taps
+            );
+            assert!(plan.taps >= 1.0);
+        }
+    }
+
+    /// The stride is in canvas pixels, so the UV step has to shrink as the
+    /// canvas grows or the blur would widen with resolution.
+    #[test]
+    fn the_blur_radius_is_in_canvas_pixels_not_uv() {
+        let small = blur_plan(100.0, 500, 500).expect("a plan");
+        let large = blur_plan(100.0, 1000, 1000).expect("a plan");
+        assert!((small.step_u / large.step_u - 2.0).abs() < 1e-4);
+        assert_eq!(small.taps, large.taps);
     }
 
     fn layer(motion_blur: f32, zoom_velocity: f32) -> LayerParams {
@@ -950,7 +1352,8 @@ mod tests {
 
     #[test]
     fn the_uniforms_match_the_std140_sizes_the_shaders_declare() {
-        assert_eq!(std::mem::size_of::<BackgroundUniform>(), 16 + 16 + 16 * 8);
+        assert_eq!(std::mem::size_of::<BackgroundUniform>(), 16 * 3 + 16 * 8);
+        assert_eq!(std::mem::size_of::<BlurUniform>(), 16);
         assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 6);
     }
 }

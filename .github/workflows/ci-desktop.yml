@@ -352,6 +352,20 @@ jobs:
           rustup target add wasm32-unknown-unknown
           cargo build --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -p recast-compositor -p recast-scene -p recast-color -p recast-time
 
+      # The native clippy step below never sees `preview.rs`, which is the whole
+      # wasm surface.
+      - name: Clippy (wasm32)
+        if: ${{ matrix.platform.name == 'windows-x64' }}
+        run: cargo clippy --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -- -D warnings
+
+      # Proves the wasm-bindgen surface still builds, and that every build
+      # product it emits is ignored rather than landing in the tree.
+      - name: Preview engine artifacts
+        if: ${{ matrix.platform.name == 'windows-x64' }}
+        run: |
+          pnpm --filter @recast/engine build
+          test -z "$(git status --porcelain -- packages/engine/wasm)"
+
       # Golden frames pin what the CURRENT export compositor renders, so the wgpu
       # rewrite has an exact target. Windows only: the fixtures are byte-compared,
       # and a different FFmpeg build / libx264 version / scaler rounding on another

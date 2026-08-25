@@ -15,6 +15,7 @@
 			"!**/.turbo",
 			"!**/target",
 			"!**/src-tauri/target",
+			"!packages/engine/wasm",
 			"!**/src-tauri/gen",
 			"!**/pnpm-lock.yaml",
 			"!**/*.min.js"

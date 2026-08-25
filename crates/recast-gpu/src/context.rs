@@ -14,6 +14,9 @@ pub struct GpuOptions {
     /// Fail rather than silently falling back to a software adapter. Export and
     /// recording want this; a preview surface may prefer WARP over nothing.
     pub require_hardware: bool,
+    /// `None` picks the platform default. The wasm preview overrides it to pin
+    /// WebGPU or WebGL2.
+    pub backends: Option<wgpu::Backends>,
 }
 
 impl Default for GpuOptions {
@@ -22,6 +25,7 @@ impl Default for GpuOptions {
             power: PowerPreference::HighPerformance,
             label: "recast",
             require_hardware: true,
+            backends: None,
         }
     }
 }
@@ -35,10 +39,23 @@ pub struct GpuContext {
 
 impl GpuContext {
     pub async fn new(options: GpuOptions) -> Result<Self, GpuError> {
-        let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
-        instance_desc.backends = preferred_backends();
-        let instance = wgpu::Instance::new(instance_desc);
+        let instance = Self::instance_for(&options);
+        Self::from_instance(instance, options, None).await
+    }
 
+    /// Split from `from_instance` because a surface must be created from the
+    /// same instance the device comes from, and the caller owns the canvas.
+    pub fn instance_for(options: &GpuOptions) -> wgpu::Instance {
+        let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle();
+        instance_desc.backends = options.backends.unwrap_or_else(preferred_backends);
+        wgpu::Instance::new(instance_desc)
+    }
+
+    pub async fn from_instance(
+        instance: wgpu::Instance,
+        options: GpuOptions,
+        compatible_surface: Option<&wgpu::Surface<'_>>,
+    ) -> Result<Self, GpuError> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: match options.power {
@@ -46,7 +63,7 @@ impl GpuContext {
                     PowerPreference::LowPower => wgpu::PowerPreference::LowPower,
                 },
                 force_fallback_adapter: false,
-                compatible_surface: None,
+                compatible_surface,
                 ..Default::default()
             })
             .await
@@ -126,10 +143,23 @@ fn preferred_backends() -> wgpu::Backends {
     } else if cfg!(target_os = "macos") {
         wgpu::Backends::METAL
     } else if cfg!(target_arch = "wasm32") {
-        wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL
+        browser_backends()
     } else {
         wgpu::Backends::VULKAN
     }
+}
+
+/// Only what this artifact compiled in: the WebGL2 backend is a separate build
+/// because it costs roughly 1.1 MB gzipped.
+fn browser_backends() -> wgpu::Backends {
+    let mut backends = wgpu::Backends::empty();
+    if cfg!(feature = "webgpu") {
+        backends |= wgpu::Backends::BROWSER_WEBGPU;
+    }
+    if cfg!(feature = "webgl2") {
+        backends |= wgpu::Backends::GL;
+    }
+    backends
 }
 
 #[cfg(test)]
@@ -144,6 +174,20 @@ mod tests {
         } else if cfg!(target_os = "macos") {
             assert_eq!(backends, wgpu::Backends::METAL);
         }
+    }
+
+    /// Pins that the override reaches the instance. Dropping it would leave the
+    /// wasm preview silently on whatever the platform default picked.
+    #[test]
+    fn an_explicit_backend_override_is_honoured_rather_than_ignored() {
+        let options = GpuOptions {
+            backends: Some(wgpu::Backends::empty()),
+            require_hardware: false,
+            ..Default::default()
+        };
+        let instance = GpuContext::instance_for(&options);
+        let result = pollster::block_on(GpuContext::from_instance(instance, options, None));
+        assert!(matches!(result, Err(GpuError::NoAdapter)));
     }
 
     #[test]
