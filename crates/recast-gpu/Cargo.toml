@@ -1,0 +1,40 @@
+[package]
+name = "recast-gpu"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "wgpu device selection, the recycled texture pool, and the OS zero-copy interop surface."
+
+[features]
+default = []
+interop = []
+
+[dependencies]
+thiserror = "2.0"
+# Pinned exactly: wgpu-hal decides the `windows` version below, and a caret bump
+# silently breaks COM type unification (S-1 finding F1).
+wgpu = { version = "=30.0.1", default-features = false, features = ["wgsl"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+wgpu = { version = "=30.0.1", default-features = false, features = ["dx12", "wgsl"] }
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_System_Threading",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "=30.0.1", default-features = false, features = ["metal", "wgsl"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu = { version = "=30.0.1", default-features = false, features = ["vulkan", "wgsl"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "=30.0.1", default-features = false, features = ["webgpu", "webgl", "wgsl"] }

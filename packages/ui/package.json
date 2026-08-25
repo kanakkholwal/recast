@@ -160,6 +160,10 @@
 			"svelte": "./src/components/ui/color-picker/index.ts",
 			"default": "./src/components/ui/color-picker/index.ts"
 		},
+		"./color-picker/logic": {
+			"svelte": "./src/components/ui/color-picker/color-picker.logic.ts",
+			"default": "./src/components/ui/color-picker/color-picker.logic.ts"
+		},
 		"./color-field": {
 			"svelte": "./src/components/ui/color-field/index.ts",
 			"default": "./src/components/ui/color-field/index.ts"

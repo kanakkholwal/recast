@@ -39,7 +39,7 @@ Thumbs.db
 .scratch/
 
 # Working notes / plans (never committed)
-.notes/
+.notes
 crates/target/
 # Golden frames: the PNGs are local eyeball material, regenerated on demand.
 # tests/goldens/manifest.json is committed and is what actually gates CI.

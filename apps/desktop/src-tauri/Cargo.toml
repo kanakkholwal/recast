@@ -36,6 +36,9 @@ image = "0.25.10"
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
+recast-scene = { path = "../../../crates/recast-scene" }
+recast-time = { path = "../../../crates/recast-time" }
+recast-color = { path = "../../../crates/recast-color" }
 anyhow = "1.0"
 thiserror = "2.0"
 crossbeam-queue = "0.3"

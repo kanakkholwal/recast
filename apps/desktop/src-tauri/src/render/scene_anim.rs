@@ -13,9 +13,6 @@
 //! (fade) is preview-only for now — FFmpeg has no per-frame alpha expression on
 //! `overlay`, so `fade` produces no geometric change here and is skipped.
 
-use serde::{Deserialize, Serialize};
-
-use super::easing::Easing;
 use super::graph::{fmt_term, wrap_flat_sum, CanvasGeometry};
 
 const SAMPLE_HZ: f64 = 20.0;
@@ -35,29 +32,7 @@ const MAX_SIDE_FRACTION: f64 = 0.4;
 
 /// One side (entrance or exit) of a segment's animation. Mirrors
 /// `SceneAnimSpec` on the frontend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SceneAnimSpec {
-    pub kind: String,
-    pub duration_ms: f64,
-    #[serde(default)]
-    pub easing: Easing,
-    #[serde(default)]
-    pub dir: Option<String>,
-    #[serde(default)]
-    pub intensity: Option<f64>,
-}
-
-/// Entrance/exit animation anchored to a segment's ORIGINAL start time.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SegmentAnim {
-    pub start: f64,
-    #[serde(rename = "in", default)]
-    pub anim_in: Option<SceneAnimSpec>,
-    #[serde(rename = "out", default)]
-    pub anim_out: Option<SceneAnimSpec>,
-}
+pub use recast_scene::v1::{SceneAnimSpec, SegmentAnim};
 
 /// The video-layer overlay expressions for the whole timeline. `x_expr`/`y_expr`
 /// drive `overlay=x:y`; `scale_expr`, when present, drives an `eval=frame` scale
@@ -338,6 +313,9 @@ pub fn build_scene_overlay(
 
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
+
+    use super::super::easing::Easing;
     use super::*;
 
     // The fixture stores easing as a 4-element array; SceneAnimSpec expects an

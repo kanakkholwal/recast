@@ -29,7 +29,10 @@ dependencies = [
  "pipewire",
  "rand 0.8.8",
  "rayon",
+ "recast-color",
+ "recast-scene",
  "recast-testkit",
+ "recast-time",
  "reqwest 0.12.28",
  "rten",
  "rten-imageproc",
@@ -5145,8 +5148,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 
 [[package]]
+name = "recast-color"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "recast-scene"
+version = "0.0.0"
+dependencies = [
+ "recast-color",
+ "recast-time",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "recast-testkit"
 version = "0.0.0"
+
+[[package]]
+name = "recast-time"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "recvmsg"
