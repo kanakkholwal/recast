@@ -102,6 +102,13 @@ impl RecordingPipeline {
     }
 }
 
+const STALE_FIRST_WARN: Duration = Duration::from_secs(5);
+const STALE_REPEAT_WARN: Duration = Duration::from_secs(30);
+
+fn stale_warning_due(stale_for: Duration, warnings_emitted: u32) -> bool {
+    stale_for >= STALE_FIRST_WARN + STALE_REPEAT_WARN * warnings_emitted
+}
+
 /// Spawn the capture + frame-pacer loop.
 ///
 /// Why this is a frame pacer, not a "capture as fast as DXGI delivers" loop:
@@ -213,6 +220,8 @@ pub fn spawn_capture_loop(
             let mut pacer_base = Instant::now();
             let mut emitted: u64 = 0;
             let mut was_paused = false;
+            let mut last_fresh_at = Instant::now();
+            let mut stale_warnings: u32 = 0;
 
             while !stop_flag.load(Ordering::Acquire) {
                 // While paused, emit nothing — the encoder is frame-count
@@ -241,13 +250,30 @@ pub fn spawn_capture_loop(
                 const MAX_DRAIN: usize = 4;
                 for _ in 0..MAX_DRAIN {
                     match source.capture_next(Duration::from_millis(0)) {
-                        Ok(Some(bytes)) => last_frame = Arc::<[u8]>::from(bytes),
-                        // Transient DXGI errors (mode change, etc.) — keep
-                        // emitting the cached frame so the timeline doesn't
-                        // freeze. The duplication will recover on the next
-                        // poll once the desktop is back to a normal state.
-                        Ok(None) | Err(_) => break,
+                        Ok(Some(bytes)) => {
+                            last_frame = Arc::<[u8]>::from(bytes);
+                            last_fresh_at = Instant::now();
+                            stale_warnings = 0;
+                        }
+                        Ok(None) => break,
+                        Err(e) => {
+                            // Unrecoverable: recoverable losses self-heal inside the
+                            // source and surface as Ok(None).
+                            log::error!("screen capture source failed: {e}");
+                            break;
+                        }
                     }
+                }
+
+                // A source that keeps returning no frame emits the cached one
+                // forever, which used to look like a working recording.
+                let stale_for = last_fresh_at.elapsed();
+                if stale_warning_due(stale_for, stale_warnings) {
+                    stale_warnings += 1;
+                    log::warn!(
+                        "no fresh screen frame for {}s — the recording is repeating the last frame",
+                        stale_for.as_secs()
+                    );
                 }
 
                 let now = Instant::now();
@@ -278,4 +304,28 @@ pub fn spawn_capture_loop(
             Ok(())
         })
         .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod stale_warning_tests {
+    use super::*;
+
+    #[test]
+    fn a_healthy_source_never_warns() {
+        assert!(!stale_warning_due(Duration::from_millis(16), 0));
+        assert!(!stale_warning_due(Duration::from_secs(4), 0));
+    }
+
+    #[test]
+    fn the_first_warning_lands_at_the_threshold() {
+        assert!(stale_warning_due(STALE_FIRST_WARN, 0));
+    }
+
+    #[test]
+    fn repeats_are_spaced_not_per_tick() {
+        assert!(!stale_warning_due(Duration::from_secs(20), 1));
+        assert!(stale_warning_due(Duration::from_secs(35), 1));
+        assert!(!stale_warning_due(Duration::from_secs(60), 2));
+        assert!(stale_warning_due(Duration::from_secs(65), 2));
+    }
 }

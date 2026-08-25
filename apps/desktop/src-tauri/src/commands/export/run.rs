@@ -673,6 +673,18 @@ pub(crate) fn run_encode(
     // salvage branches' dependency explicit.
     let _ = expected_output_duration;
 
+    let output_path = Path::new(&output_path_str);
+    if output_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(super::faststart::needs_faststart)
+    {
+        emit_export_state(&app, ExportStateEvent::finalizing(&export_id));
+        if let Err(e) = super::faststart::apply(output_path) {
+            log::warn!("faststart remux skipped, shipping moov-at-end: {e}");
+        }
+    }
+
     // Final 100% ping + an `export-done` event with the result. The
     // frontend uses `export-done` to transition the dialog to the success
     // state immediately — decoupled from the `exportVideo` Promise, which

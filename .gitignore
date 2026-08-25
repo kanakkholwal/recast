@@ -37,3 +37,7 @@ Thumbs.db
 
 # Local scratch (audit reports, working notes) — never committed
 .scratch/
+
+# Working notes / plans (never committed)
+.notes/
+crates/target/

@@ -232,16 +232,22 @@ function startRecorder() {
 	reportRecorderStart();
 }
 
+// Monotonic within this page, so an NTP step mid-recording cannot move it the
+// way Date.now() could.
+function monotonicUnixMs() {
+	return Math.round(performance.timeOrigin + performance.now());
+}
+
 // The camera track's t=0 is the first frame MediaRecorder actually encodes, not
 // the moment start() returned. rVFC lands on that frame; without it we fall back
 // to now, which is at most one frame interval early.
 function reportRecorderStart() {
 	const el = videoEl as (HTMLVideoElement & { requestVideoFrameCallback?: unknown }) | null;
 	if (el && typeof el.requestVideoFrameCallback === "function") {
-		el.requestVideoFrameCallback(() => void reportCameraStart(Date.now()).catch(() => {}));
+		el.requestVideoFrameCallback(() => void reportCameraStart(monotonicUnixMs()).catch(() => {}));
 		return;
 	}
-	void reportCameraStart(Date.now()).catch(() => {});
+	void reportCameraStart(monotonicUnixMs()).catch(() => {});
 }
 
 // Stop the recorder, assemble the blob, and deliver it to Rust. ALWAYS calls

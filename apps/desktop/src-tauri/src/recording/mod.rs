@@ -487,6 +487,89 @@ impl Default for RecordingOptions {
     }
 }
 
+const QUEUE_BUDGET_BYTES: u64 = 256 * 1024 * 1024;
+/// Enough to keep the encoder fed while the pacer writes: one in flight each
+/// way plus two spare. Only binds past 4K, where the budget alone yields fewer.
+const QUEUE_MIN_FRAMES: u64 = 4;
+const QUEUE_MAX_FRAMES: u64 = 180;
+
+fn frame_bytes_bgra(width: u32, height: u32) -> u64 {
+    (width as u64)
+        .saturating_mul(height as u64)
+        .saturating_mul(4)
+        .max(1)
+}
+
+fn queue_capacity_for(width: u32, height: u32) -> usize {
+    (QUEUE_BUDGET_BYTES / frame_bytes_bgra(width, height)).clamp(QUEUE_MIN_FRAMES, QUEUE_MAX_FRAMES)
+        as usize
+}
+
+#[cfg(test)]
+mod queue_budget_tests {
+    use super::*;
+
+    fn queue_bytes(width: u32, height: u32) -> u64 {
+        frame_bytes_bgra(width, height) * queue_capacity_for(width, height) as u64
+    }
+
+    #[test]
+    fn queue_never_exceeds_its_memory_budget_up_to_4k() {
+        for &(w, h, label) in &[
+            (1280u32, 720u32, "720p"),
+            (1920, 1080, "1080p"),
+            (2560, 1440, "1440p"),
+            (3440, 1440, "ultrawide 1440p"),
+            (3840, 2160, "4K"),
+        ] {
+            let bytes = queue_bytes(w, h);
+            assert!(
+                bytes <= QUEUE_BUDGET_BYTES,
+                "{label} queue is {} MB, over the {} MB budget",
+                bytes / (1024 * 1024),
+                QUEUE_BUDGET_BYTES / (1024 * 1024)
+            );
+        }
+    }
+
+    #[test]
+    fn past_4k_the_floor_wins_but_stays_bounded() {
+        for &(w, h, label) in &[(7680u32, 2160u32, "dual 4K span"), (7680, 4320, "8K")] {
+            assert_eq!(
+                queue_capacity_for(w, h),
+                QUEUE_MIN_FRAMES as usize,
+                "{label} should sit on the floor"
+            );
+            assert!(
+                queue_bytes(w, h) <= 2 * QUEUE_BUDGET_BYTES,
+                "{label} floor allocation is unbounded"
+            );
+        }
+    }
+
+    #[test]
+    fn small_captures_are_capped_by_frame_count_not_memory() {
+        assert_eq!(queue_capacity_for(640, 360), QUEUE_MAX_FRAMES as usize);
+    }
+
+    #[test]
+    fn every_capture_keeps_enough_frames_to_pipeline() {
+        for &(w, h) in &[(1920u32, 1080u32), (3840, 2160), (7680, 4320)] {
+            assert!(queue_capacity_for(w, h) >= QUEUE_MIN_FRAMES as usize);
+        }
+    }
+
+    #[test]
+    fn a_1440p_queue_is_not_the_pre_fix_421mb() {
+        assert!(queue_bytes(2560, 1440) < 421 * 1024 * 1024);
+    }
+
+    #[test]
+    fn a_degenerate_target_does_not_divide_by_zero() {
+        assert!(queue_capacity_for(0, 0) > 0);
+    }
+}
+
 /// Clamp a requested capture frame rate to a sane range, falling back to the
 /// default when unset or out of range. The lower bound matches the lowest
 /// cinematic rate; the upper bound covers high-refresh panels (240 Hz) while
@@ -815,19 +898,10 @@ impl RecordingManager {
         let clock = RecordingClock::new(started_at);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pause_flag = Arc::new(AtomicBool::new(false));
-        // Cap the frame queue by *memory*, not frame count. The previous
-        // hard-coded 180 was fine at 720p (~640 MB worst case) but
-        // OOM'd low-end machines at 1080p (~1.5 GB) and 4K (~6 GB) when
-        // the encoder fell behind. Target ~256 MB of BGRA backing buffers
-        // — that's a 3 s buffer at 1080p60 and ~8 frames at 4K, with a
-        // hard floor of 30 frames (0.5 s @ 60 fps) so even a single
-        // 4K monitor still gets enough headroom to ride out a hitch.
-        const QUEUE_BUDGET_BYTES: u64 = 256 * 1024 * 1024;
-        let frame_bytes = (target.source.width as u64)
-            .saturating_mul(target.source.height as u64)
-            .saturating_mul(4)
-            .max(1);
-        let queue_capacity = (QUEUE_BUDGET_BYTES / frame_bytes).clamp(30, 180) as usize;
+        // Frame queue is capped by memory, not frame count: 180 BGRA frames is
+        // ~6 GB at 4K and OOM'd low-end machines when the encoder fell behind.
+        let frame_bytes = frame_bytes_bgra(target.source.width, target.source.height);
+        let queue_capacity = queue_capacity_for(target.source.width, target.source.height);
         log::info!(
             "recording pipeline queue: {queue_capacity} frames ({} MB at {}x{} BGRA)",
             (frame_bytes * queue_capacity as u64) / (1024 * 1024),
@@ -982,6 +1056,11 @@ impl RecordingManager {
 
         // Start microphone capture as a separate track.
         let microphone_session = if options.microphone {
+            if let Some(warning) =
+                crate::audio::microphone_quality_warning(options.microphone_device_id.as_deref())
+            {
+                warnings.push(warning);
+            }
             match MicrophoneCaptureSession::start(MicrophoneCaptureConfig {
                 output_path: microphone_path.clone(),
                 device_id: options.microphone_device_id.clone(),

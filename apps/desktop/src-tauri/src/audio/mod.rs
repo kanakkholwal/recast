@@ -48,6 +48,11 @@ impl AudioCaptureSession {
     }
 }
 
+/// Non-fatal quality ceiling on the selected microphone, if any.
+pub fn microphone_quality_warning(device_id: Option<&str>) -> Option<String> {
+    platform::microphone_quality_warning(device_id)
+}
+
 /// Configuration for microphone capture.
 #[derive(Debug, Clone)]
 pub struct MicrophoneCaptureConfig {

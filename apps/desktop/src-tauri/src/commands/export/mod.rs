@@ -7,6 +7,7 @@ pub(crate) mod camera;
 pub(crate) mod captions;
 pub(crate) mod codec;
 pub(crate) mod cuts_speed;
+pub(crate) mod faststart;
 pub(crate) mod gif;
 pub(crate) mod progress;
 pub(crate) mod raster;

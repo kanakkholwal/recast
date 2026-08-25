@@ -188,6 +188,15 @@ const MAX_DRIFT_RATIO: f64 = 0.05;
 ///
 /// `None` means keep the declared rate: too small to matter, or too large to
 /// believe.
+/// Frames of silence needed to cover a span the device delivered nothing for.
+/// Returns 0 below `min_gap` so ordinary poll jitter is not padded.
+pub fn gap_silence_frames(behind: Duration, sample_rate: u32, min_gap: Duration) -> u64 {
+    if behind < min_gap || sample_rate == 0 {
+        return 0;
+    }
+    (behind.as_secs_f64() * sample_rate as f64).round() as u64
+}
+
 pub fn measured_sample_rate(frames: u64, span: Duration, declared: u32) -> Option<u32> {
     let secs = span.as_secs_f64();
     if frames == 0 || secs <= 0.0 || declared == 0 {
@@ -248,6 +257,42 @@ pub fn write_silence_wav(
         remaining -= take as u64;
     }
     writer.finish()
+}
+
+#[cfg(test)]
+mod gap_tests {
+    use super::*;
+
+    const MIN_GAP: Duration = Duration::from_millis(200);
+
+    #[test]
+    fn poll_jitter_is_not_padded() {
+        assert_eq!(
+            gap_silence_frames(Duration::from_millis(10), 48_000, MIN_GAP),
+            0
+        );
+        assert_eq!(
+            gap_silence_frames(Duration::from_millis(199), 48_000, MIN_GAP),
+            0
+        );
+    }
+
+    #[test]
+    fn an_idle_span_pads_its_own_length() {
+        assert_eq!(
+            gap_silence_frames(Duration::from_secs(4), 48_000, MIN_GAP),
+            192_000
+        );
+        assert_eq!(
+            gap_silence_frames(Duration::from_millis(500), 44_100, MIN_GAP),
+            22_050
+        );
+    }
+
+    #[test]
+    fn a_zero_rate_pads_nothing() {
+        assert_eq!(gap_silence_frames(Duration::from_secs(4), 0, MIN_GAP), 0);
+    }
 }
 
 #[cfg(test)]

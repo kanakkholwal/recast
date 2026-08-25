@@ -9,7 +9,9 @@ use windows::core::HSTRING;
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::*;
 
-use crate::audio::wav::{measured_sample_rate, SampleFormat, WavFormat, WavWriter};
+use crate::audio::wav::{
+    gap_silence_frames, measured_sample_rate, SampleFormat, WavFormat, WavWriter,
+};
 use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
 use crate::recording::clock::TrackStart;
 
@@ -24,6 +26,9 @@ const EXTENSIBLE_EXTRA_BYTES: u16 = 22;
 /// enough that the 1 s WASAPI buffer cannot overrun.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 const BUFFER_DURATION_100NS: i64 = 10_000_000;
+/// Loopback delivers no packet at all while the render endpoint is idle, so an
+/// unpadded gap shifts everything after it early. Above ordinary poll jitter.
+const MIN_SILENCE_GAP: Duration = Duration::from_millis(200);
 
 /// COM must be initialised per thread for WASAPI, and uninitialised on the way
 /// out even when the capture returns early.
@@ -266,6 +271,10 @@ fn drain_packets(
             return written;
         }
 
+        if flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32 != 0 {
+            log::warn!("audio capture reported a data discontinuity");
+        }
+
         if frames > 0 && writing {
             start.mark();
             let byte_count = frames as usize * block_align;
@@ -356,6 +365,12 @@ fn capture(
     let mut last_write: Option<Instant> = None;
     let mut paused_total = Duration::ZERO;
     let mut paused_since: Option<Instant> = None;
+    // Excluded from the drift measurement below: padding tracks wall clock, not
+    // the device crystal, so counting it would mask real drift.
+    let mut padded_frames: u64 = 0;
+    let mut gap_total = Duration::ZERO;
+    let mut covered_until: Option<Instant> = None;
+    let mut silence = Vec::new();
 
     while !stop_flag.load(Ordering::Acquire) {
         thread::sleep(POLL_INTERVAL);
@@ -367,10 +382,38 @@ fn capture(
         } else if paused_since.is_none() {
             paused_since = Some(Instant::now());
         }
+
+        if writing {
+            if let Some(covered) = covered_until {
+                let behind = covered.elapsed();
+                let pad = gap_silence_frames(behind, format.sample_rate, MIN_SILENCE_GAP);
+                if pad > 0 {
+                    let bytes = pad as usize * format.block_align() as usize;
+                    silence.clear();
+                    silence.resize(bytes, 0u8);
+                    match writer.write_samples(&silence) {
+                        Ok(()) => {
+                            padded_frames += pad;
+                            gap_total += behind;
+                            covered_until = Some(Instant::now());
+                            log::warn!(
+                                "{label} delivered nothing for {}ms — padded with silence to keep the track aligned",
+                                behind.as_millis()
+                            );
+                        }
+                        Err(e) => log::warn!("silence padding failed: {e}"),
+                    }
+                }
+            }
+        } else {
+            covered_until = None;
+        }
+
         if drain_packets(&capture_client, &mut writer, format, writing, &start) > 0 {
             let now = Instant::now();
             first_write.get_or_insert(now);
             last_write = Some(now);
+            covered_until = Some(now);
         }
     }
 
@@ -392,10 +435,12 @@ fn capture(
     if let (Some(first), Some(last)) = (first_write, last_write) {
         let span = last
             .saturating_duration_since(first)
-            .saturating_sub(paused_total);
-        if let Some(rate) = measured_sample_rate(frames, span, format.sample_rate) {
+            .saturating_sub(paused_total)
+            .saturating_sub(gap_total);
+        let device_frames = frames.saturating_sub(padded_frames);
+        if let Some(rate) = measured_sample_rate(device_frames, span, format.sample_rate) {
             log::warn!(
-                "{label} device clock drift: declared {}Hz, delivered {rate}Hz                  ({frames} frames over {:.3}s) — re-declaring so the track stays                  locked to the picture",
+                "{label} device clock drift: declared {}Hz, delivered {rate}Hz                  ({device_frames} frames over {:.3}s) — re-declaring so the track stays                  locked to the picture",
                 format.sample_rate,
                 span.as_secs_f64()
             );
@@ -437,6 +482,31 @@ impl PlatformAudioSession {
     }
 }
 
+/// Communications-mode endpoints report a 16 kHz mono mix format, which is a
+/// hard ceiling on the take. Probed before capture so the panel can say so.
+pub fn microphone_quality_warning(device_id: Option<&str>) -> Option<String> {
+    let _com = ComGuard::enter().ok()?;
+    let enumerator: IMMDeviceEnumerator =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()? };
+    let device = Endpoint::Microphone(device_id.map(str::to_string))
+        .open(&enumerator)
+        .ok()?;
+    let client: IAudioClient = unsafe { device.Activate(CLSCTX_ALL, None).ok()? };
+    let format = MixFormat::of(&client).ok()?.wav_format();
+    describe_microphone_quality(format.sample_rate, format.channels)
+}
+
+fn describe_microphone_quality(sample_rate: u32, channels: u16) -> Option<String> {
+    if sample_rate >= 32_000 {
+        return None;
+    }
+    Some(format!(
+        "Your microphone is running at {} kHz{} — Windows has it in communications mode,          which caps recording quality. Change it under Sound settings → Recording →          Properties → Advanced.",
+        sample_rate / 1000,
+        if channels <= 1 { " mono" } else { "" }
+    ))
+}
+
 pub struct PlatformMicrophoneSession(CaptureThread);
 
 impl PlatformMicrophoneSession {
@@ -452,5 +522,29 @@ impl PlatformMicrophoneSession {
 
     pub fn stop(self) -> Result<PathBuf> {
         self.0.stop()
+    }
+}
+
+#[cfg(test)]
+mod mic_quality_tests {
+    use super::describe_microphone_quality;
+
+    #[test]
+    fn a_communications_mode_endpoint_is_reported() {
+        let warning = describe_microphone_quality(16_000, 1).expect("16 kHz mono should warn");
+        assert!(warning.contains("16 kHz mono"), "{warning}");
+    }
+
+    #[test]
+    fn a_normal_endpoint_is_silent() {
+        assert!(describe_microphone_quality(48_000, 2).is_none());
+        assert!(describe_microphone_quality(44_100, 1).is_none());
+        assert!(describe_microphone_quality(32_000, 1).is_none());
+    }
+
+    #[test]
+    fn stereo_low_rate_omits_the_mono_note() {
+        let warning = describe_microphone_quality(22_050, 2).expect("22 kHz should warn");
+        assert!(!warning.contains("mono"), "{warning}");
     }
 }

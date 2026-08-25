@@ -35,3 +35,11 @@ pub use ffmpeg_unix::PlatformMicrophoneSession;
 
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub use fallback::PlatformMicrophoneSession;
+
+#[cfg(windows)]
+pub use windows::microphone_quality_warning;
+
+#[cfg(not(windows))]
+pub fn microphone_quality_warning(_device_id: Option<&str>) -> Option<String> {
+    None
+}

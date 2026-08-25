@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use xcap::Monitor;
@@ -90,6 +90,34 @@ struct DxgiSource {
     staging_texture: ::windows::Win32::Graphics::Direct3D11::ID3D11Texture2D,
     width: u32,
     height: u32,
+    target: CaptureTarget,
+    loss: LossState,
+}
+
+/// Duplication is revoked on mode change, fullscreen-exclusive entry, the UAC
+/// secure desktop, a driver reset, and undock. All are recoverable by rebuilding.
+#[derive(Default)]
+struct LossState {
+    since: Option<Instant>,
+    next_retry_at: Option<Instant>,
+    reported: bool,
+}
+
+const DUPLICATION_RETRY_INTERVAL: Duration = Duration::from_millis(250);
+
+fn is_recoverable_duplication_loss(code: ::windows::core::HRESULT) -> bool {
+    use windows::Win32::Graphics::Dxgi::{
+        DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_ACCESS_LOST, DXGI_ERROR_DEVICE_REMOVED,
+        DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_INVALID_CALL,
+    };
+    matches!(
+        code,
+        DXGI_ERROR_ACCESS_LOST
+            | DXGI_ERROR_ACCESS_DENIED
+            | DXGI_ERROR_DEVICE_REMOVED
+            | DXGI_ERROR_DEVICE_RESET
+            | DXGI_ERROR_INVALID_CALL
+    )
 }
 
 impl DxgiSource {
@@ -188,6 +216,8 @@ impl DxgiSource {
                         staging_texture,
                         width: target.source.width,
                         height: target.source.height,
+                        target: target.clone(),
+                        loss: LossState::default(),
                     });
                 }
                 output_index += 1;
@@ -197,6 +227,40 @@ impl DxgiSource {
         }
 
         Err(anyhow!("no DXGI output matched the requested display"))
+    }
+
+    fn note_loss(&mut self, code: ::windows::core::HRESULT) {
+        let now = Instant::now();
+        if self.loss.since.is_none() {
+            self.loss.since = Some(now);
+            log::warn!("screen duplication lost ({code:?}) — reacquiring; the recording continues");
+        }
+        if self.loss.next_retry_at.is_some_and(|at| now < at) {
+            return;
+        }
+        self.loss.next_retry_at = Some(now + DUPLICATION_RETRY_INTERVAL);
+        match Self::new(&self.target) {
+            Ok(fresh) => {
+                let held = self.loss.since.map(|t| t.elapsed()).unwrap_or_default();
+                self.duplication = fresh.duplication;
+                self.device_context = fresh.device_context;
+                self.staging_texture = fresh.staging_texture;
+                self.width = fresh.width;
+                self.height = fresh.height;
+                self.loss = LossState::default();
+                log::info!("screen duplication reacquired after {}ms", held.as_millis());
+            }
+            Err(e) => {
+                let held = self.loss.since.map(|t| t.elapsed()).unwrap_or_default();
+                if !self.loss.reported && held >= Duration::from_secs(5) {
+                    self.loss.reported = true;
+                    log::error!(
+                        "screen duplication still unavailable after {}s: {e}",
+                        held.as_secs()
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -223,6 +287,10 @@ impl CaptureSource for DxgiSource {
 
         if let Err(error) = acquire {
             if error.code() == DXGI_ERROR_WAIT_TIMEOUT {
+                return Ok(None);
+            }
+            if is_recoverable_duplication_loss(error.code()) {
+                self.note_loss(error.code());
                 return Ok(None);
             }
             return Err(error.into());

@@ -28,9 +28,30 @@ use crate::render::graph::RenderState;
 use crate::render::ops::{apply_op, Op};
 use crate::render::scene_anim::SceneAnimSpec;
 
-/// Namespaced socket name. Maps to `\\.\pipe\<name>` on Windows and an abstract
-/// or temp-dir socket on Unix. One app per user, so a fixed name is fine.
-const SOCKET_NAME: &str = "com.kanakkholwal.recast.cli.sock";
+const SOCKET_BASE: &str = "com.kanakkholwal.recast.cli";
+
+/// Windows pipe names are machine-global, so two signed-in users sharing a
+/// machine collide on a fixed name and the second bind fails with os error 5.
+fn socket_name_for(user: Option<&str>) -> String {
+    match user.map(str::trim).filter(|u| !u.is_empty()) {
+        Some(user) => {
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for byte in user.as_bytes() {
+                hash ^= *byte as u64;
+                hash = hash.wrapping_mul(0x1000_0000_01b3);
+            }
+            format!("{SOCKET_BASE}.{hash:016x}.sock")
+        }
+        None => format!("{SOCKET_BASE}.sock"),
+    }
+}
+
+fn socket_name() -> String {
+    let user = std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .ok();
+    socket_name_for(user.as_deref())
+}
 
 /// Path to the auth token file. Both server and client compute it without an
 /// `AppHandle`, so the headless CLI can find it too.
@@ -103,14 +124,24 @@ fn feed_event_log(app: &tauri::AppHandle) {
 fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
     feed_event_log(app);
     let token = write_token()?;
-    let name = SOCKET_NAME
+    let socket = socket_name();
+    let name = socket
+        .clone()
         .to_ns_name::<GenericNamespaced>()
         .map_err(|e| e.to_string())?;
-    let listener = ListenerOptions::new()
-        .name(name)
-        .create_sync()
-        .map_err(|e| format!("bind {SOCKET_NAME}: {e}"))?;
-    log::info!("cli control server listening on {SOCKET_NAME}");
+    let listener = match ListenerOptions::new().name(name).create_sync() {
+        Ok(listener) => listener,
+        Err(e) => {
+            // Another live instance already owns the socket; that is expected on
+            // a second launch, not an error worth surfacing every time.
+            if connect().is_ok() {
+                log::debug!("cli control server already running in another instance");
+                return Ok(());
+            }
+            return Err(format!("bind {socket}: {e}"));
+        }
+    };
+    log::info!("cli control server listening on {socket}");
 
     // One thread per connection so a long-lived `watch` never blocks other
     // commands (`status`, `rec ...`) from being accepted and answered.
@@ -1773,7 +1804,7 @@ pub fn watch(
 }
 
 fn connect() -> Result<Stream, String> {
-    let name = SOCKET_NAME
+    let name = socket_name()
         .to_ns_name::<GenericNamespaced>()
         .map_err(|e| e.to_string())?;
     Stream::connect(name).map_err(|e| e.to_string())
@@ -1966,5 +1997,37 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod socket_name_tests {
+    use super::*;
+
+    #[test]
+    fn different_users_get_different_sockets() {
+        assert_ne!(
+            socket_name_for(Some("kanak")),
+            socket_name_for(Some("alice"))
+        );
+    }
+
+    #[test]
+    fn the_same_user_is_stable_across_calls() {
+        assert_eq!(
+            socket_name_for(Some("kanak")),
+            socket_name_for(Some("kanak"))
+        );
+    }
+
+    #[test]
+    fn a_missing_or_blank_user_falls_back_to_the_shared_name() {
+        assert_eq!(socket_name_for(None), format!("{SOCKET_BASE}.sock"));
+        assert_eq!(socket_name_for(Some("   ")), format!("{SOCKET_BASE}.sock"));
+    }
+
+    #[test]
+    fn every_name_stays_within_the_windows_pipe_limit() {
+        assert!(socket_name_for(Some("a-very-long-windows-account-name")).len() < 200);
     }
 }
