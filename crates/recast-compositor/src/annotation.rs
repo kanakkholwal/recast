@@ -4,7 +4,7 @@ use recast_scene::v1::nodes::{Annotation, AnnotationAnchor, AnnotationKind};
 use crate::eval::{Affine2, DestRect};
 use crate::geometry::CanvasGeometry;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AnnotationShape {
     Rect {
         x: f32,
@@ -40,9 +40,21 @@ pub enum AnnotationShape {
         /// blur below the redaction threshold.
         tint: Srgba,
     },
+    /// A decoded asset stretched over the rect. `path` addresses the upload,
+    /// matching the host's own per-path image cache, so two annotations sharing
+    /// a file share one texture.
+    Image {
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radius: f32,
+        opacity: f32,
+        path: Box<str>,
+    },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnnotationParams {
     pub shape: AnnotationShape,
     pub fill: Srgba,
@@ -159,8 +171,8 @@ fn blur_tint(variant: &str, tint_color: &str, strength: f64, opacity: f32) -> Sr
     }
 }
 
-/// `None` for a kind this pass cannot draw (image and text both need an
-/// uploaded asset; text reaches the export pre-rasterised as an image).
+/// `None` for a kind this pass cannot draw. Only text is left: it reaches the
+/// export pre-rasterised as an `Image`, so the compositor never sees a glyph.
 pub fn annotation_params(
     annotation: &Annotation,
     source_time: f64,
@@ -245,6 +257,32 @@ pub fn annotation_params(
                 radius: (*radius as f32) * bw.abs().min(bh.abs()),
                 sigma_px: blur_sigma_px(*strength, geometry),
                 tint: blur_tint(variant, tint_color, *strength, alpha as f32),
+            }
+        }
+        AnnotationKind::Image {
+            x,
+            y,
+            w,
+            h,
+            path,
+            opacity,
+            radius,
+        } => {
+            if path.is_empty() {
+                return None;
+            }
+            let (left, top) = (x.min(x + w), y.min(y + h));
+            let (px, py) = to_canvas(left, top);
+            let (fx, fy) = to_canvas(left + w.abs(), top + h.abs());
+            let (bw, bh) = (fx - px, fy - py);
+            AnnotationShape::Image {
+                x: px,
+                y: py,
+                w: bw,
+                h: bh,
+                radius: (*radius as f32) * bw.abs().min(bh.abs()),
+                opacity: opacity.clamp(0.0, 1.0) as f32,
+                path: path.as_str().into(),
             }
         }
         _ => return None,
@@ -514,10 +552,11 @@ mod tests {
     }
 
     #[test]
-    fn image_and_text_kinds_are_reported_as_undrawable_rather_than_drawn_wrong() {
+    fn a_text_kind_is_reported_as_undrawable_rather_than_drawn_wrong() {
         for kind in [
-            r#"{"kind":"image","x":0.1,"y":0.1,"w":0.2,"h":0.2,"path":"a.png"}"#,
             r#"{"kind":"text","x":0.1,"y":0.1,"w":0.2,"h":0.2,"content":"hi"}"#,
+            // An image with no path yet: the project is mid-load, not corrupt.
+            r#"{"kind":"image","x":0.1,"y":0.1,"w":0.2,"h":0.2}"#,
         ] {
             let a = annotation(&format!(
                 r#"{{"id":"a1","start":0.0,"end":10.0,"kind":{kind}}}"#

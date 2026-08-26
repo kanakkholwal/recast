@@ -40,9 +40,9 @@ export const FLAG_META: FlagMeta[] = [
 	},
 	{
 		key: "wasmPreviewEngine",
-		label: "New preview engine (beta)",
+		label: "New preview engine",
 		description:
-			"Composite the preview with the new Rust engine on WebGPU instead of WebGL2. The same code renders the export, so what you see is what you get. Early — falls back to WebGL2 if your device has no WebGPU.",
+			"Composite the preview with the Rust engine, on WebGPU where the device has it and WebGL2 otherwise. The same code renders annotations for the export, so what you see is what you get. Turn this off to fall back to the old WebGL2 preview, which cannot draw annotations.",
 	},
 	{
 		key: "browserExportBeta",
@@ -57,7 +57,7 @@ const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	selfHosting: false,
 	remoteTranscription: false,
 	browserExportBeta: false,
-	wasmPreviewEngine: false,
+	wasmPreviewEngine: true,
 };
 
 const STORAGE_KEY = "recast-experimental-flags";

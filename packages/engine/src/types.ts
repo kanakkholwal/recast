@@ -24,6 +24,8 @@ export interface WasmPreviewEngine {
 	setTimeMap(json: string): void;
 	setCursorTrack(json: string): void;
 	setCursorSprite(slot: CursorSlot, image: ImageBitmap, hotspotX: number, hotspotY: number): void;
+	setAnnotationImage(path: string, image: ImageBitmap): void;
+	clearAnnotationImages(): void;
 	clearCursorSprites(): void;
 	cursorAt(outputTime: number): Float64Array;
 	render(outputTime: number): number;

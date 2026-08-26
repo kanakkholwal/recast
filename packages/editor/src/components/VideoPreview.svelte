@@ -637,38 +637,6 @@ function uploadVideoFrame(el: HTMLVideoElement | null = videoEl) {
 
 // AnnotationOverlay reads this canvas back via drawImage from its OWN rAF
 // loop. With preserveDrawingBuffer:false the GL buffer is only valid for a
-// cross-canvas read within the SAME task as draw(); an out-of-task read
-// samples a cleared buffer (the blur "flicker"). Fix: mirror the composite
-// into a 2D canvas in-task after each draw() and have the overlay sample
-// that. Maintained only while a blur exists, so the common path pays nothing.
-let blurMirrorEl = $state<HTMLCanvasElement | null>(null);
-const hasBlurAnnotation = $derived(
-	store.annotations.some((a) => a.kind.kind === "blur" && !a.hidden),
-);
-
-function syncBlurMirror() {
-	// The engine blurs in the compositor, so the mirror has no reader.
-	if (engineDriver || !hasBlurAnnotation || !canvasEl) return;
-	const w = canvasEl.width;
-	const h = canvasEl.height;
-	if (!w || !h) return;
-	let mirror = blurMirrorEl ?? document.createElement("canvas");
-	if (mirror.width !== w || mirror.height !== h) {
-		mirror.width = w;
-		mirror.height = h;
-	}
-	const ctx = mirror.getContext("2d");
-	if (!ctx) return;
-	try {
-		// Same-task drawImage from a WebGL canvas captures the current
-		// buffer even when preserveDrawingBuffer is false (cf. captureFrame).
-		ctx.drawImage(canvasEl, 0, 0);
-	} catch {
-		return;
-	}
-	if (blurMirrorEl !== mirror) blurMirrorEl = mirror;
-}
-
 // Target time of an in-flight cut-skip seek. draw() issues each skip ONCE
 // rather than re-assigning currentTime every frame while the decoder is
 // still seeking (which thrashes it into a multi-second stall).
@@ -978,7 +946,6 @@ function draw() {
 		}
 		hasRenderedFrame = true;
 		if (!isReady) isReady = true;
-		syncBlurMirror();
 		const finishedAt = performance.now();
 		engineFrameMs.push(finishedAt - engineStartedAt);
 		reportEngineFrameTimes(finishedAt);
@@ -1023,7 +990,6 @@ function draw() {
 			hasRenderedFrame,
 			wUseRing,
 		);
-		syncBlurMirror();
 		return;
 	}
 
@@ -1077,9 +1043,6 @@ function draw() {
 	// SVG cursor overlay: written only for a non-dot style, else cleared once so
 	// the HTML <img> hides (the shader draws the dot cursor itself).
 	updateSvgCursor(frame.svgCursor);
-
-	// In-task mirror for blur read-back (see comment on blurMirrorEl).
-	syncBlurMirror();
 }
 
 function requestRedraw() {
@@ -1312,6 +1275,52 @@ function syncEngineFrameInputs() {
 			cursorSamples.length > 0 ? { samples: cursorSamples, idlePeriods } : null,
 		);
 	}
+}
+
+/** Paths last handed to the engine, so a store write that leaves the image
+ *  annotations alone does not re-decode every asset. */
+let engineImageKey = "";
+
+// Assets for image annotations. The compositor draws them, so it needs the
+// decoded bitmap; a path that fails to decode simply never uploads and the
+// annotation is skipped rather than drawn as a placeholder.
+$effect(() => {
+	if (!engineDriver) return;
+	const paths = [
+		...new Set(
+			store.annotations
+				.filter((a) => a.kind.kind === "image" && a.kind.path)
+				.map((a) => (a.kind as { path: string }).path),
+		),
+	].sort();
+	const key = paths.join("\u0000");
+	untrack(() => {
+		if (!engineDriver || key === engineImageKey) return;
+		engineImageKey = key;
+		void loadAnnotationImages(paths, key);
+	});
+});
+
+async function loadAnnotationImages(paths: string[], key: string) {
+	const images = new Map<string, ImageBitmap>();
+	for (const path of paths) {
+		try {
+			const img = new Image();
+			img.crossOrigin = "anonymous";
+			img.src = getEditorServices().resolveAssetUrl(path);
+			await img.decode();
+			images.set(path, await createImageBitmap(img));
+		} catch (err) {
+			console.warn("annotation image could not be decoded:", path, err);
+		}
+	}
+	// Superseded while decoding: the newer set owns the engine now.
+	if (engineImageKey !== key) {
+		for (const image of images.values()) image.close();
+		return;
+	}
+	if (engineDriver?.setAnnotationImages(key, images)) requestRedraw();
+	for (const image of images.values()) image.close();
 }
 
 // Pointer sprites for the engine path. A style with no sprite uploads nothing,
@@ -1742,8 +1751,6 @@ const isAnnotationActive = $derived(
 			{store}
 			{videoEl}
 			targetEl={previewRectEl}
-			compositeCanvasEl={engineDriver ? null : (blurMirrorEl ?? canvasEl)}
-			compositorPaintsArtwork={!!engineDriver}
 			previewTime={smoothPreviewTime ?? undefined}
 		/>
 		<TextAnnotationLayer

@@ -25,6 +25,7 @@ let {
 	typeLabel,
 	meta,
 	badge,
+	footer,
 	actions,
 }: {
 	entry: RecordingEntry;
@@ -37,6 +38,7 @@ let {
 	typeLabel?: string;
 	meta?: string;
 	badge?: Snippet;
+	footer?: Snippet;
 	actions?: Snippet;
 } = $props();
 
@@ -98,6 +100,9 @@ const metaLine = $derived(meta ?? `${formatSize(entry.sizeBytes)} · ${libraryDa
   <div class="truncate text-[10.5px] text-muted-foreground/80">
     {metaLine}
   </div>
+  {#if footer}
+    {@render footer()}
+  {/if}
 </div>
 
 <button

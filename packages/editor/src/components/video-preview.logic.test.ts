@@ -188,3 +188,54 @@ describe("classifyMbError", () => {
 		expect(classifyMbError("something else")).toBe("decode_error");
 	});
 });
+
+describe("overlapping zoom regions", () => {
+	const region = (over: Record<string, unknown>) =>
+		({
+			id: "z",
+			start: 0,
+			end: 10,
+			scale: 2,
+			rampIn: 0.5,
+			rampOut: 0.5,
+			centerX: 0.5,
+			centerY: 0.5,
+			easeIn: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+			easeOut: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+			motionBlur: 0,
+			...over,
+		}) as never;
+
+	/** Latest-start-wins handed over at the incoming region's ramp START, which
+	 *  snapped the zoom to ~1 for a frame. Everything riding it flickered. */
+	it("hands over without a step", () => {
+		const regions = [
+			region({ start: 1, end: 8, scale: 2 }),
+			region({ start: 5, end: 12, scale: 2.5 }),
+		];
+		let previous: number | null = null;
+		for (let t = 0.5; t < 12.5; t += 1 / 60) {
+			const { scale } = evaluateZoomAt(regions, t);
+			if (previous !== null) expect(Math.abs(scale - previous)).toBeLessThanOrEqual(0.15);
+			previous = scale;
+		}
+	});
+
+	it("keeps the tighter region in force", () => {
+		const regions = [
+			region({ start: 0, end: 10, scale: 3, rampIn: 0, rampOut: 0 }),
+			region({ start: 4, end: 6, scale: 1.2, rampIn: 0, rampOut: 0 }),
+		];
+		expect(evaluateZoomAt(regions, 5).scale).toBeCloseTo(3, 6);
+	});
+
+	/** Rust picks the same winner, or the preview and the export disagree about
+	 *  where the frame is pointing. */
+	it("matches the compositor on a nested region", () => {
+		const regions = [
+			region({ start: 0, end: 10, scale: 1.5, rampIn: 0, rampOut: 0 }),
+			region({ start: 4, end: 6, scale: 3, rampIn: 0, rampOut: 0 }),
+		];
+		expect(evaluateZoomAt(regions, 5).scale).toBeCloseTo(3, 6);
+	});
+});

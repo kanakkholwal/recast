@@ -215,7 +215,7 @@ function openDevicePicker(type: "mic" | "camera") {
         <button
           type="button"
           onclick={() => launchRecordingPanel()}
-          class="group/new flex aspect-video flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 text-muted-foreground transition-colors duration-200 hover:border-border hover:bg-card/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          class="group/new flex aspect-video flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 text-muted-foreground transition-[background-color,border-color,color,transform] duration-150 ease-out hover:border-border hover:bg-card/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 motion-safe:active:scale-[0.98]"
         >
           <span
             class="flex size-9 items-center justify-center rounded-full bg-foreground/5 transition-colors group-hover/new:bg-primary/10 group-hover/new:text-primary"

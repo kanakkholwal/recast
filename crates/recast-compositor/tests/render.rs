@@ -647,6 +647,120 @@ fn a_white_blur_variant_washes_the_region_out() {
     );
 }
 
+/// A solid magenta asset, so "the image landed" is one pixel comparison.
+fn image_texture(ctx: &GpuContext, w: u32, h: u32) -> wgpu::Texture {
+    banded_image(ctx, w, h, |_| [255, 0, 255, 255])
+}
+
+fn render_with_annotation_image(
+    ctx: &GpuContext,
+    scene: &Scene,
+    image: Option<&wgpu::Texture>,
+) -> Rendered {
+    let ev = Evaluator::new(
+        scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(scene, 5.0);
+    let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
+    let mut compositor = Compositor::new(ctx).expect("compositor");
+    let target = compositor.output_texture(width, height);
+    let source = source_texture(ctx);
+    let source_view = source.create_view(&Default::default());
+    let image_view = image.map(|t| t.create_view(&Default::default()));
+
+    let mut inputs = FrameInputs::new();
+    let screen = scene
+        .layers
+        .iter()
+        .find(|l| matches!(l.source, LayerSource::Screen))
+        .expect("screen layer");
+    inputs.set(
+        screen.id,
+        LayerInput {
+            view: &source_view,
+            needs_srgb_decode: true,
+        },
+    );
+    if let Some(view) = &image_view {
+        inputs.set_annotation_image(
+            "asset.png",
+            LayerInput {
+                view,
+                needs_srgb_decode: true,
+            },
+        );
+    }
+    compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+    Rendered {
+        pixels: read_back(ctx, &target, width, height),
+        width,
+        height,
+    }
+}
+
+const IMAGE_ANNOTATION: &str = r##""annotations": [{"id":"i1","start":0.0,"end":10.0,
+     "kind":{"kind":"image","x":0.25,"y":0.25,"w":0.5,"h":0.5,"path":"asset.png"}}],"##;
+
+#[test]
+fn an_image_annotation_fills_its_rect_from_the_uploaded_asset() {
+    let Some(ctx) = context() else { return };
+    let scene = scene_with(IMAGE_ANNOTATION);
+    let image = image_texture(&ctx, 8, 8);
+    let out = render_with_annotation_image(&ctx, &scene, Some(&image));
+
+    let inside = out.at(SRC_W / 2, SRC_H / 2);
+    assert!(
+        close(inside, [255, 0, 255, 255], 3),
+        "the asset did not land in its rect: {inside:?}"
+    );
+    let outside = out.at(2, 2);
+    assert!(
+        !close(outside, [255, 0, 255, 255], 3),
+        "the asset leaked outside its rect: {outside:?}"
+    );
+}
+
+/// The host decodes asynchronously. Drawing the editor's dashed placeholder
+/// instead would bake an editing affordance into an export.
+#[test]
+fn an_image_annotation_whose_asset_is_not_uploaded_yet_draws_nothing() {
+    let Some(ctx) = context() else { return };
+    let scene = scene_with(IMAGE_ANNOTATION);
+    let bare = render_with_annotation_image(&ctx, &scene_with(""), None);
+    let pending = render_with_annotation_image(&ctx, &scene, None);
+    assert_eq!(
+        bare.at(SRC_W / 2, SRC_H / 2),
+        pending.at(SRC_W / 2, SRC_H / 2)
+    );
+}
+
+#[test]
+fn an_image_annotations_own_opacity_fades_it() {
+    let Some(ctx) = context() else { return };
+    let half = scene_with(
+        r##""annotations": [{"id":"i1","start":0.0,"end":10.0,
+             "kind":{"kind":"image","x":0.25,"y":0.25,"w":0.5,"h":0.5,
+                     "path":"asset.png","opacity":0.5}}],"##,
+    );
+    let image = image_texture(&ctx, 8, 8);
+    let (x, y) = (SRC_W / 2, SRC_H / 2);
+    // Blue rises from the frame's own value to the asset's magenta, so a half
+    // opacity has to land strictly between the two.
+    let none = render_with_annotation_image(&ctx, &scene_with(""), None).at(x, y)[2];
+    let full =
+        render_with_annotation_image(&ctx, &scene_with(IMAGE_ANNOTATION), Some(&image)).at(x, y)[2];
+    let mid = render_with_annotation_image(&ctx, &half, Some(&image)).at(x, y)[2];
+    assert!(full > none + 20, "the fixture must change the pixel at all");
+    assert!(
+        mid > none + 5 && mid < full - 5,
+        "half opacity landed at {mid}, outside ({none}, {full})"
+    );
+}
+
 #[test]
 fn an_annotation_outside_its_time_window_draws_nothing() {
     let Some(ctx) = context() else { return };

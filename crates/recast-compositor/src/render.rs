@@ -86,6 +86,10 @@ pub struct FrameInputs<'a> {
     /// Indexed by `CursorSlot::index`. A slot with no sprite draws the dot,
     /// which is how the host chooses between the two without another flag.
     cursor_sprites: [Option<CursorSprite<'a>>; 4],
+    /// Keyed by the annotation's image path, so two annotations pointing at one
+    /// file share a texture. Small and rarely more than a handful, so a linear
+    /// scan beats hashing a path per frame.
+    annotation_images: Vec<(String, LayerInput<'a>)>,
 }
 
 /// A pointer sprite and the point on it that sits on the cursor position.
@@ -142,6 +146,21 @@ impl<'a> FrameInputs<'a> {
         self
     }
 
+    pub fn set_annotation_image(&mut self, path: &str, input: LayerInput<'a>) -> &mut Self {
+        match self.annotation_images.iter_mut().find(|(p, _)| p == path) {
+            Some(slot) => slot.1 = input,
+            None => self.annotation_images.push((path.to_string(), input)),
+        }
+        self
+    }
+
+    pub fn annotation_image(&self, path: &str) -> Option<&LayerInput<'a>> {
+        self.annotation_images
+            .iter()
+            .find(|(p, _)| p == path)
+            .map(|(_, input)| input)
+    }
+
     pub fn cursor_sprite(&self, slot: CursorSlot) -> Option<CursorSprite<'a>> {
         self.cursor_sprites[slot.index()]
     }
@@ -162,6 +181,7 @@ pub struct Compositor {
     card: CardPass,
     shape: ShapePass,
     region: RegionPass,
+    image: ImagePass,
     sprite: SpritePass,
     present: PresentPass,
     working: Option<(u32, u32, wgpu::Texture)>,
@@ -216,6 +236,12 @@ struct RegionPass {
     blurred: Option<(u32, u32, wgpu::Texture)>,
 }
 
+/// Shares `RegionPass`'s bind-group layout and sampler; only the fragment
+/// shader differs, so it is a second pipeline rather than a second pass type.
+struct ImagePass {
+    pipeline: wgpu::RenderPipeline,
+}
+
 struct SpritePass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -240,6 +266,7 @@ impl Compositor {
             card: CardPass::new(&device),
             shape: ShapePass::new(&device),
             region: RegionPass::new(&device),
+            image: ImagePass::new(&device),
             sprite: SpritePass::new(&device),
             present: PresentPass::new(&device),
             device,
@@ -270,7 +297,7 @@ impl Compositor {
         self.blur_background(&mut encoder, &working_view, params, width, height);
         self.draw_shadow(&mut encoder, &working_view, params);
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
-        self.draw_annotations(&mut encoder, &working_view, params, width, height);
+        self.draw_annotations(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_cursor(&mut encoder, &working_view, params, inputs, width, height);
         self.present(&mut encoder, &working_view, target);
 
@@ -637,21 +664,110 @@ impl Compositor {
         encoder: &mut wgpu::CommandEncoder,
         working: &wgpu::TextureView,
         params: &FrameParams,
+        inputs: &FrameInputs<'_>,
         width: u32,
         height: u32,
     ) {
         let mut run: Vec<&AnnotationParams> = Vec::new();
         for annotation in &params.annotations {
-            match annotation.shape {
+            match &annotation.shape {
                 AnnotationShape::Blur { .. } => {
                     self.draw_shape_run(encoder, working, &run);
                     run.clear();
                     self.draw_blur_region(encoder, working, annotation, width, height);
                 }
+                AnnotationShape::Image { .. } => {
+                    self.draw_shape_run(encoder, working, &run);
+                    run.clear();
+                    self.draw_annotation_image(encoder, working, annotation, inputs);
+                }
                 _ => run.push(annotation),
             }
         }
         self.draw_shape_run(encoder, working, &run);
+    }
+
+    /// Skipped, not drawn as a placeholder, while the host is still decoding the
+    /// asset: an editor-only dashed box baked into an export would be worse than
+    /// a late image.
+    fn draw_annotation_image(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        annotation: &AnnotationParams,
+        inputs: &FrameInputs<'_>,
+    ) {
+        let AnnotationShape::Image {
+            x,
+            y,
+            w,
+            h,
+            radius,
+            opacity,
+            path,
+        } = &annotation.shape
+        else {
+            return;
+        };
+        if *w <= 0.0 || *h <= 0.0 {
+            return;
+        }
+        let Some(input) = inputs.annotation_image(path) else {
+            return;
+        };
+
+        let uniform = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("annotation-image-uniform"),
+            size: std::mem::size_of::<RegionUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(
+            &uniform,
+            0,
+            bytemuck::bytes_of(&RegionUniform {
+                rect: [*x, *y, *w, *h],
+                params: [radius.max(0.0), opacity * annotation.alpha, 0.0, 0.0],
+                tint: [0.0; 4],
+            }),
+        );
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("annotation-image"),
+            layout: &self.region.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(input.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.region.sampler),
+                },
+            ],
+        });
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("annotation-image"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: working,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.image.pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
     }
 
     /// Blurs the whole composite into a scratch, then paints the rect back from
@@ -1191,8 +1307,8 @@ fn shape_uniform(annotation: &AnnotationParams) -> ShapeUniform {
     let (geom, kind, detail) = match annotation.shape {
         AnnotationShape::Rect { x, y, w, h, radius } => ([x, y, w, h], 0.0, radius),
         AnnotationShape::Ellipse { cx, cy, rx, ry } => ([cx, cy, rx, ry], 1.0, 0.0),
-        // Blur goes through `RegionPass`, which never calls this.
-        AnnotationShape::Blur { .. } => ([0.0; 4], 0.0, 0.0),
+        // Blur and image have their own passes, which never call this.
+        AnnotationShape::Blur { .. } | AnnotationShape::Image { .. } => ([0.0; 4], 0.0, 0.0),
         AnnotationShape::Arrow {
             x1,
             y1,
@@ -1595,6 +1711,23 @@ impl RegionPass {
             layout,
             sampler: clamped_linear_sampler(device, "region"),
             blurred: None,
+        }
+    }
+}
+
+impl ImagePass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = sampled_texture_layout(device, "annotation-image");
+        Self {
+            pipeline: fullscreen_pipeline(
+                device,
+                "annotation-image",
+                include_str!("shaders/image.wgsl"),
+                &layout,
+                WORKING_FORMAT,
+                Some(PREMULTIPLIED),
+                "vs",
+            ),
         }
     }
 }

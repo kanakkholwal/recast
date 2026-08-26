@@ -1,18 +1,23 @@
 <script lang="ts">
 import { page } from "$app/state";
 import SearchCommandMenu from "$components/layout/SearchCommandMenu.svelte";
+import SidebarAccount from "$components/layout/SidebarAccount.svelte";
 import Logo from "$components/logo.svelte";
 import { launchRecordingPanel } from "$lib/ipc";
-import { chordLabel } from "$lib/shortcuts/registry.svelte";
+import { chordLabel, shortcutsDialog } from "$lib/shortcuts/registry.svelte";
 import {
 	Download,
 	LayoutDashboard,
 	Broadcast,
+	Keyboard,
+	Moon,
 	Settings,
 	SlidersHorizontal,
+	Sun,
 	Video,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
+import { mode, toggleMode } from "@recast/ui/theme";
 import * as Sidebar from "@recast/ui/sidebar";
 import { useSidebar } from "@recast/ui/sidebar";
 import { cn } from "@recast/ui/utils";
@@ -45,7 +50,7 @@ const navGroups = [
 		label: "Workspace",
 		links: [
 			{ title: "Home", href: "/", icon: LayoutDashboard },
-			{ title: "Recasts", href: "/recasts", icon: Video },
+			{ title: "Recordings", href: "/recasts", icon: Video },
 			{ title: "Exports", href: "/exports", icon: Download },
 		],
 	},
@@ -178,7 +183,7 @@ const [send, receive] = crossfade({
     {/each}
   </Sidebar.Content>
 
-  <Sidebar.Footer class="border-t border-border/30 p-2">
+  <Sidebar.Footer class="flex flex-col gap-2 border-t border-border/30 p-2">
     <Button
       onclick={() => launchRecordingPanel()}
       size="sm"
@@ -201,6 +206,38 @@ const [send, receive] = crossfade({
         Launch Panel
       </span>
     </Button>
+
+    <SidebarAccount {open} />
+
+    <div
+      class={cn(
+        "flex border-t border-border/30 pt-2",
+        open ? "items-center justify-center gap-1" : "flex-col items-center gap-1",
+      )}
+    >
+      <button
+        type="button"
+        onclick={toggleMode}
+        aria-label="Toggle theme"
+        title="Toggle light / dark"
+        class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-foreground/5 hover:text-foreground motion-safe:active:scale-95"
+      >
+        {#if mode.current === "dark"}
+          <Sun size={15} />
+        {:else}
+          <Moon size={15} />
+        {/if}
+      </button>
+      <button
+        type="button"
+        onclick={() => shortcutsDialog.show()}
+        aria-label="Keyboard shortcuts"
+        title="Keyboard shortcuts"
+        class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-foreground/5 hover:text-foreground motion-safe:active:scale-95"
+      >
+        <Keyboard size={15} />
+      </button>
+    </div>
   </Sidebar.Footer>
 </Sidebar.Root>
 

@@ -36,33 +36,38 @@ export interface ZoomState {
  * centre in video UV, and motion-blur strength. Matches the Rust
  * `ZoomRegion::scale_at` 1:1 so preview and export stay aligned.
  */
+/** Eased scale for one region at `timeSec`, ignoring whether it is in force. */
+export function zoomScaleAt(r: ZoomRegion, timeSec: number): number {
+	const duration = Math.max(0, r.end - r.start);
+	const half = duration * 0.5;
+	const rampIn = Math.min(Math.max(0, r.rampIn), half);
+	const rampOut = Math.min(Math.max(0, r.rampOut), half);
+	const holdStart = r.start + rampIn;
+	const holdEnd = r.end - rampOut;
+	let phase: number;
+	let curve;
+	let atHold = false;
+	if (timeSec < holdStart) {
+		phase = rampIn > 0 ? (timeSec - r.start) / rampIn : 1;
+		curve = r.easeIn;
+	} else if (timeSec > holdEnd) {
+		phase = rampOut > 0 ? (r.end - timeSec) / rampOut : 1;
+		curve = r.easeOut;
+	} else {
+		atHold = true;
+		phase = 1;
+		curve = r.easeIn;
+	}
+	phase = Math.max(0, Math.min(1, phase));
+	const eased = atHold ? 1 : bezierY(curve, phase);
+	return 1.0 + (r.scale - 1.0) * eased;
+}
+
 export function evaluateZoomAt(regions: ZoomRegion[], timeSec: number): ZoomState {
-	const active = activeZoomIndex(regions, timeSec);
+	const active = activeZoomIndex(regions, timeSec, (i) => zoomScaleAt(regions[i], timeSec));
 	if (active !== -1) {
 		const r = regions[active];
-		const duration = Math.max(0, r.end - r.start);
-		const half = duration * 0.5;
-		const rampIn = Math.min(Math.max(0, r.rampIn), half);
-		const rampOut = Math.min(Math.max(0, r.rampOut), half);
-		const holdStart = r.start + rampIn;
-		const holdEnd = r.end - rampOut;
-		let phase: number;
-		let curve;
-		let atHold = false;
-		if (timeSec < holdStart) {
-			phase = rampIn > 0 ? (timeSec - r.start) / rampIn : 1;
-			curve = r.easeIn;
-		} else if (timeSec > holdEnd) {
-			phase = rampOut > 0 ? (r.end - timeSec) / rampOut : 1;
-			curve = r.easeOut;
-		} else {
-			atHold = true;
-			phase = 1;
-			curve = r.easeIn;
-		}
-		phase = Math.max(0, Math.min(1, phase));
-		const eased = atHold ? 1 : bezierY(curve, phase);
-		const scale = 1.0 + (r.scale - 1.0) * eased;
+		const scale = zoomScaleAt(r, timeSec);
 		// Focus point is CONSTANT at the target for the whole region; only the
 		// scale eases. The affine zoom `(uv - c)/scale + c` is the identity at
 		// scale≈1 (no first-frame offset regardless of c) and dollies straight

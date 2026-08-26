@@ -6,8 +6,10 @@ import {
 	CAMERA_SHADOW_OFFSET_FRACTION,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
+	cameraBubbleDelta,
 	cameraShadowStyle,
 	clampPlacement,
+	MAX_RECORDED_MOVE_SECS,
 	keyframesFromMotionSegments,
 	MAX_CAMERA_SIZE,
 	MIN_CAMERA_SIZE,
@@ -331,5 +333,82 @@ describe("recorded motion segments", () => {
 		);
 		expect(frames[0].placement.x).toBeCloseTo(0.84, 6);
 		expect(frames[0].placement.y).toBeCloseTo(0.71, 6);
+	});
+});
+
+describe("cameraBubbleDelta", () => {
+	const at = (x: number, y: number, width = 0.2) => ({ x, y, width, height: width });
+
+	it("is the identity when the bubble sits on its layout box", () => {
+		const d = cameraBubbleDelta(at(0.4, 0.4), at(0.4, 0.4), 1);
+		expect(d).toEqual({ tx: 0, ty: 0, scale: 1 });
+	});
+
+	/** The whole point of freezing the layout box: wherever it sits, the delta
+	 *  has to put the bubble at the same place on screen. */
+	it("lands the bubble in the same place from any layout box", () => {
+		const drawn = at(0.7, 0.25);
+		const a = cameraBubbleDelta(at(0.1, 0.1), drawn, 1);
+		const b = cameraBubbleDelta(at(0.5, 0.5), drawn, 1);
+		const screenX = (layoutX: number, tx: number) => layoutX + (tx / 100) * 0.2;
+		expect(screenX(0.1, a.tx)).toBeCloseTo(drawn.x, 9);
+		expect(screenX(0.5, b.tx)).toBeCloseTo(drawn.x, 9);
+	});
+
+	/** A percentage translate on the Y axis resolves against the element's
+	 *  HEIGHT, which is square in pixels, not in UV. */
+	it("scales the vertical translate by the bubble's UV height", () => {
+		const wide = cameraBubbleDelta(at(0.2, 0.2), at(0.2, 0.3), 16 / 9);
+		const square = cameraBubbleDelta(at(0.2, 0.2), at(0.2, 0.3), 1);
+		expect(wide.ty).toBeLessThan(square.ty);
+	});
+
+	it("reports a grow as a scale rather than a size change", () => {
+		const d = cameraBubbleDelta(at(0.2, 0.2, 0.2), at(0.2, 0.2, 0.3), 1);
+		expect(d.scale).toBeCloseTo(1.5, 9);
+	});
+
+	it("refuses to divide by a zero-width layout box", () => {
+		expect(cameraBubbleDelta(at(0.2, 0.2, 0), at(0.5, 0.5), 1)).toEqual({
+			tx: 0,
+			ty: 0,
+			scale: 1,
+		});
+	});
+});
+
+describe("repairing an over-long recorded move", () => {
+	const glide = (start: number, end: number) => ({
+		start,
+		end,
+		fromX: 0.2,
+		fromY: 0.2,
+		fromWidth: 0.16,
+		fromHeight: 0.29,
+		toX: 0.6,
+		toY: 0.5,
+		toWidth: 0.16,
+		toHeight: 0.29,
+		easeIn: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+		easeOut: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+	});
+	const base = { x: 0.2, y: 0.2, width: 0.16, height: 0.29 };
+
+	/** Projects that recorded before the dead zone landed carry one segment for
+	 *  the whole take. Replaying it verbatim drifts the bubble across the entire
+	 *  video, which is what the file says and not what happened. */
+	it("holds the start placement instead of gliding for the whole recording", () => {
+		const frames = keyframesFromMotionSegments([glide(0.15, 153.47)], base);
+		const times = frames.map((f) => f.atSec);
+		expect(times[times.length - 1]).toBeCloseTo(153.47, 6);
+		expect(times[times.length - 2]).toBeCloseTo(153.47 - MAX_RECORDED_MOVE_SECS, 6);
+		// Held at the start placement until the move begins.
+		expect(cameraPlacementAt(base, frames, 60).x).toBeCloseTo(0.2, 6);
+		expect(cameraPlacementAt(base, frames, 153.47).x).toBeCloseTo(0.6, 6);
+	});
+
+	it("leaves a move short enough to be a real drag alone", () => {
+		const frames = keyframesFromMotionSegments([glide(1, 3)], base);
+		expect(frames.map((f) => f.atSec)).toEqual([1, 3]);
 	});
 });

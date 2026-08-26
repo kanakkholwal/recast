@@ -1,78 +1,59 @@
 <script lang="ts">
-import { evalOpacity } from "../../lib/annotations/eval";
-import { annotationZoom } from "./annotation-projection.logic";
-import { nudgeVectorPx } from "./annotation-keys.logic";
+import { onDestroy, onMount } from "svelte";
+import { disposeCanvasTokens, selectionPalette } from "../../lib/annotations/canvas-tokens";
 import {
+	type HandleName,
 	handlePositions,
 	hitTestAnnotation,
 	hitTestHandle,
-	type HandleName,
 } from "../../lib/annotations/hit";
-import { isEditableTarget } from "../../lib/dom/editable";
-import {
-	canvasToUV,
-	compositionRectPx,
-	normaliseBox,
-	uvToCanvas,
-	videoRectPx,
-	type Rect,
-} from "../../lib/annotations/uv";
-import { snap, snapBox, type SnapAnchor } from "../../lib/annotations/snap";
+import { clickPlacedArrow, clickPlacedBox } from "../../lib/annotations/place-defaults";
 import {
 	constrain45,
 	constrainSquare,
 	isCornerHandle,
 	lockAspect,
 } from "../../lib/annotations/resize-constraints";
-import { clickPlacedArrow, clickPlacedBox } from "../../lib/annotations/place-defaults";
-import { disposeCanvasTokens, selectionPalette } from "../../lib/annotations/canvas-tokens";
+import { type SnapAnchor, snap, snapBox } from "../../lib/annotations/snap";
 import {
-	blurTint,
-	cursorForHandle,
-	HANDLE_CORNER_PX,
-	HANDLE_RADIUS_PX,
-	IDENTITY_ZOOM,
-	roundRectPath,
-} from "./annotation-draw.logic";
-import { paintArrow, paintBlur, paintBoxAnnotation } from "@recast/render";
-import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
+	canvasToUV,
+	compositionRectPx,
+	normaliseBox,
+	type Rect,
+	uvToCanvas,
+	videoRectPx,
+} from "../../lib/annotations/uv";
+import { isEditableTarget } from "../../lib/dom/editable";
 import type {
 	Annotation,
 	AnnotationAnchor,
 	AnnotationKind,
 	EditorStore,
 } from "../../stores/editor-store.svelte";
-import { getEditorServices } from "../../lib/editor/services";
-import { onDestroy, onMount } from "svelte";
+import {
+	cursorForHandle,
+	HANDLE_CORNER_PX,
+	HANDLE_RADIUS_PX,
+	IDENTITY_ZOOM,
+	roundRectPath,
+} from "./annotation-draw.logic";
+import { nudgeVectorPx } from "./annotation-keys.logic";
+import { annotationZoom } from "./annotation-projection.logic";
+import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
 
 interface Props {
 	store: EditorStore;
 	videoEl: HTMLVideoElement | null;
 	/** The container that wraps the WebGL preview canvas, which we stretch to fit. */
 	targetEl: HTMLElement | null;
-	/** The WebGL composite canvas. Used as the source for blur annotations,
-	 *  so we can blur the actual rendered frame (background + padding +
-	 *  shadow + video) rather than just the bare video. */
-	compositeCanvasEl?: HTMLCanvasElement | null;
 	/** Original-time position of the frame the compositor actually drew. The
 	 *  `<video>` element is NOT that clock on the MediaBunny path (it stays
 	 *  paused and is only re-synced past a 0.25s tolerance), so reading it here
 	 *  ramped fades and tracked zoom up to a quarter-second off the picture. */
 	previewTime?: number;
-	/** True when the compositor already painted the annotation artwork. This
-	 *  canvas then owns only the editing affordances, or every annotation is
-	 *  drawn twice (and a blur is blurred twice). */
-	compositorPaintsArtwork?: boolean;
 }
 
-let {
-	store,
-	videoEl,
-	targetEl,
-	compositeCanvasEl = null,
-	previewTime,
-	compositorPaintsArtwork = false,
-}: Props = $props();
+let { store, videoEl, targetEl, previewTime }: Props = $props();
 
 let canvasEl: HTMLCanvasElement | null = $state(null);
 let rafHandle: number | null = null;
@@ -168,13 +149,6 @@ function unprojectA(a: { anchor?: AnnotationAnchor }, cx: number, cy: number, t:
 	return canvasToUV(cx, cy, rectFor(a), zoomFor(a, t));
 }
 
-/** True if this annotation should NOT draw on the 2D-canvas overlay. Text
- * lives in a separate HTML layer (TextAnnotationLayer) so the WebView
- * handles glyph rendering and inline edit. */
-function isCanvasDrawn(k: AnnotationKind): boolean {
-	return k.kind !== "text";
-}
-
 function pointerToCanvasPx(e: PointerEvent): { x: number; y: number } {
 	if (!canvasEl) return { x: 0, y: 0 };
 	const rect = canvasEl.getBoundingClientRect();
@@ -191,153 +165,6 @@ function playbackTime(): number {
 
 //  Drawing
 
-function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation, opacity: number, t: number) {
-	// Blur bypasses the fade ramps in preview: a fresh blur (start ≈ currentTime)
-	// would ramp from opacity 0 and early-return, and a half-transparent blur
-	// copy over the unblurred canvas reads as flicker (globalAlpha applies to
-	// drawImage). When a blur is selected, render it even outside [start, end]:
-	// float drift between a.start and t flickered fresh blurs on placement.
-	// Export still honours start/end exactly.
-	const isBlur = a.kind.kind === "blur";
-	const isSelected = a.id === store.selectedAnnotationId;
-	const editing = store.activePanel === "annotations";
-	// The compositor draws every annotation inside its own window, so the only
-	// thing left here is the ghost it cannot know about: the selected one being
-	// moved while the playhead sits outside its window.
-	if (compositorPaintsArtwork) {
-		if (!isSelected || !editing || (t >= a.start && t <= a.end)) return;
-	}
-	// Outside its time window an annotation is invisible. Keep showing the
-	// SELECTED one as a dim ghost while editing so moving/resizing it (its
-	// handles draw regardless of time) doesn't make it vanish under the cursor.
-	let renderOpacity = opacity;
-	if (isBlur) {
-		if (!isSelected && (t < a.start || t > a.end)) return;
-	} else if (opacity <= 0) {
-		if (isSelected && editing) renderOpacity = 0.35;
-		else return;
-	}
-	if (!isCanvasDrawn(a.kind)) return; // text is rendered by TextAnnotationLayer
-
-	if (a.kind.kind === "arrow") {
-		const rArrow = rectFor(a);
-		const p1 = projectA(a, a.kind.x1, a.kind.y1, t);
-		const p2 = projectA(a, a.kind.x2, a.kind.y2, t);
-		paintArrow(ctx, a, p1, p2, rArrow.w, renderOpacity);
-		return;
-	}
-
-	const r = rectFor(a);
-	const box = normaliseBox(a.kind);
-	const topLeft = projectA(a, box.x, box.y, t);
-	const bottomRight = projectA(a, box.x + box.w, box.y + box.h, t);
-	const rect = {
-		x: topLeft.x,
-		y: topLeft.y,
-		w: bottomRight.x - topLeft.x,
-		h: bottomRight.y - topLeft.y,
-	};
-	if (rect.w <= 0 || rect.h <= 0) return;
-
-	// Blur reads the WebGL composite (component-local); every other kind paints
-	// through the shared @recast/render path so preview == export.
-	if (a.kind.kind === "blur") {
-		drawBlur(ctx, a, rect);
-		return;
-	}
-	paintBoxAnnotation(ctx, a, rect, r.w, renderOpacity, {
-		getImage: (p) => getImage(p),
-		dpr: getDpr(),
-	});
-}
-
-// Blur samples `compositeCanvasEl` (the WebGL frame); paintBlur is shared with
-// the export, which feeds its own GL canvas + scratch through the same path.
-function drawBlur(
-	ctx: CanvasRenderingContext2D,
-	a: Annotation,
-	rect: { x: number; y: number; w: number; h: number },
-) {
-	if (a.kind.kind !== "blur" || !compositeCanvasEl) return;
-	paintBlur(ctx, { opacity: a.opacity, kind: a.kind }, rect, {
-		composite: compositeCanvasEl,
-		srcW: compositeCanvasEl.width,
-		srcH: compositeCanvasEl.height,
-		dstW: canvasEl?.width ?? 0,
-		dstH: canvasEl?.height ?? 0,
-		getScratch: (w, h) => {
-			const c = getBlurScratch(w, h);
-			return c ? { ctx: c, canvas: blurScratch as CanvasImageSource } : null;
-		},
-	});
-}
-
-// Decoded <img> per source path, reused across frames. The rAF loop repaints
-// continuously, so a load that finishes later shows up on the next frame.
-type ImageEntry = {
-	img: HTMLImageElement;
-	ready: boolean;
-	failed: boolean;
-	failedAt: number;
-};
-const imageCache = new Map<string, ImageEntry>();
-const IMAGE_RETRY_MS = 4000;
-
-function getImage(path: string): ImageEntry {
-	let entry = imageCache.get(path);
-	// Retry a failed load after a delay so a restored/renamed file recovers
-	// within the session instead of showing the placeholder forever.
-	if (entry?.failed && Date.now() - entry.failedAt > IMAGE_RETRY_MS) {
-		imageCache.delete(path);
-		entry = undefined;
-	}
-	if (!entry) {
-		const img = new Image();
-		entry = { img, ready: false, failed: false, failedAt: 0 };
-		const e = entry;
-		img.onload = () => {
-			e.ready = true;
-		};
-		img.onerror = () => {
-			e.failed = true;
-			e.failedAt = Date.now();
-		};
-		img.src = getEditorServices().resolveAssetUrl(path);
-		imageCache.set(path, entry);
-	}
-	return entry;
-}
-
-// Evict cached bitmaps no longer referenced by any annotation, so replacing
-// or deleting images doesn't accumulate decoded images for the editor's life.
-$effect(() => {
-	const live = new Set<string>();
-	for (const a of store.annotations) {
-		if (a.kind.kind === "image" && a.kind.path) live.add(a.kind.path);
-	}
-	const stale: string[] = [];
-	for (const path of imageCache.keys()) {
-		if (!live.has(path)) stale.push(path);
-	}
-	for (const path of stale) imageCache.delete(path);
-});
-
-// Reusable offscreen scratch that paintBlur renders the blur + tint into before
-// compositing under a rounded clip (a rounded clip isn't honoured while the blur
-// filter is active, so paintBlur applies corners in a filter-free second pass).
-let blurScratch: HTMLCanvasElement | null = null;
-function getBlurScratch(w: number, h: number): CanvasRenderingContext2D | null {
-	if (!blurScratch) blurScratch = document.createElement("canvas");
-	if (blurScratch.width !== w || blurScratch.height !== h) {
-		blurScratch.width = w;
-		blurScratch.height = h;
-	}
-	return blurScratch.getContext("2d");
-}
-
-/** A single resize grip: a rounded square with the surface fill, a crisp
- *  primary border and a soft drop shadow, matching the recording overlay's
- *  handle language. Shadow is applied to the fill only. */
 function drawHandle(
 	ctx: CanvasRenderingContext2D,
 	cx: number,
@@ -490,11 +317,6 @@ function draw() {
 	if (store.annotationsGloballyHidden) return;
 
 	const t = playbackTime();
-	for (const a of ordered) {
-		if (a.hidden) continue;
-		const opacity = evalOpacity(a, t);
-		drawAnnotation(ctx, a, opacity, t);
-	}
 
 	// Selection adornment + hover-flash only show on the Annotations tab so
 	// the editing handles don't clutter the preview while the user is on

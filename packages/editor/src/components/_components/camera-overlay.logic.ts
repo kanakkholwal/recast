@@ -195,6 +195,30 @@ export function clampPlacement(p: CameraPlacement): CameraPlacement {
 }
 
 /**
+ * The bubble's drawn placement expressed as a delta on its LAYOUT box, as
+ * `translate(%)` + `scale`. Percentages are relative to the layout box's own
+ * width (and its square height in UV, which is `width * videoAspect`), because
+ * that is what a CSS percentage translate resolves against.
+ *
+ * Keeping the layout box out of the playhead is the point: it is written by
+ * Svelte reactivity and the transform is written per rAF, so a layout box that
+ * moved with the clock made the two race and the bubble judder.
+ */
+export function cameraBubbleDelta(
+	layout: CameraPlacement,
+	drawn: CameraPlacement,
+	videoAspect: number,
+): { tx: number; ty: number; scale: number } {
+	if (!(layout.width > 0)) return { tx: 0, ty: 0, scale: 1 };
+	const baseH = Math.min(1, layout.width * videoAspect);
+	return {
+		tx: ((drawn.x - layout.x) / layout.width) * 100,
+		ty: baseH > 0 ? ((drawn.y - layout.y) / baseH) * 100 : 0,
+		scale: drawn.width / layout.width,
+	};
+}
+
+/**
  * Camera moves made DURING a recording, as keyframes.
  *
  * The recorder writes `motionSegments`; the preview and the export both read
@@ -202,12 +226,35 @@ export function clampPlacement(p: CameraPlacement): CameraPlacement {
  * render at all — a second evaluator would be a parity liability, and the
  * recorded moves become editable once they are keyframes.
  */
+/**
+ * A recorded segment longer than this cannot be a drag. Before the recorder had
+ * a movement dead zone, sub-pixel jitter in the preview geometry made every tick
+ * read as a move and the coalescing rule extended one segment for the whole
+ * take, so the file records a minutes-long glide that never happened.
+ *
+ * Kept in step with `MAX_MOTION_SEGMENT_SECS` in
+ * `apps/desktop/src-tauri/src/recording/mod.rs`, which stops new recordings
+ * producing one.
+ */
+export const MAX_RECORDED_MOVE_SECS = 10;
+
+/**
+ * Trims a segment that spans more than a drag can. Only the endpoints were ever
+ * sampled, so the honest repair is to HOLD the start placement and move over
+ * the last {@link MAX_RECORDED_MOVE_SECS}: the bubble ends up where the file
+ * says it ended, without drifting across the whole video on the way.
+ */
+function repairLongMove(segment: CameraMotionSegment): CameraMotionSegment {
+	if (segment.end - segment.start <= MAX_RECORDED_MOVE_SECS) return segment;
+	return { ...segment, start: segment.end - MAX_RECORDED_MOVE_SECS };
+}
+
 export function keyframesFromMotionSegments(
 	segments: readonly CameraMotionSegment[],
 	defaultPlacement: CameraPlacement,
 ): CameraKeyframe[] {
 	if (segments.length === 0) return [];
-	const sorted = [...segments].sort((a, b) => a.start - b.start);
+	const sorted = [...segments].map(repairLongMove).sort((a, b) => a.start - b.start);
 	const out: CameraKeyframe[] = [];
 	const push = (atSec: number, placement: CameraPlacement) => {
 		const last = out[out.length - 1];

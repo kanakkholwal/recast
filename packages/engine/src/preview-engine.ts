@@ -162,6 +162,16 @@ export class PreviewEngine {
 		this.#live.setCursorSprite(slot, image, hotspot[0], hotspot[1]);
 	}
 
+	/** The decoded asset for an image annotation, keyed by the path the scene
+	 *  carries. Copied, not retained. */
+	setAnnotationImage(path: string, image: ImageBitmap): void {
+		this.#live.setAnnotationImage(path, image);
+	}
+
+	clearAnnotationImages(): void {
+		this.#live.clearAnnotationImages();
+	}
+
 	clearCursorSprites(): void {
 		this.#live.clearCursorSprites();
 	}

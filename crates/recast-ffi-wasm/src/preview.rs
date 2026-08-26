@@ -71,6 +71,9 @@ pub struct PreviewEngine {
     cursor_sprites: [Option<LayerTexture>; 4],
     /// Normalised hotspot per slot, parallel to `cursor_sprites`.
     cursor_hotspots: [[f32; 2]; 4],
+    /// Keyed by the annotation's image path, matching the host's own per-path
+    /// cache, so two annotations on one file upload once.
+    annotation_images: Vec<(String, LayerTexture)>,
 }
 
 #[wasm_bindgen]
@@ -133,6 +136,7 @@ impl PreviewEngine {
             background: None,
             cursor_sprites: [None, None, None, None],
             cursor_hotspots: [[0.5, 0.5]; 4],
+            annotation_images: Vec::new(),
         })
     }
 
@@ -433,6 +437,54 @@ impl PreviewEngine {
         Ok(())
     }
 
+    /// The decoded asset for an image annotation, addressed by the same path the
+    /// scene carries. Copied into a texture, so the caller still owns the bitmap.
+    #[wasm_bindgen(js_name = setAnnotationImage)]
+    pub fn set_annotation_image(
+        &mut self,
+        path: &str,
+        image: &web_sys::ImageBitmap,
+    ) -> Result<(), JsValue> {
+        let (width, height) = (image.width(), image.height());
+        if path.is_empty() || width == 0 || height == 0 {
+            return Err(JsValue::from_str(
+                "an annotation image needs a path and a non-zero size",
+            ));
+        }
+        let texture = self.new_texture(width, height);
+        self.ctx.queue().copy_external_image_to_texture(
+            &wgpu::CopyExternalImageSourceInfo {
+                source: wgpu::ExternalImageSource::ImageBitmap(Clone::clone(image)),
+                origin: wgpu::Origin2d::ZERO,
+                flip_y: false,
+            },
+            wgpu::CopyExternalImageDestInfo {
+                texture: &texture.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+                color_space: wgpu::PredefinedColorSpace::Srgb,
+                premultiplied_alpha: false,
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.flush_uploads();
+        match self.annotation_images.iter_mut().find(|(p, _)| p == path) {
+            Some(slot) => slot.1 = texture,
+            None => self.annotation_images.push((path.to_string(), texture)),
+        }
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = clearAnnotationImages)]
+    pub fn clear_annotation_images(&mut self) {
+        self.annotation_images.clear();
+    }
+
     #[wasm_bindgen(js_name = clearCursorSprites)]
     pub fn clear_cursor_sprites(&mut self) {
         self.cursor_sprites = [None, None, None, None];
@@ -487,6 +539,16 @@ impl PreviewEngine {
                 *id,
                 LayerInput {
                     view: &slot.view,
+                    needs_srgb_decode: true,
+                },
+            );
+        }
+
+        for (path, texture) in &self.annotation_images {
+            inputs.set_annotation_image(
+                path,
+                LayerInput {
+                    view: &texture.view,
                     needs_srgb_decode: true,
                 },
             );

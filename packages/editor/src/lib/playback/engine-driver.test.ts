@@ -21,6 +21,8 @@ function engineStub() {
 		clearBackgroundImage: vi.fn(),
 		setCursorTrack: vi.fn(),
 		setCursorSprite: vi.fn(),
+		setAnnotationImage: vi.fn(),
+		clearAnnotationImages: vi.fn(),
 		clearCursorSprites: vi.fn(),
 		setLayerRingCapacity: vi.fn(),
 		putLayerFrame: vi.fn(),
@@ -185,6 +187,37 @@ describe("time map", () => {
 		expect(d.setTimeMap(null)).toBe(true);
 		expect(engine.setTimeMap).toHaveBeenCalledWith(null);
 		expect(d.setTimeMap(null)).toBe(false);
+	});
+});
+
+describe("annotation images", () => {
+	const bitmap = () => ({}) as ImageBitmap;
+
+	it("uploads a set once and skips the same key", async () => {
+		const d = await driver();
+		const set = new Map([["a.png", bitmap()]]);
+		expect(d.setAnnotationImages("a.png", set)).toBe(true);
+		expect(d.setAnnotationImages("a.png", set)).toBe(false);
+		expect(engine.setAnnotationImage).toHaveBeenCalledTimes(1);
+		expect(engine.setAnnotationImage).toHaveBeenCalledWith("a.png", expect.anything());
+	});
+
+	/** Slots are keyed by path, so an annotation whose image was swapped would
+	 *  keep drawing the old file unless the whole set is cleared first. */
+	it("clears the previous set before uploading a new one", async () => {
+		const d = await driver();
+		d.setAnnotationImages("a.png", new Map([["a.png", bitmap()]]));
+		d.setAnnotationImages("b.png", new Map([["b.png", bitmap()]]));
+		expect(engine.clearAnnotationImages).toHaveBeenCalledTimes(2);
+		expect(engine.setAnnotationImage).toHaveBeenLastCalledWith("b.png", expect.anything());
+	});
+
+	it("clears back to nothing when the last image annotation goes", async () => {
+		const d = await driver();
+		d.setAnnotationImages("a.png", new Map([["a.png", bitmap()]]));
+		d.setAnnotationImages("", new Map());
+		expect(engine.clearAnnotationImages).toHaveBeenCalledTimes(2);
+		expect(engine.setAnnotationImage).toHaveBeenCalledTimes(1);
 	});
 });
 

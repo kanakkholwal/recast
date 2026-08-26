@@ -694,18 +694,29 @@ fn shadow_params(
 /// The latest-STARTING region containing `t` wins, ties to the later entry.
 /// Matches `activeZoomIndex` in the editor: a short region nested inside a long
 /// one is the more specific intent, and the rule must not depend on array order.
+/// The tightest zoom in force. Exactly one region applies at any instant, so
+/// overlapping regions never stack.
+///
+/// Picking by SCALE rather than by latest start is what stops an overlap
+/// flickering: the winner can only change where the two scales are equal, so the
+/// zoom is continuous across the handover. Latest-start-wins snapped 2.00x to
+/// 1.03x in a single frame, because the incoming region's ramp restarts at 1.
+/// Ties keep the later start, which is the old rule and the only case where the
+/// two disagree.
 fn active_zoom<'a>(regions: &[&'a ZoomRegion], t: f64) -> Option<&'a ZoomRegion> {
-    let mut best: Option<&ZoomRegion> = None;
+    let mut best: Option<(&ZoomRegion, f64)> = None;
     for region in regions {
         if region.hidden || t <= region.start || t >= region.end {
             continue;
         }
+        let scale = region.scale_at(t);
         match best {
-            Some(current) if region.start < current.start => {}
-            _ => best = Some(region),
+            Some((current, best_scale))
+                if best_scale > scale || (best_scale == scale && region.start < current.start) => {}
+            _ => best = Some((region, scale)),
         }
     }
-    best
+    best.map(|(region, _)| region)
 }
 
 /// The picker always writes a hex string, so a parse failure means corrupt
@@ -885,6 +896,57 @@ mod tests {
         let ev = Evaluator::new(&scene, source());
         let scale = 1.0 / screen_layer(&ev.evaluate(&scene, 5.0)).transform.sx;
         assert!(scale <= 3.0 + 1e-4, "regions stacked to {scale}");
+    }
+
+    /// The visible defect: latest-start-wins handed over to the incoming region
+    /// at its own ramp start, so an overlap snapped 2.00x to 1.03x in one frame
+    /// and everything riding the zoom (the card, a video-anchored annotation,
+    /// the camera bubble) flickered with it.
+    #[test]
+    fn an_overlap_hands_over_without_a_step() {
+        let scene = scene_with(
+            r#""zoomRegions": [
+                {"start":1.0,"end":8.0,"scale":2.0,"rampIn":0.5,"rampOut":0.5,"centerX":0.5,"centerY":0.5},
+                {"start":5.0,"end":12.0,"scale":2.5,"rampIn":0.5,"rampOut":0.5,"centerX":0.5,"centerY":0.5}
+            ],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        let step = 1.0 / 60.0;
+        // A ramp covers 1.0 of scale in 0.5s, so a single 60 fps frame can move
+        // it by about 0.06. Anything past that is a jump, not a ramp.
+        let budget = 0.08;
+        let mut previous: Option<f32> = None;
+        let mut t = 0.5;
+        while t < 12.5 {
+            let sx = screen_layer(&ev.evaluate(&scene, t)).transform.sx;
+            if let Some(previous) = previous {
+                assert!(
+                    (sx - previous).abs() <= budget,
+                    "zoom stepped by {} at t {t:.3} ({previous} -> {sx})",
+                    (sx - previous).abs()
+                );
+            }
+            previous = Some(sx);
+            t += step;
+        }
+    }
+
+    /// The tightest region wins, so a wide zoom cannot cancel a tight one it
+    /// happens to start after.
+    #[test]
+    fn the_tighter_of_two_overlapping_zooms_is_the_one_in_force() {
+        let scene = scene_with(
+            r#""zoomRegions": [
+                {"start":0.0,"end":10.0,"scale":3.0,"rampIn":0.0,"rampOut":0.0,"centerX":0.5,"centerY":0.5},
+                {"start":4.0,"end":6.0,"scale":1.2,"rampIn":0.0,"rampOut":0.0,"centerX":0.5,"centerY":0.5}
+            ],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        let scale = 1.0 / screen_layer(&ev.evaluate(&scene, 5.0)).transform.sx;
+        assert!(
+            (scale - 3.0).abs() < 1e-4,
+            "the looser region won, at {scale}"
+        );
     }
 
     /// The editor gates ALL zoom on the focus lane's switch. Without the same

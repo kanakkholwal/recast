@@ -5,6 +5,7 @@ import type { EditorStore } from "../../stores/editor-store.svelte";
 import {
 	applyZoomFollow,
 	bubblePlacementStyle,
+	cameraBubbleDelta,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
 	cameraShadowStyle,
@@ -64,11 +65,13 @@ function baseAt(t: number) {
 // the bubble and mirrors the export's render_camera_shadow.
 const shadowStyle = $derived(cameraShadowStyle(store.cameraOverlay.shadow ?? 0));
 
-// BASE placement (no zoom-follow): drives the div's LAYOUT box. Uses the store
-// clock (paused-accurate; ~25 Hz while playing, fine because the base only
-// MOVES on a per-cut glide). The grow/drift is applied on top via `transform`.
-const basePlacement = $derived(baseAt(store.currentTime));
-const bubbleStyle = $derived(bubblePlacementStyle(geom, basePlacement));
+// The div's LAYOUT box, deliberately NOT a function of the playhead: it moved
+// with the ~25 Hz store clock while the transform below is written per rAF, and
+// the two landing in different frames is what made the bubble judder whenever
+// the base was actually moving (a live-recorded glide, or a zoom-follow). It
+// only changes on an edit now, which re-lays-out and re-transforms together.
+const layoutPlacement = $derived(store.cameraOverlay.defaultPlacement);
+const bubbleStyle = $derived(bubblePlacementStyle(geom, layoutPlacement));
 const borderRadius = $derived(
 	shapeBorderRadius(store.cameraOverlay.shape, store.cameraOverlay.cornerRadius),
 );
@@ -81,12 +84,9 @@ let outerEl: HTMLDivElement | null = $state(null);
 // it updates once per rAF in lockstep with the display — same cadence as the
 // zoom shader. `translateZ(0)` keeps the bubble on its own compositor layer.
 function followTransform(t: number): string {
-	// Reference = the LAYOUT box, which tracks the ~25 Hz store clock so a moving
-	// bubble does not relayout every frame. The DRAWN placement is evaluated at
-	// the smooth clock and expressed as a delta on it: a live-recorded camera
-	// glides for the whole take, so sampling the base at the store clock stepped
-	// the bubble 25 times a second against a 60 Hz picture.
-	const layout = baseAt(store.currentTime);
+	// Everything the playhead affects lives in this transform, so the layout box
+	// never moves underneath it.
+	const layout = layoutPlacement;
 	if (layout.width <= 0) return "translateZ(0)";
 	const b = baseAt(t);
 	let e = b;
@@ -104,11 +104,8 @@ function followTransform(t: number): string {
 			videoAspect,
 		);
 	}
-	const s = e.width / layout.width;
-	const baseH = Math.min(1, layout.width * videoAspect);
-	const tx = ((e.x - layout.x) / layout.width) * 100;
-	const ty = baseH > 0 ? ((e.y - layout.y) / baseH) * 100 : 0;
-	return `translate(${tx.toFixed(4)}%, ${ty.toFixed(4)}%) scale(${s.toFixed(5)}) translateZ(0)`;
+	const d = cameraBubbleDelta(layout, e, videoAspect);
+	return `translate(${d.tx.toFixed(4)}%, ${d.ty.toFixed(4)}%) scale(${d.scale.toFixed(5)}) translateZ(0)`;
 }
 
 // Paused / scrub / edit: reactive write so the bubble tracks the playhead and
