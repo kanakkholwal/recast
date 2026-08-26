@@ -712,11 +712,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-audio"
+version = "0.0.0"
+
+[[package]]
 name = "recast-captions"
 version = "0.0.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "recast-codec"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "recast-codec-mf"
+version = "0.0.0"
+dependencies = [
+ "recast-codec",
+ "recast-mux",
+ "recast-testkit",
+ "windows",
 ]
 
 [[package]]
@@ -777,6 +798,13 @@ dependencies = [
  "thiserror",
  "wgpu",
  "windows",
+]
+
+[[package]]
+name = "recast-mux"
+version = "0.0.0"
+dependencies = [
+ "recast-testkit",
 ]
 
 [[package]]

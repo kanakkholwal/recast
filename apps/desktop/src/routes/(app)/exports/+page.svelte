@@ -225,14 +225,14 @@ async function forgetDriveLink(entry: RecordingEntry) {
     </div>
     <Button
       variant={lib.selection.selectMode ? "secondary" : "ghost"}
-      size="xs"
-      class={cn("h-7 gap-1 text-[11px]", !lib.selection.selectMode && "text-muted-foreground hover:text-foreground")}
+      size="sm"
+      class={cn("h-8 gap-1 text-[11.5px]", !lib.selection.selectMode && "text-muted-foreground hover:text-foreground")}
       onclick={lib.selection.toggleMode}
       disabled={lib.entries.length === 0}
       aria-pressed={lib.selection.selectMode}
       title="Select multiple exports"
     >
-      <ListChecks size={11} />
+      <ListChecks size={12} />
       {lib.selection.selectMode ? "Done" : "Select"}
     </Button>
     <LibrarySortSelect bind:value={lib.sort} noun="exports" />

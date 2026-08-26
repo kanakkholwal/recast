@@ -1,0 +1,11 @@
+[package]
+name = "recast-mux"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "MP4 writing and reading. Progressive by construction: moov is written before mdat."
+
+[dependencies]
+
+[dev-dependencies]
+recast-testkit = { path = "../recast-testkit" }

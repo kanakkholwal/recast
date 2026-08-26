@@ -1,0 +1,8 @@
+[package]
+name = "recast-audio"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Audio time stretching, resampling and mixing for the export graph."
+
+[dependencies]

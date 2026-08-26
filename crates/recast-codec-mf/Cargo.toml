@@ -1,0 +1,25 @@
+[package]
+name = "recast-codec-mf"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Media Foundation codec enumeration on Windows. Empty everywhere else."
+
+[dependencies]
+recast-codec = { path = "../recast-codec" }
+
+[dev-dependencies]
+recast-codec = { path = "../recast-codec" }
+recast-mux = { path = "../recast-mux" }
+recast-testkit = { path = "../recast-testkit" }
+
+[target.'cfg(windows)'.dependencies]
+# Pinned to match recast-gpu: wgpu-hal decides this version, and a caret bump
+# breaks COM type unification across the two crates (S-1 finding F1).
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+] }

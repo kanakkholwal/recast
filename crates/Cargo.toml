@@ -1,3 +1,3 @@
 [workspace]
 resolver = "2"
-members = ["recast-captions", "recast-color", "recast-compositor", "recast-cursor", "recast-ffi-wasm", "recast-gpu", "recast-scene", "recast-testkit", "recast-text", "recast-time", "spike-d3d11-wgpu"]
+members = ["recast-audio", "recast-captions", "recast-codec", "recast-codec-mf", "recast-color", "recast-compositor", "recast-cursor", "recast-ffi-wasm", "recast-gpu", "recast-mux", "recast-scene", "recast-testkit", "recast-text", "recast-time", "spike-d3d11-wgpu"]

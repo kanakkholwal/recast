@@ -33,10 +33,10 @@ onMount(() => {
 </script>
 
 <label
-  class="group/search flex h-12 items-center gap-3 rounded-xl border border-border/60 bg-card/70 px-4 shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:border-border hover:bg-card hover:shadow-craft-sm focus-within:border-border focus-within:bg-card focus-within:shadow-craft-sm"
+  class="group/search flex h-8 items-center gap-2 rounded-lg border border-border/60 bg-card px-2.5 transition-colors duration-150 hover:border-border focus-within:border-border focus-within:ring-1 focus-within:ring-ring/40"
 >
   <Search
-    class="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground group-focus-within/search:text-foreground"
+    class="size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground group-focus-within/search:text-foreground"
   />
   <input
     bind:this={el}
@@ -48,15 +48,15 @@ onMount(() => {
       }
     }}
     type="text"
-    placeholder={`Search ${noun}…  (press / )`}
+    placeholder={`Search ${noun}…`}
     aria-label={`Search ${noun}`}
-    class="flex-1 bg-transparent text-[13px] font-medium text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
+    class="flex-1 bg-transparent text-[12.5px] font-medium text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
   />
   {#if value}
     <Button
       variant="ghost"
       size="icon-sm"
-      class="size-6"
+      class="-mr-1 size-5"
       onclick={() => (value = "")}
       aria-label="Clear search"
       title="Clear search"

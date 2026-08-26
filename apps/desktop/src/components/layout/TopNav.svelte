@@ -7,15 +7,15 @@ import { launchRecordingPanel } from "$lib/ipc";
 import { chordLabel } from "$lib/shortcuts/registry.svelte";
 import { commandPalette } from "$lib/stores/command-palette.svelte";
 import {
-  Broadcast,
-  Moon,
-  Search,
-  Settings,
-  Share2,
-  SlidersHorizontal,
-  Sun,
-  Video,
-  Wand2,
+	Broadcast,
+	Moon,
+	Search,
+	Settings,
+	Share2,
+	SlidersHorizontal,
+	Sun,
+	Video,
+	Wand2,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { mode, toggleMode } from "@recast/ui/theme";
@@ -98,7 +98,7 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
 
   <!-- Record / Polish / Share hang from the bar's bottom edge into the page. -->
   <div class="pointer-events-none absolute inset-x-0 bottom-0 z-50 flex translate-y-full justify-center">
-    <NotchedShelf fill="text-card" class="pointer-events-auto h-12 gap-0.5 w-fit!">
+    <NotchedShelf fill="text-card" class="pointer-events-auto h-12 w-fit!">
       <div class="flex items-center gap-0.5" style="view-transition-name: recast-nav-tabs">
         {#each tabs as tab (tab.href)}
           {@const on = isActive(tab.href)}
