@@ -19,7 +19,7 @@ const WING =
 
 <div
   class={cn(
-    "relative z-10 mx-auto flex h-11 w-fit max-w-full -translate-y-px items-start justify-center",
+    "relative z-10 mx-auto flex h-11 w-fit -translate-y-px items-start justify-center",
     fill,
     className,
   )}
@@ -31,13 +31,16 @@ const WING =
     aria-hidden="true"
     class="h-full w-auto shrink-0 translate-x-px translate-y-px overflow-visible"
   >
+    <rect x="0" y="0" width="85" height="1" fill="currentColor" transform="translate(0, -1)" />
     <path d={WING} fill="currentColor" />
   </svg>
 
+  <!-- `bg-current` inherits the shelf's own fill colour; the children's colour
+       reset lives on the nested element so it can't repaint the bar. -->
   <div
     class="relative z-10 flex h-[calc(100%+1px)] min-w-0 grow items-center justify-center bg-current"
   >
-    <div class="flex items-center justify-center gap-1.5 text-foreground">
+    <div class="flex items-center justify-center text-foreground">
       {@render children?.()}
     </div>
   </div>
@@ -49,6 +52,7 @@ const WING =
     aria-hidden="true"
     class="h-full w-auto shrink-0 -translate-x-px translate-y-px -scale-x-100 overflow-visible"
   >
+    <rect x="0" y="0" width="85" height="1" fill="currentColor" transform="translate(0, -1)" />
     <path d={WING} fill="currentColor" />
   </svg>
 </div>

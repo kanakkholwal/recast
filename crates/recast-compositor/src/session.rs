@@ -5,7 +5,7 @@ use recast_scene::{LayerId, LayerSource, Scene};
 use recast_text::{FontFace, GlyphAtlas};
 use recast_time::TimeMap;
 
-use crate::caption::{layout_caption, CaptionFrame, VideoRect};
+use crate::caption::{layout_caption, CaptionClock, CaptionFrame, VideoRect};
 use crate::eval::{Evaluator, FrameParams, SourceGeometry};
 use crate::render::{Compositor, FrameInputs, LayerInput, RenderStats};
 
@@ -29,7 +29,7 @@ pub struct Session {
     compositor: Compositor,
     /// The caption face and the glyphs packed from it. Held across frames
     /// because re-rasterising a line every frame is the whole cost.
-    caption_face: Option<FontFace>,
+    caption_face: Option<CaptionFace>,
     atlas: GlyphAtlas,
 }
 
@@ -84,11 +84,12 @@ impl Session {
     /// the style's own family.
     pub fn set_caption_font(&mut self, data: Vec<u8>, index: u32) -> bool {
         let Some(face) = FontFace::from_bytes(std::sync::Arc::new(data), index) else {
-            // Bytes we cannot read leave the working face alone: dropping it
-            // would silently turn captions off for the rest of the session.
+            // Bytes we cannot read leave the working face alone. On wasm32 there
+            // is no resolution to fall back on, so dropping it would turn
+            // captions off for the rest of the session.
             return false;
         };
-        self.caption_face = Some(face);
+        self.caption_face = Some(CaptionFace::Host(face));
         // The packed glyphs were rasterised from the old face at the same ids.
         self.atlas.reset();
         true
@@ -151,16 +152,10 @@ impl Session {
         let Some(style) = self.scene.captions.clone() else {
             return CaptionFrame::default();
         };
-        let Some(words) = self.scene.caption_track.as_ref() else {
+        let Some(words) = self.scene.caption_track.clone() else {
             return CaptionFrame::default();
         };
-        if !style.enabled || words.is_empty() {
-            return CaptionFrame::default();
-        }
-        if self.caption_face.is_none() {
-            self.caption_face = resolve_caption_face(&style);
-        }
-        let Some(face) = self.caption_face.clone() else {
+        let Some(face) = self.caption_face_for(&style) else {
             return CaptionFrame::default();
         };
 
@@ -169,11 +164,15 @@ impl Session {
             return CaptionFrame::default();
         };
         let canvas = (params.geometry.canvas_w, params.geometry.canvas_h);
-        // Captions resolve on the ORIGINAL axis: the words carry source times.
+        let clock = CaptionClock {
+            source: params.source_time,
+            output: output_time,
+            time_map: self.evaluator.time_map(),
+        };
         let frame = layout_caption(
             &style,
-            words,
-            output_time,
+            &words,
+            clock,
             video,
             canvas,
             &face,
@@ -182,6 +181,23 @@ impl Session {
         );
         self.compositor.sync_glyph_atlas(&mut self.atlas);
         frame
+    }
+
+    /// The face for this style, resolving it the first time and again whenever
+    /// the family or weight changes. Without the key a font switch in the panel
+    /// would keep drawing the old face for the rest of the session.
+    fn caption_face_for(&mut self, style: &recast_captions::CaptionStyle) -> Option<FontFace> {
+        let key = (first_family(&style.font_family), style.font_weight);
+        match &self.caption_face {
+            Some(CaptionFace::Host(face)) => return Some(face.clone()),
+            Some(CaptionFace::Resolved(cached, face)) if *cached == key => return face.clone(),
+            _ => {}
+        }
+        let resolved = resolve_caption_face(style);
+        self.caption_face = Some(CaptionFace::Resolved(key, resolved.clone()));
+        // Same glyph ids, different outlines.
+        self.atlas.reset();
+        resolved
     }
 
     pub fn render(
@@ -210,6 +226,14 @@ impl Session {
         );
         (target, stats)
     }
+}
+
+/// Where the caption face came from. A host-supplied face is never replaced by
+/// resolution; a resolved one is keyed so a style change re-resolves, and a
+/// failed resolution is remembered rather than retried every frame.
+enum CaptionFace {
+    Host(FontFace),
+    Resolved((String, u32), Option<FontFace>),
 }
 
 /// The screen card's rect on the canvas, which is what a caption is placed
@@ -242,7 +266,6 @@ fn resolve_caption_face(_style: &recast_captions::CaptionStyle) -> Option<FontFa
 
 /// The first family of a CSS stack, unquoted. fontdb matches one name, not a
 /// fallback list.
-#[cfg(not(target_arch = "wasm32"))]
 fn first_family(stack: &str) -> String {
     stack
         .split(',')
@@ -604,10 +627,54 @@ mod tests {
         assert!(session.set_caption_font(bytes, 0));
         let after = session.caption_frame(1.2);
         assert_eq!(after.glyphs.len(), before.glyphs.len());
-
-        // Bytes we cannot read must not turn captions off for good.
+        // Bytes we cannot read are refused. That they leave the working face in
+        // place only shows on wasm32, where nothing re-resolves behind it.
         assert!(!session.set_caption_font(vec![0, 1, 2, 3], 0));
+    }
+
+    /// A host-supplied face outranks the style's family: on wasm32 there is
+    /// nothing to resolve with, so a style edit must not replace it.
+    #[test]
+    fn a_style_change_does_not_replace_a_host_supplied_face() {
+        let Some(ctx) = context() else { return };
+        if !has_font() {
+            return;
+        }
+        let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
+        session.set_caption_track(Some(transcript()));
+        let bytes = recast_text::resolve_face("Arial", 400, None)
+            .expect("arial")
+            .face
+            .data()
+            .to_vec();
+        assert!(session.set_caption_font(bytes, 0));
+
+        let missing = CAPTION_STYLE.replace(r#""fontFamily": "Arial""#, r#""fontFamily": "NoSuchFamilyAnywhere""#);
+        session.set_scene(scene(&missing));
+        assert!(
+            !session.caption_frame(1.2).is_empty(),
+            "the host face was dropped for an unresolvable family"
+        );
+    }
+
+    /// The face is cached, so it has to be keyed on the family: without that a
+    /// font switch in the panel keeps drawing the old one all session.
+    #[test]
+    fn a_family_that_cannot_be_resolved_stops_drawing() {
+        let Some(ctx) = context() else { return };
+        if !has_font() {
+            return;
+        }
+        let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
+        session.set_caption_track(Some(transcript()));
         assert!(!session.caption_frame(1.2).is_empty());
+
+        let missing = CAPTION_STYLE.replace(r#""fontFamily": "Arial""#, r#""fontFamily": "NoSuchFamilyAnywhere""#);
+        session.set_scene(scene(&missing));
+        assert!(
+            session.caption_frame(1.2).is_empty(),
+            "the old face was reused for a family that does not resolve"
+        );
     }
 
     #[test]

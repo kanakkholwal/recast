@@ -1748,3 +1748,79 @@ fn a_glyph_packed_after_the_atlas_grew_still_reaches_the_gpu() {
         "the glyph packed after the growth did not reach the GPU"
     );
 }
+
+/// End to end: a caption authored on the scene has to reach pixels, pill and
+/// glyphs both. Every layer below asserts on its own piece, so nothing here
+/// catches the two being wired up to nothing.
+#[test]
+fn a_caption_on_the_scene_reaches_the_frame() {
+    let Some(ctx) = context() else { return };
+    let Some(_) = text_face() else { return };
+    let words = r#"[{"start": 0.0, "end": 4.0, "text": "hello"}]"#;
+    let style = r##""captionStyle": {
+        "enabled": true, "fontFamily": "Arial", "fontWeight": 400,
+        "fontSizePct": 14.0, "position": "bottom", "align": "center",
+        "offsetPct": 0.0, "color": "#ffffff", "uppercase": false,
+        "letterSpacing": 0.0, "background": "box", "backgroundColor": "#ff0000",
+        "backgroundOpacity": 100.0, "outlineWidth": 0.0, "outlineColor": "#000000",
+        "maxLines": 1,
+        "animation": {
+            "chunk": "line", "chunkSize": 1, "emphasis": "none",
+            "emphasisColor": "#ffffff", "highlight": "none",
+            "entrance": "none", "entranceMs": 0.0, "holdGaps": true
+        }
+    },"##;
+
+    let mut session = recast_compositor::Session::new(
+        &ctx,
+        scene_with(style),
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    )
+    .expect("session");
+
+    let blank = {
+        let (texture, _) = session.render_to_texture(1.0, &FrameInputs::new());
+        let size = session.output_size();
+        Rendered {
+            pixels: read_back(&ctx, &texture, size.width, size.height),
+            width: size.width,
+            height: size.height,
+        }
+    };
+
+    session.set_caption_track(Some(serde_json::from_str(words).expect("words")));
+    let caption = session.caption_frame(1.0);
+    assert!(caption.pill.is_some(), "the style asks for a pill");
+    assert!(!caption.glyphs.is_empty(), "no glyphs were laid out");
+
+    let mut inputs = FrameInputs::new();
+    inputs.set_caption(caption);
+    let drawn = {
+        let (texture, _) = session.render_to_texture(1.0, &inputs);
+        let size = session.output_size();
+        Rendered {
+            pixels: read_back(&ctx, &texture, size.width, size.height),
+            width: size.width,
+            height: size.height,
+        }
+    };
+
+    let changed = changed_pixels(&blank, &drawn);
+    assert!(!changed.is_empty(), "the caption never reached the frame");
+    // The pill is opaque red and the text is white, so both must be present.
+    let hits = changed.iter().map(|(x, y)| drawn.at(*x, *y));
+    let (mut red, mut white) = (0, 0);
+    for p in hits {
+        if p[0] > 180 && p[1] < 90 && p[2] < 90 {
+            red += 1;
+        }
+        if p[0] > 180 && p[1] > 180 && p[2] > 180 {
+            white += 1;
+        }
+    }
+    assert!(red > 0, "the pill did not draw");
+    assert!(white > 0, "the glyphs did not draw");
+}

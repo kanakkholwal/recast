@@ -172,6 +172,29 @@ impl PreviewEngine {
         Ok(())
     }
 
+    /// The transcript captions are drawn from, as the words array is stored.
+    /// Survives a later `setScene`, like the pointer path. An empty string
+    /// clears it.
+    #[wasm_bindgen(js_name = setCaptionTrack)]
+    pub fn set_caption_track(&mut self, json: &str) -> Result<(), JsValue> {
+        let words = match json.is_empty() {
+            true => None,
+            false => {
+                Some(serde_json::from_str(json).map_err(|e| JsValue::from_str(&e.to_string()))?)
+            }
+        };
+        self.session.set_caption_track(words);
+        Ok(())
+    }
+
+    /// The font file to draw captions with. Required here: wasm32 has no
+    /// filesystem to resolve the style's family against. Returns false when the
+    /// bytes are not a face we can read, leaving any working face in place.
+    #[wasm_bindgen(js_name = setCaptionFont)]
+    pub fn set_caption_font(&mut self, data: Vec<u8>, index: u32) -> bool {
+        self.session.set_caption_font(data, index)
+    }
+
     /// Where the pointer sits at `output_time`, in CANVAS PIXELS, as
     /// `[x, y, alpha, spritePx, dotRadiusPx, slot, hlX, hlY, hlRadiusPx,
     /// hlAlpha]`, or an empty array when there is nothing to draw.
@@ -567,6 +590,7 @@ impl PreviewEngine {
             );
         }
 
+        inputs.set_caption(self.session.caption_frame(output_time));
         let stats = self.session.render(output_time, &inputs, &view);
         drop(view);
         self.ctx.queue().present(frame);

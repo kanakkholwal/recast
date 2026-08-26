@@ -62,10 +62,7 @@
 	--sidebar-ring: oklch(0.439 0 0);
 }
 
-/* --- Marketing surface ---
-   Scoped to [data-site="marketing"] (set on <html> by the root layout) so the
-   border-first canvas never reaches /dashboard, /admin, or /share, which still
-   rely on a tonal card-over-canvas lift. */
+
 [data-site="marketing"] {
 	--background: oklch(100% 0 0);
 	--card: oklch(100% 0 0);

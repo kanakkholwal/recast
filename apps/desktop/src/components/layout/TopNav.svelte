@@ -7,15 +7,15 @@ import { launchRecordingPanel } from "$lib/ipc";
 import { chordLabel } from "$lib/shortcuts/registry.svelte";
 import { commandPalette } from "$lib/stores/command-palette.svelte";
 import {
-	Broadcast,
-	Moon,
-	Search,
-	Settings,
-	Share2,
-	SlidersHorizontal,
-	Sun,
-	Video,
-	Wand2,
+  Broadcast,
+  Moon,
+  Search,
+  Settings,
+  Share2,
+  SlidersHorizontal,
+  Sun,
+  Video,
+  Wand2,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { mode, toggleMode } from "@recast/ui/theme";
@@ -55,7 +55,7 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
 
     <Button
       size="sm"
-      class="gap-1.5"
+      class="gap-1.5 bg-foreground text-background hover:bg-foreground/90"
       onclick={() => launchRecordingPanel()}
       title={`Launch recording panel · ${recordShortcut}`}
     >
@@ -98,29 +98,31 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
 
   <!-- Record / Polish / Share hang from the bar's bottom edge into the page. -->
   <div class="pointer-events-none absolute inset-x-0 bottom-0 z-50 flex translate-y-full justify-center">
-    <NotchedShelf fill="text-card" class="pointer-events-auto h-10 gap-0.5 w-fit!">
-      {#each tabs as tab (tab.href)}
-        {@const on = isActive(tab.href)}
-        {@const Icon = tab.icon}
-        <a
-          href={tab.href}
-          aria-current={on ? "page" : undefined}
-          class={cn(
-            "relative flex items-center gap-1.5 z-0 rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold tracking-tight transition-colors duration-200",
-            on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {#if on}
-            <span
-              aria-hidden="true"
-              style="view-transition-name: recast-nav-pill"
-              class="absolute inset-0 -z-10 rounded-lg bg-background shadow-craft-md ring-1 ring-inset ring-border/60"
-            ></span>
-          {/if}
-          <Icon size={14} class={cn(on ? "text-foreground" : "text-muted-foreground","z-0")} />
-          {tab.label} 
-        </a>
-      {/each}
+    <NotchedShelf fill="text-card" class="pointer-events-auto h-12 gap-0.5 w-fit!">
+      <div class="flex items-center gap-0.5" style="view-transition-name: recast-nav-tabs">
+        {#each tabs as tab (tab.href)}
+          {@const on = isActive(tab.href)}
+          {@const Icon = tab.icon}
+          <a
+            href={tab.href}
+            aria-current={on ? "page" : undefined}
+            class={cn(
+              "relative flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold tracking-tight transition-colors duration-200",
+              on ? "text-background" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {#if on}
+              <span
+                aria-hidden="true"
+                style="view-transition-name: recast-nav-pill"
+                class="absolute inset-0 -z-10 rounded-lg bg-foreground shadow-craft-md"
+              ></span>
+            {/if}
+            <Icon size={14} />
+            {tab.label}
+          </a>
+        {/each}
+      </div>
     </NotchedShelf>
   </div>
 </div>

@@ -249,6 +249,12 @@ impl Evaluator {
         self.time_map.output_duration
     }
 
+    /// The axis in force, so a caller that has to project a time itself (a
+    /// caption's chunk start, say) uses the same one the frames do.
+    pub fn time_map(&self) -> Option<&TimeMap> {
+        Some(&self.time_map)
+    }
+
     /// `output_time` is gapless output-timeline seconds. Everything else in the
     /// scene is authored on the original recording axis, so the projection
     /// happens here, once, and every effect composes with cuts and speed for free.

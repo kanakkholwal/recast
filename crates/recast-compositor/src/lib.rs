@@ -12,7 +12,7 @@ pub mod text;
 pub use annotation::{
     annotation_alpha, annotation_params, sorted_visible, AnnotationParams, AnnotationShape,
 };
-pub use caption::{layout_caption, CaptionFrame, CaptionPill, VideoRect};
+pub use caption::{layout_caption, CaptionClock, CaptionFrame, CaptionPill, VideoRect};
 pub use camera::{bubble_params, bubble_shadow, BubbleParams};
 pub use eval::{
     Affine2, BackgroundParams, CursorDraw, CursorSlot, Evaluator, FrameParams, HighlightDraw,

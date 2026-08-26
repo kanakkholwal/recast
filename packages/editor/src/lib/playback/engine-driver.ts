@@ -43,6 +43,8 @@ export class PreviewEngineDriver {
 	#cameraRing = 0;
 	#ringCapacity = 0;
 	#spriteKey = "";
+	#captionTrackSignature = "";
+	#captionFontKey = "";
 	#annotationImageKey = "";
 
 	private constructor(engine: PreviewEngine) {
@@ -146,6 +148,36 @@ export class PreviewEngineDriver {
 		} catch (err) {
 			console.warn("preview engine refused the cursor track:", err);
 		}
+	}
+
+	/** Same upload shape as the cursor track: bulky, its own channel, and a
+	 *  refusal warns rather than throws so captions failing cannot stop the
+	 *  preview. */
+	setCaptionTrack(words: unknown | null): void {
+		const json = words === null ? "" : JSON.stringify(words);
+		if (json === this.#captionTrackSignature) return;
+		this.#captionTrackSignature = json;
+		try {
+			this.#engine.setCaptionTrack(json);
+		} catch (err) {
+			console.warn("preview engine refused the caption track:", err);
+		}
+	}
+
+	/**
+	 * The font file captions are drawn with. Required: wasm has no filesystem to
+	 * resolve a CSS family against, so the host resolves it natively and ships
+	 * the bytes. `key` is the family plus weight, so a re-upload only happens
+	 * when the style actually picks a different face.
+	 */
+	setCaptionFont(key: string, data: Uint8Array): boolean {
+		if (key === this.#captionFontKey) return false;
+		if (!this.#engine.setCaptionFont(data, 0)) {
+			console.warn("preview engine could not read the caption font", key);
+			return false;
+		}
+		this.#captionFontKey = key;
+		return true;
 	}
 
 	/**

@@ -155,6 +155,19 @@ export class PreviewEngine {
 		this.#live.setCursorTrack(typeof track === "string" ? track : JSON.stringify(track));
 	}
 
+	/** The transcribed words captions are drawn from. An empty string clears
+	 *  them; like the pointer path it survives a later `setScene`. */
+	setCaptionTrack(words: unknown): void {
+		this.#live.setCaptionTrack(typeof words === "string" ? words : JSON.stringify(words));
+	}
+
+	/** The font file captions are drawn with. Required: wasm has no filesystem
+	 *  to resolve a CSS family against. False means the bytes were unreadable,
+	 *  and any working face is left in place. */
+	setCaptionFont(data: Uint8Array, index = 0): boolean {
+		return this.#live.setCaptionFont(data, index);
+	}
+
 	/** A slot with no sprite draws the dot, which is how a pointer style is
 	 *  chosen without a separate flag. `hotspot` is normalised 0..1 within the
 	 *  sprite and is the point that lands on the cursor position. */

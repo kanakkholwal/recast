@@ -5,11 +5,77 @@ use recast_captions::{
 };
 use recast_color::{parse_css_color, Srgba};
 use recast_text::{shape_line, FontFace, GlyphAtlas};
+use recast_time::{original_to_output, TimeMap};
 
 use crate::text::GlyphQuad;
 
 /// Emphasis scale for the punched word, matching the export's `\fscx114`.
 const EMPHASIS_SCALE: f64 = 1.14;
+
+/// Slide distance as a fraction of the font size, and the scale a pop starts
+/// from. Both mirror the DOM painter, which is what the export matches.
+const SLIDE_EM: f64 = 0.25;
+const POP_FROM: f64 = 0.97;
+
+/// The two clocks a caption needs. The chunk is resolved on the ORIGINAL axis
+/// because words carry source times; the entrance is clocked on the OUTPUT axis
+/// so it plays at viewer rate even across a speed change.
+#[derive(Debug, Clone, Copy)]
+pub struct CaptionClock<'a> {
+    pub source: f64,
+    pub output: f64,
+    /// Projects the chunk's original start onto the output axis. `None` leaves
+    /// the two axes identical, which is right when nothing retimes the clip.
+    pub time_map: Option<&'a TimeMap>,
+}
+
+/// Opacity and the transform an entrance applies about the pill centre.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Entrance {
+    alpha: f32,
+    scale: f64,
+    dy: f64,
+}
+
+impl Entrance {
+    const NONE: Self = Self {
+        alpha: 1.0,
+        scale: 1.0,
+        dy: 0.0,
+    };
+}
+
+fn ease_out_quad(p: f64) -> f64 {
+    1.0 - (1.0 - p) * (1.0 - p)
+}
+
+fn ease_out_cubic(p: f64) -> f64 {
+    1.0 - (1.0 - p).powi(3)
+}
+
+fn entrance_at(anim: &CaptionAnimation, elapsed: f64, font_px: f64) -> Entrance {
+    let duration = anim.entrance_ms.max(0.0) / 1000.0;
+    if anim.entrance == "none" || duration <= 0.0 {
+        return Entrance::NONE;
+    }
+    let p = (elapsed / duration).clamp(0.0, 1.0);
+    if anim.entrance == "fade" {
+        return Entrance {
+            alpha: ease_out_quad(p) as f32,
+            ..Entrance::NONE
+        };
+    }
+    let e = ease_out_cubic(p);
+    Entrance {
+        alpha: e as f32,
+        scale: POP_FROM + (1.0 - POP_FROM) * e,
+        // Only `slide` travels; `pop` scales in place.
+        dy: match anim.entrance == "slide" {
+            true => SLIDE_EM * font_px * (1.0 - e),
+            false => 0.0,
+        },
+    }
+}
 
 /// The video rect inside the canvas, in canvas pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,7 +121,7 @@ impl CaptionFrame {
 pub fn layout_caption(
     style: &CaptionStyle,
     words: &[TranscriptWord],
-    t: f64,
+    clock: CaptionClock<'_>,
     video: VideoRect,
     canvas: (u32, u32),
     face: &FontFace,
@@ -70,11 +136,19 @@ pub fn layout_caption(
 
     let anim = resolved_animation(style);
     let runs = chunk_words(words, &anim);
-    let Some(index) = active_chunk_index(&runs, t) else {
+    let Some(index) = active_chunk_index(&runs, clock.source) else {
         return CaptionFrame::default();
     };
     let run = runs[index];
-    if run.is_empty() || t < run[0].start {
+    if run.is_empty() || clock.source < run[0].start {
+        return CaptionFrame::default();
+    }
+    let chunk_start_output = match clock.time_map {
+        Some(map) => original_to_output(map, run[0].start),
+        None => run[0].start,
+    };
+    let entrance = entrance_at(&anim, clock.output - chunk_start_output, font_px);
+    if entrance.alpha <= 0.0 {
         return CaptionFrame::default();
     }
 
@@ -84,8 +158,8 @@ pub fn layout_caption(
         return CaptionFrame::default();
     }
 
-    let active = active_word_index(run, t, anim.hold_gaps);
-    let spoken = spoken_word_count(run, t);
+    let active = active_word_index(run, clock.source, anim.hold_gaps);
+    let spoken = spoken_word_count(run, clock.source);
     let shaped: Vec<Vec<ShapedWord>> = lines
         .iter()
         .map(|line| {
@@ -149,9 +223,43 @@ pub fn layout_caption(
             pen += shape_line(face, word.px, &word.text, spacing_px).width + space_px;
         }
     }
-    CaptionFrame {
+    let mut frame = CaptionFrame {
         pill: backing_pill(style, block_x, block_y, &pill),
         glyphs: resolve_quads(pending, atlas),
+    };
+    apply_entrance(
+        &mut frame,
+        entrance,
+        (
+            block_x + pill.width / 2.0,
+            block_y + pill.height / 2.0,
+        ),
+    );
+    frame
+}
+
+/// Scales about the pill centre, shifts, and fades, the way the DOM painter
+/// applies the same three as a canvas transform plus `globalAlpha`.
+fn apply_entrance(frame: &mut CaptionFrame, entrance: Entrance, centre: (f64, f64)) {
+    if entrance == Entrance::NONE {
+        return;
+    }
+    let (cx, cy) = (centre.0 as f32, centre.1 as f32);
+    let (scale, dy) = (entrance.scale as f32, entrance.dy as f32);
+    let map = |x: f32, y: f32| ((x - cx) * scale + cx, (y - cy) * scale + cy + dy);
+    if let Some(pill) = &mut frame.pill {
+        let (x, y) = map(pill.x, pill.y);
+        pill.x = x;
+        pill.y = y;
+        pill.w *= scale;
+        pill.h *= scale;
+        pill.radius *= scale;
+        pill.color.a = (pill.color.a as f32 * entrance.alpha).round() as u8;
+    }
+    for quad in &mut frame.glyphs {
+        let (x, y) = map(quad.rect[0], quad.rect[1]);
+        quad.rect = [x, y, quad.rect[2] * scale, quad.rect[3] * scale];
+        quad.colour[3] *= entrance.alpha;
     }
 }
 

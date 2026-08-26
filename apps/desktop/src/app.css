@@ -3,6 +3,45 @@
 
 @import "@fontsource-variable/geist-mono";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/inter";
+
+/* Satoshi = display / heading face, matched to the web app. woff2 in static/fonts. */
+@font-face {
+	font-family: "Satoshi";
+	src: url("/fonts/Satoshi-400.woff2") format("woff2");
+	font-weight: 400;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Satoshi";
+	src: url("/fonts/Satoshi-500.woff2") format("woff2");
+	font-weight: 500;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Satoshi";
+	src: url("/fonts/Satoshi-700.woff2") format("woff2");
+	font-weight: 700;
+	font-display: swap;
+}
+
+/* Rule: every heading uses Satoshi at weight >= 500 (see feedback_design). */
+@layer base {
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		font-family: var(--font-display);
+		font-weight: 500;
+		letter-spacing: -0.01em;
+	}
+	h1,
+	h2 {
+		font-weight: 700;
+	}
+}
 
 @source "../node_modules/@recast/ui/src";
 @source "../node_modules/@recast/player/src";
@@ -11,8 +50,10 @@
 @variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-	--font-sans: "Geist Variable", "Inter", "Google Sans", ui-sans-serif, system-ui, -apple-system,
-		BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+		"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--font-display: "Satoshi", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+	--font-heading: var(--font-display);
 	--font-mono: "Geist Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
 		Consolas, monospace;
 
@@ -278,11 +319,20 @@ input[type="number"]:has(class) {
 	animation-duration: 0.01ms;
 }
 
-/* The active R/P/S pill is a shared element: name it so the VT morphs it
- * (slide + resize) from the old tab to the new one during navigation. */
+/* R/P/S nav layering during a page view-transition. The bar (incl. the shelf
+ * fill) sits lowest; the active pill morphs above it; the tab labels ride on
+ * top so the sliding pill never paints over the text/icons. */
+::view-transition-group(recast-topnav) {
+	z-index: 20;
+}
 ::view-transition-group(recast-nav-pill) {
+	z-index: 21;
 	animation-duration: 320ms;
 	animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+::view-transition-group(recast-nav-tabs) {
+	z-index: 22;
+	animation-duration: 0.01ms;
 }
 @media (prefers-reduced-motion: reduce) {
 	::view-transition-group(recast-nav-pill) {

@@ -1,0 +1,9 @@
+[package]
+name = "recast-codec"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Codec identity, encoder capability descriptors, and the selection policy. Platform-free."
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }

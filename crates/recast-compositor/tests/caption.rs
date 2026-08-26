@@ -1,6 +1,7 @@
 use recast_captions::{CaptionAnimation, CaptionStyle, TranscriptWord};
-use recast_compositor::{layout_caption, CaptionFrame, VideoRect};
+use recast_compositor::{layout_caption, CaptionClock, CaptionFrame, VideoRect};
 use recast_text::{resolve_face, FontFace, GlyphAtlas};
+use recast_time::{MappedSpan, TimeMap};
 
 const CANVAS: (u32, u32) = (1280, 720);
 
@@ -55,12 +56,21 @@ fn style() -> CaptionStyle {
     }
 }
 
+/// No retiming in these fixtures, so the two axes coincide.
+fn clock(t: f64) -> CaptionClock<'static> {
+    CaptionClock {
+        source: t,
+        output: t,
+        time_map: None,
+    }
+}
+
 fn lay(style: &CaptionStyle, words: &[TranscriptWord], t: f64) -> CaptionFrame {
     let Some(face) = face() else {
         return CaptionFrame::default();
     };
     let mut atlas = GlyphAtlas::new(512, 2048);
-    layout_caption(style, words, t, video(), CANVAS, &face, 0, &mut atlas)
+    layout_caption(style, words, clock(t), video(), CANVAS, &face, 0, &mut atlas)
 }
 
 #[test]
@@ -329,7 +339,7 @@ fn every_uv_matches_the_atlas_the_frame_ended_with() {
         ..style()
     };
     let (_, before) = atlas.size();
-    let frame = layout_caption(&style, &long, 1.5, video(), CANVAS, &face, 0, &mut atlas);
+    let frame = layout_caption(&style, &long, clock(1.5), video(), CANVAS, &face, 0, &mut atlas);
     let (width, height) = atlas.size();
     assert!(height > before, "the atlas never grew, so this proves nothing");
     assert!(!frame.glyphs.is_empty());
@@ -399,4 +409,178 @@ fn a_short_wrapped_line_is_centred_rather_than_left_flush() {
         narrow.1,
         wide.1
     );
+}
+
+// --- Entrance ---
+
+fn entrance_style(kind: &str, ms: f64) -> CaptionStyle {
+    CaptionStyle {
+        animation: Some(CaptionAnimation {
+            chunk: "line".into(),
+            highlight: Some("none".into()),
+            entrance: kind.into(),
+            entrance_ms: ms,
+            ..CaptionAnimation::default()
+        }),
+        ..style()
+    }
+}
+
+fn lay_at(style: &CaptionStyle, words: &[TranscriptWord], clock: CaptionClock<'_>) -> CaptionFrame {
+    let Some(face) = face() else {
+        return CaptionFrame::default();
+    };
+    let mut atlas = GlyphAtlas::new(512, 2048);
+    layout_caption(style, words, clock, video(), CANVAS, &face, 0, &mut atlas)
+}
+
+#[test]
+fn a_fade_entrance_ramps_the_alpha_and_settles_opaque() {
+    let Some(_) = face() else { return };
+    let style = entrance_style("fade", 400.0);
+    let alpha = |t: f64| lay(&style, &sentence(), t).glyphs[0].colour[3];
+    // The chunk starts at 0.0, so t IS the elapsed entrance time.
+    let (early, mid, settled) = (alpha(0.02), alpha(0.2), alpha(1.0));
+    assert!(early < mid, "alpha did not ramp: {early} then {mid}");
+    assert!(mid < settled, "alpha did not keep ramping: {mid} then {settled}");
+    assert!((settled - 1.0).abs() < 1e-6, "settled at {settled}");
+}
+
+#[test]
+fn no_entrance_is_opaque_from_the_first_frame() {
+    let Some(_) = face() else { return };
+    let style = entrance_style("none", 400.0);
+    assert!((lay(&style, &sentence(), 0.01).glyphs[0].colour[3] - 1.0).abs() < 1e-6);
+}
+
+/// A zero duration is the same as no entrance, and must not divide by it.
+#[test]
+fn a_zero_length_entrance_is_inert() {
+    let Some(_) = face() else { return };
+    let style = entrance_style("fade", 0.0);
+    assert!((lay(&style, &sentence(), 0.0).glyphs[0].colour[3] - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn a_slide_entrance_starts_below_where_it_settles() {
+    let Some(_) = face() else { return };
+    let style = entrance_style("slide", 400.0);
+    let top = |t: f64| lay(&style, &sentence(), t).glyphs[0].rect[1];
+    let (early, settled) = (top(0.02), top(1.0));
+    assert!(
+        early > settled + 1.0,
+        "the slide did not travel: {early} then {settled}"
+    );
+}
+
+/// `pop` scales in place; travelling would make it a slide.
+#[test]
+fn a_pop_entrance_scales_without_travelling() {
+    let Some(_) = face() else { return };
+    let pop = entrance_style("pop", 400.0);
+    let slide = entrance_style("slide", 400.0);
+    let centre_shift = |style: &CaptionStyle| {
+        let early = lay(style, &sentence(), 0.02).pill.unwrap();
+        let settled = lay(style, &sentence(), 1.0).pill.unwrap();
+        (early.y + early.h / 2.0) - (settled.y + settled.h / 2.0)
+    };
+    assert!(
+        centre_shift(&pop).abs() < 0.5,
+        "pop moved by {}",
+        centre_shift(&pop)
+    );
+    assert!(centre_shift(&slide) > 1.0, "slide did not move");
+
+    let early = lay(&pop, &sentence(), 0.02).pill.unwrap();
+    let settled = lay(&pop, &sentence(), 1.0).pill.unwrap();
+    assert!(early.w < settled.w, "pop did not scale up");
+}
+
+/// The pill scales about its own centre, so the glyphs must stay inside it
+/// throughout the entrance rather than sliding out during the ramp.
+#[test]
+fn the_glyphs_stay_inside_the_pill_mid_entrance() {
+    let Some(_) = face() else { return };
+    let frame = lay(&entrance_style("pop", 400.0), &sentence(), 0.05);
+    let pill = frame.pill.unwrap();
+    for quad in &frame.glyphs {
+        assert!(
+            quad.rect[0] >= pill.x - 1.0
+                && quad.rect[0] + quad.rect[2] <= pill.x + pill.w + 1.0,
+            "glyph {:?} escaped pill {:?} mid-entrance",
+            quad.rect,
+            (pill.x, pill.w)
+        );
+    }
+}
+
+/// The entrance is clocked on the OUTPUT axis: on a 2x segment the viewer sees
+/// it at the authored wall-clock rate, not at twice the speed.
+#[test]
+fn the_entrance_runs_on_the_output_axis_not_the_original_one() {
+    let Some(_) = face() else { return };
+    let style = entrance_style("fade", 400.0);
+    // One span playing at 2x: 4 s of original become 2 s of output.
+    let map = TimeMap {
+        spans: vec![MappedSpan {
+            orig_start: 0.0,
+            orig_end: 4.0,
+            speed: 2.0,
+            out_start: 0.0,
+            out_end: 2.0,
+        }],
+        output_duration: 2.0,
+    };
+    // Original 0.4 is output 0.2, which is half of a 400 ms entrance.
+    let sped = lay_at(
+        &style,
+        &sentence(),
+        CaptionClock {
+            source: 0.4,
+            output: 0.2,
+            time_map: Some(&map),
+        },
+    );
+    // The same OUTPUT elapsed with no retiming has to look identical.
+    let plain = lay_at(
+        &style,
+        &sentence(),
+        CaptionClock {
+            source: 0.4,
+            output: 0.2,
+            time_map: None,
+        },
+    );
+    assert!((sped.glyphs[0].colour[3] - plain.glyphs[0].colour[3]).abs() < 1e-6);
+    // And it must NOT have finished, which is what clocking on source would do.
+    assert!(
+        sped.glyphs[0].colour[3] < 0.95,
+        "the entrance was already over at {}",
+        sped.glyphs[0].colour[3]
+    );
+}
+
+/// A chunk that starts mid-clip has its entrance measured from ITS start, not
+/// from zero, or every later chunk appears fully settled.
+#[test]
+fn a_later_chunks_entrance_is_measured_from_its_own_start() {
+    let Some(_) = face() else { return };
+    let style = CaptionStyle {
+        animation: Some(CaptionAnimation {
+            chunk: "word".into(),
+            highlight: Some("none".into()),
+            entrance: "fade".into(),
+            entrance_ms: 400.0,
+            ..CaptionAnimation::default()
+        }),
+        ..style()
+    };
+    // The second word starts at 0.5, so 0.52 is 20 ms into ITS entrance.
+    let fresh = lay(&style, &sentence(), 0.52).glyphs[0].colour[3];
+    let settled = lay(&style, &sentence(), 0.95).glyphs[0].colour[3];
+    assert!(
+        fresh < 0.5,
+        "the second chunk started already settled at {fresh}"
+    );
+    assert!((settled - 1.0).abs() < 1e-6);
 }
