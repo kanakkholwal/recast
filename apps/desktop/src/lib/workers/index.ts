@@ -6,8 +6,6 @@ export const workerHost: WorkerHost = {
 		switch (name) {
 			case "mediabunny":
 				return new Worker(new URL("./mediabunny.worker", import.meta.url), { type: "module" });
-			case "render":
-				return new Worker(new URL("./render.worker", import.meta.url), { type: "module" });
 			case "filmstrip":
 				return new Worker(new URL("./filmstrip.worker", import.meta.url), { type: "module" });
 			case "smoothing":

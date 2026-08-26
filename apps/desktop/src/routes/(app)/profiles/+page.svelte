@@ -343,11 +343,12 @@ const capabilities: Cap[] = [
   subtitle="Save what to capture and pick the default that loads on launch."
 >
   {#snippet actions()}
-    <label for="profiles.enabled" class={cn(buttonVariants({ variant: "raw", size: "sm" }), "gap-1.5")}>
+    <label
+      for="profiles.enabled"
+      class={cn(buttonVariants({ variant: "raw", size: "sm" }), "gap-1.5")}
+    >
       <Info size={13} />
-      <span class="text-muted-foreground">
-        Apply profiles when recording
-      </span>
+      <span class="text-muted-foreground"> Apply profiles when recording </span>
       <Switch
         id="profiles.enabled"
         checked={profilesStore.enabled}
@@ -355,22 +356,27 @@ const capabilities: Cap[] = [
         aria-label="Apply profiles when recording"
       />
     </label>
-    <Button size="sm" variant="outline" class="gap-1.5" onclick={addProfile} disabled={!profilesStore.hydrated || !profilesStore.enabled}>
+  {/snippet}
+
+  {#snippet filters()}
+    <div class="w-full max-w-md flex-1">
+      <LibrarySearch bind:value={query} noun="profiles" />
+    </div>
+    <Button
+      size="sm"
+      variant="outline"
+      class="gap-1.5 ml-auto"
+      onclick={addProfile}
+      disabled={!profilesStore.hydrated || !profilesStore.enabled}
+    >
       <Plus size={13} /> New profile
     </Button>
   {/snippet}
 
-  {#snippet filters()}
-    <div class="min-w-50 flex-1">
-      <LibrarySearch bind:value={query} noun="profiles" />
-    </div>
-  {/snippet}
-
   <div class="flex flex-col gap-4">
-  
     {#if !profilesStore.hydrated}
       <div
-        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
         aria-hidden="true"
       >
         {#each { length: 3 } as _, i (i)}
@@ -406,8 +412,10 @@ const capabilities: Cap[] = [
         {/if}
       </div>
     {:else}
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-       <button
+      <div
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+      >
+        <button
           type="button"
           onclick={addProfile}
           class="group/add flex h-full min-h-28 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 ease-out hover:border-border hover:bg-card/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:hover:-translate-y-0.5"
@@ -562,8 +570,6 @@ const capabilities: Cap[] = [
             </div>
           </div>
         {/each}
-
-       
       </div>
     {/if}
   </div>
@@ -571,7 +577,7 @@ const capabilities: Cap[] = [
   {#snippet detail()}
     {#if selectedProfile}
       {@const p = selectedProfile!}
-    
+
       {#key p.id}
         <div class="flex flex-col gap-5" in:fade={{ duration: 160 }}>
           <div class="flex items-center gap-3">
@@ -590,10 +596,16 @@ const capabilities: Cap[] = [
               {/if}
             </span>
             <div class="min-w-0 flex-1">
-              <div class="truncate text-[15px] font-semibold text-foreground" title={p.name}>
+              <div
+                class="truncate text-[15px] font-semibold text-foreground"
+                title={p.name}
+              >
                 {p.name}
               </div>
-              <div class="truncate text-[11px] text-muted-foreground" title={summarize(p)}>
+              <div
+                class="truncate text-[11px] text-muted-foreground"
+                title={summarize(p)}
+              >
                 {summarize(p)}
               </div>
             </div>
@@ -605,9 +617,14 @@ const capabilities: Cap[] = [
             {#each capabilities as cap (cap.field)}
               {@const on = p[cap.field]}
               {@const CapIcon = on ? cap.iconOn : cap.iconOff}
-              {@const fieldLabel = cap.field === "microphone"
-                ? (p.micLabel ?? "On")
-                      : cap.field === "camera"? (p.cameraLabel ?? "On") : on ? "On" : "Off"}
+              {@const fieldLabel =
+                cap.field === "microphone"
+                  ? (p.micLabel ?? "On")
+                  : cap.field === "camera"
+                    ? (p.cameraLabel ?? "On")
+                    : on
+                      ? "On"
+                      : "Off"}
               <div class="flex items-center gap-2 bg-card/60 px-3 py-2">
                 <CapIcon
                   class={cn(
@@ -618,7 +635,10 @@ const capabilities: Cap[] = [
                 <dt class="flex-1 text-muted-foreground" title={cap.label}>
                   {cap.label}
                 </dt>
-                <dd class="truncate font-medium text-foreground" title={fieldLabel}>
+                <dd
+                  class="truncate font-medium text-foreground"
+                  title={fieldLabel}
+                >
                   {fieldLabel}
                 </dd>
               </div>
@@ -639,7 +659,12 @@ const capabilities: Cap[] = [
           </dl>
 
           <div class="flex flex-col gap-2">
-            <Button size="sm" class="gap-1.5" variant="default_soft" onclick={() => startEditing(p)}>
+            <Button
+              size="sm"
+              class="gap-1.5"
+              variant="default_soft"
+              onclick={() => startEditing(p)}
+            >
               <Pencil size={13} /> Edit profile
             </Button>
             <div class="grid grid-cols-2 gap-2">

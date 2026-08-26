@@ -20,7 +20,7 @@ export interface ShortcutHost {
  *  a `new URL(…, import.meta.url)` inside this package resolves outside the
  *  app root, which then only fails in dev — see
  *  `packages/media/test/worker-resolution.test.ts`. */
-export type EditorWorkerName = "mediabunny" | "render" | "filmstrip" | "smoothing" | "exportRender";
+export type EditorWorkerName = "mediabunny" | "filmstrip" | "smoothing" | "exportRender";
 
 export interface WorkerHost {
 	create(name: EditorWorkerName): Worker;
