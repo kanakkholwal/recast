@@ -63,6 +63,12 @@ impl FontFace {
         self.upem
     }
 
+    /// The file bytes, for a host that resolves a face natively and has to ship
+    /// it to a worker or across the wasm boundary.
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
     pub(crate) fn parse(&self) -> Option<ttf_parser::Face<'_>> {
         ttf_parser::Face::parse(&self.data, self.index).ok()
     }

@@ -56,6 +56,10 @@ pub fn to_scene(state: &RenderState) -> Scene {
         // The v1 state never carried the pointer path: it lives in its own file
         // and the editor attaches it after migrating.
         cursor_track: None,
+        captions: state.caption_style.clone(),
+        // The words live in their own file, like the pointer path; the editor
+        // attaches them after migrating.
+        caption_track: None,
         flags: SceneFlags {
             focus: state.focus_enabled,
             annotations: state.annotations_enabled,
@@ -184,6 +188,7 @@ pub fn to_render_state(scene: &Scene) -> RenderState {
             .collect(),
         focus_enabled: scene.flags.focus,
         annotations_enabled: scene.flags.annotations,
+        caption_style: scene.captions.clone(),
         split_points: scene.timeline.split_points.clone(),
         segment_speeds: scene.timeline.segment_speeds.clone(),
         audio_settings: scene.audio.settings.clone(),
@@ -492,6 +497,21 @@ mod tests {
     const FULLY_POPULATED: &str = r##"{
         "focusEnabled": false,
         "annotationsEnabled": false,
+        "captionStyle": {
+            "enabled": true, "fontFamily": "Anton", "fontWeight": 800,
+            "fontSizePct": 5.5, "position": "top", "align": "left",
+            "offsetPct": -4.0, "color": "#00ff00", "mutedColor": "#334455",
+            "uppercase": true, "letterSpacing": 0.05, "background": "soft",
+            "backgroundColor": "#123456", "backgroundOpacity": 42.0,
+            "boxPaddingXEm": 0.9, "boxPaddingYEm": 0.4, "boxRadiusEm": 1.2,
+            "lineHeight": 1.5, "outlineWidth": 3.0, "outlineColor": "#654321",
+            "maxLines": 3, "maxCharsPerLine": 30,
+            "animation": {
+                "chunk": "word", "chunkSize": 2, "emphasis": "scale",
+                "emphasisColor": "#ff00ff", "highlight": "progressive",
+                "entrance": "pop", "entranceMs": 90.0, "holdGaps": false
+            }
+        },
         "backgroundType": "gradient",
         "backgroundValue": "linear-gradient(45deg, #ff0000 0%, #0000ff 100%)",
         "backgroundBlur": 18.0,
@@ -575,7 +595,7 @@ mod tests {
 
     /// Keys `fully_populated()` must emit. Bumped deliberately, never to make a
     /// failing test pass.
-    const RENDER_STATE_KEYS: usize = 44;
+    const RENDER_STATE_KEYS: usize = 45;
 
     #[test]
     fn layer_ids_are_unique_and_next_id_does_not_collide() {

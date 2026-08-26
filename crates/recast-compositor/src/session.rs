@@ -1,10 +1,21 @@
+use recast_captions::TranscriptWord;
 use recast_cursor::CursorTrack;
 use recast_gpu::{GpuContext, GpuError};
 use recast_scene::{LayerId, LayerSource, Scene};
+use recast_text::{FontFace, GlyphAtlas};
 use recast_time::TimeMap;
 
+use crate::caption::{layout_caption, CaptionFrame, VideoRect};
 use crate::eval::{Evaluator, FrameParams, SourceGeometry};
 use crate::render::{Compositor, FrameInputs, LayerInput, RenderStats};
+
+/// Atlas width. Fixed, so growth never restrides the buffer, and a multiple of
+/// 256 so the row upload is aligned on every backend.
+const ATLAS_WIDTH: u32 = 1024;
+
+/// Ceiling before the atlas refuses a glyph. 4 MB of coverage, which is far
+/// more than a caption needs even at 4K.
+const ATLAS_MAX_HEIGHT: u32 = 4096;
 
 /// Owns the scene, its evaluator and the compositor for one preview or export
 /// surface. The FFI layers marshal into this; they hold no logic of their own.
@@ -16,6 +27,10 @@ pub struct Session {
     time_map: Option<TimeMap>,
     evaluator: Evaluator,
     compositor: Compositor,
+    /// The caption face and the glyphs packed from it. Held across frames
+    /// because re-rasterising a line every frame is the whole cost.
+    caption_face: Option<FontFace>,
+    atlas: GlyphAtlas,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,16 +48,21 @@ impl Session {
             time_map: None,
             evaluator,
             compositor: Compositor::new(ctx)?,
+            caption_face: None,
+            atlas: GlyphAtlas::new(ATLAS_WIDTH, ATLAS_MAX_HEIGHT),
         })
     }
 
     /// Rebuilds the evaluator, because a scene edit can move the time map and
     /// the canvas geometry. Cheap: no GPU resources are touched.
     pub fn set_scene(&mut self, mut scene: Scene) {
-        // The pointer path arrives on its own channel, so a scene edit that does
-        // not carry one must not drop the one already loaded.
+        // The pointer path and the transcript arrive on their own channels, so a
+        // scene edit that does not carry them must not drop what is loaded.
         if scene.cursor_track.is_none() {
             scene.cursor_track = self.scene.cursor_track.take();
+        }
+        if scene.caption_track.is_none() {
+            scene.caption_track = self.scene.caption_track.take();
         }
         self.evaluator = Evaluator::with_time_map(&scene, self.source, self.time_map.clone());
         self.scene = scene;
@@ -51,6 +71,27 @@ impl Session {
     /// The evaluator reads the track off the scene per frame, so no rebuild.
     pub fn set_cursor_track(&mut self, track: Option<CursorTrack>) {
         self.scene.cursor_track = track;
+    }
+
+    /// The transcribed words captions are drawn from. Its own channel for the
+    /// same reason as the pointer path: bulky, and it arrives separately.
+    pub fn set_caption_track(&mut self, words: Option<Vec<TranscriptWord>>) {
+        self.scene.caption_track = words;
+    }
+
+    /// The face to draw captions with. Required on wasm32, where there is no
+    /// filesystem to resolve a family against; native falls back to resolving
+    /// the style's own family.
+    pub fn set_caption_font(&mut self, data: Vec<u8>, index: u32) -> bool {
+        let Some(face) = FontFace::from_bytes(std::sync::Arc::new(data), index) else {
+            // Bytes we cannot read leave the working face alone: dropping it
+            // would silently turn captions off for the rest of the session.
+            return false;
+        };
+        self.caption_face = Some(face);
+        // The packed glyphs were rasterised from the old face at the same ids.
+        self.atlas.reset();
+        true
     }
 
     pub fn set_source(&mut self, source: SourceGeometry) {
@@ -103,6 +144,46 @@ impl Session {
             .map(|l| l.id)
     }
 
+    /// Lays out the caption for `output_time` and uploads any glyph it had to
+    /// rasterise. The host hands the result back through `FrameInputs`, the way
+    /// it hands over sprites and annotation images.
+    pub fn caption_frame(&mut self, output_time: f64) -> CaptionFrame {
+        let Some(style) = self.scene.captions.clone() else {
+            return CaptionFrame::default();
+        };
+        let Some(words) = self.scene.caption_track.as_ref() else {
+            return CaptionFrame::default();
+        };
+        if !style.enabled || words.is_empty() {
+            return CaptionFrame::default();
+        }
+        if self.caption_face.is_none() {
+            self.caption_face = resolve_caption_face(&style);
+        }
+        let Some(face) = self.caption_face.clone() else {
+            return CaptionFrame::default();
+        };
+
+        let params = self.evaluator.evaluate(&self.scene, output_time);
+        let Some(video) = screen_rect(&params) else {
+            return CaptionFrame::default();
+        };
+        let canvas = (params.geometry.canvas_w, params.geometry.canvas_h);
+        // Captions resolve on the ORIGINAL axis: the words carry source times.
+        let frame = layout_caption(
+            &style,
+            words,
+            output_time,
+            video,
+            canvas,
+            &face,
+            0,
+            &mut self.atlas,
+        );
+        self.compositor.sync_glyph_atlas(&mut self.atlas);
+        frame
+    }
+
     pub fn render(
         &mut self,
         output_time: f64,
@@ -131,6 +212,47 @@ impl Session {
     }
 }
 
+/// The screen card's rect on the canvas, which is what a caption is placed
+/// against.
+fn screen_rect(params: &FrameParams) -> Option<VideoRect> {
+    let layer = params.layers.first()?;
+    Some(VideoRect {
+        x: layer.dest.x as f64,
+        y: layer.dest.y as f64,
+        w: layer.dest.w as f64,
+        h: layer.dest.h as f64,
+    })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn resolve_caption_face(style: &recast_captions::CaptionStyle) -> Option<FontFace> {
+    recast_text::resolve_face(
+        &first_family(&style.font_family),
+        style.font_weight as u16,
+        None,
+    )
+    .map(|resolved| resolved.face)
+}
+
+/// No filesystem to resolve against: the host must call `set_caption_font`.
+#[cfg(target_arch = "wasm32")]
+fn resolve_caption_face(_style: &recast_captions::CaptionStyle) -> Option<FontFace> {
+    None
+}
+
+/// The first family of a CSS stack, unquoted. fontdb matches one name, not a
+/// fallback list.
+#[cfg(not(target_arch = "wasm32"))]
+fn first_family(stack: &str) -> String {
+    stack
+        .split(',')
+        .next()
+        .unwrap_or(stack)
+        .trim()
+        .trim_matches(['\'', '"'])
+        .to_string()
+}
+
 /// Builds the inputs map from a single screen frame, which is the common case
 /// for the preview before the camera stream is wired.
 pub fn screen_only<'a>(session: &Session, input: LayerInput<'a>) -> FrameInputs<'a> {
@@ -144,6 +266,7 @@ pub fn screen_only<'a>(session: &Session, input: LayerInput<'a>) -> FrameInputs<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use recast_captions::TranscriptWord;
     use recast_scene::migrate::to_scene;
     use recast_scene::v1::RenderState;
 
@@ -358,6 +481,133 @@ mod tests {
         let (_, stats) = session.render_to_texture(0.0, &FrameInputs::new());
         assert_eq!(stats.layers_drawn, 0);
         assert!(stats.layers_skipped > 0);
+    }
+
+    const CAPTION_STYLE: &str = r##""captionStyle": {
+        "enabled": true, "fontFamily": "Arial", "fontWeight": 400,
+        "fontSizePct": 6.0, "position": "bottom", "align": "center",
+        "offsetPct": 0.0, "color": "#ffffff", "uppercase": false,
+        "letterSpacing": 0.0, "background": "box", "backgroundColor": "#000000",
+        "backgroundOpacity": 80.0, "outlineWidth": 0.0, "outlineColor": "#000000",
+        "maxLines": 2,
+        "animation": {
+            "chunk": "word", "chunkSize": 1, "emphasis": "none",
+            "emphasisColor": "#ffffff", "highlight": "none",
+            "entrance": "none", "entranceMs": 0.0, "holdGaps": true
+        }
+    },"##;
+
+    fn transcript() -> Vec<TranscriptWord> {
+        vec![
+            TranscriptWord {
+                start: 1.0,
+                end: 1.5,
+                text: "l".into(),
+            },
+            TranscriptWord {
+                start: 5.0,
+                end: 5.5,
+                text: "wwww".into(),
+            },
+        ]
+    }
+
+    /// Skips when no system font resolves, the same shape as the GPU skip.
+    fn has_font() -> bool {
+        recast_text::resolve_face("Arial", 400, None).is_some()
+    }
+
+    #[test]
+    fn a_caption_needs_both_a_style_and_a_track() {
+        let Some(ctx) = context() else { return };
+        if !has_font() {
+            return;
+        }
+        let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
+        assert!(
+            session.caption_frame(1.2).is_empty(),
+            "a style with no words drew something"
+        );
+        session.set_caption_track(Some(transcript()));
+        assert!(!session.caption_frame(1.2).is_empty());
+
+        let mut styleless = Session::new(&ctx, scene(""), source()).expect("session");
+        styleless.set_caption_track(Some(transcript()));
+        assert!(styleless.caption_frame(1.2).is_empty());
+    }
+
+    /// The editor pushes a fresh scene on any store write, so a replace that
+    /// drops the transcript makes captions vanish mid-session.
+    #[test]
+    fn replacing_the_scene_keeps_the_caption_track() {
+        let Some(ctx) = context() else { return };
+        if !has_font() {
+            return;
+        }
+        let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
+        session.set_caption_track(Some(transcript()));
+        assert!(!session.caption_frame(1.2).is_empty());
+
+        session.set_scene(scene(&format!(r#"{CAPTION_STYLE} "padding": 5.0,"#)));
+        assert!(!session.caption_frame(1.2).is_empty());
+    }
+
+    #[test]
+    fn clearing_the_caption_track_is_not_undone_by_the_next_scene() {
+        let Some(ctx) = context() else { return };
+        if !has_font() {
+            return;
+        }
+        let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
+        session.set_caption_track(Some(transcript()));
+        session.set_caption_track(None);
+        assert!(session.caption_frame(1.2).is_empty());
+
+        session.set_scene(scene(&format!(r#"{CAPTION_STYLE} "padding": 5.0,"#)));
+        assert!(session.caption_frame(1.2).is_empty());
+    }
+
+    /// Words carry ORIGINAL times, so a cut has to move which one is on screen
+    /// at a given OUTPUT time. Resolving on the output axis would show the
+    /// wrong word for the whole tail of the video.
+    #[test]
+    fn a_caption_resolves_on_the_original_axis_not_the_output_one() {
+        let Some(ctx) = context() else { return };
+        if !has_font() {
+            return;
+        }
+        let cut = format!(r#"{CAPTION_STYLE} "cuts": [{{"start": 2.0, "end": 4.0}}],"#);
+        let mut session = Session::new(&ctx, scene(&cut), source()).expect("session");
+        session.set_caption_track(Some(transcript()));
+
+        // Output 1.2 is original 1.2: the one-glyph word.
+        let early = session.caption_frame(1.2);
+        // Output 3.2 is original 5.2, past the cut: the four-glyph word.
+        let late = session.caption_frame(3.2);
+        assert_eq!(early.glyphs.len(), 1, "expected the short word before the cut");
+        assert_eq!(late.glyphs.len(), 4, "expected the long word after the cut");
+    }
+
+    #[test]
+    fn a_new_face_drops_the_glyphs_packed_from_the_old_one() {
+        let Some(ctx) = context() else { return };
+        if !has_font() {
+            return;
+        }
+        let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
+        session.set_caption_track(Some(transcript()));
+        let before = session.caption_frame(1.2);
+        assert!(!before.is_empty());
+
+        let face = recast_text::resolve_face("Arial", 400, None).expect("arial");
+        let bytes = face.face.data().to_vec();
+        assert!(session.set_caption_font(bytes, 0));
+        let after = session.caption_frame(1.2);
+        assert_eq!(after.glyphs.len(), before.glyphs.len());
+
+        // Bytes we cannot read must not turn captions off for good.
+        assert!(!session.set_caption_font(vec![0, 1, 2, 3], 0));
+        assert!(!session.caption_frame(1.2).is_empty());
     }
 
     #[test]

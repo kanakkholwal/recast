@@ -59,6 +59,42 @@ pub fn chunk_words<'a>(
     words.chunks(size).collect()
 }
 
+/// Index of the chunk on screen at source-time `t`. Holds the previous chunk
+/// through the gap before the next starts, so a one-word style never blinks to
+/// empty between words. `None` only when there are no chunks at all.
+pub fn active_chunk_index(runs: &[&[TranscriptWord]], t: f64) -> Option<usize> {
+    if runs.is_empty() {
+        return None;
+    }
+    let mut index = 0;
+    for (i, run) in runs.iter().enumerate() {
+        match run.first() {
+            Some(word) if t >= word.start => index = i,
+            _ => break,
+        }
+    }
+    Some(index)
+}
+
+/// Index of the currently-spoken word in a chunk. A word containing `t` wins;
+/// in a gap `hold_gaps` keeps the most recently started word lit.
+pub fn active_word_index(words: &[TranscriptWord], t: f64, hold_gaps: bool) -> Option<usize> {
+    let mut last = None;
+    for (i, w) in words.iter().enumerate() {
+        if t >= w.start && t < w.end {
+            return Some(i);
+        }
+        if t >= w.start {
+            last = Some(i);
+        }
+    }
+    if hold_gaps {
+        last
+    } else {
+        None
+    }
+}
+
 /// Greedy line break by character count, never splitting inside a word and
 /// capped at `max_lines`. Returns groups of indices into `words`.
 ///

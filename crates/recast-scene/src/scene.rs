@@ -1,3 +1,4 @@
+use recast_captions::{CaptionStyle, TranscriptWord};
 use recast_color::{Gradient, Srgba};
 use recast_cursor::CursorTrack;
 use recast_time::{
@@ -31,6 +32,13 @@ pub struct Scene {
     /// settings, this holds the samples they are applied to.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor_track: Option<CursorTrack>,
+    /// How captions look. `None` means the project has none authored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captions: Option<CaptionStyle>,
+    /// The transcribed words captions are drawn from. Split from the style for
+    /// the same reason as the pointer path: captured signal, not authored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption_track: Option<Vec<TranscriptWord>>,
     #[serde(default)]
     pub flags: SceneFlags,
     /// Editor-owned keys the engine never reads. Carried so a round trip
@@ -48,6 +56,8 @@ impl Default for Scene {
             layers: Vec::new(),
             audio: AudioGraph::default(),
             cursor_track: None,
+            captions: None,
+            caption_track: None,
             flags: SceneFlags::default(),
             passthrough: serde_json::Map::new(),
         }

@@ -9,7 +9,8 @@ use crate::annotation::{AnnotationParams, AnnotationShape};
 use crate::eval::{
     BackgroundParams, CursorDraw, CursorSlot, FrameParams, LayerParams, ShadowParams,
 };
-use crate::text::{GlyphQuad, TextPass};
+use crate::caption::CaptionFrame;
+use crate::text::TextPass;
 
 const MAX_GRADIENT_STOPS: usize = 8;
 
@@ -91,9 +92,9 @@ pub struct FrameInputs<'a> {
     /// file share a texture. Small and rarely more than a handful, so a linear
     /// scan beats hashing a path per frame.
     annotation_images: Vec<(String, LayerInput<'a>)>,
-    /// Laid-out text for this frame, already in canvas pixels. Owned rather
+    /// This frame's caption, already laid out in canvas pixels. Owned rather
     /// than borrowed because the layout is built per frame, not uploaded.
-    glyphs: Vec<GlyphQuad>,
+    caption: CaptionFrame,
 }
 
 /// A pointer sprite and the point on it that sits on the cursor position.
@@ -165,8 +166,8 @@ impl<'a> FrameInputs<'a> {
             .map(|(_, input)| input)
     }
 
-    pub fn set_glyphs(&mut self, glyphs: Vec<GlyphQuad>) -> &mut Self {
-        self.glyphs = glyphs;
+    pub fn set_caption(&mut self, caption: CaptionFrame) -> &mut Self {
+        self.caption = caption;
         self
     }
 
@@ -310,19 +311,48 @@ impl Compositor {
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_annotations(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_cursor(&mut encoder, &working_view, params, inputs, width, height);
-        // Text last: captions sit above the pointer, as the DOM overlay does.
+        // Captions last: they sit above the pointer, as the DOM overlay does.
+        self.draw_caption_pill(&mut encoder, &working_view, &inputs.caption);
         self.text.draw(
             &self.device,
             &self.queue,
             &mut encoder,
             &working_view,
-            &inputs.glyphs,
+            &inputs.caption.glyphs,
             (width, height),
         );
         self.present(&mut encoder, &working_view, target);
 
         self.queue.submit([encoder.finish()]);
         stats
+    }
+
+    /// The caption's backing box, through the same rounded-rect pass the
+    /// annotations use rather than a pass of its own.
+    fn draw_caption_pill(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        caption: &CaptionFrame,
+    ) {
+        let Some(pill) = caption.pill else { return };
+        if pill.w <= 0.0 || pill.h <= 0.0 || pill.color.a == 0 {
+            return;
+        }
+        let params = AnnotationParams {
+            shape: AnnotationShape::Rect {
+                x: pill.x,
+                y: pill.y,
+                w: pill.w,
+                h: pill.h,
+                radius: pill.radius,
+            },
+            fill: pill.color,
+            stroke: recast_color::TRANSPARENT,
+            stroke_width: 0.0,
+            alpha: 1.0,
+        };
+        self.draw_shape_run(encoder, working, &[&params]);
     }
 
     /// Uploads whatever the caller has packed since the last frame. Separate

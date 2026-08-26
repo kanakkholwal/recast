@@ -732,6 +732,7 @@ name = "recast-compositor"
 version = "0.0.0"
 dependencies = [
  "bytemuck",
+ "recast-captions",
  "recast-color",
  "recast-cursor",
  "recast-gpu",
@@ -782,6 +783,7 @@ dependencies = [
 name = "recast-scene"
 version = "0.0.0"
 dependencies = [
+ "recast-captions",
  "recast-color",
  "recast-cursor",
  "recast-time",

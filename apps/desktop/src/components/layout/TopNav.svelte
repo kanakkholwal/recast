@@ -1,17 +1,18 @@
 <script lang="ts">
 import { page } from "$app/state";
 import NotchedShelf from "$components/layout/NotchedShelf.svelte";
-import SearchCommandMenu from "$components/layout/SearchCommandMenu.svelte";
 import SidebarAccount from "$components/layout/SidebarAccount.svelte";
 import Logo from "$components/logo.svelte";
 import { launchRecordingPanel } from "$lib/ipc";
 import { chordLabel } from "$lib/shortcuts/registry.svelte";
+import { commandPalette } from "$lib/stores/command-palette.svelte";
 import {
 	Broadcast,
 	Moon,
+	Search,
 	Settings,
-	SlidersHorizontal,
 	Share2,
+	SlidersHorizontal,
 	Sun,
 	Video,
 	Wand2,
@@ -22,6 +23,7 @@ import { cn } from "@recast/ui/utils";
 
 const path = $derived(page.url.pathname);
 const recordShortcut = $derived(chordLabel("general.record"));
+const paletteShortcut = $derived(chordLabel("general.palette"));
 
 const tabs = [
 	{ label: "Record", href: "/", icon: Video },
@@ -38,11 +40,18 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
       <Logo size="22" class="shrink-0" />
       <span class="text-[14px] font-semibold tracking-tight text-foreground">Recast</span>
     </a>
-    <div class="w-52 max-w-[40%]">
-      <SearchCommandMenu />
-    </div>
 
     <div class="h-full flex-1" data-tauri-drag-region></div>
+
+    <button
+      type="button"
+      onclick={() => commandPalette.show()}
+      aria-label="Search"
+      title={`Search · ${paletteShortcut}`}
+      class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-foreground/5 hover:text-foreground"
+    >
+      <Search size={16} />
+    </button>
 
     <Button
       size="sm"
@@ -88,8 +97,8 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
   </div>
 
   <!-- Record / Polish / Share hang from the bar's bottom edge into the page. -->
-  <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex translate-y-1/2 justify-center">
-    <NotchedShelf fill="text-card" class="pointer-events-auto h-10 gap-0.5 !w-fit">
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 z-50 flex translate-y-full justify-center">
+    <NotchedShelf fill="text-card" class="pointer-events-auto h-10 gap-0.5 w-fit!">
       {#each tabs as tab (tab.href)}
         {@const on = isActive(tab.href)}
         {@const Icon = tab.icon}
@@ -97,7 +106,7 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
           href={tab.href}
           aria-current={on ? "page" : undefined}
           class={cn(
-            "relative flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold tracking-tight transition-colors duration-200",
+            "relative flex items-center gap-1.5 z-0 rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold tracking-tight transition-colors duration-200",
             on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -108,8 +117,8 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
               class="absolute inset-0 -z-10 rounded-lg bg-background shadow-craft-md ring-1 ring-inset ring-border/60"
             ></span>
           {/if}
-          <Icon size={14} class={on ? "text-foreground" : ""} />
-          {tab.label}
+          <Icon size={14} class={cn(on ? "text-foreground" : "text-muted-foreground","z-0")} />
+          {tab.label} 
         </a>
       {/each}
     </NotchedShelf>

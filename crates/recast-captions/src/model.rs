@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// One transcribed word with its own source-time span, in seconds.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptWord {
     pub start: f64,
@@ -12,7 +12,7 @@ pub struct TranscriptWord {
 /// Word-by-word animation. The string fields mirror the TypeScript unions
 /// rather than being enums, so an unknown value from a newer project falls
 /// through to the default arm instead of failing the whole deserialize.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptionAnimation {
     pub chunk: String,
@@ -61,7 +61,7 @@ impl CaptionAnimation {
 
 /// How captions render over the video. Deserialized from the render state's
 /// `captionStyle`, and mirrored field for field by the TypeScript type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptionStyle {
     pub enabled: bool,

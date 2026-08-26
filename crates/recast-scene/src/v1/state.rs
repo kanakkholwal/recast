@@ -102,6 +102,10 @@ pub struct RenderState {
     /// The annotation lane's master switch, same shape as `focus_enabled`.
     #[serde(default = "enabled")]
     pub annotations_enabled: bool,
+    /// Caption look. Absent in a project with no captions; `enabled` on the
+    /// style itself is the lane switch, so there is no separate flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption_style: Option<recast_captions::CaptionStyle>,
     /// User-accepted silence/manual cuts removed from the timeline.
     #[serde(default)]
     pub cuts: Vec<CutRange>,
@@ -189,6 +193,7 @@ impl Default for RenderState {
             trim_end: 0.0,
             focus_enabled: true,
             annotations_enabled: true,
+            caption_style: None,
             background_type: "color".into(),
             background_value: "#111111".into(),
             background_blur: 0.0,

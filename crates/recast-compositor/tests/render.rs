@@ -1,5 +1,6 @@
 use recast_compositor::{
-    BackgroundImage, Compositor, Evaluator, FrameInputs, GlyphQuad, LayerInput, SourceGeometry,
+    BackgroundImage, CaptionFrame, Compositor, Evaluator, FrameInputs, GlyphQuad, LayerInput,
+    SourceGeometry,
 };
 use recast_gpu::{GpuContext, GpuOptions};
 use recast_scene::migrate::to_scene;
@@ -1543,7 +1544,10 @@ fn render_with_text(
     }
     let target = compositor.output_texture(width, height);
     let mut inputs = FrameInputs::new();
-    inputs.set_glyphs(glyphs);
+    inputs.set_caption(CaptionFrame {
+        pill: None,
+        glyphs,
+    });
     compositor.render(&params, &inputs, &target.create_view(&Default::default()));
     Rendered {
         pixels: read_back(ctx, &target, width, height),

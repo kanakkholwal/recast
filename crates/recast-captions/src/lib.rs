@@ -12,7 +12,7 @@ pub mod model;
 
 pub use highlight::{karaoke_centiseconds, spoken_word_count, word_color, word_scaled};
 pub use layout::{
-    break_into_lines, caption_height_frac, caption_top_frac, chunk_words, pill_box, PillBox,
-    MAX_CAP_FRAC,
+    active_chunk_index, active_word_index, break_into_lines, caption_height_frac,
+    caption_top_frac, chunk_words, pill_box, PillBox, MAX_CAP_FRAC,
 };
 pub use model::{CaptionAnimation, CaptionStyle, TranscriptWord};
