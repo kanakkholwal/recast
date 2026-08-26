@@ -31,7 +31,7 @@ const open_ = () => goto("/settings?tab=cloud");
     <span
       class={cn(
         "grid size-8 shrink-0 place-items-center rounded-md text-[11px] font-semibold",
-        signedIn ? "bg-primary/15 text-primary" : "bg-foreground/5 text-muted-foreground",
+        signedIn ? "bg-muted/60 text-foreground" : "bg-foreground/5 text-muted-foreground",
       )}
     >
       {#if signedIn}
@@ -64,7 +64,7 @@ const open_ = () => goto("/settings?tab=cloud");
     title={signedIn ? name : "Sign in"}
     class={cn(
       "mx-auto grid size-8 place-items-center rounded-md text-[11px] font-semibold transition-colors duration-150 motion-safe:active:scale-95",
-      signedIn ? "bg-primary/15 text-primary hover:bg-primary/25" : "bg-foreground/5 text-muted-foreground hover:text-foreground",
+      signedIn ? "bg-muted/60 text-foreground hover:bg-muted" : "bg-foreground/5 text-muted-foreground hover:text-foreground",
     )}
   >
     {#if signedIn}

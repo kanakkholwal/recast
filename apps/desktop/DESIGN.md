@@ -45,15 +45,20 @@ that look [outcome]"* belongs on the landing page, not on the recordings page.
 
 The desktop app is a SvelteKit SPA shell hosting **multiple Tauri webviews**:
 
-| Window | Route | Notes |
-| --- | --- | --- |
-| Main | `/(app)` group | Sidebar + titlebar shell. Navigation lives here. |
-| Recording panel | `/panel` | Floating, transparent, draggable. ~44px tall. |
-| Source selector | `/select` | Modal-style picker over a transparent window. |
-| Device picker | `/device-picker?type=mic\|camera` | Popover-sized, transparent, opened from panel. |
-| Region selector | `/select-area` | Full-screen overlay for region capture. |
-| Camera preview | `/camera-preview` | Floating webcam bubble, alwaysOnTop on macOS/Windows. |
-| Editor | `/editor/:slug` | Full-window, no sidebar. |
+| Window | Route | Fixed size | Notes |
+| --- | --- | --- | --- |
+| Main | `/(app)` group | — | Titlebar + TopNav shell: notched Record / Polish / Share tabs (no sidebar). Home renders without a StudioPage header. |
+| Recording panel | `/panel` | ~520×72 | Floating, transparent, draggable. Morphing bar; window never resizes per phase. |
+| Source selector | `/select` | 560×440 | Modal-style picker over a transparent window. |
+| Device picker | `/device-picker?type=mic\|camera` | 320×340 | Popover-sized, transparent, opened from panel. |
+| Profile picker | `/profile-picker` | 320×380 | Popover-sized, opened from panel (⌘1–⌘8 mirror it). |
+| Region selector | `/select-area` | virtual desktop | Full-screen overlay for region capture. |
+| Camera preview | `/camera-preview` | 240×240 default | Floating webcam bubble, drag-resizable with native aspect lock, alwaysOnTop on macOS/Windows. |
+| Editor | `/editor/:slug` | — | Full-window, no sidebar. |
+
+Secondary-window sizes are **fixed at spawn** — a redesign must fit the frame,
+not the other way around. Popup windows materialize in (scale 0.97 + fade,
+~180ms, static under reduced motion).
 
 The transparent secondary windows (`panel`, `select`, `device-picker`,
 `camera-preview`) take a different background treatment — they paint their
@@ -266,17 +271,47 @@ Variants:
 `(app)` shell provides the noise gradient. Transparent routes (panel etc.) sit
 on the desktop directly, so their surface alpha is bumped to `/95`.
 
-### Eyebrow chip
+### Section headers (eyebrows are retired)
+
+The 2026-08 studio pass removed the uppercase `tracking-[0.15em]` eyebrow
+pattern everywhere it labelled a section. Section headers are now normal-case:
 
 ```svelte
-<span class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur">
-  <Icon class="size-3" />
-  Profiles
-</span>
+<h2 class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground">
+  {#if icon}<Icon class="size-3.5 text-muted-foreground" />{/if}
+  {label}
+</h2>
+<p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">{description}</p>
 ```
 
-Always lead a top-level page with an eyebrow chip. The icon inherits the chip's
-`text-muted-foreground/80` — it labels the section, it is not an accent.
+Small-caps micro-labels survive only as **status badges/chips** (plan badges,
+"In use", backend tags) and as command-palette group labels (Raycast
+convention) — never as a section or page header.
+
+### Control vocabulary (2026-08 studio pass)
+
+The standing system for toolbars, filter rows, and controls — carry it into
+any new surface (including the editor chrome):
+
+- **Row controls are h-9 / `rounded-lg`** on one shared surface:
+  `bg-muted/60 ring-1 ring-inset ring-border/40`, hover `bg-muted`. Search
+  fields brighten to `bg-card` on focus and show a `/` kbd hint when empty.
+- **Active = the dark pill**: `bg-foreground text-background` (nav tabs via
+  `Tabs.List variant="pill"`, `Segmented` active thumb, armed toggle buttons,
+  check bubbles/ticks). Never a primary tint.
+- **Selection = the neutral ring**: `border-foreground/40` +
+  `ring-1 ring-inset ring-foreground/20` on `bg-card` (library cards, profile
+  tiles, picker rows use `bg-foreground/10`).
+- **Cards are `rounded-2xl`** `border-border/50 bg-card` with
+  `shadow-(--shadow-craft-inset)`, hover `-translate-y-0.5` +
+  `shadow-craft-md`, press `active:scale-[0.99]` (all `motion-safe:`).
+- **Switch** is the shared `@recast/ui` component only — Apple-proportioned
+  (42×26, white thumb, press-stretch). Never hand-roll a `role="switch"`.
+- **`--primary` is reserved** for: progress fills + percent readouts,
+  notification count badges, plan/paid badges, the recording countdown ring,
+  "Default" profile star, encoder "In use", and the command palette's
+  selected-row bar. Everything else is neutral; status uses
+  `success`/`warning`/`destructive` fills with an icon.
 
 ### Buttons
 
@@ -474,6 +509,14 @@ shape. Never throw on a parse failure; reset to the empty-state instead.
 ---
 
 ## Known drift
+
+The 2026-08 studio pass audited the desktop app's rendered surfaces and moved
+decorative `*-primary` sites to the neutral vocabulary above; the reserved list
+in "Control vocabulary" is now the authority for desktop. Dead components that
+predate the pass and were left un-restyled (candidates for deletion):
+`components/recast/RecastList|RecastCard|RecastRow.svelte` and
+`components/layout/app-sidebar.svelte` (both unreferenced since the TopNav /
+`createLibraryPage` refactors).
 
 `--primary` changed hue from lime to indigo, and the ~427 `*-primary` sites
 across both apps were **not** audited as part of that change. They render

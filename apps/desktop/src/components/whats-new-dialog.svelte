@@ -48,7 +48,7 @@ function handleOpenChange(v: boolean) {
       </div>
       <div class="min-w-0 flex-1">
         <div
-          class="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/80"
+          class="flex flex-wrap items-center gap-2 text-[10.5px] font-medium text-muted-foreground"
         >
           <span>What's new</span>
           <span class="text-muted-foreground/40">·</span>
@@ -75,7 +75,7 @@ function handleOpenChange(v: boolean) {
             <li
               class="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-[12px] leading-relaxed text-foreground"
             >
-              <AiWand class="mt-0.5 size-3.5 shrink-0 text-primary" />
+              <AiWand class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
               <span><Markdown inline source={h} /></span>
             </li>
           {/each}
@@ -90,7 +90,7 @@ function handleOpenChange(v: boolean) {
             <div class="flex items-center gap-1.5 px-1">
               <Icon class={`size-3.5 ${meta.tone}`} />
               <span
-                class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/80"
+                class="text-[10.5px] font-medium text-muted-foreground"
               >
                 {meta.label}
               </span>

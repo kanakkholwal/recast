@@ -74,14 +74,14 @@ function confirm() {
 					class={cn(
 						"flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-xs transition-colors",
 						active
-							? "border-primary/50 bg-primary/8 text-foreground"
+							? "border-foreground/40 bg-foreground/5 text-foreground"
 							: "border-border-low/60 text-muted-foreground hover:bg-foreground/4",
 					)}
 				>
 					<span
 						class={cn(
 							"grid size-7 shrink-0 place-items-center rounded-md text-[11px] font-semibold",
-							active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+							active ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
 						)}
 						aria-hidden="true"
 					>
@@ -111,7 +111,7 @@ function confirm() {
 							<span>{ws.recastsCount} {ws.recastsCount === 1 ? "recast" : "recasts"}</span>
 						</span>
 					</span>
-					{#if active}<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />{/if}
+					{#if active}<Check class="size-4 shrink-0 text-foreground" aria-hidden="true" />{/if}
 				</button>
 			{/each}
 		</div>
@@ -124,7 +124,7 @@ function confirm() {
 				class={cn(
 					"grid size-4 shrink-0 place-items-center rounded border transition-colors",
 					"peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60",
-					remember ? "border-primary bg-primary text-primary-foreground" : "border-border",
+					remember ? "border-foreground bg-foreground text-background" : "border-border",
 				)}
 				aria-hidden="true"
 			>

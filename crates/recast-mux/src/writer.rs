@@ -13,7 +13,7 @@ const COMPRESSOR: &[u8] = b"Recast";
 /// and the offset table then costs more than the interleave saves.
 const INTERLEAVE_SECONDS: f64 = 0.5;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct VideoFormat {
     pub width: u16,
     pub height: u16,
@@ -201,14 +201,43 @@ impl Mp4Writer {
     }
 
     fn ftyp(&self) -> Vec<u8> {
-        let mut buf = BoxBuf::new();
-        buf.open(b"ftyp");
-        buf.raw(b"isom").u32(512);
-        for brand in [b"isom", b"iso2", b"avc1", b"mp41"] {
-            buf.raw(brand);
+        ftyp(false)
+    }
+
+    /// `ftyp` and a `moov` whose sample tables are empty, plus the `mvex` that
+    /// says so. The header of a fragmented file, written once and never
+    /// rewritten. `None` until the parameter sets are known.
+    ///
+    /// Built from a writer holding no samples: the tables are empty because
+    /// there is nothing in them, not because anything special was done.
+    pub fn initialization_segment(&self) -> Option<Vec<u8>> {
+        let record = self.avc.record()?;
+        let mut out = ftyp(true);
+        let mut moov = self.moov(&record, 0);
+        // `mvex` goes at the END of `moov`, after the tracks it describes.
+        let mut extends = BoxBuf::new();
+        extends.open(b"mvex");
+        self.track_extends(&mut extends, 1);
+        if self.audio_format.is_some() {
+            self.track_extends(&mut extends, 2);
         }
+        extends.close();
+        let extends = extends.into_bytes();
+
+        let size = (moov.len() + extends.len()) as u32;
+        moov[..4].copy_from_slice(&size.to_be_bytes());
+        moov.extend_from_slice(&extends);
+        out.extend_from_slice(&moov);
+        Some(out)
+    }
+
+    /// Per-track defaults for the fragments. Every value is written explicitly
+    /// in each `trun`, so these are all zero and exist only because a reader
+    /// requires the box.
+    fn track_extends(&self, buf: &mut BoxBuf, track: u32) {
+        buf.open_full(b"trex", 0, 0);
+        buf.u32(track).u32(1).u32(0).u32(0).u32(0);
         buf.close();
-        buf.into_bytes()
     }
 
     fn movie_duration(&self) -> u64 {
@@ -472,6 +501,24 @@ fn write_descriptor_len(out: &mut Vec<u8>, length: usize) {
 
 /// mdat needs the 64-bit header once its payload passes what a 32-bit size can
 /// describe, and the header length feeds the offsets, so it is computed first.
+/// `iso5` is the brand that says a reader must understand `moof`, and `msdh`
+/// that the fragments are self-describing.
+fn ftyp(fragmented: bool) -> Vec<u8> {
+    let mut buf = BoxBuf::new();
+    buf.open(b"ftyp");
+    buf.raw(b"isom").u32(512);
+    for brand in [b"isom", b"iso2", b"avc1", b"mp41"] {
+        buf.raw(brand);
+    }
+    if fragmented {
+        for brand in [b"iso5", b"iso6", b"msdh"] {
+            buf.raw(brand);
+        }
+    }
+    buf.close();
+    buf.into_bytes()
+}
+
 fn mdat_header_len(payload: usize) -> usize {
     match payload as u64 + 8 > u32::MAX as u64 {
         true => 16,

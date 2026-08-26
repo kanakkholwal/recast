@@ -200,7 +200,7 @@ async function openLink(link: string) {
 			class="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-2"
 		>
 			<span
-				class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+				class="text-[12px] font-semibold tracking-tight text-foreground"
 			>
 				Activity
 			</span>
@@ -248,9 +248,11 @@ async function openLink(link: string) {
 										"grid size-7 shrink-0 place-items-center rounded-lg",
 										item.status === "error" || item.status === "interrupted"
 											? "bg-destructive/10 text-destructive"
-											: item.status === "queued"
+											: item.status === "queued" || item.status === "cancelled"
 												? "bg-muted text-muted-foreground"
-												: "bg-primary/10 text-primary",
+												: item.status === "success"
+													? "bg-success/10 text-success"
+													: "bg-primary/10 text-primary",
 									)}
 								>
 									{#if item.status === "running"}
@@ -392,7 +394,9 @@ async function openLink(link: string) {
 										"grid size-7 shrink-0 place-items-center rounded-lg",
 										up.status === "error"
 											? "bg-destructive/10 text-destructive"
-											: "bg-primary/10 text-primary",
+											: up.status === "complete"
+												? "bg-success/10 text-success"
+												: "bg-primary/10 text-primary",
 									)}
 								>
 									{#if up.status === "uploading"}
@@ -482,7 +486,9 @@ async function openLink(link: string) {
 										"grid size-7 shrink-0 place-items-center rounded-lg",
 										up.status === "error"
 											? "bg-destructive/10 text-destructive"
-											: "bg-primary/10 text-primary",
+											: up.status === "complete"
+												? "bg-success/10 text-success"
+												: "bg-primary/10 text-primary",
 									)}
 								>
 									{#if up.status === "uploading"}

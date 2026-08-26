@@ -1,115 +1,103 @@
 <script lang="ts">
-  import { Button } from "@recast/ui/button";
-  import { emit } from "@tauri-apps/api/event";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { onMount } from "svelte";
-  import {
-    clampToolbar,
-    rectFromPoints,
-    toRegionPayload,
-    TOOLBAR_W,
-  } from "./select-area.logic";
+import { Crop } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { onMount } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { scale } from "svelte/transition";
+import { clampToolbar, rectFromPoints, toRegionPayload, TOOLBAR_W } from "./select-area.logic";
 
-  // Overlay spans all monitors from the virtual-desktop origin, so pointer
-  // coords are virtual-desktop pixels, which is what the Rust resolver expects.
-  let originX = $state(0);
-  let originY = $state(0);
+// Overlay spans all monitors from the virtual-desktop origin, so pointer
+// coords are virtual-desktop pixels, which is what the Rust resolver expects.
+let originX = $state(0);
+let originY = $state(0);
 
-  let dragging = $state(false);
-  let startX = $state(0);
-  let startY = $state(0);
-  let curX = $state(0);
-  let curY = $state(0);
+let dragging = $state(false);
+let startX = $state(0);
+let startY = $state(0);
+let curX = $state(0);
+let curY = $state(0);
 
-  // Last drawn rect (frozen after pointerup so the user can confirm).
-  let rect = $state<{ x: number; y: number; w: number; h: number } | null>(
-    null,
-  );
+// Last drawn rect (frozen after pointerup so the user can confirm).
+let rect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
 
-  onMount(() => {
-    // Window position, to convert local pointer coords to global.
-    const win = getCurrentWindow();
-    win
-      .outerPosition()
-      .then((pos) => {
-        const scale = window.devicePixelRatio || 1;
-        originX = Math.round(pos.x / scale);
-        originY = Math.round(pos.y / scale);
-      })
-      .catch(() => {});
-  });
+onMount(() => {
+	// Window position, to convert local pointer coords to global.
+	const win = getCurrentWindow();
+	win
+		.outerPosition()
+		.then((pos) => {
+			const scale = window.devicePixelRatio || 1;
+			originX = Math.round(pos.x / scale);
+			originY = Math.round(pos.y / scale);
+		})
+		.catch(() => {});
+});
 
-  function onPointerDown(e: PointerEvent) {
-    dragging = true;
-    rect = null;
-    startX = e.clientX;
-    startY = e.clientY;
-    curX = e.clientX;
-    curY = e.clientY;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }
+function onPointerDown(e: PointerEvent) {
+	dragging = true;
+	rect = null;
+	startX = e.clientX;
+	startY = e.clientY;
+	curX = e.clientX;
+	curY = e.clientY;
+	(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+}
 
-  function onPointerMove(e: PointerEvent) {
-    if (!dragging) return;
-    curX = e.clientX;
-    curY = e.clientY;
-  }
+function onPointerMove(e: PointerEvent) {
+	if (!dragging) return;
+	curX = e.clientX;
+	curY = e.clientY;
+}
 
-  function onPointerUp(e: PointerEvent) {
-    if (!dragging) return;
-    dragging = false;
-    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    const next = rectFromPoints(startX, startY, curX, curY);
-    if (next.w < 8 || next.h < 8) {
-      rect = null;
-      return;
-    }
-    rect = next;
-  }
+function onPointerUp(e: PointerEvent) {
+	if (!dragging) return;
+	dragging = false;
+	(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+	const next = rectFromPoints(startX, startY, curX, curY);
+	if (next.w < 8 || next.h < 8) {
+		rect = null;
+		return;
+	}
+	rect = next;
+}
 
-  function confirm() {
-    if (!rect) return;
-    const payload = toRegionPayload(
-      rect,
-      { x: originX, y: originY },
-      window.devicePixelRatio || 1,
-    );
-    emit("region-selected", payload);
-    getCurrentWindow().close();
-  }
+function confirm() {
+	if (!rect) return;
+	const payload = toRegionPayload(rect, { x: originX, y: originY }, window.devicePixelRatio || 1);
+	emit("region-selected", payload);
+	getCurrentWindow().close();
+}
 
-  function reset() {
-    rect = null;
-  }
+function reset() {
+	rect = null;
+}
 
-  function cancel() {
-    getCurrentWindow().close();
-  }
+function cancel() {
+	getCurrentWindow().close();
+}
 
-  function onKey(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      // Esc always exits. Users expect the window to close. Use the
-      // explicit "Redraw" button to clear a selection without exiting.
-      cancel();
-    } else if (e.key === "Enter" && rect) {
-      e.preventDefault();
-      confirm();
-    }
-  }
+function onKey(e: KeyboardEvent) {
+	if (e.key === "Escape") {
+		e.preventDefault();
+		// Esc always exits. Users expect the window to close. Use the
+		// explicit "Redraw" button to clear a selection without exiting.
+		cancel();
+	} else if (e.key === "Enter" && rect) {
+		e.preventDefault();
+		confirm();
+	}
+}
 
-  // Live derived rect for display while dragging.
-  const liveRect = $derived(
-    dragging ? rectFromPoints(startX, startY, curX, curY) : rect,
-  );
+// Live derived rect for display while dragging.
+const liveRect = $derived(dragging ? rectFromPoints(startX, startY, curX, curY) : rect);
 
-  // Toolbar position, clamped to the viewport so it stays reachable when the
-  // selection lands near the bottom or right edge of the virtual desktop.
-  const toolbarPos = $derived.by(() =>
-    rect
-      ? clampToolbar(rect, window.innerWidth, window.innerHeight)
-      : { left: 0, top: 0 },
-  );
+// Toolbar position, clamped to the viewport so it stays reachable when the
+// selection lands near the bottom or right edge of the virtual desktop.
+const toolbarPos = $derived.by(() =>
+	rect ? clampToolbar(rect, window.innerWidth, window.innerHeight) : { left: 0, top: 0 },
+);
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -124,16 +112,30 @@
 >
   {#if liveRect && liveRect.w > 0 && liveRect.h > 0}
     <!-- Cut-out via box-shadow: rect is transparent, the dim layer is the outer
-         box-shadow. pointer-events: none so clicks inside don't restart a drag. -->
+         box-shadow. pointer-events: none so clicks inside don't restart a drag.
+         White marquee, not a theme token: this floats over arbitrary screen
+         content on a dark scrim, so it must not follow the app theme. -->
     <div
-      class="pointer-events-none absolute border border-primary/90 ring-1 ring-primary/40"
+      class="pointer-events-none absolute border border-white/90 ring-1 ring-black/40"
       style="left: {liveRect.x}px; top: {liveRect.y}px; width: {liveRect.w}px; height: {liveRect.h}px; background: transparent; box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);"
-    ></div>
+    >
+      <!-- Corner handles, decorative: the whole overlay redraws, not resizes. -->
+      {#each [
+        "left-0 top-0 -translate-x-1/2 -translate-y-1/2",
+        "right-0 top-0 translate-x-1/2 -translate-y-1/2",
+        "left-0 bottom-0 -translate-x-1/2 translate-y-1/2",
+        "right-0 bottom-0 translate-x-1/2 translate-y-1/2",
+      ] as pos (pos)}
+        <span
+          class="absolute size-2 rounded-full bg-white shadow-[0_0_0_1px_rgb(0_0_0/0.4)] {pos}"
+        ></span>
+      {/each}
+    </div>
 
     <!-- Size badge -->
     <div
-      class="absolute font-mono text-[11px] font-semibold tabular-nums text-primary-foreground bg-primary px-1.5 py-0.5 rounded-sm shadow-craft-sm pointer-events-none"
-      style="left: {liveRect.x}px; top: {Math.max(liveRect.y - 22, 0)}px;"
+      class="pointer-events-none absolute rounded-md bg-background/95 px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-foreground shadow-craft-sm ring-1 ring-border/60 backdrop-blur"
+      style="left: {liveRect.x}px; top: {Math.max(liveRect.y - 24, 0)}px;"
     >
       {Math.round(liveRect.w * (window.devicePixelRatio || 1))} × {Math.round(liveRect.h * (window.devicePixelRatio || 1))}
     </div>
@@ -141,14 +143,19 @@
 
   {#if !dragging && !rect}
     <div
-      class="absolute inset-0 flex items-center justify-center pointer-events-none"
+      class="pointer-events-none absolute inset-0 flex items-center justify-center"
+      in:scale={{ start: 0.96, duration: 200, easing: cubicOut }}
     >
       <div
-        class="rounded-md border border-border-subtle bg-background/85 backdrop-blur px-4 py-2 shadow-craft-floating text-[12px] font-medium text-foreground"
+        class="flex items-center gap-2 rounded-xl border border-border/60 bg-background/90 px-4 py-2.5 text-[12.5px] font-medium text-foreground shadow-craft-floating backdrop-blur-xl"
       >
-        Drag to select an area · <span class="text-muted-foreground"
-          >Esc to cancel</span
+        <Crop size={13} class="text-muted-foreground" />
+        Drag to select an area
+        <kbd
+          class="rounded border border-border/60 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
         >
+          Esc
+        </kbd>
       </div>
     </div>
   {/if}
@@ -160,14 +167,25 @@
       role="toolbar"
       aria-label="Confirm selected area"
       tabindex="0"
-      class="absolute flex items-center gap-1.5 bg-background/95 backdrop-blur border border-border-subtle rounded-md p-1 shadow-craft-floating cursor-default"
+      class="absolute flex cursor-default items-center gap-1 rounded-xl border border-border/60 bg-background/95 p-1 shadow-craft-floating backdrop-blur-xl"
       style="left: {toolbarPos.left}px; top: {toolbarPos.top}px; min-width: {TOOLBAR_W}px;"
+      in:scale={{ start: 0.96, duration: 160, easing: cubicOut }}
       onpointerdown={(e) => e.stopPropagation()}
       onpointerup={(e) => e.stopPropagation()}
     >
-      <Button variant="ghost" size="xs" onclick={reset}>Redraw</Button>
-      <Button variant="ghost" size="xs" onclick={cancel}>Cancel</Button>
-      <Button variant="default" size="xs" onclick={confirm}>Use area</Button>
+      <Button variant="ghost" size="xs" class="rounded-lg" onclick={reset}>Redraw</Button>
+      <Button variant="ghost" size="xs" class="rounded-lg text-muted-foreground" onclick={cancel}>
+        Cancel
+      </Button>
+      <Button
+        variant="default"
+        size="xs"
+        class="rounded-lg"
+        onclick={confirm}
+        title="Use this area (Enter)"
+      >
+        Use area
+      </Button>
     </div>
   {/if}
 </div>

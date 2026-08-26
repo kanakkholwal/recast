@@ -42,7 +42,7 @@ onMount(() => {
               : 'border-border/60'}"
           >
             <div
-              class="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/80"
+              class="flex flex-wrap items-center gap-2 text-[10.5px] font-medium text-muted-foreground"
             >
               <span class="font-mono normal-case tracking-normal text-foreground">
                 v{release.version}
@@ -89,7 +89,7 @@ onMount(() => {
                 <div class="flex items-center gap-1.5">
                   <Icon class={`size-3.5 ${meta.tone}`} />
                   <span
-                    class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/80"
+                    class="text-[10.5px] font-medium text-muted-foreground"
                   >
                     {meta.label}
                   </span>

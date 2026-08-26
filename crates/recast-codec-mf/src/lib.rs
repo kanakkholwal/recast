@@ -27,7 +27,7 @@ pub use aac::AacEncoder;
 #[cfg(windows)]
 pub use audio::{AudioFormat, AudioReader};
 #[cfg(windows)]
-pub use d3d::{D3dContext, Nv12Surface, SharedSurface, SyncFence};
+pub use d3d::{D3dContext, Nv12Converter, Nv12Frame, SharedSurface, SyncFence};
 #[cfg(windows)]
 pub use decoder::{DecodeError, DecodedFrame, VideoInfo, VideoReader};
 #[cfg(windows)]

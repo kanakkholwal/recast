@@ -13,8 +13,13 @@ use windows::Win32::System::Threading::GetCurrentProcess;
 
 use crate::encoder::EncodeError;
 
-/// Full-range RGB in. `Nominal_Range` is bits 4 and 5, and 2 is 0-255.
-const RGB_FULL: u32 = 2 << 4;
+/// Full-range RGB in.
+///
+/// Two fields say this and the driver reads the OLDER one: `RGB_Range` is bit 1,
+/// where 0 is full, and `Nominal_Range` is bits 4 and 5, where 2 is 0-255.
+/// Setting only the newer field leaves the behaviour resting on bit 1 happening
+/// to default to the value we want, so both are stated.
+const RGB_FULL: u32 = (0 << 1) | (2 << 4);
 /// BT.709 studio-range YCbCr out: `YCbCr_Matrix` is bit 2, and nominal range 1
 /// is 16-235. This is what an H.264 stream is read as unless it says otherwise,
 /// so writing full-range luma here would come back washed out everywhere.
@@ -114,23 +119,66 @@ impl Drop for SyncFence {
     }
 }
 
-/// The NV12 surface the encoder is fed. Kept alongside the processor that
-/// filled it, since the two are created against the same content description.
-pub struct Nv12Surface {
-    texture: ID3D11Texture2D,
+/// The video processor that turns BGRA into NV12, and the frames it fills.
+///
+/// The processor is created once; the frames are not, because a hardware
+/// encoder is ASYNCHRONOUS and holds a frame after `ProcessInput` returns.
+/// Converting into one surface over and over hands it a picture that the next
+/// conversion has already overwritten.
+pub struct Nv12Converter {
+    device: ID3D11Device,
     processor: ID3D11VideoProcessor,
     enumerator: ID3D11VideoProcessorEnumerator,
     width: u32,
     height: u32,
 }
 
-impl Nv12Surface {
-    pub fn texture(&self) -> &ID3D11Texture2D {
-        &self.texture
-    }
-
+impl Nv12Converter {
     pub fn size(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    /// A fresh surface for one frame.
+    ///
+    /// Allocated per frame rather than pooled: the sample handed to the encoder
+    /// holds a reference to the texture, so COM keeps it alive exactly as long
+    /// as the encoder needs it and frees it the moment it does not. Reusing one
+    /// would need a way to observe that release, which the API does not offer.
+    pub fn frame(&self) -> Result<Nv12Frame, EncodeError> {
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: self.width,
+            Height: self.height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_NV12,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            // The video processor writes through a render-target view, and the
+            // encoder reads it as a shader resource.
+            BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
+            CPUAccessFlags: 0,
+            MiscFlags: 0,
+        };
+        let mut texture = None;
+        // SAFETY: the description is fully initialised and the out parameter is
+        // checked below.
+        unsafe { self.device.CreateTexture2D(&desc, None, Some(&mut texture))? };
+        let texture = texture.ok_or_else(|| EncodeError::Media(missing("NV12 texture")))?;
+        Ok(Nv12Frame { texture })
+    }
+}
+
+/// One frame's worth of NV12, owned until the encoder is done with it.
+pub struct Nv12Frame {
+    texture: ID3D11Texture2D,
+}
+
+impl Nv12Frame {
+    pub(crate) fn texture(&self) -> &ID3D11Texture2D {
+        &self.texture
     }
 }
 
@@ -225,39 +273,17 @@ impl D3dContext {
         })
     }
 
-    /// An NV12 surface plus the video processor that converts into it.
+    /// The converter the encoder's frames come from.
     ///
     /// The dimensions are the encoder's, and both are even: NV12 carries chroma
     /// at half resolution in each direction and has nowhere to put an odd row.
-    pub fn nv12_surface(
+    pub fn nv12_converter(
         &self,
         width: u32,
         height: u32,
         frame_rate: (u32, u32),
-    ) -> Result<Nv12Surface, EncodeError> {
+    ) -> Result<Nv12Converter, EncodeError> {
         let (width, height) = (width & !1, height & !1);
-        let desc = D3D11_TEXTURE2D_DESC {
-            Width: width,
-            Height: height,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_NV12,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_DEFAULT,
-            // The video processor writes through a render-target view, and the
-            // encoder reads it as a shader resource.
-            BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
-            CPUAccessFlags: 0,
-            MiscFlags: 0,
-        };
-        let mut texture = None;
-        // SAFETY: as in `shared_surface`.
-        unsafe { self.device.CreateTexture2D(&desc, None, Some(&mut texture))? };
-        let texture = texture.ok_or_else(|| EncodeError::Media(missing("NV12 texture")))?;
-
         let rate = DXGI_RATIONAL {
             Numerator: frame_rate.0.max(1),
             Denominator: frame_rate.1.max(1),
@@ -300,8 +326,8 @@ impl D3dContext {
             );
         }
 
-        Ok(Nv12Surface {
-            texture,
+        Ok(Nv12Converter {
+            device: self.device.clone(),
             processor,
             enumerator,
             width,
@@ -336,8 +362,35 @@ impl D3dContext {
         Ok(())
     }
 
-    /// Converts a BGRA surface into an NV12 one, entirely on the GPU.
-    pub fn convert(&self, source: &SharedSurface, target: &Nv12Surface) -> Result<(), EncodeError> {
+    /// Signals `value` once this device's queued work has run, and hands the
+    /// queue to the driver.
+    ///
+    /// The other half of the handshake. `wait_for` orders our read AFTER the
+    /// producer's draw; this orders the producer's NEXT draw after our read.
+    /// One shared surface with only the first half is a race: the producer
+    /// overwrites the picture before the conversion has taken it.
+    pub fn signal(&self, fence: &SyncFence, value: u64) -> Result<(), EncodeError> {
+        let context: ID3D11DeviceContext4 = self.context.cast()?;
+        // SAFETY: enqueueing a signal on our own context, then flushing.
+        //
+        // The flush is contract, not something our tests prove: a signal sitting
+        // in an unsubmitted command buffer is a fence the other API waits on
+        // forever. D3D11 flushes on its own eventually, which is why removing
+        // this still passes here and is no reason to rely on it.
+        unsafe {
+            context.Signal(&fence.fence, value)?;
+            context.Flush();
+        }
+        Ok(())
+    }
+
+    /// Converts a BGRA surface into an NV12 frame, entirely on the GPU.
+    pub fn convert(
+        &self,
+        source: &SharedSurface,
+        converter: &Nv12Converter,
+        target: &Nv12Frame,
+    ) -> Result<(), EncodeError> {
         let source = &source.texture;
         let input_desc = D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC {
             FourCC: 0,
@@ -364,14 +417,14 @@ impl D3dContext {
             let mut input = None;
             self.video.CreateVideoProcessorInputView(
                 source,
-                &target.enumerator,
+                &converter.enumerator,
                 &input_desc,
                 Some(&mut input),
             )?;
             let mut output = None;
             self.video.CreateVideoProcessorOutputView(
                 &target.texture,
-                &target.enumerator,
+                &converter.enumerator,
                 &output_desc,
                 Some(&mut output),
             )?;
@@ -390,7 +443,7 @@ impl D3dContext {
                 ppFutureSurfacesRight: std::ptr::null_mut(),
             };
             let result = self.video_context.VideoProcessorBlt(
-                &target.processor,
+                &converter.processor,
                 output.as_ref(),
                 0,
                 std::slice::from_ref(&stream),
@@ -398,10 +451,6 @@ impl D3dContext {
             drop(std::mem::ManuallyDrop::take(&mut stream.pInputSurface));
             drop(std::mem::ManuallyDrop::take(&mut stream.pInputSurfaceRight));
             result?;
-            // The encoder reads on its own threads, so the blt has to be handed
-            // to the driver before the sample is queued rather than sitting in
-            // the deferred command list.
-            self.context.Flush();
         }
         Ok(())
     }

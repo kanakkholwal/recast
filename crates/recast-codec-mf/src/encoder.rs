@@ -256,7 +256,7 @@ impl H264Encoder {
     /// The texture must belong to the device the encoder was opened against.
     pub fn encode_texture(
         &mut self,
-        nv12: &crate::d3d::Nv12Surface,
+        nv12: &crate::d3d::Nv12Frame,
         timestamp: i64,
         duration: i64,
     ) -> Result<Vec<EncodedSample>, EncodeError> {
@@ -482,8 +482,10 @@ fn texture_sample(
     // reference to the surface from here on.
     unsafe {
         let buffer = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, texture, 0, false)?;
-        // A DXGI buffer starts with a current length of zero, and an encoder
-        // that checks it reads the frame as empty.
+        // A DXGI buffer starts with a current length of zero, and a transform
+        // that checks it reads the frame as empty. NVENC does not check, so
+        // nothing here proves this line; the Intel and AMD transforms are
+        // reported to, and there is no way to test them from this machine.
         let two_d: IMF2DBuffer = buffer.cast()?;
         buffer.SetCurrentLength(two_d.GetContiguousLength()?)?;
         let sample = MFCreateSample()?;

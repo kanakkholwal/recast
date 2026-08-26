@@ -1,9 +1,11 @@
 <script lang="ts">
 import {
+	CameraOff,
 	Circle,
 	FlipHorizontal2,
 	LoaderCircle,
 	Maximize2,
+	RefreshCw,
 	Square,
 	Squircle,
 	X,
@@ -511,16 +513,35 @@ function handleKeydown(e: KeyboardEvent) {
       <div
         class="absolute inset-0 flex items-center justify-center bg-background/85 p-4 text-center backdrop-blur-md"
       >
-        <div class="space-y-2">
+        <div class="flex flex-col items-center gap-2">
           {#if status === "loading"}
-            <LoaderCircle size={18} class="mx-auto animate-spin text-muted-foreground" />
+            <LoaderCircle size={18} class="animate-spin text-muted-foreground" />
+            <p class="text-[10.5px] font-medium text-muted-foreground">{statusMessage}</p>
+          {:else}
+            <span
+              class="grid size-9 place-items-center rounded-xl ring-1 ring-inset {status ===
+              'failed'
+                ? 'bg-destructive/10 text-destructive ring-destructive/25'
+                : 'bg-warning/10 text-warning ring-warning/25'}"
+            >
+              <CameraOff size={16} />
+            </span>
+            <p class="text-[11.5px] font-semibold text-foreground">
+              {status === "failed" ? "Camera unavailable" : "No live picture"}
+            </p>
+            <p class="max-w-[16rem] text-[10px] leading-relaxed text-muted-foreground">
+              {errorMessage ?? statusMessage}
+            </p>
+            <Button
+              variant="secondary"
+              size="xs"
+              class="mt-1 gap-1.5 rounded-lg"
+              onclick={() => void startCamera()}
+            >
+              <RefreshCw size={11} />
+              Try again
+            </Button>
           {/if}
-          <p class="text-[11px] font-semibold text-foreground">
-            {status === "failed" ? "Camera unavailable" : "Camera"}
-          </p>
-          <p class="max-w-[16rem] text-[10px] leading-relaxed text-muted-foreground">
-            {errorMessage ?? statusMessage}
-          </p>
         </div>
       </div>
     {/if}
@@ -568,9 +589,11 @@ function handleKeydown(e: KeyboardEvent) {
       <Button
         onclick={toggleMirror}
         onmousedown={(e: MouseEvent) => e.stopPropagation()}
-        variant={isMirrored ? "default_soft" : "ghost"}
+        variant="ghost"
         size="icon-sm"
-        class="size-6 rounded-full"
+        class="size-6 rounded-full {isMirrored
+          ? 'bg-foreground text-background hover:bg-foreground/90 hover:text-background'
+          : ''}"
         title={isMirrored ? "Mirror: on (flip horizontally)" : "Mirror: off"}
       >
         <FlipHorizontal2 size={12} stroke={2} />
