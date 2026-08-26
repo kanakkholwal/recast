@@ -19,7 +19,6 @@ import {
 	VolumeX,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import { Cutout } from "@recast/ui/cutout";
 import * as Dialog from "@recast/ui/dialog";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import * as Select from "@recast/ui/select";
@@ -349,7 +348,7 @@ const capabilities: Cap[] = [
     <!-- Governs whether the recording panel applies profiles; edits save either way. -->
     <div
       class={cn(
-        "flex items-center gap-3 rounded-xl border px-4 py-3 shadow-(--shadow-craft-inset) transition-colors duration-200",
+        "flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-(--shadow-craft-inset) transition-colors duration-200",
         profilesStore.enabled ? "border-border/50 bg-card/60" : "border-warning/30 bg-warning/10",
       )}
     >
@@ -385,14 +384,14 @@ const capabilities: Cap[] = [
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
         {#each { length: 3 } as _, i (i)}
           <div
-            class="h-44 animate-pulse rounded-xl border border-border/40 bg-card/60"
+            class="h-28 animate-pulse rounded-2xl border border-border/40 bg-card/60"
           ></div>
         {/each}
       </div>
     {:else if filtered.length === 0}
       <div
         in:fade={{ duration: 200 }}
-        class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-12 text-center"
+        class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/40 p-12 text-center"
       >
         <div
           class="flex size-12 animate-empty-float items-center justify-center rounded-xl bg-foreground/5 text-muted-foreground ring-1 ring-inset ring-border/30"
@@ -420,72 +419,79 @@ const capabilities: Cap[] = [
         {#each filtered as profile (profile.id)}
           <div
             class={cn(
-              "group/card relative flex flex-col overflow-hidden rounded-xl border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200",
+              "group/card relative flex flex-col overflow-hidden rounded-2xl border shadow-(--shadow-craft-inset) outline-none transition-[transform,background-color,border-color,box-shadow] duration-200 ease-out motion-safe:hover:-translate-y-0.5",
               resolvedId === profile.id
-                ? "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/30"
-                : profile.isDefault
-                  ? "border-primary/40 bg-card"
-                  : "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
+                ? "border-foreground/40 bg-card ring-1 ring-inset ring-foreground/20"
+                : "border-border/50 bg-card hover:border-border/80 hover:shadow-craft-md",
             )}
           >
-            <!-- Identity region, same treatment as a thumbnail-less recasts
-                 card: muted surface, centered mark, and a `.recast`-style cutout
-                 tab (here it carries the capability glyphs). -->
-            <div class="relative h-24 shrink-0 overflow-hidden bg-muted/40">
-              <div class="grid size-full place-items-center">
-                <span
-                  class={cn(
-                    "flex size-12 items-center justify-center rounded-xl border text-[17px] font-semibold transition-colors",
-                    profile.isDefault
-                      ? "border-primary/30 bg-primary/10 text-primary"
-                      : "border-border/50 bg-card text-muted-foreground group-hover/card:text-foreground",
-                  )}
-                >
-                  {#if profile.isDefault}
-                    <Star class="size-5" />
-                  {:else}
-                    {profile.name.trim().charAt(0).toUpperCase() || "?"}
-                  {/if}
-                </span>
-              </div>
-
-              {#if profile.isDefault}
-                <span
-                  class="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary backdrop-blur-md"
-                >
-                  <Star size={9} /> Default
-                </span>
-              {/if}
-
-              <Cutout
-                corner="bl"
-                surface="card"
-                radius={8}
-                class="flex items-center gap-1.5 px-2.5 pb-1 pt-2.5"
+            <!-- Compact tile: identity + name up top, capability readout as a
+                 footer strip. No fake-thumbnail stage; profiles aren't media. -->
+            <div class="flex min-w-0 items-start gap-3 p-4">
+              <span
+                class={cn(
+                  "grid size-9 shrink-0 place-items-center rounded-lg text-[14px] font-semibold ring-1 ring-inset transition-colors",
+                  profile.isDefault
+                    ? "bg-primary/10 text-primary ring-primary/25"
+                    : "bg-muted/60 text-muted-foreground ring-border/40 group-hover/card:text-foreground",
+                )}
               >
-                {#each capabilities as cap (cap.field)}
-                  {@const on = profile[cap.field]}
-                  {@const Icon = on ? cap.iconOn : cap.iconOff}
-                  <Icon
-                    role="img"
-                    class={cn(
-                      "size-3 transition-colors",
-                      on ? "text-primary" : "text-muted-foreground/40",
-                    )}
-                    aria-label={`${cap.label}: ${on ? "on" : "off"}`}
-                  />
-                {/each}
-              </Cutout>
+                {#if profile.isDefault}
+                  <Star class="size-4" />
+                {:else}
+                  {profile.name.trim().charAt(0).toUpperCase() || "?"}
+                {/if}
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 pr-7">
+                  <span class="truncate text-[13px] font-semibold tracking-tight text-foreground">
+                    {profile.name}
+                  </span>
+                  {#if profile.isDefault}
+                    <span
+                      class="inline-flex shrink-0 items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary"
+                    >
+                      Default
+                    </span>
+                  {/if}
+                </div>
+                <div class="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {summarize(profile)}
+                </div>
+              </div>
             </div>
 
-            <!-- Info -->
-            <div class="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5">
-              <div class="truncate text-[12.5px] font-semibold text-foreground">
-                {profile.name}
-              </div>
-              <div class="truncate text-[10.5px] text-muted-foreground/80">
-                {summarize(profile)}
-              </div>
+            <div
+              class="mt-auto flex items-center gap-1 border-t border-border/40 bg-muted/20 px-4 py-2"
+            >
+              {#each capabilities as cap (cap.field)}
+                {@const on = profile[cap.field]}
+                {@const Icon = on ? cap.iconOn : cap.iconOff}
+                <span
+                  class={cn(
+                    "grid size-6 place-items-center rounded-md transition-colors",
+                    on
+                      ? "bg-muted/60 text-foreground ring-1 ring-inset ring-border/40"
+                      : "text-muted-foreground/40",
+                  )}
+                >
+                  <Icon
+                    role="img"
+                    class="size-3"
+                    aria-label={`${cap.label}: ${on ? "on" : "off"}`}
+                  />
+                </span>
+              {/each}
+              <span
+                class="ml-auto inline-flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground"
+              >
+                <Timer class="size-3" />
+                {profile.countdown == null
+                  ? "Auto"
+                  : profile.countdown === 0
+                    ? "Off"
+                    : `${profile.countdown}s`}
+              </span>
             </div>
 
             <!-- The card's primary action is a real button spanning it, not a
@@ -546,10 +552,10 @@ const capabilities: Cap[] = [
         <button
           type="button"
           onclick={addProfile}
-          class="group/add flex h-full min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+          class="group/add flex h-full min-h-28 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 ease-out hover:border-border hover:bg-card/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:hover:-translate-y-0.5"
         >
           <span
-            class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-all duration-200 group-hover/add:scale-110 group-hover/add:bg-primary/10 group-hover/add:text-primary group-hover/add:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
+            class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground ring-1 ring-inset ring-border/40 transition-transform duration-200 ease-out motion-safe:group-hover/add:scale-110"
           >
             <Plus class="size-4 transition-transform duration-300 group-hover/add:rotate-90" />
           </span>
@@ -569,7 +575,10 @@ const capabilities: Cap[] = [
   {#snippet detail()}
     {#if selectedProfile}
       {@const p = selectedProfile!}
-      <div class="flex flex-col gap-5">
+      <!-- Keyed so switching profiles crossfades the detail in instead of
+           hard-swapping; exit is instant to avoid a double-height flash. -->
+      {#key p.id}
+      <div class="flex flex-col gap-5" in:fade={{ duration: 160 }}>
         <div class="flex items-center gap-3">
           <span
             class={cn(
@@ -596,7 +605,7 @@ const capabilities: Cap[] = [
             {@const on = p[cap.field]}
             {@const CapIcon = on ? cap.iconOn : cap.iconOff}
             <div class="flex items-center gap-2 bg-card/60 px-3 py-2">
-              <CapIcon class={cn("size-3.5 shrink-0", on ? "text-primary" : "text-muted-foreground/40")} />
+              <CapIcon class={cn("size-3.5 shrink-0", on ? "text-foreground" : "text-muted-foreground/40")} />
               <dt class="flex-1 text-muted-foreground">{cap.label}</dt>
               <dd class="truncate font-medium text-foreground">
                 {#if cap.field === "microphone"}{on ? (p.micLabel ?? "On") : "Off"}
@@ -642,6 +651,7 @@ const capabilities: Cap[] = [
           </Button>
         </div>
       </div>
+      {/key}
     {:else}
       <div class="flex h-full flex-col items-center justify-center gap-2 py-10 text-center">
         <span class="grid size-10 place-items-center rounded-xl bg-foreground/5 text-muted-foreground/60">
@@ -827,7 +837,7 @@ const capabilities: Cap[] = [
       <div class="border-b border-border/30 px-5 py-4">
         <label
           for="profile-name-input"
-          class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground"
+          class="mb-1.5 block text-[11px] font-medium text-muted-foreground"
         >
           Name
         </label>
@@ -921,9 +931,7 @@ const capabilities: Cap[] = [
           >
             <div class="flex items-center gap-2 border-b border-border/30 px-5 py-3">
               <SlidersIcon size={12} class="text-muted-foreground" />
-              <span
-                class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground"
-              >
+              <span class="text-[11px] font-medium text-muted-foreground">
                 Devices
               </span>
             </div>

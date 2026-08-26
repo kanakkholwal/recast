@@ -21,35 +21,50 @@ const modes = [
 ] as const;
 </script>
 
-<StudioPage title={hello} subtitle="What would you like to capture?">
-  <div class="relative mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-6 py-10">
+<StudioPage title="Record">
+  <div class="relative mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-8 py-10">
     <div
       aria-hidden="true"
-      class="bg-grid-pattern pointer-events-none absolute -inset-x-10 -top-10 -z-10 h-96"
+      class="bg-grid-pattern pointer-events-none absolute -inset-x-16 -top-16 -z-10 h-[26rem] [mask-image:radial-gradient(ellipse_65%_65%_at_50%_35%,black,transparent)]"
     ></div>
 
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      {#each modes as mode (mode.intent)}
-        {@const Icon = mode.icon}
-        <button
-          type="button"
-          onclick={() => launchRecordingPanel(mode.intent)}
-          class="group/mode relative flex flex-col gap-4 overflow-hidden rounded-2xl border border-border/60 bg-card p-5 text-left shadow-(--shadow-craft-inset) transition-[transform,border-color,box-shadow] duration-200 ease-out hover:border-border hover:shadow-craft-md focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 motion-safe:hover:-translate-y-1 motion-safe:active:scale-[0.99]"
-        >
-          <span
-            class="flex size-12 items-center justify-center rounded-xl bg-foreground/5 text-foreground transition-transform duration-200 ease-out motion-safe:group-hover/mode:scale-110"
+    <div class="flex flex-col items-center gap-1.5 text-center">
+      <h2 class="text-[26px] font-bold tracking-tight text-foreground">{hello}</h2>
+      <p class="text-[13px] text-muted-foreground">What would you like to capture?</p>
+    </div>
+
+    <!-- One recorder deck: the four capture modes as hairline-divided tiles
+         inside a single elevated surface, so the page reads as an instrument
+         rather than a grid of web cards. gap-px over a border-tinted backdrop
+         draws the dividers on both axes at every breakpoint. -->
+    <div
+      class="overflow-hidden rounded-3xl border border-border/50 bg-border/40 shadow-craft-md"
+    >
+      <div class="grid grid-cols-2 gap-px sm:grid-cols-4">
+        {#each modes as mode (mode.intent)}
+          {@const Icon = mode.icon}
+          <button
+            type="button"
+            onclick={() => launchRecordingPanel(mode.intent)}
+            class="group/mode relative flex flex-col items-center gap-3 bg-card px-3 py-7 text-center transition-colors duration-200 ease-out hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 motion-safe:active:scale-[0.98]"
           >
-            <Icon class="size-6" />
-          </span>
-          <span class="flex flex-col gap-1">
-            <span class="text-[15px] font-semibold text-foreground">{mode.label}</span>
-            <span class="text-[12px] leading-snug text-muted-foreground">{mode.hint}</span>
-          </span>
-          <ArrowUpRight
-            class="absolute right-4 top-4 size-4 text-muted-foreground/40 opacity-0 transition-all duration-200 ease-out group-hover/mode:text-foreground group-hover/mode:opacity-100 motion-safe:group-hover/mode:-translate-y-0.5 motion-safe:group-hover/mode:translate-x-0.5"
-          />
-        </button>
-      {/each}
+            <span
+              class="flex size-11 items-center justify-center rounded-xl bg-muted/60 text-foreground ring-1 ring-inset ring-border/40 transition-transform duration-200 ease-out motion-safe:group-hover/mode:scale-110 motion-safe:group-hover/mode:-translate-y-0.5"
+            >
+              <Icon class="size-5" />
+            </span>
+            <span class="flex flex-col gap-0.5">
+              <span class="text-[12.5px] font-semibold tracking-tight text-foreground">
+                {mode.label}
+              </span>
+              <span class="text-[10.5px] leading-snug text-muted-foreground">{mode.hint}</span>
+            </span>
+            <ArrowUpRight
+              class="absolute right-2.5 top-2.5 size-3.5 text-muted-foreground/40 opacity-0 transition-all duration-200 ease-out group-hover/mode:text-foreground group-hover/mode:opacity-100 motion-safe:group-hover/mode:-translate-y-0.5 motion-safe:group-hover/mode:translate-x-0.5"
+            />
+          </button>
+        {/each}
+      </div>
     </div>
 
     <p class="text-center text-[11.5px] text-muted-foreground/70">

@@ -205,7 +205,7 @@ let showDetails = $state(false);
           class={cn(
             "flex size-9 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
             captureReady
-              ? "bg-primary/15 text-primary ring-primary/25"
+              ? "bg-muted/60 text-foreground ring-border/40"
               : "bg-warning/12 text-warning ring-1 ring-warning/25",
           )}
         >
@@ -226,7 +226,7 @@ let showDetails = $state(false);
               class={cn(
                 "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ring-1 ring-inset",
                 captureReady
-                  ? "bg-primary/15 text-primary ring-primary/25"
+                  ? "bg-muted/60 text-foreground ring-border/40"
                   : "bg-warning/12 text-warning ring-warning/25",
               )}
             >
@@ -259,7 +259,7 @@ let showDetails = $state(false);
                   class={cn(
                     "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset",
                     feat.supported
-                      ? "bg-primary/10 text-primary ring-primary/20"
+                      ? "bg-muted/60 text-foreground ring-border/40"
                       : "bg-foreground/5 text-muted-foreground/60 ring-border/40",
                   )}
                 >
@@ -308,7 +308,7 @@ let showDetails = $state(false);
       class="flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5"
     >
       <div class="flex items-center gap-2">
-        <Zap class="size-3.5 text-primary" />
+        <Zap class="size-3.5 text-muted-foreground" />
         <span class="text-[11px] font-semibold text-foreground">
           Hardware acceleration
         </span>
@@ -343,7 +343,7 @@ let showDetails = $state(false);
           class={cn(
             "flex size-9 shrink-0 items-center justify-center rounded-full ring-1 ring-inset",
             isAccelerated
-              ? "bg-primary/15 text-primary ring-primary/25"
+              ? "bg-muted/60 text-foreground ring-border/40"
               : "bg-foreground/5 text-muted-foreground ring-border/50",
           )}
         >
@@ -362,7 +362,7 @@ let showDetails = $state(false);
               class={cn(
                 "inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ring-1 ring-inset",
                 isAccelerated
-                  ? "bg-primary/15 text-primary ring-primary/25"
+                  ? "bg-muted/60 text-foreground ring-border/40"
                   : "bg-foreground/5 text-muted-foreground/80 ring-border/50",
               )}
             >
@@ -412,7 +412,7 @@ let showDetails = $state(false);
                     class={cn(
                       "flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset",
                       enc.available
-                        ? "bg-primary/10 text-primary ring-primary/20"
+                        ? "bg-muted/60 text-foreground ring-border/40"
                         : "bg-foreground/5 text-muted-foreground/60 ring-border/40",
                     )}
                   >

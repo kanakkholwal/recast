@@ -1,51 +1,51 @@
 <script lang="ts">
-  import { diagnostics } from "$lib/logger/diagnostics.svelte";
-  import { openLogDir } from "$lib/ipc";
-  import { Button } from "@recast/ui/button";
-  import { toast } from "@recast/ui/sonner";
-  import { cn } from "@recast/ui/utils";
-  import { FolderOpen, ScrollText } from "@recast/icons";
+import { diagnostics } from "$lib/logger/diagnostics.svelte";
+import { openLogDir } from "$lib/ipc";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { FolderOpen, ScrollText } from "@recast/icons";
 
-  let opening = $state(false);
+let opening = $state(false);
 
-  function toggleDiagnostics() {
-    const next = !diagnostics.enabled;
-    diagnostics.set(next);
-    toast.success(
-      next
-        ? "Diagnostic logging on. Reproduce the issue, then open the logs folder."
-        : "Diagnostic logging off",
-    );
-  }
+function toggleDiagnostics() {
+	const next = !diagnostics.enabled;
+	diagnostics.set(next);
+	toast.success(
+		next
+			? "Diagnostic logging on. Reproduce the issue, then open the logs folder."
+			: "Diagnostic logging off",
+	);
+}
 
-  async function openLogs() {
-    opening = true;
-    try {
-      await openLogDir();
-    } catch (e) {
-      toast.error(`Couldn't open the logs folder: ${e}`);
-    } finally {
-      opening = false;
-    }
-  }
+async function openLogs() {
+	opening = true;
+	try {
+		await openLogDir();
+	} catch (e) {
+		toast.error(`Couldn't open the logs folder: ${e}`);
+	} finally {
+		opening = false;
+	}
+}
 </script>
 
 <section id="settings-diagnostics" class="flex flex-col gap-3">
   <div class="px-1">
     <h2
-      class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+      class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
     >
-      <ScrollText class="size-3 text-primary" />
+      <ScrollText class="size-3.5 text-muted-foreground" />
       Diagnostics
     </h2>
-    <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
       Detailed logs for troubleshooting. Turn this on while reproducing a bug,
       then send the log folder to support.
     </p>
   </div>
 
   <div
-    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <div class="flex items-center justify-between gap-3 px-4 py-3">
       <div class="min-w-0">

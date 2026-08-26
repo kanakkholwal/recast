@@ -118,8 +118,7 @@ const isLinux = platform() === "linux";
 // Global recording prefs, read by the recording panel via shared localStorage.
 let recordingQuality = $state<RecordingQuality>("auto");
 let recordingFps = $state<number>(60);
-// Highest display refresh. Capture can't produce more unique fps than this,
-// so fps options are capped to it. 60 until displays are probed.
+
 let maxRefreshHz = $state(60);
 const settingsNav = [
 	{ value: "general", label: "General", icon: SettingsIcon },
@@ -446,13 +445,14 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
         class="flex w-full flex-col gap-6 sm:flex-row sm:items-start sm:gap-8"
       >
         <Tabs.List
-          class="flex shrink-0 flex-row gap-1 overflow-x-auto p-0 no-scrollbar sm:sticky sm:top-1 sm:w-48 sm:flex-col sm:gap-0.5 sm:overflow-visible"
+          variant="pill"
+          class="flex shrink-0 flex-row gap-1 overflow-x-auto no-scrollbar sm:sticky sm:top-1 sm:w-48 sm:flex-col sm:gap-0.5 sm:overflow-visible"
         >
           {#each settingsNav as tab (tab.value)}
             {@const Icon = tab.icon}
             <Tabs.Trigger
               value={tab.value}
-              class="w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 py-2 text-[12.5px] font-medium text-muted-foreground transition-colors duration-150 hover:text-foreground data-[state=active]:bg-foreground/10 data-[state=active]:font-semibold data-[state=active]:text-foreground"
+              class="w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 py-2 text-[12.5px] font-medium transition-colors duration-150"
             >
               <Icon class="size-4 shrink-0" />
               {tab.label}
@@ -590,7 +590,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
               >
                 {#snippet icon()}
-                  <Shield class="size-3 text-primary" />
+                  <Shield class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 <SettingsRow
                   label="Share anonymous usage analytics"
@@ -625,7 +625,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 description="Wait a beat before capture starts, so you can switch windows."
               >
                 {#snippet icon()}
-                  <Timer class="size-3 text-primary" />
+                  <Timer class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 <SettingsRow
                   label="Countdown before recording"
@@ -652,7 +652,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 description="How crisp the recorded master is. The editor re-encodes on export, but detail lost here can't be recovered later."
               >
                 {#snippet icon()}
-                  <Sparkles class="size-3 text-primary" />
+                  <Sparkles class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 <SettingsRow
                   label="Recording quality"
@@ -680,7 +680,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                   : `Smoother motion needs a higher-refresh display. Yours runs at ${maxRefreshHz} Hz, so 60 fps is the max useful rate.`}
               >
                 {#snippet icon()}
-                  <Video class="size-3 text-primary" />
+                  <Video class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 <SettingsRow
                   label="Recording frame rate"
@@ -704,7 +704,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 description="Whether Recast's own floating controls show up in the video."
               >
                 {#snippet icon()}
-                  <EyeOff class="size-3 text-primary" />
+                  <EyeOff class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 <SettingsRow
                   label="Hide recording panel from captures"
@@ -772,7 +772,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 description="Share recordings as Loom-style links, layered on top of your local recordings."
               >
                 {#snippet icon()}
-                  <RecastMark class="size-3 text-primary" />
+                  <RecastMark class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 <CloudSignIn />
               </SectionCard>
@@ -783,9 +783,9 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 <section id="settings-cloud-endpoint" class="flex flex-col gap-3">
                   <div class="px-1">
                     <h2
-                      class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+                      class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
                     >
-                      <Server class="size-3 text-primary" />
+                      <Server class="size-3.5 text-muted-foreground" />
                       Self-hosting
                       <span
                         class="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-warning"
@@ -794,13 +794,13 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                         Experimental
                       </span>
                     </h2>
-                    <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+                    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
                       Run your own Recast Cloud server? Set its address here.
                       Everyone else can leave this on the default.
                     </p>
                   </div>
                   <div
-                    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+                    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
                   >
                     <CloudEndpoint />
                   </div>
@@ -815,7 +815,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 description="Upload exports to your own Drive. Files land in a private /Recast/ folder."
               >
                 {#snippet icon()}
-                  <BrandGoogleDrive class="size-3 text-primary" />
+                  <BrandGoogleDrive class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 <GoogleDriveConnection />
               </SectionCard>
@@ -828,7 +828,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 description="Unfinished features, off by default. Turn one on to try it; it may change or break."
               >
                 {#snippet icon()}
-                  <FlaskConical class="size-3 text-primary" />
+                  <FlaskConical class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 {#each FLAG_META as flag (flag.key)}
                   {@const on = experimentalStore.isEnabled(flag.key)}
@@ -849,9 +849,9 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 <section id="settings-remote-asr" class="flex flex-col gap-3">
                   <div class="px-1">
                     <h2
-                      class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+                      class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
                     >
-                      <Server class="size-3 text-primary" />
+                      <Server class="size-3.5 text-muted-foreground" />
                       Remote transcription
                       <span
                         class="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-warning"
@@ -860,13 +860,13 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                         Experimental
                       </span>
                     </h2>
-                    <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+                    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
                       Transcribe captions through an OpenAI-compatible endpoint.
                       Keys are stored in your OS keyring, never in the project.
                     </p>
                   </div>
                   <div
-                    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+                    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
                   >
                     <RemoteEndpoints />
                   </div>
@@ -881,7 +881,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 description="Control Recast from a terminal or an AI agent with the recast command."
               >
                 {#snippet icon()}
-                  <Terminal class="size-3 text-primary" />
+                  <Terminal class="size-3.5 text-muted-foreground" />
                 {/snippet}
                 <SettingsRow
                   label="Install the recast command"
@@ -989,12 +989,12 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           <section id="settings-device" class="flex flex-col gap-3">
             <div class="px-1">
               <h2
-                class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+                class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
               >
-                <Cpu class="size-3 text-primary" />
+                <Cpu class="size-3.5 text-muted-foreground" />
                 Device & diagnostics
               </h2>
-              <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+              <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
                 System status and which video encoders this device supports.
               </p>
             </div>

@@ -162,7 +162,7 @@ export interface SegmentedProps<T extends string = string> {
 		<div
 			aria-hidden="true"
 			class={cn(
-				"pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-md bg-card shadow-[0_1px_2px_color-mix(in_srgb,var(--color-foreground)_8%,transparent)] ring-1 ring-inset ring-border/40",
+				"pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-md bg-foreground shadow-craft-md",
 				hasAnimated &&
 					"transition-[left,width] duration-200 ease-[cubic-bezier(0.25,1,0.5,1)]",
 			)}
@@ -199,7 +199,7 @@ export interface SegmentedProps<T extends string = string> {
 				sizing.btn,
 				fill && "flex-1",
 				active
-					? "text-foreground"
+					? "text-background"
 					: "text-muted-foreground hover:text-foreground",
 				(disabled || option.disabled) && "cursor-not-allowed",
 			)}

@@ -1,21 +1,22 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from "tailwind-variants";
-	export const tabsListVariants = tv({
-		base: "rounded-lg p-[3px] group-data-horizontal/tabs:h-9 data-[variant=line]:rounded-none group/tabs-list text-muted-foreground inline-flex w-fit items-center justify-center group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col",
-		variants: {
-			variant: {
-				default: "gap-2-list-variant-default bg-muted",
-				line: "rounded-lg p-[3px] group-data-horizontal/tabs:h-9 data-[variant=line]:rounded-none-variant-line gap-1 bg-transparent",
-				soft: 'bg-muted/60 [&_[data-slot="tabs-trigger"][data-state=active]_svg]:text-primary [&_[data-slot="tabs-trigger"][data-state=active]]:text-foreground [&_[data-slot="tabs-trigger"]]:text-muted-foreground [&_[data-slot="tabs-trigger"]:hover]:text-foreground [&_[data-slot="tabs-trigger"]]:shadow-transparent',
-			},
+import { tv, type VariantProps } from "tailwind-variants";
+export const tabsListVariants = tv({
+	base: "rounded-lg p-[3px] group-data-horizontal/tabs:h-9 data-[variant=line]:rounded-none group/tabs-list text-muted-foreground inline-flex w-fit items-center justify-center group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col",
+	variants: {
+		variant: {
+			default: "gap-2-list-variant-default bg-muted",
+			line: "rounded-lg p-[3px] group-data-horizontal/tabs:h-9 data-[variant=line]:rounded-none-variant-line gap-1 bg-transparent",
+			soft: 'bg-muted/60 [&_[data-slot="tabs-trigger"][data-state=active]_svg]:text-primary [&_[data-slot="tabs-trigger"][data-state=active]]:text-foreground [&_[data-slot="tabs-trigger"]]:text-muted-foreground [&_[data-slot="tabs-trigger"]:hover]:text-foreground [&_[data-slot="tabs-trigger"]]:shadow-transparent',
+			// Bare nav rail: no list chrome; the active trigger rides a dark
+			// bg-foreground pill (same language as the app's notched top nav).
+			pill: 'bg-transparent p-0 [&_[data-slot="tabs-trigger"]]:text-muted-foreground [&_[data-slot="tabs-trigger"]:hover:not([data-state=active])]:text-foreground [&_[data-slot="tabs-trigger"][data-state=active]]:text-background [&_[data-slot="tabs-trigger"][data-state=active]]:bg-foreground [&_[data-slot="tabs-trigger"]]:shadow-transparent',
 		},
-		defaultVariants: {
-			variant: "default",
-		},
-	});
-	export type TabsListVariant = VariantProps<
-		typeof tabsListVariants
-	>["variant"];
+	},
+	defaultVariants: {
+		variant: "default",
+	},
+});
+export type TabsListVariant = VariantProps<typeof tabsListVariants>["variant"];
 </script>
 
 <script lang="ts">
@@ -147,6 +148,7 @@
 				"pointer-events-none absolute left-0 top-0 z-0 rounded-md will-change-transform",
 				variant === "soft" && "bg-card shadow-(--shadow-craft-inset)",
 				variant === "default" && "bg-background shadow-sm",
+				variant === "pill" && "rounded-lg bg-foreground shadow-craft-md",
 			)}
 			style="transform: translate({x.current}px, {y.current}px); width: {w.current}px; height: {h.current}px;"
 		></span>
