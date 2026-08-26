@@ -512,11 +512,11 @@ shape. Never throw on a parse failure; reset to the empty-state instead.
 
 The 2026-08 studio pass audited the desktop app's rendered surfaces and moved
 decorative `*-primary` sites to the neutral vocabulary above; the reserved list
-in "Control vocabulary" is now the authority for desktop. Dead components that
-predate the pass and were left un-restyled (candidates for deletion):
-`components/recast/RecastList|RecastCard|RecastRow.svelte` and
-`components/layout/app-sidebar.svelte` (both unreferenced since the TopNav /
-`createLibraryPage` refactors).
+in "Control vocabulary" is now the authority for desktop. The dead components
+that predated the pass (the `RecastList`/`RecastCard`/`RecastRow` family plus
+its exclusive deps `PageShell`, `TopProgress`, `accessory.logic`, the unused
+`ActionPanel`, and `app-sidebar.*`) were deleted in that pass — the TopNav and
+`createLibraryPage` refactors had already replaced them.
 
 `--primary` changed hue from lime to indigo, and the ~427 `*-primary` sites
 across both apps were **not** audited as part of that change. They render

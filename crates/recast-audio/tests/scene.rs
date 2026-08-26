@@ -242,3 +242,22 @@ fn the_master_fades_come_from_the_settings() {
     assert_eq!((master.fade_in, master.fade_out), (0.5, 0.25));
     assert_eq!(master.duration_sec, 2.0);
 }
+
+/// `clamp` passes NaN through, so a corrupt volume would otherwise reach the
+/// mixer as a NaN gain and silence every track, not just its own.
+#[test]
+fn a_corrupt_volume_falls_back_to_unity_instead_of_poisoning_the_mix() {
+    for volume in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let graph = AudioGraph {
+            settings: AudioSettings {
+                volume,
+                ..AudioSettings::default()
+            },
+            clips: Vec::new(),
+        };
+        let sources = SceneSources::new().recording(RecordingKind::Source, flat(0.5, 1.0));
+        let mix = mixer_for(&graph, 1.0, sources).render_all();
+        let level = peak_between(&mix, 0.1, 0.9);
+        assert!((level - 0.5).abs() < 0.001, "{volume} gave {level}");
+    }
+}

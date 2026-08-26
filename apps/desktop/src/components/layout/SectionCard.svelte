@@ -18,7 +18,7 @@ let { label, description, icon, id, children, class: className }: Props = $props
 
 <section {id} class={cn("flex flex-col gap-3", className)}>
 	<div class="px-1">
-		<h2 class="flex items-center gap-1.5 text-lg font-semibold tracking-wider text-foreground">
+		<h2 class="flex items-center gap-1.5 text-base font-semibold tracking-wider text-foreground">
 			{#if icon}{@render icon()}{/if}
 			{label}
 		</h2>

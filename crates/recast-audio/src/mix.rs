@@ -11,6 +11,11 @@ pub const MASTER_CHANNELS: usize = 2;
 /// as its first eight channels.
 const MAX_SOURCE_CHANNELS: usize = 8;
 
+/// Longest mix rendered in one call. A duration arriving as infinity, or from a
+/// corrupt project, would otherwise ask for an allocation that aborts the
+/// process rather than failing.
+const MAX_OUTPUT_SECONDS: f64 = 24.0 * 3600.0;
+
 /// A ducked track falls to this while the key is speaking.
 const DUCK_DEPTH: f32 = 0.25;
 /// Roughly -34 dBFS. Below it the key counts as silence.
@@ -140,8 +145,12 @@ impl Mixer {
         &self.master
     }
 
+    // NOT `clamp`: it passes NaN straight through, where `max` returns the other
+    // side and folds a non-finite duration to zero. That is the whole guard.
+    #[allow(clippy::manual_clamp)]
     pub fn total_frames(&self) -> u64 {
-        (self.master.duration_sec.max(0.0) * MASTER_RATE as f64).round() as u64
+        let seconds = self.master.duration_sec.max(0.0).min(MAX_OUTPUT_SECONDS);
+        (seconds * MASTER_RATE as f64).round() as u64
     }
 
     /// Rewinds to the start, ducking envelope included.

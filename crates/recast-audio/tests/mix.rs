@@ -244,3 +244,20 @@ fn a_muted_master_produces_silence() {
     mixer.push(track(tone(1.0, 440.0, 0.9, 48_000, 1)));
     assert_eq!(peak_between(&mixer.render_all(), 0.0, 1.0), 0.0);
 }
+
+/// A corrupt or unset duration must not turn into an allocation the size of the
+/// address space. Nothing here should reach the allocator at all.
+#[test]
+fn an_impossible_duration_renders_nothing_rather_than_aborting() {
+    for seconds in [f64::INFINITY, f64::NAN, -5.0, 1e30] {
+        let mut mixer = Mixer::new(Master::new(seconds));
+        mixer.push(track(tone(1.0, 440.0, 0.5, 48_000, 1)));
+        let frames = mixer.total_frames();
+        assert!(
+            frames <= 24 * 3600 * MASTER_RATE as u64,
+            "{seconds} asked for {frames} frames"
+        );
+    }
+    // And zero is genuinely zero, not the cap.
+    assert_eq!(Mixer::new(Master::new(0.0)).total_frames(), 0);
+}

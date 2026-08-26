@@ -13,6 +13,43 @@ const SYNC_FLAGS: u32 = 2 << 24;
 /// Depends on others, and the non-sync bit set.
 const NON_SYNC_FLAGS: u32 = (1 << 24) | (1 << 16);
 
+/// A fragment is described with 32-bit fields: the `mdat` header here has no
+/// 64-bit form, and `trun`'s data offset is signed. Past this a fragment would
+/// wrap rather than fail, and the file would be quietly corrupt.
+const MAX_FRAGMENT: usize = i32::MAX as usize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FragmentError {
+    /// The parameter sets have not arrived, so `moov` cannot describe the track.
+    NoConfig,
+    /// One fragment held more than [`MAX_FRAGMENT`] bytes. Call `fragment` more
+    /// often; the cadence is the caller's to choose.
+    TooLarge(usize),
+}
+
+impl std::fmt::Display for FragmentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoConfig => write!(f, "no parameter sets yet"),
+            Self::TooLarge(bytes) => {
+                write!(f, "a fragment of {bytes} bytes cannot be described in 32 bits")
+            }
+        }
+    }
+}
+
+impl std::error::Error for FragmentError {}
+
+/// The `mdat` size field, or `None` when it would not fit.
+fn mdat_size(payload: usize) -> Option<u32> {
+    payload.checked_add(8).filter(|n| *n <= MAX_FRAGMENT)?.try_into().ok()
+}
+
+/// A `trun` data offset, which is signed and relative to the start of `moof`.
+fn data_offset(base: usize, within: usize) -> Option<i32> {
+    base.checked_add(within).filter(|n| *n <= MAX_FRAGMENT)?.try_into().ok()
+}
+
 struct Pending {
     data: Vec<u8>,
     duration: u32,
@@ -55,17 +92,19 @@ impl FragmentedWriter {
     }
 
     /// `ftyp` and a `moov` whose sample tables are empty, which is what says the
-    /// samples arrive in fragments. `None` until the parameter sets are known.
+    /// samples arrive in fragments. Errors until the parameter sets are known.
     ///
     /// Written once, before any fragment, and never rewritten: that is the whole
     /// difference from the progressive writer.
-    pub fn initialization_segment(&self) -> Option<Vec<u8>> {
+    pub fn initialization_segment(&self) -> Result<Vec<u8>, FragmentError> {
         let mut header = Mp4Writer::new(self.video_format);
         header.set_avc_config(self.avc.clone());
         if let Some(format) = &self.audio_format {
             header.set_audio_format(format.clone());
         }
-        header.initialization_segment()
+        header
+            .initialization_segment()
+            .ok_or(FragmentError::NoConfig)
     }
 
     pub fn push_sample(&mut self, data: &[u8], duration: u32, is_sync: bool) {
@@ -107,9 +146,9 @@ impl FragmentedWriter {
     /// The caller decides the cadence. A fragment per second is the usual trade:
     /// shorter means more `moof` overhead, longer means more work lost to a
     /// crash, and one must stay under 4 GiB because its `mdat` header is 32 bit.
-    pub fn fragment(&mut self) -> Option<Vec<u8>> {
+    pub fn fragment(&mut self) -> Result<Option<Vec<u8>>, FragmentError> {
         if self.video.is_empty() && self.audio.is_empty() {
-            return None;
+            return Ok(None);
         }
         self.sequence += 1;
 
@@ -144,18 +183,23 @@ impl FragmentedWriter {
         // `default-base-is-moof` makes every offset relative to the first byte
         // of `moof`, so the base is the size of `moof` plus the `mdat` header.
         let base = out.len() + 8;
+        let payload: usize = video_bytes + audio.iter().map(|s| s.data.len()).sum::<usize>();
+        let size = mdat_size(payload).ok_or(FragmentError::TooLarge(payload))?;
         for (at, within) in patches {
-            let offset = (base + within) as u32;
-            out[at..at + 4].copy_from_slice(&offset.to_be_bytes());
+            let offset =
+                data_offset(base, within).ok_or(FragmentError::TooLarge(base + within))?;
+            let slot = out
+                .get_mut(at..at + 4)
+                .ok_or(FragmentError::TooLarge(payload))?;
+            slot.copy_from_slice(&offset.to_be_bytes());
         }
 
-        let payload: usize = video_bytes + audio.iter().map(|s| s.data.len()).sum::<usize>();
-        out.extend_from_slice(&((payload + 8) as u32).to_be_bytes());
+        out.extend_from_slice(&size.to_be_bytes());
         out.extend_from_slice(b"mdat");
         for sample in video.iter().chain(audio.iter()) {
             out.extend_from_slice(&sample.data);
         }
-        Some(out)
+        Ok(Some(out))
     }
 }
 
@@ -223,6 +267,34 @@ mod tests {
         data.windows(4).position(|w| w == kind)
     }
 
+    /// Unwraps both layers: the tests below are about box contents, and a
+    /// writer that refuses is a failure worth reading in the panic message.
+    fn frag(w: &mut FragmentedWriter) -> Vec<u8> {
+        w.fragment().expect("the writer accepted it").expect("a fragment")
+    }
+
+    /// The size fields are checked at the boundary rather than by building a
+    /// two-gigabyte fragment, which no test should allocate.
+    #[test]
+    fn a_fragment_that_would_not_fit_in_its_size_field_is_refused() {
+        assert_eq!(mdat_size(0), Some(8));
+        assert_eq!(mdat_size(100), Some(108));
+        assert_eq!(mdat_size(MAX_FRAGMENT - 8), Some(MAX_FRAGMENT as u32));
+        assert_eq!(mdat_size(MAX_FRAGMENT - 7), None);
+        assert_eq!(mdat_size(usize::MAX), None);
+    }
+
+    /// `trun` holds the data offset SIGNED, so the ceiling is half what an
+    /// unsigned field would give and a wrap would land it before the fragment.
+    #[test]
+    fn a_data_offset_past_the_signed_ceiling_is_refused() {
+        assert_eq!(data_offset(0, 0), Some(0));
+        assert_eq!(data_offset(64, 500), Some(564));
+        assert_eq!(data_offset(MAX_FRAGMENT, 0), Some(i32::MAX));
+        assert_eq!(data_offset(MAX_FRAGMENT, 1), None);
+        assert_eq!(data_offset(usize::MAX, 1), None);
+    }
+
     fn u32_at(data: &[u8], at: usize) -> u32 {
         u32::from_be_bytes(data[at..at + 4].try_into().unwrap())
     }
@@ -241,7 +313,7 @@ mod tests {
     #[test]
     fn nothing_pushed_is_no_fragment() {
         let mut w = writer();
-        assert!(w.fragment().is_none());
+        assert!(w.fragment().expect("no error").is_none());
     }
 
     #[test]
@@ -249,7 +321,7 @@ mod tests {
         let mut w = writer();
         w.push_sample(&[1, 1, 1], 1, true);
         w.push_sample(&[2, 2], 1, false);
-        let data = w.fragment().expect("a fragment");
+        let data = frag(&mut w);
         let mdat = find(&data, b"mdat").expect("an mdat");
         assert_eq!(&data[mdat + 4..], &[1, 1, 1, 2, 2]);
     }
@@ -261,7 +333,7 @@ mod tests {
     fn the_data_offset_points_at_the_first_sample() {
         let mut w = writer();
         w.push_sample(&[9, 9, 9, 9], 1, true);
-        let data = w.fragment().expect("a fragment");
+        let data = frag(&mut w);
         let trun = find(&data, b"trun").expect("a trun");
         // type, version and flags, sample count, then the offset.
         let offset = u32_at(&data, trun + 4 + 4 + 4) as usize;
@@ -278,7 +350,7 @@ mod tests {
         });
         w.push_sample(&[1, 2, 3, 4, 5, 6], 1, true);
         w.push_audio_sample(&[7, 8], 1024);
-        let data = w.fragment().expect("a fragment");
+        let data = frag(&mut w);
 
         let first = find(&data, b"trun").expect("a video trun");
         let second = first + 4 + find(&data[first + 4..], b"trun").expect("an audio trun");
@@ -295,9 +367,9 @@ mod tests {
         let mut w = writer();
         w.push_sample(&[1], 10, true);
         w.push_sample(&[2], 10, false);
-        let first = w.fragment().expect("a fragment");
+        let first = frag(&mut w);
         w.push_sample(&[3], 10, false);
-        let second = w.fragment().expect("a fragment");
+        let second = frag(&mut w);
 
         let at = |data: &[u8]| {
             let tfdt = find(data, b"tfdt").expect("a tfdt");
@@ -315,9 +387,9 @@ mod tests {
             u32_at(data, mfhd + 8)
         };
         w.push_sample(&[1], 1, true);
-        assert_eq!(number(&w.fragment().unwrap()), 1);
+        assert_eq!(number(&frag(&mut w)), 1);
         w.push_sample(&[2], 1, false);
-        assert_eq!(number(&w.fragment().unwrap()), 2);
+        assert_eq!(number(&frag(&mut w)), 2);
     }
 
     #[test]
@@ -325,7 +397,7 @@ mod tests {
         let mut w = writer();
         w.push_sample(&[1], 1, true);
         w.push_sample(&[2], 1, false);
-        let data = w.fragment().expect("a fragment");
+        let data = frag(&mut w);
         let trun = find(&data, b"trun").expect("a trun");
         // Past the header and the offset, each sample is four words.
         let first = trun + 16;
@@ -338,8 +410,8 @@ mod tests {
         let mut w = writer();
         w.push_sample(&[1], 1, true);
         assert_eq!(w.pending(), 1);
-        w.fragment();
+        let _ = w.fragment();
         assert_eq!(w.pending(), 0);
-        assert!(w.fragment().is_none());
+        assert!(w.fragment().expect("no error").is_none());
     }
 }

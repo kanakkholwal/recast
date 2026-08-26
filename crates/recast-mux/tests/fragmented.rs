@@ -110,14 +110,14 @@ fn build() -> Option<Built> {
     }
     writer.set_avc_config(config);
 
-    let mut data = writer.initialization_segment()?;
+    let mut data = writer.initialization_segment().ok()?;
     let init = data.len();
     let mut boundaries = Vec::new();
     for chunk in samples.chunks(PER_FRAGMENT) {
         for (sample, is_sync) in chunk {
             writer.push_sample(sample, 1, *is_sync);
         }
-        data.extend_from_slice(&writer.fragment()?);
+        data.extend_from_slice(&writer.fragment().ok()??);
         boundaries.push(data.len());
     }
 

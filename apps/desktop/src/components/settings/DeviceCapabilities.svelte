@@ -7,6 +7,7 @@ import {
 	type EncoderAvailability,
 	type FfmpegDiagnostics,
 } from "$lib/ipc";
+import type { IconComponent } from "@recast/icons";
 import {
 	AppWindow,
 	Check,
@@ -26,7 +27,6 @@ import {
 	X,
 	Zap,
 } from "@recast/icons";
-import type { IconComponent } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import * as Collapsible from "@recast/ui/collapsible";
 import { cn } from "@recast/ui/utils";
@@ -40,8 +40,6 @@ import {
 	PLATFORM_LABEL,
 } from "./DeviceCapabilities.logic";
 
-// Best-effort: each os-plugin getter is wrapped so a blocked permission or
-// non-Tauri preview degrades to "Unknown" rather than throwing the panel away.
 let osLabel = $state("Unknown");
 let osVersion = $state("");
 let osArch = $state("");
@@ -155,7 +153,6 @@ let showDetails = $state(false);
 
 <div class="flex flex-col gap-3">
   <div
-    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <div class="flex items-center gap-2 border-b border-border/40 px-4 py-2.5">
       <MonitorCog class="size-3.5 text-muted-foreground" />
@@ -178,7 +175,6 @@ let showDetails = $state(false);
 
   <!-- Probed at runtime (DXGI / AVFoundation / PipeWire / X11), not hardcoded. -->
   <div
-    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <div class="flex items-center gap-2 border-b border-border/40 px-4 py-2.5">
       <MonitorPlay class="size-3.5 text-muted-foreground" />
@@ -302,7 +298,6 @@ let showDetails = $state(false);
   </div>
 
   <div
-    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <div
       class="flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5"

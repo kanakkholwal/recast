@@ -7,6 +7,11 @@ use crate::source::SampleSource;
 /// Volumes are stored as percentages. Four is the same ceiling the panel offers,
 /// and it stops a corrupt project asking for a gain of a thousand.
 fn percent(value: f64) -> f32 {
+    if !value.is_finite() {
+        // `clamp` passes NaN straight through, and a NaN gain silences the whole
+        // mix rather than one track. Unity is what an absent value means here.
+        return 1.0;
+    }
     (value / 100.0).clamp(0.0, 4.0) as f32
 }
 

@@ -1,14 +1,16 @@
 <script lang="ts">
-import Logo from "$components/logo.svelte";
+import { afterNavigate, replaceState } from "$app/navigation";
+import { page } from "$app/state";
 import SectionCard from "$components/layout/SectionCard.svelte";
 import SettingsRow from "$components/layout/SettingsRow.svelte";
 import StudioPage from "$components/layout/StudioPage.svelte";
+import Logo from "$components/logo.svelte";
+import RecastMark from "$components/recast-mark.svelte";
 import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
 import CloudSignIn from "$components/settings/CloudSignIn.svelte";
 import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
 import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
 import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
-import RecastMark from "$components/recast-mark.svelte";
 import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
 import { config } from "$constants/app";
 import {
@@ -30,7 +32,6 @@ import {
 	type CliInstallStatus,
 } from "$lib/ipc";
 import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
-import { emit } from "@tauri-apps/api/event";
 import {
 	loadRecordingFps,
 	loadRecordingQuality,
@@ -38,16 +39,7 @@ import {
 	persistRecordingQuality,
 	type RecordingQuality,
 } from "@recast/editor/lib/profiles";
-import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
-import {
-	DEFAULT_SETTINGS_TAB,
-	parseSettingsTab,
-	SETTINGS_TAB_PARAM,
-	type SettingsTab,
-} from "./settings-tabs";
-import { afterNavigate, replaceState } from "$app/navigation";
-import { page } from "$app/state";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import type { IconComponent } from "@recast/icons";
 import {
 	ArrowUpRight,
 	BrandGoogleDrive,
@@ -58,8 +50,12 @@ import {
 	FolderOpen,
 	Globe,
 	HardDrive,
+	Info,
 	Monitor,
+	MonitorCog,
 	Moon,
+	Palette,
+	Pencil,
 	Server,
 	Settings as SettingsIcon,
 	Shield,
@@ -71,7 +67,6 @@ import {
 	Video,
 	Wrench,
 } from "@recast/icons";
-import type { IconComponent } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
 import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
@@ -79,22 +74,28 @@ import { toast } from "@recast/ui/sonner";
 import { Switch } from "@recast/ui/switch";
 import * as Tabs from "@recast/ui/tabs";
 import { setMode } from "@recast/ui/theme";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { platform } from "@tauri-apps/plugin-os";
 import { onMount, untrack } from "svelte";
-import { cubicOut } from "svelte/easing";
-import { fly } from "svelte/transition";
+import {
+	DEFAULT_SETTINGS_TAB,
+	parseSettingsTab,
+	SETTINGS_TAB_PARAM,
+	type SettingsTab,
+} from "./settings-tabs";
+import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
 
 import { syncConsent } from "$lib/analytics/client";
 import { desktopConsent } from "$lib/stores/consent.svelte";
-import {
-	FLAG_META,
-	experimentalStore,
-	type ExperimentalFlag,
-} from "@recast/editor/stores/experimental.svelte";
 import { LAYOUT_MODES, layoutMode, type LayoutMode } from "$lib/stores/layout-mode.svelte";
 import { profilesStore } from "$lib/stores/profiles.svelte";
 import { recordingCountdown, type CountdownSeconds } from "$lib/stores/recording-countdown.svelte";
+import {
+	experimentalStore,
+	FLAG_META,
+	type ExperimentalFlag,
+} from "@recast/editor/stores/experimental.svelte";
 import { safeStorage } from "@recast/ui/persisted-state";
 
 type Theme = "light" | "dark" | "system";
@@ -436,573 +437,596 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
 ];
 </script>
 
-<StudioPage title="Settings" subtitle="Tune appearance, storage and editor defaults. Changes save instantly.">
+<StudioPage
+  title="Settings"
+  subtitle="Tune appearance, storage and editor defaults. Changes save instantly."
+>
   <div class="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
-      <Tabs.Root
-        value={activeTab}
-        onValueChange={(v) => (activeTab = v as SettingsTab)}
-        orientation="vertical"
-        class="flex w-full flex-col gap-6 sm:flex-row sm:items-start sm:gap-8"
+    <Tabs.Root
+      value={activeTab}
+      onValueChange={(v) => (activeTab = v as SettingsTab)}
+      orientation="vertical"
+      class="flex w-full flex-col gap-6 sm:flex-row sm:items-start sm:gap-8"
+    >
+      <Tabs.List
+        variant="pill"
+        class="flex shrink-0 flex-row gap-1 overflow-x-auto no-scrollbar sm:sticky sm:top-1 sm:w-48 sm:flex-col sm:gap-0.5 sm:overflow-visible"
       >
-        <Tabs.List
-          variant="pill"
-          class="flex shrink-0 flex-row gap-1 overflow-x-auto no-scrollbar sm:sticky sm:top-1 sm:w-48 sm:flex-col sm:gap-0.5 sm:overflow-visible"
+        {#each settingsNav as tab (tab.value)}
+          {@const Icon = tab.icon}
+          <Tabs.Trigger
+            value={tab.value}
+            class="w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 py-2 text-[12.5px] font-medium transition-colors duration-150"
+          >
+            <Icon class="size-4 shrink-0" />
+            {tab.label}
+          </Tabs.Trigger>
+        {/each}
+      </Tabs.List>
+
+      <Tabs.Content value="general" class="flex min-w-0 flex-1 flex-col gap-8">
+        <SectionCard
+          id="settings-appearance"
+          label="Appearance"
+          description="How Recast looks and how the window is arranged."
         >
-          {#each settingsNav as tab (tab.value)}
-            {@const Icon = tab.icon}
-            <Tabs.Trigger
-              value={tab.value}
-              class="w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 py-2 text-[12.5px] font-medium transition-colors duration-150"
+          {#snippet icon()}
+            <Palette class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Theme"
+            description={currentTheme === "system"
+              ? "Following your OS preference."
+              : `Locked to ${currentTheme} mode.`}
+          >
+            <Segmented
+              options={themeSegments}
+              value={currentTheme}
+              onValueChange={updateTheme}
+              fill={false}
+              aria-label="Theme"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Window chrome"
+            description={LAYOUT_MODES.find(
+              (m) => m.value === layoutMode.current,
+            )?.hint}
+          >
+            <Segmented
+              options={layoutSegments}
+              value={layoutMode.current}
+              onValueChange={(v) => (layoutMode.current = v)}
+              fill={false}
+              aria-label="Window chrome layout"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Window transparency"
+            description={isLinux
+              ? "Not available on Linux."
+              : windowTransparency
+                ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
+                : "The window uses a solid background."}
+          >
+            <Switch
+              checked={!isLinux && windowTransparency}
+              disabled={isLinux}
+              onCheckedChange={() => toggleWindowTransparency()}
+              aria-label="Window transparency"
+            />
+          </SettingsRow>
+        </SectionCard>
+
+        <SectionCard
+          id="settings-editor"
+          label="Editor"
+          description="Behavior when you open a recording."
+        >
+          {#snippet icon()}
+            <Pencil class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Window behavior"
+            description="Replace the current view or pop the editor into its own window."
+          >
+            <Segmented
+              options={editorSegments}
+              value={editorWindow}
+              onValueChange={updateEditorWindow}
+              fill={false}
+              aria-label="Window behavior"
+            />
+          </SettingsRow>
+        </SectionCard>
+
+        <SectionCard
+          id="settings-storage"
+          label="Storage"
+          description="Where Recast keeps your recordings."
+        >
+          {#snippet icon()}
+            <HardDrive class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Output directory"
+            description="New recordings save here. Existing files stay where they are."
+            stacked
+          >
+            <div
+              class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/40 bg-background/60 px-3 font-mono text-[11px] text-muted-foreground"
+              title={outputDir || "Default temporary directory"}
             >
-              <Icon class="size-4 shrink-0" />
-              {tab.label}
-            </Tabs.Trigger>
-          {/each}
-        </Tabs.List>
+              <FolderOpen class="size-3.5 shrink-0 text-muted-foreground/70" />
+              <span class="truncate">
+                {outputDir || "Default temporary directory"}
+              </span>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              class="h-9 shrink-0 gap-1.5"
+              onclick={pickDirectory}
+            >
+              <FolderOpen class="size-3.5" />
+              Change
+            </Button>
+          </SettingsRow>
+        </SectionCard>
 
-        <Tabs.Content value="general" class="flex min-w-0 flex-1 flex-col gap-8">
-              <SectionCard
-                id="settings-appearance"
-                label="Appearance"
-                description="How Recast looks and how the window is arranged."
-              >
-                <SettingsRow
-                  label="Theme"
-                  description={currentTheme === "system"
-                    ? "Following your OS preference."
-                    : `Locked to ${currentTheme} mode.`}
-                >
-                  <Segmented
-                    options={themeSegments}
-                    value={currentTheme}
-                    onValueChange={updateTheme}
-                    fill={false}
-                    aria-label="Theme"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Window chrome"
-                  description={LAYOUT_MODES.find(
-                    (m) => m.value === layoutMode.current,
-                  )?.hint}
-                >
-                  <Segmented
-                    options={layoutSegments}
-                    value={layoutMode.current}
-                    onValueChange={(v) => (layoutMode.current = v)}
-                    fill={false}
-                    aria-label="Window chrome layout"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Window transparency"
-                  description={isLinux
-                    ? "Not available on Linux."
-                    : windowTransparency
-                      ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
-                      : "The window uses a solid background."}
-                >
-                  <Switch
-                    checked={!isLinux && windowTransparency}
-                    disabled={isLinux}
-                    onCheckedChange={() => toggleWindowTransparency()}
-                    aria-label="Window transparency"
-                  />
-                </SettingsRow>
-              </SectionCard>
+        <SectionCard
+          id="settings-system"
+          label="System"
+          description="Behavior when you close the main window."
+        >
+          {#snippet icon()}
+            <MonitorCog class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Minimize to tray on close"
+            description={closeToTray
+              ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
+              : "Closing the window quits Recast immediately."}
+          >
+            <Switch
+              checked={closeToTray}
+              onCheckedChange={() => toggleCloseToTray()}
+              aria-label="Minimize to tray on close"
+            />
+          </SettingsRow>
+        </SectionCard>
 
-              <SectionCard
-                id="settings-editor"
-                label="Editor"
-                description="Behavior when you open a recording."
-              >
-                <SettingsRow
-                  label="Window behavior"
-                  description="Replace the current view or pop the editor into its own window."
-                >
-                  <Segmented
-                    options={editorSegments}
-                    value={editorWindow}
-                    onValueChange={updateEditorWindow}
-                    fill={false}
-                    aria-label="Window behavior"
-                  />
-                </SettingsRow>
-              </SectionCard>
-
-              <SectionCard
-                id="settings-storage"
-                label="Storage"
-                description="Where Recast keeps your recordings."
-              >
-                <SettingsRow
-                  label="Output directory"
-                  description="New recordings save here. Existing files stay where they are."
-                  stacked
-                >
-                  <div
-                    class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/40 bg-background/60 px-3 font-mono text-[11px] text-muted-foreground"
-                    title={outputDir || "Default temporary directory"}
-                  >
-                    <FolderOpen
-                      class="size-3.5 shrink-0 text-muted-foreground/70"
-                    />
-                    <span class="truncate">
-                      {outputDir || "Default temporary directory"}
-                    </span>
-                  </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    class="h-9 shrink-0 gap-1.5"
-                    onclick={pickDirectory}
-                  >
-                    <FolderOpen class="size-3.5" />
-                    Change
-                  </Button>
-                </SettingsRow>
-              </SectionCard>
-
-              <SectionCard
-                id="settings-system"
-                label="System"
-                description="Behavior when you close the main window."
-              >
-                <SettingsRow
-                  label="Minimize to tray on close"
-                  description={closeToTray
-                    ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
-                    : "Closing the window quits Recast immediately."}
-                >
-                  <Switch
-                    checked={closeToTray}
-                    onCheckedChange={() => toggleCloseToTray()}
-                    aria-label="Minimize to tray on close"
-                  />
-                </SettingsRow>
-              </SectionCard>
-
-              <!-- Two locally-stored opt-ins: usage analytics (default off) and
+        <!-- Two locally-stored opt-ins: usage analytics (default off) and
                    crash reports (default on, PII-scrubbed). -->
-              <SectionCard
-                id="settings-privacy"
-                label="Privacy & Telemetry"
-                description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
-              >
-                {#snippet icon()}
-                  <Shield class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                <SettingsRow
-                  label="Share anonymous usage analytics"
-                  description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
-                >
-                  <Switch
-                    checked={desktopConsent.product}
-                    onCheckedChange={() => toggleProductAnalytics()}
-                    aria-label="Share anonymous usage analytics"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Send anonymous crash reports"
-                  description="Scrubbed error details when something breaks, with no file names or paths. On by default."
-                >
-                  <Switch
-                    checked={desktopConsent.errors}
-                    onCheckedChange={() => toggleCrashReports()}
-                    aria-label="Send anonymous crash reports"
-                  />
-                </SettingsRow>
-              </SectionCard>
-        </Tabs.Content>
+        <SectionCard
+          id="settings-privacy"
+          label="Privacy & Telemetry"
+          description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
+        >
+          {#snippet icon()}
+            <Shield class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Share anonymous usage analytics"
+            description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
+          >
+            <Switch
+              checked={desktopConsent.product}
+              onCheckedChange={() => toggleProductAnalytics()}
+              aria-label="Share anonymous usage analytics"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Send anonymous crash reports"
+            description="Scrubbed error details when something breaks, with no file names or paths. On by default."
+          >
+            <Switch
+              checked={desktopConsent.errors}
+              onCheckedChange={() => toggleCrashReports()}
+              aria-label="Send anonymous crash reports"
+            />
+          </SettingsRow>
+        </SectionCard>
+      </Tabs.Content>
 
-        <Tabs.Content value="recording" class="flex min-w-0 flex-1 flex-col gap-8">
-
-              <!-- Read by the recording panel via shared localStorage; profiles
+      <Tabs.Content
+        value="recording"
+        class="flex min-w-0 flex-1 flex-col gap-8"
+      >
+        <!-- Read by the recording panel via shared localStorage; profiles
                    can override it per-profile. -->
-              <SectionCard
-                id="settings-countdown"
-                label="Countdown"
-                description="Wait a beat before capture starts, so you can switch windows."
-              >
-                {#snippet icon()}
-                  <Timer class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                <SettingsRow
-                  label="Countdown before recording"
-                  description={countdown === 0
-                    ? "Recording starts immediately."
-                    : `A ${countdown}-second countdown shows in the panel first.`}
-                >
-                  <Segmented
-                    options={countdownSegments}
-                    value={String(countdown)}
-                    onValueChange={(v) =>
-                      updateCountdown(Number(v) as CountdownSeconds)}
-                    fill={false}
-                    aria-label="Countdown before recording"
-                  />
-                </SettingsRow>
-              </SectionCard>
+        <SectionCard
+          id="settings-countdown"
+          label="Countdown"
+          description="Wait a beat before capture starts, so you can switch windows."
+        >
+          {#snippet icon()}
+            <Timer class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Countdown before recording"
+            description={countdown === 0
+              ? "Recording starts immediately."
+              : `A ${countdown}-second countdown shows in the panel first.`}
+          >
+            <Segmented
+              options={countdownSegments}
+              value={String(countdown)}
+              onValueChange={(v) =>
+                updateCountdown(Number(v) as CountdownSeconds)}
+              fill={false}
+              aria-label="Countdown before recording"
+            />
+          </SettingsRow>
+        </SectionCard>
 
-              <!-- Higher tiers raise fidelity at the cost of encode headroom; if
+        <!-- Higher tiers raise fidelity at the cost of encode headroom; if
                    the GPU can't keep up the result is judder, never desync. -->
-              <SectionCard
-                id="settings-capture-quality"
-                label="Capture quality"
-                description="How crisp the recorded master is. The editor re-encodes on export, but detail lost here can't be recovered later."
-              >
-                {#snippet icon()}
-                  <Sparkles class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                <SettingsRow
-                  label="Recording quality"
-                  description={recordingQualityOptions.find(
-                    (o) => o.value === recordingQuality,
-                  )?.desc}
-                >
-                  <Segmented
-                    options={qualitySegments}
-                    value={recordingQuality}
-                    onValueChange={updateRecordingQuality}
-                    fill={false}
-                    aria-label="Recording quality"
-                  />
-                </SettingsRow>
-              </SectionCard>
+        <SectionCard
+          id="settings-capture-quality"
+          label="Capture quality"
+          description="How crisp the recorded master is. The editor re-encodes on export, but detail lost here can't be recovered later."
+        >
+          {#snippet icon()}
+            <Sparkles class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Recording quality"
+            description={recordingQualityOptions.find(
+              (o) => o.value === recordingQuality,
+            )?.desc}
+          >
+            <Segmented
+              options={qualitySegments}
+              value={recordingQuality}
+              onValueChange={updateRecordingQuality}
+              fill={false}
+              aria-label="Recording quality"
+            />
+          </SettingsRow>
+        </SectionCard>
 
-              <!-- Options gated by display refresh: capturing above it only
+        <!-- Options gated by display refresh: capturing above it only
                    duplicates frames. 60 is always available. -->
-              <SectionCard
-                id="settings-capture-fps"
-                label="Frame rate"
-                description={fpsOptions.length > 1
-                  ? `Higher frame rates capture smoother motion. Your display supports up to ${maxRefreshHz} Hz.`
-                  : `Smoother motion needs a higher-refresh display. Yours runs at ${maxRefreshHz} Hz, so 60 fps is the max useful rate.`}
-              >
-                {#snippet icon()}
-                  <Video class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                <SettingsRow
-                  label="Recording frame rate"
-                  description={recordingFps > effectiveFps
-                    ? `Set to ${recordingFps} fps, but this display runs at ${maxRefreshHz} Hz, so capture uses ${effectiveFps} fps here.`
-                    : `${recordingFps} fps. Bigger files and more encode load at higher rates.`}
-                >
-                  <Segmented
-                    options={fpsSegments}
-                    value={String(effectiveFps)}
-                    onValueChange={(v) => updateRecordingFps(Number(v))}
-                    fill={false}
-                    aria-label="Recording frame rate"
-                  />
-                </SettingsRow>
-              </SectionCard>
+        <SectionCard
+          id="settings-capture-fps"
+          label="Frame rate"
+          description={fpsOptions.length > 1
+            ? `Higher frame rates capture smoother motion. Your display supports up to ${maxRefreshHz} Hz.`
+            : `Smoother motion needs a higher-refresh display. Yours runs at ${maxRefreshHz} Hz, so 60 fps is the max useful rate.`}
+        >
+          {#snippet icon()}
+            <Video class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Recording frame rate"
+            description={recordingFps > effectiveFps
+              ? `Set to ${recordingFps} fps, but this display runs at ${maxRefreshHz} Hz, so capture uses ${effectiveFps} fps here.`
+              : `${recordingFps} fps. Bigger files and more encode load at higher rates.`}
+          >
+            <Segmented
+              options={fpsSegments}
+              value={String(effectiveFps)}
+              onValueChange={(v) => updateRecordingFps(Number(v))}
+              fill={false}
+              aria-label="Recording frame rate"
+            />
+          </SettingsRow>
+        </SectionCard>
 
-              <SectionCard
-                id="settings-panel-capture"
-                label="Recording panel"
-                description="Whether Recast's own floating controls show up in the video."
-              >
-                {#snippet icon()}
-                  <EyeOff class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                <SettingsRow
-                  label="Hide recording panel from captures"
-                  description={isLinux
-                    ? "Not available on Linux. X11 and Wayland provide no way for an app to exclude its own window from screen capture."
-                    : hidePanelFromCapture
-                      ? "The floating Recast panel is kept out of your recordings, including one that's already open."
-                      : "The floating Recast panel appears in your recordings like any other window."}
-                >
-                  <Switch
-                    checked={!isLinux && hidePanelFromCapture}
-                    disabled={isLinux}
-                    onCheckedChange={() => toggleHidePanelFromCapture()}
-                    aria-label="Hide recording panel from captures"
-                  />
-                </SettingsRow>
-              </SectionCard>
+        <SectionCard
+          id="settings-panel-capture"
+          label="Recording panel"
+          description="Whether Recast's own floating controls show up in the video."
+        >
+          {#snippet icon()}
+            <EyeOff class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Hide recording panel from captures"
+            description={isLinux
+              ? "Not available on Linux. X11 and Wayland provide no way for an app to exclude its own window from screen capture."
+              : hidePanelFromCapture
+                ? "The floating Recast panel is kept out of your recordings, including one that's already open."
+                : "The floating Recast panel appears in your recordings like any other window."}
+          >
+            <Switch
+              checked={!isLinux && hidePanelFromCapture}
+              disabled={isLinux}
+              onCheckedChange={() => toggleHidePanelFromCapture()}
+              aria-label="Hide recording panel from captures"
+            />
+          </SettingsRow>
+        </SectionCard>
 
-              <SectionCard
-                id="settings-profiles"
-                label="Recording profiles"
-                description="Save preset combinations of audio, mic, and camera."
+        <SectionCard
+          id="settings-profiles"
+          label="Recording profiles"
+          description="Save preset combinations of audio, mic, and camera."
+        >
+          {#snippet icon()}
+            <SlidersIcon class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Use profile system"
+            description={profilesStore.enabled
+              ? "Recording panel auto-applies the default profile and shows a switcher."
+              : "Recording panel resets to manual toggles every launch."}
+          >
+            <Switch
+              checked={profilesStore.enabled}
+              onCheckedChange={() => toggleProfilesEnabled()}
+              aria-label="Use profile system"
+            />
+          </SettingsRow>
+          {#if profilesStore.enabled}
+            <SettingsRow
+              label="Manage profiles"
+              description={profilesStore.profiles.length === 0
+                ? "No profiles yet."
+                : profilesStore.profiles.length === 1
+                  ? "1 profile saved."
+                  : `${profilesStore.profiles.length} profiles saved.`}
+            >
+              <Button
+                href="/profiles"
+                variant="secondary"
+                size="sm"
+                class="h-8 gap-1.5"
               >
-                <SettingsRow
-                  label="Use profile system"
-                  description={profilesStore.enabled
-                    ? "Recording panel auto-applies the default profile and shows a switcher."
-                    : "Recording panel resets to manual toggles every launch."}
-                >
-                  <Switch
-                    checked={profilesStore.enabled}
-                    onCheckedChange={() => toggleProfilesEnabled()}
-                    aria-label="Use profile system"
-                  />
-                </SettingsRow>
-                {#if profilesStore.enabled}
-                  <SettingsRow
-                    label="Manage profiles"
-                    description={profilesStore.profiles.length === 0
-                      ? "No profiles yet."
-                      : profilesStore.profiles.length === 1
-                        ? "1 profile saved."
-                        : `${profilesStore.profiles.length} profiles saved.`}
-                  >
-                    <Button
-                      href="/profiles"
-                      variant="secondary"
-                      size="sm"
-                      class="h-8 gap-1.5"
-                    >
-                      <SlidersIcon class="size-3.5" />
-                      <span class="text-[11.5px]">Open profiles</span>
-                    </Button>
-                  </SettingsRow>
-                {/if}
-              </SectionCard>
-        </Tabs.Content>
+                <SlidersIcon class="size-3.5" />
+                <span class="text-[11.5px]">Open profiles</span>
+              </Button>
+            </SettingsRow>
+          {/if}
+        </SectionCard>
+      </Tabs.Content>
 
-        <Tabs.Content value="cloud" class="flex min-w-0 flex-1 flex-col gap-8">
-              <!-- Optional. Cloud unlocks the Loom-style sharing layer. Free
+      <Tabs.Content value="cloud" class="flex min-w-0 flex-1 flex-col gap-8">
+        <!-- Optional. Cloud unlocks the Loom-style sharing layer. Free
                    tier = 10 active links; paid lifts the cap. -->
-              <SectionCard
-                id="settings-cloud"
-                label="Recast Cloud"
-                description="Share recordings as Loom-style links, layered on top of your local recordings."
-              >
-                {#snippet icon()}
-                  <RecastMark class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                <CloudSignIn />
-              </SectionCard>
+        <SectionCard
+          id="settings-cloud"
+          label="Recast Cloud"
+          description="Share recordings as Loom-style links, layered on top of your local recordings."
+        >
+          {#snippet icon()}
+            <RecastMark class="size-4 text-muted-foreground" />
+          {/snippet}
+          <CloudSignIn />
+        </SectionCard>
 
-              <!-- Gated behind the `selfHosting` flag: Cloud's server isn't
+        <!-- Gated behind the `selfHosting` flag: Cloud's server isn't
                    shipped, so there's nothing to point at by default. -->
-              {#if experimentalStore.isEnabled("selfHosting")}
-                <section id="settings-cloud-endpoint" class="flex flex-col gap-3">
-                  <div class="px-1">
-                    <h2
-                      class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
-                    >
-                      <Server class="size-3.5 text-muted-foreground" />
-                      Self-hosting
-                      <span
-                        class="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-warning"
-                      >
-                        <FlaskConical class="size-2.5" />
-                        Experimental
-                      </span>
-                    </h2>
-                    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                      Run your own Recast Cloud server? Set its address here.
-                      Everyone else can leave this on the default.
-                    </p>
-                  </div>
-                  <div
-                    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                  >
-                    <CloudEndpoint />
-                  </div>
-                </section>
-              {/if}
-
-              <!-- Separate auth from Recast Cloud above; both are external
-                   integrations that take exports off this machine. -->
-              <SectionCard
-                id="settings-google-drive"
-                label="Google Drive"
-                description="Upload exports to your own Drive. Files land in a private /Recast/ folder."
-              >
-                {#snippet icon()}
-                  <BrandGoogleDrive class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                <GoogleDriveConnection />
-              </SectionCard>
-        </Tabs.Content>
-
-        <Tabs.Content value="advanced" class="flex min-w-0 flex-1 flex-col gap-8">
-              <SectionCard
-                id="settings-experimental"
-                label="Experimental"
-                description="Unfinished features, off by default. Turn one on to try it; it may change or break."
-              >
-                {#snippet icon()}
-                  <FlaskConical class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                {#each FLAG_META as flag (flag.key)}
-                  {@const on = experimentalStore.isEnabled(flag.key)}
-                  <SettingsRow label={flag.label} description={flag.description}>
-                    <Switch
-                      checked={on}
-                      onCheckedChange={() =>
-                        toggleExperimental(flag.key, flag.label)}
-                      aria-label={flag.label}
-                    />
-                  </SettingsRow>
-                {/each}
-              </SectionCard>
-
-              <!-- Gated behind `remoteTranscription`: response formats vary
-                   across OpenAI-compatible servers, so this is early. -->
-              {#if experimentalStore.isEnabled("remoteTranscription")}
-                <section id="settings-remote-asr" class="flex flex-col gap-3">
-                  <div class="px-1">
-                    <h2
-                      class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
-                    >
-                      <Server class="size-3.5 text-muted-foreground" />
-                      Remote transcription
-                      <span
-                        class="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-warning"
-                      >
-                        <FlaskConical class="size-2.5" />
-                        Experimental
-                      </span>
-                    </h2>
-                    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                      Transcribe captions through an OpenAI-compatible endpoint.
-                      Keys are stored in your OS keyring, never in the project.
-                    </p>
-                  </div>
-                  <div
-                    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                  >
-                    <RemoteEndpoints />
-                  </div>
-                </section>
-              {/if}
-
-              <!-- Power-user: exposes the same `recast` binary as a CLI so a
-                   terminal or an AI agent can drive recording. -->
-              <SectionCard
-                id="settings-cli"
-                label="Command line tool"
-                description="Control Recast from a terminal or an AI agent with the recast command."
-              >
-                {#snippet icon()}
-                  <Terminal class="size-3.5 text-muted-foreground" />
-                {/snippet}
-                <SettingsRow
-                  label="Install the recast command"
-                  description={cliStatus === null
-                    ? "Checking availability."
-                    : cliStatus.onPath
-                      ? "Available in any terminal. Try recast --help."
-                      : "Not on your PATH yet. Install it to run recast from any terminal."}
-                >
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    class="h-8 gap-1.5"
-                    disabled={cliBusy}
-                    onclick={() => toggleCliInstall()}
-                  >
-                    <Terminal class="size-3.5" />
-                    <span class="text-[11.5px]">
-                      {cliStatus?.onPath ? "Remove" : "Install"}
-                    </span>
-                  </Button>
-                </SettingsRow>
-
-                <SettingsRow
-                  label="Auto-install on first launch"
-                  description="When enabled, Recast puts itself on your PATH the first time the app starts. Disables future auto-attempts."
-                >
-                  <Switch
-                    checked={cliAutoInstall}
-                    onCheckedChange={() => toggleCliAutoInstall()}
-                    aria-label="Auto-install on first launch"
-                  />
-                </SettingsRow>
-
-                {#if cliStatus?.modifiedRcFiles && cliStatus.modifiedRcFiles.length > 0}
-                  <div class="text-[11px] text-muted-foreground/80 px-1">
-                    <span class="font-medium">Modified shell config:</span>
-                    <span class="ml-1 inline-flex flex-wrap gap-1">
-                      {#each cliStatus.modifiedRcFiles as f (f)}
-                        <span class="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10.5px]">
-                          {f.split(/[\\/]/).pop()}
-                        </span>
-                      {/each}
-                    </span>
-                  </div>
-                {/if}
-              </SectionCard>
-
-              <SectionCard
-                id="settings-about"
-                label="About"
-                description="Version info and where to find us."
-              >
-                <div class="flex flex-col gap-3 px-4 py-4">
-                  <div class="flex items-center gap-3">
-                    <div
-                      class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/5 text-foreground ring-1 ring-inset ring-border/40"
-                    >
-                      <Logo class="size-6" />
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <div class="text-[13px] font-semibold text-foreground">
-                        {config.appName}
-                      </div>
-                      <div class="font-mono text-[10.5px] text-muted-foreground">
-                        v{config.appVersion}
-                      </div>
-                    </div>
-                  </div>
-                  <div class="flex flex-wrap gap-2">
-                    <Button href="/whats-new" variant="outline" size="xs">
-                      <Sparkles class="text-primary" />
-                      <span>What's new</span>
-                      <ArrowUpRight class="text-muted-foreground" />
-                    </Button>
-                    <!-- `openUrl`, not `target="_blank"`: the webview silently
-                         swallows a new-window request, so both of these were
-                         dead buttons. -->
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onclick={() => void openUrl(config.website)}
-                    >
-                      <Globe />
-                      <span>Website</span>
-                      <ArrowUpRight class="text-muted-foreground" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="xs"
-                      onclick={() => void openUrl(config.github)}
-                    >
-                      <GithubBrand />
-                      <span>GitHub</span>
-                      <ArrowUpRight class="text-muted-foreground" />
-                    </Button>
-                  </div>
-                </div>
-              </SectionCard>
-        </Tabs.Content>
-
-        <Tabs.Content value="diagnostics" class="flex min-w-0 flex-1 flex-col gap-8">
-          <!-- Encoder availability is probed live against this GPU (not just
-               "compiled in"), so the matrix reflects what's actually usable. -->
-          <section id="settings-device" class="flex flex-col gap-3">
+        {#if experimentalStore.isEnabled("selfHosting")}
+          <section id="settings-cloud-endpoint" class="flex flex-col gap-3">
             <div class="px-1">
               <h2
                 class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
               >
-                <Cpu class="size-3.5 text-muted-foreground" />
-                Device & diagnostics
+                <Server class="size-4 text-muted-foreground" />
+                Self-hosting
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-warning"
+                >
+                  <FlaskConical class="size-2.5" />
+                  Experimental
+                </span>
               </h2>
-              <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-                System status and which video encoders this device supports.
+              <p
+                class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground"
+              >
+                Run your own Recast Cloud server? Set its address here. Everyone
+                else can leave this on the default.
               </p>
             </div>
-            <DeviceCapabilities />
+            <div
+              class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+            >
+              <CloudEndpoint />
+            </div>
           </section>
+        {/if}
 
-          <DiagnosticsPanel />
-        </Tabs.Content>
-      </Tabs.Root>
+        <!-- Separate auth from Recast Cloud above; both are external
+                   integrations that take exports off this machine. -->
+        <SectionCard
+          id="settings-google-drive"
+          label="Google Drive"
+          description="Upload exports to your own Drive. Files land in a private /Recast/ folder."
+        >
+          {#snippet icon()}
+            <BrandGoogleDrive class="size-4 text-muted-foreground" />
+          {/snippet}
+          <GoogleDriveConnection />
+        </SectionCard>
+      </Tabs.Content>
+
+      <Tabs.Content value="advanced" class="flex min-w-0 flex-1 flex-col gap-8">
+        <SectionCard
+          id="settings-experimental"
+          label="Experimental"
+          description="Unfinished features, off by default. Turn one on to try it; it may change or break."
+        >
+          {#snippet icon()}
+            <FlaskConical class="size-4 text-muted-foreground" />
+          {/snippet}
+          {#each FLAG_META as flag (flag.key)}
+            {@const on = experimentalStore.isEnabled(flag.key)}
+            <SettingsRow label={flag.label} description={flag.description}>
+              <Switch
+                checked={on}
+                onCheckedChange={() => toggleExperimental(flag.key, flag.label)}
+                aria-label={flag.label}
+              />
+            </SettingsRow>
+          {/each}
+        </SectionCard>
+
+        <!-- Gated behind `remoteTranscription`: response formats vary
+                   across OpenAI-compatible servers, so this is early. -->
+        {#if experimentalStore.isEnabled("remoteTranscription")}
+          <section id="settings-remote-asr" class="flex flex-col gap-3">
+            <div class="px-1">
+              <h2
+                class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
+              >
+                <Server class="size-4 text-muted-foreground" />
+                Remote transcription
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-warning"
+                >
+                  <FlaskConical class="size-2.5" />
+                  Experimental
+                </span>
+              </h2>
+              <p
+                class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground"
+              >
+                Transcribe captions through an OpenAI-compatible endpoint. Keys
+                are stored in your OS keyring, never in the project.
+              </p>
+            </div>
+            <div
+              class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+            >
+              <RemoteEndpoints />
+            </div>
+          </section>
+        {/if}
+
+        <!-- Power-user: exposes the same `recast` binary as a CLI so a
+                   terminal or an AI agent can drive recording. -->
+        <SectionCard
+          id="settings-cli"
+          label="Command line tool"
+          description="Control Recast from a terminal or an AI agent with the recast command."
+        >
+          {#snippet icon()}
+            <Terminal class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Install the recast command"
+            description={cliStatus === null
+              ? "Checking availability."
+              : cliStatus.onPath
+                ? "Available in any terminal. Try recast --help."
+                : "Not on your PATH yet. Install it to run recast from any terminal."}
+          >
+            <Button
+              variant="secondary"
+              size="sm"
+              class="h-8 gap-1.5"
+              disabled={cliBusy}
+              onclick={() => toggleCliInstall()}
+            >
+              <Terminal class="size-3.5" />
+              <span class="text-[11.5px]">
+                {cliStatus?.onPath ? "Remove" : "Install"}
+              </span>
+            </Button>
+          </SettingsRow>
+
+          <SettingsRow
+            label="Auto-install on first launch"
+            description="When enabled, Recast puts itself on your PATH the first time the app starts. Disables future auto-attempts."
+          >
+            <Switch
+              checked={cliAutoInstall}
+              onCheckedChange={() => toggleCliAutoInstall()}
+              aria-label="Auto-install on first launch"
+            />
+          </SettingsRow>
+
+          {#if cliStatus?.modifiedRcFiles && cliStatus.modifiedRcFiles.length > 0}
+            <div class="text-[11px] text-muted-foreground/80 px-1">
+              <span class="font-medium">Modified shell config:</span>
+              <span class="ml-1 inline-flex flex-wrap gap-1">
+                {#each cliStatus.modifiedRcFiles as f (f)}
+                  <span
+                    class="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10.5px]"
+                  >
+                    {f.split(/[\\/]/).pop()}
+                  </span>
+                {/each}
+              </span>
+            </div>
+          {/if}
+        </SectionCard>
+
+        <SectionCard
+          id="settings-about"
+          label="About"
+          description="Version info and where to find us."
+        >
+          {#snippet icon()}
+            <Info class="size-4 text-muted-foreground" />
+          {/snippet}
+          <div class="flex flex-col gap-3 px-4 py-4">
+            <div class="flex items-center gap-3">
+              <div
+                class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/5 text-foreground ring-1 ring-inset ring-border/40"
+              >
+                <Logo class="size-6" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="text-[13px] font-semibold text-foreground">
+                  {config.appName}
+                </div>
+                <div class="font-mono text-[10.5px] text-muted-foreground">
+                  v{config.appVersion}
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <Button href="/whats-new" variant="outline" size="xs">
+                <Sparkles />
+                <span>What's new</span>
+                <ArrowUpRight class="text-muted-foreground" />
+              </Button>
+              <!-- `openUrl`, not `target="_blank"`: the webview silently
+                         swallows a new-window request, so both of these were
+                         dead buttons. -->
+              <Button
+                variant="outline"
+                size="xs"
+                onclick={() => void openUrl(config.website)}
+              >
+                <Globe />
+                <span>Website</span>
+                <ArrowUpRight class="text-muted-foreground" />
+              </Button>
+              <Button
+                variant="outline"
+                size="xs"
+                onclick={() => void openUrl(config.github)}
+              >
+                <GithubBrand />
+                <span>GitHub</span>
+                <ArrowUpRight class="text-muted-foreground" />
+              </Button>
+            </div>
+          </div>
+        </SectionCard>
+      </Tabs.Content>
+
+      <Tabs.Content
+        value="diagnostics"
+        class="flex min-w-0 flex-1 flex-col gap-8"
+      >
+        <SectionCard
+          id="settings-device"
+          label="Device & diagnostics"
+          description="System status and which video encoders this device supports."
+        >
+          {#snippet icon()}
+            <Cpu class="size-4 text-muted-foreground" />
+          {/snippet}
+          <DeviceCapabilities />
+        </SectionCard>
+
+        <DiagnosticsPanel />
+      </Tabs.Content>
+    </Tabs.Root>
   </div>
 </StudioPage>

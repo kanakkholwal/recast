@@ -124,8 +124,11 @@ impl<'a> Mp4Reader<'a> {
     }
 }
 
+/// A box's four-character code and the range its body occupies.
+type Child = ([u8; 4], Range<usize>);
+
 /// The direct children of the box body at `range`.
-fn boxes(data: &[u8], range: Range<usize>) -> Result<Vec<([u8; 4], Range<usize>)>, ReadError> {
+fn boxes(data: &[u8], range: Range<usize>) -> Result<Vec<Child>, ReadError> {
     let mut out = Vec::new();
     let mut at = range.start;
     while at + 8 <= range.end {

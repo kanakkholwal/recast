@@ -1,10 +1,11 @@
 <script lang="ts">
-import { diagnostics } from "$lib/logger/diagnostics.svelte";
+import SectionCard from "$components/layout/SectionCard.svelte";
 import { openLogDir } from "$lib/ipc";
-import { Button } from "@recast/ui/button";
-import { Switch } from "@recast/ui/switch";
-import { toast } from "@recast/ui/sonner";
+import { diagnostics } from "$lib/logger/diagnostics.svelte";
 import { FolderOpen, ScrollText } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { Switch } from "@recast/ui/switch";
 
 let opening = $state(false);
 
@@ -30,19 +31,10 @@ async function openLogs() {
 }
 </script>
 
-<section id="settings-diagnostics" class="flex flex-col gap-3">
-  <div class="px-1">
-    <h2
-      class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
-    >
-      <ScrollText class="size-3.5 text-muted-foreground" />
-      Diagnostics
-    </h2>
-    <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
-      Detailed logs for troubleshooting. Turn this on while reproducing a bug,
-      then send the log folder to support.
-    </p>
-  </div>
+<SectionCard id="settings-diagnostics"  label="Diagnostics" description="Detailed logs for troubleshooting. Turn this on while reproducing a bug, then send the log folder to support.">
+  {#snippet icon()}
+    <ScrollText class="size-4 text-muted-foreground" />
+  {/snippet}
 
   <div
     class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
@@ -86,4 +78,4 @@ async function openLogs() {
       </Button>
     </div>
   </div>
-</section>
+</SectionCard>

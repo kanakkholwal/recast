@@ -19,6 +19,7 @@ use crate::encoder::EncodeError;
 /// where 0 is full, and `Nominal_Range` is bits 4 and 5, where 2 is 0-255.
 /// Setting only the newer field leaves the behaviour resting on bit 1 happening
 /// to default to the value we want, so both are stated.
+#[allow(clippy::identity_op)] // The zero IS the statement: bit 1 is full-range RGB.
 const RGB_FULL: u32 = (0 << 1) | (2 << 4);
 /// BT.709 studio-range YCbCr out: `YCbCr_Matrix` is bit 2, and nominal range 1
 /// is 16-235. This is what an H.264 stream is read as unless it says otherwise,

@@ -142,7 +142,7 @@ pub fn queue_signal(ctx: &GpuContext, fence: &Fence, value: u64) -> Result<(), G
             .ok_or(GpuError::Unsupported("shared fence signal outside DX12"))?;
         hal_device
             .raw_queue()
-            .Signal(&fence.0, 0)
+            .Signal(&fence.0, value)
             .map_err(|e| import_error("queue signal", e))
     }
 }
