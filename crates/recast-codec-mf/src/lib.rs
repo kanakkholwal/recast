@@ -10,6 +10,8 @@
 pub use recast_codec::{EncoderDescriptor, Vendor, VideoCodec};
 
 #[cfg(windows)]
+mod aac;
+#[cfg(windows)]
 mod audio;
 #[cfg(windows)]
 mod decoder;
@@ -18,6 +20,8 @@ mod encoder;
 #[cfg(windows)]
 mod windows_mf;
 
+#[cfg(windows)]
+pub use aac::AacEncoder;
 #[cfg(windows)]
 pub use audio::{AudioFormat, AudioReader};
 #[cfg(windows)]

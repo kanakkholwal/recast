@@ -121,6 +121,14 @@ let recordingFps = $state<number>(60);
 // Highest display refresh. Capture can't produce more unique fps than this,
 // so fps options are capped to it. 60 until displays are probed.
 let maxRefreshHz = $state(60);
+const settingsNav = [
+	{ value: "general", label: "General", icon: SettingsIcon },
+	{ value: "recording", label: "Recording", icon: Video },
+	{ value: "cloud", label: "Cloud", icon: Cloud },
+	{ value: "diagnostics", label: "Diagnostics", icon: Cpu },
+	{ value: "advanced", label: "Advanced", icon: Wrench },
+] as const;
+
 let activeTab = $state<SettingsTab>(DEFAULT_SETTINGS_TAB);
 // `recast` command-line tool PATH state. null until the first probe.
 let cliStatus = $state<CliInstallStatus | null>(null);
@@ -430,39 +438,29 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
 </script>
 
 <StudioPage title="Settings" subtitle="Tune appearance, storage and editor defaults. Changes save instantly.">
-  <div class="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-6">
+  <div class="mx-auto flex w-full min-w-0 max-w-5xl flex-col gap-6">
       <Tabs.Root
         value={activeTab}
         onValueChange={(v) => (activeTab = v as SettingsTab)}
-        class="flex flex-col gap-6"
+        orientation="vertical"
+        class="flex w-full flex-col gap-6 sm:flex-row sm:items-start sm:gap-8"
       >
         <Tabs.List
-          variant="soft"
-          class="grid w-full max-w-2xl grid-cols-5 gap-1 p-1"
+          class="flex shrink-0 flex-row gap-1 overflow-x-auto p-0 no-scrollbar sm:sticky sm:top-1 sm:w-48 sm:flex-col sm:gap-0.5 sm:overflow-visible"
         >
-          <Tabs.Trigger value="general" class="gap-1.5 px-2">
-            <SettingsIcon class="size-3.5" />
-            <span class="text-[12px] font-semibold">General</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="recording" class="gap-1.5 px-2">
-            <Video class="size-3.5" />
-            <span class="text-[12px] font-semibold">Recording</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="cloud" class="gap-1.5 px-2">
-            <Cloud class="size-3.5" />
-            <span class="text-[12px] font-semibold">Cloud</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="diagnostics" class="gap-1.5 px-2">
-            <Cpu class="size-3.5" />
-            <span class="text-[12px] font-semibold">Diagnostics</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="advanced" class="gap-1.5 px-2">
-            <Wrench class="size-3.5" />
-            <span class="text-[12px] font-semibold">Advanced</span>
-          </Tabs.Trigger>
+          {#each settingsNav as tab (tab.value)}
+            {@const Icon = tab.icon}
+            <Tabs.Trigger
+              value={tab.value}
+              class="w-full shrink-0 justify-start gap-2.5 rounded-lg px-3 py-2 text-[12.5px] font-medium text-muted-foreground transition-colors duration-150 hover:text-foreground data-[state=active]:bg-foreground/10 data-[state=active]:font-semibold data-[state=active]:text-foreground"
+            >
+              <Icon class="size-4 shrink-0" />
+              {tab.label}
+            </Tabs.Trigger>
+          {/each}
         </Tabs.List>
 
-        <Tabs.Content value="general" class="flex min-w-0 flex-col gap-8">
+        <Tabs.Content value="general" class="flex min-w-0 flex-1 flex-col gap-8">
               <SectionCard
                 id="settings-appearance"
                 label="Appearance"
@@ -617,7 +615,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               </SectionCard>
         </Tabs.Content>
 
-        <Tabs.Content value="recording" class="flex min-w-0 flex-col gap-8">
+        <Tabs.Content value="recording" class="flex min-w-0 flex-1 flex-col gap-8">
 
               <!-- Read by the recording panel via shared localStorage; profiles
                    can override it per-profile. -->
@@ -765,7 +763,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               </SectionCard>
         </Tabs.Content>
 
-        <Tabs.Content value="cloud" class="flex min-w-0 flex-col gap-8">
+        <Tabs.Content value="cloud" class="flex min-w-0 flex-1 flex-col gap-8">
               <!-- Optional. Cloud unlocks the Loom-style sharing layer. Free
                    tier = 10 active links; paid lifts the cap. -->
               <SectionCard
@@ -823,7 +821,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               </SectionCard>
         </Tabs.Content>
 
-        <Tabs.Content value="advanced" class="flex min-w-0 flex-col gap-8">
+        <Tabs.Content value="advanced" class="flex min-w-0 flex-1 flex-col gap-8">
               <SectionCard
                 id="settings-experimental"
                 label="Experimental"
@@ -985,7 +983,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               </SectionCard>
         </Tabs.Content>
 
-        <Tabs.Content value="diagnostics" class="flex min-w-0 flex-col gap-8">
+        <Tabs.Content value="diagnostics" class="flex min-w-0 flex-1 flex-col gap-8">
           <!-- Encoder availability is probed live against this GPU (not just
                "compiled in"), so the matrix reflects what's actually usable. -->
           <section id="settings-device" class="flex flex-col gap-3">

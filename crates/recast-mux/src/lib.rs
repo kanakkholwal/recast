@@ -14,4 +14,4 @@ pub mod writer;
 pub use avc::{annex_b_to_avcc, split_access_units, split_annex_b, AvcConfig, Converted};
 pub use boxes::top_level_boxes;
 pub use track::{Sample, SampleTable};
-pub use writer::{Mp4Writer, VideoFormat};
+pub use writer::{AudioFormat, Mp4Writer, VideoFormat};

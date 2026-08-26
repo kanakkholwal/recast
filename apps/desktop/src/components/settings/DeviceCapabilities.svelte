@@ -1,167 +1,161 @@
 <script lang="ts">
-  import {
-    captureCapabilities,
-    diagnoseFfmpeg,
-    probeVideoEncoders,
-    type CaptureCapabilities,
-    type EncoderAvailability,
-    type FfmpegDiagnostics,
-  } from "$lib/ipc";
-  import {
-    AppWindow,
-    Check,
-    ChevronDown,
-    Cpu,
-    Mic,
-    Minus,
-    MonitorCog,
-    MonitorOff,
-    MonitorPlay,
-    MousePointer2,
-    RefreshCw,
-    Sparkles,
-    SquareDashed,
-    Video,
-    Volume2,
-    X,
-    Zap,
-  } from "@recast/icons";
-  import type { IconComponent } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import * as Collapsible from "@recast/ui/collapsible";
-  import { cn } from "@recast/ui/utils";
-  import { onMount } from "svelte";
-  import {
-    buildFacts,
-    captureHeadlineNote as captureHeadlineNoteOf,
-    deriveOsDetail,
-    deriveOsName,
-    groupEncoders,
-    PLATFORM_LABEL,
-  } from "./DeviceCapabilities.logic";
+import {
+	captureCapabilities,
+	diagnoseFfmpeg,
+	probeVideoEncoders,
+	type CaptureCapabilities,
+	type EncoderAvailability,
+	type FfmpegDiagnostics,
+} from "$lib/ipc";
+import {
+	AppWindow,
+	Check,
+	ChevronDown,
+	Cpu,
+	Mic,
+	Minus,
+	MonitorCog,
+	MonitorOff,
+	MonitorPlay,
+	MousePointer2,
+	RefreshCw,
+	Sparkles,
+	SquareDashed,
+	Video,
+	Volume2,
+	X,
+	Zap,
+} from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Collapsible from "@recast/ui/collapsible";
+import { cn } from "@recast/ui/utils";
+import { onMount } from "svelte";
+import {
+	buildFacts,
+	captureHeadlineNote as captureHeadlineNoteOf,
+	deriveOsDetail,
+	deriveOsName,
+	groupEncoders,
+	PLATFORM_LABEL,
+} from "./DeviceCapabilities.logic";
 
-  // Best-effort: each os-plugin getter is wrapped so a blocked permission or
-  // non-Tauri preview degrades to "Unknown" rather than throwing the panel away.
-  let osLabel = $state("Unknown");
-  let osVersion = $state("");
-  let osArch = $state("");
-  // Raw key ("windows" / "macos" / …) so rows can branch on it without
-  // string-matching the localized label. Empty until loadOsInfo resolves.
-  let platform = $state("");
+// Best-effort: each os-plugin getter is wrapped so a blocked permission or
+// non-Tauri preview degrades to "Unknown" rather than throwing the panel away.
+let osLabel = $state("Unknown");
+let osVersion = $state("");
+let osArch = $state("");
+// Raw key ("windows" / "macos" / …) so rows can branch on it without
+// string-matching the localized label. Empty until loadOsInfo resolves.
+let platform = $state("");
 
-  let diagnostics = $state<FfmpegDiagnostics | null>(null);
-  let encoders = $state<EncoderAvailability[]>([]);
-  let probing = $state(true);
-  let probeError = $state<string | null>(null);
+let diagnostics = $state<FfmpegDiagnostics | null>(null);
+let encoders = $state<EncoderAvailability[]>([]);
+let probing = $state(true);
+let probeError = $state<string | null>(null);
 
-  // Capture-support matrix: what this device's native APIs can actually
-  // record, probed at runtime rather than hardcoded per platform.
-  let captureCaps = $state<CaptureCapabilities | null>(null);
-  let captureProbing = $state(true);
-  let captureError = $state<string | null>(null);
+// Capture-support matrix: what this device's native APIs can actually
+// record, probed at runtime rather than hardcoded per platform.
+let captureCaps = $state<CaptureCapabilities | null>(null);
+let captureProbing = $state(true);
+let captureError = $state<string | null>(null);
 
-  async function loadOsInfo() {
-    try {
-      const os = await import("@tauri-apps/plugin-os");
-      try {
-        const p = os.platform();
-        platform = p;
-        osLabel = PLATFORM_LABEL[p] ?? p;
-      } catch {
-        /* leave default */
-      }
-      try {
-        osVersion = os.version();
-      } catch {
-        /* optional */
-      }
-      try {
-        osArch = os.arch();
-      } catch {
-        /* optional */
-      }
-    } catch {
-      // Not running under Tauri (browser preview), leave the defaults.
-    }
-  }
+async function loadOsInfo() {
+	try {
+		const os = await import("@tauri-apps/plugin-os");
+		try {
+			const p = os.platform();
+			platform = p;
+			osLabel = PLATFORM_LABEL[p] ?? p;
+		} catch {
+			/* leave default */
+		}
+		try {
+			osVersion = os.version();
+		} catch {
+			/* optional */
+		}
+		try {
+			osArch = os.arch();
+		} catch {
+			/* optional */
+		}
+	} catch {
+		// Not running under Tauri (browser preview), leave the defaults.
+	}
+}
 
-  async function loadEngine() {
-    probing = true;
-    probeError = null;
-    try {
-      // ffmpeg metadata returns fast; the encoder matrix spawns ffmpeg per
-      // hardware candidate (up to ~2s cold), so kick both off together and
-      // let the matrix fill in when it resolves.
-      const [diag, enc] = await Promise.all([
-        diagnoseFfmpeg().catch(() => null),
-        probeVideoEncoders(),
-      ]);
-      diagnostics = diag;
-      encoders = enc;
-    } catch (e) {
-      probeError = String(e);
-    } finally {
-      probing = false;
-    }
-  }
+async function loadEngine() {
+	probing = true;
+	probeError = null;
+	try {
+		// ffmpeg metadata returns fast; the encoder matrix spawns ffmpeg per
+		// hardware candidate (up to ~2s cold), so kick both off together and
+		// let the matrix fill in when it resolves.
+		const [diag, enc] = await Promise.all([
+			diagnoseFfmpeg().catch(() => null),
+			probeVideoEncoders(),
+		]);
+		diagnostics = diag;
+		encoders = enc;
+	} catch (e) {
+		probeError = String(e);
+	} finally {
+		probing = false;
+	}
+}
 
-  async function loadCapture() {
-    captureProbing = true;
-    captureError = null;
-    try {
-      captureCaps = await captureCapabilities();
-    } catch (e) {
-      captureError = String(e);
-    } finally {
-      captureProbing = false;
-    }
-  }
+async function loadCapture() {
+	captureProbing = true;
+	captureError = null;
+	try {
+		captureCaps = await captureCapabilities();
+	} catch (e) {
+		captureError = String(e);
+	} finally {
+		captureProbing = false;
+	}
+}
 
-  onMount(() => {
-    void loadOsInfo();
-    void loadEngine();
-    void loadCapture();
-  });
+onMount(() => {
+	void loadOsInfo();
+	void loadEngine();
+	void loadCapture();
+});
 
-  const osName = $derived(deriveOsName(platform, osVersion, osLabel));
-  const osDetail = $derived(deriveOsDetail(platform, osVersion));
+const osName = $derived(deriveOsName(platform, osVersion, osLabel));
+const osDetail = $derived(deriveOsDetail(platform, osVersion));
 
-  // Screen is the headline verdict; audio/camera/cursor hang off the list below.
-  const screenCap = $derived(
-    captureCaps?.capabilities.find((c) => c.key === "screen") ?? null,
-  );
-  const captureReady = $derived(screenCap?.supported ?? false);
-  const captureHeadlineNote = $derived(
-    captureHeadlineNoteOf(screenCap?.note, captureReady),
-  );
-  let showCapture = $state(false);
+// Screen is the headline verdict; audio/camera/cursor hang off the list below.
+const screenCap = $derived(captureCaps?.capabilities.find((c) => c.key === "screen") ?? null);
+const captureReady = $derived(screenCap?.supported ?? false);
+const captureHeadlineNote = $derived(captureHeadlineNoteOf(screenCap?.note, captureReady));
+let showCapture = $state(false);
 
-  // Keyed by the Rust `key`; falls back to the screen glyph for unknown keys.
-  const CAP_ICON: Record<string, IconComponent> = {
-    screen: MonitorPlay,
-    window: AppWindow,
-    region: SquareDashed,
-    systemAudio: Volume2,
-    microphone: Mic,
-    camera: Video,
-    cursor: MousePointer2,
-  };
+// Keyed by the Rust `key`; falls back to the screen glyph for unknown keys.
+const CAP_ICON: Record<string, IconComponent> = {
+	screen: MonitorPlay,
+	window: AppWindow,
+	region: SquareDashed,
+	systemAudio: Volume2,
+	microphone: Mic,
+	camera: Video,
+	cursor: MousePointer2,
+};
 
-  const facts = $derived(
-    buildFacts(platform, osName, osDetail, osArch, diagnostics?.version),
-  );
+const facts = $derived(buildFacts(platform, osName, osDetail, osArch, diagnostics?.version));
 
-  const encoderGroups = $derived(groupEncoders(encoders));
+const encoderGroups = $derived(groupEncoders(encoders));
 
-  // Which encoder the recorder actually picked, and whether it's a GPU path.
-  const activeEncoder = $derived(encoders.find((e) => e.active) ?? null);
-  const isAccelerated = $derived(activeEncoder?.hardware ?? false);
-  let showDetails = $state(false);
+// Which encoder the recorder actually picked, and whether it's a GPU path.
+const activeEncoder = $derived(encoders.find((e) => e.active) ?? null);
+const isAccelerated = $derived(activeEncoder?.hardware ?? false);
+let showDetails = $state(false);
 </script>
 
 <div class="flex flex-col gap-3">
   <div
-    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <div class="flex items-center gap-2 border-b border-border/40 px-4 py-2.5">
       <MonitorCog class="size-3.5 text-muted-foreground" />
@@ -184,7 +178,7 @@
 
   <!-- Probed at runtime (DXGI / AVFoundation / PipeWire / X11), not hardcoded. -->
   <div
-    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <div class="flex items-center gap-2 border-b border-border/40 px-4 py-2.5">
       <MonitorPlay class="size-3.5 text-muted-foreground" />
@@ -308,7 +302,7 @@
   </div>
 
   <div
-    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+    class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <div
       class="flex items-center justify-between gap-2 border-b border-border/40 px-4 py-2.5"

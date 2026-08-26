@@ -74,11 +74,20 @@ fn enumerate_codec(codec: VideoCodec, subtype: GUID) -> Vec<EncoderDescriptor> {
         .collect()
 }
 
-/// Every video-encoder transform that can output `subtype`, in the order the
-/// system ranks them.
+/// Every video-encoder transform that can output `subtype`.
 fn activates(subtype: GUID) -> Vec<IMFActivate> {
+    encoder_activates(MFT_CATEGORY_VIDEO_ENCODER, MFMediaType_Video, subtype)
+}
+
+/// Every encoder transform in `category` that can output `major`/`subtype`, in
+/// the order the system ranks them.
+pub(crate) fn encoder_activates(
+    category: GUID,
+    major: GUID,
+    subtype: GUID,
+) -> Vec<IMFActivate> {
     let output = MFT_REGISTER_TYPE_INFO {
-        guidMajorType: MFMediaType_Video,
+        guidMajorType: major,
         guidSubtype: subtype,
     };
     // SORTANDFILTER is what makes the system's own preference the array order,
@@ -96,7 +105,7 @@ fn activates(subtype: GUID) -> Vec<IMFActivate> {
     // the array it allocates is freed below.
     let enumerated = unsafe {
         MFTEnumEx(
-            MFT_CATEGORY_VIDEO_ENCODER,
+            category,
             flags,
             None,
             Some(&output),

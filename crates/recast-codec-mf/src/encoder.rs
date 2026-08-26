@@ -292,42 +292,52 @@ impl H264Encoder {
     }
 
     fn next_output(&mut self) -> Result<Option<EncodedSample>, EncodeError> {
-        // SAFETY: reading the stream info the transform advertises.
-        let info = unsafe { self.transform.GetOutputStreamInfo(0) }?;
-        // A transform that allocates its own samples wants a null one handed in.
-        let provides_samples = info.dwFlags
-            & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0 as u32
-                | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES.0 as u32)
-            != 0;
-        let mut buffers = [MFT_OUTPUT_DATA_BUFFER {
-            dwStreamID: 0,
-            pSample: std::mem::ManuallyDrop::new(match provides_samples {
-                true => None,
-                // SAFETY: allocating the buffer the transform asked us for.
-                false => Some(unsafe { empty_sample(info.cbSize as usize) }?),
-            }),
-            dwStatus: 0,
-            pEvents: std::mem::ManuallyDrop::new(None),
-        }];
-        let mut status = 0u32;
-        // SAFETY: one buffer for the one stream.
-        let result = unsafe { self.transform.ProcessOutput(0, &mut buffers, &mut status) };
-        if let Err(error) = result {
-            let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffers[0].pSample);
-            drop(sample);
-            // Not an error: the transform simply has nothing for us yet.
-            if error.code() == MF_E_TRANSFORM_NEED_MORE_INPUT {
-                return Ok(None);
-            }
-            return Err(EncodeError::Media(error));
-        }
-
-        let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffers[0].pSample);
-        let Some(sample) = sample else {
-            return Ok(None);
-        };
-        Ok(Some(read_sample(&sample)?))
+        pull_output(&self.transform)
     }
+}
+
+/// Takes one output sample from `transform`, or `None` when it wants more input.
+///
+/// Shared with the AAC encoder: the buffer dance differs only in what the
+/// transform advertises, never in the shape of the call.
+pub(crate) fn pull_output(
+    transform: &IMFTransform,
+) -> Result<Option<EncodedSample>, EncodeError> {
+    // SAFETY: reading the stream info the transform advertises.
+    let info = unsafe { transform.GetOutputStreamInfo(0) }?;
+    // A transform that allocates its own samples wants a null one handed in.
+    let provides_samples = info.dwFlags
+        & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0 as u32
+            | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES.0 as u32)
+        != 0;
+    let mut buffers = [MFT_OUTPUT_DATA_BUFFER {
+        dwStreamID: 0,
+        pSample: std::mem::ManuallyDrop::new(match provides_samples {
+            true => None,
+            // SAFETY: allocating the buffer the transform asked us for.
+            false => Some(unsafe { empty_sample(info.cbSize as usize) }?),
+        }),
+        dwStatus: 0,
+        pEvents: std::mem::ManuallyDrop::new(None),
+    }];
+    let mut status = 0u32;
+    // SAFETY: one buffer for the one stream.
+    let result = unsafe { transform.ProcessOutput(0, &mut buffers, &mut status) };
+    if let Err(error) = result {
+        let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffers[0].pSample);
+        drop(sample);
+        // Not an error: the transform simply has nothing for us yet.
+        if error.code() == MF_E_TRANSFORM_NEED_MORE_INPUT {
+            return Ok(None);
+        }
+        return Err(EncodeError::Media(error));
+    }
+
+    let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffers[0].pSample);
+    let Some(sample) = sample else {
+        return Ok(None);
+    };
+    Ok(Some(read_sample(&sample)?))
 }
 
 impl Drop for H264Encoder {
@@ -388,7 +398,7 @@ unsafe fn empty_sample(size: usize) -> Result<IMFSample, windows::core::Error> {
     Ok(sample)
 }
 
-fn memory_sample(
+pub(crate) fn memory_sample(
     data: &[u8],
     timestamp: i64,
     duration: i64,

@@ -1,20 +1,19 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import type { Snippet } from "svelte";
+import { cn } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
 
-	interface Props {
-		label: string;
-		description?: string;
-		/** Optional leading glyph in the section eyebrow. */
-		icon?: Snippet;
-		/** Anchor id (used by the command palette to jump to a section). */
-		id?: string;
-		children: Snippet;
-		class?: string;
-	}
+interface Props {
+	label: string;
+	description?: string;
+	/** Optional leading glyph in the section eyebrow. */
+	icon?: Snippet;
+	/** Anchor id (used by the command palette to jump to a section). */
+	id?: string;
+	children: Snippet;
+	class?: string;
+}
 
-	let { label, description, icon, id, children, class: className }: Props =
-		$props();
+let { label, description, icon, id, children, class: className }: Props = $props();
 </script>
 
 <section {id} class={cn("flex flex-col gap-3", className)}>
@@ -32,7 +31,7 @@
 		{/if}
 	</div>
 	<div
-		class="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+		class="divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
 	>
 		{@render children()}
 	</div>

@@ -9,21 +9,24 @@
 
 export type LibraryView = "grid" | "list";
 
-export const GRID_CLASS = "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4";
+export const GRID_CLASS =
+	"grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6";
 
 /** Wrapper for the results, laid out per view. */
 export function listClass(view: LibraryView): string {
-	return view === "grid" ? `grid gap-3 ${GRID_CLASS}` : "flex flex-col gap-1.5";
+	return view === "grid" ? `grid gap-3.5 ${GRID_CLASS}` : "flex flex-col gap-1.5";
 }
 
 /** The card container itself. `selected` drives the primary-tinted state. */
 export function cardShellClass(view: LibraryView, selected: boolean): string {
 	return [
-		"group/card relative flex overflow-hidden border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200",
-		view === "grid" ? "flex-col rounded-xl" : "flex-row items-center gap-3 rounded-lg p-1.5",
+		"group/card relative flex overflow-hidden border outline-none transition-[transform,background-color,border-color,box-shadow] duration-200 ease-out",
+		view === "grid"
+			? "flex-col rounded-2xl motion-safe:hover:-translate-y-0.5"
+			: "flex-row items-center gap-3 rounded-xl p-1.5",
 		selected
-			? "border-primary/60 bg-primary/5"
-			: "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
+			? "border-primary/60 bg-primary/5 shadow-craft-sm"
+			: "border-border/50 bg-card shadow-(--shadow-craft-inset) hover:border-border/80 hover:shadow-craft-md",
 	].join(" ");
 }
 

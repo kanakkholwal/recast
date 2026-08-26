@@ -71,7 +71,7 @@ const metaLine = $derived(meta ?? `${formatSize(entry.sizeBytes)} · ${libraryDa
       class="pointer-events-none absolute inset-0 grid place-items-center bg-linear-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
     >
       <span
-        class="flex size-9 items-center justify-center rounded-full bg-background/85 text-foreground shadow-craft-sm backdrop-blur"
+        class="flex size-9 items-center justify-center rounded-full bg-background/90 text-foreground ring-1 ring-border/50 shadow-craft-md backdrop-blur transition-transform duration-200 motion-safe:group-hover/card:scale-105"
       >
         <Play class="size-4 translate-x-px" />
       </span>
@@ -93,11 +93,11 @@ const metaLine = $derived(meta ?? `${formatSize(entry.sizeBytes)} · ${libraryDa
   {/if}
 </div>
 
-<div class={cn("flex min-w-0 flex-1 flex-col gap-0.5", view === "grid" && "px-3 py-2.5")}>
-  <div class="truncate text-[12.5px] font-semibold text-foreground">
+<div class={cn("flex min-w-0 flex-1 flex-col gap-1", view === "grid" && "px-3.5 py-3")}>
+  <div class="truncate text-[12.5px] font-semibold tracking-tight text-foreground">
     {entry.filename}
   </div>
-  <div class="truncate text-[10.5px] text-muted-foreground/80">
+  <div class="truncate text-[11px] text-muted-foreground">
     {metaLine}
   </div>
   {#if footer}
