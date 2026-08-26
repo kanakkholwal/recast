@@ -10,7 +10,6 @@ import {
 	Pencil,
 	Plus,
 	Power,
-	Search,
 	SlidersHorizontal as SlidersIcon,
 	Star,
 	Timer,
@@ -18,7 +17,6 @@ import {
 	VideoOff,
 	Volume2,
 	VolumeX,
-	X,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Cutout } from "@recast/ui/cutout";
@@ -29,6 +27,8 @@ import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
 import { toast } from "@recast/ui/sonner";
 import { Switch } from "@recast/ui/switch";
 import { cn } from "@recast/ui/utils";
+import StudioPage from "$components/layout/StudioPage.svelte";
+import { LibrarySearch } from "$components/library";
 import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
@@ -296,6 +296,26 @@ const filtered = $derived.by(() => {
 	return profilesStore.profiles.filter((p) => p.name.toLowerCase().includes(q));
 });
 
+// Master-detail selection: an explicit pick wins; otherwise fall back to the
+// default (or first visible) so the detail panel is never empty. Resolved
+// without an effect to avoid write-back loops.
+let selectedId = $state<string | null>(null);
+const resolvedId = $derived.by(() => {
+	if (selectedId && profilesStore.profiles.some((p) => p.id === selectedId)) return selectedId;
+	return (filtered.find((p) => p.isDefault) ?? filtered[0])?.id ?? null;
+});
+const selectedProfile = $derived(profilesStore.profiles.find((p) => p.id === resolvedId) ?? null);
+
+const titleText = $derived(
+	!profilesStore.hydrated
+		? "Capture Profiles"
+		: profilesStore.profiles.length === 0
+			? "No profiles yet"
+			: profilesStore.profiles.length === 1
+				? "1 profile"
+				: `${profilesStore.profiles.length} profiles`,
+);
+
 // Capture sources rendered as the faceplate readout at the bottom of each
 // card. On/off is carried by icon shape (Mic vs MicOff) as well as color, so
 // it doesn't depend on color alone.
@@ -312,66 +332,25 @@ const capabilities: Cap[] = [
 ];
 </script>
 
-<div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
-  <div class="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-10">
-    <header class="flex flex-col gap-3">
-      <span
-        in:fly={{ y: 6, duration: 280, easing: cubicOut }}
-        class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur transition-colors duration-200 hover:border-border hover:text-muted-foreground"
-      >
-        <SlidersIcon class="size-3 text-primary" />
-        Profiles
-      </span>
-      <div
-        in:fly={{ y: 12, duration: 320, delay: 40, easing: cubicOut }}
-        class="flex items-end justify-between gap-3"
-      >
-        <h1
-          class="text-balance text-[28px] font-semibold leading-tight tracking-tight text-foreground md:text-[32px]"
-        >
-          <span
-            class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
-          >
-            {#if !profilesStore.hydrated}
-              Profiles
-            {:else if profilesStore.profiles.length === 0}
-              No profiles yet
-            {:else if profilesStore.profiles.length === 1}
-              1 profile
-            {:else}
-              {profilesStore.profiles.length} profiles
-            {/if}
-          </span>
-        </h1>
-        <Button
-          onclick={addProfile}
-          size="sm"
-          class="h-9 shrink-0 gap-1.5"
-        >
-          <Plus size={13} />
-          New profile
-        </Button>
-      </div>
-      <p
-        in:fly={{ y: 8, duration: 280, delay: 100, easing: cubicOut }}
-        class="text-[12.5px] leading-relaxed text-muted-foreground"
-      >
-        Save what to capture (system audio, mic, camera) and pick the default
-        that loads on launch.
-      </p>
-    </header>
+<StudioPage title={titleText} subtitle="Save what to capture and pick the default that loads on launch.">
+  {#snippet actions()}
+    <Button size="sm" class="gap-1.5" onclick={addProfile}>
+      <Plus size={13} /> New profile
+    </Button>
+  {/snippet}
 
-    <!-- One row for both states rather than an off-only banner: the page could
-         turn profiles back on but never off, so the only way out was Settings.
-         Profiles stay editable either way; the switch governs whether the
-         recording panel applies them. -->
+  {#snippet filters()}
+    <div class="min-w-[200px] flex-1">
+      <LibrarySearch bind:value={query} noun="profiles" />
+    </div>
+  {/snippet}
+
+  <div class="flex flex-col gap-4">
+    <!-- Governs whether the recording panel applies profiles; edits save either way. -->
     <div
-      in:fly={{ y: 8, duration: 240, easing: cubicOut }}
       class={cn(
         "flex items-center gap-3 rounded-xl border px-4 py-3 shadow-(--shadow-craft-inset) transition-colors duration-200",
-        profilesStore.enabled
-          ? "border-border/50 bg-card/60"
-          : "border-warning/30 bg-warning/10",
+        profilesStore.enabled ? "border-border/50 bg-card/60" : "border-warning/30 bg-warning/10",
       )}
     >
       <span
@@ -401,33 +380,6 @@ const capabilities: Cap[] = [
         aria-label="Apply profiles when recording"
       />
     </div>
-
-    <label
-      in:fly={{ y: 8, duration: 280, delay: 60, easing: cubicOut }}
-      class="group/search flex h-12 items-center gap-3 rounded-xl border border-border/60 bg-card/70 px-4 shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:border-border hover:bg-card hover:shadow-craft-sm focus-within:border-border focus-within:bg-card focus-within:shadow-craft-sm"
-    >
-      <Search
-        class="size-4 shrink-0 text-muted-foreground/70 transition-colors group-focus-within/search:text-foreground group-hover/search:text-foreground"
-      />
-      <input
-        bind:value={query}
-        type="text"
-        placeholder="Search profiles…"
-        aria-label="Search profiles"
-        class="flex-1 bg-transparent text-[13px] font-medium text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
-      />
-      {#if query}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          class="size-6"
-          onclick={() => (query = "")}
-          title="Clear search"
-        >
-          <X class="size-3" />
-        </Button>
-      {/if}
-    </label>
 
     {#if !profilesStore.hydrated}
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
@@ -475,9 +427,11 @@ const capabilities: Cap[] = [
             }}
             class={cn(
               "group/card relative flex flex-col overflow-hidden rounded-xl border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200",
-              profile.isDefault
-                ? "border-primary/60 bg-card"
-                : "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
+              resolvedId === profile.id
+                ? "border-primary/70 bg-primary/5 ring-1 ring-inset ring-primary/30"
+                : profile.isDefault
+                  ? "border-primary/40 bg-card"
+                  : "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
             )}
           >
             <!-- Identity region, same treatment as a thumbnail-less recasts
@@ -547,10 +501,11 @@ const capabilities: Cap[] = [
                  without stopPropagation. -->
             <button
               type="button"
-              onclick={() => startEditing(profile)}
+              onclick={() => (selectedId = profile.id)}
+              ondblclick={() => startEditing(profile)}
               class="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
             >
-              <span class="sr-only">Edit {profile.name}</span>
+              <span class="sr-only">Select {profile.name}</span>
             </button>
 
             <!-- Actions, same placement/treatment as the recasts card. -->
@@ -622,7 +577,93 @@ const capabilities: Cap[] = [
       </div>
     {/if}
   </div>
-</div>
+
+  {#snippet detail()}
+    {#if selectedProfile}
+      {@const p = selectedProfile!}
+      <div class="flex flex-col gap-5">
+        <div class="flex items-center gap-3">
+          <span
+            class={cn(
+              "grid size-11 shrink-0 place-items-center rounded-xl border text-[16px] font-semibold",
+              p.isDefault
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border/50 bg-card text-muted-foreground",
+            )}
+          >
+            {#if p.isDefault}
+              <Star class="size-5" />
+            {:else}
+              {p.name.trim().charAt(0).toUpperCase() || "?"}
+            {/if}
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-[15px] font-semibold text-foreground">{p.name}</div>
+            <div class="truncate text-[11px] text-muted-foreground">{summarize(p)}</div>
+          </div>
+        </div>
+
+        <dl class="flex flex-col gap-px overflow-hidden rounded-lg border border-border/50 text-[12px]">
+          {#each capabilities as cap (cap.field)}
+            {@const on = p[cap.field]}
+            {@const CapIcon = on ? cap.iconOn : cap.iconOff}
+            <div class="flex items-center gap-2 bg-card/60 px-3 py-2">
+              <CapIcon class={cn("size-3.5 shrink-0", on ? "text-primary" : "text-muted-foreground/40")} />
+              <dt class="flex-1 text-muted-foreground">{cap.label}</dt>
+              <dd class="truncate font-medium text-foreground">
+                {#if cap.field === "microphone"}{on ? (p.micLabel ?? "On") : "Off"}
+                {:else if cap.field === "camera"}{on ? (p.cameraLabel ?? "On") : "Off"}
+                {:else}{on ? "On" : "Off"}{/if}
+              </dd>
+            </div>
+          {/each}
+          <div class="flex items-center gap-2 bg-card/60 px-3 py-2">
+            <Timer class="size-3.5 shrink-0 text-muted-foreground/60" />
+            <dt class="flex-1 text-muted-foreground">Countdown</dt>
+            <dd class="font-medium text-foreground">
+              {p.countdown == null ? "Default" : p.countdown === 0 ? "Off" : `${p.countdown}s`}
+            </dd>
+          </div>
+        </dl>
+
+        <div class="flex flex-col gap-2">
+          <Button size="sm" class="gap-1.5" onclick={() => startEditing(p)}>
+            <Pencil size={13} /> Edit profile
+          </Button>
+          <div class="grid grid-cols-2 gap-2">
+            <Button variant="secondary" size="sm" class="gap-1.5" onclick={() => duplicateProfile(p)}>
+              <Copy size={13} /> Duplicate
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              class="gap-1.5"
+              disabled={p.isDefault}
+              onclick={() => setDefault(p.id)}
+            >
+              <CheckCircle2 size={13} /> {p.isDefault ? "Default" : "Set default"}
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onclick={() => (deleteTarget = p)}
+          >
+            <Trash2 size={13} /> Delete profile
+          </Button>
+        </div>
+      </div>
+    {:else}
+      <div class="flex h-full flex-col items-center justify-center gap-2 py-10 text-center">
+        <span class="grid size-10 place-items-center rounded-xl bg-foreground/5 text-muted-foreground/60">
+          <SlidersIcon class="size-5" />
+        </span>
+        <p class="text-[12px] text-muted-foreground">Select a profile to see its details.</p>
+      </div>
+    {/if}
+  {/snippet}
+</StudioPage>
 
 {#snippet toggleRow(
   field: "isDefault" | "systemAudio" | "microphone" | "camera",

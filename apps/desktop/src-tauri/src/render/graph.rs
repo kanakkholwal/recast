@@ -554,47 +554,90 @@ struct ZoomSample {
     center_y: f64,     // focus centre Y in UV space (0..1), constant per region
 }
 
+/// Sampling step for the handover search. The graph emits per-frame LUTs
+/// anyway, so a window edge landing within a few milliseconds of the true
+/// crossover is below the resolution the export can express.
+const ZOOM_WINDOW_STEP: f64 = 1.0 / 240.0;
+
+/// The region in force at `t`, or `None`. Mirrors `active_zoom` in
+/// `crates/recast-compositor/src/eval.rs`: the TIGHTEST region wins, so the
+/// winner can only change where two scales are equal and the zoom is continuous
+/// across the handover. Ties keep the later start, then the later list entry.
+fn zoom_winner_at(regions: &[&ZoomRegion], t: f64) -> Option<usize> {
+    let mut best: Option<(usize, f64)> = None;
+    for (index, region) in regions.iter().enumerate() {
+        if region.hidden || t <= region.start || t >= region.end {
+            continue;
+        }
+        let scale = region.scale_at(t);
+        match best {
+            Some((current, best_scale))
+                if best_scale > scale
+                    || (best_scale == scale && region.start < regions[current].start) => {}
+            _ => best = Some((index, scale)),
+        }
+    }
+    best.map(|(index, _)| index)
+}
+
 /// Disjoint `(region_index, start, end)` windows in which each region actually
 /// applies. Only one zoom can apply at a time, but the filter graph SUMS every
 /// region's term (`wrap_flat_sum`), so overlapping regions would stack their
 /// zoom — two 1.8x regions rendering as 2.6x while the preview shows 1.8x.
-/// A later-starting region takes over, matching `activeZoomIndex` in
-/// `src/lib/zoom/resolve.ts`; the earlier region resumes after it ends.
+///
+/// Region starts and ends are exact edges; a handover BETWEEN two overlapping
+/// regions is found by sampling, because it happens where their eased scales
+/// cross rather than at either region's boundary.
 fn disjoint_zoom_windows(regions: &[&ZoomRegion], time_offset: f64) -> Vec<(usize, f64, f64)> {
-    let mut out = Vec::new();
-    for (i, r) in regions.iter().enumerate() {
-        // Blockers are the regions that outrank this one at a shared instant:
-        // a later start, or an equal start later in the list (the tie-break).
-        let mut blockers: Vec<(f64, f64)> = regions
-            .iter()
-            .enumerate()
-            .filter(|(j, o)| {
-                *j != i && (o.start > r.start || (o.start == r.start && *j > i)) && o.end > o.start
-            })
-            .map(|(_, o)| (o.start, o.end))
-            .collect();
-        blockers.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-
-        let mut cursor = r.start.max(time_offset);
-        for (bs, be) in blockers {
-            if be <= cursor {
-                continue;
-            }
-            if bs >= r.end {
-                break;
-            }
-            if bs > cursor {
-                out.push((i, cursor, bs.min(r.end)));
-            }
-            cursor = cursor.max(be);
-            if cursor >= r.end {
-                break;
-            }
+    let mut edges: Vec<f64> = Vec::new();
+    for region in regions {
+        if region.hidden || region.end <= region.start || region.end <= time_offset {
+            continue;
         }
-        if cursor < r.end {
-            out.push((i, cursor, r.end));
+        edges.push(region.start.max(time_offset));
+        edges.push(region.end);
+    }
+    edges.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    edges.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+
+    let mut out: Vec<(usize, f64, f64)> = Vec::new();
+    let mut push = |index: usize, start: f64, end: f64| match out.last_mut() {
+        Some(last) if last.0 == index && (start - last.2).abs() < 1e-9 => last.2 = end,
+        _ => out.push((index, start, end)),
+    };
+
+    for pair in edges.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        if to - from <= 1e-9 {
+            continue;
+        }
+        // The ACTIVE SET is constant across this interval, so the winner can
+        // only change where two of them cross.
+        let mut cursor = from;
+        let mut current: Option<usize> = None;
+        let mut first = true;
+        let mut t = from;
+        while t < to {
+            let next = (t + ZOOM_WINDOW_STEP).min(to);
+            // Sampled at the midpoint, so an open region boundary never decides.
+            let winner = zoom_winner_at(regions, (t + next) * 0.5);
+            if first {
+                current = winner;
+                first = false;
+            } else if winner != current {
+                if let Some(index) = current {
+                    push(index, cursor, t);
+                }
+                cursor = t;
+                current = winner;
+            }
+            t = next;
+        }
+        if let Some(index) = current {
+            push(index, cursor, to);
         }
     }
+
     out.retain(|(_, a, b)| b - a > 1e-6);
     out
 }
@@ -1356,10 +1399,12 @@ mod tests {
         }
     }
 
-    /// A later-starting region takes over, then the enclosing one resumes —
-    /// the same rule as `activeZoomIndex` in src/lib/zoom/resolve.ts.
+    /// The nested region takes over and the enclosing one resumes, but the
+    /// handover is where their SCALES cross, not at the nested region's start:
+    /// at its start it is still ramping from 1.0 and would zoom the frame OUT.
+    /// Mirrors `active_zoom` in the compositor.
     #[test]
-    fn nested_zoom_region_wins_then_outer_resumes() {
+    fn a_nested_zoom_takes_over_where_the_scales_cross() {
         let outer = region(0.0, 10.0, 1.5);
         let inner = region(4.0, 6.0, 2.0);
         let mut windows = disjoint_zoom_windows(&[&outer, &inner], 0.0);
@@ -1369,12 +1414,52 @@ mod tests {
             3,
             "expected outer/inner/outer, got {windows:?}"
         );
-        assert_eq!(windows[0].0, 0);
-        assert!((windows[0].2 - 4.0).abs() < 1e-9, "{windows:?}");
-        assert_eq!(windows[1].0, 1);
-        assert!((windows[1].1 - 4.0).abs() < 1e-9 && (windows[1].2 - 6.0).abs() < 1e-9);
-        assert_eq!(windows[2].0, 0);
-        assert!((windows[2].1 - 6.0).abs() < 1e-9 && (windows[2].2 - 10.0).abs() < 1e-9);
+        assert_eq!((windows[0].0, windows[1].0, windows[2].0), (0, 1, 0));
+
+        let (handover, resume) = (windows[1].1, windows[1].2);
+        assert!(
+            handover > inner.start && handover < inner.start + inner.ramp_in,
+            "handover at {handover} is not inside the nested ramp"
+        );
+        assert!(
+            resume > inner.end - inner.ramp_out && resume < inner.end,
+            "resume at {resume} is not inside the nested ramp-out"
+        );
+        // Equal scales at the handover is what makes it invisible.
+        for t in [handover, resume] {
+            let step = 1e-3;
+            let before = outer.scale_at(t - step).max(inner.scale_at(t - step));
+            let after = outer.scale_at(t + step).max(inner.scale_at(t + step));
+            assert!(
+                (after - before).abs() < 0.02,
+                "scale stepped {before} -> {after} at {t}"
+            );
+        }
+    }
+
+    /// The defect this rule exists for: handing over at the incoming region's
+    /// own start snapped the frame from full zoom back to ~1.0 for a moment,
+    /// and everything riding the zoom flickered with it.
+    #[test]
+    fn an_overlap_never_hands_over_to_a_looser_zoom() {
+        let a = region(1.0, 8.0, 2.0);
+        let b = region(5.0, 12.0, 2.5);
+        let windows = disjoint_zoom_windows(&[&a, &b], 0.0);
+        let regions = [&a, &b];
+        for (index, start, end) in &windows {
+            let mut t = start + 1e-3;
+            while t < end - 1e-3 {
+                let winner = regions[*index].scale_at(t);
+                for other in &regions {
+                    assert!(
+                        winner >= other.scale_at(t) - 0.02,
+                        "a looser region held {t:.4} at {winner:.4} vs {:.4}",
+                        other.scale_at(t)
+                    );
+                }
+                t += 1.0 / 120.0;
+            }
+        }
     }
 
     /// Non-overlapping regions must be left exactly as authored.

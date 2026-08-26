@@ -145,23 +145,16 @@ const [send, receive] = crossfade({
                       <span
                         in:receive={{ key: "sidebar-active" }}
                         out:send={{ key: "sidebar-active" }}
-                        class="absolute inset-0 z-0 rounded-lg bg-foreground/6 ring-1 ring-inset ring-border/40 shadow-(--shadow-craft-inset)"
+                        class="absolute inset-0 z-0 rounded-lg bg-primary/10 ring-1 ring-inset ring-primary/25"
                         aria-hidden="true"
                       ></span>
-                      {#if open}
-                        <span
-                          in:receive={{ key: "sidebar-active-pill" }}
-                          out:send={{ key: "sidebar-active-pill" }}
-                          class="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary"
-                          aria-hidden="true"
-                        ></span>
-                      {/if}
                     {/if}
                     <Icon
                       size={14}
                       class={cn(
-                        "relative z-10 shrink-0 transition-transform duration-200",
+                        "relative z-10 shrink-0 transition-[transform,color] duration-200",
                         "group-hover/item:-translate-y-px group-active/item:scale-95",
+                        active && "text-primary",
                       )}
                     />
                     <span

@@ -8,6 +8,7 @@ let {
 	actions,
 	filters,
 	detail,
+	footer,
 	children,
 	class: className,
 	contentClass,
@@ -18,6 +19,7 @@ let {
 	actions?: Snippet;
 	filters?: Snippet;
 	detail?: Snippet;
+	footer?: Snippet;
 	children: Snippet;
 	class?: string;
 	contentClass?: string;
@@ -70,4 +72,10 @@ let {
       </aside>
     {/if}
   </div>
+
+  {#if footer}
+    <div class="shrink-0 border-t border-border/60">
+      {@render footer()}
+    </div>
+  {/if}
 </div>
