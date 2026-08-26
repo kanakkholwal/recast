@@ -15,12 +15,10 @@ import {
 	Minus,
 	Pencil,
 	Plus,
-	Redo2,
 	Scissors,
 	SlidersHorizontal,
 	SquareSplitHorizontal,
 	Target,
-	Undo2,
 	VolumeX,
 	ZoomIn,
 	AiWand,
@@ -132,17 +130,15 @@ const effectsOff = $derived(
 		(store.annotationsGloballyHidden ? 1 : 0),
 );
 
-// Shared control styling so every toolbar affordance reads the same.
-const GROUP =
-	"flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40";
+// Shared control styling: flat, quiet segments (the studio mockups' tool row),
+// clusters separated by hairlines rather than boxed trays.
+const GROUP = "flex items-center gap-0.5";
 const SEG =
-	"flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
+	"flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground disabled:opacity-40";
 const SEG_ICON =
-	"flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
-const SEG_ACTIVE =
-	"bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40";
-const SOLO =
-	"flex h-6 items-center gap-1 rounded-md border border-border/40 bg-muted/40 px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
+	"flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground disabled:opacity-40";
+const SEG_ACTIVE = "bg-foreground/10 text-foreground";
+const SOLO = SEG;
 
 const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
 </script>
@@ -152,31 +148,8 @@ const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
   <div class="flex items-center gap-1">
     <InspectorHint content={trimHint} />
 
-    <!-- History -->
-    <div class={GROUP}>
-      <button
-        type="button"
-        onclick={() => store.undo()}
-        disabled={!store.canUndo}
-        title="Undo (Ctrl+Z)"
-        aria-label="Undo"
-        class={SEG_ICON}
-      >
-        <Undo2 class="size-3" />
-      </button>
-      <button
-        type="button"
-        onclick={() => store.redo()}
-        disabled={!store.canRedo}
-        title="Redo (Ctrl+Shift+Z)"
-        aria-label="Redo"
-        class={SEG_ICON}
-      >
-        <Redo2 class="size-3" />
-      </button>
-    </div>
-
-    <!-- Edit: split + trim to playhead. Shortcuts live in tooltips and the View
+    <!-- Edit: split + trim to playhead. Undo/redo lives in the app toolbar, not
+         here. Shortcuts live in tooltips and the View
          menu's Shortcuts list, never as chips on the buttons themselves. -->
     <div class={GROUP}>
       <button
@@ -237,6 +210,8 @@ const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
         <span class="hidden sm:inline">Use full clip</span>
       </button>
     {/if}
+
+    <div class="mx-1 h-4 w-px bg-border/60" role="separator"></div>
 
     <!-- Insert: focus regions, suggestions, silence removal -->
     <div class={GROUP}>
@@ -388,6 +363,8 @@ const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
         <Target class="size-3" />
       </button>
     </div>
+
+    <div class="mx-0.5 h-4 w-px bg-border/60" role="separator"></div>
 
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>

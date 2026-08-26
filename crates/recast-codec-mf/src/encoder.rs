@@ -1,8 +1,10 @@
 use windows::core::{Interface, GUID};
+use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
 use windows::Win32::Media::MediaFoundation::*;
 
 use recast_codec::{EncoderDescriptor, VideoCodec};
 
+use crate::d3d::D3dContext;
 use crate::windows_mf::{activate_for, ensure_started};
 
 /// What the caller asks the encoder for. Deliberately small: everything else an
@@ -34,6 +36,8 @@ pub enum EncodeError {
     NotFound,
     /// The frame handed in is smaller than the configured size.
     ShortFrame,
+    /// A texture was offered to an encoder that was not opened on a device.
+    NotOnGpu,
     Media(windows::core::Error),
 }
 
@@ -48,6 +52,7 @@ impl std::fmt::Display for EncodeError {
         match self {
             Self::NotFound => write!(f, "no matching Media Foundation encoder"),
             Self::ShortFrame => write!(f, "the frame is smaller than the configured size"),
+            Self::NotOnGpu => write!(f, "this encoder was not opened on a D3D11 device"),
             Self::Media(e) => write!(f, "media foundation: {e}"),
         }
     }
@@ -76,6 +81,7 @@ pub struct H264Encoder {
     config: EncodeConfig,
     frame_bytes: usize,
     draining: bool,
+    gpu: bool,
 }
 
 impl H264Encoder {
@@ -85,6 +91,33 @@ impl H264Encoder {
     pub fn open(
         descriptor: &EncoderDescriptor,
         config: EncodeConfig,
+    ) -> Result<Self, EncodeError> {
+        Self::open_inner(descriptor, config, None)
+    }
+
+    /// Opens `descriptor` bound to a D3D11 device, so frames can be handed over
+    /// as textures instead of as bytes.
+    ///
+    /// Falls back to the memory path rather than failing when the transform is
+    /// not D3D-aware: the software encoder never is, and a machine with no
+    /// hardware encoder should still export.
+    pub fn open_with_gpu(
+        descriptor: &EncoderDescriptor,
+        config: EncodeConfig,
+        context: &D3dContext,
+    ) -> Result<Self, EncodeError> {
+        Self::open_inner(descriptor, config, Some(context))
+    }
+
+    /// Whether frames may be handed to [`Self::encode_texture`].
+    pub fn takes_textures(&self) -> bool {
+        self.gpu
+    }
+
+    fn open_inner(
+        descriptor: &EncoderDescriptor,
+        config: EncodeConfig,
+        context: Option<&D3dContext>,
     ) -> Result<Self, EncodeError> {
         if descriptor.codec != VideoCodec::H264 {
             return Err(EncodeError::NotFound);
@@ -113,12 +146,30 @@ impl H264Encoder {
             }
         };
 
+        // The manager has to be set before the media types: a D3D-aware
+        // transform advertises different input types once it has a device.
+        let gpu = match context {
+            Some(context) if is_d3d_aware(&transform) => {
+                // SAFETY: the manager outlives the message, which only stores a
+                // reference the transform add-refs itself.
+                unsafe {
+                    transform.ProcessMessage(
+                        MFT_MESSAGE_SET_D3D_MANAGER,
+                        context.manager().as_raw() as usize,
+                    )?;
+                }
+                true
+            }
+            _ => false,
+        };
+
         let mut encoder = Self {
             transform,
             mode,
             config,
             frame_bytes: nv12_len(config.width, config.height),
             draining: false,
+            gpu,
         };
         encoder.configure()?;
         Ok(encoder)
@@ -195,6 +246,27 @@ impl H264Encoder {
             return Err(EncodeError::ShortFrame);
         }
         let sample = memory_sample(&nv12[..self.frame_bytes], timestamp, duration)?;
+        self.submit(sample)
+    }
+
+    /// Feeds one NV12 texture. The frame never reaches system memory: this is
+    /// the whole point of [`Self::open_with_gpu`].
+    ///
+    /// The texture must belong to the device the encoder was opened against.
+    pub fn encode_texture(
+        &mut self,
+        nv12: &ID3D11Texture2D,
+        timestamp: i64,
+        duration: i64,
+    ) -> Result<Vec<EncodedSample>, EncodeError> {
+        if !self.gpu {
+            return Err(EncodeError::NotOnGpu);
+        }
+        let sample = texture_sample(nv12, timestamp, duration)?;
+        self.submit(sample)
+    }
+
+    fn submit(&mut self, sample: IMFSample) -> Result<Vec<EncodedSample>, EncodeError> {
         match &self.mode {
             Mode::Sync => {
                 // SAFETY: the sample lives for the call, and stream 0 is the
@@ -396,6 +468,42 @@ unsafe fn empty_sample(size: usize) -> Result<IMFSample, windows::core::Error> {
     let buffer = MFCreateMemoryBuffer(size.max(1) as u32)?;
     sample.AddBuffer(&buffer)?;
     Ok(sample)
+}
+
+/// Wraps a D3D11 texture as a sample. No copy: the buffer refers to the
+/// surface, so it must not be overwritten until the transform has consumed it.
+fn texture_sample(
+    texture: &ID3D11Texture2D,
+    timestamp: i64,
+    duration: i64,
+) -> Result<IMFSample, windows::core::Error> {
+    // SAFETY: the texture outlives the call, and the sample holds its own
+    // reference to the surface from here on.
+    unsafe {
+        let buffer = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, texture, 0, false)?;
+        // A DXGI buffer starts with a current length of zero, and an encoder
+        // that checks it reads the frame as empty.
+        let two_d: IMF2DBuffer = buffer.cast()?;
+        buffer.SetCurrentLength(two_d.GetContiguousLength()?)?;
+        let sample = MFCreateSample()?;
+        sample.AddBuffer(&buffer)?;
+        sample.SetSampleTime(timestamp)?;
+        sample.SetSampleDuration(duration)?;
+        Ok(sample)
+    }
+}
+
+/// Whether the transform can take D3D11 surfaces at all. The software encoder
+/// cannot, and telling it about a device makes it fail rather than fall back.
+fn is_d3d_aware(transform: &IMFTransform) -> bool {
+    // SAFETY: reading the transform's own attribute store.
+    unsafe {
+        transform
+            .GetAttributes()
+            .and_then(|attributes| attributes.GetUINT32(&MF_SA_D3D11_AWARE))
+            .map(|value| value != 0)
+            .unwrap_or(false)
+    }
 }
 
 pub(crate) fn memory_sample(

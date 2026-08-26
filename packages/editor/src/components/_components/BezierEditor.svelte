@@ -5,8 +5,8 @@ import {
 	sampleCurve,
 	type Easing,
 } from "../../lib/easing/cubic-bezier";
-import { Input } from "@recast/ui/input";
 import { cn } from "@recast/ui/utils";
+import DraggableValue from "../properity-panel/DraggableValue.svelte";
 
 interface Props {
 	value: Easing;
@@ -124,14 +124,14 @@ function handleEnd(e: PointerEvent) {
 
 // Dragging clamped y; typing did not, so `y1: 50` parked the handle far
 // outside the viewBox where no pointer could reach it again.
-function setField(field: keyof Easing, raw: string) {
-	const n = Number(raw);
-	if (Number.isNaN(n)) return;
+function setField(field: keyof Easing, n: number) {
 	onchange({ ...value, [field]: clampEasingCoord(field, n) });
 }
 
-function numField(v: number): string {
-	return v.toFixed(2);
+function fieldBounds(field: keyof Easing) {
+	return field === "x1" || field === "x2"
+		? { min: 0, max: 1 }
+		: { min: -EASING_OVERSHOOT, max: 1 + EASING_OVERSHOOT };
 }
 </script>
 
@@ -239,72 +239,106 @@ function numField(v: number): string {
         class="text-muted-foreground"
       />
 
-      <!-- P1 handle -->
-      <circle
-        cx={value.x1}
-        cy={1 - value.y1}
-        r="0.032"
-        fill="currentColor"
-        role="slider"
-        tabindex="0"
-        aria-label="Control point 1"
-        aria-valuemin={0}
-        aria-valuemax={1}
-        aria-valuenow={value.x1}
-        aria-valuetext="x {value.x1.toFixed(2)}, y {value.y1.toFixed(2)}"
-        class={cn(
-          "text-primary focus:outline-none",
-          !disabled && "cursor-grab",
-        )}
-        style:cursor={dragging === "p1" ? "grabbing" : undefined}
-        onpointerdown={(e) => handleStart("p1", e)}
-        onkeydown={(e) => handleKey("p1", e)}
-      />
-
-      <!-- P2 handle -->
-      <circle
-        cx={value.x2}
-        cy={1 - value.y2}
-        r="0.032"
-        fill="currentColor"
-        role="slider"
-        tabindex="0"
-        aria-label="Control point 2"
-        aria-valuemin={0}
-        aria-valuemax={1}
-        aria-valuenow={value.x2}
-        aria-valuetext="x {value.x2.toFixed(2)}, y {value.y2.toFixed(2)}"
-        class={cn(
-          "text-primary focus:outline-none",
-          !disabled && "cursor-grab",
-        )}
-        style:cursor={dragging === "p2" ? "grabbing" : undefined}
-        onpointerdown={(e) => handleStart("p2", e)}
-        onkeydown={(e) => handleKey("p2", e)}
-      />
+      <!-- Handles: an invisible, larger hit circle carries the grab (the visible
+           dot alone is a ~6px Fitts target); the visible circle keeps the slider
+           role and keyboard support. -->
+      {#each [
+        ["p1", value.x1, value.y1],
+        ["p2", value.x2, value.y2],
+      ] as const as [which, hx, hy] (which)}
+        <circle
+          cx={hx}
+          cy={1 - hy}
+          r="0.075"
+          fill="transparent"
+          aria-hidden="true"
+          class={cn(!disabled && "cursor-grab")}
+          style:cursor={dragging === which ? "grabbing" : undefined}
+          onpointerdown={(e) => handleStart(which, e)}
+        />
+        <circle
+          cx={hx}
+          cy={1 - hy}
+          r={dragging === which ? 0.042 : 0.034}
+          fill="currentColor"
+          stroke="var(--color-background)"
+          stroke-width="0.008"
+          role="slider"
+          tabindex="0"
+          aria-label={which === "p1" ? "Control point 1" : "Control point 2"}
+          aria-valuemin={0}
+          aria-valuemax={1}
+          aria-valuenow={hx}
+          aria-valuetext="x {hx.toFixed(2)}, y {hy.toFixed(2)}"
+          class={cn("text-primary focus:outline-none", !disabled && "cursor-grab")}
+          style:cursor={dragging === which ? "grabbing" : undefined}
+          onpointerdown={(e) => handleStart(which, e)}
+          onkeydown={(e) => handleKey(which, e)}
+        />
+      {/each}
     </svg>
   </div>
 
-  <!-- Numeric inputs -->
+  <!-- Live preview: a dot runs the track with the current curve, so the shape
+       is felt as motion, not just read as a graph. Decorative; hidden from AT. -->
+  <div class="flex items-center gap-2" aria-hidden="true">
+    <span class="text-[9px] uppercase tracking-wide text-muted-foreground">Preview</span>
+    <div
+      class="relative h-4 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/60 ring-1 ring-inset ring-border/40"
+    >
+      <div
+        class="runner absolute left-1 top-1/2 h-0 w-[calc(100%-1rem)]"
+        style:animation-timing-function="cubic-bezier({value.x1}, {value.y1}, {value.x2}, {value.y2})"
+      >
+        <span class="absolute left-0 top-0 size-2 -translate-y-1/2 rounded-full bg-primary"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drag-to-scrub value fields (drag the label; click to type). -->
   <div class="grid grid-cols-2 gap-1.5">
-    {#each [["x1", value.x1], ["y1", value.y1], ["x2", value.x2], ["y2", value.y2]] as const as [field, v] (field)}
-      <label class="flex flex-col gap-0.5">
-        <span
-          class="text-[9px] font-mono uppercase tracking-wide text-muted-foreground"
-          >{field}</span
-        >
-        <Input
-          type="number"
-          step="0.01"
-          min={field === "x1" || field === "x2" ? 0 : -EASING_OVERSHOOT}
-          max={field === "x1" || field === "x2" ? 1 : 1 + EASING_OVERSHOOT}
-          {disabled}
-          value={numField(v)}
-          onchange={(e) =>
-            setField(field, (e.currentTarget as HTMLInputElement).value)}
-          class="h-6 rounded-sm px-1.5 text-[11px] font-mono tabular-nums text-foreground no-webkit"
-        />
-      </label>
+    {#each [
+      ["x1", value.x1],
+      ["y1", value.y1],
+      ["x2", value.x2],
+      ["y2", value.y2],
+    ] as const as [field, v] (field)}
+      {@const bounds = fieldBounds(field)}
+      <DraggableValue
+        label={field.toUpperCase()}
+        value={v}
+        min={bounds.min}
+        max={bounds.max}
+        step={0.01}
+        decimals={2}
+        {disabled}
+        onInput={(n) => setField(field, n)}
+        onCommit={(n) => setField(field, n)}
+      />
     {/each}
   </div>
 </div>
+
+<style>
+  .runner {
+    animation: run 1.8s infinite;
+  }
+
+  @keyframes run {
+    0%,
+    12% {
+      transform: translateX(0);
+    }
+    72%,
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .runner {
+      animation: none;
+      transform: translateX(100%);
+    }
+  }
+</style>

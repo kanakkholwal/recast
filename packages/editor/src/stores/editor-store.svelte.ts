@@ -261,7 +261,7 @@ export function createEditorStore() {
 	// Which properties-panel tab is active. Overlays (FocusOverlay,
 	// AnnotationOverlay) gate their editing UI on this so users don't interact
 	// with handles for a feature whose panel isn't visible.
-	let activePanel = $state<PanelTab>("background");
+	let activePanel = $state<PanelTab>("canvas");
 
 	// How every timecode in the editor renders. Lives here, not in Timeline.svelte,
 	// so the transport readout and the timeline agree: when this was timeline-local

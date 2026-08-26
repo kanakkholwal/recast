@@ -1029,14 +1029,14 @@ onMount(() => {
 });
 </script>
 
-<!-- Track-header chip for the fixed left rail: a square, icon stacked over the
-     label, so the rail stays narrow and every row header reads the same. -->
+<!-- Track-header row for the fixed left rail: full-width icon + label pill, the
+     tone colour carried by the icon so every row header reads the same. -->
 {#snippet railLabel(Icon: typeof Video, label: string, iconClass: string)}
   <span
-    class="inline-flex min-h-9 min-w-9 flex-col items-center justify-center gap-0.5 rounded-md bg-muted/60 px-1 py-1 font-mono text-[7px] font-bold uppercase leading-none tracking-wide text-muted-foreground ring-1 ring-inset ring-border/40"
+    class="inline-flex w-full items-center justify-start gap-1.5 rounded-md px-1.5 py-1.5 text-[8.5px] font-semibold uppercase leading-none tracking-wide text-muted-foreground"
   >
-    <Icon class="size-3.5 {iconClass}" />
-    {label}
+    <Icon class="size-3 shrink-0 {iconClass}" />
+    <span class="truncate">{label}</span>
   </span>
 {/snippet}
 
@@ -1092,7 +1092,7 @@ onMount(() => {
     class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
   >
     <div
-      class="relative z-10 flex w-16 shrink-0 flex-col border-r border-border/60 bg-card/50"
+      class="relative z-10 flex w-18 shrink-0 flex-col border-r border-border/60 bg-card/50"
     >
       <!-- Corner cell: holds the rail's edge against the sticky ruler. -->
       <div class="h-7 shrink-0 border-b border-border/60"></div>

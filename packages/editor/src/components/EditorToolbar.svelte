@@ -7,9 +7,11 @@ import {
 	Minimize2,
 	PanelBottom,
 	PanelRight,
+	Redo2,
 	RotateCcw,
 	Save,
 	Sparkles,
+	Undo2,
 	Upload,
 	X,
 } from "@recast/icons";
@@ -286,10 +288,56 @@ function onExportClick() {
     {/if}
   </div>
 
-  <div class="ml-auto flex items-center gap-1">
+  <div class="ml-auto flex items-center gap-1.5">
     <div
       class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
     >
+      <Tooltip.Root>
+        <Tooltip.Trigger>
+          {#snippet child({ props })}
+            <span {...props as Record<string, unknown>} class="inline-flex">
+              <button
+                type="button"
+                onclick={() => store.undo()}
+                disabled={exportOpen || !store.canUndo}
+                aria-label="Undo"
+                class={toggleClass(false)}
+              >
+                <Undo2 size={12} />
+              </button>
+            </span>
+          {/snippet}
+        </Tooltip.Trigger>
+        <Tooltip.Content>
+          <span class="inline-flex items-center gap-1.5">
+            Undo <Kbd>{chordLabel("editor.undo")}</Kbd>
+          </span>
+        </Tooltip.Content>
+      </Tooltip.Root>
+      <Tooltip.Root>
+        <Tooltip.Trigger>
+          {#snippet child({ props })}
+            <span {...props as Record<string, unknown>} class="inline-flex">
+              <button
+                type="button"
+                onclick={() => store.redo()}
+                disabled={exportOpen || !store.canRedo}
+                aria-label="Redo"
+                class={toggleClass(false)}
+              >
+                <Redo2 size={12} />
+              </button>
+            </span>
+          {/snippet}
+        </Tooltip.Trigger>
+        <Tooltip.Content>
+          <span class="inline-flex items-center gap-1.5">
+            Redo <Kbd>{chordLabel("editor.redo")}</Kbd>
+          </span>
+        </Tooltip.Content>
+      </Tooltip.Root>
+    </div>
+
     {#if store.canRevert}
       <Tooltip.Root>
         <Tooltip.Trigger>
@@ -392,8 +440,11 @@ function onExportClick() {
         Export
       </Button>
     {/if}
-        <Separator orientation="vertical" class="mx-0.5 h-3.5" />
+    <Separator orientation="vertical" class="mx-0.5 h-3.5" />
 
+    <div
+      class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+    >
       <Tooltip.Root>
         <Tooltip.Trigger>
           <!-- Span wrapper: a disabled <button> swallows hover, so without it the

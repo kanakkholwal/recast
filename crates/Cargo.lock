@@ -714,6 +714,9 @@ dependencies = [
 [[package]]
 name = "recast-audio"
 version = "0.0.0"
+dependencies = [
+ "recast-scene",
+]
 
 [[package]]
 name = "recast-captions"

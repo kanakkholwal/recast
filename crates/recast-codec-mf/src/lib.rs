@@ -14,6 +14,8 @@ mod aac;
 #[cfg(windows)]
 mod audio;
 #[cfg(windows)]
+mod d3d;
+#[cfg(windows)]
 mod decoder;
 #[cfg(windows)]
 mod encoder;
@@ -24,6 +26,8 @@ mod windows_mf;
 pub use aac::AacEncoder;
 #[cfg(windows)]
 pub use audio::{AudioFormat, AudioReader};
+#[cfg(windows)]
+pub use d3d::{D3dContext, Nv12Surface, SharedSurface};
 #[cfg(windows)]
 pub use decoder::{DecodeError, DecodedFrame, VideoInfo, VideoReader};
 #[cfg(windows)]
