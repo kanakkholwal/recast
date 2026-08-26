@@ -14,7 +14,7 @@ pub use format::{
 };
 pub use interop::{
     import_shared_fence, import_shared_texture, SharedFence, SharedFormat, SharedHandle,
-    SharedTexture, SharedTextureDesc,
+    SharedTexture, SharedTextureDesc, SharedUse,
 };
 pub use pool::{
     GpuTexturePool, Lease, PoolStats, TextureAllocator, TextureDesc, TexturePool, WgpuAllocator,

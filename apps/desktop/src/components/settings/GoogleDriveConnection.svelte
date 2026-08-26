@@ -48,7 +48,7 @@ async function handleDisconnect() {
     <div class="flex items-center justify-between gap-3">
       <div class="flex min-w-0 items-center gap-3">
         <div
-          class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/30"
+          class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-foreground ring-1 ring-inset ring-border/40"
         >
           <BrandGoogleDrive class="size-4" />
         </div>

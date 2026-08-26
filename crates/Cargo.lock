@@ -738,8 +738,10 @@ name = "recast-codec-mf"
 version = "0.0.0"
 dependencies = [
  "recast-codec",
+ "recast-gpu",
  "recast-mux",
  "recast-testkit",
+ "wgpu",
  "windows",
 ]
 

@@ -29,11 +29,11 @@ const LABELS: Record<LibrarySort, string> = {
 >
   <Select.Trigger
     size="sm"
-    class="h-8 gap-1 rounded-lg border-border/50 px-2.5 text-[11.5px] font-medium text-muted-foreground hover:text-foreground"
+    class="h-9! gap-1.5 rounded-lg border-transparent bg-muted/50 px-3 text-[12px] font-medium text-foreground ring-1 ring-inset ring-border/40 hover:bg-muted/70"
     aria-label={`Sort ${noun}`}
   >
-    <span data-slot="select-value" class="flex items-center gap-1">
-      <SortAsc size={11} />
+    <span data-slot="select-value" class="flex items-center gap-1.5">
+      <SortAsc size={12} class="text-muted-foreground" />
       {LABELS[value]}
     </span>
   </Select.Trigger>

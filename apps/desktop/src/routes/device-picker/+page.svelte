@@ -11,10 +11,16 @@ import { cn } from "@recast/ui/utils";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { scale } from "svelte/transition";
 import { wrapIndex } from "$lib/util/wrap-index";
 import { mapCameras, parseDevicePickerParams, pickDefault } from "./device-picker.logic";
 
 const { deviceType, selectedId } = parseDevicePickerParams(window.location.search);
+
+// Popup materializes (scale + fade) instead of popping in; static under reduced motion.
+const prefersReducedMotion =
+	typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 let devices = $state<(AudioDeviceInfo | CameraDeviceInfo)[]>([]);
 let currentSelectedId = $state<string | null>(selectedId);
@@ -113,6 +119,11 @@ function handleKeydown(e: KeyboardEvent) {
     "group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-card backdrop-blur-3xl",
     isLoading && "cursor-wait",
   )}
+  in:scale={{
+    start: prefersReducedMotion ? 1 : 0.97,
+    duration: prefersReducedMotion ? 0 : 180,
+    easing: cubicOut,
+  }}
   aria-busy={isLoading}
   
 >
@@ -225,10 +236,10 @@ function handleKeydown(e: KeyboardEvent) {
             aria-pressed={active}
             data-active={active}
             class={cn(
-              "group flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+              "group flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-[background-color,color,transform] duration-150 motion-safe:active:scale-[0.99]",
               "focus:outline-none focus:ring-1 focus:ring-ring",
               active
-                ? "bg-primary/10 text-foreground"
+                ? "bg-foreground/10 text-foreground"
                 : "text-foreground/80 hover:bg-muted/60",
             )}
           >
@@ -236,7 +247,7 @@ function handleKeydown(e: KeyboardEvent) {
               class={cn(
                 "size-6 shrink-0 rounded-sm flex items-center justify-center",
                 active
-                  ? "bg-primary text-primary-foreground"
+                  ? "bg-foreground text-background"
                   : "bg-muted text-muted-foreground",
               )}
             >
@@ -263,7 +274,7 @@ function handleKeydown(e: KeyboardEvent) {
             </div>
 
             {#if active}
-              <Check size={12} stroke={3} class="text-primary shrink-0" />
+              <Check size={12} stroke={3} class="text-foreground shrink-0" />
             {/if}
           </button>
         {/each}

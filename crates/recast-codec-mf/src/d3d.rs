@@ -1,5 +1,7 @@
 use windows::core::Interface;
-use windows::Win32::Foundation::{CloseHandle, GENERIC_ALL, HANDLE, HMODULE, TRUE};
+use windows::Win32::Foundation::{
+    CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, GENERIC_ALL, HANDLE, HMODULE, TRUE,
+};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0};
 use windows::Win32::Graphics::Direct3D11::*;
 use windows::Win32::Graphics::Dxgi::Common::{
@@ -7,6 +9,7 @@ use windows::Win32::Graphics::Dxgi::Common::{
 };
 use windows::Win32::Graphics::Dxgi::IDXGIResource1;
 use windows::Win32::Media::MediaFoundation::{IMFDXGIDeviceManager, MFCreateDXGIDeviceManager};
+use windows::Win32::System::Threading::GetCurrentProcess;
 
 use crate::encoder::EncodeError;
 
@@ -40,10 +43,11 @@ pub struct SharedSurface {
 }
 
 impl SharedSurface {
-    /// The NT handle to hand to the other API. Borrowed: this surface still
-    /// closes it, so the importer must duplicate rather than take it.
-    pub fn handle(&self) -> isize {
-        self.handle.0 as isize
+    /// An NT handle for the other API to take ownership of. Duplicated, because
+    /// this surface closes its own; an importer given the original would close
+    /// it a second time.
+    pub fn duplicate_handle(&self) -> Result<isize, EncodeError> {
+        duplicate(self.handle)
     }
 
     pub fn size(&self) -> (u32, u32) {
@@ -60,6 +64,51 @@ impl Drop for SharedSurface {
         if !self.handle.0.is_null() {
             // SAFETY: created by `CreateSharedHandle` here and closed once,
             // because `SharedSurface` is neither Copy nor Clone.
+            let _ = unsafe { CloseHandle(self.handle) };
+        }
+    }
+}
+
+/// A fence the producing API signals and this device waits on.
+///
+/// D3D12, which is the backend wgpu uses here, has no keyed-mutex support, so a
+/// shared fence is the only ordering primitive available between the two.
+pub struct SyncFence {
+    fence: ID3D11Fence,
+    handle: HANDLE,
+}
+
+impl SyncFence {
+    /// An NT handle for the producing API to take ownership of. Duplicated, for
+    /// the same reason as [`SharedSurface::duplicate_handle`].
+    pub fn duplicate_handle(&self) -> Result<isize, EncodeError> {
+        duplicate(self.handle)
+    }
+}
+
+fn duplicate(handle: HANDLE) -> Result<isize, EncodeError> {
+    let mut copy = HANDLE::default();
+    // SAFETY: `handle` is ours and stays open; the duplicate belongs to the
+    // caller, who closes it.
+    unsafe {
+        let process = GetCurrentProcess();
+        DuplicateHandle(
+            process,
+            handle,
+            process,
+            &mut copy,
+            0,
+            false,
+            DUPLICATE_SAME_ACCESS,
+        )?;
+    }
+    Ok(copy.0 as isize)
+}
+
+impl Drop for SyncFence {
+    fn drop(&mut self) {
+        if !self.handle.0.is_null() {
+            // SAFETY: created here and closed once; `SyncFence` is not Copy.
             let _ = unsafe { CloseHandle(self.handle) };
         }
     }
@@ -111,8 +160,9 @@ impl D3dContext {
         // Media Foundation calls into this device from its own threads. Without
         // multithread protection that is a data race the driver will not report.
         let multithread: ID3D11Multithread = context.cast()?;
-        // SAFETY: setting a flag on the device's own context.
-        unsafe { multithread.SetMultithreadProtected(true) };
+        // SAFETY: setting a flag on the device's own context. The return is
+        // the PREVIOUS setting, not a status.
+        let _ = unsafe { multithread.SetMultithreadProtected(true) };
 
         let mut token = 0u32;
         let mut manager = None;
@@ -259,12 +309,36 @@ impl D3dContext {
         })
     }
 
+    /// A fence for the producing API to signal when its drawing has landed.
+    pub fn shared_fence(&self) -> Result<SyncFence, EncodeError> {
+        let device: ID3D11Device5 = self.device.cast()?;
+        let mut created = None;
+        // SAFETY: creating a fence on our own device, out parameter checked
+        // below. SHARED is what lets the other API open it at all.
+        unsafe { device.CreateFence(0, D3D11_FENCE_FLAG_SHARED, &mut created)? };
+        let fence: ID3D11Fence = created.ok_or_else(|| EncodeError::Media(missing("fence")))?;
+        // SAFETY: the fence was created with the sharing flag this needs.
+        // GENERIC_ALL rather than SYNCHRONIZE: the narrower right is accepted
+        // here and then rejected at the other end's OpenSharedHandle.
+        let handle = unsafe { fence.CreateSharedHandle(None, GENERIC_ALL.0, None)? };
+        Ok(SyncFence { fence, handle })
+    }
+
+    /// Holds this device's work until the producer signals `value`. GPU-side:
+    /// the CPU does not block.
+    ///
+    /// Without it the conversion below reads whatever was in the surface before
+    /// the producer drew, and every pixel comes back wrong with no error.
+    pub fn wait_for(&self, fence: &SyncFence, value: u64) -> Result<(), EncodeError> {
+        let context: ID3D11DeviceContext4 = self.context.cast()?;
+        // SAFETY: enqueueing a wait on our own context.
+        unsafe { context.Wait(&fence.fence, value) }?;
+        Ok(())
+    }
+
     /// Converts a BGRA surface into an NV12 one, entirely on the GPU.
-    pub fn convert(
-        &self,
-        source: &ID3D11Texture2D,
-        target: &Nv12Surface,
-    ) -> Result<(), EncodeError> {
+    pub fn convert(&self, source: &SharedSurface, target: &Nv12Surface) -> Result<(), EncodeError> {
+        let source = &source.texture;
         let input_desc = D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC {
             FourCC: 0,
             ViewDimension: D3D11_VPIV_DIMENSION_TEXTURE2D,
@@ -334,5 +408,5 @@ impl D3dContext {
 }
 
 fn missing(what: &str) -> windows::core::Error {
-    windows::core::Error::new(windows::Win32::Foundation::E_FAIL, what.to_string())
+    windows::core::Error::new(windows::Win32::Foundation::E_FAIL, what)
 }

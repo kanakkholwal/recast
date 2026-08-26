@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::OnceLock;
 
 use recast_mux::{annex_b_to_avcc, split_access_units, top_level_boxes, AvcConfig, Mp4Writer, VideoFormat};
 
@@ -85,7 +86,15 @@ struct Muxed {
 
 /// Builds the MP4 once for the assertions below. `None` when the sidecars are
 /// not present, which skips rather than fails, like the GPU tests.
-fn muxed() -> Option<Muxed> {
+///
+/// Memoised, and it has to be: tests run in parallel, and four of them each
+/// rewriting the same two files means one reads what another is still writing.
+fn muxed() -> Option<&'static Muxed> {
+    static FILE: OnceLock<Option<Muxed>> = OnceLock::new();
+    FILE.get_or_init(build).as_ref()
+}
+
+fn build() -> Option<Muxed> {
     let Some(ffmpeg) = recast_testkit::ffmpeg_path() else {
         eprintln!("skipping: no ffmpeg sidecar");
         return None;

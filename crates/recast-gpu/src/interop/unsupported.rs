@@ -19,3 +19,7 @@ pub fn import_fence(_ctx: &GpuContext, _handle: SharedHandle) -> Result<SharedFe
 pub fn queue_wait(_ctx: &GpuContext, _fence: &Fence, _value: u64) -> Result<(), GpuError> {
     Err(GpuError::Unsupported("shared fence wait"))
 }
+
+pub fn queue_signal(_ctx: &GpuContext, _fence: &Fence, _value: u64) -> Result<(), GpuError> {
+    Err(GpuError::Unsupported("shared fence signal"))
+}

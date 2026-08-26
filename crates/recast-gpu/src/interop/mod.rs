@@ -42,11 +42,23 @@ impl SharedFormat {
     }
 }
 
+/// What the importing device will do with the surface. Sampling a foreign
+/// texture and drawing into one are opposite roles, and the initial resource
+/// state has to match or the first barrier is wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SharedUse {
+    /// The other API produced the picture; we read it.
+    Read,
+    /// We produce the picture; the other API consumes it.
+    RenderTarget,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SharedTextureDesc {
     pub width: u32,
     pub height: u32,
     pub format: SharedFormat,
+    pub use_as: SharedUse,
 }
 
 impl SharedTextureDesc {
@@ -55,7 +67,14 @@ impl SharedTextureDesc {
             width,
             height,
             format,
+            use_as: SharedUse::Read,
         }
+    }
+
+    /// Imports the surface to draw into rather than to sample.
+    pub fn as_render_target(mut self) -> Self {
+        self.use_as = SharedUse::RenderTarget;
+        self
     }
 }
 
@@ -110,6 +129,16 @@ impl SharedFence {
     /// `value`. Does not block the CPU.
     pub fn queue_wait(&self, ctx: &GpuContext, value: u64) -> Result<(), GpuError> {
         backend::queue_wait(ctx, &self.inner, value)
+    }
+
+    /// Makes this device's queue signal `value` once everything already
+    /// submitted has finished. Does not block the CPU.
+    ///
+    /// The mirror of [`SharedFence::queue_wait`], for when we are the producer:
+    /// without it the consuming API reads whatever was in the surface before,
+    /// with no error anywhere.
+    pub fn queue_signal(&self, ctx: &GpuContext, value: u64) -> Result<(), GpuError> {
+        backend::queue_signal(ctx, &self.inner, value)
     }
 }
 

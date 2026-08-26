@@ -2,8 +2,8 @@
 import { diagnostics } from "$lib/logger/diagnostics.svelte";
 import { openLogDir } from "$lib/ipc";
 import { Button } from "@recast/ui/button";
+import { Switch } from "@recast/ui/switch";
 import { toast } from "@recast/ui/sonner";
-import { cn } from "@recast/ui/utils";
 import { FolderOpen, ScrollText } from "@recast/icons";
 
 let opening = $state(false);
@@ -58,26 +58,11 @@ async function openLogs() {
           Nothing is uploaded. It stays on this machine until you share it.
         </div>
       </div>
-      <button
-        type="button"
-        role="switch"
+      <Switch
+        checked={diagnostics.enabled}
+        onCheckedChange={() => toggleDiagnostics()}
         aria-label="Diagnostic logging"
-        aria-checked={diagnostics.enabled}
-        onclick={toggleDiagnostics}
-        class={cn(
-          "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-          diagnostics.enabled
-            ? "bg-primary"
-            : "bg-input ring-1 ring-inset ring-border/50",
-        )}
-      >
-        <span
-          class={cn(
-            "size-4 rounded-full bg-card shadow-sm transition-transform",
-            diagnostics.enabled ? "translate-x-4.5" : "translate-x-0.5",
-          )}
-        ></span>
-      </button>
+      />
     </div>
 
     <div

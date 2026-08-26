@@ -2,6 +2,7 @@ use windows::core::{Interface, GUID};
 use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
 use windows::Win32::Media::MediaFoundation::*;
 
+
 use recast_codec::{EncoderDescriptor, VideoCodec};
 
 use crate::d3d::D3dContext;
@@ -255,14 +256,14 @@ impl H264Encoder {
     /// The texture must belong to the device the encoder was opened against.
     pub fn encode_texture(
         &mut self,
-        nv12: &ID3D11Texture2D,
+        nv12: &crate::d3d::Nv12Surface,
         timestamp: i64,
         duration: i64,
     ) -> Result<Vec<EncodedSample>, EncodeError> {
         if !self.gpu {
             return Err(EncodeError::NotOnGpu);
         }
-        let sample = texture_sample(nv12, timestamp, duration)?;
+        let sample = texture_sample(nv12.texture(), timestamp, duration)?;
         self.submit(sample)
     }
 

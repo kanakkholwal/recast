@@ -1,7 +1,7 @@
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Graphics::Direct3D12::{ID3D12Fence, ID3D12Resource};
 
-use super::{SharedFence, SharedHandle, SharedTexture, SharedTextureDesc};
+use super::{SharedFence, SharedHandle, SharedTexture, SharedTextureDesc, SharedUse};
 use crate::{GpuContext, GpuError};
 
 pub struct OwnedHandle(HANDLE);
@@ -39,6 +39,16 @@ pub fn import_texture(
 ) -> Result<SharedTexture, GpuError> {
     let owned = OwnedHandle::new(handle);
     let format = desc.format.wgpu();
+    let (usage, state) = match desc.use_as {
+        SharedUse::Read => (
+            wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            wgpu::TextureUses::COPY_SRC,
+        ),
+        SharedUse::RenderTarget => (
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            wgpu::TextureUses::COLOR_TARGET,
+        ),
+    };
     let size = wgpu::Extent3d {
         width: desc.width,
         height: desc.height,
@@ -85,10 +95,10 @@ pub fn import_texture(
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
                     format,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+                    usage,
                     view_formats: &[],
                 },
-                wgpu::TextureUses::COPY_SRC,
+                state,
             )
     };
 
@@ -120,6 +130,21 @@ pub fn import_fence(ctx: &GpuContext, handle: SharedHandle) -> Result<SharedFenc
         inner: Fence(fence),
         _handle: owned,
     })
+}
+
+pub fn queue_signal(ctx: &GpuContext, fence: &Fence, value: u64) -> Result<(), GpuError> {
+    // SAFETY: same device borrow contract as `queue_wait`; `Signal` only
+    // enqueues, and transfers no ownership.
+    unsafe {
+        let hal_device = ctx
+            .device()
+            .as_hal::<wgpu::hal::api::Dx12>()
+            .ok_or(GpuError::Unsupported("shared fence signal outside DX12"))?;
+        hal_device
+            .raw_queue()
+            .Signal(&fence.0, 0)
+            .map_err(|e| import_error("queue signal", e))
+    }
 }
 
 pub fn queue_wait(ctx: &GpuContext, fence: &Fence, value: u64) -> Result<(), GpuError> {

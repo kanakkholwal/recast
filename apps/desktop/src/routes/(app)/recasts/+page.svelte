@@ -171,9 +171,14 @@ async function handleMigrateOne(entry: RecordingEntry) {
       <LibrarySearch bind:value={lib.query} noun="recordings" />
     </div>
     <Button
-      variant={lib.selection.selectMode ? "secondary" : "ghost"}
+      variant="ghost"
       size="sm"
-      class={cn("h-8 gap-1 text-[11.5px]", !lib.selection.selectMode && "text-muted-foreground hover:text-foreground")}
+      class={cn(
+        "h-9 gap-1.5 rounded-lg px-3 text-[12px]",
+        lib.selection.selectMode
+          ? "bg-foreground text-background hover:bg-foreground/90 hover:text-background"
+          : "text-muted-foreground hover:text-foreground",
+      )}
       onclick={lib.selection.toggleMode}
       disabled={lib.entries.length === 0}
       aria-pressed={lib.selection.selectMode}
@@ -187,6 +192,7 @@ async function handleMigrateOne(entry: RecordingEntry) {
     <Button
       variant="ghost"
       size="icon-sm"
+      class="size-9 rounded-lg text-muted-foreground hover:text-foreground"
       onclick={lib.refresh}
       disabled={lib.isLoading}
       aria-label="Refresh recordings"

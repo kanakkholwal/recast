@@ -224,9 +224,14 @@ async function forgetDriveLink(entry: RecordingEntry) {
       <LibrarySearch bind:value={lib.query} noun="exports" />
     </div>
     <Button
-      variant={lib.selection.selectMode ? "secondary" : "ghost"}
+      variant="ghost"
       size="sm"
-      class={cn("h-8 gap-1 text-[11.5px]", !lib.selection.selectMode && "text-muted-foreground hover:text-foreground")}
+      class={cn(
+        "h-9 gap-1.5 rounded-lg px-3 text-[12px]",
+        lib.selection.selectMode
+          ? "bg-foreground text-background hover:bg-foreground/90 hover:text-background"
+          : "text-muted-foreground hover:text-foreground",
+      )}
       onclick={lib.selection.toggleMode}
       disabled={lib.entries.length === 0}
       aria-pressed={lib.selection.selectMode}
@@ -240,6 +245,7 @@ async function forgetDriveLink(entry: RecordingEntry) {
     <Button
       variant="ghost"
       size="icon-sm"
+      class="size-9 rounded-lg text-muted-foreground hover:text-foreground"
       onclick={lib.refresh}
       disabled={lib.isLoading}
       aria-label="Refresh exports"
@@ -284,6 +290,30 @@ async function forgetDriveLink(entry: RecordingEntry) {
             typeLabel={getExtension(entry.filename)}
             onOpen={() => activateEntry(entry)}
           >
+            {#snippet footer()}
+              {@const cloudRec = cloudShare.getRecordForPath(entry.path)}
+              {@const driveRec = gdrive.getRecordForPath(entry.path)}
+              {#if cloudRec || driveRec}
+                <span class="mt-1 flex flex-wrap items-center gap-1">
+                  {#if cloudRec}
+                    <span
+                      class="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground ring-1 ring-inset ring-border/40"
+                      title="Shared to Recast Cloud"
+                    >
+                      <RecastMark class="size-2.5" /> Cloud
+                    </span>
+                  {/if}
+                  {#if driveRec}
+                    <span
+                      class="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground ring-1 ring-inset ring-border/40"
+                      title="Uploaded to Google Drive"
+                    >
+                      <BrandGoogleDrive class="size-2.5" /> Drive
+                    </span>
+                  {/if}
+                </span>
+              {/if}
+            {/snippet}
             {#snippet actions()}
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>

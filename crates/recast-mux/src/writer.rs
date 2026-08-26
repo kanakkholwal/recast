@@ -131,10 +131,12 @@ impl Mp4Writer {
             return None;
         }
         let record = self.avc.record()?;
-        // An audio track we cannot describe is dropped rather than written: a
-        // silent track looks like a mix bug, which is harder to chase than a
-        // missing one.
-        if self.audio_format.as_ref().is_some_and(|f| f.config.is_empty()) {
+        // An audio track we cannot describe, or were never given a sample for,
+        // is dropped rather than written: a silent track looks like a mix bug,
+        // which is harder to chase than a missing one. The second case is a
+        // recording whose microphone was off, where the format is still set.
+        let undescribed = self.audio_format.as_ref().is_some_and(|f| f.config.is_empty());
+        if undescribed || self.audio.table.is_empty() {
             self.audio_format = None;
             self.audio = TrackBuffer::default();
         }
@@ -706,6 +708,21 @@ mod tests {
         assert!(
             find(&data, b"mp4a").is_none(),
             "an undescribed track was written"
+        );
+    }
+
+    /// A recording with the microphone off still sets the format. Writing the
+    /// track anyway leaves a stream with no samples, which players list and then
+    /// play as nothing.
+    #[test]
+    fn an_audio_track_with_no_samples_is_dropped() {
+        let mut w = writer();
+        w.set_audio_format(audio());
+        w.push_sample(&[0, 0, 0, 2, 0x65, 1], 1000, true);
+        let data = w.finish().expect("a file");
+        assert!(
+            find(&data, b"mp4a").is_none(),
+            "an empty audio track was written"
         );
     }
 

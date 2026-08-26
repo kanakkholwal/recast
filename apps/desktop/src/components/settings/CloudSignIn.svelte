@@ -209,7 +209,7 @@ onDestroy(() => auth.dispose());
                     </span>
                   </span>
                   {#if selected}
-                    <Check class="size-3.5 shrink-0 text-primary" />
+                    <Check class="size-3.5 shrink-0 text-foreground" />
                   {:else}
                     <span class="size-3.5 shrink-0"></span>
                   {/if}
@@ -416,7 +416,7 @@ onDestroy(() => auth.dispose());
         {#each cloudBenefits as benefit (benefit.label)}
           {@const Icon = benefit.icon}
           <li class="flex items-center gap-2 text-[11.5px] text-foreground/85">
-            <Icon class="size-3.5 shrink-0 text-primary" />
+            <Icon class="size-3.5 shrink-0 text-muted-foreground" />
             <span>{benefit.label}</span>
           </li>
         {/each}

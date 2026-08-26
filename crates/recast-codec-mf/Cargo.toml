@@ -10,6 +10,10 @@ recast-codec = { path = "../recast-codec" }
 
 [dev-dependencies]
 recast-codec = { path = "../recast-codec" }
+# Test-only, and only so one test can prove the compositor's own device draws
+# into the surface the encoder reads. Nothing in the crate depends on wgpu.
+recast-gpu = { path = "../recast-gpu" }
+wgpu = { version = "=30.0.1", default-features = false, features = ["dx12", "wgsl"] }
 recast-mux = { path = "../recast-mux" }
 recast-testkit = { path = "../recast-testkit" }
 
@@ -24,6 +28,7 @@ windows = { version = "=0.62.2", features = [
     "Win32_Graphics_Dxgi_Common",
     "Win32_Media_MediaFoundation",
     "Win32_Security",
+    "Win32_System_Threading",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_System_Variant",

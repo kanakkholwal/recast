@@ -33,7 +33,7 @@ onMount(() => {
 </script>
 
 <label
-  class="group/search flex h-8 items-center gap-2 rounded-lg border border-border/60 bg-card px-2.5 transition-colors duration-150 hover:border-border focus-within:border-border focus-within:ring-1 focus-within:ring-ring/40"
+  class="group/search flex h-9 items-center gap-2 rounded-lg bg-muted/50 px-3 ring-1 ring-inset ring-border/40 transition-[background-color,box-shadow] duration-150 hover:bg-muted/70 focus-within:bg-card focus-within:ring-ring/50"
 >
   <Search
     class="size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground group-focus-within/search:text-foreground"
@@ -52,6 +52,14 @@ onMount(() => {
     aria-label={`Search ${noun}`}
     class="flex-1 bg-transparent text-[12.5px] font-medium text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
   />
+  {#if !value}
+    <kbd
+      class="pointer-events-none hidden rounded border border-border/50 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/70 group-focus-within/search:hidden sm:block"
+      aria-hidden="true"
+    >
+      /
+    </kbd>
+  {/if}
   {#if value}
     <Button
       variant="ghost"
