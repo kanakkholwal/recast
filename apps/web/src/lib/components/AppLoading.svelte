@@ -1,8 +1,8 @@
 <script lang="ts">
+import { fade } from "svelte/transition";
 import { navigating } from "$app/state";
 import Logo from "$lib/logo.svelte";
 import { isAppArea } from "../../routes/layout.logic";
-import { fade } from "svelte/transition";
 
 // Branded, full-surface loading screen for client-side navigations *into* a
 // product area (SvelteKit's answer to Next's loading.tsx). The thin

@@ -4,7 +4,7 @@
 // track is sent once via `load`; each slider change then ships only the tiny
 // opts, and the smoothed path comes back without ever touching the main thread.
 
-import { smoothCursorPath, type CursorSampleLike, type SmoothingOptions } from "./smoothing";
+import { type CursorSampleLike, type SmoothingOptions, smoothCursorPath } from "./smoothing";
 
 type InMsg =
 	| { type: "load"; raw: CursorSampleLike[] }

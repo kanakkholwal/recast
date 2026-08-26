@@ -28,11 +28,7 @@ export const load: PageServerLoad = async (event) => {
 		.limit(20);
 
 	const sub = (async () => {
-		const [row] = await db
-			.select()
-			.from(subscription)
-			.where(eq(subscription.userId, id))
-			.limit(1);
+		const [row] = await db.select().from(subscription).where(eq(subscription.userId, id)).limit(1);
 		return row ?? null;
 	})();
 

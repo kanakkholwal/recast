@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	clampTimelineZoom,
 	MAX_PIXELS_PER_SECOND,
 	MIN_TIMELINE_ZOOM,
-	clampTimelineZoom,
 	maxTimelineZoom,
 	steppedZoom,
 } from "./timeline-helpers";

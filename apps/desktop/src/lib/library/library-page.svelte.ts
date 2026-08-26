@@ -1,6 +1,8 @@
-import { deleteFile, renameFile, type RecordingEntry } from "$lib/ipc";
+import { safeStorage } from "@recast/ui/persisted-state";
+import { toast } from "@recast/ui/sonner";
+import { deleteFile, type RecordingEntry, renameFile } from "$lib/ipc";
 import type { LibraryView } from "$lib/library/card-styles";
-import { filterEntries, sortEntries, sumBytes, type LibrarySort } from "$lib/library/list";
+import { filterEntries, type LibrarySort, sortEntries, sumBytes } from "$lib/library/list";
 import { createSelection } from "$lib/library/selection.svelte";
 import { libraryStatus } from "$lib/library/status";
 import {
@@ -10,8 +12,6 @@ import {
 	renameThumbnail,
 	type ThumbnailMap,
 } from "$lib/library/thumbnails";
-import { safeStorage } from "@recast/ui/persisted-state";
-import { toast } from "@recast/ui/sonner";
 
 interface LibraryPageConfig {
 	/** Singular noun for toast copy and select mode, e.g. `recording` / `export`. */

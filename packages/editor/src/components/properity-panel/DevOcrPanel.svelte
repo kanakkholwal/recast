@@ -5,21 +5,20 @@
 // read off it, and where on the frame that text was). Dev builds only, so the
 // output can be eyeballed against the real video before this is wired into the
 // agent/CLI surface for real.
-import { clock } from "../../lib/format/time";
+
+import { Download, FlaskConical, ImageOff, RotateCw, ScanText } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import { Progress } from "@recast/ui/progress";
+import { toast } from "@recast/ui/sonner";
 import {
 	getEditorServices,
 	type OcrProgress,
 	type VideoTextTimeline,
 } from "../../lib/editor/services";
+import { clock } from "../../lib/format/time";
 import type { ScreenStateSpan } from "../../lib/wire-types";
 import type { EditorStore } from "../../stores/editor-store.svelte";
-import { Badge } from "@recast/ui/badge";
-import { Button } from "@recast/ui/button";
-import { Progress } from "@recast/ui/progress";
-import { toast } from "@recast/ui/sonner";
-import { Download, FlaskConical, ImageOff, RotateCw, ScanText } from "@recast/icons";
-import OcrFrameDialog from "./OcrFrameDialog.svelte";
-import PanelSection from "./PanelSection.svelte";
 import {
 	etaLabel,
 	exportBodyFor,
@@ -27,10 +26,12 @@ import {
 	phaseDetail,
 	phaseTitle,
 	progressValue,
+	type RunStatus,
 	spanGist,
 	summaryRows,
-	type RunStatus,
 } from "./dev-ocr-panel.logic";
+import OcrFrameDialog from "./OcrFrameDialog.svelte";
+import PanelSection from "./PanelSection.svelte";
 
 interface Props {
 	store: EditorStore;

@@ -1,7 +1,4 @@
 <script lang="ts">
-import { page } from "$app/state";
-import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
-import { getDisplays, getLastSource, getWindows } from "$lib/ipc";
 import {
 	AppWindow,
 	Check,
@@ -19,6 +16,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
+import { page } from "$app/state";
+import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
+import { getDisplays, getLastSource, getWindows } from "$lib/ipc";
 import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
 import {
 	buildSources,

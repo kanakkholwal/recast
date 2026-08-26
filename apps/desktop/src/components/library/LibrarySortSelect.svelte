@@ -1,11 +1,12 @@
 <script lang="ts">
 // One sort vocabulary for every library page. The two pages used to disagree
 // on the Size icon (Film vs Download) for the same concept.
-import type { LibrarySort } from "$lib/library/list";
+
 import { Clock, HardDrive, SortAsc } from "@recast/icons";
 import { buttonVariants } from "@recast/ui/button";
 import * as Select from "@recast/ui/select";
 import { cn } from "@recast/ui/utils";
+import type { LibrarySort } from "$lib/library/list";
 
 interface Props {
 	value: LibrarySort;

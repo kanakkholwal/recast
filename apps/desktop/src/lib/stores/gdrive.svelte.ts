@@ -1,7 +1,7 @@
 import { createRateTracker } from "@recast/editor/lib/format/transfer-rate";
-import { isTauriApp } from "$lib/runtime/tauri";
 import { toast } from "@recast/ui/sonner";
 import {
+	type GdriveUploadRecord,
 	gdriveCancelUpload,
 	gdriveConnect,
 	gdriveDisconnect,
@@ -9,8 +9,8 @@ import {
 	gdriveListUploads,
 	gdriveStatus,
 	gdriveUpload,
-	type GdriveUploadRecord,
 } from "$lib/ipc";
+import { isTauriApp } from "$lib/runtime/tauri";
 
 /**
  * Google Drive store: a `$state`-backed singleton the UI binds to. Thin shell

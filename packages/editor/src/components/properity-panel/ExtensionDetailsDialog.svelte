@@ -1,19 +1,5 @@
 <script lang="ts">
-import {
-	fetchManifestPreview,
-	hasUpdate,
-	installFromUrl,
-	removeExtension,
-	toggleExtension,
-	type RegistryIndexEntry,
-} from "../../lib/extensions";
-import type {
-	ExtensionContributions,
-	ExtensionManifest,
-	InstalledExtension,
-} from "../../lib/wire-types";
-import { extensionsStore } from "../../stores/extensions-store.svelte";
-import { buildContributionGroups } from "./extensions-panel.logic";
+import type { IconComponent } from "@recast/icons";
 import {
 	Blend,
 	Blocks,
@@ -28,16 +14,30 @@ import {
 	Trash2,
 	Waves,
 } from "@recast/icons";
-import type { IconComponent } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import * as Dialog from "@recast/ui/dialog";
-import { DIALOG_SURFACE } from "../dialog/dialog.styles";
-import { cn } from "@recast/ui/utils";
 import { Kbd } from "@recast/ui/kbd";
 import { SegmentedToggle } from "@recast/ui/segmented";
-import { Spinner } from "@recast/ui/spinner";
 import { toast } from "@recast/ui/sonner";
+import { Spinner } from "@recast/ui/spinner";
+import { cn } from "@recast/ui/utils";
 import type { Component } from "svelte";
+import {
+	fetchManifestPreview,
+	hasUpdate,
+	installFromUrl,
+	type RegistryIndexEntry,
+	removeExtension,
+	toggleExtension,
+} from "../../lib/extensions";
+import type {
+	ExtensionContributions,
+	ExtensionManifest,
+	InstalledExtension,
+} from "../../lib/wire-types";
+import { extensionsStore } from "../../stores/extensions-store.svelte";
+import { DIALOG_SURFACE } from "../dialog/dialog.styles";
+import { buildContributionGroups } from "./extensions-panel.logic";
 
 interface Props {
 	open: boolean;

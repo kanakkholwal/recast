@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import parityFixtures from "./__fixtures__/cut-parity.json";
 import { originalToOutput as cutOriginalToOutput, normalizeCuts, type TimelineCut } from "./cuts";
+import type { Segment } from "./segments";
 import { deriveSegments } from "./segments";
 import {
 	buildGapMap,
@@ -11,8 +13,6 @@ import {
 	timeMapFromSegments,
 	toRegions,
 } from "./time-map";
-import type { Segment } from "./segments";
-import parityFixtures from "./__fixtures__/cut-parity.json";
 
 function cut(start: number, end: number, id = `${start}-${end}`): TimelineCut {
 	return { id, start, end, source: "manual" };

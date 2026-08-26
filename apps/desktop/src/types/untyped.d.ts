@@ -4,4 +4,4 @@
 //
 // `gifenc`: GIF encoder used by `@recast/media/encoders` (PR-B). Pure JS;
 // treat as `any` for type-checking.
-declare module 'gifenc';
+declare module "gifenc";

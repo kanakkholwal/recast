@@ -8,12 +8,12 @@
  * attribute to the same person as later identified events.
  */
 
-import { config } from "$constants/app";
 import {
+	type AnalyticsClient,
 	createAnalytics,
 	createPostHogBrowserProvider,
-	type AnalyticsClient,
 } from "@recast/analytics";
+import { config } from "$constants/app";
 import { getInstallId } from "$lib/analytics/identity";
 import { POSTHOG_HOST, POSTHOG_KEY } from "$lib/env";
 import { desktopConsent } from "$lib/stores/consent.svelte";

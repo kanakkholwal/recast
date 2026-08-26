@@ -43,15 +43,16 @@ export function parseTimeToken(s: string): number {
  * `@mentions`.
  */
 export function parseCommentText(text: string): CommentSegment[] {
-	const re =
-		/\[(\d{1,2}(?::\d{2}){1,2})\]|\b(\d{1,2}:\d{2}(?::\d{2})?)\b|@([A-Za-z][\w]{0,31})/g;
+	const re = /\[(\d{1,2}(?::\d{2}){1,2})\]|\b(\d{1,2}:\d{2}(?::\d{2})?)\b|@([A-Za-z][\w]{0,31})/g;
 	const out: CommentSegment[] = [];
 	let lastIdx = 0;
 	let m: RegExpExecArray | null;
 	while ((m = re.exec(text)) !== null) {
 		if (m.index > lastIdx) out.push({ kind: "text", text: text.slice(lastIdx, m.index) });
-		if (m[1] !== undefined) out.push({ kind: "timestamp", seconds: parseTimeToken(m[1]), raw: m[1] });
-		else if (m[2] !== undefined) out.push({ kind: "timestamp", seconds: parseTimeToken(m[2]), raw: m[2] });
+		if (m[1] !== undefined)
+			out.push({ kind: "timestamp", seconds: parseTimeToken(m[1]), raw: m[1] });
+		else if (m[2] !== undefined)
+			out.push({ kind: "timestamp", seconds: parseTimeToken(m[2]), raw: m[2] });
 		else if (m[3] !== undefined) out.push({ kind: "mention", name: m[3] });
 		lastIdx = m.index + m[0].length;
 	}

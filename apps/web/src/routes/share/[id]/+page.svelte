@@ -1,40 +1,4 @@
 <script lang="ts">
-import { browser } from "$app/environment";
-import { goto, invalidateAll } from "$app/navigation";
-import { page } from "$app/state";
-import { analytics } from "$lib/analytics/client";
-import { authClient } from "$lib/auth/client";
-import { SeoMeta } from "$lib/components";
-import Logo from "$lib/logo.svelte";
-import {
-	deleteComment,
-	loadEngagement,
-	postComment,
-	readApiError,
-	rememberViewerName,
-	shareSessionId,
-	storedViewerName,
-	toggleReaction,
-	type ReactionCount,
-	type ShareComment,
-} from "$lib/share/client";
-import { toggleReactionState } from "$lib/share/engagement";
-import {
-	commentHue,
-	compactTime,
-	formatTime,
-	initials,
-	parseCommentText,
-	parseTimeParam,
-} from "$lib/share/format";
-import ReactionIcon from "$lib/share/ReactionIcon.svelte";
-import { REACTIONS } from "$lib/share/reactions";
-import {
-	activeCueIndex,
-	filterCues,
-	readCuesFromTrack,
-	type TranscriptCue,
-} from "$lib/share/transcript";
 import {
 	ArrowRight,
 	AtSign,
@@ -89,11 +53,47 @@ import { onMount, tick, untrack } from "svelte";
 import { cubicOut, quintOut } from "svelte/easing";
 import { Tween } from "svelte/motion";
 import { fade, fly, scale, slide } from "svelte/transition";
+import { browser } from "$app/environment";
+import { goto, invalidateAll } from "$app/navigation";
+import { page } from "$app/state";
+import { analytics } from "$lib/analytics/client";
+import { authClient } from "$lib/auth/client";
+import { SeoMeta } from "$lib/components";
+import Logo from "$lib/logo.svelte";
+import {
+	deleteComment,
+	loadEngagement,
+	postComment,
+	type ReactionCount,
+	readApiError,
+	rememberViewerName,
+	type ShareComment,
+	shareSessionId,
+	storedViewerName,
+	toggleReaction,
+} from "$lib/share/client";
+import { toggleReactionState } from "$lib/share/engagement";
+import {
+	commentHue,
+	compactTime,
+	formatTime,
+	initials,
+	parseCommentText,
+	parseTimeParam,
+} from "$lib/share/format";
+import ReactionIcon from "$lib/share/ReactionIcon.svelte";
+import { REACTIONS } from "$lib/share/reactions";
+import {
+	activeCueIndex,
+	filterCues,
+	readCuesFromTrack,
+	type TranscriptCue,
+} from "$lib/share/transcript";
 import {
 	buildCommentMarkers,
+	type LegacyVisibility,
 	toLegacyVisibility,
 	withTimeParam,
-	type LegacyVisibility,
 } from "./share-page.logic";
 
 let { data } = $props();

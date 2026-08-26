@@ -125,11 +125,7 @@ export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
  * landing page uses. Pass `accent` for the lime variant, reserved for the
  * one moment where the brand color should be the focal point (verify-email).
  */
-export function ctaButton(
-	label: string,
-	url: string,
-	tone: "ink" | "accent" = "ink",
-): string {
+export function ctaButton(label: string, url: string, tone: "ink" | "accent" = "ink"): string {
 	const bg = tone === "accent" ? EMAIL_COLORS.primary : EMAIL_COLORS.buttonBg;
 	const ink = tone === "accent" ? EMAIL_COLORS.primaryInk : EMAIL_COLORS.buttonInk;
 	return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0 4px;">

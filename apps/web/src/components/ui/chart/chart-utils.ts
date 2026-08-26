@@ -1,5 +1,5 @@
 import type { Tooltip } from "layerchart";
-import { getContext, setContext, type Component, type Snippet } from "svelte";
+import { type Component, getContext, type Snippet, setContext } from "svelte";
 
 export const THEMES = { light: "", dark: ":is(.dark, [data-theme='dark'])" } as const;
 

@@ -1,9 +1,9 @@
 <script lang="ts">
-import type { EditorStore } from "../../../stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
 import { Plus, ZoomIn } from "@recast/icons";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
 import type { TimeMode } from "./timeline-helpers";
-import { buildSnapTargets, snapLabel, type SnapTarget } from "./timeline-snap";
+import { buildSnapTargets, type SnapTarget, snapLabel } from "./timeline-snap";
 import type { LaneCardLayout } from "./timeline-stack";
 import ZoomLayerCard from "./ZoomLayerCard.svelte";
 

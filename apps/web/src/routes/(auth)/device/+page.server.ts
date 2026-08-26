@@ -1,6 +1,6 @@
-import { getAuth } from "$lib/auth/server";
-import { APIError } from "better-auth/api";
 import { redirect } from "@sveltejs/kit";
+import { APIError } from "better-auth/api";
+import { getAuth } from "$lib/auth/server";
 import type { PageServerLoad } from "./$types";
 
 type SessionShape = { user: { id: string; email: string; name?: string | null } };
@@ -42,9 +42,7 @@ export const load: PageServerLoad = async ({ url, request }) => {
 		return {
 			userCode: null,
 			device: null,
-			viewer: session
-				? { email: session.user.email, name: session.user.name ?? null }
-				: null,
+			viewer: session ? { email: session.user.email, name: session.user.name ?? null } : null,
 			error: null,
 		};
 	}
@@ -74,8 +72,8 @@ export const load: PageServerLoad = async ({ url, request }) => {
 	} catch (err) {
 		const message =
 			err instanceof APIError
-				? (err.body as { error_description?: string })?.error_description ??
-					"Invalid or expired code."
+				? ((err.body as { error_description?: string })?.error_description ??
+					"Invalid or expired code.")
 				: "Invalid or expired code.";
 		return {
 			userCode,

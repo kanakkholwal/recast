@@ -1,29 +1,29 @@
 <script lang="ts">
-  import { analytics } from "$lib/analytics/client";
-  import { webConsent } from "$lib/analytics/consent.svelte";
-  import { Button } from "@recast/ui/button";
-  import { onMount } from "svelte";
+import { Button } from "@recast/ui/button";
+import { onMount } from "svelte";
+import { analytics } from "$lib/analytics/client";
+import { webConsent } from "$lib/analytics/consent.svelte";
 
-  let showBanner = $state(false);
+let showBanner = $state(false);
 
-  // Basic, anonymous, cookieless metrics already run without this banner. The
-  // banner only asks to *upgrade*: persistent profile + session replay.
-  function accept() {
-    webConsent.accept();
-    analytics.upgradePersistence();
-  }
+// Basic, anonymous, cookieless metrics already run without this banner. The
+// banner only asks to *upgrade*: persistent profile + session replay.
+function accept() {
+	webConsent.accept();
+	analytics.upgradePersistence();
+}
 
-  function decline() {
-    webConsent.decline();
-  }
+function decline() {
+	webConsent.decline();
+}
 
-  onMount(() => {
-    const timeout = window.setTimeout(() => {
-      showBanner = true;
-    }, 5000);
+onMount(() => {
+	const timeout = window.setTimeout(() => {
+		showBanner = true;
+	}, 5000);
 
-    return () => window.clearTimeout(timeout);
-  });
+	return () => window.clearTimeout(timeout);
+});
 </script>
 
 {#if webConsent.needsBanner && showBanner}

@@ -1,10 +1,9 @@
 <script lang="ts">
 import {
 	CameraAccessError,
-	enumerateCameras,
 	type CameraAccessReason,
+	enumerateCameras,
 } from "@recast/editor/lib/camera/browser-devices";
-import { getAudioDevices, type AudioDeviceInfo, type CameraDeviceInfo } from "$lib/ipc";
 import { Camera, CameraOff, Check, Mic, MicOff, RefreshCw, ShieldAlert, X } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
@@ -13,6 +12,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
+import { type AudioDeviceInfo, type CameraDeviceInfo, getAudioDevices } from "$lib/ipc";
 import { wrapIndex } from "$lib/util/wrap-index";
 import { mapCameras, parseDevicePickerParams, pickDefault } from "./device-picker.logic";
 

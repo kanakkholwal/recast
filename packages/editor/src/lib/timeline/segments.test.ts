@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { TimelineCut } from "./cuts";
 import {
+	type ClipShape,
 	deriveSeams,
 	deriveSegments,
 	planDeleteSegment,
 	planSplit,
 	segmentAt,
-	type ClipShape,
 } from "./segments";
 
 function cut(start: number, end: number, id = `${start}-${end}`): TimelineCut {

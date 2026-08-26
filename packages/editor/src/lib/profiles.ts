@@ -7,9 +7,9 @@
  */
 
 import { safeStorage } from "@recast/ui/persisted-state";
-import type { AudioDeviceInfo } from "./wire-types";
 import type { BrowserCamera } from "./camera/browser-devices";
 import { findCamera } from "./camera/browser-devices";
+import type { AudioDeviceInfo } from "./wire-types";
 
 /** Stored profile record. v2 schema, adding device identity fields over v1. */
 export interface RecordingProfile {
@@ -223,7 +223,6 @@ export function loadProfiles(): RecordingProfile[] {
 				cameraLabel: null,
 				cameraDeviceId: null,
 			});
-			continue;
 		}
 		// Drop unrecognized rows rather than throwing on the whole list.
 	}

@@ -12,22 +12,22 @@
  * structurally broken regardless of the ordering guard.
  */
 
-import { listen } from "@tauri-apps/api/event";
-import {
-	getProfiles,
-	RECORDING_PROFILES_CHANGED_EVENT,
-	setProfiles,
-	type ProfilesSnapshot,
-} from "$lib/ipc";
 import {
 	capSig,
 	clearLegacyProfileStorage,
 	ensureExactlyOneDefault,
 	findDefaultProfile,
+	type RecordingProfile,
 	readLegacyProfiles,
 	reconcileProfileHydration,
-	type RecordingProfile,
 } from "@recast/editor/lib/profiles";
+import { listen } from "@tauri-apps/api/event";
+import {
+	getProfiles,
+	type ProfilesSnapshot,
+	RECORDING_PROFILES_CHANGED_EVENT,
+	setProfiles,
+} from "$lib/ipc";
 
 /** Stable-ish signature of a profile set, for the best-effort echo guard. */
 function signature(profiles: RecordingProfile[], enabled: boolean): string {

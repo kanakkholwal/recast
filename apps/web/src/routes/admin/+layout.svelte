@@ -1,7 +1,4 @@
 <script lang="ts">
-import DashboardHeader from "$lib/dashboard/components/DashboardHeader.svelte";
-import DashboardSidebar from "$lib/dashboard/components/DashboardSidebar.svelte";
-import { settingsStore } from "$lib/dashboard/store.svelte";
 import {
 	Building2,
 	ClipboardList,
@@ -10,10 +7,13 @@ import {
 	LayoutDashboard,
 	Users,
 } from "@recast/icons";
-import { navigating } from "$app/state";
 import { NavProgress } from "@recast/ui/nav-progress";
 import * as Sidebar from "@recast/ui/sidebar";
 import { onMount } from "svelte";
+import { navigating } from "$app/state";
+import DashboardHeader from "$lib/dashboard/components/DashboardHeader.svelte";
+import DashboardSidebar from "$lib/dashboard/components/DashboardSidebar.svelte";
+import { settingsStore } from "$lib/dashboard/store.svelte";
 
 let { children, data } = $props();
 

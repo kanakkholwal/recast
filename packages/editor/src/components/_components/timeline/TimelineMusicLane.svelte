@@ -1,15 +1,15 @@
 <script lang="ts">
+import { AudioLines, Repeat, Scissors, Trash2 } from "@recast/icons";
 import {
+	type AudioClip,
 	clipDisplayName,
 	clipEndSec,
 	moveClip,
 	trimClipLeft,
 	trimClipRight,
-	type AudioClip,
 } from "../../../lib/audio/music";
-import type { EditorStore, PanelTab } from "../../../stores/editor-store.svelte";
 import { originalToOutput } from "../../../lib/timeline/time-map";
-import { AudioLines, Repeat, Scissors, Trash2 } from "@recast/icons";
+import type { EditorStore, PanelTab } from "../../../stores/editor-store.svelte";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
 import {
 	CLIP_BASE,

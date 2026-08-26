@@ -1,6 +1,6 @@
 import { redirect } from "@sveltejs/kit";
-import { enabledSocialProviders, getAuth } from "$lib/auth/server";
 import { safeNext } from "$lib/auth/redirect";
+import { enabledSocialProviders, getAuth } from "$lib/auth/server";
 import type { LayoutServerLoad } from "./$types";
 
 /**

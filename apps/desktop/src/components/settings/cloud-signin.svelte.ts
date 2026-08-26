@@ -3,18 +3,18 @@
  * States: loading | signed-out | waiting | signed-in | denied | expired.
  */
 
+import { toast } from "@recast/ui/sonner";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+	type AuthPlan,
+	type AuthStatus,
+	type AuthUsage,
 	authCancel,
 	authSignOut,
 	authStart,
 	authStatus,
-	type AuthPlan,
-	type AuthStatus,
-	type AuthUsage,
 } from "$lib/ipc";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
-import { toast } from "@recast/ui/sonner";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type SignedInProfile = {
 	email: string | null;

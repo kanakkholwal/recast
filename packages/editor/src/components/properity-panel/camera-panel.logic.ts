@@ -3,8 +3,8 @@
  * that places a preset chip's dot where the bubble will land in the frame.
  */
 
-import type { CameraPositionPreset } from "../../stores/editor-store.svelte";
 import type { CameraCapture } from "../../lib/wire-types";
+import type { CameraPositionPreset } from "../../stores/editor-store.svelte";
 
 export interface CameraAvailability {
 	/** Whether the overlay controls can be used at all. */

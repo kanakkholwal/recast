@@ -16,18 +16,14 @@
 import { createHash } from "node:crypto";
 import { serverEnv } from "$lib/env/server";
 
-export function resolveClientIp(
-	request: Request,
-	getClientAddress: () => string,
-): string {
+export function resolveClientIp(request: Request, getClientAddress: () => string): string {
 	const forwarded = request.headers.get("x-forwarded-for");
 	if (forwarded) {
 		// `x-forwarded-for: client, proxy1, proxy2` — the client is first.
 		const first = forwarded.split(",")[0]?.trim();
 		if (first) return first;
 	}
-	const direct =
-		request.headers.get("cf-connecting-ip") ?? request.headers.get("x-real-ip");
+	const direct = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-real-ip");
 	if (direct) return direct.trim();
 	try {
 		return getClientAddress();
@@ -49,7 +45,5 @@ export function reactorKey(opts: {
 		: opts.ip
 			? `ip:${opts.ip}`
 			: `sid:${opts.sessionId}`;
-	return createHash("sha256")
-		.update(`${serverEnv().BETTER_AUTH_SECRET}:${basis}`)
-		.digest("hex");
+	return createHash("sha256").update(`${serverEnv().BETTER_AUTH_SECRET}:${basis}`).digest("hex");
 }

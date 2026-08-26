@@ -1,10 +1,10 @@
 <script lang="ts">
-import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
-import { clockDecis as fmtTime } from "../../../lib/format/time";
-import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import { Copy, Eye, EyeOff, GripVertical, Lock, Trash2, Unlock } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
+import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
+import { clockDecis as fmtTime } from "../../../lib/format/time";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import { reorderZ } from "./annotation-layer.logic";
 
 interface Props {

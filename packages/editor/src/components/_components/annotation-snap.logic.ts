@@ -2,8 +2,8 @@
 // text layer. Both build the same frame-edge + per-annotation box anchor set,
 // so they MUST stay in one place or the two surfaces snap to different guides.
 
-import { normaliseBox } from "../../lib/annotations/uv";
 import { FRAME_ANCHORS, type SnapAnchor } from "../../lib/annotations/snap";
+import { normaliseBox } from "../../lib/annotations/uv";
 import type { Annotation } from "../../stores/editor-store.svelte";
 
 /**

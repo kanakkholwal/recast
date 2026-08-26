@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import type { Region } from "@recast/media";
 import { outputToSource } from "@recast/media";
+import { describe, expect, it } from "vitest";
 import {
 	applyFade,
 	applyGain,

@@ -1,9 +1,9 @@
 <script lang="ts">
-import { syncConsent } from "$lib/analytics/client";
-import { desktopConsent } from "$lib/stores/consent.svelte";
+import { ShieldCheck } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
-import { ShieldCheck } from "@recast/icons";
+import { syncConsent } from "$lib/analytics/client";
+import { desktopConsent } from "$lib/stores/consent.svelte";
 
 let { onclose }: { onclose: () => void } = $props();
 

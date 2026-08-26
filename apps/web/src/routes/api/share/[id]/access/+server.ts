@@ -78,10 +78,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	}
 
 	const db = getDb();
-	await db
-		.update(share)
-		.set({ visibility: next, organizationId })
-		.where(eq(share.slug, params.id));
+	await db.update(share).set({ visibility: next, organizationId }).where(eq(share.slug, params.id));
 
 	return json({ ok: true, visibility: next, organizationId });
 };

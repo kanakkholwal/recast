@@ -10,8 +10,8 @@
  * after each `await ensureRange`, so the order never shifts mid-use.
  */
 
-import { ALL_FORMATS, AudioBufferSink, Input, mediaRefSource } from "@recast/media/mediabunny";
 import { type AudioChunk, type MediaRef, missingRanges, toMediaRef } from "@recast/media";
+import { ALL_FORMATS, AudioBufferSink, Input, mediaRefSource } from "@recast/media/mediabunny";
 
 interface Resident {
 	startSec: number;

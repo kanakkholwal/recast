@@ -1,11 +1,10 @@
 <script lang="ts">
-import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
-import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
-import { motionDuration } from "../../../lib/motion.svelte";
-
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
+import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
+import { motionDuration } from "../../../lib/motion.svelte";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import {
 	computeCardMove,
 	computeCardNudge,

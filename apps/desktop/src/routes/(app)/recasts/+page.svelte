@@ -1,4 +1,27 @@
 <script lang="ts">
+import { formatSize } from "@recast/editor/lib/format/files";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
+import {
+	CopyIcon,
+	ExternalLink,
+	Film,
+	FolderOpen,
+	History,
+	ListChecks,
+	MoreHorizontal,
+	Pencil,
+	RefreshCw,
+	Trash2,
+	Video,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { safeStorage } from "@recast/ui/persisted-state";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { listen } from "@tauri-apps/api/event";
+import { platform } from "@tauri-apps/plugin-os";
+import { onMount } from "svelte";
 import StudioPage from "$components/layout/StudioPage.svelte";
 import {
 	AssetCard,
@@ -25,31 +48,12 @@ import { canReportCount } from "$lib/library/status";
 import { morph } from "$lib/morph";
 import { isShareSupported, shareRecording } from "$lib/share";
 import { shareTargetFor } from "$lib/share-target";
-import { formatSize } from "@recast/editor/lib/format/files";
-import { motionDuration } from "@recast/editor/lib/motion.svelte";
-import {
-	CopyIcon,
-	ExternalLink,
-	Film,
-	FolderOpen,
-	History,
-	ListChecks,
-	MoreHorizontal,
-	Pencil,
-	RefreshCw,
-	Trash2,
-	Video,
-} from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import * as DropdownMenu from "@recast/ui/dropdown-menu";
-import { safeStorage } from "@recast/ui/persisted-state";
-import { toast } from "@recast/ui/sonner";
-import { cn } from "@recast/ui/utils";
-import { listen } from "@tauri-apps/api/event";
-import { platform } from "@tauri-apps/plugin-os";
-import { onMount } from "svelte";
 
-const lib = createLibraryPage({ noun: "recording", viewKey: "recasts-view", load: listRecasts });
+const lib = createLibraryPage({
+	noun: "recording",
+	viewKey: "recasts-view",
+	load: listRecasts,
+});
 
 let editorWindow = $state<"navigate" | "new-window">("navigate");
 let renameTarget = $state<RecordingEntry | null>(null);
@@ -173,10 +177,7 @@ async function handleMigrateOne(entry: RecordingEntry) {
     <Button
       variant={lib.selection.selectMode ? "default_soft" : "ghost"}
       size="sm"
-      class={cn(
-        "ml-auto",
-       
-      )}
+      class="ml-auto"
       onclick={lib.selection.toggleMode}
       disabled={lib.entries.length === 0}
       aria-pressed={lib.selection.selectMode}
@@ -195,7 +196,12 @@ async function handleMigrateOne(entry: RecordingEntry) {
       aria-label="Refresh recordings"
       title="Refresh"
     >
-      <RefreshCw size={12} class={lib.isLoading ? "motion-safe:animate-spin" : "group-active/button:rotate-90 duration-500"} />
+      <RefreshCw
+        size={12}
+        class={lib.isLoading
+          ? "motion-safe:animate-spin"
+          : "group-active/button:rotate-90 duration-500"}
+      />
     </Button>
   {/snippet}
 
@@ -217,7 +223,9 @@ async function handleMigrateOne(entry: RecordingEntry) {
     >
       {#snippet action()}
         {#if lib.query}
-          <Button variant="secondary" size="sm" onclick={() => (lib.query = "")}>Clear search</Button>
+          <Button variant="secondary" size="sm" onclick={() => (lib.query = "")}
+            >Clear search</Button
+          >
         {:else}
           <Button class="gap-2" onclick={newRecording}>
             <Video class="size-4" /> Start recording
@@ -235,7 +243,7 @@ async function handleMigrateOne(entry: RecordingEntry) {
           class={cardShellClass(lib.view, isSelected)}
         >
           <AssetCard
-            entry={entry}
+            {entry}
             thumbnail={lib.thumbnails[entry.path]}
             view={lib.view}
             selectMode={lib.selection.selectMode}
@@ -290,7 +298,9 @@ async function handleMigrateOne(entry: RecordingEntry) {
                   <DropdownMenu.Item onSelect={() => (renameTarget = entry)}>
                     <Pencil class="size-3" /> Rename…
                   </DropdownMenu.Item>
-                  <DropdownMenu.Item onSelect={() => openFileLocation(entry.path)}>
+                  <DropdownMenu.Item
+                    onSelect={() => openFileLocation(entry.path)}
+                  >
                     <FolderOpen class="size-3" /> Show in folder
                   </DropdownMenu.Item>
                   <DropdownMenu.Item onSelect={() => lib.copyPath(entry)}>

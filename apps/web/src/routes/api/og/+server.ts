@@ -3,7 +3,8 @@ import ImageResponse from "takumi-js/response";
 import OgImage from "$lib/components/OgImage.svelte";
 import type { RequestHandler } from "./$types";
 
-const GEIST_CDN = "https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5.2.8/files/geist-latin-wght-normal.woff2";
+const GEIST_CDN =
+	"https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5.2.8/files/geist-latin-wght-normal.woff2";
 
 // Renderer backend selection.
 //
@@ -53,11 +54,7 @@ const clip = (value: string | null, max: number, fallback = "") => {
 };
 
 export const GET: RequestHandler = async ({ url }) => {
-	const title = clip(
-		url.searchParams.get("title"),
-		90,
-		"Record. Polish. Share.",
-	);
+	const title = clip(url.searchParams.get("title"), 90, "Record. Polish. Share.");
 	const description = clip(
 		url.searchParams.get("description"),
 		180,

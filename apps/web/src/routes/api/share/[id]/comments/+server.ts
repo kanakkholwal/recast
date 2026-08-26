@@ -19,13 +19,7 @@ const MAX_BODY = 2000;
  * comments/reactions belong to the caller (drives self-delete + toggle UI)
  * without ever leaking other viewers' fingerprints.
  */
-export const GET: RequestHandler = async ({
-	params,
-	request,
-	cookies,
-	url,
-	getClientAddress,
-}) => {
+export const GET: RequestHandler = async ({ params, request, cookies, url, getClientAddress }) => {
 	const gate = await gateShareAccess(params.id, request, cookies);
 	const sessionId = url.searchParams.get("sessionId") ?? "";
 	// The caller's reaction identity — must match the POST handler so their own
@@ -49,9 +43,7 @@ export const GET: RequestHandler = async ({
 			createdAt: shareComment.createdAt,
 		})
 		.from(shareComment)
-		.where(
-			and(eq(shareComment.shareSlug, params.id), isNull(shareComment.deletedAt)),
-		)
+		.where(and(eq(shareComment.shareSlug, params.id), isNull(shareComment.deletedAt)))
 		.orderBy(asc(shareComment.createdAt));
 
 	const reactionRows = await db

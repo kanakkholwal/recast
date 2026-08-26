@@ -4,10 +4,10 @@ import type { EditorStore } from "../../stores/editor-store.svelte";
 import {
 	applyZoomFollow,
 	bubblePlacementStyle,
+	type CameraResizeCorner,
 	cameraBubbleDelta,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
-	type CameraResizeCorner,
 	clampCameraDrag,
 	resizeCameraSquare,
 	shapeBorderRadius,

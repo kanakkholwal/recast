@@ -1,9 +1,9 @@
 <script lang="ts">
-import { prefersReducedMotion } from "$lib/motion-core";
-import NotchedShelf from "./NotchedShelf.svelte";
 import { buttonVariants } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
+import { prefersReducedMotion } from "$lib/motion-core";
 import type { HeroStep } from "./Hero.logic";
+import NotchedShelf from "./NotchedShelf.svelte";
 
 let {
 	steps,

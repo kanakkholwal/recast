@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
-import { clampToolbar, rectFromPoints, toRegionPayload, TOOLBAR_W } from "./select-area.logic";
+import { clampToolbar, rectFromPoints, TOOLBAR_W, toRegionPayload } from "./select-area.logic";
 
 // Overlay spans all monitors from the virtual-desktop origin, so pointer
 // coords are virtual-desktop pixels, which is what the Rust resolver expects.

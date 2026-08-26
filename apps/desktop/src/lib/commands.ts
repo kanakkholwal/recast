@@ -1,8 +1,3 @@
-import { goto } from "$app/navigation";
-import { config } from "$constants/app";
-import { getOutputDir, launchRecordingPanel, openFileLocation } from "$lib/ipc";
-import { chordLabel } from "$lib/shortcuts/registry.svelte";
-import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
 import {
 	Camera,
 	Download,
@@ -20,6 +15,11 @@ import {
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { toast } from "@recast/ui/sonner";
 import { setMode } from "@recast/ui/theme";
+import { goto } from "$app/navigation";
+import { config } from "$constants/app";
+import { getOutputDir, launchRecordingPanel, openFileLocation } from "$lib/ipc";
+import { chordLabel } from "$lib/shortcuts/registry.svelte";
+import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
 
 // Open external URLs via the Tauri opener plugin: `window.open` in WebView2
 // pops an in-app (often blocked) window instead of the default browser. Dynamic

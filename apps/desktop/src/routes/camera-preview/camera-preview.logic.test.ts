@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildPreviewState,
-	computeSizeConstraints,
 	CONTROL_BAR_HEIGHT,
+	computeSizeConstraints,
 	fitInsideMax,
 	MAX_SCREEN_FRACTION,
 	MIN_LOGICAL_SIZE,
@@ -87,18 +87,9 @@ describe("buildPreviewState", () => {
 	});
 
 	it("uses fixed corner radii for square and circle", () => {
-		const base = [
-			{ x: 0, y: 0 },
-			{ width: 200, height: 240 },
-			screen,
-			1,
-		] as const;
-		expect(
-			buildPreviewState(...base, "square", false, "live").cornerRadius,
-		).toBe(0);
-		expect(
-			buildPreviewState(...base, "circle", false, "live").cornerRadius,
-		).toBe(0.5);
+		const base = [{ x: 0, y: 0 }, { width: 200, height: 240 }, screen, 1] as const;
+		expect(buildPreviewState(...base, "square", false, "live").cornerRadius).toBe(0);
+		expect(buildPreviewState(...base, "circle", false, "live").cornerRadius).toBe(0.5);
 	});
 
 	it("scales the rounded radius by the shorter side, capped at 0.5", () => {

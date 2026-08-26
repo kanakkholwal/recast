@@ -1,4 +1,10 @@
 <script lang="ts">
+import { AiAtom } from "@recast/icons";
+import { ColorPicker } from "@recast/ui/color-picker";
+import * as Popover from "@recast/ui/popover";
+import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
+import { SliderControl } from "@recast/ui/slider-control";
+import { cn } from "@recast/ui/utils";
 import {
 	hasFill as kindHasFill,
 	hasStroke as kindHasStroke,
@@ -11,15 +17,8 @@ import type {
 	AnnotationStrokeStyle,
 	EditorStore,
 } from "../../../stores/editor-store.svelte";
-import { defaultGlow } from "./annotation-appearance.logic";
-import { AiAtom } from "@recast/icons";
-import { ColorPicker } from "@recast/ui/color-picker";
-import * as Popover from "@recast/ui/popover";
-import { Segmented } from "@recast/ui/segmented";
-import { SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
-import { cn } from "@recast/ui/utils";
 import PanelSection from "../PanelSection.svelte";
+import { defaultGlow } from "./annotation-appearance.logic";
 
 interface Props {
 	store: EditorStore;

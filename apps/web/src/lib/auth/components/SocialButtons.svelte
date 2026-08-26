@@ -1,7 +1,7 @@
 <script lang="ts">
-import { authClient, type SocialProvider } from "$lib/auth/client";
-import { toast } from "@recast/ui/sonner";
 import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { authClient, type SocialProvider } from "$lib/auth/client";
 
 // `providers` comes from the (auth) layout's server load, which reads the
 // configured OAuth env pairs — a provider without credentials never gets a

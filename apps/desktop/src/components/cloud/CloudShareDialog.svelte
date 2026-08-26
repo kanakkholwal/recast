@@ -7,14 +7,15 @@
  * hands it to the activity center. The store also fires success/error toasts,
  * so feedback still lands if this dialog is minimized.
  */
+
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { formatSize } from "@recast/editor/lib/format/files";
 import { etaLabel } from "@recast/editor/lib/format/time";
-import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { AlertTriangle, Check, Minus } from "@recast/icons";
-import Logo from "$components/logo.svelte";
-import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
-import UploadProgress from "$components/recast/UploadProgress.svelte";
 import { Button } from "@recast/ui/button";
+import Logo from "$components/logo.svelte";
+import UploadProgress from "$components/recast/UploadProgress.svelte";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import CloudShareSettings from "./CloudShareSettings.svelte";
 
 let { path }: { path: string } = $props();

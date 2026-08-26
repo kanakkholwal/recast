@@ -1,19 +1,4 @@
 <script lang="ts">
-import { getEditorServices, type SilenceSegment } from "../lib/editor/services";
-import type { EditorStore } from "../stores/editor-store.svelte";
-import { overlapsAny } from "../lib/timeline/cuts";
-import { clockDecis as formatTime, compactDuration as formatDuration } from "../lib/format/time";
-import {
-	BULK_MIN_CONFIDENCE,
-	confidenceBarClass,
-	confidenceLabel,
-	confidenceTextClass,
-	cutBounds,
-	parseSensitivity,
-	SENSITIVITY_OPTIONS,
-	SENSITIVITY_PRESETS,
-	type Sensitivity,
-} from "./silence-review.logic";
 import {
 	AlertTriangle,
 	Check,
@@ -25,9 +10,24 @@ import {
 	XCircle,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
+import { safeStorage } from "@recast/ui/persisted-state";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
-import { safeStorage } from "@recast/ui/persisted-state";
+import { getEditorServices, type SilenceSegment } from "../lib/editor/services";
+import { compactDuration as formatDuration, clockDecis as formatTime } from "../lib/format/time";
+import { overlapsAny } from "../lib/timeline/cuts";
+import type { EditorStore } from "../stores/editor-store.svelte";
+import {
+	BULK_MIN_CONFIDENCE,
+	confidenceBarClass,
+	confidenceLabel,
+	confidenceTextClass,
+	cutBounds,
+	parseSensitivity,
+	SENSITIVITY_OPTIONS,
+	SENSITIVITY_PRESETS,
+	type Sensitivity,
+} from "./silence-review.logic";
 
 interface Props {
 	store: EditorStore;

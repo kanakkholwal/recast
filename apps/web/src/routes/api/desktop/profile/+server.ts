@@ -1,3 +1,5 @@
+import { error, json, type RequestHandler } from "@sveltejs/kit";
+import { and, count, eq, gt, isNull, or, sum } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { limitsFor, planOf } from "$lib/billing/plans";
 import { getDb } from "$lib/db";
@@ -9,8 +11,6 @@ import {
 	subscription as subscriptionTable,
 	user as userTable,
 } from "$lib/db/schema";
-import { and, count, eq, gt, isNull, or, sum } from "drizzle-orm";
-import { error, json, type RequestHandler } from "@sveltejs/kit";
 
 type SessionShape = {
 	user: {
@@ -50,84 +50,84 @@ export const GET: RequestHandler = async ({ request }) => {
 	// other and each is cheap (single-table indexed scan / counter read).
 	const [userRow, subRows, recastAgg, shareAgg, memberships, workspaceRecastCounts] =
 		await Promise.all([
-		db
-			.select({
-				email: userTable.email,
-				name: userTable.name,
-				image: userTable.image,
-				defaultWorkspaceId: userTable.defaultWorkspaceId,
-				createdAt: userTable.createdAt,
-			})
-			.from(userTable)
-			.where(eq(userTable.id, userId))
-			.limit(1)
-			.then((rows) => rows[0] ?? null),
-		// One user can bill several workspaces, so fetch all and pick the row
-		// for the default upload target below.
-		db
-			.select({
-				organizationId: subscriptionTable.organizationId,
-				plan: subscriptionTable.plan,
-				status: subscriptionTable.status,
-				currentPeriodEnd: subscriptionTable.currentPeriodEnd,
-				cancelAtPeriodEnd: subscriptionTable.cancelAtPeriodEnd,
-			})
-			.from(subscriptionTable)
-			.where(eq(subscriptionTable.userId, userId)),
-		db
-			.select({
-				recordings: count(),
-				// Drizzle's `sum` returns string | null on PG for bigint columns;
-				// coerce after the fetch.
-				storage: sum(recastTable.sizeBytes),
-			})
-			.from(recastTable)
-			.where(and(eq(recastTable.ownerId, userId), isNull(recastTable.deletedAt)))
-			.then((rows) => rows[0] ?? { recordings: 0, storage: "0" }),
-		db
-			.select({ active: count() })
-			.from(shareTable)
-			.where(
-				and(
-					eq(shareTable.ownerId, userId),
-					// "Active" = no expiry OR not yet expired.
-					or(isNull(shareTable.expiresAt), gt(shareTable.expiresAt, new Date())),
-				),
-			)
-			.then((rows) => rows[0] ?? { active: 0 }),
-		// Workspaces the user belongs to — the desktop needs an explicit
-		// workspaceId for /api/uploads/init (its device session may not
-		// carry an activeOrganizationId).
-		db
-			.select({
-				id: organizationTable.id,
-				name: organizationTable.name,
-				role: memberTable.role,
-				plan: organizationTable.plan,
-			})
-			.from(memberTable)
-			.innerJoin(organizationTable, eq(memberTable.organizationId, organizationTable.id))
-			.where(eq(memberTable.userId, userId)),
-		// Live (non-deleted) recast count per workspace the user belongs to.
-		// The inner join to `member` both scopes to the user's workspaces and,
-		// because each recast matches exactly one of the user's membership rows,
-		// keeps the count equal to the workspace's total recast count.
-		db
-			.select({
-				workspaceId: recastTable.workspaceId,
-				count: count(),
-			})
-			.from(recastTable)
-			.innerJoin(
-				memberTable,
-				and(
-					eq(memberTable.organizationId, recastTable.workspaceId),
-					eq(memberTable.userId, userId),
-				),
-			)
-			.where(isNull(recastTable.deletedAt))
-			.groupBy(recastTable.workspaceId),
-	]);
+			db
+				.select({
+					email: userTable.email,
+					name: userTable.name,
+					image: userTable.image,
+					defaultWorkspaceId: userTable.defaultWorkspaceId,
+					createdAt: userTable.createdAt,
+				})
+				.from(userTable)
+				.where(eq(userTable.id, userId))
+				.limit(1)
+				.then((rows) => rows[0] ?? null),
+			// One user can bill several workspaces, so fetch all and pick the row
+			// for the default upload target below.
+			db
+				.select({
+					organizationId: subscriptionTable.organizationId,
+					plan: subscriptionTable.plan,
+					status: subscriptionTable.status,
+					currentPeriodEnd: subscriptionTable.currentPeriodEnd,
+					cancelAtPeriodEnd: subscriptionTable.cancelAtPeriodEnd,
+				})
+				.from(subscriptionTable)
+				.where(eq(subscriptionTable.userId, userId)),
+			db
+				.select({
+					recordings: count(),
+					// Drizzle's `sum` returns string | null on PG for bigint columns;
+					// coerce after the fetch.
+					storage: sum(recastTable.sizeBytes),
+				})
+				.from(recastTable)
+				.where(and(eq(recastTable.ownerId, userId), isNull(recastTable.deletedAt)))
+				.then((rows) => rows[0] ?? { recordings: 0, storage: "0" }),
+			db
+				.select({ active: count() })
+				.from(shareTable)
+				.where(
+					and(
+						eq(shareTable.ownerId, userId),
+						// "Active" = no expiry OR not yet expired.
+						or(isNull(shareTable.expiresAt), gt(shareTable.expiresAt, new Date())),
+					),
+				)
+				.then((rows) => rows[0] ?? { active: 0 }),
+			// Workspaces the user belongs to — the desktop needs an explicit
+			// workspaceId for /api/uploads/init (its device session may not
+			// carry an activeOrganizationId).
+			db
+				.select({
+					id: organizationTable.id,
+					name: organizationTable.name,
+					role: memberTable.role,
+					plan: organizationTable.plan,
+				})
+				.from(memberTable)
+				.innerJoin(organizationTable, eq(memberTable.organizationId, organizationTable.id))
+				.where(eq(memberTable.userId, userId)),
+			// Live (non-deleted) recast count per workspace the user belongs to.
+			// The inner join to `member` both scopes to the user's workspaces and,
+			// because each recast matches exactly one of the user's membership rows,
+			// keeps the count equal to the workspace's total recast count.
+			db
+				.select({
+					workspaceId: recastTable.workspaceId,
+					count: count(),
+				})
+				.from(recastTable)
+				.innerJoin(
+					memberTable,
+					and(
+						eq(memberTable.organizationId, recastTable.workspaceId),
+						eq(memberTable.userId, userId),
+					),
+				)
+				.where(isNull(recastTable.deletedAt))
+				.groupBy(recastTable.workspaceId),
+		]);
 
 	if (!userRow) throw error(404, "user_not_found");
 
@@ -150,16 +150,14 @@ export const GET: RequestHandler = async ({ request }) => {
 			? userRow.defaultWorkspaceId
 			: activeId && workspaces.some((w) => w.id === activeId)
 				? activeId
-				: workspaces[0]?.id) ??
-		null;
+				: workspaces[0]?.id) ?? null;
 
 	// Entitlements are workspace-scoped, so the reported plan is the default
 	// upload target's — not the user's, who may own workspaces on other plans.
 	const defaultWorkspace = workspaces.find((w) => w.id === defaultWorkspaceId);
 	const plan = planOf(defaultWorkspace?.plan);
 	const sharesLimit = limitsFor(plan.id).activeRecasts;
-	const subRow =
-		subRows.find((s) => s.organizationId === defaultWorkspaceId) ?? null;
+	const subRow = subRows.find((s) => s.organizationId === defaultWorkspaceId) ?? null;
 
 	return json({
 		user: {

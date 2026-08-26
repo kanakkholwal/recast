@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
 	AUDIO_LANE_HEIGHT_PX,
-	cardLayout,
-	cardSpan,
 	CLIP_LANE_HEIGHT_PX,
 	CLIP_ROW_HEIGHT_PX,
 	CUT_LANE_HEIGHT_PX,
+	cardLayout,
+	cardSpan,
 	edgeHandleWidth,
 	LANE_BORDER_PX,
 	LANE_PADDING_PX,

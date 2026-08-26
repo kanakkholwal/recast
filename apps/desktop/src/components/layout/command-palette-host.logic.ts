@@ -13,17 +13,13 @@ export function matchScore(cmd: PaletteCommand, q: string): number {
 	if (t.startsWith(needle)) return 100;
 	if (t.includes(needle)) return 80;
 	if ((cmd.description ?? "").toLowerCase().includes(needle)) return 60;
-	if ((cmd.keywords ?? []).some((k) => k.toLowerCase().includes(needle)))
-		return 40;
+	if ((cmd.keywords ?? []).some((k) => k.toLowerCase().includes(needle))) return 40;
 	if (cmd.category.toLowerCase().includes(needle)) return 20;
 	return 0;
 }
 
 /** Commands with a non-zero score, ranked most-relevant first. */
-export function rankCommands(
-	commands: PaletteCommand[],
-	query: string,
-): PaletteCommand[] {
+export function rankCommands(commands: PaletteCommand[], query: string): PaletteCommand[] {
 	return commands
 		.map((c) => ({ cmd: c, score: matchScore(c, query) }))
 		.filter((x) => x.score > 0)
@@ -50,10 +46,7 @@ export function groupCommands(
 }
 
 /** Split `text` into runs, flagging the parts that match `search` for emphasis. */
-export function highlight(
-	text: string,
-	search: string,
-): { text: string; hl: boolean }[] {
+export function highlight(text: string, search: string): { text: string; hl: boolean }[] {
 	if (!search.trim()) return [{ text, hl: false }];
 	const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const regex = new RegExp(`(${escaped})`, "gi");

@@ -27,7 +27,7 @@ invariants:
 ## Overview
 
 Recast has **one compositor**. The browser renders every output frame through the
-same `RenderCore` the live preview uses and WebCodecs-encodes them to a
+same wasm engine the live preview draws with and WebCodecs-encodes them to a
 **video-only temp mp4**; Rust/FFmpeg then only **muxes** the processed audio in
 with `-c:v copy`. Because a single renderer produces both preview and export,
 the two can't visually diverge.
@@ -60,7 +60,7 @@ flowchart TD
 
     subgraph browserPath["Browser engine"]
         buildJob --> renderQ["exportActivity render queue<br/>(serial, N=1)"]
-        renderQ --> render["run-export-job → RenderCore<br/>→ MediaBunny CanvasSource"]
+        renderQ --> render["run-export-job → engine<br/>→ MediaBunny CanvasSource"]
         render --> tempmp4["video-only temp mp4"]
         tempmp4 --> save["saveBrowserExportVideo → temp path"]
     end
@@ -84,7 +84,7 @@ flowchart TD
 sequenceDiagram
     participant Ed as Editor page
     participant EA as exportActivity (render queue)
-    participant RC as RenderCore + MediaBunny
+    participant RC as engine + MediaBunny
     participant IPC as Tauri commands
     participant WK as Rust export worker
 
@@ -111,8 +111,8 @@ sequenceDiagram
 | `probeBrowserExportCapability` | `packages/editor/src/lib/export/export-capability.ts` | Cached WebCodecs H.264-encode probe |
 | `buildExportJob` | `packages/editor/src/lib/export/build-export-job.ts` | **Producer** (main thread): snapshot scene, rasterize DOM assets → serializable `ExportJob` |
 | `ExportJob` + bitmap helpers | `packages/editor/src/lib/export/export-job.ts` | Handoff contract; `collectTransferables` / `closeJobBitmaps` |
-| `runExportJob` | `packages/editor/src/lib/export/run-export-job.ts` | **Consumer** (DOM-free): rebuild per-frame callbacks, drive the renderer |
-| `renderTimelineToVideo` | `packages/editor/src/lib/export/offscreen-export.ts` | Offline `RenderCore` + WebCodecs loop → mp4 bytes |
+| `runExportJob` | `packages/editor/src/lib/export/run-export-job.ts` | **Consumer** (DOM-free): wire the job's assets to the renderer and drive it |
+| `renderTimelineToVideo` | `packages/editor/src/lib/export/offscreen-export.ts` | Offline engine + WebCodecs loop → mp4 bytes |
 | `videoEncodingConfigFor` | `packages/editor/src/lib/export/browser-export-plan.ts` | Quality-tier → MediaBunny `VideoEncodingConfig` |
 | `runBrowserExport` / `renderToBytes` / `renderJobToBytes` | `packages/editor/src/lib/export/browser-export.ts` /  /  | Orchestrator + worker-vs-main-thread render + worker→main fallback |
 | `exportActivity` store | `apps/desktop/src/lib/stores/exportActivity.svelte.ts` | App-scoped serial render queue + read-model over the Rust queue |
@@ -143,7 +143,7 @@ sequenceDiagram
 5. **Render**: `pumpRenderQueue` runs one job at a time via `renderJobToBytes`
    (`browser-export.ts`): worker when supported, else main thread; a worker
    failure retries the same job main-thread. `renderTimelineToVideo`
-   (`offscreen-export.ts`) composites each output frame through `RenderCore`
+   (`offscreen-export.ts`) composites each output frame through the engine
    into a MediaBunny `CanvasSource` and WebCodecs-encodes to mp4. Render progress
    maps to `0..RENDER_MAX` (95).
 6. **Persist**: `saveBrowserExportVideo(exact)` (`exportActivity` →
@@ -241,10 +241,10 @@ clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
 
 ## Related
 
-- [03-preview-and-rendercore.md](/architecture/preview-rendercore): the shared
-  `RenderCore`/`WebGL2Backend` that composites both preview and export frames.
-- [04-media-decode-and-workers.md](/architecture/media-decode-workers): MediaBunny
-  decode, `samplesAtTimestamps`, and the render-worker ownership pattern.
+- [preview-engine.md](/architecture/preview-engine): the one compositor that
+  paints both preview and export frames.
+- [media-decode-workers.md](/architecture/media-decode-workers): MediaBunny
+  decode, `samplesAtTimestamps`, and worker ownership.
 - [07-ipc-and-tauri-boundary.md](/architecture/ipc-tauri-boundary): the
   `export-state` / `export-jobs-changed` event streams, `AppError` boundary, and
   the raw-bytes `save_browser_export_video` invoke.

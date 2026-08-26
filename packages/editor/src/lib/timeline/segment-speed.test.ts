@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import speedParity from "./__fixtures__/speed-parity.json";
 import {
 	buildSpeedOf,
 	clampSpeed,
@@ -12,7 +13,6 @@ import {
 } from "./segment-speed";
 import { deriveSegments, type Segment } from "./segments";
 import { timeMapFromSegments } from "./time-map";
-import speedParity from "./__fixtures__/speed-parity.json";
 
 function seg(start: number, end: number, index: number): Segment {
 	return { start, end, index };

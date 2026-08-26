@@ -9,8 +9,8 @@
  * never collide with built-ins and degrade gracefully when the pack is removed.
  */
 
-import type { Easing } from "../easing/cubic-bezier";
 import type { CaptionAnimation } from "@recast/captions";
+import type { Easing } from "../easing/cubic-bezier";
 
 export type AssetKind =
 	| "cursor"

@@ -1,9 +1,9 @@
 <script lang="ts">
-import { gdrive } from "$lib/stores/gdrive.svelte";
 import { BrandGoogleDrive, LoaderCircle, LogOut } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { onMount } from "svelte";
+import { gdrive } from "$lib/stores/gdrive.svelte";
 
 /**
  * Settings tile for the Google Drive connection. Modeled on

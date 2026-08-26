@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { PANEL_TABS } from "./panel-tabs";
 import {
 	boolParam,
 	PANEL_PARAM,
@@ -9,6 +8,7 @@ import {
 	TIMELINE_PARAM,
 	withEditorParams,
 } from "./editor-url";
+import { PANEL_TABS } from "./panel-tabs";
 
 const at = (search: string) => new URL(`recast://editor/clip.recast${search}`);
 

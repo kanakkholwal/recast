@@ -1,8 +1,8 @@
 <script lang="ts">
-import { prefersReducedMotion } from "$lib/motion-core";
+import { Check } from "@recast/icons";
 import { Reveal } from "@recast/ui/reveal";
 import { cn } from "@recast/ui/utils";
-import { Check } from "@recast/icons";
+import { prefersReducedMotion } from "$lib/motion-core";
 
 // Step 2's auto-polish grid. A soft "Applied" highlight ticks through the
 // cards one at a time, reading as edits being applied automatically while

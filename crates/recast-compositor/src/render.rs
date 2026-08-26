@@ -11,6 +11,7 @@ use crate::eval::{
 };
 use crate::caption::CaptionFrame;
 use crate::text::TextPass;
+use crate::yuv::{planes_of, yuv_uniform, PlaneLayout, SourcePlanes, YuvError, YuvUniform};
 
 const MAX_GRADIENT_STOPS: usize = 8;
 
@@ -187,6 +188,7 @@ pub struct Compositor {
     queue: wgpu::Queue,
     background: BackgroundPass,
     blur: BlurPass,
+    yuv: YuvPass,
     shadow: ShadowPass,
     card: CardPass,
     shape: ShapePass,
@@ -231,6 +233,18 @@ struct CardPass {
     sampler: wgpu::Sampler,
 }
 
+/// Takes a decoded frame's Y'CbCr planes to the linear working space, so every
+/// pass after it sees one RGBA texture and knows nothing about subsampling.
+struct YuvPass {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    /// Bound as the third plane for NV12, whose chroma is one texture.
+    placeholder: wgpu::TextureView,
+    /// Reused across frames of one shape, since a source rarely changes size.
+    planes: Option<(u32, u32, PlaneLayout, Vec<wgpu::Texture>)>,
+}
+
 struct ShapePass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -273,6 +287,7 @@ impl Compositor {
         Ok(Self {
             background: BackgroundPass::new(&device, &queue),
             blur: BlurPass::new(&device),
+            yuv: YuvPass::new(&device),
             shadow: ShadowPass::new(&device),
             card: CardPass::new(&device),
             shape: ShapePass::new(&device),
@@ -353,6 +368,151 @@ impl Compositor {
             alpha: 1.0,
         };
         self.draw_shape_run(encoder, working, &[&params]);
+    }
+
+    /// A destination for [`Compositor::decode_source`], sized to one frame.
+    ///
+    /// The caller owns it and should keep it across frames: reallocating a
+    /// full-resolution float target every frame is the expensive part.
+    pub fn source_texture(&self, width: u32, height: u32) -> wgpu::Texture {
+        self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("recast-source"),
+            size: wgpu::Extent3d {
+                width: width.max(1),
+                height: height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: WORKING_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+    }
+
+    /// Uploads one decoded frame's planes and converts them to linear light.
+    ///
+    /// The result goes into the layer pass as a plain `LayerInput` with
+    /// `needs_srgb_decode` false, because the decode already happened here.
+    /// Doing it as its own pass rather than inside the card shader means the
+    /// dolly blur's taps each cost one sample instead of three.
+    pub fn decode_source(
+        &mut self,
+        frame: &SourcePlanes<'_>,
+        target: &wgpu::Texture,
+    ) -> Result<(), YuvError> {
+        let planes = planes_of(frame)?;
+        if target.format() != WORKING_FORMAT {
+            return Err(YuvError::TargetFormat);
+        }
+        if target.width() != frame.width || target.height() != frame.height {
+            return Err(YuvError::TargetSize {
+                need: (frame.width, frame.height),
+                got: (target.width(), target.height()),
+            });
+        }
+
+        let textures = self
+            .yuv
+            .plane_textures(&self.device, frame.width, frame.height, frame.layout);
+        for (index, (texture, plane)) in textures.iter().zip(&planes).enumerate() {
+            let (w, h, _) = frame.layout.plane_size(index, frame.width, frame.height);
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                plane.bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(plane.stride),
+                    rows_per_image: Some(h),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+
+        let views: Vec<wgpu::TextureView> = textures
+            .iter()
+            .map(|t| t.create_view(&Default::default()))
+            .collect();
+        let uniform = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("yuv-uniform"),
+            size: std::mem::size_of::<YuvUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue.write_buffer(
+            &uniform,
+            0,
+            bytemuck::bytes_of(&yuv_uniform(&frame.color, frame.layout)),
+        );
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("yuv"),
+            layout: &self.yuv.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&views[0]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&views[1]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(
+                        views.get(2).unwrap_or(&self.yuv.placeholder),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&self.yuv.sampler),
+                },
+            ],
+        });
+
+        let view = target.create_view(&Default::default());
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("recast-yuv"),
+            });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("yuv"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.yuv.pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        self.queue.submit([encoder.finish()]);
+        Ok(())
     }
 
     /// Uploads whatever the caller has packed since the last frame. Separate
@@ -1776,6 +1936,121 @@ impl RegionPass {
             sampler: clamped_linear_sampler(device, "region"),
             blurred: None,
         }
+    }
+}
+
+impl YuvPass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("yuv"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                plane_binding(1),
+                plane_binding(2),
+                plane_binding(3),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let pipeline = fullscreen_pipeline(
+            device,
+            "yuv",
+            include_str!("shaders/yuv.wgsl"),
+            &layout,
+            WORKING_FORMAT,
+            None,
+            "vs",
+        );
+        let placeholder = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("yuv-placeholder"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
+        Self {
+            pipeline,
+            layout,
+            sampler: clamped_linear_sampler(device, "yuv"),
+            placeholder,
+            planes: None,
+        }
+    }
+
+    /// Plane textures for this frame's shape, reallocated only when it changes.
+    fn plane_textures(
+        &mut self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        layout: PlaneLayout,
+    ) -> &[wgpu::Texture] {
+        let reuse = matches!(
+            &self.planes,
+            Some((w, h, l, _)) if *w == width && *h == height && *l == layout
+        );
+        if !reuse {
+            let textures = (0..layout.plane_count())
+                .map(|index| {
+                    let (w, h, _) = layout.plane_size(index, width, height);
+                    device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("yuv-plane"),
+                        size: wgpu::Extent3d {
+                            width: w,
+                            height: h,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: layout.plane_format(index),
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING
+                            | wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    })
+                })
+                .collect();
+            self.planes = Some((width, height, layout, textures));
+        }
+        match &self.planes {
+            Some((_, _, _, textures)) => textures,
+            None => &[],
+        }
+    }
+}
+
+fn plane_binding(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
     }
 }
 

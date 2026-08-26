@@ -1,29 +1,4 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import ShareManageDialog from "$components/cloud/ShareManageDialog.svelte";
-import WorkspacePickerDialog from "$components/cloud/WorkspacePickerDialog.svelte";
-import {
-	AssetCard,
-	LibraryEmpty,
-	LibraryError,
-	LibrarySearch,
-	LibrarySkeletonGrid,
-	LibrarySortSelect,
-	LibraryViewToggle,
-	SelectionBar,
-} from "$components/library";
-import StudioPage from "$components/layout/StudioPage.svelte";
-import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
-import RecastMark from "$components/recast-mark.svelte";
-import { listExports, openFileLocation, type RecordingEntry } from "$lib/ipc";
-import { cardShellClass, listClass } from "$lib/library/card-styles";
-import { createLibraryPage } from "$lib/library/library-page.svelte";
-import { canReportCount } from "$lib/library/status";
-import { morph } from "$lib/morph";
-import { isShareSupported, shareRecording } from "$lib/share";
-import { shareTargetFor } from "$lib/share-target";
-import { cloudShare } from "$lib/stores/cloudShare.svelte";
-import { gdrive } from "$lib/stores/gdrive.svelte";
 import { formatSize, getExtension } from "@recast/editor/lib/format/files";
 import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import {
@@ -47,6 +22,31 @@ import { toast } from "@recast/ui/sonner";
 import { cn } from "@recast/ui/utils";
 import { platform } from "@tauri-apps/plugin-os";
 import { onMount } from "svelte";
+import { goto } from "$app/navigation";
+import ShareManageDialog from "$components/cloud/ShareManageDialog.svelte";
+import WorkspacePickerDialog from "$components/cloud/WorkspacePickerDialog.svelte";
+import StudioPage from "$components/layout/StudioPage.svelte";
+import {
+	AssetCard,
+	LibraryEmpty,
+	LibraryError,
+	LibrarySearch,
+	LibrarySkeletonGrid,
+	LibrarySortSelect,
+	LibraryViewToggle,
+	SelectionBar,
+} from "$components/library";
+import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
+import RecastMark from "$components/recast-mark.svelte";
+import { listExports, openFileLocation, type RecordingEntry } from "$lib/ipc";
+import { cardShellClass, listClass } from "$lib/library/card-styles";
+import { createLibraryPage } from "$lib/library/library-page.svelte";
+import { canReportCount } from "$lib/library/status";
+import { morph } from "$lib/morph";
+import { isShareSupported, shareRecording } from "$lib/share";
+import { shareTargetFor } from "$lib/share-target";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
+import { gdrive } from "$lib/stores/gdrive.svelte";
 import { settingsHref } from "../settings/settings-tabs";
 
 const lib = createLibraryPage({
@@ -66,7 +66,11 @@ let renameTarget = $state<RecordingEntry | null>(null);
 let deleteTarget = $state<RecordingEntry | null>(null);
 let manageTarget = $state<RecordingEntry | null>(null);
 let playTarget = $state<RecordingEntry | null>(null);
-let workspacePick = $state<{ path: string; title: string; fileName: string } | null>(null);
+let workspacePick = $state<{
+	path: string;
+	title: string;
+	fileName: string;
+} | null>(null);
 let bulkDeleteOpen = $state(false);
 
 const shareSupported = isShareSupported();
@@ -224,14 +228,9 @@ async function forgetDriveLink(entry: RecordingEntry) {
       <LibrarySearch bind:value={lib.query} noun="exports" />
     </div>
     <Button
-      variant="ghost"
+      variant={lib.selection.selectMode ? "default_soft" : "ghost"}
       size="sm"
-      class={cn(
-        "ml-auto h-9 gap-1.5 rounded-lg px-3 text-[12px] ring-1 ring-inset",
-        lib.selection.selectMode
-          ? "bg-foreground text-background ring-transparent hover:bg-foreground/90 hover:text-background"
-          : "bg-muted/60 text-muted-foreground ring-border/40 hover:bg-muted hover:text-foreground",
-      )}
+      class="ml-auto"
       onclick={lib.selection.toggleMode}
       disabled={lib.entries.length === 0}
       aria-pressed={lib.selection.selectMode}
@@ -245,13 +244,17 @@ async function forgetDriveLink(entry: RecordingEntry) {
     <Button
       variant="ghost"
       size="icon-sm"
-      class="size-9 rounded-lg bg-muted/60 text-muted-foreground ring-1 ring-inset ring-border/40 hover:bg-muted hover:text-foreground"
       onclick={lib.refresh}
       disabled={lib.isLoading}
       aria-label="Refresh exports"
       title="Refresh"
     >
-      <RefreshCw size={12} class={lib.isLoading ? "motion-safe:animate-spin" : ""} />
+      <RefreshCw
+        size={12}
+        class={lib.isLoading
+          ? "motion-safe:animate-spin"
+          : "group-active/button:rotate-90 duration-500"}
+      />
     </Button>
   {/snippet}
 
@@ -281,7 +284,7 @@ async function forgetDriveLink(entry: RecordingEntry) {
           class={cardShellClass(lib.view, isSelected)}
         >
           <AssetCard
-            entry={entry}
+            {entry}
             thumbnail={lib.thumbnails[entry.path]}
             view={lib.view}
             selectMode={lib.selection.selectMode}
@@ -334,7 +337,9 @@ async function forgetDriveLink(entry: RecordingEntry) {
                   {/snippet}
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content align="end" size="sm" class="w-50">
-                  <DropdownMenu.Item onSelect={() => openFileLocation(entry.path)}>
+                  <DropdownMenu.Item
+                    onSelect={() => openFileLocation(entry.path)}
+                  >
                     <FolderOpen /> Show in folder
                   </DropdownMenu.Item>
                   <DropdownMenu.Item onSelect={() => (renameTarget = entry)}>
@@ -387,7 +392,10 @@ async function forgetDriveLink(entry: RecordingEntry) {
                       <Unlink2 /> Forget cloud link
                     </DropdownMenu.Item>
                   {:else}
-                    <DropdownMenu.Item onSelect={() => shareToCloud(entry)} class="whitespace-nowrap">
+                    <DropdownMenu.Item
+                      onSelect={() => shareToCloud(entry)}
+                      class="whitespace-nowrap"
+                    >
                       <RecastMark /> Share to Recast Cloud
                     </DropdownMenu.Item>
                   {/if}

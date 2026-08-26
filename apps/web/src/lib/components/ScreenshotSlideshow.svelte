@@ -1,51 +1,46 @@
 <script lang="ts">
-	import { onMount, onDestroy } from "svelte";
-	import {
-		INTERVAL_MS,
-		TRANSITION_MS,
-		buildReel,
-		slides,
-	} from "./ScreenshotSlideshow.logic";
+import { onDestroy, onMount } from "svelte";
+import { buildReel, INTERVAL_MS, slides, TRANSITION_MS } from "./ScreenshotSlideshow.logic";
 
-	const reel = buildReel(slides);
+const reel = buildReel(slides);
 
-	let step = $state(0);
-	let snapping = $state(false);
-	let timer: ReturnType<typeof setInterval> | null = null;
+let step = $state(0);
+let snapping = $state(false);
+let timer: ReturnType<typeof setInterval> | null = null;
 
-	function tick() {
-		step += 1;
-		// When step gets close to the reel boundary, schedule a silent reset
-		// after the slide transition has finished.
-		if (step >= reel.length - slides.length) {
-			setTimeout(() => {
-				snapping = true;
-				step = step - slides.length;
-				// Two RAFs: first commits the new step + `transition: none`,
-				// second restores transitions so the next tick animates again.
+function tick() {
+	step += 1;
+	// When step gets close to the reel boundary, schedule a silent reset
+	// after the slide transition has finished.
+	if (step >= reel.length - slides.length) {
+		setTimeout(() => {
+			snapping = true;
+			step = step - slides.length;
+			// Two RAFs: first commits the new step + `transition: none`,
+			// second restores transitions so the next tick animates again.
+			requestAnimationFrame(() => {
 				requestAnimationFrame(() => {
-					requestAnimationFrame(() => {
-						snapping = false;
-					});
+					snapping = false;
 				});
-			}, TRANSITION_MS);
-		}
+			});
+		}, TRANSITION_MS);
 	}
+}
 
-	function start() {
-		stop();
-		timer = setInterval(tick, INTERVAL_MS);
+function start() {
+	stop();
+	timer = setInterval(tick, INTERVAL_MS);
+}
+
+function stop() {
+	if (timer) {
+		clearInterval(timer);
+		timer = null;
 	}
+}
 
-	function stop() {
-		if (timer) {
-			clearInterval(timer);
-			timer = null;
-		}
-	}
-
-	onMount(start);
-	onDestroy(stop);
+onMount(start);
+onDestroy(stop);
 </script>
 
 <div

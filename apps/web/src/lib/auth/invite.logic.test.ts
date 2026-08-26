@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-	INVITE_TOKEN_TTL_MS,
 	firstNameOf,
+	INVITE_TOKEN_TTL_MS,
 	inviteDisplayName,
 	resetTokenIdentifier,
 	setPasswordUrl,

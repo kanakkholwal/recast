@@ -3,10 +3,10 @@ import {
 	buildPressEvents,
 	clickAnchorAt,
 	clickHighlightAt,
-	pressStateAt,
-	smoothStep01,
 	type PressEvent,
 	type PressSample,
+	pressStateAt,
+	smoothStep01,
 } from "./cursor-animation.logic";
 
 function sample(over: Partial<PressSample> & { timestampUs: number }): PressSample {

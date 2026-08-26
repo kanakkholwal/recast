@@ -4,6 +4,7 @@
  * byte-identical copy, which would have drifted on the first bug fix.
  */
 
+export type { AudioChunk, Region, ScheduledChunk, SubPlay } from "@recast/media";
 export {
 	keptRegions,
 	missingRanges,
@@ -12,4 +13,3 @@ export {
 	planAudioScheduleWindow,
 	sliceChunksForPlayback,
 } from "@recast/media";
-export type { AudioChunk, Region, ScheduledChunk, SubPlay } from "@recast/media";

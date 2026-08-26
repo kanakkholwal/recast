@@ -1,9 +1,9 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { ChevronRight, User } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 import { onMount } from "svelte";
+import { goto } from "$app/navigation";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { monogram, sharesMeter } from "./sidebar-account.logic";
 
 let { open }: { open: boolean } = $props();

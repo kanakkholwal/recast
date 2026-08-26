@@ -4,7 +4,6 @@ import { z } from "zod";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { recast } from "$lib/db/schema";
-import { bumpUsageOnUpload, getQuotaSnapshot } from "$lib/storage/quota";
 import {
 	captionsObjectKey,
 	deleteObject,
@@ -12,6 +11,7 @@ import {
 	posterObjectKey,
 	statObject,
 } from "$lib/storage";
+import { bumpUsageOnUpload, getQuotaSnapshot } from "$lib/storage/quota";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = { user: { id: string } };
@@ -21,7 +21,12 @@ const BodySchema = z.object({
 	width: z.number().int().positive().optional(),
 	height: z.number().int().positive().optional(),
 	fps: z.number().int().positive().max(240).optional(),
-	durationSec: z.number().int().nonnegative().max(24 * 60 * 60).optional(),
+	durationSec: z
+		.number()
+		.int()
+		.nonnegative()
+		.max(24 * 60 * 60)
+		.optional(),
 	/** Client PUT a poster WebP to the signed URL from /init. */
 	hasPoster: z.boolean().optional(),
 	/** Client PUT a captions VTT to the signed URL from /init. */
@@ -166,9 +171,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Captions track: persist the bare key (signed on read, like the video) so
 	// the player can load it as a `<track>`. Only when the client uploaded one.
-	const captionsUrl = body.hasCaptions
-		? captionsObjectKey(row.workspaceId, row.id)
-		: undefined;
+	const captionsUrl = body.hasCaptions ? captionsObjectKey(row.workspaceId, row.id) : undefined;
 
 	await db.transaction(async (tx) => {
 		await tx

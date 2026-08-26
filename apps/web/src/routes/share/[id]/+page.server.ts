@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { share } from "$lib/db/schema";
-import { loadViewer, resolveShareAccess, type ResolvedShare } from "$lib/share/access";
+import { loadViewer, type ResolvedShare, resolveShareAccess } from "$lib/share/access";
 import { grantCookieName, readGrantedEmail } from "$lib/share/grant";
 import { constantTimeEquals, unlockCookieName, unlockToken } from "$lib/share/password";
 import { isStorageConfigured, resolvePlaybackUrl, signDownloadUrl } from "$lib/storage";

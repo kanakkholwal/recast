@@ -1,7 +1,7 @@
 <script lang="ts">
-import { prefersReducedMotion } from "$lib/motion-core";
 import { Check, MousePointer2, Scissors, ZoomIn } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
+import { prefersReducedMotion } from "$lib/motion-core";
 
 // Auto-polish landing on a take: zoom snaps in, silence drops out, the cursor
 // path straightens. Abstract shapes only, so it never ages with the real editor.

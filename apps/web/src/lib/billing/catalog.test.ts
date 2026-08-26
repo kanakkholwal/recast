@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	DELIVERY_OVERAGE_USD_PER_GB,
 	INFRA,
-	PLAN_IDS,
-	PLANS,
 	infraCostUsd,
 	isPaidPlan,
 	limitsFor,
+	PLAN_IDS,
+	PLANS,
 	planOf,
 	priceForSeats,
 } from "./catalog";

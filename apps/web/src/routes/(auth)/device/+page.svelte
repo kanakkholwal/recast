@@ -1,7 +1,4 @@
 <script lang="ts">
-import { goto, invalidateAll } from "$app/navigation";
-import { authClient } from "$lib/auth/client";
-import { formatUserCode, normalizeUserCode } from "./device-code.logic";
 import {
 	AlertTriangle,
 	ArrowRight,
@@ -11,11 +8,14 @@ import {
 	Monitor,
 	X,
 } from "@recast/icons";
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { goto, invalidateAll } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import { formatUserCode, normalizeUserCode } from "./device-code.logic";
 
 let { data } = $props();
 

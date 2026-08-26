@@ -1,7 +1,4 @@
 <script lang="ts">
-import { isBoxKind } from "../../../lib/annotations/kind-groups";
-import { normaliseBox } from "../../../lib/annotations/uv";
-import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import {
 	AlignCenter as AlignCenterX,
 	AlignEndHorizontal,
@@ -11,6 +8,9 @@ import {
 	AlignVerticalSpaceAround,
 } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
+import { isBoxKind } from "../../../lib/annotations/kind-groups";
+import { normaliseBox } from "../../../lib/annotations/uv";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import DraggableValue from "../DraggableValue.svelte";
 import PanelSection from "../PanelSection.svelte";
 import { alignTarget } from "./annotation-geometry.logic";

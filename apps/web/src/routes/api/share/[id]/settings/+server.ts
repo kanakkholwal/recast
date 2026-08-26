@@ -167,8 +167,6 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		...safe,
 		...recastPatch,
 		...("passwordHash" in patch ? { passwordSet: passwordHash !== null } : {}),
-		...("expiresAt" in patch
-			? { expiresAt: expiresAt ? expiresAt.toISOString() : null }
-			: {}),
+		...("expiresAt" in patch ? { expiresAt: expiresAt ? expiresAt.toISOString() : null } : {}),
 	});
 };

@@ -1,8 +1,8 @@
 <script lang="ts">
-import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { Scissors, X } from "@recast/icons";
 import { type TimelineCut } from "../../../lib/timeline/cuts";
 import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
-import { Scissors, X } from "@recast/icons";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
 import {
 	CLIP_BASE,
@@ -12,14 +12,14 @@ import {
 	clipSurface,
 } from "./timeline-clip.styles";
 import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
+import { frameStep } from "./timeline-helpers";
 import {
-	cardSpan,
 	CUT_LANE_HEIGHT_PX,
+	cardSpan,
 	edgeHandleWidth,
 	LANE_PADDING_PX,
 	ROW_HEIGHT_PX,
 } from "./timeline-stack";
-import { frameStep } from "./timeline-helpers";
 
 // Hosts cut bands. Drag empty lane space to carve a cut; drag a band's edges or body to adjust it.
 //

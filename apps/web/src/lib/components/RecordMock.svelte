@@ -1,7 +1,7 @@
 <script lang="ts">
-import { prefersReducedMotion } from "$lib/motion-core";
 import { Camera, Mic, Video } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
+import { prefersReducedMotion } from "$lib/motion-core";
 
 // Region capture, shown as the interaction rather than as a menu of it. A
 // selection is dragged across a mock desktop, snaps to a size readout, and the

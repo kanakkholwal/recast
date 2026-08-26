@@ -43,30 +43,23 @@ const optionalCsv = trimmed.pipe(
 		.transform((v) =>
 			v
 				? v
-					.split(",")
-					.map((s) => s.trim())
-					.filter((s) => s.length > 0)
+						.split(",")
+						.map((s) => s.trim())
+						.filter((s) => s.length > 0)
 				: [],
 		),
 );
 
 export const serverEnvSchema = z
 	.object({
-		//  Database 
+		//  Database
 		DATABASE_URL: trimmed.pipe(
-			z
-				.string()
-				.min(1, "DATABASE_URL is required — set a Postgres connection string"),
+			z.string().min(1, "DATABASE_URL is required — set a Postgres connection string"),
 		),
 
-		//  Better Auth 
+		//  Better Auth
 		BETTER_AUTH_SECRET: trimmed.pipe(
-			z
-				.string()
-				.min(
-					32,
-					"BETTER_AUTH_SECRET must be ≥32 chars — `openssl rand -base64 32`",
-				),
+			z.string().min(32, "BETTER_AUTH_SECRET must be ≥32 chars — `openssl rand -base64 32`"),
 		),
 		BETTER_AUTH_URL: optionalUrl,
 		// Extra origins better-auth should accept beyond BETTER_AUTH_URL /
@@ -75,25 +68,25 @@ export const serverEnvSchema = z
 		// auth/server.ts, so leave this blank unless you're adding a new one.
 		TRUSTED_ORIGINS: optionalCsv,
 
-		//  OAuth (optional pairs — see superRefine below) 
+		//  OAuth (optional pairs — see superRefine below)
 		GITHUB_CLIENT_ID: optionalSecret,
 		GITHUB_CLIENT_SECRET: optionalSecret,
 		GOOGLE_CLIENT_ID: optionalSecret,
 		GOOGLE_CLIENT_SECRET: optionalSecret,
 
-		//  Polar (billing — all-or-nothing trio, see superRefine below) 
+		//  Polar (billing — all-or-nothing trio, see superRefine below)
 		POLAR_SERVER: z.enum(["sandbox", "production"]).default("sandbox"),
 		POLAR_ACCESS_TOKEN: optionalSecret,
 		POLAR_WEBHOOK_SECRET: optionalSecret,
 		POLAR_PRODUCT_ID_PRO: optionalSecret,
 
-		//  Email 
+		//  Email
 		RESEND_API_KEY: optionalSecret,
 		EMAIL_FROM: trimmed
 			.pipe(z.string().min(1).optional())
 			.transform((v) => v ?? "Recast <hello@recast.nexonauts.com>"),
 
-		//  Cloud storage provider switch 
+		//  Cloud storage provider switch
 		// "r2" (default) | "s3" | "cloudinary" | "azure" | "gcs". Each
 		// provider's credentials live in its own block below; only the
 		// active provider's block needs to be set.
@@ -101,14 +94,14 @@ export const serverEnvSchema = z
 			.pipe(z.enum(["r2", "s3", "cloudinary", "azure", "gcs"]).optional())
 			.optional(),
 
-		//  Cloudflare R2 (all-or-nothing quartet, see superRefine below) 
+		//  Cloudflare R2 (all-or-nothing quartet, see superRefine below)
 		R2_ACCOUNT_ID: optionalSecret,
 		R2_ACCESS_KEY_ID: optionalSecret,
 		R2_SECRET_ACCESS_KEY: optionalSecret,
 		R2_BUCKET: optionalSecret,
 		R2_PUBLIC_URL: optionalUrl,
 
-		//  AWS S3 (or S3-compat: MinIO, Wasabi, B2, DO Spaces) 
+		//  AWS S3 (or S3-compat: MinIO, Wasabi, B2, DO Spaces)
 		S3_REGION: optionalSecret,
 		S3_BUCKET: optionalSecret,
 		S3_ACCESS_KEY_ID: optionalSecret,
@@ -116,36 +109,31 @@ export const serverEnvSchema = z
 		S3_ENDPOINT: optionalUrl, // for S3-compat hosts; leave blank for AWS
 		S3_PUBLIC_URL: optionalUrl,
 
-		//  Cloudinary 
+		//  Cloudinary
 		CLOUDINARY_CLOUD_NAME: optionalSecret,
 		CLOUDINARY_API_KEY: optionalSecret,
 		CLOUDINARY_API_SECRET: optionalSecret,
 
-		//  Azure Blob Storage 
+		//  Azure Blob Storage
 		AZURE_STORAGE_ACCOUNT: optionalSecret,
 		AZURE_STORAGE_KEY: optionalSecret,
 		AZURE_BLOB_CONTAINER: optionalSecret,
 		AZURE_PUBLIC_URL: optionalUrl,
 
-		//  Google Cloud Storage 
+		//  Google Cloud Storage
 		GCS_BUCKET: optionalSecret,
 		// Paste the entire service-account JSON as a single line.
 		GCS_SERVICE_ACCOUNT_JSON: optionalSecret,
 		GCS_PUBLIC_URL: optionalUrl,
 
-		//  Cron secret (gate /api/cron/* endpoints) 
+		//  Cron secret (gate /api/cron/* endpoints)
 		CRON_SECRET: optionalSecret,
 
-		//  Runtime mode (set by hosts like Vercel/Node) 
+		//  Runtime mode (set by hosts like Vercel/Node)
 		NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 	})
 	.superRefine((env, ctx) => {
-		const pair = (
-			a: string,
-			b: string,
-			aVal: string | undefined,
-			bVal: string | undefined,
-		) => {
+		const pair = (a: string, b: string, aVal: string | undefined, bVal: string | undefined) => {
 			if (Boolean(aVal) !== Boolean(bVal)) {
 				ctx.addIssue({
 					code: "custom",
@@ -167,11 +155,7 @@ export const serverEnvSchema = z
 			env.GOOGLE_CLIENT_SECRET,
 		);
 
-		const polarVars = [
-			env.POLAR_ACCESS_TOKEN,
-			env.POLAR_WEBHOOK_SECRET,
-			env.POLAR_PRODUCT_ID_PRO,
-		];
+		const polarVars = [env.POLAR_ACCESS_TOKEN, env.POLAR_WEBHOOK_SECRET, env.POLAR_PRODUCT_ID_PRO];
 		const polarSet = polarVars.filter(Boolean).length;
 		if (polarSet !== 0 && polarSet !== polarVars.length) {
 			ctx.addIssue({
@@ -193,14 +177,10 @@ export const serverEnvSchema = z
 		// own AccountKey=). Detect the connection-string form with the same regex
 		// `resolveAzureCredentials()` / `isStorageConfigured()` use, and only
 		// require the standalone AZURE_STORAGE_KEY in the bare-name case.
-		const azureIsConnString = /(^|;)\s*AccountName=/i.test(
-			env.AZURE_STORAGE_ACCOUNT ?? "",
-		);
+		const azureIsConnString = /(^|;)\s*AccountName=/i.test(env.AZURE_STORAGE_ACCOUNT ?? "");
 		const azureVars: (readonly [string, unknown])[] = [
 			["AZURE_STORAGE_ACCOUNT", env.AZURE_STORAGE_ACCOUNT],
-			...(azureIsConnString
-				? []
-				: ([["AZURE_STORAGE_KEY", env.AZURE_STORAGE_KEY]] as const)),
+			...(azureIsConnString ? [] : ([["AZURE_STORAGE_KEY", env.AZURE_STORAGE_KEY]] as const)),
 			["AZURE_BLOB_CONTAINER", env.AZURE_BLOB_CONTAINER],
 		];
 
@@ -242,9 +222,7 @@ export const serverEnvSchema = z
 		if (env.STORAGE_PROVIDER) {
 			// Explicit provider: every var for it must be set; ignore the rest.
 			const spec = providerVarSpecs[env.STORAGE_PROVIDER];
-			const missing = spec.vars
-				.filter(([, value]) => !value)
-				.map(([name]) => name);
+			const missing = spec.vars.filter(([, value]) => !value).map(([name]) => name);
 			if (missing.length > 0) {
 				ctx.addIssue({
 					code: "custom",
@@ -259,9 +237,7 @@ export const serverEnvSchema = z
 			for (const [name, spec] of Object.entries(providerVarSpecs)) {
 				const setCount = spec.vars.filter(([, v]) => Boolean(v)).length;
 				if (setCount !== 0 && setCount !== spec.vars.length) {
-					const missing = spec.vars
-						.filter(([, v]) => !v)
-						.map(([n]) => n);
+					const missing = spec.vars.filter(([, v]) => !v).map(([n]) => n);
 					ctx.addIssue({
 						code: "custom",
 						path: [spec.vars[0][0]],

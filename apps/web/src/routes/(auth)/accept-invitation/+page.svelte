@@ -1,13 +1,13 @@
 <script lang="ts">
-import { goto, invalidateAll } from "$app/navigation";
-import { authClient } from "$lib/auth/client";
-import { isInviteBlocked } from "./invitation.logic";
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import { AlertTriangle, ArrowRight, Check, LoaderCircle, MailCheck, Wand2, X } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
-import { AlertTriangle, ArrowRight, Check, LoaderCircle, MailCheck, Wand2, X } from "@recast/icons";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { goto, invalidateAll } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import { isInviteBlocked } from "./invitation.logic";
 
 let { data } = $props();
 

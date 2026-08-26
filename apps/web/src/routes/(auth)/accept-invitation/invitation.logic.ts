@@ -11,7 +11,5 @@ function sessionMismatch(viewer: Viewer): boolean {
 // Accept/decline are disabled when the viewer can't act on the invite: wrong
 // account, expired, or already resolved.
 export function isInviteBlocked(invite: Invite, viewer: Viewer): boolean {
-	return (
-		sessionMismatch(viewer) || invite.expired || invite.status !== "pending"
-	);
+	return sessionMismatch(viewer) || invite.expired || invite.status !== "pending";
 }

@@ -1,16 +1,4 @@
 <script lang="ts">
-import LazyExternalImage from "../common/LazyExternalImage.svelte";
-import { getRecentColors, pushRecentColor } from "../../lib/annotations/recent-colors";
-import { registry } from "../../lib/registry";
-import {
-	COLOR_PRESETS,
-	GRADIENT_PRESETS,
-	MAX_FRAME_PADDING_PERCENT,
-	WALLPAPERS,
-	wallpaperBackgroundValue,
-	type BackgroundType,
-	type EditorStore,
-} from "../../stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	Blend,
@@ -29,8 +17,20 @@ import { SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
 import * as Tabs from "@recast/ui/tabs";
 import { cn } from "@recast/ui/utils";
-import { getEditorServices } from "../../lib/editor/services";
 import { Image } from "@unpic/svelte";
+import { getRecentColors, pushRecentColor } from "../../lib/annotations/recent-colors";
+import { getEditorServices } from "../../lib/editor/services";
+import { registry } from "../../lib/registry";
+import {
+	type BackgroundType,
+	COLOR_PRESETS,
+	type EditorStore,
+	GRADIENT_PRESETS,
+	MAX_FRAME_PADDING_PERCENT,
+	WALLPAPERS,
+	wallpaperBackgroundValue,
+} from "../../stores/editor-store.svelte";
+import LazyExternalImage from "../common/LazyExternalImage.svelte";
 import {
 	imagePreviewSrc,
 	isValidImageValue,

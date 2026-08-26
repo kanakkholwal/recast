@@ -10,13 +10,14 @@
  * registers the enabled ones. Install/uninstall/toggle keep all three in sync.
  */
 
-import type { ExtensionManifest, InstalledExtension } from "./wire-types";
 import { tryGetEditorServices } from "./editor/services";
 import { log } from "./log";
 import { registerExtension, unregisterExtension } from "./registry/extensions";
+import type { ExtensionManifest, InstalledExtension } from "./wire-types";
 
 // Null where packs cannot be installed locally; the panel then lists only.
 const extService = () => tryGetEditorServices()?.extensions ?? null;
+
 import { extensionsStore } from "../stores/extensions-store.svelte";
 
 /** One entry of the curated registry index served from the extensions release. */

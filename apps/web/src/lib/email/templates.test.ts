@@ -15,7 +15,10 @@ const ALL: { name: TemplateName; data: Record<string, unknown> }[] = [
 			inviterEmail: "k@e.com",
 		},
 	},
-	{ name: "waitlist-approved", data: { url: "https://recast.li/reset-password?token=t", firstName: "Kanak" } },
+	{
+		name: "waitlist-approved",
+		data: { url: "https://recast.li/reset-password?token=t", firstName: "Kanak" },
+	},
 	{
 		name: "admin-invite",
 		data: {

@@ -1,28 +1,28 @@
 <script lang="ts">
-	import { enhance } from "$app/forms";
-	import { Button } from "@recast/ui/button";
-	import { Checkbox } from "@recast/ui/checkbox";
-	import { Skeleton } from "@recast/ui/skeleton";
-	import { toast } from "@recast/ui/sonner";
-	import { LoaderCircle } from "@recast/icons";
+import { LoaderCircle } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Checkbox } from "@recast/ui/checkbox";
+import { Skeleton } from "@recast/ui/skeleton";
+import { toast } from "@recast/ui/sonner";
+import { enhance } from "$app/forms";
 
-	import InlineError from "$lib/components/InlineError.svelte";
+import InlineError from "$lib/components/InlineError.svelte";
 
-	let { data } = $props();
+let { data } = $props();
 
-	let selected = $state<Set<string>>(new Set());
-	let approving = $state(false);
+let selected = $state<Set<string>>(new Set());
+let approving = $state(false);
 
-	function toggle(id: string, checked: boolean) {
-		const next = new Set(selected);
-		if (checked) next.add(id);
-		else next.delete(id);
-		selected = next;
-	}
+function toggle(id: string, checked: boolean) {
+	const next = new Set(selected);
+	if (checked) next.add(id);
+	else next.delete(id);
+	selected = next;
+}
 
-	function toggleAll(pending: Array<{ id: string }>, checked: boolean) {
-		selected = checked ? new Set(pending.map((u) => u.id)) : new Set();
-	}
+function toggleAll(pending: Array<{ id: string }>, checked: boolean) {
+	selected = checked ? new Set(pending.map((u) => u.id)) : new Set();
+}
 </script>
 
 <header class="mb-6">

@@ -1,29 +1,29 @@
 <script lang="ts">
-	import { Skeleton } from "@recast/ui/skeleton";
+import { Skeleton } from "@recast/ui/skeleton";
 
-	import InlineError from "$lib/components/InlineError.svelte";
+import InlineError from "$lib/components/InlineError.svelte";
 
-	let { data } = $props();
+let { data } = $props();
 
-	function timeAgo(d: Date | string): string {
-		const ms = Date.now() - new Date(d).getTime();
-		const min = Math.floor(ms / 60_000);
-		if (min < 1) return "just now";
-		if (min < 60) return `${min}m ago`;
-		const hr = Math.floor(min / 60);
-		if (hr < 24) return `${hr}h ago`;
-		return `${Math.floor(hr / 24)}d ago`;
-	}
+function timeAgo(d: Date | string): string {
+	const ms = Date.now() - new Date(d).getTime();
+	const min = Math.floor(ms / 60_000);
+	if (min < 1) return "just now";
+	if (min < 60) return `${min}m ago`;
+	const hr = Math.floor(min / 60);
+	if (hr < 24) return `${hr}h ago`;
+	return `${Math.floor(hr / 24)}d ago`;
+}
 
-	/** Metadata is free-form JSON — flatten to `key: value` pairs for a compact,
-	 *  scannable render instead of a raw JSON blob. */
-	function metaPairs(meta: unknown): Array<{ k: string; v: string }> {
-		if (!meta || typeof meta !== "object") return [];
-		return Object.entries(meta as Record<string, unknown>).map(([k, v]) => ({
-			k,
-			v: typeof v === "object" ? JSON.stringify(v) : String(v),
-		}));
-	}
+/** Metadata is free-form JSON — flatten to `key: value` pairs for a compact,
+ *  scannable render instead of a raw JSON blob. */
+function metaPairs(meta: unknown): Array<{ k: string; v: string }> {
+	if (!meta || typeof meta !== "object") return [];
+	return Object.entries(meta as Record<string, unknown>).map(([k, v]) => ({
+		k,
+		v: typeof v === "object" ? JSON.stringify(v) : String(v),
+	}));
+}
 </script>
 
 <header class="mb-6">

@@ -1,13 +1,13 @@
 <script lang="ts">
-import { config } from "$constants/app";
-import { KIND_META, RELEASES, groupChanges } from "$constants/changelog";
-import { whatsNew } from "$lib/stores/whats-new.svelte";
-import { GithubBrand } from "@recast/ui/brand-icons";
 import { AiWand } from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
-import StudioPage from "$components/layout/StudioPage.svelte";
 import { Markdown } from "@recast/ui/markdown";
 import { onMount } from "svelte";
+import StudioPage from "$components/layout/StudioPage.svelte";
+import { config } from "$constants/app";
+import { groupChanges, KIND_META, RELEASES } from "$constants/changelog";
+import { whatsNew } from "$lib/stores/whats-new.svelte";
 
 // Visiting the full changelog page also counts as having seen the latest version.
 onMount(() => {

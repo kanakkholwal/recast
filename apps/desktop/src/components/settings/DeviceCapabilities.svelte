@@ -1,12 +1,4 @@
 <script lang="ts">
-import {
-	captureCapabilities,
-	diagnoseFfmpeg,
-	probeVideoEncoders,
-	type CaptureCapabilities,
-	type EncoderAvailability,
-	type FfmpegDiagnostics,
-} from "$lib/ipc";
 import type { IconComponent } from "@recast/icons";
 import {
 	AppWindow,
@@ -31,6 +23,14 @@ import { Button } from "@recast/ui/button";
 import * as Collapsible from "@recast/ui/collapsible";
 import { cn } from "@recast/ui/utils";
 import { onMount } from "svelte";
+import {
+	type CaptureCapabilities,
+	captureCapabilities,
+	diagnoseFfmpeg,
+	type EncoderAvailability,
+	type FfmpegDiagnostics,
+	probeVideoEncoders,
+} from "$lib/ipc";
 import {
 	buildFacts,
 	captureHeadlineNote as captureHeadlineNoteOf,

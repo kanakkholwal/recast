@@ -9,9 +9,9 @@
  *     lands on what the user was actually pointing at
  */
 
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import type { CursorSampleLike } from "../cursor/smoothing";
 import type { ZoomSuggestion } from "../wire-types";
-import type { EditorStore } from "../../stores/editor-store.svelte";
 
 // Asymmetric window: short lead-in, long hold. With the default 0.35 s ramps
 // this leaves a ~2 s plateau at full zoom; a symmetric 1 s window held only

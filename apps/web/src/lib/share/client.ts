@@ -69,8 +69,7 @@ export async function readApiError(res: Response, fallback: string): Promise<str
 	if (trimmed.startsWith("{")) {
 		try {
 			const parsed = JSON.parse(trimmed) as { message?: unknown };
-			if (typeof parsed.message === "string" && parsed.message.trim())
-				return parsed.message.trim();
+			if (typeof parsed.message === "string" && parsed.message.trim()) return parsed.message.trim();
 		} catch {
 			// Malformed JSON — fall through to the default.
 		}
@@ -82,9 +81,7 @@ export async function readApiError(res: Response, fallback: string): Promise<str
 }
 
 export async function loadEngagement(slug: string, sessionId: string): Promise<Engagement> {
-	const res = await fetch(
-		`/api/share/${slug}/comments?sessionId=${encodeURIComponent(sessionId)}`,
-	);
+	const res = await fetch(`/api/share/${slug}/comments?sessionId=${encodeURIComponent(sessionId)}`);
 	// Throw on non-ok so callers can distinguish a genuine failure (network /
 	// 5xx / gate) from an empty-but-loaded thread. The page surfaces the former
 	// as a retry affordance instead of a false "No comments yet".

@@ -1,92 +1,86 @@
 <script lang="ts">
-	import { goto, invalidateAll } from "$app/navigation";
-	import { authClient } from "$lib/auth/client";
-	import Logo from "$lib/logo.svelte";
-	import { Button } from "@recast/ui/button";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import { toast } from "@recast/ui/sonner";
-	import {
-		ArrowRight,
-		Check,
-		LoaderCircle,
-		MailCheck,
-		Plus,
-		Users,
-	} from "@recast/icons";
-	import { untrack } from "svelte";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import { ArrowRight, Check, LoaderCircle, MailCheck, Plus, Users } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import { toast } from "@recast/ui/sonner";
+import { untrack } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { goto, invalidateAll } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import Logo from "$lib/logo.svelte";
 
-	let { data } = $props();
+let { data } = $props();
 
-	let teamName = $state(
-		untrack(() =>
-			data.user.name ? `${data.user.name.split(/\s+/)[0]}'s Team` : "My Team",
-		),
-	);
-	let creating = $state(false);
-	let acceptingId = $state<string | null>(null);
-	/** Either action in flight — prevents create + accept racing each other. */
-	const busy = $derived(creating || acceptingId !== null);
+let teamName = $state(
+	untrack(() => (data.user.name ? `${data.user.name.split(/\s+/)[0]}'s Team` : "My Team")),
+);
+let creating = $state(false);
+let acceptingId = $state<string | null>(null);
+/** Either action in flight — prevents create + accept racing each other. */
+const busy = $derived(creating || acceptingId !== null);
 
-	async function createTeam(e: SubmitEvent) {
-		e.preventDefault();
-		if (!teamName.trim() || busy) return;
-		creating = true;
-		const target = teamName.trim();
-		let base = target.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-		if (!base) base = "team";
-		const slug = `${base}-${Math.random().toString(36).slice(2, 8)}`;
-		const toastId = toast.loading(`Creating ${target}…`);
-		try {
-			const { error } = await authClient.organization.create({
-				name: target,
-				slug,
-			});
-			if (error) throw new Error(error.message ?? "Couldn't create the team.");
-			toast.success(`Welcome to ${target}.`, { id: toastId });
-			// invalidateAll forces the dashboard layout's server load to rerun
-			// with the freshly created membership + active-org cookie; without
-			// it the gate at /dashboard can bounce straight back to onboarding.
-			await invalidateAll();
-			await goto("/dashboard", { invalidateAll: true });
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't create the team.", {
-				id: toastId,
-			});
-		} finally {
-			// Always release — a thrown rejection (network drop, abort) must
-			// not leave the button permanently disabled.
-			creating = false;
-		}
+async function createTeam(e: SubmitEvent) {
+	e.preventDefault();
+	if (!teamName.trim() || busy) return;
+	creating = true;
+	const target = teamName.trim();
+	let base = target
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/(^-|-$)/g, "");
+	if (!base) base = "team";
+	const slug = `${base}-${Math.random().toString(36).slice(2, 8)}`;
+	const toastId = toast.loading(`Creating ${target}…`);
+	try {
+		const { error } = await authClient.organization.create({
+			name: target,
+			slug,
+		});
+		if (error) throw new Error(error.message ?? "Couldn't create the team.");
+		toast.success(`Welcome to ${target}.`, { id: toastId });
+		// invalidateAll forces the dashboard layout's server load to rerun
+		// with the freshly created membership + active-org cookie; without
+		// it the gate at /dashboard can bounce straight back to onboarding.
+		await invalidateAll();
+		await goto("/dashboard", { invalidateAll: true });
+	} catch (err) {
+		toast.error((err as Error)?.message ?? "Couldn't create the team.", {
+			id: toastId,
+		});
+	} finally {
+		// Always release — a thrown rejection (network drop, abort) must
+		// not leave the button permanently disabled.
+		creating = false;
 	}
+}
 
-	async function acceptInvite(id: string) {
-		if (busy) return;
-		acceptingId = id;
-		const target = data.invites.find((i) => i.id === id);
-		const orgName = target?.orgName ?? "the team";
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.organization.acceptInvitation({
-						invitationId: id,
-					});
-					if (error) throw new Error(error.message ?? "Couldn't accept the invitation.");
-				})(),
-				{
-					loading: `Joining ${orgName}…`,
-					success: `Welcome to ${orgName}.`,
-					error: (err) => (err as Error)?.message ?? "Couldn't accept the invitation.",
-				},
-			);
-			await invalidateAll();
-			await goto("/dashboard");
-		} finally {
-			acceptingId = null;
-		}
+async function acceptInvite(id: string) {
+	if (busy) return;
+	acceptingId = id;
+	const target = data.invites.find((i) => i.id === id);
+	const orgName = target?.orgName ?? "the team";
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.organization.acceptInvitation({
+					invitationId: id,
+				});
+				if (error) throw new Error(error.message ?? "Couldn't accept the invitation.");
+			})(),
+			{
+				loading: `Joining ${orgName}…`,
+				success: `Welcome to ${orgName}.`,
+				error: (err) => (err as Error)?.message ?? "Couldn't accept the invitation.",
+			},
+		);
+		await invalidateAll();
+		await goto("/dashboard");
+	} finally {
+		acceptingId = null;
 	}
+}
 </script>
 
 <svelte:head>

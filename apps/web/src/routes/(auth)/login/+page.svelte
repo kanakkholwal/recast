@@ -1,12 +1,4 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { page } from "$app/state";
-import { authClient } from "$lib/auth/client";
-import { lookupEmailStatus } from "$lib/auth/lookup";
-import { safeNext } from "$lib/auth/redirect";
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
-import OrDivider from "$lib/auth/components/OrDivider.svelte";
-import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
 import {
 	AlertCircle,
 	ArrowRight,
@@ -24,6 +16,14 @@ import { toast } from "@recast/ui/sonner";
 import * as Tabs from "@recast/ui/tabs";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import OrDivider from "$lib/auth/components/OrDivider.svelte";
+import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
+import { lookupEmailStatus } from "$lib/auth/lookup";
+import { safeNext } from "$lib/auth/redirect";
 
 let { data } = $props();
 

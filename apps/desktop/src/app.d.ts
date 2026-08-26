@@ -8,8 +8,7 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
-		declare const __VERSION__: string
-
+	declare const __VERSION__: string;
 }
 
 // `gifenc` ships JS only (no .d.ts). Used by `@recast/media/encoders` (PR-B);
@@ -17,7 +16,6 @@ declare global {
 // workspace traversal. Function signatures we rely on: `GIFEncoder()`,
 // `enc.writeFrame(...)`, `enc.finish()`, `enc.bytes()`, `quantize(rgba, n)`,
 // `applyPalette(rgba, palette)`.
-declare module 'gifenc';
+declare module "gifenc";
 
-export { };
-
+export {};

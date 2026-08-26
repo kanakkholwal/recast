@@ -2,10 +2,7 @@ import { error } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
-import {
-	invitation as invitationTable,
-	organization as organizationTable,
-} from "$lib/db/schema";
+import { invitation as invitationTable, organization as organizationTable } from "$lib/db/schema";
 import type { PageServerLoad } from "./$types";
 
 type SessionShape = { user: { id: string; email: string } };
@@ -40,10 +37,7 @@ export const load: PageServerLoad = async ({ url, request }) => {
 			orgName: organizationTable.name,
 		})
 		.from(invitationTable)
-		.innerJoin(
-			organizationTable,
-			eq(invitationTable.organizationId, organizationTable.id),
-		)
+		.innerJoin(organizationTable, eq(invitationTable.organizationId, organizationTable.id))
 		.where(eq(invitationTable.id, id))
 		.limit(1);
 
@@ -71,8 +65,7 @@ export const load: PageServerLoad = async ({ url, request }) => {
 		};
 	}
 
-	const emailMatches =
-		session.user.email.toLowerCase() === inv.email.toLowerCase();
+	const emailMatches = session.user.email.toLowerCase() === inv.email.toLowerCase();
 
 	return {
 		invite: baseInvite,

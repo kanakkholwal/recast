@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
+import parityFixtures from "./__fixtures__/cut-parity.json";
 import {
 	cutContaining,
 	normalizeCuts,
 	originalToOutput,
 	outputToOriginal,
 	overlapsAny,
-	totalCutDuration,
 	type TimelineCut,
+	totalCutDuration,
 } from "./cuts";
-import parityFixtures from "./__fixtures__/cut-parity.json";
 
 function cut(start: number, end: number, id = `${start}-${end}`): TimelineCut {
 	return { id, start, end, source: "manual" };

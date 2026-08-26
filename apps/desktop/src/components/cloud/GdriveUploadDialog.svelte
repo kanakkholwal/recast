@@ -6,23 +6,24 @@
  * activity center; the store fires success/error toasts either way. Drive
  * uploads can be cancelled, so the running state offers Cancel.
  */
+
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { formatSize } from "@recast/editor/lib/format/files";
 import { etaLabel } from "@recast/editor/lib/format/time";
-import { gdrive } from "$lib/stores/gdrive.svelte";
 import {
 	AlertTriangle,
 	Ban,
+	BrandGoogleDrive,
 	Check,
 	ExternalLink,
-	BrandGoogleDrive,
 	Link2,
 	Minus,
 } from "@recast/icons";
-import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
-import UploadProgress from "$components/recast/UploadProgress.svelte";
 import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";
 import { toast } from "@recast/ui/sonner";
+import UploadProgress from "$components/recast/UploadProgress.svelte";
+import { gdrive } from "$lib/stores/gdrive.svelte";
 
 let { uploadId }: { uploadId: string } = $props();
 

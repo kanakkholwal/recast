@@ -1,4 +1,5 @@
 <script lang="ts">
+import { CameraNotFoundError, openCameraStream } from "@recast/editor/lib/camera/browser-devices";
 import {
 	CameraOff,
 	Circle,
@@ -12,10 +13,8 @@ import {
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { emit, listen } from "@tauri-apps/api/event";
-import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
-
-import { CameraNotFoundError, openCameraStream } from "@recast/editor/lib/camera/browser-devices";
 import {
 	finishCameraFlush,
 	reportCameraStart,
@@ -26,21 +25,21 @@ import {
 } from "$lib/ipc";
 import { isBrowserDeviceId } from "$lib/runtime/device-id";
 import {
-	allowedShapesFor,
 	ASPECT_RATIO,
 	ASPECTS,
+	type AspectKey,
+	allowedShapesFor,
 	buildPreviewState,
-	computeSizeConstraints,
+	type CameraStatus,
 	CONTROL_BAR_HEIGHT,
+	computeSizeConstraints,
 	fitInsideMax,
 	MAX_SCREEN_FRACTION,
 	MIN_LOGICAL_SIZE,
 	pickCameraMimeType,
+	type ShapeKey,
 	targetWindowSize,
 	WINDOW_RADIUS,
-	type AspectKey,
-	type CameraStatus,
-	type ShapeKey,
 } from "./camera-preview.logic";
 
 // Cached max logical size; aspect-snap helpers clamp against it because the

@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { RecordingProfile } from "@recast/editor/lib/profiles";
 import {
 	Camera,
 	Check,
@@ -15,8 +16,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
-
-import type { RecordingProfile } from "@recast/editor/lib/profiles";
 import { profilesStore } from "$lib/stores/profiles.svelte";
 import { wrapIndex } from "$lib/util/wrap-index";
 import { parseSelectedParam, summarize } from "./profile-picker.logic";

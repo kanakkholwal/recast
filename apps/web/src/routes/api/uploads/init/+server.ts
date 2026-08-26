@@ -4,12 +4,6 @@ import { z } from "zod";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { recast } from "$lib/db/schema";
-import { assertWorkspaceMember } from "$lib/workspace/guard";
-import {
-	checkUploadAllowed,
-	getQuotaSnapshot,
-	type UploadDenial,
-} from "$lib/storage/quota";
 import {
 	captionsObjectKey,
 	isStorageConfigured,
@@ -17,6 +11,8 @@ import {
 	recastObjectKey,
 	signUploadUrl,
 } from "$lib/storage";
+import { checkUploadAllowed, getQuotaSnapshot, type UploadDenial } from "$lib/storage/quota";
+import { assertWorkspaceMember } from "$lib/workspace/guard";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = {
@@ -26,7 +22,11 @@ type SessionShape = {
 const BodySchema = z.object({
 	workspaceId: z.string().min(1).optional(),
 	title: z.string().trim().min(1).max(200),
-	durationSec: z.number().int().nonnegative().max(24 * 60 * 60),
+	durationSec: z
+		.number()
+		.int()
+		.nonnegative()
+		.max(24 * 60 * 60),
 	sizeBytes: z.number().int().nonnegative(),
 	width: z.number().int().positive().optional(),
 	height: z.number().int().positive().optional(),
@@ -98,10 +98,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		heightPx: body.height,
 	});
 	if (!gate.ok) {
-		return json(
-			{ ok: false, denial: gate.denial },
-			{ status: denialStatus(gate.denial) },
-		);
+		return json({ ok: false, denial: gate.denial }, { status: denialStatus(gate.denial) });
 	}
 
 	const recastId = crypto.randomUUID();

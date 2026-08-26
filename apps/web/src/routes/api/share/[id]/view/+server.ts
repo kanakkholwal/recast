@@ -48,8 +48,7 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress }
 		error(400, "Invalid JSON body");
 	}
 
-	const sessionId =
-		typeof body.sessionId === "string" ? body.sessionId.trim().slice(0, 128) : "";
+	const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim().slice(0, 128) : "";
 	if (!sessionId) error(400, "Missing session");
 	const event = body.event === "ended" ? "ended" : "start";
 	const watchPct =
@@ -77,9 +76,7 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress }
 	// audience breakdowns are a cheap GROUP BY; referrer comes from the player's
 	// `document.referrer` (the request `Referer` is always the share page).
 	const country =
-		request.headers.get("x-vercel-ip-country") ??
-		request.headers.get("cf-ipcountry") ??
-		null;
+		request.headers.get("x-vercel-ip-country") ?? request.headers.get("cf-ipcountry") ?? null;
 	const userAgent = request.headers.get("user-agent")?.slice(0, 512) ?? null;
 	const device = deviceFromUA(userAgent);
 	const referrer = referrerHost(
@@ -126,10 +123,7 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress }
 			}
 		}
 
-		await tx
-			.update(recast)
-			.set({ lastViewedAt: now })
-			.where(eq(recast.id, s.recastId));
+		await tx.update(recast).set({ lastViewedAt: now }).where(eq(recast.id, s.recastId));
 	});
 
 	return json({ ok: true });

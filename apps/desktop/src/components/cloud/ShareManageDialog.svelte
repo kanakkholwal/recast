@@ -5,14 +5,15 @@
  * shared CloudShareSettings), or delete the cloud copy. Deleting NEVER touches
  * the local export. That stays the source of truth.
  */
-import CloudShareSettings from "./CloudShareSettings.svelte";
+
+import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
+import { Link2, Trash2 } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
 import { type CloudUploadRecord } from "$lib/ipc";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
-import { Button } from "@recast/ui/button";
-import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
-import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
-import { toast } from "@recast/ui/sonner";
-import { Link2, Trash2 } from "@recast/icons";
+import CloudShareSettings from "./CloudShareSettings.svelte";
 
 let {
 	open = false,

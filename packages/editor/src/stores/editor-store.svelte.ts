@@ -12,7 +12,6 @@ import {
 	clampPlacement,
 	keyframesFromMotionSegments,
 } from "../components/_components/camera-overlay.logic";
-import { scaleTranscript, transcriptTimeScale } from "../lib/captions/normalize";
 import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
 import {
 	type AudioClip,
@@ -21,8 +20,51 @@ import {
 	splitClip,
 	voiceClip,
 } from "../lib/audio/music";
+import { scaleTranscript, transcriptTimeScale } from "../lib/captions/normalize";
 import type { CursorSampleLike } from "../lib/cursor/smoothing";
 import { EASE, EASE_IN_OUT, type Easing } from "../lib/easing/cubic-bezier";
+import {
+	type Annotation,
+	type AnnotationKind,
+	type AnnotationKindName,
+	type AudioSettings,
+	type BackgroundSelection,
+	type BackgroundType,
+	type CameraOverlaySettings,
+	type CameraPlacement,
+	type CaptionExportOptions,
+	type CursorSettings,
+	cameraPlacementFromPreset,
+	clampFramePaddingPercent,
+	DEFAULT_ANNOTATION_FILL,
+	DEFAULT_ANNOTATION_RAMP,
+	DEFAULT_ANNOTATION_STROKE,
+	DEFAULT_CAPTION_EXPORT,
+	DEFAULT_GIF_SETTINGS,
+	DEFAULT_ZOOM_CENTER,
+	DEFAULT_ZOOM_MOTION_BLUR,
+	DEFAULT_ZOOM_RAMP,
+	type DeleteSelectionResult,
+	type EditorRenderState,
+	type EditorSelection,
+	type ExportFormat,
+	type ExportQuality,
+	type ExportSpeed,
+	type GifSettings,
+	generateId,
+	type LayoutMode,
+	normalizeFramePaddingPercent,
+	type OutputAspect,
+	type PanelTab,
+	type ShadowSettings,
+	type TimelineCommands,
+	type TimelineTool,
+	type Transcript,
+	type VideoMetadata,
+	WALLPAPERS,
+	wallpaperBackgroundValue,
+	type ZoomRegion,
+} from "../lib/editor/render-state";
 import type { TimeMode } from "../lib/editor/time";
 import { log } from "../lib/log";
 import { resolveBackgroundWireValue } from "../lib/registry/resolve";
@@ -64,48 +106,6 @@ import {
 	timeMapFromSegments,
 } from "../lib/timeline/time-map";
 import { experimentalStore } from "./experimental.svelte";
-import {
-	type Annotation,
-	type AnnotationKind,
-	type AnnotationKindName,
-	type AudioSettings,
-	type BackgroundSelection,
-	type BackgroundType,
-	type CameraOverlaySettings,
-	type CameraPlacement,
-	type CaptionExportOptions,
-	type CursorSettings,
-	DEFAULT_ANNOTATION_FILL,
-	DEFAULT_ANNOTATION_RAMP,
-	DEFAULT_ANNOTATION_STROKE,
-	DEFAULT_CAPTION_EXPORT,
-	DEFAULT_GIF_SETTINGS,
-	DEFAULT_ZOOM_CENTER,
-	DEFAULT_ZOOM_MOTION_BLUR,
-	DEFAULT_ZOOM_RAMP,
-	type DeleteSelectionResult,
-	type EditorRenderState,
-	type EditorSelection,
-	type ExportFormat,
-	type ExportQuality,
-	type ExportSpeed,
-	type GifSettings,
-	type LayoutMode,
-	type OutputAspect,
-	type ShadowSettings,
-	type TimelineCommands,
-	type TimelineTool,
-	type Transcript,
-	type VideoMetadata,
-	WALLPAPERS,
-	type ZoomRegion,
-	cameraPlacementFromPreset,
-	clampFramePaddingPercent,
-	generateId,
-	normalizeFramePaddingPercent,
-	type PanelTab,
-	wallpaperBackgroundValue,
-} from "../lib/editor/render-state";
 
 export * from "../lib/editor/render-state";
 

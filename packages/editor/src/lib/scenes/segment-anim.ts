@@ -9,7 +9,7 @@
  * and mirrored by the Rust export graph. It never changes duration or timing.
  */
 
-import { EASE_OUT, EASE_IN, EASE_IN_OUT, BOUNCE, type Easing } from "../easing/cubic-bezier";
+import { BOUNCE, EASE_IN, EASE_IN_OUT, EASE_OUT, type Easing } from "../easing/cubic-bezier";
 import type { Segment } from "../timeline/segments";
 
 /** Tolerance for matching an anchor to a segment start. Matches segments.ts. */

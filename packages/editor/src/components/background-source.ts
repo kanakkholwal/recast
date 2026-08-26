@@ -6,8 +6,8 @@
  * load (colour/gradient, or an asset not cached yet).
  */
 
-import { getEditorServices } from "../lib/editor/services";
 import { resolveAsset } from "../lib/assets";
+import { getEditorServices } from "../lib/editor/services";
 import { resolveBackgroundWireValue } from "../lib/registry";
 import { assetsStore } from "../stores/assets-store.svelte";
 

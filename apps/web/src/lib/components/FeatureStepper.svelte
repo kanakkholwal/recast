@@ -1,8 +1,8 @@
 <script lang="ts">
 import { cn } from "@recast/ui/utils";
 import { untrack } from "svelte";
-import { fly } from "svelte/transition";
 import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
 type Feature = {
 	icon: any;

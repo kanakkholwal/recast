@@ -1,4 +1,58 @@
 <script lang="ts">
+import { agentSession, Editor, resolveTrackOffsets } from "@recast/editor";
+import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
+import BranchReviewPanel from "@recast/editor/components/BranchReviewPanel.svelte";
+import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
+import EditorToolbar from "@recast/editor/components/EditorToolbar.svelte";
+import ExportDialog from "@recast/editor/components/ExportDialog.svelte";
+import ExportPanel, { type ExportPanelPhase } from "@recast/editor/components/ExportPanel.svelte";
+import ExportStageLoader from "@recast/editor/components/ExportStageLoader.svelte";
+import { DEFAULT_LAYOUT, LAYOUT_KEY, parseLayout } from "@recast/editor/editor-shell.logic";
+import { clipAssetPath } from "@recast/editor/lib/audio/music";
+import { activatesOnSpace, isOverlayOpen } from "@recast/editor/lib/dom/keyboard";
+import {
+	boolParam,
+	PANEL_PARAM,
+	parseBoolParam,
+	parsePanelTab,
+	SIDEBAR_PARAM,
+	TIMELINE_PARAM,
+	withEditorParams,
+} from "@recast/editor/lib/editor/editor-url";
+import { setEditorServices } from "@recast/editor/lib/editor/services";
+import { formatClock, frameStepOutput } from "@recast/editor/lib/editor/time";
+import {
+	browserExportBlockedReason,
+	resolveExportFps,
+} from "@recast/editor/lib/export/browser-export-eligibility";
+import type { ExportQuality } from "@recast/editor/lib/export/browser-export-plan";
+import { buildExportJob } from "@recast/editor/lib/export/build-export-job";
+import { chooseExportEngine } from "@recast/editor/lib/export/choose-export-engine";
+import { probeBrowserExportCapability } from "@recast/editor/lib/export/export-capability";
+import { exportEtaMs as computeExportEtaMs, formatElapsed } from "@recast/editor/lib/format/time";
+import { AudioTimelineEngine, type MusicClipSpec } from "@recast/editor/lib/playback/audio-engine";
+import { reconcileAvDrift } from "@recast/editor/lib/playback/av-drift";
+import { decoderBudget } from "@recast/editor/lib/playback/decoder-budget";
+import {
+	buildCaptionExport,
+	buildCloudCaptionTranscript,
+	buildExportRenderState,
+	exportTimeMap,
+	findMissingImageAnnotations,
+	hasBlurUnderZoom,
+} from "@recast/editor/lib/services/export";
+import {
+	createTileProvider,
+	type TileProvider,
+} from "@recast/editor/lib/timeline/filmstrip-source";
+import {
+	originalToOutput,
+	outputToOriginal,
+	toRegions,
+} from "@recast/editor/lib/timeline/time-map";
+import type { CameraCapture } from "@recast/editor/lib/wire-types";
+import { createEditorStore, type VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
+import { experimentalStore } from "@recast/editor/stores/experimental.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	ArrowLeft,
@@ -25,42 +79,13 @@ import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
 import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
-import { agentSession, Editor, resolveTrackOffsets } from "@recast/editor";
-import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
-import BranchReviewPanel from "@recast/editor/components/BranchReviewPanel.svelte";
-import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-session.tauri";
-import EditorToolbar from "@recast/editor/components/EditorToolbar.svelte";
-import ExportDialog from "@recast/editor/components/ExportDialog.svelte";
-import ExportPanel, { type ExportPanelPhase } from "@recast/editor/components/ExportPanel.svelte";
-import ExportStageLoader from "@recast/editor/components/ExportStageLoader.svelte";
 import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
-import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
 import PlayerDialog from "$components/recast/PlayerDialog.svelte";
 import RecastMark from "$components/recast-mark.svelte";
 import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
-import { clipAssetPath } from "@recast/editor/lib/audio/music";
 import { type DestinationTile, destinationTile, uploadForPath } from "$lib/cloud/destination-tile";
-import { activatesOnSpace, isOverlayOpen } from "@recast/editor/lib/dom/keyboard";
-import {
-	boolParam,
-	PANEL_PARAM,
-	parseBoolParam,
-	parsePanelTab,
-	SIDEBAR_PARAM,
-	TIMELINE_PARAM,
-	withEditorParams,
-} from "@recast/editor/lib/editor/editor-url";
-import { setEditorServices } from "@recast/editor/lib/editor/services";
+import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-session.tauri";
 import { tauriEditorServices } from "$lib/editor/services.tauri";
-import { formatClock, frameStepOutput } from "@recast/editor/lib/editor/time";
-import { buildExportJob } from "@recast/editor/lib/export/build-export-job";
-import {
-	browserExportBlockedReason,
-	resolveExportFps,
-} from "@recast/editor/lib/export/browser-export-eligibility";
-import type { ExportQuality } from "@recast/editor/lib/export/browser-export-plan";
-import { chooseExportEngine } from "@recast/editor/lib/export/choose-export-engine";
-import { probeBrowserExportCapability } from "@recast/editor/lib/export/export-capability";
 import type { RecordingEntry } from "$lib/ipc";
 import {
 	autosaveProject,
@@ -76,41 +101,16 @@ import {
 	openFileLocation,
 	saveProjectEdits,
 } from "$lib/ipc";
-import type { CameraCapture } from "@recast/editor/lib/wire-types";
 import { log } from "$lib/logger";
-import { AudioTimelineEngine, type MusicClipSpec } from "@recast/editor/lib/playback/audio-engine";
-import { reconcileAvDrift } from "@recast/editor/lib/playback/av-drift";
-import { decoderBudget } from "@recast/editor/lib/playback/decoder-budget";
 import { generateAutoZoom } from "$lib/services/analysis";
-import {
-	buildCaptionExport,
-	buildCloudCaptionTranscript,
-	buildExportRenderState,
-	exportTimeMap,
-	findMissingImageAnnotations,
-	hasBlurUnderZoom,
-} from "@recast/editor/lib/services/export";
 import { isShareSupported, shareRecording } from "$lib/share";
 import { shareTargetFor } from "$lib/share-target";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
-import { createEditorStore, type VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
-import { experimentalStore } from "@recast/editor/stores/experimental.svelte";
-import { exportActivity, type ExportTelemetry } from "$lib/stores/exportActivity.svelte";
+import { type ExportTelemetry, exportActivity } from "$lib/stores/exportActivity.svelte";
 import { gdrive } from "$lib/stores/gdrive.svelte";
-import {
-	createTileProvider,
-	type TileProvider,
-} from "@recast/editor/lib/timeline/filmstrip-source";
-import {
-	originalToOutput,
-	outputToOriginal,
-	toRegions,
-} from "@recast/editor/lib/timeline/time-map";
 import { settingsHref } from "../../(app)/settings/settings-tabs";
 import { basename } from "./editor-page.logic";
-import { DEFAULT_LAYOUT, LAYOUT_KEY, parseLayout } from "@recast/editor/editor-shell.logic";
-import { exportEtaMs as computeExportEtaMs, formatElapsed } from "@recast/editor/lib/format/time";
 
 interface Props {
 	data: {

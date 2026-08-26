@@ -1,22 +1,22 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { config } from "$constants/app";
-import { LATEST_RELEASE } from "$constants/changelog";
-import { updater } from "$lib/stores/updater.svelte";
-import { whatsNew } from "$lib/stores/whats-new.svelte";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import {
+	AiWand,
 	ArrowRight,
 	CircleCheck,
 	Download,
 	RefreshCw,
 	TriangleAlert,
 	X,
-	AiWand,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cubicOut } from "svelte/easing";
-import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import { fly } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { config } from "$constants/app";
+import { LATEST_RELEASE } from "$constants/changelog";
+import { updater } from "$lib/stores/updater.svelte";
+import { whatsNew } from "$lib/stores/whats-new.svelte";
 
 const pct = $derived(Math.round(updater.progress * 100));
 

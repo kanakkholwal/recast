@@ -45,9 +45,6 @@ export function canSignUp(input: {
 	);
 }
 
-export function canResetPassword(input: {
-	password: string;
-	confirmPassword: string;
-}): boolean {
+export function canResetPassword(input: { password: string; confirmPassword: string }): boolean {
 	return input.password.length >= 8 && input.password === input.confirmPassword;
 }

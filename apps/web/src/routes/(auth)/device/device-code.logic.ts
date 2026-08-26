@@ -12,5 +12,8 @@ export function formatUserCode(code: string | null | undefined): string {
 // Sanitize manual entry down to the character set the plugin accepts before
 // we round-trip it through the /device navigation.
 export function normalizeUserCode(code: string): string {
-	return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
+	return code
+		.trim()
+		.toUpperCase()
+		.replace(/[^A-Z0-9-]/g, "");
 }

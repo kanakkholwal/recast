@@ -15,15 +15,15 @@
 
 import { bezierY } from "../easing/cubic-bezier";
 import type { Segment } from "../timeline/segments";
+import type { SceneAnimSpec, SegmentAnim } from "./segment-anim";
 import {
-	segmentAnimAt,
 	clampAnimMs,
-	DEFAULT_SLIDE,
-	DEFAULT_SCALE_DELTA,
 	DEFAULT_POP_DELTA,
 	DEFAULT_ROTATE_DEG,
+	DEFAULT_SCALE_DELTA,
+	DEFAULT_SLIDE,
+	segmentAnimAt,
 } from "./segment-anim";
-import type { SceneAnimSpec, SegmentAnim } from "./segment-anim";
 
 const EPS = 1e-4;
 

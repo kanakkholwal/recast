@@ -4,9 +4,9 @@
  * and path encoding stay in one place.
  */
 
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { goto } from "$app/navigation";
 import type { RecordingEntry } from "$lib/recorder-types";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 /** Encode a filesystem path for use as an `/editor/[file]` route segment. */
 export function encodeEditorPath(path: string): string {

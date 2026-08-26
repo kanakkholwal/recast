@@ -1,11 +1,11 @@
 <script lang="ts">
-import SectionCard from "$components/layout/SectionCard.svelte";
-import { openLogDir } from "$lib/ipc";
-import { diagnostics } from "$lib/logger/diagnostics.svelte";
 import { FolderOpen, ScrollText } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { Switch } from "@recast/ui/switch";
+import SectionCard from "$components/layout/SectionCard.svelte";
+import { openLogDir } from "$lib/ipc";
+import { diagnostics } from "$lib/logger/diagnostics.svelte";
 
 let opening = $state(false);
 

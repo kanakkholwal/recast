@@ -11,15 +11,15 @@ import {
 import { Button } from "@recast/ui/button";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
-import { clockCentis } from "../lib/format/time";
 import { getEditorServices, type ZoomSuggestion } from "../lib/editor/services";
-import type { EditorStore } from "../stores/editor-store.svelte";
+import { clockCentis } from "../lib/format/time";
 import {
 	findFreeSlot as _findFreeSlot,
 	AUTO_ZOOM_SCALE,
 	type Interval,
 	planPlacement,
 } from "../lib/zoom/auto-apply";
+import type { EditorStore } from "../stores/editor-store.svelte";
 import { keyOf, normalizeCenter, reasonLabel } from "./zoom-suggestions.logic";
 
 interface Props {

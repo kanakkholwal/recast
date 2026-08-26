@@ -2,12 +2,12 @@ import { error, json } from "@sveltejs/kit";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
-import { recast } from "$lib/db/schema";
 import {
 	recastLatestShareSlugSql,
 	recastTagIdsSql,
 	recastViewsSql,
 } from "$lib/db/recast-selectors";
+import { recast } from "$lib/db/schema";
 import { resolvePlaybackUrl } from "$lib/storage";
 import { assertWorkspaceMember } from "$lib/workspace/guard";
 import type { RequestHandler } from "./$types";
@@ -39,8 +39,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		.catch(() => null)) as SessionShape | null;
 	if (!session?.user) error(401, "Sign in required");
 
-	const workspaceId =
-		url.searchParams.get("workspaceId") ?? session.user.activeOrganizationId;
+	const workspaceId = url.searchParams.get("workspaceId") ?? session.user.activeOrganizationId;
 	if (!workspaceId) error(400, "No active workspace");
 
 	const db = getDb();
@@ -48,10 +47,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	await assertWorkspaceMember(session.user.id, workspaceId);
 
 	const statusFilter = url.searchParams.get("status");
-	const limit = Math.min(
-		200,
-		Math.max(1, Number(url.searchParams.get("limit")) || 50),
-	);
+	const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit")) || 50));
 	const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
 
 	const where = statusFilter

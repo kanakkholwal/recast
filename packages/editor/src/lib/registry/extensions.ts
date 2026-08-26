@@ -17,11 +17,12 @@ import { tryGetEditorServices } from "../editor/services";
 
 /** Identity on hosts whose refs are already loadable (web object URLs). */
 const resolveRef = (r: string) => tryGetEditorServices()?.resolveAssetUrl(r) ?? r;
-import type { InstalledExtension } from "../wire-types";
+
+import { DEFAULT_CAPTION_STYLE } from "@recast/captions";
 import { log } from "../log";
+import type { InstalledExtension } from "../wire-types";
 import { registry } from "./registry.svelte";
 import { extEntryId, type RegistryEntry } from "./types";
-import { DEFAULT_CAPTION_STYLE } from "@recast/captions";
 
 type AssetMap = Map<string, { path: string | null; thumbPath: string | null }>;
 

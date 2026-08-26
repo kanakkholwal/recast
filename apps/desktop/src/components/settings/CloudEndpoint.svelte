@@ -1,72 +1,70 @@
 <script lang="ts">
-	import { Check, LoaderCircle, RotateCcw, Server } from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
-	import { cn } from "@recast/ui/utils";
-	import { emit } from "@tauri-apps/api/event";
-	import { onMount } from "svelte";
-	import { getCloudApiConfig, setCloudApiUrl, type CloudApiConfig } from "$lib/ipc";
+import { Check, LoaderCircle, RotateCcw, Server } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { emit } from "@tauri-apps/api/event";
+import { onMount } from "svelte";
+import { type CloudApiConfig, getCloudApiConfig, setCloudApiUrl } from "$lib/ipc";
 
-	/**
-	 * Self-hosting server endpoint override. The Rust resolver
-	 * (`auth::cloud_api_url`) falls back to the default on an empty/malformed
-	 * value, so a bad entry can't brick sign-in; we validate on save too for an
-	 * explicit error. Changing the endpoint invalidates the session, so we emit
-	 * `cloud:endpoint-changed` to reset the sign-in card to signed-out.
-	 */
-	let config = $state<CloudApiConfig | null>(null);
-	let input = $state("");
-	let saving = $state(false);
+/**
+ * Self-hosting server endpoint override. The Rust resolver
+ * (`auth::cloud_api_url`) falls back to the default on an empty/malformed
+ * value, so a bad entry can't brick sign-in; we validate on save too for an
+ * explicit error. Changing the endpoint invalidates the session, so we emit
+ * `cloud:endpoint-changed` to reset the sign-in card to signed-out.
+ */
+let config = $state<CloudApiConfig | null>(null);
+let input = $state("");
+let saving = $state(false);
 
-	// Dirty only when the trimmed input differs from what's persisted. An empty
-	// input with no override saved is not dirty (nothing to clear).
-	const dirty = $derived(
-		config !== null && input.trim() !== (config.overrideUrl ?? ""),
-	);
+// Dirty only when the trimmed input differs from what's persisted. An empty
+// input with no override saved is not dirty (nothing to clear).
+const dirty = $derived(config !== null && input.trim() !== (config.overrideUrl ?? ""));
 
-	async function load() {
-		try {
-			const c = await getCloudApiConfig();
-			config = c;
-			input = c.overrideUrl ?? "";
-		} catch (e) {
-			toast.error(`Couldn't load server endpoint: ${e}`);
+async function load() {
+	try {
+		const c = await getCloudApiConfig();
+		config = c;
+		input = c.overrideUrl ?? "";
+	} catch (e) {
+		toast.error(`Couldn't load server endpoint: ${e}`);
+	}
+}
+
+async function save() {
+	if (saving) return;
+	saving = true;
+	const prevEffective = config?.effective;
+	try {
+		// Empty string clears the override → back to the default endpoint.
+		const trimmed = input.trim();
+		const next = await setCloudApiUrl(trimmed.length > 0 ? trimmed : null);
+		config = next;
+		input = next.overrideUrl ?? "";
+		toast.success(
+			next.isCustom
+				? `Server endpoint set to ${next.effective}`
+				: "Using the default Recast Cloud endpoint",
+		);
+		// Only nudge the sign-in card if the endpoint actually moved.
+		if (next.effective !== prevEffective) {
+			await emit("cloud:endpoint-changed");
 		}
+	} catch (e) {
+		// `set_cloud_api_url` rejects invalid URLs with a friendly message.
+		toast.error(String(e));
+	} finally {
+		saving = false;
 	}
+}
 
-	async function save() {
-		if (saving) return;
-		saving = true;
-		const prevEffective = config?.effective;
-		try {
-			// Empty string clears the override → back to the default endpoint.
-			const trimmed = input.trim();
-			const next = await setCloudApiUrl(trimmed.length > 0 ? trimmed : null);
-			config = next;
-			input = next.overrideUrl ?? "";
-			toast.success(
-				next.isCustom
-					? `Server endpoint set to ${next.effective}`
-					: "Using the default Recast Cloud endpoint",
-			);
-			// Only nudge the sign-in card if the endpoint actually moved.
-			if (next.effective !== prevEffective) {
-				await emit("cloud:endpoint-changed");
-			}
-		} catch (e) {
-			// `set_cloud_api_url` rejects invalid URLs with a friendly message.
-			toast.error(String(e));
-		} finally {
-			saving = false;
-		}
-	}
+async function reset() {
+	input = "";
+	await save();
+}
 
-	async function reset() {
-		input = "";
-		await save();
-	}
-
-	onMount(load);
+onMount(load);
 </script>
 
 <div class="flex flex-col gap-3 px-4 py-3">

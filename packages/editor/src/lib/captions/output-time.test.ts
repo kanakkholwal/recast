@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Transcript, TranscriptSegment, TranscriptWord } from "../wire-types";
 import { buildTimeMap } from "../timeline/time-map";
+import type { Transcript, TranscriptSegment, TranscriptWord } from "../wire-types";
 import { toOutputTimeTranscript } from "./output-time";
 
 function word(start: number, end: number, text: string): TranscriptWord {

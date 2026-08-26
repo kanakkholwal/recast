@@ -8,8 +8,8 @@
  * layer pulls in Tauri + analytics that unit tests can't load.
  */
 
-import type { Transcript } from "../wire-types";
 import { originalToOutput, type TimeMap } from "../timeline/time-map";
+import type { Transcript } from "../wire-types";
 import { keptCaptionSpans, splitSegmentAcrossSpans } from "./clip-with-cuts";
 
 /** Map a transcript onto the OUTPUT timeline (trim + cuts + per-segment speed)

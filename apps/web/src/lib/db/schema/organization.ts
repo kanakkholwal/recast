@@ -1,12 +1,4 @@
-import {
-	bigint,
-	index,
-	integer,
-	pgTable,
-	text,
-	timestamp,
-	unique,
-} from "drizzle-orm/pg-core";
+import { bigint, index, integer, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { PLAN_IDS, PLANS } from "$lib/billing/catalog";
 import { user } from "./auth";
 

@@ -16,24 +16,24 @@
  * a 4K recording, scrub across the cut, observe the frame).
  */
 
-import { describe, expect, it } from "vitest";
-import {
-	outputToOriginal,
-	spanAtOriginal,
-	timeMapFromSegments,
-} from "@recast/editor/lib/timeline/time-map";
 import {
 	activeClippedSegment,
 	clipSegmentToSpan,
 	clipWordsToSpan,
 } from "@recast/editor/lib/captions/clip-with-cuts";
+import {
+	outputToOriginal,
+	spanAtOriginal,
+	timeMapFromSegments,
+} from "@recast/editor/lib/timeline/time-map";
+import { describe, expect, it } from "vitest";
 import type { TranscriptSegment, TranscriptWord } from "$lib/ipc";
 
 const N_ITERATIONS = 50;
 const CUT = { start: 10, end: 12 };
 const RECORDING_SEC = 60; // arbitrary; we only need a long-enough recording
 
-const segments = (function () {
+const segments = (() => {
 	// One segment before the cut, one after. No per-segment speed.
 	const out: { start: number; end: number; index: number }[] = [];
 	out.push({ start: 0, end: CUT.start, index: 0 });

@@ -1,44 +1,44 @@
 <script lang="ts">
-	import { Badge } from "@recast/ui/badge";
-	import { Skeleton } from "@recast/ui/skeleton";
-	import {
-		Activity,
-		ClipboardList,
-		CreditCard,
-		Crown,
-		Film,
-		Hourglass,
-		ShieldOff,
-		TrendingUp,
-		UserCheck,
-		Users,
-	} from "@recast/icons";
+import {
+	Activity,
+	ClipboardList,
+	CreditCard,
+	Crown,
+	Film,
+	Hourglass,
+	ShieldOff,
+	TrendingUp,
+	UserCheck,
+	Users,
+} from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Skeleton } from "@recast/ui/skeleton";
 
-	import InlineError from "$lib/components/InlineError.svelte";
+import InlineError from "$lib/components/InlineError.svelte";
 
-	let { data } = $props();
+let { data } = $props();
 
-	function timeAgo(d: Date | string): string {
-		const ms = Date.now() - new Date(d).getTime();
-		const min = Math.floor(ms / 60_000);
-		if (min < 1) return "just now";
-		if (min < 60) return `${min}m ago`;
-		const hr = Math.floor(min / 60);
-		if (hr < 24) return `${hr}h ago`;
-		const d2 = Math.floor(hr / 24);
-		return `${d2}d ago`;
-	}
+function timeAgo(d: Date | string): string {
+	const ms = Date.now() - new Date(d).getTime();
+	const min = Math.floor(ms / 60_000);
+	if (min < 1) return "just now";
+	if (min < 60) return `${min}m ago`;
+	const hr = Math.floor(min / 60);
+	if (hr < 24) return `${hr}h ago`;
+	const d2 = Math.floor(hr / 24);
+	return `${d2}d ago`;
+}
 
-	const metricMeta = [
-		{ key: "total", label: "Total users", icon: Users, source: "counts" },
-		{ key: "active", label: "Active users", icon: UserCheck, source: "counts" },
-		{ key: "pending", label: "On waitlist", icon: Hourglass, source: "counts" },
-		{ key: "admins", label: "Admins", icon: Crown, source: "counts" },
-		{ key: "banned", label: "Banned", icon: ShieldOff, source: "counts" },
-		{ key: "active", label: "Paid subscriptions", icon: CreditCard, source: "subs" },
-		{ key: "signups7d", label: "Signups (7d)", icon: TrendingUp, source: "counts" },
-		{ key: "signups30d", label: "Signups (30d)", icon: Activity, source: "counts" },
-	] as const;
+const metricMeta = [
+	{ key: "total", label: "Total users", icon: Users, source: "counts" },
+	{ key: "active", label: "Active users", icon: UserCheck, source: "counts" },
+	{ key: "pending", label: "On waitlist", icon: Hourglass, source: "counts" },
+	{ key: "admins", label: "Admins", icon: Crown, source: "counts" },
+	{ key: "banned", label: "Banned", icon: ShieldOff, source: "counts" },
+	{ key: "active", label: "Paid subscriptions", icon: CreditCard, source: "subs" },
+	{ key: "signups7d", label: "Signups (7d)", icon: TrendingUp, source: "counts" },
+	{ key: "signups30d", label: "Signups (30d)", icon: Activity, source: "counts" },
+] as const;
 </script>
 
 <header class="mb-8">

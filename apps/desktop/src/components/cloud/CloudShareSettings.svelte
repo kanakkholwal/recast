@@ -6,8 +6,7 @@
  * both by ShareManageDialog and inline in the upload flow (CloudShareDialog).
  * Primes current state from the server; the parent applies via bound `save`.
  */
-import { recastCloudListShares } from "$lib/ipc";
-import { cloudShare } from "$lib/stores/cloudShare.svelte";
+
 import type { IconComponent } from "@recast/icons";
 import {
 	CalendarClock,
@@ -23,6 +22,8 @@ import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";
 import * as Select from "@recast/ui/select";
 import { toast } from "@recast/ui/sonner";
+import { recastCloudListShares } from "$lib/ipc";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { buildShareUpdate, toVisibility, type Visibility } from "./share-manage-dialog.logic";
 
 let {

@@ -5,8 +5,8 @@
  */
 
 import type { CaptionAnimation } from "@recast/captions";
-import type { RecordingProfile } from "./profiles";
 import type { EditorRenderState, Transcript, VideoMetadata } from "./editor/render-state";
+import type { RecordingProfile } from "./profiles";
 
 export type {
 	EditorRenderState,

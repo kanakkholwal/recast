@@ -1,29 +1,29 @@
 <script lang="ts">
-	import { cn, type WithElementRef } from "$lib/utils.js";
-	import type { HTMLAttributes } from "svelte/elements";
-	import ChartStyle from "./chart-style.svelte";
-	import { setChartContext, type ChartConfig } from "./chart-utils.js";
+import type { HTMLAttributes } from "svelte/elements";
+import { cn, type WithElementRef } from "$lib/utils.js";
+import ChartStyle from "./chart-style.svelte";
+import { type ChartConfig, setChartContext } from "./chart-utils.js";
 
-	const uid = $props.id();
+const uid = $props.id();
 
-	let {
-		ref = $bindable(null),
-		id = uid,
-		class: className,
-		children,
-		config,
-		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLElement>> & {
-		config: ChartConfig;
-	} = $props();
+let {
+	ref = $bindable(null),
+	id = uid,
+	class: className,
+	children,
+	config,
+	...restProps
+}: WithElementRef<HTMLAttributes<HTMLElement>> & {
+	config: ChartConfig;
+} = $props();
 
-	const chartId = $derived(`chart-${id || uid.replace(/:/g, "")}`);
+const chartId = $derived(`chart-${id || uid.replace(/:/g, "")}`);
 
-	setChartContext({
-		get config() {
-			return config;
-		},
-	});
+setChartContext({
+	get config() {
+		return config;
+	},
+});
 </script>
 
 <div

@@ -1,37 +1,4 @@
 <script lang="ts">
-import { afterNavigate, replaceState } from "$app/navigation";
-import { page } from "$app/state";
-import SectionCard from "$components/layout/SectionCard.svelte";
-import SettingsRow from "$components/layout/SettingsRow.svelte";
-import StudioPage from "$components/layout/StudioPage.svelte";
-import Logo from "$components/logo.svelte";
-import RecastMark from "$components/recast-mark.svelte";
-import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
-import CloudSignIn from "$components/settings/CloudSignIn.svelte";
-import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
-import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
-import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
-import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
-import { config } from "$constants/app";
-import {
-	cliInstallStatus,
-	getCliAutoInstall,
-	getCloseToTray,
-	getDisplays,
-	getHidePanelFromCapture,
-	getLastSource,
-	getOutputDir,
-	getWindowTransparency,
-	installCli,
-	setCliAutoInstall,
-	setCloseToTray,
-	setHidePanelFromCapture,
-	setOutputDir,
-	setWindowTransparency,
-	uninstallCli,
-	type CliInstallStatus,
-} from "$lib/ipc";
-import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
 import {
 	loadRecordingFps,
 	loadRecordingQuality,
@@ -39,6 +6,11 @@ import {
 	persistRecordingQuality,
 	type RecordingQuality,
 } from "@recast/editor/lib/profiles";
+import {
+	type ExperimentalFlag,
+	experimentalStore,
+	FLAG_META,
+} from "@recast/editor/stores/experimental.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	ArrowUpRight,
@@ -69,6 +41,7 @@ import {
 } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
+import { safeStorage } from "@recast/ui/persisted-state";
 import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
 import { toast } from "@recast/ui/sonner";
 import { Switch } from "@recast/ui/switch";
@@ -78,25 +51,51 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { platform } from "@tauri-apps/plugin-os";
 import { onMount, untrack } from "svelte";
+import { afterNavigate, replaceState } from "$app/navigation";
+import { page } from "$app/state";
+import SectionCard from "$components/layout/SectionCard.svelte";
+import SettingsRow from "$components/layout/SettingsRow.svelte";
+import StudioPage from "$components/layout/StudioPage.svelte";
+import Logo from "$components/logo.svelte";
+import RecastMark from "$components/recast-mark.svelte";
+import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
+import CloudSignIn from "$components/settings/CloudSignIn.svelte";
+import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
+import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
+import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
+import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
+import { config } from "$constants/app";
+import { syncConsent } from "$lib/analytics/client";
+import {
+	type CliInstallStatus,
+	cliInstallStatus,
+	getCliAutoInstall,
+	getCloseToTray,
+	getDisplays,
+	getHidePanelFromCapture,
+	getLastSource,
+	getOutputDir,
+	getWindowTransparency,
+	installCli,
+	setCliAutoInstall,
+	setCloseToTray,
+	setHidePanelFromCapture,
+	setOutputDir,
+	setWindowTransparency,
+	uninstallCli,
+} from "$lib/ipc";
+import { desktopConsent } from "$lib/stores/consent.svelte";
+import { LAYOUT_MODES, type LayoutMode, layoutMode } from "$lib/stores/layout-mode.svelte";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import { type CountdownSeconds, recordingCountdown } from "$lib/stores/recording-countdown.svelte";
+import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
+import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
 import {
 	DEFAULT_SETTINGS_TAB,
 	parseSettingsTab,
 	SETTINGS_TAB_PARAM,
 	type SettingsTab,
 } from "./settings-tabs";
-import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
-
-import { syncConsent } from "$lib/analytics/client";
-import { desktopConsent } from "$lib/stores/consent.svelte";
-import { LAYOUT_MODES, layoutMode, type LayoutMode } from "$lib/stores/layout-mode.svelte";
-import { profilesStore } from "$lib/stores/profiles.svelte";
-import { recordingCountdown, type CountdownSeconds } from "$lib/stores/recording-countdown.svelte";
-import {
-	experimentalStore,
-	FLAG_META,
-	type ExperimentalFlag,
-} from "@recast/editor/stores/experimental.svelte";
-import { safeStorage } from "@recast/ui/persisted-state";
 
 type Theme = "light" | "dark" | "system";
 type EditorBehavior = "navigate" | "new-window";

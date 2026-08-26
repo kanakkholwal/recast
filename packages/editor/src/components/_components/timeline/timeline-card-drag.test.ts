@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+	type CardDragGeometry,
 	computeCardMove,
 	computeCardResize,
-	dragEngaged,
 	DRAG_THRESHOLD_PX,
+	dragEngaged,
 	PRECISION_SCALE,
-	type CardDragGeometry,
 } from "./timeline-card-drag.logic";
 import type { SnapTarget } from "./timeline-snap";
 

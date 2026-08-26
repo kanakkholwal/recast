@@ -3,18 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { member, recast, share, shareMember, user } from "$lib/db/schema";
-import {
-	constantTimeEquals,
-	unlockCookieName,
-	unlockToken,
-} from "$lib/share/password";
 import { grantCookieName, normalizeEmail, readGrantedEmail } from "$lib/share/grant";
+import { constantTimeEquals, unlockCookieName, unlockToken } from "$lib/share/password";
 import { isStorageConfigured, signDownloadUrl } from "$lib/storage";
-import {
-	deliveryState,
-	getQuotaSnapshot,
-	recordDelivery,
-} from "$lib/storage/quota";
+import { deliveryState, getQuotaSnapshot, recordDelivery } from "$lib/storage/quota";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = {
@@ -82,12 +74,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 			const [m] = await db
 				.select({ id: member.id })
 				.from(member)
-				.where(
-					and(
-						eq(member.userId, session.user.id),
-						eq(member.organizationId, s.organizationId),
-					),
-				)
+				.where(and(eq(member.userId, session.user.id), eq(member.organizationId, s.organizationId)))
 				.limit(1);
 			if (!m) error(403, "Not a member of this workspace");
 			break;
@@ -100,10 +87,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 			// Identity can come from a signed-in email OR an account-less grant
 			// cookie (see $lib/share/grant) — both re-checked against the
 			// allowlist below so a removed invitee loses access immediately.
-			const grantedEmail = await readGrantedEmail(
-				s.slug,
-				cookies.get(grantCookieName(s.slug)),
-			);
+			const grantedEmail = await readGrantedEmail(s.slug, cookies.get(grantCookieName(s.slug)));
 			const candidates = [session?.user?.email, grantedEmail]
 				.filter((e): e is string => Boolean(e))
 				.map(normalizeEmail);
@@ -111,10 +95,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 			if (candidates.length === 0) {
 				// No session and no grant — signal the player to render the
 				// "request access" prompt rather than a bare 401.
-				return json(
-					{ ok: false, reason: "claim_required" },
-					{ status: 401 },
-				);
+				return json({ ok: false, reason: "claim_required" }, { status: 401 });
 			}
 
 			const members = await db
@@ -150,10 +131,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 		const got = cookies.get(unlockCookieName(s.slug));
 		const expected = await unlockToken(s.slug);
 		if (!got || !constantTimeEquals(got, expected)) {
-			return json(
-				{ ok: false, reason: "password_required" },
-				{ status: 401 },
-			);
+			return json({ ok: false, reason: "password_required" }, { status: 401 });
 		}
 	}
 

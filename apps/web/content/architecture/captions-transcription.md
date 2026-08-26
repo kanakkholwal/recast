@@ -35,7 +35,7 @@ Recast turns a recorded clip's audio into styled, animated captions entirely on-
 Two parallel burn-in implementations exist and are kept in lock-step by a shared fixture:
 
 - **Rust ASS path** (`transcription/subtitles.rs`) → FFmpeg `ass`/`subtitles` filter → libass paints pixels. This is the shipped export burn-in.
-- **Browser canvas path** (`caption-layer-export.ts` + `caption-render.ts`) → paints onto the same comp-native 2D layer the preview uses, so *preview == export by construction*. Wired and flag-ready under the browser-RenderCore migration (captions currently gated to Rust; see `con7_export_overlays` / `browser_render_migration`).
+- **Engine path** (`recast-text` + `recast-captions` + the compositor's text pass) → shapes and rasterises inside the compositor, so *preview == export by construction*. It needs the face as TTF bytes, since rustybuzz cannot read the woff2 the DOM loads (`lib/fonts/engine-font.ts`).
 
 The `CaptionStyle` / `CaptionAnimation` shapes are duplicated across the TS/Rust boundary (no shared source); the Rust defaults are asserted to mirror `DEFAULT_CAPTION_STYLE` (`transcription/mod.rs`, guard test `mod.rs`).
 
@@ -105,7 +105,6 @@ flowchart LR
 | Shared renderer | `packages/editor/src/lib/captions/caption-render.ts` `resolveCaptionView` /  `paintCaptionChunk` | One resolve+paint path for preview overlay AND browser burn-in. |
 | Preview overlay | `packages/editor/src/components/_components/CaptionOverlay.svelte` | Canvas 2D over the preview; rides the rAF-smooth `previewTime` clock; paused entrance-replay for the Motion tab. |
 | Web-player overlay | `packages/captions/src/CaptionBox.svelte` | DOM (not canvas) caption overlay for the web player; component-scoped CSS (kept out of the pure-TS barrel so `@recast/captions` imports cleanly in Node/vitest, import from `@recast/captions/box`). Not used by the desktop preview/export canvas path. |
-| Export layer (browser) | `packages/editor/src/lib/export/caption-layer-export.ts` `drawCaptionLayerExport` | Thin wrapper over the shared renderer for the browser export path. |
 | Cut-splitting (TS) | `packages/editor/src/lib/captions/clip-with-cuts.ts` `splitSegmentAcrossSpans` /  `activeClippedSegment` | Per-frame preview clip + batch sidecar split; kept-span merge memoized. |
 | Sidecar time-map | `packages/editor/src/lib/captions/output-time.ts` `toOutputTimeTranscript` | Split-then-map transcript onto the OUTPUT axis for sidecars. |
 | CFR normalize | `packages/editor/src/lib/captions/normalize.ts` `transcriptTimeScale` /  `scaleTranscript` | Rescale audio-timed transcript onto video-source axis (recording is count-based CFR). |
@@ -157,4 +156,4 @@ missing badge and a misleading FFmpeg error in the log.
 
 - [`05-timeline-model.md`](/architecture/timeline-model): time-map, cuts, per-segment speed; the kept-span math captions clip against.
 - [`06-export-pipeline.md`](/architecture/export-pipeline): FFmpeg graph, ASS burn-in stage ordering, sidecar writing.
-- [`03-preview-and-rendercore.md`](/architecture/preview-rendercore): preview compositor + the browser RenderCore export path the browser caption layer plugs into.
+- [`preview-engine.md`](/architecture/preview-engine): the one compositor, and the export path burned captions render through.

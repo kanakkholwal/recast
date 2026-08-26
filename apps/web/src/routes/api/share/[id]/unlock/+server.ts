@@ -1,15 +1,11 @@
-import { dev } from "$app/environment";
 import { error, json } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { dev } from "$app/environment";
 import { getDb } from "$lib/db";
 import { share } from "$lib/db/schema";
 import { enforceRateLimit } from "$lib/server/rate-limit";
-import {
-	unlockCookieName,
-	unlockToken,
-	verifySharePassword,
-} from "$lib/share/password";
+import { unlockCookieName, unlockToken, verifySharePassword } from "$lib/share/password";
 import type { RequestHandler } from "./$types";
 
 const BodySchema = z.object({

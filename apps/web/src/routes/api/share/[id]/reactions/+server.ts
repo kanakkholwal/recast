@@ -29,12 +29,7 @@ const ALLOWED = new Set(REACTION_IDS);
  *
  * Body: { sessionId, emoji, atSeconds }
  */
-export const POST: RequestHandler = async ({
-	params,
-	request,
-	cookies,
-	getClientAddress,
-}) => {
+export const POST: RequestHandler = async ({ params, request, cookies, getClientAddress }) => {
 	const gate = await gateShareAccess(params.id, request, cookies);
 
 	let body: { sessionId?: unknown; emoji?: unknown; atSeconds?: unknown } = {};
@@ -65,9 +60,7 @@ export const POST: RequestHandler = async ({
 	const [existing] = await db
 		.select({ id: shareReaction.id, emoji: shareReaction.emoji })
 		.from(shareReaction)
-		.where(
-			and(eq(shareReaction.shareSlug, params.id), eq(shareReaction.ipHash, key)),
-		)
+		.where(and(eq(shareReaction.shareSlug, params.id), eq(shareReaction.ipHash, key)))
 		.limit(1);
 
 	if (existing) {

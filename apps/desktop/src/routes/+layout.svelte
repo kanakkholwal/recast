@@ -5,20 +5,20 @@ import "../app.css";
 // Loaded once globally so any route that mounts <RecastPlayer> gets its styling.
 import "@recast/player/styles.css";
 
+import { setAgentSessionDriver, setEditorHostHooks, setLogSink } from "@recast/editor";
+import { setEditorServicesForApp } from "@recast/editor/lib/editor/services";
 import { onNavigate } from "$app/navigation";
 import { navigating, page } from "$app/state";
 import { handleDeepLink } from "$lib/deepLink";
-import { setAgentSessionDriver, setEditorHostHooks, setLogSink } from "@recast/editor";
 import { tauriAgentSessionDriver } from "$lib/editor/agent-session.tauri";
-import { workerHost } from "$lib/workers";
-import { setEditorServicesForApp } from "@recast/editor/lib/editor/services";
-import { chordLabel, registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
-import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { tauriEditorServices } from "$lib/editor/services.tauri";
 import { launchRecordingPanel, takePendingNewRecording, takePendingOpenFile } from "$lib/ipc";
 import { openProjectFromExternalPath } from "$lib/openProject";
+import { chordLabel, registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
+import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { updater } from "$lib/stores/updater.svelte";
 import { applyWindowBackdrop, BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
+import { workerHost } from "$lib/workers";
 
 let { children } = $props();
 
@@ -98,23 +98,23 @@ onMount(() => {
 	};
 });
 
-import CommandPaletteHost from "$components/layout/CommandPaletteHost.svelte";
-import ShortcutsDialog from "$components/layout/ShortcutsDialog.svelte";
-import { dispatchShortcut } from "$lib/shortcuts/registry.svelte";
-import FirstRunConsent from "$components/FirstRunConsent.svelte";
-import { analytics } from "$lib/analytics/client";
-import { desktopConsent } from "$lib/stores/consent.svelte";
 import { initAssets } from "@recast/editor/lib/assets";
 import { initExtensions } from "@recast/editor/lib/extensions";
 import { NavProgress } from "@recast/ui/nav-progress";
-import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
-import { isOverlayRoute } from "$lib/runtime/overlay-routes";
+import { safeStorage } from "@recast/ui/persisted-state";
 import { Toaster, toast } from "@recast/ui/sonner";
 import { ModeWatcher, setMode } from "@recast/ui/theme";
-import { safeStorage } from "@recast/ui/persisted-state";
 import { listen } from "@tauri-apps/api/event";
 import { onMount, tick } from "svelte";
+import FirstRunConsent from "$components/FirstRunConsent.svelte";
+import CommandPaletteHost from "$components/layout/CommandPaletteHost.svelte";
+import ShortcutsDialog from "$components/layout/ShortcutsDialog.svelte";
+import { analytics } from "$lib/analytics/client";
 import { log } from "$lib/logger";
+import { isOverlayRoute } from "$lib/runtime/overlay-routes";
+import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
+import { dispatchShortcut } from "$lib/shortcuts/registry.svelte";
+import { desktopConsent } from "$lib/stores/consent.svelte";
 
 const isTransparentRoute = $derived(isOverlayRoute(page.url.pathname));
 

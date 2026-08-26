@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
-import {
-	groupCommands,
-	highlight,
-	matchScore,
-	rankCommands,
-} from "./command-palette-host.logic";
+import { groupCommands, highlight, matchScore, rankCommands } from "./command-palette-host.logic";
 
 function cmd(over: Partial<PaletteCommand> = {}): PaletteCommand {
 	return {
@@ -47,10 +42,7 @@ describe("rankCommands", () => {
 			cmd({ title: "My export shortcut", category: "General" }), // contains, lower than prefix
 		];
 		const ranked = rankCommands(list, "export");
-		expect(ranked.map((c) => c.title)).toEqual([
-			"Export video",
-			"My export shortcut",
-		]);
+		expect(ranked.map((c) => c.title)).toEqual(["Export video", "My export shortcut"]);
 	});
 });
 

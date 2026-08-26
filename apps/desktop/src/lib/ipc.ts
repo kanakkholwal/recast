@@ -6,7 +6,6 @@
 // Type-only: erased at runtime, so no ESM cycle with `$lib/profiles` (which
 // imports value bindings from here).
 import type { RecordingProfile } from "@recast/editor/lib/profiles";
-import type { VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
 import type {
 	AssetInstallResult,
 	AudioDeviceInfo,
@@ -23,6 +22,12 @@ import type {
 	VideoTextTimeline,
 	ZoomSuggestion,
 } from "@recast/editor/lib/wire-types";
+import type { VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { platform } from "@tauri-apps/plugin-os";
+import { analytics } from "$lib/analytics/client";
 import type {
 	AuthStartResult,
 	AuthStatus,
@@ -60,11 +65,6 @@ import type {
 	RemoteAsrEndpointInfo,
 	WindowInfo,
 } from "$lib/recorder-types";
-import { analytics } from "$lib/analytics/client";
-import { Channel, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { platform } from "@tauri-apps/plugin-os";
 
 // Some Linux compositors (KWin/Wayland) let an undecorated transparent
 // always-on-top window trap input focus, breaking the main window's controls,
@@ -91,11 +91,11 @@ export type {
 	ExtColorContribution,
 	ExtCursorContribution,
 	ExtEasingContribution,
-	ExtGradientContribution,
-	ExtSmoothingContribution,
 	ExtensionAssetEntry,
 	ExtensionContributions,
 	ExtensionManifest,
+	ExtGradientContribution,
+	ExtSmoothingContribution,
 	GpuInfo,
 	HydratedAsset,
 	InstalledExtension,
@@ -650,6 +650,11 @@ export function captionCapabilities(): Promise<DeviceCapabilities> {
 /** Download (once) + cache a Google Font's woff2 on device; returns its path. */
 export function ensureGoogleFont(family: string, weight: number): Promise<string> {
 	return invoke<string>("ensure_google_font", { family, weight });
+}
+
+/** The same family's TTF. The engine's shaper cannot read the woff2 above. */
+export function captionFontFile(family: string, weight: number): Promise<string> {
+	return invoke<string>("caption_font_file", { family, weight });
 }
 
 /** Write a transcript to a subtitle sidecar at `destPath`. */

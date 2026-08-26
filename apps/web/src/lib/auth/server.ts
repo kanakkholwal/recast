@@ -1,6 +1,17 @@
+import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import {
+	admin,
+	bearer,
+	deviceAuthorization,
+	haveIBeenPwned,
+	magicLink,
+	organization,
+} from "better-auth/plugins";
+import { and, count, eq } from "drizzle-orm";
 import { dev } from "$app/environment";
-import { bearer, deviceAuthorization, haveIBeenPwned } from "better-auth/plugins";
-
+import { clearCheckoutIntent, resolveCheckoutWorkspace } from "$lib/billing/intent";
 import { limitsFor, planOf, polarProductIdFor } from "$lib/billing/plans";
 import { tryGetPolarClient } from "$lib/billing/polar";
 import {
@@ -8,23 +19,17 @@ import {
 	findWorkspaceByPolarSubscription,
 	upsertSubscription,
 } from "$lib/billing/sync";
-import { clearCheckoutIntent, resolveCheckoutWorkspace } from "$lib/billing/intent";
 import { getDb } from "$lib/db";
 import * as schema from "$lib/db/schema";
 import {
-	USER_TEAM_OWNERSHIP_CAPS,
 	member as memberTable,
 	organization as organizationTable,
+	USER_TEAM_OWNERSHIP_CAPS,
 	user as userTable,
 } from "$lib/db/schema";
 import { sendTemplatedEmail } from "$lib/email";
 import { publicEnv } from "$lib/env/public";
 import { serverEnv } from "$lib/env/server";
-import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { admin, magicLink, organization } from "better-auth/plugins";
-import { and, count, eq } from "drizzle-orm";
 
 /**
  * Better Auth instance — singleton, lazy-built on first request so the

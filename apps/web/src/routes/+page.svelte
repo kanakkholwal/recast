@@ -1,4 +1,24 @@
 <script lang="ts">
+import {
+	ArrowRight,
+	Check,
+	CircleHelp,
+	Cloud,
+	Compass,
+	Download,
+	HardDriveUpload,
+	KeyRound,
+	Monitor,
+	Play,
+	Share2,
+	Star,
+	Video,
+	Wand2,
+	X,
+} from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { Image } from "@unpic/svelte";
 import { goto } from "$app/navigation";
 import {
 	BeforeAfterSlider,
@@ -20,26 +40,6 @@ import {
 } from "$lib/components";
 import { steps } from "$lib/components/Hero.logic";
 import { prefersReducedMotion } from "$lib/motion-core";
-import {
-	ArrowRight,
-	Check,
-	CircleHelp,
-	Cloud,
-	Compass,
-	Download,
-	HardDriveUpload,
-	KeyRound,
-	Monitor,
-	Play,
-	Share2,
-	Star,
-	Video,
-	Wand2,
-	X,
-} from "@recast/icons";
-import { GithubBrand } from "@recast/ui/brand-icons";
-import { Button } from "@recast/ui/button";
-import { Image } from "@unpic/svelte";
 
 import {
 	beforeAfterClips,

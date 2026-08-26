@@ -4,39 +4,10 @@
  * WebGL preview, overlays, properties panels and the browser export compositor.
  */
 
-export { default as Editor } from "./Editor.svelte";
-export type { EditorProps, ToolbarControls } from "./Editor.svelte";
-
-export { createEditorStore } from "./stores/editor-store.svelte";
-export type { EditorStore } from "./stores/editor-store.svelte";
-
-export * from "./lib/editor/render-state";
-export * from "./lib/editor/track-offsets";
-export * from "./lib/editor/services";
-export { PANEL_TABS, WEB_PANEL_TABS } from "./lib/editor/panel-tabs";
-export type { PanelTab } from "./lib/editor/panel-tabs";
-export { setEditorHostHooks } from "./lib/host-hooks";
-export type {
-	EditorAnalytics,
-	EditorWorkerName,
-	ExportActivityHost,
-	ShortcutHost,
-	WorkerHost,
-} from "./lib/host-hooks";
-
-export { agentSession, setAgentSessionDriver } from "./lib/agent/session.svelte";
-export type { BindOptions as AgentSessionBindOptions } from "./lib/agent/session.svelte";
-export type {
-	AgentActivity,
-	AgentSessionDriver,
-	AgentSessionEvent,
-	AgentSessionMode,
-	AgentSessionSnapshot,
-	AgentWriter,
-} from "./lib/agent/types";
 export { default as BranchReviewPanel } from "./components/BranchReviewPanel.svelte";
+export type { EditorProps, ToolbarControls } from "./Editor.svelte";
+export { default as Editor } from "./Editor.svelte";
 export { branchReview } from "./lib/agent/branch-store.svelte";
-export { changeGroup, describeChange, EDIT_OP_TAGS, groupChanges } from "./lib/agent/branches";
 export type {
 	AppendReport,
 	ApplyReport,
@@ -46,9 +17,35 @@ export type {
 	EditOpTag,
 	FieldChange,
 } from "./lib/agent/branches";
-export { createAudioEngineHost } from "./lib/playback/audio-engine-host.svelte";
-export type { AudioEngineHolder } from "./lib/playback/audio-engine-host.svelte";
-export { AudioTimelineEngine } from "./lib/playback/audio-engine";
-export type { AudioTrackSpec } from "./lib/playback/audio-engine";
-export { setLogSink } from "./lib/log";
+export { changeGroup, describeChange, EDIT_OP_TAGS, groupChanges } from "./lib/agent/branches";
+export type { BindOptions as AgentSessionBindOptions } from "./lib/agent/session.svelte";
+export { agentSession, setAgentSessionDriver } from "./lib/agent/session.svelte";
+export type {
+	AgentActivity,
+	AgentSessionDriver,
+	AgentSessionEvent,
+	AgentSessionMode,
+	AgentSessionSnapshot,
+	AgentWriter,
+} from "./lib/agent/types";
+export type { PanelTab } from "./lib/editor/panel-tabs";
+export { PANEL_TABS, WEB_PANEL_TABS } from "./lib/editor/panel-tabs";
+export * from "./lib/editor/render-state";
+export * from "./lib/editor/services";
+export * from "./lib/editor/track-offsets";
+export type {
+	EditorAnalytics,
+	EditorWorkerName,
+	ExportActivityHost,
+	ShortcutHost,
+	WorkerHost,
+} from "./lib/host-hooks";
+export { setEditorHostHooks } from "./lib/host-hooks";
 export type { LogSink } from "./lib/log";
+export { setLogSink } from "./lib/log";
+export type { AudioTrackSpec } from "./lib/playback/audio-engine";
+export { AudioTimelineEngine } from "./lib/playback/audio-engine";
+export type { AudioEngineHolder } from "./lib/playback/audio-engine-host.svelte";
+export { createAudioEngineHost } from "./lib/playback/audio-engine-host.svelte";
+export type { EditorStore } from "./stores/editor-store.svelte";
+export { createEditorStore } from "./stores/editor-store.svelte";

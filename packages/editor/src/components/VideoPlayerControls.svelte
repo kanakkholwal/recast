@@ -1,7 +1,4 @@
 <script lang="ts">
-import type { EditorStore } from "../stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
-import { formatTimeByMode, frameStepOutput } from "../lib/editor/time";
 import {
 	Camera,
 	LoaderCircle,
@@ -18,6 +15,9 @@ import { toast } from "@recast/ui/sonner";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
 import { onDestroy } from "svelte";
+import { formatTimeByMode, frameStepOutput } from "../lib/editor/time";
+import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
+import type { EditorStore } from "../stores/editor-store.svelte";
 import MarkupControls from "./_components/MarkupControls.svelte";
 import { BAR_BTN, BAR_BTN_DISABLED, BAR_BTN_ON, BAR_GROUP } from "./_components/player-bar.styles";
 

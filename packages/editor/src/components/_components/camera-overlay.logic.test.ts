@@ -4,18 +4,18 @@ import {
 	CAMERA_SHADOW_BLUR_FRACTION,
 	CAMERA_SHADOW_MAX_OPACITY,
 	CAMERA_SHADOW_OFFSET_FRACTION,
+	type CameraKeyframe,
+	cameraBubbleDelta,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
-	cameraBubbleDelta,
 	cameraShadowStyle,
 	clampPlacement,
-	MAX_RECORDED_MOVE_SECS,
 	keyframesFromMotionSegments,
 	MAX_CAMERA_SIZE,
+	MAX_RECORDED_MOVE_SECS,
 	MIN_CAMERA_SIZE,
 	resizeCameraSquare,
 	upsertCameraKeyframe,
-	type CameraKeyframe,
 } from "./camera-overlay.logic";
 
 const base = { x: 0.72, y: 0.08, width: 0.22, height: 0.22 };

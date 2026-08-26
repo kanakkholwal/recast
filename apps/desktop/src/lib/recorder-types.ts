@@ -11,8 +11,8 @@
  */
 
 import type { TrackOffsetsWire } from "@recast/editor";
-import type { ExportTimeSpan } from "@recast/editor/lib/services/export";
 import type { RecordingProfile } from "@recast/editor/lib/profiles";
+import type { ExportTimeSpan } from "@recast/editor/lib/services/export";
 import type {
 	CameraCapture,
 	CaptionEngine,

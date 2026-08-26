@@ -1,11 +1,11 @@
 <script lang="ts">
+import { cn } from "@recast/ui/utils";
 import {
 	clampEasingCoord,
 	EASING_OVERSHOOT,
-	sampleCurve,
 	type Easing,
+	sampleCurve,
 } from "../../lib/easing/cubic-bezier";
-import { cn } from "@recast/ui/utils";
 import DraggableValue from "../properity-panel/DraggableValue.svelte";
 
 interface Props {

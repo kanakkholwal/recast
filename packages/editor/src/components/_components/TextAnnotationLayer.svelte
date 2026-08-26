@@ -1,12 +1,12 @@
 <script lang="ts">
+import { onDestroy, onMount, tick } from "svelte";
 import { evalOpacity, evalZoom } from "../../lib/annotations/eval";
-import { ensureFontLoaded } from "../../lib/fonts/font-options";
-import { canvasToUV, compositionRectPx, uvToCanvas, videoRectPx } from "../../lib/annotations/uv";
 import { snap } from "../../lib/annotations/snap";
+import { canvasToUV, compositionRectPx, uvToCanvas, videoRectPx } from "../../lib/annotations/uv";
+import { ensureFontLoaded } from "../../lib/fonts/font-options";
+import type { Annotation, AnnotationAnchor, EditorStore } from "../../stores/editor-store.svelte";
 import { IDENTITY_ZOOM, withAlpha } from "./annotation-draw.logic";
 import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
-import type { Annotation, AnnotationAnchor, EditorStore } from "../../stores/editor-store.svelte";
-import { onDestroy, onMount, tick } from "svelte";
 
 // HTML layer (sibling to the 2D AnnotationOverlay) so text gets the WebView's
 // full glyph rendering and contenteditable inline editing.

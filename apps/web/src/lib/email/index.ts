@@ -1,2 +1,2 @@
-export { sendEmail, type EmailMessage } from "./transport";
-export { sendTemplatedEmail, type TemplateName, type TemplateData } from "./templates";
+export { sendTemplatedEmail, type TemplateData, type TemplateName } from "./templates";
+export { type EmailMessage, sendEmail } from "./transport";

@@ -1,8 +1,8 @@
+import { toast } from "@recast/ui/sonner";
 import { listExports, listRecasts, type RecordingEntry } from "$lib/ipc";
 import { sortEntries } from "$lib/library/list";
 import { createThumbnailLoader, type ThumbnailMap } from "$lib/library/thumbnails";
 import { mergeRecents, type RecentItem } from "./home.logic";
-import { toast } from "@recast/ui/sonner";
 
 const RECENTS_LIMIT = 8;
 

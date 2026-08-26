@@ -1,6 +1,6 @@
 import { building, dev } from "$app/environment";
 import { env as rawEnv } from "$env/dynamic/private";
-import { serverEnvSchema, type ServerEnv } from "./schema";
+import { type ServerEnv, serverEnvSchema } from "./schema";
 
 /**
  * Validated server-side env, single source of truth for everything secret.
@@ -21,9 +21,9 @@ let cached: ServerEnv | null = null;
 
 export function getServerEnv(): ServerEnv {
 	if (cached) return cached;
-	
-	if (dev){
-		console.info("[NODE_ENV]:",rawEnv.NODE_ENV);
+
+	if (dev) {
+		console.info("[NODE_ENV]:", rawEnv.NODE_ENV);
 	}
 
 	// Skip validation while Vite is collecting the prerender manifest — env
@@ -41,9 +41,7 @@ export function getServerEnv(): ServerEnv {
 		const flat = result.error.issues
 			.map((i) => `  • ${i.path.join(".") || "(root)"}: ${i.message}`)
 			.join("\n");
-		throw new Error(
-			`Invalid environment variables — fix .env then restart:\n${flat}`,
-		);
+		throw new Error(`Invalid environment variables — fix .env then restart:\n${flat}`);
 	}
 	cached = result.data;
 	return cached;

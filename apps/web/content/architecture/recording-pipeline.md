@@ -276,7 +276,7 @@ lock, and surfaces any warnings.
 
 ## Related
 
-- [03-preview-and-rendercore.md](/architecture/preview-rendercore): how the editor
+- [preview-engine.md](/architecture/preview-engine): how the editor
   previews `recording.mp4` and composites the stylized cursor / camera overlay
   from the sidecar tracks this pipeline writes.
 - [05-timeline-model.md](/architecture/timeline-model): the render state and cursor /

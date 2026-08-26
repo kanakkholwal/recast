@@ -1,4 +1,17 @@
 <script lang="ts">
+import StudioPage from "$components/layout/StudioPage.svelte";
+import { LibrarySearch } from "$components/library";
+import { type AudioDeviceInfo, getAudioDevices } from "$lib/ipc";
+import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
+import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
+import { type BrowserCamera, enumerateCameras } from "@recast/editor/lib/camera/browser-devices";
+import {
+	COUNTDOWN_OPTIONS,
+	countdownToken,
+	type RecordingProfile,
+} from "@recast/editor/lib/profiles";
 import {
 	Camera,
 	CheckCircle2,
@@ -9,7 +22,6 @@ import {
 	MoreHorizontal,
 	Pencil,
 	Plus,
-	Power,
 	SlidersHorizontal as SlidersIcon,
 	Star,
 	Timer,
@@ -18,28 +30,17 @@ import {
 	Volume2,
 	VolumeX,
 } from "@recast/icons";
-import { Button } from "@recast/ui/button";
+import { Button, buttonVariants } from "@recast/ui/button";
 import * as Dialog from "@recast/ui/dialog";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
-import * as Select from "@recast/ui/select";
 import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
+import * as Select from "@recast/ui/select";
 import { toast } from "@recast/ui/sonner";
 import { Switch } from "@recast/ui/switch";
 import { cn } from "@recast/ui/utils";
-import StudioPage from "$components/layout/StudioPage.svelte";
-import { LibrarySearch } from "$components/library";
 import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
-
-import { enumerateCameras, type BrowserCamera } from "@recast/editor/lib/camera/browser-devices";
-import { getAudioDevices, type AudioDeviceInfo } from "$lib/ipc";
-import {
-	COUNTDOWN_OPTIONS,
-	countdownToken,
-	type RecordingProfile,
-} from "@recast/editor/lib/profiles";
-import { profilesStore } from "$lib/stores/profiles.svelte";
 import {
 	buildDuplicate,
 	buildNewDraft,
@@ -52,9 +53,6 @@ import {
 	normalizeProfileForSave,
 	summarize,
 } from "./profiles.logic";
-import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
-import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
-import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
 
 // mode = 'create' means draft is not yet in the store; mode = 'edit' means
 // draft mirrors an existing entry. Persistence only happens on Save.
@@ -286,7 +284,11 @@ function handleDialogKeydown(e: KeyboardEvent) {
 
 function setProfilesEnabled(next: boolean) {
 	profilesStore.setEnabled(next);
-	toast.success(next ? "Profiles enabled" : "Profiles turned off");
+	toast.success(next ? "Profiles enabled" : "Profiles turned off", {
+		description: next
+			? "The recording panel will load your default profile and show the switcher."
+			: "The recording panel won't auto-apply a default profile or show the switcher. Edits here are still saved for when you re-enable.",
+	});
 }
 
 const filtered = $derived.by(() => {
@@ -325,63 +327,52 @@ type Cap = {
 	iconOff: typeof Volume2;
 };
 const capabilities: Cap[] = [
-	{ field: "systemAudio", label: "System audio", iconOn: Volume2, iconOff: VolumeX },
+	{
+		field: "systemAudio",
+		label: "System audio",
+		iconOn: Volume2,
+		iconOff: VolumeX,
+	},
 	{ field: "microphone", label: "Microphone", iconOn: Mic, iconOff: MicOff },
 	{ field: "camera", label: "Camera", iconOn: Camera, iconOff: VideoOff },
 ];
 </script>
 
-<StudioPage title={titleText} subtitle="Save what to capture and pick the default that loads on launch.">
+<StudioPage
+  title={titleText}
+  subtitle="Save what to capture and pick the default that loads on launch."
+>
   {#snippet actions()}
-    <Button size="sm" class="gap-1.5" onclick={addProfile}>
+    <label for="profiles.enabled" class={cn(buttonVariants({ variant: "raw", size: "sm" }), "gap-1.5")}>
+      <Info size={13} />
+      <span class="text-muted-foreground">
+        Apply profiles when recording
+      </span>
+      <Switch
+        id="profiles.enabled"
+        checked={profilesStore.enabled}
+        onCheckedChange={setProfilesEnabled}
+        aria-label="Apply profiles when recording"
+      />
+    </label>
+    <Button size="sm" variant="outline" class="gap-1.5" onclick={addProfile} disabled={!profilesStore.hydrated || !profilesStore.enabled}>
       <Plus size={13} /> New profile
     </Button>
   {/snippet}
 
   {#snippet filters()}
-    <div class="min-w-[200px] flex-1">
+    <div class="min-w-50 flex-1">
       <LibrarySearch bind:value={query} noun="profiles" />
     </div>
   {/snippet}
 
   <div class="flex flex-col gap-4">
-    <!-- Governs whether the recording panel applies profiles; edits save either way. -->
-    <div
-      class={cn(
-        "flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-(--shadow-craft-inset) transition-colors duration-200",
-        profilesStore.enabled ? "border-border/50 bg-card/60" : "border-warning/30 bg-warning/10",
-      )}
-    >
-      <span
-        class={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset transition-colors",
-          profilesStore.enabled
-            ? "bg-background/70 text-muted-foreground ring-border/40"
-            : "bg-warning/15 text-warning ring-warning/30",
-        )}
+  
+    {#if !profilesStore.hydrated}
+      <div
+        class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
         aria-hidden="true"
       >
-        <Power size={14} />
-      </span>
-      <div class="min-w-0 flex-1">
-        <div class="text-[12.5px] font-semibold text-foreground">
-          {profilesStore.enabled ? "Profiles are on" : "Profiles are off"}
-        </div>
-        <div class="text-[11px] text-muted-foreground">
-          {profilesStore.enabled
-            ? "The recording panel loads your default profile and shows the switcher."
-            : "The recording panel won't auto-apply a default profile or show the switcher. Edits here are still saved for when you re-enable."}
-        </div>
-      </div>
-      <Switch
-        checked={profilesStore.enabled}
-        onCheckedChange={setProfilesEnabled}
-        aria-label="Apply profiles when recording"
-      />
-    </div>
-
-    {#if !profilesStore.hydrated}
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
         {#each { length: 3 } as _, i (i)}
           <div
             class="h-28 animate-pulse rounded-2xl border border-border/40 bg-card/60"
@@ -416,6 +407,27 @@ const capabilities: Cap[] = [
       </div>
     {:else}
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+       <button
+          type="button"
+          onclick={addProfile}
+          class="group/add flex h-full min-h-28 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 ease-out hover:border-border hover:bg-card/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:hover:-translate-y-0.5"
+        >
+          <span
+            class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground ring-1 ring-inset ring-border/40 transition-transform duration-200 ease-out motion-safe:group-hover/add:scale-110"
+          >
+            <Plus
+              class="size-4 transition-transform duration-300 group-hover/add:rotate-90"
+            />
+          </span>
+          <div>
+            <div class="text-[12.5px] font-semibold text-foreground">
+              New profile
+            </div>
+            <div class="mt-0.5 text-[10.5px] text-muted-foreground/80">
+              Save another capture setup
+            </div>
+          </div>
+        </button>
         {#each filtered as profile (profile.id)}
           <div
             class={cn(
@@ -444,7 +456,9 @@ const capabilities: Cap[] = [
               </span>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 pr-7">
-                  <span class="truncate text-[13px] font-semibold tracking-tight text-foreground">
+                  <span
+                    class="truncate text-[13px] font-semibold tracking-tight text-foreground"
+                  >
                     {profile.name}
                   </span>
                   {#if profile.isDefault}
@@ -549,25 +563,7 @@ const capabilities: Cap[] = [
           </div>
         {/each}
 
-        <button
-          type="button"
-          onclick={addProfile}
-          class="group/add flex h-full min-h-28 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 ease-out hover:border-border hover:bg-card/60 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 motion-safe:hover:-translate-y-0.5"
-        >
-          <span
-            class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground ring-1 ring-inset ring-border/40 transition-transform duration-200 ease-out motion-safe:group-hover/add:scale-110"
-          >
-            <Plus class="size-4 transition-transform duration-300 group-hover/add:rotate-90" />
-          </span>
-          <div>
-            <div class="text-[12.5px] font-semibold text-foreground">
-              New profile
-            </div>
-            <div class="mt-0.5 text-[10.5px] text-muted-foreground/80">
-              Save another capture setup
-            </div>
-          </div>
-        </button>
+       
       </div>
     {/if}
   </div>
@@ -575,89 +571,120 @@ const capabilities: Cap[] = [
   {#snippet detail()}
     {#if selectedProfile}
       {@const p = selectedProfile!}
-      <!-- Keyed so switching profiles crossfades the detail in instead of
-           hard-swapping; exit is instant to avoid a double-height flash. -->
+    
       {#key p.id}
-      <div class="flex flex-col gap-5" in:fade={{ duration: 160 }}>
-        <div class="flex items-center gap-3">
-          <span
-            class={cn(
-              "grid size-11 shrink-0 place-items-center rounded-xl border text-[16px] font-semibold",
-              p.isDefault
-                ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-border/50 bg-card text-muted-foreground",
-            )}
-          >
-            {#if p.isDefault}
-              <Star class="size-5" />
-            {:else}
-              {p.name.trim().charAt(0).toUpperCase() || "?"}
-            {/if}
-          </span>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-[15px] font-semibold text-foreground">{p.name}</div>
-            <div class="truncate text-[11px] text-muted-foreground">{summarize(p)}</div>
+        <div class="flex flex-col gap-5" in:fade={{ duration: 160 }}>
+          <div class="flex items-center gap-3">
+            <span
+              class={cn(
+                "grid size-11 shrink-0 place-items-center rounded-xl border text-[16px] font-semibold",
+                p.isDefault
+                  ? "border-border/50 bg-foreground/5 text-foreground"
+                  : "border-border/50 bg-card text-muted-foreground",
+              )}
+            >
+              {#if p.isDefault}
+                <Star class="size-5" />
+              {:else}
+                {p.name.trim().charAt(0).toUpperCase() || "?"}
+              {/if}
+            </span>
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-[15px] font-semibold text-foreground" title={p.name}>
+                {p.name}
+              </div>
+              <div class="truncate text-[11px] text-muted-foreground" title={summarize(p)}>
+                {summarize(p)}
+              </div>
+            </div>
           </div>
-        </div>
 
-        <dl class="flex flex-col gap-px overflow-hidden rounded-lg border border-border/50 text-[12px]">
-          {#each capabilities as cap (cap.field)}
-            {@const on = p[cap.field]}
-            {@const CapIcon = on ? cap.iconOn : cap.iconOff}
+          <dl
+            class="flex flex-col gap-px overflow-hidden rounded-lg border border-border/50 text-[12px]"
+          >
+            {#each capabilities as cap (cap.field)}
+              {@const on = p[cap.field]}
+              {@const CapIcon = on ? cap.iconOn : cap.iconOff}
+              {@const fieldLabel = cap.field === "microphone"
+                ? (p.micLabel ?? "On")
+                      : cap.field === "camera"? (p.cameraLabel ?? "On") : on ? "On" : "Off"}
+              <div class="flex items-center gap-2 bg-card/60 px-3 py-2">
+                <CapIcon
+                  class={cn(
+                    "size-3.5 shrink-0",
+                    on ? "text-foreground" : "text-muted-foreground/40",
+                  )}
+                />
+                <dt class="flex-1 text-muted-foreground" title={cap.label}>
+                  {cap.label}
+                </dt>
+                <dd class="truncate font-medium text-foreground" title={fieldLabel}>
+                  {fieldLabel}
+                </dd>
+              </div>
+            {/each}
             <div class="flex items-center gap-2 bg-card/60 px-3 py-2">
-              <CapIcon class={cn("size-3.5 shrink-0", on ? "text-foreground" : "text-muted-foreground/40")} />
-              <dt class="flex-1 text-muted-foreground">{cap.label}</dt>
-              <dd class="truncate font-medium text-foreground">
-                {#if cap.field === "microphone"}{on ? (p.micLabel ?? "On") : "Off"}
-                {:else if cap.field === "camera"}{on ? (p.cameraLabel ?? "On") : "Off"}
-                {:else}{on ? "On" : "Off"}{/if}
+              <Timer class="size-3.5 shrink-0 text-muted-foreground/60" />
+              <dt class="flex-1 text-muted-foreground" title="Countdown">
+                Countdown
+              </dt>
+              <dd class="font-medium text-foreground">
+                {p.countdown == null
+                  ? "Default"
+                  : p.countdown === 0
+                    ? "Off"
+                    : `${p.countdown}s`}
               </dd>
             </div>
-          {/each}
-          <div class="flex items-center gap-2 bg-card/60 px-3 py-2">
-            <Timer class="size-3.5 shrink-0 text-muted-foreground/60" />
-            <dt class="flex-1 text-muted-foreground">Countdown</dt>
-            <dd class="font-medium text-foreground">
-              {p.countdown == null ? "Default" : p.countdown === 0 ? "Off" : `${p.countdown}s`}
-            </dd>
-          </div>
-        </dl>
+          </dl>
 
-        <div class="flex flex-col gap-2">
-          <Button size="sm" class="gap-1.5" onclick={() => startEditing(p)}>
-            <Pencil size={13} /> Edit profile
-          </Button>
-          <div class="grid grid-cols-2 gap-2">
-            <Button variant="secondary" size="sm" class="gap-1.5" onclick={() => duplicateProfile(p)}>
-              <Copy size={13} /> Duplicate
+          <div class="flex flex-col gap-2">
+            <Button size="sm" class="gap-1.5" variant="default_soft" onclick={() => startEditing(p)}>
+              <Pencil size={13} /> Edit profile
             </Button>
+            <div class="grid grid-cols-2 gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                class="gap-1.5"
+                onclick={() => duplicateProfile(p)}
+              >
+                <Copy size={13} /> Duplicate
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                class="gap-1.5"
+                disabled={p.isDefault}
+                onclick={() => setDefault(p.id)}
+              >
+                <CheckCircle2 size={13} />
+                {p.isDefault ? "Default" : "Set default"}
+              </Button>
+            </div>
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
-              class="gap-1.5"
-              disabled={p.isDefault}
-              onclick={() => setDefault(p.id)}
+              class="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onclick={() => (deleteTarget = p)}
             >
-              <CheckCircle2 size={13} /> {p.isDefault ? "Default" : "Set default"}
+              <Trash2 size={13} /> Delete profile
             </Button>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            class="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onclick={() => (deleteTarget = p)}
-          >
-            <Trash2 size={13} /> Delete profile
-          </Button>
         </div>
-      </div>
       {/key}
     {:else}
-      <div class="flex h-full flex-col items-center justify-center gap-2 py-10 text-center">
-        <span class="grid size-10 place-items-center rounded-xl bg-foreground/5 text-muted-foreground/60">
+      <div
+        class="flex h-full flex-col items-center justify-center gap-2 py-10 text-center"
+      >
+        <span
+          class="grid size-10 place-items-center rounded-xl bg-foreground/5 text-muted-foreground/60"
+        >
           <SlidersIcon class="size-5" />
         </span>
-        <p class="text-[12px] text-muted-foreground">Select a profile to see its details.</p>
+        <p class="text-[12px] text-muted-foreground">
+          Select a profile to see its details.
+        </p>
       </div>
     {/if}
   {/snippet}
@@ -806,7 +833,10 @@ const capabilities: Cap[] = [
     <Dialog.Content
       showCloseButton={false}
       style="width: {dialogWidth}px; max-width: calc(100vw - 2rem);"
-      class={cn("block! gap-0! transition-[width] duration-300 ease-out", DIALOG_SURFACE)}
+      class={cn(
+        "block! gap-0! transition-[width] duration-300 ease-out",
+        DIALOG_SURFACE,
+      )}
     >
       <header
         class="flex items-center justify-between gap-3 border-b border-border/40 px-5 py-4"
@@ -901,7 +931,9 @@ const capabilities: Cap[] = [
               <Timer size={14} />
             </span>
             <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span class="truncate text-[12.5px] font-semibold text-foreground">
+              <span
+                class="truncate text-[12.5px] font-semibold text-foreground"
+              >
                 Countdown
               </span>
               <span
@@ -929,7 +961,9 @@ const capabilities: Cap[] = [
             style="width: {DIALOG_ASIDE_W}px;"
             class="flex shrink-0 flex-col border-l border-border/40"
           >
-            <div class="flex items-center gap-2 border-b border-border/30 px-5 py-3">
+            <div
+              class="flex items-center gap-2 border-b border-border/30 px-5 py-3"
+            >
               <SlidersIcon size={12} class="text-muted-foreground" />
               <span class="text-[11px] font-medium text-muted-foreground">
                 Devices

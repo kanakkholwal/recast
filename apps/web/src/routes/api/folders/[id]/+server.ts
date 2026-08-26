@@ -51,7 +51,13 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		error(400, "Invalid JSON body");
 	}
 
-	const self: { name?: string; color?: string | null; parentId?: string | null; path?: string; updatedAt: Date } = {
+	const self: {
+		name?: string;
+		color?: string | null;
+		parentId?: string | null;
+		path?: string;
+		updatedAt: Date;
+	} = {
 		updatedAt: new Date(),
 	};
 
@@ -66,11 +72,10 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 
 	// Move: resolve the destination parent + new path, with cycle protection.
 	let moved = false;
-	let oldPath = f.path;
+	const oldPath = f.path;
 	let newPath = f.path;
 	if ("parentId" in body) {
-		const newParentId =
-			typeof body.parentId === "string" && body.parentId ? body.parentId : null;
+		const newParentId = typeof body.parentId === "string" && body.parentId ? body.parentId : null;
 		if (newParentId === f.id) error(400, "A folder can't be its own parent");
 
 		let newParentPath = "/";
@@ -95,11 +100,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		}
 	}
 
-	if (
-		!("name" in self) &&
-		!("color" in self) &&
-		!("parentId" in self)
-	) {
+	if (!("name" in self) && !("color" in self) && !("parentId" in self)) {
 		error(400, "Nothing to update");
 	}
 

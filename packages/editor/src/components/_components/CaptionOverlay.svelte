@@ -4,12 +4,13 @@
 // canvas via the SAME resolve + paint path the export burn-in uses (caption-render)
 // — so preview == export by construction, no DOM renderer to drift. Fills the
 // composited output rect, so the caption's video-relative placement matches the frame.
+
+import { computeCanvasGeometry } from "../../lib/canvas-geometry";
 import {
 	captionClocks,
 	paintCaptionChunk,
 	resolveCaptionView,
 } from "../../lib/captions/caption-render";
-import { computeCanvasGeometry } from "../../lib/canvas-geometry";
 import { ensureFontLoaded } from "../../lib/fonts/font-options";
 import type { EditorStore } from "../../stores/editor-store.svelte";
 

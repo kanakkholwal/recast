@@ -2,14 +2,14 @@ import { error, fail } from "@sveltejs/kit";
 import { desc, eq } from "drizzle-orm";
 import { logAudit } from "$lib/admin/audit";
 import { requireAdmin } from "$lib/admin/guard";
+import { PLANS } from "$lib/billing/catalog";
 import { getDb } from "$lib/db";
 import {
-	TEAM_PLAN_MEMBER_CAPS,
 	member as memberTable,
 	organization as organizationTable,
+	TEAM_PLAN_MEMBER_CAPS,
 	user as userTable,
 } from "$lib/db/schema";
-import { PLANS } from "$lib/billing/catalog";
 import type { Actions, PageServerLoad } from "./$types";
 
 const GB = 1024 ** 3;
@@ -86,10 +86,7 @@ export const actions: Actions = {
 			return fail(400, { error: "Invalid plan" });
 		}
 		if (!(await ensureTeamExists(id))) error(404, "Team not found");
-		await getDb()
-			.update(organizationTable)
-			.set({ plan })
-			.where(eq(organizationTable.id, id));
+		await getDb().update(organizationTable).set({ plan }).where(eq(organizationTable.id, id));
 		await logAudit({
 			actorId: admin.user.id,
 			action: "team.update_plan",
@@ -106,10 +103,7 @@ export const actions: Actions = {
 		const id = event.params.id;
 		if (!(await ensureTeamExists(id))) error(404, "Team not found");
 
-		const parse = (
-			key: string,
-			multiplier = 1,
-		): number | null | undefined => {
+		const parse = (key: string, multiplier = 1): number | null | undefined => {
 			const raw = String(fd.get(key) ?? "").trim();
 			if (raw === "") return null;
 			const n = Number(raw);
@@ -162,10 +156,7 @@ export const actions: Actions = {
 		const name = String(fd.get("name") ?? "").trim();
 		if (!name) return fail(400, { error: "Name required" });
 		if (!(await ensureTeamExists(id))) error(404, "Team not found");
-		await getDb()
-			.update(organizationTable)
-			.set({ name })
-			.where(eq(organizationTable.id, id));
+		await getDb().update(organizationTable).set({ name }).where(eq(organizationTable.id, id));
 		await logAudit({
 			actorId: admin.user.id,
 			action: "team.rename",

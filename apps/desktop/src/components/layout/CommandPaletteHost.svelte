@@ -1,14 +1,14 @@
 <script lang="ts">
-import { buildGlobalCommands } from "$lib/commands";
-import { commandPalette, type PaletteCommand } from "$lib/stores/command-palette.svelte";
-import { groupCommands, highlight, rankCommands } from "./command-palette-host.logic";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import { CornerDownLeft, Search, X } from "@recast/icons";
 import { Kbd, KbdGroup } from "@recast/ui/kbd";
 import { cn } from "@recast/ui/utils";
 import { onMount, tick } from "svelte";
 import { cubicOut } from "svelte/easing";
-import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import { fade, scale } from "svelte/transition";
+import { buildGlobalCommands } from "$lib/commands";
+import { commandPalette, type PaletteCommand } from "$lib/stores/command-palette.svelte";
+import { groupCommands, highlight, rankCommands } from "./command-palette-host.logic";
 
 let query = $state("");
 let selectedIndex = $state(0);

@@ -1,15 +1,11 @@
+import type { Cookies } from "@sveltejs/kit";
 import { error } from "@sveltejs/kit";
 import { and, eq } from "drizzle-orm";
-import type { Cookies } from "@sveltejs/kit";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { member, share, shareMember, user } from "$lib/db/schema";
-import {
-	constantTimeEquals,
-	unlockCookieName,
-	unlockToken,
-} from "$lib/share/password";
 import { resolveShareManage } from "$lib/share/manage";
+import { constantTimeEquals, unlockCookieName, unlockToken } from "$lib/share/password";
 
 /**
  * Shared visibility/password gate for share sub-resources (comments,
@@ -85,10 +81,7 @@ export async function gateShareAccess(
 					.select({ id: member.id })
 					.from(member)
 					.where(
-						and(
-							eq(member.userId, session.user.id),
-							eq(member.organizationId, s.organizationId),
-						),
+						and(eq(member.userId, session.user.id), eq(member.organizationId, s.organizationId)),
 					)
 					.limit(1);
 				if (!m) error(403, "Not a member of this workspace");
@@ -102,12 +95,7 @@ export async function gateShareAccess(
 				const allowed = await db
 					.select({ id: shareMember.id })
 					.from(shareMember)
-					.where(
-						and(
-							eq(shareMember.shareSlug, s.slug),
-							eq(shareMember.email, session.user.email),
-						),
-					)
+					.where(and(eq(shareMember.shareSlug, s.slug), eq(shareMember.email, session.user.email)))
 					.limit(1);
 				if (allowed.length === 0) error(403, "Not on the access list");
 			}

@@ -1,9 +1,9 @@
-import { browser } from "$app/environment";
 import {
+	type AnalyticsClient,
 	createAnalytics,
 	createPostHogBrowserProvider,
-	type AnalyticsClient,
 } from "@recast/analytics";
+import { browser } from "$app/environment";
 import { getPublicEnv } from "$lib/env/public";
 
 /**

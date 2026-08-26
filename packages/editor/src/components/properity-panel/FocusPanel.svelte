@@ -27,14 +27,15 @@ import { EASE, type Easing, easingEquals } from "../../lib/easing/cubic-bezier";
 import { clockCentis as fmtTime } from "../../lib/format/time";
 import { motionDuration } from "../../lib/motion.svelte";
 import { registry } from "../../lib/registry";
+import { resolveZoomCenter } from "../../lib/zoom/auto-apply";
+import { overlappingZoomIds } from "../../lib/zoom/resolve";
 import {
 	DEFAULT_ZOOM_CENTER,
 	type EditorStore,
 	type ZoomRegion,
 } from "../../stores/editor-store.svelte";
-import { resolveZoomCenter } from "../../lib/zoom/auto-apply";
-import { overlappingZoomIds } from "../../lib/zoom/resolve";
 import EasingControl from "./EasingControl.svelte";
+import FocusPad from "./FocusPad.svelte";
 import {
 	computeNewZoomBounds,
 	isOutsideClip,
@@ -43,7 +44,6 @@ import {
 	retimeStart,
 	sparklinePath,
 } from "./focus-panel.logic";
-import FocusPad from "./FocusPad.svelte";
 import PanelSection from "./PanelSection.svelte";
 
 interface Props {

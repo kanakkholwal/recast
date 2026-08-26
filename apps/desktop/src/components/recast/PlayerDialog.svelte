@@ -1,12 +1,12 @@
 <script lang="ts">
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { formatDateTime, formatSize, isImageFile } from "@recast/editor/lib/format/files";
+import { FolderOpen, Image as ImageIcon, Video } from "@recast/icons";
+import { RecastPlayer } from "@recast/player";
+import { Button } from "@recast/ui/button";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { RecordingEntry } from "$lib/ipc";
 import { captionSidecarVtt, openFileLocation } from "$lib/ipc";
-import { FolderOpen, Image as ImageIcon, Video } from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
-import { RecastPlayer } from "@recast/player";
-import { convertFileSrc } from "@tauri-apps/api/core";
 
 let {
 	entry,

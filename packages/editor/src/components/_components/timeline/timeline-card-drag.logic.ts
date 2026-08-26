@@ -3,7 +3,7 @@
 // geometry (output-space delta mapped back through the display map) is identical.
 
 import { frameStep } from "./timeline-helpers";
-import { snapTime, type SnapTarget } from "./timeline-snap";
+import { type SnapTarget, snapTime } from "./timeline-snap";
 
 /**
  * Pointer travel before a press becomes a drag. Without it a 1px tremor during

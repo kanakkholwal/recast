@@ -1,16 +1,16 @@
 <script lang="ts">
-import { insertImageAnnotation } from "../../lib/annotations/image-import";
-import {
-	ANNOTATION_TOOLS,
-	IMAGE_TOOL,
-	toolForHotkey,
-	type AnnotationToolId,
-} from "../../lib/annotations/tools";
-import { isEditableTarget } from "../../lib/dom/editable";
-import type { EditorStore } from "../../stores/editor-store.svelte";
 import { Eye, EyeOff } from "@recast/icons";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
+import { insertImageAnnotation } from "../../lib/annotations/image-import";
+import {
+	ANNOTATION_TOOLS,
+	type AnnotationToolId,
+	IMAGE_TOOL,
+	toolForHotkey,
+} from "../../lib/annotations/tools";
+import { isEditableTarget } from "../../lib/dom/editable";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import { BAR_BTN, BAR_GROUP } from "./player-bar.styles";
 
 interface Props {

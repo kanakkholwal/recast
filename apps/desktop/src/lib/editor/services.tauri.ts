@@ -4,16 +4,18 @@
  * place under the editor that knows Tauri exists.
  */
 
+import type { EditorServices, PickFileOptions } from "@recast/editor/services";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
 	cancelTranscription,
 	captionCapabilities,
+	captionFontFile,
 	deleteCaptionModel,
 	detectSilence,
 	downloadCaptionModel,
+	enqueueExport,
 	ensureAssetsInstalled,
 	ensureGoogleFont,
-	enqueueExport,
 	exportCaptions,
 	exportScreenText,
 	extractWaveform,
@@ -34,7 +36,6 @@ import {
 	transcribeProject,
 	uninstallExtension,
 } from "$lib/ipc";
-import type { EditorServices, PickFileOptions } from "@recast/editor/services";
 
 /** Assets that are already loadable stay untouched; only real paths go through
  *  the asset protocol. */
@@ -105,6 +106,7 @@ export const tauriEditorServices: EditorServices = {
 	},
 	assets: {
 		googleFont: ensureGoogleFont,
+		captionFontFile,
 		ensureInstalled: ensureAssetsInstalled,
 		getCachedPath: getCachedAssetPath,
 		hydrate: hydrateCachedAssets,

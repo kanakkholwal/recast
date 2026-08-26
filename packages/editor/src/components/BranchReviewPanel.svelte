@@ -1,8 +1,8 @@
 <script lang="ts">
+import { Check, Eye, GitGraph, LoaderCircle, Trash2, TriangleAlert, Undo2 } from "@recast/icons";
 import { Badge } from "@recast/ui/badge";
 import { Button } from "@recast/ui/button";
 import * as Popover from "@recast/ui/popover";
-import { Check, Eye, GitGraph, LoaderCircle, Trash2, TriangleAlert, Undo2 } from "@recast/icons";
 import { prefersReducedMotion } from "svelte/motion";
 import { scale } from "svelte/transition";
 import { branchReview } from "../lib/agent/branch-store.svelte";

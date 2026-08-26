@@ -1,9 +1,11 @@
 <script lang="ts">
+import { onDestroy, onMount } from "svelte";
 import { type EditorStore, type ZoomRegion } from "../../stores/editor-store.svelte";
 import {
 	canvasToUV as canvasToUVPure,
 	cursorForHandle,
 	HANDLE_RADIUS_PX,
+	type HandleName,
 	handlePositions,
 	hitTestHandle,
 	MAX_SCALE,
@@ -12,9 +14,7 @@ import {
 	resizeFocusRegion,
 	uvToCanvas as uvToCanvasPure,
 	videoRectPx as videoRectPxPure,
-	type HandleName,
 } from "./focus-overlay.logic";
-import { onDestroy, onMount } from "svelte";
 
 interface Props {
 	store: EditorStore;

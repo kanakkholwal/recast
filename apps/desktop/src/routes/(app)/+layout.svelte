@@ -1,4 +1,5 @@
 <script lang="ts">
+import { onMount } from "svelte";
 import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
 import CornerNotifications from "$components/corner-notifications.svelte";
@@ -8,7 +9,6 @@ import WhatsNewDialog from "$components/whats-new-dialog.svelte";
 import { config } from "$constants/app";
 import { updater } from "$lib/stores/updater.svelte";
 import { whatsNew } from "$lib/stores/whats-new.svelte";
-import { onMount } from "svelte";
 
 let { children } = $props();
 let section = $derived(

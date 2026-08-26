@@ -1,6 +1,6 @@
 <script lang="ts">
-import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
 import { ShieldCheck } from "@recast/icons";
+import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
 
 const lastUpdated = "May 30, 2026";
 

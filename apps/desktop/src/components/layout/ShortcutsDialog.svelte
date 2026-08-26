@@ -1,15 +1,15 @@
 <script lang="ts">
-import * as Dialog from "@recast/ui/dialog";
 import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
-import { cn } from "@recast/ui/utils";
-import { Kbd } from "@recast/ui/kbd";
 import { Keyboard } from "@recast/icons";
+import * as Dialog from "@recast/ui/dialog";
+import { Kbd } from "@recast/ui/kbd";
+import { cn } from "@recast/ui/utils";
 import {
 	formatChordTokens,
+	type ShortcutDef,
 	shortcutDefs,
 	shortcutsByCategory,
 	shortcutsDialog,
-	type ShortcutDef,
 } from "$lib/shortcuts/registry.svelte";
 
 // The list is static (declared once in the registry); compute the grouping

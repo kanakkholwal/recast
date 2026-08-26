@@ -3,8 +3,8 @@
 // pass if the worker can't be created. Owns no rendering; callers apply the
 // result (the smoothed sample array) however they like.
 
-import { smoothCursorPath, type CursorSampleLike, type SmoothingOptions } from "./smoothing";
 import { createEditorWorker } from "../host-hooks";
+import { type CursorSampleLike, type SmoothingOptions, smoothCursorPath } from "./smoothing";
 
 type ResultMsg =
 	| { id: number; samples: CursorSampleLike[] }

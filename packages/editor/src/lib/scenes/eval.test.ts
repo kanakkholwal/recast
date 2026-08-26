@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { LINEAR, type Easing } from "../easing/cubic-bezier";
+import { type Easing, LINEAR } from "../easing/cubic-bezier";
 import type { Segment } from "../timeline/segments";
-import type { SceneAnimSpec, SegmentAnim } from "./segment-anim";
-import { evalSceneAt, evalSegmentTransform, SCENE_IDENTITY } from "./eval";
 import sceneParity from "./__fixtures__/scene-parity.json";
+import { evalSceneAt, evalSegmentTransform, SCENE_IDENTITY } from "./eval";
+import type { SceneAnimSpec, SegmentAnim } from "./segment-anim";
 
 const lin: SceneAnimSpec = { kind: "fade", durationMs: 1000, easing: LINEAR };
 

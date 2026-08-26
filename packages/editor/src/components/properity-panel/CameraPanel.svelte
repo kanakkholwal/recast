@@ -1,17 +1,17 @@
 <script lang="ts">
-import {
-	cameraPlacementFromPreset,
-	cameraPresetFromPlacement,
-	type CameraPositionPreset,
-	type EditorStore,
-} from "../../stores/editor-store.svelte";
-import { cameraPlacementAt } from "../_components/camera-overlay.logic";
 import { VideoOff } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
-import { cn } from "@recast/ui/utils";
 import { SliderControl } from "@recast/ui/slider-control";
+import { cn } from "@recast/ui/utils";
 import type { CameraCapture } from "../../lib/wire-types";
+import {
+	type CameraPositionPreset,
+	cameraPlacementFromPreset,
+	cameraPresetFromPlacement,
+	type EditorStore,
+} from "../../stores/editor-store.svelte";
+import { cameraPlacementAt } from "../_components/camera-overlay.logic";
 import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
 import EasingControl from "./EasingControl.svelte";
 import PanelSection from "./PanelSection.svelte";

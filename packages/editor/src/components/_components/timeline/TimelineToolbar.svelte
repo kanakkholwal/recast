@@ -1,8 +1,6 @@
 <script lang="ts">
-import InspectorHint from "../../InspectorHint.svelte";
-import { experimentalStore } from "../../../stores/experimental.svelte";
-import type { EditorStore } from "../../../stores/editor-store.svelte";
 import {
+	AiWand,
 	AudioLines,
 	Clapperboard,
 	Clock,
@@ -21,12 +19,14 @@ import {
 	Target,
 	VolumeX,
 	ZoomIn,
-	AiWand,
 } from "@recast/icons";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { Kbd } from "@recast/ui/kbd";
 import * as Popover from "@recast/ui/popover";
 import { cn } from "@recast/ui/utils";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { experimentalStore } from "../../../stores/experimental.svelte";
+import InspectorHint from "../../InspectorHint.svelte";
 import SilenceReviewPopover from "../../SilenceReviewPopover.svelte";
 import ZoomSuggestionsPopover from "../../ZoomSuggestionsPopover.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";

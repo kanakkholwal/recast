@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { KeptSpan } from "@recast/editor/lib/captions/clip-with-cuts";
+import { describe, expect, it } from "vitest";
 
 /**
  * Layer + annotation + fade timeline tests for the editor. These
@@ -11,19 +11,19 @@ import type { KeptSpan } from "@recast/editor/lib/captions/clip-with-cuts";
  */
 
 import {
-	outputToOriginal,
-	spanAtOriginal,
-	timeMapFromSegments,
-} from "@recast/editor/lib/timeline/time-map";
-import {
 	keptRegions,
 	planAudioSchedule,
 	type Region,
 } from "@recast/editor/lib/playback/audio-schedule";
+import {
+	outputToOriginal,
+	spanAtOriginal,
+	timeMapFromSegments,
+} from "@recast/editor/lib/timeline/time-map";
 
 const CUT = { start: 10, end: 12 };
 const RECORDING_SEC = 60;
-const segments = (function () {
+const segments = (() => {
 	const out: { start: number; end: number; index: number }[] = [];
 	out.push({ start: 0, end: CUT.start, index: 0 });
 	out.push({ start: CUT.end, end: RECORDING_SEC, index: 1 });
@@ -169,7 +169,7 @@ describe("timeMap integration: roundtrip output ↔ original across multiple cut
 		{ start: 20, end: 22 },
 		{ start: 35, end: 38 },
 	];
-	const keptSegs = (function () {
+	const keptSegs = (() => {
 		const out: { start: number; end: number; index: number }[] = [];
 		// One segment per kept interval. Uses `keptRegions` to compute the
 		// boundaries so the test asserts the helper agrees with the segments

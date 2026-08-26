@@ -8,6 +8,7 @@ pub mod geometry;
 pub mod render;
 pub mod session;
 pub mod text;
+pub mod yuv;
 
 pub use annotation::{
     annotation_alpha, annotation_params, sorted_visible, AnnotationParams, AnnotationShape,
@@ -23,3 +24,7 @@ pub use recast_cursor::{CursorPlacement, CursorSettings, CursorTrack, Highlight}
 pub use render::{BackgroundImage, Compositor, CursorSprite, FrameInputs, LayerInput, RenderStats};
 pub use text::GlyphQuad;
 pub use session::{screen_only, OutputSize, Session};
+pub use yuv::{
+    chroma_offset, decode_matrix, gamut_matrix, ChromaSiting, Plane, PlaneData, PlaneLayout,
+    SourceColor, SourcePlanes, YuvError,
+};

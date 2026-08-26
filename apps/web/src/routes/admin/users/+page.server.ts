@@ -30,8 +30,7 @@ export const load: PageServerLoad = async (event) => {
 	const searchValue = url.searchParams.get("q")?.trim() ?? "";
 	const searchField = (url.searchParams.get("field") as "email" | "name") ?? "email";
 	const sortBy = url.searchParams.get("sort") ?? "createdAt";
-	const sortDirection =
-		url.searchParams.get("dir") === "asc" ? "asc" : ("desc" as const);
+	const sortDirection = url.searchParams.get("dir") === "asc" ? "asc" : ("desc" as const);
 	const roleFilter = url.searchParams.get("role")?.trim() || null;
 	const statusFilter = url.searchParams.get("status")?.trim() || null;
 

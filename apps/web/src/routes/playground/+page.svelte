@@ -1,24 +1,24 @@
 <script lang="ts">
-import { onDestroy, onMount, untrack } from "svelte";
-import { createAudioEngineHost } from "@recast/editor";
-import { pushState } from "$app/navigation";
-import { page } from "$app/state";
-import Logo from "$lib/logo.svelte";
-import { Button } from "@recast/ui/button";
-import { Spinner } from "@recast/ui/spinner";
-import { AlertTriangle, Download, Sparkles, Upload } from "@recast/icons";
 // Type-only: a value import here would statically bind the whole editor and
 // defeat the split below (rolldown reports INEFFECTIVE_DYNAMIC_IMPORT).
 import type { Editor as EditorComponent, EditorStore, PanelTab } from "@recast/editor";
-import type { TileProvider } from "@recast/editor/lib/timeline/filmstrip-source";
+import { createAudioEngineHost } from "@recast/editor";
 // Value import, but a leaf module with no editor deps — it doesn't drag the
 // editor bundle into the landing chunk.
 import { decoderBudget } from "@recast/editor/lib/playback/decoder-budget";
+import type { TileProvider } from "@recast/editor/lib/timeline/filmstrip-source";
+import { AlertTriangle, Download, Sparkles, Upload } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Spinner } from "@recast/ui/spinner";
+import { onDestroy, onMount, untrack } from "svelte";
+import { pushState } from "$app/navigation";
+import { page } from "$app/state";
+import Logo from "$lib/logo.svelte";
 import { ACCEPTED_EXTENSIONS, probeSource } from "$lib/playground/probe";
 import { SAMPLE_CLIP } from "$lib/playground/sample";
-import { checkSupport, type SupportVerdict } from "$lib/playground/support";
 import { webEditorServices } from "$lib/playground/services";
 import { playgroundSession } from "$lib/playground/session.svelte";
+import { checkSupport, type SupportVerdict } from "$lib/playground/support";
 
 let dragging = $state(false);
 let busy = $state(false);

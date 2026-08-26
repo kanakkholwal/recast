@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nudgeVectorPx, NUDGE_STEP_COARSE_PX, NUDGE_STEP_PX } from "./annotation-keys.logic";
+import { NUDGE_STEP_COARSE_PX, NUDGE_STEP_PX, nudgeVectorPx } from "./annotation-keys.logic";
 
 function chord(
 	key: string,

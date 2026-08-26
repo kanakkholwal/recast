@@ -18,14 +18,14 @@ entrypoints:
   - "packages/editor/src/components/Editor.svelte"
   - "apps/desktop/src/routes/+layout.svelte"
 invariants:
-  - "One compositor (RenderCore) serves preview and export, so a visual bug is fixed once."
+  - "One compositor (the Rust engine, wasm in the browser) serves preview and export, so a visual bug is fixed once."
   - "@recast/editor never imports @tauri-apps; the desktop host injects every native capability."
   - "The @recast/* packages ship source, so each app compiles their .svelte and .ts itself."
 ---
 
 Recast is an **offline-first desktop screen recorder + video editor**. Stack: **Tauri v2** (Rust backend) + **Svelte 5** (runes) frontend, in a **pnpm monorepo**. The editor engine lives in the `@recast/editor` package; the desktop app (`recast-desktop`) is a thin **host** that wires it to native capabilities through injected services and host-hooks.
 
-The guiding architectural bet: **one compositor** (`RenderCore`, WebGL2) drives *both* the live preview and the export, so the two can never diverge. FFmpeg is demoted from a second compositor to a pure **muxer**. Recording is Rust; editing/preview/export compositing is browser (WebView2 + WebGL2 + WebCodecs); persistence and heavy native work cross the Tauri IPC boundary.
+The guiding architectural bet: **one compositor** drives *both* the live preview and the export, so the two can never diverge. It is a Rust crate over wgpu, compiled to wasm for the browser and natively for the desktop, and FFmpeg is demoted from a second compositor to a pure **muxer**. Recording is Rust; editing, preview and export compositing run in the WebView (WebGPU or WebGL2, plus WebCodecs); persistence and heavy native work cross the Tauri IPC boundary.
 
 ## Package & host map
 

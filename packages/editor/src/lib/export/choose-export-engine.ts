@@ -1,7 +1,7 @@
 /**
- * Export-engine resolver (migration Phase 1): the single decision for whether an
- * export runs through the browser compositor (RenderCore, WYSIWYG with the
- * preview) or the legacy Rust/FFmpeg compositor. Pure and dependency-free so it
+ * Export-engine resolver: the single decision for whether an export runs through
+ * the wasm engine (the same compositor the preview draws with, so it is WYSIWYG
+ * by construction) or the legacy Rust/FFmpeg one. Pure and dependency-free so it
  * unit-tests without the store/DOM; the caller feeds the master flag, the
  * escape-hatch setting, the feature-gate reason, and the WebCodecs capability.
  *

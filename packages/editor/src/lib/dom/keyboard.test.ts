@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OVERLAY_SELECTOR, isOverlayOpen, tagActivatesOnSpace } from "./keyboard";
+import { isOverlayOpen, OVERLAY_SELECTOR, tagActivatesOnSpace } from "./keyboard";
 
 // A ParentNode stub is enough: isOverlayOpen only ever calls querySelector.
 function root(match: boolean): ParentNode {

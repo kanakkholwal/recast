@@ -1,8 +1,8 @@
 <script lang="ts">
-import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
 import { ArrowRight, Blocks, Check, Compass, Download, Image as ImageIcon } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
+import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
 import { kinds, steps, trust } from "./data";
 
 const REGISTRY_URL = "https://github.com/kanakkholwal/recast/tree/main/extensions";

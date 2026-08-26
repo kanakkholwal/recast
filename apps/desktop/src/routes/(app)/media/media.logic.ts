@@ -1,6 +1,6 @@
+import { getExtension, isImageFile } from "@recast/editor/lib/format/files";
 import type { RecordingEntry } from "$lib/ipc";
 import type { LibrarySort } from "$lib/library/list";
-import { getExtension, isImageFile } from "@recast/editor/lib/format/files";
 
 export type MediaKind = "video" | "audio" | "image" | "other";
 export type MediaTab = "all" | MediaKind;

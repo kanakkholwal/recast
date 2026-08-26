@@ -1,7 +1,7 @@
 <script lang="ts">
+import { AppWindow, ArrowUpRight, Camera, Crop, Monitor } from "@recast/icons";
 import { launchRecordingPanel } from "$lib/ipc";
 import { chordLabel } from "$lib/shortcuts/registry.svelte";
-import { AppWindow, ArrowUpRight, Camera, Crop, Monitor } from "@recast/icons";
 import { greeting } from "./home.logic";
 
 const hello = greeting(new Date());

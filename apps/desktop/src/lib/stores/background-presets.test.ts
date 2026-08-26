@@ -1,8 +1,8 @@
 import {
 	BACKGROUND_COLORS,
 	BACKGROUND_GRADIENTS,
-	LEGACY_BACKGROUND_VALUES,
 	backgroundNeedsShadow,
+	LEGACY_BACKGROUND_VALUES,
 	migrateBackgroundValue,
 } from "@recast/design/backgrounds";
 import { describe, expect, it } from "vitest";

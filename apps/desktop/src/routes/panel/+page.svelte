@@ -28,7 +28,6 @@ import {
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { ButtonGroup } from "@recast/ui/button-group";
-import LogoWave from "./LogoWave.svelte";
 import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -64,6 +63,7 @@ import { isBrowserDeviceId } from "$lib/runtime/device-id";
 import { profilesStore } from "$lib/stores/profiles.svelte";
 import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
 import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
+import LogoWave from "./LogoWave.svelte";
 import {
 	buildCaptureIntent,
 	canonicalIntent,

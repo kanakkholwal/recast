@@ -1,15 +1,15 @@
 <script lang="ts">
-  let {
-    color = "black",
-    fill = "white",
-    size = "584",
-    ...rest
-  }: {
-    color?: string;
-    fill?: string;
-    size?: string;
-    [key: string]: unknown;
-  } = $props();
+let {
+	color = "black",
+	fill = "white",
+	size = "584",
+	...rest
+}: {
+	color?: string;
+	fill?: string;
+	size?: string;
+	[key: string]: unknown;
+} = $props();
 </script>
 
 <svg

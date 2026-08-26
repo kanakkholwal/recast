@@ -128,8 +128,7 @@ function flush(key: string): void {
 	const entry = pending.get(key);
 	if (!entry) return;
 	pending.delete(key);
-	const data =
-		entry.count > 1 ? { ...entry.data, coalesced: entry.count } : entry.data;
+	const data = entry.count > 1 ? { ...entry.data, coalesced: entry.count } : entry.data;
 	emit("debug", entry.area, entry.event, data);
 }
 

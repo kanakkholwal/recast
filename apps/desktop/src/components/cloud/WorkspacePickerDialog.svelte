@@ -7,12 +7,13 @@
  * the pick as the desktop's default (a local preference; it never touches the
  * web session's active org).
  */
-import type { CloudWorkspace } from "$lib/stores/cloudShare.svelte";
-import { planLabel, roleLabel } from "$components/settings/cloud-signin.logic";
+
 import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
+import { Check, Crown, Send, Users } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
-import { Check, Crown, Send, Users } from "@recast/icons";
+import { planLabel, roleLabel } from "$components/settings/cloud-signin.logic";
+import type { CloudWorkspace } from "$lib/stores/cloudShare.svelte";
 
 let {
 	open = false,

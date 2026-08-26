@@ -37,7 +37,6 @@ describe("worker ownership", () => {
 	it("exposes a start function for every worker body", () => {
 		// Static, not a dynamic import: these modules touch worker globals.
 		const bodies = {
-			"playback/render-worker.ts": "startRenderWorker",
 			"timeline/filmstrip-worker.ts": "startFilmstripWorker",
 			"cursor/smoothing-worker.ts": "startSmoothingWorker",
 			"export/export-render.worker.ts": "startExportRenderWorker",

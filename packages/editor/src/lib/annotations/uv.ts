@@ -1,18 +1,18 @@
 // Pure UV ↔ canvas geometry shared by the 2D annotation overlay and the HTML
 // text layer. Both MUST use the same math or they drift when zoom/padding change.
 
-import { computeCanvasGeometry } from "../canvas-geometry";
+import { canvasToUV, normaliseBox, type Rect, uvToCanvas } from "@recast/render";
 import {
 	framePaddingPixels,
 	type OutputAspect,
 	type VideoMetadata,
 } from "../../stores/editor-store.svelte";
+import { computeCanvasGeometry } from "../canvas-geometry";
 import { evalZoom, type ZoomRegionLike } from "./eval";
-import { canvasToUV, normaliseBox, uvToCanvas, type Rect } from "@recast/render";
 
 // The pure projection (Rect, uvToCanvas, canvasToUV, normaliseBox) now lives in
 // @recast/render; re-exported so existing importers of `./uv` keep one site.
-export { canvasToUV, normaliseBox, uvToCanvas, type Rect };
+export { canvasToUV, normaliseBox, type Rect, uvToCanvas };
 
 /** Composition (frame + padding) width in source pixels. */
 export function compositionWidth(

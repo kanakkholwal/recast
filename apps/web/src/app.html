@@ -12,7 +12,7 @@
 		// then every page) painted light until ModeWatcher mounted, so anyone on a
 		// forced dark theme got a white flash on every hard load. Mirrors
 		// apps/desktop/src/app.html; `mode-watcher-mode` is ModeWatcher's key.
-		(function () {
+		(() => {
 			try {
 				var stored = localStorage.getItem("mode-watcher-mode");
 				var prefersDark =
@@ -167,7 +167,7 @@
 		// Only arm the splash on product surfaces (mirror of isAppArea in
 		// routes/layout.logic.ts — keep the two in sync). Runs before body paint
 		// so marketing pages never flash it.
-		(function () {
+		(() => {
 			try {
 				var p = location.pathname;
 				var surface =
@@ -177,11 +177,11 @@
 				root.classList.add("splash-active", "splash-" + surface);
 				// Safety net: if hydration never runs (bundle error, dead network),
 				// retire the splash anyway so the viewer is never stuck on it.
-				setTimeout(function () {
+				setTimeout(() => {
 					var el = document.getElementById("app-splash");
 					if (!el) return;
 					root.classList.add("splash-hydrated");
-					setTimeout(function () {
+					setTimeout(() => {
 						if (el) el.remove();
 					}, 400);
 				}, 10000);

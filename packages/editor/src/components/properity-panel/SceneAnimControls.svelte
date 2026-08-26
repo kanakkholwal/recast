@@ -1,20 +1,20 @@
 <script lang="ts">
+import type { IconComponent } from "@recast/icons";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, Move3d } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { SliderControl } from "@recast/ui/slider-control";
+import { cn } from "@recast/ui/utils";
 import { EASING_PRESETS, easingEquals } from "../../lib/easing/cubic-bezier";
 import {
 	defaultSpec,
 	intensityRange,
 	MAX_ANIM_MS,
 	MIN_ANIM_MS,
-	type SceneAnimKind,
 	type SceneAnimDir,
+	type SceneAnimKind,
 	type SceneAnimSpec,
 } from "../../lib/scenes/segment-anim";
 import type { EditorStore } from "../../stores/editor-store.svelte";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, Move3d } from "@recast/icons";
-import type { IconComponent } from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import { SliderControl } from "@recast/ui/slider-control";
-import { cn } from "@recast/ui/utils";
 
 // One side (entrance or exit) of a segment's scene animation. Reads/writes the
 // spec through `store.setSegmentAnim` (coalesced undo). Kept dumb: all state is

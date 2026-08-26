@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import type { RecordingProfile } from "@recast/editor/lib/profiles";
+import { describe, expect, it } from "vitest";
 import { isDraftDirty, nameClashOf, normalizeProfileForSave } from "./profiles.logic";
 
 function profile(over: Partial<RecordingProfile> = {}): RecordingProfile {

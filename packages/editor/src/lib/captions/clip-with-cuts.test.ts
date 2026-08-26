@@ -5,8 +5,8 @@ import {
 	captionSpanAt,
 	clipSegmentToSpan,
 	clipWordsToSpan,
-	keptCaptionSpans,
 	type KeptSpan,
+	keptCaptionSpans,
 } from "./clip-with-cuts";
 
 const SPAN: KeptSpan = { origStart: 5, origEnd: 10 };

@@ -6,7 +6,7 @@
 // Fails OPEN: probe errors or unknown keys verdict `ok`, so a diagnostic hiccup
 // never blocks a feature that might actually work.
 
-import { captureCapabilities, type CaptureCapabilities } from "$lib/ipc";
+import { type CaptureCapabilities, captureCapabilities } from "$lib/ipc";
 
 let cached: Promise<CaptureCapabilities> | null = null;
 

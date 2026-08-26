@@ -1,4 +1,23 @@
 <script lang="ts">
+import { formatSize, getExtension } from "@recast/editor/lib/format/files";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
+import {
+	FileText,
+	Film,
+	FolderOpen,
+	type IconComponent,
+	Image as ImageIcon,
+	Music2,
+	Pencil,
+	Play,
+	RefreshCw,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { safeStorage } from "@recast/ui/persisted-state";
+import { Segmented } from "@recast/ui/segmented";
+import { onMount } from "svelte";
+import { fade } from "svelte/transition";
+import StudioPage from "$components/layout/StudioPage.svelte";
 import {
 	AssetCard,
 	LibraryError,
@@ -8,29 +27,10 @@ import {
 	LibraryViewToggle,
 } from "$components/library";
 import LibraryEmpty from "$components/library/LibraryEmpty.svelte";
-import StudioPage from "$components/layout/StudioPage.svelte";
 import { PlayerDialog } from "$components/recast";
 import { openFileLocation, type RecordingEntry } from "$lib/ipc";
 import { cardShellClass, listClass } from "$lib/library/card-styles";
 import { openInEditor as openEditorWindow } from "$lib/library/editor-window";
-import { formatSize, getExtension } from "@recast/editor/lib/format/files";
-import { motionDuration } from "@recast/editor/lib/motion.svelte";
-import {
-	FileText,
-	Film,
-	FolderOpen,
-	Image as ImageIcon,
-	Music2,
-	Pencil,
-	Play,
-	RefreshCw,
-	type IconComponent,
-} from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import { safeStorage } from "@recast/ui/persisted-state";
-import { Segmented } from "@recast/ui/segmented";
-import { onMount } from "svelte";
-import { fade } from "svelte/transition";
 import { MEDIA_TABS, type MediaItem, type MediaKind, type MediaTab } from "./media.logic";
 import { createMediaState } from "./media.svelte";
 

@@ -1,27 +1,26 @@
 <script lang="ts">
-	import { enhance } from "$app/forms";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import * as Select from "@recast/ui/select";
-	import { Skeleton } from "@recast/ui/skeleton";
-	import { ArrowLeft, Crown, LoaderCircle, ShieldCheck } from "@recast/icons";
-	import { untrack } from "svelte";
-	import { enhanceAction } from "$lib/forms/enhance";
+import { ArrowLeft, Crown, LoaderCircle, ShieldCheck } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import * as Select from "@recast/ui/select";
+import { Skeleton } from "@recast/ui/skeleton";
+import { untrack } from "svelte";
+import { enhance } from "$app/forms";
+import InlineError from "$lib/components/InlineError.svelte";
+import { enhanceAction } from "$lib/forms/enhance";
 
-	import InlineError from "$lib/components/InlineError.svelte";
+let { data } = $props();
 
-	let { data } = $props();
+let name = $state(untrack(() => data.team.name));
+let plan = $state(untrack(() => data.team.plan));
 
-	let name = $state(untrack(() => data.team.name));
-	let plan = $state(untrack(() => data.team.plan));
+let savingPlan = $state(false);
+let savingName = $state(false);
+let savingLimits = $state(false);
 
-	let savingPlan = $state(false);
-	let savingName = $state(false);
-	let savingLimits = $state(false);
-
-	const memberCap = $derived(data.caps.members[data.team.plan] ?? 3);
+const memberCap = $derived(data.caps.members[data.team.plan] ?? 3);
 </script>
 
 <a

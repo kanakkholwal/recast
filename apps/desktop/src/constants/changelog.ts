@@ -1,5 +1,5 @@
-import { Bug, RefreshCw, Sparkles, Wrench } from "@recast/icons";
 import type { IconComponent } from "@recast/icons";
+import { Bug, RefreshCw, Sparkles, Wrench } from "@recast/icons";
 
 export type ChangeKind = "added" | "changed" | "fixed" | "deprecated";
 

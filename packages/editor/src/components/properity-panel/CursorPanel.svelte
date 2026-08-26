@@ -1,8 +1,4 @@
 <script lang="ts">
-import { EASE } from "../../lib/easing/cubic-bezier";
-import { motionDuration } from "../../lib/motion.svelte";
-import { registry } from "../../lib/registry";
-import type { EditorStore } from "../../stores/editor-store.svelte";
 import {
 	Activity,
 	AiAtom,
@@ -23,11 +19,16 @@ import { cn } from "@recast/ui/utils";
 import { Image } from "@unpic/svelte";
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
-import InspectorHint from "../InspectorHint.svelte";
+import { EASE } from "../../lib/easing/cubic-bezier";
+import { motionDuration } from "../../lib/motion.svelte";
+import { registry } from "../../lib/registry";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
+import InspectorHint from "../InspectorHint.svelte";
+import { isCursorAnimTouched, svgSwatchUrl } from "./cursor-panel.logic";
 import EasingControl from "./EasingControl.svelte";
 import PanelSection from "./PanelSection.svelte";
-import { isCursorAnimTouched, svgSwatchUrl } from "./cursor-panel.logic";
+
 // Named so the swatch announces "Amber", not "#f59e0b". Deliberately vivid:
 // this ring sits on top of the recording and has to survive busy content.
 const highlightColors: { label: string; value: string }[] = [

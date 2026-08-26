@@ -1,6 +1,5 @@
 <script lang="ts">
 import { formatBytes } from "@recast/editor/lib/format/bytes";
-import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import {
 	ArrowUpRight,
 	BarChart3,
@@ -18,12 +17,13 @@ import {
 	Video,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import RecastMark from "$components/recast-mark.svelte";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { toast } from "@recast/ui/sonner";
 import { cn } from "@recast/ui/utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { onDestroy, onMount } from "svelte";
+import RecastMark from "$components/recast-mark.svelte";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import {
 	formatMemberSince,
 	formatUserCode,

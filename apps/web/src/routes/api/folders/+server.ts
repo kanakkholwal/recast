@@ -101,5 +101,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		throw e;
 	}
 
-	return json({ ok: true, folder: { id, parentId, name, color: cleanColor(body.color), path } }, { status: 201 });
+	return json(
+		{ ok: true, folder: { id, parentId, name, color: cleanColor(body.color), path } },
+		{ status: 201 },
+	);
 };

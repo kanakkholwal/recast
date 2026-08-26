@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
+import type { Easing } from "../lib/easing/cubic-bezier";
 // Relative runtime import: no `$lib` alias in the standalone vitest config.
 import { LINEAR } from "../lib/easing/cubic-bezier";
-import type { Easing } from "../lib/easing/cubic-bezier";
 import type { ZoomRegion } from "../stores/editor-store.svelte";
 import {
+	type CursorSampleJS,
 	classifyMbError,
 	evaluateZoomAt,
+	type IdlePeriodJS,
 	idleAlphaAt,
 	interpolateCursor,
 	resolutionTier,
 	shouldRecoverMbSource,
-	type CursorSampleJS,
-	type IdlePeriodJS,
 } from "./video-preview.logic";
 
 // A linear-eased region so the eased scale is a plain lerp, which locks the ramp

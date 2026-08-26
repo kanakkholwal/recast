@@ -2,10 +2,10 @@
 import { AudioLines, Mic, Music2, Pencil, Scissors, Video, ZoomIn } from "@recast/icons";
 import { onMount, untrack } from "svelte";
 import { type AudioClip, clipEndSec } from "../lib/audio/music";
-import type { EditorStore, ZoomRegion } from "../stores/editor-store.svelte";
 import type { TileProvider } from "../lib/timeline/filmstrip-source";
 import { storyboardCrop } from "../lib/timeline/storyboard";
 import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
+import type { EditorStore, ZoomRegion } from "../stores/editor-store.svelte";
 import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
 import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
 import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";

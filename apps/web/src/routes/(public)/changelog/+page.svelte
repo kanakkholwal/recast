@@ -1,12 +1,12 @@
 <script lang="ts">
-import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
-import { prefersReducedMotion } from "$lib/motion-core";
 import { ArrowUpRight, ExternalLink, GitCommit, Tag } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Markdown } from "@recast/ui/markdown";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
+import { prefersReducedMotion } from "$lib/motion-core";
 import type { PageData } from "./$types";
 
 let { data }: { data: PageData } = $props();

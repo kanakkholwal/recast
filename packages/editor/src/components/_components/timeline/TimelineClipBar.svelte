@@ -1,21 +1,16 @@
 <script lang="ts">
-import type { EditorStore } from "../../../stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
-import { type FilmstripTile, planFilmstrip } from "../../../lib/timeline/filmstrip";
-import type { TileProvider } from "../../../lib/timeline/filmstrip-source";
-import { storyboardCellSec, storyboardCoverCrop } from "../../../lib/timeline/storyboard";
-import { deriveSeams } from "../../../lib/timeline/segments";
-import { motionDuration } from "../../../lib/motion.svelte";
 import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@recast/icons";
 import * as ContextMenu from "@recast/ui/context-menu";
 import { fade } from "svelte/transition";
-import {
-	formatTimeByMode,
-	formatSmpte,
-	frameStep,
-	minClipDuration,
-	type TimeMode,
-} from "./timeline-helpers";
+import { motionDuration } from "../../../lib/motion.svelte";
+import { type FilmstripTile, planFilmstrip } from "../../../lib/timeline/filmstrip";
+import type { TileProvider } from "../../../lib/timeline/filmstrip-source";
+import { deriveSeams } from "../../../lib/timeline/segments";
+import { storyboardCellSec, storyboardCoverCrop } from "../../../lib/timeline/storyboard";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
+import { CLIP_LABEL, CLIP_META, CLIP_SELECTED } from "./timeline-clip.styles";
 import {
 	clampTrimIn,
 	clampTrimOut,
@@ -24,6 +19,14 @@ import {
 	nudgeTrimOut,
 } from "./timeline-clipbar.logic";
 import {
+	formatSmpte,
+	formatTimeByMode,
+	frameStep,
+	minClipDuration,
+	type TimeMode,
+} from "./timeline-helpers";
+import { buildSnapTargets, snapTime } from "./timeline-snap";
+import {
 	applySpineHandle,
 	buildSpineHandles,
 	canSlip,
@@ -31,9 +34,6 @@ import {
 	type SpineHandle,
 	type SpineShape,
 } from "./timeline-spine.logic";
-import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
-import { CLIP_LABEL, CLIP_META, CLIP_SELECTED } from "./timeline-clip.styles";
-import { buildSnapTargets, snapTime } from "./timeline-snap";
 import { CLIP_LANE_HEIGHT_PX } from "./timeline-stack";
 
 // Clip bar with thumbnails and in/out trim handles. Owns its drag state;

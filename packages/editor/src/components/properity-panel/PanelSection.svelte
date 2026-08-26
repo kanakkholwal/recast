@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
 import { PanelSection } from "@recast/ui/panel-section";
+import type { Snippet } from "svelte";
 import InspectorHint from "../InspectorHint.svelte";
 
 interface Props {

@@ -13,9 +13,9 @@
  */
 
 import { type MediaRef, toMediaRef } from "@recast/media";
+import { createEditorWorker } from "../host-hooks";
 import { type FilmstripTile, LruCache } from "./filmstrip";
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
-import { createEditorWorker } from "../host-hooks";
 
 /** A built storyboard sprite: one image of `cols`×`rows` cells (`cellW`×`cellH`
  *  each) holding `count` frames evenly spaced across `durationSec`. Cell `i`

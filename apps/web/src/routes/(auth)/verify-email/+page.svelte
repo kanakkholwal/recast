@@ -1,10 +1,10 @@
 <script lang="ts">
+import { ArrowRight, LoaderCircle, LogOut, MailCheck, RefreshCw } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
 import { goto, invalidateAll } from "$app/navigation";
 import { authClient } from "$lib/auth/client";
 import AuthCard from "$lib/auth/components/AuthCard.svelte";
-import { Button } from "@recast/ui/button";
-import { toast } from "@recast/ui/sonner";
-import { ArrowRight, LoaderCircle, LogOut, MailCheck, RefreshCw } from "@recast/icons";
 
 let { data } = $props();
 

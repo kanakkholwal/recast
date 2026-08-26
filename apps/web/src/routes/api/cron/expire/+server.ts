@@ -1,7 +1,7 @@
 import { error, json } from "@sveltejs/kit";
 import { serverEnv } from "$lib/env/server";
-import { runExpirySweep } from "$lib/storage/expire";
 import { isStorageConfigured } from "$lib/storage";
+import { runExpirySweep } from "$lib/storage/expire";
 import type { RequestHandler } from "./$types";
 
 /**

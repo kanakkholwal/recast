@@ -23,13 +23,13 @@
 import type { MediaRef } from "@recast/media";
 import { AudioChunkStore } from "./audio-chunk-store";
 import { gainFromPercent } from "./audio-gain";
-import { timeStretch } from "./time-stretch";
 import {
 	outputToSource,
 	planAudioScheduleWindow,
 	type Region,
 	sliceChunksForPlayback,
 } from "./audio-schedule";
+import { timeStretch } from "./time-stretch";
 
 /**
  * Output-time position the listener is actually HEARING right now.

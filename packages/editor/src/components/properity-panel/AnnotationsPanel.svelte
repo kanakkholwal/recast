@@ -1,16 +1,4 @@
 <script lang="ts">
-import { kindIcon, kindLabel } from "../../lib/annotations/kind-label";
-import { clockCentis as fmtTime } from "../../lib/format/time";
-import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
-import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
-import { FONT_WEIGHTS, STROKE_SWATCHES } from "../../lib/annotations/palette";
-import { getRecentColors, pushRecentColor } from "../../lib/annotations/recent-colors";
-import { EASE } from "../../lib/easing/cubic-bezier";
-import {
-	DEFAULT_ANNOTATION_RAMP,
-	type Annotation,
-	type EditorStore,
-} from "../../stores/editor-store.svelte";
 import {
 	AlignCenter,
 	AlignLeft,
@@ -18,25 +6,36 @@ import {
 	SquareDashedMousePointer,
 	Trash2,
 } from "@recast/icons";
-import { toast } from "@recast/ui/sonner";
-import { pickImageFile } from "../../lib/annotations/image-import";
-import type { TitlePreset } from "../../lib/annotations/title-presets";
 import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
 import { Kbd } from "@recast/ui/kbd";
-import { Segmented } from "@recast/ui/segmented";
-import { SegmentedToggle } from "@recast/ui/segmented";
-import FontPicker from "./FontPicker.svelte";
+import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
+import { toast } from "@recast/ui/sonner";
 import { Textarea } from "@recast/ui/textarea";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { pickImageFile } from "../../lib/annotations/image-import";
+import { kindIcon, kindLabel } from "../../lib/annotations/kind-label";
+import { FONT_WEIGHTS, STROKE_SWATCHES } from "../../lib/annotations/palette";
+import { getRecentColors, pushRecentColor } from "../../lib/annotations/recent-colors";
+import type { TitlePreset } from "../../lib/annotations/title-presets";
+import { EASE } from "../../lib/easing/cubic-bezier";
+import { clockCentis as fmtTime } from "../../lib/format/time";
 import { motionDuration } from "../../lib/motion.svelte";
+import {
+	type Annotation,
+	DEFAULT_ANNOTATION_RAMP,
+	type EditorStore,
+} from "../../stores/editor-store.svelte";
 import InspectorHint from "../InspectorHint.svelte";
-import EasingControl from "./EasingControl.svelte";
 import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
 import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
 import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";
+import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
+import EasingControl from "./EasingControl.svelte";
+import FontPicker from "./FontPicker.svelte";
+import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
 import PanelSection from "./PanelSection.svelte";
 import TitlePresetTiles from "./TitlePresetTiles.svelte";
 

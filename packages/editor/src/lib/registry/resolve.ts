@@ -5,11 +5,11 @@
 import { log } from "../log";
 import { registry } from "./registry.svelte";
 import {
-	isExtId,
 	type CursorState,
 	type CursorValue,
 	type EasingValue,
 	type Hotspot,
+	isExtId,
 	type SmoothingValue,
 } from "./types";
 

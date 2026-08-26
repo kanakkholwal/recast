@@ -10,9 +10,9 @@
  */
 import type { IconComponent } from "@recast/icons";
 import * as Dialog from "@recast/ui/dialog";
-import { DIALOG_BODY, DIALOG_FOOTER, DIALOG_HEADER, DIALOG_SURFACE } from "./dialog.styles";
 import { cn } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
+import { DIALOG_BODY, DIALOG_FOOTER, DIALOG_HEADER, DIALOG_SURFACE } from "./dialog.styles";
 
 type Tone = "default" | "destructive" | "muted";
 

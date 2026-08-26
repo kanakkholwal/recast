@@ -1,8 +1,8 @@
 <script lang="ts">
-import { resolveAsset } from "../../lib/assets";
-import { assetsStore } from "../../stores/assets-store.svelte";
 import { Skeleton } from "@recast/ui/skeleton";
 import { onMount, tick } from "svelte";
+import { resolveAsset } from "../../lib/assets";
+import { assetsStore } from "../../stores/assets-store.svelte";
 import { boxStyle as computeBoxStyle, pickSrc } from "./LazyExternalImage.logic";
 
 interface Props {

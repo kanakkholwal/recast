@@ -1,17 +1,17 @@
 <script lang="ts">
-import {
-	DEFAULT_GRADIENT,
-	MAX_GRADIENT_STOPS,
-	parseGradient,
-	serializeGradient,
-	type EditorStore,
-	type GradientSpec,
-} from "../../stores/editor-store.svelte";
 import { Move, Plus, RotateCw, Trash2 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
 import { SliderControl } from "@recast/ui/slider-control";
 import { cn } from "@recast/ui/utils";
+import {
+	DEFAULT_GRADIENT,
+	type EditorStore,
+	type GradientSpec,
+	MAX_GRADIENT_STOPS,
+	parseGradient,
+	serializeGradient,
+} from "../../stores/editor-store.svelte";
 import {
 	clampStopPos,
 	insertStopInWidestGap,

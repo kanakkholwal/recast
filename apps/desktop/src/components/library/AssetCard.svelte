@@ -1,18 +1,18 @@
 <script lang="ts">
+import { formatSize } from "@recast/editor/lib/format/files";
+import { Check, Film, type IconComponent, Play } from "@recast/icons";
+import { Cutout } from "@recast/ui/cutout";
+import { cn } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
+import type { RecordingEntry } from "$lib/ipc";
 import {
 	CARD_OVERLAY_CLASS,
 	cardActionsClass,
+	type LibraryView,
 	selectTickClass,
 	thumbFrameClass,
-	type LibraryView,
 } from "$lib/library/card-styles";
 import { libraryDate } from "$lib/library/thumbnails";
-import type { RecordingEntry } from "$lib/ipc";
-import { Check, Film, Play, type IconComponent } from "@recast/icons";
-import { Cutout } from "@recast/ui/cutout";
-import { cn } from "@recast/ui/utils";
-import { formatSize } from "@recast/editor/lib/format/files";
-import type { Snippet } from "svelte";
 
 let {
 	entry,

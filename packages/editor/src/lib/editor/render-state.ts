@@ -18,11 +18,11 @@ import {
 	BACKGROUND_GRADIENTS,
 	type BackgroundPreset,
 } from "@recast/design/backgrounds";
-import { type AudioClip } from "../audio/music";
-import { type Easing } from "../easing/cubic-bezier";
-import { type MotionTone, type SegmentAnim } from "../scenes/segment-anim";
-import { type TimelineCut } from "../timeline/cuts";
-import { type SegmentSpeed } from "../timeline/segment-speed";
+import type { AudioClip } from "../audio/music";
+import type { Easing } from "../easing/cubic-bezier";
+import type { MotionTone, SegmentAnim } from "../scenes/segment-anim";
+import type { TimelineCut } from "../timeline/cuts";
+import type { SegmentSpeed } from "../timeline/segment-speed";
 import type { Segment } from "../timeline/segments";
 
 /** Transcript model. Lives here, not in `ipc-types`, because it is part of the
@@ -672,6 +672,7 @@ export interface DeleteSelectionResult {
 // sites keep working; the list itself lives in a module light enough to import
 // from a unit test (see panel-tabs.ts).
 export { PANEL_TABS, type PanelTab } from "./panel-tabs";
+
 import type { PanelTab } from "./panel-tabs";
 
 /** Active timeline pointer tool. `select` is the default (scrub/drag/select);

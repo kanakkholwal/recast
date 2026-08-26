@@ -5,18 +5,12 @@
  * Minimizing the share dialog lands here. The button badges the pending count
  * and the icon pulses while anything is uploading.
  */
-import { goto } from "$app/navigation";
-import { openFileLocation } from "$lib/ipc";
-import { cloudShare } from "$lib/stores/cloudShare.svelte";
-import { exportActivity, type ExportItem } from "$lib/stores/exportActivity.svelte";
-import { gdrive } from "$lib/stores/gdrive.svelte";
-import { encodeEditorPath } from "$lib/library/editor-window";
+
 import { exportEtaMs, formatElapsed } from "@recast/editor/lib/format/time";
-import RecastMark from "$components/recast-mark.svelte";
 import {
+	BrandGoogleDrive,
 	CheckCircle2,
 	Clock,
-	BrandGoogleDrive,
 	Copy,
 	ExternalLink,
 	Film,
@@ -30,6 +24,13 @@ import { Button } from "@recast/ui/button";
 import * as Popover from "@recast/ui/popover";
 import { toast } from "@recast/ui/sonner";
 import { cn } from "@recast/ui/utils";
+import { goto } from "$app/navigation";
+import RecastMark from "$components/recast-mark.svelte";
+import { openFileLocation } from "$lib/ipc";
+import { encodeEditorPath } from "$lib/library/editor-window";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
+import { type ExportItem, exportActivity } from "$lib/stores/exportActivity.svelte";
+import { gdrive } from "$lib/stores/gdrive.svelte";
 import { cloudPhaseLabel, uploadPct } from "../corner-notifications.logic";
 
 // Cloud uploads shown in a foreground dialog are hidden here; they reappear

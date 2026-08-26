@@ -1,10 +1,10 @@
 <script lang="ts">
-import type { EditorStore, ZoomRegion } from "../../../stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
-import { motionDuration } from "../../../lib/motion.svelte";
 import { ZoomIn } from "@recast/icons";
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
+import { motionDuration } from "../../../lib/motion.svelte";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
+import type { EditorStore, ZoomRegion } from "../../../stores/editor-store.svelte";
 import {
 	computeCardMove,
 	computeCardNudge,

@@ -22,14 +22,7 @@ describe("parseDeepLink", () => {
 	});
 
 	it("parses go?to into a navigate action for each allowlisted route", () => {
-		for (const route of [
-			"/",
-			"/recasts",
-			"/exports",
-			"/profiles",
-			"/settings",
-			"/whats-new",
-		]) {
+		for (const route of ["/", "/recasts", "/exports", "/profiles", "/settings", "/whats-new"]) {
 			expect(parseDeepLink(`recast://go?to=${encodeURIComponent(route)}`)).toEqual({
 				kind: "navigate",
 				route,
@@ -78,9 +71,7 @@ describe("deep-link builders", () => {
 	});
 
 	it("builds a navigate link for an allowlisted route", () => {
-		expect(buildNavigateLink("/settings/cloud")).toBe(
-			"recast://go?to=%2Fsettings%2Fcloud",
-		);
+		expect(buildNavigateLink("/settings/cloud")).toBe("recast://go?to=%2Fsettings%2Fcloud");
 	});
 
 	it("throws when building a navigate link for a disallowed route", () => {

@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { EditorStore } from "../../../stores/editor-store.svelte";
 import { originalToOutput } from "../../../lib/timeline/time-map";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
 import { CLIP_LABEL, clipSurface } from "./timeline-clip.styles";
 import { buildWaveformPath } from "./timeline-helpers";
 import { AUDIO_LANE_HEIGHT_PX, LANE_PADDING_PX, ROW_HEIGHT_PX } from "./timeline-stack";

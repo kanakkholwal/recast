@@ -1,13 +1,13 @@
 <script lang="ts">
-import { config } from "$constants/app";
-import { KIND_META, LATEST_RELEASE, type ChangeKind } from "$constants/changelog";
-import { whatsNew } from "$lib/stores/whats-new.svelte";
-import { ArrowRight, AiWand } from "@recast/icons";
+import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
+import { AiWand, ArrowRight } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import * as Dialog from "@recast/ui/dialog";
-import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
-import { cn } from "@recast/ui/utils";
 import { Markdown } from "@recast/ui/markdown";
+import { cn } from "@recast/ui/utils";
+import { config } from "$constants/app";
+import { type ChangeKind, KIND_META, LATEST_RELEASE } from "$constants/changelog";
+import { whatsNew } from "$lib/stores/whats-new.svelte";
 
 // Order changes so additions surface first, then changes, then fixes.
 const ORDER: ChangeKind[] = ["added", "changed", "fixed", "deprecated"];

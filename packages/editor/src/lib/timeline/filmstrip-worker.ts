@@ -26,12 +26,12 @@
  * and transfer the blob back to the main thread.
  */
 
+import type { MediaRef } from "@recast/media";
 // biome-ignore lint/style/noRestrictedImports: this worker composes
 // MediaBunny primitives through `@recast/media` (the allowed channel —
 // see the override in biome.json). Same scope rule as the other worker
 // files in this package.
 import { ALL_FORMATS, CanvasSink, Input, mediaRefSource } from "@recast/media/mediabunny";
-import type { MediaRef } from "@recast/media";
 // One definition, shared with the provider. This file used to redeclare both
 // unions and they had already drifted (`ready` grew four fields here that the
 // worker never sent).

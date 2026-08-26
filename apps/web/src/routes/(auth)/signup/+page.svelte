@@ -1,19 +1,4 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { page } from "$app/state";
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
-import OrDivider from "$lib/auth/components/OrDivider.svelte";
-import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
-import { authClient } from "$lib/auth/client";
-import { lookupEmailStatus } from "$lib/auth/lookup";
-import { safeNext } from "$lib/auth/redirect";
-import {
-	STRENGTH_COLORS,
-	STRENGTH_LABELS,
-	canSignUp,
-	passwordsMatch,
-	scorePasswordStrength,
-} from "$lib/auth/password.logic";
 import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Checkbox } from "@recast/ui/checkbox";
@@ -23,6 +8,21 @@ import { toast } from "@recast/ui/sonner";
 import { untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly, slide } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import OrDivider from "$lib/auth/components/OrDivider.svelte";
+import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
+import { lookupEmailStatus } from "$lib/auth/lookup";
+import {
+	canSignUp,
+	passwordsMatch,
+	STRENGTH_COLORS,
+	STRENGTH_LABELS,
+	scorePasswordStrength,
+} from "$lib/auth/password.logic";
+import { safeNext } from "$lib/auth/redirect";
 
 let { data } = $props();
 

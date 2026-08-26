@@ -1,11 +1,11 @@
 <script lang="ts">
-	type Props = {
-		title: string;
-		description?: string;
-		eyebrow?: string;
-	};
+type Props = {
+	title: string;
+	description?: string;
+	eyebrow?: string;
+};
 
-	let { title, description = "", eyebrow = "" }: Props = $props();
+let { title, description = "", eyebrow = "" }: Props = $props();
 </script>
 
 <svelte:options css="injected" />

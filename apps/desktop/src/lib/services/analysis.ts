@@ -5,9 +5,9 @@
  * the surface a future MCP "auto-edit" tool calls. See ./README.md for layering.
  */
 
-import { autosaveProject, suggestZoomRegions } from "$lib/ipc";
-import type { EditorStore } from "@recast/editor/stores/editor-store.svelte";
 import { applyAutoZooms } from "@recast/editor/lib/zoom/auto-apply";
+import type { EditorStore } from "@recast/editor/stores/editor-store.svelte";
+import { autosaveProject, suggestZoomRegions } from "$lib/ipc";
 
 export interface AutoZoomOutcome {
 	/** Number of focus regions actually placed. */

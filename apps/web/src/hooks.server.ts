@@ -1,9 +1,9 @@
-import { building } from "$app/environment";
-import { svelteKitHandler } from "better-auth/svelte-kit";
-import { getAuth } from "$lib/auth/server";
-import { getServerEnv } from "$lib/env/server";
-import { getPublicEnv } from "$lib/env/public";
 import type { Handle, HandleServerError } from "@sveltejs/kit";
+import { svelteKitHandler } from "better-auth/svelte-kit";
+import { building } from "$app/environment";
+import { getAuth } from "$lib/auth/server";
+import { getPublicEnv } from "$lib/env/public";
+import { getServerEnv } from "$lib/env/server";
 
 // Validate env at server startup. Throws synchronously if anything is missing
 // or malformed so the process refuses to serve traffic with a half-configured

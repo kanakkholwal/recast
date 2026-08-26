@@ -2,8 +2,8 @@
 // the page file stays focused on layout. Each export is its own const so
 // the bundler can tree-shake whatever the page doesn't actually use.
 
-import type { Integration } from "$lib/components/IntegrationGrid.svelte";
 import {
+	AiWand,
 	BrandDiscord,
 	BrandDropbox,
 	BrandFigma,
@@ -15,12 +15,13 @@ import {
 	BrandVimeo,
 	BrandYoutube,
 	Camera,
-	Crop,
 	Cpu,
+	Crop,
 	FileBox,
 	HardDrive,
 	HardDriveUpload,
 	Highlighter,
+	Keyboard,
 	Layers,
 	Layout,
 	MemoryStick,
@@ -30,14 +31,13 @@ import {
 	ShieldCheck,
 	Sparkles,
 	Target,
+	UserX,
 	VolumeX,
 	WifiOff,
 	Zap,
-	AiWand,
-	Keyboard,
-	UserX,
 } from "@recast/icons";
 import { AppleBrand, GithubBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
+import type { Integration } from "$lib/components/IntegrationGrid.svelte";
 
 export const pillars = [
 	{

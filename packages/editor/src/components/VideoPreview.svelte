@@ -9,21 +9,17 @@ import { computeCanvasGeometry } from "../lib/canvas-geometry";
 import { CursorSmoother } from "../lib/cursor/smoother";
 import { smoothingStrengthToSigmaMs } from "../lib/cursor/smoothing";
 import { getEditorServices } from "../lib/editor/services";
+import { trackTimeAt } from "../lib/editor/track-offsets";
 import { analytics, exportActivity } from "../lib/host-hooks";
 import { AudioStallMonitor, resolveAvSync } from "../lib/playback/av-sync";
 import { PlaybackClock } from "../lib/playback/clock";
-import { PreviewEngineDriver } from "../lib/playback/engine-driver";
 import { loadCursorSprites } from "../lib/playback/cursor-sprites";
-import { FrameTextureRing } from "../lib/playback/frame-textures";
+import { PreviewEngineDriver } from "../lib/playback/engine-driver";
 import { createMediabunnySource } from "../lib/playback/mediabunny";
-import { RenderWorkerClient } from "../lib/playback/render-worker-client";
-import { renderWorkerCapable } from "../lib/playback/render-worker-protocol";
-import { cursorSpriteHotspot, resolveCursorDataUrl, resolveCursorSprite } from "../lib/registry";
-import { trackTimeAt } from "../lib/editor/track-offsets";
+import { resolveCursorDataUrl } from "../lib/registry";
 import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
 import { assetsStore } from "../stores/assets-store.svelte";
 import { type EditorStore } from "../stores/editor-store.svelte";
-import { experimentalStore } from "../stores/experimental.svelte";
 import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 import CameraOverlay from "./_components/CameraOverlay.svelte";
 import CaptionOverlay from "./_components/CaptionOverlay.svelte";
@@ -31,9 +27,6 @@ import FocusOverlay from "./_components/FocusOverlay.svelte";
 import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
 import { resolveBackgroundSrc } from "./background-source";
 import { buildPressEvents, type PressEvent } from "./cursor-animation.logic";
-import { computeFrameParams, type FrameInput, type SvgCursorParams } from "./frame-params";
-import { buildGradientUniforms } from "./gradient.logic";
-import { RenderCore } from "./render-core";
 import {
 	type CursorSampleJS,
 	classifyMbError,
@@ -41,7 +34,6 @@ import {
 	resolutionTier,
 	shouldRecoverMbSource,
 } from "./video-preview.logic";
-import { WebGL2Backend } from "./webgl2-backend";
 
 interface Props {
 	store: EditorStore;
@@ -103,14 +95,9 @@ let {
 }: Props = $props();
 
 let canvasEl: HTMLCanvasElement | null = $state(null);
-// WebView doesn't expose WebGL2, so surface an actionable message rather than a
-// silently blank canvas (old integrated GPUs, broken/outdated drivers).
-let webgl2Unsupported = $state(false);
-/** GPU context lost (driver reset / TDR); recoverable, unlike the above. */
-let glLost = $state(false);
 let containerEl: HTMLDivElement | null = $state(null);
-/** Shrink-wrap around the WebGL canvas so the annotation overlay can sit
- * on top of it at the same rendered rect regardless of letterboxing. */
+/** Shrink-wrap around the canvas so the annotation overlay can sit on top of
+ * it at the same rendered rect regardless of letterboxing. */
 let previewRectEl: HTMLDivElement | null = $state(null);
 // Per-FRAME picture time for smooth DOM overlays (camera bubble). store.currentTime
 // is throttled to ~25Hz to spare the timeline/waveform fan-out; the camera grow
@@ -127,21 +114,8 @@ let cameraEl = $state<HTMLVideoElement | null>(null);
 // primary element's seek latency. Only seeked once per cut, never played.
 let scoutEl = $state<HTMLVideoElement | null>(null);
 
-let gl: WebGL2RenderingContext | null = null;
-let backend: WebGL2Backend | null = null;
-let renderCore: RenderCore | null = null;
-let videoTex: WebGLTexture | null = null;
-let bgTex: WebGLTexture | null = null;
-let bgTexReady = false;
 let lastBgKey = "";
-// Phase 3 off-thread compositor: when supported, GL + the frame ring live in a
-// render worker on an OffscreenCanvas; the main thread posts uniforms + relays
-// frames and presents the returned ImageBitmap. Old main-thread GL path is the
-// fallback when unsupported or if worker init throws.
-let renderWorkerClient: RenderWorkerClient | null = null;
-// Rust/wgpu compositor, behind the `wasmPreviewEngine` flag while DG-3 is open.
-// Runs INSTEAD of GL on its own canvas; the GL path is untouched so the two can
-// be compared on the same machine before either is deleted.
+/// The Rust/wgpu compositor, the only renderer the preview has.
 let engineDriver = $state<PreviewEngineDriver | null>(null);
 let engineFailed = $state<string | null>(null);
 // One line per session so a wrong backend or an empty composite is visible
@@ -173,13 +147,6 @@ function reportEngineFrameTimes(now: number) {
 	engineFrameMs = [];
 	engineWindowStartedAt = now;
 }
-const useEngine = experimentalStore.isEnabled("wasmPreviewEngine");
-const useRenderWorker = renderWorkerCapable({
-	OffscreenCanvas: (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas,
-	VideoFrame: (globalThis as { VideoFrame?: unknown }).VideoFrame,
-	Worker: (globalThis as { Worker?: unknown }).Worker,
-});
-
 // Preview engine: `MediabunnyVideoSource` runs in a Web Worker and
 // owns the MediaBunny Input + CanvasSink lifecycle. The composite samples
 // a frame WE decode, not the <video> element's pixels, so jumping over a
@@ -191,9 +158,6 @@ const useRenderWorker = renderWorkerCapable({
 // imperative draw loop); `mbReady` is, because the markup and the
 // pause-the-transport effect both branch on it.
 let mbSource: MediabunnyVideoSource | null = null;
-// Decoded frames live here as textures we own, so each VideoFrame goes back
-// to the decoder's pool immediately after upload.
-let frameRing: FrameTextureRing | null = null;
 let mbReady = $state(false);
 let loadedMbSrc = "";
 // One user-facing notice per source when the hardware preview drops to the
@@ -212,10 +176,9 @@ function notifyPreviewFallback(reason: string) {
 const MB_RECOVER_DELAY_MS = 400;
 let mbRecoverAttempts = 0;
 let mbHealthyFrames = 0;
-let mbRecoverPending = false;
 let mbRecoverTimer: ReturnType<typeof setTimeout> | undefined;
 let mbRecoverNonce = $state(0);
-// True once a frame is in videoTex. preserveDrawingBuffer:false means an early
+// True once the engine has presented a frame. An early
 // return from draw() clears to BLACK; we re-render the last frame instead, and
 // this guards that.
 let hasRenderedFrame = false;
@@ -248,36 +211,6 @@ let smoother: CursorSmoother | null = null;
 let idlePeriods: IdlePeriodJS[] = [];
 let loadedCursorPath = "";
 
-// SVG cursor overlay state, updated each draw() for non-`dot` styles and
-// consumed by the absolutely-positioned <img>. Not $derived: the data is
-// pulled from the draw loop where the cursor sample is already evaluated.
-let svgCursor = $state<{
-	visible: boolean;
-	alpha: number;
-	styleId: import("../stores/editor-store.svelte").StoredCursorId;
-	pressed: boolean;
-	right: boolean; // active press was a right-click (sprite slot)
-	dragging: boolean; // active press is a drag (sprite slot)
-	scale: number; // JS-driven press impact curve; see pressStateAt
-	canvasX: number; // source-pixel space, includes padding offset
-	canvasY: number;
-	compW: number;
-	compH: number;
-	spritePx: number; // sprite size in source pixels; render width = (spritePx/compW)*100%
-}>({
-	visible: false,
-	alpha: 0,
-	styleId: "dot",
-	pressed: false,
-	right: false,
-	dragging: false,
-	scale: 1,
-	canvasX: 0,
-	canvasY: 0,
-	compW: 1,
-	compH: 1,
-	spritePx: 32,
-});
 // Signature of the inputs that drive smoothing. Recomputing only when this
 // changes keeps playback cheap even on long recordings.
 let smoothingSignature = "";
@@ -288,22 +221,9 @@ let cursorVersion = 0;
 
 let pressEvents: PressEvent[] = [];
 
-/**
- * (Re)build the texture ring for the live source. Sized from the source, so
- * it must be rebuilt after a context restore too — the old handles belong to
- * the dead context and binding them fails silently.
- */
+/** Resize the engine's decoded-frame ring for a new source. */
 function rebuildFrameRing(width: number, height: number) {
-	if (engineDriver) {
-		engineDriver.setScreenRingCapacity(textureRingFrames(width, height));
-		return;
-	}
-	frameRing?.dispose();
-	if (renderWorkerClient) {
-		renderWorkerClient.rebuildRing(textureRingFrames(width, height));
-		return;
-	}
-	frameRing = gl ? new FrameTextureRing(gl, textureRingFrames(width, height)) : null;
+	engineDriver?.setScreenRingCapacity(textureRingFrames(width, height));
 }
 
 async function initEngine() {
@@ -324,83 +244,9 @@ async function initEngine() {
 	}
 }
 
-function initGL() {
-	// The engine owns the canvas surface; a WebGL2 context on the same element
-	// would fail, and both drawing to it would be worse.
-	if (useEngine) return;
-	if (canvasEl && useRenderWorker && !renderWorkerClient) {
-		try {
-			renderWorkerClient = new RenderWorkerClient({
-				canvas: canvasEl,
-				ringCapacity: 6,
-				onPresented: () => {
-					hasRenderedFrame = true;
-					if (!isReady) isReady = true;
-				},
-				onContextLost: () => {
-					hasRenderedFrame = false;
-					lastBgKey = "";
-					void loadBackgroundIfNeeded();
-				},
-				onError: (m) => console.error("render worker error:", m),
-			});
-			return;
-		} catch (err) {
-			console.warn("Render worker init failed; using main-thread GL:", err);
-			renderWorkerClient = null;
-		}
-	}
-	if (!canvasEl) return;
-	const g = canvasEl.getContext("webgl2", {
-		alpha: false,
-		antialias: false,
-		premultipliedAlpha: false,
-		preserveDrawingBuffer: false,
-		// Hybrid-GPU laptops default to the integrated chip; compositing 4K
-		// per frame is exactly the case that wants the discrete one.
-		powerPreference: "high-performance",
-	});
-	if (!g) {
-		console.error("WebGL2 not supported in this WebView");
-		webgl2Unsupported = true;
-		return;
-	}
-	gl = g;
-
-	backend = WebGL2Backend.create(g);
-	renderCore = new RenderCore(backend);
-
-	// Allocate textures
-	videoTex = g.createTexture();
-	g.bindTexture(g.TEXTURE_2D, videoTex);
-	g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
-	g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
-	g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR);
-	g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
-
-	bgTex = g.createTexture();
-	g.bindTexture(g.TEXTURE_2D, bgTex);
-	g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
-	g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
-	g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MIN_FILTER, g.LINEAR);
-	g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
-	// Placeholder 1×1 transparent texture so the sampler is always valid
-	g.texImage2D(
-		g.TEXTURE_2D,
-		0,
-		g.RGBA,
-		1,
-		1,
-		0,
-		g.RGBA,
-		g.UNSIGNED_BYTE,
-		new Uint8Array([0, 0, 0, 0]),
-	);
-}
-
 //  Background loading
 async function loadBackgroundIfNeeded() {
-	if (!engineDriver && !renderWorkerClient && (!gl || !bgTex)) return;
+	if (!engineDriver) return;
 	const type = store.backgroundType;
 	const value = store.backgroundValue;
 	// Including the resolved cache path in the key ensures the texture
@@ -416,14 +262,12 @@ async function loadBackgroundIfNeeded() {
 	lastBgKey = key;
 
 	if (type !== "wallpaper" && type !== "image") {
-		bgTexReady = false;
-		engineDriver?.setBackgroundImage(null);
+		engineDriver.setBackgroundImage(null);
 		return;
 	}
 
 	if (!value) {
-		bgTexReady = false;
-		engineDriver?.setBackgroundImage(null);
+		engineDriver.setBackgroundImage(null);
 		return;
 	}
 
@@ -433,7 +277,6 @@ async function loadBackgroundIfNeeded() {
 			// Asset not yet cached (first-run offline, or still downloading).
 			// Fall through to flat-background rendering until a later tick
 			// re-runs this effect once the cache populates.
-			bgTexReady = false;
 			return;
 		}
 		const img = new Image();
@@ -441,31 +284,17 @@ async function loadBackgroundIfNeeded() {
 		img.src = resolvedSrc;
 		await img.decode();
 		if (lastBgKey !== key) return; // Superseded by another load
-		if (engineDriver) {
-			const bmp = await createImageBitmap(img);
-			if (lastBgKey !== key) {
-				bmp.close();
-				return;
-			}
-			// Copied into a texture on the way in, so the bitmap is ours to close.
-			engineDriver.setBackgroundImage(bmp);
+		const bmp = await createImageBitmap(img);
+		if (lastBgKey !== key) {
 			bmp.close();
-		} else if (renderWorkerClient) {
-			const bmp = await createImageBitmap(img);
-			if (lastBgKey !== key) {
-				bmp.close();
-				return;
-			}
-			renderWorkerClient.setBackground(bmp);
-		} else {
-			gl!.bindTexture(gl!.TEXTURE_2D, bgTex);
-			gl!.texImage2D(gl!.TEXTURE_2D, 0, gl!.RGBA, gl!.RGBA, gl!.UNSIGNED_BYTE, img);
+			return;
 		}
-		bgTexReady = true;
+		// Copied into a texture on the way in, so the bitmap is ours to close.
+		engineDriver.setBackgroundImage(bmp);
+		bmp.close();
 		requestRedraw();
 	} catch (err) {
 		console.warn("Background image load failed:", err, "value:", value);
-		bgTexReady = false;
 	}
 }
 
@@ -568,16 +397,6 @@ function currentGeometry() {
 let containerW = 0;
 let containerH = 0;
 
-let gradCache: ReturnType<typeof buildGradientUniforms> | null = null;
-let gradSig = "\0";
-function currentGradient(value: string) {
-	if (value !== gradSig) {
-		gradCache = buildGradientUniforms(value);
-		gradSig = value;
-	}
-	return gradCache!;
-}
-
 //  Sizing
 function resizeCanvas() {
 	if (!canvasEl || !containerEl) return false;
@@ -616,31 +435,6 @@ function resizeCanvas() {
 }
 
 //  Render
-let loggedTexError = false;
-// Uploads a decoded video frame into the sampling texture. `el` defaults to
-// the primary playback element but may be the scout during a cut-skip mask.
-function uploadVideoFrame(el: HTMLVideoElement | null = videoEl) {
-	if (!gl || !videoTex || !el) return false;
-	if (el.readyState < 2 /* HAVE_CURRENT_DATA */) return false;
-	if (el.videoWidth === 0 || el.videoHeight === 0) return false;
-	gl.activeTexture(gl.TEXTURE0);
-	gl.bindTexture(gl.TEXTURE_2D, videoTex);
-	// texImage2D from a video element is hardware-accelerated by the browser
-	gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-	try {
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, el);
-	} catch (err) {
-		if (!loggedTexError) {
-			loggedTexError = true;
-			console.error(`WebGL texImage2D failed for video (src=${el.currentSrc || el.src}):`, err);
-		}
-		return false;
-	}
-	return true;
-}
-
-// AnnotationOverlay reads this canvas back via drawImage from its OWN rAF
-// loop. With preserveDrawingBuffer:false the GL buffer is only valid for a
 // Target time of an in-flight cut-skip seek. draw() issues each skip ONCE
 // rather than re-assigning currentTime every frame while the decoder is
 // still seeking (which thrashes it into a multi-second stall).
@@ -676,45 +470,9 @@ function scoutReadyAt(t: number): boolean {
 	);
 }
 
-function buildFrameInput(
-	playbackTime: number,
-	meta: { width: number; height: number },
-	geom: NonNullable<ReturnType<typeof currentGeometry>>,
-	gradient: ReturnType<typeof currentGradient> | undefined,
-): FrameInput {
-	return {
-		meta: { width: meta.width, height: meta.height },
-		geom,
-		canvasPxW: canvasEl!.width,
-		canvasPxH: canvasEl!.height,
-		playbackTime,
-		segments: store.segments,
-		segmentAnims: store.segmentAnims,
-		backgroundType: store.backgroundType,
-		backgroundValue: store.backgroundValue,
-		backgroundBlur: store.backgroundBlur,
-		backgroundImageReady: bgTexReady,
-		gradient,
-		borderRadius: store.borderRadius ?? 0,
-		focusEnabled: store.focusEnabled,
-		zoomRegions: store.zoomRegions,
-		shadow: store.shadow,
-		cursor: store.cursorSettings,
-		cursorMotionEasing: store.cursorMotionEasing,
-		cursorSamples,
-		idlePeriods,
-		pressEvents,
-	};
-}
-
-function updateSvgCursor(next: SvgCursorParams | null) {
-	if (next) svgCursor = next;
-	else if (svgCursor.visible) svgCursor = { ...svgCursor, visible: false };
-}
-
 function draw() {
 	if (!canvasEl || !store.metadata) return;
-	if (!engineDriver && !renderWorkerClient && (!gl || !renderCore)) return;
+	if (!engineDriver) return;
 	if (!resizeCanvas()) return;
 
 	// Refresh the smoothed cursor path if any of its inputs changed since
@@ -890,7 +648,7 @@ function draw() {
 		if (upcoming) mbSource.prefetch(upcoming.end);
 	}
 
-	if (engineDriver) {
+	{
 		const engineStartedAt = performance.now();
 		// The engine evaluates the scene itself, so it takes OUTPUT time; the
 		// original-axis `playbackTime` is only used to pick a decoded frame.
@@ -954,100 +712,7 @@ function draw() {
 		const finishedAt = performance.now();
 		engineFrameMs.push(finishedAt - engineStartedAt);
 		reportEngineFrameTimes(finishedAt);
-		return;
 	}
-
-	if (renderWorkerClient) {
-		const wgeom = currentGeometry();
-		if (!wgeom) return;
-		const wmeta = store.metadata!;
-		const wgrad =
-			store.backgroundType === "gradient"
-				? currentGradient(store.backgroundValue || "")
-				: undefined;
-		const wparams = computeFrameParams(buildFrameInput(playbackTime, wmeta, wgeom, wgrad));
-		updateSvgCursor(wparams.svgCursor);
-		let wTUs = 0;
-		let wFloorUs = 0;
-		let wUseRing = true;
-		if (mbSource && mbReady) {
-			let floorSec = 0;
-			for (const c of activeCuts) if (c.end <= playbackTime && c.end > floorSec) floorSec = c.end;
-			mbSource.advanceTo(Math.max(0, playbackTime));
-			wTUs = Math.max(0, Math.round(playbackTime * 1e6));
-			wFloorUs = Math.max(0, Math.round(floorSec * 1e6));
-		} else if (frameEl && frameEl.readyState >= 2 && frameEl.videoWidth > 0) {
-			try {
-				wTUs = Math.max(0, Math.round(playbackTime * 1e6));
-				renderWorkerClient.putFallbackFrame(new VideoFrame(frameEl, { timestamp: wTUs }), wTUs);
-			} catch {
-				wUseRing = false;
-			}
-		} else {
-			wUseRing = false;
-		}
-		renderWorkerClient.renderFrame(
-			wparams,
-			canvasEl.width,
-			canvasEl.height,
-			wTUs,
-			wFloorUs,
-			hasRenderedFrame,
-			wUseRing,
-		);
-		return;
-	}
-
-	// Get the frame into the texture. With the WebCodecs engine we sample a
-	// frame WE decoded for playbackTime (no <video> seek latency); fall back
-	// to the <video> element while the source is still demuxing or if a frame
-	// isn't ready yet, so the preview is never blank.
-	let haveFrame = false;
-	if (mbSource && mbReady) {
-		// Floor = start of the current kept segment = the end of the most recent
-		// cut at or before the playhead (0 if none). Frames before it belong to
-		// a prior segment (inside the removed range) and must not be shown, or
-		// the picture steps back into deleted content at the cut.
-		let floorSec = 0;
-		for (const c of activeCuts) {
-			if (c.end <= playbackTime && c.end > floorSec) floorSec = c.end;
-		}
-		// Frames were uploaded to the ring as they arrived and released back
-		// to the decoder; here we only pick which texture to sample.
-		mbSource.advanceTo(Math.max(0, playbackTime));
-		const tUs = Math.max(0, Math.round(playbackTime * 1e6));
-		const floorUs = Math.max(0, Math.round(floorSec * 1e6));
-		haveFrame = frameRing?.bind(tUs, floorUs) ?? false;
-		// No fresh in-segment frame yet (briefly, right after a cut while the
-		// post-cut GOP decodes): hold the last frame we actually displayed.
-		if (!haveFrame && hasRenderedFrame) haveFrame = frameRing?.bindLast() ?? false;
-	}
-	if (!haveFrame && !uploadVideoFrame(frameEl)) return;
-	hasRenderedFrame = true;
-	// The preview has painted, so hide the spinner — whichever engine drew it.
-	// Previously `isReady` came only from the <video>'s `canplay`, which forced
-	// `preload="auto"` (buffering the whole file) just to clear the spinner.
-	if (!isReady) isReady = true;
-
-	// Background (re)load is driven by a $effect on its reactive inputs and by
-	// onContextRestored — no per-frame call needed here (it allocated a Promise
-	// + key string every frame only to early-return).
-
-	const meta = store.metadata!;
-	const geom = currentGeometry();
-	if (!geom) return;
-
-	// One pure scene→uniform evaluation + a single GL apply via RenderCore,
-	// shared with the offline export renderer instead of a second compositor.
-	const gradient =
-		store.backgroundType === "gradient" ? currentGradient(store.backgroundValue || "") : undefined;
-	const frame = renderCore!.renderFrame(buildFrameInput(playbackTime, meta, geom, gradient), {
-		backgroundTex: bgTex,
-	});
-
-	// SVG cursor overlay: written only for a non-dot style, else cleared once so
-	// the HTML <img> hides (the shader draws the dot cursor itself).
-	updateSvgCursor(frame.svgCursor);
 }
 
 function requestRedraw() {
@@ -1124,22 +789,14 @@ function stopVideoFrameLoop() {
  * (video + background + zoom + blur + cursor), so the screenshot matches
  * what the user sees rather than the raw recording.
  *
- * preserveDrawingBuffer is false, so the back buffer is cleared once the JS
- * task yields. Workaround: draw() synchronously, then drawImage from the GL
- * canvas to a 2D canvas in the same task (inter-canvas copies preserve the
- * buffer); toBlob runs against the 2D canvas, which has no such constraint.
+ * Copied through a 2D canvas because `toBlob` on the engine's own surface is
+ * not guaranteed to see the presented frame, while an inter-canvas `drawImage`
+ * is.
  */
 $effect(() => {
 	captureFrame = async () => {
-		if (!canvasEl || webgl2Unsupported) return null;
-		// The render-worker path never assigns `gl` — guarding on it alone made
-		// screenshot/copy-frame return null on the DEFAULT path.
-		if (!gl && !renderWorkerClient) return null;
-		if (renderWorkerClient && !hasRenderedFrame) return null;
+		if (!canvasEl || !engineDriver || !hasRenderedFrame) return null;
 		try {
-			// Worker path: the canvas already holds the last presented bitmap and
-			// its composite is async, so a draw() here would land after the copy.
-			if (gl) draw();
 			const w = canvasEl.width;
 			const h = canvasEl.height;
 			if (!w || !h) return null;
@@ -1148,9 +805,6 @@ $effect(() => {
 			copy.height = h;
 			const ctx = copy.getContext("2d");
 			if (!ctx) return null;
-			// Same-task drawImage from a WebGL canvas captures the current
-			// front buffer even when preserveDrawingBuffer is false. On the
-			// bitmaprenderer canvas the bitmap persists, so no timing constraint.
 			ctx.drawImage(canvasEl, 0, 0);
 			return await new Promise<Blob | null>((resolve) => {
 				copy.toBlob((b) => resolve(b), "image/png");
@@ -1161,53 +815,6 @@ $effect(() => {
 		}
 	};
 });
-
-/**
- * A lost context makes every GL call a silent no-op — no throw, so nothing
- * downstream notices and the preview freezes for the rest of the session.
- * The browser only attempts restoration if the loss event is cancelled.
- */
-function onContextLost(e: Event) {
-	e.preventDefault();
-	glLost = true;
-	stopVideoFrameLoop();
-	if (rafHandle !== null) {
-		cancelAnimationFrame(rafHandle);
-		rafHandle = null;
-	}
-	// The ring's textures died with the context. Drop it, or decoded frames
-	// keep uploading into stale handles — silent INVALID_OPERATION, and the
-	// preview stays frozen for the rest of the session.
-	frameRing?.dispose();
-	frameRing = null;
-	gl = null;
-	backend = null;
-	renderCore = null;
-	videoTex = null;
-	bgTex = null;
-	bgTexReady = false;
-	lastBgKey = "";
-	hasRenderedFrame = false;
-}
-
-// A restored context comes back with every GPU object gone, so this is a
-// full re-init, not a resume.
-function onContextRestored() {
-	glLost = false;
-	initGL();
-	// initGL rebuilds the shader/textures it owns; the ring is sized from the
-	// source, so it needs its own rebuild. Until the next decode lands, draw()
-	// finds an empty ring and falls back to the <video> frame rather than
-	// showing black.
-	if (mbSource) rebuildFrameRing(mbSource.width, mbSource.height);
-	// onContextLost cleared lastBgKey, so the background texture is gone;
-	// reload it here since the draw loop no longer does it per frame.
-	void loadBackgroundIfNeeded();
-	requestRedraw();
-	// A recovery deferred while the context was lost can run now the GL is back.
-	if (mbRecoverPending) runMbRecover();
-	if (store.isPlaying) startVideoFrameLoop();
-}
 
 /** Playback we suspended on hide, to restore on show. */
 let resumeOnVisible = false;
@@ -1288,9 +895,6 @@ let loggedCameraFrameError = false;
 
 function syncEngineFrameInputs() {
 	if (!engineDriver) return;
-	// The engine draws the pointer, so the GL overlay must stay hidden or two
-	// cursors appear.
-	if (svgCursor.visible) updateSvgCursor(null);
 	if (mbSource) {
 		engineDriver.setScreenRingCapacity(textureRingFrames(mbSource.width, mbSource.height));
 	}
@@ -1385,10 +989,7 @@ $effect(() => {
 
 //  Lifecycle & reactive wiring
 onMount(() => {
-	if (useEngine) void initEngine();
-	else initGL();
-	canvasEl?.addEventListener("webglcontextlost", onContextLost);
-	canvasEl?.addEventListener("webglcontextrestored", onContextRestored);
+	void initEngine();
 	document.addEventListener("visibilitychange", onVisibilityChange);
 	watchDpr();
 	const ro = new ResizeObserver(() => {
@@ -1404,34 +1005,17 @@ onMount(() => {
 });
 
 onDestroy(() => {
-	canvasEl?.removeEventListener("webglcontextlost", onContextLost);
-	canvasEl?.removeEventListener("webglcontextrestored", onContextRestored);
 	document.removeEventListener("visibilitychange", onVisibilityChange);
 	dprQuery?.removeEventListener("change", onDprChange);
 	stopVideoFrameLoop();
 	if (rafHandle !== null) cancelAnimationFrame(rafHandle);
 	clearTimeout(mbRecoverTimer);
-	renderWorkerClient?.dispose();
-	renderWorkerClient = null;
 	engineDriver?.dispose();
 	engineDriver = null;
 	smoother?.dispose();
 	smoother = null;
 	mbSource?.dispose();
 	mbSource = null;
-	frameRing?.dispose();
-	frameRing = null;
-	if (gl) {
-		if (videoTex) gl.deleteTexture(videoTex);
-		if (bgTex) gl.deleteTexture(bgTex);
-		backend?.dispose();
-		// This component remounts on every editor open, and reclaiming a
-		// context is GC-timed. Chromium allows ~16 live contexts and
-		// force-loses the OLDEST when it hits the cap — which would kill a
-		// live editor's preview. Release ours deterministically instead.
-		gl.getExtension("WEBGL_lose_context")?.loseContext();
-		gl = null;
-	}
 });
 
 function scheduleMbRecover() {
@@ -1440,17 +1024,10 @@ function scheduleMbRecover() {
 	mbRecoverTimer = setTimeout(runMbRecover, MB_RECOVER_DELAY_MS);
 }
 
-// Re-create the MediaBunny source after a transient failure. Deferred until
-// the GL context is back (onContextRestored re-fires this), or the ring would
-// be allocated on a dead context.
+/** Re-create the MediaBunny source after a transient decode failure. */
 function runMbRecover() {
 	mbRecoverTimer = undefined;
 	if (!video && !videoSrc) return;
-	if (glLost || !gl) {
-		mbRecoverPending = true;
-		return;
-	}
-	mbRecoverPending = false;
 	loadedMbSrc = "";
 	mbRecoverNonce++;
 }
@@ -1470,14 +1047,11 @@ $effect(() => {
 	if (!src) {
 		clearTimeout(mbRecoverTimer);
 		mbRecoverTimer = undefined;
-		mbRecoverPending = false;
 		mbRecoverAttempts = 0;
 		if (mbSource) {
 			mbSource.dispose();
 			mbSource = null;
 		}
-		frameRing?.dispose();
-		frameRing = null;
 		mbReady = false;
 		webcodecsActive = false;
 		loadedMbSrc = "";
@@ -1510,9 +1084,7 @@ $effect(() => {
 			// Upload and hand back in the same tick. Holding decoded frames is
 			// what starved the decoder at 4K until it stopped emitting.
 			source.onFrameDecoded = (frame, tsUs) => {
-				if (engineDriver) engineDriver.putScreenFrame(frame, tsUs);
-				else if (renderWorkerClient) renderWorkerClient.putFrame(frame, tsUs);
-				else frameRing?.put(frame, tsUs);
+				engineDriver?.putScreenFrame(frame, tsUs);
 				// Frames flowing again after a recovery: clear the streak so a
 				// later, unrelated failure gets its full retry budget.
 				if (mbRecoverAttempts > 0 && ++mbHealthyFrames > 30) {
@@ -1536,8 +1108,6 @@ $effect(() => {
 				webcodecsActive = false;
 				mbSource = null;
 				source.dispose();
-				frameRing?.dispose();
-				frameRing = null;
 				requestRedraw();
 				if (recover) {
 					mbRecoverAttempts++;
@@ -1563,10 +1133,6 @@ $effect(() => {
 					min_fps: Math.round(s.minFps),
 					max_late_ms: Math.round(s.maxLateMs),
 					max_av_drift_ms: Math.round(maxAvDriftSec * 1000),
-					max_upload_ms: Math.round((frameRing?.uploadStats.maxMs ?? 0) * 100) / 100,
-					avg_upload_ms: Math.round((frameRing?.uploadStats.avgMs ?? 0) * 100) / 100,
-					slow_upload_count: frameRing?.uploadStats.slowCount ?? 0,
-					slow_upload_pct: Math.round((frameRing?.uploadStats.slowPct ?? 0) * 10) / 10,
 					width: source.width,
 					height: source.height,
 					fps: Math.round(source.fps),
@@ -1586,12 +1152,6 @@ $effect(() => {
 		})
 		.catch((err) => {
 			console.warn("MediaBunny source unavailable; using <video> fallback:", err);
-			// We fall back to <video>, so the previous source's ring is dead
-			// weight — 16 textures, ~133MB of VRAM at 1080p, never sampled
-			// again. The mid-playback onError path already did this; only
-			// creation-time failure missed it.
-			frameRing?.dispose();
-			frameRing = null;
 			// Telemetry: how often real users silently drop to <video>.
 			const reason = classifyMbError(err);
 			analytics.capture("mediabunny_preview_fallback", { reason });
@@ -1727,22 +1287,7 @@ const isAnnotationActive = $derived(
 			bind:this={canvasEl}
 			class="block max-h-full max-w-full transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-90"
 		></canvas>
-		{#if glLost}
-			<!-- Recoverable: the browser restores the context once the driver
-			     settles, so this is a wait, not a dead end. -->
-			<div
-				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/95 p-6 text-center"
-				role="status"
-				aria-live="polite"
-			>
-				<div class="text-sm font-semibold text-foreground">Restoring preview</div>
-				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
-					The graphics driver reset. The preview will come back on its own — your
-					recording and edits are unaffected.
-				</p>
-			</div>
-		{/if}
-		{#if paintFailed && !glLost && !webgl2Unsupported}
+		{#if paintFailed && !engineFailed}
 			<!-- Without this the canvas keeps showing the last good frame, so
 			     every later edit reads as "the app ignored me". -->
 			<div
@@ -1762,33 +1307,17 @@ const isAnnotationActive = $derived(
 				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/95 p-6 text-center"
 				role="alert"
 			>
-				<div class="text-sm font-semibold text-foreground">Preview engine didn't start</div>
+				<div class="text-sm font-semibold text-foreground">Preview unavailable on this device</div>
 				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
-					{engineFailed}
+					The preview needs WebGPU or WebGL2, and neither started. Updating your GPU
+					driver usually fixes this. Export is unaffected.
 				</p>
 				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
-					Turn off "New preview engine" in Settings → Experimental to go back to the
-					previous preview.
+					{engineFailed}
 				</p>
 			</div>
 		{/if}
 
-		{#if webgl2Unsupported}
-			<!-- Actionable message instead of a blank canvas: reads as a
-			     graphics-driver issue, not a broken app. -->
-			<div
-				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/95 p-6 text-center"
-				role="alert"
-			>
-				<div class="text-sm font-semibold text-foreground">
-					Preview unavailable on this device
-				</div>
-				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
-					Your graphics driver doesn't expose WebGL2, which Recast's preview needs.
-					Updating your GPU driver (NVIDIA / AMD / Intel) usually fixes this. Export still works, since it uses FFmpeg directly.
-				</p>
-			</div>
-		{/if}
 		<!-- Annotation scrim: primary-tinted darkening between the composite and
 			 the overlay so shapes pop. Opacity 0 on every other tab. -->
 		<div
@@ -1810,49 +1339,7 @@ const isAnnotationActive = $derived(
 		<div class="contents transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-55">
 			<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
 		</div>
-		{#if svgCursor.visible}
-			{@const style = resolveCursorSprite(svgCursor.styleId)}
-			{@const stateKey = svgCursor.pressed
-				? svgCursor.dragging
-					? "drag"
-					: svgCursor.right
-						? "rightPress"
-						: "press"
-				: "rest"}
-			{@const cursorSrc = resolveCursorDataUrl(svgCursor.styleId, stateKey)}{#if style && cursorSrc}
-			{@const hot = cursorSpriteHotspot(style, stateKey)}
-			{@const hotPctX = (hot.x / 64) * 100}
-			{@const hotPctY = (hot.y / 64) * 100}
-			<!-- Custom SVG cursor. Wrapper owns left/top/width/opacity (per-frame
-			     motion + visibility ramp). Inner img owns the press transform:
-			     `scale` is computed in JS per frame, NOT a CSS transition; a
-			     transition would lag the impact and desync from the audio.
-			     transform-origin = hotspot keeps the cursor tip pinned. -->
-			<div
-				class="pointer-events-none absolute"
-				style="
-					left: {(svgCursor.canvasX / svgCursor.compW) * 100}%;
-					top: {(svgCursor.canvasY / svgCursor.compH) * 100}%;
-					width: {(svgCursor.spritePx / svgCursor.compW) * 100}%;
-					opacity: {svgCursor.alpha};
-				"
-			>
-				<img
-					src={cursorSrc}
-					alt=""
-					draggable="false"
-					class="block w-full will-change-transform"
-					style="
-						transform: translate(-{hotPctX}%, -{hotPctY}%) scale({svgCursor.scale});
-						transform-origin: {hotPctX}% {hotPctY}%;
-						filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.5));
-					"
-				/>
-			</div>
-			{/if}
-		{/if}
-		<!-- Above the cursor SVG so the bubble isn't clipped behind a cursor in
-		     its corner. Owns its own video element, synced via store.currentTime. -->
+		<!-- Owns its own video element, synced via store.currentTime. -->
 		<CameraOverlay
 			{store}
 			hasCamera={!!cameraSrc}
@@ -1897,7 +1384,7 @@ const isAnnotationActive = $derived(
 			></video>
 		{/if}
 	{/if}
-	{#if cameraSrc && store.cameraOverlay.enabled && useEngine}
+	{#if cameraSrc && store.cameraOverlay.enabled}
 		<!-- svelte-ignore a11y_media_has_caption -->
 		<video
 			bind:this={cameraEl}

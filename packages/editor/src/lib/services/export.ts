@@ -14,16 +14,17 @@ function enqueueViaSink(job: unknown): Promise<string[]> {
 	if (!enqueue) throw new Error("this host has no native export queue");
 	return enqueue(job);
 }
-import { rasterizeCursorSprites } from "../export/rasterize-cursor";
-import { expandTextAnnotations } from "../export/rasterize-text";
-import { type ExportGifSettings, type ExportSpeed, type Transcript } from "../wire-types";
+
 import {
 	type EditorRenderState,
 	type EditorStore,
-	type VideoMetadata,
 	framePaddingPixels,
+	type VideoMetadata,
 } from "../../stores/editor-store.svelte";
 import { toOutputTimeTranscript } from "../captions/output-time";
+import { rasterizeCursorSprites } from "../export/rasterize-cursor";
+import { expandTextAnnotations } from "../export/rasterize-text";
+import type { ExportGifSettings, ExportSpeed, Transcript } from "../wire-types";
 
 /** Optional progress hooks for the hybrid-raster "Preparing…" phase. Each fires
  *  as its lane starts/finishes so the UI can show sub-stage progress. Omit for
