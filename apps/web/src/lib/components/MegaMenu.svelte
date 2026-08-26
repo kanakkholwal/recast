@@ -116,7 +116,7 @@ const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${
 			onclick={() => (active = active === i ? -1 : i)}
 			onkeydown={(e) => onTriggerKeydown(e, i)}
 			class={cn(
-				"inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-2 text-body-sm font-medium transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary motion-reduce:transition-none",
+				"inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary motion-reduce:transition-none",
 				isOpen || isCurrent(group.href)
 					? "text-foreground"
 					: "text-muted-foreground hover:text-foreground",

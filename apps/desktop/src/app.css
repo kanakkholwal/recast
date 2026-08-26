@@ -269,9 +269,25 @@ input[type="number"]:has(class) {
 [data-recast-titlebar] {
 	view-transition-name: recast-titlebar;
 }
+[data-recast-topnav] {
+	view-transition-name: recast-topnav;
+}
 ::view-transition-group(recast-sidebar),
-::view-transition-group(recast-titlebar) {
+::view-transition-group(recast-titlebar),
+::view-transition-group(recast-topnav) {
 	animation-duration: 0.01ms;
+}
+
+/* The active R/P/S pill is a shared element: name it so the VT morphs it
+ * (slide + resize) from the old tab to the new one during navigation. */
+::view-transition-group(recast-nav-pill) {
+	animation-duration: 320ms;
+	animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-group(recast-nav-pill) {
+		animation-duration: 0.01ms;
+	}
 }
 
 

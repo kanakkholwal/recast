@@ -417,14 +417,8 @@ const capabilities: Cap[] = [
       </div>
     {:else}
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {#each filtered as profile, i (profile.id)}
+        {#each filtered as profile (profile.id)}
           <div
-            in:fly={{
-              y: 8,
-              duration: 240,
-              delay: Math.min(i * 40, 240),
-              easing: cubicOut,
-            }}
             class={cn(
               "group/card relative flex flex-col overflow-hidden rounded-xl border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200",
               resolvedId === profile.id
@@ -552,12 +546,6 @@ const capabilities: Cap[] = [
         <button
           type="button"
           onclick={addProfile}
-          in:fly={{
-            y: 8,
-            duration: 240,
-            delay: Math.min(filtered.length * 40, 280),
-            easing: cubicOut,
-          }}
           class="group/add flex h-full min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
         >
           <span

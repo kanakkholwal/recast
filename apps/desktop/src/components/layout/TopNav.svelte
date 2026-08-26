@@ -1,0 +1,117 @@
+<script lang="ts">
+import { page } from "$app/state";
+import NotchedShelf from "$components/layout/NotchedShelf.svelte";
+import SearchCommandMenu from "$components/layout/SearchCommandMenu.svelte";
+import SidebarAccount from "$components/layout/SidebarAccount.svelte";
+import Logo from "$components/logo.svelte";
+import { launchRecordingPanel } from "$lib/ipc";
+import { chordLabel } from "$lib/shortcuts/registry.svelte";
+import {
+	Broadcast,
+	Moon,
+	Settings,
+	SlidersHorizontal,
+	Share2,
+	Sun,
+	Video,
+	Wand2,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { mode, toggleMode } from "@recast/ui/theme";
+import { cn } from "@recast/ui/utils";
+
+const path = $derived(page.url.pathname);
+const recordShortcut = $derived(chordLabel("general.record"));
+
+const tabs = [
+	{ label: "Record", href: "/", icon: Video },
+	{ label: "Polish", href: "/recasts", icon: Wand2 },
+	{ label: "Share", href: "/exports", icon: Share2 },
+];
+
+const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+</script>
+
+<div class="relative z-30 shrink-0 bg-card" data-recast-topnav data-tauri-drag-region>
+  <div class="flex h-14 items-center gap-2 px-3">
+    <a href="/" class="flex shrink-0 items-center gap-2 rounded-lg px-1 hover:opacity-80" aria-label="Recast home">
+      <Logo size="22" class="shrink-0" />
+      <span class="text-[14px] font-semibold tracking-tight text-foreground">Recast</span>
+    </a>
+    <div class="w-52 max-w-[40%]">
+      <SearchCommandMenu />
+    </div>
+
+    <div class="h-full flex-1" data-tauri-drag-region></div>
+
+    <Button
+      size="sm"
+      class="gap-1.5"
+      onclick={() => launchRecordingPanel()}
+      title={`Launch recording panel · ${recordShortcut}`}
+    >
+      <Broadcast class="size-4" /> Launch Panel
+    </Button>
+
+    <a
+      href="/profiles"
+      aria-label="Capture profiles"
+      title="Capture profiles"
+      class={cn(
+        "inline-flex size-8 items-center justify-center rounded-md transition-colors duration-150",
+        isActive("/profiles") ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+      )}
+    >
+      <SlidersHorizontal size={16} />
+    </a>
+    <a
+      href="/settings"
+      aria-label="Settings"
+      title="Settings"
+      class={cn(
+        "inline-flex size-8 items-center justify-center rounded-md transition-colors duration-150",
+        isActive("/settings") ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+      )}
+    >
+      <Settings size={16} />
+    </a>
+    <button
+      type="button"
+      onclick={toggleMode}
+      aria-label="Toggle theme"
+      title="Toggle light / dark"
+      class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-foreground/5 hover:text-foreground motion-safe:active:scale-95"
+    >
+      {#if mode.current === "dark"}<Sun size={16} />{:else}<Moon size={16} />{/if}
+    </button>
+    <div class="ml-0.5"><SidebarAccount open={false} /></div>
+  </div>
+
+  <!-- Record / Polish / Share hang from the bar's bottom edge into the page. -->
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex translate-y-1/2 justify-center">
+    <NotchedShelf fill="text-card" class="pointer-events-auto h-10 gap-0.5 !w-fit">
+      {#each tabs as tab (tab.href)}
+        {@const on = isActive(tab.href)}
+        {@const Icon = tab.icon}
+        <a
+          href={tab.href}
+          aria-current={on ? "page" : undefined}
+          class={cn(
+            "relative flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold tracking-tight transition-colors duration-200",
+            on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {#if on}
+            <span
+              aria-hidden="true"
+              style="view-transition-name: recast-nav-pill"
+              class="absolute inset-0 -z-10 rounded-lg bg-background shadow-craft-md ring-1 ring-inset ring-border/60"
+            ></span>
+          {/if}
+          <Icon size={14} class={on ? "text-foreground" : ""} />
+          {tab.label}
+        </a>
+      {/each}
+    </NotchedShelf>
+  </div>
+</div>

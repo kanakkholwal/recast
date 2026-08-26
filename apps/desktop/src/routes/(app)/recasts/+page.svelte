@@ -48,7 +48,6 @@ import { cn } from "@recast/ui/utils";
 import { platform } from "@tauri-apps/plugin-os";
 import { listen } from "@tauri-apps/api/event";
 import { onMount } from "svelte";
-import { fade } from "svelte/transition";
 
 const lib = createLibraryPage({ noun: "recording", viewKey: "recasts-view", load: listRecasts });
 
@@ -225,10 +224,9 @@ async function handleMigrateOne(entry: RecordingEntry) {
     </LibraryEmpty>
   {:else}
     <div class={listClass(lib.view)}>
-      {#each lib.displayed as entry, i (entry.path)}
+      {#each lib.displayed as entry (entry.path)}
         {@const isSelected = lib.selection.has(entry.path)}
         <div
-          in:fade={{ duration: motionDuration(200), delay: motionDuration(Math.min(i * 25, 200)) }}
           animate:morph={{ duration: motionDuration(340) }}
           title={entry.filename}
           class={cardShellClass(lib.view, isSelected)}

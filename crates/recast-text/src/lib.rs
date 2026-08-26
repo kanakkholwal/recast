@@ -5,10 +5,12 @@
 //! sharing one shaper is what keeps the burn-in and the preview on the same
 //! metrics.
 
+mod atlas;
 mod face;
 mod raster;
 mod shape;
 
+pub use atlas::{AtlasGlyph, GlyphAtlas};
 pub use face::{FontFace, Metrics};
 pub use raster::{rasterize, GlyphMask};
 pub use shape::{shape_line, PositionedGlyph, ShapedLine};

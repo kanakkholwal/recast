@@ -712,6 +712,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-captions"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "recast-color"
 version = "0.0.0"
 dependencies = [
@@ -728,6 +736,7 @@ dependencies = [
  "recast-cursor",
  "recast-gpu",
  "recast-scene",
+ "recast-text",
  "recast-time",
  "serde_json",
  "wgpu",

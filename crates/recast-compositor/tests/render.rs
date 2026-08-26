@@ -1,5 +1,5 @@
 use recast_compositor::{
-    BackgroundImage, Compositor, Evaluator, FrameInputs, LayerInput, SourceGeometry,
+    BackgroundImage, Compositor, Evaluator, FrameInputs, GlyphQuad, LayerInput, SourceGeometry,
 };
 use recast_gpu::{GpuContext, GpuOptions};
 use recast_scene::migrate::to_scene;
@@ -1483,5 +1483,264 @@ fn presenting_into_a_smaller_target_scales_rather_than_cropping() {
     assert!(
         !close(centre, [0, 0, 255, 255], 4),
         "the centre was background, so nothing was drawn"
+    );
+}
+
+// --- Text ---
+
+fn text_face() -> Option<recast_text::FontFace> {
+    for family in ["Arial", "Segoe UI", "Helvetica", "DejaVu Sans"] {
+        if let Some(resolved) = recast_text::resolve_face(family, 400, None) {
+            return Some(resolved.face);
+        }
+    }
+    eprintln!("skipping: no system font resolved");
+    None
+}
+
+fn glyph_quad(
+    atlas: &recast_text::GlyphAtlas,
+    g: recast_text::AtlasGlyph,
+    x: f32,
+    y: f32,
+    colour: [f32; 4],
+) -> GlyphQuad {
+    let (aw, ah) = atlas.size();
+    GlyphQuad {
+        rect: [x, y, g.width as f32, g.height as f32],
+        uv: [
+            g.x as f32 / aw as f32,
+            g.y as f32 / ah as f32,
+            (g.x + g.width) as f32 / aw as f32,
+            (g.y + g.height) as f32 / ah as f32,
+        ],
+        colour,
+    }
+}
+
+/// Renders the scene with `glyphs` on top. `sync` says whether the atlas is
+/// uploaded first, so a test can check the un-synced case.
+fn render_with_text(
+    ctx: &GpuContext,
+    scene: &Scene,
+    atlas: &mut recast_text::GlyphAtlas,
+    glyphs: Vec<GlyphQuad>,
+    sync: bool,
+) -> Rendered {
+    let ev = Evaluator::new(
+        scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(scene, 0.0);
+    let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
+
+    let mut compositor = Compositor::new(ctx).expect("compositor");
+    if sync {
+        compositor.sync_glyph_atlas(atlas);
+    }
+    let target = compositor.output_texture(width, height);
+    let mut inputs = FrameInputs::new();
+    inputs.set_glyphs(glyphs);
+    compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+    Rendered {
+        pixels: read_back(ctx, &target, width, height),
+        width,
+        height,
+    }
+}
+
+fn changed_pixels(before: &Rendered, after: &Rendered) -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    for y in 0..before.height {
+        for x in 0..before.width {
+            if !close(after.at(x, y), before.at(x, y), 2) {
+                out.push((x, y));
+            }
+        }
+    }
+    out
+}
+
+fn packed_glyph(
+    atlas: &mut recast_text::GlyphAtlas,
+    face: &recast_text::FontFace,
+    text: &str,
+    px: f64,
+) -> recast_text::AtlasGlyph {
+    let id = recast_text::shape_line(face, px, text, 0.0).glyphs[0].id;
+    atlas.insert(0, face, id, px).expect("glyph rasterises")
+}
+
+#[test]
+fn a_glyph_quad_paints_inside_its_rect_and_nowhere_else() {
+    let Some(ctx) = context() else { return };
+    let Some(face) = text_face() else { return };
+    let scene = scene_with("");
+    let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
+    // Small enough to sit whole inside the 64x32 canvas, so clipping cannot
+    // stand in for the assertions below.
+    let g = packed_glyph(&mut atlas, &face, "M", 20.0);
+
+    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+    let quad = glyph_quad(&atlas, g, 4.0, 4.0, [1.0, 1.0, 1.0, 1.0]);
+    let drawn = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+    assert!(4 + g.width < blank.width && 4 + g.height < blank.height);
+
+    let changed = changed_pixels(&blank, &drawn);
+    assert!(changed.len() > 20, "only {} pixels changed", changed.len());
+    // A glyph is not a filled box: its corners must stay background.
+    assert!(
+        changed.len() < (g.width * g.height) as usize,
+        "the whole quad was filled, so the coverage was ignored"
+    );
+    for (x, y) in changed {
+        assert!(
+            (4..4 + g.width).contains(&x) && (4..4 + g.height).contains(&y),
+            "ink at ({x}, {y}) is outside the quad"
+        );
+    }
+}
+
+/// Two glyphs share one atlas, so a quad that ignored its uv would draw the
+/// same ink for both.
+#[test]
+fn the_uv_decides_which_glyph_in_the_atlas_is_drawn() {
+    let Some(ctx) = context() else { return };
+    let Some(face) = text_face() else { return };
+    let scene = scene_with("");
+    let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
+    let wide = packed_glyph(&mut atlas, &face, "M", 40.0);
+    let narrow = packed_glyph(&mut atlas, &face, "l", 40.0);
+    assert_ne!((wide.x, wide.y), (narrow.x, narrow.y));
+    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+
+    // The same rect for both, so only the uv differs.
+    let mut at = |g: recast_text::AtlasGlyph| {
+        let mut quad = glyph_quad(&atlas, g, 20.0, 20.0, [1.0, 1.0, 1.0, 1.0]);
+        quad.rect = [20.0, 20.0, wide.width as f32, wide.height as f32];
+        let out = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+        changed_pixels(&blank, &out)
+    };
+    assert_ne!(at(wide), at(narrow));
+}
+
+#[test]
+fn moving_the_quad_moves_the_ink() {
+    let Some(ctx) = context() else { return };
+    let Some(face) = text_face() else { return };
+    let scene = scene_with("");
+    let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
+    let g = packed_glyph(&mut atlas, &face, "M", 40.0);
+    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+
+    let far = (blank.width - g.width - 1) as f32;
+    let left = glyph_quad(&atlas, g, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]);
+    let right = glyph_quad(&atlas, g, far, 1.0, [1.0, 1.0, 1.0, 1.0]);
+    let a = changed_pixels(
+        &blank,
+        &render_with_text(&ctx, &scene, &mut atlas, vec![left], true),
+    );
+    let b = changed_pixels(
+        &blank,
+        &render_with_text(&ctx, &scene, &mut atlas, vec![right], true),
+    );
+
+    assert!(!a.is_empty() && !b.is_empty());
+    let a_max = a.iter().map(|(x, _)| *x).max().unwrap();
+    let b_min = b.iter().map(|(x, _)| *x).min().unwrap();
+    assert!(
+        a_max < b_min,
+        "the two placements overlap at x {a_max} / {b_min}"
+    );
+}
+
+/// The background is blue, so red ink proves the instance colour is used rather
+/// than the atlas being drawn as-is.
+#[test]
+fn the_quad_colour_tints_the_glyph() {
+    let Some(ctx) = context() else { return };
+    let Some(face) = text_face() else { return };
+    let scene = scene_with("");
+    let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
+    let g = packed_glyph(&mut atlas, &face, "M", 60.0);
+    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+
+    let quad = glyph_quad(&atlas, g, 20.0, 20.0, [1.0, 0.0, 0.0, 1.0]);
+    let drawn = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+    let reddest = changed_pixels(&blank, &drawn)
+        .into_iter()
+        .map(|(x, y)| drawn.at(x, y))
+        .max_by_key(|p| p[0])
+        .expect("some ink");
+    assert!(reddest[0] > 200, "expected red ink, got {reddest:?}");
+    assert!(reddest[2] < 120, "blue background bled through: {reddest:?}");
+}
+
+#[test]
+fn the_quad_alpha_fades_the_glyph() {
+    let Some(ctx) = context() else { return };
+    let Some(face) = text_face() else { return };
+    let scene = scene_with("");
+    let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
+    let g = packed_glyph(&mut atlas, &face, "M", 60.0);
+    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+
+    let mut ink = |alpha: f32| {
+        let quad = glyph_quad(&atlas, g, 20.0, 20.0, [1.0, 1.0, 1.0, alpha]);
+        let out = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+        changed_pixels(&blank, &out)
+            .into_iter()
+            .map(|(x, y)| out.at(x, y)[0] as u32)
+            .max()
+            .unwrap_or(0)
+    };
+    let half = ink(0.5);
+    let full = ink(1.0);
+    assert!(half < full, "half alpha was not dimmer: {half} vs {full}");
+    assert!(half > 0, "half alpha erased the glyph");
+}
+
+/// Text queued before the atlas reached the GPU must be dropped, not drawn from
+/// whatever texture happened to be bound.
+#[test]
+fn glyphs_draw_nothing_until_the_atlas_is_uploaded() {
+    let Some(ctx) = context() else { return };
+    let Some(face) = text_face() else { return };
+    let scene = scene_with("");
+    let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
+    let g = packed_glyph(&mut atlas, &face, "M", 40.0);
+    let quad = glyph_quad(&atlas, g, 20.0, 20.0, [1.0, 1.0, 1.0, 1.0]);
+
+    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+    let unsynced = render_with_text(&ctx, &scene, &mut atlas, vec![quad], false);
+    assert!(changed_pixels(&blank, &unsynced).is_empty());
+}
+
+/// Growth replaces the atlas texture, so an incremental upload afterwards would
+/// land in the one that was thrown away.
+#[test]
+fn a_glyph_packed_after_the_atlas_grew_still_reaches_the_gpu() {
+    let Some(ctx) = context() else { return };
+    let Some(face) = text_face() else { return };
+    let scene = scene_with("");
+    let mut atlas = recast_text::GlyphAtlas::new(256, 2048);
+    let mut last = packed_glyph(&mut atlas, &face, "M", 30.0);
+    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+
+    let (_, before) = atlas.size();
+    for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars() {
+        last = packed_glyph(&mut atlas, &face, &ch.to_string(), 90.0);
+    }
+    let (_, after) = atlas.size();
+    assert!(after > before, "the atlas never grew");
+
+    let quad = glyph_quad(&atlas, last, 10.0, 10.0, [1.0, 1.0, 1.0, 1.0]);
+    let drawn = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+    assert!(
+        changed_pixels(&blank, &drawn).len() > 50,
+        "the glyph packed after the growth did not reach the GPU"
     );
 }

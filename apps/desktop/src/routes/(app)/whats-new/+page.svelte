@@ -8,7 +8,6 @@ import { Button } from "@recast/ui/button";
 import StudioPage from "$components/layout/StudioPage.svelte";
 import { Markdown } from "@recast/ui/markdown";
 import { onMount } from "svelte";
-import { fade } from "svelte/transition";
 
 // Visiting the full changelog page also counts as having seen the latest version.
 onMount(() => {
@@ -36,10 +35,7 @@ onMount(() => {
   <div class="mx-auto flex w-full max-w-3xl flex-col gap-10">
       {#each RELEASES as release, i (release.version)}
         {@const isLatest = i === 0}
-        <section
-          in:fade={{ duration: 220, delay: 120 + i * 40 }}
-          class="relative flex flex-col gap-4"
-        >
+        <section class="relative flex flex-col gap-4">
           <div
             class="flex flex-col gap-1.5 border-l-2 pl-4 {isLatest
               ? 'border-primary'

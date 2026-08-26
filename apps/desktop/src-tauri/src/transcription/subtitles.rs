@@ -1,6 +1,10 @@
 //! Subtitle serialization from a transcript: SRT / WebVTT sidecars, plus ASS
 //! for the FFmpeg burn-in path (libass renders the styled overlay into pixels).
 
+use recast_captions::{
+    break_into_lines, caption_height_frac, caption_top_frac, chunk_words, word_scaled,
+};
+
 use super::{CaptionAnimation, CaptionStyle, Transcript, TranscriptSegment, TranscriptWord};
 
 pub fn to_srt(t: &Transcript) -> String {
@@ -89,41 +93,6 @@ pub struct VideoRectPx {
     pub y: u32,
     pub w: u32,
     pub h: u32,
-}
-
-const MAX_CAP_FRAC: f64 = 0.7;
-
-/// Estimated caption block height as a fraction of frame height. Mirror of
-/// `captionHeightFrac` in $lib/captions/layout.ts — keep them in sync.
-fn caption_height_frac(font_size_pct: f64, max_lines: u32) -> f64 {
-    (font_size_pct / 100.0 * max_lines.max(1) as f64 * 1.35).min(MAX_CAP_FRAC)
-}
-
-/// Fraction-from-top of the caption block's TOP edge (grows down). `None` =
-/// centre. Mirror of `captionTopFrac` in $lib/captions/layout.ts.
-fn caption_top_frac(
-    position: &str,
-    offset_pct: f64,
-    cap: f64,
-    v_top: f64,
-    v_bottom: f64,
-) -> Option<f64> {
-    if position == "center" {
-        return None;
-    }
-    // Signed: + moves the caption INWARD over the video, - tucks it outward into
-    // the padding. Baseline anchors at the clamped frame edge so the whole Offset
-    // range stays live even for a full-bleed video.
-    let offset = offset_pct / 100.0;
-    let cap = cap.clamp(0.0, MAX_CAP_FRAC);
-    let max_top = (1.0 - cap).max(0.0);
-    if position == "bottom" {
-        let base = v_bottom.min(max_top);
-        Some((base - offset).clamp(0.0, max_top))
-    } else {
-        let base = (v_top - cap).max(0.0);
-        Some((base + offset).clamp(0.0, max_top))
-    }
 }
 
 /// The face `to_ass` should target, resolved by `text_measure` from the actual
@@ -436,21 +405,6 @@ fn push_dialogue_layer(
 
 /// Group a line's words into display chunks — mirrors `chunkWords` in
 /// `$lib/captions/animation.ts`. Keep the two in sync.
-fn chunk_words<'a>(
-    words: &'a [TranscriptWord],
-    anim: &CaptionAnimation,
-) -> Vec<&'a [TranscriptWord]> {
-    if words.is_empty() {
-        return Vec::new();
-    }
-    let size = match anim.chunk.as_str() {
-        "line" => words.len(),
-        "word" => 1,
-        _ => (anim.chunk_size as usize).max(1),
-    };
-    words.chunks(size).collect()
-}
-
 /// Everything the pill/positioning math needs, built once in `to_ass`.
 struct LayoutCtx<'a> {
     style: &'a CaptionStyle,
@@ -718,10 +672,7 @@ fn run_text(
         .join(" ")
 }
 
-/// Inline ASS colour literal for word `index`. Mirrors `wordColor` in
-/// @recast/captions: the active word wins the accent for `color` emphasis;
-/// otherwise progressive highlight paints spoken words base / unspoken muted,
-/// and `none`/`active` paint every word the base colour.
+/// Inline ASS colour literal for word `index`, wrapping the shared rule.
 fn word_color(
     index: usize,
     active: Option<usize>,
@@ -729,77 +680,9 @@ fn word_color(
     anim: &CaptionAnimation,
     style: &CaptionStyle,
 ) -> String {
-    if Some(index) == active && anim.emphasis == "color" {
-        return ass_primary(&anim.emphasis_color);
-    }
-    if anim.highlight() == "progressive" {
-        return if index < spoken {
-            ass_primary(&style.color)
-        } else {
-            ass_primary(&style.muted_color)
-        };
-    }
-    ass_primary(&style.color)
-}
-
-/// Whether word `index` scales up. Mirrors `wordScaled`: only the active word,
-/// only for `scale` emphasis, and only in a multi-word chunk (a lone word's pop
-/// entrance already carries the emphasis).
-fn word_scaled(
-    index: usize,
-    active: Option<usize>,
-    word_count: usize,
-    anim: &CaptionAnimation,
-) -> bool {
-    anim.emphasis == "scale" && Some(index) == active && word_count > 1
-}
-
-/// Words considered spoken at source-time `t`. Mirrors `spokenWordCount`.
-#[cfg_attr(not(test), allow(dead_code))]
-fn spoken_word_count(words: &[TranscriptWord], t: f64) -> usize {
-    let mut n = 0;
-    for (i, w) in words.iter().enumerate() {
-        if t >= w.start {
-            n = i + 1;
-        } else {
-            break;
-        }
-    }
-    n
-}
-
-/// Greedy line break by character count. Mirrors `breakIntoLines`: never splits
-/// inside a word, caps at `max_lines`. Returns word-index groups.
-fn break_into_lines(words: &[TranscriptWord], max_chars: u32, max_lines: u32) -> Vec<Vec<usize>> {
-    let limit = max_chars.max(1) as usize;
-    let cap = max_lines.max(1) as usize;
-    let mut lines: Vec<Vec<usize>> = Vec::new();
-    let mut current: Vec<usize> = Vec::new();
-    let mut current_len = 0usize;
-    for (i, w) in words.iter().enumerate() {
-        let word_len = w.text.chars().count();
-        let added = if current.is_empty() {
-            word_len
-        } else {
-            current_len + 1 + word_len
-        };
-        if !current.is_empty() && added > limit {
-            lines.push(std::mem::take(&mut current));
-            current.push(i);
-            current_len = word_len;
-        } else {
-            current.push(i);
-            current_len = added;
-        }
-        if lines.len() == cap {
-            break;
-        }
-    }
-    if !current.is_empty() && lines.len() < cap {
-        lines.push(current);
-    }
-    lines.truncate(cap);
-    lines
+    ass_primary(recast_captions::word_color(
+        index, active, spoken, anim, style,
+    ))
 }
 
 /// Leading override block for a chunk's entrance, or empty for `none`. `slide`
@@ -1440,102 +1323,5 @@ mod tests {
             word_color(2, Some(2), 2, &prog_color, &style),
             ass_primary("#4ade80")
         );
-    }
-
-    // Shared parity fixture: the same JSON the @recast/captions vitest asserts on,
-    // so the preview and the burn-in agree on chunking, line breaks, and how many
-    // words are spoken at a given time. Keep the file and both sides in sync.
-    #[derive(serde::Deserialize)]
-    struct ParityFile {
-        cases: Vec<ParityCase>,
-    }
-    #[derive(serde::Deserialize)]
-    struct ParityCase {
-        name: String,
-        words: Vec<FixtureWord>,
-        animation: FixtureAnim,
-        #[serde(rename = "maxCharsPerLine")]
-        max_chars_per_line: u32,
-        #[serde(rename = "maxLines")]
-        max_lines: u32,
-        expected: ParityExpected,
-    }
-    #[derive(serde::Deserialize)]
-    struct FixtureWord {
-        start: f64,
-        end: f64,
-        text: String,
-    }
-    #[derive(serde::Deserialize)]
-    struct FixtureAnim {
-        chunk: String,
-        #[serde(rename = "chunkSize")]
-        chunk_size: u32,
-    }
-    #[derive(serde::Deserialize)]
-    struct ParityExpected {
-        chunks: Vec<Vec<usize>>,
-        lines: Vec<Vec<usize>>,
-        #[serde(rename = "spokenAt")]
-        spoken_at: Vec<SpokenAt>,
-    }
-    #[derive(serde::Deserialize)]
-    struct SpokenAt {
-        t: f64,
-        count: usize,
-    }
-
-    #[test]
-    fn matches_shared_caption_parity_fixture() {
-        let raw = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../packages/captions/src/__fixtures__/caption-parity.json"
-        ));
-        let file: ParityFile = serde_json::from_str(raw).expect("parse fixture");
-        assert!(!file.cases.is_empty());
-
-        for case in &file.cases {
-            let ws: Vec<TranscriptWord> = case
-                .words
-                .iter()
-                .map(|w| TranscriptWord {
-                    start: w.start,
-                    end: w.end,
-                    text: w.text.clone(),
-                })
-                .collect();
-            let a = CaptionAnimation {
-                chunk: case.animation.chunk.clone(),
-                chunk_size: case.animation.chunk_size,
-                ..Default::default()
-            };
-
-            // Chunking: map each returned slice back to word indices by start time.
-            let runs = chunk_words(&ws, &a);
-            let got_chunks: Vec<Vec<usize>> = runs
-                .iter()
-                .map(|run| {
-                    run.iter()
-                        .map(|w| ws.iter().position(|x| x.start == w.start).unwrap())
-                        .collect()
-                })
-                .collect();
-            assert_eq!(got_chunks, case.expected.chunks, "chunks [{}]", case.name);
-
-            // Line breaking.
-            let got_lines = break_into_lines(&ws, case.max_chars_per_line, case.max_lines);
-            assert_eq!(got_lines, case.expected.lines, "lines [{}]", case.name);
-
-            // Spoken counts at sampled times.
-            for s in &case.expected.spoken_at {
-                assert_eq!(
-                    spoken_word_count(&ws, s.t),
-                    s.count,
-                    "spokenAt t={} [{}]",
-                    s.t,
-                    case.name
-                );
-            }
-        }
     }
 }

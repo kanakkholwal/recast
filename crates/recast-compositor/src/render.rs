@@ -9,6 +9,7 @@ use crate::annotation::{AnnotationParams, AnnotationShape};
 use crate::eval::{
     BackgroundParams, CursorDraw, CursorSlot, FrameParams, LayerParams, ShadowParams,
 };
+use crate::text::{GlyphQuad, TextPass};
 
 const MAX_GRADIENT_STOPS: usize = 8;
 
@@ -90,6 +91,9 @@ pub struct FrameInputs<'a> {
     /// file share a texture. Small and rarely more than a handful, so a linear
     /// scan beats hashing a path per frame.
     annotation_images: Vec<(String, LayerInput<'a>)>,
+    /// Laid-out text for this frame, already in canvas pixels. Owned rather
+    /// than borrowed because the layout is built per frame, not uploaded.
+    glyphs: Vec<GlyphQuad>,
 }
 
 /// A pointer sprite and the point on it that sits on the cursor position.
@@ -161,6 +165,11 @@ impl<'a> FrameInputs<'a> {
             .map(|(_, input)| input)
     }
 
+    pub fn set_glyphs(&mut self, glyphs: Vec<GlyphQuad>) -> &mut Self {
+        self.glyphs = glyphs;
+        self
+    }
+
     pub fn cursor_sprite(&self, slot: CursorSlot) -> Option<CursorSprite<'a>> {
         self.cursor_sprites[slot.index()]
     }
@@ -183,6 +192,7 @@ pub struct Compositor {
     region: RegionPass,
     image: ImagePass,
     sprite: SpritePass,
+    text: TextPass,
     present: PresentPass,
     working: Option<(u32, u32, wgpu::Texture)>,
 }
@@ -268,6 +278,7 @@ impl Compositor {
             region: RegionPass::new(&device),
             image: ImagePass::new(&device),
             sprite: SpritePass::new(&device),
+            text: TextPass::new(&device),
             present: PresentPass::new(&device),
             device,
             queue,
@@ -299,10 +310,25 @@ impl Compositor {
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_annotations(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_cursor(&mut encoder, &working_view, params, inputs, width, height);
+        // Text last: captions sit above the pointer, as the DOM overlay does.
+        self.text.draw(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &working_view,
+            &inputs.glyphs,
+            (width, height),
+        );
         self.present(&mut encoder, &working_view, target);
 
         self.queue.submit([encoder.finish()]);
         stats
+    }
+
+    /// Uploads whatever the caller has packed since the last frame. Separate
+    /// from `render` because the atlas belongs to the layout, not the frame.
+    pub fn sync_glyph_atlas(&mut self, atlas: &mut recast_text::GlyphAtlas) {
+        self.text.sync(&self.device, &self.queue, atlas);
     }
 
     fn working_view(&mut self, width: u32, height: u32) -> wgpu::TextureView {
@@ -1415,7 +1441,7 @@ fn fullscreen_pipeline(
 
 /// Sources arrive premultiplied from the card pass, so the blend is
 /// `ONE, ONE_MINUS_SRC_ALPHA` rather than the usual `SRC_ALPHA` form.
-const PREMULTIPLIED: wgpu::BlendState = wgpu::BlendState {
+pub(crate) const PREMULTIPLIED: wgpu::BlendState = wgpu::BlendState {
     color: wgpu::BlendComponent {
         src_factor: wgpu::BlendFactor::One,
         dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
@@ -1462,7 +1488,7 @@ fn sampled_texture_layout(device: &wgpu::Device, label: &str) -> wgpu::BindGroup
     })
 }
 
-fn clamped_linear_sampler(device: &wgpu::Device, label: &str) -> wgpu::Sampler {
+pub(crate) fn clamped_linear_sampler(device: &wgpu::Device, label: &str) -> wgpu::Sampler {
     device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some(label),
         address_mode_u: wgpu::AddressMode::ClampToEdge,

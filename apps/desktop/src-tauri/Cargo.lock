@@ -29,6 +29,7 @@ dependencies = [
  "pipewire",
  "rand 0.8.8",
  "rayon",
+ "recast-captions",
  "recast-color",
  "recast-compositor",
  "recast-gpu",
@@ -5313,6 +5314,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 
 [[package]]
+name = "recast-captions"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "recast-color"
 version = "0.0.0"
 dependencies = [
@@ -5324,10 +5332,12 @@ name = "recast-compositor"
 version = "0.0.0"
 dependencies = [
  "bytemuck",
+ "recast-captions",
  "recast-color",
  "recast-cursor",
  "recast-gpu",
  "recast-scene",
+ "recast-text",
  "recast-time",
  "wgpu",
 ]
@@ -5363,6 +5373,16 @@ dependencies = [
 [[package]]
 name = "recast-testkit"
 version = "0.0.0"
+
+[[package]]
+name = "recast-text"
+version = "0.0.0"
+dependencies = [
+ "fontdb",
+ "rustybuzz",
+ "ttf-parser",
+ "zeno",
+]
 
 [[package]]
 name = "recast-time"
@@ -9442,6 +9462,12 @@ checksum = "d1afec51604565183aeb5c54c20aeab286120d4e4460f7f76e3e8bb8c0d99473"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "zeno"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6df3dc4292935e51816d896edcd52aa30bc297907c26167fec31e2b0c6a32524"
 
 [[package]]
 name = "zerocopy"

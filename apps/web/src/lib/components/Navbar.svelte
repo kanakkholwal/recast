@@ -29,7 +29,7 @@ $effect(() => {
 });
 
 const linkClass =
-	"inline-flex items-center whitespace-nowrap rounded-full px-3.5 py-2 text-body-sm font-medium transition-colors hover:text-foreground motion-reduce:transition-none";
+	"inline-flex items-center whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-colors hover:text-foreground motion-reduce:transition-none";
 
 const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 </script>
