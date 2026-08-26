@@ -23,7 +23,7 @@ export function cardShellClass(view: LibraryView, selected: boolean): string {
 		"group/card relative flex overflow-hidden border outline-none transition-[transform,background-color,border-color,box-shadow] duration-200 ease-out",
 		view === "grid"
 			? "flex-col rounded-2xl motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[0.99]"
-			: "flex-row items-center gap-3 rounded-xl p-1.5 motion-safe:active:scale-[0.995]",
+			: "flex-row items-center gap-3 rounded-xl p-2 motion-safe:active:scale-[0.995]",
 		selected
 			? "border-foreground/40 bg-card ring-1 ring-inset ring-foreground/20"
 			: "border-border/50 bg-card shadow-(--shadow-craft-inset) hover:border-border/80 hover:shadow-craft-md",
@@ -34,7 +34,7 @@ export function cardShellClass(view: LibraryView, selected: boolean): string {
 export function thumbFrameClass(view: LibraryView): string {
 	return [
 		"relative shrink-0 overflow-hidden bg-muted/40",
-		view === "grid" ? "aspect-video w-full" : "aspect-video w-22 rounded-md",
+		view === "grid" ? "aspect-video w-full" : "aspect-video w-24 rounded-lg",
 	].join(" ");
 }
 

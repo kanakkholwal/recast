@@ -21,6 +21,8 @@ export interface SegmentedProps<T extends string = string> {
 	fill?: boolean;
 	disabled?: boolean;
 	class?: string;
+	/** Extra classes per segment button, e.g. to square up icon-only segments. */
+	segmentClass?: string;
 	"aria-label"?: string;
 	/** Point at a visible label instead of duplicating it as `aria-label`. */
 	"aria-labelledby"?: string;
@@ -38,6 +40,7 @@ export interface SegmentedProps<T extends string = string> {
 		fill = true,
 		disabled = false,
 		class: className,
+		segmentClass,
 		"aria-label": ariaLabel,
 		"aria-labelledby": ariaLabelledby,
 	}: SegmentedProps<T> = $props();
@@ -197,6 +200,7 @@ export interface SegmentedProps<T extends string = string> {
 				"relative z-10 inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-150",
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
 				sizing.btn,
+				segmentClass,
 				fill && "flex-1",
 				active
 					? "text-background"

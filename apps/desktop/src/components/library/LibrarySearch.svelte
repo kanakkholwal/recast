@@ -33,7 +33,7 @@ onMount(() => {
 </script>
 
 <label
-  class="group/search flex h-9 items-center gap-2 rounded-lg bg-muted/50 px-3 ring-1 ring-inset ring-border/40 transition-[background-color,box-shadow] duration-150 hover:bg-muted/70 focus-within:bg-card focus-within:ring-ring/50"
+  class="group/search flex h-9 items-center gap-2 rounded-lg bg-muted/60 px-3 ring-1 ring-inset ring-border/40 transition-[background-color,box-shadow] duration-150 hover:bg-muted focus-within:bg-card focus-within:ring-ring/50"
 >
   <Search
     class="size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground group-focus-within/search:text-foreground"

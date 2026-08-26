@@ -220,17 +220,17 @@ async function forgetDriveLink(entry: RecordingEntry) {
 
 <StudioPage title={titleText} subtitle={subtitleText}>
   {#snippet filters()}
-    <div class="min-w-[180px] flex-1">
+    <div class="w-full max-w-md flex-1">
       <LibrarySearch bind:value={lib.query} noun="exports" />
     </div>
     <Button
       variant="ghost"
       size="sm"
       class={cn(
-        "h-9 gap-1.5 rounded-lg px-3 text-[12px]",
+        "ml-auto h-9 gap-1.5 rounded-lg px-3 text-[12px] ring-1 ring-inset",
         lib.selection.selectMode
-          ? "bg-foreground text-background hover:bg-foreground/90 hover:text-background"
-          : "text-muted-foreground hover:text-foreground",
+          ? "bg-foreground text-background ring-transparent hover:bg-foreground/90 hover:text-background"
+          : "bg-muted/60 text-muted-foreground ring-border/40 hover:bg-muted hover:text-foreground",
       )}
       onclick={lib.selection.toggleMode}
       disabled={lib.entries.length === 0}
@@ -245,7 +245,7 @@ async function forgetDriveLink(entry: RecordingEntry) {
     <Button
       variant="ghost"
       size="icon-sm"
-      class="size-9 rounded-lg text-muted-foreground hover:text-foreground"
+      class="size-9 rounded-lg bg-muted/60 text-muted-foreground ring-1 ring-inset ring-border/40 hover:bg-muted hover:text-foreground"
       onclick={lib.refresh}
       disabled={lib.isLoading}
       aria-label="Refresh exports"

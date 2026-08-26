@@ -15,6 +15,7 @@ let { value = $bindable("grid") }: Props = $props();
 <Segmented
 	size="md"
 	fill={false}
+	segmentClass="w-8 px-0"
 	options={[
 		{ value: "grid", icon: gridIcon, title: "Grid view" },
 		{ value: "list", icon: listIcon, title: "List view" },
