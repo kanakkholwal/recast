@@ -29,7 +29,7 @@ let {
 
 <div class={cn("flex h-full min-h-0 flex-col", className)}>
   <header
-    class="flex h-14 shrink-0 items-center gap-3 border-b border-border/60 px-5"
+    class="flex h-14 shrink-0 items-center gap-3 px-5"
     data-tauri-drag-region
   >
     <div class="min-w-0 flex-1">
@@ -64,7 +64,7 @@ let {
     {#if detail}
       <aside
         class={cn(
-          "hidden w-[340px] shrink-0 overflow-y-auto border-l border-border/60 no-scrollbar lg:block",
+          "hidden w-85 shrink-0 overflow-y-auto border-l border-border/60 no-scrollbar lg:block",
           detailClass ?? "p-5",
         )}
       >

@@ -31,6 +31,7 @@ export interface SegmentedProps<T extends string = string> {
 
 <script lang="ts" generics="T extends string">
 	import { cn } from "@recast/ui/utils";
+	import { buttonVariants } from "../button";
 
 	let {
 		options,
@@ -197,7 +198,10 @@ export interface SegmentedProps<T extends string = string> {
 				onValueChange(option.value);
 			}}
 			class={cn(
-				"relative z-10 inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-150",
+				"relative z-10",
+				buttonVariants({
+					variant: "raw",
+				}),
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
 				sizing.btn,
 				segmentClass,

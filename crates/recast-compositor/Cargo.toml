@@ -17,5 +17,9 @@ recast-text = { path = "../recast-text" }
 recast-time = { path = "../recast-time", default-features = false, features = ["serde"] }
 
 [dev-dependencies]
+recast-testkit = { path = "../recast-testkit" }
 recast-text = { path = "../recast-text" }
 serde_json = "1.0.151"
+# Golden frames only. `png` rather than `image`: this needs one codec, not
+# nineteen, and it is a dev dependency either way.
+png = "0.18"

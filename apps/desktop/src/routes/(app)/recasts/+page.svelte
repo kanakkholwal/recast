@@ -1,4 +1,5 @@
 <script lang="ts">
+import StudioPage from "$components/layout/StudioPage.svelte";
 import {
 	AssetCard,
 	LibraryEmpty,
@@ -9,7 +10,6 @@ import {
 	LibraryViewToggle,
 	SelectionBar,
 } from "$components/library";
-import StudioPage from "$components/layout/StudioPage.svelte";
 import { ConfirmDialog, RenameDialog } from "$components/recast";
 import {
 	launchRecordingPanel,
@@ -45,8 +45,8 @@ import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { safeStorage } from "@recast/ui/persisted-state";
 import { toast } from "@recast/ui/sonner";
 import { cn } from "@recast/ui/utils";
-import { platform } from "@tauri-apps/plugin-os";
 import { listen } from "@tauri-apps/api/event";
+import { platform } from "@tauri-apps/plugin-os";
 import { onMount } from "svelte";
 
 const lib = createLibraryPage({ noun: "recording", viewKey: "recasts-view", load: listRecasts });
@@ -161,7 +161,7 @@ async function handleMigrateOne(entry: RecordingEntry) {
         Update {legacyCount} older
       </Button>
     {/if}
-    <Button size="sm" class="gap-1.5" onclick={newRecording}>
+    <Button size="sm" class="gap-1.5" variant="outline" onclick={newRecording}>
       <Video class="size-4" /> New recording
     </Button>
   {/snippet}
@@ -171,13 +171,11 @@ async function handleMigrateOne(entry: RecordingEntry) {
       <LibrarySearch bind:value={lib.query} noun="recordings" />
     </div>
     <Button
-      variant="ghost"
+      variant={lib.selection.selectMode ? "default_soft" : "ghost"}
       size="sm"
       class={cn(
-        "ml-auto h-9 gap-1.5 rounded-lg px-3 text-[12px] ring-1 ring-inset",
-        lib.selection.selectMode
-          ? "bg-foreground text-background ring-transparent hover:bg-foreground/90 hover:text-background"
-          : "bg-muted/60 text-muted-foreground ring-border/40 hover:bg-muted hover:text-foreground",
+        "ml-auto",
+       
       )}
       onclick={lib.selection.toggleMode}
       disabled={lib.entries.length === 0}
@@ -192,13 +190,12 @@ async function handleMigrateOne(entry: RecordingEntry) {
     <Button
       variant="ghost"
       size="icon-sm"
-      class="size-9 rounded-lg bg-muted/60 text-muted-foreground ring-1 ring-inset ring-border/40 hover:bg-muted hover:text-foreground"
       onclick={lib.refresh}
       disabled={lib.isLoading}
       aria-label="Refresh recordings"
       title="Refresh"
     >
-      <RefreshCw size={12} class={lib.isLoading ? "motion-safe:animate-spin" : ""} />
+      <RefreshCw size={12} class={lib.isLoading ? "motion-safe:animate-spin" : "group-active/button:rotate-90 duration-500"} />
     </Button>
   {/snippet}
 
