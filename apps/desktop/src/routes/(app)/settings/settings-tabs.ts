@@ -5,7 +5,7 @@
  * four "…in Settings first" redirects can land on the tab they mean instead of
  * dropping you on General to hunt for it.
  */
-export const SETTINGS_TABS = ["general", "recording", "cloud", "advanced"] as const;
+export const SETTINGS_TABS = ["general", "recording", "cloud", "diagnostics", "advanced"] as const;
 
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 

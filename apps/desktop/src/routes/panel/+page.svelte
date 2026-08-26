@@ -28,6 +28,7 @@ import {
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { ButtonGroup } from "@recast/ui/button-group";
+import LogoWave from "./LogoWave.svelte";
 import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -1158,7 +1159,7 @@ function phaseOut(node: HTMLElement) {
      it shows the desktop through. -->
 <div class="flex h-dvh w-dvw items-center justify-center px-4 py-3">
   <div
-    class="group/panel relative flex h-11 shrink-0 items-center justify-center overflow-hidden no-scrollbar bg-card/95 backdrop-blur-xl border border-border/60 rounded-lg ring-1 ring-foreground/5"
+    class="group/panel relative flex h-11 shrink-0 items-center justify-center overflow-hidden no-scrollbar rounded-xl border border-border/60 bg-card/95 shadow-craft-floating ring-1 ring-inset ring-foreground/10 backdrop-blur-xl"
     style="width: {barWidth.current}px"
   >
     <!-- Content is `w-fit`; the bar tweens to follow it, centered, so collapse
@@ -1254,30 +1255,65 @@ function phaseOut(node: HTMLElement) {
           </Button>
         </div>
       {:else if phase === "recording"}
-        <!-- Compact transport: Stop+timer, Pause, Close. -->
+        <!-- Status (live dot + elapsed) + captured-source glyphs + pause/stop/close. -->
         <div
-          class="flex w-fit items-center gap-1"
+          class="flex w-fit items-center gap-2 pl-0.5 pr-1"
           in:fade={{ duration: 200, delay: 80, easing: cubicOut }}
           out:phaseOut
         >
-          <ButtonGroup>
-            <Button
-              onclick={toggleRecording}
-              onmousedown={(e: MouseEvent) => e.stopPropagation()}
-              disabled={isStopping}
-              size="sm"
-              variant="destructive_soft"
-              title="Stop Recording"
-            >
-              <Record size={11} class="animate-pulse text-destructive" />
+          <!-- Drag grip: the panel stays movable while recording, like idle. -->
+          <div
+            data-tauri-drag-region
+            class="flex h-7 w-3.5 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-muted-foreground active:cursor-grabbing"
+            title="Drag to move"
+            aria-label="Drag panel"
+          >
+            <GripVertical size={12} stroke={2} class="pointer-events-none" />
+          </div>
+
+          <!-- Logo doubles as the live mic meter: its three bars animate while the
+               mic captures, static brand mark when the mic is off or paused. -->
+          <LogoWave size="20" active={micOn && !isPaused} class="shrink-0" />
+
+          <span class="relative ml-0.5 flex size-2 shrink-0" aria-hidden="true">
+            {#if !isPaused}
               <span
-                class="shrink-0 font-mono text-[13px] font-semibold tabular-nums tracking-tight"
-                class:text-foreground={!isPaused}
-                class:text-muted-foreground={isPaused}
-              >
-                {timer}
-              </span>
-            </Button>
+                class="absolute inline-flex size-full rounded-full bg-destructive opacity-60 motion-safe:animate-ping"
+              ></span>
+            {/if}
+            <span
+              class="relative inline-flex size-2 rounded-full {isPaused
+                ? 'bg-muted-foreground'
+                : 'bg-destructive'}"
+            ></span>
+          </span>
+
+          <span class="flex shrink-0 flex-col leading-tight">
+            <span
+              class="text-[9px] font-bold uppercase tracking-[0.12em] {isPaused
+                ? 'text-muted-foreground'
+                : 'text-destructive'}"
+            >
+              {isPaused ? "Paused" : "Recording"}
+            </span>
+            <span
+              class="font-mono text-[13px] font-semibold leading-none tabular-nums tracking-tight text-foreground"
+            >
+              {timer}
+            </span>
+          </span>
+
+          {#if cameraOn}
+            <span
+              class="shrink-0 border-l border-border/50 pl-2 text-muted-foreground"
+              title="Camera on"
+              aria-hidden="true"
+            >
+              <Camera size={12} stroke={2} />
+            </span>
+          {/if}
+
+          <ButtonGroup>
             <Button
               onclick={togglePause}
               onmousedown={(e: MouseEvent) => e.stopPropagation()}
@@ -1291,7 +1327,19 @@ function phaseOut(node: HTMLElement) {
                 <PauseFilled size={13} />
               {/if}
             </Button>
+            <Button
+              onclick={toggleRecording}
+              onmousedown={(e: MouseEvent) => e.stopPropagation()}
+              disabled={isStopping}
+              size="icon-sm"
+              variant="destructive_soft"
+              title="Stop Recording"
+              aria-label="Stop recording"
+            >
+              <Record size={12} class="text-destructive" />
+            </Button>
           </ButtonGroup>
+
           <Button
             onclick={closePanel}
             onmousedown={(e: MouseEvent) => e.stopPropagation()}

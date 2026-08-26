@@ -175,6 +175,10 @@ pub struct LayerParams {
     /// second. Drives motion blur, which must fire during a ramp and not during
     /// the hold.
     pub zoom_velocity: f32,
+    /// Crop the source to the card's aspect instead of stretching to it. The
+    /// screen layer never needs it (its card matches the source); a camera
+    /// bubble always does, since a 16:9 sensor lands in a square.
+    pub cover_fit: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -286,6 +290,7 @@ impl Evaluator {
                 }
                 LayerSource::Camera(settings) => {
                     let mut params = self.layer_params(layer, source_time, output_time, focus);
+                    params.cover_fit = true;
                     let follow: Vec<&ZoomRegion> = match focus {
                         true => scene.zoom_regions(),
                         false => Vec::new(),
@@ -484,6 +489,7 @@ impl Evaluator {
             motion_blur,
             zoom_center,
             zoom_velocity: self.zoom_velocity(&zooms, output_time),
+            cover_fit: false,
         }
     }
 

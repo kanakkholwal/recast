@@ -2,6 +2,7 @@
 import Logo from "$components/logo.svelte";
 import SectionCard from "$components/layout/SectionCard.svelte";
 import SettingsRow from "$components/layout/SettingsRow.svelte";
+import StudioPage from "$components/layout/StudioPage.svelte";
 import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
 import CloudSignIn from "$components/settings/CloudSignIn.svelte";
 import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
@@ -428,39 +429,8 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
 ];
 </script>
 
-<div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
-  <div class="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-10">
-    <!-- Hero -->
-    <header
-      in:fly={{ y: 12, duration: 320, easing: cubicOut }}
-      class="flex flex-col gap-3"
-    >
-      <span
-        class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur"
-      >
-        <SettingsIcon class="size-3 text-primary" />
-        Settings
-      </span>
-      <h1
-        class="text-balance text-[28px] font-semibold leading-tight tracking-tight text-foreground md:text-[32px]"
-      >
-        <span
-          class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
-        >
-          Make Recast feel like yours.
-        </span>
-      </h1>
-      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        Tune appearance, storage and editor defaults. Changes save instantly.
-      </p>
-    </header>
-
-    <!-- Telemetry lives under General (small two-toggle block); Experimental
-         gets its own tab so its growing flag list doesn't crowd anything. -->
-    <div
-      in:fly={{ y: 12, duration: 320, delay: 80, easing: cubicOut }}
-      class="flex min-w-0 flex-col gap-6"
-    >
+<StudioPage title="Settings" subtitle="Tune appearance, storage and editor defaults. Changes save instantly.">
+  <div class="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-6">
       <Tabs.Root
         value={activeTab}
         onValueChange={(v) => (activeTab = v as SettingsTab)}
@@ -468,7 +438,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
       >
         <Tabs.List
           variant="soft"
-          class="grid w-full max-w-xl grid-cols-4 gap-1 p-1"
+          class="grid w-full max-w-2xl grid-cols-5 gap-1 p-1"
         >
           <Tabs.Trigger value="general" class="gap-1.5 px-2">
             <SettingsIcon class="size-3.5" />
@@ -481,6 +451,10 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           <Tabs.Trigger value="cloud" class="gap-1.5 px-2">
             <Cloud class="size-3.5" />
             <span class="text-[12px] font-semibold">Cloud</span>
+          </Tabs.Trigger>
+          <Tabs.Trigger value="diagnostics" class="gap-1.5 px-2">
+            <Cpu class="size-3.5" />
+            <span class="text-[12px] font-semibold">Diagnostics</span>
           </Tabs.Trigger>
           <Tabs.Trigger value="advanced" class="gap-1.5 px-2">
             <Wrench class="size-3.5" />
@@ -958,25 +932,6 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 {/if}
               </SectionCard>
 
-              <!-- Encoder availability is probed live against this GPU (not just
-                   "compiled in"), so the matrix reflects what's actually usable. -->
-              <section id="settings-device" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <Cpu class="size-3 text-primary" />
-                    Device & diagnostics
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Your platform and which video encoders this device supports.
-                  </p>
-                </div>
-                <DeviceCapabilities />
-              </section>
-
-              <DiagnosticsPanel />
-
               <SectionCard
                 id="settings-about"
                 label="About"
@@ -1029,7 +984,27 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                 </div>
               </SectionCard>
         </Tabs.Content>
+
+        <Tabs.Content value="diagnostics" class="flex min-w-0 flex-col gap-8">
+          <!-- Encoder availability is probed live against this GPU (not just
+               "compiled in"), so the matrix reflects what's actually usable. -->
+          <section id="settings-device" class="flex flex-col gap-3">
+            <div class="px-1">
+              <h2
+                class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+              >
+                <Cpu class="size-3 text-primary" />
+                Device & diagnostics
+              </h2>
+              <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+                System status and which video encoders this device supports.
+              </p>
+            </div>
+            <DeviceCapabilities />
+          </section>
+
+          <DiagnosticsPanel />
+        </Tabs.Content>
       </Tabs.Root>
-    </div>
   </div>
-</div>
+</StudioPage>

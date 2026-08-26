@@ -166,6 +166,42 @@ describe("cursor sprites", () => {
 	});
 });
 
+describe("camera frames", () => {
+	/** A `<video>` seeked to the playhead, not a decode stream: nothing to
+	 *  buffer, so one slot, uploaded and bound in the same tick. */
+	it("sizes the ring once and binds every frame", async () => {
+		const d = await driver();
+		d.syncScene(state(4));
+		const frame = {} as VideoFrame;
+		expect(d.putCameraFrame(frame, 1000)).toBe(true);
+		expect(d.putCameraFrame(frame, 2000)).toBe(true);
+		expect(engine.setLayerRingCapacity).toHaveBeenCalledTimes(1);
+		expect(engine.setLayerRingCapacity).toHaveBeenCalledWith(4, 1);
+		expect(engine.putLayerFrame).toHaveBeenLastCalledWith(4, frame, 2000);
+		expect(engine.bindLayerFrame).toHaveBeenLastCalledWith(4, 2000, 0);
+	});
+
+	/** A new scene can move the camera layer id, and the ring belongs to an id. */
+	it("re-sizes the ring when the camera layer id moves", async () => {
+		const d = await driver();
+		d.syncScene(state(4));
+		d.putCameraFrame({} as VideoFrame, 1000);
+		engine.cameraLayerId = 9;
+		d.syncScene(state(8));
+		d.putCameraFrame({} as VideoFrame, 2000);
+		expect(engine.setLayerRingCapacity).toHaveBeenLastCalledWith(9, 1);
+	});
+
+	it("refuses a frame while the scene has no camera layer", async () => {
+		engine.cameraLayerId = undefined as unknown as number;
+		const d = await driver();
+		d.syncScene(state(4));
+		expect(d.putCameraFrame({} as VideoFrame, 0)).toBe(false);
+		expect(d.hasCameraFrame()).toBe(false);
+		expect(engine.putLayerFrame).not.toHaveBeenCalled();
+	});
+});
+
 describe("time map", () => {
 	/** The editor drops cuts its own lane flags disable, so the engine must be
 	 *  told what output time means rather than deriving it from the scene. */

@@ -1344,7 +1344,15 @@ fn card_uniform(
             streak_length(layer),
             0.0,
         ],
-        focus: [layer.zoom_center[0], layer.zoom_center[1], 0.0, 0.0],
+        focus: [
+            layer.zoom_center[0],
+            layer.zoom_center[1],
+            match layer.cover_fit {
+                true => 1.0,
+                false => 0.0,
+            },
+            0.0,
+        ],
     }
 }
 
@@ -1916,6 +1924,7 @@ mod tests {
             motion_blur,
             zoom_center: [0.5, 0.5],
             zoom_velocity,
+            cover_fit: false,
         }
     }
 

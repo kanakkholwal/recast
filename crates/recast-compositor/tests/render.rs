@@ -826,6 +826,146 @@ fn a_frame_anchored_annotation_stays_put_while_a_video_anchored_one_rides_the_zo
     );
 }
 
+/// Renders a scene whose camera feed is four vertical bands. A centre seam
+/// cannot tell a crop from a stretch (it lands mid-bubble either way), so the
+/// feed needs a pattern that is asymmetric under BOTH transforms.
+const CAM_BANDS: [[u8; 4]; 4] = [
+    [255, 0, 0, 255],
+    [0, 255, 0, 255],
+    [0, 0, 255, 255],
+    [255, 255, 255, 255],
+];
+
+fn render_with_camera(ctx: &GpuContext, scene: &Scene, cam_w: u32, cam_h: u32) -> Rendered {
+    let ev = Evaluator::new(
+        scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(scene, 5.0);
+    let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
+    let mut compositor = Compositor::new(ctx).expect("compositor");
+    let target = compositor.output_texture(width, height);
+    let source = source_texture(ctx);
+    let source_view = source.create_view(&Default::default());
+    let camera = banded_image(ctx, cam_w, cam_h, |x| {
+        CAM_BANDS[((x * 4 / cam_w.max(1)) as usize).min(3)]
+    });
+    let camera_view = camera.create_view(&Default::default());
+
+    let mut inputs = FrameInputs::new();
+    for layer in &scene.layers {
+        let view = match layer.source {
+            LayerSource::Screen => &source_view,
+            LayerSource::Camera(_) => &camera_view,
+            _ => continue,
+        };
+        inputs.set(
+            layer.id,
+            LayerInput {
+                view,
+                needs_srgb_decode: true,
+            },
+        );
+    }
+    compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+    Rendered {
+        pixels: read_back(ctx, &target, width, height),
+        width,
+        height,
+    }
+}
+
+fn camera_scene(extra: &str) -> Scene {
+    scene_with(&format!(
+        r#""cameraOverlay": {{"enabled": true, "shape": "square", "shadow": 0.0,
+             "zoomFollow": false, {extra}
+             "defaultPlacement": {{"x":0.0,"y":0.0,"width":0.5,"height":0.5}}}},"#
+    ))
+}
+
+/// The bubble is 32x32 at the canvas origin, so each quarter of the feed is
+/// eight pixels wide when nothing crops.
+fn bubble_bands(out: &Rendered) -> [[u8; 4]; 4] {
+    [out.at(4, 8), out.at(12, 8), out.at(20, 8), out.at(28, 8)]
+}
+
+/// A 16:9 sensor in a square bubble must crop, not squash. The screen layer is
+/// stretched to its card, because there the card IS the source.
+#[test]
+fn a_wide_camera_feed_is_cropped_into_the_bubble_rather_than_squashed() {
+    let Some(ctx) = context() else { return };
+    let scene = camera_scene(r#""mirror": false,"#);
+    assert_eq!(
+        bubble_bands(&render_with_camera(&ctx, &scene, 32, 32)),
+        CAM_BANDS,
+        "a square feed should land band for band"
+    );
+    // Twice as wide: a centre crop keeps the middle half, so only the two inner
+    // bands survive and each covers half the bubble. A stretch would show all
+    // four.
+    let wide = bubble_bands(&render_with_camera(&ctx, &scene, 64, 32));
+    assert_eq!(
+        wide,
+        [CAM_BANDS[1], CAM_BANDS[1], CAM_BANDS[2], CAM_BANDS[2]],
+        "the wide feed was squashed instead of cropped"
+    );
+}
+
+/// The other axis. A tall feed keeps every band, because cropping the HEIGHT
+/// does not move a vertical seam.
+#[test]
+fn a_tall_camera_feed_crops_its_height_and_keeps_every_band() {
+    let Some(ctx) = context() else { return };
+    let tall = render_with_camera(&ctx, &camera_scene(r#""mirror": false,"#), 32, 64);
+    assert_eq!(bubble_bands(&tall), CAM_BANDS);
+}
+
+/// A webcam reads as a mirror. `bubble_transform` flips the source affine, so
+/// this is here to pin that it still happens once and only once: adding a flip
+/// to the card shader as well silently cancelled it, and the first version of
+/// this test could not see that because its feed was symmetric about the seam.
+#[test]
+fn the_mirror_setting_flips_the_camera_horizontally() {
+    let Some(ctx) = context() else { return };
+    let mirrored = bubble_bands(&render_with_camera(
+        &ctx,
+        &camera_scene(r#""mirror": true,"#),
+        32,
+        32,
+    ));
+    let mut reversed = CAM_BANDS;
+    reversed.reverse();
+    assert_eq!(
+        mirrored, reversed,
+        "the mirror did not flip the feed exactly once"
+    );
+}
+
+/// The screen layer must NOT cover-fit: its card is the source, so cropping it
+/// would trim the picture at any aspect rounding.
+#[test]
+fn the_screen_layer_is_never_cover_fitted() {
+    let scene = camera_scene(r#""mirror": true,"#);
+    let ev = Evaluator::new(
+        &scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(&scene, 5.0);
+    let screen = scene.screen_layer().expect("screen layer").id;
+    let layer = params
+        .layers
+        .iter()
+        .find(|l| l.id == screen)
+        .expect("params");
+    assert!(!layer.cover_fit);
+}
+
 #[test]
 fn an_enabled_camera_bubble_draws_over_the_card_and_a_disabled_one_does_not() {
     let Some(ctx) = context() else { return };

@@ -19,6 +19,7 @@ import { createMediabunnySource } from "../lib/playback/mediabunny";
 import { RenderWorkerClient } from "../lib/playback/render-worker-client";
 import { renderWorkerCapable } from "../lib/playback/render-worker-protocol";
 import { cursorSpriteHotspot, resolveCursorDataUrl, resolveCursorSprite } from "../lib/registry";
+import { trackTimeAt } from "../lib/editor/track-offsets";
 import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
 import { assetsStore } from "../stores/assets-store.svelte";
 import { type EditorStore } from "../stores/editor-store.svelte";
@@ -119,6 +120,9 @@ let previewRectEl: HTMLDivElement | null = $state(null);
 // fall back to the <video> transport.
 let smoothPreviewTime = $state<number | null>(null);
 let isReady = $state(false);
+/** The camera feed. The compositor draws the bubble, so the preview owns the
+ *  element and hands it frames; the overlay is only its hit target. */
+let cameraEl = $state<HTMLVideoElement | null>(null);
 // Internal decoder that pre-decodes the first post-cut frame to mask the
 // primary element's seek latency. Only seeked once per cut, never played.
 let scoutEl = $state<HTMLVideoElement | null>(null);
@@ -926,6 +930,7 @@ function draw() {
 				frame?.close();
 			}
 		}
+		putCameraFrame(Math.max(0, Math.round(playbackTime * 1e6)));
 		if (!bound && !hasRenderedFrame) return;
 
 		try {
@@ -1261,6 +1266,26 @@ $effect(() => {
  *  225-second track every frame would cost more than the composite. */
 let engineCursorSignature = "";
 
+/** One slot, uploaded and bound in the same tick: the element is a seek-only
+ *  transport, so there is no decode stream to buffer. */
+function putCameraFrame(timestampUs: number) {
+	if (!engineDriver || !cameraEl) return;
+	if (cameraEl.readyState < 2 || cameraEl.videoWidth === 0) return;
+	let frame: VideoFrame | null = null;
+	try {
+		frame = new VideoFrame(cameraEl, { timestamp: timestampUs });
+		engineDriver.putCameraFrame(frame, timestampUs);
+	} catch (err) {
+		if (!loggedCameraFrameError) {
+			loggedCameraFrameError = true;
+			console.warn("preview engine could not take the camera frame:", err);
+		}
+	} finally {
+		frame?.close();
+	}
+}
+let loggedCameraFrameError = false;
+
 function syncEngineFrameInputs() {
 	if (!engineDriver) return;
 	// The engine draws the pointer, so the GL overlay must stay hidden or two
@@ -1333,6 +1358,29 @@ $effect(() => {
 			if (engineDriver?.setCursorSprites(style, sprites)) requestRedraw();
 		});
 	});
+});
+
+// The camera recorder starts at its own instant, so `cameraOffsetMs` maps
+// between the two tracks. Tolerance avoids re-seeking on micro-jitter between
+// two HTMLVideoElement clocks.
+$effect(() => {
+	void store.currentTime;
+	if (!cameraEl || !videoEl) return;
+	if (Number.isNaN(videoEl.currentTime)) return;
+	const want = trackTimeAt(videoEl.currentTime, cameraOffsetMs);
+	if (Math.abs(cameraEl.currentTime - want) > 0.15) cameraEl.currentTime = want;
+});
+
+$effect(() => {
+	if (!cameraEl) return;
+	if (store.isPlaying) {
+		if (videoEl) cameraEl.currentTime = trackTimeAt(videoEl.currentTime, cameraOffsetMs);
+		void cameraEl.play().catch(() => {
+			/* rejects without a gesture; the transport will retry */
+		});
+	} else {
+		cameraEl.pause();
+	}
 });
 
 //  Lifecycle & reactive wiring
@@ -1807,11 +1855,9 @@ const isAnnotationActive = $derived(
 		     its corner. Owns its own video element, synced via store.currentTime. -->
 		<CameraOverlay
 			{store}
-			{videoEl}
-			{cameraSrc}
+			hasCamera={!!cameraSrc}
 			targetEl={previewRectEl}
 			previewTime={smoothPreviewTime ?? 0}
-			offsetMs={cameraOffsetMs}
 		/>
 		<CaptionOverlay {store} previewTime={smoothPreviewTime ?? undefined} />
 	</div>
@@ -1850,6 +1896,18 @@ const isAnnotationActive = $derived(
 				muted
 			></video>
 		{/if}
+	{/if}
+	{#if cameraSrc && store.cameraOverlay.enabled && useEngine}
+		<!-- svelte-ignore a11y_media_has_caption -->
+		<video
+			bind:this={cameraEl}
+			src={cameraSrc}
+			class="pointer-events-none absolute h-px w-px opacity-0"
+			style="visibility: hidden;"
+			playsinline
+			preload="auto"
+			muted
+		></video>
 	{/if}
 
 	{#if !isReady}

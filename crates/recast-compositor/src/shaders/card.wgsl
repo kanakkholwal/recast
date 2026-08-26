@@ -12,7 +12,7 @@ struct Card {
     // z = dolly-blur streak length in source UV (already folded with velocity),
     // w unused.
     flags: vec4<f32>,
-    // xy = zoom focus in source UV, zw unused.
+    // xy = zoom focus in source UV, z = 1 to cover-fit, w unused.
     focus: vec4<f32>,
 }
 
@@ -98,10 +98,27 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
     let opacity = card.affine_b.z;
     let radius_fraction = card.affine_b.w;
 
-    let source_uv = vec2<f32>(
+    var source_uv = vec2<f32>(
         sx * in.uv.x + shx * in.uv.y + tx,
         shy * in.uv.x + sy * in.uv.y + ty,
     );
+    // Cover-fit acts in SOURCE uv, after the affine, so a camera bubble crops
+    // its own centre rather than stretching a 16:9 sensor into a square. The
+    // size comes from the texture, since a decoded frame carries none of its own
+    // through `LayerInput`. Mirroring is NOT here: `bubble_transform` already
+    // flips the affine, and doing both cancels out.
+    if (card.focus.z > 0.5) {
+        let dims = vec2<f32>(textureDimensions(src));
+        let source_aspect = dims.x / max(dims.y, 1.0);
+        let dest_aspect = card.rect.z / max(card.rect.w, 1.0);
+        var fit = vec2<f32>(1.0, 1.0);
+        if (source_aspect > dest_aspect) {
+            fit.x = dest_aspect / source_aspect;
+        } else {
+            fit.y = source_aspect / dest_aspect;
+        }
+        source_uv = (source_uv - vec2<f32>(0.5)) * fit + vec2<f32>(0.5);
+    }
     var colour = sample_source(source_uv);
     let streak = card.flags.z;
     if (streak > 0.0) {

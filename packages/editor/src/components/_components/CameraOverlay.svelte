@@ -1,6 +1,5 @@
 <script lang="ts">
 import { computeCanvasGeometry } from "../../lib/canvas-geometry";
-import { trackTimeAt } from "../../lib/editor/track-offsets";
 import type { EditorStore } from "../../stores/editor-store.svelte";
 import {
 	applyZoomFollow,
@@ -8,7 +7,6 @@ import {
 	cameraBubbleDelta,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
-	cameraShadowStyle,
 	type CameraResizeCorner,
 	clampCameraDrag,
 	resizeCameraSquare,
@@ -18,22 +16,20 @@ import {
 interface Props {
 	store: EditorStore;
 	/** The screen video element, used as the time-base for camera sync. */
-	videoEl: HTMLVideoElement | null;
 	/** Preview rectangle (canvas-sized div): positioning parent and drag-coord reference. */
 	targetEl: HTMLDivElement | null;
 	/** `convertFileSrc(camera.mp4)`, or empty when no camera was recorded (renders nothing). */
-	cameraSrc: string;
+	/** Whether this project has a camera track at all. The feed itself belongs to
+	 *  the preview, which hands it to the compositor. */
+	hasCamera: boolean;
 	/** Per-frame picture time (unthrottled) so the zoom-follow grow is as smooth
 	 *  as the shader; falls back to store.currentTime when paused. */
 	previewTime?: number;
 	/** Milliseconds the camera track starts after video frame 0, measured at
 	 *  capture. 0 for projects recorded before it was measured. */
-	offsetMs?: number;
 }
 
-let { store, videoEl, targetEl, cameraSrc, previewTime = 0, offsetMs = 0 }: Props = $props();
-
-let cameraVideoEl: HTMLVideoElement | null = $state(null);
+let { store, targetEl, hasCamera, previewTime = 0 }: Props = $props();
 
 const geom = $derived.by(() => {
 	const m = store.metadata;
@@ -60,10 +56,6 @@ function baseAt(t: number) {
 		store.cameraOverlay.keyframeEasing,
 	);
 }
-
-// Drop shadow in cqmin (the outer div is a size container), so it scales with
-// the bubble and mirrors the export's render_camera_shadow.
-const shadowStyle = $derived(cameraShadowStyle(store.cameraOverlay.shadow ?? 0));
 
 // The div's LAYOUT box, deliberately NOT a function of the playhead: it moved
 // with the ~25 Hz store clock while the transform below is written per rAF, and
@@ -126,32 +118,6 @@ $effect(() => {
 		raf = requestAnimationFrame(tick);
 	});
 	return () => cancelAnimationFrame(raf);
-});
-
-// Keep the camera <video> within ~150ms of the screen video; the tolerance avoids
-// re-seeking on micro-jitter between the two HTMLVideoElement clocks. The camera
-// recorder starts at its own instant, so `offsetMs` is what maps between them.
-$effect(() => {
-	void store.currentTime;
-	if (!cameraVideoEl || !videoEl) return;
-	if (Number.isNaN(videoEl.currentTime)) return;
-	const want = trackTimeAt(videoEl.currentTime, offsetMs);
-	if (Math.abs(cameraVideoEl.currentTime - want) > 0.15) {
-		cameraVideoEl.currentTime = want;
-	}
-});
-
-$effect(() => {
-	const playing = store.isPlaying;
-	if (!cameraVideoEl) return;
-	if (playing) {
-		if (videoEl) cameraVideoEl.currentTime = trackTimeAt(videoEl.currentTime, offsetMs);
-		void cameraVideoEl.play().catch((err) => {
-			console.warn("camera overlay play failed:", err);
-		});
-	} else {
-		cameraVideoEl.pause();
-	}
 });
 
 // Client px → video UV (for absolute resize math), via the canvas rect + geom.
@@ -251,7 +217,7 @@ function onHandleUp(e: PointerEvent) {
 }
 </script>
 
-{#if cameraSrc && store.cameraOverlay.enabled && geom}
+{#if hasCamera && store.cameraOverlay.enabled && geom}
   <!-- Outer bounds: owns position + drag + resize handles (NOT clipped, so handles
        show past the shape). The inner div clips the video to the bubble shape. -->
   <div
@@ -264,23 +230,9 @@ function onHandleUp(e: PointerEvent) {
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
   >
-    <div
-      class="h-full w-full overflow-hidden"
-      style="border-radius: {borderRadius}; box-shadow: {shadowStyle};"
-    >
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video
-        bind:this={cameraVideoEl}
-        src={cameraSrc}
-        muted
-        playsinline
-        preload="auto"
-        class="block h-full w-full"
-        style="object-fit: cover; transform: {store.cameraOverlay.mirror
-          ? 'scaleX(-1)'
-          : 'none'}; pointer-events: none;"
-      ></video>
-    </div>
+    <!-- The compositor draws the bubble. This is its hit target: same rect, same
+         shape, no pixels of its own. -->
+    <div class="h-full w-full" style="border-radius: {borderRadius};"></div>
 
     <!-- Not buttons: they had no onclick and four identical accessible names, so
          they were four dead tab stops. Drag-only by nature; CameraPanel's "Bubble

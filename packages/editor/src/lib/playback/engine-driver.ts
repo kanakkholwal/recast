@@ -39,6 +39,8 @@ export class PreviewEngineDriver {
 	#canvasSize = "";
 	#sourceSize = "";
 	#screenLayer: number | null = null;
+	#cameraLayer: number | null = null;
+	#cameraRing = 0;
 	#ringCapacity = 0;
 	#spriteKey = "";
 	#annotationImageKey = "";
@@ -94,8 +96,10 @@ export class PreviewEngineDriver {
 		// The layer ids are assigned during migration, so they can move when the
 		// scene changes shape.
 		this.#screenLayer = this.#engine.screenLayerId ?? null;
+		this.#cameraLayer = this.#engine.cameraLayerId ?? null;
 		// The ring belongs to a layer id, so a new id means a new ring.
 		this.#ringCapacity = 0;
+		this.#cameraRing = 0;
 		return true;
 	}
 
@@ -200,6 +204,29 @@ export class PreviewEngineDriver {
 		if (this.#screenLayer === null) return false;
 		if (this.#engine.bindLayerFrame(this.#screenLayer, timestampUs, floorUs)) return true;
 		return this.#engine.hasBoundFrame(this.#screenLayer);
+	}
+
+	/**
+	 * The camera feed for this instant. It comes off a `<video>` the host keeps
+	 * seeked to the playhead rather than a decode stream, so there is nothing to
+	 * buffer: one slot, uploaded and bound in the same tick. False when the scene
+	 * has no camera layer, which is every recording made without one.
+	 */
+	putCameraFrame(frame: VideoFrame, timestampUs: number): boolean {
+		if (this.#cameraLayer === null) return false;
+		if (this.#cameraRing === 0) {
+			this.#cameraRing = 1;
+			this.#engine.setLayerRingCapacity(this.#cameraLayer, 1);
+		}
+		this.#engine.putLayerFrame(this.#cameraLayer, frame, timestampUs);
+		// Floor 0: the camera is its own track and cuts never remove part of it.
+		return this.#engine.bindLayerFrame(this.#cameraLayer, timestampUs, 0);
+	}
+
+	/** True once a camera frame has been bound, so the host can tell "no camera
+	 *  in this project" from "the element has not decoded yet". */
+	hasCameraFrame(): boolean {
+		return this.#cameraLayer !== null && this.#engine.hasBoundFrame(this.#cameraLayer);
 	}
 
 	render(outputTime: number): number {
