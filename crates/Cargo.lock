@@ -824,6 +824,7 @@ dependencies = [
  "recast-testkit",
  "recast-text",
  "recast-time",
+ "serde",
  "serde_json",
  "wgpu",
 ]

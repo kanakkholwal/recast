@@ -366,6 +366,21 @@ jobs:
           pnpm --filter @recast/engine build
           test -z "$(git status --porcelain -- packages/engine/wasm)"
 
+      # The WASM arm of the golden harness: the same fixtures the native
+      # compositor renders, through the BROWSER build, against the same PNGs.
+      # This is what makes "one compositor" a statement about pixels rather than
+      # about the source tree.
+      #
+      # Windows only, matching the native arm: the goldens are pixel-compared and
+      # the recorded stack is a Windows one, so anywhere else this reports its
+      # deltas instead of gating. The geometry check gates everywhere, since
+      # canvas size is not a rasterisation question.
+      - name: Engine golden frames (browser build)
+        if: ${{ matrix.platform.name == 'windows-x64' }}
+        run: |
+          pnpm --filter @recast/engine exec playwright install --with-deps chromium
+          pnpm --filter @recast/engine test:golden
+
       # Golden frames pin what the CURRENT export compositor renders, so the wgpu
       # rewrite has an exact target. Windows only: the fixtures are byte-compared,
       # and a different FFmpeg build / libx264 version / scaler rounding on another

@@ -5,9 +5,11 @@
 //! function applied twice, or a feature that quietly stopped drawing while its
 //! own assertion still passed. That is what a golden is for.
 //!
-//! These are also the reference the wasm arm will be held to: the same fixtures
-//! rendered through the browser build have to land on the same pixels, and that
-//! comparison is the gate the preview and export swap rests on.
+//! These are also the reference the WASM arm is held to: `packages/engine/test/golden`
+//! renders the same fixtures through the browser build and compares them to the
+//! same PNGs. Both arms read `goldens/fixtures.json` and the committed
+//! `source.png` / `background.png`, so neither can drift into testing a
+//! different scene than the other.
 //!
 //! `UPDATE_GOLDENS=1 cargo test -p recast-compositor --test golden` rewrites
 //! them. Read the diff before committing it.
@@ -31,94 +33,31 @@ const SRC_H: u32 = 72;
 const MAX_CHANNEL: u8 = 4;
 const MAX_MEAN: f64 = 0.35;
 
-const BASE: &str = r##"{
-    "trimStart": 0.0, "trimEnd": 10.0,
-    "backgroundType": "color", "backgroundValue": "#1e293b", "backgroundBlur": 0.0,
-    "padding": 0.0, "cursorEnabled": false, "cursorSize": 3.0, "cursorSmoothing": 50.0,
-    "cursorHighlightClicks": true, "cursorHighlightColor": "#3b82f6",
-    "cursorHighlightOpacity": 40.0, "cursorHideWhenIdle": false, "cursorIdleTimeout": 3.0,
-    "zoomRegions": []
-}"##;
+/// The fixture list, shared with the wasm arm. Read rather than compiled in, so
+/// there is one definition of what a golden fixture IS.
+#[derive(serde::Deserialize)]
+struct Fixtures {
+    base: serde_json::Map<String, serde_json::Value>,
+    fixtures: Vec<Fixture>,
+}
 
-/// Every fixture is a name, the fields it overrides, and the output time to
-/// sample. The time matters: a fixture whose animation has finished renders the
-/// same frame as one that never had it.
-fn fixtures() -> Vec<(&'static str, String, f64)> {
-    vec![
-        ("plain", String::new(), 1.0),
-        (
-            "padded-colour",
-            r##""padding": 18.0, "backgroundValue": "#3b82f6","##.into(),
-            1.0,
-        ),
-        (
-            "gradient",
-            r##""backgroundType": "gradient",
-               "backgroundValue": "linear-gradient(60deg, #ff0000 0%, #0000ff 100%)",
-               "padding": 18.0,"##
-                .into(),
-            1.0,
-        ),
-        (
-            "rounded-shadow",
-            r##""padding": 20.0, "borderRadius": 28.0,
-                "shadow": {"enabled": true, "blur": 14.0, "spread": 0.0, "offsetY": 8.0,
-                           "opacity": 75.0, "color": "#000000"},"##
-                .into(),
-            1.0,
-        ),
-        (
-            "zoomed",
-            r##""zoomRegions": [{"start":0.0,"end":10.0,"scale":1.8,"rampIn":0.0,
-                               "rampOut":0.0,"centerX":0.3,"centerY":0.45}],"##
-                .into(),
-            1.0,
-        ),
-        (
-            "zoom-ramping",
-            r##""padding": 12.0,
-               "zoomRegions": [{"start":0.5,"end":8.0,"scale":2.0,"rampIn":0.2,
-                               "rampOut":0.2,"centerX":0.28,"centerY":0.62,
-                               "motionBlur":1.0}],"##
-                .into(),
-            // Mid-ramp on purpose: the eased scale and the dolly blur that rides
-            // it are only visible while the zoom is MOVING. Two things here are
-            // load-bearing and each was found by a mutation surviving without
-            // it. `motionBlur` defaults to zero, so a fixture that omits it
-            // never runs the blur code at all. And the centre is deliberately
-            // not 0.5/0.5, because the streak runs away from it and a centred
-            // one is symmetric enough that reversing its direction looks the
-            // same.
-            0.6,
-        ),
-        (
-            "portrait",
-            r##""outputAspect": "9:16", "padding": 10.0,"##.into(),
-            1.0,
-        ),
-        (
-            "rotating-in",
-            r##""padding": 20.0,
-               "segmentAnims": [{"start": 0.0, "in": {"kind": "rotate", "durationMs": 500.0}}],"##
-                .into(),
-            // Part way through the entrance, where the rotation is non-zero.
-            0.25,
-        ),
-        (
-            "annotation",
-            r##""padding": 12.0,
-                "annotations": [{"id":"a1","start":0.0,"end":10.0,
-                  "fill":"#ff00ff","stroke":{"width":0.0,"color":"transparent"},
-                  "kind":{"kind":"rect","x":0.2,"y":0.3,"w":0.45,"h":0.35}}],"##
-                .into(),
-            1.0,
-        ),
-        (
-            "background-blur",
-            r##""backgroundType": "image", "backgroundBlur": 30.0, "padding": 24.0,"##.into(),
-            1.0,
-        ),
-    ]
+#[derive(serde::Deserialize)]
+struct Fixture {
+    name: String,
+    time: f64,
+    overrides: serde_json::Map<String, serde_json::Value>,
+    /// The same scene with this fixture's feature turned OFF. Present only where
+    /// there is a feature to turn off, and kept beside the fixture rather than in
+    /// a second list that would repeat it.
+    #[serde(default)]
+    without: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+fn load_fixtures() -> Fixtures {
+    let path = goldens_dir().join("fixtures.json");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    serde_json::from_str(&text).expect("fixtures.json")
 }
 
 fn context() -> Option<GpuContext> {
@@ -137,20 +76,13 @@ fn context() -> Option<GpuContext> {
     }
 }
 
-fn scene_with(extra: &str) -> Scene {
-    let mut base: serde_json::Value = serde_json::from_str(BASE).expect("base json");
-    let fragment = extra.trim().trim_end_matches(',');
-    if !fragment.is_empty() {
-        let overrides: serde_json::Value =
-            serde_json::from_str(&format!("{{{fragment}}}")).expect("override json");
-        let (Some(base), Some(overrides)) = (base.as_object_mut(), overrides.as_object()) else {
-            panic!("fixtures must be JSON objects");
-        };
-        for (key, value) in overrides {
-            base.insert(key.clone(), value.clone());
-        }
+fn scene_for(all: &Fixtures, fixture: &Fixture) -> Scene {
+    let mut merged = all.base.clone();
+    for (key, value) in &fixture.overrides {
+        merged.insert(key.clone(), value.clone());
     }
-    let state: RenderState = serde_json::from_value(base).expect("render state");
+    let state: RenderState =
+        serde_json::from_value(serde_json::Value::Object(merged)).expect("render state");
     to_scene(&state)
 }
 
@@ -232,12 +164,27 @@ fn texture_from(ctx: &GpuContext, label: &str, pixels: &[u8]) -> wgpu::Texture {
     texture
 }
 
+/// The input textures come from the committed PNGs, not from the generators
+/// above, so the browser arm loads the identical bytes instead of porting the
+/// pattern. `UPDATE_GOLDENS=1` rewrites them from the generators.
+fn input_pixels(name: &str, generate: fn() -> Vec<u8>) -> Vec<u8> {
+    let path = goldens_dir().join(format!("{name}.png"));
+    match read_png(&path) {
+        Some(frame) if (frame.width, frame.height) == (SRC_W, SRC_H) => frame.pixels,
+        _ => generate(),
+    }
+}
+
 fn source_texture(ctx: &GpuContext) -> wgpu::Texture {
-    texture_from(ctx, "golden-source", &source_pixels())
+    texture_from(ctx, "golden-source", &input_pixels("source", source_pixels))
 }
 
 fn background_texture(ctx: &GpuContext) -> wgpu::Texture {
-    texture_from(ctx, "golden-background", &background_pixels())
+    texture_from(
+        ctx,
+        "golden-background",
+        &input_pixels("background", background_pixels),
+    )
 }
 
 fn read_back(ctx: &GpuContext, texture: &wgpu::Texture, width: u32, height: u32) -> Vec<u8> {
@@ -412,10 +359,12 @@ fn every_fixture_matches_its_golden() {
     let recorded = recorded_adapter();
     let gates = updating() || recorded.as_deref() == Some(here.as_str());
 
+    let all = load_fixtures();
     let mut missing = Vec::new();
     let mut drifted = Vec::new();
-    for (name, extra, time) in fixtures() {
-        let frame = render(&ctx, &scene_with(&extra), time);
+    for fixture in &all.fixtures {
+        let name = &fixture.name;
+        let frame = render(&ctx, &scene_for(&all, fixture), fixture.time);
         let path = dir.join(format!("{name}.png"));
 
         if updating() {
@@ -423,7 +372,7 @@ fn every_fixture_matches_its_golden() {
             continue;
         }
         let Some(golden) = read_png(&path) else {
-            missing.push(name);
+            missing.push(name.clone());
             continue;
         };
         if (golden.width, golden.height) != (frame.width, frame.height) {
@@ -444,6 +393,22 @@ fn every_fixture_matches_its_golden() {
     }
 
     if updating() {
+        // The input textures are committed too: the wasm arm loads these bytes
+        // rather than porting the generators, so a change to the pattern reaches
+        // both arms at once.
+        for (name, generate) in [
+            ("source", source_pixels as fn() -> Vec<u8>),
+            ("background", background_pixels as fn() -> Vec<u8>),
+        ] {
+            write_png(
+                &dir.join(format!("{name}.png")),
+                &Frame {
+                    pixels: generate(),
+                    width: SRC_W,
+                    height: SRC_H,
+                },
+            );
+        }
         std::fs::write(adapter_file(), &here).expect("record the adapter");
         panic!("goldens rewritten on {here}; re-run without UPDATE_GOLDENS");
     }
@@ -481,14 +446,16 @@ fn every_fixture_matches_its_golden() {
 #[test]
 fn every_fixture_renders_a_distinct_frame() {
     let Some(ctx) = context() else { return };
+    let all = load_fixtures();
     let mut seen: Vec<(String, String)> = Vec::new();
-    for (name, extra, time) in fixtures() {
-        let frame = render(&ctx, &scene_with(&extra), time);
+    for fixture in &all.fixtures {
+        let name = &fixture.name;
+        let frame = render(&ctx, &scene_for(&all, fixture), fixture.time);
         let digest = recast_testkit::compare::digest_hex(&frame.pixels);
         if let Some((other, _)) = seen.iter().find(|(_, d)| *d == digest) {
             panic!("{name} renders exactly what {other} does, so one of them proves nothing");
         }
-        seen.push((name.to_string(), digest));
+        seen.push((name.clone(), digest));
     }
 }
 
@@ -497,7 +464,13 @@ fn every_fixture_renders_a_distinct_frame() {
 #[test]
 fn the_tolerance_is_tight_enough_to_catch_a_small_shift() {
     let Some(ctx) = context() else { return };
-    let frame = render(&ctx, &scene_with(""), 1.0);
+    let all = load_fixtures();
+    let plain = all
+        .fixtures
+        .iter()
+        .find(|f| f.name == "plain")
+        .expect("the plain fixture");
+    let frame = render(&ctx, &scene_for(&all, plain), plain.time);
     let mut nudged = frame.pixels.clone();
     // One row shifted by one pixel: the smallest geometry error worth calling a
     // regression, and invisible to any per-pixel assertion next door.
@@ -522,55 +495,20 @@ fn the_tolerance_is_tight_enough_to_catch_a_small_shift() {
 #[test]
 fn every_feature_fixture_differs_from_the_same_scene_without_it() {
     let Some(ctx) = context() else { return };
-    // (name, with the feature, without it, at time)
-    let pairs: Vec<(&str, String, String, f64)> = vec![
-        (
-            "annotation",
-            r##""padding": 12.0,
-                "annotations": [{"id":"a1","start":0.0,"end":10.0,
-                  "fill":"#ff00ff","stroke":{"width":0.0,"color":"transparent"},
-                  "kind":{"kind":"rect","x":0.2,"y":0.3,"w":0.45,"h":0.35}}],"##.into(),
-            r##""padding": 12.0,"##.into(),
-            1.0,
-        ),
-        (
-            "background-blur",
-            r##""backgroundType": "image", "backgroundBlur": 30.0, "padding": 24.0,"##.into(),
-            r##""backgroundType": "image", "backgroundBlur": 0.0, "padding": 24.0,"##.into(),
-            1.0,
-        ),
-        (
-            "rounded-shadow",
-            r##""padding": 20.0, "borderRadius": 28.0,
-                "shadow": {"enabled": true, "blur": 14.0, "spread": 0.0, "offsetY": 8.0,
-                           "opacity": 75.0, "color": "#000000"},"##.into(),
-            r##""padding": 20.0,"##.into(),
-            1.0,
-        ),
-        (
-            "zoom-ramping",
-            r##""padding": 12.0,
-               "zoomRegions": [{"start":0.5,"end":8.0,"scale":2.0,"rampIn":0.2,
-                               "rampOut":0.2,"centerX":0.28,"centerY":0.62,
-                               "motionBlur":1.0}],"##.into(),
-            r##""padding": 12.0,
-               "zoomRegions": [{"start":0.5,"end":8.0,"scale":2.0,"rampIn":0.2,
-                               "rampOut":0.2,"centerX":0.28,"centerY":0.62,
-                               "motionBlur":0.0}],"##.into(),
-            0.6,
-        ),
-        (
-            "rotating-in",
-            r##""padding": 20.0,
-               "segmentAnims": [{"start": 0.0, "in": {"kind": "rotate", "durationMs": 500.0}}],"##.into(),
-            r##""padding": 20.0,"##.into(),
-            0.25,
-        ),
-    ];
-
-    for (name, with, without, time) in pairs {
-        let a = render(&ctx, &scene_with(&with), time);
-        let b = render(&ctx, &scene_with(&without), time);
+    let all = load_fixtures();
+    let mut checked = 0;
+    for fixture in &all.fixtures {
+        let Some(without) = &fixture.without else { continue };
+        checked += 1;
+        let name = &fixture.name;
+        let off = Fixture {
+            name: name.clone(),
+            time: fixture.time,
+            overrides: without.clone(),
+            without: None,
+        };
+        let a = render(&ctx, &scene_for(&all, fixture), fixture.time);
+        let b = render(&ctx, &scene_for(&all, &off), fixture.time);
         assert_eq!((a.width, a.height), (b.width, b.height), "{name} changed size");
         let delta = recast_testkit::compare::frame_delta(&a.pixels, &b.pixels)
             .expect("same-sized frames");
@@ -579,4 +517,5 @@ fn every_feature_fixture_differs_from_the_same_scene_without_it() {
             "{name} renders exactly what the scene without it renders, so the fixture proves nothing"
         );
     }
+    assert!(checked >= 5, "only {checked} fixtures declared a `without`");
 }

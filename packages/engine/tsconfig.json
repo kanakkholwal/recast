@@ -10,7 +10,7 @@
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"isolatedModules": true,
-		"types": []
+		"types": ["node"]
 	},
-	"include": ["src/**/*.ts", "wasm/**/*.d.ts"]
+	"include": ["src/**/*.ts", "test/**/*.ts", "wasm/**/*.d.ts", "*.config.ts"]
 }

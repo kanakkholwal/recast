@@ -35,6 +35,10 @@ Thumbs.db
 
 *.turbo/turbo-build.log
 
+# Playwright (the engine's golden arm)
+test-results/
+playwright-report/
+
 # Local scratch (audit reports, working notes)
 .scratch/
 .tools

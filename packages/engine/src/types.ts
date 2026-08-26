@@ -57,5 +57,10 @@ export interface CursorPlacement {
 }
 
 export interface NavigatorLike {
-	gpu?: { requestAdapter(): Promise<unknown> };
+	gpu?: { requestAdapter(): Promise<AdapterLike | null | undefined> };
+}
+
+/** Only the part of `GPUAdapter` the probe uses. */
+export interface AdapterLike {
+	requestDevice(): Promise<{ destroy?(): void } | null | undefined>;
 }

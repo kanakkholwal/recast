@@ -88,11 +88,12 @@ async function ensureBindgen(version) {
 	return exe;
 }
 
-function run(command, args, cwd) {
+function run(command, args, cwd, env) {
 	const result = spawnSync(command, args, {
 		cwd,
 		stdio: "inherit",
 		shell: process.platform === "win32",
+		env: env ? { ...process.env, ...env } : process.env,
 	});
 	if (result.status !== 0) {
 		throw new Error(`${command} ${args.join(" ")} exited ${result.status ?? result.signal}`);
@@ -119,6 +120,12 @@ for (const { feature, outName } of VARIANTS) {
 			feature,
 		],
 		cratesRoot,
+		// REQUIRED, not a nicety. `VideoFrame` sits behind this cfg in web-sys, and
+		// without it wgpu-hal's GLES backend compiles the VideoFrame texture upload
+		// as `unimplemented!()` — so every decoded frame panics the moment the
+		// engine lands on WebGL2. Appended so a RUSTFLAGS already in the
+		// environment is not silently dropped.
+		{ RUSTFLAGS: `${process.env.RUSTFLAGS ?? ""} --cfg=web_sys_unstable_apis`.trim() },
 	);
 	run(
 		bindgen,

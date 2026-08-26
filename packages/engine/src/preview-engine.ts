@@ -37,6 +37,12 @@ export class PreviewEngine {
 		this.#requested = requested;
 	}
 
+	/**
+	 * There is deliberately NO retry on another backend here. `detectBackend` has
+	 * to get it right first time, because this claims the canvas: a canvas keeps
+	 * the first context type it is given, so a failed WebGPU surface leaves one
+	 * where `getContext("webgl2")` returns null and a fallback cannot run.
+	 */
 	static async create(
 		canvas: HTMLCanvasElement | OffscreenCanvas,
 		options: PreviewEngineOptions = {},
