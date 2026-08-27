@@ -1,5 +1,7 @@
-use recast_codec::{ranked, select_preferred, Vendor, VideoCodec};
 use recast_codec_mf::enumerate_encoders;
+// Only the Windows tests rank or select; off Windows the list is empty.
+#[cfg(windows)]
+use recast_codec::{ranked, select_preferred, Vendor, VideoCodec};
 
 /// Windows has shipped a software H.264 encoder since Windows 8, so an empty
 /// list means the enumeration itself is broken, not that the machine is bare.

@@ -1,4 +1,7 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
+// Every `.context()` call site is Windows-gated; the stub main is not.
+#[cfg(windows)]
+use anyhow::Context;
 
 #[cfg(not(windows))]
 fn main() -> Result<()> {
