@@ -55,7 +55,14 @@ fn plain() -> Option<&'static Path> {
         foreign_file(
             "foreign.mp4",
             &[
-                "-c:v", "libx264", "-preset", "ultrafast", "-bf", "0", "-c:a", "aac",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-bf",
+                "0",
+                "-c:a",
+                "aac",
             ],
         )
     })
@@ -121,11 +128,14 @@ fn foreign_video_samples_are_whole_avcc_units() {
         let bytes = reader.sample_data(sample).expect("bytes");
         let mut at = 0usize;
         while at + prefix <= bytes.len() {
-            let length =
-                u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+            let length = u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
             at += prefix + length;
         }
-        assert_eq!(at, bytes.len(), "sample {index} did not end on a NAL boundary");
+        assert_eq!(
+            at,
+            bytes.len(),
+            "sample {index} did not end on a NAL boundary"
+        );
     }
 }
 
@@ -174,7 +184,11 @@ fn a_file_with_b_frames_carries_composition_offsets() {
     );
     // Presentation order is a permutation of decode order, so the set of
     // presentation times has to be as large as the sample count.
-    let mut times: Vec<i64> = video.samples.iter().map(|s| s.presentation_time()).collect();
+    let mut times: Vec<i64> = video
+        .samples
+        .iter()
+        .map(|s| s.presentation_time())
+        .collect();
     times.sort_unstable();
     times.dedup();
     assert_eq!(times.len(), video.samples.len(), "two frames share a time");
@@ -191,7 +205,14 @@ fn the_coded_size_wins_over_a_stretched_display_size() {
             foreign_file(
                 "foreign-sar.mp4",
                 &[
-                    "-vf", "setsar=2/1", "-c:v", "libx264", "-preset", "ultrafast", "-bf", "0",
+                    "-vf",
+                    "setsar=2/1",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-bf",
+                    "0",
                     "-an",
                 ],
             )

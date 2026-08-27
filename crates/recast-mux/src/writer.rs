@@ -135,7 +135,10 @@ impl Mp4Writer {
         // is dropped rather than written: a silent track looks like a mix bug,
         // which is harder to chase than a missing one. The second case is a
         // recording whose microphone was off, where the format is still set.
-        let undescribed = self.audio_format.as_ref().is_some_and(|f| f.config.is_empty());
+        let undescribed = self
+            .audio_format
+            .as_ref()
+            .is_some_and(|f| f.config.is_empty());
         if undescribed || self.audio.table.is_empty() {
             self.audio_format = None;
             self.audio = TrackBuffer::default();
@@ -151,7 +154,11 @@ impl Mp4Writer {
         let mdat_header = mdat_header_len(payload.len());
         let payload_start = (ftyp.len() + probe.len() + mdat_header) as u64;
         let moov = self.moov(&record, payload_start);
-        debug_assert_eq!(moov.len(), probe.len(), "the offset pass changed moov's size");
+        debug_assert_eq!(
+            moov.len(),
+            probe.len(),
+            "the offset pass changed moov's size"
+        );
 
         let mut out = Vec::with_capacity(ftyp.len() + moov.len() + mdat_header + payload.len());
         out.extend_from_slice(&ftyp);
@@ -375,7 +382,12 @@ impl Mp4Writer {
         self.track_header(buf, 2, false);
 
         buf.open(b"mdia");
-        self.media_header(buf, format.sample_rate, self.audio.table.duration(), b"soun");
+        self.media_header(
+            buf,
+            format.sample_rate,
+            self.audio.table.duration(),
+            b"soun",
+        );
 
         buf.open(b"minf");
         buf.open_full(b"smhd", 0, 0);
@@ -404,7 +416,8 @@ impl Mp4Writer {
         buf.open(b"avc1");
         buf.zeros(6).u16(1);
         buf.u16(0).u16(0).zeros(12);
-        buf.u16(self.video_format.width).u16(self.video_format.height);
+        buf.u16(self.video_format.width)
+            .u16(self.video_format.height);
         // 72 dpi, as every muxer writes regardless of the real display size.
         buf.fixed16_16(72.0).fixed16_16(72.0);
         buf.u32(0).u16(1);

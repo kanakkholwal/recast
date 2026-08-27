@@ -272,7 +272,10 @@ fn encode_with(name: &str, mut render: impl FnMut(&Harness, u32)) -> Option<Path
                 .ok()?;
         }
         render(&harness, index);
-        harness.gpu_drawn.queue_signal(&harness.context, value).ok()?;
+        harness
+            .gpu_drawn
+            .queue_signal(&harness.context, value)
+            .ok()?;
 
         harness.d3d.wait_for(&harness.drawn, value).ok()?;
         // A fresh frame each time: the encoder is asynchronous and still holds
@@ -356,7 +359,10 @@ fn every_frame_survives_the_texture_path() {
     while reader.next_frame().expect("a read").is_some() {
         count += 1;
     }
-    assert_eq!(count, FRAMES as usize, "frames went missing on the GPU path");
+    assert_eq!(
+        count, FRAMES as usize,
+        "frames went missing on the GPU path"
+    );
 }
 
 /// Each frame is drawn a different level, so a frame that reaches the encoder
@@ -364,7 +370,9 @@ fn every_frame_survives_the_texture_path() {
 /// picture every frame could never show that.
 #[test]
 fn no_frame_arrives_carrying_the_one_before_it() {
-    let Some(path) = alternating_file() else { return };
+    let Some(path) = alternating_file() else {
+        return;
+    };
     let mut reader = VideoReader::open(&path).expect("the file opens");
     let mut index = 0u32;
     while let Some(frame) = reader.next_frame().expect("a read") {

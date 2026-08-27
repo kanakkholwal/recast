@@ -11,20 +11,31 @@ const SRC_W: u32 = 64;
 const SRC_H: u32 = 32;
 const MID_GREY: u8 = 128;
 
-fn context() -> Option<GpuContext> {
-    match GpuContext::new_blocking(GpuOptions {
-        require_hardware: false,
-        ..Default::default()
-    }) {
-        Ok(ctx) => Some(ctx),
-        Err(e) => {
-            if std::env::var("RECAST_GPU_REQUIRE_ADAPTER").as_deref() == Ok("1") {
-                panic!("RECAST_GPU_REQUIRE_ADAPTER=1 but no adapter: {e}");
+/// One device for the whole binary, built on first use.
+///
+/// A context per test means one wgpu device per test running at once, and on a
+/// machine with no GPU those all land on the same software adapter. That is
+/// what crashed CI here; it is also several times the setup cost for tests that
+/// only ever render.
+fn context() -> Option<&'static GpuContext> {
+    static SHARED: std::sync::OnceLock<Option<GpuContext>> = std::sync::OnceLock::new();
+    SHARED
+        .get_or_init(|| {
+            match GpuContext::new_blocking(GpuOptions {
+                require_hardware: false,
+                ..Default::default()
+            }) {
+                Ok(ctx) => Some(ctx),
+                Err(e) => {
+                    if std::env::var("RECAST_GPU_REQUIRE_ADAPTER").as_deref() == Ok("1") {
+                        panic!("RECAST_GPU_REQUIRE_ADAPTER=1 but no adapter: {e}");
+                    }
+                    eprintln!("skipping: no GPU adapter ({e})");
+                    None
+                }
             }
-            eprintln!("skipping: no GPU adapter ({e})");
-            None
-        }
-    }
+        })
+        .as_ref()
 }
 
 const BASE: &str = r##"{
@@ -1544,10 +1555,7 @@ fn render_with_text(
     }
     let target = compositor.output_texture(width, height);
     let mut inputs = FrameInputs::new();
-    inputs.set_caption(CaptionFrame {
-        pill: None,
-        glyphs,
-    });
+    inputs.set_caption(CaptionFrame { pill: None, glyphs });
     compositor.render(&params, &inputs, &target.create_view(&Default::default()));
     Rendered {
         pixels: read_back(ctx, &target, width, height),
@@ -1680,7 +1688,10 @@ fn the_quad_colour_tints_the_glyph() {
         .max_by_key(|p| p[0])
         .expect("some ink");
     assert!(reddest[0] > 200, "expected red ink, got {reddest:?}");
-    assert!(reddest[2] < 120, "blue background bled through: {reddest:?}");
+    assert!(
+        reddest[2] < 120,
+        "blue background bled through: {reddest:?}"
+    );
 }
 
 #[test]

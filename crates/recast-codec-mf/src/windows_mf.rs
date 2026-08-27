@@ -3,11 +3,11 @@ use std::sync::OnceLock;
 
 use windows::core::GUID;
 use windows::Win32::Media::MediaFoundation::{
-    MFStartup, MFTEnumEx, IMFActivate, MFMediaType_Video, MFVideoFormat_H264, MFVideoFormat_HEVC,
-    MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_FLAG, MFT_ENUM_FLAG_ASYNCMFT, MFT_ENUM_FLAG_HARDWARE,
-    MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT, MFT_ENUM_HARDWARE_URL_Attribute,
-    MFT_FRIENDLY_NAME_Attribute, MFT_REGISTER_TYPE_INFO, MFT_TRANSFORM_CLSID_Attribute,
-    MF_TRANSFORM_ASYNC, MF_VERSION,
+    IMFActivate, MFMediaType_Video, MFStartup, MFTEnumEx, MFT_ENUM_HARDWARE_URL_Attribute,
+    MFT_FRIENDLY_NAME_Attribute, MFT_TRANSFORM_CLSID_Attribute, MFVideoFormat_H264,
+    MFVideoFormat_HEVC, MFT_CATEGORY_VIDEO_ENCODER, MFT_ENUM_FLAG, MFT_ENUM_FLAG_ASYNCMFT,
+    MFT_ENUM_FLAG_HARDWARE, MFT_ENUM_FLAG_SORTANDFILTER, MFT_ENUM_FLAG_SYNCMFT,
+    MFT_REGISTER_TYPE_INFO, MF_TRANSFORM_ASYNC, MF_VERSION,
 };
 use windows::Win32::System::Com::CoTaskMemFree;
 
@@ -81,11 +81,7 @@ fn activates(subtype: GUID) -> Vec<IMFActivate> {
 
 /// Every encoder transform in `category` that can output `major`/`subtype`, in
 /// the order the system ranks them.
-pub(crate) fn encoder_activates(
-    category: GUID,
-    major: GUID,
-    subtype: GUID,
-) -> Vec<IMFActivate> {
+pub(crate) fn encoder_activates(category: GUID, major: GUID, subtype: GUID) -> Vec<IMFActivate> {
     let output = MFT_REGISTER_TYPE_INFO {
         guidMajorType: major,
         guidSubtype: subtype,
@@ -158,7 +154,9 @@ fn allocated_string(activate: &IMFActivate, key: &GUID) -> Option<String> {
     // SAFETY: the API writes a CoTaskMem string we free below; a missing
     // attribute returns an error and leaves `value` null.
     unsafe {
-        activate.GetAllocatedString(key, &mut value, &mut length).ok()?;
+        activate
+            .GetAllocatedString(key, &mut value, &mut length)
+            .ok()?;
         let text = value.to_string().ok();
         CoTaskMemFree(Some(value.0 as *const c_void));
         text

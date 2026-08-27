@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
-use recast_mux::{annex_b_to_avcc, split_access_units, top_level_boxes, AvcConfig, Mp4Writer, VideoFormat};
+use recast_mux::{
+    annex_b_to_avcc, split_access_units, top_level_boxes, AvcConfig, Mp4Writer, VideoFormat,
+};
 
 const WIDTH: u16 = 160;
 const HEIGHT: u16 = 120;
@@ -17,7 +19,10 @@ fn ffprobe() -> Option<PathBuf> {
     let ffmpeg = recast_testkit::ffmpeg_path()?;
     // The bundled sidecars carry the target triple, so ffprobe sits beside
     // ffmpeg under the SAME decorated name rather than a bare one.
-    let name = ffmpeg.file_name()?.to_str()?.replacen("ffmpeg", "ffprobe", 1);
+    let name = ffmpeg
+        .file_name()?
+        .to_str()?
+        .replacen("ffmpeg", "ffprobe", 1);
     let probe = ffmpeg.with_file_name(name);
     probe.exists().then_some(probe)
 }
@@ -145,7 +150,10 @@ fn build() -> Option<Muxed> {
 #[test]
 fn ffprobe_reads_our_file_as_h264_at_the_right_size() {
     let Some(m) = muxed() else { return };
-    assert_eq!(probe_field(&m.ffprobe, &m.path, "stream=codec_name"), "h264");
+    assert_eq!(
+        probe_field(&m.ffprobe, &m.path, "stream=codec_name"),
+        "h264"
+    );
     assert_eq!(
         probe_field(&m.ffprobe, &m.path, "stream=width,height"),
         format!("{WIDTH}\n{HEIGHT}")

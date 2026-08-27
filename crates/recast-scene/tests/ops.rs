@@ -95,7 +95,12 @@ fn a_layer_can_be_added_removed_and_moved() {
     apply(
         &mut s,
         &Op::LayerAdd {
-            layer: Box::new(Layer::new(id.0, LayerSource::Solid { color: Default::default() })),
+            layer: Box::new(Layer::new(
+                id.0,
+                LayerSource::Solid {
+                    color: Default::default(),
+                },
+            )),
         },
     )
     .expect("added");
@@ -114,8 +119,12 @@ fn a_layer_can_be_added_removed_and_moved() {
 fn moving_a_layer_shifts_the_others_rather_than_swapping() {
     let mut s = Scene::default();
     for i in 0..4 {
-        s.layers
-            .push(Layer::new(i, LayerSource::Solid { color: Default::default() }));
+        s.layers.push(Layer::new(
+            i,
+            LayerSource::Solid {
+                color: Default::default(),
+            },
+        ));
     }
     apply(&mut s, &Op::LayerMove { id: 3, to: 1 }).expect("moved");
     let order: Vec<u32> = s.layers.iter().map(|l| l.id.0).collect();
@@ -129,8 +138,12 @@ fn moving_a_layer_shifts_the_others_rather_than_swapping() {
 fn moving_a_layer_past_the_end_is_refused_rather_than_clamped() {
     let mut s = Scene::default();
     for i in 0..3 {
-        s.layers
-            .push(Layer::new(i, LayerSource::Solid { color: Default::default() }));
+        s.layers.push(Layer::new(
+            i,
+            LayerSource::Solid {
+                color: Default::default(),
+            },
+        ));
     }
     let before = s.clone();
     let err = apply(&mut s, &Op::LayerMove { id: 0, to: 3 }).unwrap_err();
@@ -208,13 +221,21 @@ fn removing_an_effect_past_the_end_is_refused() {
 fn an_op_addressed_by_layer_id_survives_a_reorder() {
     let mut s = Scene::default();
     for i in 0..3 {
-        s.layers
-            .push(Layer::new(i, LayerSource::Solid { color: Default::default() }));
+        s.layers.push(Layer::new(
+            i,
+            LayerSource::Solid {
+                color: Default::default(),
+            },
+        ));
     }
     apply(&mut s, &Op::LayerMove { id: 2, to: 0 }).expect("moved");
     apply(&mut s, &set("layers/id:2/opacity", json!(0.25))).expect("applied");
 
-    let target = s.layers.iter().find(|l| l.id == LayerId(2)).expect("layer 2");
+    let target = s
+        .layers
+        .iter()
+        .find(|l| l.id == LayerId(2))
+        .expect("layer 2");
     assert_eq!(target.opacity, 0.25);
     // And nobody else moved.
     assert!(s
@@ -230,7 +251,12 @@ fn replaying_the_same_ops_on_the_same_scene_gives_the_same_scene() {
     let ops = vec![
         set("output/padding", json!(12.0)),
         Op::LayerAdd {
-            layer: Box::new(Layer::new(77, LayerSource::Solid { color: Default::default() })),
+            layer: Box::new(Layer::new(
+                77,
+                LayerSource::Solid {
+                    color: Default::default(),
+                },
+            )),
         },
         Op::EffectAdd {
             layer: 77,
@@ -315,7 +341,11 @@ fn an_op_reads_nothing_outside_the_scene_it_is_given() {
 fn an_optional_field_that_is_currently_absent_can_still_be_set() {
     let mut s = scene();
     s.output.aspect = None;
-    assert_eq!(at(&s, "output/aspect"), Value::Null, "the fixture is not absent");
+    assert_eq!(
+        at(&s, "output/aspect"),
+        Value::Null,
+        "the fixture is not absent"
+    );
 
     apply(&mut s, &set("output/aspect", json!("16:9"))).expect("applied");
     assert_eq!(s.output.aspect.as_deref(), Some("16:9"));
@@ -344,12 +374,17 @@ fn a_v1_edit_is_refused_on_a_scene_v1_cannot_hold() {
         &Op::LayerAdd {
             layer: Box::new(Layer::new(
                 fresh,
-                LayerSource::Solid { color: Default::default() },
+                LayerSource::Solid {
+                    color: Default::default(),
+                },
             )),
         },
     )
     .expect("added");
-    assert!(!is_v1_representable(&s), "v1 was able to hold the extra layer");
+    assert!(
+        !is_v1_representable(&s),
+        "v1 was able to hold the extra layer"
+    );
 
     let before = s.clone();
     let err = with_render_state(&mut s, |state| state.trim_start = 3.0).unwrap_err();

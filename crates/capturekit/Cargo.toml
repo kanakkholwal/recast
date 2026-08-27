@@ -18,7 +18,7 @@ cpu-readback = []
 # Linux Wayland capture through xdg-desktop-portal and PipeWire. Needs
 # libpipewire-0.3-dev and libdbus-1-dev on the build host, so it is separable:
 # without it a Linux build still serves X11 and XWayland sessions.
-wayland = ["dep:ashpd", "dep:pipewire"]
+wayland = ["dep:ashpd", "dep:pipewire", "dep:async-std"]
 serde = ["capturekit-core/serde"]
 
 [dependencies]
@@ -53,6 +53,9 @@ windows = { version = "0.58.0", features = [
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", features = ["randr", "shm", "xfixes"] }
 ashpd = { version = "0.10", default-features = false, features = ["async-std"], optional = true }
+# The portal handshake is async and this crate's API is not, so the executor has
+# to be named explicitly rather than inherited from ashpd's feature.
+async-std = { version = "1", optional = true }
 pipewire = { version = "0.9", optional = true }
 libc = "0.2"
 

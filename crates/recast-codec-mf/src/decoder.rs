@@ -98,10 +98,7 @@ impl VideoReader {
                 .map(unpack)
                 .unwrap_or((0, 1));
             let duration = reader
-                .GetPresentationAttribute(
-                    MF_SOURCE_READER_MEDIASOURCE.0 as u32,
-                    &MF_PD_DURATION,
-                )
+                .GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE.0 as u32, &MF_PD_DURATION)
                 .ok()
                 // Media Foundation stores the duration unsigned, but the
                 // signed form is legal and some sources use it.
@@ -166,7 +163,10 @@ impl VideoReader {
     pub fn seek(&mut self, timestamp: i64) -> Result<(), DecodeError> {
         let position = windows::Win32::System::Com::StructuredStorage::PROPVARIANT::from(timestamp);
         // SAFETY: the position outlives the call.
-        unsafe { self.reader.SetCurrentPosition(&windows::core::GUID::zeroed(), &position) }?;
+        unsafe {
+            self.reader
+                .SetCurrentPosition(&windows::core::GUID::zeroed(), &position)
+        }?;
         Ok(())
     }
 }

@@ -70,7 +70,16 @@ fn lay(style: &CaptionStyle, words: &[TranscriptWord], t: f64) -> CaptionFrame {
         return CaptionFrame::default();
     };
     let mut atlas = GlyphAtlas::new(512, 2048);
-    layout_caption(style, words, clock(t), video(), CANVAS, &face, 0, &mut atlas)
+    layout_caption(
+        style,
+        words,
+        clock(t),
+        video(),
+        CANVAS,
+        &face,
+        0,
+        &mut atlas,
+    )
 }
 
 #[test]
@@ -140,7 +149,12 @@ fn a_bottom_caption_sits_below_a_top_one() {
     )
     .pill
     .unwrap();
-    assert!(bottom.y > top.y, "bottom {} was not below top {}", bottom.y, top.y);
+    assert!(
+        bottom.y > top.y,
+        "bottom {} was not below top {}",
+        bottom.y,
+        top.y
+    );
 }
 
 /// Positive offset moves a bottom caption INWARD over the video, so it rises.
@@ -339,9 +353,21 @@ fn every_uv_matches_the_atlas_the_frame_ended_with() {
         ..style()
     };
     let (_, before) = atlas.size();
-    let frame = layout_caption(&style, &long, clock(1.5), video(), CANVAS, &face, 0, &mut atlas);
+    let frame = layout_caption(
+        &style,
+        &long,
+        clock(1.5),
+        video(),
+        CANVAS,
+        &face,
+        0,
+        &mut atlas,
+    );
     let (width, height) = atlas.size();
-    assert!(height > before, "the atlas never grew, so this proves nothing");
+    assert!(
+        height > before,
+        "the atlas never grew, so this proves nothing"
+    );
     assert!(!frame.glyphs.is_empty());
 
     for quad in &frame.glyphs {
@@ -442,7 +468,10 @@ fn a_fade_entrance_ramps_the_alpha_and_settles_opaque() {
     // The chunk starts at 0.0, so t IS the elapsed entrance time.
     let (early, mid, settled) = (alpha(0.02), alpha(0.2), alpha(1.0));
     assert!(early < mid, "alpha did not ramp: {early} then {mid}");
-    assert!(mid < settled, "alpha did not keep ramping: {mid} then {settled}");
+    assert!(
+        mid < settled,
+        "alpha did not keep ramping: {mid} then {settled}"
+    );
     assert!((settled - 1.0).abs() < 1e-6, "settled at {settled}");
 }
 
@@ -505,8 +534,7 @@ fn the_glyphs_stay_inside_the_pill_mid_entrance() {
     let pill = frame.pill.unwrap();
     for quad in &frame.glyphs {
         assert!(
-            quad.rect[0] >= pill.x - 1.0
-                && quad.rect[0] + quad.rect[2] <= pill.x + pill.w + 1.0,
+            quad.rect[0] >= pill.x - 1.0 && quad.rect[0] + quad.rect[2] <= pill.x + pill.w + 1.0,
             "glyph {:?} escaped pill {:?} mid-entrance",
             quad.rect,
             (pill.x, pill.w)

@@ -14,8 +14,8 @@ use pipewire::spa::param::format::{MediaSubtype, MediaType};
 use pipewire::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pipewire::spa::pod::Pod;
 use pipewire::spa::utils::Direction;
-use pipewire::stream::{Stream, StreamFlags};
-use pipewire::{context::Context, main_loop::MainLoop, properties::properties};
+use pipewire::stream::{StreamFlags, StreamRc};
+use pipewire::{context::ContextRc, main_loop::MainLoopRc, properties::properties};
 
 use crate::backend::{FrameSource, RawFrame};
 use crate::deliver::{Delivered, FrameSlot};
@@ -179,14 +179,17 @@ fn run_stream(
     quit: &Arc<AtomicBool>,
 ) -> core::result::Result<(), String> {
     pipewire::init();
-    let main_loop = MainLoop::new(None).map_err(|e| e.to_string())?;
-    let context = Context::new(&main_loop).map_err(|e| e.to_string())?;
+    // The owned handles are the `*Rc` types; the bare `MainLoop`, `Context` and
+    // `Stream` are the borrowed views they deref to.
+    let main_loop = MainLoopRc::new(None).map_err(|e| e.to_string())?;
+    let context = ContextRc::new(&main_loop, None).map_err(|e| e.to_string())?;
     let core = context
-        .connect_fd(fd, None)
+        .connect_fd_rc(fd, None)
         .map_err(|e| format!("connecting to the portal's PipeWire remote: {e}"))?;
 
-    let stream = Stream::new(
-        &core,
+    // Takes the core by value and keeps it alive for the stream's lifetime.
+    let stream = StreamRc::new(
+        core,
         "capturekit",
         properties! {
             *pipewire::keys::MEDIA_TYPE => "Video",

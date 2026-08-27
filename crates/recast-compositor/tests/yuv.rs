@@ -18,20 +18,31 @@ use recast_scene::{LayerSource, Scene};
 const W: u32 = 8;
 const H: u32 = 8;
 
-fn context() -> Option<GpuContext> {
-    match GpuContext::new_blocking(GpuOptions {
-        require_hardware: false,
-        ..Default::default()
-    }) {
-        Ok(ctx) => Some(ctx),
-        Err(e) => {
-            if std::env::var("RECAST_GPU_REQUIRE_ADAPTER").as_deref() == Ok("1") {
-                panic!("RECAST_GPU_REQUIRE_ADAPTER=1 but no adapter: {e}");
+/// One device for the whole binary, built on first use.
+///
+/// A context per test means one wgpu device per test running at once, and on a
+/// machine with no GPU those all land on the same software adapter. That is
+/// what crashed CI here; it is also several times the setup cost for tests that
+/// only ever render.
+fn context() -> Option<&'static GpuContext> {
+    static SHARED: std::sync::OnceLock<Option<GpuContext>> = std::sync::OnceLock::new();
+    SHARED
+        .get_or_init(|| {
+            match GpuContext::new_blocking(GpuOptions {
+                require_hardware: false,
+                ..Default::default()
+            }) {
+                Ok(ctx) => Some(ctx),
+                Err(e) => {
+                    if std::env::var("RECAST_GPU_REQUIRE_ADAPTER").as_deref() == Ok("1") {
+                        panic!("RECAST_GPU_REQUIRE_ADAPTER=1 but no adapter: {e}");
+                    }
+                    eprintln!("skipping: no GPU adapter ({e})");
+                    None
+                }
             }
-            eprintln!("skipping: no GPU adapter ({e})");
-            None
-        }
-    }
+        })
+        .as_ref()
 }
 
 /// Packs one frame from a per-pixel code triple, taking each chroma sample from
@@ -207,7 +218,9 @@ fn read_back(ctx: &GpuContext, texture: &wgpu::Texture, width: u32, height: u32)
 }
 
 fn close(got: [f32; 3], want: [f32; 3], tolerance: f32) -> bool {
-    got.iter().zip(want).all(|(g, w)| (g - w).abs() <= tolerance)
+    got.iter()
+        .zip(want)
+        .all(|(g, w)| (g - w).abs() <= tolerance)
 }
 
 /// Half floats carry about eleven bits of mantissa, and the plane textures
@@ -247,7 +260,11 @@ fn the_shader_decodes_the_same_light_the_cpu_matrix_does() {
     for (index, (x, y)) in CENTRES.into_iter().enumerate() {
         let want = cpu_decode(&color, codes[index]);
         let got = out.at(x, y);
-        assert!(close(got, want, TOLERANCE), "{:?}: {got:?} vs {want:?}", codes[index]);
+        assert!(
+            close(got, want, TOLERANCE),
+            "{:?}: {got:?} vs {want:?}",
+            codes[index]
+        );
     }
 }
 
@@ -309,7 +326,10 @@ fn every_transfer_function_leaves_black_at_black() {
         let data = pack(PlaneLayout::I444, W, H, |_, _| [0, 128, 128]);
         let out = decode(&ctx, &frame(&data, PlaneLayout::I444, color, W, H));
         let got = out.at(4, 4);
-        assert!(close(got, [0.0; 3], 1e-3), "{transfer:?} lifted black to {got:?}");
+        assert!(
+            close(got, [0.0; 3], 1e-3),
+            "{transfer:?} lifted black to {got:?}"
+        );
     }
 }
 
@@ -317,11 +337,24 @@ fn every_transfer_function_leaves_black_at_black() {
 fn limited_range_black_and_white_reach_the_endpoints() {
     let Some(ctx) = context() else { return };
     let color = SourceColor::default();
-    let data = pack(PlaneLayout::Nv12, W, H, quadrants([BLACK, WHITE, BLACK, WHITE]));
+    let data = pack(
+        PlaneLayout::Nv12,
+        W,
+        H,
+        quadrants([BLACK, WHITE, BLACK, WHITE]),
+    );
     let out = decode(&ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
 
-    assert!(close(out.at(2, 2), [0.0; 3], TOLERANCE), "{:?}", out.at(2, 2));
-    assert!(close(out.at(6, 2), [1.0; 3], TOLERANCE), "{:?}", out.at(6, 2));
+    assert!(
+        close(out.at(2, 2), [0.0; 3], TOLERANCE),
+        "{:?}",
+        out.at(2, 2)
+    );
+    assert!(
+        close(out.at(6, 2), [1.0; 3], TOLERANCE),
+        "{:?}",
+        out.at(6, 2)
+    );
 }
 
 /// Footroom below 16 exists so an overshoot survives the encoder. It is not
@@ -416,7 +449,11 @@ fn one_compositor_decodes_frames_of_changing_shape() {
     let mut compositor = Compositor::new(&ctx).expect("compositor");
 
     let big = pack(PlaneLayout::Nv12, W, H, quadrants([RED, GREEN, BLUE, MID]));
-    let first = decode_with(&ctx, &mut compositor, &frame(&big, PlaneLayout::Nv12, color, W, H));
+    let first = decode_with(
+        &ctx,
+        &mut compositor,
+        &frame(&big, PlaneLayout::Nv12, color, W, H),
+    );
 
     // Same size, different layout: the planes have to be reallocated for the
     // channel count even though nothing about the shape moved.
@@ -428,7 +465,11 @@ fn one_compositor_decodes_frames_of_changing_shape() {
     );
     for (index, (x, y)) in CENTRES.into_iter().enumerate() {
         let want = cpu_decode(&color, [RED, GREEN, BLUE, MID][index]);
-        assert!(close(swapped.at(x, y), want, TOLERANCE), "{:?}", swapped.at(x, y));
+        assert!(
+            close(swapped.at(x, y), want, TOLERANCE),
+            "{:?}",
+            swapped.at(x, y)
+        );
     }
 
     let small = pack(PlaneLayout::I420, 4, 4, |_, _| GREEN);
@@ -445,7 +486,11 @@ fn one_compositor_decodes_frames_of_changing_shape() {
 
     // Back to the first shape, which has to reallocate again rather than read
     // the smaller planes it just wrote.
-    let again = decode_with(&ctx, &mut compositor, &frame(&big, PlaneLayout::Nv12, color, W, H));
+    let again = decode_with(
+        &ctx,
+        &mut compositor,
+        &frame(&big, PlaneLayout::Nv12, color, W, H),
+    );
     for (x, y) in CENTRES {
         assert!(
             close(first.at(x, y), again.at(x, y), 1e-4),
@@ -547,13 +592,17 @@ fn a_wide_gamut_source_is_brought_into_the_working_gamut() {
     let (a, b) = (bt709.at(4, 4), bt2020.at(4, 4));
     assert!(!close(a, b, 1e-2), "the gamut matrix did nothing: {a:?}");
     assert!(
-        close(b, cpu_decode(
-            &SourceColor {
-                primaries: Primaries::Bt2020,
-                ..Default::default()
-            },
-            GREEN
-        ), TOLERANCE),
+        close(
+            b,
+            cpu_decode(
+                &SourceColor {
+                    primaries: Primaries::Bt2020,
+                    ..Default::default()
+                },
+                GREEN
+            ),
+            TOLERANCE
+        ),
         "{b:?}"
     );
 }

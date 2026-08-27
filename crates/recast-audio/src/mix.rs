@@ -207,7 +207,11 @@ impl Mixer {
         }
         self.window = window;
 
-        let gain = if self.master.muted { 0.0 } else { self.master.gain };
+        let gain = if self.master.muted {
+            0.0
+        } else {
+            self.master.gain
+        };
         for frame in 0..frames {
             let envelope = gain
                 * fade_envelope(
@@ -286,7 +290,10 @@ fn render_track(
         // the source: it ends where a loop wraps, or where the clip does.
         let (phase, run_end) = if loop_span.is_finite() {
             let cycle = (rel / loop_span).floor();
-            (rel - cycle * loop_span, ((cycle + 1.0) * loop_span).min(play))
+            (
+                rel - cycle * loop_span,
+                ((cycle + 1.0) * loop_span).min(play),
+            )
         } else {
             (rel, play)
         };

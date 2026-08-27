@@ -208,12 +208,7 @@ mod tests {
             .collect();
         assert_eq!(
             order,
-            [
-                "h264_videotoolbox",
-                "h264_nvenc",
-                "h264_amf",
-                "h264_qsv"
-            ]
+            ["h264_videotoolbox", "h264_nvenc", "h264_amf", "h264_qsv"]
         );
     }
 

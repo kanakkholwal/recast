@@ -77,7 +77,11 @@ fn a_forty_four_one_source_arrives_at_the_master_rate() {
     assert!((peak - 0.5).abs() < 0.02, "peaked at {peak}");
     // Zero crossings prove the pitch survived: a wrong ratio moves them even
     // when the level looks right.
-    let left: Vec<f32> = mix[9_600 * 2..38_400 * 2].iter().step_by(2).copied().collect();
+    let left: Vec<f32> = mix[9_600 * 2..38_400 * 2]
+        .iter()
+        .step_by(2)
+        .copied()
+        .collect();
     let crossings = left
         .windows(2)
         .filter(|w| (w[0] <= 0.0) != (w[1] <= 0.0))
@@ -144,7 +148,10 @@ fn fades_start_and_end_at_silence() {
     assert!(peak_between(&mix, 0.8, 1.2) > 0.45, "the middle was faded");
     // Half way into a linear fade is half the level, not a curve.
     let quarter = peak_between(&mix, 0.24, 0.26);
-    assert!((quarter - 0.25).abs() < 0.02, "a quarter in it read {quarter}");
+    assert!(
+        (quarter - 0.25).abs() < 0.02,
+        "a quarter in it read {quarter}"
+    );
 }
 
 /// Music dips while the key speaks and comes back afterwards. The key is DC

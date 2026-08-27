@@ -40,12 +40,6 @@ const BEGIN_MARKER: &str = "# >>> recast cli >>>";
 #[allow(dead_code)]
 const END_MARKER: &str = "# <<< recast cli <<<";
 
-/// The single PATH line the installer appends. Idempotent inside each file:
-/// between the begin/end markers there is at most one occurrence, and we
-/// re-write the block on every install rather than appending duplicates.
-#[cfg(unix)]
-const PATH_BLOCK_BODY: &str = "export PATH=\"$HOME/.local/bin:$PATH\"";
-
 #[cfg(unix)]
 const PATH_BLOCK: &str = "\
 # >>> recast cli >>>
@@ -171,17 +165,6 @@ fn copy_to_stable() -> Result<String, String> {
         std::fs::set_permissions(&dst, perms).map_err(|e| e.to_string())?;
     }
     Ok(dst.to_string_lossy().to_string())
-}
-
-/// Read which rc files already carry our block. Used by `status()` so the
-/// settings UI can show "Modified: ~/.zshrc, ~/.bash_profile".
-#[cfg(unix)]
-pub(crate) fn modified_rc_files() -> Vec<String> {
-    shell_rc_candidates()
-        .into_iter()
-        .filter(|p| p.exists() && file_contains_block(p))
-        .map(|p| p.to_string_lossy().to_string())
-        .collect()
 }
 
 /// Return the shell-rc candidates we'd touch on this platform, in priority

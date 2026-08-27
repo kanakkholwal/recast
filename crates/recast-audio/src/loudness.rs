@@ -85,7 +85,9 @@ pub fn integrated_lufs(stereo: &[f32]) -> Option<f64> {
     while start + block <= frames {
         let mut power = 0.0;
         for channel in 0..2 {
-            let sum: f64 = (start..start + block).map(|f| squared[f * 2 + channel]).sum();
+            let sum: f64 = (start..start + block)
+                .map(|f| squared[f * 2 + channel])
+                .sum();
             power += sum / block as f64;
         }
         blocks.push(power);

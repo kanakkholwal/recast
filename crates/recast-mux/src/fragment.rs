@@ -32,7 +32,10 @@ impl std::fmt::Display for FragmentError {
         match self {
             Self::NoConfig => write!(f, "no parameter sets yet"),
             Self::TooLarge(bytes) => {
-                write!(f, "a fragment of {bytes} bytes cannot be described in 32 bits")
+                write!(
+                    f,
+                    "a fragment of {bytes} bytes cannot be described in 32 bits"
+                )
             }
         }
     }
@@ -42,12 +45,19 @@ impl std::error::Error for FragmentError {}
 
 /// The `mdat` size field, or `None` when it would not fit.
 fn mdat_size(payload: usize) -> Option<u32> {
-    payload.checked_add(8).filter(|n| *n <= MAX_FRAGMENT)?.try_into().ok()
+    payload
+        .checked_add(8)
+        .filter(|n| *n <= MAX_FRAGMENT)?
+        .try_into()
+        .ok()
 }
 
 /// A `trun` data offset, which is signed and relative to the start of `moof`.
 fn data_offset(base: usize, within: usize) -> Option<i32> {
-    base.checked_add(within).filter(|n| *n <= MAX_FRAGMENT)?.try_into().ok()
+    base.checked_add(within)
+        .filter(|n| *n <= MAX_FRAGMENT)?
+        .try_into()
+        .ok()
 }
 
 struct Pending {
@@ -186,8 +196,7 @@ impl FragmentedWriter {
         let payload: usize = video_bytes + audio.iter().map(|s| s.data.len()).sum::<usize>();
         let size = mdat_size(payload).ok_or(FragmentError::TooLarge(payload))?;
         for (at, within) in patches {
-            let offset =
-                data_offset(base, within).ok_or(FragmentError::TooLarge(base + within))?;
+            let offset = data_offset(base, within).ok_or(FragmentError::TooLarge(base + within))?;
             let slot = out
                 .get_mut(at..at + 4)
                 .ok_or(FragmentError::TooLarge(payload))?;
@@ -270,7 +279,9 @@ mod tests {
     /// Unwraps both layers: the tests below are about box contents, and a
     /// writer that refuses is a failure worth reading in the panic message.
     fn frag(w: &mut FragmentedWriter) -> Vec<u8> {
-        w.fragment().expect("the writer accepted it").expect("a fragment")
+        w.fragment()
+            .expect("the writer accepted it")
+            .expect("a fragment")
     }
 
     /// The size fields are checked at the boundary rather than by building a
@@ -305,9 +316,18 @@ mod tests {
         let init = w.initialization_segment().expect("an init segment");
         assert!(find(&init, b"moov").is_some());
         // `mvex` is what tells a reader the sample tables are empty on purpose.
-        assert!(find(&init, b"mvex").is_some(), "no mvex in the init segment");
-        assert!(find(&init, b"trex").is_some(), "no trex in the init segment");
-        assert!(find(&init, b"mdat").is_none(), "the init segment carried media");
+        assert!(
+            find(&init, b"mvex").is_some(),
+            "no mvex in the init segment"
+        );
+        assert!(
+            find(&init, b"trex").is_some(),
+            "no trex in the init segment"
+        );
+        assert!(
+            find(&init, b"mdat").is_none(),
+            "the init segment carried media"
+        );
     }
 
     #[test]

@@ -157,7 +157,9 @@ fn the_atlas_grows_instead_of_refusing_a_glyph_that_would_not_fit() {
 fn a_glyph_that_cannot_fit_at_all_is_refused_rather_than_packed_out_of_bounds() {
     let Some(face) = face() else { return };
     let mut atlas = GlyphAtlas::new(16, 16);
-    assert!(atlas.insert(0, &face, glyph_id(&face, 'M'), 200.0).is_none());
+    assert!(atlas
+        .insert(0, &face, glyph_id(&face, 'M'), 200.0)
+        .is_none());
     assert!(atlas.overflowed());
 }
 

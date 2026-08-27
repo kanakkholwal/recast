@@ -31,7 +31,10 @@ fn nv12_frame(index: u32) -> Vec<u8> {
 
 fn ffprobe() -> Option<PathBuf> {
     let ffmpeg = recast_testkit::ffmpeg_path()?;
-    let name = ffmpeg.file_name()?.to_str()?.replacen("ffmpeg", "ffprobe", 1);
+    let name = ffmpeg
+        .file_name()?
+        .to_str()?
+        .replacen("ffmpeg", "ffprobe", 1);
     let probe = ffmpeg.with_file_name(name);
     probe.exists().then_some(probe)
 }
@@ -102,7 +105,11 @@ fn muxed() -> Option<PathBuf> {
     let frame_duration = 10_000_000i64 / FPS as i64;
     for index in 0..FRAMES {
         for sample in video
-            .encode(&nv12_frame(index), index as i64 * frame_duration, frame_duration)
+            .encode(
+                &nv12_frame(index),
+                index as i64 * frame_duration,
+                frame_duration,
+            )
             .expect("the frame encodes")
         {
             for unit in split_access_units(&sample.data) {
@@ -271,5 +278,8 @@ fn our_own_reader_still_walks_the_video_track() {
     while reader.next_frame().expect("a read").is_some() {
         count += 1;
     }
-    assert_eq!(count, FRAMES as usize, "frames went missing beside the audio");
+    assert_eq!(
+        count, FRAMES as usize,
+        "frames went missing beside the audio"
+    );
 }

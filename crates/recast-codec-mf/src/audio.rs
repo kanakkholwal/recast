@@ -41,7 +41,8 @@ impl AudioReader {
             return Err(DecodeError::Unsupported);
         }
         // SAFETY: the URL outlives the call.
-        let reader = unsafe { MFCreateSourceReaderFromURL(&HSTRING::from(path.as_os_str()), None) }?;
+        let reader =
+            unsafe { MFCreateSourceReaderFromURL(&HSTRING::from(path.as_os_str()), None) }?;
 
         // SAFETY: stream selection and type negotiation on the reader we own.
         let negotiated = unsafe {

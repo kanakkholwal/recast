@@ -55,25 +55,35 @@ struct Fixture {
 
 fn load_fixtures() -> Fixtures {
     let path = goldens_dir().join("fixtures.json");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&text).expect("fixtures.json")
 }
 
-fn context() -> Option<GpuContext> {
-    match GpuContext::new_blocking(GpuOptions {
-        require_hardware: false,
-        ..Default::default()
-    }) {
-        Ok(ctx) => Some(ctx),
-        Err(e) => {
-            if std::env::var("RECAST_GPU_REQUIRE_ADAPTER").as_deref() == Ok("1") {
-                panic!("RECAST_GPU_REQUIRE_ADAPTER=1 but no adapter: {e}");
+/// One device for the whole binary, built on first use.
+///
+/// A context per test means one wgpu device per test running at once, and on a
+/// machine with no GPU those all land on the same software adapter. That is
+/// what crashed CI here; it is also several times the setup cost for tests that
+/// only ever render.
+fn context() -> Option<&'static GpuContext> {
+    static SHARED: std::sync::OnceLock<Option<GpuContext>> = std::sync::OnceLock::new();
+    SHARED
+        .get_or_init(|| {
+            match GpuContext::new_blocking(GpuOptions {
+                require_hardware: false,
+                ..Default::default()
+            }) {
+                Ok(ctx) => Some(ctx),
+                Err(e) => {
+                    if std::env::var("RECAST_GPU_REQUIRE_ADAPTER").as_deref() == Ok("1") {
+                        panic!("RECAST_GPU_REQUIRE_ADAPTER=1 but no adapter: {e}");
+                    }
+                    eprintln!("skipping: no GPU adapter ({e})");
+                    None
+                }
             }
-            eprintln!("skipping: no GPU adapter ({e})");
-            None
-        }
-    }
+        })
+        .as_ref()
 }
 
 fn scene_for(all: &Fixtures, fixture: &Fixture) -> Scene {
@@ -296,11 +306,7 @@ fn goldens_dir() -> PathBuf {
 
 fn write_png(path: &Path, frame: &Frame) {
     let file = std::fs::File::create(path).expect("create golden");
-    let mut encoder = png::Encoder::new(
-        std::io::BufWriter::new(file),
-        frame.width,
-        frame.height,
-    );
+    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), frame.width, frame.height);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     encoder
@@ -478,8 +484,8 @@ fn the_tolerance_is_tight_enough_to_catch_a_small_shift() {
     let width = (frame.width * 4) as usize;
     nudged.copy_within(row..row + width - 4, row + 4);
 
-    let delta = recast_testkit::compare::frame_delta(&frame.pixels, &nudged)
-        .expect("same-sized frames");
+    let delta =
+        recast_testkit::compare::frame_delta(&frame.pixels, &nudged).expect("same-sized frames");
     assert!(
         !delta.is_within(MAX_CHANNEL, MAX_MEAN),
         "a one-pixel shift on one row passed the gate: max {} mean {:.3}",
@@ -498,7 +504,9 @@ fn every_feature_fixture_differs_from_the_same_scene_without_it() {
     let all = load_fixtures();
     let mut checked = 0;
     for fixture in &all.fixtures {
-        let Some(without) = &fixture.without else { continue };
+        let Some(without) = &fixture.without else {
+            continue;
+        };
         checked += 1;
         let name = &fixture.name;
         let off = Fixture {
@@ -509,9 +517,13 @@ fn every_feature_fixture_differs_from_the_same_scene_without_it() {
         };
         let a = render(&ctx, &scene_for(&all, fixture), fixture.time);
         let b = render(&ctx, &scene_for(&all, &off), fixture.time);
-        assert_eq!((a.width, a.height), (b.width, b.height), "{name} changed size");
-        let delta = recast_testkit::compare::frame_delta(&a.pixels, &b.pixels)
-            .expect("same-sized frames");
+        assert_eq!(
+            (a.width, a.height),
+            (b.width, b.height),
+            "{name} changed size"
+        );
+        let delta =
+            recast_testkit::compare::frame_delta(&a.pixels, &b.pixels).expect("same-sized frames");
         assert!(
             delta.differing_pixels > 0,
             "{name} renders exactly what the scene without it renders, so the fixture proves nothing"

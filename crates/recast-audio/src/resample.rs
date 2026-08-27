@@ -163,9 +163,9 @@ mod tests {
         let input = vec![0.5f32; 8_000];
         let out = convert(&input, 44_100, 48_000);
         let interior = &out[100..out.len() - 100];
-        let (low, high) = interior.iter().fold((f32::MAX, f32::MIN), |(l, h), v| {
-            (l.min(*v), h.max(*v))
-        });
+        let (low, high) = interior
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(l, h), v| (l.min(*v), h.max(*v)));
         assert!(
             (high - low) < 1e-4,
             "the gain rippled between {low} and {high}"

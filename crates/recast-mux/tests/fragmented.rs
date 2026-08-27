@@ -16,7 +16,10 @@ const PER_FRAGMENT: usize = 10;
 
 fn ffprobe() -> Option<PathBuf> {
     let ffmpeg = recast_testkit::ffmpeg_path()?;
-    let name = ffmpeg.file_name()?.to_str()?.replacen("ffmpeg", "ffprobe", 1);
+    let name = ffmpeg
+        .file_name()?
+        .to_str()?
+        .replacen("ffmpeg", "ffprobe", 1);
     let probe = ffmpeg.with_file_name(name);
     probe.exists().then_some(probe)
 }
@@ -142,7 +145,10 @@ fn write_temp(name: &str, data: &[u8]) -> PathBuf {
 fn a_fragmented_file_reads_as_h264_at_the_right_size() {
     let Some(built) = built() else { return };
     let path = write_temp("fragmented-whole.mp4", &built.data);
-    assert_eq!(probe_field(&built.ffprobe, &path, "stream=codec_name"), "h264");
+    assert_eq!(
+        probe_field(&built.ffprobe, &path, "stream=codec_name"),
+        "h264"
+    );
     assert_eq!(
         probe_field(&built.ffprobe, &path, "stream=width,height"),
         format!("{WIDTH}\n{HEIGHT}")

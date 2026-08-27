@@ -68,17 +68,36 @@ impl std::error::Error for OpError {}
 pub enum Op {
     /// Writes one value at one path. The escape hatch, and the only op most
     /// field edits need.
-    Set { path: String, value: Value },
+    Set {
+        path: String,
+        value: Value,
+    },
     /// Shallow field merge at a path, so an edit to two fields of one object is
     /// one op rather than two.
-    Merge { path: String, patch: Map<String, Value> },
+    Merge {
+        path: String,
+        patch: Map<String, Value>,
+    },
     /// Appends a layer, which lands on top: the index IS the z-order.
-    LayerAdd { layer: Box<Layer> },
-    LayerRemove { id: u32 },
+    LayerAdd {
+        layer: Box<Layer>,
+    },
+    LayerRemove {
+        id: u32,
+    },
     /// Moves a layer to `to`, shifting the rest. This is how z-order is edited.
-    LayerMove { id: u32, to: usize },
-    EffectAdd { layer: u32, effect: Box<Effect> },
-    EffectRemove { layer: u32, index: usize },
+    LayerMove {
+        id: u32,
+        to: usize,
+    },
+    EffectAdd {
+        layer: u32,
+        effect: Box<Effect>,
+    },
+    EffectRemove {
+        layer: u32,
+        index: usize,
+    },
 }
 
 /// Applies one op in place, returning the verb's wire result.

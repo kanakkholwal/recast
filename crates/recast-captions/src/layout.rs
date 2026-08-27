@@ -100,7 +100,11 @@ pub fn active_word_index(words: &[TranscriptWord], t: f64, hold_gaps: bool) -> O
 ///
 /// Measurement-free on purpose: the DOM and libass shape text differently, so a
 /// break derived from either would drift. Both honour the break decided here.
-pub fn break_into_lines(words: &[TranscriptWord], max_chars: u32, max_lines: u32) -> Vec<Vec<usize>> {
+pub fn break_into_lines(
+    words: &[TranscriptWord],
+    max_chars: u32,
+    max_lines: u32,
+) -> Vec<Vec<usize>> {
     let limit = max_chars.max(1) as usize;
     let cap = max_lines.max(1) as usize;
     let mut lines: Vec<Vec<usize>> = Vec::new();
@@ -144,7 +148,12 @@ pub struct PillBox {
     pub pad_y: f64,
 }
 
-pub fn pill_box(style: &CaptionStyle, font_px: f64, text_width_px: f64, line_count: usize) -> PillBox {
+pub fn pill_box(
+    style: &CaptionStyle,
+    font_px: f64,
+    text_width_px: f64,
+    line_count: usize,
+) -> PillBox {
     let pad_x = style.box_padding_x_em * font_px;
     let pad_y = style.box_padding_y_em * font_px;
     let lines = line_count.max(1) as f64;

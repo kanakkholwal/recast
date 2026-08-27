@@ -12,6 +12,9 @@ use anyhow::Result;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SampleFormat {
     Int,
+    // Only WASAPI reports a float mix format; the other backends always ask for
+    // integer PCM, so nothing constructs this off Windows.
+    #[cfg_attr(not(windows), allow(dead_code))]
     Float,
 }
 
@@ -190,6 +193,9 @@ const MAX_DRIFT_RATIO: f64 = 0.05;
 /// believe.
 /// Frames of silence needed to cover a span the device delivered nothing for.
 /// Returns 0 below `min_gap` so ordinary poll jitter is not padded.
+/// Only the WASAPI path measures a gap it has to pad; the other backends let
+/// the OS pace the stream.
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn gap_silence_frames(behind: Duration, sample_rate: u32, min_gap: Duration) -> u64 {
     if behind < min_gap || sample_rate == 0 {
         return 0;

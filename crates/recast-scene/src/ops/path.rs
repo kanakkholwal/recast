@@ -210,13 +210,19 @@ mod tests {
     fn a_layer_id_survives_an_insert_where_a_position_does_not() {
         let mut doc = json!({"layers": [{"id": 4, "opacity": 0.5}, {"id": 9, "opacity": 1.0}]});
         assert_eq!(resolve(&doc, &path("layers/1/opacity")), Some(&json!(1.0)));
-        assert_eq!(resolve(&doc, &path("layers/id:9/opacity")), Some(&json!(1.0)));
+        assert_eq!(
+            resolve(&doc, &path("layers/id:9/opacity")),
+            Some(&json!(1.0))
+        );
 
         let layers = doc["layers"].as_array_mut().unwrap();
         layers.insert(0, json!({"id": 1, "opacity": 0.25}));
 
         assert_eq!(resolve(&doc, &path("layers/1/opacity")), Some(&json!(0.5)));
-        assert_eq!(resolve(&doc, &path("layers/id:9/opacity")), Some(&json!(1.0)));
+        assert_eq!(
+            resolve(&doc, &path("layers/id:9/opacity")),
+            Some(&json!(1.0))
+        );
     }
 
     /// A scene skips its optional fields when serialising, so a key that is

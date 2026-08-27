@@ -230,10 +230,7 @@ pub fn layout_caption(
     apply_entrance(
         &mut frame,
         entrance,
-        (
-            block_x + pill.width / 2.0,
-            block_y + pill.height / 2.0,
-        ),
+        (block_x + pill.width / 2.0, block_y + pill.height / 2.0),
     );
     frame
 }

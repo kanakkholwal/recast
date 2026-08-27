@@ -2,7 +2,6 @@ use windows::core::{Interface, GUID};
 use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
 use windows::Win32::Media::MediaFoundation::*;
 
-
 use recast_codec::{EncoderDescriptor, VideoCodec};
 
 use crate::d3d::D3dContext;
@@ -89,10 +88,7 @@ impl H264Encoder {
     /// Opens `descriptor`. The descriptor is matched by id against a fresh
     /// enumeration rather than being held open, so nothing keeps a hardware
     /// session reserved between the probe and the encode.
-    pub fn open(
-        descriptor: &EncoderDescriptor,
-        config: EncodeConfig,
-    ) -> Result<Self, EncodeError> {
+    pub fn open(descriptor: &EncoderDescriptor, config: EncodeConfig) -> Result<Self, EncodeError> {
         Self::open_inner(descriptor, config, None)
     }
 
@@ -336,7 +332,8 @@ impl H264Encoder {
         unsafe {
             self.transform
                 .ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0)?;
-            self.transform.ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0)?;
+            self.transform
+                .ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0)?;
         }
         if matches!(self.mode, Mode::Sync) {
             return self.drain_available();
@@ -373,9 +370,7 @@ impl H264Encoder {
 ///
 /// Shared with the AAC encoder: the buffer dance differs only in what the
 /// transform advertises, never in the shape of the call.
-pub(crate) fn pull_output(
-    transform: &IMFTransform,
-) -> Result<Option<EncodedSample>, EncodeError> {
+pub(crate) fn pull_output(transform: &IMFTransform) -> Result<Option<EncodedSample>, EncodeError> {
     // SAFETY: reading the stream info the transform advertises.
     let info = unsafe { transform.GetOutputStreamInfo(0) }?;
     // A transform that allocates its own samples wants a null one handed in.

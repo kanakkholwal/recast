@@ -471,8 +471,14 @@ mod tests {
 
     #[test]
     fn packed_lengths_match_the_known_frame_sizes() {
-        assert_eq!(PlaneLayout::Nv12.packed_len(1920, 1080), 1920 * 1080 * 3 / 2);
-        assert_eq!(PlaneLayout::I420.packed_len(1920, 1080), 1920 * 1080 * 3 / 2);
+        assert_eq!(
+            PlaneLayout::Nv12.packed_len(1920, 1080),
+            1920 * 1080 * 3 / 2
+        );
+        assert_eq!(
+            PlaneLayout::I420.packed_len(1920, 1080),
+            1920 * 1080 * 3 / 2
+        );
         assert_eq!(PlaneLayout::I444.packed_len(1920, 1080), 1920 * 1080 * 3);
     }
 
@@ -514,8 +520,8 @@ mod tests {
     #[test]
     fn a_packed_buffer_splits_into_planes_at_the_right_offsets() {
         let data = vec![0u8; PlaneLayout::I420.packed_len(4, 4)];
-        let planes = planes_of(&frame(PlaneLayout::I420, PlaneData::Packed(&data), 4, 4))
-            .expect("planes");
+        let planes =
+            planes_of(&frame(PlaneLayout::I420, PlaneData::Packed(&data), 4, 4)).expect("planes");
         assert_eq!(planes.len(), 3);
         assert_eq!((planes[0].bytes.len(), planes[0].stride), (16, 4));
         assert_eq!((planes[1].bytes.len(), planes[1].stride), (4, 2));
@@ -535,14 +541,24 @@ mod tests {
     fn a_short_buffer_is_refused_rather_than_read_past() {
         let luma_only = vec![0u8; 10];
         assert!(matches!(
-            planes_of(&frame(PlaneLayout::Nv12, PlaneData::Packed(&luma_only), 4, 4)),
+            planes_of(&frame(
+                PlaneLayout::Nv12,
+                PlaneData::Packed(&luma_only),
+                4,
+                4
+            )),
             Err(YuvError::ShortPlane { index: 0, .. })
         ));
         // Luma fits, chroma does not, which is the case a length check on the
         // whole buffer would still catch but a per-plane one has to attribute.
         let half_chroma = vec![0u8; 20];
         assert!(matches!(
-            planes_of(&frame(PlaneLayout::Nv12, PlaneData::Packed(&half_chroma), 4, 4)),
+            planes_of(&frame(
+                PlaneLayout::Nv12,
+                PlaneData::Packed(&half_chroma),
+                4,
+                4
+            )),
             Err(YuvError::ShortPlane { index: 1, .. })
         ));
     }
@@ -553,7 +569,10 @@ mod tests {
         assert!((neutral_chroma(8) - 128.0 / 255.0).abs() < 1e-9);
         assert!((neutral_chroma(10) - 512.0 / 1023.0).abs() < 1e-9);
         let drift = (neutral_chroma(8) - 0.5) * ColorRange::Limited.chroma_scale(8);
-        let cast = apply(MatrixCoefficients::Bt709.ycbcr_to_rgb(), [0.0, drift, drift]);
+        let cast = apply(
+            MatrixCoefficients::Bt709.ycbcr_to_rgb(),
+            [0.0, drift, drift],
+        );
         assert!(cast[0].abs() > 2e-3, "half scale tints red: {cast:?}");
         assert!(cast[2].abs() > 2e-3, "half scale tints blue: {cast:?}");
     }

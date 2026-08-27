@@ -60,7 +60,10 @@ fn nv12_frame(index: u32) -> Vec<u8> {
 
 fn ffprobe() -> Option<PathBuf> {
     let ffmpeg = recast_testkit::ffmpeg_path()?;
-    let name = ffmpeg.file_name()?.to_str()?.replacen("ffmpeg", "ffprobe", 1);
+    let name = ffmpeg
+        .file_name()?
+        .to_str()?
+        .replacen("ffmpeg", "ffprobe", 1);
     let probe = ffmpeg.with_file_name(name);
     probe.exists().then_some(probe)
 }
@@ -113,7 +116,9 @@ fn encode_clip() -> Option<Vec<u8>> {
 /// and nothing could be written to disk as it went.
 #[test]
 fn samples_come_back_during_the_encode_not_only_at_the_end() {
-    let Some(mut encoder) = open_any() else { return };
+    let Some(mut encoder) = open_any() else {
+        return;
+    };
     let duration = 10_000_000i64 / FPS as i64;
     let mut during = 0;
     for index in 0..FRAMES {

@@ -13,7 +13,6 @@
 //! `cfg`; the JS snap-to-aspect fallback keeps those platforms usable until a
 //! native equivalent (macOS: `NSWindow.aspectRatio`) lands.
 
-#[cfg(windows)]
 mod imp {
     use std::collections::HashMap;
     use std::ffi::c_void;
@@ -198,18 +197,4 @@ mod imp {
     }
 }
 
-#[cfg(windows)]
 pub use imp::apply;
-
-/// No-op on platforms without a native aspect lock — the JS snap-to-aspect
-/// fallback handles resizing there.
-#[cfg(not(windows))]
-pub fn apply(
-    _app: &tauri::AppHandle,
-    _hwnd_raw: isize,
-    _ratio: f64,
-    _max_fraction: f64,
-    _min_w: i32,
-    _chrome: i32,
-) {
-}

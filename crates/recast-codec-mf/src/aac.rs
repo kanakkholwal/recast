@@ -41,21 +41,19 @@ impl AacEncoder {
         let transform: IMFTransform = unsafe { activate.ActivateObject() }?;
 
         // Output first, as with the video encoders.
-        let output = audio_type(
-            &[
-                (MF_MT_MAJOR_TYPE, Value::Guid(MFMediaType_Audio)),
-                (MF_MT_SUBTYPE, Value::Guid(MFAudioFormat_AAC)),
-                (MF_MT_AUDIO_BITS_PER_SAMPLE, Value::U32(16)),
-                (MF_MT_AUDIO_SAMPLES_PER_SECOND, Value::U32(format.sample_rate)),
-                (MF_MT_AUDIO_NUM_CHANNELS, Value::U32(format.channels as u32)),
-                (
-                    MF_MT_AUDIO_AVG_BYTES_PER_SECOND,
-                    Value::U32(bitrate / 8),
-                ),
-                // 0 is raw AAC; 1 would ask for ADTS.
-                (MF_MT_AAC_PAYLOAD_TYPE, Value::U32(0)),
-            ],
-        )?;
+        let output = audio_type(&[
+            (MF_MT_MAJOR_TYPE, Value::Guid(MFMediaType_Audio)),
+            (MF_MT_SUBTYPE, Value::Guid(MFAudioFormat_AAC)),
+            (MF_MT_AUDIO_BITS_PER_SAMPLE, Value::U32(16)),
+            (
+                MF_MT_AUDIO_SAMPLES_PER_SECOND,
+                Value::U32(format.sample_rate),
+            ),
+            (MF_MT_AUDIO_NUM_CHANNELS, Value::U32(format.channels as u32)),
+            (MF_MT_AUDIO_AVG_BYTES_PER_SECOND, Value::U32(bitrate / 8)),
+            // 0 is raw AAC; 1 would ask for ADTS.
+            (MF_MT_AAC_PAYLOAD_TYPE, Value::U32(0)),
+        ])?;
         // SAFETY: stream 0 is the only stream an encoder MFT exposes.
         unsafe { transform.SetOutputType(0, &output, 0) }?;
 
@@ -63,7 +61,10 @@ impl AacEncoder {
             (MF_MT_MAJOR_TYPE, Value::Guid(MFMediaType_Audio)),
             (MF_MT_SUBTYPE, Value::Guid(MFAudioFormat_PCM)),
             (MF_MT_AUDIO_BITS_PER_SAMPLE, Value::U32(16)),
-            (MF_MT_AUDIO_SAMPLES_PER_SECOND, Value::U32(format.sample_rate)),
+            (
+                MF_MT_AUDIO_SAMPLES_PER_SECOND,
+                Value::U32(format.sample_rate),
+            ),
             (MF_MT_AUDIO_NUM_CHANNELS, Value::U32(format.channels as u32)),
         ])?;
         // SAFETY: as above.
@@ -81,7 +82,10 @@ impl AacEncoder {
                     windows::Win32::System::Com::CoTaskMemFree(Some(
                         blob as *const std::ffi::c_void,
                     ));
-                    bytes.get(HEAAC_HEADER..).map(|c| c.to_vec()).unwrap_or_default()
+                    bytes
+                        .get(HEAAC_HEADER..)
+                        .map(|c| c.to_vec())
+                        .unwrap_or_default()
                 }
                 Err(_) => Vec::new(),
             }
@@ -133,7 +137,8 @@ impl AacEncoder {
         unsafe {
             self.transform
                 .ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0)?;
-            self.transform.ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0)?;
+            self.transform
+                .ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0)?;
         }
         self.drain()
     }

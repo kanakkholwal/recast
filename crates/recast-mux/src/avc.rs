@@ -125,7 +125,9 @@ pub struct Converted {
 pub fn annex_b_to_avcc(data: &[u8]) -> Converted {
     let mut out = Converted::default();
     for unit in split_annex_b(data) {
-        let Some(&header) = unit.first() else { continue };
+        let Some(&header) = unit.first() else {
+            continue;
+        };
         match header & 0x1F {
             NAL_SPS => out.config.sps.push(unit.to_vec()),
             NAL_PPS => out.config.pps.push(unit.to_vec()),
@@ -241,13 +243,7 @@ mod tests {
 
     #[test]
     fn each_coded_picture_becomes_one_access_unit() {
-        let data = annex_b(&[
-            &[0x67, 1],
-            &[0x68, 2],
-            &[0x65, 3],
-            &[0x41, 4],
-            &[0x41, 5],
-        ]);
+        let data = annex_b(&[&[0x67, 1], &[0x68, 2], &[0x65, 3], &[0x41, 4], &[0x41, 5]]);
         let units = split_access_units(&data);
         assert_eq!(units.len(), 3, "expected one unit per picture");
         // The parameter sets ride with the picture they precede.

@@ -607,7 +607,11 @@ mod tests {
         let early = session.caption_frame(1.2);
         // Output 3.2 is original 5.2, past the cut: the four-glyph word.
         let late = session.caption_frame(3.2);
-        assert_eq!(early.glyphs.len(), 1, "expected the short word before the cut");
+        assert_eq!(
+            early.glyphs.len(),
+            1,
+            "expected the short word before the cut"
+        );
         assert_eq!(late.glyphs.len(), 4, "expected the long word after the cut");
     }
 
@@ -649,7 +653,10 @@ mod tests {
             .to_vec();
         assert!(session.set_caption_font(bytes, 0));
 
-        let missing = CAPTION_STYLE.replace(r#""fontFamily": "Arial""#, r#""fontFamily": "NoSuchFamilyAnywhere""#);
+        let missing = CAPTION_STYLE.replace(
+            r#""fontFamily": "Arial""#,
+            r#""fontFamily": "NoSuchFamilyAnywhere""#,
+        );
         session.set_scene(scene(&missing));
         assert!(
             !session.caption_frame(1.2).is_empty(),
@@ -669,7 +676,10 @@ mod tests {
         session.set_caption_track(Some(transcript()));
         assert!(!session.caption_frame(1.2).is_empty());
 
-        let missing = CAPTION_STYLE.replace(r#""fontFamily": "Arial""#, r#""fontFamily": "NoSuchFamilyAnywhere""#);
+        let missing = CAPTION_STYLE.replace(
+            r#""fontFamily": "Arial""#,
+            r#""fontFamily": "NoSuchFamilyAnywhere""#,
+        );
         session.set_scene(scene(&missing));
         assert!(
             session.caption_frame(1.2).is_empty(),

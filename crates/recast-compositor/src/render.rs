@@ -6,10 +6,10 @@ use recast_gpu::{GpuContext, GpuError, OUTPUT_FORMAT, WORKING_FORMAT};
 use recast_scene::LayerId;
 
 use crate::annotation::{AnnotationParams, AnnotationShape};
+use crate::caption::CaptionFrame;
 use crate::eval::{
     BackgroundParams, CursorDraw, CursorSlot, FrameParams, LayerParams, ShadowParams,
 };
-use crate::caption::CaptionFrame;
 use crate::text::TextPass;
 use crate::yuv::{planes_of, yuv_uniform, PlaneLayout, SourcePlanes, YuvError, YuvUniform};
 
@@ -413,9 +413,9 @@ impl Compositor {
             });
         }
 
-        let textures = self
-            .yuv
-            .plane_textures(&self.device, frame.width, frame.height, frame.layout);
+        let textures =
+            self.yuv
+                .plane_textures(&self.device, frame.width, frame.height, frame.layout);
         for (index, (texture, plane)) in textures.iter().zip(&planes).enumerate() {
             let (w, h, _) = frame.layout.plane_size(index, frame.width, frame.height);
             self.queue.write_texture(
@@ -2026,8 +2026,7 @@ impl YuvPass {
                         sample_count: 1,
                         dimension: wgpu::TextureDimension::D2,
                         format: layout.plane_format(index),
-                        usage: wgpu::TextureUsages::TEXTURE_BINDING
-                            | wgpu::TextureUsages::COPY_DST,
+                        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                         view_formats: &[],
                     })
                 })

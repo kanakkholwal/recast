@@ -35,17 +35,26 @@ const BASE: &str = r##"{
     "zoomRegions": []
 }"##;
 
-fn context() -> Option<GpuContext> {
-    match GpuContext::new_blocking(GpuOptions {
-        require_hardware: false,
-        ..Default::default()
-    }) {
-        Ok(ctx) => Some(ctx),
-        Err(e) => {
-            eprintln!("skipping: no GPU adapter ({e})");
-            None
-        }
-    }
+/// One device for the whole binary. A context per test means one wgpu device
+/// per test running at once, which on a machine with no GPU all land on the
+/// same software adapter, and here would also charge every measurement for its
+/// own device setup.
+fn context() -> Option<&'static GpuContext> {
+    static SHARED: std::sync::OnceLock<Option<GpuContext>> = std::sync::OnceLock::new();
+    SHARED
+        .get_or_init(|| {
+            match GpuContext::new_blocking(GpuOptions {
+                require_hardware: false,
+                ..Default::default()
+            }) {
+                Ok(ctx) => Some(ctx),
+                Err(e) => {
+                    eprintln!("skipping: no GPU adapter ({e})");
+                    None
+                }
+            }
+        })
+        .as_ref()
 }
 
 fn scene_with(extra: &str) -> Scene {
@@ -105,13 +114,7 @@ fn source_texture(ctx: &GpuContext, width: u32, height: u32) -> wgpu::Texture {
 /// Timing without the wait measures how fast we can QUEUE work, which stays flat
 /// while the shader behind it gets arbitrarily slower.
 fn frame_time_ms(ctx: &GpuContext, scene: &Scene, width: u32, height: u32) -> f64 {
-    let ev = Evaluator::new(
-        scene,
-        SourceGeometry {
-            width,
-            height,
-        },
-    );
+    let ev = Evaluator::new(scene, SourceGeometry { width, height });
     let mut compositor = Compositor::new(ctx).expect("compositor");
     let source = source_texture(ctx, width, height);
     let source_view = source.create_view(&Default::default());

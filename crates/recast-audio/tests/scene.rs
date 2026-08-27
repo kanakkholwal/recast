@@ -1,8 +1,6 @@
 #![cfg(feature = "scene")]
 
-use recast_audio::{
-    mixer_for, RecordingKind, SampleSource, Samples, SceneSources, MASTER_RATE,
-};
+use recast_audio::{mixer_for, RecordingKind, SampleSource, Samples, SceneSources, MASTER_RATE};
 use recast_scene::v1::nodes::{AudioClip, AudioClipSource, AudioSettings};
 use recast_scene::AudioGraph;
 
@@ -204,9 +202,12 @@ fn a_ducking_clip_becomes_a_ducked_track() {
     let mix = mixer_for(&graph, 4.0, sources).render_all();
 
     let before = peak_between(&mix, 0.5, 0.9);
-    assert!((before - 0.2).abs() < 0.001, "bed read {before} before the key");
-    let under = mix[(1.8 * MASTER_RATE as f64) as usize * 2
-        ..(1.95 * MASTER_RATE as f64) as usize * 2]
+    assert!(
+        (before - 0.2).abs() < 0.001,
+        "bed read {before} before the key"
+    );
+    let under = mix
+        [(1.8 * MASTER_RATE as f64) as usize * 2..(1.95 * MASTER_RATE as f64) as usize * 2]
         .iter()
         .step_by(2)
         .fold(0.0f32, |m, v| m.max((v - 0.5).abs()));
@@ -222,7 +223,11 @@ fn the_normalize_flag_reaches_the_master() {
         },
         clips: Vec::new(),
     };
-    assert!(mixer_for(&graph, 1.0, SceneSources::new()).master().normalize);
+    assert!(
+        mixer_for(&graph, 1.0, SceneSources::new())
+            .master()
+            .normalize
+    );
 
     let off = AudioGraph::default();
     assert!(!mixer_for(&off, 1.0, SceneSources::new()).master().normalize);

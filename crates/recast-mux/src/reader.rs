@@ -133,7 +133,10 @@ fn boxes(data: &[u8], range: Range<usize>) -> Result<Vec<Child>, ReadError> {
     let mut at = range.start;
     while at + 8 <= range.end {
         let size = u32be(data, at) as u64;
-        let Some(kind) = data.get(at + 4..at + 8).and_then(|b| <[u8; 4]>::try_from(b).ok()) else {
+        let Some(kind) = data
+            .get(at + 4..at + 8)
+            .and_then(|b| <[u8; 4]>::try_from(b).ok())
+        else {
             return Err(ReadError::Truncated("box header"));
         };
         // 1 means the real size is a 64-bit field after the type; 0 means the
@@ -168,7 +171,9 @@ fn child(
         .find(|(found, _)| found == kind)
         .map(|(_, at)| at)
         // Safe to unwrap: every caller passes a four-character ASCII code.
-        .ok_or(ReadError::Missing(std::str::from_utf8(kind).unwrap_or("box")))
+        .ok_or(ReadError::Missing(
+            std::str::from_utf8(kind).unwrap_or("box"),
+        ))
 }
 
 fn read_track(data: &[u8], trak: Range<usize>) -> Result<Track, ReadError> {
@@ -200,8 +205,16 @@ fn read_track(data: &[u8], trak: Range<usize>) -> Result<Track, ReadError> {
         // The CODED size, from the sample entry, with the track header's
         // display size as the fallback. They differ whenever the pixels are not
         // square, and a decoder wants the coded one.
-        width: if entry.width > 0 { entry.width } else { display.0 },
-        height: if entry.height > 0 { entry.height } else { display.1 },
+        width: if entry.width > 0 {
+            entry.width
+        } else {
+            display.0
+        },
+        height: if entry.height > 0 {
+            entry.height
+        } else {
+            display.1
+        },
         sample_rate: entry.sample_rate,
         channels: entry.channels,
         decoder_config: entry.decoder_config,
@@ -215,7 +228,11 @@ fn read_tkhd(data: &[u8], tkhd: &Range<usize>) -> (u32, (u16, u16)) {
     let version = data.get(tkhd.start).copied().unwrap_or(0);
     // The header grew when the times went 64-bit, and every field after them
     // moves with it.
-    let id_at = if version == 1 { tkhd.start + 20 } else { tkhd.start + 12 };
+    let id_at = if version == 1 {
+        tkhd.start + 20
+    } else {
+        tkhd.start + 12
+    };
     (
         u32be(data, id_at),
         (u16be(data, tkhd.end - 8), u16be(data, tkhd.end - 4)),
@@ -279,9 +296,7 @@ fn sample_entry(data: &[u8], stbl: &Range<usize>) -> Result<SampleEntry, ReadErr
     for (kind, range) in boxes(data, extensions..entry.end)? {
         match &kind {
             b"avcC" | b"hvcC" => out.decoder_config = data.get(range).unwrap_or(&[]).to_vec(),
-            b"esds" => {
-                out.decoder_config = audio_specific_config(data.get(range).unwrap_or(&[]))
-            }
+            b"esds" => out.decoder_config = audio_specific_config(data.get(range).unwrap_or(&[])),
             _ => {}
         }
     }
@@ -352,11 +367,21 @@ fn read_samples(data: &[u8], stbl: &Range<usize>) -> Result<Vec<SampleRef>, Read
 
     let sizes = read_stsz(data, find(b"stsz").ok_or(ReadError::Missing("stsz"))?);
     let offsets = match find(b"stco") {
-        Some(stco) => read_u32_table(data, stco).into_iter().map(u64::from).collect(),
-        None => read_co64(data, find(b"co64").ok_or(ReadError::Missing("chunk offsets"))?),
+        Some(stco) => read_u32_table(data, stco)
+            .into_iter()
+            .map(u64::from)
+            .collect(),
+        None => read_co64(
+            data,
+            find(b"co64").ok_or(ReadError::Missing("chunk offsets"))?,
+        ),
     };
     let runs = read_stsc(data, find(b"stsc").ok_or(ReadError::Missing("stsc"))?);
-    let times = read_stts(data, find(b"stts").ok_or(ReadError::Missing("stts"))?, sizes.len());
+    let times = read_stts(
+        data,
+        find(b"stts").ok_or(ReadError::Missing("stts"))?,
+        sizes.len(),
+    );
     let composition = find(b"ctts")
         .map(|ctts| read_ctts(data, ctts, sizes.len()))
         .unwrap_or_else(|| vec![0; sizes.len()]);
@@ -447,7 +472,10 @@ fn read_stts(data: &[u8], stts: Range<usize>, samples: usize) -> Vec<u32> {
         let at = stts.start + 8 + i * 8;
         let run = u32be(data, at) as usize;
         let delta = u32be(data, at + 4);
-        out.extend(std::iter::repeat_n(delta, run.min(samples.saturating_sub(out.len()))));
+        out.extend(std::iter::repeat_n(
+            delta,
+            run.min(samples.saturating_sub(out.len())),
+        ));
     }
     out.resize(samples, 0);
     out

@@ -166,7 +166,10 @@ impl Nv12Converter {
         let mut texture = None;
         // SAFETY: the description is fully initialised and the out parameter is
         // checked below.
-        unsafe { self.device.CreateTexture2D(&desc, None, Some(&mut texture))? };
+        unsafe {
+            self.device
+                .CreateTexture2D(&desc, None, Some(&mut texture))?
+        };
         let texture = texture.ok_or_else(|| EncodeError::Media(missing("NV12 texture")))?;
         Ok(Nv12Frame { texture })
     }
@@ -260,7 +263,10 @@ impl D3dContext {
         let mut texture = None;
         // SAFETY: the description is fully initialised and the out parameter is
         // checked; no initial data means an undefined but allocated surface.
-        unsafe { self.device.CreateTexture2D(&desc, None, Some(&mut texture))? };
+        unsafe {
+            self.device
+                .CreateTexture2D(&desc, None, Some(&mut texture))?
+        };
         let texture = texture.ok_or_else(|| EncodeError::Media(missing("shared texture")))?;
 
         let resource: IDXGIResource1 = texture.cast()?;

@@ -85,7 +85,11 @@ fn encoded_file() -> Option<PathBuf> {
 
     for index in 0..FRAMES {
         for sample in encoder
-            .encode(&nv12_frame(index), index as i64 * FRAME_DURATION, FRAME_DURATION)
+            .encode(
+                &nv12_frame(index),
+                index as i64 * FRAME_DURATION,
+                FRAME_DURATION,
+            )
             .expect("the frame encodes")
         {
             push(&mut writer, &mut config, &sample.data);
@@ -122,7 +126,10 @@ fn every_encoded_frame_decodes_back_out() {
     while reader.next_frame().expect("a read").is_some() {
         count += 1;
     }
-    assert_eq!(count, FRAMES as usize, "frames went missing in the round trip");
+    assert_eq!(
+        count, FRAMES as usize,
+        "frames went missing in the round trip"
+    );
 }
 
 /// Plumbing that returns the right NUMBER of frames can still return the wrong

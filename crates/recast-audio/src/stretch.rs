@@ -35,9 +35,7 @@ pub fn resample_linear(input: &[f32], rate: f64) -> Vec<f32> {
 
 fn hann(length: usize) -> Vec<f32> {
     (0..length)
-        .map(|i| {
-            0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / length as f64).cos() as f32
-        })
+        .map(|i| 0.5 - 0.5 * (2.0 * std::f64::consts::PI * i as f64 / length as f64).cos() as f32)
         .collect()
 }
 
@@ -158,9 +156,7 @@ mod tests {
 
     fn sine(samples: usize, hz: f64, sample_rate: u32) -> Vec<f32> {
         (0..samples)
-            .map(|i| {
-                (2.0 * std::f64::consts::PI * hz * i as f64 / sample_rate as f64).sin() as f32
-            })
+            .map(|i| (2.0 * std::f64::consts::PI * hz * i as f64 / sample_rate as f64).sin() as f32)
             .collect()
     }
 
@@ -205,7 +201,8 @@ mod tests {
         let stretched = time_stretch(&input, 2.0, sample_rate);
         let resampled = resample_linear(&input, 2.0);
 
-        let per_second = |data: &[f32]| crossings(data) as f64 * sample_rate as f64 / data.len() as f64;
+        let per_second =
+            |data: &[f32]| crossings(data) as f64 * sample_rate as f64 / data.len() as f64;
         let source = per_second(&input);
         assert!(
             (per_second(&stretched) - source).abs() < source * 0.1,
@@ -228,8 +225,14 @@ mod tests {
         let middle = peak(&out[out.len() / 2..out.len() / 2 + 2000]);
         let head = peak(&out[10..300]);
         let tail = peak(&out[out.len() - 300..out.len() - 10]);
-        assert!(head > middle * 0.5, "the start faded: {head} against {middle}");
-        assert!(tail > middle * 0.5, "the end faded: {tail} against {middle}");
+        assert!(
+            head > middle * 0.5,
+            "the start faded: {head} against {middle}"
+        );
+        assert!(
+            tail > middle * 0.5,
+            "the end faded: {tail} against {middle}"
+        );
         assert!(middle < 1.2, "the middle clipped at {middle}");
     }
 
@@ -283,6 +286,10 @@ mod tests {
         let input = [0.0, 1.0, 2.0, 3.0];
         let out = resample_linear(&input, 0.5);
         assert_eq!(out.len(), 8);
-        assert!((out[1] - 0.5).abs() < 1e-6, "no interpolation at {}", out[1]);
+        assert!(
+            (out[1] - 0.5).abs() < 1e-6,
+            "no interpolation at {}",
+            out[1]
+        );
     }
 }

@@ -30,6 +30,7 @@ mod silence;
 mod telemetry;
 mod transcription;
 mod tray;
+#[cfg(windows)]
 mod window_aspect;
 
 use commands::system::load_config;
