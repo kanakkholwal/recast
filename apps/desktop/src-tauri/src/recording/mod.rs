@@ -1,11 +1,11 @@
 pub mod clock;
 pub mod pipeline;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
@@ -18,10 +18,9 @@ use crate::audio::{
 use crate::cursor::{
     shift_cursor_track, spawn_cursor_capture, write_cursor_track, CursorCaptureFrame, CursorTrack,
 };
-use crate::encoder::h264::{self, EncodePurpose, H264Encoder};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
-pub use clock::{camera_offset_ms, offset_ms_from_video, RecordingClock, TrackStart};
+pub use clock::{offset_ms_from_video, RecordingClock, TrackStart};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
 
 /// Frames per second emitted by the capture pacer and declared to the encoder.
@@ -586,14 +585,6 @@ fn resolve_recording_fps(requested: Option<u32>) -> u32 {
 pub struct RecordingManager {
     session: Mutex<Option<RecordingSession>>,
     pending_camera_overlay: Mutex<CameraOverlaySettings>,
-    /// Set true by `save_recorded_camera` once the preview WebView's track has
-    /// landed on disk. `stop_recording` (every stop path) waits on this before
-    /// finalizing so the camera file is present when the project is zipped.
-    camera_ready: Arc<AtomicBool>,
-    /// Unix ms at which the preview WebView's recorder produced its first
-    /// frame. Held on the MANAGER because the preview is told to roll before
-    /// `start()` runs, so this usually arrives before a session exists.
-    camera_start_unix_ms: Mutex<Option<u64>>,
 }
 
 impl Default for RecordingManager {
@@ -601,8 +592,6 @@ impl Default for RecordingManager {
         Self {
             session: Mutex::new(None),
             pending_camera_overlay: Mutex::new(CameraOverlaySettings::default()),
-            camera_ready: Arc::new(AtomicBool::new(false)),
-            camera_start_unix_ms: Mutex::new(None),
         }
     }
 }
@@ -620,59 +609,6 @@ impl RecordingManager {
         if let Some(session) = self.session.lock().take() {
             log::warn!("aborting live recording session on shutdown");
             session.abort();
-        }
-    }
-
-    /// Destination for the active session's camera track. The preview WebView
-    /// delivers its MediaRecorder blob here (via `save_recorded_camera`) before
-    /// stop, so this returns `None` once the session has ended.
-    pub fn active_camera_path(&self) -> Option<PathBuf> {
-        self.session.lock().as_ref().map(|s| s.camera_path.clone())
-    }
-
-    /// Whether the active session requested a camera track (so the stop path
-    /// knows to flush the preview recorder before finalizing).
-    pub fn camera_requested(&self) -> bool {
-        self.session
-            .lock()
-            .as_ref()
-            .map(|s| s.camera_requested)
-            .unwrap_or(false)
-    }
-
-    /// Mark the camera track delivered. Called by `save_recorded_camera` after
-    /// the file is fully written and renamed into place.
-    pub fn mark_camera_ready(&self) {
-        self.camera_ready.store(true, Ordering::Release);
-    }
-
-    /// Record when the preview WebView's MediaRecorder actually began, in Unix
-    /// milliseconds. The recorder lives in another webview, so it reports its
-    /// own start rather than being measured here; `stop()` turns it into an
-    /// offset against the session origin.
-    pub fn report_camera_start(&self, started_at_unix_ms: u64) {
-        // Deliberately NOT routed through the session. The panel tells the
-        // preview to roll BEFORE it calls `start_recording`, so this report
-        // normally arrives while `session` is still None; storing it on the
-        // session dropped it every time. Staleness is handled at stop by
-        // `camera_offset_ms`, which refuses a stamp outside this session.
-        *self.camera_start_unix_ms.lock() = Some(started_at_unix_ms);
-        log::info!("camera preview reported start at unix ms {started_at_unix_ms}");
-    }
-
-    /// Block until the camera track lands or `timeout` elapses; returns whether
-    /// it landed. Polls (cheap) rather than a condvar so it composes with the
-    /// existing lock discipline. Runs on a blocking worker, never the UI thread.
-    pub fn wait_for_camera(&self, timeout: Duration) -> bool {
-        let start = Instant::now();
-        loop {
-            if self.camera_ready.load(Ordering::Acquire) {
-                return true;
-            }
-            if start.elapsed() >= timeout {
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(50));
         }
     }
 }
@@ -712,12 +648,12 @@ struct RecordingSession {
     audio_start: TrackStart,
     microphone_session: Option<MicrophoneCaptureSession>,
     microphone_start: TrackStart,
-    /// Camera was requested this session. The track itself is recorded in the
-    /// preview WebView (getUserMedia → MediaRecorder) and delivered to
-    /// `write_camera_track` before stop — the Rust side never opens the device
-    /// (a second open would contend with the preview's live stream and fail).
+    /// Camera was requested this session. `camera::session` owns the device and
+    /// writes the track directly, so the offset below is measured against this
+    /// session's own clock instead of being reported over IPC.
     camera_requested: bool,
     camera_path: PathBuf,
+    camera_start: TrackStart,
     pipeline: RecordingPipeline,
     target: CaptureTarget,
     recording_path: PathBuf,
@@ -952,6 +888,7 @@ impl RecordingManager {
         // turns the differences into the offsets the muxer aligns by.
         let audio_start = TrackStart::new(started_at);
         let microphone_start = TrackStart::new(started_at);
+        let camera_start = TrackStart::new(started_at);
         let capture_handle = spawn_capture_loop(
             target.clone(),
             stop_flag.clone(),
@@ -1102,15 +1039,21 @@ impl RecordingManager {
             None
         };
 
-        // The camera is recorded in the preview WebView (getUserMedia →
-        // MediaRecorder) and delivered via `write_camera_track` before stop — NOT
-        // opened here. Opening the webcam a second time via FFmpeg while the
-        // preview already holds it fails on single-consumer devices (the old
-        // "Camera could not be captured" bug); we only record intent.
-        let camera_requested = options.camera;
-        // Clear any ready flag from a prior recording so this stop waits for a
-        // freshly delivered track, not a stale one.
-        self.camera_ready.store(false, Ordering::Release);
+        // Attach a sink to the preview's reader: a second open fails, cameras are exclusive.
+        let mut camera_requested = options.camera;
+        if camera_requested {
+            if let Err(e) = crate::camera::session::attach_recorder(
+                camera_path.clone(),
+                recording_fps,
+                clock.clone(),
+                camera_start.clone(),
+                pause_flag.clone(),
+            ) {
+                log::warn!("camera recording unavailable: {e:#}");
+                warnings.push(format!("Camera could not be recorded: {e}"));
+                camera_requested = false;
+            }
+        }
 
         let mut camera_overlay = self.pending_camera_overlay.lock().clone();
         // The authoritative value (a delivered track) is set at stop; enable on
@@ -1131,6 +1074,7 @@ impl RecordingManager {
             microphone_start,
             camera_requested,
             camera_path,
+            camera_start,
             pipeline,
             target,
             recording_path,
@@ -1177,6 +1121,10 @@ impl RecordingManager {
             .is_some_and(|s| s.is_capturing());
         let audio_stop = session.audio_session.take().map(|s| s.stop());
         let microphone_stop = session.microphone_session.take().map(|s| s.stop());
+        // Finish the file but leave the preview live; the device closes with the bubble.
+        let camera_stop = session
+            .camera_requested
+            .then(crate::camera::session::detach_recorder);
 
         // Everything is reaped — now surface fatal thread failures.
         capture_join.map_err(|_| anyhow!("capture thread panicked"))??;
@@ -1195,14 +1143,7 @@ impl RecordingManager {
         let track_offsets = TrackOffsets {
             audio_ms: offset_ms_from_video(cursor_offset_us, &session.audio_start),
             microphone_ms: offset_ms_from_video(cursor_offset_us, &session.microphone_start),
-            camera_ms: self.camera_start_unix_ms.lock().and_then(|reported| {
-                camera_offset_ms(
-                    reported,
-                    session.started_at_unix_ms,
-                    cursor_offset_us,
-                    session.clock.effective_elapsed().as_millis() as u64,
-                )
-            }),
+            camera_ms: offset_ms_from_video(cursor_offset_us, &session.camera_start),
         };
         log::info!(
             "track offsets vs video t0 ({}ms warmup): {:?}",
@@ -1273,12 +1214,10 @@ impl RecordingManager {
             None => None,
         };
 
-        // The camera track is recorded in the preview WebView and delivered to
-        // `session.camera_path` by `write_camera_track` *before* this stop runs
-        // (the panel flushes the recorder, then calls stop_recording). Resolve by
-        // presence: a requested-but-missing/tiny file means delivery failed or no
-        // preview was open. MediaRecorder.pause() already dropped paused spans, so
-        // unlike the old FFmpeg path there is nothing to trim.
+        // Joined above, so complete; size-checked because a dead camera leaves a header.
+        if let Some(Err(e)) = camera_stop {
+            log::warn!("camera recording failed: {e:#}");
+        }
         let camera_path = if session.camera_requested {
             match std::fs::metadata(&session.camera_path) {
                 Ok(m) if m.len() >= 1024 => Some(session.camera_path.clone()),
@@ -1375,101 +1314,6 @@ impl RecordingManager {
     pub fn is_recording(&self) -> bool {
         self.session.lock().is_some()
     }
-}
-
-/// Persist a camera track recorded in the preview WebView. `bytes` is a complete
-/// MediaRecorder blob (WebM/VP8-9, or fragmented MP4/H.264 where the WebView
-/// supports it); normalise it to the plain H.264 MP4 the editor and export
-/// expect at `dest`. The container is sniffed from magic bytes (`ftyp` = MP4,
-/// else WebM/EBML) so no MIME plumbing is needed. Called before `stop()` so the
-/// file is on disk when the project is zipped.
-pub fn write_camera_track(dest: &Path, bytes: &[u8]) -> Result<()> {
-    if bytes.len() < 1024 {
-        return Err(anyhow!("camera payload too small ({} bytes)", bytes.len()));
-    }
-    let is_mp4 = bytes.len() >= 12 && &bytes[4..8] == b"ftyp";
-    let src = dest.with_extension("src");
-    std::fs::write(&src, bytes).context("failed to stage camera payload")?;
-    let src_str = src.to_string_lossy().to_string();
-    // FFmpeg writes to a temp, then we atomically rename onto `dest` — so `dest`
-    // only ever exists as a *complete* file. stop_recording resolves the camera
-    // by presence, so a half-written dest (e.g. a flush that timed out mid-encode)
-    // must never be observable. Keep the `.mp4` tail AND pass `-f mp4`: FFmpeg
-    // picks the muxer from the output extension, and a bare `.part` has none.
-    let part = dest.with_extension("part.mp4");
-    let part_str = part.to_string_lossy().to_string();
-    let cleanup = || {
-        let _ = std::fs::remove_file(&src);
-        let _ = std::fs::remove_file(&part);
-    };
-
-    // A MediaRecorder MP4 is already H.264, so stream-copy it into a plain,
-    // faststart MP4 (near-instant). Only WebM needs a real transcode.
-    let remuxed = is_mp4
-        && run_camera_ffmpeg(
-            &[
-                "-y",
-                "-i",
-                &src_str,
-                "-c",
-                "copy",
-                "-movflags",
-                "+faststart",
-                "-f",
-                "mp4",
-                &part_str,
-            ],
-            "camera remux",
-        )
-        .is_ok();
-
-    if !remuxed {
-        // Route the transcode through the probed encoder the recorder already
-        // uses (NVENC/AMF/QSV → GPU, else libx264 ultrafast) so it stays fast
-        // even on a long take.
-        let codec_args = h264::codec_args(
-            H264Encoder::from_ffmpeg_name(crate::ffmpeg::preferred_h264_encoder()),
-            EncodePurpose::QuickTrim,
-        );
-        let mut args: Vec<String> = vec![
-            "-y".into(),
-            "-i".into(),
-            src_str.clone(),
-            "-pix_fmt".into(),
-            "yuv420p".into(),
-            "-an".into(),
-        ];
-        args.extend(codec_args);
-        args.push("-f".into());
-        args.push("mp4".into());
-        args.push(part_str.clone());
-        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        if let Err(e) = run_camera_ffmpeg(&arg_refs, "camera transcode") {
-            cleanup();
-            return Err(e);
-        }
-    }
-    std::fs::rename(&part, dest)
-        .context("failed to swap in the recorded camera file")
-        .inspect_err(|_| cleanup())?;
-    let _ = std::fs::remove_file(&src);
-    Ok(())
-}
-
-fn run_camera_ffmpeg(args: &[&str], label: &str) -> Result<()> {
-    let mut command = std::process::Command::new(crate::ffmpeg::ffmpeg_path());
-    command.args(args);
-    crate::ffmpeg::configure_silent_command(&mut command);
-    let output = command
-        .output()
-        .with_context(|| format!("failed to run ffmpeg for {label}"))?;
-    if !output.status.success() {
-        return Err(anyhow!(
-            "ffmpeg {label} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    Ok(())
 }
 
 fn build_stats(pipeline: &RecordingPipeline, duration_ms: u64, nominal_fps: u32) -> RecordingStats {

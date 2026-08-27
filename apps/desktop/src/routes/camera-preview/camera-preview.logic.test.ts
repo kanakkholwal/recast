@@ -6,23 +6,7 @@ import {
 	fitInsideMax,
 	MAX_SCREEN_FRACTION,
 	MIN_LOGICAL_SIZE,
-	pickCameraMimeType,
 } from "./camera-preview.logic";
-
-describe("pickCameraMimeType", () => {
-	it("prefers H.264/MP4 when supported", () => {
-		expect(pickCameraMimeType(() => true)).toBe("video/mp4;codecs=avc1.42E01E");
-	});
-
-	it("falls back to VP9 WebM when MP4 is unsupported", () => {
-		const supported = (t: string) => t.startsWith("video/webm");
-		expect(pickCameraMimeType(supported)).toBe("video/webm;codecs=vp9");
-	});
-
-	it("returns empty string when nothing is supported", () => {
-		expect(pickCameraMimeType(() => false)).toBe("");
-	});
-});
 
 describe("fitInsideMax", () => {
 	it("passes a box through unchanged when it fits", () => {

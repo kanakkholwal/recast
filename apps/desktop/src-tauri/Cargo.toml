@@ -44,6 +44,10 @@ image = "0.25.10"
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
+# Camera capture. Media Foundation on Windows: `default-features = false` because
+# the defaults are the Linux portal/PipeWire backends, which this crate reaches
+# through its own capture module, not through capturekit.
+capturekit = { path = "../../../crates/capturekit", default-features = false }
 recast-captions = { path = "../../../crates/recast-captions" }
 recast-scene = { path = "../../../crates/recast-scene" }
 recast-time = { path = "../../../crates/recast-time" }

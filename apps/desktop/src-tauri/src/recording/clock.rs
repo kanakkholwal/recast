@@ -115,33 +115,6 @@ pub fn offset_ms_from_video(video_first_us: u64, track: &TrackStart) -> Option<i
     Some((track_us as i64 - video_first_us as i64) / 1000)
 }
 
-/// A camera stamp more than this far ahead of the session start is not from
-/// this recording. The preview is told to roll just before `start_recording`,
-/// so a genuine lead is well under a second.
-const MAX_CAMERA_LEAD_MS: i64 = 10_000;
-
-/// Signed milliseconds the camera track begins after video frame 0, from the
-/// preview WebView's own Unix-ms report.
-///
-/// The camera records in a separate webview that is told to roll BEFORE the
-/// capture threads spin up, so its offset is normally negative (it has a head
-/// start, which the export trims). `None` when the stamp cannot belong to this
-/// session, which downstream reads as "assume aligned" rather than shifting the
-/// track by a wrong amount.
-pub fn camera_offset_ms(
-    reported_unix_ms: u64,
-    session_start_unix_ms: u64,
-    video_first_us: u64,
-    session_duration_ms: u64,
-) -> Option<i64> {
-    let delta = reported_unix_ms as i64 - session_start_unix_ms as i64;
-    let latest = session_duration_ms as i64 + MAX_CAMERA_LEAD_MS;
-    if delta < -MAX_CAMERA_LEAD_MS || delta > latest {
-        return None;
-    }
-    Some(delta - (video_first_us / 1000) as i64)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,37 +157,6 @@ mod tests {
             offset_ms_from_video(0, &TrackStart::new(Instant::now())),
             None
         );
-    }
-
-    #[test]
-    fn a_camera_that_rolled_before_capture_reports_a_negative_offset() {
-        // Preview started 300 ms before the session; video frame 0 landed
-        // 750 ms in. The camera therefore leads the picture by 1050 ms.
-        assert_eq!(
-            camera_offset_ms(9_700, 10_000, 750_000, 60_000),
-            Some(-1_050)
-        );
-    }
-
-    #[test]
-    fn a_camera_that_rolled_after_capture_reports_a_positive_offset() {
-        assert_eq!(camera_offset_ms(11_500, 10_000, 750_000, 60_000), Some(750));
-    }
-
-    #[test]
-    fn a_stamp_from_an_earlier_session_is_refused() {
-        // A leftover report from a previous recording must not shift this one.
-        assert_eq!(camera_offset_ms(1_000, 500_000, 0, 60_000), None);
-    }
-
-    #[test]
-    fn a_stamp_past_the_end_of_the_session_is_refused() {
-        assert_eq!(camera_offset_ms(200_000, 10_000, 0, 60_000), None);
-    }
-
-    #[test]
-    fn a_camera_starting_exactly_with_the_video_is_aligned() {
-        assert_eq!(camera_offset_ms(10_750, 10_000, 750_000, 60_000), Some(0));
     }
 
     #[test]

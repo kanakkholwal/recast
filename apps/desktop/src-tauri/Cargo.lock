@@ -9,6 +9,7 @@ dependencies = [
  "anyhow",
  "ashpd",
  "base64 0.22.1",
+ "capturekit",
  "chrono",
  "clap",
  "crossbeam-queue",
@@ -786,6 +787,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb1307f12aa967b5a58416e87b3653360e0fd614a016b6e970db08fecbb1b80d"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "capturekit"
+version = "0.1.0"
+dependencies = [
+ "block2",
+ "capturekit-core",
+ "dispatch2",
+ "libc",
+ "log",
+ "objc2",
+ "objc2-av-foundation",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-media",
+ "objc2-core-video",
+ "objc2-foundation",
+ "objc2-screen-capture-kit",
+ "windows 0.58.0",
+ "x11rb",
+]
+
+[[package]]
+name = "capturekit-core"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4052,6 +4082,7 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-core-image",
+ "objc2-core-media",
  "objc2-core-video",
  "objc2-foundation",
  "objc2-image-io",
@@ -4317,6 +4348,22 @@ dependencies = [
  "objc2-core-graphics",
  "objc2-foundation",
  "objc2-metal",
+]
+
+[[package]]
+name = "objc2-screen-capture-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "74b7c5390f477482f001bc354d6571a70db7e4f8d5288e860c45521fbce11394"
+dependencies = [
+ "bitflags 2.13.1",
+ "block2",
+ "dispatch2",
+ "objc2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-media",
+ "objc2-foundation",
 ]
 
 [[package]]

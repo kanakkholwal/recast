@@ -86,10 +86,6 @@ pub enum EncodePurpose<'a> {
     /// Live screen capture: low-latency, must sustain real time. Carries the
     /// user-facing capture quality tier.
     RealtimeCapture(RecordingQuality),
-    /// One-shot re-encode of an existing clip — the camera pause-trim at
-    /// `stop()`. Fixed quality at the fastest preset; the goal is to finish
-    /// quickly, not to squeeze bitrate.
-    QuickTrim,
     /// Final render: quality-first (no real-time constraint), adds
     /// `-profile:v high`. Carries the resolved per-family knobs.
     Export(ExportEncodeParams<'a>),
@@ -102,7 +98,6 @@ pub enum EncodePurpose<'a> {
 pub fn codec_args(encoder: H264Encoder, purpose: EncodePurpose<'_>) -> Vec<String> {
     match purpose {
         EncodePurpose::RealtimeCapture(quality) => realtime_capture_args(encoder, quality),
-        EncodePurpose::QuickTrim => quick_trim_args(encoder),
         EncodePurpose::Export(params) => export_args(encoder, params),
     }
 }
@@ -213,33 +208,6 @@ fn with_codec(encoder: H264Encoder, tail: &[&str]) -> Vec<String> {
     out.push(encoder.ffmpeg_name().to_string());
     out.extend(tail.iter().map(|s| s.to_string()));
     out
-}
-
-/// One-shot re-encode args for cutting paused spans out of an existing clip
-/// (the camera pause-trim). Fixed near-visually-lossless quality at the fastest
-/// preset each family offers — this runs synchronously at `stop()`, so it's
-/// tuned to finish fast, not to minimize bitrate. 4:2:0 like every other path.
-fn quick_trim_args(encoder: H264Encoder) -> Vec<String> {
-    use H264Encoder::*;
-    let tail: &[&str] = match encoder {
-        VideoToolbox => &["-b:v", "3M", "-pix_fmt", "yuv420p"],
-        Nvenc => &[
-            "-preset", "p5", "-rc", "vbr", "-cq", "26", "-b:v", "0", "-pix_fmt", "yuv420p",
-        ],
-        Amf => &[
-            "-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p", "26", "-pix_fmt", "yuv420p",
-        ],
-        Qsv => &[
-            "-preset",
-            "veryfast",
-            "-global_quality",
-            "26",
-            "-pix_fmt",
-            "nv12",
-        ],
-        Libx264 => &["-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p"],
-    };
-    with_codec(encoder, tail)
 }
 
 /// Final-export args. Quality-first (no real-time pacing): hardware encoders use
@@ -487,101 +455,6 @@ mod tests {
                         "{enc}/{q:?} must set an explicit quality target, got {args:?}"
                     );
                 }
-            }
-        }
-    }
-
-    mod quick_trim {
-        use super::*;
-
-        fn trim(name: &str) -> Vec<String> {
-            codec_args(
-                H264Encoder::from_ffmpeg_name(name),
-                EncodePurpose::QuickTrim,
-            )
-        }
-
-        // Regression guard: byte-identical to the pre-refactor inline camera
-        // pause-trim args, so trimmed camera video is unchanged.
-        #[test]
-        fn reproduces_historical_trim_args_exactly() {
-            assert_eq!(
-                trim("h264_videotoolbox"),
-                [
-                    "-c:v",
-                    "h264_videotoolbox",
-                    "-b:v",
-                    "3M",
-                    "-pix_fmt",
-                    "yuv420p"
-                ]
-            );
-            assert_eq!(
-                trim("h264_nvenc"),
-                [
-                    "-c:v",
-                    "h264_nvenc",
-                    "-preset",
-                    "p5",
-                    "-rc",
-                    "vbr",
-                    "-cq",
-                    "26",
-                    "-b:v",
-                    "0",
-                    "-pix_fmt",
-                    "yuv420p"
-                ]
-            );
-            assert_eq!(
-                trim("h264_amf"),
-                [
-                    "-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p",
-                    "26", "-pix_fmt", "yuv420p"
-                ]
-            );
-            assert_eq!(
-                trim("h264_qsv"),
-                [
-                    "-c:v",
-                    "h264_qsv",
-                    "-preset",
-                    "veryfast",
-                    "-global_quality",
-                    "26",
-                    "-pix_fmt",
-                    "nv12"
-                ]
-            );
-            assert_eq!(
-                trim("libx264"),
-                [
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    "ultrafast",
-                    "-crf",
-                    "23",
-                    "-pix_fmt",
-                    "yuv420p"
-                ]
-            );
-        }
-
-        #[test]
-        fn stays_420_for_every_family() {
-            for name in [
-                "h264_videotoolbox",
-                "h264_nvenc",
-                "h264_amf",
-                "h264_qsv",
-                "libx264",
-            ] {
-                let args = trim(name);
-                assert!(
-                    !args.iter().any(|a| a.contains("444")),
-                    "{name} trim must stay 4:2:0, got {args:?}"
-                );
             }
         }
     }

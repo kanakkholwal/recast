@@ -349,25 +349,22 @@ export function updateCameraPreviewState(state: CameraPreviewState): Promise<voi
 	return invoke("update_camera_preview_state", { state });
 }
 
-/** Deliver the camera track recorded in the preview window (MediaRecorder blob)
- *  to the active recording session. The ArrayBuffer is the raw invoke payload so
- *  it ships as a binary body, not a giant JSON number array. */
-export function saveRecordedCamera(buffer: ArrayBuffer): Promise<void> {
-	return invoke<void>("save_recorded_camera", buffer);
+/** Camera geometry the backend negotiated, so the preview can size its canvas. */
+export type CameraGeometry = { width: number; height: number };
+
+/** Open the camera and stream preview frames.
+ *  Cameras are exclusive, so this also takes the device away from getUserMedia.
+ *  Each frame is `width: u32le, height: u32le` then BGRA rows. */
+export function startCameraPreview(
+	device: string,
+	onFrame: Channel<ArrayBuffer>,
+): Promise<CameraGeometry> {
+	return invoke<CameraGeometry>("start_camera_preview", { device, onFrame });
 }
 
-/** Report when the preview's MediaRecorder actually started capturing, so the
- *  session can measure the camera track's offset from video frame 0. The camera
- *  runs in its own webview, so nothing backend-side can observe this. */
-export function reportCameraStart(startedAtUnixMs: number): Promise<void> {
-	return invoke<void>("report_camera_start", { startedAtUnixMs: Math.round(startedAtUnixMs) });
-}
-
-/** Tell Rust the preview finished its flush attempt (releasing stop_recording's
- *  wait). `error` is a human message when no track could be delivered, logged
- *  backend-side so the reason is visible. */
-export function finishCameraFlush(error: string | null): Promise<void> {
-	return invoke<void>("finish_camera_flush", { error });
+/** Release the camera. Safe to call when nothing is open. */
+export function stopCameraPreview(): Promise<void> {
+	return invoke<void>("stop_camera_preview");
 }
 
 export function stopRecording(): Promise<string> {

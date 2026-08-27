@@ -844,26 +844,20 @@ fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
 
 #[cfg(windows)]
 fn get_camera_devices_windows() -> Result<Vec<CameraDeviceInfo>, String> {
-    // ffmpeg DirectShow listing is the only way to enumerate dshow names
-    // that match what the capture pipeline opens.
-    let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
-    command.args([
-        "-hide_banner",
-        "-list_devices",
-        "true",
-        "-f",
-        "dshow",
-        "-i",
-        "dummy",
-    ]);
-    crate::ffmpeg::configure_silent_command(&mut command);
-    let output = command
-        .output()
-        .map_err(|e| format!("failed to list camera devices: {e}"))?;
-
-    // ffmpeg prints device list to stderr (it "fails" because "dummy" isn't a real input).
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Ok(parse_camera_devices(&stderr))
+    // Id stays the friendly name: the WebView matches it against a device label.
+    let cameras = crate::camera::devices()?;
+    Ok(cameras
+        .into_iter()
+        .map(|camera| {
+            let (status, status_message) = classify_camera_name(&camera.name);
+            CameraDeviceInfo {
+                id: camera.name.clone(),
+                name: camera.name,
+                status,
+                status_message,
+            }
+        })
+        .collect())
 }
 
 /// macOS cameras from the cached AVFoundation listing. The AVFoundation
@@ -1022,53 +1016,6 @@ fn parse_avfoundation_section(stderr: &str, section: AvfSection) -> Vec<(String,
         out.push((inside.to_string(), name));
     }
     out
-}
-
-#[cfg(any(windows, test))]
-fn parse_camera_devices(stderr: &str) -> Vec<CameraDeviceInfo> {
-    let mut devices: Vec<CameraDeviceInfo> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut in_video_section = false;
-    for line in stderr.lines() {
-        if line.contains("DirectShow video devices") {
-            in_video_section = true;
-            continue;
-        }
-        if line.contains("DirectShow audio devices") {
-            in_video_section = false;
-            continue;
-        }
-        if line.contains("Alternative name") {
-            continue;
-        }
-
-        let has_video_tag = line.contains("(video)");
-        let has_audio_tag = line.contains("(audio)");
-        let is_video_device = has_video_tag || (in_video_section && !has_audio_tag);
-        if !is_video_device {
-            continue;
-        }
-
-        let Some(start) = line.find('"') else {
-            continue;
-        };
-        let Some(end_rel) = line[start + 1..].find('"') else {
-            continue;
-        };
-        let name = line[start + 1..start + 1 + end_rel].trim().to_string();
-        if name.is_empty() || !seen.insert(name.clone()) {
-            continue;
-        }
-
-        let (status, status_message) = classify_camera_name(&name);
-        devices.push(CameraDeviceInfo {
-            id: name.clone(),
-            name,
-            status,
-            status_message,
-        });
-    }
-    devices
 }
 
 #[tauri::command]
@@ -1236,7 +1183,7 @@ mod manifest_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_camera_name, parse_camera_devices};
+    use super::classify_camera_name;
 
     #[test]
     fn classifies_known_flaky_virtual_cameras_as_warning() {
@@ -1263,34 +1210,6 @@ mod tests {
     fn camera_classification_is_case_insensitive() {
         let (status, _) = classify_camera_name("droidcam source");
         assert_eq!(status, "warning");
-    }
-
-    #[test]
-    fn parses_legacy_ffmpeg_camera_list() {
-        let stderr = r#"
-[dshow @ 0000] DirectShow video devices
-[dshow @ 0000]  "Integrated Camera"
-[dshow @ 0000]  "NVIDIA Broadcast"
-[dshow @ 0000] DirectShow audio devices
-"#;
-        let devices = parse_camera_devices(stderr);
-        assert_eq!(devices.len(), 2);
-        assert_eq!(devices[0].name, "Integrated Camera");
-        assert_eq!(devices[0].status, "ready");
-        assert_eq!(devices[1].status, "warning");
-    }
-
-    #[test]
-    fn parses_inline_video_tags_and_dedupes() {
-        let stderr = r#"
-[dshow @ 0000] "OBS Virtual Camera" (video)
-[dshow @ 0000] "OBS Virtual Camera" (video)
-[dshow @ 0000] "Microphone" (audio)
-"#;
-        let devices = parse_camera_devices(stderr);
-        assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].name, "OBS Virtual Camera");
-        assert_eq!(devices[0].status, "unknown");
     }
 }
 

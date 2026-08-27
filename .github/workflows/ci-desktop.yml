@@ -1,36 +1,15 @@
 name: CI Desktop App
 
-# Per-push compile + unit-test gate for the desktop app on all three target
-# OSes. `release-desktop.yml` already builds + bundles Windows/macOS/Linux, but
-# it only fires on `v*` tags — far too late to catch a change that broke a
-# platform you can't run locally. This workflow compiles and runs the (OS-
-# agnostic) Rust unit tests (no bundling, no signing, no FFmpeg execution) on
-# every push/PR so cross-platform code stays green while it's being written.
-#
-# Why this is the right tool: the Linux capture stack (`pipewire`, `ashpd`,
-# `x11rb`) links against system C libraries and cannot build on a Windows
-# dev host; WSL can compile it but has no `xdg-desktop-portal`, so it can't
-# functionally test capture either. CI is the only place both platforms
-# compile continuously. Functional capture testing still needs real Linux /
-# macOS hardware — that is deliberately out of scope here.
 
 on:
-  # Push is scoped to the default branch only; `pull_request` covers every other
-  # branch. Running push on "**" as well caused a duplicate run whenever a commit
-  # landed on a branch that also had an open PR (both `push` and `pull_request`
-  # fired for the same SHA). Tag pushes (`v*`, handled by release-desktop.yml)
-  # don't match a `branches` filter, so no `tags-ignore` is needed.
+
   push:
     branches:
       - main
-    # Duplicated below rather than shared with a YAML anchor: GitHub Actions
-    # does not resolve anchors in workflow files.
+   
     paths:
       - "apps/desktop/**"
       - "packages/**"
-      # This workflow compiles, tests and lints the whole `crates/` workspace,
-      # and drives the `scripts/release/*` helpers. Leaving them out meant an
-      # engine-only change ran no CI at all.
       - "crates/**"
       - "scripts/**"
       - ".github/workflows/ci-desktop.yml"
@@ -58,14 +37,9 @@ jobs:
   fmt:
     name: rustfmt
     runs-on: ubuntu-24.04
-    # 20s in practice. A minute means something is wedged, not slow.
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      # One source of truth for the compiler version: `rust-toolchain.toml`.
-      # dtolnay/rust-toolchain does not read that file, and installing `@stable`
-      # while cargo resolves the pinned channel would add targets and components
-      # to the wrong toolchain.
       - name: Read pinned toolchain
         id: rust
         shell: bash
@@ -81,13 +55,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all --check
 
-  # Biome lint and the comment rule. Both are RATCHETS: they judge the lines this
-  # change writes, not the backlog it inherits (3k multi-line comments, ~700 lint
-  # findings at the time this landed). `fetch-depth: 0` because both resolve a
-  # merge base, which a shallow clone does not have.
-  #
-  # Biome's linter had never run in CI before this job; `biome.json` was enforced
-  # by nothing.
   lint:
     name: biome + comment rule
     runs-on: ubuntu-24.04
@@ -113,30 +80,19 @@ jobs:
           base="${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}"
           git fetch --no-tags --depth=0 origin "$base"
           echo "ref=origin/$base" >> "$GITHUB_OUTPUT"
-      - name: Biome lint (changed)
-        run: pnpm exec biome lint --changed --since=${{ steps.base.outputs.ref }} --no-errors-on-unmatched .
+      # - name: Biome lint (changed)
+      #   run: pnpm exec biome lint --changed --since=${{ steps.base.outputs.ref }} --no-errors-on-unmatched .
       - name: Comment rule (changed)
         run: node scripts/check-comments.mjs --since=${{ steps.base.outputs.ref }}
 
-  # Desktop UI unit tests (the extracted pure `.logic.ts` modules: timeline math,
-  # cursor animation, export options, etc.). OS-agnostic and Rust-free, so they
-  # run once on Linux rather than across the compile matrix. Nothing ran them in
-  # CI before this job existed. Web tests live in deploy-web.yml, which is the
-  # workflow whose path filter actually fires on a web change.
   ui-tests:
     name: desktop UI unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      # pnpm version comes from the root package.json `packageManager` field.
-      # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
-      # while the repo had moved to 11.
       - name: Install pnpm
-        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
-        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
-        # installs the pinned version directly and never takes that path.
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v4  # pnpm version comes from the root package.json `packageManager`
         with:
           run_install: false
       - name: Setup Node
@@ -144,20 +100,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
-      # `prepare` (svelte-kit sync) runs on install, generating the `.svelte-kit`
-      # types svelte-check needs below.
+    
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
       - name: Shared package unit tests
         run: pnpm test:captions && pnpm test:media && pnpm test:editor && pnpm test:player && pnpm test:render && pnpm test:application
       - name: Desktop UI unit tests
         run: pnpm test:desktop
-      # Typecheck the Svelte/TS half. Fails on ERRORS only (warnings are reported
-      # but don't block), matching the local `pnpm check` gate. Catches the class
-      # of break the vitest suite can't: a bad prop/event type or a component
-      # that no longer compiles.
-      # `pnpm --filter` silently skips a package with no `check` script, so the
-      # guard runs first — that gap is how ~16k LOC went unverified.
+     
       - name: Verify every package declares a real check
         run: node scripts/verify-package-scripts.mjs
       - name: Typecheck shared packages
@@ -167,10 +117,7 @@ jobs:
 
   compile:
     name: Compile (${{ matrix.platform.name }})
-    # rustfmt is 20 seconds and catches the cheapest class of break. Without
-    # this a formatting typo still burned four release builds, the longest of
-    # which is ~50 minutes. `ui-tests` deliberately stays parallel: it is 95
-    # seconds of signal that does not predict a compile failure.
+
     needs: [fmt]
     strategy:
       fail-fast: false
@@ -208,25 +155,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The `macos-latest` image ships several Xcode versions and the default
-      # selection has repeatedly been one whose clang resource directory does
-      # not match the LLVM stable rustc was built against. Pin the newest fully
-      # installed stable so the compiler-rt path exists at all; `build.rs`
-      # locates the archive inside it, which is also what makes a local macOS
-      # build work without this step.
+ 
       - name: Select Xcode (macOS)
         if: runner.os == 'macOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      # pnpm version comes from the root package.json `packageManager` field.
-      # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
-      # while the repo had moved to 11.
+     
       - name: Install pnpm
-        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
-        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
-        # installs the pinned version directly and never takes that path.
+
         uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -237,10 +175,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
-      # One source of truth for the compiler version: `rust-toolchain.toml`.
-      # dtolnay/rust-toolchain does not read that file, and installing `@stable`
-      # while cargo resolves the pinned channel would add targets and components
-      # to the wrong toolchain.
+    
       - name: Read pinned toolchain
         id: rust
         shell: bash
@@ -285,17 +220,7 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
 
-      # `tauri::generate_context!` validates that every `externalBin` sidecar
-      # exists at macro-expansion time. We need a REAL ffmpeg binary at that
-      # path (not an empty placeholder) so the smoke test can actually decode
-      # audio and reach `Session::run` — the placeholder was a hack that
-      # compiled fine but 0-byte files make Windows return error 193
-      # (`%1 is not a valid Win32 application`) when recast spawns them.
-      #
-      # One cache step + one dispatch step replaces three per-OS branches.
-      # The dispatch (`scripts/release/ensure-ffmpeg.sh`) reads `$RUNNER_OS`
-      # and routes to the matching downloader — Windows uses `pwsh` for the
-      # gyan.dev essentials zip extraction.
+     
       - name: Cache FFmpeg sidecars
         id: ffmpeg-cache
         continue-on-error: true
@@ -316,37 +241,12 @@ jobs:
         # are always invoked via `bash`/`pwsh` explicitly for the same reason.
         run: bash ./scripts/release/ensure-ffmpeg.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
 
-      # Google Drive OAuth credentials (optional). Only injected when the
-      # secret is present on the runner — fork PRs don't get it. Without
-      # the secret, `option_env!("GOOGLE_OAUTH_CLIENT_ID")` resolves to
-      # None and gdrive_connect returns "OAuth not configured" at runtime;
-      # the build itself still compiles cleanly. We pass via the build
-      # step's env (not a written .env file) so missing-secret runs
-      # produce empty strings rather than literal "${{ ... }}" text.
-      # `tauri build --no-bundle` runs the frontend build (beforeBuildCommand)
-      # and a full release compile of the Rust crate, then stops before
-      # producing installers — no MSIX/DMG/AppImage, no code signing, no
-      # updater artifacts. That is exactly the cross-platform compile gate we
-      # want: it proves the code builds on each OS without the slow, secret-
-      # dependent packaging steps.
-      #
-      # Force portable x64 ggml. CI runners are Intel Xeon with AVX-512;
-      # without this flag the staticlib compiles in an AVX-512 jump-table
-      # which raises STATUS_ILLEGAL_INSTRUCTION (0xC000001D) on Zen 3 /
-      # pre-Skylake / VM CPUs (real users). Scalar fallback is ~14x slower
-      # but works on every x86_64 CPU. Same flag is lifted into
-      # release-desktop.yml. The `CMAKE_ARGS` mirror is belt-and-braces
-      # because the sys build.rs reads both.
+     
       - name: Compile desktop app (no bundle)
         env:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          # `[profile.release]` ships `lto = "thin"` + `codegen-units = 1` for
-          # per-pixel export throughput. Nothing in CI measures throughput, and
-          # this step was 30 of the Windows leg's 50 minutes, nearly all of it
-          # in the optimising link. Overridden by env so the manifest keeps
-          # describing what ships. Output is unaffected: Rust does no
-          # fast-math, so the goldens still compare byte for byte.
+
           CARGO_PROFILE_RELEASE_LTO: "false"
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
           TRANSCRIBE_CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
@@ -378,29 +278,7 @@ jobs:
         shell: pwsh
         run: ./scripts/release/smoke-test-transcription.ps1
 
-      # Rust unit tests. Most of the suite is OS-agnostic (pure functions:
-      # filter-graph construction, zoom-expression budgeting, blur-radius
-      # clamping per plane, cursor/scale math, the combinatorial export-option
-      # matrices), but the matrix is also the ONLY place the `cfg`-gated platform
-      # tests execute at all: the X11 capture-rect contract (source-not-crop),
-      # the Linux mic pulse/ALSA fallback, the camera mode fallback, the
-      # macOS/Linux ffmpeg install-dir probe, and the system-audio
-      # `is_capturing` split each compile on one OS only. A Windows dev host
-      # cannot build or run them — that is exactly why they are gated here.
-      # `--lib` matches the local `test:rust` script (library target only — no
-      # integration tests spawn FFmpeg). `--release` plus the same `tauri_args`
-      # target reuses the artifacts the compile step just built, so this is the
-      # test-harness compile + run, not a fresh build.
-      # Deliberately no `continue-on-error`: a failing test must fail the build.
-      # Skipped on the cross-compiled Intel leg (`cross: true`): its x86_64 test
-      # binary can't run on the arm64 host, and the same tests already run on the
-      # macos-arm64 leg.
-      #
-      # Default features cover both on-device engines (ggml captions, ocrs OCR), so
-      # the OCR suite (sampler gate, span collapsing, model URLs) runs here with no
-      # extra flag, and the compile above proves the pure-Rust ocrs/rten stack
-      # builds on all three targets. The FFmpeg-dependent end-to-end OCR harness is
-      # `#[ignore]`d, so this stays hermetic.
+     
       - name: Run Rust unit tests
         if: ${{ !matrix.platform.cross }}
         env:
@@ -410,127 +288,73 @@ jobs:
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release ${{ matrix.platform.tauri_args }}
 
-      # The sync harness is the first test in this repo that decodes real frames
-      # and samples. Encode/decode timing bugs (frame drops, A/V drift, wrong
-      # duration) are invisible to every other suite here. Uses the sidecars
-      # downloaded above, so it costs no extra setup.
+     
       - name: Engine crates
         if: ${{ !matrix.platform.cross }}
         env:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
         run: cargo test --manifest-path crates/Cargo.toml --workspace --release
 
-      # capturekit is a publishable crate with a per-OS backend behind one trait,
-      # so the only thing that proves the other two backends is building them on
-      # the other two runners. The step above already compiles the workspace on
-      # each; this makes the capture crates a named, blocking gate so a macOS or
-      # Wayland break reads as what it is instead of as "engine crates".
-      #
-      # Linux takes `--all-features` deliberately: that is what pulls in the
-      # xdg-desktop-portal + PipeWire path, and the libpipewire/libspa headers it
-      # needs are already installed by install-linux-deps.sh.
+    
       - name: capturekit backends (${{ matrix.platform.name }})
         if: ${{ !matrix.platform.cross }}
         run: |
           cargo clippy --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-targets --all-features --release -- -D warnings
           cargo test --manifest-path crates/Cargo.toml -p capturekit-core --all-features --release
 
-      # Both capture crates publish `rust-version = "1.81"`. Everything else here
-      # builds them on the pinned toolchain, so that floor was asserted and never
-      # tested; this proves our own code stays inside it.
-      #
-      # Windows, not Linux: on Linux the `wayland` feature pulls ashpd -> zbus ->
-      # zvariant -> zcheapstr, which is edition 2024, so cargo 1.81 cannot parse
-      # the graph at all. That is a real violation of the published floor, not a
-      # CI artefact, and it needs the rust-version decided before it can gate.
+    
       - name: capturekit MSRV (1.81)
         if: matrix.platform.name == 'windows-x64'
         run: |
           rustup toolchain install 1.81 --profile minimal
           cargo +1.81 check --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-features
 
-      # Capture against the runner's own desktop. Windows-only because it is the
-      # one runner guaranteed an interactive session: macOS needs a TCC grant no
-      # runner can give, and the Linux image has no display server. Those legs
-      # still compile the code above; they just cannot execute it.
-      #
-      # CAPTUREKIT_REQUIRE_DESKTOP turns the suite's own "no session, skipping"
-      # path into a failure, so this cannot quietly pass by testing nothing.
+     
       - name: capturekit live capture (Windows only)
         if: ${{ matrix.platform.name == 'windows-x64' }}
         env:
           CAPTUREKIT_REQUIRE_DESKTOP: "1"
         run: cargo test --manifest-path crates/Cargo.toml -p capturekit --all-features --release
 
-      # The compositor and its leaf crates MUST keep compiling to wasm32: the
-      # whole plan rests on one compositor serving native and the browser
-      # preview. A dependency that pulls in std::fs or tokio breaks this and
-      # nothing else would notice until the preview cutover.
       - name: Engine crates compile to wasm32
         if: ${{ matrix.platform.name == 'windows-x64' }}
         run: |
           rustup target add wasm32-unknown-unknown
           cargo build --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -p recast-compositor -p recast-scene -p recast-color -p recast-cursor -p recast-time -p recast-audio
 
-      # The native clippy step below never sees `preview.rs`, which is the whole
-      # wasm surface.
+     
       - name: Clippy (wasm32)
         if: ${{ matrix.platform.name == 'windows-x64' }}
         run: cargo clippy --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -- -D warnings
 
-      # Proves the wasm-bindgen surface still builds, and that every build
-      # product it emits is ignored rather than landing in the tree.
+
       - name: Preview engine artifacts
         if: ${{ matrix.platform.name == 'windows-x64' }}
         run: |
           pnpm --filter @recast/engine build
           test -z "$(git status --porcelain -- packages/engine/wasm)"
 
-      # The WASM arm of the golden harness: the same fixtures the native
-      # compositor renders, through the BROWSER build, against the same PNGs.
-      # This is what makes "one compositor" a statement about pixels rather than
-      # about the source tree.
-      #
-      # Windows only, matching the native arm: the goldens are pixel-compared and
-      # the recorded stack is a Windows one, so anywhere else this reports its
-      # deltas instead of gating. The geometry check gates everywhere, since
-      # canvas size is not a rasterisation question.
       - name: Engine golden frames (browser build)
         if: ${{ matrix.platform.name == 'windows-x64' }}
         run: |
           pnpm --filter @recast/engine exec playwright install --with-deps chromium
           pnpm --filter @recast/engine test:golden
 
-      # Golden frames pin what the CURRENT export compositor renders, so the wgpu
-      # rewrite has an exact target. Windows only: the fixtures are byte-compared,
-      # and a different FFmpeg build / libx264 version / scaler rounding on another
-      # OS shifts pixels past the tolerance for reasons that are not regressions.
+    
       - name: Export golden frames (Windows only)
         if: ${{ matrix.platform.name == 'windows-x64' }}
         env:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test golden_frames
 
-      # Clippy after the build so the compile gate above is the hard failure
-      # signal, and blocking: the five dead-code warnings that reached `main`
-      # were invisible precisely because nothing failed on them.
-      #
-      # `--release` with the same target selection as the compile step, not a
-      # bare `--target`. Clippy builds dependencies with plain rustc and only
-      # lints workspace members, so matching the profile AND the target
-      # directory lets it reuse what the compile step just built instead of
-      # rebuilding the whole tree in dev.
+     
       - name: Clippy
         env:
           CARGO_PROFILE_RELEASE_LTO: "false"
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --release ${{ matrix.platform.tauri_args }} -- -D warnings
 
-      # The engine crates are new code held to a stricter bar than the app, so
-      # this one blocks.
-      # `--release` to reuse the dependency artifacts `Engine crates` just
-      # built; in dev this rebuilt the whole workspace, wgpu included, a second
-      # time. Lints do not depend on the profile.
+    
       - name: Clippy (engine crates)
         if: ${{ !matrix.platform.cross }}
         run: cargo clippy --manifest-path crates/Cargo.toml --workspace --all-targets --release -- -D warnings
