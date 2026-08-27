@@ -5,13 +5,33 @@ mod enumerate;
 mod wgc;
 
 use capturekit_core::{
-    CaptureError, Permission, PermissionKind, Result, Target,
+    Capabilities, CaptureError, ExclusionSupport, Permission, PermissionKind, RegionCrop, Result,
+    Target,
 };
 
 use crate::backend::ScreenBackend;
 use crate::platform::OpenOptions;
 
 pub(crate) use enumerate::{displays, windows};
+
+/// What this platform can do, reported as data so callers branch on the answer
+/// rather than on `cfg`.
+pub(crate) fn capabilities() -> Capabilities {
+    Capabilities {
+        backend: "dxgi",
+        // No per-session exclude list exists. `SetWindowDisplayAffinity` is the
+        // mechanism, and only the excluded window's own process may call it.
+        exclusion: ExclusionSupport::OwnWindowsOnly,
+        window_capture: wgc::is_supported(),
+        window_enumeration: true,
+        display_enumeration: true,
+        region_crop: RegionCrop::DuringAcquisition,
+        cursor_in_frame: wgc::is_supported(),
+        cursor_samples: true,
+        dirty_rects: true,
+        audio_loopback: true,
+    }
+}
 
 /// Windows gates neither screen nor window capture behind consent.
 pub(crate) fn permission(kind: PermissionKind) -> Permission {

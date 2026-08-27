@@ -120,6 +120,29 @@ impl Window {
     }
 }
 
+/// One mode a camera can be opened in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct CameraFormat {
+    /// Frame width in pixels.
+    pub width: u32,
+    /// Frame height in pixels.
+    pub height: u32,
+    /// Pixel layout the camera delivers in this mode.
+    pub pixel_format: PixelFormat,
+    /// Frames per second, where the device reports one.
+    pub frame_rate: Option<f32>,
+}
+
+impl CameraFormat {
+    /// Pixel count, for ranking modes by size.
+    #[must_use]
+    pub const fn area(&self) -> u64 {
+        self.width as u64 * self.height as u64
+    }
+}
+
 /// A camera available to capture.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -131,6 +154,27 @@ pub struct Camera {
     pub name: String,
     /// Whether the OS reports this as the default camera.
     pub is_default: bool,
+    /// Modes the device advertises, largest first.
+    pub formats: Vec<CameraFormat>,
+}
+
+impl Camera {
+    /// The mode closest to `width` by `height` without exceeding either, or the
+    /// smallest the device has when everything it offers is larger.
+    ///
+    /// Cameras advertise a ragged list rather than a range, so asking for 1280x720
+    /// on a device that only does 1920x1080 and 640x480 has to resolve to one of
+    /// those two rather than failing.
+    #[must_use]
+    pub fn best_format(&self, width: u32, height: u32) -> Option<CameraFormat> {
+        let fits = self
+            .formats
+            .iter()
+            .filter(|format| format.width <= width && format.height <= height)
+            .max_by_key(|format| format.area());
+        fits.copied()
+            .or_else(|| self.formats.iter().min_by_key(|f| f.area()).copied())
+    }
 }
 
 /// What a backend actually negotiated, which is not always what was asked for.
@@ -218,6 +262,58 @@ mod tests {
             is_on_screen: true,
         };
         assert!(!window.is_capturable());
+    }
+
+    fn camera_with(modes: &[(u32, u32)]) -> Camera {
+        Camera {
+            id: CameraId("cam".into()),
+            name: "Test".into(),
+            is_default: true,
+            formats: modes
+                .iter()
+                .map(|(width, height)| CameraFormat {
+                    width: *width,
+                    height: *height,
+                    pixel_format: PixelFormat::Nv12,
+                    frame_rate: Some(30.0),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn the_best_camera_mode_is_the_largest_that_fits() {
+        let camera = camera_with(&[(640, 480), (1280, 720), (1920, 1080)]);
+        let chosen = camera.best_format(1280, 720).expect("a mode");
+        assert_eq!((chosen.width, chosen.height), (1280, 720));
+    }
+
+    #[test]
+    fn a_camera_with_only_larger_modes_falls_back_to_its_smallest() {
+        let camera = camera_with(&[(1920, 1080), (3840, 2160)]);
+        let chosen = camera.best_format(640, 480).expect("a mode");
+        assert_eq!((chosen.width, chosen.height), (1920, 1080));
+    }
+
+    #[test]
+    fn a_camera_with_no_modes_picks_nothing() {
+        assert!(camera_with(&[]).best_format(1280, 720).is_none());
+    }
+
+    #[test]
+    fn a_mode_wider_but_shorter_than_asked_for_is_not_chosen() {
+        let camera = camera_with(&[(1920, 240), (640, 480)]);
+        let chosen = camera.best_format(1280, 720).expect("a mode");
+        assert_eq!((chosen.width, chosen.height), (640, 480));
+    }
+
+    /// A mode narrow enough but too tall. Without it, dropping the height
+    /// check from the filter goes unnoticed.
+    #[test]
+    fn a_mode_narrow_enough_but_too_tall_is_not_chosen() {
+        let camera = camera_with(&[(640, 1080), (640, 480)]);
+        let chosen = camera.best_format(1280, 720).expect("a mode");
+        assert_eq!((chosen.width, chosen.height), (640, 480));
     }
 
     #[test]

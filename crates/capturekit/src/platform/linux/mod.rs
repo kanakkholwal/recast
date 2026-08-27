@@ -4,7 +4,8 @@ mod x11;
 mod wayland;
 
 use capturekit_core::{
-    CaptureError, Display, Permission, PermissionKind, Result, Target, Timestamp, Window,
+    Capabilities, CaptureError, Display, ExclusionSupport, Permission, PermissionKind, RegionCrop,
+    Result, Target, Timestamp, Window,
 };
 
 use crate::backend::ScreenBackend;
@@ -69,6 +70,48 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
         Session::Wayland => Err(no_wayland()),
         Session::X11 => x11::windows(),
         Session::None => Err(no_session()),
+    }
+}
+
+/// What this session can do, reported as data so callers branch on the answer
+/// rather than on `cfg`.
+///
+/// The two Linux sessions differ more from each other than macOS differs from
+/// Windows, so this is per-session rather than per-OS.
+pub(crate) fn capabilities() -> Capabilities {
+    match session() {
+        Session::Wayland => Capabilities {
+            backend: "pipewire",
+            // The compositor owns the frame and gives a client no say in what is
+            // in it. There is no portal API for excluding a window, so an
+            // exclusion request here is refused rather than silently dropped.
+            exclusion: ExclusionSupport::None,
+            window_capture: true,
+            // The portal runs its own picker; a client never sees the list.
+            window_enumeration: false,
+            display_enumeration: false,
+            region_crop: RegionCrop::OnHost,
+            cursor_in_frame: true,
+            cursor_samples: false,
+            dirty_rects: false,
+            audio_loopback: true,
+        },
+        _ => Capabilities {
+            backend: "x11",
+            // X11 has no notion of hiding a window from a `GetImage` of the root.
+            exclusion: ExclusionSupport::None,
+            window_capture: true,
+            window_enumeration: true,
+            display_enumeration: true,
+            // `GetImage` crops server-side, so nothing outside the rectangle
+            // crosses the socket.
+            region_crop: RegionCrop::DuringAcquisition,
+            // The root window image never contains the pointer.
+            cursor_in_frame: false,
+            cursor_samples: true,
+            dirty_rects: false,
+            audio_loopback: true,
+        },
     }
 }
 

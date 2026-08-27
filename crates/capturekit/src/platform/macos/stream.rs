@@ -148,7 +148,11 @@ pub(crate) struct SckSource {
 // the frame slot is explicitly synchronised. The bound satisfies `ScreenBackend`.
 unsafe impl Send for SckSource {}
 
-fn configuration(size: Rect, source_rect: Option<Rect>, opts: &OpenOptions) -> Retained<SCStreamConfiguration> {
+fn configuration(
+    size: Rect,
+    source_rect: Option<Rect>,
+    opts: &OpenOptions,
+) -> Retained<SCStreamConfiguration> {
     let config = unsafe { SCStreamConfiguration::new() };
     unsafe {
         config.setWidth(size.width as usize);
@@ -172,7 +176,7 @@ fn configuration(size: Rect, source_rect: Option<Rect>, opts: &OpenOptions) -> R
                 },
             });
         }
-        if let Some(fps) = opts.frame_rate.filter(|fps| *fps > 0) {
+        if let Some(fps) = opts.frame_rate().filter(|fps| *fps > 0) {
             config.setMinimumFrameInterval(objc2_core_media::CMTime {
                 value: 1,
                 timescale: fps as i32,
@@ -199,7 +203,12 @@ impl SckSource {
         let output = StreamOutput::new(Arc::clone(&slot));
 
         let stream = unsafe {
-            SCStream::initWithFilter_configuration_delegate(SCStream::alloc(), &filter, &config, None)
+            SCStream::initWithFilter_configuration_delegate(
+                SCStream::alloc(),
+                &filter,
+                &config,
+                None,
+            )
         };
         // Serial: frames must reach the slot in the order the daemon produced
         // them, and a concurrent queue would let two deliveries race the swap.
@@ -213,7 +222,10 @@ impl SckSource {
             )
         }
         .map_err(|error| {
-            CaptureError::backend(BACKEND, std::io::Error::other(error.localizedDescription().to_string()))
+            CaptureError::backend(
+                BACKEND,
+                std::io::Error::other(error.localizedDescription().to_string()),
+            )
         })?;
 
         start_capture(&stream)?;
@@ -229,7 +241,7 @@ impl SckSource {
                 color_space: ColorSpace::SRGB,
                 rotation,
                 scale_factor,
-                frame_rate: opts.frame_rate,
+                frame_rate: opts.frame_rate(),
                 backend: BACKEND,
             },
             region,

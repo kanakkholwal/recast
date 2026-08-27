@@ -2,21 +2,21 @@ use core::time::Duration;
 use std::time::Instant;
 
 use capturekit_core::{
-    CaptureError, ColorSpace, DirtyRects, DisplayId, LostReason, Rect, Result, Rotation, SourceDesc,
-    Timestamp,
+    CaptureError, ColorSpace, DirtyRects, DisplayId, LostReason, Rect, Result, Rotation,
+    SourceDesc, Timestamp,
 };
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{E_ACCESSDENIED, E_INVALIDARG, RECT};
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11Texture2D};
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_MODE_ROTATION, DXGI_MODE_ROTATION_ROTATE180, DXGI_MODE_ROTATION_ROTATE270,
+    DXGI_MODE_ROTATION_ROTATE90,
+};
 use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, IDXGIAdapter, IDXGIAdapter1, IDXGIFactory1, IDXGIOutput, IDXGIOutput1,
     IDXGIOutputDuplication, IDXGIResource, DXGI_ERROR_ACCESS_DENIED, DXGI_ERROR_ACCESS_LOST,
     DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_INVALID_CALL,
     DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_DESC, DXGI_OUTDUPL_FRAME_INFO,
-};
-use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_MODE_ROTATION, DXGI_MODE_ROTATION_ROTATE90, DXGI_MODE_ROTATION_ROTATE180,
-    DXGI_MODE_ROTATION_ROTATE270,
 };
 
 use crate::backend::{RawFrame, ScreenBackend};
@@ -122,19 +122,16 @@ impl DxgiSource {
 
         let dupl_desc: DXGI_OUTDUPL_DESC = unsafe { duplication.GetDesc() };
         let surface = Rect::from_size(dupl_desc.ModeDesc.Width, dupl_desc.ModeDesc.Height);
-        let region = match opts.region {
-            Some(region) => {
-                Some(
-                    region
-                        .fit_inside(&surface)
-                        .ok_or(CaptureError::Unsupported {
-                            backend: BACKEND,
-                            operation: "crop to a region outside the display",
-                        })?,
-                )
-            }
-            None => None,
-        };
+        let region =
+            match opts.region {
+                Some(region) => Some(region.fit_inside(&surface).ok_or(
+                    CaptureError::Unsupported {
+                        backend: BACKEND,
+                        operation: "crop to a region outside the display",
+                    },
+                )?),
+                None => None,
+            };
         let staged = region.unwrap_or(surface);
 
         let readback = Readback::new(
@@ -154,7 +151,7 @@ impl DxgiSource {
             color_space: ColorSpace::SRGB,
             rotation: rotation_of(output_desc.Rotation),
             scale_factor: 1.0,
-            frame_rate: opts.frame_rate,
+            frame_rate: opts.frame_rate(),
             backend: BACKEND,
         };
 
@@ -195,7 +192,10 @@ impl DxgiSource {
 
         let opts = OpenOptions {
             region: self.region,
-            frame_rate: self.desc.frame_rate,
+            pacing: match self.desc.frame_rate {
+                Some(fps) => capturekit_core::Pacing::Constant { fps },
+                None => capturekit_core::Pacing::Passthrough,
+            },
             ..OpenOptions::default()
         };
         match Self::open(self.display, &opts) {
@@ -222,13 +222,18 @@ impl DxgiSource {
         }
         let slot = core::mem::size_of::<RECT>();
         self.dirty_scratch.clear();
-        self.dirty_scratch
-            .resize(info.TotalMetadataBufferSize as usize / slot + 1, RECT::default());
+        self.dirty_scratch.resize(
+            info.TotalMetadataBufferSize as usize / slot + 1,
+            RECT::default(),
+        );
         let mut required = 0u32;
         let bytes = (self.dirty_scratch.len() * slot) as u32;
         let read = unsafe {
-            self.duplication
-                .GetFrameDirtyRects(bytes, self.dirty_scratch.as_mut_ptr(), &mut required)
+            self.duplication.GetFrameDirtyRects(
+                bytes,
+                self.dirty_scratch.as_mut_ptr(),
+                &mut required,
+            )
         };
         if read.is_err() {
             return DirtyRects::unknown();

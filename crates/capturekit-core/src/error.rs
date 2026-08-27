@@ -88,6 +88,44 @@ pub enum CaptureError {
         got: usize,
     },
 
+    /// An exclusion request cannot be honoured by this platform.
+    ///
+    /// Never downgraded to a warning: the caller asked for something to be kept
+    /// out of the recording, and capturing it anyway is the failure they were
+    /// trying to prevent.
+    #[error("{backend} cannot exclude {requested} window(s) from a capture ({detail})")]
+    ExclusionUnsupported {
+        /// The backend that refused.
+        backend: &'static str,
+        /// How many windows were asked for.
+        requested: usize,
+        /// What the platform can do instead.
+        detail: &'static str,
+    },
+
+    /// An audio buffer ends mid-frame, so the reader and the device disagree
+    /// about the channel count.
+    #[error("{len} bytes is not a whole number of {bytes_per_frame}-byte {format:?} frames")]
+    PartialAudioFrame {
+        /// The format being read.
+        format: crate::audio::AudioFormat,
+        /// Bytes offered.
+        len: usize,
+        /// Bytes one sample frame occupies.
+        bytes_per_frame: usize,
+    },
+
+    /// A cursor image is shorter than the masks it declares.
+    #[error("a {kind:?} cursor needs {needed} bytes, got {got}")]
+    ShortCursorShape {
+        /// How the image said it was stored.
+        kind: crate::cursor::CursorShapeKind,
+        /// Bytes the image requires.
+        needed: usize,
+        /// Bytes actually present.
+        got: usize,
+    },
+
     /// The frame does not fit in this platform's address space.
     #[error("a {width}x{height} frame needs {bytes} bytes, more than this platform can address")]
     FrameTooLarge {

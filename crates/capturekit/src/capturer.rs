@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use capturekit_core::{
-    ColorSpaceRequest, DirtyRects, MonotonicClock, Rect, Result, SourceDesc, Target, Timestamp,
+    CaptureError, ColorSpaceRequest, DirtyRects, ExclusionSupport, MonotonicClock, Pacing, Rect,
+    Result, SourceDesc, Target, Timestamp, WindowId,
 };
 
 use crate::backend::ScreenBackend;
@@ -107,10 +108,30 @@ impl CapturerBuilder {
         self
     }
 
-    /// Pacing hint, honoured by backends that deliver on repaint.
+    /// Frames per second to hold, repeating the last frame when the source
+    /// produces nothing. Shorthand for [`CapturerBuilder::pacing`].
     #[must_use]
-    pub fn frame_rate(mut self, frame_rate: Option<u32>) -> Self {
-        self.opts.frame_rate = frame_rate;
+    pub fn frame_rate(self, fps: u32) -> Self {
+        self.pacing(Pacing::Constant { fps })
+    }
+
+    /// How the output timeline relates to what the source produced.
+    #[must_use]
+    pub fn pacing(mut self, pacing: Pacing) -> Self {
+        self.opts.pacing = pacing;
+        self
+    }
+
+    /// Keep these windows out of the capture.
+    ///
+    /// Not best-effort. If the platform cannot honour the request,
+    /// [`CapturerBuilder::build`] fails rather than capturing a window the caller
+    /// asked to hide: exclusion is a privacy control, and silently ignoring one
+    /// records exactly what the user was promised would be left out. Check
+    /// [`crate::capabilities`] first to decide gracefully.
+    #[must_use]
+    pub fn exclude_windows(mut self, windows: &[WindowId]) -> Self {
+        self.opts.exclude = windows.to_vec();
         self
     }
 
@@ -123,6 +144,7 @@ impl CapturerBuilder {
 
     /// Open the source.
     pub fn build(self) -> Result<Capturer> {
+        check_exclusion(&self.opts.exclude)?;
         let backend = os::open(&self.target, &self.opts)?;
         let desc = backend.describe().clone();
         let clock = MonotonicClock::for_frame_rate(desc.frame_rate.unwrap_or(60));
@@ -132,6 +154,26 @@ impl CapturerBuilder {
             clock,
         })
     }
+}
+
+/// Refuse an exclusion request this platform cannot meet.
+fn check_exclusion(requested: &[WindowId]) -> Result<()> {
+    if requested.is_empty() {
+        return Ok(());
+    }
+    let capabilities = os::capabilities();
+    let detail = match capabilities.exclusion {
+        ExclusionSupport::AnyWindow => return Ok(()),
+        // Ownership is checked by the backend, which is the only layer that can
+        // ask the OS who owns a window.
+        ExclusionSupport::OwnWindowsOnly => return Ok(()),
+        ExclusionSupport::None => "this session gives a client no say in what the capture contains",
+    };
+    Err(CaptureError::ExclusionUnsupported {
+        backend: capabilities.backend,
+        requested: requested.len(),
+        detail,
+    })
 }
 
 /// A live capture, held open.

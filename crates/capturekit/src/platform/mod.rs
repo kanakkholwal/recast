@@ -18,7 +18,7 @@ pub(crate) mod unsupported;
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub(crate) use unsupported as os;
 
-use capturekit_core::{ColorSpaceRequest, Rect};
+use capturekit_core::{ColorSpaceRequest, Pacing, Rect, WindowId};
 
 use crate::shot::{CursorMode, ShotOptions};
 
@@ -32,9 +32,18 @@ pub(crate) struct OpenOptions {
     pub cursor: CursorMode,
     /// Crop applied during acquisition, in the target's own coordinates.
     pub region: Option<Rect>,
-    /// Pacing hint. Backends that deliver on repaint throttle readback to it.
-    pub frame_rate: Option<u32>,
+    /// How the output timeline relates to what the source produced.
+    pub pacing: Pacing,
+    /// Windows to keep out of the capture, whoever owns them.
+    pub exclude: Vec<WindowId>,
     pub color_space: ColorSpaceRequest,
+}
+
+impl OpenOptions {
+    /// Frames per second the backend should pace at, where it paces at all.
+    pub(crate) fn frame_rate(&self) -> Option<u32> {
+        self.pacing.fps()
+    }
 }
 
 impl From<&ShotOptions> for OpenOptions {
@@ -43,7 +52,8 @@ impl From<&ShotOptions> for OpenOptions {
             cursor: opts.cursor,
             region: opts.region,
             // A screenshot wants the next frame, not a paced one.
-            frame_rate: None,
+            pacing: Pacing::Passthrough,
+            exclude: Vec::new(),
             color_space: opts.color_space,
         }
     }

@@ -137,16 +137,16 @@ impl Image {
         let left = fitted.x as usize * bytes_per_pixel;
         for y in 0..fitted.height {
             let row_start = (fitted.y as u32 + y) as usize * self.stride as usize + left;
-            let row = self
-                .bytes
-                .get(row_start..row_start + stride)
-                .ok_or(CaptureError::ShortBuffer {
-                    format: self.format,
-                    width: self.width,
-                    height: self.height,
-                    needed: row_start + stride,
-                    got: self.bytes.len(),
-                })?;
+            let row =
+                self.bytes
+                    .get(row_start..row_start + stride)
+                    .ok_or(CaptureError::ShortBuffer {
+                        format: self.format,
+                        width: self.width,
+                        height: self.height,
+                        needed: row_start + stride,
+                        got: self.bytes.len(),
+                    })?;
             bytes.extend_from_slice(row);
         }
 

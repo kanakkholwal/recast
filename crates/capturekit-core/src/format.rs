@@ -224,8 +224,12 @@ mod tests {
 
     #[test]
     fn p010_is_twice_the_size_of_nv12() {
-        let nv12 = PixelFormat::Nv12.buffer_len(1920, 1080, 1920).expect("nv12");
-        let p010 = PixelFormat::P010.buffer_len(1920, 1080, 3840).expect("p010");
+        let nv12 = PixelFormat::Nv12
+            .buffer_len(1920, 1080, 1920)
+            .expect("nv12");
+        let p010 = PixelFormat::P010
+            .buffer_len(1920, 1080, 3840)
+            .expect("p010");
         assert_eq!(p010, nv12 * 2);
     }
 

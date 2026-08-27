@@ -1,14 +1,12 @@
 use core::time::Duration;
 
 use capturekit_core::{
-    CaptureError, ColorSpace, DirtyRects, Display, DisplayId, LostReason, PixelFormat, Rect, Result,
-    Rotation, SourceDesc, Window, WindowId,
+    CaptureError, ColorSpace, DirtyRects, Display, DisplayId, LostReason, PixelFormat, Rect,
+    Result, Rotation, SourceDesc, Window, WindowId,
 };
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::{self, ConnectionExt as RandrExt};
-use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt, ImageFormat, Screen, Window as XWindow,
-};
+use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, ImageFormat, Screen, Window as XWindow};
 use x11rb::rust_connection::RustConnection;
 
 use crate::backend::{RawFrame, ScreenBackend};
@@ -177,21 +175,33 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
         };
 
         let title = text_property(&session, handle, net_name, utf8)
-            .or_else(|| text_property(&session, handle, AtomEnum::WM_NAME.into(), AtomEnum::STRING.into()))
+            .or_else(|| {
+                text_property(
+                    &session,
+                    handle,
+                    AtomEnum::WM_NAME.into(),
+                    AtomEnum::STRING.into(),
+                )
+            })
             .unwrap_or_default();
         if title.is_empty() {
             continue;
         }
-        let app_name = text_property(&session, handle, AtomEnum::WM_CLASS.into(), AtomEnum::STRING.into())
-            .map(|class| {
-                // WM_CLASS is two NUL-separated strings: instance then class.
-                class
-                    .split('\0')
-                    .rfind(|part| !part.is_empty())
-                    .unwrap_or_default()
-                    .to_string()
-            })
-            .unwrap_or_default();
+        let app_name = text_property(
+            &session,
+            handle,
+            AtomEnum::WM_CLASS.into(),
+            AtomEnum::STRING.into(),
+        )
+        .map(|class| {
+            // WM_CLASS is two NUL-separated strings: instance then class.
+            class
+                .split('\0')
+                .rfind(|part| !part.is_empty())
+                .unwrap_or_default()
+                .to_string()
+        })
+        .unwrap_or_default();
 
         let is_minimized = session
             .conn
@@ -270,17 +280,23 @@ impl X11Source {
         // the screen is where its pixels start.
         let surface = monitor.bounds;
         let grab = match opts.region {
-            Some(region) => region
-                .offset_by(&surface)
-                .fit_inside(&surface)
-                .ok_or(CaptureError::Unsupported {
+            Some(region) => region.offset_by(&surface).fit_inside(&surface).ok_or(
+                CaptureError::Unsupported {
                     backend: BACKEND,
                     operation: "crop to a region outside the display",
-                })?,
+                },
+            )?,
             None => surface,
         };
         let root = session.screen.root;
-        Self::build(session, root, grab, opts.region.map(|_| grab), Rotation::None, opts)
+        Self::build(
+            session,
+            root,
+            grab,
+            opts.region.map(|_| grab),
+            Rotation::None,
+            opts,
+        )
     }
 
     pub(crate) fn open_window(window: WindowId, opts: &OpenOptions) -> Result<Self> {
@@ -305,7 +321,14 @@ impl X11Source {
                 })?,
             None => surface,
         };
-        Self::build(session, handle, grab, opts.region.map(|_| grab), Rotation::None, opts)
+        Self::build(
+            session,
+            handle,
+            grab,
+            opts.region.map(|_| grab),
+            Rotation::None,
+            opts,
+        )
     }
 
     fn build(
@@ -328,7 +351,7 @@ impl X11Source {
                 color_space: ColorSpace::SRGB,
                 rotation,
                 scale_factor: 1.0,
-                frame_rate: opts.frame_rate,
+                frame_rate: opts.frame_rate(),
                 backend: BACKEND,
             },
             frame: Vec::new(),

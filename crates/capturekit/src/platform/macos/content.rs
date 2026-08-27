@@ -1,8 +1,6 @@
 use core::time::Duration;
 
-use capturekit_core::{
-    CaptureError, Display, DisplayId, Rect, Result, Rotation, Window, WindowId,
-};
+use capturekit_core::{CaptureError, Display, DisplayId, Rect, Result, Rotation, Window, WindowId};
 use objc2::rc::Retained;
 use objc2_core_graphics::{
     CGDisplayCopyDisplayMode, CGDisplayMode, CGDisplayRotation, CGMainDisplayID,
@@ -65,11 +63,12 @@ fn shareable_content() -> Result<Retained<SCShareableContent>> {
             unsafe { Retained::from_raw(pointer as *mut SCShareableContent) }
                 .ok_or_else(|| failed("the content list was released before it arrived".into()))
         }
-        Ok(Err(message)) => Err(match message.contains("declined") || message.contains("permission")
-        {
-            true => CaptureError::PermissionDenied(capturekit_core::PermissionKind::Screen),
-            false => failed(message),
-        }),
+        Ok(Err(message)) => Err(
+            match message.contains("declined") || message.contains("permission") {
+                true => CaptureError::PermissionDenied(capturekit_core::PermissionKind::Screen),
+                false => failed(message),
+            },
+        ),
         Err(_) => Err(CaptureError::Timeout(CONTENT_TIMEOUT)),
     }
 }

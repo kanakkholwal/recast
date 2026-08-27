@@ -7,8 +7,8 @@ use std::thread::JoinHandle;
 use ashpd::desktop::screencast::{CursorMode as PortalCursor, Screencast, SourceType};
 use ashpd::desktop::PersistMode;
 use capturekit_core::{
-    CaptureError, ColorSpace, DirtyRects, Display, DisplayId, LostReason, PixelFormat, Rect, Result,
-    Rotation, SourceDesc, Timestamp,
+    CaptureError, ColorSpace, DirtyRects, Display, DisplayId, LostReason, PixelFormat, Rect,
+    Result, Rotation, SourceDesc, Timestamp,
 };
 use pipewire::spa::param::format::{MediaSubtype, MediaType};
 use pipewire::spa::param::video::{VideoFormat, VideoInfoRaw};
@@ -138,10 +138,7 @@ pub(crate) struct PortalSource {
 }
 
 impl PortalSource {
-    pub(crate) fn open(
-        _target: &capturekit_core::Target,
-        opts: &OpenOptions,
-    ) -> Result<Self> {
+    pub(crate) fn open(_target: &capturekit_core::Target, opts: &OpenOptions) -> Result<Self> {
         let negotiated = negotiate(opts.cursor)?;
         let slot = Arc::new(FrameSlot::default());
         let quit = Arc::new(AtomicBool::new(false));
@@ -184,7 +181,7 @@ impl PortalSource {
                 color_space: ColorSpace::SRGB,
                 rotation: Rotation::None,
                 scale_factor: 1.0,
-                frame_rate: opts.frame_rate,
+                frame_rate: opts.frame_rate(),
                 backend: BACKEND,
             },
             last_sequence: 0,

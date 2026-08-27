@@ -8,8 +8,9 @@
 use std::time::Duration;
 
 use capturekit::{
-    capturer, displays, permission, shot, shot_with, windows, CursorMode, Display, Flow,
-    PermissionKind, PixelFormat, Rect, ShotOptions, Target, Warmup,
+    capabilities, capturer, displays, permission, shot, shot_with, windows, CursorMode, Display,
+    ExclusionSupport, Flow, PermissionKind, PixelFormat, Rect, ShotOptions, Target, Warmup,
+    WindowId,
 };
 
 /// The display to capture, or `None` when there is no desktop to capture from.
@@ -52,7 +53,8 @@ fn skip(reason: &str) -> Option<Display> {
 /// and fail as `AlreadyCaptured`, which is the library behaving correctly.
 fn exclusive() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 macro_rules! require_desktop {
@@ -125,7 +127,12 @@ fn a_region_shot_is_cropped_during_acquisition_not_afterwards() {
 fn a_region_larger_than_the_display_is_clipped_rather_than_refused() {
     let _exclusive = exclusive();
     let display = require_desktop!();
-    let oversized = Rect::new(0, 0, display.bounds.width + 512, display.bounds.height + 512);
+    let oversized = Rect::new(
+        0,
+        0,
+        display.bounds.width + 512,
+        display.bounds.height + 512,
+    );
     let image = shot_with(
         Target::Region {
             display: display.id,
@@ -143,8 +150,8 @@ fn a_region_larger_than_the_display_is_clipped_rather_than_refused() {
 #[test]
 fn a_shot_of_a_display_that_does_not_exist_names_what_was_missing() {
     let _ = require_desktop!();
-    let err = shot(Target::Display(capturekit::DisplayId(u64::MAX)))
-        .expect_err("no display has this id");
+    let err =
+        shot(Target::Display(capturekit::DisplayId(u64::MAX))).expect_err("no display has this id");
     assert!(err.to_string().contains("display"), "{err}");
 }
 
@@ -153,7 +160,7 @@ fn a_stream_delivers_frames_that_keep_moving_forward() {
     let _exclusive = exclusive();
     let display = require_desktop!();
     let mut capture = capturer(Target::Display(display.id))
-        .frame_rate(Some(30))
+        .frame_rate(30)
         .cursor(CursorMode::Exclude)
         .build()
         .expect("open a stream on the primary display");
@@ -206,7 +213,7 @@ fn a_push_capture_stops_when_the_handler_says_so() {
     let display = require_desktop!();
     let (sender, receiver) = std::sync::mpsc::channel();
     let capture = capturer(Target::Display(display.id))
-        .frame_rate(Some(30))
+        .frame_rate(30)
         .build()
         .expect("open a stream");
 
@@ -260,5 +267,51 @@ fn a_window_shot_is_the_size_of_the_window_not_the_display() {
         // A window can close between enumeration and capture, and Graphics
         // Capture is absent before Windows 10 2004.
         Err(err) => eprintln!("skipped: {} could not be captured: {err}", window.title),
+    }
+}
+
+/// Exclusion is a privacy control, so a platform that cannot honour it must say
+/// so at `build()` rather than quietly recording the window anyway.
+#[test]
+fn an_exclusion_request_is_either_honoured_or_refused_but_never_ignored() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let built = capturer(Target::Display(display.id))
+        .exclude_windows(&[WindowId(1)])
+        .build();
+
+    match capabilities().exclusion {
+        ExclusionSupport::None => {
+            let Err(err) = built else {
+                panic!("a session that cannot exclude accepted an exclusion request");
+            };
+            assert!(
+                matches!(err, capturekit::CaptureError::ExclusionUnsupported { .. }),
+                "expected a refusal naming exclusion, got {err}"
+            );
+        }
+        // Where it is supported, the request must not itself break the capture.
+        _ => {
+            let mut capture = built.expect("exclusion is supported here");
+            capture.stop().expect("release the display");
+        }
+    }
+}
+
+#[test]
+fn the_reported_capabilities_match_what_the_platform_actually_does() {
+    let _ = require_desktop!();
+    let caps = capabilities();
+    assert!(!caps.backend.is_empty());
+    // Enumeration is the one claim testable without capturing anything.
+    if caps.window_enumeration {
+        assert!(
+            windows().is_ok(),
+            "claims window enumeration but cannot list"
+        );
+    }
+    if caps.display_enumeration {
+        let listed = displays().expect("claims display enumeration");
+        assert!(!listed.is_empty());
     }
 }

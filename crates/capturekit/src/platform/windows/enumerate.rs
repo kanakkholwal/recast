@@ -2,7 +2,7 @@ use capturekit_core::{Display, DisplayId, Rect, Result, Rotation, Window, Window
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW, MonitorFromWindow, DEVMODEW,
-    DEVMODE_DISPLAY_ORIENTATION, DMDO_90, DMDO_180, DMDO_270, ENUM_CURRENT_SETTINGS, HDC, HMONITOR,
+    DEVMODE_DISPLAY_ORIENTATION, DMDO_180, DMDO_270, DMDO_90, ENUM_CURRENT_SETTINGS, HDC, HMONITOR,
     MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
@@ -85,12 +85,7 @@ fn physical_bounds(mode: DEVMODEW) -> Rect {
     // SAFETY: `dmPosition` is the active member for a display device, which is
     // what `EnumDisplaySettingsW` was asked about.
     let position = unsafe { mode.Anonymous1.Anonymous2.dmPosition };
-    Rect::new(
-        position.x,
-        position.y,
-        mode.dmPelsWidth,
-        mode.dmPelsHeight,
-    )
+    Rect::new(position.x, position.y, mode.dmPelsWidth, mode.dmPelsHeight)
 }
 
 fn scale_factor(monitor: HMONITOR) -> f32 {
@@ -151,7 +146,8 @@ pub(crate) fn displays() -> Result<Vec<Display>> {
 /// to an application display name without a package manifest lookup.
 fn app_name(window: HWND) -> String {
     use windows::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT, PROCESS_QUERY_LIMITED_INFORMATION,
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
+        PROCESS_QUERY_LIMITED_INFORMATION,
     };
 
     let mut pid = 0u32;

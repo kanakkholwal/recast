@@ -2,7 +2,8 @@ mod content;
 mod stream;
 
 use capturekit_core::{
-    CaptureError, Permission, PermissionKind, Result, Target, Timestamp,
+    Capabilities, CaptureError, ExclusionSupport, Permission, PermissionKind, RegionCrop, Result,
+    Target, Timestamp,
 };
 use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
 
@@ -10,6 +11,27 @@ use crate::backend::ScreenBackend;
 use crate::platform::OpenOptions;
 
 pub(crate) use content::{displays, windows};
+
+/// What this platform can do, reported as data so callers branch on the answer
+/// rather than on `cfg`.
+pub(crate) fn capabilities() -> Capabilities {
+    Capabilities {
+        backend: content::BACKEND,
+        // `SCContentFilter` takes an exclusion list of any windows at all, which
+        // is the only one of the three that can hide a stranger's window.
+        exclusion: ExclusionSupport::AnyWindow,
+        window_capture: true,
+        window_enumeration: true,
+        display_enumeration: true,
+        region_crop: RegionCrop::DuringAcquisition,
+        cursor_in_frame: true,
+        // Position and shape come from a separate CoreGraphics call, not with
+        // the sample buffer, so they are not on the frame clock yet.
+        cursor_samples: false,
+        dirty_rects: false,
+        audio_loopback: true,
+    }
+}
 
 /// Screen recording is gated by TCC; the camera and microphone by their own
 /// prompts, which capturekit does not drive yet.

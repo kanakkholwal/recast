@@ -1,5 +1,6 @@
 use capturekit_core::{
-    CaptureError, Display, Permission, PermissionKind, Result, Target, Timestamp, Window,
+    Capabilities, CaptureError, Display, ExclusionSupport, Permission, PermissionKind, RegionCrop,
+    Result, Target, Timestamp, Window,
 };
 
 use crate::backend::ScreenBackend;
@@ -13,6 +14,21 @@ fn unsupported(operation: &'static str) -> CaptureError {
     CaptureError::Unsupported {
         backend: BACKEND,
         operation,
+    }
+}
+
+pub(crate) fn capabilities() -> Capabilities {
+    Capabilities {
+        backend: BACKEND,
+        exclusion: ExclusionSupport::None,
+        window_capture: false,
+        window_enumeration: false,
+        display_enumeration: false,
+        region_crop: RegionCrop::OnHost,
+        cursor_in_frame: false,
+        cursor_samples: false,
+        dirty_rects: false,
+        audio_loopback: false,
     }
 }
 

@@ -260,10 +260,7 @@ impl DirtyRects {
     /// The smallest rectangle covering every reported region.
     #[must_use]
     pub fn bounds(&self) -> Option<Rect> {
-        self.rects
-            .iter()
-            .copied()
-            .reduce(|acc, r| acc.union(&r))
+        self.rects.iter().copied().reduce(|acc, r| acc.union(&r))
     }
 
     /// The region of `frame` a consumer must redraw, which is all of it when the

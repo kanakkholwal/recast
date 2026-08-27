@@ -25,16 +25,29 @@ mod shot;
 mod mock;
 
 pub use capturekit_core::{
-    Camera, CameraId, CaptureError, ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest,
-    DirtyRects, Display, DisplayId, LostReason, MatrixCoefficients, Permission, PermissionKind,
-    PixelFormat, PlaneFormat, Primaries, Rect, Result, Rotation, SourceDesc, Target, Timestamp,
-    TransferFunction, Window, WindowId,
+    AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, Camera, CameraFormat,
+    CameraId, Capabilities, CaptureError, ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest,
+    CursorSample, CursorShape, CursorShapeKind, DirtyRects, Display, DisplayId, ExclusionSupport,
+    LostReason, MatrixCoefficients, Pacer, Pacing, Permission, PermissionKind, PixelFormat,
+    PlaneFormat, Primaries, Rect, RegionCrop, Result, Rotation, SampleFormat, SourceDesc, Target,
+    Timestamp, TransferFunction, Window, WindowId,
 };
 pub use capturer::{CaptureHandle, Capturer, CapturerBuilder, Flow, Frame};
 pub use image::Image;
 pub use shot::{CursorMode, ShotOptions, Warmup};
 
 use platform::os;
+
+/// What this platform's capture backend can and cannot do.
+///
+/// Reported as data rather than left to `cfg`, so a caller asks once and branches
+/// on the answer. The API shape is identical on all three systems; only these
+/// values differ. Consult it before relying on exclusion, window enumeration or
+/// cursor samples, all of which one platform or another cannot provide.
+#[must_use]
+pub fn capabilities() -> Capabilities {
+    os::capabilities()
+}
 
 /// Every monitor available to capture.
 pub fn displays() -> Result<Vec<Display>> {

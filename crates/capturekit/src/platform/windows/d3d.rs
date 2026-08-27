@@ -153,13 +153,14 @@ impl Readback {
         unsafe { source.GetDesc(&mut desc) };
 
         let surface = Rect::from_size(desc.Width, desc.Height);
-        let clipped = region
-            .unwrap_or(surface)
-            .fit_inside(&surface)
-            .ok_or(CaptureError::Unsupported {
-                backend: BACKEND,
-                operation: "crop to a region outside the captured surface",
-            })?;
+        let clipped =
+            region
+                .unwrap_or(surface)
+                .fit_inside(&surface)
+                .ok_or(CaptureError::Unsupported {
+                    backend: BACKEND,
+                    operation: "crop to a region outside the captured surface",
+                })?;
         let source_box = D3D11_BOX {
             left: clipped.x.max(0) as u32,
             top: clipped.y.max(0) as u32,
@@ -194,7 +195,9 @@ impl Readback {
             }
             self.mapped = Some(mapped);
         }
-        let mapped = self.mapped.ok_or_else(|| missing("map a staging texture"))?;
+        let mapped = self
+            .mapped
+            .ok_or_else(|| missing("map a staging texture"))?;
         let stride = mapped.RowPitch;
         let len = if mapped.DepthPitch > 0 {
             mapped.DepthPitch as usize

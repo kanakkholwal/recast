@@ -9,23 +9,31 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+mod audio;
+mod capabilities;
 mod color;
+mod cursor;
 mod error;
 mod format;
 mod geom;
+mod pacing;
 mod permission;
 mod target;
 mod time;
 
+pub use audio::{AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, SampleFormat};
+pub use capabilities::{Capabilities, ExclusionSupport, RegionCrop};
 pub use color::{
     ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest, MatrixCoefficients, Primaries,
     TransferFunction,
 };
+pub use cursor::{CursorSample, CursorShape, CursorShapeKind};
 pub use error::{CaptureError, LostReason, Result};
 pub use format::{PixelFormat, PlaneFormat};
 pub use geom::{DirtyRects, Rect, Rotation};
+pub use pacing::{Pacer, Pacing};
 pub use permission::{Permission, PermissionKind};
 pub use target::{
-    Camera, CameraId, Display, DisplayId, SourceDesc, Target, Window, WindowId,
+    Camera, CameraFormat, CameraId, Display, DisplayId, SourceDesc, Target, Window, WindowId,
 };
 pub use time::{MonotonicClock, Timestamp};

@@ -2,13 +2,12 @@ use core::time::Duration;
 use std::time::Instant;
 
 use capturekit_core::{
-    CaptureError, ColorSpace, DirtyRects, LostReason, Rect, Result, Rotation, SourceDesc, Timestamp,
-    WindowId,
+    CaptureError, ColorSpace, DirtyRects, LostReason, Rect, Result, Rotation, SourceDesc,
+    Timestamp, WindowId,
 };
 use windows::core::{factory, Interface};
 use windows::Graphics::Capture::{
-    Direct3D11CaptureFrame, Direct3D11CaptureFramePool, GraphicsCaptureItem,
-    GraphicsCaptureSession,
+    Direct3D11CaptureFrame, Direct3D11CaptureFramePool, GraphicsCaptureItem, GraphicsCaptureSession,
 };
 use windows::Graphics::DirectX::Direct3D11::IDirect3DDevice;
 use windows::Graphics::DirectX::DirectXPixelFormat;
@@ -74,37 +73,40 @@ impl WgcSource {
         let dxgi_device: IDXGIDevice = device.cast::<IDXGIDevice>().map_err(d3d::err)?;
         let inspectable =
             unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device) }.map_err(d3d::err)?;
-        let d3d_device: IDirect3DDevice = inspectable.cast::<IDirect3DDevice>().map_err(d3d::err)?;
+        let d3d_device: IDirect3DDevice =
+            inspectable.cast::<IDirect3DDevice>().map_err(d3d::err)?;
 
         let interop: IGraphicsCaptureItemInterop =
             factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().map_err(d3d::err)?;
         let item: GraphicsCaptureItem =
-            unsafe { interop.CreateForWindow(hwnd) }.map_err(|error: windows::core::Error| match error.code().0 {
-                // The window went away between enumeration and capture.
-                code if code == windows::Win32::Foundation::E_INVALIDARG.0 => {
-                    CaptureError::NotFound {
-                        kind: "window",
-                        id: window.0,
+            unsafe { interop.CreateForWindow(hwnd) }.map_err(|error: windows::core::Error| {
+                match error.code().0 {
+                    // The window went away between enumeration and capture.
+                    code if code == windows::Win32::Foundation::E_INVALIDARG.0 => {
+                        CaptureError::NotFound {
+                            kind: "window",
+                            id: window.0,
+                        }
                     }
+                    _ => d3d::err(error),
                 }
-                _ => d3d::err(error),
             })?;
         let item_size = item.Size().map_err(d3d::err)?;
-        let surface = Rect::from_size(item_size.Width.max(0) as u32, item_size.Height.max(0) as u32);
+        let surface = Rect::from_size(
+            item_size.Width.max(0) as u32,
+            item_size.Height.max(0) as u32,
+        );
 
-        let region = match opts.region {
-            Some(region) => {
-                Some(
-                    region
-                        .fit_inside(&surface)
-                        .ok_or(CaptureError::Unsupported {
-                            backend: BACKEND,
-                            operation: "crop to a region outside the window",
-                        })?,
-                )
-            }
-            None => surface.fit_inside(&surface),
-        };
+        let region =
+            match opts.region {
+                Some(region) => Some(region.fit_inside(&surface).ok_or(
+                    CaptureError::Unsupported {
+                        backend: BACKEND,
+                        operation: "crop to a region outside the window",
+                    },
+                )?),
+                None => surface.fit_inside(&surface),
+            };
         let staged = region.unwrap_or(surface);
 
         let frame_pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
@@ -140,11 +142,11 @@ impl WgcSource {
                 color_space: ColorSpace::SRGB,
                 rotation: Rotation::None,
                 scale_factor: 1.0,
-                frame_rate: opts.frame_rate,
+                frame_rate: opts.frame_rate(),
                 backend: BACKEND,
             },
             region: opts.region.map(|_| staged),
-            min_readback_gap: readback_gap(opts.frame_rate),
+            min_readback_gap: readback_gap(opts.frame_rate()),
             next_readback_at: Instant::now(),
             closed: false,
         })
