@@ -120,6 +120,20 @@ impl Rect {
         }
     }
 
+    /// This rectangle moved by `origin`, the inverse of [`Rect::relative_to`].
+    ///
+    /// Takes a rectangle expressed inside some surface and puts it back into the
+    /// space that surface lives in.
+    #[must_use]
+    pub fn offset_by(&self, origin: &Self) -> Self {
+        Self {
+            x: self.x.saturating_add(origin.x),
+            y: self.y.saturating_add(origin.y),
+            width: self.width,
+            height: self.height,
+        }
+    }
+
     /// This rectangle scaled about the origin, for lifting logical points into
     /// physical pixels on a HiDPI display.
     #[must_use]
@@ -320,6 +334,14 @@ mod tests {
         let source = Rect::new(-1920, 0, 1920, 1080);
         let crop = Rect::new(-1820, 100, 640, 480);
         assert_eq!(crop.relative_to(&source), Rect::new(100, 100, 640, 480));
+    }
+
+    #[test]
+    fn offset_by_is_the_inverse_of_relative_to() {
+        let surface = Rect::new(1920, 0, 1920, 1080);
+        let local = Rect::new(100, 50, 640, 480);
+        assert_eq!(local.offset_by(&surface), Rect::new(2020, 50, 640, 480));
+        assert_eq!(local.offset_by(&surface).relative_to(&surface), local);
     }
 
     #[test]

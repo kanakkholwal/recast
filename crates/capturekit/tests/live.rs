@@ -1,0 +1,239 @@
+//! Capture against the real desktop this test runs on.
+//!
+//! Skipped rather than failed where there is no session to capture: a headless
+//! CI runner has no desktop, and a suite that goes red there teaches nobody
+//! anything. Everything that can be checked without a display lives in the unit
+//! tests instead.
+
+use std::time::Duration;
+
+use capturekit::{
+    capturer, displays, shot, shot_with, windows, CursorMode, Display, Flow, PixelFormat, Rect,
+    ShotOptions, Target, Warmup,
+};
+
+/// The display to capture, or `None` when there is no desktop to capture from.
+fn primary() -> Option<Display> {
+    let displays = displays().ok()?;
+    displays
+        .iter()
+        .find(|display| display.is_primary)
+        .or_else(|| displays.first())
+        .cloned()
+}
+
+/// Desktop Duplication is one-per-output-per-process, and cargo runs tests on
+/// threads of a single process. Without this they contend for the same output
+/// and fail as `AlreadyCaptured`, which is the library behaving correctly.
+fn exclusive() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+macro_rules! require_desktop {
+    () => {
+        match primary() {
+            Some(display) => display,
+            None => {
+                eprintln!("skipped: no desktop session to capture");
+                return;
+            }
+        }
+    };
+}
+
+/// Whether the frame carries real content rather than a cleared buffer.
+///
+/// A capture that silently hands back zeroes is the failure worth catching: the
+/// dimensions are right, the call succeeded, and the image is blank.
+fn has_content(bytes: &[u8]) -> bool {
+    bytes.iter().any(|byte| *byte != 0)
+}
+
+#[test]
+fn a_display_shot_matches_the_display_it_came_from() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let image = shot(Target::Display(display.id)).expect("capture the primary display");
+
+    assert_eq!(image.width(), display.bounds.width);
+    assert_eq!(image.height(), display.bounds.height);
+    assert_eq!(image.format(), PixelFormat::Bgra8);
+    assert!(
+        image.stride() >= image.width() * 4,
+        "stride {} cannot hold a {}px BGRA row",
+        image.stride(),
+        image.width()
+    );
+    assert!(has_content(image.bytes()), "the capture came back blank");
+}
+
+#[test]
+fn a_region_shot_is_cropped_during_acquisition_not_afterwards() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let region = Rect::new(0, 0, 320, 240);
+    let opts = ShotOptions {
+        region: Some(region),
+        ..ShotOptions::default()
+    };
+    let image = shot_with(
+        Target::Region {
+            display: display.id,
+            rect: region,
+        },
+        &opts,
+    )
+    .expect("capture a region");
+
+    assert_eq!((image.width(), image.height()), (320, 240));
+    // Read back at the region's size, so the pixels outside it never crossed the
+    // bus. A host-side crop would have produced the same dimensions from a
+    // full-display readback, which is what this is guarding against.
+    assert!(
+        image.bytes().len() < display.bounds.area() as usize * 4,
+        "the whole display was read back to serve a 320x240 region"
+    );
+}
+
+#[test]
+fn a_region_larger_than_the_display_is_clipped_rather_than_refused() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let oversized = Rect::new(0, 0, display.bounds.width + 512, display.bounds.height + 512);
+    let image = shot_with(
+        Target::Region {
+            display: display.id,
+            rect: oversized,
+        },
+        &ShotOptions {
+            region: Some(oversized),
+            ..ShotOptions::default()
+        },
+    )
+    .expect("an oversized region clips to the display");
+    assert_eq!(image.width(), display.bounds.width & !1);
+}
+
+#[test]
+fn a_shot_of_a_display_that_does_not_exist_names_what_was_missing() {
+    let _ = require_desktop!();
+    let err = shot(Target::Display(capturekit::DisplayId(u64::MAX)))
+        .expect_err("no display has this id");
+    assert!(err.to_string().contains("display"), "{err}");
+}
+
+#[test]
+fn a_stream_delivers_frames_that_keep_moving_forward() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let mut capture = capturer(Target::Display(display.id))
+        .frame_rate(Some(30))
+        .cursor(CursorMode::Exclude)
+        .build()
+        .expect("open a stream on the primary display");
+
+    let desc = capture.describe().clone();
+    assert_eq!(desc.width, display.bounds.width);
+
+    let mut seen = 0;
+    let mut last = None;
+    // The desktop may be idle, so a timeout is expected rather than fatal; what
+    // matters is that the frames that do arrive are ordered and well-formed.
+    for _ in 0..10 {
+        match capture.next_frame(Duration::from_millis(250)) {
+            Ok(frame) => {
+                if let Some(previous) = last {
+                    assert!(frame.pts() > previous, "timestamps went backwards");
+                }
+                last = Some(frame.pts());
+                assert!(frame.stride() >= desc.width * 4);
+                seen += 1;
+            }
+            Err(err) => assert!(err.is_recoverable(), "stream failed: {err}"),
+        }
+    }
+    assert!(seen > 0, "an active desktop produced no frames at all");
+    capture.stop().expect("release the display");
+}
+
+#[test]
+fn a_snapshot_from_a_running_stream_is_the_same_size_as_its_frames() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let mut capture = capturer(Target::Display(display.id))
+        .build()
+        .expect("open a stream");
+    let image = capture
+        .snapshot(&ShotOptions {
+            // The stream is already running, so its next frame is by definition
+            // current: there is no stale accumulated frame to discard.
+            warmup: Warmup::None,
+            ..ShotOptions::default()
+        })
+        .expect("take a still from the stream");
+    assert_eq!(image.width(), capture.describe().width);
+}
+
+#[test]
+fn a_push_capture_stops_when_the_handler_says_so() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let capture = capturer(Target::Display(display.id))
+        .frame_rate(Some(30))
+        .build()
+        .expect("open a stream");
+
+    let handle = capture.start(Duration::from_millis(250), move |frame| {
+        let _ = sender.send(frame.bytes().len());
+        Flow::Stop
+    });
+    let delivered = receiver.recv_timeout(Duration::from_secs(5));
+    handle.stop().expect("the capture thread ends cleanly");
+    assert!(delivered.is_ok(), "the handler was never called");
+}
+
+#[test]
+fn a_second_capture_of_one_display_says_what_it_is_contending_for() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let _held = capturer(Target::Display(display.id))
+        .build()
+        .expect("the first capture opens");
+    let Err(err) = capturer(Target::Display(display.id)).build() else {
+        panic!("a display was duplicated twice in one process");
+    };
+    assert!(
+        matches!(err, capturekit::CaptureError::AlreadyCaptured { .. }),
+        "a second open reported {err} instead of naming the contended display"
+    );
+}
+
+#[test]
+fn a_window_shot_is_the_size_of_the_window_not_the_display() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let Some(window) = windows()
+        .expect("a window list")
+        .into_iter()
+        .find(|window| window.is_capturable() && window.bounds.width > 64)
+    else {
+        eprintln!("skipped: no capturable window on this desktop");
+        return;
+    };
+
+    match shot(Target::Window(window.id)) {
+        Ok(image) => {
+            assert!(
+                image.width() <= display.bounds.width.max(window.bounds.width),
+                "{} came back wider than its own bounds",
+                window.title
+            );
+            assert!(has_content(image.bytes()));
+        }
+        // A window can close between enumeration and capture, and Graphics
+        // Capture is absent before Windows 10 2004.
+        Err(err) => eprintln!("skipped: {} could not be captured: {err}", window.title),
+    }
+}

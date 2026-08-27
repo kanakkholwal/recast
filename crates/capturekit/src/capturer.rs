@@ -1,0 +1,252 @@
+use core::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
+
+use capturekit_core::{
+    ColorSpaceRequest, DirtyRects, MonotonicClock, Rect, Result, SourceDesc, Target, Timestamp,
+};
+
+use crate::backend::ScreenBackend;
+use crate::image::Image;
+use crate::platform::{os, OpenOptions};
+use crate::shot::{grab_one, CursorMode, ShotOptions};
+
+/// What a frame handler tells the capture to do next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Flow {
+    /// Keep capturing.
+    Continue,
+    /// Tear the capture down.
+    Stop,
+}
+
+/// One frame of a live capture, borrowed from the backend that produced it.
+pub struct Frame<'a> {
+    pts: Timestamp,
+    bytes: &'a [u8],
+    stride: u32,
+    dirty: DirtyRects,
+    desc: &'a SourceDesc,
+}
+
+impl Frame<'_> {
+    /// When the source produced the frame, corrected to always move forward.
+    #[must_use]
+    pub const fn pts(&self) -> Timestamp {
+        self.pts
+    }
+
+    /// The pixels, at the stride the driver laid them out with.
+    #[must_use]
+    pub const fn bytes(&self) -> &[u8] {
+        self.bytes
+    }
+
+    /// Bytes between the start of one row and the next, padding included.
+    #[must_use]
+    pub const fn stride(&self) -> u32 {
+        self.stride
+    }
+
+    /// Regions that changed. Empty means the whole frame must be assumed dirty.
+    #[must_use]
+    pub const fn dirty(&self) -> &DirtyRects {
+        &self.dirty
+    }
+
+    /// What the backend negotiated for this source.
+    #[must_use]
+    pub const fn desc(&self) -> &SourceDesc {
+        self.desc
+    }
+
+    /// Copy the frame into an owned image.
+    pub fn to_image(&self) -> Result<Image> {
+        Image::new(
+            self.bytes.to_vec(),
+            self.desc.width,
+            self.desc.height,
+            self.stride,
+            self.desc.format,
+            self.desc.color_space,
+            self.pts,
+        )
+    }
+}
+
+/// Configures a capture before it opens.
+///
+/// Options that only one platform honours are still typed here and documented as
+/// ignored elsewhere, rather than hidden behind a lowest common denominator.
+#[derive(Debug, Clone)]
+pub struct CapturerBuilder {
+    target: Target,
+    opts: OpenOptions,
+}
+
+impl CapturerBuilder {
+    pub(crate) fn new(target: Target) -> Self {
+        Self {
+            target,
+            opts: OpenOptions::default(),
+        }
+    }
+
+    /// Whether the cursor is composited into frames. All three platforms.
+    #[must_use]
+    pub fn cursor(mut self, cursor: CursorMode) -> Self {
+        self.opts.cursor = cursor;
+        self
+    }
+
+    /// Crop during acquisition, in the target's own coordinates.
+    #[must_use]
+    pub fn region(mut self, region: Option<Rect>) -> Self {
+        self.opts.region = region;
+        self
+    }
+
+    /// Pacing hint, honoured by backends that deliver on repaint.
+    #[must_use]
+    pub fn frame_rate(mut self, frame_rate: Option<u32>) -> Self {
+        self.opts.frame_rate = frame_rate;
+        self
+    }
+
+    /// The colour space to deliver, or `Auto` to take what the source reports.
+    #[must_use]
+    pub fn color_space(mut self, color_space: ColorSpaceRequest) -> Self {
+        self.opts.color_space = color_space;
+        self
+    }
+
+    /// Open the source.
+    pub fn build(self) -> Result<Capturer> {
+        let backend = os::open(&self.target, &self.opts)?;
+        let desc = backend.describe().clone();
+        let clock = MonotonicClock::for_frame_rate(desc.frame_rate.unwrap_or(60));
+        Ok(Capturer {
+            backend,
+            desc,
+            clock,
+        })
+    }
+}
+
+/// A live capture, held open.
+pub struct Capturer {
+    backend: Box<dyn ScreenBackend>,
+    desc: SourceDesc,
+    clock: MonotonicClock,
+}
+
+impl Capturer {
+    /// What the backend actually negotiated.
+    #[must_use]
+    pub const fn describe(&self) -> &SourceDesc {
+        &self.desc
+    }
+
+    /// Wait for the next frame.
+    ///
+    /// Timestamps are forced to advance here and not in the one-shot path: a
+    /// stalled source is a pacing problem for a recording, but for a screenshot
+    /// it is the signal that the frame is stale.
+    pub fn next_frame(&mut self, timeout: Duration) -> Result<Frame<'_>> {
+        let raw = self.backend.next_frame(timeout)?;
+        let pts = self.clock.admit(raw.pts);
+        Ok(Frame {
+            pts,
+            bytes: raw.bytes,
+            stride: raw.stride,
+            dirty: raw.dirty,
+            desc: &self.desc,
+        })
+    }
+
+    /// Take a still from the running capture, with the same warmup and cropping
+    /// a standalone [`crate::shot`] would apply.
+    pub fn snapshot(&mut self, opts: &ShotOptions) -> Result<Image> {
+        grab_one(self.backend.as_mut(), opts, os::now())
+    }
+
+    /// How many timestamps the source reported out of order or repeated.
+    #[must_use]
+    pub const fn timestamp_corrections(&self) -> u64 {
+        self.clock.corrections()
+    }
+
+    /// Release the source.
+    pub fn stop(&mut self) -> Result<()> {
+        self.backend.stop()
+    }
+
+    /// Run `handler` on a capture thread until it returns [`Flow::Stop`].
+    ///
+    /// The pull API above is the same stream; this only moves the loop off the
+    /// caller's thread for backends that deliver faster than it can consume.
+    pub fn start<H>(mut self, timeout: Duration, mut handler: H) -> CaptureHandle
+    where
+        H: FnMut(Frame<'_>) -> Flow + Send + 'static,
+    {
+        let stopping = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&stopping);
+        let join = std::thread::spawn(move || {
+            while !flag.load(Ordering::Relaxed) {
+                match self.next_frame(timeout) {
+                    Ok(frame) => {
+                        if handler(frame) == Flow::Stop {
+                            break;
+                        }
+                    }
+                    // A timeout is an idle desktop, not a failure.
+                    Err(err) if err.is_recoverable() => continue,
+                    Err(err) => {
+                        let _ = self.stop();
+                        return Err(err);
+                    }
+                }
+            }
+            self.stop()
+        });
+        CaptureHandle {
+            stopping,
+            join: Some(join),
+        }
+    }
+}
+
+/// A running capture thread.
+pub struct CaptureHandle {
+    stopping: Arc<AtomicBool>,
+    join: Option<JoinHandle<Result<()>>>,
+}
+
+impl CaptureHandle {
+    /// Ask the capture to stop and wait for it, returning what it ended with.
+    pub fn stop(mut self) -> Result<()> {
+        self.stopping.store(true, Ordering::Relaxed);
+        match self.join.take() {
+            Some(join) => join.join().unwrap_or(Ok(())),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether the capture thread has already finished.
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.join.as_ref().is_some_and(JoinHandle::is_finished)
+    }
+}
+
+impl Drop for CaptureHandle {
+    /// Stops the capture rather than detaching it, so a dropped handle cannot
+    /// leave a duplication session holding the desktop open.
+    fn drop(&mut self) {
+        self.stopping.store(true, Ordering::Relaxed);
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
+    }
+}

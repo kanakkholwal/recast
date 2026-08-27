@@ -70,13 +70,6 @@ impl Default for ShotOptions {
 ///
 /// Shared by the one-shot API and by a snapshot taken mid-recording, so both get
 /// the same warmup, the same crop and the same validation.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the public shot() entry point lands with the first platform backend in 5b"
-    )
-)]
 pub(crate) fn grab_one(
     backend: &mut dyn ScreenBackend,
     opts: &ShotOptions,

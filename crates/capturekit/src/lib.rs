@@ -1,8 +1,14 @@
 //! Cross-platform screen, window and camera capture.
 //!
 //! A screenshot and a recording are the same acquisition with different
-//! lifetimes, so [`shot`] and the streaming capturer drive one backend per
-//! platform. A fix to stale frames, cropping, colour or permissions lands on both.
+//! lifetimes, so [`shot`] and [`capturer`] drive one backend per platform. A fix
+//! to stale frames, cropping, colour or permissions lands on both.
+//!
+//! ```no_run
+//! let display = capturekit::displays()?.remove(0);
+//! let image = capturekit::shot(capturekit::Target::Display(display.id))?;
+//! # Ok::<(), capturekit::CaptureError>(())
+//! ```
 //!
 //! Vocabulary types live in [`capturekit_core`] and are re-exported here.
 
@@ -10,7 +16,9 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod backend;
+mod capturer;
 mod image;
+mod platform;
 mod shot;
 
 #[cfg(test)]
@@ -19,11 +27,68 @@ mod mock;
 pub use capturekit_core::{
     Camera, CameraId, CaptureError, ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest,
     DirtyRects, Display, DisplayId, LostReason, MatrixCoefficients, Permission, PermissionKind,
-    PixelFormat, PlaneFormat, Primaries, Rect, Result, Rotation, SourceDesc, Target,
+    PixelFormat, PlaneFormat, Primaries, Rect, Result, Rotation, SourceDesc, Target, Timestamp,
     TransferFunction, Window, WindowId,
 };
+pub use capturer::{CaptureHandle, Capturer, CapturerBuilder, Flow, Frame};
 pub use image::Image;
 pub use shot::{CursorMode, ShotOptions, Warmup};
+
+use platform::os;
+
+/// Every monitor available to capture.
+pub fn displays() -> Result<Vec<Display>> {
+    os::displays()
+}
+
+/// Every window a user would recognise and could sensibly capture.
+///
+/// Excludes tool windows and title-less shell scaffolding, of which any desktop
+/// has dozens.
+pub fn windows() -> Result<Vec<Window>> {
+    os::windows()
+}
+
+/// Whether a capability may be used, and if not, whether asking would help.
+#[must_use]
+pub fn permission(kind: PermissionKind) -> Permission {
+    os::permission(kind)
+}
+
+/// Prompt for a capability, where the platform has a prompt to show.
+///
+/// Blocks while the user decides. A `Denied` answer is final until they change it
+/// in system settings, which is why [`Permission::is_requestable`] exists.
+pub fn request_permission(kind: PermissionKind) -> Permission {
+    os::request_permission(kind)
+}
+
+/// Capture one frame: acquire, grab, release.
+///
+/// Discards stale frames first. See [`Warmup`] for why that is not optional.
+pub fn shot(target: Target) -> Result<Image> {
+    shot_with(target, &ShotOptions::default())
+}
+
+/// Capture one frame with explicit options.
+pub fn shot_with(target: Target, opts: &ShotOptions) -> Result<Image> {
+    let requested_at = os::now();
+    let mut backend = os::open(&target, &platform::OpenOptions::from(opts))?;
+    let image = shot::grab_one(backend.as_mut(), opts, requested_at);
+    let stopped = backend.stop();
+    // The frame is the point; a failure to release the source after taking it is
+    // worth logging, not worth failing a screenshot the caller already has.
+    if let Err(err) = stopped {
+        log::debug!("releasing the capture source after a shot failed: {err}");
+    }
+    image
+}
+
+/// Open a streaming capture of `target`.
+#[must_use]
+pub fn capturer(target: Target) -> CapturerBuilder {
+    CapturerBuilder::new(target)
+}
 
 #[cfg(test)]
 mod tests {
@@ -57,7 +122,8 @@ mod tests {
             warmup: Warmup::UntilFresh { max_frames: 3 },
             ..ShotOptions::default()
         };
-        let image = grab_one(&mut source, &opts, REQUESTED_AT).expect("an idle source is not an error");
+        let image =
+            grab_one(&mut source, &opts, REQUESTED_AT).expect("an idle source is not an error");
         assert_eq!(source.served(), 4, "one attempt plus three discards");
         assert_eq!(image.bytes()[0], 0x13, "the newest of the stale frames");
     }

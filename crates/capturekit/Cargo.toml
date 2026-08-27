@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.81"
 license = "Apache-2.0"
-description = "Cross-platform screen, window and camera capture: one-shot screenshots and streaming recording on one backend, with zero-copy GPU handles."
+description = "Cross-platform screen, window and camera capture: one-shot screenshots and streaming recording on one backend."
 repository = "https://github.com/kanakkholwal/capturekit"
 keywords = ["screen-capture", "screenshot", "screen-recording", "video"]
 categories = ["multimedia::video", "graphics", "os"]
@@ -12,13 +12,69 @@ categories = ["multimedia::video", "graphics", "os"]
 publish = false
 
 [features]
-default = ["cpu-readback"]
-# Frames can be read back to host memory. Without it a consumer must stay on the GPU.
+default = ["cpu-readback", "wayland"]
+# Frames can be read back to host memory.
 cpu-readback = []
+# Linux Wayland capture through xdg-desktop-portal and PipeWire. Needs
+# libpipewire-0.3-dev and libdbus-1-dev on the build host, so it is separable:
+# without it a Linux build still serves X11 and XWayland sessions.
+wayland = ["dep:ashpd", "dep:pipewire"]
 serde = ["capturekit-core/serde"]
 
 [dependencies]
 capturekit-core = { path = "../capturekit-core" }
+log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58.0", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_Performance",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+    "Foundation",
+    "Graphics_Capture",
+    "Graphics_DirectX",
+    "Graphics_DirectX_Direct3D11",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_WinRT_Graphics_Capture",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["randr", "shm"] }
+ashpd = { version = "0.10", default-features = false, features = ["async-std"], optional = true }
+pipewire = { version = "0.9", optional = true }
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
+objc2-core-media = "0.3"
+objc2-core-video = "0.3"
+# Trimmed of the AVFoundation and uniform-type-identifiers halves, which pull
+# extra frameworks this backend never touches.
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "SCStream",
+    "SCShareableContent",
+    "SCError",
+    "bitflags",
+    "block2",
+    "dispatch2",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+    "objc2-core-media",
+] }
+block2 = "0.6"
+dispatch2 = "0.3"
 
 [lints]
 workspace = true

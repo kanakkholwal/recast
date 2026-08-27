@@ -11,7 +11,6 @@ pub(crate) struct RawFrame<'a> {
     /// Bytes between rows.
     pub stride: u32,
     /// Regions that changed, empty when the backend cannot say.
-    #[expect(dead_code, reason = "read by the streaming path, which lands in 5b")]
     pub dirty: DirtyRects,
 }
 
@@ -41,6 +40,5 @@ pub(crate) trait ScreenBackend: Send {
     fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>>;
 
     /// Release the source. Called on drop, and safe to call twice.
-    #[expect(dead_code, reason = "called by the streaming path, which lands in 5b")]
     fn stop(&mut self) -> Result<()>;
 }

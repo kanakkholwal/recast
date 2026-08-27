@@ -19,6 +19,15 @@ pub enum CaptureError {
         id: u64,
     },
 
+    /// The source is already being captured and cannot be handed out twice.
+    #[error("{kind} {id} is already being captured by this process")]
+    AlreadyCaptured {
+        /// What was already open.
+        kind: &'static str,
+        /// Its id.
+        id: u64,
+    },
+
     /// The OS refused, and the user has to grant access before a retry can work.
     #[error("{0} capture permission was not granted")]
     PermissionDenied(PermissionKind),

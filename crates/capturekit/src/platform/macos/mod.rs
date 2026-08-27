@@ -1,0 +1,81 @@
+mod content;
+mod stream;
+
+use capturekit_core::{
+    CaptureError, Permission, PermissionKind, Result, Target, Timestamp,
+};
+use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
+
+use crate::backend::ScreenBackend;
+use crate::platform::OpenOptions;
+
+pub(crate) use content::{displays, windows};
+
+/// Screen recording is gated by TCC; the camera and microphone by their own
+/// prompts, which capturekit does not drive yet.
+pub(crate) fn permission(kind: PermissionKind) -> Permission {
+    match kind {
+        PermissionKind::Screen => {
+            if CGPreflightScreenCaptureAccess() {
+                Permission::Granted
+            } else {
+                // TCC does not distinguish "never asked" from "refused" through
+                // this call, and asking again is harmless when it is the former.
+                Permission::NotDetermined
+            }
+        }
+        _ => Permission::NotDetermined,
+    }
+}
+
+/// Ask TCC for screen recording.
+///
+/// The prompt appears once per application; afterwards this returns the standing
+/// answer without showing anything, which is why a `Denied` result has to send
+/// the user to System Settings rather than prompting again.
+pub(crate) fn request_permission(kind: PermissionKind) -> Permission {
+    match kind {
+        PermissionKind::Screen => {
+            if CGRequestScreenCaptureAccess() {
+                Permission::Granted
+            } else {
+                Permission::Denied
+            }
+        }
+        _ => Permission::NotDetermined,
+    }
+}
+
+/// The current instant on the host time clock, which is what ScreenCaptureKit
+/// stamps sample buffers with.
+pub(crate) fn now() -> Timestamp {
+    let time = unsafe { objc2_core_media::CMClock::host_time_clock().time() };
+    match time.timescale {
+        0 => Timestamp::ZERO,
+        scale => Timestamp::from_ticks(time.value, i64::from(scale)),
+    }
+}
+
+pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn ScreenBackend>> {
+    // Every path checks first: ScreenCaptureKit answers a process without the
+    // grant by returning an empty content list, which reads as "no displays"
+    // rather than as the permission problem it is.
+    if !permission(PermissionKind::Screen).is_usable() {
+        return Err(CaptureError::PermissionDenied(PermissionKind::Screen));
+    }
+    match target {
+        Target::Display(id) => Ok(Box::new(stream::SckSource::open_display(*id, opts)?)),
+        Target::Region { display, rect } => {
+            let opts = OpenOptions {
+                region: Some(*rect),
+                ..opts.clone()
+            };
+            Ok(Box::new(stream::SckSource::open_display(*display, &opts)?))
+        }
+        Target::Window(id) => Ok(Box::new(stream::SckSource::open_window(*id, opts)?)),
+        Target::Camera(_) => Err(CaptureError::Unsupported {
+            backend: "macos",
+            operation: "capture a camera yet",
+        }),
+    }
+}
