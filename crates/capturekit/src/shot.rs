@@ -2,7 +2,7 @@ use core::time::Duration;
 
 use capturekit_core::{CaptureError, ColorSpaceRequest, Rect, Result, Timestamp};
 
-use crate::backend::ScreenBackend;
+use crate::backend::FrameSource;
 use crate::image::Image;
 
 /// Whether the cursor is drawn into captured frames.
@@ -71,7 +71,7 @@ impl Default for ShotOptions {
 /// Shared by the one-shot API and by a snapshot taken mid-recording, so both get
 /// the same warmup, the same crop and the same validation.
 pub(crate) fn grab_one(
-    backend: &mut dyn ScreenBackend,
+    backend: &mut dyn FrameSource,
     opts: &ShotOptions,
     requested_at: Timestamp,
 ) -> Result<Image> {
@@ -84,7 +84,7 @@ pub(crate) fn grab_one(
 }
 
 fn acquire_fresh(
-    backend: &mut dyn ScreenBackend,
+    backend: &mut dyn FrameSource,
     opts: &ShotOptions,
     requested_at: Timestamp,
 ) -> Result<Image> {

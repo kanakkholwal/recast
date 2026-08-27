@@ -21,7 +21,7 @@ use windows::Win32::System::WinRT::Direct3D11::{
 };
 use windows::Win32::System::WinRT::Graphics::Capture::IGraphicsCaptureItemInterop;
 
-use crate::backend::{RawFrame, ScreenBackend};
+use crate::backend::{FrameSource, RawFrame};
 use crate::platform::windows::d3d::{self, Readback};
 use crate::platform::OpenOptions;
 use crate::shot::CursorMode;
@@ -50,7 +50,7 @@ pub(crate) struct WgcSource {
 }
 
 // SAFETY: the frame pool is created free-threaded, and every object here is used
-// only from the thread that owns the source. The bound satisfies `ScreenBackend`.
+// only from the thread that owns the source. The bound satisfies `FrameSource`.
 unsafe impl Send for WgcSource {}
 
 impl WgcSource {
@@ -184,7 +184,7 @@ impl Drop for WgcSource {
     }
 }
 
-impl ScreenBackend for WgcSource {
+impl FrameSource for WgcSource {
     fn describe(&self) -> &SourceDesc {
         &self.desc
     }
@@ -234,6 +234,7 @@ impl ScreenBackend for WgcSource {
             stride,
             // Graphics Capture reports no damage, so every frame is fully dirty.
             dirty: DirtyRects::unknown(),
+            cursor: None,
         })
     }
 

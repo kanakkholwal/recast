@@ -19,6 +19,7 @@ mod backend;
 mod capturer;
 mod image;
 mod platform;
+mod session;
 mod shot;
 
 #[cfg(test)]
@@ -34,6 +35,7 @@ pub use capturekit_core::{
 };
 pub use capturer::{CaptureHandle, Capturer, CapturerBuilder, Flow, Frame};
 pub use image::Image;
+pub use session::{Session, SessionBuilder, SessionFrame, TrackId};
 pub use shot::{CursorMode, ShotOptions, Warmup};
 
 use platform::os;

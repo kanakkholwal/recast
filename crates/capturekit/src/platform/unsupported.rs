@@ -3,7 +3,7 @@ use capturekit_core::{
     Result, Target, Timestamp, Window,
 };
 
-use crate::backend::ScreenBackend;
+use crate::backend::FrameSource;
 use crate::platform::OpenOptions;
 
 const BACKEND: &str = "unsupported";
@@ -52,6 +52,6 @@ pub(crate) fn now() -> Timestamp {
     Timestamp::ZERO
 }
 
-pub(crate) fn open(_target: &Target, _opts: &OpenOptions) -> Result<Box<dyn ScreenBackend>> {
+pub(crate) fn open(_target: &Target, _opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
     Err(unsupported("capture on this platform"))
 }

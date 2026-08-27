@@ -8,7 +8,7 @@ use capturekit_core::{
     Result, Target, Timestamp, Window,
 };
 
-use crate::backend::ScreenBackend;
+use crate::backend::FrameSource;
 use crate::platform::OpenOptions;
 
 /// Which display server this session actually runs on.
@@ -106,9 +106,10 @@ pub(crate) fn capabilities() -> Capabilities {
             // `GetImage` crops server-side, so nothing outside the rectangle
             // crosses the socket.
             region_crop: RegionCrop::DuringAcquisition,
-            // The root window image never contains the pointer.
+            // The root window image never contains the pointer, and XFixes
+            // cursor sampling is not wired up yet.
             cursor_in_frame: false,
-            cursor_samples: true,
+            cursor_samples: false,
             dirty_rects: false,
             audio_loopback: true,
         },
@@ -145,7 +146,7 @@ pub(crate) fn now() -> Timestamp {
     Timestamp::from_nanos(spec.tv_sec.saturating_mul(1_000_000_000) + spec.tv_nsec)
 }
 
-pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn ScreenBackend>> {
+pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
     if let Target::Camera(_) = target {
         return Err(CaptureError::Unsupported {
             backend: "linux",

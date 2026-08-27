@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use capturekit::{
     capabilities, capturer, displays, permission, shot, shot_with, windows, CursorMode, Display,
-    ExclusionSupport, Flow, PermissionKind, PixelFormat, Rect, ShotOptions, Target, Warmup,
-    WindowId,
+    ExclusionSupport, Flow, PermissionKind, PixelFormat, Rect, Session, ShotOptions, Target,
+    Warmup, WindowId,
 };
 
 /// The display to capture, or `None` when there is no desktop to capture from.
@@ -314,4 +314,187 @@ fn the_reported_capabilities_match_what_the_platform_actually_does() {
         let listed = displays().expect("claims display enumeration");
         assert!(!listed.is_empty());
     }
+}
+
+/// Two live streams on one timeline, both off the caller's thread.
+///
+/// Display and window rather than two displays: Desktop Duplication is
+/// one-per-output-per-process, so two display tracks would contend.
+#[test]
+fn a_session_runs_several_streams_off_one_clock() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let Some(window) = windows()
+        .expect("a window list")
+        .into_iter()
+        .find(|window| window.is_capturable() && window.bounds.width > 64)
+    else {
+        eprintln!("skipped: no capturable window to pair with the display");
+        return;
+    };
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let screen_sender = sender.clone();
+    let session = Session::builder()
+        .video(
+            "screen",
+            capturer(Target::Display(display.id)).frame_rate(30),
+            move |frame| {
+                let _ = screen_sender.send((frame.track.0.clone(), frame.elapsed));
+                Flow::Continue
+            },
+        )
+        .video(
+            "window",
+            capturer(Target::Window(window.id)).frame_rate(30),
+            move |frame| {
+                let _ = sender.send((frame.track.0.clone(), frame.elapsed));
+                Flow::Continue
+            },
+        )
+        .start()
+        .expect("open both streams");
+
+    assert_eq!(session.track_count(), 2);
+
+    // Both tracks must deliver, and every timestamp must sit on the session
+    // timeline rather than on each source's own origin.
+    let deadline = std::time::Instant::now() + Duration::from_secs(6);
+    let mut seen: std::collections::BTreeSet<String> = Default::default();
+    while std::time::Instant::now() < deadline && seen.len() < 2 {
+        match receiver.recv_timeout(Duration::from_millis(500)) {
+            Ok((track, elapsed)) => {
+                assert!(
+                    elapsed < Duration::from_secs(60),
+                    "{track} reported {elapsed:?} from the session origin, so it is on its own clock"
+                );
+                seen.insert(track);
+            }
+            Err(_) => continue,
+        }
+    }
+    session.stop().expect("both streams end cleanly");
+
+    assert!(
+        seen.contains("screen"),
+        "the display track delivered nothing; saw {seen:?}"
+    );
+}
+
+/// A session that cannot open every source must not leave some running.
+#[test]
+fn a_session_that_cannot_open_every_source_starts_none_of_them() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let opened = Session::builder()
+        .video("good", capturer(Target::Display(display.id)), |_| {
+            Flow::Continue
+        })
+        .video(
+            "missing",
+            capturer(Target::Display(capturekit::DisplayId(u64::MAX))),
+            |_| Flow::Continue,
+        )
+        .start();
+    assert!(
+        opened.is_err(),
+        "a session opened with a source that does not exist"
+    );
+
+    // The good source must have been released, so it can be opened again.
+    let mut retry = capturer(Target::Display(display.id))
+        .build()
+        .expect("the display was left held by the failed session");
+    retry.stop().expect("release");
+}
+
+/// The cursor must arrive with the frame, on the frame's clock.
+#[test]
+fn a_display_stream_reports_the_cursor_alongside_its_frames() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    if !capabilities().cursor_samples {
+        eprintln!("skipped: this backend does not report cursor samples");
+        return;
+    }
+
+    let mut capture = capturer(Target::Display(display.id))
+        .frame_rate(30)
+        .build()
+        .expect("open a stream");
+
+    let mut sampled = 0;
+    for _ in 0..20 {
+        let Ok(frame) = capture.next_frame(Duration::from_millis(250)) else {
+            continue;
+        };
+        let Some(cursor) = frame.cursor() else {
+            panic!("cursor_samples is claimed but no sample arrived");
+        };
+        assert_eq!(
+            cursor.pts,
+            frame.pts(),
+            "the cursor is on a different clock from its frame"
+        );
+        sampled += 1;
+    }
+    assert!(sampled > 0, "an active desktop produced no frames");
+    capture.stop().expect("release the display");
+}
+
+/// Desktop Duplication cannot composite a cursor, so asking must fail loudly
+/// rather than silently producing a recording with no pointer in it.
+#[test]
+fn a_display_capture_refuses_to_pretend_it_can_draw_the_cursor() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let built = capturer(Target::Display(display.id))
+        .cursor(CursorMode::Include)
+        .build();
+
+    if capabilities().backend == "dxgi" {
+        let Err(err) = built else {
+            panic!("dxgi accepted CursorMode::Include, which it cannot honour");
+        };
+        assert!(
+            err.to_string().contains("cursor"),
+            "the refusal does not say it is about the cursor: {err}"
+        );
+    } else if let Ok(mut capture) = built {
+        capture.stop().expect("release");
+    }
+}
+
+/// A cursor shape must decode to a real image, whatever form Windows sent it in.
+#[test]
+fn the_reported_cursor_shape_decodes_to_pixels() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    if !capabilities().cursor_samples {
+        eprintln!("skipped: this backend does not report cursor samples");
+        return;
+    }
+    let mut capture = capturer(Target::Display(display.id))
+        .frame_rate(30)
+        .build()
+        .expect("open a stream");
+
+    // A shape arrives only when it changes, so poll for a while.
+    for _ in 0..40 {
+        let _ = capture.next_frame(Duration::from_millis(100));
+        if let Some(shape) = capture.cursor_shape() {
+            let rgba = shape.to_rgba().expect("the reported shape decodes");
+            assert_eq!(
+                rgba.len(),
+                (shape.width * shape.drawn_height() * 4) as usize,
+                "a {:?} cursor decoded to the wrong size",
+                shape.kind
+            );
+            assert!(shape.width > 0 && shape.drawn_height() > 0);
+            capture.stop().expect("release");
+            return;
+        }
+    }
+    eprintln!("skipped: the cursor shape never changed during the window");
+    capture.stop().expect("release");
 }

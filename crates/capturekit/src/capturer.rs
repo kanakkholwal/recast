@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use capturekit_core::{
-    CaptureError, ColorSpaceRequest, DirtyRects, ExclusionSupport, MonotonicClock, Pacing, Rect,
-    Result, SourceDesc, Target, Timestamp, WindowId,
+    CaptureError, ColorSpaceRequest, CursorSample, CursorShape, DirtyRects, ExclusionSupport,
+    MonotonicClock, Pacing, Rect, Result, SourceDesc, Target, Timestamp, WindowId,
 };
 
-use crate::backend::ScreenBackend;
+use crate::backend::FrameSource;
 use crate::image::Image;
 use crate::platform::{os, OpenOptions};
 use crate::shot::{grab_one, CursorMode, ShotOptions};
@@ -28,6 +28,7 @@ pub struct Frame<'a> {
     bytes: &'a [u8],
     stride: u32,
     dirty: DirtyRects,
+    cursor: Option<CursorSample>,
     desc: &'a SourceDesc,
 }
 
@@ -54,6 +55,16 @@ impl Frame<'_> {
     #[must_use]
     pub const fn dirty(&self) -> &DirtyRects {
         &self.dirty
+    }
+
+    /// Where the cursor was when this frame was produced.
+    ///
+    /// On the frame's own clock, not a separate poller's, so it needs no
+    /// smoothing to line up with the video. `None` where the platform's
+    /// [`crate::Capabilities::cursor_samples`] is false.
+    #[must_use]
+    pub const fn cursor(&self) -> Option<&CursorSample> {
+        self.cursor.as_ref()
     }
 
     /// What the backend negotiated for this source.
@@ -178,7 +189,7 @@ fn check_exclusion(requested: &[WindowId]) -> Result<()> {
 
 /// A live capture, held open.
 pub struct Capturer {
-    backend: Box<dyn ScreenBackend>,
+    backend: Box<dyn FrameSource>,
     desc: SourceDesc,
     clock: MonotonicClock,
 }
@@ -203,6 +214,7 @@ impl Capturer {
             bytes: raw.bytes,
             stride: raw.stride,
             dirty: raw.dirty,
+            cursor: raw.cursor,
             desc: &self.desc,
         })
     }
@@ -211,6 +223,15 @@ impl Capturer {
     /// a standalone [`crate::shot`] would apply.
     pub fn snapshot(&mut self, opts: &ShotOptions) -> Result<Image> {
         grab_one(self.backend.as_mut(), opts, os::now())
+    }
+
+    /// The cursor image most recently reported, if the backend reports one.
+    ///
+    /// Kept off the frame because it changes rarely: a consumer decodes it once
+    /// when [`CursorSample::shape_id`] changes rather than on every frame.
+    #[must_use]
+    pub fn cursor_shape(&self) -> Option<&CursorShape> {
+        self.backend.cursor_shape()
     }
 
     /// How many timestamps the source reported out of order or repeated.

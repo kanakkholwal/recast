@@ -2,8 +2,8 @@ use core::time::Duration;
 use std::time::Instant;
 
 use capturekit_core::{
-    CaptureError, ColorSpace, DirtyRects, DisplayId, LostReason, Rect, Result, Rotation,
-    SourceDesc, Timestamp,
+    CaptureError, ColorSpace, CursorSample, CursorShape, CursorShapeKind, DirtyRects, DisplayId,
+    LostReason, Rect, Result, Rotation, SourceDesc, Timestamp,
 };
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{E_ACCESSDENIED, E_INVALIDARG, RECT};
@@ -18,8 +18,12 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_INVALID_CALL,
     DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_DESC, DXGI_OUTDUPL_FRAME_INFO,
 };
+use windows::Win32::Graphics::Dxgi::{
+    DXGI_OUTDUPL_POINTER_SHAPE_INFO, DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR,
+    DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR, DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME,
+};
 
-use crate::backend::{RawFrame, ScreenBackend};
+use crate::backend::{FrameSource, RawFrame};
 use crate::platform::windows::d3d::{self, Readback};
 use crate::platform::OpenOptions;
 
@@ -91,6 +95,9 @@ pub(crate) struct DxgiSource {
     region: Option<Rect>,
     dirty: DirtyRects,
     dirty_scratch: Vec<RECT>,
+    /// The cursor, carried across frames because Desktop Duplication reports a
+    /// position only when it moves and a shape only when it changes.
+    cursor: Cursor,
     qpc_frequency: i64,
     holding_frame: bool,
     lost_since: Option<Instant>,
@@ -98,12 +105,23 @@ pub(crate) struct DxgiSource {
 }
 
 // SAFETY: every COM object here is created and used on one thread. The bound
-// exists to satisfy `ScreenBackend`; a `DxgiSource` is moved to its capture
+// exists to satisfy `FrameSource`; a `DxgiSource` is moved to its capture
 // thread before any call and never shared between two.
 unsafe impl Send for DxgiSource {}
 
 impl DxgiSource {
     pub(crate) fn open(display: DisplayId, opts: &OpenOptions) -> Result<Self> {
+        // Desktop Duplication never composites the cursor into the frame, so
+        // honouring `Include` here is impossible. Saying so beats handing back a
+        // recording with no cursor in it and no indication why; the pointer is
+        // reported as a sample on every frame instead.
+        if opts.cursor == crate::shot::CursorMode::Include {
+            return Err(CaptureError::Unsupported {
+                backend: BACKEND,
+                operation:
+                    "composite the cursor into a display capture; read Frame::cursor instead",
+            });
+        }
         let (adapter, output1, output) = find_output(display)?;
         let (device, context) = d3d::create_device(Some(&adapter))?;
         let output_desc = unsafe { output.GetDesc() }.map_err(d3d::err)?;
@@ -164,6 +182,7 @@ impl DxgiSource {
             region,
             dirty: DirtyRects::unknown(),
             dirty_scratch: Vec::new(),
+            cursor: Cursor::default(),
             qpc_frequency: qpc_frequency(),
             holding_frame: false,
             lost_since: None,
@@ -255,15 +274,105 @@ impl DxgiSource {
     }
 }
 
+/// Cursor state accumulated across frames.
+///
+/// Desktop Duplication is edge-triggered on both halves: `PointerPosition` is
+/// meaningful only when `LastMouseUpdateTime` is non-zero, and a shape arrives
+/// only when it actually changed. A backend that read them per frame without
+/// remembering would report the cursor jumping to the origin and losing its
+/// image whenever it held still.
+#[derive(Default)]
+struct Cursor {
+    position: Option<(i32, i32)>,
+    visible: bool,
+    shape: Option<CursorShape>,
+    shape_id: u64,
+    scratch: Vec<u8>,
+}
+
+impl Cursor {
+    fn shape_kind(raw: DXGI_OUTDUPL_POINTER_SHAPE_INFO) -> Option<CursorShapeKind> {
+        match raw.Type as i32 {
+            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME.0 => {
+                Some(CursorShapeKind::Monochrome)
+            }
+            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR.0 => Some(CursorShapeKind::Color),
+            t if t == DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR.0 => {
+                Some(CursorShapeKind::MaskedColor)
+            }
+            _ => None,
+        }
+    }
+
+    /// Take in one frame's pointer metadata.
+    fn update(&mut self, duplication: &IDXGIOutputDuplication, info: &DXGI_OUTDUPL_FRAME_INFO) {
+        if info.LastMouseUpdateTime != 0 {
+            self.visible = info.PointerPosition.Visible.as_bool();
+            self.position = Some((
+                info.PointerPosition.Position.x,
+                info.PointerPosition.Position.y,
+            ));
+        }
+        if info.PointerShapeBufferSize == 0 {
+            return;
+        }
+
+        self.scratch.clear();
+        self.scratch.resize(info.PointerShapeBufferSize as usize, 0);
+        let mut required = 0u32;
+        let mut shape_info = DXGI_OUTDUPL_POINTER_SHAPE_INFO::default();
+        let read = unsafe {
+            duplication.GetFramePointerShape(
+                self.scratch.len() as u32,
+                self.scratch.as_mut_ptr().cast(),
+                &mut required,
+                &mut shape_info,
+            )
+        };
+        if read.is_err() {
+            return;
+        }
+        let Some(kind) = Self::shape_kind(shape_info) else {
+            return;
+        };
+        self.scratch.truncate(required as usize);
+        self.shape = Some(CursorShape {
+            width: shape_info.Width,
+            height: shape_info.Height,
+            stride: shape_info.Pitch,
+            hotspot_x: shape_info.HotSpot.x.max(0) as u32,
+            hotspot_y: shape_info.HotSpot.y.max(0) as u32,
+            kind,
+            bytes: core::mem::take(&mut self.scratch),
+        });
+        self.shape_id = self.shape_id.wrapping_add(1);
+    }
+
+    /// The sample for a frame at `pts`, in the captured surface's coordinates.
+    fn sample(&self, pts: Timestamp, region: Option<Rect>) -> CursorSample {
+        let origin = region.unwrap_or_default();
+        CursorSample {
+            pts,
+            position: self.position.map(|(x, y)| (x - origin.x, y - origin.y)),
+            visible: self.visible,
+            shape_id: self.shape_id,
+        }
+    }
+}
+
 impl Drop for DxgiSource {
     fn drop(&mut self) {
         self.release_frame();
     }
 }
 
-impl ScreenBackend for DxgiSource {
+impl FrameSource for DxgiSource {
     fn describe(&self) -> &SourceDesc {
         &self.desc
+    }
+
+    fn cursor_shape(&self) -> Option<&CursorShape> {
+        self.cursor.shape.as_ref()
     }
 
     fn region(&self) -> Option<Rect> {
@@ -307,13 +416,16 @@ impl ScreenBackend for DxgiSource {
         // cursor-only update. Reporting it as the origin is what keeps the warmup
         // honest: a screenshot must not accept a frame with no new content.
         let pts = Timestamp::from_ticks(info.LastPresentTime, self.qpc_frequency);
+        self.cursor.update(&self.duplication, &info);
         let dirty = self.dirty.clone();
+        let cursor = Some(self.cursor.sample(pts, self.region));
         let (bytes, stride) = self.readback.map()?;
         Ok(RawFrame {
             pts,
             bytes,
             stride,
             dirty,
+            cursor,
         })
     }
 

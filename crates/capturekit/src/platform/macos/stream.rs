@@ -20,7 +20,7 @@ use objc2_screen_capture_kit::{
     SCContentFilter, SCStream, SCStreamConfiguration, SCStreamOutput, SCStreamOutputType,
 };
 
-use crate::backend::{RawFrame, ScreenBackend};
+use crate::backend::{FrameSource, RawFrame};
 use crate::platform::macos::content::{self, BACKEND};
 use crate::platform::OpenOptions;
 use crate::shot::CursorMode;
@@ -145,7 +145,7 @@ pub(crate) struct SckSource {
 }
 
 // SAFETY: `SCStream` and the output object are thread-safe Objective-C objects;
-// the frame slot is explicitly synchronised. The bound satisfies `ScreenBackend`.
+// the frame slot is explicitly synchronised. The bound satisfies `FrameSource`.
 unsafe impl Send for SckSource {}
 
 fn configuration(
@@ -323,7 +323,7 @@ impl Drop for SckSource {
     }
 }
 
-impl ScreenBackend for SckSource {
+impl FrameSource for SckSource {
     fn describe(&self) -> &SourceDesc {
         &self.desc
     }
@@ -372,6 +372,7 @@ impl ScreenBackend for SckSource {
             stride,
             // ScreenCaptureKit reports no damage rectangles.
             dirty: DirtyRects::unknown(),
+            cursor: None,
         })
     }
 

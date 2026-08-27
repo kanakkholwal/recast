@@ -5,7 +5,7 @@ use capturekit_core::{
     SourceDesc, Timestamp,
 };
 
-use crate::backend::{RawFrame, ScreenBackend};
+use crate::backend::{FrameSource, RawFrame};
 
 /// A frame the mock will hand out, and how it should behave when it does.
 #[derive(Debug, Clone)]
@@ -90,7 +90,7 @@ impl MockSource {
     }
 }
 
-impl ScreenBackend for MockSource {
+impl FrameSource for MockSource {
     fn describe(&self) -> &SourceDesc {
         &self.desc
     }
@@ -120,6 +120,7 @@ impl ScreenBackend for MockSource {
             bytes: &self.buffer,
             stride,
             dirty: DirtyRects::unknown(),
+            cursor: None,
         })
     }
 

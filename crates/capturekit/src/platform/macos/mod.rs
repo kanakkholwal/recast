@@ -7,7 +7,7 @@ use capturekit_core::{
 };
 use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
 
-use crate::backend::ScreenBackend;
+use crate::backend::FrameSource;
 use crate::platform::OpenOptions;
 
 pub(crate) use content::{displays, windows};
@@ -78,7 +78,7 @@ pub(crate) fn now() -> Timestamp {
     }
 }
 
-pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn ScreenBackend>> {
+pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
     // Every path checks first: ScreenCaptureKit answers a process without the
     // grant by returning an empty content list, which reads as "no displays"
     // rather than as the permission problem it is.

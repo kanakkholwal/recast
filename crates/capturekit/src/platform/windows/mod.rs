@@ -9,7 +9,7 @@ use capturekit_core::{
     Target,
 };
 
-use crate::backend::ScreenBackend;
+use crate::backend::FrameSource;
 use crate::platform::OpenOptions;
 
 pub(crate) use enumerate::{displays, windows};
@@ -26,6 +26,8 @@ pub(crate) fn capabilities() -> Capabilities {
         window_enumeration: true,
         display_enumeration: true,
         region_crop: RegionCrop::DuringAcquisition,
+        // Only Graphics Capture can composite one. Desktop Duplication never
+        // does, and refuses `CursorMode::Include` rather than dropping it.
         cursor_in_frame: wgc::is_supported(),
         cursor_samples: true,
         dirty_rects: true,
@@ -65,7 +67,7 @@ pub(crate) fn now() -> capturekit_core::Timestamp {
     capturekit_core::Timestamp::from_ticks(ticks, frequency)
 }
 
-pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn ScreenBackend>> {
+pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
     match target {
         Target::Display(id) => Ok(Box::new(dxgi::DxgiSource::open(*id, opts)?)),
         Target::Region { display, rect } => {

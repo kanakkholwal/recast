@@ -17,7 +17,7 @@ use pipewire::spa::utils::Direction;
 use pipewire::stream::{Stream, StreamFlags};
 use pipewire::{context::Context, main_loop::MainLoop, properties::properties};
 
-use crate::backend::{RawFrame, ScreenBackend};
+use crate::backend::{FrameSource, RawFrame};
 use crate::platform::linux::now;
 use crate::platform::OpenOptions;
 use crate::shot::CursorMode;
@@ -390,7 +390,7 @@ impl Drop for PortalSource {
     }
 }
 
-impl ScreenBackend for PortalSource {
+impl FrameSource for PortalSource {
     fn describe(&self) -> &SourceDesc {
         &self.desc
     }
@@ -436,6 +436,7 @@ impl ScreenBackend for PortalSource {
             bytes: &self.current,
             stride,
             dirty: DirtyRects::unknown(),
+            cursor: None,
         })
     }
 

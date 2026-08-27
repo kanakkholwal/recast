@@ -9,7 +9,7 @@ use x11rb::protocol::randr::{self, ConnectionExt as RandrExt};
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, ImageFormat, Screen, Window as XWindow};
 use x11rb::rust_connection::RustConnection;
 
-use crate::backend::{RawFrame, ScreenBackend};
+use crate::backend::{FrameSource, RawFrame};
 use crate::platform::linux::now;
 use crate::platform::OpenOptions;
 
@@ -359,7 +359,7 @@ impl X11Source {
     }
 }
 
-impl ScreenBackend for X11Source {
+impl FrameSource for X11Source {
     fn describe(&self) -> &SourceDesc {
         &self.desc
     }
@@ -411,6 +411,7 @@ impl ScreenBackend for X11Source {
             bytes: &self.frame,
             stride,
             dirty: DirtyRects::unknown(),
+            cursor: None,
         })
     }
 
