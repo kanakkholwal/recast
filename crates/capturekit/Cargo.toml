@@ -1,0 +1,24 @@
+[package]
+name = "capturekit"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+license = "Apache-2.0"
+description = "Cross-platform screen, window and camera capture: one-shot screenshots and streaming recording on one backend, with zero-copy GPU handles."
+repository = "https://github.com/kanakkholwal/capturekit"
+keywords = ["screen-capture", "screenshot", "screen-recording", "video"]
+categories = ["multimedia::video", "graphics", "os"]
+# Flipped on when the API is settled and the name is reserved.
+publish = false
+
+[features]
+default = ["cpu-readback"]
+# Frames can be read back to host memory. Without it a consumer must stay on the GPU.
+cpu-readback = []
+serde = ["capturekit-core/serde"]
+
+[dependencies]
+capturekit-core = { path = "../capturekit-core" }
+
+[lints]
+workspace = true

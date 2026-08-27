@@ -107,6 +107,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "capturekit"
+version = "0.1.0"
+dependencies = [
+ "capturekit-core",
+]
+
+[[package]]
+name = "capturekit-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,31 @@
+//! Vocabulary types shared by every capturekit backend.
+//!
+//! Pure: no OS calls, no `unsafe`, no allocation beyond the enumeration results.
+//! Everything a backend would otherwise reimplement per platform (stride and
+//! buffer arithmetic, crop fitting, timestamp monotonicity) lives here once and
+//! is tested on any host, with or without a display.
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
+
+mod color;
+mod error;
+mod format;
+mod geom;
+mod permission;
+mod target;
+mod time;
+
+pub use color::{
+    ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest, MatrixCoefficients, Primaries,
+    TransferFunction,
+};
+pub use error::{CaptureError, LostReason, Result};
+pub use format::{PixelFormat, PlaneFormat};
+pub use geom::{DirtyRects, Rect, Rotation};
+pub use permission::{Permission, PermissionKind};
+pub use target::{
+    Camera, CameraId, Display, DisplayId, SourceDesc, Target, Window, WindowId,
+};
+pub use time::{MonotonicClock, Timestamp};

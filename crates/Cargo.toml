@@ -1,3 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["recast-audio", "recast-captions", "recast-codec", "recast-codec-mf", "recast-color", "recast-compositor", "recast-cursor", "recast-ffi-wasm", "recast-gpu", "recast-mux", "recast-scene", "recast-testkit", "recast-text", "recast-time", "spike-d3d11-wgpu"]
+members = ["capturekit", "capturekit-core", "recast-audio", "recast-captions", "recast-codec", "recast-codec-mf", "recast-color", "recast-compositor", "recast-cursor", "recast-ffi-wasm", "recast-gpu", "recast-mux", "recast-scene", "recast-testkit", "recast-text", "recast-time", "spike-d3d11-wgpu"]
+
+# Groups take a negative priority so an individual lint below can override them.
+[workspace.lints.rust]
+future-incompatible = { level = "warn", priority = -2 }
+nonstandard_style = { level = "deny", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+redundant_clone = "deny"
