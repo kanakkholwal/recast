@@ -191,6 +191,12 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
 }
 
 /// The `SCDisplay` matching `id`, which a capture filter needs by object.
+/// The display a capture falls back to when the caller named none, which is
+/// what an audio-only stream still has to filter on.
+pub(crate) fn main_display() -> DisplayId {
+    DisplayId(u64::from(CGMainDisplayID()))
+}
+
 pub(crate) fn sc_display(id: DisplayId) -> Result<(Retained<SCDisplay>, Display)> {
     let content = shareable_content()?;
     let found = unsafe { content.displays() }

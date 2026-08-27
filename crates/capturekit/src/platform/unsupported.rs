@@ -1,6 +1,6 @@
 use capturekit_core::{
-    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, Display, ExclusionSupport, Permission, PermissionKind, RegionCrop,
-    Result, Target, Timestamp, Window,
+    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, Display,
+    ExclusionSupport, Permission, PermissionKind, RegionCrop, Result, Target, Timestamp, Window,
 };
 
 use crate::backend::{AudioSource, FrameSource};
@@ -22,6 +22,7 @@ pub(crate) fn capabilities() -> Capabilities {
         backend: BACKEND,
         exclusion: ExclusionSupport::None,
         window_capture: false,
+        camera_capture: false,
         window_enumeration: false,
         display_enumeration: false,
         region_crop: RegionCrop::OnHost,
@@ -29,6 +30,7 @@ pub(crate) fn capabilities() -> Capabilities {
         cursor_samples: false,
         dirty_rects: false,
         audio_loopback: false,
+        audio_device_enumeration: false,
     }
 }
 
@@ -53,6 +55,14 @@ pub(crate) fn now() -> Timestamp {
 }
 
 /// Audio devices are not enumerated on this platform yet.
+/// Cameras are not enumerated on this platform yet.
+pub(crate) fn cameras() -> Result<Vec<capturekit_core::Camera>> {
+    Err(CaptureError::Unsupported {
+        backend: "unsupported",
+        operation: "enumerate cameras yet",
+    })
+}
+
 pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
     Err(CaptureError::Unsupported {
         backend: BACKEND,

@@ -61,6 +61,8 @@ pub struct Capabilities {
     pub exclusion: ExclusionSupport,
     /// Whether a single window can be captured without the windows over it.
     pub window_capture: bool,
+    /// Whether cameras can be listed and opened as capture targets.
+    pub camera_capture: bool,
     /// Whether windows can be listed at all. False under the Wayland portal,
     /// which shows its own picker instead.
     pub window_enumeration: bool,
@@ -77,6 +79,11 @@ pub struct Capabilities {
     pub dirty_rects: bool,
     /// Whether system output can be captured back as audio.
     pub audio_loopback: bool,
+    /// Whether audio devices can be listed by name.
+    ///
+    /// False on macOS: ScreenCaptureKit serves the system default and names no
+    /// others, so a caller picks a direction rather than a device.
+    pub audio_device_enumeration: bool,
 }
 
 impl Capabilities {
@@ -103,6 +110,7 @@ mod tests {
         backend: "pipewire",
         exclusion: ExclusionSupport::None,
         window_capture: true,
+        camera_capture: false,
         window_enumeration: false,
         display_enumeration: false,
         region_crop: RegionCrop::OnHost,
@@ -110,12 +118,14 @@ mod tests {
         cursor_samples: false,
         dirty_rects: false,
         audio_loopback: true,
+        audio_device_enumeration: false,
     };
 
     const WINDOWS: Capabilities = Capabilities {
         backend: "dxgi",
         exclusion: ExclusionSupport::OwnWindowsOnly,
         window_capture: true,
+        camera_capture: true,
         window_enumeration: true,
         display_enumeration: true,
         region_crop: RegionCrop::DuringAcquisition,
@@ -123,12 +133,14 @@ mod tests {
         cursor_samples: true,
         dirty_rects: true,
         audio_loopback: true,
+        audio_device_enumeration: true,
     };
 
     const MACOS: Capabilities = Capabilities {
         backend: "screencapturekit",
         exclusion: ExclusionSupport::AnyWindow,
         window_capture: true,
+        camera_capture: false,
         window_enumeration: true,
         display_enumeration: true,
         region_crop: RegionCrop::DuringAcquisition,
@@ -136,6 +148,7 @@ mod tests {
         cursor_samples: false,
         dirty_rects: false,
         audio_loopback: true,
+        audio_device_enumeration: false,
     };
 
     #[test]

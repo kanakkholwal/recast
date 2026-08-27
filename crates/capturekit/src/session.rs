@@ -2,8 +2,12 @@ use core::time::Duration;
 
 use capturekit_core::{Result, Timestamp};
 
+use crate::audio::{AudioBuffer, AudioCapturerBuilder, AudioHandle};
 use crate::capturer::{CaptureHandle, CapturerBuilder, Flow, Frame};
 use crate::platform::os;
+
+/// How long a track waits on its source before looping to check for a stop.
+const POLL: Duration = Duration::from_millis(250);
 
 /// Names one stream inside a session, so a handler can tell them apart.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,17 +34,99 @@ pub struct SessionFrame<'a> {
     pub frame: Frame<'a>,
 }
 
+/// A buffer of samples, plus where it sits on the session's shared timeline.
+pub struct SessionAudio<'a> {
+    /// Which stream produced it.
+    pub track: &'a TrackId,
+    /// How far into the session the samples belong, on the same timeline as
+    /// [`SessionFrame::elapsed`]. Lining audio up against video is subtracting
+    /// one origin, nothing more.
+    pub elapsed: Duration,
+    /// The samples themselves.
+    pub buffer: AudioBuffer<'a>,
+}
+
 /// Collects the streams a session will run before starting them together.
 #[derive(Default)]
 pub struct SessionBuilder {
     tracks: Vec<PendingTrack>,
 }
 
-struct PendingTrack {
-    id: TrackId,
-    builder: CapturerBuilder,
-    handler: Box<dyn FnMut(SessionFrame<'_>) -> Flow + Send>,
-    timeout: Duration,
+enum PendingTrack {
+    Video {
+        id: TrackId,
+        builder: CapturerBuilder,
+        handler: Box<dyn FnMut(SessionFrame<'_>) -> Flow + Send>,
+    },
+    Audio {
+        id: TrackId,
+        builder: AudioCapturerBuilder,
+        handler: Box<dyn FnMut(SessionAudio<'_>) -> Flow + Send>,
+    },
+}
+
+/// One opened source, waiting for the origin to be read before it starts.
+enum OpenTrack {
+    Video(
+        TrackId,
+        crate::capturer::Capturer,
+        Box<dyn FnMut(SessionFrame<'_>) -> Flow + Send>,
+    ),
+    Audio(
+        TrackId,
+        crate::audio::AudioCapturer,
+        Box<dyn FnMut(SessionAudio<'_>) -> Flow + Send>,
+    ),
+}
+
+impl OpenTrack {
+    /// Start the source against a timeline origin every track shares.
+    fn start(self, origin: Timestamp) -> TrackHandle {
+        match self {
+            Self::Video(id, capturer, mut handler) => {
+                TrackHandle::Video(capturer.start(POLL, move |frame| {
+                    let elapsed = frame.pts().saturating_since(origin);
+                    handler(SessionFrame {
+                        track: &id,
+                        elapsed,
+                        frame,
+                    })
+                }))
+            }
+            Self::Audio(id, capturer, mut handler) => {
+                TrackHandle::Audio(capturer.start(POLL, move |buffer| {
+                    let elapsed = buffer.pts().saturating_since(origin);
+                    handler(SessionAudio {
+                        track: &id,
+                        elapsed,
+                        buffer,
+                    })
+                }))
+            }
+        }
+    }
+}
+
+/// A running track, whichever kind it is.
+enum TrackHandle {
+    Video(CaptureHandle),
+    Audio(AudioHandle),
+}
+
+impl TrackHandle {
+    fn stop(self) -> Result<()> {
+        match self {
+            Self::Video(handle) => handle.stop(),
+            Self::Audio(handle) => handle.stop(),
+        }
+    }
+
+    fn is_finished(&self) -> bool {
+        match self {
+            Self::Video(handle) => handle.is_finished(),
+            Self::Audio(handle) => handle.is_finished(),
+        }
+    }
 }
 
 impl SessionBuilder {
@@ -53,11 +139,33 @@ impl SessionBuilder {
     where
         H: FnMut(SessionFrame<'_>) -> Flow + Send + 'static,
     {
-        self.tracks.push(PendingTrack {
+        self.tracks.push(PendingTrack::Video {
             id: id.into(),
             builder,
             handler: Box::new(handler),
-            timeout: Duration::from_millis(250),
+        });
+        self
+    }
+
+    /// Add an audio stream, with the handler that will run on its capture thread.
+    ///
+    /// A microphone and a loopback capture are two tracks, not one: they are
+    /// separate devices on separate clocks of their own, and mixing them is the
+    /// consumer's decision, not this crate's.
+    #[must_use]
+    pub fn audio<H>(
+        mut self,
+        id: impl Into<TrackId>,
+        builder: AudioCapturerBuilder,
+        handler: H,
+    ) -> Self
+    where
+        H: FnMut(SessionAudio<'_>) -> Flow + Send + 'static,
+    {
+        self.tracks.push(PendingTrack::Audio {
+            id: id.into(),
+            builder,
+            handler: Box::new(handler),
         });
         self
     }
@@ -70,8 +178,18 @@ impl SessionBuilder {
     pub fn start(self) -> Result<Session> {
         let mut opened = Vec::with_capacity(self.tracks.len());
         for track in self.tracks {
-            let capturer = track.builder.build()?;
-            opened.push((track.id, capturer, track.handler, track.timeout));
+            opened.push(match track {
+                PendingTrack::Video {
+                    id,
+                    builder,
+                    handler,
+                } => OpenTrack::Video(id, builder.build()?, handler),
+                PendingTrack::Audio {
+                    id,
+                    builder,
+                    handler,
+                } => OpenTrack::Audio(id, builder.build()?, handler),
+            });
         }
 
         // Read once, after every source is open: a source that took a second to
@@ -80,16 +198,7 @@ impl SessionBuilder {
 
         let handles = opened
             .into_iter()
-            .map(|(id, capturer, mut handler, timeout)| {
-                capturer.start(timeout, move |frame| {
-                    let elapsed = frame.pts().saturating_since(origin);
-                    handler(SessionFrame {
-                        track: &id,
-                        elapsed,
-                        frame,
-                    })
-                })
-            })
+            .map(|track| track.start(origin))
             .collect();
 
         Ok(Session { origin, handles })
@@ -99,7 +208,7 @@ impl SessionBuilder {
 /// Several capture streams running together on one timeline.
 pub struct Session {
     origin: Timestamp,
-    handles: Vec<CaptureHandle>,
+    handles: Vec<TrackHandle>,
 }
 
 impl Session {
@@ -124,7 +233,7 @@ impl Session {
     /// Whether every stream has finished on its own.
     #[must_use]
     pub fn is_finished(&self) -> bool {
-        self.handles.iter().all(CaptureHandle::is_finished)
+        self.handles.iter().all(TrackHandle::is_finished)
     }
 
     /// Stop every stream and wait for all of them.

@@ -15,6 +15,12 @@ pub enum CursorShapeKind {
     /// 32-bit BGRA whose alpha byte is a flag, not coverage: `0` copies the
     /// pixel, `0xFF` inverts what is underneath.
     MaskedColor,
+    /// 32-bit BGRA whose colour channels are already multiplied by alpha, which
+    /// is what X11's XFixes hands over.
+    ///
+    /// Drawing these as if they were straight alpha darkens every soft edge,
+    /// which on a cursor is a visible black fringe.
+    PremultipliedColor,
 }
 
 /// A cursor image, in whatever form the platform delivered it.
@@ -35,6 +41,22 @@ pub struct CursorShape {
     pub kind: CursorShapeKind,
     /// The raw image, as the platform gave it.
     pub bytes: Vec<u8>,
+}
+
+/// Divide colour back out of alpha, in place.
+///
+/// A fully transparent pixel has no colour left to recover, and its colour
+/// cannot affect anything drawn, so it stays zero.
+fn unpremultiply(rgba: &mut [u8]) {
+    for pixel in rgba.chunks_exact_mut(4) {
+        let alpha = u32::from(pixel[3]);
+        if alpha == 0 || alpha == 255 {
+            continue;
+        }
+        for channel in &mut pixel[..3] {
+            *channel = u8::try_from((u32::from(*channel) * 255 / alpha).min(255)).unwrap_or(255);
+        }
+    }
 }
 
 impl CursorShape {
@@ -59,6 +81,11 @@ impl CursorShape {
     pub fn to_rgba(&self) -> Result<Vec<u8>, CaptureError> {
         match self.kind {
             CursorShapeKind::Color => self.decode_bgra(false),
+            CursorShapeKind::PremultipliedColor => {
+                let mut rgba = self.decode_bgra(false)?;
+                unpremultiply(&mut rgba);
+                Ok(rgba)
+            }
             CursorShapeKind::MaskedColor => self.decode_bgra(true),
             CursorShapeKind::Monochrome => self.decode_monochrome(),
         }
@@ -152,7 +179,7 @@ impl CursorShape {
 /// Sampled by the capture backend on the same clock as the frames rather than by
 /// a separate poller: a cursor track on its own clock drifts against the video
 /// and has to be smoothed to hide it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CursorSample {
     /// When the position was true, on the source's clock.
     pub pts: Timestamp,
@@ -241,6 +268,73 @@ mod tests {
             bytes: vec![10, 20, 30, 128],
         };
         assert_eq!(shape.to_rgba().expect("decoded"), vec![30, 20, 10, 128]);
+    }
+
+    /// Premultiplied colour drawn as straight alpha is a black fringe on every
+    /// soft edge, which is what a cursor is mostly made of.
+    #[test]
+    fn a_premultiplied_cursor_has_its_colour_divided_back_out() {
+        let shape = CursorShape {
+            width: 1,
+            height: 1,
+            stride: 4,
+            hotspot_x: 0,
+            hotspot_y: 0,
+            kind: CursorShapeKind::PremultipliedColor,
+            // Half-transparent white, stored premultiplied: 128 in every channel.
+            bytes: vec![128, 128, 128, 128],
+        };
+        let rgba = shape.to_rgba().expect("decoded");
+        assert_eq!(rgba[3], 128, "alpha must not be touched");
+        for channel in &rgba[..3] {
+            assert!(*channel > 250, "{rgba:?} was left premultiplied");
+        }
+    }
+
+    #[test]
+    fn an_opaque_premultiplied_pixel_is_left_exactly_alone() {
+        let shape = CursorShape {
+            width: 1,
+            height: 1,
+            stride: 4,
+            hotspot_x: 0,
+            hotspot_y: 0,
+            kind: CursorShapeKind::PremultipliedColor,
+            bytes: vec![10, 20, 30, 255],
+        };
+        assert_eq!(shape.to_rgba().expect("decoded"), vec![30, 20, 10, 255]);
+    }
+
+    /// Nothing to divide by, and nothing the colour could affect.
+    #[test]
+    fn a_fully_transparent_premultiplied_pixel_stays_transparent() {
+        let shape = CursorShape {
+            width: 1,
+            height: 1,
+            stride: 4,
+            hotspot_x: 0,
+            hotspot_y: 0,
+            kind: CursorShapeKind::PremultipliedColor,
+            bytes: vec![0, 0, 0, 0],
+        };
+        assert_eq!(shape.to_rgba().expect("decoded"), vec![0, 0, 0, 0]);
+    }
+
+    /// A channel brighter than its alpha is a malformed premultiplied pixel;
+    /// dividing it out overflows a byte and must clamp rather than wrap.
+    #[test]
+    fn a_channel_brighter_than_its_alpha_clamps_instead_of_wrapping() {
+        let shape = CursorShape {
+            width: 1,
+            height: 1,
+            stride: 4,
+            hotspot_x: 0,
+            hotspot_y: 0,
+            kind: CursorShapeKind::PremultipliedColor,
+            bytes: vec![200, 200, 200, 100],
+        };
+        let rgba = shape.to_rgba().expect("decoded");
+        assert_eq!(&rgba[..3], &[255, 255, 255]);
     }
 
     #[test]

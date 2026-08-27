@@ -1,11 +1,13 @@
 use core::time::Duration;
 
 use capturekit_core::{
-    CaptureError, ColorSpace, DirtyRects, Display, DisplayId, LostReason, PixelFormat, Rect,
-    Result, Rotation, SourceDesc, Window, WindowId,
+    CaptureError, ColorSpace, CursorSample, CursorShape, CursorShapeKind, DirtyRects, Display,
+    DisplayId, LostReason, PixelFormat, Rect, Result, Rotation, SourceDesc, Timestamp, Window,
+    WindowId,
 };
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::{self, ConnectionExt as RandrExt};
+use x11rb::protocol::xfixes::ConnectionExt as XfixesExt;
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, ImageFormat, Screen, Window as XWindow};
 use x11rb::rust_connection::RustConnection;
 
@@ -18,6 +20,11 @@ pub(crate) const BACKEND: &str = "x11";
 fn failed(error: impl std::error::Error + Send + Sync + 'static) -> CaptureError {
     CaptureError::backend(BACKEND, error)
 }
+
+/// XFixes 2.0 is where `GetCursorImage` arrives, and every server that has the
+/// extension at all has at least that.
+const XFIXES_MAJOR: u32 = 2;
+const XFIXES_MINOR: u32 = 0;
 
 /// A connection plus the screen it was opened against.
 struct Session {
@@ -38,6 +45,18 @@ impl Session {
                 id: index as u64,
             })?;
         Ok(Self { conn, screen })
+    }
+
+    /// Turn on XFixes, so the cursor can be sampled with the frames.
+    ///
+    /// The extension has to be negotiated before any of its requests are sent.
+    /// Absent on nothing modern, but a server without it just means no cursor.
+    fn enable_xfixes(&self) -> bool {
+        self.conn
+            .xfixes_query_version(XFIXES_MAJOR, XFIXES_MINOR)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .is_some()
     }
 
     fn atom(&self, name: &[u8]) -> Result<u32> {
@@ -264,9 +283,83 @@ pub(crate) struct X11Source {
     region: Option<Rect>,
     desc: SourceDesc,
     frame: Vec<u8>,
+    /// Cursor sampling through XFixes, off when the server has no such extension.
+    cursor: Option<Cursor>,
+}
+
+/// The cursor as XFixes last reported it.
+///
+/// The image comes back with every call, so the serial is what says whether it
+/// actually changed and a consumer can keep its decoded copy.
+#[derive(Default)]
+struct Cursor {
+    shape: Option<CursorShape>,
+    serial: u32,
+}
+
+/// Where the cursor IMAGE starts, given the position XFixes reports.
+///
+/// XFixes answers with the hotspot's position on the screen, while every
+/// backend here reports the image's top-left, which is what Windows' Desktop
+/// Duplication gives. Reporting the hotspot instead offsets the drawn cursor by
+/// however far into its own image the point is, which for a standard arrow is a
+/// few pixels and for a crosshair is half its width.
+const fn image_origin(hotspot: (i32, i32), hot: (u32, u32), surface: &Rect) -> (i32, i32) {
+    (
+        hotspot.0 - hot.0 as i32 - surface.x,
+        hotspot.1 - hot.1 as i32 - surface.y,
+    )
 }
 
 impl X11Source {
+    /// Read the cursor, keeping its image only when the serial says it changed.
+    ///
+    /// `None` when the server has no XFixes, and `visible: false` when the
+    /// pointer is on another screen or hidden, which XFixes reports as a
+    /// zero-sized image rather than as an error.
+    fn sample_cursor(&mut self, pts: Timestamp) -> Option<CursorSample> {
+        let cursor = self.cursor.as_mut()?;
+        let image = self
+            .session
+            .conn
+            .xfixes_get_cursor_image()
+            .ok()?
+            .reply()
+            .ok()?;
+
+        if image.width == 0 || image.height == 0 {
+            return Some(CursorSample::absent(pts));
+        }
+        if image.cursor_serial != cursor.serial || cursor.shape.is_none() {
+            cursor.serial = image.cursor_serial;
+            cursor.shape = Some(CursorShape {
+                width: u32::from(image.width),
+                height: u32::from(image.height),
+                stride: u32::from(image.width) * 4,
+                hotspot_x: u32::from(image.xhot),
+                hotspot_y: u32::from(image.yhot),
+                // XFixes stores ARGB premultiplied, one pixel per 32-bit word.
+                kind: CursorShapeKind::PremultipliedColor,
+                bytes: image
+                    .cursor_image
+                    .iter()
+                    .flat_map(|pixel| pixel.to_le_bytes())
+                    .collect(),
+            });
+        }
+        let (x, y) = image_origin(
+            (i32::from(image.x), i32::from(image.y)),
+            (u32::from(image.xhot), u32::from(image.yhot)),
+            &self.grab,
+        );
+        Some(CursorSample {
+            pts,
+            position: Some((x, y)),
+            visible: true,
+            shape_id: u64::from(image.cursor_serial),
+        })
+    }
+
     pub(crate) fn open_display(display: DisplayId, opts: &OpenOptions) -> Result<Self> {
         let session = Session::open()?;
         let monitor = displays()?
@@ -339,6 +432,9 @@ impl X11Source {
         rotation: Rotation,
         opts: &OpenOptions,
     ) -> Result<Self> {
+        // Negotiated once at open: a per-frame check would cost a round trip
+        // for an answer that cannot change while the connection lives.
+        let cursor = session.enable_xfixes().then(Cursor::default);
         Ok(Self {
             session,
             drawable,
@@ -355,6 +451,7 @@ impl X11Source {
                 backend: BACKEND,
             },
             frame: Vec::new(),
+            cursor,
         })
     }
 }
@@ -368,7 +465,14 @@ impl FrameSource for X11Source {
         self.region
     }
 
+    fn cursor_shape(&self) -> Option<&CursorShape> {
+        self.cursor.as_ref()?.shape.as_ref()
+    }
+
     fn next_frame(&mut self, _timeout: Duration) -> Result<RawFrame<'_>> {
+        // GetImage is a synchronous grab with no timestamp of its own, so the
+        // moment of the call is the only honest answer.
+        let pts = now();
         let reply = self
             .session
             .conn
@@ -393,6 +497,9 @@ impl FrameSource for X11Source {
                 operation: "read a visual that is not 24 or 32 bits deep",
             });
         }
+        // Sampled next to the grab rather than on a poller of its own, so the
+        // cursor and the pixels it sits on share one instant.
+        let sample = self.sample_cursor(pts);
         self.frame = reply.data;
         // Z_PIXMAP pads each scanline to the server's bitmap unit, which is 32
         // bits on every modern server, so a 32-bit-per-pixel row is already whole.
@@ -405,17 +512,44 @@ impl FrameSource for X11Source {
         )?;
 
         Ok(RawFrame {
-            // GetImage is a synchronous grab with no timestamp of its own, so the
-            // moment of the call is the only honest answer.
-            pts: now(),
+            pts,
             bytes: &self.frame,
             stride,
             dirty: DirtyRects::unknown(),
-            cursor: None,
+            cursor: sample,
         })
     }
 
     fn stop(&mut self) -> Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// XFixes answers with the HOTSPOT's position while every backend here
+    /// reports the image's top-left. Skipping the correction offsets the drawn
+    /// cursor by however far into its own image the point is.
+    #[test]
+    fn the_reported_position_is_the_images_corner_not_the_hotspot() {
+        let screen = Rect::from_size(1920, 1080);
+        assert_eq!(image_origin((100, 200), (7, 9), &screen), (93, 191));
+    }
+
+    /// A capture of a monitor that does not start at the screen origin, or of a
+    /// cropped region, must report the cursor in the captured surface's own
+    /// pixels rather than in screen coordinates.
+    #[test]
+    fn the_position_is_relative_to_the_captured_surface() {
+        let second_monitor = Rect::new(1920, 0, 1920, 1080);
+        assert_eq!(image_origin((2000, 50), (0, 0), &second_monitor), (80, 50));
+    }
+
+    #[test]
+    fn a_cursor_left_of_the_captured_surface_reports_a_negative_position() {
+        let region = Rect::new(100, 100, 200, 200);
+        assert_eq!(image_origin((40, 40), (0, 0), &region), (-60, -60));
     }
 }

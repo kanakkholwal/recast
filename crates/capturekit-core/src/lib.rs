@@ -22,7 +22,8 @@ mod target;
 mod time;
 
 pub use audio::{
-    AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, AudioTimeline, SampleFormat,
+    interleave, AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, AudioTimeline,
+    SampleFormat,
 };
 pub use capabilities::{Capabilities, ExclusionSupport, RegionCrop};
 pub use color::{

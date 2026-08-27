@@ -1,0 +1,633 @@
+use core::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, OnceLock};
+use std::thread::JoinHandle;
+
+use capturekit_core::{
+    Camera, CameraFormat, CameraId, CaptureError, ColorSpace, DirtyRects, PixelFormat, Rect,
+    Result, Rotation, SourceDesc,
+};
+use windows::core::{Interface, GUID, HRESULT, PWSTR};
+use windows::Win32::Foundation::{S_FALSE, S_OK};
+use windows::Win32::Media::MediaFoundation::{
+    IMF2DBuffer, IMFActivate, IMFAttributes, IMFMediaSource, IMFMediaType, IMFSourceReader,
+    MFCreateAttributes, MFCreateMediaType, MFCreateSourceReaderFromMediaSource,
+    MFEnumDeviceSources, MFMediaType_Video, MFShutdown, MFStartup, MFVideoFormat_RGB32,
+    MFSTARTUP_NOSOCKET, MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID,
+    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK, MF_MT_DEFAULT_STRIDE,
+    MF_MT_FRAME_RATE, MF_MT_FRAME_SIZE, MF_MT_MAJOR_TYPE, MF_MT_SUBTYPE,
+    MF_SOURCE_READERF_ENDOFSTREAM, MF_SOURCE_READERF_ERROR,
+    MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+    MF_VERSION,
+};
+use windows::Win32::System::Com::{
+    CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_MULTITHREADED,
+};
+
+use crate::backend::{FrameSource, RawFrame};
+use crate::deliver::{Delivered, FrameSlot};
+use crate::platform::OpenOptions;
+
+const BACKEND: &str = "mediafoundation";
+/// The stream index every device video source publishes its frames on.
+const VIDEO_STREAM: u32 = MF_SOURCE_READER_FIRST_VIDEO_STREAM.0 as u32;
+/// What the reader is asked for when the caller names no size.
+const DEFAULT_SIZE: (u32, u32) = (1280, 720);
+
+fn err(source: windows::core::Error) -> CaptureError {
+    CaptureError::backend(BACKEND, source)
+}
+
+fn unsupported(operation: &'static str) -> CaptureError {
+    CaptureError::Unsupported {
+        backend: BACKEND,
+        operation,
+    }
+}
+
+/// Start Media Foundation once for the process, and never shut it down.
+///
+/// `MFShutdown` is refcounted against `MFStartup`, but a library cannot know
+/// when the host is done with MF. Balancing every start with a stop would tear
+/// the platform down under a camera another part of the app still holds open.
+fn ensure_started() -> Result<()> {
+    static STARTED: OnceLock<HRESULT> = OnceLock::new();
+    let hr = *STARTED.get_or_init(|| unsafe {
+        MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET).map_or_else(|error| error.code(), |()| S_OK)
+    });
+    if hr.is_ok() {
+        Ok(())
+    } else {
+        Err(err(windows::core::Error::from(hr)))
+    }
+}
+
+/// COM for the current thread, undone only if this scope is what started it.
+///
+/// A host that already chose an apartment gets `RPC_E_CHANGED_MODE` here, and a
+/// thread already initialised gets `S_FALSE`. Uninitialising on either would
+/// close an apartment this library does not own.
+struct ComScope {
+    owned: bool,
+}
+
+impl ComScope {
+    fn mta() -> Self {
+        let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+        Self {
+            owned: hr.is_ok() && hr != S_FALSE,
+        }
+    }
+}
+
+impl Drop for ComScope {
+    fn drop(&mut self) {
+        if self.owned {
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
+/// A `PWSTR` the callee allocated, freed however this function leaves.
+fn take_string(value: PWSTR) -> String {
+    if value.is_null() {
+        return String::new();
+    }
+    let text = unsafe { value.to_string() }.unwrap_or_default();
+    unsafe { CoTaskMemFree(Some(value.as_ptr().cast())) };
+    text
+}
+
+fn attribute_string(activate: &IMFActivate, key: &GUID) -> Option<String> {
+    let mut value = PWSTR::null();
+    let mut len = 0u32;
+    unsafe { activate.GetAllocatedString(key, &mut value, &mut len) }.ok()?;
+    Some(take_string(value))
+}
+
+/// Width and height out of the `UINT64` MF packs them into.
+fn unpack_pair(value: u64) -> (u32, u32) {
+    ((value >> 32) as u32, (value & 0xffff_ffff) as u32)
+}
+
+fn pack_pair(high: u32, low: u32) -> u64 {
+    (u64::from(high) << 32) | u64::from(low)
+}
+
+/// Every video capture device the system offers.
+///
+/// The array and each activation object in it are owned by the caller of
+/// `MFEnumDeviceSources`, so both are released here whatever happens next.
+fn activations() -> Result<Vec<IMFActivate>> {
+    ensure_started()?;
+    let mut attributes: Option<IMFAttributes> = None;
+    unsafe { MFCreateAttributes(&mut attributes, 1) }.map_err(err)?;
+    let attributes = attributes.ok_or_else(|| unsupported("describe a device query"))?;
+    unsafe {
+        attributes.SetGUID(
+            &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+            &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID,
+        )
+    }
+    .map_err(err)?;
+
+    let mut raw: *mut Option<IMFActivate> = core::ptr::null_mut();
+    let mut count = 0u32;
+    unsafe { MFEnumDeviceSources(&attributes, &mut raw, &mut count) }.map_err(err)?;
+    if raw.is_null() {
+        return Ok(Vec::new());
+    }
+    let mut found = Vec::with_capacity(count as usize);
+    for index in 0..count as usize {
+        // Reading takes ownership of the reference the array held, which is what
+        // keeps this from leaking one per device.
+        if let Some(activate) = unsafe { raw.add(index).read() } {
+            found.push(activate);
+        }
+    }
+    unsafe { CoTaskMemFree(Some(raw.cast())) };
+    Ok(found)
+}
+
+/// The symbolic link that identifies a device across reboots and USB ports.
+fn symbolic_link(activate: &IMFActivate) -> Option<String> {
+    attribute_string(
+        activate,
+        &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
+    )
+}
+
+pub(crate) fn cameras() -> Result<Vec<Camera>> {
+    let _com = ComScope::mta();
+    let found = activations()?;
+    let mut cameras = Vec::with_capacity(found.len());
+    for (index, activate) in found.iter().enumerate() {
+        let Some(id) = symbolic_link(activate) else {
+            continue;
+        };
+        let name = attribute_string(activate, &MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME)
+            .unwrap_or_else(|| format!("Camera {}", index + 1));
+        cameras.push(Camera {
+            id: CameraId(id),
+            name,
+            // Media Foundation enumerates in the order the class installer
+            // registered devices, and the first is what a camera app opens.
+            is_default: index == 0,
+            formats: modes(activate).unwrap_or_default(),
+        });
+    }
+    Ok(cameras)
+}
+
+/// The modes one device advertises, deduplicated and largest first.
+///
+/// Reported as what capturekit will deliver rather than as the device's own
+/// subtype: the reader converts, and a webcam lists the same geometry two or
+/// three times over MJPG, YUY2 and NV12.
+fn modes(activate: &IMFActivate) -> Result<Vec<CameraFormat>> {
+    let source: IMFMediaSource = unsafe { activate.ActivateObject() }.map_err(err)?;
+    let reader = reader_for(&source)?;
+    let mut modes: Vec<CameraFormat> = Vec::new();
+    let mut index = 0u32;
+    while let Ok(media_type) = unsafe { reader.GetNativeMediaType(VIDEO_STREAM, index) } {
+        index += 1;
+        let Ok(size) = (unsafe { media_type.GetUINT64(&MF_MT_FRAME_SIZE) }) else {
+            continue;
+        };
+        let (width, height) = unpack_pair(size);
+        if width == 0 || height == 0 {
+            continue;
+        }
+        let frame_rate = unsafe { media_type.GetUINT64(&MF_MT_FRAME_RATE) }
+            .ok()
+            .and_then(|packed| {
+                let (numerator, denominator) = unpack_pair(packed);
+                (denominator != 0).then(|| numerator as f32 / denominator as f32)
+            });
+        let mode = CameraFormat {
+            width,
+            height,
+            pixel_format: PixelFormat::Bgra8,
+            frame_rate,
+        };
+        if !modes.contains(&mode) {
+            modes.push(mode);
+        }
+    }
+    // Shut the device down again: enumeration must not leave a camera powered.
+    let _ = unsafe { source.Shutdown() };
+    modes.sort_by(|a, b| {
+        b.area().cmp(&a.area()).then(
+            b.frame_rate
+                .unwrap_or_default()
+                .total_cmp(&a.frame_rate.unwrap_or_default()),
+        )
+    });
+    Ok(modes)
+}
+
+fn reader_for(source: &IMFMediaSource) -> Result<IMFSourceReader> {
+    let mut attributes: Option<IMFAttributes> = None;
+    unsafe { MFCreateAttributes(&mut attributes, 1) }.map_err(err)?;
+    let attributes = attributes.ok_or_else(|| unsupported("describe a reader"))?;
+    // Without this the reader refuses any output format the device does not
+    // produce natively, and no webcam produces BGRA.
+    unsafe {
+        attributes.SetUINT32(
+            &MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,
+            u32::from(true),
+        )
+    }
+    .map_err(err)?;
+    unsafe { MFCreateSourceReaderFromMediaSource(source, &attributes) }.map_err(err)
+}
+
+/// Open the device whose symbolic link is `id`.
+fn activate_by_id(id: &CameraId) -> Result<IMFMediaSource> {
+    let found = activations()?;
+    let activate = found
+        .iter()
+        .find(|activate| symbolic_link(activate).as_deref() == Some(id.0.as_str()))
+        .ok_or_else(|| CaptureError::CameraNotFound(id.0.clone()))?;
+    unsafe { activate.ActivateObject() }.map_err(err)
+}
+
+/// Ask the reader for BGRA at `size`, and report what it settled on.
+fn negotiate(reader: &IMFSourceReader, size: (u32, u32)) -> Result<(u32, u32)> {
+    let wanted: IMFMediaType = unsafe { MFCreateMediaType() }.map_err(err)?;
+    unsafe {
+        wanted
+            .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
+            .and_then(|()| wanted.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_RGB32))
+            .and_then(|()| wanted.SetUINT64(&MF_MT_FRAME_SIZE, pack_pair(size.0, size.1)))
+            // RGB32 defaults to bottom-up, which is how a camera preview ends up
+            // upside down. Asking for a positive stride makes the reader deliver
+            // top-down like every other source here.
+            .and_then(|()| wanted.SetUINT32(&MF_MT_DEFAULT_STRIDE, size.0.saturating_mul(4)))
+    }
+    .map_err(err)?;
+    unsafe { reader.SetCurrentMediaType(VIDEO_STREAM, None, &wanted) }.map_err(err)?;
+
+    let settled = unsafe { reader.GetCurrentMediaType(VIDEO_STREAM) }.map_err(err)?;
+    let packed = unsafe { settled.GetUINT64(&MF_MT_FRAME_SIZE) }.map_err(err)?;
+    let (width, height) = unpack_pair(packed);
+    if width == 0 || height == 0 {
+        return Err(unsupported("open a camera that reports no frame size"));
+    }
+    Ok((width, height))
+}
+
+/// What the worker thread reports back once the device is open, or why it is not.
+type Opened = Result<SourceDesc>;
+
+/// A camera stream, read on a thread of its own.
+///
+/// `IMFSourceReader::ReadSample` blocks until the device produces a frame and
+/// nothing else may touch the reader while it does, so the reader is created on
+/// the worker and never leaves it. The caller sees only [`FrameSlot`].
+pub(crate) struct MfCameraSource {
+    desc: SourceDesc,
+    slot: Arc<FrameSlot>,
+    stopping: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+    /// The buffer handed to the caller, swapped out of the slot so the worker
+    /// cannot reallocate it while the caller reads it.
+    current: Vec<u8>,
+    seen: u64,
+    stride: u32,
+}
+
+impl MfCameraSource {
+    pub(crate) fn open(id: &CameraId, opts: &OpenOptions) -> Result<Self> {
+        ensure_started()?;
+        let size = opts
+            .region
+            .map_or(DEFAULT_SIZE, |region| (region.width, region.height));
+        let slot = Arc::new(FrameSlot::default());
+        let stopping = Arc::new(AtomicBool::new(false));
+        let (report, opened) = mpsc::channel::<Opened>();
+
+        let worker = {
+            let id = id.clone();
+            let slot = Arc::clone(&slot);
+            let stopping = Arc::clone(&stopping);
+            let frame_rate = opts.frame_rate();
+            std::thread::Builder::new()
+                .name("capturekit-camera".into())
+                .spawn(move || run(&id, size, frame_rate, &report, &slot, &stopping))
+                .map_err(|error| CaptureError::backend(BACKEND, error))?
+        };
+
+        // A worker that dies before reporting drops the sender, so this ends
+        // rather than waiting for a device that will never open.
+        let desc = match opened.recv() {
+            Ok(result) => result,
+            Err(_) => Err(unsupported("start a camera capture thread")),
+        };
+        match desc {
+            Ok(desc) => Ok(Self {
+                stride: desc.width.saturating_mul(4),
+                desc,
+                slot,
+                stopping,
+                worker: Some(worker),
+                current: Vec::new(),
+                seen: 0,
+            }),
+            Err(failure) => {
+                stopping.store(true, Ordering::Relaxed);
+                let _ = worker.join();
+                Err(failure)
+            }
+        }
+    }
+}
+
+/// Open the device, report the result, then pump frames until asked to stop.
+fn run(
+    id: &CameraId,
+    size: (u32, u32),
+    frame_rate: Option<u32>,
+    report: &mpsc::Sender<Opened>,
+    slot: &FrameSlot,
+    stopping: &AtomicBool,
+) {
+    // Declared first so COM outlives every object created under it.
+    let _com = ComScope::mta();
+    let opened = activate_by_id(id).and_then(|source| {
+        let reader = reader_for(&source)?;
+        let (width, height) = negotiate(&reader, size)?;
+        Ok((source, reader, width, height))
+    });
+    let (source, reader, width, height) = match opened {
+        Ok((source, reader, width, height)) => {
+            let desc = SourceDesc {
+                width,
+                height,
+                format: PixelFormat::Bgra8,
+                // Webcams deliver limited-range BT.601, which the reader's video
+                // processor has already expanded to full-range RGB by here.
+                color_space: ColorSpace::SRGB,
+                rotation: Rotation::None,
+                scale_factor: 1.0,
+                frame_rate,
+                backend: BACKEND,
+            };
+            let _ = report.send(Ok(desc));
+            (source, reader, width, height)
+        }
+        Err(failure) => {
+            slot.end();
+            let _ = report.send(Err(failure));
+            return;
+        }
+    };
+
+    let mut scratch = Vec::new();
+    while !stopping.load(Ordering::Relaxed) {
+        match read_one(&reader, width, height, slot, &mut scratch) {
+            Ok(true) => {}
+            // End of stream: the device was unplugged or another process took it.
+            // Unplugged and taken-by-another-process both surface as the reader
+            // ending its stream, and Windows does not say which.
+            Ok(false) => {
+                log::info!("camera stream ended");
+                break;
+            }
+            Err(error) => {
+                log::warn!("camera read failed: {error}");
+                break;
+            }
+        }
+    }
+    slot.end();
+    let _ = unsafe { source.Shutdown() };
+}
+
+/// Read one sample, publishing it. `false` means the stream ended.
+fn read_one(
+    reader: &IMFSourceReader,
+    width: u32,
+    height: u32,
+    slot: &FrameSlot,
+    scratch: &mut Vec<u8>,
+) -> Result<bool, windows::core::Error> {
+    let mut flags = 0u32;
+    let mut sample = None;
+    unsafe {
+        reader.ReadSample(
+            VIDEO_STREAM,
+            0,
+            None,
+            Some(&mut flags),
+            None,
+            Some(&mut sample),
+        )
+    }?;
+    if flags & MF_SOURCE_READERF_ERROR.0 as u32 != 0
+        || flags & MF_SOURCE_READERF_ENDOFSTREAM.0 as u32 != 0
+    {
+        return Ok(false);
+    }
+    // A null sample with no end-of-stream flag is the reader saying "nothing
+    // yet"; it happens around a format change and is not a failure.
+    let Some(sample) = sample else {
+        return Ok(true);
+    };
+    let buffer = unsafe { sample.ConvertToContiguousBuffer() }?;
+
+    // A 2D buffer knows its own pitch; a plain one is packed at the width.
+    let (base, stride) = match buffer.cast::<IMF2DBuffer>() {
+        Ok(flat) => {
+            let mut scanline = core::ptr::null_mut();
+            let mut pitch = 0i32;
+            unsafe { flat.Lock2D(&mut scanline, &mut pitch) }?;
+            (scanline, pitch)
+        }
+        Err(_) => {
+            let mut data = core::ptr::null_mut();
+            let mut length = 0u32;
+            unsafe { buffer.Lock(&mut data, None, Some(&mut length)) }?;
+            (data, width.saturating_mul(4) as i32)
+        }
+    };
+
+    if !base.is_null() && stride != 0 {
+        let row_bytes = width.saturating_mul(4) as usize;
+        // SAFETY: the buffer is locked until the unlock below, so it addresses
+        // `height` rows of the pitch the lock reported.
+        unsafe { gather_rows(scratch, base, stride, row_bytes, height) };
+        slot.publish(
+            Delivered {
+                // Stamped from the same clock the screen and audio backends use.
+                // A camera's own sample time counts from when its stream
+                // started, so aligning it against a display by that would be
+                // meaningless.
+                pts: super::now(),
+                stride: row_bytes as u32,
+                width,
+                height,
+            },
+            scratch,
+        );
+    }
+
+    match buffer.cast::<IMF2DBuffer>() {
+        Ok(flat) => unsafe { flat.Unlock2D() }?,
+        Err(_) => unsafe { buffer.Unlock() }?,
+    }
+    Ok(true)
+}
+
+/// Copy `height` scanlines into `out`, top row first whichever way MF laid them
+/// out in memory.
+///
+/// `Lock2D` hands back the FIRST scanline, not the lowest address. A negative
+/// pitch means the rows after it run backwards through memory, which is the
+/// default for RGB32 and the reason an unhandled camera preview is upside down.
+/// Stepping by the signed pitch is top-down either way.
+///
+/// # Safety
+///
+/// `scanline0` must address `height` rows of `row_bytes` readable bytes, each
+/// `pitch` from the last.
+unsafe fn gather_rows(
+    out: &mut Vec<u8>,
+    scanline0: *const u8,
+    pitch: i32,
+    row_bytes: usize,
+    height: u32,
+) {
+    out.clear();
+    out.reserve(row_bytes.saturating_mul(height as usize));
+    for row in 0..height as isize {
+        let line = unsafe { scanline0.offset(row * pitch as isize) };
+        out.extend_from_slice(unsafe { core::slice::from_raw_parts(line, row_bytes) });
+    }
+}
+
+impl Drop for MfCameraSource {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
+}
+
+impl FrameSource for MfCameraSource {
+    fn describe(&self) -> &SourceDesc {
+        &self.desc
+    }
+
+    fn region(&self) -> Option<Rect> {
+        // The reader scales to the requested size rather than cropping to it, so
+        // a region is a resolution request and not a crop.
+        None
+    }
+
+    fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>> {
+        let meta = self.slot.take(timeout, &mut self.seen, &mut self.current)?;
+        self.desc.width = meta.width;
+        self.desc.height = meta.height;
+        self.stride = meta.stride;
+        Ok(RawFrame {
+            pts: meta.pts,
+            bytes: &self.current,
+            stride: self.stride,
+            // A camera repaints its whole sensor every frame.
+            dirty: DirtyRects::unknown(),
+            cursor: None,
+        })
+    }
+
+    fn stop(&mut self) -> Result<()> {
+        self.stopping.store(true, Ordering::Relaxed);
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+        Ok(())
+    }
+}
+
+/// Kept so the process can release Media Foundation deliberately, which only a
+/// host shutting down should ever do.
+#[allow(dead_code)]
+pub(crate) fn shutdown() {
+    let _ = unsafe { MFShutdown() };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_packed_pair_round_trips_through_the_uint64_mf_stores_it_in() {
+        assert_eq!(unpack_pair(pack_pair(1920, 1080)), (1920, 1080));
+    }
+
+    /// The half that silently truncates if the low word is masked wrong: 4K is
+    /// past the point where a signed or narrowed shift starts losing bits.
+    #[test]
+    fn a_frame_size_larger_than_a_signed_word_survives_unpacking() {
+        assert_eq!(unpack_pair(pack_pair(3840, 2160)), (3840, 2160));
+        assert_eq!(unpack_pair(pack_pair(0, u32::MAX)), (0, u32::MAX));
+    }
+
+    #[test]
+    fn a_null_string_attribute_reads_as_empty_rather_than_panicking() {
+        assert_eq!(take_string(PWSTR::null()), "");
+    }
+
+    /// Rows numbered top to bottom, laid out in that order.
+    const ROWS: usize = 4;
+    const ROW_BYTES: usize = 3;
+
+    fn ladder() -> Vec<u8> {
+        (0..ROWS as u8).flat_map(|row| [row; ROW_BYTES]).collect()
+    }
+
+    #[test]
+    fn a_positive_pitch_reads_the_rows_in_the_order_memory_holds_them() {
+        let source = ladder();
+        let mut out = Vec::new();
+        unsafe {
+            gather_rows(
+                &mut out,
+                source.as_ptr(),
+                ROW_BYTES as i32,
+                ROW_BYTES,
+                ROWS as u32,
+            );
+        };
+        assert_eq!(out, source);
+    }
+
+    /// The bug this exists to prevent: a bottom-up frame handed back in memory
+    /// order is an upside-down camera preview that passes every size check.
+    #[test]
+    fn a_negative_pitch_reads_the_rows_back_into_top_down_order() {
+        let source = ladder();
+        // `Lock2D` reports the first scanline, which for a negative pitch is the
+        // last row in memory.
+        let first = unsafe { source.as_ptr().add((ROWS - 1) * ROW_BYTES) };
+        let mut out = Vec::new();
+        unsafe {
+            gather_rows(&mut out, first, -(ROW_BYTES as i32), ROW_BYTES, ROWS as u32);
+        };
+        let expected: Vec<u8> = (0..ROWS as u8)
+            .rev()
+            .flat_map(|row| [row; ROW_BYTES])
+            .collect();
+        assert_eq!(out, expected);
+    }
+
+    /// A stride wider than the row: the padding must not travel with the pixels.
+    #[test]
+    fn padding_between_rows_is_left_behind() {
+        let padded: Vec<u8> = (0..ROWS as u8)
+            .flat_map(|row| [row, row, row, 0xFF, 0xFF])
+            .collect();
+        let mut out = Vec::new();
+        unsafe { gather_rows(&mut out, padded.as_ptr(), 5, ROW_BYTES, ROWS as u32) };
+        assert_eq!(out, ladder());
+    }
+}

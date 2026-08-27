@@ -1,8 +1,8 @@
 use core::time::Duration;
 
 use capturekit_core::{
-    CaptureError, ColorSpace, DirtyRects, LostReason, PixelFormat, Rect, Result, Rotation,
-    SourceDesc, Timestamp,
+    CaptureError, ColorSpace, CursorSample, DirtyRects, LostReason, PixelFormat, Rect, Result,
+    Rotation, SourceDesc, Timestamp,
 };
 
 use crate::backend::{FrameSource, RawFrame};
@@ -37,6 +37,8 @@ pub struct MockSource {
     frames: Vec<MockFrame>,
     failures: Vec<Option<LostReason>>,
     region: Option<Rect>,
+    dirty: DirtyRects,
+    cursor: Option<CursorSample>,
     buffer: Vec<u8>,
     served: usize,
 }
@@ -59,9 +61,30 @@ impl MockSource {
             frames,
             failures: Vec::new(),
             region: None,
+            dirty: DirtyRects::unknown(),
+            cursor: None,
             buffer: Vec::new(),
             served: 0,
         }
+    }
+
+    /// Report `rect` as the only region that changed on every frame.
+    #[must_use]
+    pub fn reporting_dirty(mut self, rect: Rect) -> Self {
+        self.dirty = DirtyRects::from_rects([rect]);
+        self
+    }
+
+    /// Report a cursor at `position` on every frame.
+    #[must_use]
+    pub fn with_cursor(mut self, position: (i32, i32)) -> Self {
+        self.cursor = Some(CursorSample {
+            pts: Timestamp::ZERO,
+            position: Some(position),
+            visible: true,
+            shape_id: 1,
+        });
+        self
     }
 
     /// Fail the nth acquisition with `reason` instead of delivering a frame.
@@ -104,11 +127,13 @@ impl FrameSource for MockSource {
             self.served += 1;
             return Err(CaptureError::Lost(reason));
         }
-        let frame = self
-            .frames
-            .get(self.served)
-            .cloned()
-            .ok_or(CaptureError::Timeout(timeout))?;
+        let Some(frame) = self.frames.get(self.served).cloned() else {
+            // A real backend blocks for the timeout before admitting it has
+            // nothing. A mock that answers instantly turns a caller's busy-wait
+            // into a passing test.
+            std::thread::sleep(timeout);
+            return Err(CaptureError::Timeout(timeout));
+        };
         self.served += 1;
 
         let stride = self.desc.width * 4;
@@ -119,8 +144,11 @@ impl FrameSource for MockSource {
             pts: frame.pts,
             bytes: &self.buffer,
             stride,
-            dirty: DirtyRects::unknown(),
-            cursor: None,
+            dirty: self.dirty.clone(),
+            cursor: self.cursor.map(|sample| CursorSample {
+                pts: frame.pts,
+                ..sample
+            }),
         })
     }
 

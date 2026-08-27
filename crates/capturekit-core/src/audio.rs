@@ -242,9 +242,122 @@ impl AudioTimeline {
     }
 }
 
+/// Interleave one plane per channel into sample frames.
+///
+/// CoreAudio and PipeWire both deliver planar audio, one buffer per channel,
+/// while capturekit's contract is interleaved. Done here rather than in each
+/// backend because a stride mistake produces swapped or stuttering channels,
+/// which sounds like a bad device rather than like a bug.
+///
+/// `out` is cleared and reused, so a backend calling this per buffer allocates
+/// once. Returns the sample frames written.
+pub fn interleave(
+    planes: &[&[u8]],
+    format: AudioFormat,
+    out: &mut Vec<u8>,
+) -> Result<usize, CaptureError> {
+    out.clear();
+    let sample = format.sample_format.bytes();
+    if planes.len() != format.channels as usize || sample == 0 {
+        return Err(CaptureError::Unsupported {
+            backend: "capturekit",
+            operation: "interleave a channel count the format does not describe",
+        });
+    }
+    let Some(first) = planes.first() else {
+        return Ok(0);
+    };
+    for (channel, plane) in planes.iter().enumerate().skip(1) {
+        if plane.len() != first.len() {
+            return Err(CaptureError::RaggedAudioPlanes {
+                channel,
+                len: plane.len(),
+                expected: first.len(),
+            });
+        }
+    }
+    let frames = first.len() / sample;
+    out.reserve(frames * planes.len() * sample);
+    for frame in 0..frames {
+        let at = frame * sample;
+        for plane in planes {
+            out.extend_from_slice(&plane[at..at + sample]);
+        }
+    }
+    Ok(frames)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const STEREO_I16: AudioFormat = AudioFormat::new(48_000, 2, SampleFormat::I16);
+
+    #[test]
+    fn two_planes_interleave_into_sample_frames() {
+        let left = [0x01, 0x02, 0x03, 0x04];
+        let right = [0x11, 0x12, 0x13, 0x14];
+        let mut out = Vec::new();
+        let frames = interleave(&[&left, &right], STEREO_I16, &mut out).expect("two planes");
+        assert_eq!(frames, 2);
+        assert_eq!(out, vec![0x01, 0x02, 0x11, 0x12, 0x03, 0x04, 0x13, 0x14]);
+    }
+
+    /// The mistake this exists to prevent: taking a whole plane at a time rather
+    /// than one sample, which plays the left channel then the right.
+    #[test]
+    fn a_sample_of_each_channel_alternates_rather_than_whole_planes() {
+        let left = [1u8, 1, 2, 2, 3, 3];
+        let right = [9u8, 9, 8, 8, 7, 7];
+        let mut out = Vec::new();
+        interleave(&[&left, &right], STEREO_I16, &mut out).expect("two planes");
+        assert_eq!(out, vec![1, 1, 9, 9, 2, 2, 8, 8, 3, 3, 7, 7]);
+    }
+
+    #[test]
+    fn a_mono_plane_comes_through_unchanged() {
+        let mono = [7u8, 7, 8, 8];
+        let mut out = Vec::new();
+        let frames = interleave(
+            &[&mono],
+            AudioFormat::new(48_000, 1, SampleFormat::I16),
+            &mut out,
+        )
+        .expect("one plane");
+        assert_eq!(frames, 2);
+        assert_eq!(out, mono);
+    }
+
+    /// A plane shorter than the first means the buffer list was misread. Taking
+    /// the shorter length would quietly drop the tail of one channel.
+    #[test]
+    fn planes_that_do_not_agree_are_refused_rather_than_truncated() {
+        let left = [1u8, 1, 2, 2];
+        let right = [9u8, 9];
+        let mut out = Vec::new();
+        let err =
+            interleave(&[&left, &right], STEREO_I16, &mut out).expect_err("the planes disagree");
+        assert!(
+            matches!(err, CaptureError::RaggedAudioPlanes { channel: 1, .. }),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_plane_count_the_format_does_not_describe_is_refused() {
+        let only = [1u8, 1];
+        let mut out = Vec::new();
+        assert!(interleave(&[&only], STEREO_I16, &mut out).is_err());
+    }
+
+    #[test]
+    fn interleaving_reuses_the_buffer_it_is_given() {
+        let left = [1u8, 1];
+        let right = [2u8, 2];
+        let mut out = vec![0xFF; 64];
+        interleave(&[&left, &right], STEREO_I16, &mut out).expect("two planes");
+        assert_eq!(out, vec![1, 1, 2, 2], "the previous contents were kept");
+    }
 
     #[test]
     fn a_stereo_float_frame_is_eight_bytes() {

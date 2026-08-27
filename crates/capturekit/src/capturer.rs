@@ -2,13 +2,14 @@ use core::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+use std::time::Instant;
 
 use capturekit_core::{
     CaptureError, ColorSpaceRequest, CursorSample, CursorShape, DirtyRects, ExclusionSupport,
-    MonotonicClock, Pacing, Rect, Result, SourceDesc, Target, Timestamp, WindowId,
+    MonotonicClock, Pacer, Pacing, Rect, Result, SourceDesc, Target, Timestamp, WindowId,
 };
 
-use crate::backend::FrameSource;
+use crate::backend::{FrameSource, RawFrame};
 use crate::image::Image;
 use crate::platform::{os, OpenOptions};
 use crate::shot::{grab_one, CursorMode, ShotOptions};
@@ -30,6 +31,7 @@ pub struct Frame<'a> {
     dirty: DirtyRects,
     cursor: Option<CursorSample>,
     desc: &'a SourceDesc,
+    repeat: bool,
 }
 
 impl Frame<'_> {
@@ -71,6 +73,17 @@ impl Frame<'_> {
     #[must_use]
     pub const fn desc(&self) -> &SourceDesc {
         self.desc
+    }
+
+    /// Whether this frame repeats the previous one to hold the paced rate.
+    ///
+    /// Under [`Pacing::Constant`] an idle source still owes a frame every slot.
+    /// The pixels are the last ones the source produced, so an encoder can emit a
+    /// duplicate rather than compressing them again. Always false under
+    /// [`Pacing::Passthrough`], which invents nothing.
+    #[must_use]
+    pub const fn is_repeat(&self) -> bool {
+        self.repeat
     }
 
     /// Copy the frame into an owned image.
@@ -163,6 +176,8 @@ impl CapturerBuilder {
             backend,
             desc,
             clock,
+            pacer: self.opts.pacing.fps().map(Pacer::new),
+            held: Held::default(),
         })
     }
 }
@@ -187,11 +202,45 @@ fn check_exclusion(requested: &[WindowId]) -> Result<()> {
     })
 }
 
+/// The frame a paced capture last took from the source, kept so a slot the
+/// source produced nothing for can still be filled.
+///
+/// Constant pacing copies every frame it emits. That is the price of being able
+/// to repeat one: a backend's buffer is only valid until the next acquisition
+/// unmaps it, so there is nothing left to repeat by the time the gap is known.
+#[derive(Default)]
+struct Held {
+    bytes: Vec<u8>,
+    stride: u32,
+    dirty: DirtyRects,
+    cursor: Option<CursorSample>,
+    /// Whether the source produced this since the last slot was filled.
+    fresh: bool,
+    /// Whether anything has been taken from the source at all.
+    filled: bool,
+    repeats: u64,
+}
+
+impl Held {
+    fn store(&mut self, raw: &RawFrame<'_>) {
+        self.bytes.clear();
+        self.bytes.extend_from_slice(raw.bytes);
+        self.stride = raw.stride;
+        self.dirty = raw.dirty.clone();
+        self.cursor = raw.cursor;
+        self.fresh = true;
+        self.filled = true;
+    }
+}
+
 /// A live capture, held open.
 pub struct Capturer {
     backend: Box<dyn FrameSource>,
     desc: SourceDesc,
     clock: MonotonicClock,
+    /// `None` under [`Pacing::Passthrough`], where the source sets the rate.
+    pacer: Option<Pacer>,
+    held: Held,
 }
 
 impl Capturer {
@@ -203,12 +252,26 @@ impl Capturer {
 
     /// Wait for the next frame.
     ///
+    /// Under [`Pacing::Constant`] this returns one frame per slot whatever the
+    /// source did, repeating the last one over a gap. Under
+    /// [`Pacing::Passthrough`] it returns only what the source produced.
+    ///
     /// Timestamps are forced to advance here and not in the one-shot path: a
     /// stalled source is a pacing problem for a recording, but for a screenshot
     /// it is the signal that the frame is stale.
     pub fn next_frame(&mut self, timeout: Duration) -> Result<Frame<'_>> {
-        let raw = self.backend.next_frame(timeout)?;
-        let pts = self.clock.admit(raw.pts);
+        if self.pacer.is_some() {
+            let slot = self.wait_for_slot(timeout)?;
+            return Ok(self.fill(slot));
+        }
+        let Self {
+            backend,
+            desc,
+            clock,
+            ..
+        } = self;
+        let raw = backend.next_frame(timeout)?;
+        let pts = clock.admit(raw.pts);
         // The cursor belongs to this frame, so it carries the frame's corrected
         // timestamp rather than the raw one the backend read. Desktop
         // Duplication reports the origin for a frame with no new content, which
@@ -221,8 +284,80 @@ impl Capturer {
             stride: raw.stride,
             dirty: raw.dirty,
             cursor,
-            desc: &self.desc,
+            desc,
+            repeat: false,
         })
+    }
+
+    /// Drain the source until a slot falls due, and report which slot.
+    ///
+    /// A slot is only taken from the pacer once there is a frame to put in it, so
+    /// the pacer's count is the number of frames actually handed out and the
+    /// timeline never gains a hole the caller was not told about.
+    fn wait_for_slot(&mut self, timeout: Duration) -> Result<Timestamp> {
+        let started = Instant::now();
+        loop {
+            if self.held.filled {
+                if let Some(slot) = self.pacer.as_mut().and_then(|p| p.next_due(os::now())) {
+                    return Ok(slot);
+                }
+            }
+            let elapsed = started.elapsed();
+            if elapsed >= timeout {
+                return Err(CaptureError::Timeout(timeout));
+            }
+            let budget = timeout - elapsed;
+            // Nothing held yet means nothing to repeat, so the first frame is
+            // worth the whole budget however far off the slot is.
+            let wait = if self.held.filled {
+                self.until_slot(budget)
+            } else {
+                budget
+            };
+            let Self { backend, held, .. } = self;
+            match backend.next_frame(wait) {
+                Ok(raw) => held.store(&raw),
+                // An idle source is what pacing exists to cover, so keep waiting
+                // for the slot rather than passing a timeout to the caller.
+                Err(err) if err.is_recoverable() => {}
+                Err(err) => return Err(err),
+            }
+        }
+    }
+
+    /// How long until the next slot, never longer than what is left of `budget`.
+    fn until_slot(&self, budget: Duration) -> Duration {
+        match self.pacer.as_ref().and_then(Pacer::next_deadline) {
+            Some(deadline) => budget.min(deadline.saturating_since(os::now())),
+            None => budget,
+        }
+    }
+
+    /// Put the held frame in `pts`, marking it a repeat if the source has
+    /// produced nothing since the last slot.
+    fn fill(&mut self, pts: Timestamp) -> Frame<'_> {
+        let repeat = !self.held.fresh;
+        self.held.fresh = false;
+        self.held.repeats += u64::from(repeat);
+        let cursor = self
+            .held
+            .cursor
+            .map(|sample| CursorSample { pts, ..sample });
+        Frame {
+            pts,
+            bytes: &self.held.bytes,
+            stride: self.held.stride,
+            // A repeat carries no damage of its own, and empty already means
+            // "assume everything changed"; `is_repeat` is the signal to act on.
+            dirty: if repeat {
+                DirtyRects::unknown()
+            } else {
+                self.held.dirty.clone()
+            },
+            cursor,
+            desc: &self.desc,
+            repeat,
+        }
     }
 
     /// Take a still from the running capture, with the same warmup and cropping
@@ -244,6 +379,23 @@ impl Capturer {
     #[must_use]
     pub const fn timestamp_corrections(&self) -> u64 {
         self.clock.corrections()
+    }
+
+    /// How many paced slots were filled with a repeat of the previous frame.
+    ///
+    /// A recording of a mostly idle desktop is nearly all repeats and that is
+    /// correct. A rate that stays high while the screen is busy is the signal
+    /// that the source cannot keep up with the pace it was asked for.
+    #[must_use]
+    pub const fn repeated_frames(&self) -> u64 {
+        self.held.repeats
+    }
+
+    /// Slots abandoned because the capture stalled longer than the pacer's
+    /// catch-up window, or 0 under [`Pacing::Passthrough`].
+    #[must_use]
+    pub fn skipped_frames(&self) -> u64 {
+        self.pacer.as_ref().map_or(0, Pacer::skipped)
     }
 
     /// Release the source.
@@ -286,6 +438,21 @@ impl Capturer {
     }
 }
 
+#[cfg(test)]
+impl Capturer {
+    /// Drive a synthetic source, so pacing can be tested without a display.
+    pub(crate) fn from_source(backend: Box<dyn FrameSource>, pacing: Pacing) -> Self {
+        let desc = backend.describe().clone();
+        Self {
+            clock: MonotonicClock::for_frame_rate(desc.frame_rate.unwrap_or(60)),
+            backend,
+            desc,
+            pacer: pacing.fps().map(Pacer::new),
+            held: Held::default(),
+        }
+    }
+}
+
 /// A running capture thread.
 pub struct CaptureHandle {
     stopping: Arc<AtomicBool>,
@@ -317,5 +484,136 @@ impl Drop for CaptureHandle {
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mock::{MockFrame, MockSource};
+
+    const SLOT_MS: u64 = 10;
+    const FPS: u32 = (1_000 / SLOT_MS) as u32;
+    /// Long enough that a timeout means pacing is broken, not that the box is busy.
+    const PATIENT: Duration = Duration::from_secs(2);
+
+    fn paced(frames: usize) -> Capturer {
+        let frames = (0..frames)
+            .map(|i| MockFrame::new(1_000 + i as i64, 0x10 + i as u8))
+            .collect();
+        Capturer::from_source(
+            Box::new(MockSource::new(4, 4, frames)),
+            Pacing::Constant { fps: FPS },
+        )
+    }
+
+    #[test]
+    fn a_slot_the_source_produced_nothing_for_repeats_the_frame_before_it() {
+        let mut capturer = paced(1);
+        let first = capturer.next_frame(PATIENT).expect("the source frame");
+        assert!(!first.is_repeat());
+        let fill = capturer.next_frame(PATIENT).expect("a filled slot");
+        assert!(fill.is_repeat());
+        assert_eq!(fill.bytes()[0], 0x10, "the repeat lost the pixels");
+        assert_eq!(capturer.repeated_frames(), 1);
+    }
+
+    /// The point of constant pacing: slots land on the grid whatever the source
+    /// did, so audio recorded alongside stays in step.
+    #[test]
+    fn paced_timestamps_sit_exactly_on_the_grid() {
+        let mut capturer = paced(1);
+        let mut stamps = Vec::new();
+        for _ in 0..5 {
+            stamps.push(
+                capturer
+                    .next_frame(PATIENT)
+                    .expect("a slot")
+                    .pts()
+                    .as_nanos(),
+            );
+        }
+        let interval = (SLOT_MS * 1_000_000) as i64;
+        for pair in stamps.windows(2) {
+            assert_eq!(pair[1] - pair[0], interval, "{stamps:?} left the grid");
+        }
+    }
+
+    /// A source faster than the pace is not forwarded faster than the pace, and
+    /// the slot gets the newest frame rather than the oldest one still queued.
+    #[test]
+    fn a_source_that_outruns_the_pace_is_drained_to_its_newest_frame() {
+        let mut capturer = paced(64);
+        let started = Instant::now();
+        let first = capturer.next_frame(PATIENT).expect("a slot").bytes()[0];
+        let second = capturer.next_frame(PATIENT).expect("a slot").bytes()[0];
+        assert_eq!(first, 0x10, "the first slot ran ahead of the source");
+        assert_eq!(second, 0x10 + 63, "a slot served a superseded frame");
+        let owed = Duration::from_millis(SLOT_MS);
+        assert!(
+            started.elapsed() >= owed,
+            "two slots took {:?}, less than the {owed:?} the pace owes",
+            started.elapsed()
+        );
+        assert_eq!(capturer.repeated_frames(), 0, "the source was never idle");
+    }
+
+    #[test]
+    fn passthrough_pacing_reports_an_idle_source_rather_than_inventing_a_frame() {
+        let mut capturer = Capturer::from_source(
+            Box::new(MockSource::new(4, 4, vec![MockFrame::new(1_000, 0x10)])),
+            Pacing::Passthrough,
+        );
+        assert!(!capturer
+            .next_frame(Duration::from_millis(20))
+            .expect("the source frame")
+            .is_repeat());
+        let Err(err) = capturer.next_frame(Duration::from_millis(20)) else {
+            panic!("passthrough invented a frame the source never produced");
+        };
+        assert!(err.is_recoverable(), "{err}");
+        assert_eq!(capturer.repeated_frames(), 0);
+    }
+
+    /// A repeat carries no damage of its own. Reusing the previous frame's rects
+    /// would tell an encoder that region changed again when nothing did.
+    #[test]
+    fn a_repeat_reports_unknown_damage_where_the_frame_it_copies_reported_rects() {
+        let dirty = Rect::new(1, 1, 2, 2);
+        let mut capturer = Capturer::from_source(
+            Box::new(
+                MockSource::new(4, 4, vec![MockFrame::new(1_000, 0x10)]).reporting_dirty(dirty),
+            ),
+            Pacing::Constant { fps: FPS },
+        );
+        assert_eq!(
+            capturer
+                .next_frame(PATIENT)
+                .expect("a frame")
+                .dirty()
+                .as_slice(),
+            [dirty]
+        );
+        assert!(capturer
+            .next_frame(PATIENT)
+            .expect("a filled slot")
+            .dirty()
+            .is_unknown());
+    }
+
+    /// The cursor belongs to the slot it is delivered in, not to the frame it was
+    /// sampled with, or it drifts behind the pixels over every repeat.
+    #[test]
+    fn a_repeated_cursor_carries_the_timestamp_of_the_slot_it_fills() {
+        let mut capturer = Capturer::from_source(
+            Box::new(MockSource::new(4, 4, vec![MockFrame::new(1_000, 0x10)]).with_cursor((7, 9))),
+            Pacing::Constant { fps: FPS },
+        );
+        capturer.next_frame(PATIENT).expect("a frame");
+        let fill = capturer.next_frame(PATIENT).expect("a filled slot");
+        let pts = fill.pts();
+        let cursor = fill.cursor().expect("the cursor came with it");
+        assert_eq!(cursor.position, Some((7, 9)));
+        assert_eq!(cursor.pts, pts);
     }
 }

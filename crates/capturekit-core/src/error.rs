@@ -19,6 +19,14 @@ pub enum CaptureError {
         id: u64,
     },
 
+    /// The requested camera is gone or was never there.
+    ///
+    /// Separate from [`CaptureError::NotFound`] because a camera is identified by
+    /// its device path rather than by a handle, and narrowing that to a number is
+    /// how two cameras end up looking like one.
+    #[error("no camera matches {0:?}")]
+    CameraNotFound(String),
+
     /// The source is already being captured and cannot be handed out twice.
     #[error("{kind} {id} is already being captured by this process")]
     AlreadyCaptured {
@@ -113,6 +121,20 @@ pub enum CaptureError {
         len: usize,
         /// Bytes one sample frame occupies.
         bytes_per_frame: usize,
+    },
+
+    /// A backend handed over per-channel planes that do not agree.
+    ///
+    /// One plane shorter than another means the buffer list was misread, which
+    /// interleaving would turn into swapped channels rather than an error.
+    #[error("channel {channel} carries {len} bytes where the first carries {expected}")]
+    RaggedAudioPlanes {
+        /// The channel that disagreed.
+        channel: usize,
+        /// Bytes that channel carries.
+        len: usize,
+        /// Bytes every channel should carry.
+        expected: usize,
     },
 
     /// A cursor image is shorter than the masks it declares.

@@ -18,6 +18,10 @@
 mod audio;
 mod backend;
 mod capturer;
+// Push backends only. X11 polls the server, so a Linux build without the portal
+// never hands a frame over between threads.
+#[cfg(any(windows, target_os = "macos", feature = "wayland"))]
+mod deliver;
 mod image;
 mod platform;
 mod session;
@@ -37,7 +41,7 @@ pub use capturekit_core::{
 };
 pub use capturer::{CaptureHandle, Capturer, CapturerBuilder, Flow, Frame};
 pub use image::Image;
-pub use session::{Session, SessionBuilder, SessionFrame, TrackId};
+pub use session::{Session, SessionAudio, SessionBuilder, SessionFrame, TrackId};
 pub use shot::{CursorMode, ShotOptions, Warmup};
 
 use platform::os;
@@ -64,6 +68,14 @@ pub fn displays() -> Result<Vec<Display>> {
 /// has dozens.
 pub fn windows() -> Result<Vec<Window>> {
     os::windows()
+}
+
+/// Every camera available to capture.
+///
+/// Each device is opened briefly to read the modes it advertises, then shut down
+/// again, so listing cameras does not leave one powered.
+pub fn cameras() -> Result<Vec<Camera>> {
+    os::cameras()
 }
 
 /// Whether a capability may be used, and if not, whether asking would help.

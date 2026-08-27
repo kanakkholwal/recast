@@ -2,12 +2,13 @@ mod d3d;
 mod dpi;
 mod dxgi;
 mod enumerate;
+mod mf;
 mod wasapi;
 mod wgc;
 
 use capturekit_core::{
-    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, ExclusionSupport,
-    Permission, PermissionKind, RegionCrop, Result, Target,
+    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, ExclusionSupport, Permission,
+    PermissionKind, RegionCrop, Result, Target,
 };
 
 use crate::backend::{AudioSource, FrameSource};
@@ -24,6 +25,7 @@ pub(crate) fn capabilities() -> Capabilities {
         // mechanism, and only the excluded window's own process may call it.
         exclusion: ExclusionSupport::OwnWindowsOnly,
         window_capture: wgc::is_supported(),
+        camera_capture: true,
         window_enumeration: true,
         display_enumeration: true,
         region_crop: RegionCrop::DuringAcquisition,
@@ -33,6 +35,7 @@ pub(crate) fn capabilities() -> Capabilities {
         cursor_samples: true,
         dirty_rects: true,
         audio_loopback: true,
+        audio_device_enumeration: true,
     }
 }
 
@@ -68,6 +71,10 @@ pub(crate) fn now() -> capturekit_core::Timestamp {
     capturekit_core::Timestamp::from_ticks(ticks, frequency)
 }
 
+pub(crate) fn cameras() -> Result<Vec<capturekit_core::Camera>> {
+    mf::cameras()
+}
+
 pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
     wasapi::devices()
 }
@@ -92,10 +99,7 @@ pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameS
         // Graphics Capture, not duplication plus a crop: a maximised or
         // overlapped window is only separable at the OS compositor.
         Target::Window(id) => Ok(Box::new(wgc::WgcSource::open(*id, opts)?)),
-        Target::Camera(_) => Err(CaptureError::Unsupported {
-            backend: "windows",
-            operation: "capture a camera yet",
-        }),
+        Target::Camera(id) => Ok(Box::new(mf::MfCameraSource::open(id, opts)?)),
     }
 }
 

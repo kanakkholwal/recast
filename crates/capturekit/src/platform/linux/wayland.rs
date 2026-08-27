@@ -1,14 +1,14 @@
 use core::time::Duration;
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
 use ashpd::desktop::screencast::{CursorMode as PortalCursor, Screencast, SourceType};
 use ashpd::desktop::PersistMode;
 use capturekit_core::{
-    CaptureError, ColorSpace, DirtyRects, Display, DisplayId, LostReason, PixelFormat, Rect,
-    Result, Rotation, SourceDesc, Timestamp,
+    CaptureError, ColorSpace, DirtyRects, Display, DisplayId, PixelFormat, Rect, Result, Rotation,
+    SourceDesc,
 };
 use pipewire::spa::param::format::{MediaSubtype, MediaType};
 use pipewire::spa::param::video::{VideoFormat, VideoInfoRaw};
@@ -18,6 +18,7 @@ use pipewire::stream::{Stream, StreamFlags};
 use pipewire::{context::Context, main_loop::MainLoop, properties::properties};
 
 use crate::backend::{FrameSource, RawFrame};
+use crate::deliver::{Delivered, FrameSlot};
 use crate::platform::linux::now;
 use crate::platform::OpenOptions;
 use crate::shot::CursorMode;
@@ -90,25 +91,6 @@ fn portal_error(error: ashpd::Error) -> CaptureError {
     }
 }
 
-/// One delivered frame, copied out of the PipeWire buffer.
-#[derive(Default)]
-struct Delivered {
-    bytes: Vec<u8>,
-    stride: u32,
-    width: u32,
-    height: u32,
-    pts: Timestamp,
-    sequence: u64,
-}
-
-#[derive(Default)]
-struct FrameSlot {
-    frame: Mutex<Delivered>,
-    arrived: Condvar,
-    /// Set when the stream ends before the consumer stops reading it.
-    ended: AtomicBool,
-}
-
 /// The portal does not report per-monitor geometry, so a Wayland session offers
 /// one nominal display standing for "whatever the user picks in the dialog".
 ///
@@ -133,7 +115,7 @@ pub(crate) struct PortalSource {
     quit: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
     desc: SourceDesc,
-    last_sequence: u64,
+    seen: u64,
     current: Vec<u8>,
 }
 
@@ -157,8 +139,7 @@ impl PortalSource {
                     if let Err(message) = outcome {
                         log::error!("pipewire capture ended: {message}");
                     }
-                    slot.ended.store(true, Ordering::Release);
-                    slot.arrived.notify_all();
+                    slot.end();
                 }
             })
             .map_err(|error| CaptureError::backend(BACKEND, error))?;
@@ -184,7 +165,7 @@ impl PortalSource {
                 frame_rate: opts.frame_rate(),
                 backend: BACKEND,
             },
-            last_sequence: 0,
+            seen: 0,
             current: Vec::new(),
         })
     }
@@ -266,16 +247,15 @@ fn run_stream(
                 if bytes.len() < len {
                     return;
                 }
-                if let Ok(mut frame) = slot.frame.lock() {
-                    frame.bytes.clear();
-                    frame.bytes.extend_from_slice(&bytes[..len]);
-                    frame.stride = stride;
-                    frame.width = width;
-                    frame.height = height;
-                    frame.pts = now();
-                    frame.sequence = frame.sequence.wrapping_add(1);
-                    slot.arrived.notify_all();
-                }
+                slot.publish(
+                    Delivered {
+                        pts: now(),
+                        stride,
+                        width,
+                        height,
+                    },
+                    &bytes[..len],
+                );
             }
         })
         .register()
@@ -402,39 +382,15 @@ impl FrameSource for PortalSource {
     }
 
     fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>> {
-        let mut slot = self
-            .slot
-            .frame
-            .lock()
-            .map_err(|_| CaptureError::Lost(LostReason::AccessLost))?;
-        while slot.sequence == self.last_sequence {
-            if self.slot.ended.load(Ordering::Acquire) {
-                return Err(CaptureError::Lost(LostReason::AccessLost));
-            }
-            let (next, waited) = self
-                .slot
-                .arrived
-                .wait_timeout(slot, timeout)
-                .map_err(|_| CaptureError::Lost(LostReason::AccessLost))?;
-            slot = next;
-            if waited.timed_out() && slot.sequence == self.last_sequence {
-                return Err(CaptureError::Timeout(timeout));
-            }
-        }
-        self.last_sequence = slot.sequence;
+        let meta = self.slot.take(timeout, &mut self.seen, &mut self.current)?;
         // The portal reports its size before the stream negotiates one, and a
         // compositor may renegotiate mid-stream, so the frame is the authority.
-        self.desc.width = slot.width;
-        self.desc.height = slot.height;
-        let pts = slot.pts;
-        let stride = slot.stride;
-        core::mem::swap(&mut self.current, &mut slot.bytes);
-        drop(slot);
-
+        self.desc.width = meta.width;
+        self.desc.height = meta.height;
         Ok(RawFrame {
-            pts,
+            pts: meta.pts,
             bytes: &self.current,
-            stride,
+            stride: meta.stride,
             dirty: DirtyRects::unknown(),
             cursor: None,
         })

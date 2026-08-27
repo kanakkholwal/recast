@@ -170,8 +170,6 @@ fn a_stream_delivers_frames_that_keep_moving_forward() {
 
     let mut seen = 0;
     let mut last = None;
-    // The desktop may be idle, so a timeout is expected rather than fatal; what
-    // matters is that the frames that do arrive are ordered and well-formed.
     for _ in 0..10 {
         match capture.next_frame(Duration::from_millis(250)) {
             Ok(frame) => {
@@ -186,6 +184,59 @@ fn a_stream_delivers_frames_that_keep_moving_forward() {
         }
     }
     assert!(seen > 0, "an active desktop produced no frames at all");
+    capture.stop().expect("release the display");
+}
+
+/// What constant pacing exists for: an idle desktop produces no frames at all on
+/// Desktop Duplication, and a recording that forwards only what the source gave
+/// has a hole wherever the screen held still.
+#[test]
+fn a_constant_rate_capture_fills_the_slots_an_idle_desktop_leaves_empty() {
+    const FPS: u32 = 30;
+    const SLOTS: usize = 15;
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    let mut capture = capturer(Target::Display(display.id))
+        .frame_rate(FPS)
+        .build()
+        .expect("open a paced stream");
+
+    let started = std::time::Instant::now();
+    let stamps: Vec<i64> = (0..SLOTS)
+        .map(|slot| {
+            capture
+                .next_frame(Duration::from_secs(1))
+                .unwrap_or_else(|err| panic!("slot {slot} was never filled: {err}"))
+                .pts()
+                .as_nanos()
+        })
+        .collect();
+    let elapsed = started.elapsed();
+
+    let interval = 1_000_000_000 / i64::from(FPS);
+    for (slot, pair) in stamps.windows(2).enumerate() {
+        assert_eq!(
+            pair[1] - pair[0],
+            interval,
+            "slot {} left the grid: {stamps:?}",
+            slot + 1
+        );
+    }
+    // The slots are real time, not a counter: 15 of them at 30fps take half a
+    // second whatever the desktop was doing.
+    let owed = Duration::from_millis(1000 * (SLOTS as u64 - 1) / u64::from(FPS));
+    assert!(
+        elapsed >= owed,
+        "{SLOTS} slots took {elapsed:?}, under {owed:?}"
+    );
+    assert!(
+        elapsed < owed * 3,
+        "{SLOTS} slots took {elapsed:?}, far over the {owed:?} they owe"
+    );
+    eprintln!(
+        "{} of {SLOTS} slots repeated the frame before them",
+        capture.repeated_frames()
+    );
     capture.stop().expect("release the display");
 }
 
@@ -314,12 +365,87 @@ fn the_reported_capabilities_match_what_the_platform_actually_does() {
         let listed = displays().expect("claims display enumeration");
         assert!(!listed.is_empty());
     }
+    // A backend that lists no devices must SAY so rather than return an empty
+    // list, which reads as "this machine has no audio".
+    assert_eq!(
+        caps.audio_device_enumeration,
+        capturekit::audio_devices().is_ok(),
+        "the audio device claim does not match what the backend does"
+    );
+    assert_eq!(
+        caps.camera_capture,
+        capturekit::cameras().is_ok(),
+        "the camera claim does not match what the backend does"
+    );
 }
 
 /// Two live streams on one timeline, both off the caller's thread.
 ///
 /// Display and window rather than two displays: Desktop Duplication is
 /// one-per-output-per-process, so two display tracks would contend.
+/// The property an A/V recording rests on: audio and video land on ONE timeline,
+/// so lining them up is subtracting a single origin. A track that kept its own
+/// clock would still deliver, still look monotonic, and still be out of sync.
+#[test]
+fn a_session_puts_audio_and_video_on_the_same_timeline() {
+    let _exclusive = exclusive();
+    let display = require_desktop!();
+    // Loopback rather than a microphone: every desktop has a render endpoint,
+    // and an idle one now delivers inserted silence rather than nothing.
+    if let Err(err) = capturekit::audio_loopback().build() {
+        eprintln!("skipped: no loopback device to pair with the display: {err}");
+        return;
+    }
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let audio_sender = sender.clone();
+    let session = Session::builder()
+        .video(
+            "screen",
+            capturer(Target::Display(display.id)).frame_rate(30),
+            move |frame| {
+                let _ = sender.send((frame.track.0.clone(), frame.elapsed));
+                Flow::Continue
+            },
+        )
+        .audio("system", capturekit::audio_loopback(), move |audio| {
+            let _ = audio_sender.send((audio.track.0.clone(), audio.elapsed));
+            Flow::Continue
+        })
+        .start()
+        .expect("open both streams");
+
+    assert_eq!(session.track_count(), 2);
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+    let mut furthest: std::collections::BTreeMap<String, Duration> = Default::default();
+    while std::time::Instant::now() < deadline
+        && furthest
+            .values()
+            .all(|seen| *seen < Duration::from_millis(700))
+    {
+        let Ok((track, elapsed)) = receiver.recv_timeout(Duration::from_millis(500)) else {
+            continue;
+        };
+        let seen = furthest.entry(track).or_default();
+        *seen = (*seen).max(elapsed);
+    }
+    session.stop().expect("both streams end cleanly");
+
+    let screen = furthest.get("screen").copied();
+    let system = furthest.get("system").copied();
+    let (Some(screen), Some(system)) = (screen, system) else {
+        panic!("only {furthest:?} delivered, so one track produced nothing at all");
+    };
+    // A track on its own origin is off by however long that clock has been
+    // running, which on Windows is uptime. Half a second is the sync budget.
+    let drift = screen.max(system) - screen.min(system);
+    assert!(
+        drift < Duration::from_millis(500),
+        "screen reached {screen:?} and audio {system:?}: they are not on one timeline"
+    );
+}
+
 #[test]
 fn a_session_runs_several_streams_off_one_clock() {
     let _exclusive = exclusive();

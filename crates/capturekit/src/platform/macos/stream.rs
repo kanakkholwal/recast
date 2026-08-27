@@ -1,101 +1,27 @@
 use core::time::Duration;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 
 use capturekit_core::{
     CaptureError, ColorSpace, DirtyRects, DisplayId, PixelFormat, Rect, Result, Rotation,
-    SourceDesc, Timestamp, WindowId,
+    SourceDesc, WindowId,
 };
 use dispatch2::{DispatchQueue, DispatchQueueAttr};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2::{define_class, msg_send, AllocAnyThread, DefinedClass};
 use objc2_core_media::CMSampleBuffer;
-use objc2_core_video::{
-    CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow, CVPixelBufferGetHeight,
-    CVPixelBufferGetPixelFormatType, CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress,
-    CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress,
-};
 use objc2_foundation::{NSArray, NSObject, NSObjectProtocol};
 use objc2_screen_capture_kit::{
-    SCContentFilter, SCStream, SCStreamConfiguration, SCStreamOutput, SCStreamOutputType,
+    SCContentFilter, SCStream, SCStreamConfiguration, SCStreamDelegate, SCStreamOutput,
+    SCStreamOutputType,
 };
 
 use crate::backend::{FrameSource, RawFrame};
+use crate::deliver::{Endable, FrameSlot};
 use crate::platform::macos::content::{self, BACKEND};
+use crate::platform::macos::sample::{accept_video, BGRA};
 use crate::platform::OpenOptions;
 use crate::shot::CursorMode;
-
-/// `kCVPixelFormatType_32BGRA`, the only format this backend asks for.
-const BGRA: u32 = u32::from_be_bytes(*b"BGRA");
-
-/// One delivered frame, already copied out of the pixel buffer.
-///
-/// Copied rather than retained because holding an `IOSurface` locked across the
-/// consumer's work starves the stream's own pool, which is only `queue_depth`
-/// frames deep. The copy is into a reused buffer, so it costs no allocation.
-#[derive(Default)]
-struct Delivered {
-    bytes: Vec<u8>,
-    stride: u32,
-    width: u32,
-    height: u32,
-    pts: Timestamp,
-    /// Bumped per delivery so a waiter can tell a new frame from the last one.
-    sequence: u64,
-}
-
-#[derive(Default)]
-struct FrameSlot {
-    frame: Mutex<Delivered>,
-    arrived: Condvar,
-}
-
-impl FrameSlot {
-    /// Copy a delivered pixel buffer into the slot and wake the waiter.
-    fn accept(&self, sample: &CMSampleBuffer) {
-        let Some(image) = (unsafe { sample.image_buffer() }) else {
-            return;
-        };
-        let pixels = image.as_ref();
-        if CVPixelBufferGetPixelFormatType(pixels) != BGRA {
-            return;
-        }
-
-        let locked =
-            unsafe { CVPixelBufferLockBaseAddress(pixels, CVPixelBufferLockFlags::ReadOnly) };
-        if locked != 0 {
-            return;
-        }
-        let base = CVPixelBufferGetBaseAddress(pixels);
-        let stride = CVPixelBufferGetBytesPerRow(pixels);
-        let width = CVPixelBufferGetWidth(pixels);
-        let height = CVPixelBufferGetHeight(pixels);
-
-        if !base.is_null() && stride > 0 && height > 0 {
-            let time = unsafe { sample.presentation_time_stamp() };
-            let pts = match time.timescale {
-                0 => Timestamp::ZERO,
-                scale => Timestamp::from_ticks(time.value, i64::from(scale)),
-            };
-            if let Ok(mut slot) = self.frame.lock() {
-                let len = stride * height;
-                slot.bytes.clear();
-                slot.bytes.reserve(len);
-                // SAFETY: the buffer is locked, so `base` points at
-                // `stride * height` readable bytes until the unlock below.
-                let source = unsafe { core::slice::from_raw_parts(base.cast::<u8>(), len) };
-                slot.bytes.extend_from_slice(source);
-                slot.stride = stride as u32;
-                slot.width = width as u32;
-                slot.height = height as u32;
-                slot.pts = pts;
-                slot.sequence = slot.sequence.wrapping_add(1);
-                self.arrived.notify_all();
-            }
-        }
-        unsafe { CVPixelBufferUnlockBaseAddress(pixels, CVPixelBufferLockFlags::ReadOnly) };
-    }
-}
 
 define_class!(
     // SAFETY: NSObject has no subclassing requirements, and this type has no Drop.
@@ -115,11 +41,37 @@ define_class!(
             kind: SCStreamOutputType,
         ) {
             if kind == SCStreamOutputType::Screen {
-                self.ivars().accept(sample);
+                accept_video(self.ivars(), sample);
             }
         }
     }
 );
+
+define_class!(
+    #[unsafe(super(NSObject))]
+    #[ivars = Arc<dyn Endable>]
+    pub(super) struct StreamStopped;
+
+    unsafe impl NSObjectProtocol for StreamStopped {}
+
+    /// The daemon stops a stream when the grant is revoked, the display goes
+    /// away or the window closes. Without this the consumer only sees frames
+    /// stop arriving and waits out its timeout over and over.
+    unsafe impl SCStreamDelegate for StreamStopped {
+        #[unsafe(method(stream:didStopWithError:))]
+        fn did_stop(&self, _stream: &SCStream, error: &objc2_foundation::NSError) {
+            log::warn!("screencapturekit stopped the stream: {}", error.localizedDescription());
+            self.ivars().end();
+        }
+    }
+);
+
+impl StreamStopped {
+    pub(super) fn new(slot: Arc<dyn Endable>) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(slot);
+        unsafe { msg_send![super(this), init] }
+    }
+}
 
 impl StreamOutput {
     fn new(slot: Arc<FrameSlot>) -> Retained<Self> {
@@ -132,12 +84,14 @@ impl StreamOutput {
 pub(crate) struct SckSource {
     stream: Retained<SCStream>,
     _output: Retained<StreamOutput>,
+    /// Held only to keep the delegate alive; the stream does not retain it.
+    _stopped: Retained<StreamStopped>,
     slot: Arc<FrameSlot>,
     desc: SourceDesc,
     region: Option<Rect>,
     /// The sequence the last returned frame carried, so a slow consumer is not
     /// handed the same frame twice as though it were new.
-    last_sequence: u64,
+    seen: u64,
     /// The frame handed to the caller, swapped out of the slot so the delivery
     /// thread cannot reallocate it while the caller reads it.
     current: Vec<u8>,
@@ -201,13 +155,14 @@ impl SckSource {
         let config = configuration(staged, region, opts);
         let slot = Arc::new(FrameSlot::default());
         let output = StreamOutput::new(Arc::clone(&slot));
+        let stopped = StreamStopped::new(Arc::clone(&slot) as Arc<dyn Endable>);
 
         let stream = unsafe {
             SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),
                 &filter,
                 &config,
-                None,
+                Some(ProtocolObject::from_ref(&*stopped)),
             )
         };
         // Serial: frames must reach the slot in the order the daemon produced
@@ -233,6 +188,7 @@ impl SckSource {
         Ok(Self {
             stream,
             _output: output,
+            _stopped: stopped,
             slot,
             desc: SourceDesc {
                 width: staged.width,
@@ -245,7 +201,7 @@ impl SckSource {
                 backend: BACKEND,
             },
             region,
-            last_sequence: 0,
+            seen: 0,
             current: Vec::new(),
             stopped: false,
         })
@@ -296,7 +252,7 @@ fn fit_region(region: Option<Rect>, surface: &Rect) -> Result<Option<Rect>> {
 }
 
 /// Start the stream and wait for the daemon to say whether it did.
-fn start_capture(stream: &SCStream) -> Result<()> {
+pub(super) fn start_capture(stream: &SCStream) -> Result<()> {
     let (sender, receiver) = std::sync::mpsc::channel::<Option<String>>();
     let handler = block2::RcBlock::new(move |error: *mut objc2_foundation::NSError| {
         let message = (!error.is_null()).then(|| {
@@ -333,43 +289,15 @@ impl FrameSource for SckSource {
     }
 
     fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>> {
-        let mut slot = self
-            .slot
-            .frame
-            .lock()
-            .map_err(|_| CaptureError::Lost(capturekit_core::LostReason::AccessLost))?;
-        // Guard against a spurious wake handing back the frame already returned.
-        while slot.sequence == self.last_sequence {
-            let (next, waited) = self
-                .slot
-                .arrived
-                .wait_timeout(slot, timeout)
-                .map_err(|_| CaptureError::Lost(capturekit_core::LostReason::AccessLost))?;
-            slot = next;
-            if waited.timed_out() && slot.sequence == self.last_sequence {
-                return Err(CaptureError::Timeout(timeout));
-            }
-        }
-        self.last_sequence = slot.sequence;
-
+        let meta = self.slot.take(timeout, &mut self.seen, &mut self.current)?;
         // The stream can renegotiate its size on a display mode change, and the
         // description has to follow or every consumer reads the wrong geometry.
-        self.desc.width = slot.width;
-        self.desc.height = slot.height;
-        let pts = slot.pts;
-        let stride = slot.stride;
-
-        // Swap rather than copy: the caller gets a buffer this source owns, and
-        // the delivery thread gets the previous one back to refill. Nothing is
-        // shared, so it cannot reallocate under a reader, and after the first
-        // frame neither side allocates again.
-        core::mem::swap(&mut self.current, &mut slot.bytes);
-        drop(slot);
-
+        self.desc.width = meta.width;
+        self.desc.height = meta.height;
         Ok(RawFrame {
-            pts,
+            pts: meta.pts,
             bytes: &self.current,
-            stride,
+            stride: meta.stride,
             // ScreenCaptureKit reports no damage rectangles.
             dirty: DirtyRects::unknown(),
             cursor: None,

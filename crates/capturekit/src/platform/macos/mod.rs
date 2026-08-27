@@ -1,9 +1,12 @@
+mod audio;
+mod camera;
 mod content;
+mod sample;
 mod stream;
 
 use capturekit_core::{
-    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, ExclusionSupport, Permission, PermissionKind, RegionCrop, Result,
-    Target, Timestamp,
+    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, ExclusionSupport,
+    Permission, PermissionKind, RegionCrop, Result, Target, Timestamp,
 };
 use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
 
@@ -21,6 +24,7 @@ pub(crate) fn capabilities() -> Capabilities {
         // is the only one of the three that can hide a stranger's window.
         exclusion: ExclusionSupport::AnyWindow,
         window_capture: true,
+        camera_capture: true,
         window_enumeration: true,
         display_enumeration: true,
         region_crop: RegionCrop::DuringAcquisition,
@@ -30,6 +34,7 @@ pub(crate) fn capabilities() -> Capabilities {
         cursor_samples: false,
         dirty_rects: false,
         audio_loopback: true,
+        audio_device_enumeration: false,
     }
 }
 
@@ -78,23 +83,19 @@ pub(crate) fn now() -> Timestamp {
     }
 }
 
-/// Audio devices are not enumerated on this platform yet.
 pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
-    Err(CaptureError::Unsupported {
-        backend: "coreaudio",
-        operation: "enumerate audio devices yet",
-    })
+    audio::devices()
 }
 
-/// Audio capture is not implemented on this platform yet.
 pub(crate) fn open_audio(
-    _device: Option<&AudioDeviceId>,
-    _direction: AudioDirection,
+    device: Option<&AudioDeviceId>,
+    direction: AudioDirection,
 ) -> Result<Box<dyn AudioSource>> {
-    Err(CaptureError::Unsupported {
-        backend: "coreaudio",
-        operation: "capture audio yet",
-    })
+    Ok(Box::new(audio::SckAudioSource::open(device, direction)?))
+}
+
+pub(crate) fn cameras() -> Result<Vec<capturekit_core::Camera>> {
+    camera::cameras()
 }
 
 pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
@@ -114,9 +115,6 @@ pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameS
             Ok(Box::new(stream::SckSource::open_display(*display, &opts)?))
         }
         Target::Window(id) => Ok(Box::new(stream::SckSource::open_window(*id, opts)?)),
-        Target::Camera(_) => Err(CaptureError::Unsupported {
-            backend: "macos",
-            operation: "capture a camera yet",
-        }),
+        Target::Camera(id) => Ok(Box::new(camera::AvfCameraSource::open(id, opts)?)),
     }
 }
