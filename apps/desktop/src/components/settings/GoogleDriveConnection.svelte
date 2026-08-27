@@ -1,9 +1,9 @@
 <script lang="ts">
+import { gdrive } from "$lib/stores/gdrive.svelte";
 import { BrandGoogleDrive, LoaderCircle, LogOut } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { onMount } from "svelte";
-import { gdrive } from "$lib/stores/gdrive.svelte";
 
 /**
  * Settings tile for the Google Drive connection. Modeled on
@@ -84,7 +84,8 @@ async function handleDisconnect() {
       </div>
       <Button
         size="sm"
-        class="h-8 shrink-0 gap-1.5"
+        variant="secondary"
+        class="shrink-0 gap-1.5"
         disabled={gdrive.connecting}
         onclick={handleConnect}
       >

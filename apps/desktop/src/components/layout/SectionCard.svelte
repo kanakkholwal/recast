@@ -29,7 +29,7 @@ let { label, description, icon, id, children, class: className }: Props = $props
 		{/if}
 	</div>
 	<div
-		class="divide-y divide-border/40 overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+		class="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
 	>
 		{@render children()}
 	</div>

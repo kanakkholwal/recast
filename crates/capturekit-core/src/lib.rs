@@ -21,7 +21,9 @@ mod permission;
 mod target;
 mod time;
 
-pub use audio::{AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, SampleFormat};
+pub use audio::{
+    AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, AudioTimeline, SampleFormat,
+};
 pub use capabilities::{Capabilities, ExclusionSupport, RegionCrop};
 pub use color::{
     ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest, MatrixCoefficients, Primaries,

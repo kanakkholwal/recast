@@ -1,4 +1,42 @@
 <script lang="ts">
+import { afterNavigate, replaceState } from "$app/navigation";
+import { page } from "$app/state";
+import SectionCard from "$components/layout/SectionCard.svelte";
+import SettingsRow from "$components/layout/SettingsRow.svelte";
+import StudioPage from "$components/layout/StudioPage.svelte";
+import Logo from "$components/logo.svelte";
+import RecastMark from "$components/recast-mark.svelte";
+import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
+import CloudSignIn from "$components/settings/CloudSignIn.svelte";
+import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
+import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
+import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
+import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
+import { config } from "$constants/app";
+import { syncConsent } from "$lib/analytics/client";
+import {
+	type CliInstallStatus,
+	cliInstallStatus,
+	getCliAutoInstall,
+	getCloseToTray,
+	getDisplays,
+	getHidePanelFromCapture,
+	getLastSource,
+	getOutputDir,
+	getWindowTransparency,
+	installCli,
+	setCliAutoInstall,
+	setCloseToTray,
+	setHidePanelFromCapture,
+	setOutputDir,
+	setWindowTransparency,
+	uninstallCli,
+} from "$lib/ipc";
+import { desktopConsent } from "$lib/stores/consent.svelte";
+import { LAYOUT_MODES, type LayoutMode, layoutMode } from "$lib/stores/layout-mode.svelte";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import { type CountdownSeconds, recordingCountdown } from "$lib/stores/recording-countdown.svelte";
+import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
 import {
 	loadRecordingFps,
 	loadRecordingQuality,
@@ -51,51 +89,13 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { platform } from "@tauri-apps/plugin-os";
 import { onMount, untrack } from "svelte";
-import { afterNavigate, replaceState } from "$app/navigation";
-import { page } from "$app/state";
-import SectionCard from "$components/layout/SectionCard.svelte";
-import SettingsRow from "$components/layout/SettingsRow.svelte";
-import StudioPage from "$components/layout/StudioPage.svelte";
-import Logo from "$components/logo.svelte";
-import RecastMark from "$components/recast-mark.svelte";
-import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
-import CloudSignIn from "$components/settings/CloudSignIn.svelte";
-import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
-import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
-import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
-import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
-import { config } from "$constants/app";
-import { syncConsent } from "$lib/analytics/client";
-import {
-	type CliInstallStatus,
-	cliInstallStatus,
-	getCliAutoInstall,
-	getCloseToTray,
-	getDisplays,
-	getHidePanelFromCapture,
-	getLastSource,
-	getOutputDir,
-	getWindowTransparency,
-	installCli,
-	setCliAutoInstall,
-	setCloseToTray,
-	setHidePanelFromCapture,
-	setOutputDir,
-	setWindowTransparency,
-	uninstallCli,
-} from "$lib/ipc";
-import { desktopConsent } from "$lib/stores/consent.svelte";
-import { LAYOUT_MODES, type LayoutMode, layoutMode } from "$lib/stores/layout-mode.svelte";
-import { profilesStore } from "$lib/stores/profiles.svelte";
-import { type CountdownSeconds, recordingCountdown } from "$lib/stores/recording-countdown.svelte";
-import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
-import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
 import {
 	DEFAULT_SETTINGS_TAB,
 	parseSettingsTab,
 	SETTINGS_TAB_PARAM,
 	type SettingsTab,
 } from "./settings-tabs";
+import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
 
 type Theme = "light" | "dark" | "system";
 type EditorBehavior = "navigate" | "new-window";
@@ -584,7 +584,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           <SettingsRow
             label="Minimize to tray on close"
             description={closeToTray
-              ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
+              ? "Closing the window hides Recast to the system tray."
               : "Closing the window quits Recast immediately."}
           >
             <Switch
@@ -782,8 +782,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
       </Tabs.Content>
 
       <Tabs.Content value="cloud" class="flex min-w-0 flex-1 flex-col gap-8">
-        <!-- Optional. Cloud unlocks the Loom-style sharing layer. Free
-                   tier = 10 active links; paid lifts the cap. -->
+      
         <SectionCard
           id="settings-cloud"
           label="Recast Cloud"
@@ -794,9 +793,6 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           {/snippet}
           <CloudSignIn />
         </SectionCard>
-
-        <!-- Gated behind the `selfHosting` flag: Cloud's server isn't
-                   shipped, so there's nothing to point at by default. -->
         {#if experimentalStore.isEnabled("selfHosting")}
           <section id="settings-cloud-endpoint" class="flex flex-col gap-3">
             <div class="px-1">

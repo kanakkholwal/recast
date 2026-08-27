@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use capturekit_core::{CursorSample, DirtyRects, Rect, Result, SourceDesc, Timestamp};
+use capturekit_core::{AudioDesc, CursorSample, DirtyRects, Rect, Result, SourceDesc, Timestamp};
 
 /// A frame as the backend holds it, before capturekit copies or wraps it.
 pub(crate) struct RawFrame<'a> {
@@ -49,5 +49,34 @@ pub(crate) trait FrameSource: Send {
     fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>>;
 
     /// Release the source. Called on drop, and safe to call twice.
+    fn stop(&mut self) -> Result<()>;
+}
+
+/// Samples as the backend holds them, before capturekit wraps them.
+pub(crate) struct RawAudio<'a> {
+    /// When the samples were captured, on the source's clock.
+    pub pts: Timestamp,
+    /// Interleaved samples in the described format.
+    pub bytes: &'a [u8],
+    /// Whether the backend generated this to cover a gap the device ran through.
+    pub silence: bool,
+    /// Whether the device reported a break before these samples.
+    pub discontinuous: bool,
+}
+
+/// A source of audio samples.
+///
+/// Separate from [`FrameSource`] because the two differ in every way that
+/// matters: audio is continuous and counted in sample frames, video is discrete
+/// and counted in pictures. What they share is the clock, which is what lets a
+/// session line them up.
+pub(crate) trait AudioSource: Send {
+    /// What the backend negotiated, which shared-mode capture never converts.
+    fn describe(&self) -> &AudioDesc;
+
+    /// Wait for the next buffer of samples.
+    fn next_buffer(&mut self, timeout: Duration) -> Result<RawAudio<'_>>;
+
+    /// Release the device. Safe to call twice.
     fn stop(&mut self) -> Result<()>;
 }

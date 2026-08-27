@@ -1,9 +1,9 @@
 use capturekit_core::{
-    Capabilities, CaptureError, Display, ExclusionSupport, Permission, PermissionKind, RegionCrop,
+    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, Display, ExclusionSupport, Permission, PermissionKind, RegionCrop,
     Result, Target, Timestamp, Window,
 };
 
-use crate::backend::FrameSource;
+use crate::backend::{AudioSource, FrameSource};
 use crate::platform::OpenOptions;
 
 const BACKEND: &str = "unsupported";
@@ -50,6 +50,25 @@ pub(crate) fn request_permission(_kind: PermissionKind) -> Permission {
 
 pub(crate) fn now() -> Timestamp {
     Timestamp::ZERO
+}
+
+/// Audio devices are not enumerated on this platform yet.
+pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
+    Err(CaptureError::Unsupported {
+        backend: BACKEND,
+        operation: "enumerate audio devices yet",
+    })
+}
+
+/// Audio capture is not implemented on this platform yet.
+pub(crate) fn open_audio(
+    _device: Option<&AudioDeviceId>,
+    _direction: AudioDirection,
+) -> Result<Box<dyn AudioSource>> {
+    Err(CaptureError::Unsupported {
+        backend: BACKEND,
+        operation: "capture audio yet",
+    })
 }
 
 pub(crate) fn open(_target: &Target, _opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {

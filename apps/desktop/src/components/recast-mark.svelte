@@ -6,7 +6,12 @@
 // other icon.
 import Logo from "$components/logo.svelte";
 
-let { class: klass = "", size = 16 }: { class?: string; size?: string | number } = $props();
+let {
+	class: className = "",
+	size = 16,
+	fill = "none",
+	color = "currentColor",
+}: { class?: string; size?: string | number; fill?: string; color?: string } = $props();
 </script>
 
-<Logo fill="none" color="currentColor" {size} class={klass} aria-hidden="true" />
+<Logo fill={fill} color={color} {size} class={className} aria-hidden="true" />

@@ -209,12 +209,18 @@ impl Capturer {
     pub fn next_frame(&mut self, timeout: Duration) -> Result<Frame<'_>> {
         let raw = self.backend.next_frame(timeout)?;
         let pts = self.clock.admit(raw.pts);
+        // The cursor belongs to this frame, so it carries the frame's corrected
+        // timestamp rather than the raw one the backend read. Desktop
+        // Duplication reports the origin for a frame with no new content, which
+        // the clock moves forward; a cursor left behind would then sit on a
+        // different timeline from the pixels it was sampled with.
+        let cursor = raw.cursor.map(|sample| CursorSample { pts, ..sample });
         Ok(Frame {
             pts,
             bytes: raw.bytes,
             stride: raw.stride,
             dirty: raw.dirty,
-            cursor: raw.cursor,
+            cursor,
             desc: &self.desc,
         })
     }

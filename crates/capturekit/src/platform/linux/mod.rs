@@ -4,11 +4,11 @@ mod x11;
 mod wayland;
 
 use capturekit_core::{
-    Capabilities, CaptureError, Display, ExclusionSupport, Permission, PermissionKind, RegionCrop,
+    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, Display, ExclusionSupport, Permission, PermissionKind, RegionCrop,
     Result, Target, Timestamp, Window,
 };
 
-use crate::backend::FrameSource;
+use crate::backend::{AudioSource, FrameSource};
 use crate::platform::OpenOptions;
 
 /// Which display server this session actually runs on.
@@ -144,6 +144,25 @@ pub(crate) fn now() -> Timestamp {
         return Timestamp::ZERO;
     }
     Timestamp::from_nanos(spec.tv_sec.saturating_mul(1_000_000_000) + spec.tv_nsec)
+}
+
+/// Audio devices are not enumerated on this platform yet.
+pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
+    Err(CaptureError::Unsupported {
+        backend: "pipewire-audio",
+        operation: "enumerate audio devices yet",
+    })
+}
+
+/// Audio capture is not implemented on this platform yet.
+pub(crate) fn open_audio(
+    _device: Option<&AudioDeviceId>,
+    _direction: AudioDirection,
+) -> Result<Box<dyn AudioSource>> {
+    Err(CaptureError::Unsupported {
+        backend: "pipewire-audio",
+        operation: "capture audio yet",
+    })
 }
 
 pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {

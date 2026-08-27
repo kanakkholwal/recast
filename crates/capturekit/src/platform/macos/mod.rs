@@ -2,12 +2,12 @@ mod content;
 mod stream;
 
 use capturekit_core::{
-    Capabilities, CaptureError, ExclusionSupport, Permission, PermissionKind, RegionCrop, Result,
+    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, ExclusionSupport, Permission, PermissionKind, RegionCrop, Result,
     Target, Timestamp,
 };
 use objc2_core_graphics::{CGPreflightScreenCaptureAccess, CGRequestScreenCaptureAccess};
 
-use crate::backend::FrameSource;
+use crate::backend::{AudioSource, FrameSource};
 use crate::platform::OpenOptions;
 
 pub(crate) use content::{displays, windows};
@@ -76,6 +76,25 @@ pub(crate) fn now() -> Timestamp {
         0 => Timestamp::ZERO,
         scale => Timestamp::from_ticks(time.value, i64::from(scale)),
     }
+}
+
+/// Audio devices are not enumerated on this platform yet.
+pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
+    Err(CaptureError::Unsupported {
+        backend: "coreaudio",
+        operation: "enumerate audio devices yet",
+    })
+}
+
+/// Audio capture is not implemented on this platform yet.
+pub(crate) fn open_audio(
+    _device: Option<&AudioDeviceId>,
+    _direction: AudioDirection,
+) -> Result<Box<dyn AudioSource>> {
+    Err(CaptureError::Unsupported {
+        backend: "coreaudio",
+        operation: "capture audio yet",
+    })
 }
 
 pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {

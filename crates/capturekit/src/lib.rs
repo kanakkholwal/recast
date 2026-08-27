@@ -15,6 +15,7 @@
 #![deny(missing_docs)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+mod audio;
 mod backend;
 mod capturer;
 mod image;
@@ -25,6 +26,7 @@ mod shot;
 #[cfg(test)]
 mod mock;
 
+pub use audio::{AudioBuffer, AudioCapturer, AudioCapturerBuilder, AudioHandle};
 pub use capturekit_core::{
     AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, Camera, CameraFormat,
     CameraId, Capabilities, CaptureError, ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest,
@@ -97,6 +99,29 @@ pub fn shot_with(target: Target, opts: &ShotOptions) -> Result<Image> {
         log::debug!("releasing the capture source after a shot failed: {err}");
     }
     image
+}
+
+/// Every audio device available to capture, inputs and loopback alike.
+pub fn audio_devices() -> Result<Vec<AudioDevice>> {
+    os::audio_devices()
+}
+
+/// Open a microphone or line input.
+///
+/// Captures the system default unless [`AudioCapturerBuilder::device`] names one.
+#[must_use]
+pub fn audio_input() -> AudioCapturerBuilder {
+    AudioCapturerBuilder::new(AudioDirection::Input)
+}
+
+/// Open a capture of what the system is playing.
+///
+/// A loopback device delivers nothing at all while nothing is playing, so the
+/// backend inserts real silence for the gaps rather than letting the track come
+/// out short. See [`AudioBuffer::is_inserted_silence`].
+#[must_use]
+pub fn audio_loopback() -> AudioCapturerBuilder {
+    AudioCapturerBuilder::new(AudioDirection::Loopback)
 }
 
 /// Open a streaming capture of `target`.

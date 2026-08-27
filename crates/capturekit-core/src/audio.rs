@@ -170,6 +170,78 @@ pub struct AudioDesc {
     pub backend: &'static str,
 }
 
+/// Tracks where a capture is on its own sample timeline, and how far a device
+/// has run ahead of it.
+///
+/// Every OS capture API here reports a device position that keeps advancing in
+/// real time, while buffers arrive only when there is something to deliver. A
+/// loopback device with nothing playing delivers NOTHING at all, sometimes for
+/// minutes. A consumer that just concatenates what arrives produces a track
+/// shorter than the recording, and every sound in it drifts earlier than the
+/// picture. The gap has to be filled with real silence, at the right place, and
+/// only the device position says where that is.
+#[derive(Debug, Clone)]
+pub struct AudioTimeline {
+    format: AudioFormat,
+    next_frame: u64,
+}
+
+impl AudioTimeline {
+    /// A timeline starting at sample frame zero.
+    #[must_use]
+    pub const fn new(format: AudioFormat) -> Self {
+        Self {
+            format,
+            next_frame: 0,
+        }
+    }
+
+    /// The format this timeline counts in.
+    #[must_use]
+    pub const fn format(&self) -> AudioFormat {
+        self.format
+    }
+
+    /// The next sample frame this timeline expects to receive.
+    #[must_use]
+    pub const fn position(&self) -> u64 {
+        self.next_frame
+    }
+
+    /// Silent sample frames needed before a buffer that starts at
+    /// `device_position`.
+    ///
+    /// Zero when the device is where the timeline expects, or behind it: a
+    /// device position that goes backwards is a driver resetting its counter,
+    /// and inserting silence for it would push everything after it late.
+    #[must_use]
+    pub const fn gap_before(&self, device_position: u64) -> u64 {
+        device_position.saturating_sub(self.next_frame)
+    }
+
+    /// Bytes of silence for a gap of `frames`.
+    #[must_use]
+    pub fn silence_bytes(&self, frames: u64) -> usize {
+        self.format.bytes_for(frames as usize)
+    }
+
+    /// Record that `frames` sample frames were delivered.
+    pub fn advance(&mut self, frames: u64) {
+        self.next_frame = self.next_frame.saturating_add(frames);
+    }
+
+    /// Jump to a device position, for a driver that reset its counter.
+    pub fn resync(&mut self, device_position: u64) {
+        self.next_frame = device_position;
+    }
+
+    /// How long the timeline covers so far.
+    #[must_use]
+    pub fn elapsed(&self) -> Duration {
+        self.format.duration_of(self.next_frame)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +305,53 @@ mod tests {
         let format = AudioFormat::new(48_000, 0, SampleFormat::F32);
         assert!(format.validate_buffer(16).is_err());
         assert_eq!(format.frames_in(16), 0);
+    }
+
+    #[test]
+    fn a_timeline_that_keeps_up_reports_no_gap() {
+        let mut timeline = AudioTimeline::new(AudioFormat::STEREO_48K);
+        timeline.advance(480);
+        assert_eq!(timeline.gap_before(480), 0);
+        assert_eq!(timeline.position(), 480);
+    }
+
+    /// The idle-loopback case: nothing played for a second, so the device ran on
+    /// while no buffers arrived. Without the silence the track ends up a second
+    /// short and everything after it drifts early.
+    #[test]
+    fn an_idle_device_leaves_a_gap_measured_in_frames() {
+        let mut timeline = AudioTimeline::new(AudioFormat::STEREO_48K);
+        timeline.advance(480);
+        let gap = timeline.gap_before(48_480);
+        assert_eq!(gap, 48_000, "one second of silence is owed");
+        assert_eq!(timeline.silence_bytes(gap), 48_000 * 8);
+    }
+
+    #[test]
+    fn a_device_position_that_goes_backwards_owes_no_silence() {
+        let mut timeline = AudioTimeline::new(AudioFormat::STEREO_48K);
+        timeline.advance(96_000);
+        assert_eq!(
+            timeline.gap_before(48_000),
+            0,
+            "a reset counter must not push the timeline later"
+        );
+    }
+
+    #[test]
+    fn resync_moves_the_timeline_to_the_device() {
+        let mut timeline = AudioTimeline::new(AudioFormat::STEREO_48K);
+        timeline.advance(1_000);
+        timeline.resync(50_000);
+        assert_eq!(timeline.position(), 50_000);
+        assert_eq!(timeline.gap_before(50_000), 0);
+    }
+
+    #[test]
+    fn elapsed_follows_the_frames_delivered() {
+        let mut timeline = AudioTimeline::new(AudioFormat::STEREO_48K);
+        timeline.advance(24_000);
+        assert_eq!(timeline.elapsed(), Duration::from_millis(500));
     }
 
     #[test]

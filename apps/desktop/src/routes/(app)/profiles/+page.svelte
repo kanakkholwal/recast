@@ -30,7 +30,7 @@ import {
 	Volume2,
 	VolumeX,
 } from "@recast/icons";
-import { Button, buttonVariants } from "@recast/ui/button";
+import { Button } from "@recast/ui/button";
 import * as Dialog from "@recast/ui/dialog";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
@@ -97,11 +97,6 @@ async function loadMics() {
 	}
 }
 
-// Cameras are loaded only once the draft actually wants one, and once per
-// dialog. `enumerateCameras` calls getUserMedia when labels are blank — the
-// only way to unlock them — which turns the webcam on and can raise a
-// permission prompt. Doing that on page load lit the camera for anyone who
-// merely opened Profiles.
 let camerasRequested = false;
 async function loadCameras() {
 	if (camerasRequested) return;
@@ -297,9 +292,6 @@ const filtered = $derived.by(() => {
 	return profilesStore.profiles.filter((p) => p.name.toLowerCase().includes(q));
 });
 
-// Master-detail selection: an explicit pick wins; otherwise fall back to the
-// default (or first visible) so the detail panel is never empty. Resolved
-// without an effect to avoid write-back loops.
 let selectedId = $state<string | null>(null);
 const resolvedId = $derived.by(() => {
 	if (selectedId && profilesStore.profiles.some((p) => p.id === selectedId)) return selectedId;
@@ -317,9 +309,6 @@ const titleText = $derived(
 				: `${profilesStore.profiles.length} profiles`,
 );
 
-// Capture sources rendered as the faceplate readout at the bottom of each
-// card. On/off is carried by icon shape (Mic vs MicOff) as well as color, so
-// it doesn't depend on color alone.
 type Cap = {
 	field: "systemAudio" | "microphone" | "camera";
 	label: string;
@@ -342,21 +331,7 @@ const capabilities: Cap[] = [
   title={titleText}
   subtitle="Save what to capture and pick the default that loads on launch."
 >
-  {#snippet actions()}
-    <label
-      for="profiles.enabled"
-      class={cn(buttonVariants({ variant: "raw", size: "sm" }), "gap-1.5")}
-    >
-      <Info size={13} />
-      <span class="text-muted-foreground"> Apply profiles when recording </span>
-      <Switch
-        id="profiles.enabled"
-        checked={profilesStore.enabled}
-        onCheckedChange={setProfilesEnabled}
-        aria-label="Apply profiles when recording"
-      />
-    </label>
-  {/snippet}
+  
 
   {#snippet filters()}
     <div class="w-full max-w-md flex-1">

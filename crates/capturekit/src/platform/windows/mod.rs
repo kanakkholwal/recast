@@ -2,14 +2,15 @@ mod d3d;
 mod dpi;
 mod dxgi;
 mod enumerate;
+mod wasapi;
 mod wgc;
 
 use capturekit_core::{
-    Capabilities, CaptureError, ExclusionSupport, Permission, PermissionKind, RegionCrop, Result,
-    Target,
+    AudioDevice, AudioDeviceId, AudioDirection, Capabilities, CaptureError, ExclusionSupport,
+    Permission, PermissionKind, RegionCrop, Result, Target,
 };
 
-use crate::backend::FrameSource;
+use crate::backend::{AudioSource, FrameSource};
 use crate::platform::OpenOptions;
 
 pub(crate) use enumerate::{displays, windows};
@@ -65,6 +66,17 @@ pub(crate) fn now() -> capturekit_core::Timestamp {
         let _ = QueryPerformanceFrequency(&mut frequency);
     }
     capturekit_core::Timestamp::from_ticks(ticks, frequency)
+}
+
+pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
+    wasapi::devices()
+}
+
+pub(crate) fn open_audio(
+    device: Option<&AudioDeviceId>,
+    direction: AudioDirection,
+) -> Result<Box<dyn AudioSource>> {
+    Ok(Box::new(wasapi::WasapiSource::open(device, direction)?))
 }
 
 pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
