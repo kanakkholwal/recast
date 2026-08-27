@@ -62,9 +62,21 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      # One source of truth for the compiler version: `rust-toolchain.toml`.
+      # dtolnay/rust-toolchain does not read that file, and installing `@stable`
+      # while cargo resolves the pinned channel would add targets and components
+      # to the wrong toolchain.
+      - name: Read pinned toolchain
+        id: rust
+        shell: bash
+        run: |
+          channel=$(grep -m1 -oE 'channel[[:space:]]*=[[:space:]]*"[^"]+"' rust-toolchain.toml | grep -oE '"[^"]+"' | tr -d '"')
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust.outputs.channel }}
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all --check
@@ -188,9 +200,21 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
+      # One source of truth for the compiler version: `rust-toolchain.toml`.
+      # dtolnay/rust-toolchain does not read that file, and installing `@stable`
+      # while cargo resolves the pinned channel would add targets and components
+      # to the wrong toolchain.
+      - name: Read pinned toolchain
+        id: rust
+        shell: bash
+        run: |
+          channel=$(grep -m1 -oE 'channel[[:space:]]*=[[:space:]]*"[^"]+"' rust-toolchain.toml | grep -oE '"[^"]+"' | tr -d '"')
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust.outputs.channel }}
           targets: ${{ matrix.platform.rust_target }}
           components: clippy
 
@@ -373,6 +397,20 @@ jobs:
         run: |
           cargo clippy --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-targets --all-features --release -- -D warnings
           cargo test --manifest-path crates/Cargo.toml -p capturekit-core --all-features --release
+
+      # Both capture crates publish `rust-version = "1.81"`. Everything else here
+      # builds them on the pinned toolchain, so that floor was asserted and never
+      # tested; this proves our own code stays inside it.
+      #
+      # Windows, not Linux: on Linux the `wayland` feature pulls ashpd -> zbus ->
+      # zvariant -> zcheapstr, which is edition 2024, so cargo 1.81 cannot parse
+      # the graph at all. That is a real violation of the published floor, not a
+      # CI artefact, and it needs the rust-version decided before it can gate.
+      - name: capturekit MSRV (1.81)
+        if: matrix.platform.name == 'windows-x64'
+        run: |
+          rustup toolchain install 1.81 --profile minimal
+          cargo +1.81 check --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-features
 
       # Capture against the runner's own desktop. Windows-only because it is the
       # one runner guaranteed an interactive session: macOS needs a TCC grant no

@@ -219,17 +219,31 @@ mod tests {
 
     #[test]
     fn effective_elapsed_excludes_paused_spans() {
+        // Measured as "how far did the clock advance across the pause", not as
+        // an absolute reading: a loaded CI runner can stretch either sleep.
         let clock = RecordingClock::new(Instant::now());
         std::thread::sleep(Duration::from_millis(20));
         clock.pause();
+        let at_pause = clock.effective_elapsed();
+
         std::thread::sleep(Duration::from_millis(40));
-        clock.resume();
-        let elapsed = clock.effective_elapsed();
+        let while_paused = clock.effective_elapsed();
         assert!(
-            elapsed < Duration::from_millis(40),
-            "paused span leaked into elapsed: {elapsed:?}"
+            while_paused.saturating_sub(at_pause) < SLACK,
+            "clock ran while paused: {at_pause:?} -> {while_paused:?}"
+        );
+
+        clock.resume();
+        let after_resume = clock.effective_elapsed();
+        assert!(
+            after_resume.saturating_sub(at_pause) < SLACK,
+            "paused span leaked into elapsed: {at_pause:?} -> {after_resume:?}"
         );
     }
+
+    /// Room for the scheduler between a `pause`/`resume` call and the reading
+    /// beside it. Well under the 40 ms a leaked pause span would show up as.
+    const SLACK: Duration = Duration::from_millis(10);
 
     #[test]
     fn pause_and_resume_are_idempotent() {

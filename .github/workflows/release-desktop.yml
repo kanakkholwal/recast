@@ -178,9 +178,21 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
+      # One source of truth for the compiler version: `rust-toolchain.toml`.
+      # dtolnay/rust-toolchain does not read that file, and installing `@stable`
+      # while cargo resolves the pinned channel would add targets and components
+      # to the wrong toolchain.
+      - name: Read pinned toolchain
+        id: rust
+        shell: bash
+        run: |
+          channel=$(grep -m1 -oE 'channel[[:space:]]*=[[:space:]]*"[^"]+"' rust-toolchain.toml | grep -oE '"[^"]+"' | tr -d '"')
+          test -n "$channel"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust.outputs.channel }}
           targets: ${{ matrix.platform.rust_target }}
 
       - name: Rust cache

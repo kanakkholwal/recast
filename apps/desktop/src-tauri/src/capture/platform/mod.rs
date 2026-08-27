@@ -115,14 +115,10 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
         //
         // We check WAYLAND_DISPLAY before DISPLAY because XWayland sets
         // both — Wayland-native is preferred when available.
-        if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-            if linux_wayland::has_pending_stream() {
-                return linux_wayland::create_source(target);
-            }
-            // Wayland session but no portal stream — user denied the
-            // dialog or the portal is broken. Fall through to xcap;
-            // we'll trigger the portal again per-frame which is bad,
-            // but at least the user gets *some* output.
+        // No pending stream on a Wayland session means the user denied the
+        // portal dialog; fall through to X11/xcap rather than failing outright.
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() && linux_wayland::has_pending_stream() {
+            return linux_wayland::create_source(target);
         }
         if std::env::var_os("DISPLAY").is_some() {
             return linux_x11::create_source(target);

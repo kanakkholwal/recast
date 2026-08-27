@@ -679,6 +679,9 @@ fn shadow_params(
     if !settings.enabled || settings.opacity <= 0.0 {
         return None;
     }
+    if geometry.canvas_w == 0 || geometry.canvas_h == 0 {
+        return None;
+    }
 
     let half_w = params.dest.w as f64 / 2.0;
     let half_h = params.dest.h as f64 / 2.0;
@@ -700,7 +703,6 @@ fn shadow_params(
         half_h: half_h as f32,
         radius_px: radius_px as f32,
     })
-    .filter(|_| geometry.canvas_w > 0 && geometry.canvas_h > 0)
 }
 
 /// The latest-STARTING region containing `t` wins, ties to the later entry.

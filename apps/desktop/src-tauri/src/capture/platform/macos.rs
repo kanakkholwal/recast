@@ -371,7 +371,7 @@ fn capture_screen_indices() -> &'static [(u32, u32)] {
     static CACHED: OnceLock<Vec<(u32, u32)>> = OnceLock::new();
     CACHED.get_or_init(|| {
         let stderr = crate::ffmpeg::cached_avfoundation_devices();
-        super::parse_capture_screen_listing(&stderr)
+        super::parse_capture_screen_listing(stderr)
     })
 }
 

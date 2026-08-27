@@ -117,7 +117,7 @@ fn recent_recasts(app: &AppHandle, limit: usize) -> Vec<(String, String)> {
             .unwrap_or_default();
         rows.push((mtime, path, label));
     }
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.0));
     rows.into_iter()
         .take(limit)
         .map(|(_, path, label)| (path.to_string_lossy().to_string(), label))

@@ -129,7 +129,7 @@ async fn portal_handshake_async() -> Result<PortalStream> {
     proxy
         .select_sources(
             &session,
-            CursorMode::Embedded.into(),
+            CursorMode::Embedded,
             SourceType::Monitor | SourceType::Window,
             false,
             None,

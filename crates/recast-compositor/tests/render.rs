@@ -1214,7 +1214,9 @@ fn blurring_a_background_does_not_change_its_overall_brightness() {
     let mean = |r: &Rendered| {
         let total: f64 = r
             .pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|p| {
                 p[..3]
                     .iter()

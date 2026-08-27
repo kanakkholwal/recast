@@ -300,8 +300,8 @@ mod enabled {
                 return None;
             }
             let mut out = Vec::with_capacity(f32_count * 2);
-            for chunk in bytes.chunks_exact(4) {
-                let f = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            for &chunk in bytes.as_chunks::<4>().0 {
+                let f = f32::from_le_bytes(chunk);
                 let i = (f.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16;
                 out.extend_from_slice(&i.to_le_bytes());
             }

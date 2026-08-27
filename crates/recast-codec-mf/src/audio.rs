@@ -114,8 +114,10 @@ fn float_samples(sample: &IMFSample) -> Result<Vec<f32>, DecodeError> {
         // Copied through `from_le_bytes` rather than transmuted: the buffer has
         // no alignment guarantee, and a misaligned f32 read is undefined.
         let samples = bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|&c| f32::from_le_bytes(c))
             .collect();
         buffer.Unlock()?;
         Ok(samples)

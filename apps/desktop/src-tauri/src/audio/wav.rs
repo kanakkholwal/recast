@@ -127,11 +127,7 @@ impl WavWriter {
     /// Whole samples written so far, per channel.
     pub fn frames_written(&self) -> u64 {
         let align = self.format.block_align() as u64;
-        if align == 0 {
-            0
-        } else {
-            self.data_bytes_written / align
-        }
+        self.data_bytes_written.checked_div(align).unwrap_or(0)
     }
 
     pub fn finish(mut self) -> Result<()> {

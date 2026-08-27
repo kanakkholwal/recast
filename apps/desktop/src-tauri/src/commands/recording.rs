@@ -452,7 +452,7 @@ fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEnt
             });
         }
     }
-    entries.sort_by(|a, b| b.modified.cmp(&a.modified));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.modified));
     Ok(entries)
 }
 

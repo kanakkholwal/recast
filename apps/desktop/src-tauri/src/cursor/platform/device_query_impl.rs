@@ -66,8 +66,8 @@ pub fn sample_cursor_state() -> Option<CursorState> {
         let left_down = mouse.button_pressed.get(1).copied().unwrap_or(false);
         let right_down = mouse.button_pressed.get(3).copied().unwrap_or(false);
         Some(CursorState {
-            x: mouse.coords.0 as i32,
-            y: mouse.coords.1 as i32,
+            x: mouse.coords.0,
+            y: mouse.coords.1,
             visible: true,
             left_down,
             right_down,

@@ -381,7 +381,12 @@ fn the_two_engines_are_diffed_fixture_by_fixture() {
 /// diffed, because a 255-channel delta against a background that was never drawn
 /// is not a parity signal.
 fn is_flat(frame: &[u8], width: u32) -> bool {
-    let row: Vec<&[u8]> = frame.chunks_exact(4).take(width as usize).collect();
+    let row: Vec<&[u8; 4]> = frame
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .take(width as usize)
+        .collect();
     let Some(first) = row.first() else {
         return true;
     };

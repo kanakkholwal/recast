@@ -201,10 +201,7 @@ fn shell_rc_candidates() -> Vec<PathBuf> {
 fn upsert_rc_block(path: &Path) -> RcFileChange {
     let path_str = path.to_string_lossy().to_string();
     let had_block = file_contains_block(path);
-    let body = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(_) => String::new(),
-    };
+    let body = std::fs::read_to_string(path).unwrap_or_default();
     if had_block {
         // Already present — leave the existing block verbatim so a manual
         // user edit survives `recast install`. The settings toggle's notion
@@ -504,7 +501,7 @@ mod platform {
         std::env::var("PATH")
             .unwrap_or_default()
             .split(':')
-            .any(|p| PathBuf::from(p) == dir)
+            .any(|p| std::path::Path::new(p) == dir)
     }
 
     /// Set of rc files that already carry our PATH block.
@@ -547,7 +544,7 @@ mod platform {
         // resolving even after uninstall (the dev binary never gets
         // removed).
         let copied = super::copy_to_stable()?;
-        std::fs::create_dir_all(&bin_dir()).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(bin_dir()).map_err(|e| e.to_string())?;
         let link = link_path();
         if link.symlink_metadata().is_ok() {
             let _ = std::fs::remove_file(&link);

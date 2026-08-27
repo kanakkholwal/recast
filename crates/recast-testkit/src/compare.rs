@@ -22,7 +22,7 @@ pub fn frame_delta(a: &[u8], b: &[u8]) -> Option<FrameDelta> {
     let mut total = 0u64;
     let mut differing_pixels = 0u64;
 
-    for (pa, pb) in a.chunks_exact(4).zip(b.chunks_exact(4)) {
+    for (pa, pb) in a.as_chunks::<4>().0.iter().zip(b.as_chunks::<4>().0) {
         let mut pixel_differs = false;
         for channel in 0..4 {
             let d = pa[channel].abs_diff(pb[channel]);

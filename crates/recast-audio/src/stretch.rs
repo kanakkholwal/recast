@@ -17,7 +17,8 @@ pub fn resample_linear(input: &[f32], rate: f64) -> Vec<f32> {
     if !rate.is_finite() || rate <= 0.0 || (rate - 1.0).abs() < EPS as f64 {
         return input.to_vec();
     }
-    let out_length = ((input.len() as f64 / rate).floor() as usize).max(0);
+    // The guard above already refuses rates that would floor below zero.
+    let out_length = (input.len() as f64 / rate).floor() as usize;
     let mut out = Vec::with_capacity(out_length);
     for i in 0..out_length {
         let position = i as f64 * rate;
