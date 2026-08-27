@@ -19,13 +19,19 @@ pub enum CaptureError {
         id: u64,
     },
 
-    /// The requested camera is gone or was never there.
+    /// A source named by a string, rather than by a handle, that is gone or was
+    /// never there.
     ///
-    /// Separate from [`CaptureError::NotFound`] because a camera is identified by
-    /// its device path rather than by a handle, and narrowing that to a number is
-    /// how two cameras end up looking like one.
-    #[error("no camera matches {0:?}")]
-    CameraNotFound(String),
+    /// Separate from [`CaptureError::NotFound`] because a camera is identified
+    /// by its device path and an audio endpoint by its node name. Narrowing
+    /// either to a number is how two devices end up looking like one.
+    #[error("no {kind} matches {id:?}")]
+    NotFoundNamed {
+        /// What was being looked up.
+        kind: &'static str,
+        /// The name that matched nothing.
+        id: String,
+    },
 
     /// The source is already being captured and cannot be handed out twice.
     #[error("{kind} {id} is already being captured by this process")]

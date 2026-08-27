@@ -188,7 +188,7 @@ fn every_case_renders_inside_the_frame_budget() {
     let software = ctx.is_software();
     let mut over = Vec::new();
     for (name, width, height, extra) in cases() {
-        let ms = frame_time_ms(&ctx, &scene_with(&extra), width, height);
+        let ms = frame_time_ms(ctx, &scene_with(&extra), width, height);
         // 4K is four times the pixels, and the budget scales with them rather
         // than pretending one number fits every resolution.
         let budget = if width > 2000 {
@@ -217,7 +217,7 @@ fn print_the_frame_times() {
     let Some(ctx) = context() else { return };
     eprintln!("adapter: {:?}", ctx.info().name);
     for (name, width, height, extra) in cases() {
-        let ms = frame_time_ms(&ctx, &scene_with(&extra), width, height);
+        let ms = frame_time_ms(ctx, &scene_with(&extra), width, height);
         eprintln!("{name:34} {ms:7.2} ms  {:6.1} fps", 1000.0 / ms);
     }
 }

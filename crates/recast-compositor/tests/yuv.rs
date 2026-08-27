@@ -255,7 +255,7 @@ fn the_shader_decodes_the_same_light_the_cpu_matrix_does() {
     let color = SourceColor::default();
     let codes = [RED, GREEN, BLUE, MID];
     let data = pack(PlaneLayout::Nv12, W, H, quadrants(codes));
-    let out = decode(&ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
+    let out = decode(ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
 
     for (index, (x, y)) in CENTRES.into_iter().enumerate() {
         let want = cpu_decode(&color, codes[index]);
@@ -288,7 +288,7 @@ fn every_transfer_function_matches_recast_color() {
         // I444 so no chroma sample is shared and every pixel stands alone.
         let ramp = |x: u32, y: u32| [(((y * W + x) * 255) / (W * H - 1)) as u8, 128, 128];
         let data = pack(PlaneLayout::I444, W, H, ramp);
-        let out = decode(&ctx, &frame(&data, PlaneLayout::I444, color, W, H));
+        let out = decode(ctx, &frame(&data, PlaneLayout::I444, color, W, H));
 
         for y in 0..H {
             for x in 0..W {
@@ -324,7 +324,7 @@ fn every_transfer_function_leaves_black_at_black() {
             ..Default::default()
         };
         let data = pack(PlaneLayout::I444, W, H, |_, _| [0, 128, 128]);
-        let out = decode(&ctx, &frame(&data, PlaneLayout::I444, color, W, H));
+        let out = decode(ctx, &frame(&data, PlaneLayout::I444, color, W, H));
         let got = out.at(4, 4);
         assert!(
             close(got, [0.0; 3], 1e-3),
@@ -343,7 +343,7 @@ fn limited_range_black_and_white_reach_the_endpoints() {
         H,
         quadrants([BLACK, WHITE, BLACK, WHITE]),
     );
-    let out = decode(&ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
+    let out = decode(ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
 
     assert!(
         close(out.at(2, 2), [0.0; 3], TOLERANCE),
@@ -364,7 +364,7 @@ fn codes_below_the_footroom_clamp_rather_than_going_negative() {
     let Some(ctx) = context() else { return };
     let color = SourceColor::default();
     let data = pack(PlaneLayout::Nv12, W, H, quadrants([[0, 128, 128]; 4]));
-    let out = decode(&ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
+    let out = decode(ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
     let got = out.at(4, 4);
     assert!(close(got, [0.0; 3], 1e-4), "{got:?}");
 }
@@ -376,8 +376,8 @@ fn nv12_and_i420_agree_on_the_same_samples() {
     let codes = quadrants([RED, GREEN, BLUE, MID]);
     let nv12 = pack(PlaneLayout::Nv12, W, H, &codes);
     let i420 = pack(PlaneLayout::I420, W, H, &codes);
-    let a = decode(&ctx, &frame(&nv12, PlaneLayout::Nv12, color, W, H));
-    let b = decode(&ctx, &frame(&i420, PlaneLayout::I420, color, W, H));
+    let a = decode(ctx, &frame(&nv12, PlaneLayout::Nv12, color, W, H));
+    let b = decode(ctx, &frame(&i420, PlaneLayout::I420, color, W, H));
 
     for (x, y) in CENTRES {
         assert!(
@@ -404,7 +404,7 @@ fn the_matrix_coefficients_change_what_the_codes_mean() {
             matrix,
             ..Default::default()
         };
-        let out = decode(&ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
+        let out = decode(ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
         let got = out.at(4, 4);
         assert!(
             seen.iter().all(|prior| !close(*prior, got, 5e-3)),
@@ -419,11 +419,11 @@ fn full_range_and_limited_range_read_the_same_codes_differently() {
     let Some(ctx) = context() else { return };
     let data = pack(PlaneLayout::Nv12, W, H, quadrants([BRIGHT; 4]));
     let limited = decode(
-        &ctx,
+        ctx,
         &frame(&data, PlaneLayout::Nv12, SourceColor::default(), W, H),
     );
     let full = decode(
-        &ctx,
+        ctx,
         &frame(
             &data,
             PlaneLayout::Nv12,
@@ -446,11 +446,11 @@ fn full_range_and_limited_range_read_the_same_codes_differently() {
 fn one_compositor_decodes_frames_of_changing_shape() {
     let Some(ctx) = context() else { return };
     let color = SourceColor::default();
-    let mut compositor = Compositor::new(&ctx).expect("compositor");
+    let mut compositor = Compositor::new(ctx).expect("compositor");
 
     let big = pack(PlaneLayout::Nv12, W, H, quadrants([RED, GREEN, BLUE, MID]));
     let first = decode_with(
-        &ctx,
+        ctx,
         &mut compositor,
         &frame(&big, PlaneLayout::Nv12, color, W, H),
     );
@@ -459,7 +459,7 @@ fn one_compositor_decodes_frames_of_changing_shape() {
     // channel count even though nothing about the shape moved.
     let planar = pack(PlaneLayout::I420, W, H, quadrants([RED, GREEN, BLUE, MID]));
     let swapped = decode_with(
-        &ctx,
+        ctx,
         &mut compositor,
         &frame(&planar, PlaneLayout::I420, color, W, H),
     );
@@ -474,7 +474,7 @@ fn one_compositor_decodes_frames_of_changing_shape() {
 
     let small = pack(PlaneLayout::I420, 4, 4, |_, _| GREEN);
     let middle = decode_with(
-        &ctx,
+        ctx,
         &mut compositor,
         &frame(&small, PlaneLayout::I420, color, 4, 4),
     );
@@ -487,7 +487,7 @@ fn one_compositor_decodes_frames_of_changing_shape() {
     // Back to the first shape, which has to reallocate again rather than read
     // the smaller planes it just wrote.
     let again = decode_with(
-        &ctx,
+        ctx,
         &mut compositor,
         &frame(&big, PlaneLayout::Nv12, color, W, H),
     );
@@ -509,11 +509,11 @@ fn chroma_siting_moves_the_colour_edge() {
     let edge = |x: u32, _y: u32| if x < W / 2 { RED } else { BLUE };
     let data = pack(PlaneLayout::Nv12, W, H, edge);
     let left = decode(
-        &ctx,
+        ctx,
         &frame(&data, PlaneLayout::Nv12, SourceColor::default(), W, H),
     );
     let centred = decode(
-        &ctx,
+        ctx,
         &frame(
             &data,
             PlaneLayout::Nv12,
@@ -544,7 +544,7 @@ fn co_siting_lands_on_a_chroma_sample_rather_than_between_two() {
     let color = SourceColor::default();
     let edge = |x: u32, _y: u32| if x < W / 2 { RED } else { BLUE };
     let data = pack(PlaneLayout::Nv12, W, H, edge);
-    let out = decode(&ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
+    let out = decode(ctx, &frame(&data, PlaneLayout::Nv12, color, W, H));
 
     let on_sample = cpu_decode(&color, BLUE);
     assert!(
@@ -573,11 +573,11 @@ fn a_wide_gamut_source_is_brought_into_the_working_gamut() {
     let Some(ctx) = context() else { return };
     let data = pack(PlaneLayout::Nv12, W, H, quadrants([GREEN; 4]));
     let bt709 = decode(
-        &ctx,
+        ctx,
         &frame(&data, PlaneLayout::Nv12, SourceColor::default(), W, H),
     );
     let bt2020 = decode(
-        &ctx,
+        ctx,
         &frame(
             &data,
             PlaneLayout::Nv12,
@@ -610,7 +610,7 @@ fn a_wide_gamut_source_is_brought_into_the_working_gamut() {
 #[test]
 fn a_mismatched_target_is_refused_rather_than_rendered_wrong() {
     let Some(ctx) = context() else { return };
-    let mut compositor = Compositor::new(&ctx).expect("compositor");
+    let mut compositor = Compositor::new(ctx).expect("compositor");
     let data = pack(PlaneLayout::Nv12, W, H, quadrants([MID; 4]));
     let source = frame(&data, PlaneLayout::Nv12, SourceColor::default(), W, H);
 
@@ -677,8 +677,8 @@ fn a_padded_plane_decodes_the_same_as_a_tight_one() {
         data: PlaneData::Planar(&planes),
     };
 
-    let a = decode(&ctx, &frame(&tight, PlaneLayout::Nv12, color, W, H));
-    let b = decode(&ctx, &padded);
+    let a = decode(ctx, &frame(&tight, PlaneLayout::Nv12, color, W, H));
+    let b = decode(ctx, &padded);
     for (x, y) in CENTRES {
         assert!(
             close(a.at(x, y), b.at(x, y), 1e-4),
@@ -717,7 +717,7 @@ fn the_decoded_texture_composites_without_a_second_decode() {
 
     let color = SourceColor::default();
     let data = pack(PlaneLayout::Nv12, W, H, quadrants([MID; 4]));
-    let mut compositor = Compositor::new(&ctx).expect("compositor");
+    let mut compositor = Compositor::new(ctx).expect("compositor");
     let source = compositor.source_texture(W, H);
     compositor
         .decode_source(&frame(&data, PlaneLayout::Nv12, color, W, H), &source)

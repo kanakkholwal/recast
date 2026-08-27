@@ -144,7 +144,7 @@ fn target_dims(w: u32, h: u32, max_dim: u32) -> (u32, u32) {
 }
 
 fn even(n: u32) -> u32 {
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         n
     } else {
         n + 1
@@ -286,7 +286,7 @@ pub fn sample_frames(
                 let mut seen = 0usize;
                 kept.retain(|_| {
                     seen += 1;
-                    seen % 2 == 0
+                    seen.is_multiple_of(2)
                 });
                 gap_scale *= 2.0;
                 log::warn!(

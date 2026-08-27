@@ -16,7 +16,7 @@ use objc2_screen_capture_kit::{
 };
 
 use crate::backend::{AudioSource, RawAudio};
-use crate::deliver::{AudioSlot, DeliveredAudio, Endable};
+use crate::deliver::{AudioQueue, Endable};
 use crate::platform::macos::content::{self, BACKEND};
 use crate::platform::macos::stream::{start_capture, StreamStopped};
 
@@ -33,6 +33,11 @@ const FLAG_IS_SIGNED_INTEGER: u32 = 1 << 2;
 /// 7.1 is the widest layout a Mac mixes, and a fixed ceiling is what lets the
 /// buffer list live on the stack instead of being allocated per delivery.
 const MAX_CHANNELS: usize = 8;
+
+/// How many samples may queue before a stalled consumer starts losing them.
+/// Four seconds of 48 kHz stereo float, far past any read interval a recorder
+/// uses and still bounded.
+const QUEUE_BYTES: usize = 4 * 48_000 * 2 * 4;
 
 /// What ScreenCaptureKit is asked for. It converts to this whatever the output
 /// device runs at, which is why the answer does not depend on the hardware.
@@ -145,7 +150,7 @@ fn samples_of(buffers: &[AudioBuffer], format: AudioFormat, out: &mut Vec<u8>) -
 
 define_class!(
     #[unsafe(super(NSObject))]
-    #[ivars = Arc<AudioSlot>]
+    #[ivars = Arc<AudioQueue>]
     struct AudioOutput;
 
     unsafe impl NSObjectProtocol for AudioOutput {}
@@ -166,14 +171,14 @@ define_class!(
 );
 
 impl AudioOutput {
-    fn new(slot: Arc<AudioSlot>) -> Retained<Self> {
-        let this = Self::alloc().set_ivars(slot);
+    fn new(queue: Arc<AudioQueue>) -> Retained<Self> {
+        let this = Self::alloc().set_ivars(queue);
         unsafe { msg_send![super(this), init] }
     }
 }
 
 /// Pull the samples out of a delivered buffer and publish them.
-fn accept(slot: &AudioSlot, sample: &CMSampleBuffer) {
+fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
     let Some(description) = (unsafe { sample.format_description() }) else {
         return;
     };
@@ -221,7 +226,7 @@ fn accept(slot: &AudioSlot, sample: &CMSampleBuffer) {
         // an audio and a video track of one session line up with no correction.
         scale => Timestamp::from_ticks(time.value, i64::from(scale)),
     };
-    slot.publish(DeliveredAudio { pts }, &samples);
+    queue.publish(pts, &samples, QUEUE_BYTES);
 }
 
 /// ScreenCaptureKit names no devices, so a caller is told that rather than
@@ -242,10 +247,9 @@ pub(crate) struct SckAudioSource {
     stream: Retained<SCStream>,
     _output: Retained<AudioOutput>,
     _stopped: Retained<StreamStopped>,
-    slot: Arc<AudioSlot>,
+    queue: Arc<AudioQueue>,
     desc: AudioDesc,
     current: Vec<u8>,
-    seen: u64,
     stopped: bool,
 }
 
@@ -275,9 +279,9 @@ impl SckAudioSource {
             )
         };
 
-        let slot = Arc::new(AudioSlot::default());
-        let output = AudioOutput::new(Arc::clone(&slot));
-        let stopped = StreamStopped::new(Arc::clone(&slot) as Arc<dyn Endable>);
+        let queue = Arc::new(AudioQueue::default());
+        let output = AudioOutput::new(Arc::clone(&queue));
+        let stopped = StreamStopped::new(Arc::clone(&queue) as Arc<dyn Endable>);
         let stream = unsafe {
             SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),
@@ -293,7 +297,7 @@ impl SckAudioSource {
         };
         // Serial: buffers must reach the slot in the order the daemon produced
         // them, and a concurrent queue would let two deliveries race the swap.
-        let queue = dispatch2::DispatchQueue::new(
+        let deliveries = dispatch2::DispatchQueue::new(
             "com.capturekit.audio",
             dispatch2::DispatchQueueAttr::SERIAL,
         );
@@ -301,7 +305,7 @@ impl SckAudioSource {
             stream.addStreamOutput_type_sampleHandlerQueue_error(
                 ProtocolObject::from_ref(&*output),
                 kind,
-                Some(&queue),
+                Some(&deliveries),
             )
         }
         .map_err(|error| {
@@ -317,7 +321,7 @@ impl SckAudioSource {
             stream,
             _output: output,
             _stopped: stopped,
-            slot,
+            queue,
             desc: AudioDesc {
                 // What was asked for. The first delivery replaces it with what
                 // the daemon actually produced, which for a microphone is the
@@ -328,7 +332,6 @@ impl SckAudioSource {
                 backend: BACKEND,
             },
             current: Vec::new(),
-            seen: 0,
             stopped: false,
         })
     }
@@ -371,15 +374,15 @@ impl AudioSource for SckAudioSource {
     }
 
     fn next_buffer(&mut self, timeout: Duration) -> Result<RawAudio<'_>> {
-        let meta = self.slot.take(timeout, &mut self.seen, &mut self.current)?;
+        let (pts, lost) = self.queue.take(timeout, &mut self.current)?;
         Ok(RawAudio {
-            pts: meta.pts,
+            pts,
             bytes: &self.current,
             // ScreenCaptureKit taps the mix continuously, so an idle system
-            // delivers real silence rather than nothing. Neither flag has a
-            // source on this platform.
+            // delivers real silence rather than nothing.
             silence: false,
-            discontinuous: false,
+            // Set only when the queue had to refuse samples.
+            discontinuous: lost,
         })
     }
 

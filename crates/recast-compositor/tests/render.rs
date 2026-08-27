@@ -236,7 +236,7 @@ fn close(got: [u8; 4], want: [u8; 4], tolerance: u8) -> bool {
 fn a_solid_background_renders_the_authored_colour() {
     let Some(ctx) = context() else { return };
     let scene = scene_with(r#""padding": 20.0,"#);
-    let out = render(&ctx, &scene, 0.0, false);
+    let out = render(ctx, &scene, 0.0, false);
 
     let corner = out.at(1, 1);
     assert!(
@@ -257,7 +257,7 @@ fn the_source_lands_in_the_video_rect_with_its_colours_intact() {
         },
     );
     let g = ev.geometry();
-    let out = render(&ctx, &scene, 0.0, true);
+    let out = render(ctx, &scene, 0.0, true);
 
     let left = out.at(g.video_x + 2, g.video_y + g.video_h / 4);
     let right = out.at(g.video_x + g.video_w - 3, g.video_y + g.video_h / 4);
@@ -282,8 +282,8 @@ fn a_zoom_moves_the_seam_because_the_shader_samples_a_smaller_window() {
         r#""zoomRegions": [{"start":0.0,"end":10.0,"scale":2.0,"rampIn":0.0,"rampOut":0.0,"centerX":0.25,"centerY":0.5}],"#,
     );
 
-    let plain = render(&ctx, &unzoomed, 5.0, true);
-    let zoom = render(&ctx, &zoomed, 5.0, true);
+    let plain = render(ctx, &unzoomed, 5.0, true);
+    let zoom = render(ctx, &zoomed, 5.0, true);
 
     let row = SRC_H / 4;
     // Centre 0.25 with a half-width window puts the sampled window at u 0..0.5,
@@ -308,7 +308,7 @@ fn a_gradient_background_varies_along_its_angle() {
            "backgroundValue": "linear-gradient(90deg, #ff0000 0%, #0000ff 100%)",
            "padding": 20.0,"#,
     );
-    let out = render(&ctx, &scene, 0.0, false);
+    let out = render(ctx, &scene, 0.0, false);
 
     let left = out.at(1, out.height / 2);
     let right = out.at(out.width - 2, out.height / 2);
@@ -328,7 +328,7 @@ fn a_corner_radius_cuts_the_card_corner_without_touching_its_centre() {
         },
     );
     let g = ev.geometry();
-    let out = render(&ctx, &scene, 0.0, true);
+    let out = render(ctx, &scene, 0.0, true);
 
     let corner = out.at(g.video_x, g.video_y);
     assert!(
@@ -356,7 +356,7 @@ fn a_layer_with_no_decoded_frame_is_skipped_rather_than_drawn_black() {
     let params = ev.evaluate(&scene, 0.0);
     let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
 
-    let mut compositor = Compositor::new(&ctx).expect("compositor");
+    let mut compositor = Compositor::new(ctx).expect("compositor");
     let target = compositor.output_texture(width, height);
     let stats = compositor.render(
         &params,
@@ -368,7 +368,7 @@ fn a_layer_with_no_decoded_frame_is_skipped_rather_than_drawn_black() {
     assert!(stats.layers_skipped > 0);
 
     let out = Rendered {
-        pixels: read_back(&ctx, &target, width, height),
+        pixels: read_back(ctx, &target, width, height),
         width,
         height,
     };
@@ -391,9 +391,9 @@ fn an_unknown_layer_id_in_the_inputs_does_not_draw_anything() {
         },
     );
     let params = ev.evaluate(&scene, 0.0);
-    let mut compositor = Compositor::new(&ctx).expect("compositor");
+    let mut compositor = Compositor::new(ctx).expect("compositor");
     let target = compositor.output_texture(params.geometry.canvas_w, params.geometry.canvas_h);
-    let source = source_texture(&ctx);
+    let source = source_texture(ctx);
     let view = source.create_view(&Default::default());
 
     let mut inputs = FrameInputs::new();
@@ -416,7 +416,7 @@ fn an_unknown_layer_id_in_the_inputs_does_not_draw_anything() {
 fn a_mid_grey_source_survives_the_linear_working_space_unchanged() {
     let Some(ctx) = context() else { return };
     let scene = scene_with("");
-    let out = render(&ctx, &scene, 0.0, true);
+    let out = render(ctx, &scene, 0.0, true);
 
     let grey = out.at(SRC_W / 2, SRC_H * 3 / 4);
     assert!(
@@ -429,7 +429,7 @@ fn a_mid_grey_source_survives_the_linear_working_space_unchanged() {
 fn a_mid_grey_background_survives_the_linear_working_space_unchanged() {
     let Some(ctx) = context() else { return };
     let scene = scene_with(r##""backgroundValue": "#808080", "padding": 20.0,"##);
-    let out = render(&ctx, &scene, 0.0, false);
+    let out = render(ctx, &scene, 0.0, false);
 
     let grey = out.at(1, 1);
     assert!(
@@ -456,8 +456,8 @@ fn a_drop_shadow_darkens_the_padding_below_the_card_and_not_above_it() {
         },
     );
     let g = ev.geometry();
-    let without = render(&ctx, &plain, 0.0, true);
-    let with = render(&ctx, &shadowed, 0.0, true);
+    let without = render(ctx, &plain, 0.0, true);
+    let with = render(ctx, &shadowed, 0.0, true);
 
     let x = g.video_x + g.video_w / 2;
     let below_y = g.video_y + g.video_h + 3;
@@ -494,8 +494,8 @@ fn a_rotated_card_leaves_background_showing_at_the_rect_corner() {
     );
     let g = ev.geometry();
 
-    let settled = render(&ctx, &scene, 5.0, true);
-    let rotating = render(&ctx, &scene, 0.0, true);
+    let settled = render(ctx, &scene, 5.0, true);
+    let rotating = render(ctx, &scene, 0.0, true);
 
     let corner = (g.video_x, g.video_y + 1);
     let settled_px = settled.at(corner.0, corner.1);
@@ -535,15 +535,15 @@ fn dolly_blur_softens_the_frame_during_a_ramp_and_is_inert_during_the_hold() {
             .count()
     };
 
-    let ramp_blurred = mixed(&render(&ctx, &blurred, 0.1, true));
-    let ramp_sharp = mixed(&render(&ctx, &sharp, 0.1, true));
+    let ramp_blurred = mixed(&render(ctx, &blurred, 0.1, true));
+    let ramp_sharp = mixed(&render(ctx, &sharp, 0.1, true));
     assert!(
         ramp_blurred > ramp_sharp,
         "mid-ramp: blurred {ramp_blurred} mixed px, sharp {ramp_sharp}"
     );
 
-    let hold_blurred = mixed(&render(&ctx, &blurred, 5.0, true));
-    let hold_sharp = mixed(&render(&ctx, &sharp, 5.0, true));
+    let hold_blurred = mixed(&render(ctx, &blurred, 5.0, true));
+    let hold_sharp = mixed(&render(ctx, &sharp, 5.0, true));
     assert_eq!(
         hold_blurred, hold_sharp,
         "the blur fired on a held zoom, which is not moving"
@@ -558,7 +558,7 @@ fn a_rect_annotation_fills_its_uv_box_and_leaves_the_rest_alone() {
              "fill":"#ff00ff","stroke":{"width":0.0,"color":"transparent"},
              "kind":{"kind":"rect","x":0.25,"y":0.25,"w":0.5,"h":0.5}}],"##,
     );
-    let out = render(&ctx, &scene, 5.0, true);
+    let out = render(ctx, &scene, 5.0, true);
 
     let inside = out.at(SRC_W / 2, SRC_H / 2);
     assert!(
@@ -580,8 +580,8 @@ fn a_blur_annotation_mixes_the_pixels_underneath_it() {
     // Over the red|green seam, in the top band where neither side has any blue.
     const BLUR: &str = r##""annotations": [{"id":"b1","start":0.0,"end":10.0,
          "kind":{"kind":"blur","x":0.25,"y":0.0,"w":0.5,"h":0.5,"strength":0.6}}],"##;
-    let sharp = render(&ctx, &scene_with(""), 5.0, true);
-    let blurred = render(&ctx, &scene_with(BLUR), 5.0, true);
+    let sharp = render(ctx, &scene_with(""), 5.0, true);
+    let blurred = render(ctx, &scene_with(BLUR), 5.0, true);
 
     // One pixel left of the seam: pure red until green bleeds across.
     let (x, y) = (SRC_W / 2 - 1, SRC_H / 4);
@@ -602,8 +602,8 @@ fn a_blur_annotation_leaves_everything_outside_its_rect_sharp() {
     let Some(ctx) = context() else { return };
     const BLUR: &str = r##""annotations": [{"id":"b1","start":0.0,"end":10.0,
          "kind":{"kind":"blur","x":0.25,"y":0.0,"w":0.5,"h":0.5,"strength":1.0}}],"##;
-    let sharp = render(&ctx, &scene_with(""), 5.0, true);
-    let blurred = render(&ctx, &scene_with(BLUR), 5.0, true);
+    let sharp = render(ctx, &scene_with(""), 5.0, true);
+    let blurred = render(ctx, &scene_with(BLUR), 5.0, true);
 
     let (x, y) = (2, SRC_H / 4);
     assert_eq!(
@@ -631,8 +631,8 @@ fn a_blur_takes_in_what_was_drawn_before_it_and_not_after() {
     };
     // Three pixels right of the mark's edge, inside the blur rect.
     let (x, y) = (SRC_W / 2 + 3, SRC_H / 4);
-    let under = render(&ctx, &scene(1), 5.0, true).at(x, y);
-    let over = render(&ctx, &scene(9), 5.0, true).at(x, y);
+    let under = render(ctx, &scene(1), 5.0, true).at(x, y);
+    let over = render(ctx, &scene(9), 5.0, true).at(x, y);
 
     assert!(
         under[2] > 20,
@@ -650,7 +650,7 @@ fn a_white_blur_variant_washes_the_region_out() {
     const BLUR: &str = r##""annotations": [{"id":"b1","start":0.0,"end":10.0,
          "kind":{"kind":"blur","x":0.25,"y":0.0,"w":0.5,"h":0.5,
                  "strength":1.0,"variant":"white"}}],"##;
-    let out = render(&ctx, &scene_with(BLUR), 5.0, true);
+    let out = render(ctx, &scene_with(BLUR), 5.0, true);
     let (x, y) = (SRC_W / 2 - 4, SRC_H / 4);
     let px = out.at(x, y);
     assert!(
@@ -721,8 +721,8 @@ const IMAGE_ANNOTATION: &str = r##""annotations": [{"id":"i1","start":0.0,"end":
 fn an_image_annotation_fills_its_rect_from_the_uploaded_asset() {
     let Some(ctx) = context() else { return };
     let scene = scene_with(IMAGE_ANNOTATION);
-    let image = image_texture(&ctx, 8, 8);
-    let out = render_with_annotation_image(&ctx, &scene, Some(&image));
+    let image = image_texture(ctx, 8, 8);
+    let out = render_with_annotation_image(ctx, &scene, Some(&image));
 
     let inside = out.at(SRC_W / 2, SRC_H / 2);
     assert!(
@@ -742,8 +742,8 @@ fn an_image_annotation_fills_its_rect_from_the_uploaded_asset() {
 fn an_image_annotation_whose_asset_is_not_uploaded_yet_draws_nothing() {
     let Some(ctx) = context() else { return };
     let scene = scene_with(IMAGE_ANNOTATION);
-    let bare = render_with_annotation_image(&ctx, &scene_with(""), None);
-    let pending = render_with_annotation_image(&ctx, &scene, None);
+    let bare = render_with_annotation_image(ctx, &scene_with(""), None);
+    let pending = render_with_annotation_image(ctx, &scene, None);
     assert_eq!(
         bare.at(SRC_W / 2, SRC_H / 2),
         pending.at(SRC_W / 2, SRC_H / 2)
@@ -758,14 +758,14 @@ fn an_image_annotations_own_opacity_fades_it() {
              "kind":{"kind":"image","x":0.25,"y":0.25,"w":0.5,"h":0.5,
                      "path":"asset.png","opacity":0.5}}],"##,
     );
-    let image = image_texture(&ctx, 8, 8);
+    let image = image_texture(ctx, 8, 8);
     let (x, y) = (SRC_W / 2, SRC_H / 2);
     // Blue rises from the frame's own value to the asset's magenta, so a half
     // opacity has to land strictly between the two.
-    let none = render_with_annotation_image(&ctx, &scene_with(""), None).at(x, y)[2];
+    let none = render_with_annotation_image(ctx, &scene_with(""), None).at(x, y)[2];
     let full =
-        render_with_annotation_image(&ctx, &scene_with(IMAGE_ANNOTATION), Some(&image)).at(x, y)[2];
-    let mid = render_with_annotation_image(&ctx, &half, Some(&image)).at(x, y)[2];
+        render_with_annotation_image(ctx, &scene_with(IMAGE_ANNOTATION), Some(&image)).at(x, y)[2];
+    let mid = render_with_annotation_image(ctx, &half, Some(&image)).at(x, y)[2];
     assert!(full > none + 20, "the fixture must change the pixel at all");
     assert!(
         mid > none + 5 && mid < full - 5,
@@ -781,8 +781,8 @@ fn an_annotation_outside_its_time_window_draws_nothing() {
              "fill":"#ff00ff","stroke":{"width":0.0,"color":"transparent"},
              "kind":{"kind":"rect","x":0.25,"y":0.25,"w":0.5,"h":0.5}}],"##,
     );
-    let before = render(&ctx, &scene, 1.0, true);
-    let during = render(&ctx, &scene, 7.0, true);
+    let before = render(ctx, &scene, 1.0, true);
+    let during = render(ctx, &scene, 7.0, true);
 
     let x = SRC_W / 2;
     let y = SRC_H / 2;
@@ -802,7 +802,7 @@ fn z_order_decides_which_overlapping_annotation_is_on_top() {
               "fill":"#00ffff","stroke":{"width":0.0,"color":"transparent"},
               "kind":{"kind":"rect","x":0.2,"y":0.2,"w":0.6,"h":0.6}}],"##,
     );
-    let out = render(&ctx, &scene, 5.0, true);
+    let out = render(ctx, &scene, 5.0, true);
     let centre = out.at(SRC_W / 2, SRC_H / 2);
     assert!(
         close(centre, [255, 0, 255, 255], 3),
@@ -822,8 +822,8 @@ fn a_frame_anchored_annotation_stays_put_while_a_video_anchored_one_rides_the_zo
                  "kind":{{"kind":"rect","x":0.4,"y":0.4,"w":0.2,"h":0.2}}}}],"##
         ))
     };
-    let frame = render(&ctx, &make("frame"), 5.0, true);
-    let video = render(&ctx, &make("video"), 5.0, true);
+    let frame = render(ctx, &make("frame"), 5.0, true);
+    let video = render(ctx, &make("video"), 5.0, true);
 
     let count = |img: &Rendered| {
         (0..img.width * img.height)
@@ -911,14 +911,14 @@ fn a_wide_camera_feed_is_cropped_into_the_bubble_rather_than_squashed() {
     let Some(ctx) = context() else { return };
     let scene = camera_scene(r#""mirror": false,"#);
     assert_eq!(
-        bubble_bands(&render_with_camera(&ctx, &scene, 32, 32)),
+        bubble_bands(&render_with_camera(ctx, &scene, 32, 32)),
         CAM_BANDS,
         "a square feed should land band for band"
     );
     // Twice as wide: a centre crop keeps the middle half, so only the two inner
     // bands survive and each covers half the bubble. A stretch would show all
     // four.
-    let wide = bubble_bands(&render_with_camera(&ctx, &scene, 64, 32));
+    let wide = bubble_bands(&render_with_camera(ctx, &scene, 64, 32));
     assert_eq!(
         wide,
         [CAM_BANDS[1], CAM_BANDS[1], CAM_BANDS[2], CAM_BANDS[2]],
@@ -931,7 +931,7 @@ fn a_wide_camera_feed_is_cropped_into_the_bubble_rather_than_squashed() {
 #[test]
 fn a_tall_camera_feed_crops_its_height_and_keeps_every_band() {
     let Some(ctx) = context() else { return };
-    let tall = render_with_camera(&ctx, &camera_scene(r#""mirror": false,"#), 32, 64);
+    let tall = render_with_camera(ctx, &camera_scene(r#""mirror": false,"#), 32, 64);
     assert_eq!(bubble_bands(&tall), CAM_BANDS);
 }
 
@@ -943,7 +943,7 @@ fn a_tall_camera_feed_crops_its_height_and_keeps_every_band() {
 fn the_mirror_setting_flips_the_camera_horizontally() {
     let Some(ctx) = context() else { return };
     let mirrored = bubble_bands(&render_with_camera(
-        &ctx,
+        ctx,
         &camera_scene(r#""mirror": true,"#),
         32,
         32,
@@ -1021,7 +1021,7 @@ fn an_enabled_camera_bubble_draws_over_the_card_and_a_disabled_one_does_not() {
 
     // The bubble shares the screen layer's source here, so it must at least
     // paint SOMETHING inside its rect rather than leaving the card showing.
-    let _ = render(&ctx, &with_camera, 5.0, true);
+    let _ = render(ctx, &with_camera, 5.0, true);
 }
 
 #[test]
@@ -1140,8 +1140,8 @@ fn a_wider_than_canvas_background_is_cropped_not_stretched() {
         2 => [0, 0, 255, 255],
         _ => [255, 255, 255, 255],
     };
-    let image = banded_image(&ctx, SRC_W * 2, SRC_H, quarters);
-    let out = render_background(&ctx, &wallpaper(0.0), Some((&image, SRC_W * 2, SRC_H)));
+    let image = banded_image(ctx, SRC_W * 2, SRC_H, quarters);
+    let out = render_background(ctx, &wallpaper(0.0), Some((&image, SRC_W * 2, SRC_H)));
 
     let left = out.at(2, out.height / 2);
     assert!(
@@ -1162,8 +1162,8 @@ fn a_background_image_with_no_blur_keeps_its_edge_sharp() {
         true => [255, 0, 0, 255],
         false => [0, 0, 255, 255],
     };
-    let image = banded_image(&ctx, SRC_W, SRC_H, edge);
-    let out = render_background(&ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
+    let image = banded_image(ctx, SRC_W, SRC_H, edge);
+    let out = render_background(ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
 
     let mid = out.height / 2;
     assert!(close(out.at(SRC_W / 2 - 3, mid), [255, 0, 0, 255], 3));
@@ -1177,9 +1177,9 @@ fn background_blur_softens_the_edge_it_is_pointed_at() {
         true => [255, 0, 0, 255],
         false => [0, 0, 255, 255],
     };
-    let image = banded_image(&ctx, SRC_W, SRC_H, edge);
-    let sharp = render_background(&ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
-    let soft = render_background(&ctx, &wallpaper(20.0), Some((&image, SRC_W, SRC_H)));
+    let image = banded_image(ctx, SRC_W, SRC_H, edge);
+    let sharp = render_background(ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
+    let soft = render_background(ctx, &wallpaper(20.0), Some((&image, SRC_W, SRC_H)));
 
     let mid = sharp.height / 2;
     let x = SRC_W / 2 - 3;
@@ -1204,9 +1204,9 @@ fn blurring_a_background_does_not_change_its_overall_brightness() {
         true => [200, 60, 30, 255],
         false => [30, 60, 200, 255],
     };
-    let image = banded_image(&ctx, SRC_W, SRC_H, edge);
-    let sharp = render_background(&ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
-    let soft = render_background(&ctx, &wallpaper(60.0), Some((&image, SRC_W, SRC_H)));
+    let image = banded_image(ctx, SRC_W, SRC_H, edge);
+    let sharp = render_background(ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
+    let soft = render_background(ctx, &wallpaper(60.0), Some((&image, SRC_W, SRC_H)));
 
     // Averaged in linear light, because that is where the blur happens. The
     // sRGB-encoded mean legitimately rises when a dark and a bright pixel are
@@ -1234,7 +1234,7 @@ fn blurring_a_background_does_not_change_its_overall_brightness() {
 #[test]
 fn blur_on_a_solid_background_is_a_no_op() {
     let Some(ctx) = context() else { return };
-    let out = render_background(&ctx, &scene_with(r#""backgroundBlur": 100.0,"#), None);
+    let out = render_background(ctx, &scene_with(r#""backgroundBlur": 100.0,"#), None);
     let corner = out.at(1, 1);
     assert!(close(corner, [0, 0, 255, 255], 2), "corner was {corner:?}");
 }
@@ -1243,7 +1243,7 @@ fn blur_on_a_solid_background_is_a_no_op() {
 #[test]
 fn a_wallpaper_background_with_no_image_yet_renders_the_fallback_grey() {
     let Some(ctx) = context() else { return };
-    let out = render_background(&ctx, &wallpaper(0.0), None);
+    let out = render_background(ctx, &wallpaper(0.0), None);
     let corner = out.at(1, 1);
     assert!(close(corner, [17, 17, 17, 255], 3), "corner was {corner:?}");
 }
@@ -1312,7 +1312,7 @@ const CURSOR_AT: (u32, u32) = (SRC_W / 4, SRC_H * 3 / 4);
 fn the_dot_cursor_is_drawn_where_the_track_says_it_is() {
     let Some(ctx) = context() else { return };
     let out = render_cursor(
-        &ctx,
+        ctx,
         &cursor_scene(r#""cursorHighlightClicks": false,"#),
         None,
     );
@@ -1332,11 +1332,11 @@ fn the_dot_cursor_is_drawn_where_the_track_says_it_is() {
 fn a_disabled_cursor_layer_leaves_the_frame_alone() {
     let Some(ctx) = context() else { return };
     let with_cursor = render_cursor(
-        &ctx,
+        ctx,
         &cursor_scene(r#""cursorHighlightClicks": false,"#),
         None,
     );
-    let without = render_cursor(&ctx, &scene_with(r#""cursorEnabled": false,"#), None);
+    let without = render_cursor(ctx, &scene_with(r#""cursorEnabled": false,"#), None);
     assert_ne!(
         with_cursor.at(CURSOR_AT.0, CURSOR_AT.1),
         without.at(CURSOR_AT.0, CURSOR_AT.1)
@@ -1348,10 +1348,10 @@ fn a_disabled_cursor_layer_leaves_the_frame_alone() {
 #[test]
 fn an_uploaded_sprite_replaces_the_dot() {
     let Some(ctx) = context() else { return };
-    let sprite = banded_image(&ctx, 16, 16, |_| [255, 0, 255, 255]);
+    let sprite = banded_image(ctx, 16, 16, |_| [255, 0, 255, 255]);
     let scene = cursor_scene(r#""cursorHighlightClicks": false,"#);
-    let dot = render_cursor(&ctx, &scene, None);
-    let drawn = render_cursor(&ctx, &scene, Some(&sprite));
+    let dot = render_cursor(ctx, &scene, None);
+    let drawn = render_cursor(ctx, &scene, Some(&sprite));
 
     let on = drawn.at(CURSOR_AT.0, CURSOR_AT.1);
     assert!(close(on, [255, 0, 255, 255], 6), "sprite pixel was {on:?}");
@@ -1363,7 +1363,7 @@ fn an_uploaded_sprite_replaces_the_dot() {
 #[test]
 fn the_hotspot_decides_where_the_sprite_sits() {
     let Some(ctx) = context() else { return };
-    let sprite = banded_image(&ctx, 16, 16, |_| [255, 0, 255, 255]);
+    let sprite = banded_image(ctx, 16, 16, |_| [255, 0, 255, 255]);
     let scene = cursor_scene(r#""cursorHighlightClicks": false,"#);
 
     let ev = Evaluator::new(
@@ -1378,7 +1378,7 @@ fn the_hotspot_decides_where_the_sprite_sits() {
     let view = sprite.create_view(&Default::default());
 
     let render_with = |hotspot: [f32; 2]| {
-        let mut compositor = Compositor::new(&ctx).expect("compositor");
+        let mut compositor = Compositor::new(ctx).expect("compositor");
         let target = compositor.output_texture(width, height);
         let mut inputs = FrameInputs::new();
         inputs.set_cursor_sprite(
@@ -1390,7 +1390,7 @@ fn the_hotspot_decides_where_the_sprite_sits() {
         );
         compositor.render(&params, &inputs, &target.create_view(&Default::default()));
         Rendered {
-            pixels: read_back(&ctx, &target, width, height),
+            pixels: read_back(ctx, &target, width, height),
             width,
             height,
         }
@@ -1410,11 +1410,11 @@ fn the_hotspot_decides_where_the_sprite_sits() {
 #[test]
 fn a_transparent_sprite_does_not_erase_what_is_under_it() {
     let Some(ctx) = context() else { return };
-    let clear = banded_image(&ctx, 16, 16, |_| [0, 0, 0, 0]);
+    let clear = banded_image(ctx, 16, 16, |_| [0, 0, 0, 0]);
     let scene = cursor_scene(r#""cursorEnabled": false,"#);
-    let bare = render_cursor(&ctx, &scene, None);
+    let bare = render_cursor(ctx, &scene, None);
     let scene = cursor_scene(r#""cursorHighlightClicks": false,"#);
-    let over = render_cursor(&ctx, &scene, Some(&clear));
+    let over = render_cursor(ctx, &scene, Some(&clear));
 
     assert!(
         close(
@@ -1449,8 +1449,8 @@ fn presenting_into_a_smaller_target_scales_rather_than_cropping() {
     let (comp_w, comp_h) = (params.geometry.canvas_w, params.geometry.canvas_h);
     assert!(comp_w > SRC_W, "the fixture must actually pad");
 
-    let mut compositor = Compositor::new(&ctx).expect("compositor");
-    let source = source_texture(&ctx);
+    let mut compositor = Compositor::new(ctx).expect("compositor");
+    let source = source_texture(ctx);
     let source_view = source.create_view(&Default::default());
     let screen = scene
         .layers
@@ -1471,7 +1471,7 @@ fn presenting_into_a_smaller_target_scales_rather_than_cropping() {
     let target = compositor.output_texture(out_w, out_h);
     compositor.render(&params, &inputs, &target.create_view(&Default::default()));
     let out = Rendered {
-        pixels: read_back(&ctx, &target, out_w, out_h),
+        pixels: read_back(ctx, &target, out_w, out_h),
         width: out_w,
         height: out_h,
     };
@@ -1596,9 +1596,9 @@ fn a_glyph_quad_paints_inside_its_rect_and_nowhere_else() {
     // stand in for the assertions below.
     let g = packed_glyph(&mut atlas, &face, "M", 20.0);
 
-    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+    let blank = render_with_text(ctx, &scene, &mut atlas, Vec::new(), true);
     let quad = glyph_quad(&atlas, g, 4.0, 4.0, [1.0, 1.0, 1.0, 1.0]);
-    let drawn = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+    let drawn = render_with_text(ctx, &scene, &mut atlas, vec![quad], true);
     assert!(4 + g.width < blank.width && 4 + g.height < blank.height);
 
     let changed = changed_pixels(&blank, &drawn);
@@ -1627,13 +1627,13 @@ fn the_uv_decides_which_glyph_in_the_atlas_is_drawn() {
     let wide = packed_glyph(&mut atlas, &face, "M", 40.0);
     let narrow = packed_glyph(&mut atlas, &face, "l", 40.0);
     assert_ne!((wide.x, wide.y), (narrow.x, narrow.y));
-    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+    let blank = render_with_text(ctx, &scene, &mut atlas, Vec::new(), true);
 
     // The same rect for both, so only the uv differs.
     let mut at = |g: recast_text::AtlasGlyph| {
         let mut quad = glyph_quad(&atlas, g, 20.0, 20.0, [1.0, 1.0, 1.0, 1.0]);
         quad.rect = [20.0, 20.0, wide.width as f32, wide.height as f32];
-        let out = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+        let out = render_with_text(ctx, &scene, &mut atlas, vec![quad], true);
         changed_pixels(&blank, &out)
     };
     assert_ne!(at(wide), at(narrow));
@@ -1646,18 +1646,18 @@ fn moving_the_quad_moves_the_ink() {
     let scene = scene_with("");
     let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
     let g = packed_glyph(&mut atlas, &face, "M", 40.0);
-    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+    let blank = render_with_text(ctx, &scene, &mut atlas, Vec::new(), true);
 
     let far = (blank.width - g.width - 1) as f32;
     let left = glyph_quad(&atlas, g, 1.0, 1.0, [1.0, 1.0, 1.0, 1.0]);
     let right = glyph_quad(&atlas, g, far, 1.0, [1.0, 1.0, 1.0, 1.0]);
     let a = changed_pixels(
         &blank,
-        &render_with_text(&ctx, &scene, &mut atlas, vec![left], true),
+        &render_with_text(ctx, &scene, &mut atlas, vec![left], true),
     );
     let b = changed_pixels(
         &blank,
-        &render_with_text(&ctx, &scene, &mut atlas, vec![right], true),
+        &render_with_text(ctx, &scene, &mut atlas, vec![right], true),
     );
 
     assert!(!a.is_empty() && !b.is_empty());
@@ -1678,10 +1678,10 @@ fn the_quad_colour_tints_the_glyph() {
     let scene = scene_with("");
     let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
     let g = packed_glyph(&mut atlas, &face, "M", 60.0);
-    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+    let blank = render_with_text(ctx, &scene, &mut atlas, Vec::new(), true);
 
     let quad = glyph_quad(&atlas, g, 20.0, 20.0, [1.0, 0.0, 0.0, 1.0]);
-    let drawn = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+    let drawn = render_with_text(ctx, &scene, &mut atlas, vec![quad], true);
     let reddest = changed_pixels(&blank, &drawn)
         .into_iter()
         .map(|(x, y)| drawn.at(x, y))
@@ -1701,11 +1701,11 @@ fn the_quad_alpha_fades_the_glyph() {
     let scene = scene_with("");
     let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
     let g = packed_glyph(&mut atlas, &face, "M", 60.0);
-    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+    let blank = render_with_text(ctx, &scene, &mut atlas, Vec::new(), true);
 
     let mut ink = |alpha: f32| {
         let quad = glyph_quad(&atlas, g, 20.0, 20.0, [1.0, 1.0, 1.0, alpha]);
-        let out = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+        let out = render_with_text(ctx, &scene, &mut atlas, vec![quad], true);
         changed_pixels(&blank, &out)
             .into_iter()
             .map(|(x, y)| out.at(x, y)[0] as u32)
@@ -1729,8 +1729,8 @@ fn glyphs_draw_nothing_until_the_atlas_is_uploaded() {
     let g = packed_glyph(&mut atlas, &face, "M", 40.0);
     let quad = glyph_quad(&atlas, g, 20.0, 20.0, [1.0, 1.0, 1.0, 1.0]);
 
-    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
-    let unsynced = render_with_text(&ctx, &scene, &mut atlas, vec![quad], false);
+    let blank = render_with_text(ctx, &scene, &mut atlas, Vec::new(), true);
+    let unsynced = render_with_text(ctx, &scene, &mut atlas, vec![quad], false);
     assert!(changed_pixels(&blank, &unsynced).is_empty());
 }
 
@@ -1743,7 +1743,7 @@ fn a_glyph_packed_after_the_atlas_grew_still_reaches_the_gpu() {
     let scene = scene_with("");
     let mut atlas = recast_text::GlyphAtlas::new(256, 2048);
     let mut last = packed_glyph(&mut atlas, &face, "M", 30.0);
-    let blank = render_with_text(&ctx, &scene, &mut atlas, Vec::new(), true);
+    let blank = render_with_text(ctx, &scene, &mut atlas, Vec::new(), true);
 
     let (_, before) = atlas.size();
     for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars() {
@@ -1753,7 +1753,7 @@ fn a_glyph_packed_after_the_atlas_grew_still_reaches_the_gpu() {
     assert!(after > before, "the atlas never grew");
 
     let quad = glyph_quad(&atlas, last, 10.0, 10.0, [1.0, 1.0, 1.0, 1.0]);
-    let drawn = render_with_text(&ctx, &scene, &mut atlas, vec![quad], true);
+    let drawn = render_with_text(ctx, &scene, &mut atlas, vec![quad], true);
     assert!(
         changed_pixels(&blank, &drawn).len() > 50,
         "the glyph packed after the growth did not reach the GPU"
@@ -1783,7 +1783,7 @@ fn a_caption_on_the_scene_reaches_the_frame() {
     },"##;
 
     let mut session = recast_compositor::Session::new(
-        &ctx,
+        ctx,
         scene_with(style),
         SourceGeometry {
             width: SRC_W,
@@ -1796,7 +1796,7 @@ fn a_caption_on_the_scene_reaches_the_frame() {
         let (texture, _) = session.render_to_texture(1.0, &FrameInputs::new());
         let size = session.output_size();
         Rendered {
-            pixels: read_back(&ctx, &texture, size.width, size.height),
+            pixels: read_back(ctx, &texture, size.width, size.height),
             width: size.width,
             height: size.height,
         }
@@ -1813,7 +1813,7 @@ fn a_caption_on_the_scene_reaches_the_frame() {
         let (texture, _) = session.render_to_texture(1.0, &inputs);
         let size = session.output_size();
         Rendered {
-            pixels: read_back(&ctx, &texture, size.width, size.height),
+            pixels: read_back(ctx, &texture, size.width, size.height),
             width: size.width,
             height: size.height,
         }

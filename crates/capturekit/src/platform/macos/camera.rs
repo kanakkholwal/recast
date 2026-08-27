@@ -147,7 +147,10 @@ fn device_by_id(id: &CameraId) -> Result<Retained<AVCaptureDevice>> {
     discover()
         .iter()
         .find(|device| unsafe { device.uniqueID() }.to_string() == id.0)
-        .ok_or_else(|| CaptureError::CameraNotFound(id.0.clone()))
+        .ok_or_else(|| CaptureError::NotFoundNamed {
+            kind: "camera",
+            id: id.0.clone(),
+        })
 }
 
 /// Pin the device to the mode closest to `size` without exceeding it.

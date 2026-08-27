@@ -16,15 +16,6 @@ pub(crate) struct Delivered {
     pub height: u32,
 }
 
-/// What an audio delivery published alongside the samples.
-///
-/// macOS and PipeWire push audio; WASAPI is polled, so Windows never builds one.
-#[cfg(any(target_os = "macos", all(target_os = "linux", feature = "wayland")))]
-#[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct DeliveredAudio {
-    pub pts: Timestamp,
-}
-
 #[derive(Default)]
 struct Held<M> {
     meta: M,
@@ -55,9 +46,6 @@ pub(crate) struct Slot<M> {
 
 /// Frames from a compositor or a camera.
 pub(crate) type FrameSlot = Slot<Delivered>;
-/// Samples from a system-audio or microphone stream.
-#[cfg(any(target_os = "macos", all(target_os = "linux", feature = "wayland")))]
-pub(crate) type AudioSlot = Slot<DeliveredAudio>;
 
 impl<M: Copy + Default> Slot<M> {
     /// Publish a buffer and wake the consumer. Never blocks on the consumer.
@@ -118,6 +106,129 @@ impl<M: Copy + Default> Slot<M> {
     }
 }
 
+/// A push backend's audio handoff.
+///
+/// **Accumulates rather than keeping only the newest.** A dropped video frame is
+/// a repeated picture; a dropped audio buffer is a hole in the recording that
+/// nothing downstream can reconstruct, and every sample after it lands early.
+///
+/// Samples are kept in contiguous runs. A run ends where samples had to be
+/// refused, so the hole is reported on the run that FOLLOWS it rather than on
+/// the one before, and nothing is ever spliced across a gap.
+#[cfg(any(
+    target_os = "macos",
+    all(target_os = "linux", feature = "pipewire-audio")
+))]
+#[derive(Default)]
+pub(crate) struct AudioQueue {
+    queued: Mutex<Queued>,
+    arrived: Condvar,
+    ended: AtomicBool,
+}
+
+/// One contiguous run of samples.
+#[cfg(any(
+    target_os = "macos",
+    all(target_os = "linux", feature = "pipewire-audio")
+))]
+struct Run {
+    bytes: Vec<u8>,
+    /// When the first sample in this run was captured.
+    pts: Timestamp,
+    /// Whether samples are missing between the previous run and this one.
+    broken: bool,
+}
+
+#[cfg(any(
+    target_os = "macos",
+    all(target_os = "linux", feature = "pipewire-audio")
+))]
+#[derive(Default)]
+struct Queued {
+    runs: std::collections::VecDeque<Run>,
+    total: usize,
+    /// Samples were refused, so whatever arrives next begins a new run.
+    broke: bool,
+}
+
+#[cfg(any(
+    target_os = "macos",
+    all(target_os = "linux", feature = "pipewire-audio")
+))]
+impl AudioQueue {
+    /// Queue samples captured at `pts` and wake the consumer.
+    ///
+    /// Never blocks the delivery thread: a consumer stalled past `capacity`
+    /// costs the samples that do not fit, and the next run says so.
+    pub(crate) fn publish(&self, pts: Timestamp, bytes: &[u8], capacity: usize) {
+        let Ok(mut queued) = self.queued.lock() else {
+            return;
+        };
+        if queued.total.saturating_add(bytes.len()) > capacity {
+            // Refusing the new samples rather than evicting the old keeps what
+            // is already queued intact; the caller asked for those first.
+            queued.broke = true;
+            return;
+        }
+        queued.total += bytes.len();
+        // A run that a refusal has already ended cannot take more samples:
+        // appending would splice them onto the far side of the hole.
+        let continues = !queued.broke && !queued.runs.is_empty();
+        if continues {
+            if let Some(run) = queued.runs.back_mut() {
+                run.bytes.extend_from_slice(bytes);
+            }
+        } else {
+            let broken = core::mem::take(&mut queued.broke);
+            queued.runs.push_back(Run {
+                bytes: bytes.to_vec(),
+                pts,
+                broken,
+            });
+        }
+        self.arrived.notify_all();
+    }
+
+    /// Report that no further samples will arrive, and wake whoever is waiting.
+    pub(crate) fn end(&self) {
+        self.ended.store(true, Ordering::Release);
+        self.arrived.notify_all();
+    }
+
+    /// Wait for samples, swapping the oldest contiguous run into `buffer`.
+    ///
+    /// The bool is whether samples are missing between the previous run and this
+    /// one. Runs already queued are delivered even after [`AudioQueue::end`]: a
+    /// stream that ends still owes what it captured.
+    pub(crate) fn take(
+        &self,
+        timeout: Duration,
+        buffer: &mut Vec<u8>,
+    ) -> Result<(Timestamp, bool)> {
+        buffer.clear();
+        let mut queued = self.queued.lock().map_err(|_| lost())?;
+        while queued.runs.is_empty() {
+            if self.ended.load(Ordering::Acquire) {
+                return Err(lost());
+            }
+            let (next, waited) = self
+                .arrived
+                .wait_timeout(queued, timeout)
+                .map_err(|_| lost())?;
+            queued = next;
+            if waited.timed_out() && queued.runs.is_empty() {
+                return Err(CaptureError::Timeout(timeout));
+            }
+        }
+        let Some(run) = queued.runs.pop_front() else {
+            return Err(CaptureError::Timeout(timeout));
+        };
+        queued.total = queued.total.saturating_sub(run.bytes.len());
+        *buffer = run.bytes;
+        Ok((run.pts, run.broken))
+    }
+}
+
 /// A slot that can be told its source stopped, whatever it carries.
 ///
 /// One end-of-stream delegate then serves the video and audio slots alike,
@@ -129,6 +240,13 @@ pub(crate) trait Endable: Send + Sync {
 
 #[cfg(target_os = "macos")]
 impl<M: Copy + Default + Send> Endable for Slot<M> {
+    fn end(&self) {
+        Self::end(self);
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Endable for AudioQueue {
     fn end(&self) {
         Self::end(self);
     }
@@ -293,5 +411,126 @@ mod tests {
             recycled,
             "the same buffer came back, so nothing was swapped"
         );
+    }
+}
+
+#[cfg(all(
+    test,
+    any(
+        target_os = "macos",
+        all(target_os = "linux", feature = "pipewire-audio")
+    )
+))]
+mod audio_queue_tests {
+    use super::*;
+
+    const ROOM: usize = 64;
+
+    fn at(nanos: i64) -> Timestamp {
+        Timestamp::from_nanos(nanos)
+    }
+
+    #[test]
+    fn samples_accumulate_rather_than_the_newest_winning() {
+        let queue = AudioQueue::default();
+        queue.publish(at(0), &[1, 2], ROOM);
+        queue.publish(at(10), &[3, 4], ROOM);
+        let mut out = Vec::new();
+        let (pts, broken) = queue
+            .take(Duration::from_millis(50), &mut out)
+            .expect("both buffers");
+        assert_eq!(out, vec![1, 2, 3, 4], "samples were dropped");
+        assert_eq!(pts, at(0), "the run starts at its first sample");
+        assert!(!broken);
+    }
+
+    /// The bug this shape exists to prevent: the flag marking a hole was
+    /// attached to the run BEFORE it, so a consumer saw an undeclared jump.
+    #[test]
+    fn a_hole_is_reported_on_the_run_after_it_not_the_one_before() {
+        let queue = AudioQueue::default();
+        queue.publish(at(0), &[1, 2], ROOM);
+        // Refused: too big for what is left.
+        queue.publish(at(10), &[9; ROOM], ROOM);
+        queue.publish(at(99), &[7, 8], ROOM);
+
+        let mut out = Vec::new();
+        let (pts, broken) = queue
+            .take(Duration::from_millis(50), &mut out)
+            .expect("the run before the hole");
+        assert_eq!(out, vec![1, 2]);
+        assert_eq!(pts, at(0));
+        assert!(!broken, "the run before a hole is not the broken one");
+
+        let (pts, broken) = queue
+            .take(Duration::from_millis(50), &mut out)
+            .expect("the run after the hole");
+        assert_eq!(out, vec![7, 8]);
+        assert_eq!(pts, at(99));
+        assert!(broken, "the hole was never declared");
+    }
+
+    /// Appending across a refusal would splice samples from the far side of a
+    /// hole onto the near side, which reads as one continuous run that is not.
+    #[test]
+    fn samples_after_a_refusal_never_join_the_run_before_it() {
+        let queue = AudioQueue::default();
+        queue.publish(at(0), &[1], ROOM);
+        queue.publish(at(5), &[9; ROOM], ROOM);
+        queue.publish(at(50), &[2], ROOM);
+        let mut out = Vec::new();
+        queue
+            .take(Duration::from_millis(50), &mut out)
+            .expect("the first run");
+        assert_eq!(
+            out,
+            vec![1],
+            "the run swallowed samples from after the hole"
+        );
+    }
+
+    #[test]
+    fn a_refusal_frees_up_again_once_the_consumer_drains() {
+        let queue = AudioQueue::default();
+        queue.publish(at(0), &[1; ROOM], ROOM);
+        queue.publish(at(10), &[2], ROOM);
+        let mut out = Vec::new();
+        queue
+            .take(Duration::from_millis(50), &mut out)
+            .expect("the full run");
+        assert_eq!(out.len(), ROOM);
+        queue.publish(at(20), &[3], ROOM);
+        let (_, broken) = queue
+            .take(Duration::from_millis(50), &mut out)
+            .expect("room again");
+        assert_eq!(out, vec![3]);
+        assert!(broken, "the refusal while full was never declared");
+    }
+
+    #[test]
+    fn an_empty_queue_times_out_rather_than_returning_nothing() {
+        let queue = AudioQueue::default();
+        let mut out = Vec::new();
+        let err = queue
+            .take(Duration::from_millis(10), &mut out)
+            .expect_err("nothing was published");
+        assert!(matches!(err, CaptureError::Timeout(_)), "{err}");
+    }
+
+    #[test]
+    fn samples_queued_before_the_end_are_still_delivered() {
+        let queue = AudioQueue::default();
+        queue.publish(at(3), &[5, 6], ROOM);
+        queue.end();
+        let mut out = Vec::new();
+        let (pts, _) = queue
+            .take(Duration::from_millis(50), &mut out)
+            .expect("the stream still owes these");
+        assert_eq!(out, vec![5, 6]);
+        assert_eq!(pts, at(3));
+        let err = queue
+            .take(Duration::from_millis(10), &mut out)
+            .expect_err("and nothing after");
+        assert!(!matches!(err, CaptureError::Timeout(_)), "{err}");
     }
 }

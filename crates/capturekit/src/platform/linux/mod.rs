@@ -1,5 +1,8 @@
 mod x11;
 
+#[cfg(feature = "pipewire-audio")]
+mod audio;
+
 #[cfg(feature = "wayland")]
 mod wayland;
 
@@ -96,7 +99,7 @@ pub(crate) fn capabilities() -> Capabilities {
             cursor_samples: false,
             dirty_rects: false,
             audio_loopback: true,
-            audio_device_enumeration: false,
+            audio_device_enumeration: cfg!(feature = "pipewire-audio"),
         },
         _ => Capabilities {
             backend: "x11",
@@ -115,7 +118,7 @@ pub(crate) fn capabilities() -> Capabilities {
             cursor_samples: true,
             dirty_rects: false,
             audio_loopback: true,
-            audio_device_enumeration: false,
+            audio_device_enumeration: cfg!(feature = "pipewire-audio"),
         },
     }
 }
@@ -150,7 +153,35 @@ pub(crate) fn now() -> Timestamp {
     Timestamp::from_nanos(spec.tv_sec.saturating_mul(1_000_000_000) + spec.tv_nsec)
 }
 
-/// Audio devices are not enumerated on this platform yet.
+/// Stop a PipeWire main loop from outside it.
+///
+/// The loop is not safe to signal from another thread, so the flag is polled
+/// from a timer inside it instead. `interval` is both the first firing and the
+/// repeat, so a caller that only wants a deadline passes the deadline.
+#[cfg(feature = "pipewire-audio")]
+pub(crate) fn quit_timer<'l>(
+    main_loop: &'l pipewire::main_loop::MainLoopRc,
+    flag: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    interval: core::time::Duration,
+) -> core::result::Result<pipewire::loop_::TimerSource<'l>, String> {
+    use std::sync::atomic::Ordering;
+
+    let weak = main_loop.downgrade();
+    let flag = std::sync::Arc::clone(flag);
+    let timer = main_loop.loop_().add_timer(move |_| {
+        if flag.load(Ordering::Acquire) {
+            if let Some(main_loop) = weak.upgrade() {
+                main_loop.quit();
+            }
+        }
+    });
+    timer
+        .update_timer(Some(interval), Some(interval))
+        .into_result()
+        .map_err(|e| e.to_string())?;
+    Ok(timer)
+}
+
 /// Cameras are not enumerated on this platform yet.
 pub(crate) fn cameras() -> Result<Vec<capturekit_core::Camera>> {
     Err(CaptureError::Unsupported {
@@ -159,22 +190,41 @@ pub(crate) fn cameras() -> Result<Vec<capturekit_core::Camera>> {
     })
 }
 
+#[cfg(feature = "pipewire-audio")]
 pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
-    Err(CaptureError::Unsupported {
-        backend: "pipewire-audio",
-        operation: "enumerate audio devices yet",
-    })
+    audio::devices()
 }
 
-/// Audio capture is not implemented on this platform yet.
+/// Built without PipeWire, which is the only audio backend this platform has.
+#[cfg(not(feature = "pipewire-audio"))]
+pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
+    Err(no_pipewire_audio())
+}
+
+#[cfg(feature = "pipewire-audio")]
+pub(crate) fn open_audio(
+    device: Option<&AudioDeviceId>,
+    direction: AudioDirection,
+) -> Result<Box<dyn AudioSource>> {
+    Ok(Box::new(audio::PipewireAudioSource::open(
+        device, direction,
+    )?))
+}
+
+#[cfg(not(feature = "pipewire-audio"))]
 pub(crate) fn open_audio(
     _device: Option<&AudioDeviceId>,
     _direction: AudioDirection,
 ) -> Result<Box<dyn AudioSource>> {
-    Err(CaptureError::Unsupported {
-        backend: "pipewire-audio",
-        operation: "capture audio yet",
-    })
+    Err(no_pipewire_audio())
+}
+
+#[cfg(not(feature = "pipewire-audio"))]
+fn no_pipewire_audio() -> CaptureError {
+    CaptureError::Unsupported {
+        backend: "linux",
+        operation: "capture audio without the pipewire-audio feature",
+    }
 }
 
 pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {

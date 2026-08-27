@@ -249,7 +249,10 @@ fn activate_by_id(id: &CameraId) -> Result<IMFMediaSource> {
     let activate = found
         .iter()
         .find(|activate| symbolic_link(activate).as_deref() == Some(id.0.as_str()))
-        .ok_or_else(|| CaptureError::CameraNotFound(id.0.clone()))?;
+        .ok_or_else(|| CaptureError::NotFoundNamed {
+            kind: "camera",
+            id: id.0.clone(),
+        })?;
     unsafe { activate.ActivateObject() }.map_err(err)
 }
 

@@ -83,8 +83,10 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
     let format = capture.describe().format;
     let mut frames = 0u64;
     let mut inserted_silence = 0u64;
-    let mut first_pts = None;
-    let mut expected_next: Option<capturekit::Timestamp> = None;
+    let mut first_pts: Option<capturekit::Timestamp> = None;
+    let mut run_start: Option<capturekit::Timestamp> = None;
+    let mut run_frames = 0u64;
+    let mut breaks = 0u32;
     let mut worst_wait = Duration::ZERO;
 
     let started = std::time::Instant::now();
@@ -98,14 +100,25 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
                     .validate_buffer(buffer.bytes().len())
                     .expect("a buffer that is not whole sample frames");
 
-                // Every buffer must begin exactly where the last one ended. A
-                // timeline that does not advance over inserted silence fails
-                // here, and so does one that double-counts it.
-                if let Some(expected) = expected_next {
+                // Every buffer must begin exactly where the samples before it
+                // ended, measured from the START OF ITS RUN rather than from the
+                // previous buffer. Summing per-buffer durations rounds on every
+                // step and drifts, which is the very thing a sample-counted
+                // timeline exists to avoid, so it cannot also be the yardstick.
+                // This also catches accumulated drift the pairwise check never
+                // could.
+                //
+                // A run ends where the source SAYS it broke. Continuity is the
+                // contract between declared breaks, not across them.
+                if buffer.is_discontinuous() {
+                    breaks += 1;
+                    run_start = None;
+                    run_frames = 0;
+                } else if let Some(start) = run_start {
                     assert_eq!(
                         buffer.pts(),
-                        expected,
-                        "a {} buffer left a hole in the timeline",
+                        start.saturating_add(format.duration_of(run_frames)),
+                        "a {} buffer left an undeclared hole after {run_frames} frames",
                         if buffer.is_inserted_silence() {
                             "silence"
                         } else {
@@ -113,7 +126,8 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
                         }
                     );
                 }
-                expected_next = Some(buffer.pts().saturating_add(buffer.duration()));
+                run_start.get_or_insert(buffer.pts());
+                run_frames += buffer.frames() as u64;
                 first_pts.get_or_insert(buffer.pts());
 
                 if buffer.is_inserted_silence() {
@@ -134,16 +148,21 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
         "1.2s of loopback produced only {covered:?} of samples ({inserted_silence} inserted)"
     );
 
-    // The timestamps must span the same length the samples do, or the two
-    // disagree about how long the recording is.
-    let (Some(first), Some(end)) = (first_pts, expected_next) else {
-        panic!("no buffers arrived at all");
-    };
-    let spanned = end.saturating_since(first);
-    assert_eq!(
-        spanned, covered,
-        "the timeline and the sample count disagree"
-    );
+    assert!(first_pts.is_some(), "no buffers arrived at all");
+    // A stream that kept up cannot deliver more audio than time has passed,
+    // plus whatever was buffered when it opened. Catches a device delivering at
+    // a rate other than the one it declared, which the continuity check above
+    // cannot see because it is measured in that same wrong rate. Skipped where
+    // the source declared a break, since then it is not the same stream.
+    let real_time = started.elapsed();
+    if breaks == 0 {
+        assert!(
+            covered <= real_time + Duration::from_millis(300),
+            "{covered:?} of samples from {real_time:?} of capture"
+        );
+    } else {
+        eprintln!("note: the source declared {breaks} break(s); rate check skipped");
+    }
 
     // Silence must arrive promptly, not only when a read times out: an encoder
     // fed one buffer per timeout stalls its own pipeline.

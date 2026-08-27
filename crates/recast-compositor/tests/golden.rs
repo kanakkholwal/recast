@@ -361,7 +361,7 @@ fn every_fixture_matches_its_golden() {
     let dir = goldens_dir();
     std::fs::create_dir_all(&dir).expect("goldens dir");
 
-    let here = adapter_id(&ctx);
+    let here = adapter_id(ctx);
     let recorded = recorded_adapter();
     let gates = updating() || recorded.as_deref() == Some(here.as_str());
 
@@ -370,7 +370,7 @@ fn every_fixture_matches_its_golden() {
     let mut drifted = Vec::new();
     for fixture in &all.fixtures {
         let name = &fixture.name;
-        let frame = render(&ctx, &scene_for(&all, fixture), fixture.time);
+        let frame = render(ctx, &scene_for(&all, fixture), fixture.time);
         let path = dir.join(format!("{name}.png"));
 
         if updating() {
@@ -456,7 +456,7 @@ fn every_fixture_renders_a_distinct_frame() {
     let mut seen: Vec<(String, String)> = Vec::new();
     for fixture in &all.fixtures {
         let name = &fixture.name;
-        let frame = render(&ctx, &scene_for(&all, fixture), fixture.time);
+        let frame = render(ctx, &scene_for(&all, fixture), fixture.time);
         let digest = recast_testkit::compare::digest_hex(&frame.pixels);
         if let Some((other, _)) = seen.iter().find(|(_, d)| *d == digest) {
             panic!("{name} renders exactly what {other} does, so one of them proves nothing");
@@ -476,7 +476,7 @@ fn the_tolerance_is_tight_enough_to_catch_a_small_shift() {
         .iter()
         .find(|f| f.name == "plain")
         .expect("the plain fixture");
-    let frame = render(&ctx, &scene_for(&all, plain), plain.time);
+    let frame = render(ctx, &scene_for(&all, plain), plain.time);
     let mut nudged = frame.pixels.clone();
     // One row shifted by one pixel: the smallest geometry error worth calling a
     // regression, and invisible to any per-pixel assertion next door.
@@ -515,8 +515,8 @@ fn every_feature_fixture_differs_from_the_same_scene_without_it() {
             overrides: without.clone(),
             without: None,
         };
-        let a = render(&ctx, &scene_for(&all, fixture), fixture.time);
-        let b = render(&ctx, &scene_for(&all, &off), fixture.time);
+        let a = render(ctx, &scene_for(&all, fixture), fixture.time);
+        let b = render(ctx, &scene_for(&all, &off), fixture.time);
         assert_eq!(
             (a.width, a.height),
             (b.width, b.height),

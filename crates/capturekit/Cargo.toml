@@ -12,13 +12,16 @@ categories = ["multimedia::video", "graphics", "os"]
 publish = false
 
 [features]
-default = ["cpu-readback", "wayland"]
+default = ["cpu-readback", "wayland", "pipewire-audio"]
 # Frames can be read back to host memory.
 cpu-readback = []
 # Linux Wayland capture through xdg-desktop-portal and PipeWire. Needs
 # libpipewire-0.3-dev and libdbus-1-dev on the build host, so it is separable:
 # without it a Linux build still serves X11 and XWayland sessions.
 wayland = ["dep:ashpd", "dep:pipewire", "dep:async-std"]
+# Linux audio through PipeWire. Separate from `wayland` because an X11 session
+# has PipeWire audio too, and a build that wants neither should need neither.
+pipewire-audio = ["dep:pipewire"]
 serde = ["capturekit-core/serde"]
 
 [dependencies]
@@ -56,7 +59,9 @@ ashpd = { version = "0.10", default-features = false, features = ["async-std"], 
 # The portal handshake is async and this crate's API is not, so the executor has
 # to be named explicitly rather than inherited from ashpd's feature.
 async-std = { version = "1", optional = true }
-pipewire = { version = "0.9", optional = true }
+# `v0_3_44` is what exposes PW_KEY_TARGET_OBJECT, the only way to name a device
+# rather than take the session manager's default. PipeWire 0.3.44 is from 2022.
+pipewire = { version = "0.9", features = ["v0_3_44"], optional = true }
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
