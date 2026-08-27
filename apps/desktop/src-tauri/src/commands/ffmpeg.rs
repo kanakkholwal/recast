@@ -1656,8 +1656,7 @@ pub struct BlurRegion<'a> {
 fn rounded_alpha_filter(r: f64) -> String {
     let r = format!("{r:.2}");
     format!(
-        ",format=yuva420p,geq=lum='p(X\\,Y)':cb='p(X\\,Y)':cr='p(X\\,Y)':a='255*(1-gt(pow(max(0\\,max({r}-X\\,X-(W-1-{r})))\\,2)+pow(max(0\\,max({r}-Y\\,Y-(H-1-{r})))\\,2)\\,{r}*{r}))'",
-        r = r
+        ",format=yuva420p,geq=lum='p(X\\,Y)':cb='p(X\\,Y)':cr='p(X\\,Y)':a='255*(1-gt(pow(max(0\\,max({r}-X\\,X-(W-1-{r})))\\,2)+pow(max(0\\,max({r}-Y\\,Y-(H-1-{r})))\\,2)\\,{r}*{r}))'"
     )
 }
 

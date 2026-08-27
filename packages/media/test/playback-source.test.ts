@@ -111,9 +111,7 @@ describe("MediabunnyVideoSource — supersede + cut-jump behavior", () => {
 		// Replace the global Worker constructor with a factory that hands back
 		// our fake. `vi.stubGlobal` keeps the rest of the world's globals
 		// intact and resets after each test.
-		vi.stubGlobal("Worker", function () {
-			return worker;
-		} as unknown as typeof Worker);
+		vi.stubGlobal("Worker", (() => worker) as unknown as typeof Worker);
 		// Capability check: `static create` rejects when VideoFrame or
 		// OffscreenCanvas are missing. Stub them as no-constructible classes
 		// so the check passes without real implementations.

@@ -113,10 +113,7 @@ fn url_allowed(url: &str) -> bool {
     match reqwest::Url::parse(url) {
         Ok(u) => match u.scheme() {
             "https" => true,
-            "http" => matches!(
-                u.host_str(),
-                Some("localhost") | Some("127.0.0.1") | Some("::1")
-            ),
+            "http" => matches!(u.host_str(), Some("localhost" | "127.0.0.1" | "::1")),
             _ => false,
         },
         Err(_) => false,
@@ -187,7 +184,7 @@ fn validate_manifest(m: &ExtensionManifest) -> Result<(), String> {
         }
         if let Some(tn) = &a.thumb_filename {
             if !is_safe_filename(tn) {
-                return Err(format!("unsafe thumbnail filename '{}'", tn));
+                return Err(format!("unsafe thumbnail filename '{tn}'"));
             }
         }
     }

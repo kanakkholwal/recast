@@ -352,7 +352,7 @@ export function applyZoomFollow(
 	base: CameraPlacement,
 	zoom: { scale: number; cx: number; cy: number },
 	opts: ZoomFollowOpts,
-	aspect: number = 1,
+	aspect = 1,
 ): CameraPlacement {
 	const k = Math.max(0, Math.min(1, opts.strength));
 	if (!opts.enabled || k <= 0 || zoom.scale <= 1.0001) return base;

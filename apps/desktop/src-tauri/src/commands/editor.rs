@@ -207,7 +207,7 @@ fn append_audio_to_complex(
                 duration
             ));
         } else if trim_start > 0.0 {
-            filters.push(format!("atrim=start={:.3}", trim_start));
+            filters.push(format!("atrim=start={trim_start:.3}"));
         }
         filters.push("asetpts=PTS-STARTPTS".to_string());
         filters.push(format!("volume={gain:.4}"));

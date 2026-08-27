@@ -121,7 +121,6 @@ function parseChangelog(markdown) {
 		) {
 			const last = current.changes[current.changes.length - 1];
 			last.summary = collapseWhitespace(`${last.summary} ${continuation[1]}`);
-			continue;
 		}
 	}
 

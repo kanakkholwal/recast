@@ -46,7 +46,7 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true,
+			"preset": "recommended",
 			"style": {
 				"noRestrictedImports": {
 					"level": "error",
@@ -64,11 +64,94 @@
 							"fflate": "Import from @recast/media instead. The zip helper is owned by @recast/media's encoders module."
 						}
 					}
-				}
+				},
+				"noHexColors": "error",
+				"noUselessElse": "error",
+				"noNonNullAssertion": "error",
+				"noInferrableTypes": "error",
+				"noParameterAssign": "error",
+				"noNestedTernary": "error",
+				"noYodaExpression": "error",
+				"useCollapsedIf": "error",
+				"useCollapsedElseIf": "error",
+				"useConst": "error",
+				"useTemplate": "error",
+				"useShorthandAssign": "error",
+				"useSingleVarDeclarator": "error",
+				"useImportType": "error",
+				"useExportType": "error"
+			},
+			"complexity": {
+				"noExcessiveCognitiveComplexity": {
+					"level": "error",
+					"options": {
+						"maxAllowedComplexity": 15
+					}
+				},
+				"noExcessiveLinesPerFunction": {
+					"level": "error",
+					"options": {
+						"maxLines": 120
+					}
+				},
+				"useMaxParams": {
+					"level": "error",
+					"options": {
+						"max": 5
+					}
+				},
+				"noUselessFragments": "error",
+				"noUselessTernary": "error",
+				"noImplicitCoercions": "error",
+				"useOptionalChain": "error",
+				"useArrowFunction": "error",
+				"useFlatMap": "error"
+			},
+			"suspicious": {
+				"noExplicitAny": "error",
+				"noDoubleEquals": "error",
+				"noShadow": "error",
+				"noEmptyBlockStatements": "error",
+				"noTsIgnore": "error",
+				"noVar": "error",
+				"noRedeclare": "error",
+				"noUnusedExpressions": "error",
+				"noDuplicateProperties": "error",
+				"noDuplicateCustomProperties": "error",
+				"noDuplicateFontNames": "error",
+				"noShorthandPropertyOverrides": "error",
+				"useAwait": "error"
+			},
+			"correctness": {
+				"noUnusedFunctionParameters": "error",
+				"noUnusedPrivateClassMembers": "error"
+			},
+			"performance": {
+				"noAccumulatingSpread": "error",
+				"noDelete": "error"
+			},
+			"nursery": {
+				"noSvelteLegacyConst": "error",
+				"noSvelteUnnecessaryStateWrap": "error",
+				"useSvelteRequireEachKey": "error",
+				"noDuplicateSelectors": "error",
+				"noUnnecessaryTemplateExpression": "error",
+				"noUselessTypeConversion": "error"
 			}
 		}
 	},
 	"overrides": [
+		{
+			"includes": ["**/*.svelte"],
+			"linter": {
+				"rules": {
+					"correctness": {
+						"noUnusedVariables": "off",
+						"noUnusedImports": "off"
+					}
+				}
+			}
+		},
 		{
 			"includes": ["packages/icons/**"],
 			"linter": {

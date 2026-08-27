@@ -222,9 +222,8 @@ BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, 
 Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n",
     );
     out.push_str(&format!(
-        "Style: Default,{font_name},{size:.0},{primary},{primary},{outline_col},{back_col},{bold},0,0,0,\
+        "Style: Default,{font_name},{font_size:.0},{primary},{primary},{outline_col},{back_col},{bold},0,0,0,\
 100,100,{spacing:.1},0,{border_style},{outline:.1},{shadow:.1},{alignment},{margin_l},{margin_r},{margin_v},1\n\n",
-        size = font_size,
     ));
 
     out.push_str("[Events]\n");

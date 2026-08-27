@@ -81,6 +81,43 @@ jobs:
       - name: Check formatting
         run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all --check
 
+  # Biome lint and the comment rule. Both are RATCHETS: they judge the lines this
+  # change writes, not the backlog it inherits (3k multi-line comments, ~700 lint
+  # findings at the time this landed). `fetch-depth: 0` because both resolve a
+  # merge base, which a shallow clone does not have.
+  #
+  # Biome's linter had never run in CI before this job; `biome.json` was enforced
+  # by nothing.
+  lint:
+    name: biome + comment rule
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Resolve base ref
+        id: base
+        run: |
+          base="${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}"
+          git fetch --no-tags --depth=0 origin "$base"
+          echo "ref=origin/$base" >> "$GITHUB_OUTPUT"
+      - name: Biome lint (changed)
+        run: pnpm exec biome lint --changed --since=${{ steps.base.outputs.ref }} --no-errors-on-unmatched .
+      - name: Comment rule (changed)
+        run: node scripts/check-comments.mjs --since=${{ steps.base.outputs.ref }}
+
   # Desktop UI unit tests (the extracted pure `.logic.ts` modules: timeline math,
   # cursor animation, export options, etc.). OS-agnostic and Rust-free, so they
   # run once on Linux rather than across the compile matrix. Nothing ran them in

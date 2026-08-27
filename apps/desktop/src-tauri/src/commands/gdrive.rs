@@ -619,12 +619,6 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   </main>
 </body>
 </html>"##,
-        title = title,
-        recast_logo = recast_logo,
-        accent_class = accent_class,
-        icon_path = icon_path,
-        heading = heading,
-        sub = sub,
     );
 
     (body, http_status)
@@ -845,8 +839,7 @@ async fn find_or_create_recast_folder(
     // we own called `Recast`. The query escapes the literal name since
     // Drive's q syntax treats single quotes as string delimiters.
     let q = format!(
-        "name='{}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
-        RECAST_FOLDER_NAME
+        "name='{RECAST_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     );
     let resp = client
         .get(format!("{DRIVE_API}/files"))

@@ -545,10 +545,7 @@ pub async fn download_file(
             return Err(format!("sha256 mismatch (expected {expected}, got {got})"));
         }
     } else {
-        log::warn!(
-            "caption model file {} downloaded without sha256 verification",
-            url
-        );
+        log::warn!("caption model file {url} downloaded without sha256 verification");
     }
 
     if dest.exists() {

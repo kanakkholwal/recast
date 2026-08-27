@@ -34,10 +34,7 @@ fn is_punctuation(text: &str) -> bool {
 
 /// True when the token ends a sentence (forces a line break after it).
 fn ends_sentence(text: &str) -> bool {
-    matches!(
-        text.trim_end().chars().last(),
-        Some('.') | Some('!') | Some('?') | Some('…')
-    )
+    matches!(text.trim_end().chars().last(), Some('.' | '!' | '?' | '…'))
 }
 
 /// Normalize a word list in place: clamp to non-negative, force monotonic

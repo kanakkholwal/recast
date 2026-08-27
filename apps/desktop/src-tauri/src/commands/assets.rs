@@ -118,8 +118,7 @@ async fn download_verified(
     if !got.eq_ignore_ascii_case(expected_sha256) {
         let _ = fs::remove_file(&tmp_path).await;
         return Err(format!(
-            "sha256 mismatch (expected {}, got {})",
-            expected_sha256, got
+            "sha256 mismatch (expected {expected_sha256}, got {got})"
         ));
     }
 

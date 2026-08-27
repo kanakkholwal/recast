@@ -696,7 +696,7 @@ fn get_device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> Option<S
         };
         let value = store.GetValue(&key).ok()?;
         // The value is a VT_LPWSTR PROPVARIANT. Use its Display/Debug impl.
-        let display = format!("{}", value);
+        let display = format!("{value}");
         if display.is_empty() || display == "EMPTY" {
             None
         } else {

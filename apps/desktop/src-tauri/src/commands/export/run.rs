@@ -392,21 +392,15 @@ pub(crate) fn run_encode(
                             let total_elapsed = encode_started_at.elapsed().as_millis();
                             if in_finalizing {
                                 log::warn!(
-                                    "export watchdog: killing ffmpeg after progress=end at T+{}ms; no exit for {:?}",
-                                    total_elapsed,
-                                    elapsed
+                                    "export watchdog: killing ffmpeg after progress=end at T+{total_elapsed}ms; no exit for {elapsed:?}"
                                 );
                             } else if near_end {
                                 log::warn!(
-                                    "export watchdog: killing ffmpeg near end of encode at T+{}ms; progress stopped for {:?}",
-                                    total_elapsed,
-                                    elapsed
+                                    "export watchdog: killing ffmpeg near end of encode at T+{total_elapsed}ms; progress stopped for {elapsed:?}"
                                 );
                             } else {
                                 log::warn!(
-                                    "export watchdog: killing stalled ffmpeg at T+{}ms (no progress for {:?})",
-                                    total_elapsed,
-                                    elapsed
+                                    "export watchdog: killing stalled ffmpeg at T+{total_elapsed}ms (no progress for {elapsed:?})"
                                 );
                             }
                             let _ = child.kill();

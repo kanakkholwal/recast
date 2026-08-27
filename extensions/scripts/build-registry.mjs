@@ -33,14 +33,14 @@
 
 import { createHash } from "node:crypto";
 import {
-    copyFileSync,
-    existsSync,
-    mkdirSync,
-    readFileSync,
-    readdirSync,
-    rmSync,
-    statSync,
-    writeFileSync,
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	readdirSync,
+	rmSync,
+	statSync,
+	writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -76,9 +76,7 @@ function buildPack(dir, base) {
 		const abs = resolve(dir, a.file);
 		const root = resolve(dir) + sep;
 		if (!abs.startsWith(root)) {
-			throw new Error(
-				`${packId}: asset "${a.id}" file "${a.file}" escapes the pack directory`,
-			);
+			throw new Error(`${packId}: asset "${a.id}" file "${a.file}" escapes the pack directory`);
 		}
 		if (!existsSync(abs)) {
 			throw new Error(`${packId}: asset "${a.id}" file missing at ${a.file}`);
@@ -151,8 +149,7 @@ export function buildRegistry({ baseUrl, tag } = {}) {
 
 // - CLI --
 
-const invokedDirectly =
-	process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (invokedDirectly) {
 	const { dir, base, tag, entries } = buildRegistry();

@@ -534,8 +534,13 @@ mod tests {
             );
         }
         let interval = (SLOT_MS * 1_000_000) as i64;
+        // On the grid, not adjacent on it: a stall costs whole slots, never phase.
         for pair in stamps.windows(2) {
-            assert_eq!(pair[1] - pair[0], interval, "{stamps:?} left the grid");
+            assert!(pair[1] > pair[0], "{stamps:?} did not advance");
+        }
+        for stamp in &stamps {
+            let offset = stamp - stamps[0];
+            assert_eq!(offset % interval, 0, "{stamps:?} left the grid");
         }
     }
 

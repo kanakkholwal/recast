@@ -25,8 +25,8 @@ import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { buildRegistry, DIST_DIR, EXT_ROOT } from "./build-registry.mjs";
 
-const PORT = Number(process.env.PORT ?? 4422);
-const BASE_URL = (process.env.BASE_URL ?? `http://localhost:${PORT}`).replace(/\/+$/, "");
+const PORT = Number(4422);
+const BASE_URL = `http://localhost:${PORT}`.replace(/\/+$/, "");
 const DEBOUNCE_MS = 150;
 
 const CONTENT_TYPES = {
@@ -113,7 +113,8 @@ server.listen(PORT, () => {
 // Watch sources recursively; ignore our own writes under dist/.
 let timer = null;
 const isDistEvent = (file) =>
-	typeof file === "string" && (file === "dist" || file.startsWith(`dist${"\\"}`) || file.startsWith("dist/"));
+	typeof file === "string" &&
+	(file === "dist" || file.startsWith("dist\\") || file.startsWith("dist/"));
 
 const watcher = watch(EXT_ROOT, { recursive: true }, (_event, file) => {
 	if (isDistEvent(file)) return;

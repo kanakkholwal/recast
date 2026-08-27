@@ -21,7 +21,7 @@ const REDACTIONS: Array<[RegExp, string]> = [
 	// file:// , tauri:// , http(s):// origins  ->  scheme://<host> (drops host + path tail handled below)
 	[/((?:file|tauri|https?):\/\/)[^\s/"'`)]+/g, "$1<host>"],
 	// Bearer / Authorization tokens
-	[/(bearer\s+)[A-Za-z0-9._\-]+/gi, "$1<redacted>"],
+	[/(bearer\s+)[A-Za-z0-9._-]+/gi, "$1<redacted>"],
 	[/(authorization["':\s]+)[A-Za-z0-9._\-\s]+/gi, "$1<redacted>"],
 	// Email addresses
 	[/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<email>"],

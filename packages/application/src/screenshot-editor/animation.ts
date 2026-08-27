@@ -110,11 +110,11 @@ const EASINGS: Record<Easing, (t: number) => number> = {
 	linear: (t) => t,
 	"ease-in": (t) => t * t,
 	"ease-out": (t) => 1 - (1 - t) * (1 - t),
-	"ease-in-out": (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
+	"ease-in-out": (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2),
 	"ease-in-cubic": (t) => t * t * t,
-	"ease-out-cubic": (t) => 1 - Math.pow(1 - t, 3),
-	"ease-in-expo": (t) => (t === 0 ? 0 : Math.pow(2, 10 * t - 10)),
-	"ease-out-expo": (t) => (t === 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+	"ease-out-cubic": (t) => 1 - (1 - t) ** 3,
+	"ease-in-expo": (t) => (t === 0 ? 0 : 2 ** (10 * t - 10)),
+	"ease-out-expo": (t) => (t === 1 ? 1 : 1 - 2 ** (-10 * t)),
 };
 
 function ease(progress: number, easing: Easing): number {

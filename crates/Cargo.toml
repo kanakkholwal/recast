@@ -10,3 +10,15 @@ nonstandard_style = { level = "deny", priority = -1 }
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 redundant_clone = "deny"
+
+# Curated anti-slop set, not `pedantic`: pedantic reports 3500 here, and its top
+# lints (cast_possible_truncation, must_use_candidate, suboptimal_flops) are
+# inherent to graphics and audio code rather than signals of bad code.
+# These currently have ZERO hits, so they only ever catch new slop.
+cloned_instead_of_copied = "deny"
+implicit_clone = "deny"
+inconsistent_struct_constructor = "deny"
+inefficient_to_string = "deny"
+redundant_else = "deny"
+uninlined_format_args = "deny"
+unnested_or_patterns = "deny"

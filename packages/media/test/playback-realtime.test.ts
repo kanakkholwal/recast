@@ -109,9 +109,7 @@ let worker: StreamingWorker;
 describe("continuous playback (60fps rAF)", () => {
 	function setup(decodeMs: number) {
 		worker = new StreamingWorker(decodeMs);
-		vi.stubGlobal("Worker", function () {
-			return worker;
-		} as unknown as typeof Worker);
+		vi.stubGlobal("Worker", (() => worker) as unknown as typeof Worker);
 		vi.stubGlobal("VideoFrame", FakeFrame as unknown as typeof VideoFrame);
 		vi.stubGlobal("OffscreenCanvas", class {} as unknown);
 		resetFrameCache();
@@ -194,9 +192,7 @@ describe("seek vs playhead policy", () => {
 
 	async function build(decodeMs = 5) {
 		worker = new StreamingWorker(decodeMs);
-		vi.stubGlobal("Worker", function () {
-			return worker;
-		} as unknown as typeof Worker);
+		vi.stubGlobal("Worker", (() => worker) as unknown as typeof Worker);
 		vi.stubGlobal("VideoFrame", FakeFrame as unknown as typeof VideoFrame);
 		vi.stubGlobal("OffscreenCanvas", class {} as unknown);
 		resetFrameCache();

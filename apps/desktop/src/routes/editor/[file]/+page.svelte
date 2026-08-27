@@ -438,11 +438,13 @@ function handleTimeUpdate() {
 		// natural end uses the `ended` event (more precise than the ~250ms tick).
 		if (loopEnabled && store.metadata) {
 			const trimEnd = store.trimEnd > 0 ? store.trimEnd : store.metadata.duration;
-			if (trimEnd > 0 && trimEnd < store.metadata.duration - 0.05) {
-				if (videoEl.currentTime >= trimEnd - 0.05) {
-					loopBackToStart();
-					return;
-				}
+			if (
+				trimEnd > 0 &&
+				trimEnd < store.metadata.duration - 0.05 &&
+				videoEl.currentTime >= trimEnd - 0.05
+			) {
+				loopBackToStart();
+				return;
 			}
 		}
 	}

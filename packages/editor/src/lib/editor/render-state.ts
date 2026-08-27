@@ -406,7 +406,7 @@ export function cameraPlacementFromPreset(
 	preset: CameraPositionPreset,
 	size: number = CAMERA_DEFAULT_SIZE,
 	inset: number = CAMERA_PRESET_INSET,
-	aspect: number = 1,
+	aspect = 1,
 ): CameraPlacement {
 	const height = Math.min(1, size * aspect);
 	const farX = 1 - size - inset;
@@ -431,10 +431,7 @@ export function cameraPlacementFromPreset(
  * used to build the placement (video width/height) so the vertical anchors line
  * up. Returns `custom` for free-drag positions. Highlights the active chip.
  */
-export function cameraPresetFromPlacement(
-	p: CameraPlacement,
-	aspect: number = 1,
-): CameraPositionPreset {
+export function cameraPresetFromPlacement(p: CameraPlacement, aspect = 1): CameraPositionPreset {
 	const presets: CameraPositionPreset[] = [
 		"top-left",
 		"top-center",

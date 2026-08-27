@@ -1338,7 +1338,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             let caption_sidecar = match params.get("captionSidecar") {
                 Some(Value::String(fmt)) if fmt == "vtt" || fmt == "srt" => {
                     Some(crate::commands::types::CaptionSidecar {
-                        format: fmt.to_string(),
+                        format: fmt.clone(),
                         transcript: doc_transcript(state.inner(), path_str, fmt)?,
                     })
                 }

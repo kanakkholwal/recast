@@ -45,3 +45,17 @@ if [ -n "$web_files" ]; then
   fi
   printf '%s\n' "$web_files" | restage
 fi
+
+# # Lint gates, staged-scoped. Both are ratchets: they judge what this commit
+# # writes, not the backlog it inherits.
+# if [ -n "$web_files" ]; then
+#   say "biome lint…"
+#   if ! pnpm exec biome lint --staged --no-errors-on-unmatched . >&2; then
+#     say "biome lint failed. Fix, or run: pnpm lint:js:fix"
+#     exit 1
+#   fi
+# fi
+
+if ! node scripts/check-comments.mjs --staged >&2; then
+  exit 1
+fi

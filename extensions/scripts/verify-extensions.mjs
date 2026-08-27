@@ -35,9 +35,28 @@ const EXT_ROOT = resolve(SCRIPTS_DIR, "..");
 const PACKS_DIR = join(EXT_ROOT, "packs");
 
 const RESERVED_NAMES = new Set([
-	"CON", "PRN", "AUX", "NUL",
-	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-	"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+	"CON",
+	"PRN",
+	"AUX",
+	"NUL",
+	"COM1",
+	"COM2",
+	"COM3",
+	"COM4",
+	"COM5",
+	"COM6",
+	"COM7",
+	"COM8",
+	"COM9",
+	"LPT1",
+	"LPT2",
+	"LPT3",
+	"LPT4",
+	"LPT5",
+	"LPT6",
+	"LPT7",
+	"LPT8",
+	"LPT9",
 ]);
 
 const CURSOR_EXTS = new Set([".svg"]);
@@ -87,8 +106,7 @@ const ext = (file) => {
 };
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
-const isSvg = (text) =>
-	/^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/.test(text);
+const isSvg = (text) => /^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/.test(text);
 
 /** Collects all problems for one pack, then reports pass/fail. */
 class PackResult {
@@ -167,7 +185,12 @@ function validateContributions(res, contributes) {
 
 	const c = contributes ?? {};
 	const kinds = [
-		"cursors", "backgrounds", "gradients", "colors", "easings", "smoothings",
+		"cursors",
+		"backgrounds",
+		"gradients",
+		"colors",
+		"easings",
+		"smoothings",
 		"captionPresets",
 	];
 	for (const u of Object.keys(c).filter((k) => !kinds.includes(k))) {
@@ -185,7 +208,8 @@ function validateContributions(res, contributes) {
 		if (cur?.rightPress != null) ref(cur.rightPress, "cursor", `${w}.rightPress`);
 		if (cur?.drag != null) ref(cur.drag, "cursor", `${w}.drag`);
 		validateHotspot(res, w, cur?.hotspot);
-		if (cur?.pressedHotspot != null) validateHotspot(res, `${w}.pressedHotspot`, cur.pressedHotspot);
+		if (cur?.pressedHotspot != null)
+			validateHotspot(res, `${w}.pressedHotspot`, cur.pressedHotspot);
 		if (cur?.rightPressedHotspot != null)
 			validateHotspot(res, `${w}.rightPressedHotspot`, cur.rightPressedHotspot);
 		if (cur?.dragHotspot != null) validateHotspot(res, `${w}.dragHotspot`, cur.dragHotspot);
@@ -358,9 +382,8 @@ function validatePack(dir) {
 		} else if (type === "cursor") {
 			if (!CURSOR_EXTS.has(e)) res.err(`${w}: cursor asset must be .svg`);
 			else if (!isSvg(buf.toString("utf8"))) res.err(`${w}: not a valid SVG`);
-		} else if (type === "image") {
-			if (!IMAGE_EXTS.has(e)) res.err(`${w}: background asset must be .png/.jpg/.jpeg/.webp`);
-		}
+		} else if (type === "image" && !IMAGE_EXTS.has(e))
+			res.err(`${w}: background asset must be .png/.jpg/.jpeg/.webp`);
 
 		res.assets.push({ id: a.id, filename: fname, sha256: sha256(buf), bytes: buf.length });
 	}
