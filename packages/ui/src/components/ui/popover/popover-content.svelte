@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { Popover as PopoverPrimitive } from "bits-ui";
-	import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import type { ComponentProps } from "svelte";
+import { Popover as PopoverPrimitive } from "bits-ui";
+import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import type { ComponentProps } from "svelte";
 
-	type PortalProps = WithoutChildrenOrChild<ComponentProps<typeof PopoverPrimitive.Portal>>;
+type PortalProps = WithoutChildrenOrChild<ComponentProps<typeof PopoverPrimitive.Portal>>;
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		align = "center",
-		sideOffset = 6,
-		portalProps,
-		preventScroll = false,
-		...restProps
-	}: PopoverPrimitive.ContentProps & {
-		portalProps?: PortalProps;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	align = "center",
+	sideOffset = 6,
+	portalProps,
+	preventScroll = false,
+	...restProps
+}: PopoverPrimitive.ContentProps & {
+	portalProps?: PortalProps;
+} = $props();
 </script>
 
 <PopoverPrimitive.Portal {...portalProps}>

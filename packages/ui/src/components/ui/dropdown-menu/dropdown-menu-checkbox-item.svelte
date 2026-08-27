@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
-	import { IconMinus } from '@tabler/icons-svelte';
-	import { IconCheck } from '@tabler/icons-svelte';
-	import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import type { Snippet } from "svelte";
+import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
+import { IconMinus } from "@tabler/icons-svelte";
+import { IconCheck } from "@tabler/icons-svelte";
+import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
 
-	let {
-		ref = $bindable(null),
-		checked = $bindable(false),
-		indeterminate = $bindable(false),
-		class: className,
-		children: childrenProp,
-		...restProps
-	}: WithoutChildrenOrChild<DropdownMenuPrimitive.CheckboxItemProps> & {
-		children?: Snippet;
-	} = $props();
+let {
+	ref = $bindable(null),
+	checked = $bindable(false),
+	indeterminate = $bindable(false),
+	class: className,
+	children: childrenProp,
+	...restProps
+}: WithoutChildrenOrChild<DropdownMenuPrimitive.CheckboxItemProps> & {
+	children?: Snippet;
+} = $props();
 </script>
 
 <DropdownMenuPrimitive.CheckboxItem

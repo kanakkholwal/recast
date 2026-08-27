@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { RadioGroup as RadioGroupPrimitive } from "bits-ui";
-	import { IconCircle } from '@tabler/icons-svelte';
-	import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import { RadioGroup as RadioGroupPrimitive } from "bits-ui";
+import { IconCircle } from "@tabler/icons-svelte";
+import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		...restProps
-	}: WithoutChildrenOrChild<RadioGroupPrimitive.ItemProps> = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	...restProps
+}: WithoutChildrenOrChild<RadioGroupPrimitive.ItemProps> = $props();
 </script>
 
 <RadioGroupPrimitive.Item

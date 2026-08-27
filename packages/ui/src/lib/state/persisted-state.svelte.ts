@@ -324,7 +324,10 @@ export const safeStorage = {
 		}
 	},
 
-	remove(key: string, options: Pick<SafeStorageOptions<unknown>, "storage" | "onError"> = {}): void {
+	remove(
+		key: string,
+		options: Pick<SafeStorageOptions<unknown>, "storage" | "onError"> = {},
+	): void {
 		if (!isBrowser) return;
 		const storage = options.storage ?? "local";
 		try {

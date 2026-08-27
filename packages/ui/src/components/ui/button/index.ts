@@ -8,8 +8,10 @@ import Root, {
 export {
 	//
 	Root as Button,
-	buttonVariants, Root, type ButtonProps,
+	buttonVariants,
+	Root,
+	type ButtonProps,
 	type ButtonSize,
-	type ButtonVariant, type ButtonProps as Props
+	type ButtonVariant,
+	type ButtonProps as Props,
 };
-

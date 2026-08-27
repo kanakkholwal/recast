@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { Select as SelectPrimitive } from "bits-ui";
-	import { cn, type WithoutChild } from "@recast/ui/utils";
-	import { IconCheck } from '@tabler/icons-svelte';
+import { Select as SelectPrimitive } from "bits-ui";
+import { cn, type WithoutChild } from "@recast/ui/utils";
+import { IconCheck } from "@tabler/icons-svelte";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		value,
-		label,
-		children: childrenProp,
-		...restProps
-	}: WithoutChild<SelectPrimitive.ItemProps> = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	value,
+	label,
+	children: childrenProp,
+	...restProps
+}: WithoutChild<SelectPrimitive.ItemProps> = $props();
 </script>
 
 <SelectPrimitive.Item

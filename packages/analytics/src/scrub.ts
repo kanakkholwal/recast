@@ -8,14 +8,7 @@ import type { ErrorContext, ScrubbedError } from "./types";
  * Applied in `core.captureError` before any provider sees the error.
  */
 
-const ALLOWED_CONTEXT_KEYS = [
-	"route",
-	"command",
-	"os",
-	"app_version",
-	"source",
-	"phase",
-] as const;
+const ALLOWED_CONTEXT_KEYS = ["route", "command", "os", "app_version", "source", "phase"] as const;
 
 // Order matters: paths and origins first (most specific), then identifiers.
 const REDACTIONS: Array<[RegExp, string]> = [
@@ -81,10 +74,7 @@ export function scrubError(err: unknown, ctx: ErrorContext = {}): ScrubbedError 
 	} else if (err && typeof err === "object") {
 		const e = err as Record<string, unknown>;
 		name = typeof e.name === "string" ? e.name : "Error";
-		message =
-			typeof e.message === "string"
-				? e.message
-				: safeStringify(e);
+		message = typeof e.message === "string" ? e.message : safeStringify(e);
 		stack = typeof e.stack === "string" ? e.stack : undefined;
 	} else {
 		message = String(err);

@@ -1,28 +1,28 @@
 <script lang="ts" module>
-	import type { Snippet } from "svelte";
+import type { Snippet } from "svelte";
 
-	export interface ColorFieldProps {
-		/** Row label (e.g. "Color", "Background"). */
-		label: string;
-		/** Current color as a CSS hex string (#rrggbb or #rrggbbaa). */
-		value: string;
-		/** Fired when the user commits a new color from the popover or hex edit. */
-		oncommit: (next: string) => void;
-		/** Optional preset palette shown in the popover. */
-		swatches?: string[];
-		/** Optional recents list shown in the popover. */
-		recents?: string[];
-		/** Show the alpha slider inside the popover. */
-		allowAlpha?: boolean;
-		/** Leading glyph rendered next to the label. */
-		icon?: Snippet;
-		disabled?: boolean;
-		/** Bits-UI popover alignment. Defaults to `start`. */
-		align?: "start" | "center" | "end";
-		class?: string;
-	}
+export interface ColorFieldProps {
+	/** Row label (e.g. "Color", "Background"). */
+	label: string;
+	/** Current color as a CSS hex string (#rrggbb or #rrggbbaa). */
+	value: string;
+	/** Fired when the user commits a new color from the popover or hex edit. */
+	oncommit: (next: string) => void;
+	/** Optional preset palette shown in the popover. */
+	swatches?: string[];
+	/** Optional recents list shown in the popover. */
+	recents?: string[];
+	/** Show the alpha slider inside the popover. */
+	allowAlpha?: boolean;
+	/** Leading glyph rendered next to the label. */
+	icon?: Snippet;
+	disabled?: boolean;
+	/** Bits-UI popover alignment. Defaults to `start`. */
+	align?: "start" | "center" | "end";
+	class?: string;
+}
 
-	const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 </script>
 
 <script lang="ts">

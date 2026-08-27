@@ -1,14 +1,14 @@
 <script lang="ts">
-	// Brand mark — Apple. Same Lucide-compatible prop surface as LinuxBrand
-	// (numeric `size` + `class` + `currentColor`), so it drops into the
-	// same call sites. Path from simple-icons.
-	import type { SVGAttributes } from "svelte/elements";
+// Brand mark — Apple. Same Lucide-compatible prop surface as LinuxBrand
+// (numeric `size` + `class` + `currentColor`), so it drops into the
+// same call sites. Path from simple-icons.
+import type { SVGAttributes } from "svelte/elements";
 
-	interface Props extends SVGAttributes<SVGSVGElement> {
-		size?: number | string;
-	}
+interface Props extends SVGAttributes<SVGSVGElement> {
+	size?: number | string;
+}
 
-	let { size = 24, ...rest }: Props = $props();
+let { size = 24, ...rest }: Props = $props();
 </script>
 
 <svg

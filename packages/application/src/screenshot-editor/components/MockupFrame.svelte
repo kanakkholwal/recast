@@ -1,19 +1,19 @@
 <script lang="ts" module>
-  import type { Mockup } from "../types";
+import type { Mockup } from "../types";
 
-  export interface MockupFrameProps {
-    mockup: Mockup;
-    /** Corner radius (px) applied to the whole window. */
-    radius: number;
-    /** Ready-to-use CSS `box-shadow` value, or "none". */
-    shadow: string;
-    /** Ready-to-use CSS `border` value, or "none". */
-    border: string;
-    /** Ready-to-use CSS `filter` value for the screenshot only, or "none". */
-    filter?: string;
-    src: string;
-    alt: string;
-  }
+export interface MockupFrameProps {
+	mockup: Mockup;
+	/** Corner radius (px) applied to the whole window. */
+	radius: number;
+	/** Ready-to-use CSS `box-shadow` value, or "none". */
+	shadow: string;
+	/** Ready-to-use CSS `border` value, or "none". */
+	border: string;
+	/** Ready-to-use CSS `filter` value for the screenshot only, or "none". */
+	filter?: string;
+	src: string;
+	alt: string;
+}
 </script>
 
 <script lang="ts">

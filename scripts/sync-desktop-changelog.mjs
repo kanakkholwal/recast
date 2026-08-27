@@ -24,14 +24,7 @@ const __dirname = dirname(__filename);
 const REPO_ROOT = resolve(__dirname, "..");
 
 const CHANGELOG_PATH = join(REPO_ROOT, "CHANGELOG.md");
-const CONSTANTS_PATH = join(
-	REPO_ROOT,
-	"apps",
-	"desktop",
-	"src",
-	"constants",
-	"changelog.ts",
-);
+const CONSTANTS_PATH = join(REPO_ROOT, "apps", "desktop", "src", "constants", "changelog.ts");
 const REGION_START = "// RELEASES:START";
 const REGION_END = "// RELEASES:END";
 
@@ -62,9 +55,7 @@ function parseChangelog(markdown) {
 
 	for (const line of lines) {
 		// Version header: `## [<version>] — <date>` (em-dash) or `## [<version>] - <date>`.
-		const versionMatch = line.match(
-			/^##\s+\[([^\]]+)\](?:\s*[—-]\s*(.+))?\s*$/,
-		);
+		const versionMatch = line.match(/^##\s+\[([^\]]+)\](?:\s*[—-]\s*(.+))?\s*$/);
 		if (versionMatch) {
 			const version = versionMatch[1].trim();
 			const date = (versionMatch[2] ?? "").trim();
@@ -144,9 +135,7 @@ function collapseWhitespace(s) {
 function renderReleasesBlock(releases) {
 	const out = [];
 	out.push(REGION_START + ", auto-generated, do not edit by hand");
-	out.push(
-		"export const RELEASES: readonly ChangelogRelease[] = [",
-	);
+	out.push("export const RELEASES: readonly ChangelogRelease[] = [");
 	for (const r of releases) {
 		out.push("\t{");
 		out.push(`\t\tversion: ${tsString(r.version)},`);
@@ -163,9 +152,7 @@ function renderReleasesBlock(releases) {
 		}
 		out.push("\t\tchanges: [");
 		for (const c of r.changes) {
-			out.push(
-				`\t\t\t{ kind: ${tsString(c.kind)}, summary: ${tsString(c.summary)} },`,
-			);
+			out.push(`\t\t\t{ kind: ${tsString(c.kind)}, summary: ${tsString(c.summary)} },`);
 		}
 		out.push("\t\t],");
 		out.push("\t},");
@@ -179,9 +166,7 @@ function spliceRegion(source, replacement) {
 	const startIdx = source.indexOf(REGION_START);
 	const endIdx = source.indexOf(REGION_END);
 	if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
-		throw new Error(
-			`Could not find ${REGION_START} … ${REGION_END} markers in ${CONSTANTS_PATH}`,
-		);
+		throw new Error(`Could not find ${REGION_START} … ${REGION_END} markers in ${CONSTANTS_PATH}`);
 	}
 	const endLineEnd = source.indexOf("\n", endIdx);
 	const tail = endLineEnd === -1 ? "" : source.slice(endLineEnd);
@@ -195,9 +180,7 @@ async function main() {
 	const markdown = await readFile(CHANGELOG_PATH, "utf8");
 	const releases = parseChangelog(markdown);
 	if (releases.length === 0) {
-		stderr.write(
-			"warn: no released versions found in CHANGELOG.md (only [Unreleased]?)\n",
-		);
+		stderr.write("warn: no released versions found in CHANGELOG.md (only [Unreleased]?)\n");
 	}
 
 	const before = await readFile(CONSTANTS_PATH, "utf8");

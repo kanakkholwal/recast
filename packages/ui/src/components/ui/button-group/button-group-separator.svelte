@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import type { ComponentProps } from "svelte";
-	import { Separator } from "../separator";
+import { cn } from "@recast/ui/utils";
+import type { ComponentProps } from "svelte";
+import { Separator } from "../separator";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		orientation = "vertical",
-		...restProps
-	}: ComponentProps<typeof Separator> = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	orientation = "vertical",
+	...restProps
+}: ComponentProps<typeof Separator> = $props();
 </script>
 
 <Separator

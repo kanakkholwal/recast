@@ -11,7 +11,7 @@ export const LAYOUT_MODES: {
 	{
 		value: "os-native",
 		label: "OS native",
-		hint: "Window controls follow your operating system: traffic lights on the left on macOS, minimize, maximize, and close on the right on Windows and Linux.",
+		hint: "Window controls follow your operating system.",
 	},
 	{
 		value: "recast",

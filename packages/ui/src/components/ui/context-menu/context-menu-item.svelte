@@ -1,27 +1,23 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
-	import {
-		contextMenuItemSizeVariants,
-		getContextMenuSize,
-		type ContextMenuSize,
-	} from "./context";
+import { cn } from "@recast/ui/utils";
+import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
+import { contextMenuItemSizeVariants, getContextMenuSize, type ContextMenuSize } from "./context";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		inset,
-		size,
-		variant = "default",
-		...restProps
-	}: ContextMenuPrimitive.ItemProps & {
-		inset?: boolean;
-		size?: ContextMenuSize;
-		variant?: "default" | "destructive";
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	inset,
+	size,
+	variant = "default",
+	...restProps
+}: ContextMenuPrimitive.ItemProps & {
+	inset?: boolean;
+	size?: ContextMenuSize;
+	variant?: "default" | "destructive";
+} = $props();
 
-	// Inherit from <Content size="…"> unless overridden per-item.
-	const resolvedSize = $derived(size ?? getContextMenuSize());
+// Inherit from <Content size="…"> unless overridden per-item.
+const resolvedSize = $derived(size ?? getContextMenuSize());
 </script>
 
 <ContextMenuPrimitive.Item

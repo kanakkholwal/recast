@@ -37,9 +37,7 @@ export function createPostHogBrowserProvider(): Provider {
 				// Only ever create a person profile once we've identified a user —
 				// keeps anonymous, cookieless visitors from minting person rows.
 				person_profiles: "identified_only",
-				bootstrap: cfg.bootstrapDistinctId
-					? { distinctID: cfg.bootstrapDistinctId }
-					: undefined,
+				bootstrap: cfg.bootstrapDistinctId ? { distinctID: cfg.bootstrapDistinctId } : undefined,
 			});
 			if (cfg.superProperties) posthog.register(cfg.superProperties);
 			ph = posthog;
@@ -66,9 +64,7 @@ export function createPostHogBrowserProvider(): Provider {
 					{
 						type: err.name,
 						value: err.message,
-						stacktrace: err.stack
-							? { type: "raw", frames: [], raw: err.stack }
-							: undefined,
+						stacktrace: err.stack ? { type: "raw", frames: [], raw: err.stack } : undefined,
 					},
 				],
 				$exception_type: err.name,

@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import { Command as CommandPrimitive, useId } from "bits-ui";
+import { cn } from "@recast/ui/utils";
+import { Command as CommandPrimitive, useId } from "bits-ui";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		children,
-		heading,
-		value,
-		...restProps
-	}: CommandPrimitive.GroupProps & {
-		heading?: string;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	children,
+	heading,
+	value,
+	...restProps
+}: CommandPrimitive.GroupProps & {
+	heading?: string;
+} = $props();
 </script>
 
 <CommandPrimitive.Group

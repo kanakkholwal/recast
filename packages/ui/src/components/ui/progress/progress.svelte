@@ -1,22 +1,22 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import { Progress as ProgressPrimitive } from "bits-ui";
+import { cn } from "@recast/ui/utils";
+import { Progress as ProgressPrimitive } from "bits-ui";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		max = 100,
-		value,
-		...restProps
-	}: ProgressPrimitive.RootProps = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	max = 100,
+	value,
+	...restProps
+}: ProgressPrimitive.RootProps = $props();
 
-	// `null` means the work is real but uncountable (a phase that has not reported a
-	// total yet). bits-ui maps it to aria-valuenow="indeterminate"; the bar shows a
-	// travelling sliver so it still reads as running rather than stuck at zero.
-	const indeterminate = $derived(value == null);
-	const pct = $derived(
-		indeterminate ? 0 : Math.min(100, Math.max(0, ((value ?? 0) / (max || 1)) * 100)),
-	);
+// `null` means the work is real but uncountable (a phase that has not reported a
+// total yet). bits-ui maps it to aria-valuenow="indeterminate"; the bar shows a
+// travelling sliver so it still reads as running rather than stuck at zero.
+const indeterminate = $derived(value == null);
+const pct = $derived(
+	indeterminate ? 0 : Math.min(100, Math.max(0, ((value ?? 0) / (max || 1)) * 100)),
+);
 </script>
 
 <ProgressPrimitive.Root

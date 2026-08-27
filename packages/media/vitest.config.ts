@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from "vitest/config";
 
 // The @recast/media package owns the non-linear editor's media-pipeline
 // contract (see packages/media/REQUIREMENTS.md). Tests target pure logic
@@ -13,10 +13,10 @@ import { defineConfig } from 'vitest/config';
 // modules extensionless and vitest resolves them to .ts.
 export default defineConfig({
 	resolve: {
-		extensions: ['.ts', '.tsx', '.js', '.mjs', '.mts'],
+		extensions: [".ts", ".tsx", ".js", ".mjs", ".mts"],
 	},
 	test: {
-		include: ['src/**/*.{test,spec}.ts', 'test/**/*.{test,spec}.ts'],
-		environment: 'node',
+		include: ["src/**/*.{test,spec}.ts", "test/**/*.{test,spec}.ts"],
+		environment: "node",
 	},
 });

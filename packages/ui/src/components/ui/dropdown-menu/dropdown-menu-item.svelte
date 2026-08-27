@@ -1,27 +1,27 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
-	import {
-		dropdownMenuItemSizeVariants,
-		getDropdownMenuSize,
-		type DropdownMenuSize,
-	} from "./context";
+import { cn } from "@recast/ui/utils";
+import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
+import {
+	dropdownMenuItemSizeVariants,
+	getDropdownMenuSize,
+	type DropdownMenuSize,
+} from "./context";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		inset,
-		size,
-		variant = "default",
-		...restProps
-	}: DropdownMenuPrimitive.ItemProps & {
-		inset?: boolean;
-		size?: DropdownMenuSize;
-		variant?: "default" | "destructive";
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	inset,
+	size,
+	variant = "default",
+	...restProps
+}: DropdownMenuPrimitive.ItemProps & {
+	inset?: boolean;
+	size?: DropdownMenuSize;
+	variant?: "default" | "destructive";
+} = $props();
 
-	// Inherit from <Content size="…"> unless overridden per-item.
-	const resolvedSize = $derived(size ?? getDropdownMenuSize());
+// Inherit from <Content size="…"> unless overridden per-item.
+const resolvedSize = $derived(size ?? getDropdownMenuSize());
 </script>
 
 <DropdownMenuPrimitive.Item

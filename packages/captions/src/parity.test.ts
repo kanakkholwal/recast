@@ -34,7 +34,9 @@ describe("caption parity fixture", () => {
 			it("chunks words as expected", () => {
 				const runs = chunkWords(c.words, anim);
 				const asIndices = runs.map((run) =>
-					run.words.map((w) => c.words.findIndex((cw) => cw.start === w.start && cw.text === w.text)),
+					run.words.map((w) =>
+						c.words.findIndex((cw) => cw.start === w.start && cw.text === w.text),
+					),
 				);
 				expect(asIndices).toEqual(c.expected.chunks);
 			});

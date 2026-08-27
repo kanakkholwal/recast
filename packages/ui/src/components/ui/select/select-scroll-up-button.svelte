@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { Select as SelectPrimitive } from "bits-ui";
-	import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import { IconChevronUp } from '@tabler/icons-svelte';
+import { Select as SelectPrimitive } from "bits-ui";
+import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import { IconChevronUp } from "@tabler/icons-svelte";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		...restProps
-	}: WithoutChildrenOrChild<SelectPrimitive.ScrollUpButtonProps> = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	...restProps
+}: WithoutChildrenOrChild<SelectPrimitive.ScrollUpButtonProps> = $props();
 </script>
 
 <SelectPrimitive.ScrollUpButton

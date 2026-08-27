@@ -1,19 +1,9 @@
 <script lang="ts">
-	import { mode } from "mode-watcher";
-	import {
-		AlertOctagon,
-		AlertTriangle,
-		CheckCircle2,
-		Info,
-		Loader2,
-		X,
-	} from "@recast/icons";
-	import {
-		Toaster as Sonner,
-		type ToasterProps as SonnerProps,
-	} from "svelte-sonner";
+import { mode } from "mode-watcher";
+import { AlertOctagon, AlertTriangle, CheckCircle2, Info, Loader2, X } from "@recast/icons";
+import { Toaster as Sonner, type ToasterProps as SonnerProps } from "svelte-sonner";
 
-	let { ...restProps }: SonnerProps = $props();
+let { ...restProps }: SonnerProps = $props();
 </script>
 
 <!--

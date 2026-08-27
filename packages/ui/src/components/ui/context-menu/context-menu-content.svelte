@@ -1,30 +1,30 @@
 <script lang="ts">
-	import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import ContextMenuPortal from "./context-menu-portal.svelte";
-	import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
-	import type { ComponentProps } from "svelte";
-	import {
-		contextMenuContentSizeVariants,
-		setContextMenuSize,
-		type ContextMenuSize,
-	} from "./context";
+import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import ContextMenuPortal from "./context-menu-portal.svelte";
+import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
+import type { ComponentProps } from "svelte";
+import {
+	contextMenuContentSizeVariants,
+	setContextMenuSize,
+	type ContextMenuSize,
+} from "./context";
 
-	let {
-		ref = $bindable(null),
-		size = "default",
-		portalProps,
-		class: className,
-		preventScroll = false,
-		...restProps
-	}: ContextMenuPrimitive.ContentProps & {
-		size?: ContextMenuSize;
-		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof ContextMenuPortal>>;
-	} = $props();
+let {
+	ref = $bindable(null),
+	size = "default",
+	portalProps,
+	class: className,
+	preventScroll = false,
+	...restProps
+}: ContextMenuPrimitive.ContentProps & {
+	size?: ContextMenuSize;
+	portalProps?: WithoutChildrenOrChild<ComponentProps<typeof ContextMenuPortal>>;
+} = $props();
 
-	// Propagate size to descendant Item / CheckboxItem / RadioItem / SubTrigger.
-	$effect(() => {
-		setContextMenuSize(size);
-	});
+// Propagate size to descendant Item / CheckboxItem / RadioItem / SubTrigger.
+$effect(() => {
+	setContextMenuSize(size);
+});
 </script>
 
 <ContextMenuPortal {...portalProps}>

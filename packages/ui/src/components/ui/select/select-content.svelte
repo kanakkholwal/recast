@@ -1,23 +1,23 @@
 <script lang="ts">
-	import type { WithoutChildrenOrChild } from "@recast/ui/utils";
-	import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChild } from "@recast/ui/utils";
-	import { Select as SelectPrimitive } from "bits-ui";
-	import type { ComponentProps } from "svelte";
-	import SelectPortal from "./select-portal.svelte";
-	import SelectScrollDownButton from "./select-scroll-down-button.svelte";
-	import SelectScrollUpButton from "./select-scroll-up-button.svelte";
+import type { WithoutChildrenOrChild } from "@recast/ui/utils";
+import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChild } from "@recast/ui/utils";
+import { Select as SelectPrimitive } from "bits-ui";
+import type { ComponentProps } from "svelte";
+import SelectPortal from "./select-portal.svelte";
+import SelectScrollDownButton from "./select-scroll-down-button.svelte";
+import SelectScrollUpButton from "./select-scroll-up-button.svelte";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		sideOffset = 4,
-		portalProps,
-		children,
-		preventScroll = false,
-		...restProps
-	}: WithoutChild<SelectPrimitive.ContentProps> & {
-		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof SelectPortal>>;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	sideOffset = 4,
+	portalProps,
+	children,
+	preventScroll = false,
+	...restProps
+}: WithoutChild<SelectPrimitive.ContentProps> & {
+	portalProps?: WithoutChildrenOrChild<ComponentProps<typeof SelectPortal>>;
+} = $props();
 </script>
 
 <SelectPortal {...portalProps}>

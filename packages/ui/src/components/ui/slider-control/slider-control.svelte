@@ -1,46 +1,46 @@
 <script lang="ts" module>
-	import type { Snippet } from "svelte";
+import type { Snippet } from "svelte";
 
-	export interface SliderControlProps {
-		label: string;
-		value: number;
-		min?: number;
-		max?: number;
-		step?: number;
-		/** Visible only via the `title` tooltip — no extra row height. */
-		description?: string;
-		/** Leading glyph rendered next to the label. */
-		icon?: Snippet;
-		/** Appended to the formatted value when no `formatValue` is given. */
-		unit?: string;
-		disabled?: boolean;
-		class?: string;
-		/** Show step/decile hash marks behind the fill. Default true. */
-		hashMarks?: boolean;
-		onstart?: () => void;
-		onchange?: (value: number) => void;
-		oncommit?: (value: number) => void;
-		formatValue?: (value: number, unit: string) => string;
-	}
+export interface SliderControlProps {
+	label: string;
+	value: number;
+	min?: number;
+	max?: number;
+	step?: number;
+	/** Visible only via the `title` tooltip — no extra row height. */
+	description?: string;
+	/** Leading glyph rendered next to the label. */
+	icon?: Snippet;
+	/** Appended to the formatted value when no `formatValue` is given. */
+	unit?: string;
+	disabled?: boolean;
+	class?: string;
+	/** Show step/decile hash marks behind the fill. Default true. */
+	hashMarks?: boolean;
+	onstart?: () => void;
+	onchange?: (value: number) => void;
+	oncommit?: (value: number) => void;
+	formatValue?: (value: number, unit: string) => string;
+}
 
-	function decimalsForStep(step: number): number {
-		if (!Number.isFinite(step) || step <= 0) return 0;
-		const str = step.toString();
-		const idx = str.indexOf(".");
-		return idx === -1 ? 0 : str.length - idx - 1;
-	}
+function decimalsForStep(step: number): number {
+	if (!Number.isFinite(step) || step <= 0) return 0;
+	const str = step.toString();
+	const idx = str.indexOf(".");
+	return idx === -1 ? 0 : str.length - idx - 1;
+}
 
-	function roundValue(v: number, step: number): number {
-		return Number(v.toFixed(decimalsForStep(step)));
-	}
+function roundValue(v: number, step: number): number {
+	return Number(v.toFixed(decimalsForStep(step)));
+}
 
-	function snapToDecile(v: number, min: number, max: number): number {
-		const range = max - min;
-		if (range === 0) return min;
-		const ratio = (v - min) / range;
-		const decile = Math.round(ratio * 10) / 10;
-		return min + decile * range;
-	}
+function snapToDecile(v: number, min: number, max: number): number {
+	const range = max - min;
+	if (range === 0) return min;
+	const ratio = (v - min) / range;
+	const decile = Math.round(ratio * 10) / 10;
+	return min + decile * range;
+}
 </script>
 
 <script lang="ts">

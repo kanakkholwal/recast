@@ -59,9 +59,7 @@ const pick = (predicate) => sigs.find(predicate);
 const targets = [
 	{
 		key: "windows-x86_64",
-		sig:
-			pick((f) => f.endsWith("-setup.exe.sig")) ??
-			pick((f) => f.endsWith(".msi.sig")),
+		sig: pick((f) => f.endsWith("-setup.exe.sig")) ?? pick((f) => f.endsWith(".msi.sig")),
 	},
 	{
 		key: "linux-x86_64",
@@ -69,16 +67,11 @@ const targets = [
 	},
 	{
 		key: "darwin-aarch64",
-		sig: pick(
-			(f) => f.endsWith(".app.tar.gz.sig") && /aarch64|arm64/.test(f),
-		),
+		sig: pick((f) => f.endsWith(".app.tar.gz.sig") && /aarch64|arm64/.test(f)),
 	},
 	{
 		key: "darwin-x86_64",
-		sig: pick(
-			(f) =>
-				f.endsWith(".app.tar.gz.sig") && /(?:^|[_-])x(?:64|86_64)/.test(f),
-		),
+		sig: pick((f) => f.endsWith(".app.tar.gz.sig") && /(?:^|[_-])x(?:64|86_64)/.test(f)),
 	},
 ];
 
@@ -122,6 +115,4 @@ const manifest = {
 };
 
 writeFileSync(out, `${JSON.stringify(manifest, null, 2)}\n`);
-console.log(
-	`Wrote ${out} for ${tag} — platforms: ${Object.keys(platforms).join(", ")}`,
-);
+console.log(`Wrote ${out} for ${tag} — platforms: ${Object.keys(platforms).join(", ")}`);

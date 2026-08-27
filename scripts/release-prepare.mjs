@@ -64,9 +64,7 @@ function parseArgs(args) {
 	for (const a of args) {
 		if (a === "--dry-run" || a === "-n") out.dryRun = true;
 		else if (a === "-h" || a === "--help") {
-			stdout.write(
-				"Usage: release-prepare.mjs <version> [--dry-run]\n",
-			);
+			stdout.write("Usage: release-prepare.mjs <version> [--dry-run]\n");
 			exit(0);
 		} else if (!out.version) out.version = a.replace(/^v/, "");
 	}
@@ -82,7 +80,10 @@ function parseFrontmatter(source) {
 		if (!line || line.startsWith("#")) continue;
 		const idx = line.indexOf(":");
 		if (idx === -1) continue;
-		const key = line.slice(0, idx).trim().replace(/^["']|["']$/g, "");
+		const key = line
+			.slice(0, idx)
+			.trim()
+			.replace(/^["']|["']$/g, "");
 		const val = line
 			.slice(idx + 1)
 			.trim()
@@ -113,9 +114,7 @@ async function readChangesets() {
 		if (!bump) continue;
 		let kind = (frontmatter.kind ?? "changed").toLowerCase();
 		if (!KIND_VALUES.has(kind)) {
-			stderr.write(
-				`warn: ${name}: unknown kind "${kind}", defaulting to "changed"\n`,
-			);
+			stderr.write(`warn: ${name}: unknown kind "${kind}", defaulting to "changed"\n`);
 			kind = "changed";
 		}
 		collected.push({ file, name, bump, kind, summary: body.replace(/\s+/g, " ").trim() });
@@ -187,22 +186,16 @@ function splitSections(markdown) {
 		}
 	}
 	const preambleEnd =
-		unreleasedStart !== -1
-			? unreleasedStart
-			: releasesStart !== -1
-				? releasesStart
-				: lines.length;
+		unreleasedStart !== -1 ? unreleasedStart : releasesStart !== -1 ? releasesStart : lines.length;
 	const preamble = lines.slice(0, preambleEnd).join("\n");
 	const unreleasedLines =
 		unreleasedStart === -1
 			? []
-			: lines.slice(
-					unreleasedStart,
-					releasesStart === -1 ? lines.length : releasesStart,
-				);
-	const releases = (
-		releasesStart === -1 ? "" : lines.slice(releasesStart).join("\n")
-	).replace(/\s+$/, "");
+			: lines.slice(unreleasedStart, releasesStart === -1 ? lines.length : releasesStart);
+	const releases = (releasesStart === -1 ? "" : lines.slice(releasesStart).join("\n")).replace(
+		/\s+$/,
+		"",
+	);
 	return { preamble, unreleased: unreleasedLines.join("\n"), releases };
 }
 
@@ -223,15 +216,10 @@ function parseUnreleasedBlock(unreleasedMd) {
 			const heading = sub[1].trim().toLowerCase();
 			if (heading === "highlights") mode = "highlights";
 			else if (heading === "added" || heading === "new") mode = "added";
-			else if (
-				heading === "changed" ||
-				heading === "updated" ||
-				heading === "improved"
-			)
+			else if (heading === "changed" || heading === "updated" || heading === "improved")
 				mode = "changed";
 			else if (heading === "fixed" || heading === "bug fixes") mode = "fixed";
-			else if (heading === "deprecated" || heading === "removed")
-				mode = "deprecated";
+			else if (heading === "deprecated" || heading === "removed") mode = "deprecated";
 			else mode = null;
 			continue;
 		}
@@ -333,12 +321,9 @@ async function main() {
 	const merged = mergeEntries(parsedUnreleased, changesets);
 
 	const totalEntries =
-		KIND_ORDER.reduce((sum, k) => sum + merged.byKind[k].length, 0) +
-		merged.highlights.length;
+		KIND_ORDER.reduce((sum, k) => sum + merged.byKind[k].length, 0) + merged.highlights.length;
 	if (totalEntries === 0) {
-		stderr.write(
-			"error: nothing to release — no [Unreleased] entries and no changesets found.\n",
-		);
+		stderr.write("error: nothing to release — no [Unreleased] entries and no changesets found.\n");
 		exit(1);
 	}
 

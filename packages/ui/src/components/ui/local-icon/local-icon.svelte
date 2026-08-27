@@ -1,20 +1,20 @@
 <script lang="ts" module>
-  import type { SVGAttributes } from "svelte/elements";
+import type { SVGAttributes } from "svelte/elements";
 
-  /**
-   * Icon geometry as data, mirroring `@lucide/svelte`'s `IconNode`: an array of
-   * `[svgTag, attributes]` tuples. Authoring an icon is pure data — no new
-   * component file — which keeps the local set extensible and tree-shakeable.
-   */
-  export type IconNode = [tag: string, attrs: Record<string, string | number>][];
+/**
+ * Icon geometry as data, mirroring `@lucide/svelte`'s `IconNode`: an array of
+ * `[svgTag, attributes]` tuples. Authoring an icon is pure data — no new
+ * component file — which keeps the local set extensible and tree-shakeable.
+ */
+export type IconNode = [tag: string, attrs: Record<string, string | number>][];
 
-  export interface LocalIconProps extends SVGAttributes<SVGSVGElement> {
-    size?: number | string;
-    color?: string;
-    strokeWidth?: number | string;
-    absoluteStrokeWidth?: boolean;
-    iconNode?: IconNode;
-  }
+export interface LocalIconProps extends SVGAttributes<SVGSVGElement> {
+	size?: number | string;
+	color?: string;
+	strokeWidth?: number | string;
+	absoluteStrokeWidth?: boolean;
+	iconNode?: IconNode;
+}
 </script>
 
 <script lang="ts">

@@ -1,23 +1,23 @@
 <script lang="ts">
-	import type { WithoutChildrenOrChild } from "@recast/ui/utils";
-	import { CRAFT_OVERLAY_ANIMATION, cn } from "@recast/ui/utils";
-	import { Tooltip as TooltipPrimitive } from "bits-ui";
-	import type { ComponentProps } from "svelte";
-	import TooltipPortal from "./tooltip-portal.svelte";
+import type { WithoutChildrenOrChild } from "@recast/ui/utils";
+import { CRAFT_OVERLAY_ANIMATION, cn } from "@recast/ui/utils";
+import { Tooltip as TooltipPrimitive } from "bits-ui";
+import type { ComponentProps } from "svelte";
+import TooltipPortal from "./tooltip-portal.svelte";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		sideOffset = 0,
-		side = "top",
-		children,
-		arrowClasses,
-		portalProps,
-		...restProps
-	}: TooltipPrimitive.ContentProps & {
-		arrowClasses?: string;
-		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof TooltipPortal>>;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	sideOffset = 0,
+	side = "top",
+	children,
+	arrowClasses,
+	portalProps,
+	...restProps
+}: TooltipPrimitive.ContentProps & {
+	arrowClasses?: string;
+	portalProps?: WithoutChildrenOrChild<ComponentProps<typeof TooltipPortal>>;
+} = $props();
 </script>
 
 <TooltipPortal {...portalProps}>

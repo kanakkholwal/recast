@@ -1,30 +1,30 @@
 <script lang="ts">
-	import type { Command as CommandPrimitive, Dialog as DialogPrimitive } from "bits-ui";
-	import type { Snippet } from "svelte";
-	import Command from "./command.svelte";
-	import * as Dialog from "../dialog";
-	import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import type { Command as CommandPrimitive, Dialog as DialogPrimitive } from "bits-ui";
+import type { Snippet } from "svelte";
+import Command from "./command.svelte";
+import * as Dialog from "../dialog";
+import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
 
-	let {
-		open = $bindable(false),
-		ref = $bindable(null),
-		value = $bindable(""),
-		title = "Command Palette",
-		description = "Search for a command to run...",
-		showCloseButton = false,
-		portalProps,
-		children,
-		class: className,
-		...restProps
-	}: WithoutChildrenOrChild<DialogPrimitive.RootProps> &
-		WithoutChildrenOrChild<CommandPrimitive.RootProps> & {
-			portalProps?: DialogPrimitive.PortalProps;
-			children: Snippet;
-			title?: string;
-			description?: string;
-			showCloseButton?: boolean;
-			class?: string;
-		} = $props();
+let {
+	open = $bindable(false),
+	ref = $bindable(null),
+	value = $bindable(""),
+	title = "Command Palette",
+	description = "Search for a command to run...",
+	showCloseButton = false,
+	portalProps,
+	children,
+	class: className,
+	...restProps
+}: WithoutChildrenOrChild<DialogPrimitive.RootProps> &
+	WithoutChildrenOrChild<CommandPrimitive.RootProps> & {
+		portalProps?: DialogPrimitive.PortalProps;
+		children: Snippet;
+		title?: string;
+		description?: string;
+		showCloseButton?: boolean;
+		class?: string;
+	} = $props();
 </script>
 
 <Dialog.Root bind:open {...restProps}>

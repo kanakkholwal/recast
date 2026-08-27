@@ -1,32 +1,32 @@
 <script lang="ts">
-	import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import DropdownMenuPortal from "./dropdown-menu-portal.svelte";
-	import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
-	import type { ComponentProps } from "svelte";
-	import {
-		dropdownMenuContentSizeVariants,
-		setDropdownMenuSize,
-		type DropdownMenuSize,
-	} from "./context";
+import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import DropdownMenuPortal from "./dropdown-menu-portal.svelte";
+import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
+import type { ComponentProps } from "svelte";
+import {
+	dropdownMenuContentSizeVariants,
+	setDropdownMenuSize,
+	type DropdownMenuSize,
+} from "./context";
 
-	let {
-		ref = $bindable(null),
-		sideOffset = 4,
-		align = "start",
-		size = "default",
-		portalProps,
-		class: className,
-		preventScroll = false,
-		...restProps
-	}: DropdownMenuPrimitive.ContentProps & {
-		size?: DropdownMenuSize;
-		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof DropdownMenuPortal>>;
-	} = $props();
+let {
+	ref = $bindable(null),
+	sideOffset = 4,
+	align = "start",
+	size = "default",
+	portalProps,
+	class: className,
+	preventScroll = false,
+	...restProps
+}: DropdownMenuPrimitive.ContentProps & {
+	size?: DropdownMenuSize;
+	portalProps?: WithoutChildrenOrChild<ComponentProps<typeof DropdownMenuPortal>>;
+} = $props();
 
-	// Propagate size to descendant Item / CheckboxItem / RadioItem / SubTrigger.
-	$effect(() => {
-		setDropdownMenuSize(size);
-	});
+// Propagate size to descendant Item / CheckboxItem / RadioItem / SubTrigger.
+$effect(() => {
+	setDropdownMenuSize(size);
+});
 </script>
 
 <DropdownMenuPortal {...portalProps}>

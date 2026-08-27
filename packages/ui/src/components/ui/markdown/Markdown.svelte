@@ -1,42 +1,42 @@
 <script lang="ts" module>
-  import { marked } from "marked";
-  import DOMPurify from "dompurify";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 
-  // GFM is on by default in marked (tables, strikethrough, autolinks, task
-  // lists). `breaks: false` keeps GitHub's "two spaces / blank line" newline
-  // semantics rather than turning every `\n` into a `<br>`.
-  marked.setOptions({ gfm: true, breaks: false });
+// GFM is on by default in marked (tables, strikethrough, autolinks, task
+// lists). `breaks: false` keeps GitHub's "two spaces / blank line" newline
+// semantics rather than turning every `\n` into a `<br>`.
+marked.setOptions({ gfm: true, breaks: false });
 
-  // Release bodies come from the GitHub API and can contain raw HTML, so the
-  // marked output MUST be sanitized before it reaches `{@html}` — marked does
-  // not sanitize (the maintainers explicitly defer to DOMPurify). Register the
-  // link-hardening hook once; it only runs in the browser (DOMPurify needs a
-  // DOM, which both consumers — the Tauri webview and the client-only web
-  // changelog — have).
-  let hookInstalled = false;
-  function ensureHook() {
-    if (hookInstalled || typeof window === "undefined") return;
-    DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-      if (node.tagName === "A") {
-        node.setAttribute("target", "_blank");
-        node.setAttribute("rel", "noopener noreferrer");
-      }
-    });
-    hookInstalled = true;
-  }
+// Release bodies come from the GitHub API and can contain raw HTML, so the
+// marked output MUST be sanitized before it reaches `{@html}` — marked does
+// not sanitize (the maintainers explicitly defer to DOMPurify). Register the
+// link-hardening hook once; it only runs in the browser (DOMPurify needs a
+// DOM, which both consumers — the Tauri webview and the client-only web
+// changelog — have).
+let hookInstalled = false;
+function ensureHook() {
+	if (hookInstalled || typeof window === "undefined") return;
+	DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+		if (node.tagName === "A") {
+			node.setAttribute("target", "_blank");
+			node.setAttribute("rel", "noopener noreferrer");
+		}
+	});
+	hookInstalled = true;
+}
 
-  export function renderMarkdown(source: string, inline: boolean): string {
-    const src = source ?? "";
-    const parsed = inline ? marked.parseInline(src) : marked.parse(src);
-    // We never enable marked's async mode, so the result is always a string;
-    // guard anyway so a future option flip can't inject a `[object Promise]`.
-    if (typeof parsed !== "string") return "";
-    // DOMPurify needs a DOM. Under SSR there is none — return empty and let
-    // client hydration fill it in (both current consumers render client-side).
-    if (typeof window === "undefined") return "";
-    ensureHook();
-    return DOMPurify.sanitize(parsed);
-  }
+export function renderMarkdown(source: string, inline: boolean): string {
+	const src = source ?? "";
+	const parsed = inline ? marked.parseInline(src) : marked.parse(src);
+	// We never enable marked's async mode, so the result is always a string;
+	// guard anyway so a future option flip can't inject a `[object Promise]`.
+	if (typeof parsed !== "string") return "";
+	// DOMPurify needs a DOM. Under SSR there is none — return empty and let
+	// client hydration fill it in (both current consumers render client-side).
+	if (typeof window === "undefined") return "";
+	ensureHook();
+	return DOMPurify.sanitize(parsed);
+}
 </script>
 
 <script lang="ts">
