@@ -1,5 +1,8 @@
 <script lang="ts">
-import { type BrowserCamera, enumerateCameras } from "@recast/editor/lib/camera/browser-devices";
+import {
+	type BrowserCamera,
+	isVirtualCameraLabel,
+} from "@recast/editor/lib/camera/browser-devices";
 import {
 	loadRecordingFps,
 	loadRecordingQuality,
@@ -46,6 +49,7 @@ import {
 	type CaptureIntentState,
 	excludeWindowFromCapture,
 	getAudioDevices,
+	getCameraDevices,
 	getCaptureIntent,
 	getDisplays,
 	getLastSource,
@@ -280,7 +284,7 @@ function applyIntentToPanel(intent: CaptureIntentState) {
 		if (match) {
 			selectedCameraId = match.deviceId;
 			void refreshCameraValidation(match.deviceId);
-			openCameraPreview(match.deviceId);
+			openCameraPreview(match.label);
 		}
 		cameraWarning = null;
 	} else if (cameraOn) {
@@ -389,7 +393,7 @@ onMount(() => {
 				selectedCameraId = id;
 				selectedCameraName = name;
 				void refreshCameraValidation(id);
-				openCameraPreview(id);
+				openCameraPreview(name);
 			} else {
 				cameraOn = false;
 				cameraValidation = null;
@@ -565,9 +569,19 @@ onMount(() => {
 // Load devices, then apply the default profile if enabled; otherwise seed
 // defaults (default mic, first non-virtual camera, only system audio on).
 async function initDevicesAndProfile() {
+	// Cameras come from Rust: offering one the backend cannot open is a dead end.
 	const [audioDevices, videoDevices] = await Promise.all([
 		getAudioDevices().catch(() => [] as AudioDeviceInfo[]),
-		enumerateCameras().catch(() => [] as BrowserCamera[]),
+		getCameraDevices()
+			.then((found) =>
+				found.map((camera) => ({
+					deviceId: camera.name,
+					label: camera.name,
+					groupId: "",
+					isVirtual: isVirtualCameraLabel(camera.name),
+				})),
+			)
+			.catch(() => [] as BrowserCamera[]),
 	]);
 	mics = audioDevices;
 	cameras = videoDevices;
@@ -626,7 +640,7 @@ function applyProfile(profile: RecordingProfile) {
 		selectedCameraId = camera.device.deviceId;
 		selectedCameraName = camera.device.label;
 		void refreshCameraValidation(camera.device.deviceId);
-		openCameraPreview(camera.device.deviceId);
+		openCameraPreview(camera.device.label);
 	} else {
 		cameraValidation = null;
 		// `missing` tears down unconditionally: the profile asked for a camera, so
@@ -770,13 +784,15 @@ function openDevicePicker(type: "mic" | "camera") {
 	});
 }
 
-function openCameraPreview(deviceId: string) {
+/** `name` is the camera's friendly label: Rust resolves the device by name, and
+ *  the browser's deviceId hash means nothing to Media Foundation. */
+function openCameraPreview(name: string) {
 	WebviewWindow.getByLabel("camera-preview").then(async (existing) => {
 		if (existing) {
 			await existing.close();
 		}
 		const win = new WebviewWindow("camera-preview", {
-			url: `/camera-preview?deviceId=${encodeURIComponent(deviceId)}`,
+			url: `/camera-preview?deviceId=${encodeURIComponent(name)}`,
 			title: "Camera",
 			width: 240,
 			height: 240,

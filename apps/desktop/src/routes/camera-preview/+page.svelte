@@ -57,6 +57,7 @@ let isSnapping = false;
 
 // Rust owns the camera and feeds this preview; getUserMedia cannot also hold it.
 let frames: Channel<ArrayBuffer> | null = null;
+let session = 0;
 let painter: ImageData | null = null;
 
 const params = new URLSearchParams(window.location.search);
@@ -155,6 +156,7 @@ async function startCamera() {
 		channel.onmessage = paint;
 		frames = channel;
 		const geometry = await startCameraPreview(deviceQuery, channel);
+		session = geometry.session;
 		console.info(
 			`[camera-preview] Rust opened ${deviceQuery} at ${geometry.width}x${geometry.height}`,
 		);
@@ -188,7 +190,9 @@ function startLivelinessProbe() {
 function stopCamera() {
 	// Releases the device; any recording was already finalized by stop_recording.
 	frames = null;
-	void stopCameraPreview().catch(() => {});
+	if (session === 0) return;
+	void stopCameraPreview(session).catch(() => {});
+	session = 0;
 }
 
 function closeWindow() {

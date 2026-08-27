@@ -381,9 +381,7 @@ fn pipewire_capture_loop(
             if info.parse(pod).is_err() {
                 log::warn!(
                     "pipewire param_changed: failed to parse Format pod; \
-                     keeping portal-reported {}x{} as the working geometry",
-                    portal_w,
-                    portal_h
+                     keeping portal-reported {portal_w}x{portal_h} as the working geometry"
                 );
                 return;
             }

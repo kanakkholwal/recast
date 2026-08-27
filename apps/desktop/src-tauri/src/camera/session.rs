@@ -9,7 +9,7 @@
 //! the A/V offset is measured rather than reported over IPC in wall-clock time.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -25,9 +25,20 @@ use crate::recording::{RecordingClock, TrackStart};
 /// How long to wait for a frame before re-checking the stop flag.
 const POLL: Duration = Duration::from_millis(250);
 
-/// How long the camera has to produce its first frame before we give up. A cold
-/// USB webcam negotiates format and runs auto-exposure first, which takes seconds.
-const FIRST_FRAME: Duration = Duration::from_secs(10);
+/// How long one attempt waits for the first frame. A cold USB webcam negotiates
+/// format and runs auto-exposure first, so this is seconds rather than millis.
+const FIRST_FRAME: Duration = Duration::from_secs(4);
+
+/// How many times to reopen before giving up.
+///
+/// A source reader that has not delivered in `FIRST_FRAME` will not start by
+/// being waited on longer, but usually will on a fresh open: the device is
+/// briefly held by whatever released it last (a WebView probe, a closing
+/// preview, another app). Reopening beats a single long wait.
+const OPEN_ATTEMPTS: u32 = 3;
+
+/// Pause between attempts, letting the previous holder finish releasing.
+const RETRY_BACKOFF: Duration = Duration::from_millis(400);
 
 /// Frames buffered between the camera thread and the file encoder.
 const QUEUE_DEPTH: usize = 8;
@@ -39,12 +50,17 @@ const PREVIEW_MAX_DIM: u32 = 480;
 /// Where preview frames go. Boxed so the camera thread does not depend on Tauri.
 pub type FrameSink = Box<dyn Fn(Vec<u8>) + Send + 'static>;
 
-/// The negotiated capture size, so the caller can size its canvas.
+/// The negotiated capture size, plus the token that identifies this session.
+///
+/// The panel closes the preview window and immediately opens a new one, so the
+/// old window's teardown can land after the new window's open. Stopping is
+/// keyed on this token, which means a stale window cannot close a live camera.
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CameraGeometry {
     pub width: u32,
     pub height: u32,
+    pub session: u64,
 }
 
 /// A file being written from the live camera.
@@ -58,11 +74,21 @@ struct Recorder {
 }
 
 struct Running {
+    session: u64,
     device: String,
     stop: Arc<AtomicBool>,
     thread: thread::JoinHandle<()>,
     geometry: CameraGeometry,
     recorder: Arc<Mutex<Option<Recorder>>>,
+    /// Swapped when the preview window reopens: the old window's channel is
+    /// dead, and frames sent to it would never reach the new one.
+    sink: Arc<Mutex<FrameSink>>,
+}
+
+/// Monotonic session token. Zero is never handed out, so it means "no session".
+fn next_session() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 fn slot() -> &'static Mutex<Option<Running>> {
@@ -76,8 +102,18 @@ fn slot() -> &'static Mutex<Option<Running>> {
 /// the receiver needs no side channel to size itself.
 pub fn start(device: &str, sink: FrameSink) -> Result<CameraGeometry> {
     let mut held = slot().lock().map_err(|_| anyhow!("camera lock poisoned"))?;
-    if let Some(running) = held.as_ref() {
+    if let Some(running) = held.as_mut() {
         if running.device == device {
+            {
+                let mut current = running
+                    .sink
+                    .lock()
+                    .map_err(|_| anyhow!("camera sink lock poisoned"))?;
+                *current = sink;
+            }
+            // A fresh token so the window this replaced cannot stop the camera.
+            running.session = next_session();
+            running.geometry.session = running.session;
             return Ok(running.geometry);
         }
     }
@@ -86,23 +122,83 @@ pub fn start(device: &str, sink: FrameSink) -> Result<CameraGeometry> {
         shut_down(previous);
     }
 
+    if !super::supported() {
+        return Err(anyhow!(
+            "camera capture is not supported on this platform yet"
+        ));
+    }
     let cameras = super::devices().map_err(|e| anyhow!("camera enumeration failed: {e}"))?;
-    let camera = cameras
-        .iter()
-        .find(|camera| camera.name == device)
+    let camera = super::find(&cameras, device)
         .ok_or_else(|| anyhow!("camera \"{device}\" is not available"))?;
 
-    let mut capturer = capturekit::capturer(Target::Camera(camera.id.clone()))
+    let (capturer, geometry, opening) = open_streaming(device, &camera.id)?;
+    let session = geometry.session;
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let recorder: Arc<Mutex<Option<Recorder>>> = Arc::new(Mutex::new(None));
+    let sink = Arc::new(Mutex::new(sink));
+    let thread = thread::Builder::new()
+        .name("recast-camera".into())
+        .spawn({
+            let stop = stop.clone();
+            let recorder = recorder.clone();
+            let sink = sink.clone();
+            move || pump(capturer, geometry, opening, &sink, &recorder, &stop)
+        })
+        .context("failed to spawn the camera thread")?;
+
+    *held = Some(Running {
+        session,
+        device: device.to_string(),
+        stop,
+        thread,
+        geometry,
+        recorder,
+        sink,
+    });
+    Ok(geometry)
+}
+
+/// Open the camera and take its first frame, reopening on a transient failure.
+fn open_streaming(
+    device: &str,
+    id: &capturekit::CameraId,
+) -> Result<(capturekit::Capturer, CameraGeometry, Vec<u8>)> {
+    let mut last = None;
+    for attempt in 1..=OPEN_ATTEMPTS {
+        match try_open(device, id) {
+            Ok(open) => return Ok(open),
+            Err(e) => {
+                let retryable = e
+                    .downcast_ref::<capturekit::CaptureError>()
+                    .is_some_and(capturekit::CaptureError::is_recoverable);
+                if !retryable || attempt == OPEN_ATTEMPTS {
+                    return Err(e);
+                }
+                log::warn!("camera \"{device}\" attempt {attempt} failed, reopening: {e:#}");
+                last = Some(e);
+                thread::sleep(RETRY_BACKOFF);
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow!("camera \"{device}\" could not be opened")))
+}
+
+fn try_open(
+    device: &str,
+    id: &capturekit::CameraId,
+) -> Result<(capturekit::Capturer, CameraGeometry, Vec<u8>)> {
+    let mut capturer = capturekit::capturer(Target::Camera(id.clone()))
         .frame_rate(30)
         .build()
         .with_context(|| format!("failed to open camera \"{device}\""))?;
-
     let first = capturer
         .next_frame(FIRST_FRAME)
         .with_context(|| format!("camera \"{device}\" produced no frames"))?;
     let geometry = CameraGeometry {
         width: first.desc().width,
         height: first.desc().height,
+        session: next_session(),
     };
     let opening = pack_rows(
         first.bytes(),
@@ -111,31 +207,16 @@ pub fn start(device: &str, sink: FrameSink) -> Result<CameraGeometry> {
         geometry.height,
     );
     drop(first);
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let recorder: Arc<Mutex<Option<Recorder>>> = Arc::new(Mutex::new(None));
-    let thread = thread::Builder::new()
-        .name("recast-camera".into())
-        .spawn({
-            let stop = stop.clone();
-            let recorder = recorder.clone();
-            move || pump(capturer, geometry, opening, sink, recorder, stop)
-        })
-        .context("failed to spawn the camera thread")?;
-
-    *held = Some(Running {
-        device: device.to_string(),
-        stop,
-        thread,
-        geometry,
-        recorder,
-    });
-    Ok(geometry)
+    Ok((capturer, geometry, opening))
 }
 
-/// Release the device. Idempotent.
-pub fn stop() {
-    let taken = slot().lock().ok().and_then(|mut held| held.take());
+/// Release the device held by `session`. Idempotent, and a no-op for a token
+/// that is not the live one, so a closing window cannot stop its replacement.
+pub fn stop(session: u64) {
+    let taken = slot().lock().ok().and_then(|mut held| {
+        let matches = held.as_ref().is_some_and(|r| r.session == session);
+        matches.then(|| held.take()).flatten()
+    });
     if let Some(running) = taken {
         shut_down(running);
     }
@@ -222,13 +303,13 @@ fn pump(
     mut capturer: capturekit::Capturer,
     geometry: CameraGeometry,
     opening: Vec<u8>,
-    sink: FrameSink,
-    recorder: Arc<Mutex<Option<Recorder>>>,
-    stop: Arc<AtomicBool>,
+    sink: &Mutex<FrameSink>,
+    recorder: &Mutex<Option<Recorder>>,
+    stop: &AtomicBool,
 ) {
     let mut packed = opening;
     loop {
-        deliver(&packed, geometry, &sink, &recorder);
+        deliver(&packed, geometry, sink, recorder);
         if stop.load(Ordering::Acquire) {
             break;
         }
@@ -254,8 +335,8 @@ fn pump(
 fn deliver(
     packed: &[u8],
     geometry: CameraGeometry,
-    sink: &FrameSink,
-    recorder: &Arc<Mutex<Option<Recorder>>>,
+    sink: &Mutex<FrameSink>,
+    recorder: &Mutex<Option<Recorder>>,
 ) {
     if let Ok(held) = recorder.lock() {
         if let Some(rec) = held.as_ref() {
@@ -275,7 +356,9 @@ fn deliver(
     message.extend_from_slice(&w.to_le_bytes());
     message.extend_from_slice(&h.to_le_bytes());
     message.extend_from_slice(&small);
-    sink(message);
+    if let Ok(send) = sink.lock() {
+        send(message);
+    }
 }
 
 /// Copy rows into a tightly packed buffer.
@@ -327,6 +410,7 @@ mod tests {
         let geometry = CameraGeometry {
             width: 2,
             height: 2,
+            session: 1,
         };
         let packed = vec![9u8; 2 * 2 * 4];
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -334,7 +418,7 @@ mod tests {
             let seen = seen.clone();
             Box::new(move |message| seen.lock().expect("sink lock").push(message))
         };
-        deliver(&packed, geometry, &sink, &Arc::new(Mutex::new(None)));
+        deliver(&packed, geometry, &Mutex::new(sink), &Mutex::new(None));
 
         let held = seen.lock().expect("sink lock");
         let message = held.first().expect("a frame was delivered");

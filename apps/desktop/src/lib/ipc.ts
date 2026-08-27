@@ -349,8 +349,8 @@ export function updateCameraPreviewState(state: CameraPreviewState): Promise<voi
 	return invoke("update_camera_preview_state", { state });
 }
 
-/** Camera geometry the backend negotiated, so the preview can size its canvas. */
-export type CameraGeometry = { width: number; height: number };
+/** Camera geometry plus the token identifying this capture session. */
+export type CameraGeometry = { width: number; height: number; session: number };
 
 /** Open the camera and stream preview frames.
  *  Cameras are exclusive, so this also takes the device away from getUserMedia.
@@ -362,9 +362,10 @@ export function startCameraPreview(
 	return invoke<CameraGeometry>("start_camera_preview", { device, onFrame });
 }
 
-/** Release the camera. Safe to call when nothing is open. */
-export function stopCameraPreview(): Promise<void> {
-	return invoke<void>("stop_camera_preview");
+/** Release the camera held by `session`. A stale token is ignored, so a closing
+ *  preview window cannot stop the one that replaced it. */
+export function stopCameraPreview(session: number): Promise<void> {
+	return invoke<void>("stop_camera_preview", { session });
 }
 
 export function stopRecording(): Promise<string> {

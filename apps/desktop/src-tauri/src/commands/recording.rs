@@ -304,13 +304,15 @@ pub async fn start_camera_preview(
     })
     .await
     .map_err(|e| AppError::msg(format!("start_camera_preview join error: {e}")))?
-    .map_err(|e| AppError::msg(e.to_string()))
+    // `{:#}` for the whole chain: the outer message hides why the open failed.
+    .map_err(|e| AppError::msg(format!("{e:#}")))
 }
 
-/// Release the camera. Idempotent, and safe to call with no session open.
+/// Release the camera held by `session`. Ignores a stale token, so the preview
+/// window being replaced cannot close the camera its replacement just opened.
 #[tauri::command]
-pub async fn stop_camera_preview() -> AppResult<()> {
-    tauri::async_runtime::spawn_blocking(crate::camera::session::stop)
+pub async fn stop_camera_preview(session: u64) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::camera::session::stop(session))
         .await
         .map_err(|e| AppError::msg(format!("stop_camera_preview join error: {e}")))
 }

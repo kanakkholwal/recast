@@ -1,3 +1,4 @@
+mod v4l2;
 mod x11;
 
 #[cfg(feature = "pipewire-audio")]
@@ -90,7 +91,7 @@ pub(crate) fn capabilities() -> Capabilities {
             // exclusion request here is refused rather than silently dropped.
             exclusion: ExclusionSupport::None,
             window_capture: true,
-            camera_capture: false,
+            camera_capture: true,
             // The portal runs its own picker; a client never sees the list.
             window_enumeration: false,
             display_enumeration: false,
@@ -106,7 +107,7 @@ pub(crate) fn capabilities() -> Capabilities {
             // X11 has no notion of hiding a window from a `GetImage` of the root.
             exclusion: ExclusionSupport::None,
             window_capture: true,
-            camera_capture: false,
+            camera_capture: true,
             window_enumeration: true,
             display_enumeration: true,
             // `GetImage` crops server-side, so nothing outside the rectangle
@@ -129,6 +130,7 @@ pub(crate) fn permission(kind: PermissionKind) -> Permission {
         // query a standing answer, so the honest report is "you will be asked".
         (PermissionKind::Screen, Session::Wayland) => Permission::NotDetermined,
         (PermissionKind::Screen, Session::X11) => Permission::NotRequired,
+        (PermissionKind::Camera, _) => v4l2::permission(),
         _ => Permission::NotDetermined,
     }
 }
@@ -182,12 +184,8 @@ pub(crate) fn quit_timer<'l>(
     Ok(timer)
 }
 
-/// Cameras are not enumerated on this platform yet.
 pub(crate) fn cameras() -> Result<Vec<capturekit_core::Camera>> {
-    Err(CaptureError::Unsupported {
-        backend: "v4l2",
-        operation: "enumerate cameras yet",
-    })
+    v4l2::cameras()
 }
 
 #[cfg(feature = "pipewire-audio")]
@@ -228,11 +226,9 @@ fn no_pipewire_audio() -> CaptureError {
 }
 
 pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
-    if let Target::Camera(_) = target {
-        return Err(CaptureError::Unsupported {
-            backend: "linux",
-            operation: "capture a camera yet",
-        });
+    // Ahead of the session check: a camera is a device node, not a surface.
+    if let Target::Camera(id) = target {
+        return Ok(Box::new(v4l2::V4l2CameraSource::open(id, opts)?));
     }
     match session() {
         #[cfg(feature = "wayland")]
@@ -249,7 +245,8 @@ pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameS
                 Ok(Box::new(x11::X11Source::open_display(*display, &opts)?))
             }
             Target::Window(id) => Ok(Box::new(x11::X11Source::open_window(*id, opts)?)),
-            Target::Camera(_) => Err(no_session()),
+            // Taken above, before the display server was ever consulted.
+            Target::Camera(id) => Ok(Box::new(v4l2::V4l2CameraSource::open(id, opts)?)),
         },
         Session::None => Err(no_session()),
     }
