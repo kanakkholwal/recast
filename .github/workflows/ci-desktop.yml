@@ -342,6 +342,34 @@ jobs:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
         run: cargo test --manifest-path crates/Cargo.toml --workspace --release
 
+      # capturekit is a publishable crate with a per-OS backend behind one trait,
+      # so the only thing that proves the other two backends is building them on
+      # the other two runners. The step above already compiles the workspace on
+      # each; this makes the capture crates a named, blocking gate so a macOS or
+      # Wayland break reads as what it is instead of as "engine crates".
+      #
+      # Linux takes `--all-features` deliberately: that is what pulls in the
+      # xdg-desktop-portal + PipeWire path, and the libpipewire/libspa headers it
+      # needs are already installed by install-linux-deps.sh.
+      - name: capturekit backends (${{ matrix.platform.name }})
+        if: ${{ !matrix.platform.cross }}
+        run: |
+          cargo clippy --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-targets --all-features -- -D warnings
+          cargo test --manifest-path crates/Cargo.toml -p capturekit-core --all-features
+
+      # Capture against the runner's own desktop. Windows-only because it is the
+      # one runner guaranteed an interactive session: macOS needs a TCC grant no
+      # runner can give, and the Linux image has no display server. Those legs
+      # still compile the code above; they just cannot execute it.
+      #
+      # CAPTUREKIT_REQUIRE_DESKTOP turns the suite's own "no session, skipping"
+      # path into a failure, so this cannot quietly pass by testing nothing.
+      - name: capturekit live capture (Windows only)
+        if: ${{ matrix.platform.name == 'windows-x64' }}
+        env:
+          CAPTUREKIT_REQUIRE_DESKTOP: "1"
+        run: cargo test --manifest-path crates/Cargo.toml -p capturekit --all-features
+
       # The compositor and its leaf crates MUST keep compiling to wasm32: the
       # whole plan rests on one compositor serving native and the browser
       # preview. A dependency that pulls in std::fs or tokio breaks this and

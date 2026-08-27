@@ -6,8 +6,8 @@
 	"scripts": {
 		"sync:changelog": "node ../../scripts/sync-desktop-changelog.mjs",
 		"sync:assets": "node ../../scripts/sync-screenshot-assets.mjs",
-		"ui:dev": "pnpm sync:changelog && pnpm sync:assets && vite dev",
-		"ui:build": "pnpm sync:changelog && pnpm sync:assets && vite build",
+		"ui:dev": "pnpm --filter @recast/engine build:wasm:ensure && pnpm sync:changelog && pnpm sync:assets && vite dev",
+		"ui:build": "pnpm --filter @recast/engine build:wasm:ensure && pnpm sync:changelog && pnpm sync:assets && vite build",
 		"ui:preview": "vite preview",
 		"tauri": "tauri",
 		"dev": "tauri dev",

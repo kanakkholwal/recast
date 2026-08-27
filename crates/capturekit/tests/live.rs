@@ -8,18 +8,43 @@
 use std::time::Duration;
 
 use capturekit::{
-    capturer, displays, shot, shot_with, windows, CursorMode, Display, Flow, PixelFormat, Rect,
-    ShotOptions, Target, Warmup,
+    capturer, displays, permission, shot, shot_with, windows, CursorMode, Display, Flow,
+    PermissionKind, PixelFormat, Rect, ShotOptions, Target, Warmup,
 };
 
 /// The display to capture, or `None` when there is no desktop to capture from.
+///
+/// Skipping is allowed because a CI runner may have no session, no display or no
+/// screen-recording grant. It is NOT allowed to hide a regression, so the reasons
+/// are narrow: an empty display list, or a permission the platform has not given.
+/// A backend that errors for any other reason still fails the test.
 fn primary() -> Option<Display> {
-    let displays = displays().ok()?;
+    if !permission(PermissionKind::Screen).is_usable() {
+        return skip("screen capture is not permitted for this process");
+    }
+    let displays = match displays() {
+        Ok(displays) if !displays.is_empty() => displays,
+        Ok(_) => return skip("the platform reports no displays"),
+        Err(err) => return skip(&format!("displays could not be enumerated: {err}")),
+    };
     displays
         .iter()
         .find(|display| display.is_primary)
         .or_else(|| displays.first())
         .cloned()
+}
+
+/// Report a skip, or fail when the environment promised a desktop.
+///
+/// `CAPTUREKIT_REQUIRE_DESKTOP=1` is set on the CI leg that is known to have a
+/// session, so a silent skip there cannot pass for a green run.
+fn skip(reason: &str) -> Option<Display> {
+    assert!(
+        std::env::var_os("CAPTUREKIT_REQUIRE_DESKTOP").is_none(),
+        "CAPTUREKIT_REQUIRE_DESKTOP is set but {reason}"
+    );
+    eprintln!("skipped: {reason}");
+    None
 }
 
 /// Desktop Duplication is one-per-output-per-process, and cargo runs tests on

@@ -100,6 +100,10 @@ function run(command, args, cwd, env) {
 	}
 }
 
+// Idempotent, and cheap when already present. Without it a job that has Rust
+// but has never built for the web fails deep inside cargo instead of here.
+run("rustup", ["target", "add", "wasm32-unknown-unknown"], repoRoot);
+
 const version = await pinnedBindgenVersion();
 const bindgen = await ensureBindgen(version);
 const outDir = join(pkgRoot, "wasm");

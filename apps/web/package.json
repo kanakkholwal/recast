@@ -5,8 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"sync:assets": "node ../../scripts/sync-screenshot-assets.mjs",
-		"dev": "pnpm sync:assets && vite dev",
-		"build": "pnpm sync:assets && vite build",
+		"dev": "pnpm --filter @recast/engine build:wasm:ensure && pnpm sync:assets && vite dev",
+		"build": "pnpm --filter @recast/engine build:wasm:ensure && pnpm sync:assets && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "docvia build && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

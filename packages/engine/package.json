@@ -22,6 +22,7 @@
 		"check": "tsc --noEmit -p tsconfig.json",
 		"test:unit": "vitest run --passWithNoTests",
 		"test:unit:watch": "vitest",
-		"test:golden": "playwright test"
+		"test:golden": "playwright test",
+		"build:wasm:ensure": "node scripts/ensure-wasm.mjs"
 	}
 }
