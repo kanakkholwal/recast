@@ -144,7 +144,8 @@ pub(crate) fn displays() -> Result<Vec<Display>> {
 
 /// The executable name owning `window`, which is the closest thing Win32 offers
 /// to an application display name without a package manifest lookup.
-fn app_name(window: HWND) -> String {
+/// The owning process id and its executable name, from one lookup.
+fn owner(window: HWND) -> (u32, String) {
     use windows::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
         PROCESS_QUERY_LIMITED_INFORMATION,
@@ -153,10 +154,10 @@ fn app_name(window: HWND) -> String {
     let mut pid = 0u32;
     unsafe { GetWindowThreadProcessId(window, Some(&mut pid)) };
     if pid == 0 {
-        return String::new();
+        return (0, String::new());
     }
     let Ok(handle) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }) else {
-        return String::new();
+        return (pid, String::new());
     };
     let mut buffer = [0u16; 260];
     let mut len = buffer.len() as u32;
@@ -170,14 +171,15 @@ fn app_name(window: HWND) -> String {
     };
     let _ = unsafe { windows::Win32::Foundation::CloseHandle(handle) };
     if queried.is_err() {
-        return String::new();
+        return (pid, String::new());
     }
-    wide_to_string(&buffer[..len as usize])
+    let name = wide_to_string(&buffer[..len as usize])
         .rsplit(['\\', '/'])
         .next()
         .unwrap_or_default()
         .trim_end_matches(".exe")
-        .to_string()
+        .to_string();
+    (pid, name)
 }
 
 fn window_title(window: HWND) -> String {
@@ -226,10 +228,12 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
             continue;
         }
         let monitor = unsafe { MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) };
+        let (pid, app_name) = owner(window);
         listed.push(Window {
             id: WindowId(window.0 as u64),
             title,
-            app_name: app_name(window),
+            app_name,
+            pid,
             bounds: rect_of(rect),
             display: DisplayId(monitor.0 as u64),
             is_minimized: unsafe { IsIconic(window) }.as_bool(),

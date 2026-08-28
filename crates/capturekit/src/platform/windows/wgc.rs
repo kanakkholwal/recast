@@ -146,7 +146,7 @@ impl WgcSource {
                 backend: BACKEND,
             },
             region: opts.region.map(|_| staged),
-            min_readback_gap: readback_gap(opts.frame_rate()),
+            min_readback_gap: readback_gap(opts.readback_rate()),
             next_readback_at: Instant::now(),
             closed: false,
         })

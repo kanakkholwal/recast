@@ -358,9 +358,9 @@ fn apply_edit(
 #[serde(rename_all = "camelCase")]
 struct StartParams {
     target_type: String,
-    target_id: u32,
+    target_id: u64,
     #[serde(default)]
-    region: Option<crate::recording::RegionRect>,
+    region: Option<crate::capture::RegionRect>,
     #[serde(default)]
     options: Option<crate::recording::RecordingOptions>,
 }
@@ -376,7 +376,7 @@ fn apply_patch(intent: &mut crate::commands::types::CaptureIntent, params: &Valu
         intent.target_type = v.as_str().map(str::to_string);
     }
     if let Some(n) = map.get("targetId").and_then(Value::as_u64) {
-        intent.target_id = n as u32;
+        intent.target_id = n;
     }
     if map.contains_key("region") {
         intent.region = serde_json::from_value(map["region"].clone()).ok();

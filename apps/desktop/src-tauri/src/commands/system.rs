@@ -5,7 +5,6 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager, State};
-use xcap::{Monitor, Window};
 
 use super::error::{AppError, AppResult};
 use super::ffmpeg::{encode_thumbnail_base64, make_thumbnail};
@@ -198,19 +197,15 @@ fn is_wayland() -> bool {
     cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
-fn capture_monitor_thumbnail(monitor: &Monitor) -> Option<String> {
+/// A picker thumbnail, or `None` where taking one would be intrusive or fail.
+///
+/// Skipped under Wayland, where every capture is a portal dialog and a picker
+/// full of thumbnails would be a picker full of prompts.
+fn capture_thumbnail(target: capturekit::Target) -> Option<String> {
     if is_wayland() {
         return None;
     }
-    let shot = monitor.capture_image().ok()?;
-    encode_thumbnail_base64(&make_thumbnail(&shot))
-}
-
-fn capture_window_thumbnail(window: &Window) -> Option<String> {
-    if is_wayland() {
-        return None;
-    }
-    let shot = window.capture_image().ok()?;
+    let shot = crate::capture::thumbnail(target).ok()?;
     encode_thumbnail_base64(&make_thumbnail(&shot))
 }
 
@@ -449,37 +444,24 @@ pub fn open_log_dir(app: AppHandle) -> AppResult<String> {
     Ok(display)
 }
 
-// `get_displays` and `get_windows` are async + spawn_blocking because xcap's
-// underlying calls (`Monitor::all`, `Window::all`, `capture_image`) can stall
-// for hundreds of ms or longer on Linux/Wayland (portal handshake, compositor
-// IPC). Tauri runs sync commands directly on the GTK main thread on Linux —
-// any blocking work there freezes the entire window: close/minimize/maximize
-// stop responding because the WM can't deliver events. Pushing both onto a
-// blocking worker keeps the GTK loop free even if xcap hangs.
+// Enumeration and thumbnails hit the compositor; a sync command would freeze the GTK main thread.
 #[tauri::command]
 pub async fn get_displays() -> AppResult<Vec<DisplayInfo>> {
     tauri::async_runtime::spawn_blocking(|| -> AppResult<Vec<DisplayInfo>> {
-        let monitors = Monitor::all().map_err(|e| e.to_string())?;
-        Ok(monitors
-            .iter()
-            .map(|monitor| DisplayInfo {
-                id: monitor.id().unwrap_or_default(),
-                name: monitor.name().unwrap_or_default(),
-                x: monitor.x().unwrap_or_default(),
-                y: monitor.y().unwrap_or_default(),
-                width: monitor.width().unwrap_or_default(),
-                height: monitor.height().unwrap_or_default(),
-                is_primary: monitor.is_primary().unwrap_or_default(),
-                thumbnail: capture_monitor_thumbnail(monitor),
-                // The display's current refresh rate, rounded; 0 if unreported.
-                // This is the *current* rate, not the panel's max, so a 144 Hz
-                // monitor running at 60 correctly reports 60.
-                refresh_hz: monitor
-                    .frequency()
-                    .ok()
-                    .filter(|hz| hz.is_finite() && *hz >= 1.0)
-                    .map(|hz| hz.round() as u32)
-                    .unwrap_or(0),
+        let displays = capturekit::displays().map_err(|e| e.to_string())?;
+        Ok(displays
+            .into_iter()
+            .map(|display| DisplayInfo {
+                id: display.id.0,
+                name: display.name,
+                x: display.bounds.x,
+                y: display.bounds.y,
+                width: display.bounds.width,
+                height: display.bounds.height,
+                is_primary: display.is_primary,
+                thumbnail: capture_thumbnail(capturekit::Target::Display(display.id)),
+                // The CURRENT rate, not the panel's maximum; 0 if unreported.
+                refresh_hz: display.refresh_hz.map_or(0, |hz| hz.round() as u32),
             })
             .collect())
     })
@@ -490,30 +472,21 @@ pub async fn get_displays() -> AppResult<Vec<DisplayInfo>> {
 #[tauri::command]
 pub async fn get_windows() -> AppResult<Vec<WindowInfo>> {
     tauri::async_runtime::spawn_blocking(|| -> AppResult<Vec<WindowInfo>> {
-        let windows = Window::all().map_err(|e| e.to_string())?;
-        // Each xcap accessor hits the compositor/WM. The old filter + map
-        // called `.is_minimized()` and `.title()` twice each per window.
-        // Snapshot once into a local struct, then filter + map cheaply.
+        let windows = capturekit::windows().map_err(|e| e.to_string())?;
         Ok(windows
-            .iter()
-            .filter_map(|window| {
-                let is_minimized = window.is_minimized().unwrap_or_default();
-                let title = window.title().unwrap_or_default();
-                if is_minimized || title.is_empty() {
-                    return None;
-                }
-                Some(WindowInfo {
-                    id: window.id().unwrap_or_default(),
-                    pid: window.pid().unwrap_or_default(),
-                    app_name: window.app_name().unwrap_or_default(),
-                    title,
-                    x: window.x().unwrap_or_default(),
-                    y: window.y().unwrap_or_default(),
-                    width: window.width().unwrap_or_default(),
-                    height: window.height().unwrap_or_default(),
-                    is_minimized,
-                    thumbnail: capture_window_thumbnail(window),
-                })
+            .into_iter()
+            .filter(|window| window.is_capturable() && !window.title.is_empty())
+            .map(|window| WindowInfo {
+                id: window.id.0,
+                pid: window.pid,
+                app_name: window.app_name,
+                title: window.title,
+                x: window.bounds.x,
+                y: window.bounds.y,
+                width: window.bounds.width,
+                height: window.bounds.height,
+                is_minimized: window.is_minimized,
+                thumbnail: capture_thumbnail(capturekit::Target::Window(window.id)),
             })
             .collect())
     })
@@ -1340,7 +1313,10 @@ fn cap_planned(key: &str, label: &str, backend: &str, note: Option<&str>) -> Cap
 
 /// Build the capture-support matrix for whichever platform this binary was
 /// compiled for. Each `#[cfg]` block is the function's tail expression on its
-/// target — the same dispatch pattern as `capture::platform::create_source`.
+/// target.
+///
+/// Screen and camera rows describe capturekit's backends; audio and cursor still
+/// describe the app's own, which have not moved yet.
 fn build_capture_capabilities() -> CaptureCapabilities {
     #[cfg(windows)]
     {
@@ -1354,13 +1330,25 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                     "Full-screen recording",
                     true,
                     screen_backend,
-                    Some("Falls back to GDI capture (xcap) if GPU duplication is unavailable."),
+                    None,
                 ),
-                cap("window", "Window capture", true, screen_backend, None),
+                cap(
+                    "window",
+                    "Window capture",
+                    true,
+                    "Windows Graphics Capture",
+                    Some("Records the window's own surface, so overlapping windows stay out."),
+                ),
                 cap("region", "Region capture", true, screen_backend, None),
                 cap("systemAudio", "System audio", true, "WASAPI loopback", None),
                 cap("microphone", "Microphone", true, "WASAPI", None),
-                cap("camera", "Webcam", true, "DirectShow (FFmpeg)", None),
+                cap(
+                    "camera",
+                    "Webcam",
+                    true,
+                    "Media Foundation",
+                    Some("DirectShow-only virtual cameras are not listed."),
+                ),
                 cap(
                     "cursor",
                     "Cursor tracking",
@@ -1373,16 +1361,12 @@ fn build_capture_capabilities() -> CaptureCapabilities {
     }
     #[cfg(target_os = "macos")]
     {
-        // The AVFoundation device listing is cached after the first probe. A
-        // "Capture screen" pseudo-device in it means the bundled FFmpeg has
-        // avfoundation support wired — the prerequisite for the native macOS
-        // path. (Screen Recording *permission* is enforced at record time,
-        // not at listing time, so its presence here only proves the API is
-        // reachable, which is exactly the "is it supported" question.)
+        // Gates the AUDIO rows only: FFmpeg no longer captures the screen.
         let listing = crate::ffmpeg::cached_avfoundation_devices();
         let has_avf = !listing.is_empty();
-        let has_screen = listing.to_ascii_lowercase().contains("capture screen");
-        let screen_backend = "FFmpeg AVFoundation";
+        // Always present; the grant varies, and the row's note covers that.
+        let has_screen = true;
+        let screen_backend = "ScreenCaptureKit";
         CaptureCapabilities {
             platform: "macos".into(),
             screen_backend: screen_backend.into(),
@@ -1399,7 +1383,7 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                     "Window capture",
                     has_screen,
                     screen_backend,
-                    Some("Captured as a screen region; placement is approximate on Retina displays."),
+                    Some("Records the window's own surface, so overlapping windows stay out."),
                 ),
                 cap("region", "Region capture", has_screen, screen_backend, None),
                 cap(
@@ -1417,10 +1401,7 @@ fn build_capture_capabilities() -> CaptureCapabilities {
     }
     #[cfg(target_os = "linux")]
     {
-        // Session-type dispatch mirrors `capture::platform::create_source`:
-        // prefer Wayland (PipeWire portal) when present, else X11, else the
-        // software fallback. WAYLAND_DISPLAY is checked first because XWayland
-        // sets both.
+        // WAYLAND_DISPLAY first: XWayland sets both, and X11 capture under it is black.
         let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
         let x11 = std::env::var_os("DISPLAY").is_some();
         let (screen_backend, screen_note): (&str, Option<&str>) = if wayland {
@@ -1432,8 +1413,8 @@ fn build_capture_capabilities() -> CaptureCapabilities {
             ("X11 (XGetImage)", None)
         } else {
             (
-                "xcap (software)",
-                Some("No display server detected — capture falls back to the slow software path."),
+                "None",
+                Some("No display server detected — set WAYLAND_DISPLAY or DISPLAY."),
             )
         };
         // device_query reads the pointer through X11/xcb; a pure-Wayland

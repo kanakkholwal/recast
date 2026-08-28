@@ -102,6 +102,9 @@ pub struct Window {
     pub title: String,
     /// Owning application's display name.
     pub app_name: String,
+    /// Owning process id, so a caller can tie a window to a process it knows.
+    /// Zero where the platform declines to report one.
+    pub pid: u32,
     /// Position and size in physical pixels, in virtual-desktop coordinates.
     pub bounds: Rect,
     /// The display holding most of the window.
@@ -240,6 +243,7 @@ mod tests {
             id: WindowId(1),
             title: "Editor".into(),
             app_name: "Recast".into(),
+            pid: 0,
             bounds: Rect::from_size(800, 600),
             display: DisplayId(0),
             is_minimized: false,
@@ -256,6 +260,7 @@ mod tests {
             id: WindowId(1),
             title: String::new(),
             app_name: String::new(),
+            pid: 0,
             bounds: Rect::from_size(0, 0),
             display: DisplayId(0),
             is_minimized: false,

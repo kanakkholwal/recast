@@ -13,11 +13,33 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::recording::{pipeline::RecordingPipeline, CaptureArea};
+use crate::capture::CaptureArea;
+use crate::recording::pipeline::RecordingPipeline;
 
 pub mod h264;
 
 use h264::{EncodePurpose, H264Encoder};
+
+/// Copy rows into a tightly packed buffer.
+///
+/// Capture backends deliver rows at the driver's own stride, and FFmpeg's
+/// `rawvideo` demuxer expects `width * 4` per row with no gaps.
+pub fn pack_rows(bytes: &[u8], stride: u32, width: u32, height: u32) -> Vec<u8> {
+    let row_bytes = width as usize * 4;
+    let stride = stride as usize;
+    if stride == row_bytes {
+        return bytes.to_vec();
+    }
+    let mut packed = Vec::with_capacity(row_bytes * height as usize);
+    for row in 0..height as usize {
+        let start = row * stride;
+        let Some(line) = bytes.get(start..start + row_bytes) else {
+            break;
+        };
+        packed.extend_from_slice(line);
+    }
+    packed
+}
 
 /// Maximum stderr tail retained for diagnostics. The fatal line is always at
 /// the end (codec error, disk full, etc.); FFmpeg's startup chatter is noise.
@@ -375,9 +397,33 @@ pub fn spawn_encoder_loop(
 }
 
 #[cfg(test)]
+mod pack_rows_tests {
+    use super::pack_rows;
+
+    #[test]
+    fn packing_a_frame_without_padding_copies_it_verbatim() {
+        let bytes: Vec<u8> = (0..16u8).collect();
+        assert_eq!(pack_rows(&bytes, 8, 2, 2), bytes);
+    }
+
+    #[test]
+    fn packing_drops_the_padding_between_rows() {
+        // 1px wide at a stride of 6: 2 padding bytes per row the encoder must not see.
+        let bytes = vec![1, 2, 3, 4, 0xFF, 0xFF, 5, 6, 7, 8, 0xFF, 0xFF];
+        assert_eq!(pack_rows(&bytes, 6, 1, 2), vec![1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn a_short_buffer_yields_the_rows_it_actually_has() {
+        let bytes = vec![1, 2, 3, 4, 0xFF, 0xFF, 5, 6];
+        assert_eq!(pack_rows(&bytes, 6, 1, 2), vec![1, 2, 3, 4]);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::{build_video_filter, dup_count, RecordingQuality};
-    use crate::recording::CaptureArea;
+    use crate::capture::CaptureArea;
 
     #[test]
     fn recording_quality_parses_with_safe_default() {

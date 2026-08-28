@@ -15,7 +15,8 @@ pub const THUMBNAIL_HEIGHT: u32 = 180;
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayInfo {
-    pub id: u32,
+    /// capturekit's own id, opaque to the frontend and passed straight back.
+    pub id: u64,
     pub name: String,
     pub x: i32,
     pub y: i32,
@@ -33,7 +34,8 @@ pub struct DisplayInfo {
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowInfo {
-    pub id: u32,
+    /// capturekit's own id, opaque to the frontend and passed straight back.
+    pub id: u64,
     pub pid: u32,
     pub app_name: String,
     pub title: String,
@@ -390,9 +392,9 @@ pub struct CaptureIntent {
     /// "display" | "window" | "region". None until a source is chosen.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_type: Option<String>,
-    pub target_id: u32,
+    pub target_id: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub region: Option<crate::recording::RegionRect>,
+    pub region: Option<crate::capture::RegionRect>,
     pub options: crate::recording::RecordingOptions,
     /// Pre-roll seconds. The countdown is a frontend concern, stored here so the
     /// panel and CLI agree. None inherits the global default.

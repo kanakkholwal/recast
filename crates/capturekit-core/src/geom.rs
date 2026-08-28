@@ -109,6 +109,28 @@ impl Rect {
             && other.bottom() <= self.bottom()
     }
 
+    /// Whether `point` lies inside, treating the right and bottom edges as
+    /// belonging to the next rectangle along.
+    ///
+    /// Half-open on purpose: adjacent displays share an edge, and a closed test
+    /// puts a point on it in both of them.
+    #[must_use]
+    pub fn contains_point(&self, point: (i32, i32)) -> bool {
+        i64::from(point.0) >= i64::from(self.x)
+            && i64::from(point.0) < self.right()
+            && i64::from(point.1) >= i64::from(self.y)
+            && i64::from(point.1) < self.bottom()
+    }
+
+    /// The middle of the rectangle, for asking which surface holds it.
+    #[must_use]
+    pub fn centre(&self) -> (i32, i32) {
+        (
+            self.x.saturating_add((self.width / 2) as i32),
+            self.y.saturating_add((self.height / 2) as i32),
+        )
+    }
+
     /// This rectangle re-expressed with `origin`'s top-left as `(0, 0)`.
     #[must_use]
     pub fn relative_to(&self, origin: &Self) -> Self {
@@ -271,6 +293,43 @@ impl DirtyRects {
             None => Some(*frame),
             Some(b) => b.intersect(frame),
         }
+    }
+}
+
+#[cfg(test)]
+mod point_tests {
+    use super::Rect;
+
+    /// Adjacent displays share an edge; a closed test would put a point on it in
+    /// both of them, and the picker would pick the wrong one.
+    #[test]
+    fn containment_is_half_open_on_the_far_edge() {
+        let rect = Rect::new(0, 0, 100, 100);
+        assert!(rect.contains_point((0, 0)));
+        assert!(rect.contains_point((99, 99)));
+        assert!(!rect.contains_point((100, 50)));
+        assert!(!rect.contains_point((50, 100)));
+    }
+
+    #[test]
+    fn a_display_left_of_the_primary_holds_its_own_points() {
+        let left = Rect::new(-1920, 0, 1920, 1080);
+        assert!(left.contains_point((-1000, 500)));
+        assert!(!left.contains_point((10, 500)));
+    }
+
+    /// The right edge is computed in i64, so a desktop that spans past i32 does
+    /// not wrap into reporting a point as outside.
+    #[test]
+    fn a_rectangle_reaching_past_i32_still_contains_its_points() {
+        let far = Rect::new(i32::MAX - 10, 0, 100, 100);
+        assert!(far.contains_point((i32::MAX - 1, 50)));
+    }
+
+    #[test]
+    fn the_centre_is_the_middle_of_the_rectangle() {
+        assert_eq!(Rect::new(10, 20, 100, 50).centre(), (60, 45));
+        assert_eq!(Rect::new(-1920, 0, 1920, 1080).centre(), (-960, 540));
     }
 }
 

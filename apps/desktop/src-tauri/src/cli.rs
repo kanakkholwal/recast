@@ -693,9 +693,9 @@ enum RecAction {
 #[derive(Subcommand)]
 enum SelectAction {
     /// Record a display by id (from `displays list`).
-    Screen { id: u32 },
+    Screen { id: u64 },
     /// Record a window by id (from `windows list`).
-    Window { id: u32 },
+    Window { id: u64 },
     /// Record a region given as X,Y,W,H in physical pixels.
     Region {
         #[arg(value_name = "X,Y,W,H")]
@@ -759,13 +759,13 @@ enum ProfileAction {
 enum ScreenshotTarget {
     /// A whole display by id (from `displays list`).
     Display {
-        id: u32,
+        id: u64,
         #[command(flatten)]
         shot: ShotArgs,
     },
     /// One application window by id (from `windows list`).
     Window {
-        id: u32,
+        id: u64,
         #[command(flatten)]
         shot: ShotArgs,
     },

@@ -6,8 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use crossbeam_queue::ArrayQueue;
 
-use super::CaptureTarget;
-use crate::capture::create_capture_source;
+use crate::capture::CaptureSource;
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -137,7 +136,7 @@ fn stale_warning_due(stale_for: Duration, warnings_emitted: u32) -> bool {
 /// seconds. Preview and rendered MP4 stay in lockstep with the cursor
 /// track regardless of how often the desktop redraws.
 pub fn spawn_capture_loop(
-    target: CaptureTarget,
+    mut source: Box<dyn CaptureSource>,
     stop_flag: Arc<std::sync::atomic::AtomicBool>,
     pause_flag: Arc<std::sync::atomic::AtomicBool>,
     pipeline: RecordingPipeline,
@@ -152,10 +151,6 @@ pub fn spawn_capture_loop(
     thread::Builder::new()
         .name("recast-capture".into())
         .spawn(move || {
-            let mut source = create_capture_source(&target)?;
-            // Let frame-pushing sources (WGC) throttle their GPU readback to the
-            // encode rate instead of doing one per window repaint.
-            source.set_target_fps(target_fps);
             let fps = target_fps.max(1) as u64;
             // Exact per-tick schedule: tick `k` (counting from the pacer's
             // current anchor) fires at `base + k/fps` seconds, computed in
@@ -304,6 +299,113 @@ pub fn spawn_capture_loop(
             Ok(())
         })
         .map_err(Into::into)
+}
+
+/// A source under the test's control, so the pacer's contract can be checked
+/// without a display.
+#[cfg(test)]
+struct ScriptedSource {
+    width: u32,
+    height: u32,
+    /// Frames handed out before the source goes quiet; `None` never runs dry.
+    remaining: Option<usize>,
+}
+
+#[cfg(test)]
+impl CaptureSource for ScriptedSource {
+    fn capture_next(&mut self, _timeout: Duration) -> Result<Option<Vec<u8>>> {
+        if let Some(left) = self.remaining.as_mut() {
+            if *left == 0 {
+                return Ok(None);
+            }
+            *left -= 1;
+        }
+        Ok(Some(vec![0u8; (self.width * self.height * 4) as usize]))
+    }
+
+    fn width(&self) -> u32 {
+        self.width
+    }
+
+    fn height(&self) -> u32 {
+        self.height
+    }
+}
+
+#[cfg(test)]
+mod pacer_tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    const FPS: u32 = 50;
+
+    /// Runs the real loop for `run` and returns what reached the pipeline.
+    fn run_loop(remaining: Option<usize>, run: Duration) -> (PipelineSnapshot, u64) {
+        let source = Box::new(ScriptedSource {
+            width: 8,
+            height: 8,
+            remaining,
+        });
+        let stop = Arc::new(AtomicBool::new(false));
+        let pause = Arc::new(AtomicBool::new(false));
+        let pipeline = RecordingPipeline::new(4096);
+        let offset = Arc::new(AtomicU64::new(0));
+        let handle = spawn_capture_loop(
+            source,
+            stop.clone(),
+            pause.clone(),
+            pipeline.clone(),
+            Instant::now(),
+            FPS,
+            offset.clone(),
+        )
+        .expect("the capture thread starts");
+        thread::sleep(run);
+        stop.store(true, Ordering::Release);
+        handle.join().expect("the thread joins").expect("no error");
+        (pipeline.stats().snapshot(), offset.load(Ordering::Acquire))
+    }
+
+    /// The wall-clock contract: one real second of recording is `fps` frames of
+    /// video, whatever the source did. A pacer that just forwarded frames would
+    /// emit hundreds here, and one that never ticked would emit one.
+    #[test]
+    fn a_source_faster_than_the_pace_is_still_emitted_at_the_pace() {
+        let (stats, _) = run_loop(None, Duration::from_millis(400));
+        let expected = FPS as u64 * 400 / 1000;
+        assert!(
+            (expected / 2..=expected * 2).contains(&stats.captured_frames),
+            "expected about {expected} frames at {FPS}fps, got {}",
+            stats.captured_frames
+        );
+        assert_eq!(stats.dropped_frames, 0, "the queue was big enough");
+    }
+
+    /// An idle desktop produces nothing after its first frame, and the recording
+    /// still has to advance: the encoder is frame-count based, so a gap here
+    /// would compress the video against the cursor track.
+    #[test]
+    fn a_source_that_goes_quiet_keeps_the_recording_advancing() {
+        let (stats, _) = run_loop(Some(1), Duration::from_millis(300));
+        let expected = FPS as u64 * 300 / 1000;
+        assert!(
+            stats.captured_frames >= expected / 2,
+            "a still screen still owes {expected} frames, got {}",
+            stats.captured_frames
+        );
+    }
+
+    /// Video t=0 is the first frame the source produced, not recording start;
+    /// `stop()` subtracts this so the cursor track lines up with frame 0.
+    #[test]
+    fn the_first_frame_records_when_it_arrived() {
+        let (stats, offset) = run_loop(None, Duration::from_millis(200));
+        assert!(stats.captured_frames > 0);
+        assert!(
+            offset < 200_000,
+            "the warmup offset should be the first frame's instant, got {offset}us"
+        );
+    }
 }
 
 #[cfg(test)]

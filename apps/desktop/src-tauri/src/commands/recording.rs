@@ -8,9 +8,10 @@ use tauri::{Emitter, State};
 use super::error::{AppError, AppResult};
 use super::system::get_active_output_dir;
 use super::types::{AppState, RecordingEntry, RecordingStartResult};
+use crate::capture::{CaptureTarget, RegionRect};
 use crate::project::writer::{write_project, ProjectWriteRequest};
 use crate::project::{ProjectMediaMetadata, ProjectMetadata, ProjectVideoMetadata};
-use crate::recording::{CameraPreviewUpdate, CaptureTarget, RecordingOptions, RegionRect};
+use crate::recording::{CameraPreviewUpdate, RecordingOptions};
 use crate::render::graph::RenderState;
 
 fn recasts_dir(state: &State<'_, AppState>) -> PathBuf {
@@ -29,7 +30,7 @@ fn exports_dir(state: &State<'_, AppState>) -> PathBuf {
 pub async fn start_recording(
     app: tauri::AppHandle,
     target_type: String,
-    target_id: u32,
+    target_id: u64,
     region: Option<RegionRect>,
     options: Option<RecordingOptions>,
     state: State<'_, AppState>,
@@ -48,55 +49,7 @@ pub async fn start_recording(
 
     let outcome =
         tauri::async_runtime::spawn_blocking(move || -> AppResult<RecordingStartResult> {
-            // On Wayland the compositor refuses direct framebuffer access — the
-            // user-supplied target_type/target_id/region are essentially advisory
-            // because the *real* source is whatever the user picks in the
-            // xdg-desktop-portal dialog. We negotiate the portal stream up front
-            // (this blocks while the dialog is on screen), use the portal's
-            // returned dimensions as authoritative, and stash the stream handle
-            // for the capture thread to pick up. See
-            // `capture::platform::linux_wayland` for the full lifecycle.
-            #[cfg(target_os = "linux")]
-            let target = {
-                if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-                    let stream = crate::capture::platform::linux_wayland::acquire_portal_stream()
-                        .map_err(|e| {
-                        AppError::msg(format!("Wayland portal handshake failed: {e:#}"))
-                    })?;
-                    let kind = if target_type == "window" {
-                        crate::recording::CaptureKind::Window
-                    } else if target_type == "region" {
-                        crate::recording::CaptureKind::Region
-                    } else {
-                        crate::recording::CaptureKind::Display
-                    };
-                    let area = crate::recording::CaptureArea {
-                        x: 0,
-                        y: 0,
-                        width: stream.width,
-                        height: stream.height,
-                    };
-                    let target = CaptureTarget {
-                        kind,
-                        id: target_id,
-                        display_id: target_id,
-                        label: "Wayland portal".to_string(),
-                        source: area,
-                        crop: area,
-                        // The portal already hands us physical pixels, so no rescale.
-                        scale_factor: 1.0,
-                    };
-                    crate::capture::platform::linux_wayland::stash_portal_stream(stream);
-                    target
-                } else if target_type == "region" {
-                    let rect =
-                        region.ok_or_else(|| AppError::from("region target requires a rect"))?;
-                    CaptureTarget::resolve_region(rect)?
-                } else {
-                    CaptureTarget::resolve(&target_type, target_id)?
-                }
-            };
-            #[cfg(not(target_os = "linux"))]
+            // Advisory under the Wayland portal, where the user picks the real surface.
             let target = if target_type == "region" {
                 let rect = region.ok_or_else(|| AppError::from("region target requires a rect"))?;
                 CaptureTarget::resolve_region(rect)?

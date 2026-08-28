@@ -146,6 +146,18 @@ impl CapturerBuilder {
         self
     }
 
+    /// How often frames are worth reading back to host memory, for a caller that
+    /// paces itself and so leaves [`Pacing::Passthrough`] in place.
+    ///
+    /// Windows Graphics Capture delivers on every window repaint, far above any
+    /// encode rate, and each readback maps GPU memory. Ignored where frames
+    /// arrive in host memory already.
+    #[must_use]
+    pub fn readback_rate(mut self, fps: u32) -> Self {
+        self.opts.readback_rate = Some(fps);
+        self
+    }
+
     /// Keep these windows out of the capture.
     ///
     /// Not best-effort. If the platform cannot honour the request,

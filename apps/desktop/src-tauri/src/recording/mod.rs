@@ -10,11 +10,11 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use xcap::{Monitor, Window};
 
 use crate::audio::{
     AudioCaptureConfig, AudioCaptureSession, MicrophoneCaptureConfig, MicrophoneCaptureSession,
 };
+use crate::capture::CaptureTarget;
 use crate::cursor::{
     shift_cursor_track, spawn_cursor_capture, write_cursor_track, CursorCaptureFrame, CursorTrack,
 };
@@ -33,337 +33,6 @@ pub const RECORDING_FPS: u32 = 60;
 
 //  Shared types
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CaptureArea {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum CaptureKind {
-    Display,
-    Window,
-    Region,
-}
-
-/// Pixel-space rectangle in virtual desktop coordinates.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RegionRect {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CaptureTarget {
-    pub kind: CaptureKind,
-    pub id: u32,
-    pub label: String,
-    pub source: CaptureArea,
-    pub crop: CaptureArea,
-    /// CGDirectDisplayID / xcap monitor id of the display being captured. For
-    /// `Window` targets this is the display the window sits on (distinct from
-    /// `id`, which is the window id). macOS uses it to pick the matching
-    /// AVFoundation "Capture screen N"; other platforms ignore it.
-    #[serde(default)]
-    pub display_id: u32,
-    /// Backing scale factor (physical ÷ logical) of `display_id`. `source` and
-    /// `crop` are stored in *physical device pixels* — on macOS that means the
-    /// xcap-logical values were multiplied by this; on Windows/Linux xcap
-    /// already reports physical, so this is 1.0. The cursor track uses it to
-    /// lift its logical samples into the same physical space as the video.
-    #[serde(default = "default_scale_factor")]
-    pub scale_factor: f32,
-}
-
-fn default_scale_factor() -> f32 {
-    1.0
-}
-
-/// Backing scale factor of a monitor — physical pixels per logical point.
-/// Only macOS needs it (AVFoundation captures physical while xcap reports
-/// logical); elsewhere xcap dimensions are already physical, so 1.0.
-#[cfg(target_os = "macos")]
-fn display_scale_factor(monitor: &Monitor) -> f32 {
-    monitor.scale_factor().unwrap_or(1.0).max(1.0)
-}
-#[cfg(not(target_os = "macos"))]
-fn display_scale_factor(_monitor: &Monitor) -> f32 {
-    1.0
-}
-
-/// Scale a rectangle by `scale`, keeping width/height even (libx264 requires
-/// it) and at least 2px.
-fn scale_area(a: CaptureArea, scale: f64) -> CaptureArea {
-    CaptureArea {
-        x: (a.x as f64 * scale).round() as i32,
-        y: (a.y as f64 * scale).round() as i32,
-        width: (((a.width as f64 * scale).round() as u32) & !1).max(2),
-        height: (((a.height as f64 * scale).round() as u32) & !1).max(2),
-    }
-}
-
-/// Lift a freshly-resolved target's xcap-logical `source`/`crop` into the
-/// physical device pixels AVFoundation actually delivers, and record the
-/// factor for the cursor track. A no-op at scale 1.0 (Windows/Linux, where
-/// xcap already reports physical), so those platforms stay byte-for-byte
-/// unchanged.
-fn apply_device_scale(target: &mut CaptureTarget, scale: f32) {
-    target.scale_factor = scale;
-    if (scale - 1.0).abs() < 1e-3 {
-        return;
-    }
-    let s = scale as f64;
-    target.source = scale_area(target.source, s);
-    let mut crop = scale_area(target.crop, s);
-    // Rounding can nudge the scaled crop a pixel past the scaled source; clamp
-    // so the encoder's crop filter never exceeds the captured frame.
-    let max_x = target.source.x + target.source.width as i32;
-    let max_y = target.source.y + target.source.height as i32;
-    crop.x = crop.x.clamp(target.source.x, max_x);
-    crop.y = crop.y.clamp(target.source.y, max_y);
-    let avail_w = (max_x - crop.x).max(2) as u32;
-    let avail_h = (max_y - crop.y).max(2) as u32;
-    crop.width = (crop.width.min(avail_w)) & !1;
-    crop.height = (crop.height.min(avail_h)) & !1;
-    target.crop = crop;
-}
-
-impl CaptureTarget {
-    pub fn resolve(target_type: &str, target_id: u32) -> Result<Self> {
-        match target_type {
-            "window" => resolve_window_target(target_id),
-            _ => resolve_display_target(target_id),
-        }
-    }
-
-    pub fn resolve_region(rect: RegionRect) -> Result<Self> {
-        resolve_region_target(rect)
-    }
-
-    pub fn crop_relative_to_source(&self) -> Option<CaptureArea> {
-        if self.crop.x == self.source.x
-            && self.crop.y == self.source.y
-            && self.crop.width == self.source.width
-            && self.crop.height == self.source.height
-        {
-            None
-        } else {
-            Some(CaptureArea {
-                x: self.crop.x - self.source.x,
-                y: self.crop.y - self.source.y,
-                width: self.crop.width,
-                height: self.crop.height,
-            })
-        }
-    }
-}
-
-fn resolve_display_target(target_id: u32) -> Result<CaptureTarget> {
-    let display = Monitor::all()?
-        .into_iter()
-        .find(|monitor| monitor.id().ok() == Some(target_id))
-        .context("display target not found")?;
-
-    let area = CaptureArea {
-        x: display.x().unwrap_or_default(),
-        y: display.y().unwrap_or_default(),
-        width: display.width().unwrap_or_default(),
-        height: display.height().unwrap_or_default(),
-    };
-
-    let mut target = CaptureTarget {
-        kind: CaptureKind::Display,
-        id: target_id,
-        display_id: target_id,
-        label: display.name().unwrap_or_else(|_| "Display".into()),
-        source: area,
-        crop: area,
-        scale_factor: 1.0,
-    };
-    apply_device_scale(&mut target, display_scale_factor(&display));
-    Ok(target)
-}
-
-fn resolve_window_target(target_id: u32) -> Result<CaptureTarget> {
-    let window = Window::all()?
-        .into_iter()
-        .find(|candidate| candidate.id().ok() == Some(target_id))
-        .context("window target not found")?;
-
-    let crop = CaptureArea {
-        x: window.x().unwrap_or_default(),
-        y: window.y().unwrap_or_default(),
-        width: window.width().unwrap_or_default(),
-        height: window.height().unwrap_or_default(),
-    };
-    let center_x = crop.x + (crop.width as i32 / 2);
-    let center_y = crop.y + (crop.height as i32 / 2);
-
-    // True per-window capture (Windows Graphics Capture) records only the
-    // window's own surface, so the "source" IS the window — no monitor, no
-    // crop. This isolates a maximized or overlapped window, which the
-    // monitor-plus-crop path below cannot. `create_source` selects the WGC
-    // backend on the same predicate, so the two stay consistent. Other
-    // platforms (and older Windows) fall through to monitor-plus-crop.
-    #[cfg(windows)]
-    if crate::capture::platform::windows::wgc_window_capture_supported() {
-        // Even dims for libx264/NVENC; the WGC source clamps its copy to match.
-        let win = CaptureArea {
-            x: crop.x,
-            y: crop.y,
-            width: crop.width & !1,
-            height: crop.height & !1,
-        };
-        // display_id is the monitor the window sits on, used only to re-base the
-        // cursor track onto the window's origin.
-        let display_id = Monitor::all()
-            .ok()
-            .and_then(|monitors| {
-                monitors.into_iter().find(|monitor| {
-                    let x = monitor.x().unwrap_or_default();
-                    let y = monitor.y().unwrap_or_default();
-                    let width = monitor.width().unwrap_or_default() as i32;
-                    let height = monitor.height().unwrap_or_default() as i32;
-                    center_x >= x && center_x < x + width && center_y >= y && center_y < y + height
-                })
-            })
-            .and_then(|monitor| monitor.id().ok())
-            .unwrap_or_default();
-
-        return Ok(CaptureTarget {
-            kind: CaptureKind::Window,
-            id: target_id,
-            display_id,
-            label: window.title().unwrap_or_else(|_| "Window".into()),
-            source: win,
-            crop: win,
-            scale_factor: 1.0,
-        });
-    }
-
-    let source_monitor = Monitor::all()?
-        .into_iter()
-        .find(|monitor| {
-            let x = monitor.x().unwrap_or_default();
-            let y = monitor.y().unwrap_or_default();
-            let width = monitor.width().unwrap_or_default() as i32;
-            let height = monitor.height().unwrap_or_default() as i32;
-            center_x >= x && center_x < x + width && center_y >= y && center_y < y + height
-        })
-        .context("unable to locate the display containing the selected window")?;
-
-    let source = CaptureArea {
-        x: source_monitor.x().unwrap_or_default(),
-        y: source_monitor.y().unwrap_or_default(),
-        width: source_monitor.width().unwrap_or_default(),
-        height: source_monitor.height().unwrap_or_default(),
-    };
-
-    let mut target = CaptureTarget {
-        kind: CaptureKind::Window,
-        id: target_id,
-        display_id: source_monitor.id().unwrap_or_default(),
-        label: window.title().unwrap_or_else(|_| "Window".into()),
-        source,
-        crop,
-        scale_factor: 1.0,
-    };
-    apply_device_scale(&mut target, display_scale_factor(&source_monitor));
-    Ok(target)
-}
-
-fn resolve_region_target(rect: RegionRect) -> Result<CaptureTarget> {
-    if rect.width == 0 || rect.height == 0 {
-        return Err(anyhow!("region must have non-zero width and height"));
-    }
-
-    let center_x = rect.x + (rect.width as i32 / 2);
-    let center_y = rect.y + (rect.height as i32 / 2);
-
-    let monitor = Monitor::all()?
-        .into_iter()
-        .find(|monitor| {
-            // The frontend Region Picker passes coordinates in PHYSICAL pixels,
-            // but xcap's Monitor bounds are in LOGICAL pixels.
-            // We must un-scale the physical center point to find the matching monitor.
-            let scale = display_scale_factor(monitor);
-            let cx = (center_x as f32 / scale).round() as i32;
-            let cy = (center_y as f32 / scale).round() as i32;
-
-            let x = monitor.x().unwrap_or_default();
-            let y = monitor.y().unwrap_or_default();
-            let width = monitor.width().unwrap_or_default() as i32;
-            let height = monitor.height().unwrap_or_default() as i32;
-            cx >= x && cx < x + width && cy >= y && cy < y + height
-        })
-        .context("unable to locate the display containing the selected region")?;
-
-    let scale = display_scale_factor(&monitor);
-    let scale_f32 = scale;
-
-    // Convert the physical rect back to logical pixels so it shares the same
-    // coordinate space as the monitor for clamping.
-    let logical_x = (rect.x as f32 / scale_f32).round() as i32;
-    let logical_y = (rect.y as f32 / scale_f32).round() as i32;
-    let logical_w = (rect.width as f32 / scale_f32).round() as u32;
-    let logical_h = (rect.height as f32 / scale_f32).round() as u32;
-
-    let monitor_id = monitor.id().unwrap_or_default();
-    let mon_x = monitor.x().unwrap_or_default();
-    let mon_y = monitor.y().unwrap_or_default();
-    let mon_w = monitor.width().unwrap_or_default();
-    let mon_h = monitor.height().unwrap_or_default();
-
-    let source = CaptureArea {
-        x: mon_x,
-        y: mon_y,
-        width: mon_w,
-        height: mon_h,
-    };
-
-    // Clamp the requested logical region to the source monitor's bounds
-    let clamped_x = logical_x.max(mon_x).min(mon_x + mon_w as i32);
-    let clamped_y = logical_y.max(mon_y).min(mon_y + mon_h as i32);
-    let max_w = (mon_x + mon_w as i32 - clamped_x).max(0) as u32;
-    let max_h = (mon_y + mon_h as i32 - clamped_y).max(0) as u32;
-
-    // Encoder libx264 requires even dimensions.
-    let crop_w = (logical_w.min(max_w)) & !1u32;
-    let crop_h = (logical_h.min(max_h)) & !1u32;
-    if crop_w == 0 || crop_h == 0 {
-        return Err(anyhow!("region collapsed to zero after clamping"));
-    }
-
-    let crop = CaptureArea {
-        x: clamped_x,
-        y: clamped_y,
-        width: crop_w,
-        height: crop_h,
-    };
-
-    let mut target = CaptureTarget {
-        kind: CaptureKind::Region,
-        id: monitor_id,
-        display_id: monitor_id,
-        // Use the original physical dimensions for the display label, ensuring they are even
-        label: format!("Area {}×{}", rect.width & !1u32, rect.height & !1u32),
-        source,
-        crop,
-        scale_factor: 1.0,
-    };
-
-    // This scales both source and crop back up to physical pixels for the encoder!
-    apply_device_scale(&mut target, scale);
-    Ok(target)
-}
 //  Recording stats and artifacts
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -687,8 +356,7 @@ impl RecordingSession {
         if let Some(session) = self.microphone_session {
             let _ = session.stop();
         }
-        // The camera is owned by the preview WebView, not a Rust child, so there
-        // is nothing to reap here — the webview is torn down with the app.
+        // The camera lives in camera::session's own slot, not in this session.
     }
 }
 
@@ -814,7 +482,7 @@ impl RecordingManager {
 
     pub fn start(
         &self,
-        target: CaptureTarget,
+        mut target: CaptureTarget,
         output_dir: PathBuf,
         options: RecordingOptions,
     ) -> Result<Vec<String>> {
@@ -859,6 +527,10 @@ impl RecordingManager {
         let clock = RecordingClock::new(started_at);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pause_flag = Arc::new(AtomicBool::new(false));
+        // Opened first: the backend is the authority on the frame size below.
+        let source = crate::capture::create_capture_source(&target, recording_fps)?;
+        target.adopt_source_size(source.width(), source.height());
+
         // Frame queue is capped by memory, not frame count: 180 BGRA frames is
         // ~6 GB at 4K and OOM'd low-end machines when the encoder fell behind.
         let frame_bytes = frame_bytes_bgra(target.source.width, target.source.height);
@@ -890,7 +562,7 @@ impl RecordingManager {
         let microphone_start = TrackStart::new(started_at);
         let camera_start = TrackStart::new(started_at);
         let capture_handle = spawn_capture_loop(
-            target.clone(),
+            source,
             stop_flag.clone(),
             pause_flag.clone(),
             pipeline.clone(),
@@ -1333,116 +1005,6 @@ fn build_stats(pipeline: &RecordingPipeline, duration_ms: u64, nominal_fps: u32)
 }
 
 #[cfg(test)]
-mod scale_tests {
-    use super::*;
-
-    fn target(source: CaptureArea, crop: CaptureArea) -> CaptureTarget {
-        CaptureTarget {
-            kind: CaptureKind::Region,
-            id: 1,
-            display_id: 1,
-            label: "t".into(),
-            source,
-            crop,
-            scale_factor: 1.0,
-        }
-    }
-
-    #[test]
-    fn scale_area_scales_origin_and_keeps_even_dims() {
-        let a = CaptureArea {
-            x: 10,
-            y: 20,
-            width: 101,
-            height: 51,
-        };
-        let s = scale_area(a, 2.0);
-        assert_eq!((s.x, s.y), (20, 40));
-        // 101*2 = 202, 51*2 = 102 — both already even.
-        assert_eq!((s.width, s.height), (202, 102));
-    }
-
-    #[test]
-    fn scale_area_forces_even_dimensions() {
-        // 75 → round → 75 → & !1 → 74; libx264 needs even dims.
-        let a = CaptureArea {
-            x: 0,
-            y: 0,
-            width: 75,
-            height: 75,
-        };
-        let s = scale_area(a, 1.0);
-        assert_eq!((s.width, s.height), (74, 74));
-    }
-
-    #[test]
-    fn apply_device_scale_is_noop_at_one() {
-        let area = CaptureArea {
-            x: 5,
-            y: 7,
-            width: 100,
-            height: 80,
-        };
-        let mut t = target(area, area);
-        apply_device_scale(&mut t, 1.0);
-        assert_eq!(t.scale_factor, 1.0);
-        assert_eq!(t.source.width, 100);
-        assert_eq!((t.crop.x, t.crop.y), (5, 7));
-        assert_eq!((t.crop.width, t.crop.height), (100, 80));
-    }
-
-    #[test]
-    fn apply_device_scale_lifts_source_and_crop_to_physical() {
-        let source = CaptureArea {
-            x: 0,
-            y: 0,
-            width: 200,
-            height: 100,
-        };
-        let crop = CaptureArea {
-            x: 50,
-            y: 25,
-            width: 100,
-            height: 50,
-        };
-        let mut t = target(source, crop);
-        apply_device_scale(&mut t, 2.0);
-        assert_eq!(t.scale_factor, 2.0);
-        assert_eq!((t.source.width, t.source.height), (400, 200));
-        assert_eq!((t.crop.x, t.crop.y), (100, 50));
-        assert_eq!((t.crop.width, t.crop.height), (200, 100));
-    }
-
-    #[test]
-    fn apply_device_scale_clamps_scaled_crop_within_scaled_source() {
-        // A crop that runs off the display (e.g. a window pulled past the
-        // screen edge): after scaling it must be clamped so the encoder's
-        // crop filter never exceeds the captured frame.
-        let source = CaptureArea {
-            x: 0,
-            y: 0,
-            width: 100,
-            height: 100,
-        };
-        let crop = CaptureArea {
-            x: 60,
-            y: 60,
-            width: 80,
-            height: 80,
-        };
-        let mut t = target(source, crop);
-        apply_device_scale(&mut t, 2.0);
-        // source → 200×200; crop origin → (120,120); available = 80 each way.
-        assert_eq!((t.source.width, t.source.height), (200, 200));
-        assert_eq!((t.crop.x, t.crop.y), (120, 120));
-        assert_eq!((t.crop.width, t.crop.height), (80, 80));
-        // Crop stays inside the captured frame.
-        assert!(t.crop.x + t.crop.width as i32 <= t.source.x + t.source.width as i32);
-        assert!(t.crop.y + t.crop.height as i32 <= t.source.y + t.source.height as i32);
-    }
-}
-
-#[cfg(test)]
 mod camera_motion_tests {
     use super::*;
 
@@ -1559,6 +1121,7 @@ mod options_tests {
 #[cfg(test)]
 mod session_tests {
     use super::*;
+    use crate::capture::{CaptureArea, CaptureKind};
 
     fn area(x: i32, y: i32, width: u32, height: u32) -> CaptureArea {
         CaptureArea {

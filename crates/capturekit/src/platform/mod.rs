@@ -34,6 +34,9 @@ pub(crate) struct OpenOptions {
     pub region: Option<Rect>,
     /// How the output timeline relates to what the source produced.
     pub pacing: Pacing,
+    /// How often a push backend should read frames back to host memory, for a
+    /// caller that paces itself and so declares no [`Pacing`].
+    pub readback_rate: Option<u32>,
     /// Windows to keep out of the capture, whoever owns them.
     pub exclude: Vec<WindowId>,
     pub color_space: ColorSpaceRequest,
@@ -44,6 +47,15 @@ impl OpenOptions {
     pub(crate) fn frame_rate(&self) -> Option<u32> {
         self.pacing.fps()
     }
+
+    /// Frames per second worth reading back, which a self-pacing caller states
+    /// even though it asked for no pacing.
+    ///
+    /// Only WGC reads it: every other backend delivers into host memory already.
+    #[cfg(windows)]
+    pub(crate) fn readback_rate(&self) -> Option<u32> {
+        self.readback_rate.or_else(|| self.frame_rate())
+    }
 }
 
 impl From<&ShotOptions> for OpenOptions {
@@ -53,6 +65,7 @@ impl From<&ShotOptions> for OpenOptions {
             region: opts.region,
             // A screenshot wants the next frame, not a paced one.
             pacing: Pacing::Passthrough,
+            readback_rate: None,
             exclude: Vec::new(),
             color_space: opts.color_space,
         }

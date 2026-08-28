@@ -3,7 +3,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::recording::{CaptureTarget, RecordingStats};
+use crate::capture::CaptureTarget;
+use crate::recording::RecordingStats;
 
 pub mod autosave;
 pub mod format;

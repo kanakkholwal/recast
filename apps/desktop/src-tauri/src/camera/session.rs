@@ -18,6 +18,7 @@ use anyhow::{anyhow, Context, Result};
 use capturekit::Target;
 
 use super::scale::downscale_bgra;
+use crate::encoder::pack_rows;
 use crate::encoder::{spawn_encoder_loop, EncoderConfig, RecordingQuality};
 use crate::recording::pipeline::{RecordingPipeline, VideoFrame};
 use crate::recording::{RecordingClock, TrackStart};
@@ -361,49 +362,9 @@ fn deliver(
     }
 }
 
-/// Copy rows into a tightly packed buffer.
-///
-/// Media Foundation pads rows to the driver's stride, and FFmpeg's `rawvideo`
-/// demuxer expects `width * 4` per row with no gaps.
-fn pack_rows(bytes: &[u8], stride: u32, width: u32, height: u32) -> Vec<u8> {
-    let row_bytes = width as usize * 4;
-    let stride = stride as usize;
-    if stride == row_bytes {
-        return bytes.to_vec();
-    }
-    let mut packed = Vec::with_capacity(row_bytes * height as usize);
-    for row in 0..height as usize {
-        let start = row * stride;
-        let Some(line) = bytes.get(start..start + row_bytes) else {
-            break;
-        };
-        packed.extend_from_slice(line);
-    }
-    packed
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn packing_a_frame_without_padding_copies_it_verbatim() {
-        let bytes: Vec<u8> = (0..16u8).collect();
-        assert_eq!(pack_rows(&bytes, 8, 2, 2), bytes);
-    }
-
-    #[test]
-    fn packing_drops_the_padding_between_rows() {
-        // 1px wide at a stride of 6: 2 padding bytes per row the encoder must not see.
-        let bytes = vec![1, 2, 3, 4, 0xFF, 0xFF, 5, 6, 7, 8, 0xFF, 0xFF];
-        assert_eq!(pack_rows(&bytes, 6, 1, 2), vec![1, 2, 3, 4, 5, 6, 7, 8]);
-    }
-
-    #[test]
-    fn a_short_buffer_yields_the_rows_it_actually_has() {
-        let bytes = vec![1, 2, 3, 4, 0xFF, 0xFF, 5, 6];
-        assert_eq!(pack_rows(&bytes, 6, 1, 2), vec![1, 2, 3, 4]);
-    }
 
     #[test]
     fn a_preview_frame_carries_its_own_dimensions() {

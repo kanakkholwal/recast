@@ -1,16 +1,17 @@
 //! Full-resolution screenshots for the automation CLI, so an agent driving
 //! Recast can see on-screen state and decide when a step is done or what to do
-//! next. Reuses xcap (the same backend as the picker thumbnails), writes a PNG,
-//! and returns its path plus dimensions. Display/window shots are headless (no
-//! running app needed, like the enumeration verbs); the `app` shot goes through
-//! the running instance so it can target its own focused window.
+//! next. Captures through capturekit (the same backends the recorder streams
+//! from), writes a PNG, and returns its path plus dimensions. Display/window
+//! shots are headless (no running app needed, like the enumeration verbs); the
+//! `app` shot goes through the running instance so it can target its own
+//! focused window.
 
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use capturekit::{DisplayId, Rect, Target, WindowId};
 use image::RgbaImage;
 use serde::Serialize;
-use xcap::{Monitor, Window};
 
 use super::ffmpeg::{encode_png_bytes, encode_thumbnail_base64};
 
@@ -44,24 +45,14 @@ pub struct Screenshot {
 }
 
 /// Capture a whole monitor by its display id (from `displays list`).
-pub fn capture_display(id: u32, opts: &ShotOptions) -> Result<Screenshot, String> {
-    let monitor = Monitor::all()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|m| m.id().unwrap_or_default() == id)
-        .ok_or_else(|| format!("no display with id {id}"))?;
-    let img = monitor.capture_image().map_err(|e| e.to_string())?;
+pub fn capture_display(id: u64, opts: &ShotOptions) -> Result<Screenshot, String> {
+    let img = crate::capture::grab(Target::Display(DisplayId(id))).map_err(|e| format!("{e:#}"))?;
     finalize(img, "display", opts)
 }
 
 /// Capture one application window by its window id (from `windows list`).
-pub fn capture_window(id: u32, opts: &ShotOptions) -> Result<Screenshot, String> {
-    let window = Window::all()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|w| w.id().unwrap_or_default() == id)
-        .ok_or_else(|| format!("no window with id {id}"))?;
-    let img = window.capture_image().map_err(|e| e.to_string())?;
+pub fn capture_window(id: u64, opts: &ShotOptions) -> Result<Screenshot, String> {
+    let img = crate::capture::grab(Target::Window(WindowId(id))).map_err(|e| format!("{e:#}"))?;
     finalize(img, "window", opts)
 }
 
@@ -70,9 +61,10 @@ pub fn capture_window(id: u32, opts: &ShotOptions) -> Result<Screenshot, String>
 ///
 /// Targets the given window label, else the focused Recast window, else the
 /// first one. Captures the monitor the window sits on and crops to the window
-/// rectangle: portable across all three OSes and non-intrusive (no raise or
-/// focus steal). The tradeoff is that another window overlapping ours would show
-/// through, but the app window is normally focused and on top when an agent asks.
+/// rectangle during acquisition: non-intrusive (no raise or focus steal), and
+/// portable across all three OSes. The tradeoff is that another window
+/// overlapping ours shows through, but the app window is normally focused and on
+/// top when an agent asks.
 pub fn capture_app_window(
     app: &tauri::AppHandle,
     label: Option<&str>,
@@ -82,21 +74,22 @@ pub fn capture_app_window(
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
 
-    let monitors = Monitor::all().map_err(|e| e.to_string())?;
-    let center = (
-        pos.x + size.width as i32 / 2,
-        pos.y + size.height as i32 / 2,
-    );
-    let monitor = monitor_for_point(&monitors, center)
+    let displays = capturekit::displays().map_err(|e| e.to_string())?;
+    let frame = Rect::new(pos.x, pos.y, size.width, size.height);
+    let display = crate::capture::display_at(&displays, frame.centre())
         .ok_or("could not find the monitor the app window is on")?;
 
-    let full = monitor.capture_image().map_err(|e| e.to_string())?;
-    let mon_origin = (
-        monitor.x().unwrap_or_default(),
-        monitor.y().unwrap_or_default(),
-    );
-    let cropped = crop_to_window(&full, mon_origin, pos.into(), (size.width, size.height));
-    finalize(cropped, "app", opts)
+    // A window can hang off its display, and a crop past the frame is refused.
+    let region = frame
+        .relative_to(&display.bounds)
+        .fit_inside(&Rect::from_size(
+            display.bounds.width,
+            display.bounds.height,
+        ))
+        .ok_or("the app window is off screen")?;
+    let img = crate::capture::grab_region(Target::Display(display.id), Some(region))
+        .map_err(|e| format!("{e:#}"))?;
+    finalize(img, "app", opts)
 }
 
 /// The webview window an `app` shot targets: the named one, else the focused
@@ -179,45 +172,6 @@ fn scaled_dims(w: u32, h: u32, max_edge: u32) -> (u32, u32) {
     (sw, sh)
 }
 
-/// Crop a full-monitor image to a window rectangle expressed in virtual-desktop
-/// physical pixels. Clamps to the image so an off-screen or oversized window
-/// can't panic the crop.
-fn crop_to_window(
-    monitor_img: &RgbaImage,
-    monitor_origin: (i32, i32),
-    window_pos: (i32, i32),
-    window_size: (u32, u32),
-) -> RgbaImage {
-    let (mw, mh) = (monitor_img.width(), monitor_img.height());
-    let x = (window_pos.0 - monitor_origin.0).clamp(0, mw as i32) as u32;
-    let y = (window_pos.1 - monitor_origin.1).clamp(0, mh as i32) as u32;
-    let w = window_size.0.min(mw.saturating_sub(x)).max(1);
-    let h = window_size.1.min(mh.saturating_sub(y)).max(1);
-    image::imageops::crop_imm(monitor_img, x, y, w, h).to_image()
-}
-
-/// The first monitor whose bounds contain `point`, else the primary, else the
-/// first available. Pure over the monitor rects so it is unit-testable.
-fn monitor_for_point(monitors: &[Monitor], point: (i32, i32)) -> Option<&Monitor> {
-    monitors
-        .iter()
-        .find(|m| {
-            rect_contains(
-                m.x().unwrap_or_default(),
-                m.y().unwrap_or_default(),
-                m.width().unwrap_or_default(),
-                m.height().unwrap_or_default(),
-                point,
-            )
-        })
-        .or_else(|| monitors.iter().find(|m| m.is_primary().unwrap_or(false)))
-        .or_else(|| monitors.first())
-}
-
-fn rect_contains(x: i32, y: i32, w: u32, h: u32, point: (i32, i32)) -> bool {
-    point.0 >= x && point.0 < x + w as i32 && point.1 >= y && point.1 < y + h as i32
-}
-
 fn default_path(kind: &str) -> PathBuf {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -266,22 +220,6 @@ mod tests {
     #[test]
     fn scaled_dims_never_collapses_to_zero() {
         assert_eq!(scaled_dims(2000, 1, 100), (100, 1));
-    }
-
-    #[test]
-    fn rect_contains_is_half_open_on_the_far_edge() {
-        assert!(rect_contains(0, 0, 100, 100, (0, 0)));
-        assert!(rect_contains(0, 0, 100, 100, (99, 99)));
-        // The right/bottom edge belongs to the next monitor, not this one.
-        assert!(!rect_contains(0, 0, 100, 100, (100, 50)));
-        assert!(!rect_contains(0, 0, 100, 100, (50, 100)));
-    }
-
-    #[test]
-    fn rect_contains_handles_a_negative_origin_monitor() {
-        // A left-of-primary monitor at x = -1920.
-        assert!(rect_contains(-1920, 0, 1920, 1080, (-1000, 500)));
-        assert!(!rect_contains(-1920, 0, 1920, 1080, (10, 500)));
     }
 
     #[test]

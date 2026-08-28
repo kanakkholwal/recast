@@ -150,6 +150,18 @@ fn text_property(session: &Session, window: XWindow, property: u32, kind: u32) -
     (!reply.value.is_empty()).then(|| String::from_utf8_lossy(&reply.value).into_owned())
 }
 
+/// A single 32-bit CARDINAL property, which is how EWMH publishes a pid.
+fn cardinal(session: &Session, window: XWindow, property: u32) -> Option<u32> {
+    session
+        .conn
+        .get_property(false, window, property, AtomEnum::CARDINAL, 0, 1)
+        .ok()?
+        .reply()
+        .ok()?
+        .value32()?
+        .next()
+}
+
 pub(crate) fn windows() -> Result<Vec<Window>> {
     let session = Session::open()?;
     let displays = displays()?;
@@ -158,6 +170,7 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
     let utf8 = session.atom(b"UTF8_STRING")?;
     let net_state = session.atom(b"_NET_WM_STATE")?;
     let hidden = session.atom(b"_NET_WM_STATE_HIDDEN")?;
+    let net_pid = session.atom(b"_NET_WM_PID")?;
 
     let listed = session
         .conn
@@ -240,6 +253,7 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
             id: WindowId(u64::from(handle)),
             title,
             app_name,
+            pid: cardinal(&session, handle, net_pid).unwrap_or(0),
             display: display_for(&bounds, &displays),
             bounds,
             is_minimized,

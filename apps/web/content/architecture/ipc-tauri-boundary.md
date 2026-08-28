@@ -111,7 +111,7 @@ The editor package cannot import Tauri. Instead:
 - **The host installs everything in `+layout.svelte`.** Services, host hooks, agent-session driver, and log sink are installed app-scoped at layout init (`+layout.svelte`), before any editor component reads them. App-scoped (not just context) because the export queue and pure asset helpers run outside any editor component.
 - **`convertFileSrc` + the asset protocol serve local media.** `assetProtocol` is enabled with scope `**` in `tauri.conf.json`; `convertFileSrc(path)` rewrites a filesystem path to an `asset:`/`tauri:` URL the sandboxed WebView can `fetch`/`<img>`/`<video>`. Never hand a raw disk path to the WebView.
 - **FFmpeg spawns must be silent.** Every FFmpeg/ffprobe `Command` calls `configure_silent_command` (`ffmpeg.rs`) to set `CREATE_NO_WINDOW`; without it a console window flashes and steals focus on Windows ("window freeze"). Long-lived FFmpeg children additionally need their stderr drained (`StderrTail`, `ffmpeg.rs`) or the pipe fills and the encoder deadlocks.
-- **Large binary payloads ride the invoke body, not JSON.** Export mp4 bytes and recorded camera blobs are passed as a raw `ArrayBuffer` (`saveBrowserExportVideo`, `saveRecordedCamera`) so they ship as a binary body instead of a giant JSON number array.
+- **Large binary payloads ride the invoke body, not JSON.** Export mp4 bytes are passed as a raw `ArrayBuffer` (`saveBrowserExportVideo`) so they ship as a binary body instead of a giant JSON number array. The camera preview runs the same trade in reverse: `start_camera_preview` takes an `ipc::Channel` and answers with `InvokeResponseBody::Raw` BGRA frames, downscaled first because capture-resolution frames are 110 MB/s at 720p30.
 
 ### Rules that hold the boundary
 

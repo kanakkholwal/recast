@@ -582,11 +582,20 @@ impl V4l2CameraSource {
     /// frames, each one a frame further behind than the last.
     fn dequeue_newest(&self, first: uapi::Buffer) -> Result<uapi::Buffer> {
         let mut newest = first;
-        while let Some(next) = self.dequeue()? {
-            self.enqueue(newest.index)?;
-            newest = next;
+        loop {
+            match self.dequeue() {
+                Ok(Some(next)) => {
+                    self.enqueue(newest.index)?;
+                    newest = next;
+                }
+                Ok(None) => return Ok(newest),
+                // The buffer goes back, or the driver is one short from here on.
+                Err(e) => {
+                    let _ = self.enqueue(newest.index);
+                    return Err(e);
+                }
+            }
         }
-        Ok(newest)
     }
 
     fn wait_readable(&self, timeout: Duration) -> Result<()> {

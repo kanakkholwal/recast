@@ -145,14 +145,19 @@ fn window_of(sc: &SCWindow, displays: &[Display], scale: f32) -> Window {
         (frame.size.height * f64::from(scale)).round() as u32,
     );
     let on_screen = unsafe { sc.isOnScreen() };
+    let owner = unsafe { sc.owningApplication() };
     Window {
         id: WindowId(u64::from(unsafe { sc.windowID() })),
         title: unsafe { sc.title() }
             .map(|title| title.to_string())
             .unwrap_or_default(),
-        app_name: unsafe { sc.owningApplication() }
+        app_name: owner
+            .as_ref()
             .map(|app| unsafe { app.applicationName() }.to_string())
             .unwrap_or_default(),
+        pid: owner
+            .as_ref()
+            .map_or(0, |app| unsafe { app.processID() }.max(0) as u32),
         display: display_for(&bounds, displays),
         bounds,
         // ScreenCaptureKit does not report minimisation directly; a window that

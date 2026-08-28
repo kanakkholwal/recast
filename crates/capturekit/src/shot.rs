@@ -99,7 +99,12 @@ fn acquire_fresh(
 
     let mut newest = None;
     for _ in 0..=attempts {
-        let frame = backend.next_frame(opts.timeout)?;
+        let frame = match backend.next_frame(opts.timeout) {
+            Ok(frame) => frame,
+            // A source that produced something and went quiet is idle, not broken.
+            Err(CaptureError::Timeout(_)) if newest.is_some() => break,
+            Err(e) => return Err(e),
+        };
         let fresh = frame.pts >= requested_at;
         let image = Image::new(
             frame.bytes.to_vec(),
@@ -124,6 +129,24 @@ fn acquire_fresh(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An idle desktop stops producing after its first frame, and DXGI's first
+    /// is regularly stale. Propagating that timeout threw the only frame away,
+    /// so a screenshot of a still screen failed after the whole timeout.
+    #[test]
+    fn a_source_that_goes_quiet_after_one_stale_frame_still_answers() {
+        use crate::mock::{MockFrame, MockSource};
+
+        // One frame, stamped before the request, then nothing.
+        let mut source = MockSource::new(2, 2, vec![MockFrame::new(0, 7)]);
+        let opts = ShotOptions {
+            timeout: Duration::from_millis(10),
+            ..ShotOptions::default()
+        };
+        let image = acquire_fresh(&mut source, &opts, Timestamp::from_nanos(1_000))
+            .expect("the stale frame is a better answer than an error");
+        assert_eq!(image.bytes()[0], 7);
+    }
 
     #[test]
     fn the_default_warmup_discards_stale_frames() {
