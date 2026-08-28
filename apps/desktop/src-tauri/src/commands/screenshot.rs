@@ -6,6 +6,7 @@
 //! `app` shot goes through the running instance so it can target its own
 //! focused window.
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -48,18 +49,22 @@ pub struct Screenshot {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base64: Option<String>,
+    /// Whether the shot also reached the system clipboard. Absent when no copy
+    /// was asked for, `false` when it was asked for and the OS refused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copied_to_clipboard: Option<bool>,
 }
 
 /// Capture a whole monitor by its display id (from `displays list`).
 pub fn capture_display(id: u64, opts: &ShotOptions) -> Result<Screenshot, String> {
     let img = crate::capture::grab(Target::Display(DisplayId(id))).map_err(|e| format!("{e:#}"))?;
-    finalize(img, "display", opts)
+    finalize(&img, "display", opts)
 }
 
 /// Capture one application window by its window id (from `windows list`).
 pub fn capture_window(id: u64, opts: &ShotOptions) -> Result<Screenshot, String> {
     let img = crate::capture::grab(Target::Window(WindowId(id))).map_err(|e| format!("{e:#}"))?;
-    finalize(img, "window", opts)
+    finalize(&img, "window", opts)
 }
 
 /// Capture the rectangle the region overlay dragged out.
@@ -72,23 +77,44 @@ pub fn capture_window(id: u64, opts: &ShotOptions) -> Result<Screenshot, String>
 /// The crop happens during acquisition, on the GPU where there is one: the
 /// pixels outside the selection are never read back, let alone copied.
 pub fn capture_region(rect: RegionRect, opts: &ShotOptions) -> Result<Screenshot, String> {
+    finalize(&grab_region_pixels(rect)?, "region", opts)
+}
+
+/// The selection's pixels, cropped during acquisition.
+fn grab_region_pixels(rect: RegionRect) -> Result<RgbaImage, String> {
     let target = CaptureTarget::resolve_region(rect).map_err(|e| format!("{e:#}"))?;
-    let img = crate::capture::grab_region(
+    crate::capture::grab_region(
         Target::Display(DisplayId(target.display_id)),
         target.crop_relative_to_source(),
     )
-    .map_err(|e| format!("{e:#}"))?;
-    finalize(img, "region", opts)
+    .map_err(|e| format!("{e:#}"))
+}
+
+/// Put a shot on the system clipboard, reporting rather than propagating a
+/// refusal: the PNG on disk is the artifact, and a clipboard another process is
+/// holding open should not turn a good capture into a failed one.
+fn copy_to_clipboard(app: &tauri::AppHandle, img: &RgbaImage) -> bool {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let image = tauri::image::Image::new(img.as_raw(), img.width(), img.height());
+    match app.clipboard().write_image(&image) {
+        Ok(()) => true,
+        Err(err) => {
+            log::warn!("screenshot clipboard copy failed: {err}");
+            false
+        }
+    }
 }
 
 /// Capture the region the overlay dragged out, for the screenshot flow.
 ///
 /// Native resolution: the user is about to edit and export this, so the
 /// agent-facing longest-edge cap would throw away the pixels they came for.
+/// Also copies to the clipboard, which is what most screenshots are taken for.
 /// `spawn_blocking` because opening a capture source and reading a frame back
 /// blocks, and a sync command runs on the thread WKWebView paints on.
 #[tauri::command]
 pub async fn capture_region_shot(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     rect: RegionRect,
 ) -> AppResult<Screenshot> {
@@ -97,14 +123,19 @@ pub async fn capture_region_shot(
         .join(SCREENSHOT_DIR)
         .join(screenshot_name());
     tauri::async_runtime::spawn_blocking(move || {
-        capture_region(
-            rect,
+        let img = grab_region_pixels(rect)?;
+        // Disk first: the durable artifact, and a clipboard write is not worth losing it over.
+        let mut shot = finalize(
+            &img,
+            "region",
             &ShotOptions {
                 out: Some(out),
                 max_edge: 0,
                 base64: false,
             },
-        )
+        )?;
+        shot.copied_to_clipboard = Some(copy_to_clipboard(&app, &img));
+        Ok::<_, String>(shot)
     })
     .await
     .map_err(|e| AppError::msg(format!("capture_region_shot join error: {e}")))?
@@ -201,7 +232,7 @@ pub fn capture_app_window(
         .ok_or("the app window is off screen")?;
     let img = crate::capture::grab_region(Target::Display(display.id), Some(region))
         .map_err(|e| format!("{e:#}"))?;
-    finalize(img, "app", opts)
+    finalize(&img, "app", opts)
 }
 
 /// The webview window an `app` shot targets: the named one, else the focused
@@ -235,7 +266,7 @@ fn resolve_window(
 }
 
 /// Downscale (if requested), PNG-encode, write to disk, and build the result.
-fn finalize(img: RgbaImage, kind: &str, opts: &ShotOptions) -> Result<Screenshot, String> {
+fn finalize(img: &RgbaImage, kind: &str, opts: &ShotOptions) -> Result<Screenshot, String> {
     let img = downscale(img, opts.max_edge);
     let path = match &opts.out {
         Some(p) => p.clone(),
@@ -257,18 +288,24 @@ fn finalize(img: RgbaImage, kind: &str, opts: &ShotOptions) -> Result<Screenshot
         height: img.height(),
         kind: kind.to_string(),
         base64,
+        copied_to_clipboard: None,
     })
 }
 
 /// Resize so the longest edge is at most `max_edge`. `0`, an already-small
 /// image, or a degenerate dimension passes through untouched.
-fn downscale(img: RgbaImage, max_edge: u32) -> RgbaImage {
+fn downscale(img: &RgbaImage, max_edge: u32) -> Cow<'_, RgbaImage> {
     let (w, h) = (img.width(), img.height());
     let (tw, th) = scaled_dims(w, h, max_edge);
     if (tw, th) == (w, h) {
-        return img;
+        return Cow::Borrowed(img);
     }
-    image::imageops::resize(&img, tw, th, image::imageops::FilterType::Triangle)
+    Cow::Owned(image::imageops::resize(
+        img,
+        tw,
+        th,
+        image::imageops::FilterType::Triangle,
+    ))
 }
 
 /// Target dimensions after capping the longest edge to `max_edge` (0 = no cap),

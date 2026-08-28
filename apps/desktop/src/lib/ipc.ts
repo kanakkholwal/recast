@@ -341,6 +341,8 @@ export interface Screenshot {
 	/** The captured surface: `display`, `window`, `region`, or `app`. */
 	kind: string;
 	base64?: string;
+	/** Absent when no copy was asked for; `false` when the OS refused one. */
+	copiedToClipboard?: boolean;
 }
 
 /**

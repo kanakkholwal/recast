@@ -119,6 +119,12 @@ licence (no unlicensed crates in the tree).
 `dtoa-short`, `selectors`, `option-ext`) are file-level copyleft: fine to link, and we
 have not modified them, so no source-disclosure duty arises.
 
+Added since the count above, not yet folded into it: `tauri-plugin-clipboard-manager`
+brings 17 crates (`arboard`, `wl-clipboard-rs`, the `wayland-*` set, `tree_magic_mini`,
+`clipboard-win`, …). All permissive, all checked individually: MIT, Apache-2.0,
+BSL-1.0 and Zlib, none copyleft. `tree_magic_mini` is the MIT rewrite, not the
+GPL `tree_magic` it is named after.
+
 Worth naming individually:
 
 - **[transcribe.cpp](https://github.com/cjpais/Handy)** (`transcribe-cpp` crate) — the

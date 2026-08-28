@@ -235,6 +235,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        // Injects JS, so it joins the pre-window group like dialog/os/sharekit.
+        .plugin(tauri_plugin_clipboard_manager::init())
         // JS-injecting plugin — must be on the Builder before any window,
         // same constraint as dialog/os (see the comment block below).
         .plugin(tauri_plugin_sharekit::init())

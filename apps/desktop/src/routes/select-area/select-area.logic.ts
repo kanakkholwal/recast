@@ -71,3 +71,18 @@ export function confirmLabel(mode: OverlayMode): string {
 export function hintLabel(mode: OverlayMode): string {
 	return mode === "screenshot" ? "Drag to capture an area" : "Drag to select an area";
 }
+
+/**
+ * Notification title and body for a saved shot. A refused clipboard copy is
+ * named rather than swallowed: the overlay is gone by the time it is noticed.
+ */
+export function savedMessage(shot: {
+	path: string;
+	copiedToClipboard?: boolean;
+}): [string, string] {
+	if (shot.copiedToClipboard) return ["Screenshot saved and copied", shot.path];
+	if (shot.copiedToClipboard === false) {
+		return ["Screenshot saved", `${shot.path} (could not copy to clipboard)`];
+	}
+	return ["Screenshot saved", shot.path];
+}

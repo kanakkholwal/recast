@@ -5,6 +5,7 @@ import {
 	hintLabel,
 	overlayMode,
 	rectFromPoints,
+	savedMessage,
 	TOOLBAR_H,
 	TOOLBAR_W,
 	toRegionPayload,
@@ -68,5 +69,25 @@ describe("clampToolbar", () => {
 	it("keeps the toolbar on screen at the right edge", () => {
 		const { left } = clampToolbar({ x: 980, y: 10, w: 10, h: 10 }, 1000, 1000);
 		expect(left).toBe(1000 - TOOLBAR_W - 8);
+	});
+});
+
+describe("savedMessage", () => {
+	it("says so when the shot also reached the clipboard", () => {
+		expect(savedMessage({ path: "C:/shot.png", copiedToClipboard: true })).toEqual([
+			"Screenshot saved and copied",
+			"C:/shot.png",
+		]);
+	});
+
+	// The overlay is gone by then, so the notification is the only place to say it.
+	it("names a refused clipboard copy instead of swallowing it", () => {
+		const [title, body] = savedMessage({ path: "C:/shot.png", copiedToClipboard: false });
+		expect(title).toBe("Screenshot saved");
+		expect(body).toContain("could not copy to clipboard");
+	});
+
+	it("stays quiet about the clipboard when no copy was attempted", () => {
+		expect(savedMessage({ path: "C:/shot.png" })).toEqual(["Screenshot saved", "C:/shot.png"]);
 	});
 });

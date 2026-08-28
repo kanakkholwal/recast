@@ -157,6 +157,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 fontdb = "0.23"
 ttf-parser = "0.25"
 rustybuzz = "0.20"
+tauri-plugin-clipboard-manager = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [

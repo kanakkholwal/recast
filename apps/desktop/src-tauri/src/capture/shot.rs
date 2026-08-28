@@ -87,12 +87,122 @@ mod tests {
     use super::*;
     use crate::capture::{CaptureTarget, RegionRect};
 
+    /// How many distinct colours the compared window needs before a match means
+    /// the crop is in the right PLACE. Over a flat desktop every offset matches,
+    /// so a pass there would say nothing; measured rather than assumed, because
+    /// that vacuous pass is what an earlier version of this test shipped.
+    const DISTINCT_COLOURS: usize = 24;
+
+    /// How a cropped capture lines up against the same window of a full one.
+    struct CropMatch {
+        /// Pixels that were identical in `before` and `after`, so a difference
+        /// against the crop is the crop's and not the desktop's.
+        stable: u64,
+        /// Distinct colours among those, which is what makes a match locating.
+        colours: usize,
+        mismatched: u64,
+    }
+
+    /// Compare `cropped` against the window of `before` at `at`, counting only
+    /// pixels `after` agrees with. Pure, so the offset sensitivity this test
+    /// depends on is provable without a real screen.
+    fn compare_crop(
+        cropped: &RgbaImage,
+        before: &RgbaImage,
+        after: &RgbaImage,
+        at: (u32, u32),
+    ) -> CropMatch {
+        let mut colours = std::collections::HashSet::new();
+        let mut stable = 0u64;
+        let mut mismatched = 0u64;
+        for y in 0..cropped.height() {
+            for x in 0..cropped.width() {
+                let (sx, sy) = (x + at.0, y + at.1);
+                let there = before.get_pixel(sx, sy);
+                if there != after.get_pixel(sx, sy) {
+                    continue;
+                }
+                stable += 1;
+                colours.insert(there.0);
+                if cropped.get_pixel(x, y) != there {
+                    mismatched += 1;
+                }
+            }
+        }
+        CropMatch {
+            stable,
+            colours: colours.len(),
+            mismatched,
+        }
+    }
+
+    /// A deterministic non-flat image, standing in for a busy desktop.
+    fn patterned(w: u32, h: u32) -> RgbaImage {
+        RgbaImage::from_fn(w, h, |x, y| {
+            image::Rgba([(x * 7) as u8, (y * 11) as u8, (x * y) as u8, 255])
+        })
+    }
+
+    fn window_of(img: &RgbaImage, at: (u32, u32), w: u32, h: u32) -> RgbaImage {
+        RgbaImage::from_fn(w, h, |x, y| *img.get_pixel(x + at.0, y + at.1))
+    }
+
+    #[test]
+    fn a_crop_taken_from_the_right_place_matches_every_stable_pixel() {
+        let full = patterned(64, 64);
+        let crop = window_of(&full, (16, 16), 32, 32);
+        let found = compare_crop(&crop, &full, &full, (16, 16));
+        assert_eq!(found.mismatched, 0);
+    }
+
+    /// The assertion the live test rests on: shift the origin and it must notice.
+    #[test]
+    fn a_crop_taken_from_the_wrong_place_is_caught() {
+        let full = patterned(64, 64);
+        let crop = window_of(&full, (16, 16), 32, 32);
+        let found = compare_crop(&crop, &full, &full, (25, 23));
+        assert!(found.mismatched > 0);
+    }
+
+    /// The flat-area guard is only meaningful if a busy area clears it.
+    #[test]
+    fn a_busy_area_clears_the_flatness_guard() {
+        let full = patterned(64, 64);
+        let crop = window_of(&full, (16, 16), 32, 32);
+        let found = compare_crop(&crop, &full, &full, (16, 16));
+        assert!(found.colours >= DISTINCT_COLOURS);
+    }
+
+    /// Why the live test refuses a flat area rather than passing on one.
+    #[test]
+    fn a_flat_area_matches_at_any_offset_and_reports_one_colour() {
+        let full = RgbaImage::from_pixel(64, 64, image::Rgba([9, 9, 9, 255]));
+        let crop = window_of(&full, (16, 16), 32, 32);
+        let found = compare_crop(&crop, &full, &full, (25, 23));
+        assert_eq!((found.mismatched, found.colours), (0, 1));
+    }
+
+    #[test]
+    fn a_pixel_that_moved_between_the_two_captures_is_not_counted() {
+        let full = patterned(64, 64);
+        let mut moved = full.clone();
+        moved.put_pixel(20, 20, image::Rgba([1, 2, 3, 255]));
+        let crop = window_of(&full, (16, 16), 32, 32);
+        let found = compare_crop(&crop, &full, &moved, (16, 16));
+        assert_eq!(found.stable, 32 * 32 - 1);
+    }
+
     /// The region path resolves a virtual-desktop rectangle to a display and
     /// crops during acquisition. Checked against an independent full-display
-    /// capture of the same pixels, because a crop that is off by a display
-    /// origin or a scale factor still returns an image of the right SIZE, and
-    /// only the content says it came from the right PLACE.
+    /// capture of the same pixels: a crop off by a display origin or a scale
+    /// factor still returns an image of the right SIZE, and only the content
+    /// says it came from the right PLACE.
+    ///
+    /// Live and `#[ignore]`d, like the other real-device tests: it needs a
+    /// desktop that is showing something and holding still, which a CI runner
+    /// (and a machine mid-build) is not.
     #[test]
+    #[ignore = "live: needs a real display showing static content"]
     fn a_region_capture_matches_the_same_crop_of_its_display() {
         if !capturekit::capabilities().display_enumeration {
             return;
@@ -115,7 +225,7 @@ mod tests {
             height: h,
         };
 
-        let Ok(full) = grab(Target::Display(display.id)) else {
+        let Ok(before) = grab(Target::Display(display.id)) else {
             return;
         };
         let target = CaptureTarget::resolve_region(region).expect("the region resolves");
@@ -124,23 +234,28 @@ mod tests {
             target.crop_relative_to_source(),
         )
         .expect("the region captures");
+        let Ok(after) = grab(Target::Display(display.id)) else {
+            return;
+        };
 
         assert_eq!((cropped.width(), cropped.height()), (w, h));
-        let mut mismatched = 0u64;
-        for y in 0..h {
-            for x in 0..w {
-                let here = cropped.get_pixel(x, y);
-                let there = full.get_pixel(x + w, y + h);
-                if here != there {
-                    mismatched += 1;
-                }
-            }
-        }
-        // Not zero: the screen changes between captures. A wrong origin misses nearly every pixel.
+        // The two full grabs are what separate a moved origin from a moving desktop.
+        let found = compare_crop(&cropped, &before, &after, (w, h));
         let total = u64::from(w) * u64::from(h);
         assert!(
-            mismatched * 20 < total,
-            "{mismatched} of {total} pixels differ, so the crop is not where the region asked for"
+            found.stable * 4 >= total,
+            "only {} of {total} pixels held still; run this on a static desktop",
+            found.stable
+        );
+        assert!(
+            found.colours >= DISTINCT_COLOURS,
+            "the compared area is near-flat ({} colours), so a match would not locate the crop",
+            found.colours
+        );
+        assert_eq!(
+            found.mismatched, 0,
+            "{} of {} unchanged pixels differ, so the crop is not where the region asked for",
+            found.mismatched, found.stable
         );
     }
 }

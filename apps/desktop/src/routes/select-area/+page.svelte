@@ -14,6 +14,7 @@ import {
 	hintLabel,
 	overlayMode,
 	rectFromPoints,
+	savedMessage,
 	TOOLBAR_W,
 	toRegionPayload,
 } from "./select-area.logic";
@@ -93,7 +94,7 @@ async function confirm() {
 		const shot = await captureRegionShot(payload);
 		await emit("screenshot-captured", shot);
 		// Awaited before the close, or the notification races this window's teardown.
-		await notifyNow("Screenshot saved", shot.path);
+		await notifyNow(...savedMessage(shot));
 		getCurrentWindow().close();
 	} catch (e) {
 		capturing = false;
