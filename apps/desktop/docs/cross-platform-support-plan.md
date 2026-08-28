@@ -23,7 +23,7 @@ hitting a known-broken path, verified on hardware.
 | OS | Code complete | Production-ready | What's actually left |
 |---|---|---|---|
 | **Windows** | 100% | **~100% — shipping** | Verified, in users' hands. The reference platform. |
-| **macOS** | ~95% | **~75%** | (a) Hardware verification of capture + the TCC permission flow + Retina/multi-monitor. (b) The microphone records the system default only: ScreenCaptureKit names no input devices, so a picked one is ignored. (c) Deferred capture-read timeout (a stalled device can hang `stop()`). (d) Developer-ID signing + **notarization**. (e) First-run permissions UX. |
+| **macOS** | ~98% | **~80%** | (a) Hardware verification of capture + audio + the TCC permission flow + Retina/multi-monitor. (b) Deferred capture-read timeout (a stalled device can hang `stop()`). (c) Developer-ID signing + **notarization**. (d) First-run permissions UX. |
 | **Linux** | ~90% | **~60%** | (a) **Zero hardware verification yet** — biggest unknown. Portal+PipeWire (Wayland) and XGetImage (X11) are written but never run on a real session. (b) Wayland: cursor double-render and a portal dialog on every record (no `restore_token` persistence). (c) X11 perf: XShm fast path unwired, ~4× over-capture, window-occlusion not handled. (d) Functional sign-off on GNOME + KDE + an X11 session. |
 
 **One-line answer:** Windows is done. **macOS is roughly one focused
@@ -46,11 +46,11 @@ hardware-verified** · ⚠️ implemented with a known limitation · ❌ stub/no
 |---|---|---|---|
 | Screen capture | ✅ capturekit (DXGI + Windows Graphics Capture) | 🟢 capturekit (portal+PipeWire / X11) | 🟢 capturekit (ScreenCaptureKit) |
 | System audio (loopback) | ✅ capturekit (WASAPI) | 🟢 capturekit (PipeWire sink monitor) | 🟢 capturekit (ScreenCaptureKit tap, no virtual driver) |
-| Microphone | ✅ capturekit (WASAPI) | 🟢 capturekit (PipeWire) | ⚠️ capturekit (SCK) — system default only, named inputs unsupported |
+| Microphone | ✅ capturekit (WASAPI) | 🟢 capturekit (PipeWire) | 🟢 capturekit (AVFoundation, any named device) |
 | Camera / webcam | ✅ capturekit (Media Foundation) | 🟢 capturekit (V4L2) | 🟢 capturekit (AVFoundation) |
 | Cursor sampling | ✅ Win32 GetCursorPos | 🟢 device_query (xcb / XWayland) | 🟢 device_query (CoreGraphics) |
 | Reveal in file manager | ✅ `explorer /select,` | 🟢 D-Bus `FileManager1.ShowItems` + xdg-open fallback | 🟢 `open -R` |
-| Audio device list | ✅ capturekit (loopback filtered out) | 🟢 capturekit (loopback filtered out) | ⚠️ none — the picker offers "System default" |
+| Audio device list | ✅ capturekit (loopback filtered out) | 🟢 capturekit (loopback filtered out) | 🟢 capturekit (CoreAudio, loopback filtered out) |
 | Camera device list | ✅ capturekit | 🟢 capturekit | 🟢 capturekit |
 | Capture capabilities probe | ✅ `capture_capabilities` | 🟢 `capture_capabilities` | 🟢 `capture_capabilities` |
 | Window capture-exclusion | ✅ `set_content_protected` (`WDA_EXCLUDEFROMCAPTURE`) | ❌ no-op (no OS API — X11/Wayland have no per-window exclusion) | 🟢 `set_content_protected` (`NSWindow.sharingType`), works vs. AVFoundation capture |
@@ -70,10 +70,6 @@ is a person sitting in front of a Mac / a Linux box.**
 
 ### macOS — nearest milestone (in active testing)
 - **Hardware pass:** capture + TCC permissions + Retina/multi-monitor.
-- **Named microphone inputs:** ScreenCaptureKit captures the system default and
-  refuses any other device name, so a mic chosen in the picker is ignored (with
-  a log line) rather than failing the track. Naming one needs a CoreAudio
-  enumeration plus an AVCaptureDevice input backend in capturekit.
 - **Deferred capture-read timeout:** a device stall (permission revoked
   mid-record) must not block `stop()`.
 - **Permissions UX:** first launch prompts for Screen Recording / Microphone /

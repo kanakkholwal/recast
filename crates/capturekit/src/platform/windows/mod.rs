@@ -1,3 +1,4 @@
+mod com;
 mod d3d;
 mod dpi;
 mod dxgi;

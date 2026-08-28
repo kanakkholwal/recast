@@ -8,7 +8,7 @@ use capturekit_core::{
     Result, Rotation, SourceDesc,
 };
 use windows::core::{Interface, GUID, HRESULT, PWSTR};
-use windows::Win32::Foundation::{S_FALSE, S_OK};
+use windows::Win32::Foundation::S_OK;
 use windows::Win32::Media::MediaFoundation::{
     IMF2DBuffer, IMFActivate, IMFAttributes, IMFMediaSource, IMFMediaType, IMFSourceReader,
     MFCreateAttributes, MFCreateMediaType, MFCreateSourceReaderFromMediaSource,
@@ -21,10 +21,9 @@ use windows::Win32::Media::MediaFoundation::{
     MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, MF_SOURCE_READER_FIRST_VIDEO_STREAM,
     MF_VERSION,
 };
-use windows::Win32::System::Com::{
-    CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_MULTITHREADED,
-};
+use windows::Win32::System::Com::CoTaskMemFree;
 
+use super::com::ComScope;
 use crate::backend::{FrameSource, RawFrame};
 use crate::deliver::{Delivered, FrameSlot};
 use crate::platform::OpenOptions;
@@ -60,32 +59,6 @@ fn ensure_started() -> Result<()> {
         Ok(())
     } else {
         Err(err(windows::core::Error::from(hr)))
-    }
-}
-
-/// COM for the current thread, undone only if this scope is what started it.
-///
-/// A host that already chose an apartment gets `RPC_E_CHANGED_MODE` here, and a
-/// thread already initialised gets `S_FALSE`. Uninitialising on either would
-/// close an apartment this library does not own.
-struct ComScope {
-    owned: bool,
-}
-
-impl ComScope {
-    fn mta() -> Self {
-        let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
-        Self {
-            owned: hr.is_ok() && hr != S_FALSE,
-        }
-    }
-}
-
-impl Drop for ComScope {
-    fn drop(&mut self) {
-        if self.owned {
-            unsafe { CoUninitialize() };
-        }
     }
 }
 

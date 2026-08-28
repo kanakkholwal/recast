@@ -1,6 +1,8 @@
 mod audio;
 mod camera;
 mod content;
+mod coreaudio;
+mod mic;
 mod sample;
 mod stream;
 
@@ -34,7 +36,8 @@ pub(crate) fn capabilities() -> Capabilities {
         cursor_samples: false,
         dirty_rects: false,
         audio_loopback: true,
-        audio_device_enumeration: false,
+        // CoreAudio lists them and AVFoundation opens any of them by UID.
+        audio_device_enumeration: true,
     }
 }
 
@@ -84,13 +87,22 @@ pub(crate) fn now() -> Timestamp {
 }
 
 pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
-    audio::devices()
+    coreaudio::devices()
 }
 
+/// System audio through ScreenCaptureKit, inputs through AVFoundation.
+///
+/// ScreenCaptureKit is the only way to tap the output mix without a virtual
+/// driver, but it can capture only the DEFAULT input and refuses any other name.
+/// Inputs therefore go through AVFoundation, which opens the device the user
+/// picked and takes the Microphone grant rather than the Screen Recording one.
 pub(crate) fn open_audio(
     device: Option<&AudioDeviceId>,
     direction: AudioDirection,
 ) -> Result<Box<dyn AudioSource>> {
+    if direction == AudioDirection::Input {
+        return Ok(Box::new(mic::AvfMicSource::open(device)?));
+    }
     Ok(Box::new(audio::SckAudioSource::open(device, direction)?))
 }
 

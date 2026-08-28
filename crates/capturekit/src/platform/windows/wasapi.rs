@@ -16,6 +16,7 @@ use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
 use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
 
+use super::com::ComScope;
 use crate::backend::{AudioSource, RawAudio};
 
 pub(crate) const BACKEND: &str = "wasapi";
@@ -47,16 +48,13 @@ fn err(source: windows::core::Error) -> CaptureError {
     CaptureError::backend(BACKEND, source)
 }
 
-fn enumerator() -> Result<IMMDeviceEnumerator> {
-    // WASAPI is COM; a bare capture thread has to initialise it. Idempotent, and
-    // the apartment is not ours to own.
-    unsafe {
-        let _ = windows::Win32::System::Com::CoInitializeEx(
-            None,
-            windows::Win32::System::Com::COINIT_MULTITHREADED,
-        );
-        CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).map_err(err)
-    }
+/// WASAPI is COM, so a bare capture thread has to join an apartment first. The
+/// caller keeps the returned scope alive for as long as it uses what it made.
+fn enumerator() -> Result<(IMMDeviceEnumerator, ComScope)> {
+    let scope = ComScope::mta();
+    let enumerator =
+        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }.map_err(err)?;
+    Ok((enumerator, scope))
 }
 
 fn device_id(device: &IMMDevice) -> Result<AudioDeviceId> {
@@ -140,7 +138,7 @@ fn integer_format(bits: u16) -> Result<SampleFormat> {
 
 /// Every active input, plus every output that can be captured as loopback.
 pub(crate) fn devices() -> Result<Vec<AudioDevice>> {
-    let enumerator = enumerator()?;
+    let (enumerator, _com) = enumerator()?;
     let mut devices = Vec::new();
     for (flow, direction) in [
         (eCapture, AudioDirection::Input),
@@ -188,6 +186,14 @@ pub(crate) struct WasapiSource {
     /// When the stream started, so silence for an idle device can be measured
     /// against the clock rather than against packets that never arrive.
     origin: Timestamp,
+    /// What to subtract from a reported device position to get this capture's
+    /// own frame count. See [`local_position`].
+    anchor: Option<u64>,
+    /// LAST on purpose: fields drop in declaration order, and the apartment has
+    /// to outlive the interfaces made in it. Held for the source's whole life
+    /// rather than just the open, because those interfaces are used on every
+    /// read.
+    _com: ComScope,
     stopped: bool,
 }
 
@@ -197,7 +203,7 @@ unsafe impl Send for WasapiSource {}
 
 impl WasapiSource {
     pub(crate) fn open(device: Option<&AudioDeviceId>, direction: AudioDirection) -> Result<Self> {
-        let enumerator = enumerator()?;
+        let (enumerator, com) = enumerator()?;
         let flow = match direction {
             AudioDirection::Input => eCapture,
             AudioDirection::Loopback => eRender,
@@ -259,6 +265,8 @@ impl WasapiSource {
             timeline: AudioTimeline::new(format),
             staging: Vec::new(),
             origin: super::now(),
+            anchor: None,
+            _com: com,
             stopped: false,
         })
     }
@@ -294,6 +302,20 @@ impl WasapiSource {
         let expected = self.desc.format.frames_in_duration(elapsed);
         expected.saturating_sub(self.timeline.position())
     }
+}
+
+/// A reported device position translated into this capture's own frame count.
+///
+/// A capture stream's position counts from when the stream started, but a
+/// LOOPBACK stream is a render endpoint's, and that one started when the audio
+/// engine did — hours ago, millions of frames back. Taken literally it reads as
+/// a permanent enormous gap, and the source fills it with silence as fast as the
+/// caller can ask, burying the real audio under hours of it. The first packet
+/// fixes the offset, and the timeline's own position is what it is fixed to, so
+/// the two agree from that packet on.
+fn local_position(anchor: &mut Option<u64>, device_position: u64, timeline: u64) -> u64 {
+    let at = *anchor.get_or_insert_with(|| device_position.saturating_sub(timeline));
+    device_position.saturating_sub(at)
 }
 
 /// The most silence one call will generate, so a long idle period is delivered
@@ -359,7 +381,8 @@ impl AudioSource for WasapiSource {
             // The device ran on while nothing arrived, which for a loopback
             // endpoint means nothing was playing. The samples owed are real
             // silence at a real position, not something to skip.
-            let gap = self.timeline.gap_before(device_position);
+            let local = local_position(&mut self.anchor, device_position, self.timeline.position());
+            let gap = self.timeline.gap_before(local);
             let discontinuous = flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32 != 0;
             if gap > 0 {
                 // Release without consuming: this buffer is delivered next call,
@@ -400,6 +423,61 @@ impl AudioSource for WasapiSource {
         }
         self.stopped = true;
         unsafe { self.client.Stop() }.map_err(err)
+    }
+}
+
+#[cfg(test)]
+mod position_tests {
+    use super::local_position;
+
+    /// A capture endpoint starts at zero, so nothing should shift.
+    #[test]
+    fn an_input_stream_starting_at_zero_is_left_alone() {
+        let mut anchor = None;
+        assert_eq!(local_position(&mut anchor, 0, 0), 0);
+        assert_eq!(local_position(&mut anchor, 4_800, 0), 4_800);
+    }
+
+    /// The bug this exists to prevent: a loopback endpoint reports the render
+    /// stream's position, which is hours old. Read literally it is a gap of
+    /// hundreds of millions of frames, and the source fills it with silence.
+    #[test]
+    fn a_loopback_stream_starting_hours_in_is_rebased_to_this_capture() {
+        let mut anchor = None;
+        let hours_in = 48_000 * 60 * 60 * 3;
+        assert_eq!(local_position(&mut anchor, hours_in, 0), 0);
+        assert_eq!(local_position(&mut anchor, hours_in + 4_800, 0), 4_800);
+    }
+
+    /// Silence emitted before the first packet already moved the timeline, so
+    /// the anchor lines the device up with where the timeline actually is
+    /// rather than restarting it at zero.
+    #[test]
+    fn the_anchor_lands_on_the_timeline_the_clock_already_advanced() {
+        let mut anchor = None;
+        let hours_in = 48_000 * 60 * 60 * 3;
+        assert_eq!(local_position(&mut anchor, hours_in, 14_400), 14_400);
+        assert_eq!(
+            local_position(&mut anchor, hours_in + 4_800, 14_400),
+            19_200
+        );
+    }
+
+    /// Only the first packet sets it; a later timeline position must not move
+    /// the anchor, or every gap after it would be measured from a new zero.
+    #[test]
+    fn the_anchor_is_fixed_by_the_first_packet_only() {
+        let mut anchor = None;
+        assert_eq!(local_position(&mut anchor, 1_000_000, 0), 0);
+        assert_eq!(local_position(&mut anchor, 1_004_800, 999_999), 4_800);
+    }
+
+    /// A driver that resets its counter must not underflow into a huge gap.
+    #[test]
+    fn a_position_that_goes_backwards_saturates_at_zero() {
+        let mut anchor = None;
+        assert_eq!(local_position(&mut anchor, 1_000_000, 0), 0);
+        assert_eq!(local_position(&mut anchor, 500, 0), 0);
     }
 }
 

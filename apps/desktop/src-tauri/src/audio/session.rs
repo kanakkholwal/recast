@@ -25,65 +25,130 @@ pub(super) enum Source {
     /// What the system is playing.
     Loopback,
     /// A microphone, by id, or the system default when `None`.
-    Input(Option<String>),
+    Input {
+        device: Option<AudioDeviceId>,
+        /// Why the device the user picked is not the one being opened, when it
+        /// is not. Carried here so `open` reports it like any other notice.
+        ignored: Option<String>,
+    },
+}
+
+/// What a track opened with, and anything the user has to be told about it.
+///
+/// A fallback the user is not told about is the failure mode worth designing
+/// against: the recording looks fine and the wrong device is on it.
+pub(super) struct Opened {
+    pub(super) capturer: AudioCapturer,
+    pub(super) notices: Vec<String>,
 }
 
 impl Source {
+    /// The source for a picker's microphone id, resolved on the CALLER's
+    /// thread: which device to open is policy, and the capture thread's job is
+    /// to capture.
+    ///
+    /// A request this platform cannot honour becomes a notice rather than a log
+    /// line, so the user hears about it.
+    pub(super) fn input(requested: Option<String>) -> Self {
+        let can_name = capturekit::capabilities().audio_device_enumeration;
+        let (device, ignored) = named_device(requested.as_deref(), can_name);
+        Self::Input {
+            device: device.map(AudioDeviceId),
+            ignored,
+        }
+    }
+
     const fn label(&self) -> &'static str {
         match self {
             Self::Loopback => "system-audio loopback",
-            Self::Input(_) => "microphone",
+            Self::Input { .. } => "microphone",
         }
     }
 
     const fn thread_name(&self) -> &'static str {
         match self {
             Self::Loopback => "recast-audio",
-            Self::Input(_) => "recast-microphone",
+            Self::Input { .. } => "recast-microphone",
         }
     }
 
-    fn open(&self) -> Result<AudioCapturer> {
+    fn open(&self) -> Result<Opened> {
+        let (named, ignored) = match self {
+            Self::Loopback => (None, None),
+            Self::Input { device, ignored } => (device.as_ref(), ignored.clone()),
+        };
+        let mut notices: Vec<String> = ignored.into_iter().collect();
+        let capturer = match named {
+            None => self.build(None),
+            Some(id) => match self.build(Some(id)) {
+                // Unplugged or renamed since the picker saw it; the default beats nothing, if the user is told.
+                Err(err) if is_missing_device(&err) => {
+                    log::warn!("the chosen microphone {} is gone: {err}", id.0);
+                    notices.push(MIC_GONE.to_string());
+                    self.build(None)
+                }
+                other => other,
+            },
+        }
+        .with_context(|| format!("failed to open the {} device", self.label()))?;
+        Ok(Opened { capturer, notices })
+    }
+
+    fn build(&self, device: Option<&AudioDeviceId>) -> capturekit::Result<AudioCapturer> {
         let builder = match self {
             Self::Loopback => capturekit::audio_loopback(),
-            Self::Input(id) => {
-                let named = named_device(
-                    id.as_deref(),
-                    capturekit::capabilities().audio_device_enumeration,
-                );
-                match named {
-                    Some(id) => capturekit::audio_input().device(AudioDeviceId(id)),
-                    None => capturekit::audio_input(),
-                }
-            }
+            Self::Input { .. } => capturekit::audio_input(),
         };
-        builder
-            .build()
-            .with_context(|| format!("failed to open the {} device", self.label()))
+        match device {
+            Some(id) => builder.device(id.clone()),
+            None => builder,
+        }
+        .build()
     }
 }
 
-/// The device id to open, or `None` for the platform default.
+/// Told to the user when their chosen microphone has gone away.
+const MIC_GONE: &str = "The microphone you picked is no longer available, so the recording used your default one instead.";
+
+/// Told to the user when the platform cannot open a named input at all.
+const MIC_UNNAMEABLE: &str = "This system only lets Recast record the default microphone, so the one you picked was not used.";
+
+/// Whether an open failed because the named device is not there.
+///
+/// Distinguished from every other failure because it is the one worth falling
+/// back from: a device that is merely busy or refused is not helped by opening a
+/// different one.
+fn is_missing_device(err: &CaptureError) -> bool {
+    matches!(
+        err,
+        CaptureError::NotFoundNamed { .. } | CaptureError::NotFound { .. }
+    )
+}
+
+/// The device id to open, and the notice for a request that cannot be honoured.
 ///
 /// A backend that cannot enumerate cannot name either, and refuses an id it did
 /// not issue; ignoring the request there records from the default rather than
-/// failing the track outright.
-fn named_device(requested: Option<&str>, can_name: bool) -> Option<String> {
-    let id = requested?.trim();
+/// failing the track outright, and says so.
+fn named_device(requested: Option<&str>, can_name: bool) -> (Option<String>, Option<String>) {
+    let Some(id) = requested.map(str::trim) else {
+        return (None, None);
+    };
     if id.is_empty() || id.eq_ignore_ascii_case("default") {
-        return None;
+        return (None, None);
     }
     if !can_name {
-        log::info!("this platform captures only the default input; ignoring device '{id}'");
-        return None;
+        return (None, Some(MIC_UNNAMEABLE.to_string()));
     }
-    Some(id.to_string())
+    (Some(id.to_string()), None)
 }
 
 /// A running capture thread writing one track's WAV.
 pub(super) struct TrackSession {
     stop: Arc<AtomicBool>,
     format: AudioFormat,
+    /// What the user has to be told about how this track opened.
+    notices: Vec<String>,
     /// `Option` so `Drop` can take it; see the `Drop` impl.
     join: Option<JoinHandle<Result<PathBuf>>>,
 }
@@ -108,8 +173,8 @@ impl TrackSession {
         let join = thread::Builder::new()
             .name(source.thread_name().to_string())
             .spawn(move || match open(&source, output_path, pause, start) {
-                Ok((capturer, writer)) => {
-                    let _ = ready.send(Ok(capturer.describe().format));
+                Ok((capturer, writer, notices)) => {
+                    let _ = ready.send(Ok((capturer.describe().format, notices)));
                     run(capturer, writer, &flag, label)
                 }
                 Err(err) => {
@@ -120,9 +185,10 @@ impl TrackSession {
             .with_context(|| format!("failed to spawn the {label} capture thread"))?;
 
         match opened.recv() {
-            Ok(Ok(format)) => Ok(Self {
+            Ok(Ok((format, notices))) => Ok(Self {
                 stop,
                 format,
+                notices,
                 join: Some(join),
             }),
             Ok(Err(err)) => Err(err),
@@ -133,6 +199,11 @@ impl TrackSession {
     /// What the device negotiated, which is not always what was asked for.
     pub(super) const fn format(&self) -> AudioFormat {
         self.format
+    }
+
+    /// Anything the user has to be told about how this track opened.
+    pub(super) fn notices(&self) -> &[String] {
+        &self.notices
     }
 
     pub(super) fn stop(mut self) -> Result<PathBuf> {
@@ -162,8 +233,8 @@ fn open(
     output_path: PathBuf,
     pause: Arc<AtomicBool>,
     start: TrackStart,
-) -> Result<(AudioCapturer, TrackWriter)> {
-    let capturer = source.open()?;
+) -> Result<(AudioCapturer, TrackWriter, Vec<String>)> {
+    let Opened { capturer, notices } = source.open()?;
     let desc = capturer.describe();
     let format = WavFormat::of(desc.format)?;
     log::info!(
@@ -177,7 +248,7 @@ fn open(
         output_path.display()
     );
     let writer = TrackWriter::new(source.label(), output_path, format, pause, start)?;
-    Ok((capturer, writer))
+    Ok((capturer, writer, notices))
 }
 
 /// Whether the loop should read again after an error.
@@ -225,7 +296,7 @@ fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::{keep_reading, named_device};
+    use super::{is_missing_device, keep_reading, named_device};
     use capturekit::{CaptureError, LostReason};
     use core::time::Duration;
 
@@ -249,10 +320,31 @@ mod tests {
 
     #[test]
     fn a_named_device_is_opened_where_the_backend_can_name_one() {
-        assert_eq!(
-            named_device(Some("{0.0.1.00000000}.{abc}"), true),
-            Some("{0.0.1.00000000}.{abc}".to_string())
-        );
+        let (device, notice) = named_device(Some("{0.0.1.00000000}.{abc}"), true);
+        assert_eq!(device, Some("{0.0.1.00000000}.{abc}".to_string()));
+        assert_eq!(notice, None, "an honoured request needs no notice");
+    }
+
+    /// A device that has gone away is the one failure worth opening a different
+    /// device for. Anything else (busy, refused, no permission) is not helped by
+    /// trying the default, and silently swapping would hide a real problem.
+    #[test]
+    fn only_a_missing_device_falls_back_to_the_default() {
+        assert!(is_missing_device(&CaptureError::NotFoundNamed {
+            kind: "audio input",
+            id: "Blue Yeti".to_string(),
+        }));
+        assert!(is_missing_device(&CaptureError::NotFound {
+            kind: "audio device",
+            id: 0,
+        }));
+        assert!(!is_missing_device(&CaptureError::Lost(
+            LostReason::AccessLost
+        )));
+        assert!(!is_missing_device(&CaptureError::Unsupported {
+            backend: "test",
+            operation: "open an input another session already holds",
+        }));
     }
 
     /// The picker sends these for "no explicit choice"; forwarding either as a
@@ -260,15 +352,20 @@ mod tests {
     #[test]
     fn blank_and_default_ids_mean_the_system_default() {
         for id in ["", "   ", "default", "Default"] {
-            assert_eq!(named_device(Some(id), true), None);
+            assert_eq!(named_device(Some(id), true), (None, None));
         }
-        assert_eq!(named_device(None, true), None);
+        assert_eq!(named_device(None, true), (None, None));
     }
 
     /// macOS captures the default input and refuses any other name, so honouring
     /// a stored id there would fail the mic track instead of recording it.
     #[test]
     fn a_backend_that_cannot_enumerate_records_the_default_rather_than_failing() {
-        assert_eq!(named_device(Some("Blue Yeti"), false), None);
+        let (device, notice) = named_device(Some("Blue Yeti"), false);
+        assert_eq!(device, None, "the id it cannot open must not be forwarded");
+        assert!(
+            notice.is_some(),
+            "falling back to the default must not be silent"
+        );
     }
 }

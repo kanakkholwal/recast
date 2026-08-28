@@ -2,6 +2,8 @@ use core::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex};
 
+#[cfg(target_os = "macos")]
+use capturekit_core::AudioFormat;
 use capturekit_core::{CaptureError, LostReason, Result, Timestamp};
 
 /// What a video delivery published alongside the pixels.
@@ -149,6 +151,18 @@ struct Queued {
     total: usize,
     /// Samples were refused, so whatever arrives next begins a new run.
     broke: bool,
+    /// Deliveries dropped before they could be queued at all, and why the first
+    /// one was. Counted rather than logged per buffer: the delivery callback
+    /// runs hundreds of times a second, and a device whose format cannot be read
+    /// fails on every one of them.
+    dropped: u64,
+    reason: Option<String>,
+    /// What the delivered samples are actually in. A backend that configures
+    /// its own format knows this up front; one that opens a device the system
+    /// picked can only learn it from a buffer. PipeWire renegotiates through its
+    /// own param callback, so only the AVFoundation input needs this.
+    #[cfg(target_os = "macos")]
+    format: Option<AudioFormat>,
 }
 
 #[cfg(any(
@@ -187,6 +201,64 @@ impl AudioQueue {
             });
         }
         self.arrived.notify_all();
+    }
+
+    /// Record the format the delivered samples are in.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn note_format(&self, format: AudioFormat) {
+        if let Ok(mut queued) = self.queued.lock() {
+            queued.format = Some(format);
+        }
+    }
+
+    /// The format of the samples delivered so far, once any have been.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn format(&self) -> Option<AudioFormat> {
+        self.queued.lock().ok()?.format
+    }
+
+    /// Record that a delivery could not be queued, and why.
+    ///
+    /// The samples are gone either way; what must not happen is losing them
+    /// silently. The gap is marked so the next run reports a discontinuity, and
+    /// the reason is kept for [`Self::take_drops`] to surface once.
+    pub(crate) fn note_dropped(&self, reason: &str) {
+        let Ok(mut queued) = self.queued.lock() else {
+            return;
+        };
+        queued.broke = true;
+        queued.dropped = queued.dropped.saturating_add(1);
+        if queued.reason.is_none() {
+            queued.reason = Some(reason.to_string());
+        }
+    }
+
+    /// [`Self::note_dropped`] with the error that caused it.
+    pub(crate) fn note_dropped_with(&self, reason: &str, err: &CaptureError) {
+        self.note_dropped(&format!("{reason}: {err}"));
+    }
+
+    /// Log anything dropped since the last call, once, with its reason.
+    ///
+    /// The samples are already gone; a track that is quietly short is the thing
+    /// worth preventing.
+    pub(crate) fn report_drops(&self, backend: &str) {
+        if let Some((count, reason)) = self.take_drops() {
+            log::warn!(
+                "{backend}: dropped {count} audio buffer(s) — {reason}. The track is short by that much."
+            );
+        }
+    }
+
+    /// Take what has been dropped since the last ask, as a count and a reason.
+    ///
+    /// `None` when nothing was dropped, so a caller can report only when there
+    /// is something to report.
+    pub(crate) fn take_drops(&self) -> Option<(u64, String)> {
+        let mut queued = self.queued.lock().ok()?;
+        let reason = queued.reason.take()?;
+        let count = core::mem::take(&mut queued.dropped);
+        Some((count, reason))
     }
 
     /// Report that no further samples will arrive, and wake whoever is waiting.

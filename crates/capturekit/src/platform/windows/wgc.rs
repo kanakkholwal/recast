@@ -1,4 +1,5 @@
 use core::time::Duration;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use capturekit_core::{
@@ -16,6 +17,8 @@ use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+
+use super::com::ComScope;
 use windows::Win32::System::WinRT::Direct3D11::{
     CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess,
 };
@@ -29,8 +32,20 @@ use crate::shot::CursorMode;
 const BACKEND: &str = "wgc";
 
 /// Whether this build of Windows has Graphics Capture at all (10 2004+ and 11).
+/// Whether this build of Windows has Graphics Capture at all.
+///
+/// Probed once. `IsSupported` is a WinRT activation, and `windows-rs` caches the
+/// activation factory in a process global: asked again after an apartment the
+/// factory was made in has been torn down, the cached pointer is stale and the
+/// call faults. Audio capture threads open and close apartments as takes come
+/// and go, so a live probe per call crashed the second recording. The answer is
+/// a property of the OS build and cannot change while the process runs.
 pub(crate) fn is_supported() -> bool {
-    GraphicsCaptureSession::IsSupported().unwrap_or(false)
+    static SUPPORTED: OnceLock<bool> = OnceLock::new();
+    *SUPPORTED.get_or_init(|| {
+        let _com = ComScope::mta();
+        GraphicsCaptureSession::IsSupported().unwrap_or(false)
+    })
 }
 
 /// Per-window capture, which Desktop Duplication cannot do: a maximised or

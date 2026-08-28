@@ -331,25 +331,36 @@ fn run_stream(
             let timeline = Arc::clone(timeline);
             move |stream, ()| {
                 let Some(mut buffer) = stream.dequeue_buffer() else {
+                    queue.note_dropped("the daemon offered no buffer to dequeue");
                     return;
                 };
                 let Some(data) = buffer.datas_mut().first_mut() else {
+                    queue.note_dropped("a buffer arrived carrying no data plane");
                     return;
                 };
                 let chunk = data.chunk();
                 let (offset, size) = (chunk.offset() as usize, chunk.size() as usize);
-                let Some(bytes) = data.data() else { return };
+                let Some(bytes) = data.data() else {
+                    queue.note_dropped("a buffer's data plane could not be mapped");
+                    return;
+                };
                 let Some(samples) = bytes.get(offset..offset.saturating_add(size)) else {
+                    queue.note_dropped("a buffer's chunk ran past the data it points into");
                     return;
                 };
                 let Ok(mut timeline) = timeline.lock() else {
+                    queue.note_dropped("the stream timeline was poisoned by a panic");
                     return;
                 };
+                let format = timeline.format;
+                if samples.is_empty() {
+                    return;
+                }
                 // A partial sample frame means the negotiated channel count and
                 // the buffer disagree; publishing it swaps the channels of
                 // everything after it rather than failing.
-                let format = timeline.format;
-                if samples.is_empty() || format.validate_buffer(samples.len()).is_err() {
+                if let Err(err) = format.validate_buffer(samples.len()) {
+                    queue.note_dropped_with("this stream's channel layout is unreadable", &err);
                     return;
                 }
                 let pts = timeline.stamp(format.frames_in(samples.len()) as u64);
@@ -432,6 +443,7 @@ impl AudioSource for PipewireAudioSource {
     }
 
     fn next_buffer(&mut self, timeout: Duration) -> Result<RawAudio<'_>> {
+        self.queue.report_drops(BACKEND);
         let (pts, lost) = self.queue.take(timeout, &mut self.current)?;
         // What the graph settled on, which is only knowable once it has.
         if let Ok(timeline) = self.timeline.lock() {

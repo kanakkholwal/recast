@@ -686,7 +686,7 @@ impl RecordingManager {
                 start: microphone_start.clone(),
             }) {
                 Ok(session) => {
-                    warnings.extend(session.quality_warning());
+                    warnings.extend(session.warnings());
                     Some(session)
                 }
                 Err(e) => {

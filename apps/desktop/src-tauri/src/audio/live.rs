@@ -77,7 +77,7 @@ impl Track {
     fn assert_reaches(&self, stop: Duration, tolerance: Duration) {
         assert!(self.frames > 0, "{} produced no samples at all", self.name);
         let end = self.began + self.covered;
-        let slack = if end > stop { end - stop } else { stop - end };
+        let slack = end.abs_diff(stop);
         assert!(
             slack <= tolerance,
             "{} covers {:.3}s from {:.3}s, ending at {:.3}s, but the take ended at {:.3}s — {:.0}ms out of sync",
@@ -195,5 +195,69 @@ fn a_pause_shortens_the_track_by_exactly_its_length() {
         // Two flag transitions, each noticed within a poll, on top of the
         // ordinary slack.
         track.assert_reaches(take.elapsed - paused_for, TOLERANCE * 2);
+    }
+}
+
+/// A user records more than once per app run, so the devices are opened,
+/// released and opened again in one process.
+#[test]
+#[ignore = "opens the real audio devices; run with --ignored"]
+fn a_second_take_opens_the_devices_again() {
+    for attempt in 0..3 {
+        eprintln!("take {attempt}: opening");
+        let take = record(&format!("repeat-{attempt}"), |_| {
+            std::thread::sleep(Duration::from_secs(1));
+        });
+        eprintln!("take {attempt}: stopped");
+        for track in take.tracks() {
+            track.report();
+            assert!(track.frames > 0, "{} produced nothing", track.name);
+        }
+    }
+}
+
+fn scratch(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("recast-audio-live-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    dir.join(format!("{tag}.wav"))
+}
+
+#[test]
+#[ignore = "opens the real audio devices; run with --ignored"]
+fn the_loopback_alone_survives_repeated_takes() {
+    for attempt in 0..3 {
+        eprintln!("loopback take {attempt}: opening");
+        let Some(session) = AudioCaptureSession::start(AudioCaptureConfig {
+            output_path: scratch(&format!("loop-only-{attempt}")),
+            pause_flag: Arc::new(AtomicBool::new(false)),
+            start: TrackStart::new(Instant::now()),
+        }) else {
+            eprintln!("skipped: no loopback endpoint");
+            return;
+        };
+        std::thread::sleep(Duration::from_millis(400));
+        session.stop().expect("released");
+        eprintln!("loopback take {attempt}: released");
+    }
+}
+
+#[test]
+#[ignore = "opens the real audio devices; run with --ignored"]
+fn the_microphone_alone_survives_repeated_takes() {
+    for attempt in 0..3 {
+        eprintln!("mic take {attempt}: opening");
+        let session = MicrophoneCaptureSession::start(MicrophoneCaptureConfig {
+            output_path: scratch(&format!("mic-only-{attempt}")),
+            device_id: None,
+            pause_flag: Arc::new(AtomicBool::new(false)),
+            start: TrackStart::new(Instant::now()),
+        });
+        let Ok(session) = session else {
+            eprintln!("skipped: no microphone endpoint");
+            return;
+        };
+        std::thread::sleep(Duration::from_millis(400));
+        session.stop().expect("released");
+        eprintln!("mic take {attempt}: released");
     }
 }

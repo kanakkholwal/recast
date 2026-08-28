@@ -71,8 +71,16 @@ objc2-core-foundation = "0.3"
 objc2-core-graphics = "0.3"
 objc2-core-media = "0.3"
 objc2-core-audio-types = "0.3"
+# The device registry: CoreAudio is the only place a Mac lists its audio
+# hardware, and AVFoundation opens those devices by the UID it reports.
+objc2-core-audio = { version = "0.3", default-features = false, features = [
+    "std",
+    "AudioHardware",
+    "objc2-core-audio-types",
+] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = [
     "std",
+    "AVCaptureAudioDataOutput",
     "AVCaptureDevice",
     "AVCaptureInput",
     "AVCaptureOutput",

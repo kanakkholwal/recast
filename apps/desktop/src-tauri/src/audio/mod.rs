@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod live;
 mod session;
 mod track;
 pub mod wav;
@@ -78,7 +80,7 @@ pub struct MicrophoneCaptureSession(TrackSession);
 impl MicrophoneCaptureSession {
     pub fn start(config: MicrophoneCaptureConfig) -> Result<Self> {
         TrackSession::start(
-            Source::Input(config.device_id),
+            Source::input(config.device_id),
             config.output_path,
             config.pause_flag,
             config.start,
@@ -86,14 +88,22 @@ impl MicrophoneCaptureSession {
         .map(Self)
     }
 
-    /// Non-fatal quality ceiling on the device that actually opened, if any.
+    /// Everything non-fatal the user should know about this track.
     ///
-    /// Read from the negotiated format rather than from a device listing: the
-    /// backend picks the endpoint, and enumerating to ask activates every other
-    /// one on the machine while the user waits for the recording to start.
-    pub fn quality_warning(&self) -> Option<String> {
+    /// The quality ceiling is read from the negotiated format rather than from a
+    /// device listing: the backend picks the endpoint, and enumerating to ask
+    /// activates every other one on the machine while the user waits.
+    pub fn warnings(&self) -> Vec<String> {
         let format = self.0.format();
-        describe_microphone_quality(format.sample_rate, format.channels)
+        self.0
+            .notices()
+            .iter()
+            .cloned()
+            .chain(describe_microphone_quality(
+                format.sample_rate,
+                format.channels,
+            ))
+            .collect()
     }
 
     pub fn stop(self) -> Result<PathBuf> {

@@ -178,18 +178,27 @@ impl AudioOutput {
 }
 
 /// Pull the samples out of a delivered buffer and publish them.
-fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
+///
+/// Shared with the AVCapture microphone source: both receive `CMSampleBuffer`s,
+/// so the format decoding and interleaving have one implementation.
+pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
     let Some(description) = (unsafe { sample.format_description() }) else {
+        queue.note_dropped("a sample buffer arrived with no format description");
         return;
     };
     // SAFETY: the description is an audio one, since this only runs for the
     // audio output types; a non-audio description returns null and is refused.
     let asbd = unsafe { CMAudioFormatDescriptionGetStreamBasicDescription(&description) };
     if asbd.is_null() {
+        queue.note_dropped("a sample buffer carried no audio stream description");
         return;
     }
-    let Ok(format) = format_of(unsafe { &*asbd }) else {
-        return;
+    let format = match format_of(unsafe { &*asbd }) {
+        Ok(format) => format,
+        Err(err) => {
+            queue.note_dropped_with("this device's sample format is unreadable", &err);
+            return;
+        }
     };
 
     let mut list = ChannelBuffers::empty();
@@ -206,19 +215,21 @@ fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
         )
     };
     if status != 0 {
-        log::debug!("screencapturekit audio buffer list refused: {status}");
+        queue.note_dropped("CoreMedia refused to hand over the sample buffer list");
         return;
     }
     // Retained by the call above, and it owns the sample memory read below.
     let _block = (!block.is_null()).then(|| unsafe { Retained::from_raw(block) });
 
     let mut samples = Vec::new();
-    if samples_of(list.filled(), format, &mut samples).is_err() {
+    if let Err(err) = samples_of(list.filled(), format, &mut samples) {
+        queue.note_dropped_with("this device's channel layout is unreadable", &err);
         return;
     }
     if samples.is_empty() {
         return;
     }
+    queue.note_format(format);
     let time = unsafe { sample.presentation_time_stamp() };
     let pts = match time.timescale {
         0 => Timestamp::ZERO,
@@ -227,14 +238,6 @@ fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
         scale => Timestamp::from_ticks(time.value, i64::from(scale)),
     };
     queue.publish(pts, &samples, QUEUE_BYTES);
-}
-
-/// ScreenCaptureKit names no devices, so a caller is told that rather than
-/// handed a list with one invented entry in it.
-pub(crate) fn devices() -> Result<Vec<capturekit_core::AudioDevice>> {
-    Err(unsupported(
-        "enumerate audio devices; it captures the system default",
-    ))
 }
 
 /// System audio and the microphone, both through a ScreenCaptureKit stream.
@@ -375,6 +378,7 @@ impl AudioSource for SckAudioSource {
 
     fn next_buffer(&mut self, timeout: Duration) -> Result<RawAudio<'_>> {
         let (pts, lost) = self.queue.take(timeout, &mut self.current)?;
+        self.queue.report_drops(BACKEND);
         Ok(RawAudio {
             pts,
             bytes: &self.current,
