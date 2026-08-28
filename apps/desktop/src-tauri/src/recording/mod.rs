@@ -658,50 +658,37 @@ impl RecordingManager {
         // previewing echo. When off, `stop()` falls back to a silent WAV so
         // downstream muxing still has a track.
         let audio_session = if options.system_audio {
-            match AudioCaptureSession::start(AudioCaptureConfig {
+            let session = AudioCaptureSession::start(AudioCaptureConfig {
                 output_path: audio_path.clone(),
                 pause_flag: pause_flag.clone(),
                 start: audio_start.clone(),
-            }) {
-                Ok(session) => {
-                    // System audio was requested, but on macOS without
-                    // ScreenCaptureKit or a virtual driver (and Linux without a
-                    // PulseAudio monitor) no loopback source is reachable, so
-                    // the session falls back to writing silence. Tell the user
-                    // rather than delivering a mute track that looks captured.
-                    if !session.is_capturing() {
-                        warnings.push(
-                            "System audio could not be captured on this device, \
-                             so the recording will have no system sound. Your \
-                             microphone and video are not affected."
-                                .to_string(),
-                        );
-                    }
-                    Some(session)
-                }
-                Err(e) => {
-                    log::warn!("audio capture unavailable, recording without audio: {e}");
-                    None
-                }
+            });
+            // Asked for but unreachable; `stop` writes silence, so say so rather than deliver a mute track that looks captured.
+            if session.is_none() {
+                warnings.push(
+                    "System audio could not be captured on this device, \
+                     so the recording will have no system sound. Your \
+                     microphone and video are not affected."
+                        .to_string(),
+                );
             }
+            session
         } else {
             None
         };
 
         // Start microphone capture as a separate track.
         let microphone_session = if options.microphone {
-            if let Some(warning) =
-                crate::audio::microphone_quality_warning(options.microphone_device_id.as_deref())
-            {
-                warnings.push(warning);
-            }
             match MicrophoneCaptureSession::start(MicrophoneCaptureConfig {
                 output_path: microphone_path.clone(),
                 device_id: options.microphone_device_id.clone(),
                 pause_flag: pause_flag.clone(),
                 start: microphone_start.clone(),
             }) {
-                Ok(session) => Some(session),
+                Ok(session) => {
+                    warnings.extend(session.quality_warning());
+                    Some(session)
+                }
                 Err(e) => {
                     log::warn!("microphone capture unavailable: {e}");
                     None
@@ -780,17 +767,9 @@ impl RecordingManager {
         let cursor_join = session.cursor_handle.join();
         let encoder_join = session.encoder_handle.join();
 
-        // Stop the system-audio / mic / camera OS sessions regardless of how the
-        // threads fared — each reaps its own FFmpeg child / releases its device.
-        // Report system audio honestly before consuming the session: it counts
-        // only when a real track was captured. A disabled toggle (no session) and
-        // the silence fallback (session present but no reachable loopback source,
-        // e.g. macOS without SCKit/BlackHole) both write silence below purely to
-        // give the muxer a track, and neither must claim captured system audio.
-        let has_system_audio = session
-            .audio_session
-            .as_ref()
-            .is_some_and(|s| s.is_capturing());
+        // No session means the toggle was off or no loopback was reachable; both write silence below, and neither is a captured track.
+        let has_system_audio = session.audio_session.is_some();
+        // Stopped however the threads fared: each session releases its own device.
         let audio_stop = session.audio_session.take().map(|s| s.stop());
         let microphone_stop = session.microphone_session.take().map(|s| s.stop());
         // Finish the file but leave the preview live; the device closes with the bubble.
@@ -831,12 +810,12 @@ impl RecordingManager {
             Some(Err(e)) => {
                 log::warn!("audio capture stop failed, writing silence: {e}");
                 let duration = session.clock.effective_elapsed().as_secs_f64();
-                crate::audio::wav::write_silence_wav(&session.audio_path, 48_000, 2, duration)?;
+                crate::audio::wav::write_track_silence(&session.audio_path, duration)?;
                 session.audio_path.clone()
             }
             None => {
                 let duration = session.clock.effective_elapsed().as_secs_f64();
-                crate::audio::wav::write_silence_wav(&session.audio_path, 48_000, 2, duration)?;
+                crate::audio::wav::write_track_silence(&session.audio_path, duration)?;
                 session.audio_path.clone()
             }
         };
@@ -852,7 +831,7 @@ impl RecordingManager {
                 "system audio captured no samples ({}s of silence written instead)",
                 duration.round()
             );
-            crate::audio::wav::write_silence_wav(&audio_path, 48_000, 2, duration)?;
+            crate::audio::wav::write_track_silence(&audio_path, duration)?;
             has_system_audio = false;
         }
 

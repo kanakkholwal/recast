@@ -48,7 +48,8 @@ capture thread pulls raw BGRA frames from a platform `CaptureSource`
 (`capture/`), paces them to a constant frame rate, and hands them to the encoder
 thread through a bounded `ArrayQueue` (`RecordingPipeline`). The encoder pipes
 those frames to a long-lived FFmpeg child for H.264 encoding. Audio (system
-loopback + microphone) is captured by independent OS sessions (`audio/`). The
+loopback + microphone) is two more capturekit sessions, one thread each
+(`audio/`). The
 camera is opened by Rust through capturekit and read by a thread of its own,
 which fans every frame two ways: downscaled to the preview bubble over IPC, and
 full-size into a second encoder that writes `camera.mp4`.
@@ -88,7 +89,8 @@ flowchart TD
 
     CLOCK --> CUR[cursor thread 125Hz<br/>cursor/mod.rs]
     CUR --> CJSON[(cursor.json)]
-    CLOCK --> AUD[audio + mic sessions<br/>audio/]
+    CLOCK --> AUD[audio + mic sessions<br/>audio/session.rs]
+    AUD --> AUDK{capturekit<br/>WASAPI / SCK / PipeWire}
     AUD --> WAV[(audio.wav / mic.wav)]
 
     CLOCK --> CAM[camera thread<br/>camera/session.rs]
@@ -143,16 +145,17 @@ sequenceDiagram
 | `spawn_encoder_loop` | `encoder/mod.rs` | Pipes BGRA rawvideo to FFmpeg H.264; dropped-frame duplication; GOP + quality tiers |
 | `pump_stderr_tail` | `encoder/mod.rs` | Drains FFmpeg stderr on a side thread (deadlock avoidance, diagnostics tail) |
 | `H264Encoder` / `codec_args` | `encoder/h264.rs` | Per-encoder (NVENC/AMF/QSV/VideoToolbox/libx264) FFmpeg arg generation |
-| `CaptureSource` trait | `capture/mod.rs` | Platform-independent full-`source`-sized BGRA frame source; `set_target_fps` hint |
+| `CaptureSource` trait | `capture/mod.rs` | Full-`source`-sized BGRA frame source; the seam the pacer's tests script |
 | `CapturekitSource` | `capture/source.rs` | The only screen backend: opens a resolved target, repacks rows, reopens on loss |
-| `recording/target.rs` | `recording/target.rs` | Resolves a picker id to a display, window or region, as pure functions over the enumerated lists |
+| `CaptureTarget` | `capture/target.rs` | Resolves a picker id to a display, window or region, as pure functions over the enumerated lists |
 | `capture::grab` | `capture/shot.rs` | One-shot captures for picker thumbnails and agent screenshots, off the same backends |
 | `pack_rows` | `encoder/mod.rs` | Copies rows off the driver's stride into the tight `width * 4` FFmpeg's `rawvideo` demuxer expects |
 | `spawn_cursor_capture` | `cursor/mod.rs` | 125Hz deadline sampler; virtual-desktop→frame mapping; click tracking |
 | `sample_cursor_state` | `cursor/platform/` | Win32 `GetCursorPos`/`GetCursorInfo`/`GetAsyncKeyState`; `device_query` on macOS/Linux |
 | `shift_cursor_track` | `cursor/mod.rs` | Re-bases whole track earlier by `first_frame_offset_us` so cursor t=0 == video frame 0 |
 | `detect_idle_periods` / `detect_zoom_triggers` | `cursor/smoothing.rs` | Post-capture idle windows (2s/5px) and scored auto-zoom candidates |
-| Audio sessions | `audio/mod.rs`, `audio/platform/` | WASAPI loopback+mic (Windows); FFmpeg avfoundation/pulse + SCKit (macOS/Linux) |
+| `TrackSession` | `audio/session.rs` | One capture loop over capturekit, for loopback and microphone alike |
+| `TrackWriter` | `audio/track.rs` | Pause gating, first-sample marking and the drift re-declaration, testable without a device |
 | `configure_silent_command` | `ffmpeg.rs` | `CREATE_NO_WINDOW` on every FFmpeg/ffprobe spawn (Windows console-flash / focus-steal) |
 
 ## Control / data flow
@@ -267,8 +270,9 @@ lock, and surfaces any warnings.
   capturekit and its ids travel through the picker and back, so a target cannot
   be resolved against one enumeration and captured from another. The ids are
   HMONITOR / HWND / CGDirectDisplayID values, so they are `u64` in Rust and plain
-  JSON numbers on the wire — exact below 2^53, which every handle is
-  (`commands/system.rs`, `recording/target.rs`).
+  JSON numbers on the wire — exact below 2^53, which every handle is. Audio
+  devices come from the same enumeration, so a mic picked in the panel is the
+  one opened (`commands/system.rs`, `capture/target.rs`).
 
 - **`CaptureSource` contract: emit full-`source`-sized frames; the encoder
   crops.** A backend must return `source`-dimensioned BGRA, never pre-cropped: the encoder is configured for `source` dims and applies its own crop filter.
@@ -310,6 +314,52 @@ lock, and surfaces any warnings.
   device is briefly still held by whatever released it last. Three attempts with
   a 400ms backoff, and only on errors capturekit marks recoverable, so an absent
   camera still fails at once (`camera/session.rs`).
+
+- **A track is marked where its first buffer BEGAN, not where it arrived.** A
+  video frame's unit is an instant, so `TrackStart::mark()` suits it. An audio
+  buffer covers time before it is handed over, and on an idle loopback the first
+  delivery is capturekit's 100 ms silence chunk, so marking the arrival put the
+  whole system-audio track 100 ms late against the picture. Audio uses
+  `mark_at(now - duration_of(frames))` (`audio/track.rs`, `recording/clock.rs`).
+
+- **An idle loopback still owes samples.** A device with nothing playing
+  delivers no buffers at all, sometimes for minutes, so a track that just
+  concatenates what arrives comes out short and everything in it drifts early.
+  capturekit measures the gap against the device clock and hands back real
+  silence for it, flagged as inserted so the drift measurement can leave it out
+  (`audio/track.rs`).
+
+- **A paused stretch is dropped, not paused at the device.** The capture loop
+  keeps draining while `pause_flag` is set and only the WAV write is suppressed,
+  because a device left undrained overruns and the audio after the resume comes
+  back corrupt (`audio/track.rs`).
+
+- **The header states the rate the device delivered, not the one it declared.**
+  A capture crystal that runs off nominal drifts against the frame pacer for the
+  whole take instead of cancelling, so a take longer than 5s that measures
+  0.02–5% off is re-declared at its measured rate. Inserted silence and paused
+  spans are excluded: both are paced by wall clock and would mask the drift
+  (`audio/track.rs`, `audio/wav.rs`).
+
+- **A missing loopback becomes silence; a missing microphone becomes a
+  warning.** The muxer needs a system-audio track either way, so
+  `AudioCaptureSession::start` returns `None` for an unreachable loopback and
+  the RECORDER writes the silence, at `effective_elapsed()`. The session cannot:
+  it would measure wall clock, and the track would then outrun the picture by
+  every paused second. A user who explicitly asked for the mic is told instead
+  (`audio/mod.rs`, `recording/mod.rs`).
+
+- **An audio device that is lost ends its track.** `CaptureError::is_recoverable`
+  is true for a lost device, but an audio backend reports that with no wait at
+  all and keeps reporting it, and the audio loop has no reopen: retrying would
+  spin a core for the rest of the take. Only a timeout reads again; everything
+  else keeps what was captured and stops (`audio/session.rs`).
+
+- **The audio device is opened on its own capture thread.** WASAPI is COM, and
+  an `IAudioClient` created on the caller's apartment is not the capture
+  thread's to use. `TrackSession::start` spawns first and takes the open's
+  outcome back over a channel, so the caller still learns synchronously whether
+  the device opened (`audio/session.rs`).
 
 - **Shutdown reaping.** Quitting from the tray goes through `app.exit(0)` →
   `std::process::exit`, which runs no destructors. `abort_for_shutdown` must be

@@ -3,11 +3,12 @@
 //! macOS gates screen capture and global cursor sampling behind two *separate*
 //! TCC buckets, which the app previously conflated:
 //!
-//! - **Screen Recording** — required by the FFmpeg `avfoundation` capture
-//!   source. Without it FFmpeg spawns but emits zero frames, so the recording
-//!   silently captures nothing while the UI timer keeps ticking. We HARD-FAIL
-//!   the start (and trigger the system prompt) so the user gets an actionable
-//!   error instead of a black, empty recording they only discover at stop().
+//! - **Screen Recording** — required by ScreenCaptureKit, which serves both the
+//!   picture and the audio: system audio and the microphone are taps on the
+//!   same stream. Without it the stream starts but delivers nothing, so the
+//!   recording silently captures nothing while the UI timer keeps ticking. We
+//!   HARD-FAIL the start (and trigger the system prompt) so the user gets an
+//!   actionable error instead of a black, empty recording found at stop().
 //! - **Accessibility** — required by `device_query` (CoreGraphics mouse-button
 //!   state) for the cursor track. This is non-essential — the screen capture
 //!   still works without it — so we only WARN; the cursor track just has gaps

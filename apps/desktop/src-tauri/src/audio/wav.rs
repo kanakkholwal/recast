@@ -12,9 +12,6 @@ use anyhow::Result;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SampleFormat {
     Int,
-    // Only WASAPI reports a float mix format; the other backends always ask for
-    // integer PCM, so nothing constructs this off Windows.
-    #[cfg_attr(not(windows), allow(dead_code))]
     Float,
 }
 
@@ -60,8 +57,33 @@ impl WavFormat {
         Self::new(sample_rate, channels, 16, SampleFormat::Int)
     }
 
+    /// The WAV description of what a capturekit device negotiated.
+    ///
+    /// Sample bytes go into the file exactly as the device delivered them, so
+    /// this has to describe the container width rather than a nominal depth: a
+    /// header that says 24-bit over 24-in-32 samples plays back fast and
+    /// distorted.
+    pub fn of(format: capturekit::AudioFormat) -> Result<Self> {
+        let (bits, kind) = match format.sample_format {
+            capturekit::SampleFormat::I16 => (16, SampleFormat::Int),
+            capturekit::SampleFormat::I32 => (32, SampleFormat::Int),
+            capturekit::SampleFormat::F32 => (32, SampleFormat::Float),
+            // Refused, not guessed: a misdescribed sample is heard as noise.
+            other => anyhow::bail!("no WAV encoding for capture format {other:?}"),
+        };
+        Ok(Self::new(format.sample_rate, format.channels, bits, kind))
+    }
+
     pub fn block_align(&self) -> u16 {
         self.channels * (self.bits_per_sample / 8)
+    }
+
+    /// How long `frames` sample frames last at this rate.
+    pub fn duration_of(&self, frames: u64) -> Duration {
+        match self.sample_rate {
+            0 => Duration::ZERO,
+            rate => Duration::from_nanos(frames.saturating_mul(1_000_000_000) / u64::from(rate)),
+        }
     }
 
     fn byte_rate(&self) -> u32 {
@@ -187,18 +209,6 @@ const MAX_DRIFT_RATIO: f64 = 0.05;
 ///
 /// `None` means keep the declared rate: too small to matter, or too large to
 /// believe.
-/// Frames of silence needed to cover a span the device delivered nothing for.
-/// Returns 0 below `min_gap` so ordinary poll jitter is not padded.
-/// Only the WASAPI path measures a gap it has to pad; the other backends let
-/// the OS pace the stream.
-#[cfg_attr(not(windows), allow(dead_code))]
-pub fn gap_silence_frames(behind: Duration, sample_rate: u32, min_gap: Duration) -> u64 {
-    if behind < min_gap || sample_rate == 0 {
-        return 0;
-    }
-    (behind.as_secs_f64() * sample_rate as f64).round() as u64
-}
-
 pub fn measured_sample_rate(frames: u64, span: Duration, declared: u32) -> Option<u32> {
     let secs = span.as_secs_f64();
     if frames == 0 || secs <= 0.0 || declared == 0 {
@@ -239,6 +249,16 @@ pub fn wav_has_samples(path: &Path) -> bool {
     wav_data_bytes(path).is_some_and(|bytes| bytes > 0)
 }
 
+/// Stand-in silence for a track that never captured, in the one format the
+/// whole pipeline assumes when there is no device to ask.
+///
+/// `duration_secs` must be the recording's PAUSE-EXCLUDED length: this track is
+/// muxed against a picture the frame pacer held to that clock, and wall-clock
+/// silence outruns it by every paused second.
+pub fn write_track_silence(path: &Path, duration_secs: f64) -> Result<()> {
+    write_silence_wav(path, 48_000, 2, duration_secs)
+}
+
 /// Write a silence WAV. Used when no audio device is reachable, so downstream
 /// muxing still has a track of the right length.
 pub fn write_silence_wav(
@@ -259,42 +279,6 @@ pub fn write_silence_wav(
         remaining -= take as u64;
     }
     writer.finish()
-}
-
-#[cfg(test)]
-mod gap_tests {
-    use super::*;
-
-    const MIN_GAP: Duration = Duration::from_millis(200);
-
-    #[test]
-    fn poll_jitter_is_not_padded() {
-        assert_eq!(
-            gap_silence_frames(Duration::from_millis(10), 48_000, MIN_GAP),
-            0
-        );
-        assert_eq!(
-            gap_silence_frames(Duration::from_millis(199), 48_000, MIN_GAP),
-            0
-        );
-    }
-
-    #[test]
-    fn an_idle_span_pads_its_own_length() {
-        assert_eq!(
-            gap_silence_frames(Duration::from_secs(4), 48_000, MIN_GAP),
-            192_000
-        );
-        assert_eq!(
-            gap_silence_frames(Duration::from_millis(500), 44_100, MIN_GAP),
-            22_050
-        );
-    }
-
-    #[test]
-    fn a_zero_rate_pads_nothing() {
-        assert_eq!(gap_silence_frames(Duration::from_secs(4), 0, MIN_GAP), 0);
-    }
 }
 
 #[cfg(test)]

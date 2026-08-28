@@ -83,14 +83,27 @@ impl TrackStart {
 
     /// Record *now* as this track's first sample. Only the first call takes
     /// effect, so capture loops can call it unconditionally on every write.
+    ///
+    /// For a track whose unit is an instant: a video frame, a cursor sample. A
+    /// track delivered in buffers must use [`Self::mark_at`] instead.
     pub fn mark(&self) {
+        self.mark_at(Instant::now());
+    }
+
+    /// Record `at` as this track's first sample.
+    ///
+    /// Audio arrives in buffers that cover time *before* they are handed over,
+    /// so the arrival instant is not the first sample's instant. Marking the
+    /// arrival puts the whole track late by one buffer, which on an idle
+    /// loopback is capturekit's 100 ms silence chunk: audible lip-sync error.
+    pub fn mark_at(&self, at: Instant) {
         if self.first_us.load(Ordering::Relaxed) != UNSET {
             return;
         }
-        let now = self.origin.elapsed().as_micros() as u64;
+        let elapsed = at.saturating_duration_since(self.origin).as_micros() as u64;
         let _ = self.first_us.compare_exchange(
             UNSET,
-            now.min(UNSET - 1),
+            elapsed.min(UNSET - 1),
             Ordering::AcqRel,
             Ordering::Relaxed,
         );

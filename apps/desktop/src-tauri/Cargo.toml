@@ -162,8 +162,6 @@ rustybuzz = "0.20"
 windows = { version = "0.58.0", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
-    "Win32_Devices_FunctionDiscovery",
-    "Win32_Media_Audio",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
     # AttachConsole + CONOUT$/CONIN$ rebind so the headless CLI branch can
@@ -172,7 +170,6 @@ windows = { version = "0.58.0", features = [
     "Win32_Storage_FileSystem",
     "Win32_Security",
     "Win32_System_Com",
-    "Win32_System_Com_StructuredStorage",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
     "Win32_UI_Shell_PropertiesSystem",
@@ -205,28 +202,6 @@ webkit2gtk = "2.0"
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 device_query = "2.1"
 
-# macOS-only: native ScreenCaptureKit bindings for system-audio loopback
-# (and later screen capture). Eliminates the BlackHole virtual-driver
-# requirement that the FFmpeg fallback chain depends on.
-#
-# **Opt-in feature `sckit-loopback`.** The `screencapturekit` 6.x crate
-# transitively pulls `apple-metal`, whose Swift bridge references macOS
-# 10.15 SDK symbols (`MTLSamplerReductionMode`) and macOS 14.4 SDK symbols
-# (`reactiveTextureUsage`) unconditionally — neither is available on the
-# GH Actions `macos-latest` runner's Xcode. Pinning `apple-metal` to
-# older versions doesn't help; the macOS 14.4 references go back to 0.6.x.
-# This is an upstream packaging bug in `apple-metal` (should be `#if
-# canImport(...)` compile-time gates, not runtime `#available` checks).
-#
-# Until upstream is fixed (or the runner gets a newer SDK), the dep is
-# gated behind the `sckit-loopback` feature so default builds stay green.
-# Builds with `--features sckit-loopback` against a Mac that has the
-# required SDK locally will exercise the native SCKit path; everyone else
-# falls through to the existing BlackHole / silence chain in
-# `audio/platform/ffmpeg_unix.rs`.
-[target.'cfg(target_os = "macos")'.dependencies]
-screencapturekit = { version = "6.0", default-features = false, features = ["macos_13_0"], optional = true }
-
 [features]
 # On-device captions on by default via the ggml (transcribe.cpp) engine. It builds
 # from source (CMake + a C/C++ compiler; ggml is vendored, no submodules) on every
@@ -250,10 +225,6 @@ ggml = ["dep:transcribe-cpp"]
 # The models are fetched on first use, not bundled, so this costs no install size.
 # `--no-default-features` still drops it (and ggml) for a minimal build.
 ocr = ["dep:ocrs", "dep:rten", "dep:rten-imageproc"]
-# Enables the native ScreenCaptureKit audio loopback path on macOS.
-# See `audio/platform/macos_sckit.rs` for the runtime smoke-test
-# checklist before flipping this on for a release build.
-sckit-loopback = ["dep:screencapturekit"]
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

@@ -518,164 +518,42 @@ pub async fn get_audio_devices() -> AppResult<Vec<AudioDeviceInfo>> {
         .map_err(Into::into)
 }
 
+/// Every microphone capturekit can name, plus the default row.
+///
+/// Loopback endpoints are dropped: they are outputs read backwards, and a mic
+/// picker offering one records the desktop instead of the speaker.
 fn get_audio_devices_blocking() -> Result<Vec<AudioDeviceInfo>, String> {
-    #[cfg(windows)]
-    {
-        get_audio_devices_windows()
+    if !capturekit::capabilities().audio_device_enumeration {
+        return Ok(vec![default_microphone()]);
     }
-    #[cfg(target_os = "macos")]
-    {
-        Ok(get_audio_devices_macos())
-    }
-    #[cfg(target_os = "linux")]
-    {
-        Ok(get_audio_devices_linux())
-    }
-    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    {
-        Ok(Vec::new())
+    let devices = capturekit::audio_devices().map_err(|err| err.to_string())?;
+    Ok(microphones(&devices))
+}
+
+/// The row for a backend that names no devices, so the picker offers what will
+/// actually be captured rather than reading as "no microphone found".
+fn default_microphone() -> AudioDeviceInfo {
+    AudioDeviceInfo {
+        id: "default".to_string(),
+        name: "System default".to_string(),
+        is_default: true,
     }
 }
 
-/// macOS audio input devices via the cached AVFoundation listing in
-/// `ffmpeg.rs`. We reuse the already-collected stderr (one probe per
-/// process) instead of spawning FFmpeg again — see
-/// `cached_avfoundation_devices` for the caching rationale.
-///
-/// AVFoundation lacks a "system default" concept comparable to WASAPI's
-/// `eConsole` endpoint, so `is_default` flags the first device — which
-/// is what FFmpeg picks when `-i :0` is passed without an explicit index.
-#[cfg(target_os = "macos")]
-fn get_audio_devices_macos() -> Vec<AudioDeviceInfo> {
-    let stderr = crate::ffmpeg::cached_avfoundation_devices();
-    parse_avfoundation_audio(stderr)
-        .into_iter()
-        .enumerate()
-        .map(|(idx, (id, name))| AudioDeviceInfo {
-            id,
-            name,
-            is_default: idx == 0,
+fn microphones(devices: &[capturekit::AudioDevice]) -> Vec<AudioDeviceInfo> {
+    devices
+        .iter()
+        .filter(|device| device.direction == capturekit::AudioDirection::Input)
+        .map(|device| AudioDeviceInfo {
+            id: device.id.0.clone(),
+            name: if device.name.is_empty() {
+                device.id.0.clone()
+            } else {
+                device.name.clone()
+            },
+            is_default: device.is_default,
         })
         .collect()
-}
-
-/// Linux audio input devices via `pactl list short sources`. Returns
-/// PulseAudio source names (e.g. `alsa_input.pci-0000_00_1f.3.analog-stereo`)
-/// as IDs. `.monitor` sources are filtered out — those are loopback
-/// sinks, not microphones, and would confuse a mic picker.
-#[cfg(target_os = "linux")]
-fn get_audio_devices_linux() -> Vec<AudioDeviceInfo> {
-    let output = match std::process::Command::new("pactl")
-        .args(["list", "short", "sources"])
-        .output()
-    {
-        Ok(out) if out.status.success() => out,
-        _ => return Vec::new(),
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut devices = Vec::new();
-    for line in text.lines() {
-        // Format: `<id>\t<name>\t<driver>\t<sample_spec>\t<state>`
-        let mut cols = line.split('\t');
-        let _ = cols.next();
-        let Some(name) = cols.next() else { continue };
-        if name.ends_with(".monitor") {
-            continue;
-        }
-        // First *surviving* (non-monitor) source becomes the default. Using
-        // the pre-filter enumerate index here would let a leading `.monitor`
-        // row eat the only default slot.
-        let is_default = devices.is_empty();
-        devices.push(AudioDeviceInfo {
-            id: name.to_string(),
-            name: name.to_string(),
-            is_default,
-        });
-    }
-    devices
-}
-
-#[cfg(windows)]
-fn get_audio_devices_windows() -> Result<Vec<AudioDeviceInfo>, String> {
-    use windows::Win32::Media::Audio::*;
-    use windows::Win32::System::Com::*;
-
-    unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-
-        let enumerator: IMMDeviceEnumerator =
-            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
-                .map_err(|e| format!("failed to create device enumerator: {e}"))?;
-
-        let default_id = enumerator
-            .GetDefaultAudioEndpoint(eCapture, eConsole)
-            .ok()
-            .and_then(|d| d.GetId().ok())
-            .map(|pwstr| pwstr.to_string().unwrap_or_default());
-
-        let collection = enumerator
-            .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
-            .map_err(|e| format!("failed to enumerate audio devices: {e}"))?;
-
-        let count = collection.GetCount().map_err(|e| e.to_string())?;
-        let mut devices = Vec::new();
-
-        for i in 0..count {
-            let Ok(device) = collection.Item(i) else {
-                continue;
-            };
-
-            let id = device
-                .GetId()
-                .ok()
-                .and_then(|pwstr| pwstr.to_string().ok())
-                .unwrap_or_default();
-
-            // Use device friendly name from endpoint properties.
-            let name = get_device_name(&device).unwrap_or_else(|| format!("Microphone {}", i + 1));
-
-            let is_default = default_id.as_deref() == Some(&id);
-
-            devices.push(AudioDeviceInfo {
-                id,
-                name,
-                is_default,
-            });
-        }
-
-        Ok(devices)
-    }
-}
-
-/// Extract the friendly name from an audio device using its property store.
-#[cfg(windows)]
-fn get_device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> Option<String> {
-    use windows::core::GUID;
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
-
-    unsafe {
-        let store: IPropertyStore = device
-            .OpenPropertyStore(windows::Win32::System::Com::STGM(0))
-            .ok()?;
-        // PKEY_Device_FriendlyName = {a45c254e-df1c-4efd-8020-67d146a850e0}, 14
-        let key = PROPERTYKEY {
-            fmtid: GUID::from_values(
-                0xa45c254e,
-                0xdf1c,
-                0x4efd,
-                [0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0],
-            ),
-            pid: 14,
-        };
-        let value = store.GetValue(&key).ok()?;
-        // The value is a VT_LPWSTR PROPVARIANT. Use its Display/Debug impl.
-        let display = format!("{value}");
-        if display.is_empty() || display == "EMPTY" {
-            None
-        } else {
-            Some(display)
-        }
-    }
 }
 
 /// Mark a Tauri window as excluded from screen capture.
@@ -810,51 +688,6 @@ fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
         .collect())
 }
 
-/// The audio half of `cached_avfoundation_devices`'s stderr as `(index, name)`.
-///
-/// Lines look like `[AVFoundation indev @ 0x...] [0] MacBook Air Microphone`,
-/// and the index is what the capture pipeline passes FFmpeg as `-i :N`.
-#[cfg(target_os = "macos")]
-fn parse_avfoundation_audio(stderr: &str) -> Vec<(String, String)> {
-    let in_marker = "AVFoundation audio devices";
-    let other_marker = "AVFoundation video devices";
-    let mut in_section = false;
-    let mut out = Vec::new();
-    for line in stderr.lines() {
-        if line.contains(in_marker) {
-            in_section = true;
-            continue;
-        }
-        if line.contains(other_marker) {
-            in_section = false;
-            continue;
-        }
-        if !in_section {
-            continue;
-        }
-        // Each device line has `[N]` (the numeric index in square brackets)
-        // somewhere after the `[AVFoundation indev @ …]` prefix. Find the
-        // *last* `[` to skip the prefix.
-        let Some(idx_open) = line.rfind('[') else {
-            continue;
-        };
-        let Some(idx_close_rel) = line[idx_open + 1..].find(']') else {
-            continue;
-        };
-        let inside = &line[idx_open + 1..idx_open + 1 + idx_close_rel];
-        // Must be purely numeric — skip the prefix `[AVFoundation indev @ …]`.
-        if inside.is_empty() || !inside.chars().all(|c| c.is_ascii_digit()) {
-            continue;
-        }
-        let name = line[idx_open + 1 + idx_close_rel + 1..].trim().to_string();
-        if name.is_empty() {
-            continue;
-        }
-        out.push((inside.to_string(), name));
-    }
-    out
-}
-
 #[tauri::command]
 pub async fn validate_camera_source(device_id: String) -> AppResult<CameraValidationResult> {
     tauri::async_runtime::spawn_blocking(move || -> Result<CameraValidationResult, String> {
@@ -964,6 +797,51 @@ fn probe_camera_device_health(device_id: &str) -> Option<(String, Option<String>
         "warning".into(),
         Some("Camera probe failed. Preview validation will confirm liveliness.".into()),
     ))
+}
+
+#[cfg(test)]
+mod microphone_tests {
+    use super::{microphones, AudioDeviceInfo};
+    use capturekit::{AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, SampleFormat};
+
+    fn device(id: &str, name: &str, direction: AudioDirection, is_default: bool) -> AudioDevice {
+        AudioDevice {
+            id: AudioDeviceId(id.to_string()),
+            name: name.to_string(),
+            direction,
+            is_default,
+            format: AudioFormat::new(48_000, 2, SampleFormat::F32),
+        }
+    }
+
+    fn listed() -> Vec<AudioDeviceInfo> {
+        microphones(&[
+            device("speakers", "Speakers", AudioDirection::Loopback, true),
+            device("yeti", "Blue Yeti", AudioDirection::Input, true),
+            device("nameless", "", AudioDirection::Input, false),
+        ])
+    }
+
+    /// A loopback endpoint is an output read backwards; offering one in a mic
+    /// picker records the desktop instead of the speaker.
+    #[test]
+    fn loopback_endpoints_are_not_offered_as_microphones() {
+        let ids: Vec<_> = listed().into_iter().map(|d| d.id).collect();
+        assert_eq!(ids, vec!["yeti", "nameless"]);
+    }
+
+    #[test]
+    fn the_default_flag_survives_the_filter() {
+        let devices = listed();
+        assert!(devices[0].is_default);
+        assert!(!devices[1].is_default);
+    }
+
+    /// PipeWire nodes can have no description; a blank row is unpickable.
+    #[test]
+    fn a_device_with_no_name_is_listed_under_its_id() {
+        assert_eq!(listed()[1].name, "nameless");
+    }
 }
 
 #[cfg(test)]
@@ -1315,8 +1193,8 @@ fn cap_planned(key: &str, label: &str, backend: &str, note: Option<&str>) -> Cap
 /// compiled for. Each `#[cfg]` block is the function's tail expression on its
 /// target.
 ///
-/// Screen and camera rows describe capturekit's backends; audio and cursor still
-/// describe the app's own, which have not moved yet.
+/// Every row but the cursor describes a capturekit backend; the cursor sampler
+/// is the app's own and has not moved yet.
 fn build_capture_capabilities() -> CaptureCapabilities {
     #[cfg(windows)]
     {
@@ -1361,9 +1239,6 @@ fn build_capture_capabilities() -> CaptureCapabilities {
     }
     #[cfg(target_os = "macos")]
     {
-        // Gates the AUDIO rows only: FFmpeg no longer captures the screen.
-        let listing = crate::ffmpeg::cached_avfoundation_devices();
-        let has_avf = !listing.is_empty();
         // Always present; the grant varies, and the row's note covers that.
         let has_screen = true;
         let screen_backend = "ScreenCaptureKit";
@@ -1389,12 +1264,18 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                 cap(
                     "systemAudio",
                     "System audio",
-                    has_avf,
-                    "ScreenCaptureKit",
-                    Some("Falls back to a virtual device (e.g. BlackHole) when the system tap is unavailable."),
+                    has_screen,
+                    screen_backend,
+                    Some("Carries the Screen Recording grant: macOS taps system audio through the same stream."),
                 ),
-                cap("microphone", "Microphone", has_avf, "AVFoundation", None),
-                cap("camera", "Webcam", has_avf, "AVFoundation", None),
+                cap(
+                    "microphone",
+                    "Microphone",
+                    has_screen,
+                    screen_backend,
+                    Some("Records the system default input; macOS does not let this backend name another."),
+                ),
+                cap("camera", "Webcam", true, "AVFoundation", None),
                 cap("cursor", "Cursor tracking", true, "CoreGraphics", None),
             ],
         }
@@ -1417,6 +1298,7 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                 Some("No display server detected — set WAYLAND_DISPLAY or DISPLAY."),
             )
         };
+        let audio = capturekit::capabilities().audio_loopback;
         // device_query reads the pointer through X11/xcb; a pure-Wayland
         // session (no XWayland) blocks global pointer reads, so cursor
         // tracking is best-effort there.
@@ -1441,17 +1323,11 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                 cap(
                     "systemAudio",
                     "System audio",
-                    true,
-                    "PulseAudio / PipeWire",
-                    Some("Uses a PulseAudio monitor source; needs PulseAudio or PipeWire-Pulse."),
+                    audio,
+                    "PipeWire",
+                    Some("Reads the default sink's monitor; needs a running PipeWire daemon."),
                 ),
-                cap(
-                    "microphone",
-                    "Microphone",
-                    true,
-                    "PulseAudio (FFmpeg)",
-                    None,
-                ),
+                cap("microphone", "Microphone", audio, "PipeWire", None),
                 cap("camera", "Webcam", true, "V4L2", None),
                 cap("cursor", "Cursor tracking", true, "X11 (xcb)", cursor_note),
             ],
