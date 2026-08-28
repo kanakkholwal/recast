@@ -194,14 +194,6 @@ winreg = "0.52"
 # `PlatformWebview::inner()` unifies with this crate's `WebView`.
 webkit2gtk = "2.0"
 
-# Cross-platform pointer + button sampling for the cursor-capture thread.
-# `device_query` wraps CoreGraphics on macOS and xcb on Linux behind one
-# API, sparing us two separate `unsafe` FFI implementations. On Wayland
-# sessions it falls back through XWayland (present on every mainstream
-# distro). True Wayland-native pointer tracking would need libei and is
-# out of scope — see the cross-platform plan, Phase 2 caveats.
-[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
-device_query = "2.1"
 
 [features]
 # On-device captions on by default via the ggml (transcribe.cpp) engine. It builds

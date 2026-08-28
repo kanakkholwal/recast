@@ -17,8 +17,32 @@ import {
 	FADE_PRESETS,
 	type FadePreset,
 } from "./audio-panel.logic";
+import { clampValue } from "./draggable-value.logic";
+import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
 import SettingRow from "./SettingRow.svelte";
+import Stepper from "./Stepper.svelte";
+
+// A drag pushes undo once at the start, a typed/keyed edit is one undo entry.
+function fadeField(key: "fadeIn" | "fadeOut") {
+	return {
+		onDragStart: () => store.pushUndoState(),
+		onInput: (v: number) => store.updateAudioSettings({ [key]: v }),
+		onCommit: (v: number, viaDrag: boolean) => {
+			if (!viaDrag) store.pushUndoState();
+			store.updateAudioSettings({ [key]: v });
+		},
+		onStep: (d: 1 | -1) => {
+			store.pushUndoState();
+			const next = clampValue(Number((store.audioSettings[key] + d * 0.05).toFixed(2)), 0, 5);
+			store.updateAudioSettings({ [key]: next });
+		},
+	};
+}
+
+const fin = fadeField("fadeIn");
+const fout = fadeField("fadeOut");
 
 interface Props {
 	store: EditorStore;
@@ -284,29 +308,41 @@ const zoneText = $derived(
       />
     </div>
 
-    <div class="mt-2.5 space-y-2.5">
-      <SliderControl
-        label="Fade in"
-        value={store.audioSettings.fadeIn}
-        min={0}
-        max={5}
-        step={0.05}
-        unit="s"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => store.updateAudioSettings({ fadeIn: next })}
-        formatValue={(v) => `${v.toFixed(2)}s`}
-      />
-      <SliderControl
-        label="Fade out"
-        value={store.audioSettings.fadeOut}
-        min={0}
-        max={5}
-        step={0.05}
-        unit="s"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => store.updateAudioSettings({ fadeOut: next })}
-        formatValue={(v) => `${v.toFixed(2)}s`}
-      />
+    <div class="mt-2.5 space-y-1.5">
+      <PropRow label="Fade in">
+        <NumberField
+          class="flex-1"
+          label="Fade in"
+          icon={Waves}
+          value={store.audioSettings.fadeIn}
+          min={0}
+          max={5}
+          step={0.05}
+          decimals={2}
+          suffix="s"
+          onDragStart={fin.onDragStart}
+          onInput={fin.onInput}
+          onCommit={fin.onCommit}
+        />
+        <Stepper label="fade in" onStep={fin.onStep} />
+      </PropRow>
+      <PropRow label="Fade out">
+        <NumberField
+          class="flex-1"
+          label="Fade out"
+          icon={Waves}
+          value={store.audioSettings.fadeOut}
+          min={0}
+          max={5}
+          step={0.05}
+          decimals={2}
+          suffix="s"
+          onDragStart={fout.onDragStart}
+          onInput={fout.onInput}
+          onCommit={fout.onCommit}
+        />
+        <Stepper label="fade out" onStep={fout.onStep} />
+      </PropRow>
     </div>
   </PanelSection>
 

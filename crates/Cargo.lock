@@ -1529,6 +1529,7 @@ dependencies = [
  "bitflags",
  "block2",
  "dispatch2",
+ "libc",
  "objc2",
  "objc2-core-foundation",
  "objc2-core-graphics",

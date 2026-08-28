@@ -3,10 +3,11 @@ import type { IconComponent } from "@recast/icons";
 import {
 	Blend,
 	Check,
+	Circle,
 	FolderOpen,
 	ImageIcon,
 	LayoutTemplate,
-	Move,
+	MoveVertical,
 	Palette,
 	SquareRoundCorner,
 	Wallpaper,
@@ -36,8 +37,12 @@ import {
 	isValidImageValue,
 	selectionValueForType,
 } from "./background-picker.logic";
+import { clampValue } from "./draggable-value.logic";
 import GradientBuilder from "./GradientBuilder.svelte";
+import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import Stepper from "./Stepper.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -80,8 +85,6 @@ function rememberColor(color: string) {
 let displayedMode = $derived<BackgroundType>(store.backgroundType);
 
 let blurValue = $state(0);
-let paddingValue = $state(0);
-let borderRadiusValue = $state(0);
 
 const isRegisteredBackground = (id: string) => registry.get("background", id) !== undefined;
 
@@ -113,8 +116,6 @@ const getImagePreviewSrc = (value: string): string =>
 
 $effect(() => {
 	blurValue = store.backgroundBlur;
-	paddingValue = store.padding;
-	borderRadiusValue = store.borderRadius;
 });
 </script>
 
@@ -131,6 +132,46 @@ $effect(() => {
 
   <!-- Blur only affects texture backgrounds (image/wallpaper), so it lives
        inside those modes rather than as a global knob. -->
+  <!-- One filled field + stepper per numeric setting, aligned in a label column. -->
+  {#snippet numRow(cfg: {
+    label: string;
+    icon: IconComponent;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    decimals?: number;
+    suffix?: string;
+    set: (v: number) => void;
+  })}
+    <PropRow label={cfg.label}>
+      <NumberField
+        class="flex-1"
+        label={cfg.label}
+        icon={cfg.icon}
+        value={cfg.value}
+        min={cfg.min}
+        max={cfg.max}
+        step={cfg.step}
+        decimals={cfg.decimals ?? 0}
+        suffix={cfg.suffix}
+        onDragStart={() => store.pushUndoState()}
+        onInput={(v) => cfg.set(v)}
+        onCommit={(v, viaDrag) => {
+          if (!viaDrag) store.pushUndoState();
+          cfg.set(v);
+        }}
+      />
+      <Stepper
+        label={cfg.label}
+        onStep={(d) => {
+          store.pushUndoState();
+          cfg.set(clampValue(cfg.value + d * cfg.step, cfg.min, cfg.max));
+        }}
+      />
+    </PropRow>
+  {/snippet}
+
   {#snippet blurControl()}
     <SliderControl
       label="Background blur"
@@ -163,7 +204,7 @@ $effect(() => {
     class="flex flex-col gap-4"
   >
     <PanelSection
-      title="Canvas"
+      title="Background"
       hint="What fills the canvas behind your recording."
       flush
     >
@@ -390,40 +431,31 @@ $effect(() => {
   <PanelSection
     title="Frame"
     hint="Padding adds space around the recording; corner radius rounds its edges. Both apply to every background."
+    flush
   >
-    <SliderControl
-      label="Frame padding"
-      bind:value={paddingValue}
-      min={0}
-      max={MAX_FRAME_PADDING_PERCENT}
-      step={1}
-      unit="%"
-      onstart={() => store.pushUndoState()}
-      onchange={(next) => {
-        store.padding = next;
-      }}
-    >
-      {#snippet icon()}
-        <LayoutTemplate size={11} />
-      {/snippet}
-    </SliderControl>
-
-    <SliderControl
-      label="Corner radius"
-      bind:value={borderRadiusValue}
-      min={0}
-      max={25}
-      step={0.5}
-      unit="%"
-      onstart={() => store.pushUndoState()}
-      onchange={(next) => {
-        store.borderRadius = next;
-      }}
-    >
-      {#snippet icon()}
-        <SquareRoundCorner size={11} />
-      {/snippet}
-    </SliderControl>
+    <div class="space-y-1.5">
+      {@render numRow({
+        label: "Padding",
+        icon: LayoutTemplate,
+        value: store.padding,
+        min: 0,
+        max: MAX_FRAME_PADDING_PERCENT,
+        step: 1,
+        suffix: "%",
+        set: (v) => (store.padding = v),
+      })}
+      {@render numRow({
+        label: "Radius",
+        icon: SquareRoundCorner,
+        value: store.borderRadius,
+        min: 0,
+        max: 25,
+        step: 0.5,
+        decimals: 1,
+        suffix: "%",
+        set: (v) => (store.borderRadius = v),
+      })}
+    </div>
   </PanelSection>
 
   <PanelSection
@@ -446,62 +478,49 @@ $effect(() => {
     {/snippet}
 
     {#if store.shadow.enabled}
-      <div class="space-y-2.5">
-        <SliderControl
-          label="Blur"
-          value={store.shadow.blur}
-          min={0}
-          max={100}
-          step={1}
-          unit="px"
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => store.updateShadow({ blur: v })}
-        >
-          {#snippet icon()}
-            <Blend size={11} />
-          {/snippet}
-        </SliderControl>
-
-        <SliderControl
-          label="Spread"
-          value={store.shadow.spread}
-          min={0}
-          max={50}
-          step={1}
-          unit="px"
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => store.updateShadow({ spread: v })}
-        >
-          {#snippet icon()}
-            <SquareRoundCorner size={11} />
-          {/snippet}
-        </SliderControl>
-
-        <SliderControl
-          label="Offset Y"
-          value={store.shadow.offsetY}
-          min={-40}
-          max={40}
-          step={1}
-          unit="px"
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => store.updateShadow({ offsetY: v })}
-        >
-          {#snippet icon()}
-            <Move size={11} />
-          {/snippet}
-        </SliderControl>
-
-        <SliderControl
-          label="Opacity"
-          value={store.shadow.opacity}
-          min={0}
-          max={100}
-          step={1}
-          unit="%"
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => store.updateShadow({ opacity: v })}
-        />
+      <div class="space-y-2">
+        <div class="space-y-1.5">
+          {@render numRow({
+            label: "Blur",
+            icon: Blend,
+            value: store.shadow.blur,
+            min: 0,
+            max: 100,
+            step: 1,
+            suffix: "px",
+            set: (v) => store.updateShadow({ blur: v }),
+          })}
+          {@render numRow({
+            label: "Spread",
+            icon: SquareRoundCorner,
+            value: store.shadow.spread,
+            min: 0,
+            max: 50,
+            step: 1,
+            suffix: "px",
+            set: (v) => store.updateShadow({ spread: v }),
+          })}
+          {@render numRow({
+            label: "Offset Y",
+            icon: MoveVertical,
+            value: store.shadow.offsetY,
+            min: -40,
+            max: 40,
+            step: 1,
+            suffix: "px",
+            set: (v) => store.updateShadow({ offsetY: v }),
+          })}
+          {@render numRow({
+            label: "Opacity",
+            icon: Circle,
+            value: store.shadow.opacity,
+            min: 0,
+            max: 100,
+            step: 1,
+            suffix: "%",
+            set: (v) => store.updateShadow({ opacity: v }),
+          })}
+        </div>
 
         <ColorField
           label="Shadow color"

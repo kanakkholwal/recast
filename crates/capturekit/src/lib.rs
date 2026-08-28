@@ -24,6 +24,7 @@ mod capturer;
 mod deliver;
 mod image;
 mod platform;
+mod pointer;
 mod session;
 mod shot;
 
@@ -34,13 +35,14 @@ pub use audio::{AudioBuffer, AudioCapturer, AudioCapturerBuilder, AudioHandle};
 pub use capturekit_core::{
     AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, Camera, CameraFormat,
     CameraId, Capabilities, CaptureError, ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest,
-    CursorSample, CursorShape, CursorShapeKind, DirtyRects, Display, DisplayId, ExclusionSupport,
-    LostReason, MatrixCoefficients, Pacer, Pacing, Permission, PermissionKind, PixelFormat,
-    PlaneFormat, Primaries, Rect, RegionCrop, Result, Rotation, SampleFormat, SourceDesc, Target,
-    Timestamp, TransferFunction, Window, WindowId,
+    CursorButtons, CursorSample, CursorShape, CursorShapeKind, DirtyRects, Display, DisplayId,
+    ExclusionSupport, LostReason, MatrixCoefficients, Pacer, Pacing, Permission, PermissionKind,
+    PixelFormat, PlaneFormat, Primaries, Rect, RegionCrop, Result, Rotation, SampleFormat,
+    SourceDesc, Target, Timestamp, TransferFunction, Window, WindowId,
 };
 pub use capturer::{CaptureHandle, Capturer, CapturerBuilder, Flow, Frame};
 pub use image::Image;
+pub use pointer::{Pointer, PointerCapturer, PointerSample};
 pub use session::{Session, SessionAudio, SessionBuilder, SessionFrame, TrackId};
 pub use shot::{CursorMode, ShotOptions, Warmup};
 

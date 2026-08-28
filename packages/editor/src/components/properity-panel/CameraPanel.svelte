@@ -1,5 +1,5 @@
 <script lang="ts">
-import { VideoOff } from "@recast/icons";
+import { Ruler, VideoOff } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
@@ -13,8 +13,12 @@ import {
 } from "../../stores/editor-store.svelte";
 import { cameraPlacementAt } from "../_components/camera-overlay.logic";
 import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
+import { clampValue } from "./draggable-value.logic";
 import EasingControl from "./EasingControl.svelte";
+import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import Stepper from "./Stepper.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -166,7 +170,7 @@ const shapeOptions = [
                 "group relative aspect-square overflow-hidden rounded-md border transition-all duration-150",
                 "focus:outline-none focus:ring-2 focus:ring-ring/40",
                 isActive
-                  ? "border-primary/60 bg-primary/8 text-foreground"
+                  ? "border-foreground/40 bg-foreground/10 text-foreground"
                   : "border-transparent bg-background/40 text-foreground/80 hover:border-border hover:bg-background/80",
               )}
             >
@@ -174,7 +178,7 @@ const shapeOptions = [
                 aria-hidden="true"
                 class={cn(
                   "absolute size-1.5 rounded-full transition-colors duration-150",
-                  isActive ? "bg-primary" : "bg-foreground/35 group-hover:bg-foreground/60",
+                  isActive ? "bg-foreground" : "bg-foreground/35 group-hover:bg-foreground/60",
                 )}
                 style={dotStyleFor(cell)}
               ></span>
@@ -218,17 +222,34 @@ const shapeOptions = [
     <PanelSection
       title="Size"
       hint="Bubble width as a percentage of the frame, or drag its corners in the preview. Height matches width (1:1 only for now)."
+      flush
     >
-      <SliderControl
-        label="Bubble size"
-        value={Math.round(currentBase.width * 100)}
-        min={8}
-        max={32}
-        step={1}
-        unit="%"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => setSize(next / 100)}
-      />
+      {@const sizePct = Math.round(currentBase.width * 100)}
+      <PropRow label="Width">
+        <NumberField
+          class="flex-1"
+          label="Bubble size"
+          icon={Ruler}
+          value={sizePct}
+          min={8}
+          max={32}
+          step={1}
+          suffix="%"
+          onDragStart={() => store.pushUndoState()}
+          onInput={(v) => setSize(v / 100)}
+          onCommit={(v, viaDrag) => {
+            if (!viaDrag) store.pushUndoState();
+            setSize(v / 100);
+          }}
+        />
+        <Stepper
+          label="width"
+          onStep={(d) => {
+            store.pushUndoState();
+            setSize(clampValue(sizePct + d, 8, 32) / 100);
+          }}
+        />
+      </PropRow>
     </PanelSection>
 
     <PanelSection
@@ -250,7 +271,7 @@ const shapeOptions = [
               "rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-150",
               "focus:outline-none focus:ring-2 focus:ring-ring/40",
               isActive
-                ? "border-primary/60 bg-primary/8 text-foreground"
+                ? "border-foreground/40 bg-foreground/10 text-foreground"
                 : "border-transparent bg-background/40 text-foreground/80 hover:border-border hover:bg-background/80",
             )}
           >

@@ -74,7 +74,22 @@ pub struct Capabilities {
     /// Whether the OS can composite the cursor into captured frames.
     pub cursor_in_frame: bool,
     /// Whether the OS reports cursor position and shape alongside frames.
+    ///
+    /// False on macOS, where ScreenCaptureKit attaches no pointer metadata to a
+    /// sample. That is not the same as having no cursor at all: see
+    /// [`cursor_pointer`](Self::cursor_pointer).
     pub cursor_samples: bool,
+    /// Whether the pointer can be read on demand, independently of frames.
+    ///
+    /// This is what lets a caller sample faster than it captures, and it is the
+    /// only cursor source on macOS. False under Wayland, which reports the
+    /// pointer to no client outside its own surfaces.
+    pub cursor_pointer: bool,
+    /// Whether mouse buttons can be read at all.
+    ///
+    /// False under Wayland, which gives no client the global pointer-button
+    /// state; a consumer there gets movement but can never see a click.
+    pub cursor_buttons: bool,
     /// Whether the backend reports which regions changed.
     pub dirty_rects: bool,
     /// Whether system output can be captured back as audio.
@@ -116,6 +131,8 @@ mod tests {
         region_crop: RegionCrop::OnHost,
         cursor_in_frame: true,
         cursor_samples: false,
+        cursor_pointer: false,
+        cursor_buttons: false,
         dirty_rects: false,
         audio_loopback: true,
         audio_device_enumeration: false,
@@ -131,6 +148,8 @@ mod tests {
         region_crop: RegionCrop::DuringAcquisition,
         cursor_in_frame: true,
         cursor_samples: true,
+        cursor_pointer: true,
+        cursor_buttons: true,
         dirty_rects: true,
         audio_loopback: true,
         audio_device_enumeration: true,
@@ -146,6 +165,8 @@ mod tests {
         region_crop: RegionCrop::DuringAcquisition,
         cursor_in_frame: true,
         cursor_samples: false,
+        cursor_pointer: true,
+        cursor_buttons: true,
         dirty_rects: false,
         audio_loopback: true,
         audio_device_enumeration: false,

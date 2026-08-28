@@ -1,3 +1,4 @@
+mod pointer;
 mod v4l2;
 mod x11;
 
@@ -98,6 +99,8 @@ pub(crate) fn capabilities() -> Capabilities {
             region_crop: RegionCrop::OnHost,
             cursor_in_frame: true,
             cursor_samples: false,
+            cursor_pointer: false,
+            cursor_buttons: false,
             dirty_rects: false,
             audio_loopback: true,
             audio_device_enumeration: cfg!(feature = "pipewire-audio"),
@@ -117,6 +120,8 @@ pub(crate) fn capabilities() -> Capabilities {
             // it alongside instead.
             cursor_in_frame: false,
             cursor_samples: true,
+            cursor_pointer: true,
+            cursor_buttons: true,
             dirty_rects: false,
             audio_loopback: true,
             audio_device_enumeration: cfg!(feature = "pipewire-audio"),
@@ -248,6 +253,15 @@ pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameS
             // Taken above, before the display server was ever consulted.
             Target::Camera(id) => Ok(Box::new(v4l2::V4l2CameraSource::open(id, opts)?)),
         },
+        Session::None => Err(no_session()),
+    }
+}
+
+/// The pointer reader for this session, which Wayland does not have.
+pub(crate) fn pointer_source() -> Result<Box<dyn crate::pointer::PointerSource>> {
+    match session() {
+        Session::X11 => pointer::source(),
+        Session::Wayland => Err(pointer::unavailable()),
         Session::None => Err(no_session()),
     }
 }

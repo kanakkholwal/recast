@@ -30,7 +30,10 @@ pub use color::{
     ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest, MatrixCoefficients, Primaries,
     TransferFunction,
 };
-pub use cursor::{CursorSample, CursorShape, CursorShapeKind};
+pub use cursor::{
+    point_in_surface, point_offset_in_surface, CursorButtons, CursorSample, CursorShape,
+    CursorShapeKind,
+};
 pub use error::{CaptureError, LostReason, Result};
 pub use format::{PixelFormat, PlaneFormat};
 pub use geom::{DirtyRects, Rect, Rotation};

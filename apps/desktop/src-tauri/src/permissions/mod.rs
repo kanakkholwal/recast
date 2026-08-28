@@ -10,7 +10,7 @@
 //!   the user gets an actionable error rather than an empty recording found at
 //!   stop(). The microphone is separate: it goes through AVFoundation and takes
 //!   the Microphone grant.
-//! - **Accessibility** — required by `device_query` (CoreGraphics mouse-button
+//! - **Accessibility** — required by capturekit's pointer reader (CoreGraphics mouse-button
 //!   state) for the cursor track. This is non-essential — the screen capture
 //!   still works without it — so we only WARN; the cursor track just has gaps
 //!   until it's granted.

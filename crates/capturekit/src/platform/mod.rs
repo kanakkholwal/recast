@@ -71,3 +71,8 @@ impl From<&ShotOptions> for OpenOptions {
         }
     }
 }
+
+/// The platform pointer reader, or an error where none exists.
+pub(crate) fn pointer_source() -> capturekit_core::Result<Box<dyn crate::pointer::PointerSource>> {
+    os::pointer_source()
+}

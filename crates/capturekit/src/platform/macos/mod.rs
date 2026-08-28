@@ -3,6 +3,7 @@ mod camera;
 mod content;
 mod coreaudio;
 mod mic;
+mod pointer;
 mod sample;
 mod stream;
 
@@ -16,6 +17,7 @@ use crate::backend::{AudioSource, FrameSource};
 use crate::platform::OpenOptions;
 
 pub(crate) use content::{displays, windows};
+pub(crate) use pointer::source as pointer_source;
 
 /// What this platform can do, reported as data so callers branch on the answer
 /// rather than on `cfg`.
@@ -34,6 +36,8 @@ pub(crate) fn capabilities() -> Capabilities {
         // Position and shape come from a separate CoreGraphics call, not with
         // the sample buffer, so they are not on the frame clock yet.
         cursor_samples: false,
+        cursor_pointer: true,
+        cursor_buttons: true,
         dirty_rects: false,
         audio_loopback: true,
         // CoreAudio lists them and AVFoundation opens any of them by UID.

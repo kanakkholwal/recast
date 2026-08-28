@@ -1,5 +1,7 @@
 <script lang="ts">
+import type { IconComponent } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
 import {
 	clampValue,
 	DRAG_THRESHOLD_PX,
@@ -8,8 +10,13 @@ import {
 	parseInputValue,
 } from "./draggable-value.logic";
 
+// Figma/Premiere-grade numeric field
 interface Props {
 	label: string;
+	/** Leading glyph: a short string ("X", "W") or a snippet for custom content. */
+	glyph?: string | Snippet;
+	/** Leading property icon; doubles as the drag-scrub handle. Wins over `glyph`. */
+	icon?: IconComponent;
 	value: number;
 	min?: number;
 	max?: number;
@@ -18,17 +25,16 @@ interface Props {
 	decimals?: number;
 	suffix?: string;
 	disabled?: boolean;
-	/** Fired once when a drag passes the threshold; the place to push undo. */
 	onDragStart?: () => void;
-	/** Live value while dragging. Pair with an undo-suppressed write. */
 	onInput?: (v: number) => void;
-	/** Final value: drag end (`viaDrag`) or a typed/keyed edit. */
 	onCommit: (v: number, viaDrag: boolean) => void;
 	class?: string;
 }
 
 let {
 	label,
+	glyph,
+	icon: Icon,
 	value,
 	min,
 	max,
@@ -44,19 +50,19 @@ let {
 
 let inputEl: HTMLInputElement | null = $state(null);
 let dragging = $state(false);
-// While the input holds focus it owns its text; outside of that the prop wins.
 let editing = $state(false);
 let draftText = $state("");
 
+// Reads like the reference inspectors instead of floating at the field's right edge.
 const display = $derived(
 	editing ? draftText : `${dragging ? draftText : formatValue(value, decimals)}${suffix ?? ""}`,
 );
+const glyphIsText = $derived(typeof glyph === "string");
 
 function clamp(v: number) {
 	return clampValue(v, min, max);
 }
 
-// --- drag-to-scrub on the label ---
 let startX = 0;
 let startValue = 0;
 let engaged = false;
@@ -90,7 +96,6 @@ function onPointerUp(e: PointerEvent) {
 		dragging = false;
 		onCommit(parseInputValue(draftText, value), true);
 	} else {
-		// A plain click on the label hands focus to the field for typing.
 		inputEl?.focus();
 		inputEl?.select();
 	}
@@ -105,7 +110,6 @@ function onPointerCancel() {
 	engaged = false;
 }
 
-// --- typed edits ---
 function onFocus() {
 	editing = true;
 	draftText = formatValue(value, decimals);
@@ -145,16 +149,24 @@ function onKeydown(e: KeyboardEvent) {
 		className,
 	)}
 >
-	<span
-		class="shrink-0 cursor-ew-resize touch-none select-none text-[10px] font-semibold uppercase text-muted-foreground/80"
-		onpointerdown={onPointerDown}
-		onpointermove={onPointerMove}
-		onpointerup={onPointerUp}
-		onpointercancel={onPointerCancel}
-		aria-hidden="true"
-	>
-		{label}
-	</span>
+	{#if Icon || glyph !== undefined}
+		<span
+			class="flex shrink-0 cursor-ew-resize touch-none select-none items-center justify-center text-muted-foreground/80"
+			onpointerdown={onPointerDown}
+			onpointermove={onPointerMove}
+			onpointerup={onPointerUp}
+			onpointercancel={onPointerCancel}
+			aria-hidden="true"
+		>
+			{#if Icon}
+				<Icon class="size-3" />
+			{:else if glyphIsText}
+				<span class="text-[10px] font-semibold uppercase">{glyph}</span>
+			{:else}
+				{@render (glyph as Snippet)()}
+			{/if}
+		</span>
+	{/if}
 	<input
 		bind:this={inputEl}
 		type="text"

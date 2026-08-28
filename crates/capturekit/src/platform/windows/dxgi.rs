@@ -355,6 +355,8 @@ impl Cursor {
             pts,
             position: self.position.map(|(x, y)| (x - origin.x, y - origin.y)),
             visible: self.visible,
+            // Duplication has no button state; read the source the pointer path uses.
+            buttons: super::pointer::buttons(),
             shape_id: self.shape_id,
         }
     }

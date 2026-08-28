@@ -1,9 +1,9 @@
 use core::time::Duration;
 
 use capturekit_core::{
-    CaptureError, ColorSpace, CursorSample, CursorShape, CursorShapeKind, DirtyRects, Display,
-    DisplayId, LostReason, PixelFormat, Rect, Result, Rotation, SourceDesc, Timestamp, Window,
-    WindowId,
+    CaptureError, ColorSpace, CursorButtons, CursorSample, CursorShape, CursorShapeKind,
+    DirtyRects, Display, DisplayId, LostReason, PixelFormat, Rect, Result, Rotation, SourceDesc,
+    Timestamp, Window, WindowId,
 };
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::{self, ConnectionExt as RandrExt};
@@ -332,6 +332,7 @@ impl X11Source {
     /// pointer is on another screen or hidden, which XFixes reports as a
     /// zero-sized image rather than as an error.
     fn sample_cursor(&mut self, pts: Timestamp) -> Option<CursorSample> {
+        let buttons = self.buttons();
         let cursor = self.cursor.as_mut()?;
         let image = self
             .session
@@ -342,7 +343,7 @@ impl X11Source {
             .ok()?;
 
         if image.width == 0 || image.height == 0 {
-            return Some(CursorSample::absent(pts));
+            return Some(CursorSample::absent(pts, buttons));
         }
         if image.cursor_serial != cursor.serial || cursor.shape.is_none() {
             cursor.serial = image.cursor_serial;
@@ -370,8 +371,23 @@ impl X11Source {
             pts,
             position: Some((x, y)),
             visible: true,
+            buttons,
             shape_id: u64::from(image.cursor_serial),
         })
+    }
+
+    /// Buttons held, so a frame-attached sample carries what the pointer reader
+    /// would say. None held is also what a refused query reports, which is the
+    /// same answer X11 gives when the pointer is on another screen.
+    fn buttons(&self) -> CursorButtons {
+        self.session
+            .conn
+            .query_pointer(self.session.screen.root)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .map_or(CursorButtons::NONE, |reply| {
+                super::pointer::buttons_of(reply.mask)
+            })
     }
 
     pub(crate) fn open_display(display: DisplayId, opts: &OpenOptions) -> Result<Self> {

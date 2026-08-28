@@ -142,11 +142,8 @@ pub fn spawn_capture_loop(
     pipeline: RecordingPipeline,
     clock: Instant,
     target_fps: u32,
-    // Set to the wall-clock μs of the FIRST encoded frame (the DXGI duplication
-    // warmup). `stop()` subtracts this from the cursor track so cursor t=0
-    // lines up with video frame 0 — otherwise the warmup shifts the cursor
-    // ahead of the video and clicks land ~that far off.
-    first_frame_offset_us: Arc<std::sync::atomic::AtomicU64>,
+    // Marked at the FIRST encoded frame: video t=0, which the cursor blocks on.
+    video_start: crate::recording::TrackStart,
 ) -> Result<thread::JoinHandle<Result<()>>> {
     thread::Builder::new()
         .name("recast-capture".into())
@@ -196,12 +193,10 @@ pub fn spawn_capture_loop(
                 }
             };
 
-            // The first frame defines video t=0 (the encoder is frame-count
-            // based). Record how long the capture-source warmup took so the
-            // cursor track — which has been ticking since recording start — can
-            // be re-based onto this same zero in `stop()`.
-            let first_us = clock.elapsed().as_micros() as u64;
-            first_frame_offset_us.store(first_us, Ordering::Release);
+            // One instant for both, or the cursor's zero and the video's differ.
+            let at = Instant::now();
+            let first_us = at.saturating_duration_since(clock).as_micros() as u64;
+            video_start.mark_at(at);
             pipeline.push(VideoFrame {
                 timestamp_us: first_us,
                 width: source.width(),
@@ -340,7 +335,7 @@ mod pacer_tests {
     const FPS: u32 = 50;
 
     /// Runs the real loop for `run` and returns what reached the pipeline.
-    fn run_loop(remaining: Option<usize>, run: Duration) -> (PipelineSnapshot, u64) {
+    fn run_loop(remaining: Option<usize>, run: Duration) -> (PipelineSnapshot, Option<u64>) {
         let source = Box::new(ScriptedSource {
             width: 8,
             height: 8,
@@ -349,21 +344,22 @@ mod pacer_tests {
         let stop = Arc::new(AtomicBool::new(false));
         let pause = Arc::new(AtomicBool::new(false));
         let pipeline = RecordingPipeline::new(4096);
-        let offset = Arc::new(AtomicU64::new(0));
+        let started = Instant::now();
+        let video_start = crate::recording::TrackStart::new(started);
         let handle = spawn_capture_loop(
             source,
             stop.clone(),
             pause.clone(),
             pipeline.clone(),
-            Instant::now(),
+            started,
             FPS,
-            offset.clone(),
+            video_start.clone(),
         )
         .expect("the capture thread starts");
         thread::sleep(run);
         stop.store(true, Ordering::Release);
         handle.join().expect("the thread joins").expect("no error");
-        (pipeline.stats().snapshot(), offset.load(Ordering::Acquire))
+        (pipeline.stats().snapshot(), video_start.elapsed_us())
     }
 
     /// The wall-clock contract: one real second of recording is `fps` frames of
@@ -395,16 +391,27 @@ mod pacer_tests {
         );
     }
 
-    /// Video t=0 is the first frame the source produced, not recording start;
-    /// `stop()` subtracts this so the cursor track lines up with frame 0.
+    /// Video t=0 is the first frame the source produced, not recording start.
+    /// The cursor thread blocks on this mark, so leaving it unset would stall
+    /// the cursor track entirely rather than merely misplace it.
     #[test]
     fn the_first_frame_records_when_it_arrived() {
         let (stats, offset) = run_loop(None, Duration::from_millis(200));
         assert!(stats.captured_frames > 0);
+        let offset = offset.expect("the first frame marks video t=0");
         assert!(
             offset < 200_000,
             "the warmup offset should be the first frame's instant, got {offset}us"
         );
+    }
+
+    /// A source that never yields a frame must leave video t=0 UNSET, not 0:
+    /// the two used to be the same value, which is why the cursor could not
+    /// tell "no frame yet" from "the frame was at zero".
+    #[test]
+    fn a_source_that_never_delivers_leaves_video_zero_unset() {
+        let (_, offset) = run_loop(Some(0), Duration::from_millis(120));
+        assert_eq!(offset, None);
     }
 }
 

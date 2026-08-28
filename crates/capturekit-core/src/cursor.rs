@@ -1,4 +1,5 @@
 use crate::error::CaptureError;
+use crate::geom::Rect;
 use crate::time::Timestamp;
 
 /// How a cursor image is stored, which differs per platform and per cursor.
@@ -174,11 +175,73 @@ impl CursorShape {
     }
 }
 
-/// Where the cursor was, and whether it was showing, at one instant.
+/// Where a pointer read in virtual-desktop coordinates lands inside a captured
+/// surface, or `None` when it is outside it.
 ///
-/// Sampled by the capture backend on the same clock as the frames rather than by
-/// a separate poller: a cursor track on its own clock drifts against the video
-/// and has to be smoothed to hide it.
+/// `scale` lifts a pointer the OS reports in logical points into the surface's
+/// physical pixels, which is what macOS needs and what everywhere else gets as
+/// an exact identity at `1.0`. Returning `None` rather than clamping is what
+/// lets a consumer hide the cursor when it leaves the recorded area instead of
+/// pinning it to an edge for the rest of the video.
+#[must_use]
+pub fn point_in_surface(point: (i32, i32), surface: &Rect, scale: f64) -> Option<(i32, i32)> {
+    let (x, y) = point_offset_in_surface(point, surface, scale);
+    // try_from rejects a pointer left of or above the surface, so this is both bounds.
+    let inside = u32::try_from(x).is_ok_and(|x| x < surface.width)
+        && u32::try_from(y).is_ok_and(|y| y < surface.height);
+    inside.then_some((x, y))
+}
+
+/// Where a pointer sits relative to a surface, whether or not it is on it.
+///
+/// The unclamped half of [`point_in_surface`]. A caller tracking movement needs
+/// this: an off-surface pointer collapsed to one position reads as stationary,
+/// which turns "the user moved the mouse away" into a detected idle period.
+#[must_use]
+pub fn point_offset_in_surface(point: (i32, i32), surface: &Rect, scale: f64) -> (i32, i32) {
+    let lift = |v: i32| (f64::from(v) * scale).round() as i32;
+    (lift(point.0) - surface.x, lift(point.1) - surface.y)
+}
+
+/// Which mouse buttons were held at the instant of a sample.
+///
+/// Buttons are a property of the mouse, not of the captured surface, so they
+/// stay true while a drag leaves the surface. Backends that cannot read them
+/// report [`CursorButtons::NONE`] and set
+/// [`Capabilities::cursor_buttons`](crate::Capabilities::cursor_buttons) false,
+/// so a consumer can tell "no button" from "cannot know".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
+pub struct CursorButtons {
+    /// Primary button, whichever physical button the user has mapped to it.
+    pub left: bool,
+    /// Secondary (context menu) button.
+    pub right: bool,
+    /// Wheel click.
+    pub middle: bool,
+}
+
+impl CursorButtons {
+    /// Nothing held, which is also what a backend without button support says.
+    pub const NONE: Self = Self {
+        left: false,
+        right: false,
+        middle: false,
+    };
+
+    /// Whether any button is held, which is what makes a move a drag.
+    #[must_use]
+    pub const fn any(&self) -> bool {
+        self.left || self.right || self.middle
+    }
+}
+
+/// Where the cursor was, which buttons were held, and whether it was showing.
+///
+/// Sampled on the capture's own clock rather than by a separate poller: a cursor
+/// track on its own clock drifts against the video and has to be smoothed to
+/// hide it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CursorSample {
     /// When the position was true, on the source's clock.
@@ -188,19 +251,25 @@ pub struct CursorSample {
     pub position: Option<(i32, i32)>,
     /// Whether the cursor was being drawn at all.
     pub visible: bool,
+    /// Buttons held at `pts`, or `NONE` from a backend that cannot read them.
+    pub buttons: CursorButtons,
     /// Identifies the shape, so a consumer can cache decoded images instead of
     /// decoding one per frame. Changes whenever the image does.
     pub shape_id: u64,
 }
 
 impl CursorSample {
-    /// A sample saying the cursor is not on this surface.
+    /// A sample saying the cursor is not on this surface, with the buttons that
+    /// were still held. Takes them rather than assuming none: a drag that leaves
+    /// the surface would otherwise read as a button release and a fresh press
+    /// when it comes back.
     #[must_use]
-    pub const fn absent(pts: Timestamp) -> Self {
+    pub const fn absent(pts: Timestamp, buttons: CursorButtons) -> Self {
         Self {
             pts,
             position: None,
             visible: false,
+            buttons,
             shape_id: 0,
         }
     }
@@ -395,8 +464,116 @@ mod tests {
 
     #[test]
     fn an_absent_cursor_draws_nothing() {
-        let sample = CursorSample::absent(Timestamp::ZERO);
+        let sample = CursorSample::absent(Timestamp::ZERO, CursorButtons::NONE);
         assert!(!sample.is_drawable());
+    }
+
+    const SURFACE: Rect = Rect {
+        x: 1920,
+        y: 0,
+        width: 1280,
+        height: 720,
+    };
+
+    #[test]
+    fn a_pointer_inside_the_surface_maps_relative_to_its_origin() {
+        assert_eq!(point_in_surface((1930, 10), &SURFACE, 1.0), Some((10, 10)));
+    }
+
+    /// A second monitor puts the surface origin far from zero, which is the case
+    /// that made every sample land outside the frame before this existed.
+    #[test]
+    fn a_pointer_on_another_monitor_is_outside() {
+        assert_eq!(point_in_surface((100, 10), &SURFACE, 1.0), None);
+    }
+
+    #[test]
+    fn the_far_edge_is_outside_because_the_last_pixel_is_width_minus_one() {
+        assert_eq!(point_in_surface((1920 + 1280, 10), &SURFACE, 1.0), None);
+        assert_eq!(
+            point_in_surface((1920 + 1279, 719), &SURFACE, 1.0),
+            Some((1279, 719))
+        );
+    }
+
+    /// Only the vertical bound is violated here, which is what an x-only pair of
+    /// cases lets a missing height check slip through.
+    #[test]
+    fn a_pointer_below_the_surface_is_outside() {
+        assert_eq!(point_in_surface((1930, 720), &SURFACE, 1.0), None);
+    }
+
+    #[test]
+    fn a_pointer_above_the_surface_is_outside() {
+        assert_eq!(point_in_surface((1930, -1), &SURFACE, 1.0), None);
+    }
+
+    /// macOS reports the pointer in logical points against a physical surface.
+    #[test]
+    fn a_logical_pointer_is_lifted_into_physical_pixels_before_the_origin() {
+        let surface = Rect {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        assert_eq!(
+            point_in_surface((640, 360), &surface, 2.0),
+            Some((1280, 720))
+        );
+    }
+
+    /// A monitor left of or above the primary has a negative origin, so the
+    /// subtraction has to move the point up, not down.
+    #[test]
+    fn a_surface_at_a_negative_origin_maps_a_negative_pointer_inside() {
+        let surface = Rect {
+            x: -1920,
+            y: -100,
+            width: 1920,
+            height: 1080,
+        };
+        assert_eq!(
+            point_in_surface((-1910, -90), &surface, 1.0),
+            Some((10, 10))
+        );
+    }
+
+    /// The reason `absent` takes buttons: a drag that leaves the surface would
+    /// otherwise read as a release, and its return as a fresh press.
+    #[test]
+    fn a_cursor_that_drags_off_the_surface_keeps_its_buttons() {
+        let held = CursorButtons {
+            left: true,
+            ..CursorButtons::NONE
+        };
+        let sample = CursorSample::absent(Timestamp::ZERO, held);
+        assert_eq!(sample.buttons, held);
+    }
+
+    #[test]
+    fn no_buttons_held_is_not_a_drag() {
+        assert!(!CursorButtons::NONE.any());
+    }
+
+    #[test]
+    fn any_single_button_makes_a_drag() {
+        for held in [
+            CursorButtons {
+                left: true,
+                ..CursorButtons::NONE
+            },
+            CursorButtons {
+                right: true,
+                ..CursorButtons::NONE
+            },
+            CursorButtons {
+                middle: true,
+                ..CursorButtons::NONE
+            },
+        ] {
+            assert!(held.any(), "{held:?} should count as held");
+        }
     }
 
     #[test]
@@ -405,6 +582,7 @@ mod tests {
             pts: Timestamp::ZERO,
             position: None,
             visible: true,
+            buttons: CursorButtons::NONE,
             shape_id: 7,
         };
         assert!(!sample.is_drawable());
@@ -418,6 +596,7 @@ mod tests {
             pts: Timestamp::ZERO,
             position: Some((10, 20)),
             visible: false,
+            buttons: CursorButtons::NONE,
             shape_id: 7,
         };
         assert!(!sample.is_drawable());
@@ -429,6 +608,7 @@ mod tests {
             pts: Timestamp::ZERO,
             position: Some((10, 20)),
             visible: true,
+            buttons: CursorButtons::NONE,
             shape_id: 7,
         };
         assert!(sample.is_drawable());

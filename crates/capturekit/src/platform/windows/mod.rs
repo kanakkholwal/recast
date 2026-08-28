@@ -4,6 +4,7 @@ mod dpi;
 mod dxgi;
 mod enumerate;
 mod mf;
+mod pointer;
 mod wasapi;
 mod wgc;
 
@@ -16,6 +17,7 @@ use crate::backend::{AudioSource, FrameSource};
 use crate::platform::OpenOptions;
 
 pub(crate) use enumerate::{displays, windows};
+pub(crate) use pointer::source as pointer_source;
 
 /// What this platform can do, reported as data so callers branch on the answer
 /// rather than on `cfg`.
@@ -34,6 +36,8 @@ pub(crate) fn capabilities() -> Capabilities {
         // does, and refuses `CursorMode::Include` rather than dropping it.
         cursor_in_frame: wgc::is_supported(),
         cursor_samples: true,
+        cursor_pointer: true,
+        cursor_buttons: true,
         dirty_rects: true,
         audio_loopback: true,
         audio_device_enumeration: true,

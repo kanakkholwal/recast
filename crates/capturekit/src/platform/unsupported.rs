@@ -28,6 +28,8 @@ pub(crate) fn capabilities() -> Capabilities {
         region_crop: RegionCrop::OnHost,
         cursor_in_frame: false,
         cursor_samples: false,
+        cursor_pointer: false,
+        cursor_buttons: false,
         dirty_rects: false,
         audio_loopback: false,
         audio_device_enumeration: false,
@@ -83,4 +85,8 @@ pub(crate) fn open_audio(
 
 pub(crate) fn open(_target: &Target, _opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
     Err(unsupported("capture on this platform"))
+}
+
+pub(crate) fn pointer_source() -> Result<Box<dyn crate::pointer::PointerSource>> {
+    Err(unsupported("read the pointer on this platform"))
 }

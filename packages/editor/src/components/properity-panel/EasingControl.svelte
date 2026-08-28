@@ -137,7 +137,7 @@ const progress = $derived(bezierY(active, t));
 					"h-6 rounded-md border px-2 text-[10px] font-medium transition-colors",
 					"focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring",
 					checked
-						? "border-primary/60 bg-primary/10 text-primary"
+						? "border-transparent bg-foreground text-background shadow-craft-md"
 						: "border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground",
 				)}
 			>

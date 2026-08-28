@@ -82,6 +82,7 @@ impl MockSource {
             pts: Timestamp::ZERO,
             position: Some(position),
             visible: true,
+            buttons: capturekit_core::CursorButtons::NONE,
             shape_id: 1,
         });
         self

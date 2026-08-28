@@ -1173,6 +1173,27 @@ fn cap(
     }
 }
 
+/// The cursor row, from what capturekit reports rather than from a per-OS
+/// guess. Wayland hands the pointer to no application, so a hardcoded `true`
+/// there is how a silently empty cursor track ships.
+fn cursor_cap(backend: &str) -> CaptureCapability {
+    let caps = capturekit::capabilities();
+    let note = if !caps.cursor_pointer {
+        Some("Your session does not report the pointer to applications, so cursor tracking is off.")
+    } else if !caps.cursor_buttons {
+        Some("Movement is tracked, but clicks cannot be detected on this session.")
+    } else {
+        None
+    };
+    cap(
+        "cursor",
+        "Cursor tracking",
+        caps.cursor_pointer,
+        backend,
+        note,
+    )
+}
+
 /// A capability we plan to support but haven't built for this platform yet —
 /// distinct from `cap(.., false, ..)`, which marks something the OS can't do
 /// at all. Drives the "not available yet" toast rather than "not supported".
@@ -1227,13 +1248,7 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                     "Media Foundation",
                     Some("DirectShow-only virtual cameras are not listed."),
                 ),
-                cap(
-                    "cursor",
-                    "Cursor tracking",
-                    true,
-                    "Win32 GetCursorInfo",
-                    None,
-                ),
+                cursor_cap("Win32 GetCursorInfo"),
             ],
         }
     }
@@ -1276,7 +1291,7 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                     Some("Uses the Microphone permission, separate from Screen Recording."),
                 ),
                 cap("camera", "Webcam", true, "AVFoundation", None),
-                cap("cursor", "Cursor tracking", true, "CoreGraphics", None),
+                cursor_cap("CoreGraphics"),
             ],
         }
     }
@@ -1299,14 +1314,6 @@ fn build_capture_capabilities() -> CaptureCapabilities {
             )
         };
         let audio = capturekit::capabilities().audio_loopback;
-        // device_query reads the pointer through X11/xcb; a pure-Wayland
-        // session (no XWayland) blocks global pointer reads, so cursor
-        // tracking is best-effort there.
-        let cursor_note = if wayland && !x11 {
-            Some("Limited under Wayland — global cursor position may be unavailable.")
-        } else {
-            None
-        };
         CaptureCapabilities {
             platform: "linux".into(),
             screen_backend: screen_backend.into(),
@@ -1329,7 +1336,7 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                 ),
                 cap("microphone", "Microphone", audio, "PipeWire", None),
                 cap("camera", "Webcam", true, "V4L2", None),
-                cap("cursor", "Cursor tracking", true, "X11 (xcb)", cursor_note),
+                cursor_cap("X11 XQueryPointer"),
             ],
         }
     }

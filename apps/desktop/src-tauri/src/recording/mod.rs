@@ -2,7 +2,7 @@ pub mod clock;
 pub mod pipeline;
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -15,9 +15,7 @@ use crate::audio::{
     AudioCaptureConfig, AudioCaptureSession, MicrophoneCaptureConfig, MicrophoneCaptureSession,
 };
 use crate::capture::CaptureTarget;
-use crate::cursor::{
-    shift_cursor_track, spawn_cursor_capture, write_cursor_track, CursorCaptureFrame, CursorTrack,
-};
+use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorCaptureFrame, CursorTrack};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 pub use clock::{offset_ms_from_video, RecordingClock, TrackStart};
@@ -311,7 +309,7 @@ struct RecordingSession {
     /// Wall-clock μs from recording start to the first encoded video frame
     /// (capture-source warmup). Subtracted from the cursor track at `stop()`
     /// so cursor t=0 aligns with video frame 0.
-    first_frame_offset_us: Arc<AtomicU64>,
+    video_start: TrackStart,
     audio_session: Option<AudioCaptureSession>,
     audio_path: PathBuf,
     audio_start: TrackStart,
@@ -555,9 +553,9 @@ impl RecordingManager {
             );
         }
 
-        let first_frame_offset_us = Arc::new(AtomicU64::new(0));
         // Each track marks its own first sample against `started_at`; stop()
         // turns the differences into the offsets the muxer aligns by.
+        let video_start = TrackStart::new(started_at);
         let audio_start = TrackStart::new(started_at);
         let microphone_start = TrackStart::new(started_at);
         let camera_start = TrackStart::new(started_at);
@@ -568,7 +566,7 @@ impl RecordingManager {
             pipeline.clone(),
             started_at,
             recording_fps,
-            first_frame_offset_us.clone(),
+            video_start.clone(),
         )?;
 
         let encoder_handle = match spawn_encoder_loop(
@@ -594,24 +592,12 @@ impl RecordingManager {
             }
         };
 
-        // Cursor coordinates need to be remapped from virtual-desktop space
-        // (where `GetCursorPos` returns them) to the recorded frame's
-        // pixel space. The encoder crops the captured DXGI texture to the
-        // `crop` rectangle, so the recorded video's (0, 0) corresponds to
-        // virtual-desktop (`crop.x`, `crop.y`). Without this remap, every
-        // sample lives outside the [0..frame] range whenever the user
-        // records a secondary monitor or a region.
-        // Only sample the cursor when the OS actually permits it. On macOS,
-        // `device_query`'s CoreGraphics access re-triggers the "control this
-        // computer using accessibility features" prompt EVERY recording when
-        // Accessibility isn't granted — the repeated-prompt complaint. Gating
-        // on the (non-prompting) trust check means we never poke that API
-        // unless it'll succeed; otherwise we substitute an empty track (the
-        // user already got the warning above). Always-true off macOS.
+        // macOS re-prompts for Accessibility on an unguarded CoreGraphics read.
         let cursor_handle = if crate::permissions::cursor_tracking_authorized() {
             match spawn_cursor_capture(
                 stop_flag.clone(),
                 clock.clone(),
+                video_start.clone(),
                 CursorCaptureFrame {
                     origin_x: target.crop.x,
                     origin_y: target.crop.y,
@@ -725,7 +711,7 @@ impl RecordingManager {
             capture_handle,
             encoder_handle,
             cursor_handle,
-            first_frame_offset_us,
+            video_start,
             audio_session,
             audio_path,
             audio_start,
@@ -779,26 +765,21 @@ impl RecordingManager {
 
         // Everything is reaped — now surface fatal thread failures.
         capture_join.map_err(|_| anyhow!("capture thread panicked"))??;
-        let mut cursor_track = cursor_join.map_err(|_| anyhow!("cursor thread panicked"))?;
+        let cursor_track = cursor_join.map_err(|_| anyhow!("cursor thread panicked"))?;
         encoder_join.map_err(|_| anyhow!("encoder thread panicked"))??;
 
-        // Re-base the cursor track onto the video clock: the capture-source
-        // warmup means video frame 0 is wall-clock `first_frame_offset_us`, not
-        // 0, while the cursor track has been ticking since recording start.
-        // Without this the cursor (and its clicks / highlight) runs ahead of
-        // the on-screen action by the warmup — the reported ~half-second delay.
-        let cursor_offset_us = session.first_frame_offset_us.load(Ordering::Acquire);
-        shift_cursor_track(&mut cursor_track, cursor_offset_us);
+        // The cursor thread stamped in video time, so there is nothing to re-base.
+        let video_zero_us = session.video_start.elapsed_us().unwrap_or(0);
         write_cursor_track(&session.cursor_path, &cursor_track)?;
 
         let track_offsets = TrackOffsets {
-            audio_ms: offset_ms_from_video(cursor_offset_us, &session.audio_start),
-            microphone_ms: offset_ms_from_video(cursor_offset_us, &session.microphone_start),
-            camera_ms: offset_ms_from_video(cursor_offset_us, &session.camera_start),
+            audio_ms: offset_ms_from_video(video_zero_us, &session.audio_start),
+            microphone_ms: offset_ms_from_video(video_zero_us, &session.microphone_start),
+            camera_ms: offset_ms_from_video(video_zero_us, &session.camera_start),
         };
         log::info!(
             "track offsets vs video t0 ({}ms warmup): {:?}",
-            cursor_offset_us / 1000,
+            video_zero_us / 1000,
             track_offsets
         );
 
