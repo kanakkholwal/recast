@@ -5,7 +5,7 @@ mod target;
 use std::time::Duration;
 
 use anyhow::Result;
-use capturekit::Display;
+use capturekit::{Display, Rect};
 
 pub use shot::{grab, grab_region, thumbnail};
 pub use source::{create_capture_source, window_capture_supported};
@@ -45,10 +45,23 @@ pub fn display_at(displays: &[Display], point: (i32, i32)) -> Option<&Display> {
         .or_else(|| displays.first())
 }
 
+/// The rectangle covering every display, in physical virtual-desktop pixels.
+///
+/// What a full-screen overlay has to span. Sizing it to the primary display
+/// instead leaves the other monitors unselectable, and on a layout with a
+/// monitor above or left of the primary the origin is negative, so it cannot be
+/// assumed to be (0, 0) either.
+pub fn virtual_bounds(displays: &[Display]) -> Option<Rect> {
+    displays
+        .iter()
+        .map(|display| display.bounds)
+        .reduce(|all, bounds| all.union(&bounds))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use capturekit::{DisplayId, Rect};
+    use capturekit::DisplayId;
 
     fn display(id: u64, bounds: (i32, i32, u32, u32), primary: bool) -> Display {
         Display {
@@ -90,6 +103,29 @@ mod tests {
             display_at(&desktop(), (-5000, -5000)).map(|d| d.id.0),
             Some(2)
         );
+    }
+
+    #[test]
+    fn the_virtual_bounds_cover_every_display() {
+        let bounds = virtual_bounds(&desktop()).expect("two displays");
+        assert_eq!(bounds, Rect::new(0, 0, 4480, 1440));
+    }
+
+    /// A monitor placed above or to the left of the primary puts the origin in
+    /// negative space; an overlay pinned to (0, 0) misses it entirely.
+    #[test]
+    fn the_virtual_bounds_start_at_the_topmost_leftmost_display() {
+        let spread = [
+            display(1, (0, 0, 1920, 1080), true),
+            display(2, (-1280, -300, 1280, 1024), false),
+        ];
+        let bounds = virtual_bounds(&spread).expect("two displays");
+        assert_eq!(bounds, Rect::new(-1280, -300, 3200, 1380));
+    }
+
+    #[test]
+    fn a_desktop_with_no_displays_has_no_bounds() {
+        assert_eq!(virtual_bounds(&[]), None);
     }
 
     /// A desktop with no primary flagged still has to answer.

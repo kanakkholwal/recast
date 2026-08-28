@@ -769,6 +769,22 @@ enum ScreenshotTarget {
         #[command(flatten)]
         shot: ShotArgs,
     },
+    /// A rectangle of the virtual desktop, in physical pixels.
+    Region {
+        /// Left edge, in virtual-desktop pixels. May be negative on a layout
+        /// with a monitor above or left of the primary.
+        #[arg(long, allow_negative_numbers = true)]
+        x: i32,
+        /// Top edge, in virtual-desktop pixels.
+        #[arg(long, allow_negative_numbers = true)]
+        y: i32,
+        #[arg(long)]
+        width: u32,
+        #[arg(long)]
+        height: u32,
+        #[command(flatten)]
+        shot: ShotArgs,
+    },
     /// Recast's own UI: the focused window, or a specific one by label.
     App {
         /// Window label to capture (default: the focused Recast window).
@@ -1795,7 +1811,9 @@ fn show_profile(cli: &Cli, id: &str) -> Result<(), String> {
 /// enumeration verbs); the `app` shot goes through the running instance so it
 /// can target its own focused window.
 fn screenshot(cli: &Cli, target: &ScreenshotTarget) -> Result<(), String> {
-    use crate::commands::screenshot::{capture_display, capture_window, ShotOptions};
+    use crate::commands::screenshot::{
+        capture_display, capture_region, capture_window, ShotOptions,
+    };
     match target {
         ScreenshotTarget::Display { id, shot } => {
             let opts = ShotOptions {
@@ -1812,6 +1830,26 @@ fn screenshot(cli: &Cli, target: &ScreenshotTarget) -> Result<(), String> {
                 base64: shot.base64,
             };
             emit(&capture_window(*id, &opts)?, cli.format)
+        }
+        ScreenshotTarget::Region {
+            x,
+            y,
+            width,
+            height,
+            shot,
+        } => {
+            let opts = ShotOptions {
+                out: shot.resolved_out(),
+                max_edge: shot.max_edge(),
+                base64: shot.base64,
+            };
+            let rect = crate::capture::RegionRect {
+                x: *x,
+                y: *y,
+                width: *width,
+                height: *height,
+            };
+            emit(&capture_region(rect, &opts)?, cli.format)
         }
         ScreenshotTarget::App { window, shot } => {
             let mut params = serde_json::Map::new();

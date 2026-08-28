@@ -333,6 +333,25 @@ export function setLastSource(source: LastSource): Promise<void> {
 	return invoke("set_last_source", { source });
 }
 
+/** A screenshot written to disk, as the capture reports it. */
+export interface Screenshot {
+	path: string;
+	width: number;
+	height: number;
+	/** The captured surface: `display`, `window`, `region`, or `app`. */
+	kind: string;
+	base64?: string;
+}
+
+/**
+ * Capture a region of the screen at native resolution and save it under the
+ * output directory. `rect` is in physical virtual-desktop pixels, which is what
+ * the region overlay emits.
+ */
+export function captureRegionShot(rect: RegionRect): Promise<Screenshot> {
+	return invoke<Screenshot>("capture_region_shot", { rect });
+}
+
 export function getAudioDevices(): Promise<AudioDeviceInfo[]> {
 	return invoke<AudioDeviceInfo[]>("get_audio_devices");
 }

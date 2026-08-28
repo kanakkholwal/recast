@@ -81,3 +81,66 @@ fn to_rgba(image: &capturekit::Image) -> Result<RgbaImage> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::capture::{CaptureTarget, RegionRect};
+
+    /// The region path resolves a virtual-desktop rectangle to a display and
+    /// crops during acquisition. Checked against an independent full-display
+    /// capture of the same pixels, because a crop that is off by a display
+    /// origin or a scale factor still returns an image of the right SIZE, and
+    /// only the content says it came from the right PLACE.
+    #[test]
+    fn a_region_capture_matches_the_same_crop_of_its_display() {
+        if !capturekit::capabilities().display_enumeration {
+            return;
+        }
+        let Ok(displays) = capturekit::displays() else {
+            return;
+        };
+        let Some(display) = displays.iter().find(|d| d.is_primary).or(displays.first()) else {
+            return;
+        };
+        // Inset so the region is unambiguously inside one display.
+        let (w, h) = (display.bounds.width / 4, display.bounds.height / 4);
+        if w < 16 || h < 16 {
+            return;
+        }
+        let region = RegionRect {
+            x: display.bounds.x + w as i32,
+            y: display.bounds.y + h as i32,
+            width: w,
+            height: h,
+        };
+
+        let Ok(full) = grab(Target::Display(display.id)) else {
+            return;
+        };
+        let target = CaptureTarget::resolve_region(region).expect("the region resolves");
+        let cropped = grab_region(
+            Target::Display(capturekit::DisplayId(target.display_id)),
+            target.crop_relative_to_source(),
+        )
+        .expect("the region captures");
+
+        assert_eq!((cropped.width(), cropped.height()), (w, h));
+        let mut mismatched = 0u64;
+        for y in 0..h {
+            for x in 0..w {
+                let here = cropped.get_pixel(x, y);
+                let there = full.get_pixel(x + w, y + h);
+                if here != there {
+                    mismatched += 1;
+                }
+            }
+        }
+        // Not zero: the screen changes between captures. A wrong origin misses nearly every pixel.
+        let total = u64::from(w) * u64::from(h);
+        assert!(
+            mismatched * 20 < total,
+            "{mismatched} of {total} pixels differ, so the crop is not where the region asked for"
+        );
+    }
+}

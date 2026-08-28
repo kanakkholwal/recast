@@ -11,7 +11,8 @@
 		"device-picker-*",
 		"profile-picker",
 		"camera-preview",
-		"region-picker"
+		"region-picker",
+		"screenshot-region"
 	],
 	"permissions": [
 		"core:default",

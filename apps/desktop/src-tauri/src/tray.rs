@@ -44,6 +44,7 @@ const MENU_ID_SHOW_HIDE: &str = "tray.show_hide";
 const MENU_ID_RECORD_TOGGLE: &str = "tray.record_toggle";
 const MENU_ID_PAUSE_TOGGLE: &str = "tray.pause_toggle";
 const MENU_ID_OPEN_OUTPUT: &str = "tray.open_output_folder";
+const MENU_ID_CAPTURE_AREA: &str = "tray.capture_area";
 const MENU_ID_CHECK_UPDATES: &str = "tray.check_updates";
 const MENU_ID_QUIT: &str = "tray.quit";
 const MENU_ID_ABOUT_DOCS: &str = "tray.about.docs";
@@ -159,6 +160,19 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         None
     };
 
+    // Idle only: the overlay lands in the recording it interrupts. The shortcut agrees.
+    let capture_area = (!is_recording)
+        .then(|| {
+            MenuItem::with_id(
+                app,
+                MENU_ID_CAPTURE_AREA,
+                "Capture Area	Alt+Shift+S",
+                true,
+                None::<&str>,
+            )
+        })
+        .transpose()?;
+
     // Group 3: output access.
     let open_output = MenuItem::with_id(
         app,
@@ -200,6 +214,9 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         }
     } else {
         items.push(&record_toggle);
+    }
+    if let Some(ref capture) = capture_area {
+        items.push(capture);
     }
     items.push(&sep2);
     items.push(&open_output);
@@ -388,6 +405,11 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         }
         MENU_ID_PAUSE_TOGGLE => {
             let _ = app.emit("tray:pause-toggle", ());
+        }
+        MENU_ID_CAPTURE_AREA => {
+            if let Err(e) = crate::commands::screenshot::open_region_overlay(app) {
+                log::warn!("region overlay failed to open: {e}");
+            }
         }
         MENU_ID_OPEN_OUTPUT => open_output_folder(app),
         MENU_ID_CHECK_UPDATES => {

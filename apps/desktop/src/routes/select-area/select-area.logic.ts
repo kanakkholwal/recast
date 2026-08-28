@@ -49,3 +49,25 @@ export function clampToolbar(rect: Rect, vw: number, vh: number): { left: number
 	const left = Math.max(8, Math.min(rect.x, vw - TOOLBAR_W - 8));
 	return { left, top };
 }
+
+/**
+ * What the overlay does once an area is confirmed. The drag interaction is the
+ * same either way, so the two flows share one overlay rather than growing a
+ * second one that drifts from it.
+ */
+export type OverlayMode = "record" | "screenshot";
+
+/** The mode a spawned overlay window was opened in; anything else records. */
+export function overlayMode(search: string): OverlayMode {
+	return new URLSearchParams(search).get("mode") === "screenshot" ? "screenshot" : "record";
+}
+
+/** Confirm-button label, naming the action rather than the selection. */
+export function confirmLabel(mode: OverlayMode): string {
+	return mode === "screenshot" ? "Capture" : "Use area";
+}
+
+/** Hint shown before the first drag. */
+export function hintLabel(mode: OverlayMode): string {
+	return mode === "screenshot" ? "Drag to capture an area" : "Drag to select an area";
+}

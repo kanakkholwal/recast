@@ -20,6 +20,21 @@ async function ensurePermission(): Promise<boolean> {
 }
 
 /**
+ * Send a notification regardless of focus. For work whose own window is about to
+ * close, where the focus check in {@link notifyJobDone} would suppress the only
+ * feedback the user gets.
+ */
+export async function notifyNow(title: string, body: string): Promise<void> {
+	try {
+		if (!(await ensurePermission())) return;
+		const { sendNotification } = await import("@tauri-apps/plugin-notification");
+		sendNotification({ title, body });
+	} catch (e) {
+		console.warn("[notify] failed", e);
+	}
+}
+
+/**
  * Send a notification for a finished job. No-op when the window is focused (the
  * user is already looking) or permission is denied.
  */

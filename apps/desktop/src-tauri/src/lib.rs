@@ -241,9 +241,7 @@ pub fn run() {
         // Deep-link injects JS (onOpenUrl/getCurrent) into the webview, so it
         // sits in the pre-window group like dialog/os/sharekit.
         .plugin(tauri_plugin_deep_link::init())
-        // OS-wide recording hotkeys, handled in Rust so they fire when Recast is
-        // unfocused. Alt+Shift+R stops (routed to the panel via tray:record-toggle)
-        // when recording, else launches the panel; Alt+Shift+P pauses/resumes.
+        // OS-wide hotkeys in Rust so they fire unfocused: Alt+Shift+R record, +P pause, +S capture area.
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -261,6 +259,11 @@ pub fn run() {
                         };
                     } else if shortcut == &Shortcut::new(Some(mods), Code::KeyP) && recording {
                         let _ = app.emit("global-shortcut:toggle-pause", ());
+                    } else if shortcut == &Shortcut::new(Some(mods), Code::KeyS) && !recording {
+                        // Refused mid-recording: the overlay lands in the recording it interrupts.
+                        if let Err(e) = crate::commands::screenshot::open_region_overlay(app) {
+                            log::warn!("region overlay failed to open: {e}");
+                        }
                     }
                 })
                 .build(),
@@ -454,10 +457,11 @@ pub fn run() {
             use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
             let registered: Vec<Shortcut> = {
                 let mods = Modifiers::ALT | Modifiers::SHIFT;
-                let mut registered = Vec::with_capacity(2);
+                let mut registered = Vec::with_capacity(3);
                 for sc in [
                     Shortcut::new(Some(mods), Code::KeyR),
                     Shortcut::new(Some(mods), Code::KeyP),
+                    Shortcut::new(Some(mods), Code::KeyS),
                 ] {
                     match app.global_shortcut().register(sc) {
                         Ok(()) => registered.push(sc),
@@ -593,6 +597,7 @@ pub fn run() {
             commands::cancel_export_job,
             commands::dismiss_export_job,
             commands::retry_export_job,
+            commands::screenshot::capture_region_shot,
             commands::get_audio_devices,
             commands::get_camera_devices,
             commands::validate_camera_source,

@@ -6,7 +6,22 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
-import { clampToolbar, rectFromPoints, TOOLBAR_W, toRegionPayload } from "./select-area.logic";
+import { captureRegionShot } from "$lib/ipc";
+import { notifyNow } from "$lib/notify";
+import {
+	clampToolbar,
+	confirmLabel,
+	hintLabel,
+	overlayMode,
+	rectFromPoints,
+	TOOLBAR_W,
+	toRegionPayload,
+} from "./select-area.logic";
+
+// Same drag, two endings: hand the area to the recorder, or capture it now.
+const mode = overlayMode(window.location.search);
+let capturing = $state(false);
+let failure = $state<string | null>(null);
 
 // Overlay spans all monitors from the virtual-desktop origin, so pointer
 // coords are virtual-desktop pixels, which is what the Rust resolver expects.
@@ -63,11 +78,27 @@ function onPointerUp(e: PointerEvent) {
 	rect = next;
 }
 
-function confirm() {
-	if (!rect) return;
+async function confirm() {
+	if (!rect || capturing) return;
 	const payload = toRegionPayload(rect, { x: originX, y: originY }, window.devicePixelRatio || 1);
-	emit("region-selected", payload);
-	getCurrentWindow().close();
+	if (mode === "record") {
+		emit("region-selected", payload);
+		getCurrentWindow().close();
+		return;
+	}
+	// The overlay captures itself: a shortcut can fire with no window alive to listen.
+	capturing = true;
+	failure = null;
+	try {
+		const shot = await captureRegionShot(payload);
+		await emit("screenshot-captured", shot);
+		// Awaited before the close, or the notification races this window's teardown.
+		await notifyNow("Screenshot saved", shot.path);
+		getCurrentWindow().close();
+	} catch (e) {
+		capturing = false;
+		failure = e instanceof Error ? e.message : String(e);
+	}
 }
 
 function reset() {
@@ -79,6 +110,7 @@ function cancel() {
 }
 
 function onKey(e: KeyboardEvent) {
+	if (capturing) return;
 	if (e.key === "Escape") {
 		e.preventDefault();
 		// Esc always exits. Users expect the window to close. Use the
@@ -106,9 +138,9 @@ const toolbarPos = $derived.by(() =>
   role="presentation"
   class="absolute inset-0 cursor-crosshair select-none"
   style="background: rgba(0, 0, 0, 0.35);"
-  onpointerdown={onPointerDown}
-  onpointermove={onPointerMove}
-  onpointerup={onPointerUp}
+  onpointerdown={capturing ? undefined : onPointerDown}
+  onpointermove={capturing ? undefined : onPointerMove}
+  onpointerup={capturing ? undefined : onPointerUp}
 >
   {#if liveRect && liveRect.w > 0 && liveRect.h > 0}
     <!-- Cut-out via box-shadow: rect is transparent, the dim layer is the outer
@@ -150,13 +182,24 @@ const toolbarPos = $derived.by(() =>
         class="flex items-center gap-2 rounded-xl border border-border/60 bg-background/90 px-4 py-2.5 text-[12.5px] font-medium text-foreground shadow-craft-floating backdrop-blur-xl"
       >
         <Crop size={13} class="text-muted-foreground" />
-        Drag to select an area
+        {hintLabel(mode)}
         <kbd
           class="rounded border border-border/60 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
         >
           Esc
         </kbd>
       </div>
+    </div>
+  {/if}
+
+  {#if failure}
+    <!-- A failed capture keeps the overlay up with the selection intact, so the
+         user can retry instead of losing the area they just drew. -->
+    <div
+      role="alert"
+      class="pointer-events-none absolute inset-x-0 top-6 mx-auto w-fit rounded-xl border border-destructive/50 bg-background/95 px-4 py-2.5 text-[12.5px] font-medium text-foreground shadow-craft-floating backdrop-blur-xl"
+    >
+      Could not capture that area. {failure}
     </div>
   {/if}
 
@@ -173,8 +216,16 @@ const toolbarPos = $derived.by(() =>
       onpointerdown={(e) => e.stopPropagation()}
       onpointerup={(e) => e.stopPropagation()}
     >
-      <Button variant="ghost" size="xs" class="rounded-lg" onclick={reset}>Redraw</Button>
-      <Button variant="ghost" size="xs" class="rounded-lg text-muted-foreground" onclick={cancel}>
+      <Button variant="ghost" size="xs" class="rounded-lg" onclick={reset} disabled={capturing}>
+        Redraw
+      </Button>
+      <Button
+        variant="ghost"
+        size="xs"
+        class="rounded-lg text-muted-foreground"
+        onclick={cancel}
+        disabled={capturing}
+      >
         Cancel
       </Button>
       <Button
@@ -182,9 +233,10 @@ const toolbarPos = $derived.by(() =>
         size="xs"
         class="rounded-lg"
         onclick={confirm}
-        title="Use this area (Enter)"
+        disabled={capturing}
+        title="{confirmLabel(mode)} (Enter)"
       >
-        Use area
+        {capturing ? "Capturing…" : confirmLabel(mode)}
       </Button>
     </div>
   {/if}

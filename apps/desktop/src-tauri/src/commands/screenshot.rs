@@ -14,6 +14,12 @@ use image::RgbaImage;
 use serde::Serialize;
 
 use super::ffmpeg::{encode_png_bytes, encode_thumbnail_base64};
+use tauri::State;
+
+use super::error::{AppError, AppResult};
+use super::system::get_active_output_dir;
+use crate::capture::{CaptureTarget, RegionRect};
+use crate::AppState;
 
 /// Longest-edge cap for agent-facing shots. Vision models downsample anyway and
 /// a native 4K PNG is megabytes of wasted tokens, so bound it unless the caller
@@ -54,6 +60,112 @@ pub fn capture_display(id: u64, opts: &ShotOptions) -> Result<Screenshot, String
 pub fn capture_window(id: u64, opts: &ShotOptions) -> Result<Screenshot, String> {
     let img = crate::capture::grab(Target::Window(WindowId(id))).map_err(|e| format!("{e:#}"))?;
     finalize(img, "window", opts)
+}
+
+/// Capture the rectangle the region overlay dragged out.
+///
+/// `rect` is in physical virtual-desktop pixels, the one coordinate space the
+/// overlay and capturekit share. Which display it lands on and where it sits
+/// within that display are resolved by the same pure functions the recorder
+/// uses, so a region cannot mean one thing to a recording and another to a shot.
+///
+/// The crop happens during acquisition, on the GPU where there is one: the
+/// pixels outside the selection are never read back, let alone copied.
+pub fn capture_region(rect: RegionRect, opts: &ShotOptions) -> Result<Screenshot, String> {
+    let target = CaptureTarget::resolve_region(rect).map_err(|e| format!("{e:#}"))?;
+    let img = crate::capture::grab_region(
+        Target::Display(DisplayId(target.display_id)),
+        target.crop_relative_to_source(),
+    )
+    .map_err(|e| format!("{e:#}"))?;
+    finalize(img, "region", opts)
+}
+
+/// Capture the region the overlay dragged out, for the screenshot flow.
+///
+/// Native resolution: the user is about to edit and export this, so the
+/// agent-facing longest-edge cap would throw away the pixels they came for.
+/// `spawn_blocking` because opening a capture source and reading a frame back
+/// blocks, and a sync command runs on the thread WKWebView paints on.
+#[tauri::command]
+pub async fn capture_region_shot(
+    state: State<'_, AppState>,
+    rect: RegionRect,
+) -> AppResult<Screenshot> {
+    // Read the directory before the await: a state guard cannot cross one.
+    let out = get_active_output_dir(&state)
+        .join(SCREENSHOT_DIR)
+        .join(screenshot_name());
+    tauri::async_runtime::spawn_blocking(move || {
+        capture_region(
+            rect,
+            &ShotOptions {
+                out: Some(out),
+                max_edge: 0,
+                base64: false,
+            },
+        )
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("capture_region_shot join error: {e}")))?
+    .map_err(AppError::msg)
+}
+
+/// The overlay window's label, so a second trigger focuses the one already up
+/// rather than stacking another transparent full-screen window over it.
+const OVERLAY_LABEL: &str = "screenshot-region";
+
+/// Open the region overlay across every display.
+///
+/// Sized and placed in PHYSICAL pixels from capturekit's own enumeration rather
+/// than from the primary display's logical size: a second monitor would
+/// otherwise be unreachable, and a monitor above or left of the primary puts the
+/// origin in negative space that a window pinned to (0, 0) never covers.
+pub fn open_region_overlay(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(existing) = app.get_webview_window(OVERLAY_LABEL) {
+        return existing.set_focus().map_err(|e| e.to_string());
+    }
+    let displays = capturekit::displays().map_err(|e| format!("{e:#}"))?;
+    let bounds = crate::capture::virtual_bounds(&displays)
+        .ok_or("no displays to put the capture overlay on")?;
+
+    let window = WebviewWindowBuilder::new(
+        app,
+        OVERLAY_LABEL,
+        WebviewUrl::App("/select-area?mode=screenshot".into()),
+    )
+    .title("Capture Area")
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .shadow(false)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    // Physical pixels: the builder takes logical points, and that conversion is the Retina half-size bug.
+    window
+        .set_position(PhysicalPosition::new(bounds.x, bounds.y))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_size(PhysicalSize::new(bounds.width, bounds.height))
+        .map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
+/// Where shots land inside the output directory, beside the recordings rather
+/// than mixed in with them.
+const SCREENSHOT_DIR: &str = "Screenshots";
+
+/// A filename a person can read in a file manager, and that sorts by when it
+/// was taken. Colons are illegal on Windows and awkward everywhere, so the
+/// time is dashed.
+fn screenshot_name() -> String {
+    let now = chrono::Local::now();
+    format!("Recast {}.png", now.format("%Y-%m-%d %H-%M-%S"))
 }
 
 /// Capture Recast's own UI so an agent can read the current app state (which
