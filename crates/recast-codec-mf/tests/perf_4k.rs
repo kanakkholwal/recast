@@ -86,6 +86,7 @@ fn four_k_sixty_stays_within_the_cpu_budget() {
         height: HEIGHT,
         frame_rate: (FPS, 1),
         bitrate: BITRATE,
+        keyframe_interval: 0,
     };
     let mut encoder = H264Encoder::open_with_gpu(descriptor, config, &context)
         .expect("the encoder opens on the GPU");

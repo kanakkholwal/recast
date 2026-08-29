@@ -50,6 +50,7 @@ fn encoded_file() -> Option<PathBuf> {
             frame_rate: (FPS, 1),
             // Generous, so the bar stays crisp enough to locate.
             bitrate: 8_000_000,
+            keyframe_interval: 0,
         };
         if let Ok(open) = H264Encoder::open(descriptor, config) {
             eprintln!("encoding with {}", descriptor.name);

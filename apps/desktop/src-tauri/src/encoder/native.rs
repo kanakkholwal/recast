@@ -43,6 +43,13 @@ const MF_TICKS_PER_SEC: i64 = 10_000_000;
 /// ends cannot be seeked past, so a keepalive repeat bounds both.
 pub const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// The longest a recording may go without a keyframe.
+///
+/// A seek decodes from the keyframe before it, so this is what a scrub costs.
+/// Measured in TIME, not frames: this writer is variable rate, and a still
+/// desktop produces far fewer frames per second than the rate it was opened at.
+const KEYFRAME_INTERVAL_US: u64 = 500_000;
+
 /// Encodes capture frames straight from the GPU into a fragmented MP4.
 pub struct NativeRecorder {
     context: D3dContext,
@@ -64,6 +71,8 @@ pub struct NativeRecorder {
     released: u64,
     /// The slot holding the picture last converted, which a repeat copies from.
     last_converted: Option<usize>,
+    /// When the last keyframe was asked for, so the next is due by time.
+    last_keyframe_us: Option<u64>,
     /// The sample whose duration is not known yet. VFR means a sample lasts
     /// until the NEXT frame arrives, so the writer is always one behind.
     pending: Option<PendingSample>,
@@ -103,6 +112,8 @@ impl NativeRecorder {
             height,
             frame_rate: (fps.max(1), 1),
             bitrate,
+            // Zero: keyframes are asked for by TIME, not by frame count.
+            keyframe_interval: 0,
         };
         let encoder = H264Encoder::open_with_gpu(descriptor, config, &context)
             .map_err(|e| anyhow!("open the {} encoder: {e:?}", descriptor.label()))?;
@@ -141,6 +152,7 @@ impl NativeRecorder {
             imported: None,
             released: 0,
             last_converted: None,
+            last_keyframe_us: None,
             pending: None,
             wrote_init: false,
             have_config: false,
@@ -197,6 +209,14 @@ impl NativeRecorder {
         self.encode_slot(index, pts_us)
     }
 
+    /// Whether this frame owes a keyframe, by time rather than by frame count.
+    const fn keyframe_due(&self, pts_us: u64) -> bool {
+        match self.last_keyframe_us {
+            None => true,
+            Some(last) => pts_us.saturating_sub(last) >= KEYFRAME_INTERVAL_US,
+        }
+    }
+
     /// The next NV12 slot to fill. Round-robin because a hardware encoder is
     /// asynchronous and still holds the previous frame.
     fn take_slot(&mut self) -> usize {
@@ -207,6 +227,10 @@ impl NativeRecorder {
 
     /// Encode the picture in `index` and file whatever samples come back.
     fn encode_slot(&mut self, index: usize, pts_us: u64) -> Result<()> {
+        if self.keyframe_due(pts_us) {
+            self.encoder.request_keyframe();
+            self.last_keyframe_us = Some(pts_us);
+        }
         let encoded = self
             .encoder
             .encode_texture(&self.frames[index], us_to_mf(pts_us), 0)

@@ -1358,6 +1358,33 @@ mod sync_live_tests {
             distinct.len() > 1,
             "every gap is identical ({distinct:?}), which is a fixed rate"
         );
+
+        // NVIDIA's default GOP is infinite: one keyframe for a whole recording.
+        let keyed = std::process::Command::new(&probe)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-skip_frame",
+                "nokey",
+                "-show_entries",
+                "frame=pts_time",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&artifacts.recording_path)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .expect("ffprobe runs");
+        let keyframes = String::from_utf8_lossy(&keyed.stdout)
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count();
+        assert!(
+            keyframes >= 4,
+            "a {span:.1}s recording holds {keyframes} keyframes, so seeking decodes from far back"
+        );
     }
 
     #[test]

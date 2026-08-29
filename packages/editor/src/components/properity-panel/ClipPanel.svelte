@@ -17,6 +17,8 @@ import { MAX_SEGMENT_SPEED, MIN_SEGMENT_SPEED } from "../../lib/timeline/segment
 import type { EditorStore } from "../../stores/editor-store.svelte";
 import { anchorMatches, fmtSpeed } from "./clip-panel.logic";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
 import SceneAnimControls from "./SceneAnimControls.svelte";
 import SliderRow from "./SliderRow.svelte";
 
@@ -50,6 +52,10 @@ const isSped = $derived(!anchorMatches(speed, 1));
 const activeSpeedPreset = $derived(
 	String(SPEED_PRESETS.find((p) => anchorMatches(speed, p)) ?? ""),
 );
+const speedPresetOptions = $derived([
+	...SPEED_PRESETS.map((p) => ({ value: String(p), label: fmtSpeed(p) })),
+	...(activeSpeedPreset ? [] : [{ value: "custom", label: "Custom" }]),
+]);
 
 // A seam sits before this clip when a cut removed content between it and the
 // previous segment. That's where a transition smooths the jump.
@@ -95,7 +101,7 @@ function deleteClip() {
 {:else}
   {@const duration = selected.end - selected.start}
   <div class="space-y-3 animate-in fade-in duration-200">
-    <div class="rounded-lg border border-border/60 bg-card/40 px-3 py-2">
+    <div class="rounded-lg bg-muted/30 px-3 py-2 ring-1 ring-inset ring-border/40">
       <div class="flex items-baseline justify-between">
         <span class="text-[11px] text-muted-foreground">Clip duration</span>
         <span class="font-mono text-[12px] tabular-nums text-foreground">
@@ -105,7 +111,7 @@ function deleteClip() {
       {#if isSped}
         <div class="mt-0.5 flex items-baseline justify-between text-[10px] text-muted-foreground">
           <span>Plays in</span>
-          <span class="font-mono tabular-nums text-primary">
+          <span class="font-mono tabular-nums text-foreground">
             {clockCentis(duration / speed)} at {fmtSpeed(speed)}
           </span>
         </div>
@@ -130,25 +136,28 @@ function deleteClip() {
           </Button>
         {/if}
       {/snippet}
-      <Segmented
-        size="xs"
-        aria-label="Clip speed preset"
-        value={activeSpeedPreset}
-        options={SPEED_PRESETS.map((p) => ({
-          value: String(p),
-          label: fmtSpeed(p),
-        }))}
-        onValueChange={(v) => setSpeed(Number(v))}
-      />
-      <SliderRow
-        label="Fine"
-        value={speed}
-        min={MIN_SEGMENT_SPEED}
-        max={MAX_SEGMENT_SPEED}
-        step={0.05}
-        formatValue={(v) => `${v.toFixed(2)}×`}
-        onchange={(v) => setSpeed(v)}
-      />
+      <div class="space-y-1.5">
+        <PropRow label="Preset">
+          <PropSelect
+            class="flex-1"
+            label="Clip speed preset"
+            value={activeSpeedPreset || "custom"}
+            options={speedPresetOptions}
+            onChange={(v) => {
+              if (v !== "custom") setSpeed(Number(v));
+            }}
+          />
+        </PropRow>
+        <SliderRow
+          label="Speed"
+          value={speed}
+          min={MIN_SEGMENT_SPEED}
+          max={MAX_SEGMENT_SPEED}
+          step={0.05}
+          formatValue={(v) => `${v.toFixed(2)}×`}
+          onchange={(v) => setSpeed(v)}
+        />
+      </div>
     </PanelSection>
 
     {#if seamBefore}
@@ -160,33 +169,39 @@ function deleteClip() {
              "None"/"Dip" at panel width, and `Segmented` cannot wrap. Only one
              row shows a selection at a time — the other matches no option and
              renders no pill. -->
-        <div class="flex flex-col gap-1">
-          {#snippet icoLeft()}<ArrowLeft class="size-3.5" />{/snippet}
-          {#snippet icoRight()}<ArrowRight class="size-3.5" />{/snippet}
-          {#snippet icoUp()}<ArrowUp class="size-3.5" />{/snippet}
-          {#snippet icoDown()}<ArrowDown class="size-3.5" />{/snippet}
-          <Segmented
-            size="xs"
-            aria-label="Cut transition"
-            value={seamKind}
-            options={[
-              { value: "none", label: "None", title: "No transition" },
-              { value: "dip", label: "Dip", title: "Dip to background" },
-            ]}
-            onValueChange={(v) => setSeam(v as SeamTransition)}
-          />
-          <Segmented
-            size="xs"
-            aria-label="Push direction"
-            value={seamKind}
-            options={[
-              { value: "push-left", icon: icoLeft, title: "Push left" },
-              { value: "push-right", icon: icoRight, title: "Push right" },
-              { value: "push-up", icon: icoUp, title: "Push up" },
-              { value: "push-down", icon: icoDown, title: "Push down" },
-            ]}
-            onValueChange={(v) => setSeam(v as SeamTransition)}
-          />
+        <div class="flex flex-col gap-1.5">
+          <PropRow label="Mode">
+            <Segmented
+              size="xs"
+              aria-label="Cut transition"
+              value={seamKind}
+              options={[
+                { value: "none", label: "None", title: "No transition" },
+                { value: "dip", label: "Dip", title: "Dip to background" },
+              ]}
+              onValueChange={(v) => setSeam(v as SeamTransition)}
+            />
+          </PropRow>
+          <PropRow label="Direction">
+            <div class="contents">
+              {#snippet icoLeft()}<ArrowLeft class="size-3.5" />{/snippet}
+              {#snippet icoRight()}<ArrowRight class="size-3.5" />{/snippet}
+              {#snippet icoUp()}<ArrowUp class="size-3.5" />{/snippet}
+              {#snippet icoDown()}<ArrowDown class="size-3.5" />{/snippet}
+              <Segmented
+                size="xs"
+                aria-label="Push direction"
+                value={seamKind}
+                options={[
+                  { value: "push-left", icon: icoLeft, title: "Push left" },
+                  { value: "push-right", icon: icoRight, title: "Push right" },
+                  { value: "push-up", icon: icoUp, title: "Push up" },
+                  { value: "push-down", icon: icoDown, title: "Push down" },
+                ]}
+                onValueChange={(v) => setSeam(v as SeamTransition)}
+              />
+            </div>
+          </PropRow>
         </div>
         {#if seamKind === "custom"}
           <p class="mt-1 text-[10px] text-muted-foreground/70">
@@ -201,25 +216,24 @@ function deleteClip() {
       hint="How this clip animates into and out of view. Applies to the video layer only, in both preview and export."
     >
       <div class="space-y-3">
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Motion</span>
-            <span class="text-[10px] text-muted-foreground/70">all clips</span>
-          </div>
-          <Segmented
-            size="xs"
-            aria-label="Scene animation motion style"
-            value={store.motionTone}
-            options={MOTION_TONES.map((t) => ({ value: t.id, label: t.label }))}
-            onValueChange={(v) => store.setMotionTone(v as MotionTone)}
-          />
+        <div class="space-y-1">
+          <PropRow label="Motion">
+            <PropSelect
+              class="flex-1"
+              label="Scene animation motion style"
+              value={store.motionTone}
+              options={MOTION_TONES.map((t) => ({ value: t.id, label: t.label }))}
+              onChange={(v) => store.setMotionTone(v as MotionTone)}
+            />
+          </PropRow>
+          <p class="text-[10px] text-muted-foreground/70">Applies to all clips.</p>
         </div>
         <div class="space-y-1.5">
-          <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Entrance</span>
+          <span class="text-[11px] text-muted-foreground">Entrance</span>
           <SceneAnimControls {store} start={selected.start} side="in" />
         </div>
         <div class="space-y-1.5">
-          <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Exit</span>
+          <span class="text-[11px] text-muted-foreground">Exit</span>
           <SceneAnimControls {store} start={selected.start} side="out" />
         </div>
       </div>
@@ -235,17 +249,19 @@ function deleteClip() {
         <SquareSplitHorizontal class="size-3.5" />
         Split at playhead
       </Button>
-      {#if store.segments.length > 1}
-        <Button
-          variant="destructive_soft"
-          size="sm"
-          class="w-full justify-start gap-2"
-          onclick={deleteClip}
-        >
-          <Trash2 class="size-3.5" />
-          Delete clip
-        </Button>
-      {/if}
+      <Button
+        variant="destructive_soft"
+        size="sm"
+        class="w-full justify-start gap-2"
+        disabled={store.segments.length <= 1}
+        title={store.segments.length <= 1
+          ? "The only clip can't be deleted"
+          : "Delete this clip"}
+        onclick={deleteClip}
+      >
+        <Trash2 class="size-3.5" />
+        Delete clip
+      </Button>
     </div>
   </div>
 {/if}

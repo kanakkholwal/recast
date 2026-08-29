@@ -7,6 +7,7 @@ import {
 	sampleCurve,
 } from "../../lib/easing/cubic-bezier";
 import DraggableValue from "../properity-panel/DraggableValue.svelte";
+import PropRow from "../properity-panel/PropRow.svelte";
 
 interface Props {
 	value: Easing;
@@ -279,26 +280,37 @@ function fieldBounds(field: keyof Easing) {
     </svg>
   </div>
 
-  <!-- Drag-to-scrub value fields (drag the label; click to type). -->
-  <div class="grid grid-cols-2 gap-1.5">
-    {#each [
-      ["x1", value.x1],
-      ["y1", value.y1],
-      ["x2", value.x2],
-      ["y2", value.y2],
-    ] as const as [field, v] (field)}
-      {@const bounds = fieldBounds(field)}
+  <!-- Drag-to-scrub value fields (drag the axis label; click to type). Paired
+       per control point, row-labelled like the reference transform inspector. -->
+  {#each [
+    ["Start", "x1", "y1"],
+    ["End", "x2", "y2"],
+  ] as const as [rowLabel, xf, yf] (rowLabel)}
+    <PropRow label={rowLabel}>
       <DraggableValue
-        label={field.toUpperCase()}
-        value={v}
-        min={bounds.min}
-        max={bounds.max}
+        class="flex-1"
+        label="X"
+        value={value[xf]}
+        min={fieldBounds(xf).min}
+        max={fieldBounds(xf).max}
         step={0.01}
         decimals={2}
         {disabled}
-        onInput={(n) => setField(field, n)}
-        onCommit={(n) => setField(field, n)}
+        onInput={(n) => setField(xf, n)}
+        onCommit={(n) => setField(xf, n)}
       />
-    {/each}
-  </div>
+      <DraggableValue
+        class="flex-1"
+        label="Y"
+        value={value[yf]}
+        min={fieldBounds(yf).min}
+        max={fieldBounds(yf).max}
+        step={0.01}
+        decimals={2}
+        {disabled}
+        onInput={(n) => setField(yf, n)}
+        onCommit={(n) => setField(yf, n)}
+      />
+    </PropRow>
+  {/each}
 </div>

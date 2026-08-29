@@ -1,6 +1,7 @@
 use windows::core::{Interface, GUID};
 use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
 use windows::Win32::Media::MediaFoundation::*;
+use windows::Win32::System::Variant::{VARIANT, VT_UI4};
 
 use recast_codec::{EncoderDescriptor, VideoCodec};
 
@@ -17,6 +18,12 @@ pub struct EncodeConfig {
     /// Numerator and denominator, so 30000/1001 stays exact.
     pub frame_rate: (u32, u32),
     pub bitrate: u32,
+    /// Frames between keyframes, or 0 to take the encoder's own default.
+    ///
+    /// A seek decodes from the keyframe before it, so footage that will be
+    /// scrubbed and cut wants them close together. NVIDIA's default is an
+    /// infinite GOP: one keyframe for the whole recording.
+    pub keyframe_interval: u32,
 }
 
 /// One compressed access unit as the transform produced it.
@@ -172,6 +179,47 @@ impl H264Encoder {
         Ok(encoder)
     }
 
+    /// Ask for a keyframe every `keyframe_interval` frames.
+    ///
+    /// Two traps, both of which return S_OK and then do nothing: the value must
+    /// be VT_UI4, not VT_I4, and it must be set BEFORE the output media type.
+    /// Set afterwards, NVIDIA's transform reads the value back as its own
+    /// default. Best effort: a transform without the property still encodes.
+    fn set_gop_size(&self) {
+        if self.config.keyframe_interval == 0 {
+            return;
+        }
+        self.set_codec_u32(&CODECAPI_AVEncMPVGOPSize, self.config.keyframe_interval);
+    }
+
+    /// Encode the next frame handed in as a keyframe.
+    ///
+    /// A frame-count GOP cannot express a time interval under VARIABLE RATE: an
+    /// idle desktop can produce fewer frames in a second than the GOP spans, so
+    /// a whole recording ends up with one keyframe. A caller that knows the
+    /// timestamps asks for these by time instead.
+    pub fn request_keyframe(&self) {
+        self.set_codec_u32(&CODECAPI_AVEncVideoForceKeyFrame, 1);
+    }
+
+    /// Set one UINT32 codec property, best effort.
+    ///
+    /// The value must be VT_UI4: a VT_I4 is accepted with S_OK and then ignored,
+    /// which is indistinguishable from success.
+    fn set_codec_u32(&self, property: &windows::core::GUID, value: u32) {
+        let Ok(codec) = self.transform.cast::<ICodecAPI>() else {
+            return;
+        };
+        let mut variant = VARIANT::default();
+        // SAFETY: writing the union arm named by the tag set beside it.
+        unsafe {
+            let inner = &mut *variant.Anonymous.Anonymous;
+            inner.vt = VT_UI4;
+            inner.Anonymous.ulVal = value;
+            let _ = codec.SetValue(property, &variant);
+        }
+    }
+
     fn configure(&mut self) -> Result<(), EncodeError> {
         // Output first: an H.264 transform will not accept an input type until
         // it knows what it is producing.
@@ -194,6 +242,8 @@ impl H264Encoder {
             (MF_MT_PIXEL_ASPECT_RATIO, Value::U64(pack(1, 1))),
         ];
         let output = media_type(&attributes)?;
+        // BEFORE the output type: set after, it returns S_OK and changes nothing.
+        self.set_gop_size();
         // SAFETY: stream 0 is the only stream an H.264 encoder MFT exposes.
         unsafe { self.transform.SetOutputType(0, &output, 0) }?;
 

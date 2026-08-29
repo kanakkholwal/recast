@@ -69,6 +69,7 @@ import {
 import FontPicker from "./FontPicker.svelte";
 import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
 import SettingRow from "./SettingRow.svelte";
 
 interface Props {
@@ -450,7 +451,7 @@ const noSpeechFound = $derived(
         {#snippet child({ props })}
           <button
             {...props as Record<string, unknown>}
-            class="flex w-full items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-card"
+            class="flex w-full items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-2 text-left ring-1 ring-inset ring-border/40 transition-colors hover:bg-muted"
           >
             <span
               class={cn(
@@ -527,7 +528,7 @@ const noSpeechFound = $derived(
 
     <!-- Selected-model detail -->
     {#if selected}
-      <div class="mt-2 rounded-lg border border-border/60 bg-card/40 p-2.5">
+      <div class="mt-2.5 border-t border-border/40 pt-2.5">
         <!-- Nine badges at 9px read as texture, not information. Only what
              decides the pick stays inline: language, size, and whether this
              machine can run it. The rest moved to one plain capability line. -->
@@ -573,22 +574,27 @@ const noSpeechFound = $derived(
              against each other, so they're labelled as such rather than shown
              as a percentage or a benchmark figure. -->
         {#if selected.accuracyScore !== null || selected.speedScore !== null}
-          <div class="mt-2 flex flex-col gap-1">
-            <p class="text-[11px] text-muted-foreground">Compared with the other models</p>
-            {#each [{ label: "accuracy", score: selected.accuracyScore }, { label: "speed", score: selected.speedScore }] as bar (bar.label)}
+          <div class="mt-2 flex flex-col gap-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+              Compared with other models
+            </p>
+            {#each [{ label: "Accuracy", score: selected.accuracyScore }, { label: "Speed", score: selected.speedScore }] as bar (bar.label)}
               {#if bar.score !== null}
                 <div class="flex items-center gap-2">
-                  <span class="w-12 shrink-0 text-[10px] text-muted-foreground">{bar.label}</span>
+                  <span class="w-14 shrink-0 text-[11px] text-muted-foreground">{bar.label}</span>
                   <div
-                    class="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+                    class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
                     role="meter"
                     aria-label="{bar.label}, relative to other models"
                     aria-valuenow={bar.score}
                     aria-valuemin={0}
                     aria-valuemax={100}
                   >
-                    <div class="h-full rounded-full bg-primary" style="width: {bar.score}%"></div>
+                    <div class="h-full rounded-full bg-foreground" style="width: {bar.score}%"></div>
                   </div>
+                  <span class="w-7 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+                    {bar.score}
+                  </span>
                 </div>
               {/if}
             {/each}
@@ -771,33 +777,26 @@ const noSpeechFound = $derived(
             </div>
           {/if}
 
-          <SettingRow label="Font">
-            {#snippet children(props)}
+          <PropRow label="Font">
             <FontPicker
-              {...props}
               value={cs.fontFamily}
               weight={cs.fontWeight}
               onChange={(v) => store.updateCaptionStyle({ fontFamily: v })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
-          <SettingRow label="Weight">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Weight">
+            <PropSelect
+              class="flex-1"
+              label="Font weight"
               value={String(cs.fontWeight)}
               options={FONT_WEIGHTS.map((w) => ({
                 value: String(w.value),
                 label: w.label,
-                title: w.title,
               }))}
-              onValueChange={(v) => store.updateCaptionStyle({ fontWeight: Number(v) })}
+              onChange={(v) => store.updateCaptionStyle({ fontWeight: Number(v) })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           <SliderRow
             label="Font size"
@@ -839,40 +838,36 @@ const noSpeechFound = $derived(
             />
           </PropRow>
 
-          <SettingRow label="Position">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Position">
+            <PropSelect
+              class="flex-1"
+              label="Position"
               value={cs.position}
               options={positionOptions}
-              onValueChange={(v) =>
+              onChange={(v) =>
                 store.updateCaptionStyle({ position: v as "top" | "center" | "bottom" })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
-          <SettingRow label="Align">
-            {#snippet children(props)}
-            {#snippet alignLeftIcon()}<AlignLeft size={12} />{/snippet}
-            {#snippet alignCenterIcon()}<AlignCenter size={12} />{/snippet}
-            {#snippet alignRightIcon()}<AlignRight size={12} />{/snippet}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
-              value={cs.align}
-              options={[
-                { value: "left", icon: alignLeftIcon, title: "Left" },
-                { value: "center", icon: alignCenterIcon, title: "Center" },
-                { value: "right", icon: alignRightIcon, title: "Right" },
-              ]}
-              onValueChange={(v) =>
-                store.updateCaptionStyle({ align: v as "left" | "center" | "right" })}
-            />
-            {/snippet}
-          </SettingRow>
+          <PropRow label="Align">
+            <div class="contents">
+              {#snippet alignLeftIcon()}<AlignLeft size={12} />{/snippet}
+              {#snippet alignCenterIcon()}<AlignCenter size={12} />{/snippet}
+              {#snippet alignRightIcon()}<AlignRight size={12} />{/snippet}
+              <Segmented
+                size="xs"
+                fill={false}
+                value={cs.align}
+                options={[
+                  { value: "left", icon: alignLeftIcon, title: "Left" },
+                  { value: "center", icon: alignCenterIcon, title: "Center" },
+                  { value: "right", icon: alignRightIcon, title: "Right" },
+                ]}
+                onValueChange={(v) =>
+                  store.updateCaptionStyle({ align: v as "left" | "center" | "right" })}
+              />
+            </div>
+          </PropRow>
 
           {#if cs.position !== "center"}
             <SliderRow
@@ -896,19 +891,16 @@ const noSpeechFound = $derived(
           defaultOpen={false}
         >
           <fieldset class="flex flex-col gap-3 disabled:opacity-50" disabled={!cs.enabled}>
-            <SettingRow label="Background">
-              {#snippet children(props)}
-              <Segmented
-                size="xs"
-                fill={false}
-                {...props}
+            <PropRow label="Background">
+              <PropSelect
+                class="flex-1"
+                label="Background"
                 value={cs.background}
                 options={backgroundOptions}
-                onValueChange={(v) =>
+                onChange={(v) =>
                   store.updateCaptionStyle({ background: v as "none" | "soft" | "box" })}
               />
-              {/snippet}
-            </SettingRow>
+            </PropRow>
 
             {#if cs.background === "box"}
               <PropRow label="Box">
@@ -1056,18 +1048,15 @@ const noSpeechFound = $derived(
           class="flex flex-col gap-3 disabled:opacity-50"
           disabled={!cs.enabled}
         >
-          <SettingRow label="Show">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Show">
+            <PropSelect
+              class="flex-1"
+              label="Show"
               value={ca.chunk}
               options={chunkOptions}
-              onValueChange={(v) => updateAnimation({ chunk: v as CaptionAnimation["chunk"] })}
+              onChange={(v) => updateAnimation({ chunk: v as CaptionAnimation["chunk"] })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           {#if ca.chunk === "phrase"}
             <SliderRow
@@ -1082,19 +1071,16 @@ const noSpeechFound = $derived(
             />
           {/if}
 
-          <SettingRow label="Highlight">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Highlight">
+            <PropSelect
+              class="flex-1"
+              label="Highlight"
               value={ca.highlight ?? "none"}
               options={highlightOptions}
-              onValueChange={(v) =>
+              onChange={(v) =>
                 updateAnimation({ highlight: v as CaptionAnimation["highlight"] })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           {#if (ca.highlight ?? "none") === "progressive"}
             <PropRow label="Unspoken">
@@ -1114,18 +1100,15 @@ const noSpeechFound = $derived(
             </PropRow>
           {/if}
 
-          <SettingRow label="Active word">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Active word">
+            <PropSelect
+              class="flex-1"
+              label="Active word"
               value={ca.emphasis}
               options={emphasisOptions}
-              onValueChange={(v) => updateAnimation({ emphasis: v as CaptionAnimation["emphasis"] })}
+              onChange={(v) => updateAnimation({ emphasis: v as CaptionAnimation["emphasis"] })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           {#if ca.emphasis === "color"}
             <PropRow label="Highlight">
@@ -1145,18 +1128,15 @@ const noSpeechFound = $derived(
             </PropRow>
           {/if}
 
-          <SettingRow label="Entrance">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Entrance">
+            <PropSelect
+              class="flex-1"
+              label="Entrance"
               value={ca.entrance}
               options={entranceOptions}
-              onValueChange={(v) => updateAnimation({ entrance: v as CaptionAnimation["entrance"] })}
+              onChange={(v) => updateAnimation({ entrance: v as CaptionAnimation["entrance"] })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           {#if ca.entrance !== "none"}
             <SliderRow
@@ -1172,18 +1152,15 @@ const noSpeechFound = $derived(
           {/if}
 
           {#if ca.emphasis !== "none"}
-            <SettingRow label="In pauses">
-              {#snippet children(props)}
-              <Segmented
-                size="xs"
-                fill={false}
-              {...props}
+            <PropRow label="In pauses">
+              <PropSelect
+                class="flex-1"
+                label="In pauses"
                 value={ca.holdGaps ? "hold" : "clear"}
                 options={holdOptions}
-                onValueChange={(v) => updateAnimation({ holdGaps: v === "hold" })}
+                onChange={(v) => updateAnimation({ holdGaps: v === "hold" })}
               />
-              {/snippet}
-            </SettingRow>
+            </PropRow>
           {/if}
         </fieldset>
       </Tabs.Content>

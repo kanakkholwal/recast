@@ -312,7 +312,7 @@ fn choose_size(
         .collect();
     let fast = fits
         .iter()
-        .filter(|(_, rate)| rate.map_or(true, |rate| rate >= fps))
+        .filter(|(_, rate)| rate.is_none_or(|rate| rate >= fps))
         .max_by_key(|((w, h), _)| u64::from(*w) * u64::from(*h));
     if let Some(((w, h), _)) = fast {
         return Some((*w, *h));

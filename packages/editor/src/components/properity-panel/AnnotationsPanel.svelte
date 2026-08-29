@@ -37,6 +37,7 @@ import FontPicker from "./FontPicker.svelte";
 import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
 import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
 import SliderRow from "./SliderRow.svelte";
 import TitlePresetTiles from "./TitlePresetTiles.svelte";
 
@@ -66,7 +67,7 @@ function insertTitle(preset: TitlePreset) {
 }
 
 async function replaceImage() {
-	if (!selected || selected.kind.kind !== "image") return;
+	if (selected?.kind.kind !== "image") return;
 	try {
 		const path = await pickImageFile();
 		if (!path) return;
@@ -115,7 +116,7 @@ const clipOut = $derived(store.outPoint);
 // An annotation timed outside the trim never plays, and the Rust side silently
 // repairs it at export ("annotation_out_of_trim" in validate_render_state), so
 // it has to be visible and fixable here instead.
-const outOfClip = $derived(!!selected && isOutsideClip(selected, clipIn, clipOut));
+const outOfClip = $derived(selected !== null && isOutsideClip(selected, clipIn, clipOut));
 
 function fitToClip() {
 	if (!selected) return;
@@ -269,8 +270,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             />
           </div>
 
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Font</span>
+          <PropRow label="Font">
             <FontPicker
               value={k.fontFamily}
               weight={k.fontWeight}
@@ -280,7 +280,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
                 updateSelected({ kind: { ...a.kind, fontFamily: v } });
               }}
             />
-          </div>
+          </PropRow>
 
           <SliderRow
             label="Size"
@@ -298,19 +298,16 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             }}
           />
 
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Weight</span>
-            <Segmented
-              size="xs"
-              fill={false}
-              aria-label="Font weight"
+          <PropRow label="Weight">
+            <PropSelect
+              class="flex-1"
+              label="Font weight"
               value={String(k.fontWeight)}
               options={FONT_WEIGHTS.map((w) => ({
                 value: String(w.value),
                 label: w.label,
-                title: w.title,
               }))}
-              onValueChange={(v) => {
+              onChange={(v) => {
                 if (a.kind.kind !== "text") return;
                 store.pushUndoState();
                 updateSelected({
@@ -321,35 +318,36 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
                 });
               }}
             />
-          </div>
+          </PropRow>
 
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Align</span>
-            {#snippet alignLeftIcon()}<AlignLeft size={12} />{/snippet}
-            {#snippet alignCenterIcon()}<AlignCenter size={12} />{/snippet}
-            {#snippet alignRightIcon()}<AlignRight size={12} />{/snippet}
-            <Segmented
-              size="xs"
-              fill={false}
-              aria-label="Text alignment"
-              value={k.align}
-              options={[
-                { value: "left", icon: alignLeftIcon, title: "Left" },
-                { value: "center", icon: alignCenterIcon, title: "Center" },
-                { value: "right", icon: alignRightIcon, title: "Right" },
-              ]}
-              onValueChange={(v) => {
-                if (a.kind.kind !== "text") return;
-                store.pushUndoState();
-                updateSelected({
-                  kind: {
-                    ...a.kind,
-                    align: v as "left" | "center" | "right",
-                  },
-                });
-              }}
-            />
-          </div>
+          <PropRow label="Align">
+            <div class="contents">
+              {#snippet alignLeftIcon()}<AlignLeft size={12} />{/snippet}
+              {#snippet alignCenterIcon()}<AlignCenter size={12} />{/snippet}
+              {#snippet alignRightIcon()}<AlignRight size={12} />{/snippet}
+              <Segmented
+                size="xs"
+                fill={false}
+                aria-label="Text alignment"
+                value={k.align}
+                options={[
+                  { value: "left", icon: alignLeftIcon, title: "Left" },
+                  { value: "center", icon: alignCenterIcon, title: "Center" },
+                  { value: "right", icon: alignRightIcon, title: "Right" },
+                ]}
+                onValueChange={(v) => {
+                  if (a.kind.kind !== "text") return;
+                  store.pushUndoState();
+                  updateSelected({
+                    kind: {
+                      ...a.kind,
+                      align: v as "left" | "center" | "right",
+                    },
+                  });
+                }}
+              />
+            </div>
+          </PropRow>
 
           <PropRow label="Color">
             <ColorField
@@ -403,12 +401,10 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
               updateSelected({ kind: { ...a.kind, radius: v / 200 } });
             }}
           />
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Style</span>
-            <Segmented
-              size="xs"
-              fill={false}
-              aria-label="Blur style"
+          <PropRow label="Style">
+            <PropSelect
+              class="flex-1"
+              label="Blur style"
               value={k.variant}
               options={[
                 { value: "glass", label: "Glass" },
@@ -416,7 +412,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
                 { value: "black", label: "Black" },
                 { value: "color", label: "Color" },
               ]}
-              onValueChange={(v) => {
+              onChange={(v) => {
                 if (a.kind.kind !== "blur") return;
                 store.pushUndoState();
                 updateSelected({
@@ -427,7 +423,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
                 });
               }}
             />
-          </div>
+          </PropRow>
           {#if k.variant === "color"}
             <PropRow label="Tint">
               <ColorField

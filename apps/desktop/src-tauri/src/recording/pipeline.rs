@@ -664,7 +664,12 @@ mod cadence_tests {
 
     struct Run {
         stamps: Vec<u64>,
-        served: Duration,
+        /// Measured, not the requested sleep: a loaded runner overshoots every
+        /// `thread::sleep`, and an assertion against the nominal figure fails
+        /// there for reasons that have nothing to do with the code.
+        wall: Duration,
+        /// How long the clock was actually paused, measured the same way.
+        paused: Duration,
     }
 
     /// Runs the real loop with `cadence`, pausing for `pause` in the middle when
@@ -697,12 +702,16 @@ mod cadence_tests {
         )
         .expect("the capture thread starts");
 
+        let began = Instant::now();
+        let mut paused = Duration::ZERO;
         match pause {
             Some(held) => {
                 thread::sleep(run_for / 2);
                 pause_flag.store(true, Ordering::Release);
                 clock.pause();
+                let at = Instant::now();
                 thread::sleep(held);
+                paused = at.elapsed();
                 clock.resume();
                 pause_flag.store(false, Ordering::Release);
                 thread::sleep(run_for / 2);
@@ -711,10 +720,12 @@ mod cadence_tests {
         }
         stop.store(true, Ordering::Release);
         handle.join().expect("the thread joins").expect("no error");
+        let wall = began.elapsed();
         let stamps = stamps.lock().clone();
         Run {
             stamps,
-            served: run_for,
+            wall,
+            paused,
         }
     }
 
@@ -771,7 +782,7 @@ mod cadence_tests {
     #[test]
     fn a_pause_is_cut_out_of_the_timestamps_rather_than_frozen_into_them() {
         let held = Duration::from_millis(200);
-        let paused = run(
+        let run = run(
             Cadence::OnChange {
                 keepalive: Duration::from_millis(20),
             },
@@ -779,13 +790,20 @@ mod cadence_tests {
             Duration::from_millis(200),
             Some(held),
         );
-        let last = *paused.stamps.last().expect("samples were emitted");
-        let recorded = paused.served.as_micros() as u64;
+        let last = *run.stamps.last().expect("samples were emitted");
+        // Everything is measured, so this holds however far the sleeps overshot.
+        let recorded = (run.wall - run.paused).as_micros() as u64;
         assert!(
-            last < recorded + 50_000,
-            "the last sample is at {last}us of a {recorded}us recording, so the \
-             {}ms pause was stamped into it",
-            held.as_millis()
+            run.paused >= held / 2,
+            "the pause did not happen: {:?}",
+            run.paused
+        );
+        assert!(
+            last <= recorded + 60_000,
+            "the last sample is at {last}us of a {recorded}us recording (wall {:?}, \
+             paused {:?}), so the pause was stamped into it",
+            run.wall,
+            run.paused
         );
     }
 }

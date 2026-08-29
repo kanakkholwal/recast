@@ -115,6 +115,7 @@ fn harness() -> Option<Harness> {
         height: HEIGHT,
         frame_rate: (FPS, 1),
         bitrate: 8_000_000,
+        keyframe_interval: 0,
     };
     let found = enumerate_encoders();
     let mut encoder = None;
@@ -415,6 +416,7 @@ fn an_encoder_opened_without_a_device_refuses_a_texture() {
         height: HEIGHT,
         frame_rate: (FPS, 1),
         bitrate: 4_000_000,
+        keyframe_interval: 0,
     };
     let found = enumerate_encoders();
     let Some(mut encoder) = ranked(&found, VideoCodec::H264)

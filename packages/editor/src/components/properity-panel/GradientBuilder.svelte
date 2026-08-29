@@ -192,17 +192,19 @@ function addStopAtPointer(e: MouseEvent) {
           onRememberColor(c);
         }}
       />
-      {#if gradientDraft.stops.length > 2}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          class="size-8 shrink-0 text-muted-foreground hover:text-destructive"
-          onclick={() => removeStop(selectedStop)}
-          aria-label="Remove selected stop"
-        >
-          <Trash2 size={13} />
-        </Button>
-      {/if}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        class="size-8 shrink-0 text-muted-foreground hover:text-destructive"
+        onclick={() => removeStop(selectedStop)}
+        disabled={gradientDraft.stops.length <= 2}
+        title={gradientDraft.stops.length <= 2
+          ? "A gradient needs at least two stops"
+          : "Remove selected stop"}
+        aria-label="Remove selected stop"
+      >
+        <Trash2 size={13} />
+      </Button>
     </PropRow>
 
     <SliderRow

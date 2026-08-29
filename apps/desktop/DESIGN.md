@@ -327,17 +327,35 @@ numeric fields run `h-8`, not `h-9` — the panel stacks dozens of them, so the
 general row-control height would read as bulky. Everything else is the vocabulary
 above (`rounded-lg`, `bg-muted/60 ring-inset ring-border/40`, dark-pill active).
 
-- `NumberField` / `DraggableValue` — the filled pill; a leading property icon or
-  axis label drag-scrubs (Shift ×10, Alt ×0.1), the value is left-aligned with its
-  unit glued in (`84.1s`, `100%`), and typing shows the raw number.
-- `Stepper` — the `−`/`+` pair beside a field.
-- `PropRow` — fixed label column + control cell so fields line up down the panel.
-- `PanelSection` — a 13px semibold section title + inline action, optionally collapsible.
-- The panel rail is `Tabs.List variant="pill"` (dark-pill active), same component
-  and active treatment as the settings-page tabs.
+**Control vocabulary — the choice of control is fixed by the kind of setting, and
+must stay consistent across every panel (and future ones).** No `−`/`+` steppers
+(a field is drag-to-scrub and typeable), no native `<select>`, `--primary` never
+signals selection (dark pill or neutral ring does), and every simple control is
+one `PropRow` line (label column + control) — only genuinely wide blocks (kind
+grids, `SceneAnimControls`) stay label-above.
 
-Transform/geometry values (position, size, padding, radius) use field+stepper
-rows; feel params (volume, blur, opacity) stay on `SliderControl`.
+| Setting kind | Control |
+| --- | --- |
+| Free numeric geometry (X/Y/W/H, padding, radius, shadow px) | `NumberField` / `DraggableValue`; paired axes share one `PropRow` with a row label |
+| Bounded "feel" (volume, size, opacity, blur strength, speed, duration, intensity) | `SliderRow` (dense `SliderControl`, value inline) |
+| One of several **named** options (presets, weight, blur style, motion, easing curve, background type, scene-anim kind) | `PropSelect` (inline `@recast/ui` select in a `PropRow`) |
+| One of several **icon/glyph** options (text align, slide/push direction) | `Segmented` (icon pills) |
+| **Visual** pick where the choice is the thumbnail/swatch (wallpaper, gradient, color, cursor style) | gallery grid, neutral dark-pill/ring selection |
+| Boolean | `SegmentedToggle` (section action) or a borderless `switchRow` |
+| Color | `ColorField` (dense, swatch-led, in a `PropRow`) |
+
+- `NumberField` / `DraggableValue` — the filled `h-8` pill; a leading property icon
+  or axis label drag-scrubs (Shift ×10, Alt ×0.1), the value is left-aligned with
+  its unit glued in (`84.1s`, `100%`), and typing shows the raw number.
+- `PropRow` — fixed label column (`w-20`) + control cell so controls line up down
+  the panel. A named `{#snippet}` (e.g. Segmented option icons) placed directly in
+  a component like `PropRow` becomes a *prop*; wrap it in `<div class="contents">`.
+- `PropSelect` — matches `NumberField`'s box exactly (`h-8 min-h-0 py-0 leading-none`);
+  the base `@recast/ui` trigger's `py-2`/`text-sm` otherwise read taller than the fields.
+- `PanelSection` — a 13px semibold section title + inline action, optionally collapsible.
+- The panel rail is `Tabs.List variant="soft"` — a subtle `bg-card` inset behind the
+  active tab, active icon forced to `foreground` (not the `line` variant: its edge
+  indicator is clipped by the rail's `overflow-y-auto`).
 
 ### Buttons
 

@@ -26,7 +26,7 @@ const selected = $derived(options.find((o) => o.value === value));
 		aria-label={label}
 		{disabled}
 		class={cn(
-			"h-8 min-h-0 w-full border-transparent bg-muted/60 py-0 pl-2.5 pr-2 text-[11px] font-medium leading-none text-foreground ring-1 ring-inset ring-border/40 transition-colors hover:bg-muted focus-visible:ring-ring/60 dark:bg-muted/60 dark:hover:bg-muted",
+			"h-8 min-h-0 w-full border-transparent bg-muted/60 py-0 pl-2.5 pr-2 text-xs font-medium leading-none text-foreground ring-1 ring-inset ring-border/40 transition-colors hover:bg-muted focus-visible:ring-ring/60 dark:bg-muted/60 dark:hover:bg-muted",
 			className,
 		)}
 	>

@@ -48,13 +48,36 @@ fn err(source: windows::core::Error) -> CaptureError {
     CaptureError::backend(BACKEND, source)
 }
 
-/// WASAPI is COM, so a bare capture thread has to join an apartment first. The
-/// caller keeps the returned scope alive for as long as it uses what it made.
-fn enumerator() -> Result<(IMMDeviceEnumerator, ComScope)> {
+/// The device enumerator and the apartment it was made in.
+///
+/// A struct rather than a tuple, because a tuple gets destructured into two
+/// locals and LOCALS DROP IN REVERSE: the apartment would close first, and
+/// releasing a COM object into a torn-down apartment faults instead of failing.
+/// Struct fields drop in declaration order, so this order is the contract.
+/// Declare it before anything made from it and never take it apart early.
+struct Enumerator {
+    device: IMMDeviceEnumerator,
+    _com: ComScope,
+}
+
+impl Enumerator {
+    /// Hand the apartment on, releasing the enumerator first.
+    ///
+    /// For a caller that outlives this scope: the apartment has to stay open for
+    /// as long as anything made in it is still alive.
+    fn into_scope(self) -> ComScope {
+        self._com
+    }
+}
+
+/// WASAPI is COM, so a bare capture thread has to join an apartment first.
+fn enumerator() -> Result<Enumerator> {
     let scope = ComScope::mta();
-    let enumerator =
-        unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }.map_err(err)?;
-    Ok((enumerator, scope))
+    let device = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }.map_err(err)?;
+    Ok(Enumerator {
+        device,
+        _com: scope,
+    })
 }
 
 fn device_id(device: &IMMDevice) -> Result<AudioDeviceId> {
@@ -138,17 +161,21 @@ fn integer_format(bits: u16) -> Result<SampleFormat> {
 
 /// Every active input, plus every output that can be captured as loopback.
 pub(crate) fn devices() -> Result<Vec<AudioDevice>> {
-    let (enumerator, _com) = enumerator()?;
+    let enumerator = enumerator()?;
     let mut devices = Vec::new();
     for (flow, direction) in [
         (eCapture, AudioDirection::Input),
         (eRender, AudioDirection::Loopback),
     ] {
-        let default_id = unsafe { enumerator.GetDefaultAudioEndpoint(flow, eConsole) }
+        let default_id = unsafe { enumerator.device.GetDefaultAudioEndpoint(flow, eConsole) }
             .ok()
             .and_then(|device| device_id(&device).ok());
-        let collection =
-            unsafe { enumerator.EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE) }.map_err(err)?;
+        let collection = unsafe {
+            enumerator
+                .device
+                .EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE)
+        }
+        .map_err(err)?;
         let count = unsafe { collection.GetCount() }.map_err(err)?;
         for index in 0..count {
             let Ok(device) = (unsafe { collection.Item(index) }) else {
@@ -203,7 +230,7 @@ unsafe impl Send for WasapiSource {}
 
 impl WasapiSource {
     pub(crate) fn open(device: Option<&AudioDeviceId>, direction: AudioDirection) -> Result<Self> {
-        let (enumerator, com) = enumerator()?;
+        let enumerator = enumerator()?;
         let flow = match direction {
             AudioDirection::Input => eCapture,
             AudioDirection::Loopback => eRender,
@@ -211,7 +238,7 @@ impl WasapiSource {
         let endpoint = match device {
             Some(id) => {
                 let wide: Vec<u16> = id.0.encode_utf16().chain(core::iter::once(0)).collect();
-                unsafe { enumerator.GetDevice(PCWSTR(wide.as_ptr())) }.map_err(|error| {
+                unsafe { enumerator.device.GetDevice(PCWSTR(wide.as_ptr())) }.map_err(|error| {
                     if error.code() == E_NOTFOUND {
                         CaptureError::NotFound {
                             kind: "audio device",
@@ -222,7 +249,9 @@ impl WasapiSource {
                     }
                 })?
             }
-            None => unsafe { enumerator.GetDefaultAudioEndpoint(flow, eConsole) }.map_err(err)?,
+            None => {
+                unsafe { enumerator.device.GetDefaultAudioEndpoint(flow, eConsole) }.map_err(err)?
+            }
         };
 
         let client: IAudioClient = unsafe { endpoint.Activate(CLSCTX_ALL, None) }.map_err(err)?;
@@ -266,7 +295,7 @@ impl WasapiSource {
             staging: Vec::new(),
             origin: super::now(),
             anchor: None,
-            _com: com,
+            _com: enumerator.into_scope(),
             stopped: false,
         })
     }

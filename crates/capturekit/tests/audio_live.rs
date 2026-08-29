@@ -330,3 +330,57 @@ fn both_directions_can_be_held_at_once_over_repeated_takes() {
         eprintln!("attempt {attempt}: opened {opened:?}");
     }
 }
+
+/// Enumeration from many threads that each open and close a COM apartment.
+///
+/// The apartment is process-global state: when the last reference goes away the
+/// MTA is torn down and the activation factories windows-rs caches in process
+/// globals dangle, so the next call FAULTS rather than failing. That is an
+/// access violation, not a test failure, which is how it reached CI as
+/// `STATUS_ACCESS_VIOLATION` with no name attached to it.
+///
+/// A CANARY, not a proof: on a machine that has audio endpoints the apartment
+/// is kept alive by something else, so this passes with the fix and without it.
+/// It only has teeth where the fault actually happens, which so far is CI.
+#[test]
+fn enumerating_from_many_short_lived_threads_does_not_tear_the_apartment_down() {
+    let threads: Vec<_> = (0..8)
+        .map(|_| {
+            std::thread::spawn(|| {
+                for _ in 0..20 {
+                    // The result does not matter; surviving the call does.
+                    let _ = audio_devices();
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread
+            .join()
+            .expect("no thread faulted enumerating devices");
+    }
+}
+
+/// A failed open must release its interfaces BEFORE closing the apartment.
+///
+/// `open` binds the enumerator and its `ComScope`; if those are two locals they
+/// drop in reverse and `CoUninitialize` runs first, so the release that follows
+/// lands in a torn-down apartment and FAULTS. A refused device is the shortest
+/// path to that early return, and a device-less machine takes it for every open.
+///
+/// On its own thread so this is the only apartment reference in play. Also a
+/// canary: reinstating the inverted drop order does NOT make it fail here, so
+/// it guards the CI environment rather than proving the fix on this one.
+#[test]
+fn a_refused_open_releases_its_interfaces_before_closing_the_apartment() {
+    std::thread::spawn(|| {
+        for _ in 0..50 {
+            // Refusal is the expected answer; surviving it is what is asserted.
+            let _ = audio_input()
+                .device(capturekit::AudioDeviceId("no-such-endpoint".into()))
+                .build();
+        }
+    })
+    .join()
+    .expect("no thread faulted on a refused open");
+}

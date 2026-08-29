@@ -18,6 +18,7 @@ fn config() -> EncodeConfig {
         height: HEIGHT,
         frame_rate: (FPS, 1),
         bitrate: 2_000_000,
+        keyframe_interval: 0,
     }
 }
 
@@ -222,4 +223,134 @@ fn the_encoded_stream_muxes_into_a_file_ffprobe_can_decode() {
         .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
         .unwrap_or(0);
     assert_eq!(decoded, samples, "not every encoded frame decoded back");
+}
+
+/// Keyframes in the stream `descriptor` produced at `interval`, over `count`
+/// frames.
+///
+/// Counted as IDR access units in the bitstream. The transform's per-sample
+/// `is_sync` flag cannot answer this: NVIDIA's MFT reports exactly one.
+fn keyframes_at(
+    descriptor: &recast_codec::EncoderDescriptor,
+    interval: u32,
+    count: u32,
+) -> Option<usize> {
+    let mut encoder = H264Encoder::open(
+        descriptor,
+        EncodeConfig {
+            keyframe_interval: interval,
+            ..config()
+        },
+    )
+    .ok()?;
+    let mut stream = Vec::new();
+    for index in 0..count {
+        let stamp = i64::from(index) * 10_000_000 / i64::from(FPS);
+        for sample in encoder.encode(&nv12_frame(index), stamp, 0).ok()? {
+            stream.extend_from_slice(&sample.data);
+        }
+    }
+    for sample in encoder.finish().ok()? {
+        stream.extend_from_slice(&sample.data);
+    }
+    Some(
+        split_access_units(&stream)
+            .iter()
+            .filter(|unit| annex_b_to_avcc(unit).is_sync)
+            .count(),
+    )
+}
+
+/// Footage that will be scrubbed needs keyframes close together: a seek decodes
+/// from the one before it, and NVIDIA's default is an infinite GOP — one
+/// keyframe for a whole recording.
+///
+/// Every encoder this machine offers, not just the preferred one: the property
+/// has to hold across vendors or the recorder cannot rely on it.
+#[test]
+fn a_short_keyframe_interval_produces_more_keyframes_than_the_default() {
+    const CLIP: u32 = 90;
+    const EVERY: u32 = 15;
+    let found = enumerate_encoders();
+    let mut checked = 0;
+    for descriptor in ranked(&found, VideoCodec::H264) {
+        let Some(dense) = keyframes_at(descriptor, EVERY, CLIP) else {
+            eprintln!("{} did not open", descriptor.name);
+            continue;
+        };
+        let sparse = keyframes_at(descriptor, 0, CLIP).expect("it opened once already");
+        eprintln!(
+            "{}: every-{EVERY} = {dense} keyframes, default = {sparse}",
+            descriptor.name
+        );
+        assert!(
+            dense >= (CLIP / EVERY) as usize - 1,
+            "{} produced {dense} keyframes for a {EVERY}-frame interval over {CLIP}",
+            descriptor.name
+        );
+        assert!(
+            dense > sparse,
+            "{} ignored the interval: {dense} against its default {sparse}",
+            descriptor.name
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 0,
+        "no H.264 encoder opened, so nothing was checked"
+    );
+}
+
+/// Keyframes when they are ASKED FOR per frame rather than configured as a GOP.
+///
+/// This is what a variable-rate writer needs: it knows the timestamps, so it
+/// decides when a keyframe is due. A frame-count GOP cannot express that.
+#[test]
+fn a_keyframe_can_be_demanded_for_a_chosen_frame() {
+    const CLIP: u32 = 60;
+    const EVERY: u32 = 10;
+    let found = enumerate_encoders();
+    let mut checked = 0;
+    for descriptor in ranked(&found, VideoCodec::H264) {
+        // Default GOP: anything counted came from the request, not config.
+        let Ok(mut encoder) = H264Encoder::open(descriptor, config()) else {
+            continue;
+        };
+        let mut stream = Vec::new();
+        for index in 0..CLIP {
+            if index % EVERY == 0 {
+                encoder.request_keyframe();
+            }
+            let stamp = i64::from(index) * 10_000_000 / i64::from(FPS);
+            for sample in encoder
+                .encode(&nv12_frame(index), stamp, 0)
+                .expect("it encodes")
+            {
+                stream.extend_from_slice(&sample.data);
+            }
+        }
+        for sample in encoder.finish().expect("it flushes") {
+            stream.extend_from_slice(&sample.data);
+        }
+        let keyframes = split_access_units(&stream)
+            .iter()
+            .filter(|unit| annex_b_to_avcc(unit).is_sync)
+            .count();
+        eprintln!(
+            "{}: {keyframes} keyframes for {} requests",
+            descriptor.name,
+            CLIP / EVERY
+        );
+        assert!(
+            keyframes >= (CLIP / EVERY) as usize - 1,
+            "{} produced {keyframes} keyframes for {} requests",
+            descriptor.name,
+            CLIP / EVERY
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 0,
+        "no H.264 encoder opened, so nothing was checked"
+    );
 }

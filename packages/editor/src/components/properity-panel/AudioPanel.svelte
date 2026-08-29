@@ -1,7 +1,7 @@
 <script lang="ts">
 import { Mic, MicOff, RotateCcw, Speaker, VolumeOff, Waves } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
+import { SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
@@ -20,6 +20,7 @@ import {
 import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
 import SettingRow from "./SettingRow.svelte";
 
 // A drag pushes undo once at the start, a typed/keyed edit is one undo entry.
@@ -83,7 +84,10 @@ function applyPreset(preset: FadePreset) {
 // Matching preset drives the Segmented selection; a custom slider value
 // leaves nothing selected.
 const activePreset = $derived(activePresetLabel(store.audioSettings));
-const fadePresetOptions = $derived(FADE_PRESETS.map((p) => ({ value: p.label, label: p.label })));
+const fadePresetOptions = $derived([
+	...FADE_PRESETS.map((p) => ({ value: p.label, label: p.label })),
+	...(activePreset ? [] : [{ value: "custom", label: "Custom" }]),
+]);
 
 // Wrappers: read the reactive store, defer maths to the shared helpers.
 const envelopePath = (fadeIn: number, fadeOut: number): string =>
@@ -94,16 +98,15 @@ const formatClipDuration = (): string => clock(store.clipDuration || 0);
 // `effective_audio_gain` (commands/editor.rs) ignores system/mic gain for
 // muxed `AudioKind::Source` audio. Showing sliders for a track that doesn't
 // exist meant setting mic gain to 180% on a recording with no mic.
-const hasSystemTrack = $derived(!!store.audioPath);
-const hasMicTrack = $derived(!!store.microphonePath);
+const hasSystemTrack = $derived(Boolean(store.audioPath));
+const hasMicTrack = $derived(Boolean(store.microphonePath));
 
-const zoneText = $derived(
-	volumeZone === "hot"
-		? "text-destructive"
-		: volumeZone === "boost"
-			? "text-warning"
-			: "text-muted-foreground",
-);
+function zoneTextClass(zone: string): string {
+	if (zone === "hot") return "text-destructive";
+	if (zone === "boost") return "text-warning";
+	return "text-muted-foreground";
+}
+const zoneText = $derived(zoneTextClass(volumeZone));
 </script>
 
 <!-- `M` toggles master mute. Bound here, so it only works while this panel is
@@ -242,15 +245,7 @@ const zoneText = $derived(
     flush
     collapsible
   >
-    {#snippet action()}
-      <!-- Dragging either slider off a preset leaves the Segmented with nothing
-           selected, which reads as broken unless the state is named. -->
-      {#if !activePreset}
-        <span class="text-[11px] text-muted-foreground">Custom</span>
-      {/if}
-    {/snippet}
-
-    <div class="rounded-md border border-border bg-background/60 p-2">
+    <div class="rounded-lg bg-muted/30 p-2 ring-1 ring-inset ring-border/40">
       <svg
         viewBox="0 0 100 24"
         preserveAspectRatio="none"
@@ -259,11 +254,11 @@ const zoneText = $derived(
       >
         <path
           d={`${envelopePath(store.audioSettings.fadeIn, store.audioSettings.fadeOut)} L 100 24 L 0 24 Z`}
-          class="fill-primary/15"
+          class="fill-foreground/10"
         />
         <path
           d={envelopePath(store.audioSettings.fadeIn, store.audioSettings.fadeOut)}
-          class="stroke-primary/80"
+          class="stroke-foreground/70"
           stroke-width="1.2"
           fill="none"
           vector-effect="non-scaling-stroke"
@@ -286,20 +281,19 @@ const zoneText = $derived(
       </div>
     </div>
 
-    <div class="mt-2">
-      <Segmented
-        size="xs"
-        aria-label="Fade preset"
-        value={activePreset}
-        options={fadePresetOptions}
-        onValueChange={(v) => {
-          const preset = FADE_PRESETS.find((p) => p.label === v);
-          if (preset) applyPreset(preset);
-        }}
-      />
-    </div>
-
     <div class="mt-2.5 space-y-1.5">
+      <PropRow label="Preset">
+        <PropSelect
+          class="flex-1"
+          label="Fade preset"
+          value={activePreset ?? "custom"}
+          options={fadePresetOptions}
+          onChange={(v) => {
+            const preset = FADE_PRESETS.find((p) => p.label === v);
+            if (preset) applyPreset(preset);
+          }}
+        />
+      </PropRow>
       <PropRow label="Fade in">
         <NumberField
           class="flex-1"
@@ -347,9 +341,10 @@ const zoneText = $derived(
     {@const muted = isSystem
       ? store.audioSettings.systemMuted
       : store.audioSettings.micMuted}
-    <div class="flex items-center gap-1">
+    <PropRow label={isSystem ? "System" : "Mic"}>
       <SliderControl
         dense
+        hideLabel
         class="min-w-0 flex-1"
         label={name}
         value={level}
@@ -407,7 +402,7 @@ const zoneText = $derived(
       >
         <RotateCcw size={11} />
       </Button>
-    </div>
+    </PropRow>
   {/snippet}
 
   {#if hasSystemTrack || hasMicTrack}

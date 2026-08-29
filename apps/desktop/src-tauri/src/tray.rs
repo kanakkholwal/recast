@@ -47,7 +47,6 @@ const MENU_ID_OPEN_OUTPUT: &str = "tray.open_output_folder";
 const MENU_ID_CAPTURE_AREA: &str = "tray.capture_area";
 const MENU_ID_CHECK_UPDATES: &str = "tray.check_updates";
 const MENU_ID_QUIT: &str = "tray.quit";
-const MENU_ID_ABOUT_DOCS: &str = "tray.about.docs";
 const MENU_ID_ABOUT_GITHUB: &str = "tray.about.github";
 const MENU_ID_RECENT_EXPORTS_PREFIX: &str = "tray.recent_export:";
 const MENU_ID_RECENT_PROJECTS_PREFIX: &str = "tray.recent_project:";
@@ -284,7 +283,6 @@ fn build_about_submenu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
         false, // disabled — informational only
         None::<&str>,
     )?;
-    let docs = MenuItem::with_id(app, MENU_ID_ABOUT_DOCS, "Documentation", true, None::<&str>)?;
     let github = MenuItem::with_id(
         app,
         MENU_ID_ABOUT_GITHUB,
@@ -292,7 +290,7 @@ fn build_about_submenu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
         true,
         None::<&str>,
     )?;
-    Submenu::with_items(app, "About Recast", true, &[&version, &docs, &github])
+    Submenu::with_items(app, "About Recast", true, &[&version, &github])
 }
 
 /// Top-N most recent exports by mtime under `<output_dir>/exports/`. Mirrors
@@ -417,14 +415,6 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             // surfaces is actually visible.
             show_main_window(app);
             let _ = app.emit("updater:check-from-tray", ());
-        }
-        MENU_ID_ABOUT_DOCS => {
-            if let Err(e) = app.opener().open_url(
-                "https://github.com/kanakkholwal/recast/blob/main/apps/desktop/docs",
-                None::<&str>,
-            ) {
-                log::warn!("open docs failed: {e}");
-            }
         }
         MENU_ID_ABOUT_GITHUB => {
             if let Err(e) = app

@@ -262,7 +262,7 @@ mod tests {
     fn a_2x2_block_shares_one_chroma_pair_in_nv12() {
         let src = [RED_Y, RED_Y, RED_Y, RED_Y, RED_U, RED_V];
         let out = convert(NV12, &src, 2, 2, 2);
-        for pixel in out.chunks_exact(4) {
+        for pixel in out.as_chunks::<4>().0 {
             assert_eq!(pixel[2], 255, "every pixel of the block is red");
         }
     }

@@ -17,7 +17,7 @@ import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 import { EASE, type Easing, easingEquals } from "../../lib/easing/cubic-bezier";
-import { clockCentis as fmtTime } from "../../lib/format/time";
+import { clock, clockCentis as fmtTime } from "../../lib/format/time";
 import { motionDuration } from "../../lib/motion.svelte";
 import { registry } from "../../lib/registry";
 import { resolveZoomCenter } from "../../lib/zoom/auto-apply";
@@ -229,9 +229,9 @@ function applyPresetToBoth(preset: Easing) {
       </div>
     {/snippet}
 
-    <!-- A settings row, not an AI badge: the persistent preference reads on
-         the first line, the one-shot action sits under it. -->
-    <div class="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/70 px-2.5 py-2">
+    <!-- A plain preference + a leading action, not a boxed banner: the box read
+         as an alert. Toggle sets the persistent behaviour; the button runs it now. -->
+    <div class="flex flex-col gap-2.5">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <p class="text-[11px] font-medium text-foreground">Auto-zoom on import</p>
@@ -246,10 +246,7 @@ function applyPresetToBoth(preset: Easing) {
           onCheckedChange={(next) => (store.autoZoomEnabled = next)}
         />
       </div>
-      <div class="flex items-center justify-end gap-1 border-t border-border/50 pt-2">
-        {#if hasAutoZooms}
-          <Button variant="ghost" size="xs" onclick={clearAuto}>Remove generated</Button>
-        {/if}
+      <div class="flex items-center gap-1.5">
         <Button
           variant="secondary"
           size="xs"
@@ -260,6 +257,16 @@ function applyPresetToBoth(preset: Easing) {
           <AiWand size={11} />
           Generate now
         </Button>
+        {#if hasAutoZooms}
+          <Button
+            variant="ghost"
+            size="xs"
+            class="text-muted-foreground hover:text-destructive"
+            onclick={clearAuto}
+          >
+            Remove generated
+          </Button>
+        {/if}
       </div>
     </div>
 
@@ -332,13 +339,17 @@ function applyPresetToBoth(preset: Easing) {
               </svg>
             </span>
             <div class="pointer-events-none min-w-0 flex-1">
-              <div class="flex items-center gap-1.5">
-                <span
-                  class="truncate text-[11px] font-medium tabular-nums text-foreground"
-                >
-                  {region.scale.toFixed(2)}× · {fmtTime(region.start)}–{fmtTime(
-                    region.end,
-                  )}
+              <div class="flex items-baseline gap-1.5">
+                <span class="shrink-0 text-[12px] font-semibold tabular-nums text-foreground">
+                  {region.scale.toFixed(2)}×
+                </span>
+                <span class="truncate text-[11px] tabular-nums text-muted-foreground">
+                  {clock(region.start)}–{clock(region.end)}
+                </span>
+              </div>
+              <div class="mt-0.5 flex items-center gap-1">
+                <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                  {(region.end - region.start).toFixed(2)}s
                 </span>
                 {#if region.source === "auto"}
                   <span
@@ -359,7 +370,7 @@ function applyPresetToBoth(preset: Easing) {
                 {#if overlapping.has(region.id)}
                   <span
                     title="Overlaps another region. Only one can apply, and export and preview can disagree."
-                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-amber-500/40 bg-amber-500/10 px-1 text-[9px] font-medium text-amber-600 dark:text-amber-400"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-warning/40 bg-warning/10 px-1 text-[9px] font-medium text-warning"
                   >
                     <TriangleAlert size={8} />
                     Overlaps
@@ -373,9 +384,6 @@ function applyPresetToBoth(preset: Easing) {
                     Outside clip
                   </span>
                 {/if}
-              </div>
-              <div class="text-[10px] tabular-nums text-muted-foreground">
-                {(region.end - region.start).toFixed(2)}s duration
               </div>
             </div>
             <!-- Row actions on hover/focus only. For the SELECTED row these
@@ -495,7 +503,7 @@ function applyPresetToBoth(preset: Easing) {
 
       {#if overlapping.has(region.id)}
         <div
-          class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-amber-700 dark:text-amber-300"
+          class="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[10px] leading-snug text-warning"
         >
           <TriangleAlert size={11} class="mt-px shrink-0" />
           <span>

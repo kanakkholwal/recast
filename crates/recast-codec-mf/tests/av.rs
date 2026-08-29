@@ -65,6 +65,7 @@ fn muxed() -> Option<PathBuf> {
             height: HEIGHT,
             frame_rate: (FPS, 1),
             bitrate: 4_000_000,
+            keyframe_interval: 0,
         };
         if let Ok(open) = H264Encoder::open(descriptor, config) {
             eprintln!("video via {}", descriptor.name);

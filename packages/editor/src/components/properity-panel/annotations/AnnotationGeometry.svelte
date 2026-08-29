@@ -13,6 +13,7 @@ import { normaliseBox } from "../../../lib/annotations/uv";
 import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import DraggableValue from "../DraggableValue.svelte";
 import PanelSection from "../PanelSection.svelte";
+import PropRow from "../PropRow.svelte";
 import { alignTarget } from "./annotation-geometry.logic";
 
 interface Props {
@@ -88,20 +89,24 @@ const ALIGN_BTN =
   <div class="flex flex-col gap-2.5">
     {#if isArrow && annotation.kind.kind === "arrow"}
       {@const k = annotation.kind}
-      <div class="grid grid-cols-2 gap-1.5">
-        <DraggableValue label="X1" value={k.x1 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ x1: v }))} />
-        <DraggableValue label="Y1" value={k.y1 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ y1: v }))} />
-        <DraggableValue label="X2" value={k.x2 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ x2: v }))} />
-        <DraggableValue label="Y2" value={k.y2 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ y2: v }))} />
-      </div>
+      <PropRow label="Start">
+        <DraggableValue class="flex-1" label="X" value={k.x1 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ x1: v }))} />
+        <DraggableValue class="flex-1" label="Y" value={k.y1 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ y1: v }))} />
+      </PropRow>
+      <PropRow label="End">
+        <DraggableValue class="flex-1" label="X" value={k.x2 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ x2: v }))} />
+        <DraggableValue class="flex-1" label="Y" value={k.y2 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ y2: v }))} />
+      </PropRow>
     {:else if isBoxKind(annotation.kind)}
       {@const k = annotation.kind}
-      <div class="grid grid-cols-2 gap-1.5">
-        <DraggableValue label="X" value={k.x * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ x: v }))} />
-        <DraggableValue label="Y" value={k.y * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ y: v }))} />
-        <DraggableValue label="W" value={k.w * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ w: v }))} />
-        <DraggableValue label="H" value={k.h * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ h: v }))} />
-      </div>
+      <PropRow label="Position">
+        <DraggableValue class="flex-1" label="X" value={k.x * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ x: v }))} />
+        <DraggableValue class="flex-1" label="Y" value={k.y * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ y: v }))} />
+      </PropRow>
+      <PropRow label="Size">
+        <DraggableValue class="flex-1" label="W" value={k.w * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ w: v }))} />
+        <DraggableValue class="flex-1" label="H" value={k.h * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ h: v }))} />
+      </PropRow>
     {/if}
 
     <div class="flex flex-col gap-1">
