@@ -287,6 +287,7 @@ async function onToggle(ext: InstalledExtension, enabled: boolean) {
               <img
                 src={entry.iconUrl}
                 alt=""
+                loading="lazy"
                 class="size-7 shrink-0 rounded-md object-cover"
               />
             {:else}

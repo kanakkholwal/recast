@@ -21,7 +21,7 @@ let { oninsert }: Props = $props();
 			class="group flex flex-col gap-1 rounded-lg border border-border/50 p-1 text-left transition-colors hover:border-border hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 		>
 			<span
-				class="relative block aspect-video w-full overflow-hidden rounded-md bg-[#101014]"
+				class="relative block aspect-video max-h-20 w-full overflow-hidden rounded-md bg-neutral-950"
 				style="container-type: size;"
 			>
 				<span

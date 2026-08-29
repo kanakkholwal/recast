@@ -82,7 +82,7 @@ function alignFrame(axis: "x" | "y", anchor: "start" | "center" | "end") {
 const isArrow = $derived(annotation.kind.kind === "arrow");
 
 const ALIGN_BTN =
-	"grid size-7 place-items-center rounded-md border border-border/60 bg-card/60 text-muted-foreground transition-colors hover:border-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40";
+	"grid size-6 place-items-center rounded-md border border-border/60 bg-card/60 text-muted-foreground transition-colors hover:border-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40";
 </script>
 
 <PanelSection title="Geometry" flush collapsible defaultOpen={false}>
@@ -109,8 +109,7 @@ const ALIGN_BTN =
       </PropRow>
     {/if}
 
-    <div class="flex flex-col gap-1">
-      <span class="text-[10px] text-muted-foreground">Align to frame</span>
+    <PropRow label="Align">
       <div class="flex items-center gap-1">
         <button type="button" onclick={() => alignFrame("x", "start")} class={cn(ALIGN_BTN)} title="Align left">
           <AlignStartVertical size={12} />
@@ -132,6 +131,6 @@ const ALIGN_BTN =
           <AlignEndHorizontal size={12} />
         </button>
       </div>
-    </div>
+    </PropRow>
   </div>
 </PanelSection>

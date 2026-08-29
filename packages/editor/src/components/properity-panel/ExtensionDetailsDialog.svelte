@@ -21,7 +21,6 @@ import { SegmentedToggle } from "@recast/ui/segmented";
 import { toast } from "@recast/ui/sonner";
 import { Spinner } from "@recast/ui/spinner";
 import { cn } from "@recast/ui/utils";
-import type { Component } from "svelte";
 import {
 	fetchManifestPreview,
 	hasUpdate,
@@ -61,11 +60,9 @@ $effect(() => {
 		loadKey = "";
 		return;
 	}
-	const key = installed
-		? `i:${installed.manifest.id}:${installed.manifest.version}`
-		: entry
-			? `e:${entry.id}:${entry.manifestUrl}`
-			: "";
+	let key = "";
+	if (installed) key = `i:${installed.manifest.id}:${installed.manifest.version}`;
+	else if (entry) key = `e:${entry.id}:${entry.manifestUrl}`;
 	if (key === loadKey) return;
 	loadKey = key;
 
@@ -85,7 +82,7 @@ $effect(() => {
 	}
 });
 
-const isInstalled = $derived(!!installed);
+const isInstalled = $derived(installed !== null);
 const name = $derived(installed?.manifest.name ?? entry?.name ?? manifest?.name ?? "Extension");
 const installedVersion = $derived(installed?.manifest.version);
 const latestVersion = $derived(entry?.version ?? manifest?.version);
@@ -98,7 +95,6 @@ const updateAvailable = $derived(
 const manifestUrl = $derived(entry?.manifestUrl ?? null);
 
 // Icon-bearing definition table stays in the component; the pure map/filter
-// lives in the shared logic module.
 const contributionDefs: Array<{
 	key: keyof ExtensionContributions;
 	label: string;
@@ -115,6 +111,17 @@ const contributionDefs: Array<{
 const groups = $derived(buildContributionGroups(manifest, contributionDefs));
 
 const assetCount = $derived(manifest?.assets?.length ?? 0);
+
+// Previews resolve manifest-local asset ids to their remote source URLs
+const contributes = $derived<ExtensionContributions>(manifest?.contributes ?? {});
+const assetById = $derived(new Map((manifest?.assets ?? []).map((a) => [a.id, a])));
+function assetUrl(id: string | null | undefined): string | null {
+	return id ? (assetById.get(id)?.url ?? null) : null;
+}
+function bgThumbUrl(bg: { thumb?: string; asset: string }): string | null {
+	const a = assetById.get(bg.thumb ?? bg.asset);
+	return a?.thumbUrl ?? a?.url ?? null;
+}
 
 // Which action is in flight, so the matching button shows a spinner + verb.
 // GOTCHA: `installed`/`entry` are reactive props that go null the moment the
@@ -182,7 +189,7 @@ async function onToggle(next: boolean) {
     <Dialog.Header class="space-y-0 border-b border-border px-4 py-2.5 text-left">
       <div class="flex items-center gap-2.5">
         {#if entry?.iconUrl}
-          <img src={entry.iconUrl} alt="" class="size-8 shrink-0 rounded-md object-cover" />
+          <img src={entry.iconUrl} alt="" loading="lazy" class="size-8 shrink-0 rounded-md object-cover" />
         {:else}
           <div
             class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/50 bg-muted/50"
@@ -244,33 +251,176 @@ async function onToggle(next: boolean) {
           </div>
         {:else if manifest}
           {#if groups.length > 0}
-            <div class="space-y-3 px-4 py-3">
+            {@const c = contributes}
+            <div class="space-y-3.5 px-4 py-3">
               <h4
                 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
               >
                 Includes
               </h4>
-              {#each groups as g (g.key)}
-                {@const Icon = g.icon}
+
+              {#snippet groupHead(Icon: IconComponent, label: string, count: number)}
+                <div class="mb-1.5 flex items-center gap-1.5">
+                  <Icon class="size-3.5 text-muted-foreground" />
+                  <span class="text-[11px] font-medium text-foreground">{label}</span>
+                  <span class="font-mono text-[9px] text-muted-foreground/70">{count}</span>
+                </div>
+              {/snippet}
+
+              {#if c.cursors?.length}
                 <section class="min-w-0">
-                  <div class="mb-1.5 flex items-center gap-1.5">
-                    <Icon class="size-3.5 text-muted-foreground" />
-                    <span class="text-[11px] font-medium text-foreground">{g.label}</span>
-                    <span class="font-mono text-[9px] text-muted-foreground/70">
-                      {g.items.length}
-                    </span>
+                  {@render groupHead(MousePointer, "Cursors", c.cursors.length)}
+                  <div class="flex flex-wrap gap-2">
+                    {#each c.cursors as cur (cur.id)}
+                      {@const url = assetUrl(cur.rest)}
+                      <div class="flex w-14 flex-col items-center gap-1">
+                        <div
+                          class="grid size-12 place-items-center rounded-lg bg-muted/40 ring-1 ring-inset ring-border/40"
+                        >
+                          {#if url}
+                            <img
+                              src={url}
+                              alt={cur.label}
+                              loading="lazy"
+                              class="size-8 object-contain"
+                            />
+                          {:else}
+                            <MousePointer class="size-4 text-muted-foreground" />
+                          {/if}
+                        </div>
+                        <span class="w-full truncate text-center text-[9px] text-muted-foreground">
+                          {cur.label}
+                        </span>
+                      </div>
+                    {/each}
                   </div>
+                </section>
+              {/if}
+
+              {#if c.backgrounds?.length}
+                <section class="min-w-0">
+                  {@render groupHead(Image, "Backgrounds", c.backgrounds.length)}
+                  <div class="flex flex-wrap gap-1.5">
+                    {#each c.backgrounds as bg (bg.id)}
+                      {@const url = bgThumbUrl(bg)}
+                      <div class="w-24">
+                        <div
+                          class="aspect-video overflow-hidden rounded-md bg-muted/40 ring-1 ring-inset ring-border/40"
+                        >
+                          {#if url}
+                            <img
+                              src={url}
+                              alt={bg.label}
+                              loading="lazy"
+                              class="size-full object-cover"
+                            />
+                          {/if}
+                        </div>
+                        <span class="mt-0.5 block truncate text-[9px] text-muted-foreground">
+                          {bg.label}
+                        </span>
+                      </div>
+                    {/each}
+                  </div>
+                </section>
+              {/if}
+
+              {#if c.gradients?.length}
+                <section class="min-w-0">
+                  {@render groupHead(Blend, "Gradients", c.gradients.length)}
+                  <div class="flex flex-wrap gap-1.5">
+                    {#each c.gradients as g (g.id)}
+                      <div class="w-16">
+                        <div
+                          class="h-8 rounded-md ring-1 ring-inset ring-border/40"
+                          style="background: {g.value}"
+                        ></div>
+                        <span class="mt-0.5 block truncate text-[9px] text-muted-foreground">
+                          {g.label}
+                        </span>
+                      </div>
+                    {/each}
+                  </div>
+                </section>
+              {/if}
+
+              {#if c.colors?.length}
+                <section class="min-w-0">
+                  {@render groupHead(Palette, "Colors", c.colors.length)}
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    {#each c.colors as col (col.id)}
+                      <span
+                        class="size-6 rounded-md ring-1 ring-inset ring-border/40"
+                        style="background: {col.value}"
+                        title={col.label}
+                      ></span>
+                    {/each}
+                  </div>
+                </section>
+              {/if}
+
+              {#if c.easings?.length}
+                <section class="min-w-0">
+                  {@render groupHead(Spline, "Easing presets", c.easings.length)}
+                  <div class="flex flex-col gap-1.5">
+                    {#each c.easings as e (e.id)}
+                      <div class="flex items-center gap-2">
+                        <span class="w-24 shrink-0 truncate text-[10px] text-muted-foreground">
+                          {e.label}
+                        </span>
+                        <!-- A dot runs the track with this curve's timing, so the
+                             ease is felt as motion. Decorative; hidden from AT. -->
+                        <div
+                          aria-hidden="true"
+                          class="relative h-4 flex-1 overflow-hidden rounded-full bg-muted/50 ring-1 ring-inset ring-border/30"
+                        >
+                          <span
+                            class="ext-ease-dot absolute top-1/2 size-2 -translate-y-1/2 rounded-full bg-foreground"
+                            style="animation-timing-function: cubic-bezier({e.value.x1}, {e.value.y1}, {e.value.x2}, {e.value.y2})"
+                          ></span>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                </section>
+              {/if}
+
+              {#if c.smoothings?.length}
+                <section class="min-w-0">
+                  {@render groupHead(Waves, "Smoothing presets", c.smoothings.length)}
                   <div class="flex flex-wrap gap-1">
-                    {#each g.items as item (item)}
+                    {#each c.smoothings as s (s.id)}
                       <span
                         class="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[10px] text-foreground/80"
                       >
-                        {item}
+                        {s.label}
                       </span>
                     {/each}
                   </div>
                 </section>
-              {/each}
+              {/if}
+
+              {#if c.captionPresets?.length}
+                <section class="min-w-0">
+                  {@render groupHead(Captions, "Caption themes", c.captionPresets.length)}
+                  <div class="flex flex-wrap gap-1.5">
+                    {#each c.captionPresets as cap (cap.id)}
+                      <div
+                        class="grid h-8 w-24 place-items-center overflow-hidden rounded-md bg-neutral-950 px-1"
+                      >
+                        <span
+                          class="truncate text-[10px] font-semibold"
+                          style="font-family: {cap.fontFamily}; color: {cap.color}; text-transform: {cap.uppercase
+                            ? 'uppercase'
+                            : 'none'}"
+                        >
+                          {cap.label}
+                        </span>
+                      </div>
+                    {/each}
+                  </div>
+                </section>
+              {/if}
             </div>
           {/if}
 
@@ -384,3 +534,25 @@ async function onToggle(next: boolean) {
     </footer>
   </Dialog.Content>
 </Dialog.Root>
+
+<style>
+  .ext-ease-dot {
+    animation: ext-ease-run 1.7s infinite;
+  }
+  @keyframes ext-ease-run {
+    0%,
+    12% {
+      left: 0.25rem;
+    }
+    88%,
+    100% {
+      left: calc(100% - 0.75rem);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ext-ease-dot {
+      animation: none;
+      left: calc(100% - 0.75rem);
+    }
+  }
+</style>

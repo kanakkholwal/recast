@@ -175,7 +175,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
 
   {#if store.annotations.length === 0}
     <div
-      class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-card/40 px-3 py-6 text-center"
+      class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/60 bg-card/40 px-3 py-6 text-center"
     >
       <div
         class="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset)"
@@ -229,12 +229,10 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
         </Button>
       </div>
 
-      <PanelSection
-        title="Anchor"
-        hint="Video moves with zoom/focus; Frame pins it to the output frame."
-      >
+      <PropRow label="Anchor">
         <Segmented
           size="xs"
+          fill={false}
           aria-label="Anchor"
           value={a.anchor ?? "video"}
           options={[
@@ -246,13 +244,16 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             updateSelected({ anchor: v as "video" | "frame" });
           }}
         />
-      </PanelSection>
+        <InspectorHint
+          content="Video moves with zoom/focus; Frame pins it to the output frame."
+        />
+      </PropRow>
 
       {#if a.kind.kind === "text"}
         {@const k = a.kind}
         <PanelSection title="Text">
           <div class="flex flex-col gap-1">
-            <span class="text-[10px] text-muted-foreground">Content</span>
+            <span class="text-[11px] text-muted-foreground">Content</span>
             <Textarea
               rows={2}
               value={k.content}

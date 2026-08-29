@@ -22,9 +22,9 @@ import {
 	Monitor,
 	PauseFilled,
 	PlayFilled,
-	Record,
 	RecordFilled,
 	SlidersHorizontal as SlidersIcon,
+	SquareFilled,
 	Volume,
 	VolumeOff,
 	X,
@@ -1187,7 +1187,7 @@ function phaseOut(node: HTMLElement) {
       {#if phase === "countdown"}
         <!-- Depleting ring with the ticking second (click to start now), status, Cancel. -->
         <div
-          class="flex w-fit items-center gap-2.5 pl-1"
+          class="flex w-fit items-center gap-2 pl-1"
           in:fade={{ duration: 200, delay: 80, easing: cubicOut }}
           out:phaseOut
         >
@@ -1304,9 +1304,9 @@ function phaseOut(node: HTMLElement) {
             ></span>
           </span>
 
-          <span class="flex shrink-0 flex-col leading-tight">
+          <span class="flex shrink-0 flex-col gap-0.5 leading-tight">
             <span
-              class="text-[9px] font-bold uppercase tracking-[0.12em] {isPaused
+              class="text-[10px] font-bold uppercase tracking-widest {isPaused
                 ? 'text-muted-foreground'
                 : 'text-destructive'}"
             >
@@ -1349,10 +1349,10 @@ function phaseOut(node: HTMLElement) {
               disabled={isStopping}
               size="icon-sm"
               variant="destructive_soft"
-              title="Stop Recording"
+              title="Stop recording"
               aria-label="Stop recording"
             >
-              <Record size={12} class="text-destructive" />
+              <SquareFilled size={10} class="text-destructive" />
             </Button>
           </ButtonGroup>
 

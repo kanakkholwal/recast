@@ -389,7 +389,7 @@ function handleKeydown(e: KeyboardEvent) {
   <!-- Video bubble, the only clipped/rounded surface; `flex-1` is the window
        height minus the control strip, the region the aspect lock governs. -->
   <div
-    class="relative min-h-0 w-full flex-1 overflow-hidden bg-card transition-[border-radius] duration-150 ease-out motion-reduce:transition-none"
+    class="@container/bubble relative min-h-0 w-full flex-1 overflow-hidden bg-card transition-[border-radius] duration-150 ease-out motion-reduce:transition-none"
     data-tauri-drag-region
     style="border-radius: {cssRadius}"
   >
@@ -400,39 +400,46 @@ function handleKeydown(e: KeyboardEvent) {
     ></canvas>
 
     {#if status !== "live" || errorMessage}
+      <!-- Sized to the bubble via container queries: the window shrinks to
+           ~168px, so text wraps to the box (never `max-w` beyond it) and the
+           description/label hide progressively so nothing clips at small sizes. -->
       <div
-        class="absolute inset-0 flex items-center justify-center bg-background/85 p-4 text-center backdrop-blur-md"
+        class="absolute inset-0 flex flex-col items-center justify-center gap-1.5 overflow-hidden bg-background/85 px-2.5 py-2 text-center backdrop-blur-md @[220px]/bubble:gap-2 @[220px]/bubble:p-4"
       >
-        <div class="flex flex-col items-center gap-2">
-          {#if status === "loading"}
-            <LoaderCircle size={18} class="animate-spin text-muted-foreground" />
-            <p class="text-[10.5px] font-medium text-muted-foreground">{statusMessage}</p>
-          {:else}
-            <span
-              class="grid size-9 place-items-center rounded-xl ring-1 ring-inset {status ===
-              'failed'
-                ? 'bg-destructive/10 text-destructive ring-destructive/25'
-                : 'bg-warning/10 text-warning ring-warning/25'}"
-            >
-              <CameraOff size={16} />
-            </span>
-            <p class="text-[11.5px] font-semibold text-foreground">
-              {status === "failed" ? "Camera unavailable" : "No live picture"}
-            </p>
-            <p class="max-w-[16rem] text-[10px] leading-relaxed text-muted-foreground">
-              {errorMessage ?? statusMessage}
-            </p>
-            <Button
-              variant="secondary"
-              size="xs"
-              class="mt-1 gap-1.5 rounded-lg"
-              onclick={() => void startCamera()}
-            >
-              <RefreshCw size={11} />
-              Try again
-            </Button>
-          {/if}
-        </div>
+        {#if status === "loading"}
+          <LoaderCircle size={18} class="shrink-0 animate-spin text-muted-foreground" />
+          <p
+            class="hidden max-w-full text-[10px] font-medium leading-tight text-muted-foreground @[150px]/bubble:block"
+          >
+            {statusMessage}
+          </p>
+        {:else}
+          <span
+            class="grid size-8 shrink-0 place-items-center rounded-lg ring-1 ring-inset @[220px]/bubble:size-9 @[220px]/bubble:rounded-xl {status ===
+            'failed'
+              ? 'bg-destructive/10 text-destructive ring-destructive/25'
+              : 'bg-warning/10 text-warning ring-warning/25'}"
+          >
+            <CameraOff size={15} />
+          </span>
+          <p class="max-w-full text-[11px] font-semibold leading-tight text-foreground">
+            {status === "failed" ? "Camera unavailable" : "No live picture"}
+          </p>
+          <p
+            class="hidden max-w-full text-pretty text-[9.5px] leading-snug text-muted-foreground @[180px]/bubble:line-clamp-3 @[180px]/bubble:block @[260px]/bubble:line-clamp-none"
+          >
+            {errorMessage ?? statusMessage}
+          </p>
+          <Button
+            variant="secondary"
+            size="xs"
+            class="mt-0.5 shrink-0 gap-1.5 rounded-lg"
+            onclick={() => void startCamera()}
+          >
+            <RefreshCw size={11} />
+            Try again
+          </Button>
+        {/if}
       </div>
     {/if}
   </div>

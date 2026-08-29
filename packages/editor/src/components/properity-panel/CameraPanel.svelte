@@ -16,6 +16,7 @@ import EasingControl from "./EasingControl.svelte";
 import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
 import SliderRow from "./SliderRow.svelte";
 
 interface Props {
@@ -34,13 +35,13 @@ interface Props {
 
 let { store, cameraPath, cameraCapture = "legacy" }: Props = $props();
 
-const hasCamera = $derived(!!cameraPath);
+const hasCamera = $derived(Boolean(cameraPath));
 const availability = $derived(cameraAvailability(cameraCapture, hasCamera));
 
 // Video pixel aspect. The bubble is square in pixels, so its UV height is
 // `width * aspect`; the presets need it to anchor vertically on a wide frame.
 const videoAspect = $derived(
-	store.metadata && store.metadata.height ? store.metadata.width / store.metadata.height : 1,
+	store.metadata?.height ? store.metadata.width / store.metadata.height : 1,
 );
 
 const perCut = $derived(store.cameraOverlay.keyframes.length > 0);
@@ -150,12 +151,12 @@ const shapeOptions = [
         </span>
       {/snippet}
       <div
-        class="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
+        class="grid max-w-56 grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
       >
         {#each presetGrid as cell, i (i)}
           {#if cell === null}
             <!-- Centre cell left empty so the chips map to bubble position. -->
-            <div aria-hidden="true" class="aspect-square"></div>
+            <div aria-hidden="true" class="aspect-video"></div>
           {:else}
             {@const isActive = activePreset === cell}
             <button
@@ -165,7 +166,7 @@ const shapeOptions = [
               title={labelFor(cell)}
               onclick={() => applyPreset(cell)}
               class={cn(
-                "group relative aspect-square overflow-hidden rounded-md border transition-all duration-150",
+                "group relative aspect-video overflow-hidden rounded-md border transition-all duration-150",
                 "focus:outline-none focus:ring-2 focus:ring-ring/40",
                 isActive
                   ? "border-foreground/40 bg-foreground/10 text-foreground"
@@ -218,8 +219,8 @@ const shapeOptions = [
     </PanelSection>
 
     <PanelSection
-      title="Size"
-      hint="Bubble width as a percentage of the frame, or drag its corners in the preview. Height matches width (1:1 only for now)."
+      title="Size & shape"
+      hint="Bubble width as a percentage of the frame (drag its corners in the preview; height matches width), plus its outline shape."
       flush
     >
       {@const sizePct = Math.round(currentBase.width * 100)}
@@ -241,35 +242,18 @@ const shapeOptions = [
           }}
         />
       </PropRow>
-    </PanelSection>
-
-    <PanelSection
-      title="Shape"
-      hint="Circle for talking-head puck, rounded for app-style overlay, square for a sharp cut."
-      flush
-    >
-      <div class="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)">
-        {#each shapeOptions as opt (opt.id)}
-          {@const isActive = store.cameraOverlay.shape === opt.id}
-          <button
-            type="button"
-            aria-pressed={isActive}
-            onclick={() => {
-              store.pushUndoState();
-              store.updateCameraOverlay({ shape: opt.id });
-            }}
-            class={cn(
-              "rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-150",
-              "focus:outline-none focus:ring-2 focus:ring-ring/40",
-              isActive
-                ? "border-foreground/40 bg-foreground/10 text-foreground"
-                : "border-transparent bg-background/40 text-foreground/80 hover:border-border hover:bg-background/80",
-            )}
-          >
-            {opt.label}
-          </button>
-        {/each}
-      </div>
+      <PropRow label="Shape">
+        <PropSelect
+          class="flex-1"
+          label="Shape"
+          value={store.cameraOverlay.shape}
+          options={shapeOptions.map((o) => ({ value: o.id, label: o.label }))}
+          onChange={(v) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ shape: v as "circle" | "rounded" | "square" });
+          }}
+        />
+      </PropRow>
     </PanelSection>
 
     <PanelSection
