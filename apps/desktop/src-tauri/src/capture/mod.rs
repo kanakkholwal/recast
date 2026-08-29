@@ -19,12 +19,48 @@ pub use target::{CaptureArea, CaptureKind, CaptureTarget, RegionRect};
 /// **Frames are `source`-sized, never pre-cropped.** The encoder is configured
 /// for the full source and applies its own crop filter; a backend that cropped
 /// first would crop twice.
+/// Something about the capture the user has to be told, because a recording
+/// that silently repeats its last frame looks like a working one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CaptureNotice {
+    /// Lost, and being retried. The recording repeats its last frame meanwhile.
+    Interrupted(String),
+    /// Gone, and not coming back on its own. Nothing more can be recorded.
+    Ended(String),
+    /// Frames are flowing again after an interruption.
+    Resumed,
+}
+
+impl CaptureNotice {
+    /// The sentence shown to the user.
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Interrupted(message) | Self::Ended(message) => message,
+            Self::Resumed => "The screen is being recorded again.",
+        }
+    }
+
+    /// Whether the recording can still produce new pixels after this.
+    pub const fn is_terminal(&self) -> bool {
+        matches!(self, Self::Ended(_))
+    }
+}
+
 pub trait CaptureSource: Send {
     /// The next frame, or `Ok(None)` if none arrived within `timeout`.
     ///
     /// A recoverable loss reopens the source and reports `Ok(None)`, so the
     /// recording repeats its last frame rather than ending.
     fn capture_next(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>>;
+
+    /// Anything the user needs telling since the last call, taken once.
+    ///
+    /// Separate from `capture_next` because a loss is reported on the tick it
+    /// happens while frames keep being asked for, and because the recorder
+    /// forwards these to the UI rather than acting on them itself.
+    fn take_notice(&mut self) -> Option<CaptureNotice> {
+        None
+    }
 
     /// Width of the captured frames in pixels.
     fn width(&self) -> u32;

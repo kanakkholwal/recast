@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use capturekit::{CaptureError, Capturer, DisplayId, Target, WindowId};
 
-use super::CaptureSource;
 use super::{CaptureKind, CaptureTarget};
+use super::{CaptureNotice, CaptureSource};
 use crate::encoder::pack_rows;
 
 /// Whether a window can be captured as its own surface rather than as a crop of
@@ -44,6 +44,11 @@ struct CapturekitSource {
     height: u32,
     /// When another reopen is worth trying, or `None` once it is hopeless.
     retry_at: Option<Instant>,
+    /// Pending notice for the recorder to forward to the user.
+    notice: Option<CaptureNotice>,
+    /// Whether the user was told frames stopped, so recovery is only announced
+    /// to someone who saw the interruption.
+    interrupted: bool,
 }
 
 /// Open a capture that produces only what the source produced.
@@ -71,6 +76,8 @@ impl CapturekitSource {
             height: desc.height,
             capturer: Some(capturer),
             retry_at: None,
+            notice: None,
+            interrupted: false,
         })
     }
 
@@ -104,10 +111,30 @@ impl CapturekitSource {
                 self.height
             );
             self.retry_at = None;
+            self.note(CaptureNotice::Ended(format!(
+                "The display came back at {}x{}, but this recording is {}x{}, so it cannot continue.",
+                desc.width, desc.height, self.width, self.height
+            )));
             return;
         }
         self.capturer = Some(capturer);
         self.retry_at = None;
+        if self.interrupted {
+            self.interrupted = false;
+            self.note(CaptureNotice::Resumed);
+        }
+    }
+
+    /// Queue a notice, keeping a terminal one over any later interruption:
+    /// once the recording cannot continue, that is the fact worth reporting.
+    fn note(&mut self, notice: CaptureNotice) {
+        if self.notice.as_ref().is_some_and(CaptureNotice::is_terminal) {
+            return;
+        }
+        if notice.is_terminal() || matches!(notice, CaptureNotice::Interrupted(_)) {
+            self.interrupted = true;
+        }
+        self.notice = Some(notice);
     }
 }
 
@@ -131,13 +158,27 @@ impl CaptureSource for CapturekitSource {
             CaptureError::Timeout(_) => Ok(None),
             other if other.is_recoverable() => {
                 log::warn!("screen source lost, reopening: {other}");
+                self.note(CaptureNotice::Interrupted(format!(
+                    "Screen capture was interrupted ({other}). Trying to resume."
+                )));
                 self.capturer = None;
                 self.retry_at = Some(Instant::now());
                 self.reacquire();
                 Ok(None)
             }
-            other => Err(other.into()),
+            other => {
+                // Unplugging the display lands here; terminal stops the frame repeat.
+                self.note(CaptureNotice::Ended(format!(
+                    "Screen capture stopped: {other}. The recording was kept up to this point."
+                )));
+                self.capturer = None;
+                Ok(None)
+            }
         }
+    }
+
+    fn take_notice(&mut self) -> Option<CaptureNotice> {
+        self.notice.take()
     }
 
     fn width(&self) -> u32 {

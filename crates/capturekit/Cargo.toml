@@ -2,7 +2,10 @@
 name = "capturekit"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.81"
+# 1.88 is the LINUX floor, and rust-version cannot vary by platform. The
+# xdg-desktop-portal stack (ashpd -> zbus -> icu 2.3) is edition 2024.
+# Windows and macOS build at 1.81; CI gates all three at the declared value.
+rust-version = "1.88"
 license = "Apache-2.0"
 description = "Cross-platform screen, window and camera capture: one-shot screenshots and streaming recording on one backend."
 repository = "https://github.com/kanakkholwal/capturekit"
@@ -23,6 +26,9 @@ wayland = ["dep:ashpd", "dep:pipewire", "dep:async-std"]
 # has PipeWire audio too, and a build that wants neither should need neither.
 pipewire-audio = ["dep:pipewire"]
 serde = ["capturekit-core/serde"]
+# A scripted capture source, so a downstream crate can test against the real
+# pipeline with no display. Off by default: it is test scaffolding, not capture.
+mock = []
 
 [dependencies]
 capturekit-core = { path = "../capturekit-core" }
@@ -32,6 +38,8 @@ log = "0.4"
 windows = { version = "0.58.0", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
+    # SECURITY_ATTRIBUTES, which CreateSharedHandle takes even when passed None.
+    "Win32_Security",
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",

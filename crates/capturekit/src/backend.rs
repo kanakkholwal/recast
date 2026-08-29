@@ -1,6 +1,8 @@
 use core::time::Duration;
 
-use capturekit_core::{AudioDesc, CursorSample, DirtyRects, Rect, Result, SourceDesc, Timestamp};
+use capturekit_core::{
+    AudioDesc, CursorSample, DirtyRects, GpuHandle, Rect, Result, SourceDesc, Timestamp,
+};
 
 /// A frame as the backend holds it, before capturekit copies or wraps it.
 pub(crate) struct RawFrame<'a> {
@@ -16,6 +18,8 @@ pub(crate) struct RawFrame<'a> {
     ///
     /// `None` from a backend whose `Capabilities::cursor_samples` is false.
     pub cursor: Option<CursorSample>,
+    /// The same frame left on the GPU, when the caller asked for handles.
+    pub gpu: Option<GpuHandle>,
 }
 
 /// A source of video frames, whatever produced them.

@@ -14,12 +14,12 @@ use serde::{Deserialize, Serialize};
 use crate::audio::{
     AudioCaptureConfig, AudioCaptureSession, MicrophoneCaptureConfig, MicrophoneCaptureSession,
 };
-use crate::capture::CaptureTarget;
+use crate::capture::{CaptureNotice, CaptureTarget};
 use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorCaptureFrame, CursorTrack};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 pub use clock::{offset_ms_from_video, RecordingClock, TrackStart};
-use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
+use pipeline::{spawn_capture_loop, CaptureLoop, PipelineSnapshot, RecordingPipeline};
 
 /// Frames per second emitted by the capture pacer and declared to the encoder.
 /// The pacer emits exactly this many frames per real-time second, and the
@@ -483,6 +483,7 @@ impl RecordingManager {
         mut target: CaptureTarget,
         output_dir: PathBuf,
         options: RecordingOptions,
+        notify: impl Fn(CaptureNotice) + Send + Clone + 'static,
     ) -> Result<Vec<String>> {
         let mut guard = self.session.lock();
         if guard.is_some() {
@@ -561,12 +562,15 @@ impl RecordingManager {
         let camera_start = TrackStart::new(started_at);
         let capture_handle = spawn_capture_loop(
             source,
-            stop_flag.clone(),
-            pause_flag.clone(),
-            pipeline.clone(),
-            started_at,
-            recording_fps,
-            video_start.clone(),
+            CaptureLoop {
+                stop_flag: stop_flag.clone(),
+                pause_flag: pause_flag.clone(),
+                pipeline: pipeline.clone(),
+                clock: started_at,
+                target_fps: recording_fps,
+                video_start: video_start.clone(),
+            },
+            notify,
         )?;
 
         let encoder_handle = match spawn_encoder_loop(
@@ -1141,5 +1145,90 @@ mod session_tests {
         let manager = RecordingManager::default();
         assert!(!manager.is_recording());
         drop(manager);
+    }
+}
+
+/// A/V sync against the real capture stack, with every source enabled.
+///
+/// Phase 5's exit criterion. The per-track unit tests cover the arithmetic;
+/// only this catches the tracks disagreeing about when zero is, because each is
+/// opened by a different OS API on its own schedule.
+#[cfg(test)]
+mod sync_live_tests {
+    use super::*;
+
+    /// Opening a capture device legitimately takes a few hundred milliseconds
+    /// (measured here: ~364ms for WASAPI loopback, ~739ms for the microphone),
+    /// and that latency is CORRECTED downstream from the offset this reports.
+    /// So the bound catches a garbage clock, not the latency itself: past a
+    /// second and a half nothing plausible is being measured.
+    const PLAUSIBLE_OPEN_MS: i64 = 1_500;
+
+    #[test]
+    #[ignore = "live: records the real screen and opens the mic and camera"]
+    fn every_enabled_track_lands_on_the_video_clock() {
+        if !capturekit::capabilities().display_enumeration {
+            return;
+        }
+        let displays = capturekit::displays().expect("displays enumerate");
+        let Some(display) = displays.iter().find(|d| d.is_primary).or(displays.first()) else {
+            return;
+        };
+        // The real id: a made-up one failed silently and passed this in 60ms.
+        let target = CaptureTarget::resolve("screen", display.id.0).expect("the display resolves");
+        let out = std::env::temp_dir().join("recast-sync-live");
+        let _ = std::fs::create_dir_all(&out);
+
+        let options = RecordingOptions {
+            system_audio: true,
+            microphone: true,
+            camera: true,
+            ..RecordingOptions::default()
+        };
+        let manager = RecordingManager::default();
+        let warnings = manager
+            .start(target, out, options, |_| {})
+            .expect("the recording starts");
+        std::thread::sleep(std::time::Duration::from_secs(4));
+        let artifacts = manager.stop().expect("the recording stops");
+
+        // A source this machine lacks is reported, never silently dropped.
+        for warning in &warnings {
+            eprintln!("source warning: {warning}");
+        }
+        // Without real video there is no clock to measure the other tracks against.
+        let recorded = std::fs::metadata(&artifacts.recording_path)
+            .expect("the recording file exists")
+            .len();
+        assert!(
+            recorded > 0,
+            "the recording is empty, so nothing was captured"
+        );
+
+        let offsets = &artifacts.track_offsets;
+        eprintln!("recorded {recorded} bytes; track offsets vs video t0: {offsets:?}");
+
+        let mut measured = 0;
+        for (name, offset) in [
+            ("system audio", offsets.audio_ms),
+            ("microphone", offsets.microphone_ms),
+            ("camera", offsets.camera_ms),
+        ] {
+            // A real absence, named in the warnings above, not a code failure.
+            let Some(offset) = offset else {
+                eprintln!("{name}: no samples, skipped");
+                continue;
+            };
+            measured += 1;
+            // An unmeasured track is assumed aligned and drifts by its open time.
+            assert!(
+                offset.abs() <= PLAUSIBLE_OPEN_MS,
+                "{name} reports {offset}ms from video t0, which is not a device open latency"
+            );
+        }
+        assert!(
+            measured >= 2,
+            "only {measured} track(s) reported an offset; the harness proves nothing about sync"
+        );
     }
 }

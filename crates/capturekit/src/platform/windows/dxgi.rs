@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use capturekit_core::{
     CaptureError, ColorSpace, CursorSample, CursorShape, CursorShapeKind, DirtyRects, DisplayId,
-    LostReason, Rect, Result, Rotation, SourceDesc, Timestamp,
+    GpuHandle, LostReason, Rect, Result, Rotation, SourceDesc, Timestamp,
 };
 use windows::core::{Interface, HRESULT};
 use windows::Win32::Foundation::{E_ACCESSDENIED, E_INVALIDARG, RECT};
@@ -98,6 +98,9 @@ pub(crate) struct DxgiSource {
     /// The cursor, carried across frames because Desktop Duplication reports a
     /// position only when it moves and a shape only when it changes.
     cursor: Cursor,
+    /// Present only when the caller asked for GPU handles; the readback is then
+    /// skipped entirely, which is the point of the mode.
+    shared: Option<d3d::SharedSurface>,
     qpc_frequency: i64,
     holding_frame: bool,
     lost_since: Option<Instant>,
@@ -154,11 +157,22 @@ impl DxgiSource {
 
         let readback = Readback::new(
             &device,
-            context,
+            context.clone(),
             staged.width,
             staged.height,
             dupl_desc.ModeDesc.Format,
         )?;
+        let shared = if opts.gpu_handles {
+            Some(d3d::SharedSurface::new(
+                &device,
+                &context,
+                staged.width,
+                staged.height,
+                dupl_desc.ModeDesc.Format,
+            )?)
+        } else {
+            None
+        };
 
         let desc = SourceDesc {
             width: staged.width,
@@ -183,6 +197,7 @@ impl DxgiSource {
             dirty: DirtyRects::unknown(),
             dirty_scratch: Vec::new(),
             cursor: Cursor::default(),
+            shared,
             qpc_frequency: qpc_frequency(),
             holding_frame: false,
             lost_since: None,
@@ -411,7 +426,24 @@ impl FrameSource for DxgiSource {
             operation: "deliver a frame without a surface",
         })?;
         let texture: ID3D11Texture2D = resource.cast().map_err(d3d::err)?;
-        self.readback.copy_from(&texture, self.region)?;
+        // One or the other: a readback here is the host copy this mode avoids.
+        let gpu = match self.shared.as_mut() {
+            Some(shared) => {
+                let ready_at = shared.copy_from(&texture, self.region)?;
+                let (texture_handle, fence) = shared.handles();
+                Some(GpuHandle {
+                    texture: texture_handle,
+                    fence,
+                    ready_at,
+                    width: self.desc.width,
+                    height: self.desc.height,
+                })
+            }
+            None => {
+                self.readback.copy_from(&texture, self.region)?;
+                None
+            }
+        };
         self.dirty = self.read_dirty(&info);
 
         // A zero `LastPresentTime` means the desktop did not change and this is a
@@ -421,13 +453,18 @@ impl FrameSource for DxgiSource {
         self.cursor.update(&self.duplication, &info);
         let dirty = self.dirty.clone();
         let cursor = Some(self.cursor.sample(pts, self.region));
-        let (bytes, stride) = self.readback.map()?;
+        let (bytes, stride) = if gpu.is_some() {
+            (&[][..], 0)
+        } else {
+            self.readback.map()?
+        };
         Ok(RawFrame {
             pts,
             bytes,
             stride,
             dirty,
             cursor,
+            gpu,
         })
     }
 

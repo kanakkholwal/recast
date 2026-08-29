@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use crossbeam_queue::ArrayQueue;
 
-use crate::capture::CaptureSource;
+use crate::capture::{CaptureNotice, CaptureSource};
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -135,16 +135,31 @@ fn stale_warning_due(stale_for: Duration, warnings_emitted: u32) -> bool {
 /// Result: wall-clock seconds == video PTS seconds == cursor track
 /// seconds. Preview and rendered MP4 stay in lockstep with the cursor
 /// track regardless of how often the desktop redraws.
+pub struct CaptureLoop {
+    pub stop_flag: Arc<std::sync::atomic::AtomicBool>,
+    pub pause_flag: Arc<std::sync::atomic::AtomicBool>,
+    pub pipeline: RecordingPipeline,
+    /// Session origin, which every timestamp is measured from.
+    pub clock: Instant,
+    pub target_fps: u32,
+    /// Marked at the FIRST encoded frame: video t=0, which the cursor blocks on.
+    pub video_start: crate::recording::TrackStart,
+}
+
 pub fn spawn_capture_loop(
     mut source: Box<dyn CaptureSource>,
-    stop_flag: Arc<std::sync::atomic::AtomicBool>,
-    pause_flag: Arc<std::sync::atomic::AtomicBool>,
-    pipeline: RecordingPipeline,
-    clock: Instant,
-    target_fps: u32,
-    // Marked at the FIRST encoded frame: video t=0, which the cursor blocks on.
-    video_start: crate::recording::TrackStart,
+    session: CaptureLoop,
+    // Forwards anything the user has to be told about the capture.
+    notify: impl Fn(CaptureNotice) + Send + 'static,
 ) -> Result<thread::JoinHandle<Result<()>>> {
+    let CaptureLoop {
+        stop_flag,
+        pause_flag,
+        pipeline,
+        clock,
+        target_fps,
+        video_start,
+    } = session;
     thread::Builder::new()
         .name("recast-capture".into())
         .spawn(move || {
@@ -238,6 +253,7 @@ pub fn spawn_capture_loop(
                 // returning Some unconditionally — without the cap the
                 // loop would never exit on that path.
                 const MAX_DRAIN: usize = 4;
+                let mut failed = None;
                 for _ in 0..MAX_DRAIN {
                     match source.capture_next(Duration::from_millis(0)) {
                         Ok(Some(bytes)) => {
@@ -247,12 +263,22 @@ pub fn spawn_capture_loop(
                         }
                         Ok(None) => break,
                         Err(e) => {
-                            // Unrecoverable: recoverable losses self-heal inside the
-                            // source and surface as Ok(None).
                             log::error!("screen capture source failed: {e}");
+                            failed = Some(e);
                             break;
                         }
                     }
+                }
+                // Repeating the last frame made an unplugged display look alive.
+                if let Some(notice) = source.take_notice() {
+                    let ended = notice.is_terminal();
+                    notify(notice);
+                    if ended {
+                        return Ok(());
+                    }
+                }
+                if let Some(e) = failed {
+                    return Err(e);
                 }
 
                 // A source that keeps returning no frame emits the cached one
@@ -264,6 +290,10 @@ pub fn spawn_capture_loop(
                         "no fresh screen frame for {}s — the recording is repeating the last frame",
                         stale_for.as_secs()
                     );
+                    notify(CaptureNotice::Interrupted(format!(
+                        "The screen has not changed for {}s. If this is wrong, the recording is repeating one frame.",
+                        stale_for.as_secs()
+                    )));
                 }
 
                 let now = Instant::now();
@@ -304,6 +334,30 @@ struct ScriptedSource {
     height: u32,
     /// Frames handed out before the source goes quiet; `None` never runs dry.
     remaining: Option<usize>,
+    /// Raised after `notice_after` frames, the way an unplugged display would.
+    notice: Option<CaptureNotice>,
+    notice_after: usize,
+    served: usize,
+}
+
+#[cfg(test)]
+impl ScriptedSource {
+    fn new(width: u32, height: u32, remaining: Option<usize>) -> Self {
+        Self {
+            width,
+            height,
+            remaining,
+            notice: None,
+            notice_after: 0,
+            served: 0,
+        }
+    }
+
+    fn raising(mut self, notice: CaptureNotice, after: usize) -> Self {
+        self.notice = Some(notice);
+        self.notice_after = after;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -315,7 +369,15 @@ impl CaptureSource for ScriptedSource {
             }
             *left -= 1;
         }
+        self.served += 1;
         Ok(Some(vec![0u8; (self.width * self.height * 4) as usize]))
+    }
+
+    fn take_notice(&mut self) -> Option<CaptureNotice> {
+        if self.served < self.notice_after {
+            return None;
+        }
+        self.notice.take()
     }
 
     fn width(&self) -> u32 {
@@ -330,17 +392,14 @@ impl CaptureSource for ScriptedSource {
 #[cfg(test)]
 mod pacer_tests {
     use super::*;
+    use parking_lot::Mutex;
     use std::sync::atomic::AtomicBool;
 
     const FPS: u32 = 50;
 
     /// Runs the real loop for `run` and returns what reached the pipeline.
     fn run_loop(remaining: Option<usize>, run: Duration) -> (PipelineSnapshot, Option<u64>) {
-        let source = Box::new(ScriptedSource {
-            width: 8,
-            height: 8,
-            remaining,
-        });
+        let source = Box::new(ScriptedSource::new(8, 8, remaining));
         let stop = Arc::new(AtomicBool::new(false));
         let pause = Arc::new(AtomicBool::new(false));
         let pipeline = RecordingPipeline::new(4096);
@@ -348,12 +407,15 @@ mod pacer_tests {
         let video_start = crate::recording::TrackStart::new(started);
         let handle = spawn_capture_loop(
             source,
-            stop.clone(),
-            pause.clone(),
-            pipeline.clone(),
-            started,
-            FPS,
-            video_start.clone(),
+            CaptureLoop {
+                stop_flag: stop.clone(),
+                pause_flag: pause.clone(),
+                pipeline: pipeline.clone(),
+                clock: started,
+                target_fps: FPS,
+                video_start: video_start.clone(),
+            },
+            |_| {},
         )
         .expect("the capture thread starts");
         thread::sleep(run);
@@ -389,6 +451,79 @@ mod pacer_tests {
             "a still screen still owes {expected} frames, got {}",
             stats.captured_frames
         );
+    }
+
+    /// Run until the source raises `notice`, and report what the loop did.
+    fn run_until_notice(notice: CaptureNotice, after: usize) -> (u64, Vec<CaptureNotice>, bool) {
+        let source = Box::new(ScriptedSource::new(8, 8, None).raising(notice, after));
+        let stop = Arc::new(AtomicBool::new(false));
+        let pause = Arc::new(AtomicBool::new(false));
+        let pipeline = RecordingPipeline::new(4096);
+        let started = Instant::now();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let collector = Arc::clone(&seen);
+        let handle = spawn_capture_loop(
+            source,
+            CaptureLoop {
+                stop_flag: stop.clone(),
+                pause_flag: pause.clone(),
+                pipeline: pipeline.clone(),
+                clock: started,
+                target_fps: FPS,
+                video_start: crate::recording::TrackStart::new(started),
+            },
+            move |n| collector.lock().push(n),
+        )
+        .expect("the capture thread starts");
+        thread::sleep(Duration::from_millis(250));
+        let exited_on_its_own = handle.is_finished();
+        stop.store(true, Ordering::Release);
+        handle.join().expect("the thread joins").expect("no error");
+        let notices = seen.lock().clone();
+        (
+            pipeline.stats().snapshot().captured_frames,
+            notices,
+            exited_on_its_own,
+        )
+    }
+
+    /// The unplugged-display contract: the loop must STOP, not keep pushing the
+    /// last frame. Repeating it to the end is what made a dead capture look
+    /// like a working recording.
+    #[test]
+    fn a_terminal_notice_ends_the_capture_instead_of_repeating_a_frame() {
+        let (frames, notices, exited) =
+            run_until_notice(CaptureNotice::Ended("display gone".into()), 1);
+        assert!(exited, "the loop kept running after the source ended");
+        assert!(
+            frames < FPS as u64 * 250 / 1000,
+            "{frames} frames were pushed after the source ended"
+        );
+        assert!(notices.iter().any(CaptureNotice::is_terminal));
+    }
+
+    /// The user has to be told, or a frozen recording is indistinguishable
+    /// from a working one until they play it back.
+    #[test]
+    fn a_terminal_notice_reaches_the_user_with_its_message() {
+        let (_, notices, _) = run_until_notice(
+            CaptureNotice::Ended("the display was disconnected".into()),
+            1,
+        );
+        assert!(notices
+            .iter()
+            .any(|n| n.message().contains("the display was disconnected")));
+    }
+
+    /// An interruption is not the end: the source may come back, so the loop
+    /// keeps going and the recording keeps its timeline.
+    #[test]
+    fn an_interruption_is_reported_without_ending_the_capture() {
+        let (frames, notices, exited) =
+            run_until_notice(CaptureNotice::Interrupted("reopening".into()), 1);
+        assert!(!exited, "an interruption must not end the recording");
+        assert!(frames > 0);
+        assert!(notices.iter().all(|n| !n.is_terminal()));
     }
 
     /// Video t=0 is the first frame the source produced, not recording start.

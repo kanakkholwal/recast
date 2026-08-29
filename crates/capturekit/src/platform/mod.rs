@@ -40,6 +40,8 @@ pub(crate) struct OpenOptions {
     /// Windows to keep out of the capture, whoever owns them.
     pub exclude: Vec<WindowId>,
     pub color_space: ColorSpaceRequest,
+    /// Hand frames over as GPU handles instead of host bytes.
+    pub gpu_handles: bool,
 }
 
 impl OpenOptions {
@@ -66,6 +68,8 @@ impl From<&ShotOptions> for OpenOptions {
             // A screenshot wants the next frame, not a paced one.
             pacing: Pacing::Passthrough,
             readback_rate: None,
+            // A one-shot returns an owned image, so it always reads back.
+            gpu_handles: false,
             exclude: Vec::new(),
             color_space: opts.color_space,
         }

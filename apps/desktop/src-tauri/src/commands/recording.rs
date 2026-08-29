@@ -26,6 +26,15 @@ fn exports_dir(state: &State<'_, AppState>) -> PathBuf {
     dir
 }
 
+/// A capture notice on its way to the UI.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureNoticePayload {
+    message: String,
+    /// True when nothing more can be recorded, so the UI stops rather than warns.
+    terminal: bool,
+}
+
 #[tauri::command]
 pub async fn start_recording(
     app: tauri::AppHandle,
@@ -46,6 +55,17 @@ pub async fn start_recording(
     // the UI thread — including the Wayland portal dialog — stays responsive.
     let manager = state.recording_manager.clone();
     let output_dir = get_active_output_dir(&state);
+    // A recording repeating one frame looks exactly like a working one.
+    let notifier = app.clone();
+    let notify = move |notice: crate::capture::CaptureNotice| {
+        let payload = CaptureNoticePayload {
+            message: notice.message().to_string(),
+            terminal: notice.is_terminal(),
+        };
+        if let Err(e) = notifier.emit("recording:capture-notice", payload) {
+            log::warn!("could not deliver a capture notice to the UI: {e}");
+        }
+    };
 
     let outcome =
         tauri::async_runtime::spawn_blocking(move || -> AppResult<RecordingStartResult> {
@@ -57,7 +77,7 @@ pub async fn start_recording(
                 CaptureTarget::resolve(&target_type, target_id)?
             };
             let warnings = manager
-                .start(target, output_dir, options.unwrap_or_default())
+                .start(target, output_dir, options.unwrap_or_default(), notify)
                 .inspect_err(|e| log::error!("start_recording failed: {e:#}"))?;
             Ok(RecordingStartResult { warnings })
         })

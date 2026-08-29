@@ -28,17 +28,18 @@ mod pointer;
 mod session;
 mod shot;
 
-#[cfg(test)]
-mod mock;
+/// A scripted capture source, for downstream tests and headless CI.
+#[cfg(any(test, feature = "mock"))]
+pub mod mock;
 
 pub use audio::{AudioBuffer, AudioCapturer, AudioCapturerBuilder, AudioHandle};
 pub use capturekit_core::{
     AudioDesc, AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, Camera, CameraFormat,
     CameraId, Capabilities, CaptureError, ChromaSiting, ColorRange, ColorSpace, ColorSpaceRequest,
     CursorButtons, CursorSample, CursorShape, CursorShapeKind, DirtyRects, Display, DisplayId,
-    ExclusionSupport, LostReason, MatrixCoefficients, Pacer, Pacing, Permission, PermissionKind,
-    PixelFormat, PlaneFormat, Primaries, Rect, RegionCrop, Result, Rotation, SampleFormat,
-    SourceDesc, Target, Timestamp, TransferFunction, Window, WindowId,
+    ExclusionSupport, GpuHandle, LostReason, MatrixCoefficients, Pacer, Pacing, Permission,
+    PermissionKind, PixelFormat, PlaneFormat, Primaries, Rect, RegionCrop, Result, Rotation,
+    SampleFormat, SourceDesc, Target, Timestamp, TransferFunction, Window, WindowId,
 };
 pub use capturer::{CaptureHandle, Capturer, CapturerBuilder, Flow, Frame};
 pub use image::Image;

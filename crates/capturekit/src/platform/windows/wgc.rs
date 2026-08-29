@@ -250,6 +250,7 @@ impl FrameSource for WgcSource {
             // Graphics Capture reports no damage, so every frame is fully dirty.
             dirty: DirtyRects::unknown(),
             cursor: None,
+            gpu: None,
         })
     }
 

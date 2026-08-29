@@ -6,7 +6,8 @@ use std::time::Instant;
 
 use capturekit_core::{
     CaptureError, ColorSpaceRequest, CursorSample, CursorShape, DirtyRects, ExclusionSupport,
-    MonotonicClock, Pacer, Pacing, Rect, Result, SourceDesc, Target, Timestamp, WindowId,
+    GpuHandle, MonotonicClock, Pacer, Pacing, Rect, Result, SourceDesc, Target, Timestamp,
+    WindowId,
 };
 
 use crate::backend::{FrameSource, RawFrame};
@@ -26,6 +27,7 @@ pub enum Flow {
 /// One frame of a live capture, borrowed from the backend that produced it.
 pub struct Frame<'a> {
     pts: Timestamp,
+    gpu: Option<GpuHandle>,
     bytes: &'a [u8],
     stride: u32,
     dirty: DirtyRects,
@@ -67,6 +69,17 @@ impl Frame<'_> {
     #[must_use]
     pub const fn cursor(&self) -> Option<&CursorSample> {
         self.cursor.as_ref()
+    }
+
+    /// The frame as a GPU handle, when the capturer was built with
+    /// [`CapturerBuilder::gpu_handles`].
+    ///
+    /// `bytes()` is empty in that mode: reading back a frame the caller asked to
+    /// keep on the GPU is the host copy the mode exists to avoid. Nothing is
+    /// implicitly ordered, so wait on the fence before sampling the texture.
+    #[must_use]
+    pub const fn gpu_handle(&self) -> Option<&GpuHandle> {
+        self.gpu.as_ref()
     }
 
     /// What the backend negotiated for this source.
@@ -175,6 +188,17 @@ impl CapturerBuilder {
     #[must_use]
     pub fn color_space(mut self, color_space: ColorSpaceRequest) -> Self {
         self.opts.color_space = color_space;
+        self
+    }
+
+    /// Deliver frames as GPU handles rather than host bytes.
+    ///
+    /// The pixels never leave the GPU, which is what makes an encode path keep
+    /// up at 4K. `Frame::bytes()` is empty in this mode. Windows only today;
+    /// other backends ignore it and keep reading back.
+    #[must_use]
+    pub fn gpu_handles(mut self, gpu_handles: bool) -> Self {
+        self.opts.gpu_handles = gpu_handles;
         self
     }
 
@@ -292,6 +316,7 @@ impl Capturer {
         let cursor = raw.cursor.map(|sample| CursorSample { pts, ..sample });
         Ok(Frame {
             pts,
+            gpu: raw.gpu,
             bytes: raw.bytes,
             stride: raw.stride,
             dirty: raw.dirty,
@@ -357,6 +382,8 @@ impl Capturer {
             .map(|sample| CursorSample { pts, ..sample });
         Frame {
             pts,
+            // A repeat is the last frame again; its GPU copy has been overwritten.
+            gpu: None,
             bytes: &self.held.bytes,
             stride: self.held.stride,
             // A repeat carries no damage of its own, and empty already means
@@ -450,10 +477,10 @@ impl Capturer {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "mock"))]
 impl Capturer {
     /// Drive a synthetic source, so pacing can be tested without a display.
-    pub(crate) fn from_source(backend: Box<dyn FrameSource>, pacing: Pacing) -> Self {
+    fn from_source(backend: Box<dyn FrameSource>, pacing: Pacing) -> Self {
         let desc = backend.describe().clone();
         Self {
             clock: MonotonicClock::for_frame_rate(desc.frame_rate.unwrap_or(60)),
@@ -462,6 +489,28 @@ impl Capturer {
             pacer: pacing.fps().map(Pacer::new),
             held: Held::default(),
         }
+    }
+}
+
+#[cfg(feature = "mock")]
+impl Capturer {
+    /// A capturer over a scripted source, for tests and for CI with no display.
+    ///
+    /// The whole pipeline runs: pacing, the monotonic clock, stale-frame
+    /// discard, loss and recovery. Only the OS is replaced, so a downstream
+    /// test exercises the same code a real capture does.
+    ///
+    /// ```
+    /// use capturekit::{mock::{MockFrame, MockSource}, Capturer, Pacing};
+    ///
+    /// let source = MockSource::new(4, 4, vec![MockFrame::new(0, 0xAB)]);
+    /// let mut capturer = Capturer::from_mock(source, Pacing::Passthrough);
+    /// let frame = capturer.next_frame(std::time::Duration::from_millis(50)).unwrap();
+    /// assert_eq!(frame.desc().width, 4);
+    /// ```
+    #[must_use]
+    pub fn from_mock(source: crate::mock::MockSource, pacing: Pacing) -> Self {
+        Self::from_source(Box::new(source), pacing)
     }
 }
 

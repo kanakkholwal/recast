@@ -797,7 +797,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           <section id="settings-cloud-endpoint" class="flex flex-col gap-3">
             <div class="px-1">
               <h2
-                class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
+                class="flex items-center gap-1.5 text-base font-semibold tracking-tight text-foreground"
               >
                 <Server class="size-4 text-muted-foreground" />
                 Self-hosting

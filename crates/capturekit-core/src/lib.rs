@@ -16,6 +16,7 @@ mod cursor;
 mod error;
 mod format;
 mod geom;
+mod gpu;
 mod pacing;
 mod permission;
 mod target;
@@ -37,6 +38,7 @@ pub use cursor::{
 pub use error::{CaptureError, LostReason, Result};
 pub use format::{PixelFormat, PlaneFormat};
 pub use geom::{DirtyRects, Rect, Rotation};
+pub use gpu::GpuHandle;
 pub use pacing::{Pacer, Pacing};
 pub use permission::{Permission, PermissionKind};
 pub use target::{

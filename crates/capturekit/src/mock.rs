@@ -150,6 +150,7 @@ impl FrameSource for MockSource {
                 pts: frame.pts,
                 ..sample
             }),
+            gpu: None,
         })
     }
 

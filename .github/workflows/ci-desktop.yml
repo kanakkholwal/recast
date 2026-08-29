@@ -303,11 +303,13 @@ jobs:
           cargo test --manifest-path crates/Cargo.toml -p capturekit-core --all-features --release
 
     
-      - name: capturekit MSRV (1.81)
-        if: matrix.platform.name == 'windows-x64'
+      # Every platform, not just Windows: the Linux portal stack is what sets the
+      # floor, so a Windows-only gate let a false 1.81 claim stand.
+      - name: capturekit MSRV (1.88)
+        if: ${{ !matrix.platform.cross }}
         run: |
-          rustup toolchain install 1.81 --profile minimal
-          cargo +1.81 check --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-features
+          rustup toolchain install 1.88 --profile minimal
+          cargo +1.88 check --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-features
 
      
       - name: capturekit live capture (Windows only)
