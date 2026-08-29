@@ -1,10 +1,11 @@
 <script lang="ts">
 import { SegmentedToggle } from "@recast/ui/segmented";
-import { cn } from "@recast/ui/utils";
 import { bezierY, type Easing, easingEquals } from "../../lib/easing/cubic-bezier";
 import { registry } from "../../lib/registry";
 import BezierEditor from "../_components/BezierEditor.svelte";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
 
 // The one easing control. Intent-named presets lead, a live preview shows what
 // they feel like, and the raw curve stays behind a disclosure. Both zoom and
@@ -41,41 +42,15 @@ function presetActive(p: Easing): boolean {
 	return easingEquals(v.in, p) && easingEquals(v.out, p);
 }
 
-const activeIndex = $derived(
-	Math.max(
-		0,
-		presets.findIndex((p) => presetActive(p.value)),
-	),
-);
-let chips = $state<(HTMLButtonElement | null)[]>([]);
-
-function moveTo(index: number) {
-	const preset = presets[(index + presets.length) % presets.length];
-	if (!preset) return;
-	onpick({ ...preset.value });
-	chips[(index + presets.length) % presets.length]?.focus();
-}
-
-function handleChipKeys(e: KeyboardEvent) {
-	switch (e.key) {
-		case "ArrowRight":
-		case "ArrowDown":
-			moveTo(activeIndex + 1);
-			break;
-		case "ArrowLeft":
-		case "ArrowUp":
-			moveTo(activeIndex - 1);
-			break;
-		case "Home":
-			moveTo(0);
-			break;
-		case "End":
-			moveTo(presets.length - 1);
-			break;
-		default:
-			return;
-	}
-	e.preventDefault();
+// Selected preset id, or "custom" when the curve has drifted off every preset.
+const activeId = $derived(presets.find((p) => presetActive(p.value))?.id ?? "custom");
+const options = $derived([
+	...presets.map((p) => ({ value: p.id, label: p.label })),
+	...(activeId === "custom" ? [{ value: "custom", label: "Custom" }] : []),
+]);
+function pickPreset(id: string) {
+	const preset = presets.find((p) => p.id === id);
+	if (preset) onpick({ ...preset.value });
 }
 
 // Looping playhead for the preview. rAF stops on its own when the window is
@@ -114,58 +89,33 @@ const progress = $derived(bezierY(active, t));
 </script>
 
 <div class="flex flex-col gap-2">
-	<!-- Wrapped chips rather than a 7-way Segmented: "Ease In Out" does not
-	     survive a seventh of a 280px inspector. Radiogroup semantics + roving
-	     tabindex give it the arrow keys a Segmented would have. -->
-	<div
-		role="radiogroup"
-		tabindex="-1"
-		aria-label="Easing preset"
-		class="flex flex-wrap gap-1"
-		onkeydown={handleChipKeys}
-	>
-		{#each presets as preset, i (preset.id)}
-			{@const checked = presetActive(preset.value)}
-			<button
-				bind:this={chips[i]}
-				type="button"
-				role="radio"
-				aria-checked={checked}
-				tabindex={i === activeIndex ? 0 : -1}
-				onclick={() => onpick({ ...preset.value })}
-				class={cn(
-					"h-6 rounded-md border px-2 text-[10px] font-medium transition-colors",
-					"focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring",
-					checked
-						? "border-transparent bg-foreground text-background shadow-craft-md"
-						: "border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground",
-				)}
-			>
-				{preset.label}
-			</button>
-		{/each}
-	</div>
+	<PropRow label="Curve">
+		<PropSelect
+			class="flex-1"
+			label="Easing preset"
+			value={activeId}
+			{options}
+			onChange={pickPreset}
+		/>
+	</PropRow>
 
 	<!-- Feel the curve without opening the graph: a dot on a track, retimed by
 	     the active easing. aria-hidden because it reports no state a screen
 	     reader needs, and it never stops moving. -->
 	<div
 		aria-hidden="true"
-		class="relative h-5 overflow-hidden rounded-md border border-border/50 bg-card/40"
+		class="relative h-4 overflow-hidden rounded-md bg-muted/50 ring-1 ring-inset ring-border/30"
 	>
 		<!-- Inset to 80% of the track so Bounce's overshoot and undershoot stay on
 		     screen instead of being clipped at the ends. -->
 		<div
-			class="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
+			class="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground"
 			style="left: calc({(progress * 100).toFixed(2)}% * 0.8 + 10%)"
 		></div>
 	</div>
 
 	{#if isPair}
-		<div class="flex items-center justify-between gap-2">
-			<span class="text-[10px] text-muted-foreground">
-				Graph edits the ease-{ramp} ramp
-			</span>
+		<PropRow label="Ramp">
 			<SegmentedToggle
 				checked={ramp === "out"}
 				offLabel="In"
@@ -174,7 +124,7 @@ const progress = $derived(bezierY(active, t));
 				aria-label="Edit the ease-in or ease-out curve"
 				onCheckedChange={(next) => (ramp = next ? "out" : "in")}
 			/>
-		</div>
+		</PropRow>
 	{/if}
 
 	<PanelSection title="Custom curve" flush collapsible defaultOpen={false}>

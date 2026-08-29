@@ -547,6 +547,7 @@ impl FrameSource for X11Source {
             stride,
             dirty: DirtyRects::unknown(),
             cursor: sample,
+            gpu: None,
         })
     }
 

@@ -37,12 +37,11 @@ import {
 	isValidImageValue,
 	selectionValueForType,
 } from "./background-picker.logic";
-import { clampValue } from "./draggable-value.logic";
 import GradientBuilder from "./GradientBuilder.svelte";
 import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
-import Stepper from "./Stepper.svelte";
+import PropSelect from "./PropSelect.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -60,6 +59,8 @@ const backgroundModes: BackgroundMode[] = [
 	{ type: "gradient", label: "Gradient", icon: Blend },
 	{ type: "image", label: "Image", icon: ImageIcon },
 ];
+
+const backgroundModeOptions = backgroundModes.map((m) => ({ value: m.type, label: m.label }));
 
 const DEFAULT_BACKGROUND_VALUES: Record<BackgroundType, string> = {
 	wallpaper: WALLPAPERS[0] ? wallpaperBackgroundValue(WALLPAPERS[0].id) : "",
@@ -124,7 +125,7 @@ $effect(() => {
        or a gradient — and isn't signalled by colour alone. -->
   {#snippet selectedMark()}
     <span
-      class="absolute right-1 top-1 grid size-3.5 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm"
+      class="absolute right-1 top-1 grid size-3.5 place-items-center rounded-full bg-foreground text-background shadow-sm"
     >
       <Check class="size-2.5" />
     </span>
@@ -132,7 +133,8 @@ $effect(() => {
 
   <!-- Blur only affects texture backgrounds (image/wallpaper), so it lives
        inside those modes rather than as a global knob. -->
-  <!-- One filled field + stepper per numeric setting, aligned in a label column. -->
+  <!-- Draggable/typeable field per numeric setting, aligned in a label column.
+       No +/- stepper: these values are drag-to-scrub and directly typeable. -->
   {#snippet numRow(cfg: {
     label: string;
     icon: IconComponent;
@@ -162,33 +164,31 @@ $effect(() => {
           cfg.set(v);
         }}
       />
-      <Stepper
-        label={cfg.label}
-        onStep={(d) => {
-          store.pushUndoState();
-          cfg.set(clampValue(cfg.value + d * cfg.step, cfg.min, cfg.max));
-        }}
-      />
     </PropRow>
   {/snippet}
 
   {#snippet blurControl()}
-    <SliderControl
-      label="Background blur"
-      bind:value={blurValue}
-      min={0}
-      max={100}
-      step={1}
-      unit="%"
-      onstart={() => store.pushUndoState()}
-      onchange={(next) => {
-        store.backgroundBlur = next;
-      }}
-    >
-      {#snippet icon()}
-        <Blend size={11} />
-      {/snippet}
-    </SliderControl>
+    <PropRow label="Blur">
+      <SliderControl
+        dense
+        hideLabel
+        class="flex-1"
+        label="Background blur"
+        bind:value={blurValue}
+        min={0}
+        max={100}
+        step={1}
+        unit="%"
+        onstart={() => store.pushUndoState()}
+        onchange={(next) => {
+          store.backgroundBlur = next;
+        }}
+      >
+        {#snippet icon()}
+          <Blend size={11} />
+        {/snippet}
+      </SliderControl>
+    </PropRow>
   {/snippet}
 
   <!-- Order follows the dependency chain: choose a background first, then frame
@@ -203,229 +203,223 @@ $effect(() => {
     onValueChange={(v: string) => (displayedMode = v as BackgroundType)}
     class="flex flex-col gap-4"
   >
-    <PanelSection
-      title="Background"
-      hint="What fills the canvas behind your recording."
-      flush
-    >
-      <Tabs.List
-        variant="soft"
-        class="flex flex-row h-auto items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
-      >
-        {#each backgroundModes as mode}
-          {@const Icon = mode.icon}
-          <Tabs.Trigger
-            value={mode.type}
-            title={mode.label}
-            class="h-6 flex-1 gap-1 px-2 text-[11px] font-medium"
+    <PropRow label="Background">
+      <PropSelect
+        class="flex-1"
+        label="Background type"
+        value={displayedMode}
+        options={backgroundModeOptions}
+        onChange={(v) => (displayedMode = v as BackgroundType)}
+      />
+    </PropRow>
+
+    <Tabs.Content value="wallpaper">
+      <PanelSection title="Wallpapers" flush>
+        {#snippet action()}
+          <span
+            class="font-mono text-[10px] tabular-nums text-muted-foreground"
           >
-            <!-- `size-` class, not the `size` prop: Tabs.Trigger forces unsized
-                 SVGs to size-4, so the class both sets 11px and opts out. -->
-            <Icon class="size-2.75" />
-            <span class="hidden @[260px]/panel:inline">{mode.label}</span>
-          </Tabs.Trigger>
-        {/each}
-      </Tabs.List>
-    </PanelSection>
-
-  <Tabs.Content value="wallpaper">
-    <PanelSection title="Wallpapers" flush>
-      {#snippet action()}
-        <span class="font-mono text-[10px] tabular-nums text-muted-foreground">
-          {registry.list("background").length}
-        </span>
-      {/snippet}
-      <div class="grid grid-cols-3 gap-1.5">
-        {#each registry.list("background") as entry (entry.id)}
-          {@const isSelected = store.backgroundValue === entry.id}
-          <Button
-            variant="raw"
-            size="raw"
-            onclick={() => applyBackground("wallpaper", entry.id)}
-            class={cn(
-              "group relative aspect-video overflow-hidden rounded-md border transition-all",
-              isSelected
-                ? "border-primary ring-2 ring-primary/30"
-                : "border-border hover:border-foreground/30",
-            )}
-            title={entry.label}
-            aria-label="Use {entry.label} background"
-            aria-pressed={isSelected}
-          >
-            {#if entry.thumbUrl}
-              <!-- Extension wallpaper: thumbnail already resolved to a WebView URL. -->
-              <img
-                src={entry.thumbUrl}
-                alt={entry.label}
-                class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
-              />
-            {:else if entry.thumbAssetId}
-              <LazyExternalImage
-                assetId={entry.thumbAssetId}
-                alt={entry.label}
-                tier="thumb"
-                class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
-              />
-            {/if}
-            {#if isSelected}
-              {@render selectedMark()}
-            {/if}
-          </Button>
-        {/each}
-      </div>
-
-      <div class="mt-2.5">
-        {@render blurControl()}
-      </div>
-    </PanelSection>
-  </Tabs.Content>
-
-  <Tabs.Content value="color">
-    <PanelSection
-      title="Color"
-      hint="Solid backgrounds keep attention on the recording itself."
-      flush
-    >
-      <div class="grid grid-cols-6 gap-1.5">
-        {#each registry.list("color") as entry (entry.id)}
-          {@const color = entry.value.value}
-          {@const isSelected = store.backgroundValue === color}
-          <Button
-            variant="raw"
-            size="raw"
-            onclick={() => applyBackground("color", color)}
-            title={entry.label}
-            aria-label="Use {entry.label} background"
-            aria-pressed={isSelected}
-            class={cn(
-              "group relative aspect-square overflow-hidden rounded-md border transition-all",
-              isSelected
-                ? "border-primary ring-2 ring-primary/30"
-                : "border-border hover:border-foreground/30",
-            )}
-            style="background-color: {color}"
-          >
-            {#if isSelected}
-              {@render selectedMark()}
-            {/if}
-          </Button>
-        {/each}
-      </div>
-
-      <div class="mt-2">
-        <ColorField
-          label="Custom"
-          value={store.backgroundValue.startsWith("#")
-            ? store.backgroundValue
-            : DEFAULT_BACKGROUND_VALUES.color}
-          {recents}
-          oncommit={(c: string) => {
-            store.pushUndoState();
-            applyBackground("color", c);
-            rememberColor(c);
-          }}
-        />
-      </div>
-    </PanelSection>
-  </Tabs.Content>
-
-  <Tabs.Content value="gradient" class="space-y-4">
-    <PanelSection
-      title="Gradients"
-      hint="Rich preset backdrops, rendered live in the preview and the export."
-      flush
-    >
-      {#snippet action()}
-        <span class="font-mono text-[10px] tabular-nums text-muted-foreground">
-          {registry.list("gradient").length}
-        </span>
-      {/snippet}
-      <div class="grid grid-cols-3 gap-1.5">
-        {#each registry.list("gradient") as entry (entry.id)}
-          {@const value = entry.value.value}
-          {@const isSelected = store.backgroundValue === value}
-          <Button
-            variant="raw"
-            size="raw"
-            onclick={() => applyBackground("gradient", value)}
-            class={cn(
-              "group relative h-14 overflow-hidden rounded-md border p-1.5 text-left transition-all",
-              isSelected
-                ? "border-primary ring-2 ring-primary/30"
-                : "border-border hover:border-foreground/30",
-            )}
-            style="background: {value}"
-            aria-label="Use {entry.label} gradient"
-            aria-pressed={isSelected}
-          >
-            <div class="flex h-full items-end">
-              <!-- Opaque scrim, not black/40: at 40% the label failed 4.5:1 over
-                   the lighter gradients (Blush, Sage, Fog). -->
-              <span
-                class="rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white"
-              >
-                {entry.label}
-              </span>
-            </div>
-            {#if isSelected}
-              {@render selectedMark()}
-            {/if}
-          </Button>
-        {/each}
-      </div>
-    </PanelSection>
-
-    <GradientBuilder {store} {recents} onRememberColor={rememberColor} />
-  </Tabs.Content>
-
-  <Tabs.Content value="image">
-    <PanelSection
-      title="Image"
-      hint="Imported images fit to cover the full canvas."
-      flush
-    >
-      {#snippet action()}
-        <Button
-          variant="outline"
-          size="xs"
-          class="gap-1.5"
-          onclick={pickBackgroundImage}
-        >
-          <FolderOpen size={11} />
-          {store.backgroundValue ? "Replace" : "Choose"}
-        </Button>
-      {/snippet}
-      {#if store.backgroundValue && isValidImageValue(store.backgroundValue)}
-        <div
-          class="overflow-hidden rounded-md border border-border bg-background"
-        >
-          <Image
-            src={getImagePreviewSrc(store.backgroundValue)}
-            alt="Selected background"
-            layout="constrained"
-            width={320}
-            aspectRatio={16 / 9}
-            objectFit="cover"
-            loading="lazy"
-            decoding="async"
-            class="max-h-56 w-full"
-          />
+            {registry.list("background").length}
+          </span>
+        {/snippet}
+        <div class="grid grid-cols-3 gap-1.5">
+          {#each registry.list("background") as entry (entry.id)}
+            {@const isSelected = store.backgroundValue === entry.id}
+            <Button
+              variant="raw"
+              size="raw"
+              onclick={() => applyBackground("wallpaper", entry.id)}
+              class={cn(
+                "group relative aspect-video overflow-hidden rounded-md border transition-all",
+                isSelected
+                  ? "border-foreground/60 ring-2 ring-foreground/25"
+                  : "border-border hover:border-foreground/30",
+              )}
+              title={entry.label}
+              aria-label="Use {entry.label} background"
+              aria-pressed={isSelected}
+            >
+              {#if entry.thumbUrl}
+                <!-- Extension wallpaper: thumbnail already resolved to a WebView URL. -->
+                <img
+                  src={entry.thumbUrl}
+                  alt={entry.label}
+                  class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                />
+              {:else if entry.thumbAssetId}
+                <LazyExternalImage
+                  assetId={entry.thumbAssetId}
+                  alt={entry.label}
+                  tier="thumb"
+                  class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+                />
+              {/if}
+              {#if isSelected}
+                {@render selectedMark()}
+              {/if}
+            </Button>
+          {/each}
         </div>
-      {:else}
-        <div
-          class="flex h-20 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 text-[11px] text-muted-foreground"
-        >
-          No image selected
-        </div>
-      {/if}
 
-      {#if store.backgroundValue && isValidImageValue(store.backgroundValue)}
         <div class="mt-2.5">
           {@render blurControl()}
         </div>
-      {/if}
-    </PanelSection>
-  </Tabs.Content>
+      </PanelSection>
+    </Tabs.Content>
+
+    <Tabs.Content value="color">
+      <PanelSection
+        title="Color"
+        hint="Solid backgrounds keep attention on the recording itself."
+        flush
+      >
+        <div class="grid grid-cols-6 gap-1.5">
+          {#each registry.list("color") as entry (entry.id)}
+            {@const color = entry.value.value}
+            {@const isSelected = store.backgroundValue === color}
+            <Button
+              variant="raw"
+              size="raw"
+              onclick={() => applyBackground("color", color)}
+              title={entry.label}
+              aria-label="Use {entry.label} background"
+              aria-pressed={isSelected}
+              class={cn(
+                "group relative aspect-square overflow-hidden rounded-md border transition-all",
+                isSelected
+                  ? "border-foreground/60 ring-2 ring-foreground/25"
+                  : "border-border hover:border-foreground/30",
+              )}
+              style="background-color: {color}"
+            >
+              {#if isSelected}
+                {@render selectedMark()}
+              {/if}
+            </Button>
+          {/each}
+        </div>
+
+        <div class="mt-2">
+          <PropRow label="Custom">
+            <ColorField
+              dense
+              hideLabel
+              class="flex-1"
+              label="Custom"
+              value={store.backgroundValue.startsWith("#")
+                ? store.backgroundValue
+                : DEFAULT_BACKGROUND_VALUES.color}
+              {recents}
+              oncommit={(c: string) => {
+                store.pushUndoState();
+                applyBackground("color", c);
+                rememberColor(c);
+              }}
+            />
+          </PropRow>
+        </div>
+      </PanelSection>
+    </Tabs.Content>
+
+    <Tabs.Content value="gradient" class="space-y-4">
+      <PanelSection
+        title="Gradients"
+        hint="Rich preset backdrops, rendered live in the preview and the export."
+        flush
+      >
+        {#snippet action()}
+          <span
+            class="font-mono text-[10px] tabular-nums text-muted-foreground"
+          >
+            {registry.list("gradient").length}
+          </span>
+        {/snippet}
+        <div class="grid grid-cols-3 gap-1.5">
+          {#each registry.list("gradient") as entry (entry.id)}
+            {@const value = entry.value.value}
+            {@const isSelected = store.backgroundValue === value}
+            <Button
+              variant="raw"
+              size="raw"
+              onclick={() => applyBackground("gradient", value)}
+              class={cn(
+                "group relative h-14 overflow-hidden rounded-md border p-1.5 text-left transition-all",
+                isSelected
+                  ? "border-foreground/60 ring-2 ring-foreground/25"
+                  : "border-border hover:border-foreground/30",
+              )}
+              style="background: {value}"
+              aria-label="Use {entry.label} gradient"
+              aria-pressed={isSelected}
+            >
+              <div class="flex h-full items-end">
+                <!-- Opaque scrim, not black/40: at 40% the label failed 4.5:1 over
+                   the lighter gradients (Blush, Sage, Fog). -->
+                <span
+                  class="rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white"
+                >
+                  {entry.label}
+                </span>
+              </div>
+              {#if isSelected}
+                {@render selectedMark()}
+              {/if}
+            </Button>
+          {/each}
+        </div>
+      </PanelSection>
+
+      <GradientBuilder {store} {recents} onRememberColor={rememberColor} />
+    </Tabs.Content>
+
+    <Tabs.Content value="image">
+      <PanelSection
+        title="Image"
+        hint="Imported images fit to cover the full canvas."
+        flush
+      >
+        {#snippet action()}
+          <Button
+            variant="outline"
+            size="xs"
+            class="gap-1.5"
+            onclick={pickBackgroundImage}
+          >
+            <FolderOpen size={11} />
+            {store.backgroundValue ? "Replace" : "Choose"}
+          </Button>
+        {/snippet}
+        {#if store.backgroundValue && isValidImageValue(store.backgroundValue)}
+          <div
+            class="overflow-hidden rounded-md border border-border bg-background"
+          >
+            <Image
+              src={getImagePreviewSrc(store.backgroundValue)}
+              alt="Selected background"
+              layout="constrained"
+              width={320}
+              aspectRatio={16 / 9}
+              objectFit="cover"
+              loading="lazy"
+              decoding="async"
+              class="max-h-56 w-full"
+            />
+          </div>
+        {:else}
+          <div
+            class="flex h-20 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 text-[11px] text-muted-foreground"
+          >
+            No image selected
+          </div>
+        {/if}
+
+        {#if store.backgroundValue && isValidImageValue(store.backgroundValue)}
+          <div class="mt-2.5">
+            {@render blurControl()}
+          </div>
+        {/if}
+      </PanelSection>
+    </Tabs.Content>
   </Tabs.Root>
 
   <PanelSection
@@ -522,21 +516,26 @@ $effect(() => {
           })}
         </div>
 
-        <ColorField
-          label="Shadow color"
-          value={store.shadow.color || "#000000"}
-          {recents}
-          oncommit={(c: string) => {
-            store.pushUndoState();
-            store.updateShadow({ color: c });
-            rememberColor(c);
-          }}
-        />
+        <PropRow label="Color">
+          <ColorField
+            dense
+            hideLabel
+            class="flex-1"
+            label="Shadow color"
+            value={store.shadow.color || "#000000"}
+            {recents}
+            oncommit={(c: string) => {
+              store.pushUndoState();
+              store.updateShadow({ color: c });
+              rememberColor(c);
+            }}
+          />
+        </PropRow>
       </div>
-      {:else}
-        <div class="text-[11px] text-muted-foreground">
-          Drop shadow is disabled. Enable it to adjust its settings.
-        </div>
+    {:else}
+      <div class="text-[11px] text-muted-foreground">
+        Drop shadow is disabled. Enable it to adjust its settings.
+      </div>
     {/if}
   </PanelSection>
 </div>

@@ -2,13 +2,14 @@ mod shot;
 mod source;
 mod target;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use capturekit::{Display, Rect};
+use capturekit::{Display, GpuHandle, Rect};
 
 pub use shot::{grab, grab_region, thumbnail};
-pub use source::{create_capture_source, window_capture_supported};
+pub use source::{create_capture_source, window_capture_supported, FrameMode};
 pub use target::{CaptureArea, CaptureKind, CaptureTarget, RegionRect};
 
 /// A source of screen frames, as raw BGRA8 at `width * 4` bytes per row.
@@ -46,12 +47,32 @@ impl CaptureNotice {
     }
 }
 
+/// One captured frame, in whichever place the source was asked to leave it.
+///
+/// A source is opened in one mode for its whole life, so a consumer sees only
+/// the variant it asked for.
+#[derive(Clone)]
+pub enum CapturedFrame {
+    /// Packed BGRA8 at `width * 4` per row, ready for an encoder's stdin.
+    Host(Arc<[u8]>),
+    /// Left on the GPU. Nothing orders it: wait on the fence before sampling.
+    ///
+    /// Only the Windows writer reads the handle so far, so off Windows this is
+    /// a variant the backends can produce and nothing yet consumes.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    ///
+    /// The backend reuses ONE shared texture, so this addresses whatever the
+    /// source most recently copied there, not a snapshot. It must be consumed
+    /// before the next `capture_next`, which rules out queueing it.
+    Gpu(GpuHandle),
+}
+
 pub trait CaptureSource: Send {
     /// The next frame, or `Ok(None)` if none arrived within `timeout`.
     ///
     /// A recoverable loss reopens the source and reports `Ok(None)`, so the
     /// recording repeats its last frame rather than ending.
-    fn capture_next(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>>;
+    fn capture_next(&mut self, timeout: Duration) -> Result<Option<CapturedFrame>>;
 
     /// Anything the user needs telling since the last call, taken once.
     ///

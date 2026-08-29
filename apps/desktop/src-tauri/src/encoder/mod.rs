@@ -17,6 +17,8 @@ use crate::capture::CaptureArea;
 use crate::recording::pipeline::RecordingPipeline;
 
 pub mod h264;
+#[cfg(windows)]
+pub mod native;
 
 use h264::{EncodePurpose, H264Encoder};
 
@@ -337,7 +339,7 @@ pub fn spawn_encoder_loop(
                     let dups = dup_count(drops, compensated_drops, MAX_DUPS_PER_ITER);
                     compensated_drops += dups;
                     for _ in 0..(1 + dups) {
-                        if let Err(e) = stdin.write_all(&frame.data) {
+                        if let Err(e) = stdin.write_all(&frame) {
                             // Broken pipe — FFmpeg died between our liveness
                             // check and this write. The stderr pump is already
                             // draining, so `wait()` can't hang; surface the real
@@ -353,7 +355,7 @@ pub fn spawn_encoder_loop(
                         }
                         stats.encoded_frames.fetch_add(1, Ordering::Relaxed);
                     }
-                    last_frame = Some(frame.data.clone());
+                    last_frame = Some(frame);
                     continue;
                 }
 

@@ -396,6 +396,7 @@ impl FrameSource for PortalSource {
             stride: meta.stride,
             dirty: DirtyRects::unknown(),
             cursor: None,
+            gpu: None,
         })
     }
 

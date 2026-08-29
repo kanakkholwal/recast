@@ -23,6 +23,11 @@ impl RecordingClock {
         }
     }
 
+    /// The session origin every track measures its first sample from.
+    pub const fn origin(&self) -> Instant {
+        self.start
+    }
+
     /// Wall-clock time since start, excluding all paused intervals.
     pub fn effective_elapsed(&self) -> Duration {
         let raw = self.start.elapsed();

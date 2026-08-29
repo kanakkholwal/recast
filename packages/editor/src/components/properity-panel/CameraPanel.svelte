@@ -2,7 +2,6 @@
 import { Ruler, VideoOff } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
 import { cn } from "@recast/ui/utils";
 import type { CameraCapture } from "../../lib/wire-types";
 import {
@@ -13,12 +12,11 @@ import {
 } from "../../stores/editor-store.svelte";
 import { cameraPlacementAt } from "../_components/camera-overlay.logic";
 import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
-import { clampValue } from "./draggable-value.logic";
 import EasingControl from "./EasingControl.svelte";
 import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
-import Stepper from "./Stepper.svelte";
+import SliderRow from "./SliderRow.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -242,13 +240,6 @@ const shapeOptions = [
             setSize(v / 100);
           }}
         />
-        <Stepper
-          label="width"
-          onStep={(d) => {
-            store.pushUndoState();
-            setSize(clampValue(sizePct + d, 8, 32) / 100);
-          }}
-        />
       </PropRow>
     </PanelSection>
 
@@ -316,7 +307,7 @@ const shapeOptions = [
         />
       {/snippet}
       {#if store.cameraOverlay.zoomFollow}
-        <SliderControl
+        <SliderRow
           label="Strength"
           value={Math.round(store.cameraOverlay.zoomFollowStrength * 100)}
           min={0}
@@ -326,7 +317,7 @@ const shapeOptions = [
           onstart={() => store.pushUndoState()}
           onchange={(next) => store.updateCameraOverlay({ zoomFollowStrength: next / 100 })}
         />
-        <SliderControl
+        <SliderRow
           label="Transition"
           value={Math.round(store.cameraOverlay.zoomFollowDuration * 1000)}
           min={200}
@@ -352,8 +343,8 @@ const shapeOptions = [
       {/if}
     </PanelSection>
 
-    <PanelSection title="Shadow" hint="Drop shadow cast by the bubble. 0% turns it off.">
-      <SliderControl
+    <PanelSection title="Shadow" hint="Drop shadow cast by the bubble. 0% turns it off." flush>
+      <SliderRow
         label="Shadow"
         value={Math.round(store.cameraOverlay.shadow * 100)}
         min={0}

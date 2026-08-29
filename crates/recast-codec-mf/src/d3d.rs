@@ -280,6 +280,44 @@ impl D3dContext {
         })
     }
 
+    /// Open a texture another API shared, rather than creating one here.
+    ///
+    /// This is the seam capture plugs into: a capturekit frame is already a
+    /// shared NT handle on this adapter, so opening it is what keeps the pixels
+    /// on the GPU from duplication all the way to the encoder.
+    pub fn open_shared_texture(
+        &self,
+        handle: isize,
+        width: u32,
+        height: u32,
+    ) -> Result<SharedSurface, EncodeError> {
+        let device1: ID3D11Device1 = self.device.cast()?;
+        // SAFETY: an NT handle to a texture shared on this adapter; a foreign one fails the open.
+        let texture: ID3D11Texture2D =
+            unsafe { device1.OpenSharedResource1(HANDLE(handle as *mut core::ffi::c_void))? };
+        Ok(SharedSurface {
+            texture,
+            // Not ours to close: the producer owns the handle it lent us.
+            handle: HANDLE::default(),
+            width,
+            height,
+        })
+    }
+
+    /// Open a fence another API shared, to wait on its work.
+    pub fn open_shared_fence(&self, handle: isize) -> Result<SyncFence, EncodeError> {
+        let device5: ID3D11Device5 = self.device.cast()?;
+        let mut fence = None;
+        // SAFETY: an NT handle to a fence created with FENCE_FLAG_SHARED.
+        unsafe {
+            device5.OpenSharedFence(HANDLE(handle as *mut core::ffi::c_void), &mut fence)?;
+        }
+        Ok(SyncFence {
+            fence: fence.ok_or_else(|| EncodeError::Media(missing("shared fence")))?,
+            handle: HANDLE::default(),
+        })
+    }
+
     /// The converter the encoder's frames come from.
     ///
     /// The dimensions are the encoder's, and both are even: NV12 carries chroma
@@ -388,6 +426,47 @@ impl D3dContext {
             context.Signal(&fence.fence, value)?;
             context.Flush();
         }
+        Ok(())
+    }
+
+    /// Fill a surface with BGRA rows from host memory.
+    ///
+    /// For a producer that starts on the CPU, which in practice means a test or
+    /// a benchmark. The live path never calls it: a capture frame is already a
+    /// texture, and uploading one is the copy this crate exists to avoid.
+    pub fn write_bgra(&self, target: &SharedSurface, pixels: &[u8]) -> Result<(), EncodeError> {
+        let (width, height) = target.size();
+        let expected = width as usize * height as usize * 4;
+        if pixels.len() < expected {
+            return Err(EncodeError::ShortFrame);
+        }
+        let resource: windows::Win32::Graphics::Direct3D11::ID3D11Resource =
+            target.texture.cast()?;
+        // SAFETY: a full-subresource update; the row pitch is checked against the size above.
+        unsafe {
+            self.context.UpdateSubresource(
+                &resource,
+                0,
+                None,
+                pixels.as_ptr().cast(),
+                width * 4,
+                0,
+            );
+        }
+        Ok(())
+    }
+
+    /// Duplicate one NV12 frame into another, on this device.
+    ///
+    /// What a keepalive repeat uses. Re-reading the producer's shared surface
+    /// for a picture already converted would take the surface back from a
+    /// capture that has been told it is free to overwrite it, and nothing
+    /// orders the two, so the repeat could come out torn.
+    pub fn copy_frame(&self, source: &Nv12Frame, target: &Nv12Frame) -> Result<(), EncodeError> {
+        let source: windows::Win32::Graphics::Direct3D11::ID3D11Resource = source.texture.cast()?;
+        let target: windows::Win32::Graphics::Direct3D11::ID3D11Resource = target.texture.cast()?;
+        // SAFETY: both textures come from this device with the same descriptor.
+        unsafe { self.context.CopyResource(&target, &source) };
         Ok(())
     }
 

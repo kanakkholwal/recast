@@ -10,7 +10,6 @@ import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
 import { Kbd } from "@recast/ui/kbd";
 import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
 import { toast } from "@recast/ui/sonner";
 import { Textarea } from "@recast/ui/textarea";
 import { cubicOut } from "svelte/easing";
@@ -37,6 +36,8 @@ import EasingControl from "./EasingControl.svelte";
 import FontPicker from "./FontPicker.svelte";
 import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import SliderRow from "./SliderRow.svelte";
 import TitlePresetTiles from "./TitlePresetTiles.svelte";
 
 interface Props {
@@ -201,7 +202,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
       <div class="flex items-center justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
           <span
-            class="grid size-5 shrink-0 place-items-center rounded bg-primary/15 text-primary"
+            class="grid size-5 shrink-0 place-items-center rounded bg-muted text-muted-foreground"
           >
             <Icon size={11} />
           </span>
@@ -281,7 +282,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             />
           </div>
 
-          <SliderControl
+          <SliderRow
             label="Size"
             value={k.fontSize * 100}
             min={2}
@@ -350,25 +351,30 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             />
           </div>
 
-          <ColorField
-            label="Color"
-            value={k.color}
-            swatches={STROKE_SWATCHES}
-            {recents}
-            oncommit={(c: string) => {
-              if (a.kind.kind !== "text") return;
-              store.pushUndoState();
-              updateSelected({ kind: { ...a.kind, color: c } });
-              rememberColor(c);
-            }}
-          />
+          <PropRow label="Color">
+            <ColorField
+              dense
+              hideLabel
+              class="flex-1"
+              label="Color"
+              value={k.color}
+              swatches={STROKE_SWATCHES}
+              {recents}
+              oncommit={(c: string) => {
+                if (a.kind.kind !== "text") return;
+                store.pushUndoState();
+                updateSelected({ kind: { ...a.kind, color: c } });
+                rememberColor(c);
+              }}
+            />
+          </PropRow>
         </PanelSection>
       {/if}
 
       {#if a.kind.kind === "blur"}
         {@const k = a.kind}
         <PanelSection title="Blur">
-          <SliderControl
+          <SliderRow
             label="Strength"
             value={k.strength * 100}
             min={0}
@@ -383,8 +389,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
               updateSelected({ kind: { ...a.kind, strength: v / 100 } });
             }}
           />
-          <SliderControl
-            label="Corner radius"
+          <SliderRow
+            label="Radius"
             value={(k.radius ?? 0) * 200}
             min={0}
             max={100}
@@ -423,18 +429,23 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             />
           </div>
           {#if k.variant === "color"}
-            <ColorField
-              label="Tint"
-              value={k.tintColor}
-              swatches={STROKE_SWATCHES}
-              {recents}
-              oncommit={(c: string) => {
-                if (a.kind.kind !== "blur") return;
-                store.pushUndoState();
-                updateSelected({ kind: { ...a.kind, tintColor: c } });
-                rememberColor(c);
-              }}
-            />
+            <PropRow label="Tint">
+              <ColorField
+                dense
+                hideLabel
+                class="flex-1"
+                label="Tint"
+                value={k.tintColor}
+                swatches={STROKE_SWATCHES}
+                {recents}
+                oncommit={(c: string) => {
+                  if (a.kind.kind !== "blur") return;
+                  store.pushUndoState();
+                  updateSelected({ kind: { ...a.kind, tintColor: c } });
+                  rememberColor(c);
+                }}
+              />
+            </PropRow>
           {/if}
         </PanelSection>
       {/if}
@@ -452,8 +463,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
               </span>
               <Button size="xs" variant="outline" onclick={replaceImage}>Replace</Button>
             </div>
-            <SliderControl
-              label="Corner radius"
+            <SliderRow
+              label="Radius"
               value={(k.radius ?? 0) * 200}
               min={0}
               max={100}
@@ -475,8 +486,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
       {#if a.kind.kind === "rect"}
         {@const k = a.kind}
         <PanelSection title="Shape">
-          <SliderControl
-            label="Corner radius"
+          <SliderRow
+            label="Radius"
             value={(k.radius ?? 0) * 200}
             min={0}
             max={100}
@@ -495,7 +506,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
       {#if a.kind.kind === "arrow"}
         {@const k = a.kind}
         <PanelSection title="Arrowhead">
-          <SliderControl
+          <SliderRow
             label="Head size"
             value={k.headSize * 100}
             min={5}
@@ -553,7 +564,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
         <!-- Bounded by the clip, not the raw recording: the old 0..duration range
              let you park an annotation outside the trim, which the export then
              silently moved back in. -->
-        <SliderControl
+        <SliderRow
           label="Start"
           value={a.start}
           min={clipIn}
@@ -564,7 +575,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ start: v })}
         />
-        <SliderControl
+        <SliderRow
           label="End"
           value={a.end}
           min={a.start + 0.1}
@@ -575,7 +586,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ end: v })}
         />
-        <SliderControl
+        <SliderRow
           label="Fade in"
           value={a.rampIn}
           min={0}
@@ -586,7 +597,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampIn: v })}
         />
-        <SliderControl
+        <SliderRow
           label="Fade out"
           value={a.rampOut}
           min={0}

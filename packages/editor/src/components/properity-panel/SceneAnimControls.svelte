@@ -1,8 +1,7 @@
 <script lang="ts">
 import type { IconComponent } from "@recast/icons";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, Move3d } from "@recast/icons";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import { SliderControl } from "@recast/ui/slider-control";
 import { cn } from "@recast/ui/utils";
 import { EASING_PRESETS, easingEquals } from "../../lib/easing/cubic-bezier";
 import {
@@ -15,6 +14,7 @@ import {
 	type SceneAnimSpec,
 } from "../../lib/scenes/segment-anim";
 import type { EditorStore } from "../../stores/editor-store.svelte";
+import SliderRow from "./SliderRow.svelte";
 
 // One side (entrance or exit) of a segment's scene animation. Reads/writes the
 // spec through `store.setSegmentAnim` (coalesced undo). Kept dumb: all state is
@@ -73,7 +73,7 @@ function patch(part: Partial<SceneAnimSpec>) {
       class={cn(
         "rounded-md border px-1.5 py-1 text-[11px] font-medium transition-colors",
         spec === null
-          ? "border-primary/60 bg-primary/10 text-primary"
+          ? "border-transparent bg-foreground text-background"
           : "border-border/60 bg-card/40 text-muted-foreground hover:border-border hover:text-foreground",
       )}
     >
@@ -117,7 +117,7 @@ function patch(part: Partial<SceneAnimSpec>) {
     {/if}
 
     {#if range}
-      <SliderControl
+      <SliderRow
         label={range.label}
         value={intensityValue}
         min={range.min}
@@ -127,27 +127,18 @@ function patch(part: Partial<SceneAnimSpec>) {
         formatValue={(v) =>
           range.unit === "°" ? `${Math.round(v)}°` : `${v.toFixed(2)}${range.unit}`}
         onchange={(v) => patch({ intensity: v })}
-      >
-        {#snippet icon()}
-          <Move3d class="size-3" />
-        {/snippet}
-      </SliderControl>
+      />
     {/if}
 
-    <SliderControl
+    <SliderRow
       label="Duration"
       value={spec.durationMs}
       min={MIN_ANIM_MS}
       max={MAX_ANIM_MS}
       step={50}
-      unit="ms"
       formatValue={(v) => `${Math.round(v)}ms`}
       onchange={(v) => patch({ durationMs: v })}
-    >
-      {#snippet icon()}
-        <Clock class="size-3" />
-      {/snippet}
-    </SliderControl>
+    />
 
     <div class="flex flex-wrap gap-1">
       {#each EASING_PRESETS as preset (preset.id)}

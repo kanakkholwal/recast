@@ -347,6 +347,7 @@ impl FrameSource for AvfCameraSource {
             // A camera repaints its whole sensor every frame.
             dirty: DirtyRects::unknown(),
             cursor: None,
+            gpu: None,
         })
     }
 

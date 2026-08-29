@@ -218,7 +218,7 @@ function fieldBounds(field: keyof Easing) {
       <path
         d={curvePath}
         stroke="currentColor"
-        class="text-primary"
+        class="text-foreground"
         stroke-width="0.012"
         fill="none"
       />
@@ -270,29 +270,13 @@ function fieldBounds(field: keyof Easing) {
           aria-valuemax={1}
           aria-valuenow={hx}
           aria-valuetext="x {hx.toFixed(2)}, y {hy.toFixed(2)}"
-          class={cn("text-primary focus:outline-none", !disabled && "cursor-grab")}
+          class={cn("text-foreground focus:outline-none", !disabled && "cursor-grab")}
           style:cursor={dragging === which ? "grabbing" : undefined}
           onpointerdown={(e) => handleStart(which, e)}
           onkeydown={(e) => handleKey(which, e)}
         />
       {/each}
     </svg>
-  </div>
-
-  <!-- Live preview: a dot runs the track with the current curve, so the shape
-       is felt as motion, not just read as a graph. Decorative; hidden from AT. -->
-  <div class="flex items-center gap-2" aria-hidden="true">
-    <span class="text-[9px] uppercase tracking-wide text-muted-foreground">Preview</span>
-    <div
-      class="relative h-4 min-w-0 flex-1 overflow-hidden rounded-full bg-muted/60 ring-1 ring-inset ring-border/40"
-    >
-      <div
-        class="runner absolute left-1 top-1/2 h-0 w-[calc(100%-1rem)]"
-        style:animation-timing-function="cubic-bezier({value.x1}, {value.y1}, {value.x2}, {value.y2})"
-      >
-        <span class="absolute left-0 top-0 size-2 -translate-y-1/2 rounded-full bg-primary"></span>
-      </div>
-    </div>
   </div>
 
   <!-- Drag-to-scrub value fields (drag the label; click to type). -->
@@ -318,27 +302,3 @@ function fieldBounds(field: keyof Easing) {
     {/each}
   </div>
 </div>
-
-<style>
-  .runner {
-    animation: run 1.8s infinite;
-  }
-
-  @keyframes run {
-    0%,
-    12% {
-      transform: translateX(0);
-    }
-    72%,
-    100% {
-      transform: translateX(100%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .runner {
-      animation: none;
-      transform: translateX(100%);
-    }
-  }
-</style>

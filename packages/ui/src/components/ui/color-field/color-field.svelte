@@ -19,6 +19,10 @@ export interface ColorFieldProps {
 	disabled?: boolean;
 	/** Bits-UI popover alignment. Defaults to `start`. */
 	align?: "start" | "center" | "end";
+	/** Compact h-8 variant on the shared field surface, for inline panel rows. */
+	dense?: boolean;
+	/** Drop the in-field label (swatch leads) when an outer row labels it. */
+	hideLabel?: boolean;
 	class?: string;
 }
 
@@ -41,6 +45,8 @@ const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 		icon,
 		disabled = false,
 		align = "start",
+		dense = false,
+		hideLabel = false,
 		class: className,
 	}: ColorFieldProps = $props();
 
@@ -123,43 +129,19 @@ const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 <Popover.Root>
 	<div
 		class={cn(
-			"group/field relative flex h-10 w-full select-none items-center gap-3 overflow-hidden rounded-md border border-border/40 bg-card/60 px-3 text-left outline-none transition-colors duration-150",
-			"focus-within:ring-2 focus-within:ring-primary/30 focus-within:ring-offset-1 focus-within:ring-offset-background",
+			"group/field relative flex w-full select-none items-center overflow-hidden text-left outline-none",
+			dense
+				? "h-8 gap-2 rounded-lg bg-muted/60 px-2 ring-1 ring-inset ring-border/40 transition-[background-color,box-shadow] duration-150 focus-within:bg-card focus-within:ring-ring/60"
+				: "h-10 gap-3 rounded-md border border-border/40 bg-card/60 px-3 transition-colors duration-150 focus-within:ring-2 focus-within:ring-primary/30 focus-within:ring-offset-1 focus-within:ring-offset-background",
 			disabled
 				? "cursor-not-allowed opacity-50"
-				: "hover:border-border/60 hover:bg-card/80",
+				: dense
+					? "hover:bg-muted"
+					: "hover:border-border/60 hover:bg-card/80",
 			className,
 		)}
 	>
-		<Popover.Trigger>
-			{#snippet child({ props })}
-				<button
-					type="button"
-					{...props}
-					{disabled}
-					aria-label={`${label} — opens color picker`}
-					class={cn(
-						"flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none",
-						disabled ? "cursor-not-allowed" : "cursor-pointer",
-					)}
-				>
-					{#if icon}
-						<span
-							class="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
-						>
-							{@render icon()}
-						</span>
-					{/if}
-					<span
-						class="truncate text-[12px] font-medium text-muted-foreground"
-					>
-						{label}
-					</span>
-				</button>
-			{/snippet}
-		</Popover.Trigger>
-
-		<div class="flex shrink-0 items-center gap-2">
+		{#snippet hexPart()}
 			{#if showInput}
 				<input
 					bind:this={inputEl}
@@ -193,7 +175,8 @@ const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 					aria-label={`${label} hex — hover and click to edit`}
 					tabindex={isHexEditable ? 0 : -1}
 					class={cn(
-						"shrink-0 font-mono text-[12px] font-medium tabular-nums text-foreground/85 outline-none transition-colors",
+						"shrink-0 font-mono font-medium tabular-nums text-foreground/85 outline-none transition-colors",
+						dense ? "text-[11px]" : "text-[12px]",
 						isHexEditable &&
 							"rounded-sm bg-foreground/[0.06] px-1 text-foreground cursor-text",
 						!isHexEditable && "cursor-default",
@@ -203,9 +186,11 @@ const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 					{displayHex}
 				</button>
 			{/if}
+		{/snippet}
 
-			<!-- Swatch — opens the full ColorPicker popover. Checker grid sits
-			     underneath so transparent/alpha colors read correctly. -->
+		<!-- Swatch — opens the full ColorPicker popover. Checker grid sits
+		     underneath so transparent/alpha colors read correctly. -->
+		{#snippet swatchPart()}
 			<Popover.Trigger>
 				{#snippet child({ props })}
 					<button
@@ -214,8 +199,9 @@ const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 						{disabled}
 						aria-label={`${label} swatch — opens color picker`}
 						class={cn(
-							"relative inline-block h-4 w-7 overflow-hidden rounded-md border border-border/60 shadow-[inset_0_0_0_1px_color-mix(in_srgb,_var(--color-foreground)_4%,_transparent)] outline-none transition-transform",
+							"relative inline-block shrink-0 overflow-hidden rounded-md border border-border/60 shadow-[inset_0_0_0_1px_color-mix(in_srgb,_var(--color-foreground)_4%,_transparent)] outline-none transition-transform",
 							"focus-visible:ring-2 focus-visible:ring-primary/30",
+							dense ? "size-4" : "h-4 w-7",
 							disabled
 								? "cursor-not-allowed"
 								: "cursor-pointer hover:scale-105 active:scale-95",
@@ -234,7 +220,46 @@ const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 					</button>
 				{/snippet}
 			</Popover.Trigger>
-		</div>
+		{/snippet}
+
+		{#if hideLabel}
+			{@render swatchPart()}
+			{@render hexPart()}
+			<div class="min-w-0 flex-1"></div>
+		{:else}
+			<Popover.Trigger>
+				{#snippet child({ props })}
+					<button
+						type="button"
+						{...props}
+						{disabled}
+						aria-label={`${label} — opens color picker`}
+						class={cn(
+							"flex min-w-0 flex-1 items-center gap-1.5 text-left outline-none",
+							disabled ? "cursor-not-allowed" : "cursor-pointer",
+						)}
+					>
+						{#if icon}
+							<span
+								class="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
+							>
+								{@render icon()}
+							</span>
+						{/if}
+						<span
+							class="truncate text-[12px] font-medium text-muted-foreground"
+						>
+							{label}
+						</span>
+					</button>
+				{/snippet}
+			</Popover.Trigger>
+
+			<div class="flex shrink-0 items-center gap-2">
+				{@render hexPart()}
+				{@render swatchPart()}
+			</div>
+		{/if}
 	</div>
 
 	<Popover.Content {align} sideOffset={6} class="w-auto p-0">

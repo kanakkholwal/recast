@@ -5,13 +5,14 @@
 //! between the app's resolved [`CaptureTarget`] and capturekit's [`Target`],
 //! then repacks frames for the encoder.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use capturekit::{CaptureError, Capturer, DisplayId, Target, WindowId};
 
 use super::{CaptureKind, CaptureTarget};
-use super::{CaptureNotice, CaptureSource};
+use super::{CaptureNotice, CaptureSource, CapturedFrame};
 use crate::encoder::pack_rows;
 
 /// Whether a window can be captured as its own surface rather than as a crop of
@@ -23,8 +24,21 @@ pub fn window_capture_supported() -> bool {
     capturekit::capabilities().window_capture
 }
 
-pub fn create_capture_source(target: &CaptureTarget, fps: u32) -> Result<Box<dyn CaptureSource>> {
-    Ok(Box::new(CapturekitSource::open(target, fps)?))
+/// Where the source should leave its pixels.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FrameMode {
+    /// Read back to host memory, packed for an encoder that reads bytes.
+    Host,
+    /// Left on the GPU as a shared handle, for an encoder that takes textures.
+    Gpu,
+}
+
+pub fn create_capture_source(
+    target: &CaptureTarget,
+    fps: u32,
+    mode: FrameMode,
+) -> Result<Box<dyn CaptureSource>> {
+    Ok(Box::new(CapturekitSource::open(target, fps, mode)?))
 }
 
 /// How long to wait between reopen attempts after a loss.
@@ -38,6 +52,7 @@ const REACQUIRE_INTERVAL: Duration = Duration::from_millis(500);
 struct CapturekitSource {
     target: Target,
     fps: u32,
+    mode: FrameMode,
     /// `None` between a loss and a successful reopen.
     capturer: Option<Capturer>,
     width: u32,
@@ -57,21 +72,28 @@ struct CapturekitSource {
 /// the encoder's dropped-frame compensation. `readback_rate` is what a
 /// self-pacing caller still owes a push backend: WGC delivers on every repaint,
 /// and each readback maps GPU memory.
-fn open_capturer(target: &Target, fps: u32) -> Result<Capturer> {
-    capturekit::capturer(target.clone())
+fn open_capturer(target: &Target, fps: u32, mode: FrameMode) -> Result<Capturer> {
+    let mut builder = capturekit::capturer(target.clone())
         .readback_rate(fps)
+        .gpu_handles(mode == FrameMode::Gpu);
+    if mode == FrameMode::Gpu {
+        // capturekit paces constantly by default, and its repeats carry no GPU handle.
+        builder = builder.pacing(capturekit::Pacing::Passthrough);
+    }
+    builder
         .build()
         .with_context(|| format!("failed to open {} capture", target.kind_name()))
 }
 
 impl CapturekitSource {
-    fn open(target: &CaptureTarget, fps: u32) -> Result<Self> {
+    fn open(target: &CaptureTarget, fps: u32, mode: FrameMode) -> Result<Self> {
         let resolved = resolve(target);
-        let capturer = open_capturer(&resolved, fps)?;
+        let capturer = open_capturer(&resolved, fps, mode)?;
         let desc = capturer.describe();
         Ok(Self {
             target: resolved,
             fps,
+            mode,
             width: desc.width,
             height: desc.height,
             capturer: Some(capturer),
@@ -93,7 +115,7 @@ impl CapturekitSource {
         }
         self.retry_at = Some(Instant::now() + REACQUIRE_INTERVAL);
 
-        let capturer = match open_capturer(&self.target, self.fps) {
+        let capturer = match open_capturer(&self.target, self.fps, self.mode) {
             Ok(capturer) => capturer,
             Err(e) => {
                 log::warn!("screen source could not be reopened: {e:#}");
@@ -139,17 +161,31 @@ impl CapturekitSource {
 }
 
 impl CaptureSource for CapturekitSource {
-    fn capture_next(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>> {
+    fn capture_next(&mut self, timeout: Duration) -> Result<Option<CapturedFrame>> {
         let Some(capturer) = self.capturer.as_mut() else {
             // Reopened or not, this tick has no frame; the loop repeats its last.
             self.reacquire();
             return Ok(None);
         };
-        // The frame borrows the capturer, so it is packed and released first.
+        // The frame borrows the capturer, so it is taken and released first.
         let failure = match capturer.next_frame(timeout) {
             Ok(frame) => {
-                let packed = pack_rows(frame.bytes(), frame.stride(), self.width, self.height);
-                return Ok(Some(packed));
+                let taken = match (self.mode, frame.gpu_handle()) {
+                    (FrameMode::Gpu, Some(handle)) => CapturedFrame::Gpu(*handle),
+                    // A silent host fallback is how a readback reached this path once.
+                    (FrameMode::Gpu, None) => {
+                        return Err(anyhow::anyhow!(
+                            "the capture answered without a GPU handle although one was asked for"
+                        ))
+                    }
+                    (FrameMode::Host, _) => CapturedFrame::Host(Arc::from(pack_rows(
+                        frame.bytes(),
+                        frame.stride(),
+                        self.width,
+                        self.height,
+                    ))),
+                };
+                return Ok(Some(taken));
             }
             Err(e) => e,
         };
@@ -260,7 +296,8 @@ mod tests {
             return;
         };
         let source = target(CaptureKind::Display, primary.id.0, primary.id.0);
-        let mut capture = CapturekitSource::open(&source, 60).expect("the primary display opens");
+        let mut capture = CapturekitSource::open(&source, 60, FrameMode::Host)
+            .expect("the primary display opens");
         assert_eq!(capture.width(), primary.bounds.width);
         assert_eq!(capture.height(), primary.bounds.height);
 
@@ -270,15 +307,18 @@ mod tests {
             if std::time::Instant::now() >= deadline {
                 panic!("no frame within 5s from a display the platform listed");
             }
-            if let Some(bytes) = capture
+            if let Some(frame) = capture
                 .capture_next(Duration::from_millis(200))
                 .expect("capture did not fail")
             {
-                break bytes;
+                break frame;
             }
         };
+        let CapturedFrame::Host(bytes) = frame else {
+            panic!("a host-mode source must not answer with a GPU handle");
+        };
         assert_eq!(
-            frame.len(),
+            bytes.len(),
             capture.width() as usize * capture.height() as usize * 4,
             "a packed frame is exactly width * height * 4"
         );

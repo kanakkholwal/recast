@@ -1,5 +1,5 @@
 <script lang="ts">
-import { AudioLines, Mic, MicOff, RotateCcw, Speaker, VolumeOff, Waves } from "@recast/icons";
+import { Mic, MicOff, RotateCcw, Speaker, VolumeOff, Waves } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
@@ -17,12 +17,10 @@ import {
 	FADE_PRESETS,
 	type FadePreset,
 } from "./audio-panel.logic";
-import { clampValue } from "./draggable-value.logic";
 import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
 import SettingRow from "./SettingRow.svelte";
-import Stepper from "./Stepper.svelte";
 
 // A drag pushes undo once at the start, a typed/keyed edit is one undo entry.
 function fadeField(key: "fadeIn" | "fadeOut") {
@@ -32,11 +30,6 @@ function fadeField(key: "fadeIn" | "fadeOut") {
 		onCommit: (v: number, viaDrag: boolean) => {
 			if (!viaDrag) store.pushUndoState();
 			store.updateAudioSettings({ [key]: v });
-		},
-		onStep: (d: 1 | -1) => {
-			store.pushUndoState();
-			const next = clampValue(Number((store.audioSettings[key] + d * 0.05).toFixed(2)), 0, 5);
-			store.updateAudioSettings({ [key]: next });
 		},
 	};
 }
@@ -138,8 +131,10 @@ const zoneText = $derived(
     {/snippet}
 
     <div class="flex flex-col gap-2.5">
-      <div class="flex items-center gap-1">
+      <PropRow label="Master">
         <SliderControl
+          dense
+          hideLabel
           class="min-w-0 flex-1"
           label="Master"
           value={store.audioSettings.volume}
@@ -151,22 +146,18 @@ const zoneText = $derived(
           onstart={() => store.pushUndoState()}
           onchange={(next) => store.updateAudioSettings({ volume: next })}
           formatValue={(v) => `${v}%`}
-        >
-          {#snippet icon()}
-            <AudioLines size={11} />
-          {/snippet}
-        </SliderControl>
+        />
         <Button
           variant="ghost"
           size="xs"
-          class="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+          class="size-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
           onclick={resetVolume}
           title="Reset master volume to 100%"
           aria-label="Reset master volume"
         >
           <RotateCcw size={11} />
         </Button>
-      </div>
+      </PropRow>
 
       <!-- dB, plus the boost/clipping warning. The old version put this in a
            hero card with a 0-200 bar that read as a level meter but only ever
@@ -324,7 +315,6 @@ const zoneText = $derived(
           onInput={fin.onInput}
           onCommit={fin.onCommit}
         />
-        <Stepper label="fade in" onStep={fin.onStep} />
       </PropRow>
       <PropRow label="Fade out">
         <NumberField
@@ -341,7 +331,6 @@ const zoneText = $derived(
           onInput={fout.onInput}
           onCommit={fout.onCommit}
         />
-        <Stepper label="fade out" onStep={fout.onStep} />
       </PropRow>
     </div>
   </PanelSection>
@@ -360,6 +349,7 @@ const zoneText = $derived(
       : store.audioSettings.micMuted}
     <div class="flex items-center gap-1">
       <SliderControl
+        dense
         class="min-w-0 flex-1"
         label={name}
         value={level}
@@ -386,7 +376,7 @@ const zoneText = $derived(
       <Button
         variant="ghost"
         size="xs"
-        class="size-6 shrink-0 p-0 {muted
+        class="size-8 shrink-0 p-0 {muted
           ? 'text-destructive hover:text-destructive'
           : 'text-muted-foreground hover:text-foreground'}"
         aria-label="Mute {name}"
@@ -410,7 +400,7 @@ const zoneText = $derived(
       <Button
         variant="ghost"
         size="xs"
-        class="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+        class="size-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
         onclick={isSystem ? resetSystemVolume : resetMicVolume}
         title="Reset {name} to 100%"
         aria-label="Reset {name} level"

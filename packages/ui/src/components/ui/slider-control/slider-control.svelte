@@ -17,6 +17,10 @@ export interface SliderControlProps {
 	class?: string;
 	/** Show step/decile hash marks behind the fill. Default true. */
 	hashMarks?: boolean;
+	/** Compact h-8 variant on the shared field surface, for inline panel rows. */
+	dense?: boolean;
+	/** Drop the in-track label (keep the aria name) when an outer row labels it. */
+	hideLabel?: boolean;
 	onstart?: () => void;
 	onchange?: (value: number) => void;
 	oncommit?: (value: number) => void;
@@ -60,6 +64,8 @@ function snapToDecile(v: number, min: number, max: number): number {
 		disabled = false,
 		class: className,
 		hashMarks: showHashMarks = true,
+		dense = false,
+		hideLabel = false,
 		onstart,
 		onchange,
 		oncommit,
@@ -435,11 +441,15 @@ function snapToDecile(v: number, min: number, max: number): number {
 	role="group"
 	aria-label={label}
 	class={cn(
-		"relative h-10 w-full select-none overflow-hidden rounded-md border border-border/40 bg-card/60 outline-none transition-colors duration-150",
-		"focus-within:ring-2 focus-within:ring-primary/30 focus-within:ring-offset-1 focus-within:ring-offset-background",
+		"relative w-full select-none overflow-hidden outline-none transition-colors duration-150",
+		dense
+			? "h-8 rounded-lg bg-muted/60 ring-1 ring-inset ring-border/40 focus-within:ring-ring/60"
+			: "h-10 rounded-md border border-border/40 bg-card/60 focus-within:ring-2 focus-within:ring-primary/30 focus-within:ring-offset-1 focus-within:ring-offset-background",
 		disabled
 			? "cursor-not-allowed opacity-50"
-			: "hover:border-border/60 hover:bg-card/80",
+			: dense
+				? "hover:bg-muted"
+				: "hover:border-border/60 hover:bg-card/80",
 		className,
 	)}
 	onmouseenter={() => (isHovered = true)}
@@ -501,7 +511,9 @@ function snapToDecile(v: number, min: number, max: number): number {
 			style:transform={`scaleX(${handleScaleXMv.current}) scaleY(${handleScaleYMv.current})`}
 		></div>
 
-		<!-- Label (left). z-20 so it floats above the fill. -->
+		<!-- Label (left). z-20 so it floats above the fill. Hidden when an outer
+		     row already labels the slider; the flex-1 spacer stays to keep the
+		     value pinned right. -->
 		<div class="pointer-events-none relative z-20 flex min-w-0 flex-1 items-center gap-1.5">
 			{#if icon}
 				<span
@@ -510,12 +522,14 @@ function snapToDecile(v: number, min: number, max: number): number {
 					{@render icon()}
 				</span>
 			{/if}
-			<span
-				bind:this={labelEl}
-				class="truncate text-[12px] font-medium text-muted-foreground"
-			>
-				{label}
-			</span>
+			{#if !hideLabel}
+				<span
+					bind:this={labelEl}
+					class={cn("truncate font-medium text-muted-foreground", dense ? "text-[11px]" : "text-[12px]")}
+				>
+					{label}
+				</span>
+			{/if}
 		</div>
 
 		<!-- Value (right). Click, or focus and press Enter, to type an exact value. -->
@@ -543,7 +557,8 @@ function snapToDecile(v: number, min: number, max: number): number {
 					? `${label}: type an exact value`
 					: undefined}
 				class={cn(
-					"relative z-20 shrink-0 pl-3 font-mono text-[12px] font-medium tabular-nums text-foreground/85 transition-colors",
+					"relative z-20 shrink-0 pl-3 font-mono font-medium tabular-nums text-foreground/85 transition-colors",
+					dense ? "text-[11px]" : "text-[12px]",
 					"focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring",
 					isValueEditable &&
 						isValueHovered &&

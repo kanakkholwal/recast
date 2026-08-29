@@ -113,7 +113,6 @@ pub(crate) struct Readback {
     context: ID3D11DeviceContext,
     resource: ID3D11Resource,
     height: u32,
-    format: PixelFormat,
     mapped: Option<D3D11_MAPPED_SUBRESOURCE>,
 }
 
@@ -125,23 +124,14 @@ impl Readback {
         height: u32,
         format: DXGI_FORMAT,
     ) -> Result<Self> {
-        let pixel_format = pixel_format(format).ok_or(CaptureError::Unsupported {
-            backend: BACKEND,
-            operation: "deliver frames in this surface format",
-        })?;
         let staging = staging_texture(device, width, height, format)?;
         let resource: ID3D11Resource = staging.cast::<ID3D11Resource>().map_err(err)?;
         Ok(Self {
             context,
             resource,
             height,
-            format: pixel_format,
             mapped: None,
         })
-    }
-
-    pub(crate) const fn format(&self) -> PixelFormat {
-        self.format
     }
 
     /// Copy `source` into the staging texture, cropping on the GPU when `region`
@@ -242,8 +232,13 @@ pub(crate) struct SharedSurface {
     texture: ID3D11Texture2D,
     context: ID3D11DeviceContext4,
     fence: ID3D11Fence,
+    /// Signalled by the CONSUMER when it has finished with a frame. One texture
+    /// is reused for every frame, so without this the next copy overwrites the
+    /// picture while the consumer is still reading it.
+    release: ID3D11Fence,
     texture_handle: isize,
     fence_handle: isize,
+    release_handle: isize,
     /// Incremented per copy, so a consumer waits for its own frame.
     signalled: u64,
 }
@@ -282,6 +277,10 @@ impl SharedSurface {
         let mut fence_slot: Option<ID3D11Fence> = None;
         unsafe { device5.CreateFence(0, D3D11_FENCE_FLAG_SHARED, &mut fence_slot) }.map_err(err)?;
         let fence = fence_slot.ok_or_else(|| missing("create a shared fence"))?;
+        let mut release_slot: Option<ID3D11Fence> = None;
+        unsafe { device5.CreateFence(0, D3D11_FENCE_FLAG_SHARED, &mut release_slot) }
+            .map_err(err)?;
+        let release = release_slot.ok_or_else(|| missing("create a release fence"))?;
 
         let texture_handle = unsafe {
             texture
@@ -292,18 +291,27 @@ impl SharedSurface {
         .map_err(err)?;
         let fence_handle =
             unsafe { fence.CreateSharedHandle(None, GENERIC_ALL, None) }.map_err(err)?;
+        let release_handle =
+            unsafe { release.CreateSharedHandle(None, GENERIC_ALL, None) }.map_err(err)?;
 
         Ok(Self {
             texture,
             context: context4,
             fence,
+            release,
             texture_handle: texture_handle.0 as isize,
             fence_handle: fence_handle.0 as isize,
+            release_handle: release_handle.0 as isize,
             signalled: 0,
         })
     }
 
     /// Copy `source` in and signal the fence, returning the value to wait for.
+    ///
+    /// Queues a wait for the consumer to release the PREVIOUS frame first. This
+    /// is a GPU-side wait, so the CPU does not block, but it does mean a
+    /// consumer that takes a handle and never signals `release` stalls the
+    /// capture. That is the contract [`GpuHandle`] states.
     pub(crate) fn copy_from(
         &mut self,
         source: &ID3D11Texture2D,
@@ -313,6 +321,10 @@ impl SharedSurface {
         let destination: ID3D11Resource = self.texture.cast().map_err(err)?;
         let source_resource: ID3D11Resource = source.cast().map_err(err)?;
         unsafe {
+            // Zero on the first copy, which a fence starting at zero passes.
+            self.context
+                .Wait(&self.release, self.signalled)
+                .map_err(err)?;
             self.context.CopySubresourceRegion(
                 &destination,
                 0,
@@ -329,15 +341,16 @@ impl SharedSurface {
         Ok(self.signalled)
     }
 
-    pub(crate) const fn handles(&self) -> (isize, isize) {
-        (self.texture_handle, self.fence_handle)
+    /// The texture, the producer's fence and the consumer's release fence.
+    pub(crate) const fn handles(&self) -> (isize, isize, isize) {
+        (self.texture_handle, self.fence_handle, self.release_handle)
     }
 }
 
 impl Drop for SharedSurface {
     fn drop(&mut self) {
         // Duplicated into the consumer, so closing ours does not invalidate theirs.
-        for handle in [self.texture_handle, self.fence_handle] {
+        for handle in [self.texture_handle, self.fence_handle, self.release_handle] {
             if handle != 0 {
                 unsafe {
                     let _ = CloseHandle(HANDLE(handle as *mut core::ffi::c_void));

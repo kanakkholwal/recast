@@ -1,25 +1,18 @@
 <script lang="ts">
 import {
 	AiWand,
-	Clock,
 	Copy,
 	Crosshair,
 	Eye,
 	EyeOff,
-	MoveHorizontal,
-	MoveVertical,
 	Plus,
 	Sparkles,
 	Trash2,
-	TrendingDown,
-	TrendingUp,
 	TriangleAlert,
-	Wind,
 	ZoomIn,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
@@ -45,6 +38,7 @@ import {
 	sparklinePath,
 } from "./focus-panel.logic";
 import PanelSection from "./PanelSection.svelte";
+import SliderRow from "./SliderRow.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -301,7 +295,7 @@ function applyPresetToBoth(preset: Easing) {
             class={cn(
               "group relative flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all duration-150",
               isActive
-                ? "border-primary/60 bg-primary/10 shadow-(--shadow-craft-inset)"
+                ? "border-foreground/40 bg-card shadow-(--shadow-craft-inset) ring-1 ring-inset ring-foreground/20"
                 : "border-border/60 bg-card/60 hover:border-border hover:bg-card",
               isHidden && "opacity-55",
             )}
@@ -316,13 +310,13 @@ function applyPresetToBoth(preset: Easing) {
             <span
               class={cn(
                 "pointer-events-none w-3.5 shrink-0 text-center text-[10px] font-semibold tabular-nums",
-                isActive ? "text-primary" : "text-muted-foreground/70",
+                isActive ? "text-foreground" : "text-muted-foreground/70",
               )}>{i + 1}</span>
             <span
               class={cn(
                 "pointer-events-none flex h-8 w-12 shrink-0 items-center justify-center rounded-md border transition-colors",
                 isActive
-                  ? "border-primary/40 bg-background/40 text-primary"
+                  ? "border-foreground/40 bg-background/40 text-foreground"
                   : "border-border/50 bg-background/40 text-muted-foreground group-hover:text-foreground",
               )}
             >
@@ -348,7 +342,7 @@ function applyPresetToBoth(preset: Easing) {
                 </span>
                 {#if region.source === "auto"}
                   <span
-                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-primary/30 bg-primary/10 px-1 text-[9px] font-semibold uppercase tracking-wider text-primary"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-border/60 bg-muted/60 px-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground"
                   >
                     <Sparkles size={8} />
                     Auto
@@ -551,22 +545,17 @@ function applyPresetToBoth(preset: Easing) {
           onchange={(x, y) => updateSelected({ centerX: x, centerY: y })}
         />
 
-        <SliderControl
+        <SliderRow
           label="Scale"
           value={region.scale}
           min={1}
           max={3}
           step={0.05}
-          unit="×"
           formatValue={(v) => `${v.toFixed(2)}×`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ scale: v })}
-        >
-          {#snippet icon()}
-            <ZoomIn size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="Focus X"
           value={region.centerX}
           min={0}
@@ -575,12 +564,8 @@ function applyPresetToBoth(preset: Easing) {
           formatValue={(v) => v.toFixed(2)}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ centerX: v })}
-        >
-          {#snippet icon()}
-            <MoveHorizontal size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="Focus Y"
           value={region.centerY}
           min={0}
@@ -589,31 +574,22 @@ function applyPresetToBoth(preset: Easing) {
           formatValue={(v) => v.toFixed(2)}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ centerY: v })}
-        >
-          {#snippet icon()}
-            <MoveVertical size={11} />
-          {/snippet}
-        </SliderControl>
+        />
 
         <!-- Preview-only, and it must say so: the Rust compositor has no zoom
              motion blur (only the cursor trail does), and every region defaults
              to 0.5, so exports come out sharper than the editor looks. -->
-        <SliderControl
-          label="Motion blur"
+        <SliderRow
+          label="Blur"
           description="Preview only. Not applied to exported video."
           value={Math.round(region.motionBlur * 100)}
           min={0}
           max={100}
           step={1}
-          unit="%"
           formatValue={(v) => (v === 0 ? "Off" : `${v.toFixed(0)}%`)}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ motionBlur: v / 100 })}
-        >
-          {#snippet icon()}
-            <Wind size={11} />
-          {/snippet}
-        </SliderControl>
+        />
         {#if region.motionBlur > 0.001}
           <p class="px-0.5 text-[10px] leading-snug text-muted-foreground">
             Motion blur shows in the preview only. The exported video is not blurred.
@@ -651,66 +627,46 @@ function applyPresetToBoth(preset: Easing) {
             </Button>
           </div>
         {/snippet}
-        <SliderControl
+        <SliderRow
           label="Start"
           value={region.start}
           min={clipIn}
           max={Math.max(region.end - 0.1, clipIn)}
           step={0.01}
-          unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ start: v })}
-        >
-          {#snippet icon()}
-            <Clock size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="End"
           value={region.end}
           min={region.start + 0.1}
           max={clipOut}
           step={0.01}
-          unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ end: v })}
-        >
-          {#snippet icon()}
-            <Clock size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="Ramp in"
           value={region.rampIn}
           min={0}
           max={Math.max(maxRamp, 0.01)}
           step={0.01}
-          unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampIn: v })}
-        >
-          {#snippet icon()}
-            <TrendingUp size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="Ramp out"
           value={region.rampOut}
           min={0}
           max={Math.max(maxRamp, 0.01)}
           step={0.01}
-          unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampOut: v })}
-        >
-          {#snippet icon()}
-            <TrendingDown size={11} />
-          {/snippet}
-        </SliderControl>
+        />
       </PanelSection>
 
       <!-- Presets lead; raw bezier curves live behind a "Custom curves" disclosure. -->

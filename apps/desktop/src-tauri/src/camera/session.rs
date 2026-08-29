@@ -20,8 +20,8 @@ use capturekit::Target;
 use super::scale::downscale_bgra;
 use crate::encoder::pack_rows;
 use crate::encoder::{spawn_encoder_loop, EncoderConfig, RecordingQuality};
-use crate::recording::pipeline::{RecordingPipeline, VideoFrame};
-use crate::recording::{RecordingClock, TrackStart};
+use crate::recording::pipeline::RecordingPipeline;
+use crate::recording::TrackStart;
 
 /// How long to wait for a frame before re-checking the stop flag.
 const POLL: Duration = Duration::from_millis(250);
@@ -69,7 +69,6 @@ struct Recorder {
     pipeline: RecordingPipeline,
     encoder: thread::JoinHandle<Result<()>>,
     stop: Arc<AtomicBool>,
-    clock: RecordingClock,
     track: TrackStart,
     pause: Arc<AtomicBool>,
 }
@@ -227,7 +226,6 @@ pub fn stop(session: u64) {
 pub fn attach_recorder(
     dest: PathBuf,
     fps: u32,
-    clock: RecordingClock,
     track: TrackStart,
     pause: Arc<AtomicBool>,
 ) -> Result<()> {
@@ -259,7 +257,6 @@ pub fn attach_recorder(
         pipeline,
         encoder,
         stop,
-        clock,
         track,
         pause,
     });
@@ -343,12 +340,7 @@ fn deliver(
         if let Some(rec) = held.as_ref() {
             if !rec.pause.load(Ordering::Acquire) {
                 rec.track.mark();
-                rec.pipeline.push(VideoFrame {
-                    timestamp_us: rec.clock.effective_elapsed().as_micros() as u64,
-                    width: geometry.width,
-                    height: geometry.height,
-                    data: packed.to_vec().into(),
-                });
+                rec.pipeline.push(packed.to_vec().into());
             }
         }
     }

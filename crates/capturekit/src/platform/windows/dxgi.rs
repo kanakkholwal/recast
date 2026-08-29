@@ -89,7 +89,9 @@ pub(crate) struct DxgiSource {
     duplication: IDXGIOutputDuplication,
     /// Held only to outlive the duplication, which the device owns.
     _device: ID3D11Device,
-    readback: Readback,
+    /// `None` when the caller asked for GPU handles: the staging texture is the
+    /// host copy that mode exists to avoid, and at 4K it is 33 MB of it.
+    readback: Option<Readback>,
     desc: SourceDesc,
     display: DisplayId,
     region: Option<Rect>,
@@ -111,6 +113,13 @@ pub(crate) struct DxgiSource {
 // exists to satisfy `FrameSource`; a `DxgiSource` is moved to its capture
 // thread before any call and never shared between two.
 unsafe impl Send for DxgiSource {}
+
+/// Release the mapped staging texture, where the capture has one at all.
+fn unmap(readback: Option<&mut Readback>) {
+    if let Some(readback) = readback {
+        readback.unmap();
+    }
+}
 
 impl DxgiSource {
     pub(crate) fn open(display: DisplayId, opts: &OpenOptions) -> Result<Self> {
@@ -155,31 +164,37 @@ impl DxgiSource {
             };
         let staged = region.unwrap_or(surface);
 
-        let readback = Readback::new(
-            &device,
-            context.clone(),
-            staged.width,
-            staged.height,
-            dupl_desc.ModeDesc.Format,
-        )?;
-        let shared = if opts.gpu_handles {
-            Some(d3d::SharedSurface::new(
+        // One or the other: GPU mode is zero-copy because no staging texture exists.
+        let format =
+            d3d::pixel_format(dupl_desc.ModeDesc.Format).ok_or(CaptureError::Unsupported {
+                backend: BACKEND,
+                operation: "deliver this display's pixel format",
+            })?;
+        let (readback, shared) = if opts.gpu_handles {
+            let shared = d3d::SharedSurface::new(
                 &device,
                 &context,
                 staged.width,
                 staged.height,
                 dupl_desc.ModeDesc.Format,
-            )?)
+            )?;
+            (None, Some(shared))
         } else {
-            None
+            let readback = Readback::new(
+                &device,
+                context,
+                staged.width,
+                staged.height,
+                dupl_desc.ModeDesc.Format,
+            )?;
+            (Some(readback), None)
         };
 
         let desc = SourceDesc {
             width: staged.width,
             height: staged.height,
-            format: readback.format(),
-            // The compositor hands out full-range sRGB whatever profile the
-            // monitor itself carries.
+            format,
+            // The compositor hands out full-range sRGB whatever the monitor carries.
             color_space: ColorSpace::SRGB,
             rotation: rotation_of(output_desc.Rotation),
             scale_factor: 1.0,
@@ -397,7 +412,7 @@ impl FrameSource for DxgiSource {
     }
 
     fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>> {
-        self.readback.unmap();
+        unmap(self.readback.as_mut());
         self.release_frame();
 
         let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
@@ -426,21 +441,25 @@ impl FrameSource for DxgiSource {
             operation: "deliver a frame without a surface",
         })?;
         let texture: ID3D11Texture2D = resource.cast().map_err(d3d::err)?;
-        // One or the other: a readback here is the host copy this mode avoids.
         let gpu = match self.shared.as_mut() {
             Some(shared) => {
                 let ready_at = shared.copy_from(&texture, self.region)?;
-                let (texture_handle, fence) = shared.handles();
+                let (texture_handle, fence, release) = shared.handles();
                 Some(GpuHandle {
                     texture: texture_handle,
                     fence,
+                    release,
                     ready_at,
                     width: self.desc.width,
                     height: self.desc.height,
                 })
             }
             None => {
-                self.readback.copy_from(&texture, self.region)?;
+                let readback = self.readback.as_mut().ok_or(CaptureError::Unsupported {
+                    backend: BACKEND,
+                    operation: "read back a capture opened for GPU handles",
+                })?;
+                readback.copy_from(&texture, self.region)?;
                 None
             }
         };
@@ -453,10 +472,9 @@ impl FrameSource for DxgiSource {
         self.cursor.update(&self.duplication, &info);
         let dirty = self.dirty.clone();
         let cursor = Some(self.cursor.sample(pts, self.region));
-        let (bytes, stride) = if gpu.is_some() {
-            (&[][..], 0)
-        } else {
-            self.readback.map()?
+        let (bytes, stride) = match self.readback.as_mut() {
+            Some(readback) => readback.map()?,
+            None => (&[][..], 0),
         };
         Ok(RawFrame {
             pts,
@@ -469,7 +487,7 @@ impl FrameSource for DxgiSource {
     }
 
     fn stop(&mut self) -> Result<()> {
-        self.readback.unmap();
+        unmap(self.readback.as_mut());
         self.release_frame();
         Ok(())
     }

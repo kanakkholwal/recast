@@ -47,6 +47,9 @@ tauri-build = { version = "2.5.6", features = [] }
 # Every screen, window and camera capture in the app, on all three platforms.
 # `serde` because its `Rect` is the rectangle the project format stores.
 capturekit = { path = "../../../crates/capturekit", features = ["serde"] }
+# Phase 4: the FFmpeg-free encode and mux path the recorder writes through.
+recast-codec = { path = "../../../crates/recast-codec" }
+recast-mux = { path = "../../../crates/recast-mux" }
 recast-captions = { path = "../../../crates/recast-captions" }
 recast-scene = { path = "../../../crates/recast-scene" }
 recast-time = { path = "../../../crates/recast-time" }
@@ -160,6 +163,8 @@ rustybuzz = "0.20"
 tauri-plugin-clipboard-manager = "2"
 
 [target.'cfg(windows)'.dependencies]
+# Media Foundation H.264, including the zero-copy texture encode path.
+recast-codec-mf = { path = "../../../crates/recast-codec-mf" }
 windows = { version = "0.58.0", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

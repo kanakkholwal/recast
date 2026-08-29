@@ -6,16 +6,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use crossbeam_queue::ArrayQueue;
 
-use crate::capture::{CaptureNotice, CaptureSource};
-
-#[derive(Clone)]
-#[allow(dead_code)]
-pub struct VideoFrame {
-    pub timestamp_us: u64,
-    pub width: u32,
-    pub height: u32,
-    pub data: Arc<[u8]>,
-}
+use crate::capture::{CaptureNotice, CaptureSource, CapturedFrame};
 
 #[derive(Clone, Default)]
 pub struct PipelineStats {
@@ -41,9 +32,15 @@ pub struct PipelineSnapshot {
     pub encoded_frames: u64,
 }
 
+/// Packed frames waiting for the encoder thread, and what that thread's
+/// throughput looks like.
+///
+/// The frames carry no timing: the writer on the other end declares a fixed rate
+/// and derives every duration from the frame count, so a timestamp here would be
+/// a second answer to a question the pipe has already settled.
 #[derive(Clone)]
 pub struct RecordingPipeline {
-    queue: Arc<ArrayQueue<VideoFrame>>,
+    queue: Arc<ArrayQueue<Arc<[u8]>>>,
     stats: PipelineStats,
 }
 
@@ -55,8 +52,7 @@ impl RecordingPipeline {
         }
     }
 
-    pub fn push(&self, frame: VideoFrame) {
-        self.stats.captured_frames.fetch_add(1, Ordering::Relaxed);
+    pub fn push(&self, frame: Arc<[u8]>) {
         if self.queue.push(frame).is_err() {
             // The queue is full — the encoder is falling behind the
             // pacer. Increment the counter and surface the condition in
@@ -88,7 +84,7 @@ impl RecordingPipeline {
         }
     }
 
-    pub fn pop(&self) -> Option<VideoFrame> {
+    pub fn pop(&self) -> Option<Arc<[u8]>> {
         self.queue.pop()
     }
 
@@ -99,6 +95,57 @@ impl RecordingPipeline {
     pub fn stats(&self) -> PipelineStats {
         self.stats.clone()
     }
+}
+
+/// Where the capture loop sends a frame it has decided to emit.
+///
+/// The loop owns timing and recovery; the sink owns the encoder. Splitting them
+/// is what lets the same loop feed FFmpeg's stdin and the GPU encoder without a
+/// second copy of the pause, notice and stale-frame handling.
+pub trait FrameSink: Send {
+    fn accept(&mut self, frame: &CapturedFrame, pts_us: u64, width: u32, height: u32)
+        -> Result<()>;
+
+    /// Close the output. Called once, on the capture thread, after the loop stops.
+    fn finish(&mut self) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// The bounded queue the FFmpeg encoder thread drains.
+pub struct QueueSink(RecordingPipeline);
+
+impl QueueSink {
+    pub const fn new(pipeline: RecordingPipeline) -> Self {
+        Self(pipeline)
+    }
+}
+
+impl FrameSink for QueueSink {
+    fn accept(&mut self, frame: &CapturedFrame, _pts_us: u64, _: u32, _: u32) -> Result<()> {
+        let CapturedFrame::Host(data) = frame else {
+            anyhow::bail!("the FFmpeg encoder cannot read a frame left on the GPU");
+        };
+        self.0.push(Arc::clone(data));
+        Ok(())
+    }
+}
+
+/// How often the loop emits, which is a property of what the sink can read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cadence {
+    /// Exactly `fps` frames per wall-clock second, repeating the cached frame
+    /// when the source is idle. For a sink that has no timestamps and derives
+    /// duration from frame count, which is every FFmpeg rawvideo pipe.
+    Fixed,
+    /// Only the frames the source actually produced, plus a keepalive repeat so
+    /// a still desktop stays seekable. For a sink that stamps each sample, where
+    /// a repeat would be a byte cost for no information.
+    ///
+    /// Chosen only by the Windows GPU writer today, so off Windows nothing
+    /// constructs it.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    OnChange { keepalive: Duration },
 }
 
 const STALE_FIRST_WARN: Duration = Duration::from_secs(5);
@@ -138,13 +185,45 @@ fn stale_warning_due(stale_for: Duration, warnings_emitted: u32) -> bool {
 pub struct CaptureLoop {
     pub stop_flag: Arc<std::sync::atomic::AtomicBool>,
     pub pause_flag: Arc<std::sync::atomic::AtomicBool>,
-    pub pipeline: RecordingPipeline,
-    /// Session origin, which every timestamp is measured from.
-    pub clock: Instant,
+    /// Where emitted frames go, and what closes the output.
+    pub sink: Box<dyn FrameSink>,
+    /// How often to emit, which is a property of the sink.
+    pub cadence: Cadence,
+    /// The session, and the only origin in here: `origin()` is what the tracks
+    /// measure their first sample from, `effective_elapsed()` is what stamps
+    /// each sample. A sample stamped from the raw origin would be stretched
+    /// across a pause, freezing the recording for as long as the user was away.
+    pub timeline: crate::recording::RecordingClock,
+    /// Counts what the loop emitted, so a recording reports its own throughput
+    /// whichever writer took the frames.
+    pub stats: PipelineStats,
     pub target_fps: u32,
     /// Marked at the FIRST encoded frame: video t=0, which the cursor blocks on.
     pub video_start: crate::recording::TrackStart,
 }
+
+/// Hand one frame to the writer and count it.
+///
+/// The count lives here rather than in a sink because every writer owes the
+/// same number: what the loop decided to record.
+fn emit(
+    sink: &mut Box<dyn FrameSink>,
+    frame: &CapturedFrame,
+    pts_us: u64,
+    source: &dyn CaptureSource,
+    stats: &PipelineStats,
+) -> Result<()> {
+    sink.accept(frame, pts_us, source.width(), source.height())?;
+    stats.captured_frames.fetch_add(1, Ordering::Relaxed);
+    Ok(())
+}
+
+/// How long an `OnChange` poll blocks for.
+///
+/// Short enough that stop, pause and a capture notice are still handled
+/// promptly; long enough that an idle desktop parks in the backend instead of
+/// spinning a core.
+const ON_CHANGE_POLL: Duration = Duration::from_millis(4);
 
 pub fn spawn_capture_loop(
     mut source: Box<dyn CaptureSource>,
@@ -155,8 +234,10 @@ pub fn spawn_capture_loop(
     let CaptureLoop {
         stop_flag,
         pause_flag,
-        pipeline,
-        clock,
+        mut sink,
+        cadence,
+        timeline,
+        stats,
         target_fps,
         video_start,
     } = session;
@@ -164,33 +245,15 @@ pub fn spawn_capture_loop(
         .name("recast-capture".into())
         .spawn(move || {
             let fps = target_fps.max(1) as u64;
-            // Exact per-tick schedule: tick `k` (counting from the pacer's
-            // current anchor) fires at `base + k/fps` seconds, computed in
-            // integer nanoseconds so the 1/fps rounding never accumulates.
-            // The previous `Duration::from_micros(1_000_000/fps)` truncated
-            // (60 fps → 16666 µs instead of 16666.67), making the pacer run
-            // ~0.004 % fast — negligible per second, but ~0.14 s of video-vs-
-            // wall-clock drift per hour of recording, enough to desync the
-            // cursor/audio on a long capture.
+            // Integer nanoseconds: truncating microseconds ran 60fps 0.004% fast.
             let tick_at = |base: Instant, k: u64| -> Instant {
                 base + Duration::from_nanos(k.saturating_mul(1_000_000_000) / fps)
             };
 
-            // Wait for the very first frame so the encoder isn't fed an
-            // empty pipeline at t=0. DXGI returns the current desktop
-            // immediately on most systems; we still cap the wait to keep
-            // a stop request responsive (poll the stop flag every 100 ms).
-            //
-            // Bound the total wait: a healthy source (DXGI / avfoundation)
-            // delivers within a second or two, so a source that produces
-            // NOTHING means capture is broken — most commonly a missing macOS
-            // Screen Recording grant, where FFmpeg stays alive but emits zero
-            // bytes. Without this cap the loop spins forever and `stop()`'s
-            // `capture_handle.join()` hangs, so the Stop button looks dead and
-            // the user mashes it. Surface an actionable error instead.
+            // Capped: a source that yields nothing (no macOS Screen Recording grant) hangs stop().
             const WARMUP_TIMEOUT: Duration = Duration::from_secs(10);
             let warmup_start = Instant::now();
-            let mut last_frame: Arc<[u8]> = loop {
+            let mut last_frame: CapturedFrame = loop {
                 if stop_flag.load(Ordering::Acquire) {
                     return Ok(());
                 }
@@ -203,21 +266,16 @@ pub fn spawn_capture_loop(
                     ));
                 }
                 match source.capture_next(Duration::from_millis(100))? {
-                    Some(bytes) => break Arc::<[u8]>::from(bytes),
+                    Some(frame) => break frame,
                     None => continue,
                 }
             };
 
             // One instant for both, or the cursor's zero and the video's differ.
             let at = Instant::now();
-            let first_us = at.saturating_duration_since(clock).as_micros() as u64;
+            let first_us = at.saturating_duration_since(timeline.origin()).as_micros() as u64;
             video_start.mark_at(at);
-            pipeline.push(VideoFrame {
-                timestamp_us: first_us,
-                width: source.width(),
-                height: source.height(),
-                data: last_frame.clone(),
-            });
+            emit(&mut sink, &last_frame, first_us, source.as_ref(), &stats)?;
             // Anchor the exact schedule at the warmup frame. `emitted` counts
             // frames pushed since `pacer_base`; tick `emitted+1` is the next
             // deadline. Both reset on resume so a paused span is excluded
@@ -226,40 +284,41 @@ pub fn spawn_capture_loop(
             let mut emitted: u64 = 0;
             let mut was_paused = false;
             let mut last_fresh_at = Instant::now();
+            let mut last_emit_at = Instant::now();
             let mut stale_warnings: u32 = 0;
 
-            while !stop_flag.load(Ordering::Acquire) {
-                // While paused, emit nothing — the encoder is frame-count
-                // based, so a span with no frames pushed simply doesn't
-                // exist in the output video.
+            loop {
+                if stop_flag.load(Ordering::Acquire) {
+                    break;
+                }
+                // Emit nothing: a span with no frames does not exist in the output.
                 if pause_flag.load(Ordering::Acquire) {
                     was_paused = true;
                     thread::sleep(Duration::from_millis(20));
                     continue;
                 }
                 if was_paused {
-                    // Resuming: restart the exact schedule from now so the
-                    // paused span isn't treated as lag and "caught up" with a
-                    // burst of frames.
+                    // Restart the schedule, or the paused span is caught up as lag.
                     pacer_base = Instant::now();
                     emitted = 0;
                     was_paused = false;
+                    last_emit_at = Instant::now();
                 }
 
-                // Non-blocking drain: pull at most a few frames DXGI may
-                // have queued between ticks so we emit the freshest pixels.
-                // Capped at 4 because the XCap fallback ignores the
-                // timeout and does a full synchronous capture every call,
-                // returning Some unconditionally — without the cap the
-                // loop would never exit on that path.
-                const MAX_DRAIN: usize = 4;
+                // Capped: a source ignoring the timeout always answers Some; OnChange emits each.
+                let (max_drain, poll) = match cadence {
+                    Cadence::Fixed => (4usize, Duration::ZERO),
+                    Cadence::OnChange { .. } => (1usize, ON_CHANGE_POLL),
+                };
+                let mut fresh = false;
                 let mut failed = None;
-                for _ in 0..MAX_DRAIN {
-                    match source.capture_next(Duration::from_millis(0)) {
-                        Ok(Some(bytes)) => {
-                            last_frame = Arc::<[u8]>::from(bytes);
+                for _ in 0..max_drain {
+                    match source.capture_next(poll) {
+                        Ok(Some(frame)) => {
+                            last_frame = frame;
                             last_fresh_at = Instant::now();
                             stale_warnings = 0;
+                            fresh = true;
                         }
                         Ok(None) => break,
                         Err(e) => {
@@ -271,18 +330,19 @@ pub fn spawn_capture_loop(
                 }
                 // Repeating the last frame made an unplugged display look alive.
                 if let Some(notice) = source.take_notice() {
-                    let ended = notice.is_terminal();
+                    let terminal = notice.is_terminal();
                     notify(notice);
-                    if ended {
-                        return Ok(());
+                    if terminal {
+                        break;
                     }
                 }
                 if let Some(e) = failed {
+                    // A half-written file with a real error beats no file.
+                    let _ = sink.finish();
                     return Err(e);
                 }
 
-                // A source that keeps returning no frame emits the cached one
-                // forever, which used to look like a working recording.
+                // Repeating the cached frame forever used to look like a working recording.
                 let stale_for = last_fresh_at.elapsed();
                 if stale_warning_due(stale_for, stale_warnings) {
                     stale_warnings += 1;
@@ -297,31 +357,34 @@ pub fn spawn_capture_loop(
                 }
 
                 let now = Instant::now();
-                let next_tick = tick_at(pacer_base, emitted + 1);
-                if now >= next_tick {
-                    pipeline.push(VideoFrame {
-                        timestamp_us: clock.elapsed().as_micros() as u64,
-                        width: source.width(),
-                        height: source.height(),
-                        data: last_frame.clone(),
-                    });
-                    emitted += 1;
-                    // If a system stall pushed us more than one period
-                    // behind, keep emitting one frame per iteration (no
-                    // sleep) until we catch up — the loop body is cheap
-                    // (Arc clone + queue push) and FFmpeg will absorb the
-                    // burst. This preserves video duration after a
-                    // hitch instead of leaving a permanent gap.
-                    continue;
+                match cadence {
+                    Cadence::Fixed => {
+                        let next_tick = tick_at(pacer_base, emitted + 1);
+                        if now >= next_tick {
+                            let pts = timeline.effective_elapsed().as_micros() as u64;
+                            emit(&mut sink, &last_frame, pts, source.as_ref(), &stats)?;
+                            emitted += 1;
+                            last_emit_at = now;
+                            // Emit without sleeping to catch up, or the hitch is permanent.
+                            continue;
+                        }
+                        // Capped at 2ms so fresh frames keep arriving between ticks.
+                        let until = (next_tick - now).min(Duration::from_micros(2_000));
+                        thread::sleep(until);
+                    }
+                    Cadence::OnChange { keepalive } => {
+                        // A sample that never ends cannot be seeked past.
+                        if fresh || now.duration_since(last_emit_at) >= keepalive {
+                            let pts = timeline.effective_elapsed().as_micros() as u64;
+                            emit(&mut sink, &last_frame, pts, source.as_ref(), &stats)?;
+                            emitted += 1;
+                            last_emit_at = now;
+                        }
+                    }
                 }
-
-                // Sleep until the next tick, but cap at 2 ms so we keep
-                // draining fresh DXGI frames between ticks rather than
-                // emitting a stale cached frame at tick time.
-                let until = (next_tick - now).min(Duration::from_micros(2_000));
-                thread::sleep(until);
             }
-            Ok(())
+
+            sink.finish()
         })
         .map_err(Into::into)
 }
@@ -362,7 +425,7 @@ impl ScriptedSource {
 
 #[cfg(test)]
 impl CaptureSource for ScriptedSource {
-    fn capture_next(&mut self, _timeout: Duration) -> Result<Option<Vec<u8>>> {
+    fn capture_next(&mut self, _timeout: Duration) -> Result<Option<CapturedFrame>> {
         if let Some(left) = self.remaining.as_mut() {
             if *left == 0 {
                 return Ok(None);
@@ -370,7 +433,8 @@ impl CaptureSource for ScriptedSource {
             *left -= 1;
         }
         self.served += 1;
-        Ok(Some(vec![0u8; (self.width * self.height * 4) as usize]))
+        let pixels = vec![0u8; (self.width * self.height * 4) as usize];
+        Ok(Some(CapturedFrame::Host(Arc::from(pixels))))
     }
 
     fn take_notice(&mut self) -> Option<CaptureNotice> {
@@ -410,8 +474,10 @@ mod pacer_tests {
             CaptureLoop {
                 stop_flag: stop.clone(),
                 pause_flag: pause.clone(),
-                pipeline: pipeline.clone(),
-                clock: started,
+                sink: Box::new(QueueSink::new(pipeline.clone())),
+                cadence: Cadence::Fixed,
+                timeline: crate::recording::RecordingClock::new(started),
+                stats: pipeline.stats(),
                 target_fps: FPS,
                 video_start: video_start.clone(),
             },
@@ -467,8 +533,10 @@ mod pacer_tests {
             CaptureLoop {
                 stop_flag: stop.clone(),
                 pause_flag: pause.clone(),
-                pipeline: pipeline.clone(),
-                clock: started,
+                sink: Box::new(QueueSink::new(pipeline.clone())),
+                cadence: Cadence::Fixed,
+                timeline: crate::recording::RecordingClock::new(started),
+                stats: pipeline.stats(),
                 target_fps: FPS,
                 video_start: crate::recording::TrackStart::new(started),
             },
@@ -571,5 +639,153 @@ mod stale_warning_tests {
         assert!(stale_warning_due(Duration::from_secs(35), 1));
         assert!(!stale_warning_due(Duration::from_secs(60), 2));
         assert!(stale_warning_due(Duration::from_secs(65), 2));
+    }
+}
+
+#[cfg(test)]
+mod cadence_tests {
+    use super::*;
+    use crate::recording::{RecordingClock, TrackStart};
+    use parking_lot::Mutex;
+    use std::sync::atomic::AtomicBool;
+
+    const FPS: u32 = 50;
+
+    /// Keeps every timestamp the loop emitted, which is what the two cadences
+    /// actually differ about.
+    struct CollectSink(Arc<Mutex<Vec<u64>>>);
+
+    impl FrameSink for CollectSink {
+        fn accept(&mut self, _: &CapturedFrame, pts_us: u64, _: u32, _: u32) -> Result<()> {
+            self.0.lock().push(pts_us);
+            Ok(())
+        }
+    }
+
+    struct Run {
+        stamps: Vec<u64>,
+        served: Duration,
+    }
+
+    /// Runs the real loop with `cadence`, pausing for `pause` in the middle when
+    /// one is given, and returns the timestamps that reached the sink.
+    fn run(
+        cadence: Cadence,
+        frames: Option<usize>,
+        run_for: Duration,
+        pause: Option<Duration>,
+    ) -> Run {
+        let source = Box::new(ScriptedSource::new(8, 8, frames));
+        let stop = Arc::new(AtomicBool::new(false));
+        let pause_flag = Arc::new(AtomicBool::new(false));
+        let stamps = Arc::new(Mutex::new(Vec::new()));
+        let started = Instant::now();
+        let clock = RecordingClock::new(started);
+        let handle = spawn_capture_loop(
+            source,
+            CaptureLoop {
+                stop_flag: stop.clone(),
+                pause_flag: pause_flag.clone(),
+                sink: Box::new(CollectSink(Arc::clone(&stamps))),
+                cadence,
+                timeline: clock.clone(),
+                stats: PipelineStats::default(),
+                target_fps: FPS,
+                video_start: TrackStart::new(started),
+            },
+            |_| {},
+        )
+        .expect("the capture thread starts");
+
+        match pause {
+            Some(held) => {
+                thread::sleep(run_for / 2);
+                pause_flag.store(true, Ordering::Release);
+                clock.pause();
+                thread::sleep(held);
+                clock.resume();
+                pause_flag.store(false, Ordering::Release);
+                thread::sleep(run_for / 2);
+            }
+            None => thread::sleep(run_for),
+        }
+        stop.store(true, Ordering::Release);
+        handle.join().expect("the thread joins").expect("no error");
+        let stamps = stamps.lock().clone();
+        Run {
+            stamps,
+            served: run_for,
+        }
+    }
+
+    /// The whole point of `OnChange`: a source that produced 3 frames owes 3
+    /// samples, not one per pacer slot. `Fixed` in the same conditions emits
+    /// dozens, which is what the assertion below is measured against.
+    #[test]
+    fn on_change_emits_what_the_source_produced_not_one_per_slot() {
+        let quiet = run(
+            Cadence::OnChange {
+                keepalive: Duration::from_secs(60),
+            },
+            Some(3),
+            Duration::from_millis(300),
+            None,
+        );
+        assert!(
+            quiet.stamps.len() <= 4,
+            "a source with 3 frames owes at most 4 samples, got {}",
+            quiet.stamps.len()
+        );
+
+        let paced = run(Cadence::Fixed, Some(3), Duration::from_millis(300), None);
+        assert!(
+            paced.stamps.len() > quiet.stamps.len() * 2,
+            "fixed pacing must keep emitting while the source is quiet: {} vs {}",
+            paced.stamps.len(),
+            quiet.stamps.len()
+        );
+    }
+
+    /// A sample that never ends cannot be seeked past, so a still desktop still
+    /// owes one every keepalive.
+    #[test]
+    fn a_still_source_still_owes_a_keepalive_sample() {
+        let still = run(
+            Cadence::OnChange {
+                keepalive: Duration::from_millis(40),
+            },
+            Some(1),
+            Duration::from_millis(300),
+            None,
+        );
+        assert!(
+            still.stamps.len() >= 4,
+            "300ms of stillness at a 40ms keepalive owes several samples, got {}",
+            still.stamps.len()
+        );
+    }
+
+    /// Timestamps come off the paused-aware clock, so a pause is CUT from the
+    /// recording rather than held as a freeze. Stamping from the raw origin
+    /// would put the last sample past the end of the recorded time.
+    #[test]
+    fn a_pause_is_cut_out_of_the_timestamps_rather_than_frozen_into_them() {
+        let held = Duration::from_millis(200);
+        let paused = run(
+            Cadence::OnChange {
+                keepalive: Duration::from_millis(20),
+            },
+            None,
+            Duration::from_millis(200),
+            Some(held),
+        );
+        let last = *paused.stamps.last().expect("samples were emitted");
+        let recorded = paused.served.as_micros() as u64;
+        assert!(
+            last < recorded + 50_000,
+            "the last sample is at {last}us of a {recorded}us recording, so the \
+             {}ms pause was stamped into it",
+            held.as_millis()
+        );
     }
 }

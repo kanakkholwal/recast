@@ -118,7 +118,9 @@ dense app surface:
 icons, panel glyphs, and empty-state art are all **neutral** — an icon that only
 labels a heading takes `text-muted-foreground`, or no colour class at all so it
 inherits from its row. The status tokens keep their own reserved meanings (see
-the mapping below) and are never decorative either.
+the mapping below) and are never decorative either. Avoid `--primary` as much as possible unless needs to assert brand identity or a high-stakes action.
+
+For emptyy states, use a neutral icon + muted copy. For example, the recordings list shows a muted Native `Video` icon and the copy "No recordings yet" — the icon is not tinted with `--primary` because it does not convey any state.But also, is possible, then use neutral or duotone svg illustrations for native application experience.
 
 Density makes this stricter than web, not looser. A settings page shows 40 rows
 where a landing page shows four; an accent glyph on each one turns the accent
@@ -196,6 +198,9 @@ with the accent. Always test new components in both modes.
 - **Sans:** `Geist Variable`. Tight tracking (`tracking-tight`), `font-feature-settings: "ss01"`.
 - **Mono:** `Geist Mono Variable`. Use for paths, version numbers, timer readouts.
 
+- For headings use `text-balance` to avoid widows and orphans. For body copy use `text-pretty` to improve readability.
+- For headings use `Satori` with font weight >= 500. and rest use 'Inter' and for mono use 'JetBrains Mono' or `Geist Mono Variable`.
+
 ### Scale (smaller than web by design)
 
 The desktop app is a high-information surface. Most text sits below 14px so the
@@ -214,6 +219,7 @@ window holds more content without scrolling.
 
 Always `text-balance` headings. Always `text-pretty` body paragraphs.
 
+- also although here I have mentioned hard-coded font sizes but not recommended to use hard-coded font sizes, instead use the tailwind typography classes for better responsiveness and accessibility.
 ---
 
 ## Layout
@@ -222,13 +228,13 @@ Always `text-balance` headings. Always `text-pretty` body paragraphs.
 
 Top-level routes inside the `(app)` group follow this pattern:
 
-1. **Eyebrow chip** — pill with a Lucide icon + section name. Sits at the top
+1. **Eyebrow chip** — pill with a @recast/icons icon + section name. Sits at the top
    of the hero. Fly-in on mount.
 2. **Hero h1** — gradient-clipped, balanced, two short lines max. May include a
    right-aligned action button (e.g. "New profile").
 3. **Hero supporting copy** — single line, `text-muted-foreground`. Optionally
    appends meta info (e.g. "5 of 18 combinations free.").
-4. **Search / filter bar** *(if listing)* — 12-tall pill with a Lucide icon.
+4. **Search / filter bar** *(if listing)* — 12-tall pill with a @recast/icons icon.
 5. **Sections** — each with an uppercase microlabel + one-line description in
    the left margin, content card on the right. Use `gap-8` between sections.
 
@@ -313,11 +319,31 @@ any new surface (including the editor chrome):
   selected-row bar. Everything else is neutral; status uses
   `success`/`warning`/`destructive` fills with an icon.
 
+### Editor inspector (property panels)
+
+The property panels (`packages/editor/src/components/properity-panel/`) follow a
+Figma/Premiere register on the shared vocabulary. The **one density exception**:
+numeric fields run `h-8`, not `h-9` — the panel stacks dozens of them, so the
+general row-control height would read as bulky. Everything else is the vocabulary
+above (`rounded-lg`, `bg-muted/60 ring-inset ring-border/40`, dark-pill active).
+
+- `NumberField` / `DraggableValue` — the filled pill; a leading property icon or
+  axis label drag-scrubs (Shift ×10, Alt ×0.1), the value is left-aligned with its
+  unit glued in (`84.1s`, `100%`), and typing shows the raw number.
+- `Stepper` — the `−`/`+` pair beside a field.
+- `PropRow` — fixed label column + control cell so fields line up down the panel.
+- `PanelSection` — a 13px semibold section title + inline action, optionally collapsible.
+- The panel rail is `Tabs.List variant="pill"` (dark-pill active), same component
+  and active treatment as the settings-page tabs.
+
+Transform/geometry values (position, size, padding, radius) use field+stepper
+rows; feel params (volume, blur, opacity) stay on `SliderControl`.
+
 ### Buttons
 
 Use `Button` from `@recast/ui/button`. Common patterns:
 
-- **Page-level primary action** (e.g. "New profile"): `size="sm"` `class="h-9 gap-1.5"` with leading Lucide icon at `size={13}` and trailing `<Kbd>⌘N</Kbd>`.
+- **Page-level primary action** (e.g. "New profile"): `size="sm"` with leading icon from  `@recast/icons` at `size={13}` and trailing `<Kbd>⌘N</Kbd>`.
 - **Settings inline action** (e.g. "Change"): `variant="secondary"` `size="sm"` `class="h-9 gap-1.5"`.
 - **Card row trailing action** (e.g. "Edit" on a profile card): `variant="ghost"` `size="xs"` `class="h-6 gap-1 px-1.5 text-[10.5px] text-muted-foreground"`.
 - **Destructive action**: `variant="destructive_soft"` for soft-destructive (delete), `variant="destructive"` only for top-level "Stop Recording" / "Delete forever".
@@ -426,9 +452,9 @@ Default durations:
 
 ## Icons
 
-**Lucide only.** `@lucide/svelte` is the only sanctioned icon library in the
+**@recast/icons only.** `@recast/icons` is the only sanctioned icon library in the
 desktop app. The shared UI package historically pulls some Tabler icons in
-its Sonner wrapper; that is being migrated. Do not introduce new Tabler/Phosphor/Heroicons usage.
+its Sonner wrapper; that is being migrated.introduce new Tabler/Phosphor/Heroicons but only if absolutely necessary and inside @recast/icons package only. every icon **must** be from `@recast/icons` and must be tree-shaken.
 
 Sizing:
 
@@ -486,7 +512,7 @@ shape. Never throw on a parse failure; reset to the empty-state instead.
 **Do**
 
 - Use markdown link syntax (`[file.svelte](path)`) when referencing code in docs.
-- Use Lucide icons only. Match the size table above.
+- Use @recast/icons icons only. Match the size table above.
 - Reference design tokens via Tailwind utilities (`bg-primary`, `text-muted-foreground`).
 - Reach for the canonical glass surface (`bg-card/70 + border-border/60 + shadow-craft-inset + backdrop-blur`) before inventing a new container.
 - Wire keyboard shortcuts and surface them in tooltips/labels.
@@ -497,7 +523,7 @@ shape. Never throw on a parse failure; reset to the empty-state instead.
 
 - Hardcode hex/rgb values. Use CSS variables and `color-mix()` in `srgb`.
 - Pass `richColors` to `Toaster`. Use the design-token wrapper.
-- Use a different icon library (no Tabler, no Phosphor, no Material).
+- Use a different icon library (no Material).
 - Add disabled `<button>`s without wrapping them in a tooltip span — hover gets eaten otherwise.
 - Echo marketing voice ("Empower your workflow") inside the app.
 - Use more than one `--primary` fill per view — a second one means you needed hierarchy, not colour.

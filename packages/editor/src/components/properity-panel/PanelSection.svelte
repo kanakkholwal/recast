@@ -45,7 +45,7 @@ let {
 const isControlled = $derived(open !== undefined);
 // svelte-ignore state_referenced_locally
 let internalOpen = $state(defaultOpen);
-const isOpen = $derived(isControlled ? !!open : internalOpen);
+const isOpen = $derived(isControlled ? open === true : internalOpen);
 
 // svelte-ignore state_referenced_locally
 const chevronRotation = new Spring(defaultOpen ? 0 : -90, {
@@ -65,9 +65,9 @@ function toggle() {
 	onOpenChange?.(next);
 }
 
-const hasHeader = $derived(!!title || !!action || collapsible);
+const hasHeader = $derived(title !== undefined || action !== undefined || collapsible);
 const labelClass =
-	"truncate text-[12px] font-semibold tracking-tight text-foreground transition-colors";
+	"truncate text-[13px] font-semibold tracking-tight text-foreground transition-colors";
 </script>
 
 <section class={cn("flex flex-col gap-2", className)}>

@@ -4,14 +4,12 @@ import {
 	ArrowLeft,
 	ArrowRight,
 	ArrowUp,
-	Gauge,
 	RotateCcw,
 	SquareSplitHorizontal,
 	Trash2,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Segmented } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
 import { clockCentis } from "../../lib/format/time";
 import type { SeamTransition } from "../../lib/scenes/seam";
 import type { MotionTone } from "../../lib/scenes/segment-anim";
@@ -20,6 +18,7 @@ import type { EditorStore } from "../../stores/editor-store.svelte";
 import { anchorMatches, fmtSpeed } from "./clip-panel.logic";
 import PanelSection from "./PanelSection.svelte";
 import SceneAnimControls from "./SceneAnimControls.svelte";
+import SliderRow from "./SliderRow.svelte";
 
 // Contextual controls for the clip/segment selected on the timeline. Auto-opened
 // by PropertiesPanel when `selectedClipStart` is set (mirrors the Focus tab for
@@ -59,7 +58,9 @@ const prevSeg = $derived(
 		? (store.segments.find((s) => s.index === selected.index - 1) ?? null)
 		: null,
 );
-const seamBefore = $derived(!!prevSeg && !!selected && selected.start - prevSeg.end > 1e-4);
+const seamBefore = $derived(
+	prevSeg !== null && selected !== null && selected.start - prevSeg.end > 1e-4,
+);
 const seamKind = $derived(
 	seamBefore && prevSeg && selected
 		? store.seamTransitionAt(prevSeg.start, selected.start)
@@ -139,20 +140,15 @@ function deleteClip() {
         }))}
         onValueChange={(v) => setSpeed(Number(v))}
       />
-      <SliderControl
+      <SliderRow
         label="Fine"
         value={speed}
         min={MIN_SEGMENT_SPEED}
         max={MAX_SEGMENT_SPEED}
         step={0.05}
-        unit="×"
         formatValue={(v) => `${v.toFixed(2)}×`}
         onchange={(v) => setSpeed(v)}
-      >
-        {#snippet icon()}
-          <Gauge class="size-3" />
-        {/snippet}
-      </SliderControl>
+      />
     </PanelSection>
 
     {#if seamBefore}

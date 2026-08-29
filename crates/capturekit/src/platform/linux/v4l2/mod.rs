@@ -707,6 +707,7 @@ impl FrameSource for V4l2CameraSource {
             // A camera repaints its whole sensor every frame.
             dirty: DirtyRects::unknown(),
             cursor: None,
+            gpu: None,
         })
     }
 

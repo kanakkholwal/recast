@@ -2,12 +2,12 @@
 import { AudioLines, ExternalLink, Plus, Repeat, Trash2, Volume2, VolumeX } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
 import { toast } from "@recast/ui/sonner";
 import { clipDisplayName, collectCredits, pickAudioFile } from "../../lib/audio/music";
 import { getEditorServices } from "../../lib/editor/services";
 import type { EditorStore } from "../../stores/editor-store.svelte";
 import PanelSection from "./PanelSection.svelte";
+import SliderRow from "./SliderRow.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -79,43 +79,38 @@ async function addMusic() {
               </button>
             </div>
 
-            <div class="mt-2 space-y-2">
-              <SliderControl
+            <div class="mt-2 space-y-1.5">
+              <SliderRow
                 label="Volume"
                 value={clip.gain}
                 min={0}
                 max={200}
                 step={5}
-                unit="%"
                 disabled={clip.muted}
                 onstart={() => store.pushUndoState()}
                 onchange={(v) => store.updateMusicClip(clip.id, { gain: v })}
                 formatValue={(v) => `${v}%`}
               />
-              <div class="grid grid-cols-2 gap-2">
-                <SliderControl
-                  label="Fade in"
-                  value={clip.fadeIn}
-                  min={0}
-                  max={5}
-                  step={0.1}
-                  unit="s"
-                  onstart={() => store.pushUndoState()}
-                  onchange={(v) => store.updateMusicClip(clip.id, { fadeIn: v })}
-                  formatValue={(v) => `${v.toFixed(1)}s`}
-                />
-                <SliderControl
-                  label="Fade out"
-                  value={clip.fadeOut}
-                  min={0}
-                  max={5}
-                  step={0.1}
-                  unit="s"
-                  onstart={() => store.pushUndoState()}
-                  onchange={(v) => store.updateMusicClip(clip.id, { fadeOut: v })}
-                  formatValue={(v) => `${v.toFixed(1)}s`}
-                />
-              </div>
+              <SliderRow
+                label="Fade in"
+                value={clip.fadeIn}
+                min={0}
+                max={5}
+                step={0.1}
+                onstart={() => store.pushUndoState()}
+                onchange={(v) => store.updateMusicClip(clip.id, { fadeIn: v })}
+                formatValue={(v) => `${v.toFixed(1)}s`}
+              />
+              <SliderRow
+                label="Fade out"
+                value={clip.fadeOut}
+                min={0}
+                max={5}
+                step={0.1}
+                onstart={() => store.pushUndoState()}
+                onchange={(v) => store.updateMusicClip(clip.id, { fadeOut: v })}
+                formatValue={(v) => `${v.toFixed(1)}s`}
+              />
               <div class="flex items-center justify-between pt-0.5">
                 <span class="inline-flex items-center gap-1.5 text-[11px] text-foreground">
                   <Repeat size={12} /> Loop to fill

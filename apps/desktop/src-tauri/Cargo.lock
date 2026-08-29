@@ -28,9 +28,12 @@ dependencies = [
  "rand 0.8.8",
  "rayon",
  "recast-captions",
+ "recast-codec",
+ "recast-codec-mf",
  "recast-color",
  "recast-compositor",
  "recast-gpu",
+ "recast-mux",
  "recast-scene",
  "recast-testkit",
  "recast-time",
@@ -5293,6 +5296,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-codec"
+version = "0.0.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "recast-codec-mf"
+version = "0.0.0"
+dependencies = [
+ "recast-codec",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "recast-color"
 version = "0.0.0"
 dependencies = [
@@ -5330,6 +5348,10 @@ dependencies = [
  "wgpu",
  "windows 0.62.2",
 ]
+
+[[package]]
+name = "recast-mux"
+version = "0.0.0"
 
 [[package]]
 name = "recast-scene"

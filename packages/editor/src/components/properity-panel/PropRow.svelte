@@ -17,18 +17,18 @@ let { label, children, alignTop = false, class: className }: Props = $props();
 
 <div
 	class={cn(
-		"grid grid-cols-[3.5rem_1fr] gap-2",
+		"flex gap-2",
 		alignTop ? "items-start" : "items-center",
 		className,
 	)}
 >
 	<span
 		class={cn(
-			"truncate text-[11px] text-muted-foreground",
+			"w-20 shrink-0 truncate text-[11px] text-muted-foreground",
 			alignTop && "pt-1.5 leading-none",
 		)}
 	>
 		{label}
 	</span>
-	<div class="flex min-w-0 items-center gap-1.5">{@render children()}</div>
+	<div class="flex min-w-0 flex-1 items-center gap-1.5">{@render children()}</div>
 </div>

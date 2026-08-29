@@ -175,7 +175,7 @@ impl H264Encoder {
     fn configure(&mut self) -> Result<(), EncodeError> {
         // Output first: an H.264 transform will not accept an input type until
         // it knows what it is producing.
-        let output = media_type(&[
+        let attributes = [
             (MF_MT_MAJOR_TYPE, Value::Guid(MFMediaType_Video)),
             (MF_MT_SUBTYPE, Value::Guid(MFVideoFormat_H264)),
             (MF_MT_AVG_BITRATE, Value::U32(self.config.bitrate)),
@@ -192,7 +192,8 @@ impl H264Encoder {
                 Value::U64(pack(self.config.frame_rate.0, self.config.frame_rate.1)),
             ),
             (MF_MT_PIXEL_ASPECT_RATIO, Value::U64(pack(1, 1))),
-        ])?;
+        ];
+        let output = media_type(&attributes)?;
         // SAFETY: stream 0 is the only stream an H.264 encoder MFT exposes.
         unsafe { self.transform.SetOutputType(0, &output, 0) }?;
 

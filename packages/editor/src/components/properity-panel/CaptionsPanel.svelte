@@ -33,7 +33,7 @@ import { ColorField } from "@recast/ui/color-field";
 import * as Command from "@recast/ui/command";
 import * as Popover from "@recast/ui/popover";
 import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
+import SliderRow from "./SliderRow.svelte";
 import { toast } from "@recast/ui/sonner";
 import { Switch } from "@recast/ui/switch";
 import * as Tabs from "@recast/ui/tabs";
@@ -68,6 +68,7 @@ import {
 } from "./captions-panel.logic";
 import FontPicker from "./FontPicker.svelte";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
 import SettingRow from "./SettingRow.svelte";
 
 interface Props {
@@ -392,7 +393,7 @@ const noSpeechFound = $derived(
           title={caps.gpu.name ?? gpuLabel}
         >
           {#if caps.gpu.available}
-            <Zap size={9} class="text-primary" />
+            <Zap size={9} class="text-muted-foreground" />
           {:else}
             <Cpu size={9} />
           {/if}
@@ -495,12 +496,12 @@ const noSpeechFound = $derived(
                     class="gap-2"
                   >
                     <span class="flex size-4 shrink-0 items-center justify-center">
-                      {#if m.id === selectedModelId}<Check size={13} class="text-primary" />{/if}
+                      {#if m.id === selectedModelId}<Check size={13} class="text-foreground" />{/if}
                     </span>
                     <span class="min-w-0 flex-1 truncate text-[12px]">{m.displayName}</span>
                     {#if m.recommended}
                       <span
-                        class="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary"
+                        class="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
                       >
                         Rec
                       </span>
@@ -798,7 +799,7 @@ const noSpeechFound = $derived(
             {/snippet}
           </SettingRow>
 
-          <SliderControl
+          <SliderRow
             label="Font size"
             value={cs.fontSizePct}
             min={2}
@@ -822,16 +823,21 @@ const noSpeechFound = $derived(
             {/snippet}
           </SettingRow>
 
-          <ColorField
-            label="Color"
-            value={cs.color}
-            swatches={CAPTION_SWATCHES}
-            {recents}
-            oncommit={(c) => {
-              store.updateCaptionStyle({ color: c });
-              rememberColor(c);
-            }}
-          />
+          <PropRow label="Color">
+            <ColorField
+              dense
+              hideLabel
+              class="flex-1"
+              label="Color"
+              value={cs.color}
+              swatches={CAPTION_SWATCHES}
+              {recents}
+              oncommit={(c) => {
+                store.updateCaptionStyle({ color: c });
+                rememberColor(c);
+              }}
+            />
+          </PropRow>
 
           <SettingRow label="Position">
             {#snippet children(props)}
@@ -869,7 +875,7 @@ const noSpeechFound = $derived(
           </SettingRow>
 
           {#if cs.position !== "center"}
-            <SliderControl
+            <SliderRow
               label="Offset"
               value={cs.offsetPct}
               min={-20}
@@ -905,18 +911,23 @@ const noSpeechFound = $derived(
             </SettingRow>
 
             {#if cs.background === "box"}
-              <ColorField
-                label="Box color"
-                value={cs.backgroundColor}
-                swatches={CAPTION_SWATCHES}
-                {recents}
-                oncommit={(c) => {
-                  store.updateCaptionStyle({ backgroundColor: c });
-                  rememberColor(c);
-                }}
-              />
+              <PropRow label="Box">
+                <ColorField
+                  dense
+                  hideLabel
+                  class="flex-1"
+                  label="Box color"
+                  value={cs.backgroundColor}
+                  swatches={CAPTION_SWATCHES}
+                  {recents}
+                  oncommit={(c) => {
+                    store.updateCaptionStyle({ backgroundColor: c });
+                    rememberColor(c);
+                  }}
+                />
+              </PropRow>
 
-              <SliderControl
+              <SliderRow
                 label="Box opacity"
                 value={cs.backgroundOpacity}
                 min={0}
@@ -927,7 +938,7 @@ const noSpeechFound = $derived(
                 formatValue={(v) => `${v}%`}
               />
 
-              <SliderControl
+              <SliderRow
                 label="Corner radius"
                 value={cs.boxRadiusEm}
                 min={0}
@@ -938,7 +949,7 @@ const noSpeechFound = $derived(
                 formatValue={(v) => (v >= 1.2 ? "Pill" : v === 0 ? "Square" : v.toFixed(2))}
               />
 
-              <SliderControl
+              <SliderRow
                 label="Padding"
                 value={cs.boxPaddingXEm}
                 min={0}
@@ -950,7 +961,7 @@ const noSpeechFound = $derived(
               />
             {/if}
 
-            <SliderControl
+            <SliderRow
               label="Outline"
               value={cs.outlineWidth}
               min={0}
@@ -962,16 +973,21 @@ const noSpeechFound = $derived(
             />
 
             {#if cs.outlineWidth > 0}
-              <ColorField
-                label="Outline color"
-                value={cs.outlineColor}
-                swatches={CAPTION_SWATCHES}
-                {recents}
-                oncommit={(c) => {
-                  store.updateCaptionStyle({ outlineColor: c });
-                  rememberColor(c);
-                }}
-              />
+              <PropRow label="Outline">
+                <ColorField
+                  dense
+                  hideLabel
+                  class="flex-1"
+                  label="Outline color"
+                  value={cs.outlineColor}
+                  swatches={CAPTION_SWATCHES}
+                  {recents}
+                  oncommit={(c) => {
+                    store.updateCaptionStyle({ outlineColor: c });
+                    rememberColor(c);
+                  }}
+                />
+              </PropRow>
             {/if}
           </fieldset>
         </PanelSection>
@@ -984,7 +1000,7 @@ const noSpeechFound = $derived(
           defaultOpen={false}
         >
           <fieldset class="flex flex-col gap-3 disabled:opacity-50" disabled={!cs.enabled}>
-            <SliderControl
+            <SliderRow
               label="Max lines"
               value={cs.maxLines}
               min={1}
@@ -995,7 +1011,7 @@ const noSpeechFound = $derived(
               formatValue={(v) => `${v}`}
             />
 
-            <SliderControl
+            <SliderRow
               label="Wrap width"
               value={cs.maxCharsPerLine}
               min={16}
@@ -1006,7 +1022,7 @@ const noSpeechFound = $derived(
               formatValue={(v) => `${v} chars`}
             />
 
-            <SliderControl
+            <SliderRow
               label="Line height"
               value={cs.lineHeight}
               min={1}
@@ -1017,7 +1033,7 @@ const noSpeechFound = $derived(
               formatValue={(v) => v.toFixed(2)}
             />
 
-            <SliderControl
+            <SliderRow
               label="Letter spacing"
               value={cs.letterSpacing}
               min={-0.05}
@@ -1054,7 +1070,7 @@ const noSpeechFound = $derived(
           </SettingRow>
 
           {#if ca.chunk === "phrase"}
-            <SliderControl
+            <SliderRow
               label="Words per chunk"
               value={ca.chunkSize}
               min={1}
@@ -1081,16 +1097,21 @@ const noSpeechFound = $derived(
           </SettingRow>
 
           {#if (ca.highlight ?? "none") === "progressive"}
-            <ColorField
-              label="Unspoken color"
-              value={cs.mutedColor}
-              swatches={CAPTION_SWATCHES}
-              {recents}
-              oncommit={(c) => {
-                store.updateCaptionStyle({ mutedColor: c });
-                rememberColor(c);
-              }}
-            />
+            <PropRow label="Unspoken">
+              <ColorField
+                dense
+                hideLabel
+                class="flex-1"
+                label="Unspoken color"
+                value={cs.mutedColor}
+                swatches={CAPTION_SWATCHES}
+                {recents}
+                oncommit={(c) => {
+                  store.updateCaptionStyle({ mutedColor: c });
+                  rememberColor(c);
+                }}
+              />
+            </PropRow>
           {/if}
 
           <SettingRow label="Active word">
@@ -1107,16 +1128,21 @@ const noSpeechFound = $derived(
           </SettingRow>
 
           {#if ca.emphasis === "color"}
-            <ColorField
-              label="Highlight color"
-              value={ca.emphasisColor}
-              swatches={CAPTION_SWATCHES}
-              {recents}
-              oncommit={(c) => {
-                updateAnimation({ emphasisColor: c });
-                rememberColor(c);
-              }}
-            />
+            <PropRow label="Highlight">
+              <ColorField
+                dense
+                hideLabel
+                class="flex-1"
+                label="Highlight color"
+                value={ca.emphasisColor}
+                swatches={CAPTION_SWATCHES}
+                {recents}
+                oncommit={(c) => {
+                  updateAnimation({ emphasisColor: c });
+                  rememberColor(c);
+                }}
+              />
+            </PropRow>
           {/if}
 
           <SettingRow label="Entrance">
@@ -1133,7 +1159,7 @@ const noSpeechFound = $derived(
           </SettingRow>
 
           {#if ca.entrance !== "none"}
-            <SliderControl
+            <SliderRow
               label="Entrance speed"
               value={ca.entranceMs}
               min={80}
@@ -1215,7 +1241,7 @@ const noSpeechFound = $derived(
               aria-current={isActive ? "true" : undefined}
               class={cn(
                 "group flex items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors",
-                isActive ? "bg-primary/10" : "hover:bg-muted/60",
+                isActive ? "bg-foreground/10" : "hover:bg-muted/60",
               )}
               onclick={() => store.seek(seg.start)}
             >
@@ -1223,7 +1249,7 @@ const noSpeechFound = $derived(
                 class={cn(
                   "shrink-0 pt-px font-mono text-[11px] tabular-nums",
                   isActive
-                    ? "text-primary"
+                    ? "text-foreground"
                     : "text-muted-foreground/70 group-hover:text-foreground",
                 )}
               >

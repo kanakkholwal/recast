@@ -19,7 +19,9 @@ use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorCaptureFrame
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 pub use clock::{offset_ms_from_video, RecordingClock, TrackStart};
-use pipeline::{spawn_capture_loop, CaptureLoop, PipelineSnapshot, RecordingPipeline};
+use pipeline::{
+    spawn_capture_loop, Cadence, CaptureLoop, PipelineSnapshot, QueueSink, RecordingPipeline,
+};
 
 /// Frames per second emitted by the capture pacer and declared to the encoder.
 /// The pacer emits exactly this many frames per real-time second, and the
@@ -299,12 +301,109 @@ struct CameraOverlayTracker {
     last_at_secs: Option<f64>,
 }
 
+/// Opt-in for the FFmpeg-free recording writer.
+///
+/// The native path is complete but has only run on this machine; until it has
+/// recorded on other people's hardware, FFmpeg stays the default.
+const NATIVE_ENCODER_ENV: &str = "RECAST_NATIVE_ENCODER";
+
+/// Whether this recording writes through the GPU encoder, and why not if not.
+struct NativeChoice {
+    chosen: bool,
+    refused: Option<&'static str>,
+}
+
+/// The reason the native writer cannot take this recording, or `None`.
+///
+/// Pure so the policy is testable without a display or an encoder: every input
+/// here is something the caller has already looked up.
+const fn native_refusal(
+    opted_in: bool,
+    platform_supported: bool,
+    encoder_available: bool,
+    cropped: bool,
+) -> Option<&'static str> {
+    if !platform_supported {
+        return Some("the GPU writer is Windows-only so far");
+    }
+    if !opted_in {
+        return Some("not opted in");
+    }
+    if !encoder_available {
+        return Some("this machine has no Media Foundation H.264 encoder");
+    }
+    if cropped {
+        // The metadata still describes a full-size source, so the editor would disagree.
+        return Some("a cropped recording still goes through the FFmpeg crop filter");
+    }
+    None
+}
+
+impl NativeChoice {
+    /// Where the source must leave its pixels for the chosen writer.
+    const fn frame_mode(&self) -> crate::capture::FrameMode {
+        if self.chosen {
+            crate::capture::FrameMode::Gpu
+        } else {
+            crate::capture::FrameMode::Host
+        }
+    }
+}
+
+/// The writer for this recording, and the cadence it needs.
+///
+/// The native writer stamps every sample, so it takes only the frames the source
+/// produced; FFmpeg reads a timestamp-less pipe and needs one frame per slot
+/// whether the desktop changed or not.
+fn writer_for(
+    native: &NativeChoice,
+    path: &std::path::Path,
+    fps: u32,
+    pipeline: &RecordingPipeline,
+) -> (Box<dyn pipeline::FrameSink>, Cadence) {
+    #[cfg(windows)]
+    if native.chosen {
+        return (
+            Box::new(crate::encoder::native::NativeSink::new(
+                path.to_path_buf(),
+                fps,
+                pipeline.stats(),
+            )),
+            Cadence::OnChange {
+                keepalive: crate::encoder::native::KEEPALIVE,
+            },
+        );
+    }
+    #[cfg(not(windows))]
+    let _ = (native, path, fps);
+    (Box::new(QueueSink::new(pipeline.clone())), Cadence::Fixed)
+}
+
+fn native_encoding_choice(target: &CaptureTarget) -> NativeChoice {
+    let opted_in = std::env::var(NATIVE_ENCODER_ENV).is_ok_and(|v| v == "1");
+    #[cfg(windows)]
+    let (platform_supported, encoder_available) = (true, crate::encoder::native::available());
+    #[cfg(not(windows))]
+    let (platform_supported, encoder_available) = (false, false);
+    let refused = native_refusal(
+        opted_in,
+        platform_supported,
+        encoder_available,
+        target.crop_relative_to_source().is_some(),
+    );
+    NativeChoice {
+        chosen: refused.is_none(),
+        refused,
+    }
+}
+
 struct RecordingSession {
     stop_flag: Arc<AtomicBool>,
     /// Set while the recording is paused — capture/audio threads skip work.
     pause_flag: Arc<AtomicBool>,
     capture_handle: JoinHandle<Result<()>>,
-    encoder_handle: JoinHandle<Result<()>>,
+    /// `None` on the native path, where the capture thread encodes as it goes.
+    encoder_handle: Option<JoinHandle<Result<()>>>,
     cursor_handle: JoinHandle<CursorTrack>,
     /// Wall-clock μs from recording start to the first encoded video frame
     /// (capture-source warmup). Subtracted from the cursor track at `stop()`
@@ -346,7 +445,9 @@ impl RecordingSession {
         // the encoder/cursor threads finalize and exit.
         let _ = self.capture_handle.join();
         let _ = self.cursor_handle.join();
-        let _ = self.encoder_handle.join();
+        if let Some(encoder) = self.encoder_handle {
+            let _ = encoder.join();
+        }
         // Each OS session reaps its own FFmpeg child / releases its device.
         if let Some(session) = self.audio_session {
             let _ = session.stop();
@@ -526,20 +627,28 @@ impl RecordingManager {
         let clock = RecordingClock::new(started_at);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pause_flag = Arc::new(AtomicBool::new(false));
+        // Settled before the source opens: the writer decides where frames must live.
+        let native = native_encoding_choice(&target);
+        if let Some(reason) = native.refused {
+            log::info!("native encoder not used: {reason}");
+        }
         // Opened first: the backend is the authority on the frame size below.
-        let source = crate::capture::create_capture_source(&target, recording_fps)?;
+        let source =
+            crate::capture::create_capture_source(&target, recording_fps, native.frame_mode())?;
         target.adopt_source_size(source.width(), source.height());
 
         // Frame queue is capped by memory, not frame count: 180 BGRA frames is
         // ~6 GB at 4K and OOM'd low-end machines when the encoder fell behind.
-        let frame_bytes = frame_bytes_bgra(target.source.width, target.source.height);
         let queue_capacity = queue_capacity_for(target.source.width, target.source.height);
-        log::info!(
-            "recording pipeline queue: {queue_capacity} frames ({} MB at {}x{} BGRA)",
-            (frame_bytes * queue_capacity as u64) / (1024 * 1024),
-            target.source.width,
-            target.source.height,
-        );
+        if !native.chosen {
+            let frame_bytes = frame_bytes_bgra(target.source.width, target.source.height);
+            log::info!(
+                "recording pipeline queue: {queue_capacity} frames ({} MB at {}x{} BGRA)",
+                (frame_bytes * queue_capacity as u64) / (1024 * 1024),
+                target.source.width,
+                target.source.height,
+            );
+        }
         let pipeline = RecordingPipeline::new(queue_capacity);
         let mut warnings = Vec::new();
 
@@ -560,39 +669,44 @@ impl RecordingManager {
         let audio_start = TrackStart::new(started_at);
         let microphone_start = TrackStart::new(started_at);
         let camera_start = TrackStart::new(started_at);
+        let (sink, cadence) = writer_for(&native, &recording_path, recording_fps, &pipeline);
         let capture_handle = spawn_capture_loop(
             source,
             CaptureLoop {
                 stop_flag: stop_flag.clone(),
                 pause_flag: pause_flag.clone(),
-                pipeline: pipeline.clone(),
-                clock: started_at,
+                sink,
+                cadence,
+                timeline: clock.clone(),
+                stats: pipeline.stats(),
                 target_fps: recording_fps,
                 video_start: video_start.clone(),
             },
             notify,
         )?;
 
-        let encoder_handle = match spawn_encoder_loop(
-            EncoderConfig {
-                width: target.source.width,
-                height: target.source.height,
-                fps: recording_fps,
-                crop: target.crop_relative_to_source(),
-                output_path: recording_path.clone(),
-                quality: recording_quality,
-            },
-            stop_flag.clone(),
-            pipeline.clone(),
-        ) {
-            Ok(handle) => handle,
-            Err(e) => {
-                // Capture thread is already live; signal + join it so a failed
-                // start doesn't leave an orphaned capture loop (and its FFmpeg
-                // child) running forever.
-                stop_flag.store(true, Ordering::Release);
-                let _ = capture_handle.join();
-                return Err(e);
+        let encoder_handle = if native.chosen {
+            None
+        } else {
+            match spawn_encoder_loop(
+                EncoderConfig {
+                    width: target.source.width,
+                    height: target.source.height,
+                    fps: recording_fps,
+                    crop: target.crop_relative_to_source(),
+                    output_path: recording_path.clone(),
+                    quality: recording_quality,
+                },
+                stop_flag.clone(),
+                pipeline.clone(),
+            ) {
+                Ok(handle) => Some(handle),
+                Err(e) => {
+                    // Signal + join the live capture thread so a failed start orphans nothing.
+                    stop_flag.store(true, Ordering::Release);
+                    let _ = capture_handle.join();
+                    return Err(e);
+                }
             }
         };
 
@@ -619,7 +733,9 @@ impl RecordingManager {
                     // start doesn't orphan them.
                     stop_flag.store(true, Ordering::Release);
                     let _ = capture_handle.join();
-                    let _ = encoder_handle.join();
+                    if let Some(encoder) = encoder_handle {
+                        let _ = encoder.join();
+                    }
                     return Err(e);
                 }
             }
@@ -634,7 +750,9 @@ impl RecordingManager {
                 Err(e) => {
                     stop_flag.store(true, Ordering::Release);
                     let _ = capture_handle.join();
-                    let _ = encoder_handle.join();
+                    if let Some(encoder) = encoder_handle {
+                        let _ = encoder.join();
+                    }
                     return Err(anyhow!("failed to spawn cursor placeholder thread: {e}"));
                 }
             }
@@ -694,7 +812,6 @@ impl RecordingManager {
             if let Err(e) = crate::camera::session::attach_recorder(
                 camera_path.clone(),
                 recording_fps,
-                clock.clone(),
                 camera_start.clone(),
                 pause_flag.clone(),
             ) {
@@ -755,7 +872,7 @@ impl RecordingManager {
         // session first, then surface the first failure.
         let capture_join = session.capture_handle.join();
         let cursor_join = session.cursor_handle.join();
-        let encoder_join = session.encoder_handle.join();
+        let encoder_join = session.encoder_handle.take().map(JoinHandle::join);
 
         // No session means the toggle was off or no loopback was reachable; both write silence below, and neither is a captured track.
         let has_system_audio = session.audio_session.is_some();
@@ -770,7 +887,9 @@ impl RecordingManager {
         // Everything is reaped — now surface fatal thread failures.
         capture_join.map_err(|_| anyhow!("capture thread panicked"))??;
         let cursor_track = cursor_join.map_err(|_| anyhow!("cursor thread panicked"))?;
-        encoder_join.map_err(|_| anyhow!("encoder thread panicked"))??;
+        if let Some(joined) = encoder_join {
+            joined.map_err(|_| anyhow!("encoder thread panicked"))??;
+        }
 
         // The cursor thread stamped in video time, so there is nothing to re-base.
         let video_zero_us = session.video_start.elapsed_us().unwrap_or(0);
@@ -1164,6 +1283,83 @@ mod sync_live_tests {
     /// second and a half nothing plausible is being measured.
     const PLAUSIBLE_OPEN_MS: i64 = 1_500;
 
+    /// The zero-copy writer driven by the REAL recorder, not by a test calling
+    /// `NativeRecorder` directly. Nothing else proves the capture loop hands it
+    /// GPU handles, that `stop()` closes the file, or that the result plays.
+    ///
+    /// Sets the opt-in for the whole process, so it must not run beside another
+    /// recording test.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "live: records the real screen through the GPU encoder"]
+    fn the_native_writer_records_a_playable_variable_rate_file() {
+        if !capturekit::capabilities().display_enumeration || !crate::encoder::native::available() {
+            return;
+        }
+        let displays = capturekit::displays().expect("displays enumerate");
+        let Some(display) = displays.iter().find(|d| d.is_primary).or(displays.first()) else {
+            return;
+        };
+        let target = CaptureTarget::resolve("screen", display.id.0).expect("the display resolves");
+        let out = std::env::temp_dir().join("recast-native-live");
+        let _ = std::fs::create_dir_all(&out);
+
+        std::env::set_var(NATIVE_ENCODER_ENV, "1");
+        let manager = RecordingManager::default();
+        let started = manager.start(target, out, RecordingOptions::default(), |_| {});
+        let artifacts = started.and_then(|_| {
+            std::thread::sleep(std::time::Duration::from_secs(4));
+            manager.stop()
+        });
+        std::env::remove_var(NATIVE_ENCODER_ENV);
+        let artifacts = artifacts.expect("the recording runs");
+
+        let probe = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join("ffprobe-x86_64-pc-windows-msvc.exe");
+        assert!(probe.exists(), "no ffprobe at {}", probe.display());
+        let out = std::process::Command::new(&probe)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "packet=pts_time",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(&artifacts.recording_path)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .expect("ffprobe runs");
+        let times: Vec<f64> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter_map(|line| line.trim().trim_end_matches(',').parse().ok())
+            .collect();
+        assert!(
+            times.len() > 10,
+            "4 seconds of recording produced {} packets",
+            times.len()
+        );
+
+        let span = times.last().expect("packets") - times[0];
+        assert!(
+            (2.5..5.5).contains(&span),
+            "a 4s recording spans {span}s of presentation time"
+        );
+        // What separates this writer: gaps are kept, not rounded to a slot.
+        let gaps: Vec<i64> = times
+            .windows(2)
+            .map(|pair| ((pair[1] - pair[0]) * 1_000_000.0).round() as i64)
+            .collect();
+        let distinct: std::collections::HashSet<i64> = gaps.iter().copied().collect();
+        assert!(
+            distinct.len() > 1,
+            "every gap is identical ({distinct:?}), which is a fixed rate"
+        );
+    }
+
     #[test]
     #[ignore = "live: records the real screen and opens the mic and camera"]
     fn every_enabled_track_lands_on_the_video_clock() {
@@ -1229,6 +1425,40 @@ mod sync_live_tests {
         assert!(
             measured >= 2,
             "only {measured} track(s) reported an offset; the harness proves nothing about sync"
+        );
+    }
+}
+
+#[cfg(test)]
+mod native_choice_tests {
+    use super::native_refusal;
+
+    #[test]
+    fn every_condition_met_takes_the_native_path() {
+        assert_eq!(native_refusal(true, true, true, false), None);
+    }
+
+    /// Opting in cannot conjure an encoder, a platform or a crop-free capture.
+    #[test]
+    fn each_missing_condition_refuses_with_its_own_reason() {
+        let reasons = [
+            native_refusal(false, true, true, false),
+            native_refusal(true, false, true, false),
+            native_refusal(true, true, false, false),
+            native_refusal(true, true, true, true),
+        ];
+        assert!(reasons.iter().all(Option::is_some), "{reasons:?}");
+        let distinct: std::collections::HashSet<_> = reasons.iter().collect();
+        assert_eq!(distinct.len(), 4, "each refusal owes its own reason");
+    }
+
+    /// An unsupported platform is reported as such even when nothing else is
+    /// set up either, because that is the fact the user can do nothing about.
+    #[test]
+    fn the_platform_is_reported_before_anything_the_user_could_change() {
+        assert_eq!(
+            native_refusal(false, false, false, true),
+            Some("the GPU writer is Windows-only so far")
         );
     }
 }

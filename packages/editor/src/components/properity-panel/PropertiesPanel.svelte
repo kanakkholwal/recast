@@ -233,7 +233,7 @@ const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-tran
   >
     <Tabs.List
       variant="soft"
-      class="h-full w-16 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/60 bg-transparent px-2 py-2 scrollbar-transparent no-scrollbar"
+      class="h-full w-16 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/60 bg-transparent px-2 py-2 scrollbar-transparent no-scrollbar [&_[data-slot=tabs-trigger][data-state=active]_svg]:text-foreground"
     >
       {#each groupedTabs as group, gi (gi)}
         {#each group as tab (tab.id)}

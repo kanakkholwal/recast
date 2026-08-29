@@ -301,6 +301,7 @@ impl FrameSource for SckSource {
             // ScreenCaptureKit reports no damage rectangles.
             dirty: DirtyRects::unknown(),
             cursor: None,
+            gpu: None,
         })
     }
 
