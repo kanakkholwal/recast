@@ -1,5 +1,5 @@
 /**
- * First-party line glyphs for the tool cards, authored as Lucide-style
+ * First-party line glyphs for the tool cards, authored as @recast/icons-style
  * `IconNode` data (24×24 viewBox, currentColor stroke). Drawn in-house so each
  * tool reads as its own operation rather than a generic file icon; rendered via
  * `<LocalIcon iconNode={…} />`. Several slugs share an op (transcode), so they

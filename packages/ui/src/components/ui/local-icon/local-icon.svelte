@@ -18,7 +18,7 @@ export interface LocalIconProps extends SVGAttributes<SVGSVGElement> {
 </script>
 
 <script lang="ts">
-  // A Lucide-compatible prop surface so custom glyphs drop into the same call sites; a documented exception to the Lucide-only rule.
+  // A @recast/icons-compatible prop surface so custom glyphs drop into the same call sites; a documented exception to the @recast/icons-only rule.
   import { cn } from "@recast/ui/utils";
   import type { Snippet } from "svelte";
 

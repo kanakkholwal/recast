@@ -19,7 +19,7 @@ let { ...restProps }: SonnerProps = $props();
   the bottom, so toasts naturally pile on top of any persistent corner
   notification without forcing a layout coordination layer.
 
-  Icons are Lucide only (the rest of the app is Lucide-only by design
+  Icons are @recast/icons only (the rest of the app is @recast/icons-only by design
   rule). Sonner renders our snippet inside its `[data-icon]` element, so
   `classes.icon` styles the *badge* and the snippet just supplies the
   glyph that sits inside it.

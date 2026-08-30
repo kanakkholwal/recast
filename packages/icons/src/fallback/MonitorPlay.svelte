@@ -15,7 +15,7 @@ let {
 <!--
 Hand-stitched: Tabler ships equivalent primitives but no "monitor with play
 triad" specifically. Composes `device-desktop` with a smaller `player-play`
-overlay so call sites keep the same Lucide semantic ("a screen showing it's
+overlay so call sites keep the same @recast/icons semantic ("a screen showing it's
 ready to play / actively showing content").
 -->
 <svg

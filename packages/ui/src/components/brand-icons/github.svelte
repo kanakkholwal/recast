@@ -1,5 +1,5 @@
 <script lang="ts">
-// Lucide 1.x dropped brand icons, so these ship as inline SVGs with a Lucide-compatible prop surface. Path from simple-icons.
+// Lucide 1.x dropped brand icons, so these ship as inline SVGs with a @recast/icons-compatible prop surface. Path from simple-icons.
 import type { SVGAttributes } from "svelte/elements";
 
 interface Props extends SVGAttributes<SVGSVGElement> {

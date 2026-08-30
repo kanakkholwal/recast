@@ -68,7 +68,7 @@ describe("mediaRefSource", () => {
 		vi.doMock("mediabunny", () => ({
 			BlobSource: class {
 				readonly tag = "blob";
-				constructor(readonly source: Blob) {}
+				constructor(readonly blob: Blob) {}
 			},
 			UrlSource: class {
 				readonly tag = "url";
@@ -77,8 +77,11 @@ describe("mediaRefSource", () => {
 		}));
 		const { mediaRefSource } = await import("../src/mediabunny");
 
-		const blob = new Blob(["x"]);
-		expect(mediaRefSource({ kind: "blob", blob })).toMatchObject({ tag: "blob", blob });
+		const payload = new Blob(["x"]);
+		expect(mediaRefSource({ kind: "blob", blob: payload })).toMatchObject({
+			tag: "blob",
+			blob: payload,
+		});
 		expect(mediaRefSource({ kind: "url", url: "asset://x.mp4" })).toMatchObject({
 			tag: "url",
 			url: "asset://x.mp4",

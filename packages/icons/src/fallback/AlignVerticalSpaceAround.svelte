@@ -13,7 +13,7 @@ let {
 </script>
 
 <!--
-Hand-stitched: Lucide had `align-vertical-space-around` for stacked-with-
+Hand-stitched: @recast/icons had `align-vertical-space-around` for stacked-with-
 vertical-spacing alignment. Tabler's `space-between` and `align-center`
 approximate it but with subtly different geometry. Kept as its own component
 so the editor's geometry panel doesn't depend on a third-party equivalent.

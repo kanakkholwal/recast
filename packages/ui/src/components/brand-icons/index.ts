@@ -1,4 +1,4 @@
-// Brand marks as inline SVGs with a Lucide-compatible prop surface, since Lucide 1.x dropped them; a documented exception to the Lucide-only rule.
+// Brand marks as inline SVGs with a @recast/icons-compatible prop surface, since @recast/icons 1.x dropped them; a documented exception to the @recast/icons-only rule.
 export { default as AppleBrand } from "./apple.svelte";
 export { default as FacebookBrand } from "./facebook.svelte";
 export { default as GithubBrand } from "./github.svelte";

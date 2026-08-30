@@ -15,7 +15,7 @@ import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 import Logo from "$lib/logo.svelte";
 import { isActive, resolveActiveOrg, resolveMemberships } from "./DashboardSidebar.logic";
 
-// One shape powers the dashboard and admin shells; every Lucide icon shares a component type, so no `any` is needed.
+// One shape powers the dashboard and admin shells; every @recast/icons icon shares a component type, so no `any` is needed.
 interface NavItem {
 	title: string;
 	href: string;

@@ -1505,7 +1505,7 @@ $effect(() => {
 				</div>
 			</section>
 
-			<!-- Floating action bar — sits just under the video. Id-based Lucide
+			<!-- Floating action bar — sits just under the video. Id-based @recast/icons
 			     reaction icons + on-demand Comments / Transcript triggers that open
 			     the docked side panel. This is the only always-on chrome; the
 			     conversation never competes with the video for space. -->
