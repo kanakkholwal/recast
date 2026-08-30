@@ -4,19 +4,14 @@
 //! more. Sending capture resolution over IPC is 110 MB/s at 720p30, so frames
 //! are reduced here first, where the pixels already live.
 
-/// A BGRA frame reduced so neither side exceeds `max_dim`.
+/// A BGRA frame reduced so neither side exceeds `max_dim`, appended to `out`.
 ///
 /// Averages every source pixel that lands in a destination pixel rather than
 /// point-sampling: a webcam bubble shown at a third of capture size shimmers
 /// badly under nearest-neighbour.
-pub fn downscale_bgra(src: &[u8], width: u32, height: u32, max_dim: u32) -> (Vec<u8>, u32, u32) {
-    let mut out = Vec::new();
-    let (w, h) = downscale_bgra_into(&mut out, src, width, height, max_dim);
-    (out, w, h)
-}
-
-/// [`downscale_bgra`] appending to `out` instead of returning a new buffer, so
-/// a caller framing the pixels (an IPC header, say) writes one buffer not two.
+///
+/// Appends rather than returning a buffer so a caller framing the pixels (an
+/// IPC header, say) writes one buffer instead of two.
 pub fn downscale_bgra_into(
     out: &mut Vec<u8>,
     src: &[u8],
@@ -84,8 +79,8 @@ mod tests {
     #[test]
     fn a_frame_already_within_the_bound_is_untouched() {
         let src = vec![7u8; 4 * 4 * 4];
-        let (out, w, h) = downscale_bgra(&src, 4, 4, 16);
-        assert_eq!((w, h), (4, 4));
+        let mut out = Vec::new();
+        assert_eq!(downscale_bgra_into(&mut out, &src, 4, 4, 16), (4, 4));
         assert_eq!(out, src);
     }
 
@@ -105,16 +100,16 @@ mod tests {
             80, 80, 80, 80, // (0,1)
             120, 120, 120, 120, // (1,1)
         ];
-        let (out, w, h) = downscale_bgra(&src, 2, 2, 1);
-        assert_eq!((w, h), (1, 1));
+        let mut out = Vec::new();
+        assert_eq!(downscale_bgra_into(&mut out, &src, 2, 2, 1), (1, 1));
         assert_eq!(out, vec![60, 60, 60, 60]);
     }
 
     #[test]
     fn a_truncated_frame_does_not_panic() {
         let src = vec![9u8; 8];
-        let (out, w, h) = downscale_bgra(&src, 4, 4, 2);
-        assert_eq!((w, h), (2, 2));
+        let mut out = Vec::new();
+        assert_eq!(downscale_bgra_into(&mut out, &src, 4, 4, 2), (2, 2));
         assert_eq!(out.len(), 2 * 2 * 4);
     }
 
@@ -128,14 +123,5 @@ mod tests {
         assert_eq!((w, h), (2, 2));
         assert_eq!(&out[..4], &[1, 2, 3, 4]);
         assert_eq!(out.len(), 4 + 2 * 2 * 4);
-    }
-
-    #[test]
-    fn scaling_into_a_buffer_matches_the_allocating_form() {
-        let src: Vec<u8> = (0..4u32 * 4 * 4).map(|i| (i % 251) as u8).collect();
-        let (owned, w, h) = downscale_bgra(&src, 4, 4, 2);
-        let mut into = Vec::new();
-        assert_eq!(downscale_bgra_into(&mut into, &src, 4, 4, 2), (w, h));
-        assert_eq!(into, owned);
     }
 }

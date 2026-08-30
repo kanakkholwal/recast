@@ -127,6 +127,27 @@ pub fn decode_matrix(color: &SourceColor) -> (Mat3, [f32; 3]) {
     (folded, apply(m, bias))
 }
 
+/// The 3x3 and bias taking R'G'B' back to normalised Y'CbCr code values: the
+/// exact inverse of [`decode_matrix`], tested as one, and export's only source.
+pub fn encode_matrix(color: &SourceColor) -> (Mat3, [f32; 3]) {
+    let depth = color.bit_depth.clamp(8, 16);
+    let (luma_scale, luma_offset) = color.range.luma_scale_offset(depth);
+    let chroma_scale = color.range.chroma_scale(depth);
+    let m = color.matrix.rgb_to_ycbcr();
+
+    let mut folded = m;
+    for value in &mut folded[0] {
+        *value /= luma_scale;
+    }
+    for row in &mut folded[1..] {
+        for value in row.iter_mut() {
+            *value /= chroma_scale;
+        }
+    }
+    let neutral = neutral_chroma(depth);
+    (folded, [-luma_offset, neutral, neutral])
+}
+
 /// The code value that means no colour, as a sampler reports it.
 ///
 /// NOT 0.5. Neutral is 2^(n-1) and a unorm texture normalises by 2^n - 1, so
@@ -675,5 +696,75 @@ mod tests {
         assert_eq!(hlg.codes[0], 2);
         assert_eq!(hlg.codes[1], 5);
         assert_eq!(hlg.chroma[0], 0.0);
+    }
+
+    fn round_trip(color: &SourceColor, rgb: [f32; 3]) -> [f32; 3] {
+        let (enc, enc_bias) = encode_matrix(color);
+        let mut code = apply(enc, rgb);
+        for (value, bias) in code.iter_mut().zip(enc_bias) {
+            *value += bias;
+        }
+        let (dec, dec_bias) = decode_matrix(color);
+        let out = apply(dec, code);
+        [
+            out[0] + dec_bias[0],
+            out[1] + dec_bias[1],
+            out[2] + dec_bias[2],
+        ]
+    }
+
+    /// The whole reason `encode_matrix` lives beside `decode_matrix`: a colour
+    /// that survives the pair is a colour that survives export.
+    #[test]
+    fn encoding_then_decoding_returns_the_colour_it_started_with() {
+        let color = SourceColor::default();
+        for rgb in [
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 1.0],
+            [0.5, 0.5, 0.5],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.2, 0.7, 0.4],
+        ] {
+            let back = round_trip(&color, rgb);
+            for (got, want) in back.iter().zip(rgb) {
+                assert!((got - want).abs() < 1e-4, "{rgb:?} came back as {back:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_pair_round_trips_at_full_range_too() {
+        let color = SourceColor {
+            range: ColorRange::Full,
+            ..SourceColor::default()
+        };
+        let back = round_trip(&color, [0.2, 0.7, 0.4]);
+        assert!((back[0] - 0.2).abs() < 1e-4, "{back:?}");
+        assert!((back[2] - 0.4).abs() < 1e-4, "{back:?}");
+    }
+
+    /// Limited range is the default, and getting it wrong is the classic
+    /// washed-out or crushed export. White must land on code 235, not 255.
+    #[test]
+    fn limited_range_white_encodes_to_code_235_and_neutral_chroma() {
+        let color = SourceColor::default();
+        let (enc, bias) = encode_matrix(&color);
+        let mut code = apply(enc, [1.0, 1.0, 1.0]);
+        for (value, b) in code.iter_mut().zip(bias) {
+            *value += b;
+        }
+        assert!((code[0] * 255.0 - 235.0).abs() < 0.01, "luma {code:?}");
+        assert!((code[1] * 255.0 - 128.0).abs() < 0.01, "cb {code:?}");
+        assert!((code[2] * 255.0 - 128.0).abs() < 0.01, "cr {code:?}");
+    }
+
+    #[test]
+    fn limited_range_black_encodes_to_code_16() {
+        let color = SourceColor::default();
+        let (enc, bias) = encode_matrix(&color);
+        let code = apply(enc, [0.0, 0.0, 0.0])[0] + bias[0];
+        assert!((code * 255.0 - 16.0).abs() < 0.01, "luma {code}");
     }
 }

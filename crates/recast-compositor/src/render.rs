@@ -515,8 +515,8 @@ impl Compositor {
         Ok(())
     }
 
-    /// Uploads whatever the caller has packed since the last frame. Separate
-    /// from `render` because the atlas belongs to the layout, not the frame.
+    /// Uploads whatever the caller has packed since the last frame. One cache
+    /// per compositor: `take_dirty` is destructive, so a second mirror misses.
     pub fn sync_glyph_atlas(&mut self, atlas: &mut recast_text::GlyphAtlas) {
         self.text.sync(&self.device, &self.queue, atlas);
     }

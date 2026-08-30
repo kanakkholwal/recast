@@ -449,11 +449,8 @@ pub(crate) fn pull_output(transform: &IMFTransform) -> Result<Option<EncodedSamp
     Ok(Some(read_sample(&sample)?))
 }
 
-/// Takes ownership of everything `ProcessOutput` wrote into the buffer.
-///
-/// `pEvents` is an OUT parameter whose reference belongs to the caller. Leaving
-/// it in place leaks one COM object per output sample on any transform that
-/// populates it, which over an export is per frame.
+/// Takes ownership of everything `ProcessOutput` wrote, `pEvents` included: it
+/// is an OUT parameter, so leaving it leaks a COM object per output sample.
 fn drain(buffer: &mut MFT_OUTPUT_DATA_BUFFER) -> Option<IMFSample> {
     let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffer.pSample);
     drop(std::mem::ManuallyDrop::take_if_needed(&mut buffer.pEvents));

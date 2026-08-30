@@ -6,8 +6,7 @@
 //! and returns in microseconds.
 
 #![cfg_attr(not(windows), allow(unused_imports))]
-// Every unsafe block here is documented and must stay that way: this crate is
-// the whole FFmpeg-free encode path.
+// Documented 1:1 today and must stay so: this is the whole encode path.
 #![deny(clippy::undocumented_unsafe_blocks, unsafe_op_in_unsafe_fn)]
 
 pub use recast_codec::{EncoderDescriptor, Vendor, VideoCodec};

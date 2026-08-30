@@ -353,10 +353,8 @@ jobs:
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test golden_frames
 
 
-      # `--lib` above skips integration targets, so these two only ever ran by
-      # hand. Parity is the one gate on the FFmpeg and engine renderers agreeing;
-      # nothing else catches them drifting apart.
-      - name: Engine parity + perf baseline (Windows only)
+      # `--lib` above skips integration targets, so these never ran in CI.
+      - name: Engine parity + perf assertions (Windows only)
         if: ${{ matrix.platform.name == 'windows-x64' }}
         env:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"

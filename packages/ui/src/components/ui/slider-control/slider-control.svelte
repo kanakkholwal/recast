@@ -48,9 +48,9 @@ function snapToDecile(v: number, min: number, max: number): number {
 </script>
 
 <script lang="ts">
+	import { cn } from "@recast/ui/utils";
 	import { tick } from "svelte";
 	import { Spring } from "svelte/motion";
-	import { cn } from "@recast/ui/utils";
 
 	let {
 		label,
@@ -484,9 +484,6 @@ function snapToDecile(v: number, min: number, max: number): number {
 				: "0px"}
 		></div>
 
-		<!-- Pill thumb. Vertically positioned with symmetric inset so the
-		     transform stack only carries scale (origin: center) and stays
-		     glued to the row's midline regardless of scaleY. -->
 		<div
 			class={cn(
 				"pointer-events-none absolute inset-y-[21%] z-10 w-[3px] rounded-full bg-primary shadow-[0_0_0_1px_color-mix(in_srgb,_var(--color-background)_50%,_transparent)]",
@@ -497,9 +494,6 @@ function snapToDecile(v: number, min: number, max: number): number {
 			style:transform={`scaleX(${handleScaleXMv.current}) scaleY(${handleScaleYMv.current})`}
 		></div>
 
-		<!-- Label (left). z-20 so it floats above the fill. Hidden when an outer
-		     row already labels the slider; the flex-1 spacer stays to keep the
-		     value pinned right. -->
 		<div class="pointer-events-none relative z-20 flex min-w-0 flex-1 items-center gap-1.5">
 			{#if icon}
 				<span

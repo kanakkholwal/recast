@@ -6,6 +6,7 @@ mod error;
 mod format;
 pub mod interop;
 mod pool;
+pub mod readback;
 
 pub use context::{GpuContext, GpuOptions, PowerPreference};
 pub use error::GpuError;
@@ -21,3 +22,4 @@ pub use pool::{
     GpuTexturePool, Lease, PoolStats, TextureAllocator, TextureDesc, TexturePool, WgpuAllocator,
     DEFAULT_MAX_IDLE_BYTES, DEFAULT_MAX_UNUSED_FRAMES,
 };
+pub use readback::Readback;

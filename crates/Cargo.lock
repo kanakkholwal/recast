@@ -1889,6 +1889,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "recast-export"
+version = "0.0.0"
+dependencies = [
+ "recast-codec",
+ "recast-codec-mf",
+ "recast-color",
+ "recast-compositor",
+ "recast-gpu",
+ "recast-mux",
+ "recast-scene",
+ "recast-testkit",
+ "recast-time",
+ "serde_json",
+ "thiserror",
+ "wgpu",
+]
+
+[[package]]
 name = "recast-ffi-wasm"
 version = "0.0.0"
 dependencies = [

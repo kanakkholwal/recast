@@ -49,3 +49,15 @@ export type { AudioEngineHolder } from "./lib/playback/audio-engine-host.svelte"
 export { createAudioEngineHost } from "./lib/playback/audio-engine-host.svelte";
 export type { EditorStore } from "./stores/editor-store.svelte";
 export { createEditorStore } from "./stores/editor-store.svelte";
+
+// Pure helpers hosts otherwise reach by deep @recast/editor/lib/* subpaths.
+export * from "./lib/audio/music";
+export * from "./lib/camera/browser-devices";
+export * from "./lib/captions/clip-with-cuts";
+export * from "./lib/dom/keyboard";
+export * from "./lib/format/bytes";
+export * from "./lib/format/files";
+export * from "./lib/format/time";
+export * from "./lib/format/transfer-rate";
+export * from "./lib/profiles";
+export * from "./lib/timeline/time-map";

@@ -1,0 +1,29 @@
+[package]
+name = "recast-export"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+recast-compositor = { path = "../recast-compositor" }
+recast-gpu = { path = "../recast-gpu" }
+recast-scene = { path = "../recast-scene" }
+recast-codec = { path = "../recast-codec" }
+recast-mux = { path = "../recast-mux" }
+recast-time = { path = "../recast-time" }
+recast-color = { path = "../recast-color" }
+thiserror = "2.0"
+wgpu = { version = "=30.0.1", default-features = false, features = ["wgsl"] }
+
+[target.'cfg(windows)'.dependencies]
+recast-codec-mf = { path = "../recast-codec-mf" }
+
+[dev-dependencies]
+serde_json = "1.0"
+recast-testkit = { path = "../recast-testkit" }
+
+[target.'cfg(windows)'.dev-dependencies]
+recast-codec-mf = { path = "../recast-codec-mf" }

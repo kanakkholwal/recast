@@ -1,7 +1,8 @@
 <script lang="ts">
-import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
 import { ChevronRight } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
+import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
+import { type DropdownMenuContentSizeVariant, dropdownMenuItemSizeVariants } from "./context";
 
 let {
 	ref = $bindable(null),
@@ -11,6 +12,7 @@ let {
 	...restProps
 }: DropdownMenuPrimitive.SubTriggerProps & {
 	inset?: boolean;
+	size?: DropdownMenuContentSizeVariant;
 } = $props();
 </script>
 
@@ -20,7 +22,10 @@ let {
 	data-inset={inset}
 	class={cn(
 		"focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground gap-1.5 rounded-md px-1.5 py-1 text-sm data-inset:pl-7 [&_svg:not([class*='size-'])]:size-4 flex cursor-default items-center outline-hidden select-none data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0",
-		className
+			dropdownMenuItemSizeVariants({
+			size: restProps.size,
+		}),
+		className,
 	)}
 	{...restProps}
 >

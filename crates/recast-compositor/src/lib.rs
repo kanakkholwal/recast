@@ -24,9 +24,9 @@ pub use geometry::{canvas_geometry, parse_aspect_ratio, CanvasGeometry, MAX_PADD
 pub use recast_cursor::{CursorPlacement, CursorSettings, CursorTrack, Highlight};
 pub use render::{BackgroundImage, Compositor, CursorSprite, FrameInputs, LayerInput, RenderStats};
 pub use session::{screen_only, OutputSize, Session};
-pub use source::RenderSource;
+pub use source::{RenderSource, Renderable};
 pub use text::GlyphQuad;
 pub use yuv::{
-    chroma_offset, decode_matrix, gamut_matrix, ChromaSiting, Plane, PlaneData, PlaneLayout,
-    SourceColor, SourcePlanes, YuvError,
+    chroma_offset, decode_matrix, encode_matrix, gamut_matrix, ChromaSiting, Plane, PlaneData,
+    PlaneLayout, SourceColor, SourcePlanes, YuvError,
 };

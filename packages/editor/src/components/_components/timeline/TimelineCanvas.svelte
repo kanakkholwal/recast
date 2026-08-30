@@ -3,6 +3,7 @@ import {
 	Captions,
 	ChevronDown,
 	ChevronRight,
+	Clock,
 	Copy,
 	Ellipsis,
 	Eye,
@@ -21,9 +22,12 @@ import {
 	Sun,
 	Trash2,
 	Unlock,
+	Upload,
 	Volume2,
+	VolumeOff,
 	ZoomIn,
 } from "@recast/icons";
+import { Button } from "@recast/ui/button";
 import * as ContextMenu from "@recast/ui/context-menu";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { onMount, untrack } from "svelte";
@@ -52,12 +56,6 @@ import {
 import type { EditorStore } from "../../../stores/editor-store.svelte";
 import { effectiveFps } from "./timeline-helpers";
 
-// Canvas timeline, ported from Diffusion Studio to our object model: a dark NLE
-// surface, one ROW PER CLIP grouped by type (empty types omitted, voice+music
-// folded into Audio), a header column that lists each row and expands to its
-// property controls, frame-snapped move/trim, cut seams, captions and a shadcn
-// context menu. View state (scroll/zoom/expansion) is local — never the file.
-
 interface Props {
 	store: EditorStore;
 	/** The preview element, so the header transport can play/pause it. */
@@ -81,31 +79,32 @@ const RULER_HEIGHT = 36;
 const RULER_LABEL_Y = 18;
 const RULER_TICK_MAJOR = 9;
 const RULER_TICK_MINOR = 3;
-const ROW_H = 44;
-// Video rows are taller so the picture strip and the waveform each get a band
-// instead of overlapping (Diffusion splits them; a 44px row can't hold both).
-const VIDEO_ROW_H = 64;
+// Uniform lane height for every kind (Diffusion's DEFAULT_CLIP_HEIGHT); rows sit
+// nearly contiguous the way its layer list does.
+const ROW_H = 40;
 const WAVE_BAND = 22;
 const SUBROW_H = 30;
-const ROW_GAP = 3;
+const ROW_GAP = 2;
+// The video lane splits picture/waveform only when tall enough for both.
+const VIDEO_WAVE_MIN_H = 62;
 const CLIP_RADIUS = 4;
 const CLIP_LABEL_X = 6;
 const CLIP_LABEL_HEIGHT = 18;
 const TRIM_HANDLE_PX = 10;
 const SNAP_PX = 10;
 const MIN_CLIP_FRAMES = 2;
-const TRACK_HEADER_W = 184;
+// How near the playhead line a press counts as grabbing it (over the lanes).
+const PLAYHEAD_GRAB_PX = 5;
+const TRACK_HEADER_W = 240;
 const SAMPLE_WIDTH = 2;
 const FILMSTRIP_TILE_HEIGHT = 48;
 const FILMSTRIP_TILE_WIDTH = 72;
-// The header floats over the canvas's left edge, so the canvas element stays
-// full width (responsive) and its time content begins after this gutter. A small
-// pad keeps frame 0 off the panel edge (Diffusion's TIMELINE_PADDING_LEFT).
-const PAD_LEFT = 8;
-const GUTTER = TRACK_HEADER_W + PAD_LEFT;
+// The header is a flex sibling, so the canvas owns only the content region. A
+// small left pad keeps frame 0 off the edge (Diffusion's TIMELINE_PADDING_LEFT).
+const GUTTER = 8;
 
-function rowHeight(kind: ClipKind): number {
-	return kind === "video" ? VIDEO_ROW_H : ROW_H;
+function rowHeight(_kind: ClipKind): number {
+	return ROW_H;
 }
 
 const ZOOM_SENSITIVITY = 0.01;
@@ -136,6 +135,14 @@ interface PropSpec {
 	format: (v: number) => string;
 }
 const PROP: Partial<Record<ClipKind, PropSpec>> = {
+	video: {
+		label: "Speed",
+		icon: Gauge,
+		min: 0.25,
+		max: 4,
+		step: 0.05,
+		format: (v) => `${v.toFixed(2)}×`,
+	},
 	audio: {
 		label: "Volume",
 		icon: Volume2,
@@ -146,7 +153,7 @@ const PROP: Partial<Record<ClipKind, PropSpec>> = {
 	},
 	zoom: {
 		label: "Scale",
-		icon: Gauge,
+		icon: ZoomIn,
 		min: 1,
 		max: 4,
 		step: 0.1,
@@ -160,6 +167,14 @@ const PROP: Partial<Record<ClipKind, PropSpec>> = {
 		step: 0.05,
 		format: (v) => `${Math.round(v * 100)}%`,
 	},
+	caption: {
+		label: "Size",
+		icon: Captions,
+		min: 2,
+		max: 8,
+		step: 0.1,
+		format: (v) => `${v.toFixed(1)}%`,
+	},
 };
 
 let containerEl: HTMLDivElement | undefined = $state();
@@ -169,12 +184,16 @@ let ctx: CanvasRenderingContext2D | null = null;
 let cssW = $state(900);
 let cssH = $state(200);
 let dpr = 1;
-let didFit = false;
+// Once the user zooms/pans, stop auto-fitting on resize and let them drive.
+let userAdjusted = false;
 
 // Width available for the time content, i.e. everything right of the header gutter.
 const contentW = $derived(Math.max(1, cssW - GUTTER));
 
-let view = $state<TimelineView>({ scrollFrames: 0, resolution: DEFAULT_RESOLUTION });
+let view = $state<TimelineView>({
+	scrollFrames: 0,
+	resolution: DEFAULT_RESOLUTION,
+});
 let scrollY = $state(0);
 let expandedRows = $state(new Set<string>());
 
@@ -273,17 +292,24 @@ const cutFrames = $derived.by<number[]>(() => {
 	return store.cuts.map((c) => originalToOutput(store.renderMap, c.start) * fps);
 });
 
+// Guarded like the rest of the editor (Editor.svelte); never touch a bare
+// localStorage, which throws under SSR and in privacy modes.
 const EXPAND_KEY = "recast:tl-expanded";
+const tlStorage = typeof localStorage === "undefined" ? null : localStorage;
 function persistExpanded(ids: Set<string>) {
 	try {
-		localStorage.setItem(EXPAND_KEY, JSON.stringify([...ids]));
-	} catch {}
+		tlStorage?.setItem(EXPAND_KEY, JSON.stringify([...ids]));
+	} catch {
+		// best-effort; expansion just won't persist.
+	}
 }
 function loadExpanded(): Set<string> {
 	try {
-		const raw = localStorage.getItem(EXPAND_KEY);
+		const raw = tlStorage?.getItem(EXPAND_KEY);
 		if (raw) return new Set(JSON.parse(raw) as string[]);
-	} catch {}
+	} catch {
+		// best-effort; start with nothing expanded.
+	}
 	return new Set();
 }
 function toggleExpand(id: string) {
@@ -299,17 +325,45 @@ function toggleExpand(id: string) {
 function propClipId(row: TimelineRow): string | undefined {
 	return (row.clips.find((c) => c.selected) ?? row.clips[0])?.id;
 }
+function rowSelected(row: TimelineRow): boolean {
+	return row.clips.some((c) => c.selected);
+}
+// The lane-level toggles that map cleanly to the store: markup hides, audio
+// mutes (gain 0). Other kinds have none, so their row shows no toggle.
+function rowToggleKind(row: TimelineRow): "hide" | "mute" | null {
+	if (row.kind === "markup") return "hide";
+	if (row.kind === "audio") return "mute";
+	return null;
+}
+function rowToggled(row: TimelineRow): boolean {
+	if (row.kind === "markup") return store.annotationsGloballyHidden;
+	if (row.kind === "audio") return propValue(row) <= 0;
+	return false;
+}
+function toggleRow(row: TimelineRow) {
+	if (row.kind === "markup") {
+		store.annotationsGloballyHidden = !store.annotationsGloballyHidden;
+	} else if (row.kind === "audio") {
+		const id = propClipId(row);
+		if (id) store.updateMusicClip(id, { gain: rowToggled(row) ? 100 : 0 });
+	}
+}
 function propValue(row: TimelineRow): number {
 	const id = propClipId(row);
+	if (row.kind === "video") return store.segmentSpeedAt(Number(id));
+	if (row.kind === "caption") return store.captionStyle.fontSizePct;
 	if (row.kind === "audio") return store.musicClips.find((c) => c.id === id)?.gain ?? 100;
 	if (row.kind === "zoom") return store.zoomRegions.find((z) => z.id === id)?.scale ?? 1;
 	if (row.kind === "markup") return store.annotations.find((a) => a.id === id)?.opacity ?? 1;
 	return 0;
 }
 function setProp(row: TimelineRow, v: number) {
+	// Caption size is a global style, so it needs no clip id; the rest edit a clip.
+	if (row.kind === "caption") return store.updateCaptionStyle({ fontSizePct: v });
 	const id = propClipId(row);
 	if (!id) return;
-	if (row.kind === "audio") store.updateMusicClip(id, { gain: v });
+	if (row.kind === "video") store.setSegmentSpeed(Number(id), v);
+	else if (row.kind === "audio") store.updateMusicClip(id, { gain: v });
 	else if (row.kind === "zoom") store.updateZoomRegion(id, { scale: v });
 	else if (row.kind === "markup") store.updateAnnotation(id, { opacity: v });
 }
@@ -353,12 +407,20 @@ function deleteSelected() {
 function zoomToFit() {
 	if (totalFrames <= 0) return;
 	view = clampScroll(
-		zoomAt({ scrollFrames: 0, resolution: (contentW * 0.98) / totalFrames }, 0, 1),
+		zoomAt(
+			{
+				scrollFrames: 0,
+				resolution: (contentW * 0.98) / totalFrames,
+			},
+			0,
+			1,
+		),
 		totalFrames,
 		contentW,
 	);
 }
 function zoomStep(factor: number) {
+	userAdjusted = true;
 	view = clampScroll(zoomAt(view, contentW / 2, factor), totalFrames, contentW);
 }
 
@@ -475,13 +537,17 @@ function sizeCanvas() {
 	canvasEl.height = Math.round(cssH * dpr);
 	canvasEl.style.width = `${cssW}px`;
 	canvasEl.style.height = `${cssH}px`;
-	if (!didFit && totalFrames > 0) {
+	// Refit on every resize until the user zooms/pans: a one-shot fit locked the
+	// stale first-mount width, so the clip under-filled and the pointer mismapped.
+	if (totalFrames > 0 && contentW > 40 && !userAdjusted) {
 		view = clampScroll(
-			zoomAt({ scrollFrames: 0, resolution: (contentW * 0.98) / totalFrames }, 0, 1),
+			{
+				scrollFrames: 0,
+				resolution: (contentW * 0.98) / totalFrames,
+			},
 			totalFrames,
 			contentW,
 		);
-		didFit = true;
 	}
 	scrollY = clampScrollY(scrollY);
 	scheduleDraw();
@@ -627,9 +693,10 @@ function drawClip(clip: TimelineClip, top: number, h: number) {
 function drawClipContent(clip: TimelineClip, r: ClipRect, paint: ClipPaint) {
 	const wave = hasWaveform();
 	if (clip.kind === "video") {
-		const picH = wave ? r.h - WAVE_BAND : r.h;
+		const splitWave = wave && r.h >= VIDEO_WAVE_MIN_H;
+		const picH = splitWave ? r.h - WAVE_BAND : r.h;
 		drawFilmstrip(clip, r.x, r.w, r.y, picH);
-		if (wave)
+		if (splitWave)
 			drawWaveformBars({ x: r.x, w: r.w, y: r.y + picH, h: WAVE_BAND }, paint.primary, 0.85);
 	} else if (clip.kind === "audio" && wave) {
 		drawWaveformBars(r, paint.primary, 1);
@@ -875,8 +942,9 @@ let lastPlayTs = 0;
 
 function drawPlayhead() {
 	if (!ctx) return;
-	const x = frameToX(playheadFrame, view);
-	if (x < -2 || x > contentW + 2) return;
+	// Snap to a whole device pixel like the ticks/clips: an unsnapped 1px line
+	// anti-aliases across two columns and washes out over the dark lanes.
+	const x = snapDev(frameToX(playheadFrame, view));
 
 	ctx.save();
 	ctx.translate(x, 0);
@@ -893,15 +961,16 @@ function drawPlayhead() {
 	ctx.fill(KNOB_PATH);
 	ctx.restore();
 
-	// The line below the ruler: a dark halo (3px) with the blue scrubber over it.
+	// The line below the ruler: a dark halo (4px) under the blue scrubber (2px),
+	// both crisp because x is device-snapped.
 	ctx.beginPath();
-	ctx.moveTo(0.5, RULER_HEIGHT);
-	ctx.lineTo(0.5, cssH);
+	ctx.moveTo(0, RULER_HEIGHT);
+	ctx.lineTo(0, cssH);
 	ctx.strokeStyle = tl.border;
-	ctx.lineWidth = 3;
+	ctx.lineWidth = 4;
 	ctx.stroke();
 	ctx.strokeStyle = tl.ring;
-	ctx.lineWidth = 1;
+	ctx.lineWidth = 2;
 	ctx.stroke();
 	ctx.restore();
 }
@@ -931,7 +1000,9 @@ function drawMotionTrail() {
 	if (width <= 0.5) return;
 	const reverse = gradientWidth < 0;
 	const grad = ctx.createLinearGradient(reverse ? width : -width, 0, 0, 0);
-	grad.addColorStop(0, `${tl.ring}00`);
+	// `transparent`, not `${tl.ring}00`: the hex-alpha suffix is invalid on the
+	// oklch()/rgb() strings getComputedStyle returns and throws in addColorStop.
+	grad.addColorStop(0, "transparent");
 	grad.addColorStop(1, tl.ring);
 	ctx.fillStyle = grad;
 	ctx.globalAlpha = 0.16;
@@ -959,8 +1030,20 @@ function seekToX(x: number) {
 
 type Gesture =
 	| { kind: "scrub" }
-	| { kind: "move"; clip: TimelineClip; grabFrame: number; startFrame: number; durFrames: number }
-	| { kind: "trim"; edge: "l" | "r"; clip: TimelineClip; startFrame: number; endFrame: number };
+	| {
+			kind: "move";
+			clip: TimelineClip;
+			grabFrame: number;
+			startFrame: number;
+			durFrames: number;
+	  }
+	| {
+			kind: "trim";
+			edge: "l" | "r";
+			clip: TimelineClip;
+			startFrame: number;
+			endFrame: number;
+	  };
 let gesture: Gesture | null = null;
 let snapGuideFrame: number | null = null;
 
@@ -1067,7 +1150,7 @@ function applyClipSpan(clip: TimelineClip, startFrame: number, endFrame: number)
 }
 
 function hoverCursor(x: number, y: number): string {
-	if (y < RULER_HEIGHT) return "ew-resize";
+	if (y < RULER_HEIGHT || nearPlayhead(x)) return "ew-resize";
 	const clip = clipAt(x, y);
 	if (!clip) return "default";
 	if (clip.kind === "video" && !videoTrimmable) return "pointer";
@@ -1077,18 +1160,28 @@ function hoverCursor(x: number, y: number): string {
 	return canMove(clip) ? "grab" : "pointer";
 }
 
+// True when x is over the playhead line, so a press on the lanes grabs the
+// scrubber rather than the clip beneath it.
+function nearPlayhead(x: number): boolean {
+	return Math.abs(frameToX(playheadFrame, view) - x) <= PLAYHEAD_GRAB_PX;
+}
+function startScrub(x: number, e: PointerEvent) {
+	if (store.isPlaying) {
+		videoEl?.pause();
+		store.isPlaying = false;
+	}
+	gesture = { kind: "scrub" };
+	canvasEl?.setPointerCapture(e.pointerId);
+	seekToX(x);
+}
+
 function onPointerDown(e: PointerEvent) {
 	if (e.button !== 0) return;
 	const x = localX(e);
 	const y = localY(e);
-	if (y < RULER_HEIGHT) {
-		if (store.isPlaying) {
-			videoEl?.pause();
-			store.isPlaying = false;
-		}
-		gesture = { kind: "scrub" };
-		canvasEl?.setPointerCapture(e.pointerId);
-		seekToX(x);
+	// The ruler scrubs to the point; the line itself is grabbable over the lanes.
+	if (y < RULER_HEIGHT || nearPlayhead(x)) {
+		startScrub(x, e);
 		return;
 	}
 	const clip = clipAt(x, y);
@@ -1217,6 +1310,7 @@ function onWheel(e: WheelEvent) {
 	const dY = normDelta(e.deltaY, e.deltaMode);
 	const dX = normDelta(e.deltaX, e.deltaMode);
 	if (e.ctrlKey || e.metaKey) {
+		userAdjusted = true;
 		const clamped = Math.max(-ZOOM_DELTA_CLAMP, Math.min(ZOOM_DELTA_CLAMP, dY));
 		view = clampScroll(
 			zoomAt(view, localX(e), Math.exp(-clamped * ZOOM_SENSITIVITY)),
@@ -1230,6 +1324,7 @@ function onWheel(e: WheelEvent) {
 		scrollY = clampScrollY(scrollY + dY);
 		return;
 	}
+	userAdjusted = true;
 	const dx = (dxDominant ? dX : dY) * SCROLL_X_SENSITIVITY;
 	view = clampScroll(scrollByPixels(view, dx), totalFrames, contentW);
 }
@@ -1389,122 +1484,171 @@ const playheadLabel = $derived(
 
 <div
 	bind:this={containerEl}
-	class="relative h-full min-h-0 w-full overflow-hidden rounded-lg border border-border/60 bg-background text-[12px]"
+	class="flex h-full min-h-0 w-full overflow-hidden rounded-lg border border-border/60 bg-background text-[12px]"
+	id="timeline-container"
 >
-	<!-- Track/properties panel: floats over the canvas's left gutter so the canvas
-	     itself stays full width and responsive. Scrolls its rows with the canvas. -->
 	<div
-		class="absolute inset-y-0 left-0 z-10 overflow-hidden border-r border-border/60 bg-background"
+		class="relative shrink-0 overflow-hidden border-r border-border/60 bg-background"
 		style="width:{TRACK_HEADER_W}px"
+		id="timeline-header"
 	>
 		<div
 			class="flex items-center justify-between gap-2 border-b border-border/60 pl-1.5 pr-2.5"
 			style="height:{RULER_HEIGHT}px"
+			id="timeline-controls"
 		>
-			<div class="flex items-center gap-0.5">
-				<button
+			<div class="flex shrink-0 items-center gap-0.5">
+				<Button
 					type="button"
 					onclick={togglePlay}
 					disabled={!videoEl}
 					aria-label={store.isPlaying ? "Pause" : "Play"}
 					class="tl-btn"
+					size="icon-sm"
+					variant="ghost"
 				>
-					{#if store.isPlaying}<Pause class="size-4" fill="currentColor" />{:else}<Play
-							class="size-4"
+					{#if store.isPlaying}<Pause
 							fill="currentColor"
-						/>{/if}
-				</button>
-				<button
+						/>{:else}<Play fill="currentColor" />{/if}
+				</Button>
+				<Button
 					type="button"
 					onclick={splitAtPlayhead}
 					disabled={totalFrames <= 0}
 					aria-label="Split at playhead"
 					title="Split at playhead (S)"
 					class="tl-btn"
+					size="icon-sm"
+					variant="ghost"
 				>
-					<SquareSplitHorizontal class="size-4" />
-				</button>
-				<button
-					type="button"
-					onclick={addZoomAtPlayhead}
-					disabled={totalFrames <= 0}
-					aria-label="Add zoom at playhead"
-					title="Add zoom at playhead (Z)"
-					class="tl-btn"
-				>
-					<ZoomIn class="size-4" />
-				</button>
+					<SquareSplitHorizontal />
+				</Button>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
-						<button type="button" aria-label="More timeline options" class="tl-btn">
-							<Ellipsis class="size-4" />
-						</button>
+						<Button
+							type="button"
+							aria-label="More timeline options"
+							class="tl-btn"
+							size="icon-sm"
+							variant="ghost"
+						>
+							<Ellipsis />
+						</Button>
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content size="sm" align="start" class="w-52">
-						<DropdownMenu.Item onSelect={zoomToFit}>
-							<Maximize2 class="size-3.5" />
-							Zoom to fit
+					<DropdownMenu.Content
+						size="sm"
+						align="start"
+						class="max-w-44 w-fit"
+					>
+						<DropdownMenu.Item
+							onSelect={addZoomAtPlayhead}
+							disabled={totalFrames <= 0}
+							size="sm"
+						>
+							<ZoomIn />
+							Add zoom (Z)
 						</DropdownMenu.Item>
-						<DropdownMenu.CheckboxItem checked={loopEnabled} onCheckedChange={(v) => (loopEnabled = v)}>
-							<Repeat class="size-3.5" />
+						<DropdownMenu.Item onSelect={zoomToFit} size="sm">
+							<Maximize2 />
+							Zoom to fit (F)
+						</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Sub>
+							<DropdownMenu.SubTrigger size="sm">
+								<Scissors />
+								Trim
+							</DropdownMenu.SubTrigger>
+							<DropdownMenu.SubContent>
+								<DropdownMenu.Item onSelect={markIn} size="sm"
+									>Mark in ([)</DropdownMenu.Item
+								>
+								<DropdownMenu.Item onSelect={markOut} size="sm"
+									>Mark out (])</DropdownMenu.Item
+								>
+								<DropdownMenu.Item
+									onSelect={resetTrim}
+									size="sm">Use full clip</DropdownMenu.Item
+								>
+							</DropdownMenu.SubContent>
+						</DropdownMenu.Sub>
+						<DropdownMenu.Sub>
+							<DropdownMenu.SubTrigger size="sm">
+								<Clock />
+								Time display
+							</DropdownMenu.SubTrigger>
+							<DropdownMenu.SubContent>
+								<DropdownMenu.CheckboxItem
+									checked={store.timeMode === "smpte"}
+									onCheckedChange={() =>
+										(store.timeMode = "smpte")}
+									size="sm"
+								>
+									Timecode
+								</DropdownMenu.CheckboxItem>
+								<DropdownMenu.CheckboxItem
+									checked={store.timeMode === "seconds"}
+									onCheckedChange={() =>
+										(store.timeMode = "seconds")}
+									size="sm"
+								>
+									Seconds
+								</DropdownMenu.CheckboxItem>
+								<DropdownMenu.CheckboxItem
+									checked={store.timeMode === "frames"}
+									size="sm"
+									onCheckedChange={() =>
+										(store.timeMode = "frames")}
+								>
+									Frames
+								</DropdownMenu.CheckboxItem>
+							</DropdownMenu.SubContent>
+						</DropdownMenu.Sub>
+						<DropdownMenu.Sub>
+							<DropdownMenu.SubTrigger size="sm">
+								<Upload />
+								Apply on export
+							</DropdownMenu.SubTrigger>
+							<DropdownMenu.SubContent>
+								<DropdownMenu.CheckboxItem
+									checked={store.cutsEnabled}
+									onCheckedChange={(v) =>
+										(store.cutsEnabled = v)}
+									size="sm"
+								>
+									Silence cuts
+								</DropdownMenu.CheckboxItem>
+								<DropdownMenu.CheckboxItem
+									checked={!store.annotationsGloballyHidden}
+									size="sm"
+									onCheckedChange={(v) =>
+										(store.annotationsGloballyHidden = !v)}
+								>
+									Markup
+								</DropdownMenu.CheckboxItem>
+							</DropdownMenu.SubContent>
+						</DropdownMenu.Sub>
+						<DropdownMenu.Separator />
+						<DropdownMenu.CheckboxItem
+							checked={loopEnabled}
+							onCheckedChange={(v) => (loopEnabled = v)}
+							size="sm"
+						>
+							<Repeat />
 							Loop playback
 						</DropdownMenu.CheckboxItem>
-						<DropdownMenu.Separator />
-						<DropdownMenu.Label>Trim</DropdownMenu.Label>
-						<DropdownMenu.Item onSelect={markIn}>Mark in ([)</DropdownMenu.Item>
-						<DropdownMenu.Item onSelect={markOut}>Mark out (])</DropdownMenu.Item>
-						<DropdownMenu.Item onSelect={resetTrim}>Use full clip</DropdownMenu.Item>
-						<DropdownMenu.Separator />
-						<DropdownMenu.Label>Apply on export</DropdownMenu.Label>
-						<DropdownMenu.CheckboxItem
-							checked={store.cutsEnabled}
-							onCheckedChange={(v) => (store.cutsEnabled = v)}
-						>
-							<Scissors class="size-3.5" />
-							Silence cuts
-						</DropdownMenu.CheckboxItem>
-						<DropdownMenu.CheckboxItem
-							checked={!store.annotationsGloballyHidden}
-							onCheckedChange={(v) => (store.annotationsGloballyHidden = !v)}
-						>
-							<Highlighter class="size-3.5" />
-							Markup
-						</DropdownMenu.CheckboxItem>
-						<DropdownMenu.Separator />
-						<DropdownMenu.Label>Time display</DropdownMenu.Label>
-						<DropdownMenu.CheckboxItem
-							checked={store.timeMode === "smpte"}
-							onCheckedChange={() => (store.timeMode = "smpte")}
-						>
-							Timecode
-						</DropdownMenu.CheckboxItem>
-						<DropdownMenu.CheckboxItem
-							checked={store.timeMode === "seconds"}
-							onCheckedChange={() => (store.timeMode = "seconds")}
-						>
-							Seconds
-						</DropdownMenu.CheckboxItem>
-						<DropdownMenu.CheckboxItem
-							checked={store.timeMode === "frames"}
-							onCheckedChange={() => (store.timeMode = "frames")}
-						>
-							Frames
-						</DropdownMenu.CheckboxItem>
-						<DropdownMenu.Separator />
-						<DropdownMenu.Item onSelect={() => store.seek(0)}>Jump to start</DropdownMenu.Item>
-						<DropdownMenu.Item
-							onSelect={() => store.seek(outputToOriginal(store.renderMap, outputDurationSec))}
-						>
-							Jump to end
-						</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 			</div>
-			<span class="font-mono text-[11px] tabular-nums text-foreground">
+			<span
+				class="min-w-0 truncate font-mono text-xs font-thin tabular-nums text-foreground"
+			>
 				{timecode(playheadFrame)}
 			</span>
 		</div>
-		<div class="absolute inset-x-0 overflow-hidden" style="top:{RULER_HEIGHT}px;bottom:0">
+		<div
+			class="absolute inset-x-0 overflow-hidden"
+			style="top:{RULER_HEIGHT}px;bottom:0"
+		>
 			<div style={headerScrollStyle}>
 				{#each rowLayout as laid (laid.row.id)}
 					{@const row = laid.row}
@@ -1512,34 +1656,81 @@ const playheadLabel = $derived(
 					{@const spec = PROP[row.kind]}
 					<div style="margin-bottom:{ROW_GAP}px">
 						<div
-							class="flex items-center gap-1.5 rounded-md px-1.5 transition-colors hover:bg-muted/40"
+							class="group/row flex items-center justify-between gap-1 pl-1 pr-1.5 text-muted-foreground transition-colors {rowSelected(
+								row,
+							)
+								? 'bg-accent'
+								: 'hover:bg-accent/70'}"
 							style="height:{laid.height}px"
 						>
-							{#if laid.expandable}
+							<div class="flex min-w-0 items-center gap-0.5">
+								{#if laid.expandable}
+									<button
+										type="button"
+										class="flex size-4 shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-foreground"
+										aria-expanded={laid.expanded}
+										aria-label={laid.expanded
+											? "Collapse"
+											: "Expand"}
+										onclick={() => toggleExpand(row.id)}
+									>
+										{#if laid.expanded}<ChevronDown
+												class="size-3.5"
+											/>{:else}<ChevronRight
+												class="size-3.5"
+											/>{/if}
+									</button>
+								{:else}
+									<span class="w-4 shrink-0"></span>
+								{/if}
+								<Icon class="size-4 shrink-0" />
+								<span
+									class="truncate px-0.5 text-xs text-foreground"
+									>{row.label}</span
+								>
+							</div>
+							{#if rowToggleKind(row)}
+								{@const on = rowToggled(row)}
+								{@const mute = rowToggleKind(row) === "mute"}
 								<button
 									type="button"
-									class="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground"
-									aria-expanded={laid.expanded}
-									aria-label={laid.expanded ? "Collapse" : "Expand"}
-									onclick={() => toggleExpand(row.id)}
+									class="flex size-6 shrink-0 items-center justify-center rounded-sm transition-opacity hover:text-foreground {on
+										? 'opacity-100'
+										: 'opacity-0 group-hover/row:opacity-100'}"
+									aria-pressed={on}
+									aria-label={mute
+										? on
+											? "Unmute lane"
+											: "Mute lane"
+										: on
+											? "Show lane"
+											: "Hide lane"}
+									onclick={() => toggleRow(row)}
 								>
-									{#if laid.expanded}<ChevronDown class="size-3" />{:else}<ChevronRight
-											class="size-3"
-										/>{/if}
+									{#if mute}
+										{#if on}<VolumeOff
+												class="size-3.5"
+											/>{:else}<Volume2
+												class="size-3.5"
+											/>{/if}
+									{:else if on}<EyeOff
+											class="size-3.5"
+										/>{:else}<Eye class="size-3.5" />{/if}
 								</button>
-							{:else}
-								<span class="w-5 shrink-0"></span>
 							{/if}
-							<Icon class="size-4 shrink-0" style="color:var(--tl-{row.kind}-primary)" />
-							<span class="truncate text-[12px] font-medium text-foreground">{row.label}</span>
 						</div>
 						{#if laid.expanded && spec}
 							{@const PropIcon = spec.icon}
-							<div class="flex items-center pl-6 pr-1.5" style="height:{SUBROW_H}px">
+							<div
+								class="flex items-center pl-6 pr-1.5"
+								style="height:{SUBROW_H}px"
+							>
 								<div
 									class="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-muted/60 pl-2 pr-2.5 ring-1 ring-inset ring-border/40 transition-colors hover:bg-muted"
 								>
-									<PropIcon class="size-3.5 shrink-0 text-muted-foreground" />
+									<PropIcon
+										class="size-3.5 shrink-0 text-muted-foreground"
+									/>
 									<input
 										type="range"
 										class="tl-range"
@@ -1547,7 +1738,11 @@ const playheadLabel = $derived(
 										max={spec.max}
 										step={spec.step}
 										value={propValue(row)}
-										oninput={(e) => setProp(row, e.currentTarget.valueAsNumber)}
+										oninput={(e) =>
+											setProp(
+												row,
+												e.currentTarget.valueAsNumber,
+											)}
 										aria-label={`${row.label} ${spec.label}`}
 									/>
 									<span
@@ -1572,7 +1767,7 @@ const playheadLabel = $derived(
 				<!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
 				<div
 					{...props}
-					class="absolute inset-0 outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
+					class="relative min-w-0 flex-1 outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
 					role="application"
 					aria-label="Timeline. Home and End jump to the start and end; drag the ruler to scrub, drag a clip to move or trim it."
 					tabindex="0"
@@ -1589,7 +1784,9 @@ const playheadLabel = $derived(
 						onpointerleave={onPointerLeave}
 						onwheel={onWheel}
 					></canvas>
-					<span class="sr-only" aria-live="polite">{playheadLabel}</span>
+					<span class="sr-only" aria-live="polite"
+						>{playheadLabel}</span
+					>
 				</div>
 			{/snippet}
 		</ContextMenu.Trigger>
@@ -1603,12 +1800,14 @@ const playheadLabel = $derived(
 						Duplicate
 					</ContextMenu.Item>
 					<ContextMenu.Item onSelect={menuToggleHidden}>
-						{#if menuClip.hidden}<Eye />Show{:else}<EyeOff />Hide{/if}
+						{#if menuClip.hidden}<Eye />Show{:else}<EyeOff
+							/>Hide{/if}
 					</ContextMenu.Item>
 				{/if}
 				{#if menuClip.kind === "markup"}
 					<ContextMenu.Item onSelect={menuToggleLock}>
-						{#if menuClip.locked}<Unlock />Unlock{:else}<Lock />Lock{/if}
+						{#if menuClip.locked}<Unlock />Unlock{:else}<Lock
+							/>Lock{/if}
 					</ContextMenu.Item>
 				{/if}
 				{#if menuClip.kind === "video"}
@@ -1617,7 +1816,9 @@ const playheadLabel = $derived(
 						<SquareSplitHorizontal />
 						Split at playhead
 					</ContextMenu.Item>
-					<ContextMenu.Label>Speed · {menuSpeed.toFixed(2)}×</ContextMenu.Label>
+					<ContextMenu.Label
+						>Speed · {menuSpeed.toFixed(2)}×</ContextMenu.Label
+					>
 					{#each SPEED_PRESETS as sp (sp)}
 						<ContextMenu.Item onSelect={() => menuSetSpeed(sp)}>
 							<Gauge />
@@ -1627,13 +1828,20 @@ const playheadLabel = $derived(
 				{/if}
 				{#if menuCanDelete}
 					<ContextMenu.Separator />
-					<ContextMenu.Item variant="destructive" onSelect={menuDelete}>
+					<ContextMenu.Item
+						variant="destructive"
+						onSelect={menuDelete}
+					>
 						<Trash2 />
-						{menuClip.kind === "video" ? "Delete (ripple)" : "Delete"}
+						{menuClip.kind === "video"
+							? "Delete (ripple)"
+							: "Delete"}
 					</ContextMenu.Item>
 				{/if}
 			{:else}
-				<ContextMenu.Item disabled>Right-click a clip to edit it</ContextMenu.Item>
+				<ContextMenu.Item disabled size="sm" class="text-muted-foreground font-light"
+					>Right-click a clip to edit it</ContextMenu.Item
+				>
 			{/if}
 		</ContextMenu.Content>
 	</ContextMenu.Root>
@@ -1676,7 +1884,8 @@ const playheadLabel = $derived(
 		height: 12px;
 		border-radius: 50%;
 		background: var(--primary);
-		box-shadow: 0 0 0 1px color-mix(in oklab, var(--background) 60%, transparent);
+		box-shadow: 0 0 0 1px
+			color-mix(in oklab, var(--background) 60%, transparent);
 	}
 	.tl-range::-moz-range-thumb {
 		width: 12px;

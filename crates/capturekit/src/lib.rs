@@ -15,8 +15,7 @@
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
-// This crate is 254 unsafe blocks of FFI and the one meant for crates.io. The
-// Windows platform layer still owes its comments and carries the only opt-out.
+// 254 unsafe blocks of FFI; `platform::windows` carries the only opt-out.
 #![deny(clippy::undocumented_unsafe_blocks)]
 
 mod audio;

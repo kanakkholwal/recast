@@ -30,9 +30,11 @@ pub struct Session {
     /// The caption face and the glyphs packed from it. Held across frames
     /// because re-rasterising a line every frame is the whole cost.
     caption_face: Option<CaptionFace>,
+    /// Rasterised glyphs, held here because this session's compositor is the
+    /// one that mirrors them. See `Compositor::sync_glyph_atlas`.
     atlas: GlyphAtlas,
-    /// Size-keyed output target for `render_to_texture`. An export runs this
-    /// per frame, where a fresh 4K texture is 33 MB of allocate-and-free.
+    /// Size-keyed target for `render_to_texture`: an export calls it per frame,
+    /// where a fresh 4K texture is 33 MB of allocate-and-free.
     output: Option<(u32, u32, wgpu::Texture)>,
     output_allocations: u64,
 }
@@ -126,6 +128,21 @@ impl Session {
         }
     }
 
+    /// A texture sized for one decoded picture, in the compositor's working
+    /// format. Fresh each call: the caller decides what to reuse.
+    pub fn source_texture(&self, width: u32, height: u32) -> wgpu::Texture {
+        self.compositor.source_texture(width, height)
+    }
+
+    /// Uploads one decoded picture into `target` and converts it to linear.
+    pub fn decode_source(
+        &mut self,
+        planes: &crate::yuv::SourcePlanes<'_>,
+        target: &wgpu::Texture,
+    ) -> Result<(), crate::yuv::YuvError> {
+        self.compositor.decode_source(planes, target)
+    }
+
     pub fn output_duration(&self) -> f64 {
         self.evaluator.output_duration()
     }
@@ -213,9 +230,8 @@ impl Session {
         self.compositor.render(&params, inputs, target)
     }
 
-    /// Renders into a scene-sized output texture, reused across calls at the
-    /// same size. The returned handle is refcounted, so holding it past the
-    /// next call keeps that frame alive rather than copying it.
+    /// Renders into a scene-sized texture reused across calls. The handle is
+    /// refcounted, so holding one past the next call keeps that frame alive.
     pub fn render_to_texture(
         &mut self,
         output_time: f64,

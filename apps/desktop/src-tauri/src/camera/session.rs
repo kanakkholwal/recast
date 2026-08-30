@@ -376,8 +376,7 @@ fn deliver(
             }
         }
     }
-    // Reduced straight into the message: the header is patched afterwards
-    // because the scaled size is only known once `fit` has run.
+    // Header patched after: the scaled size is only known once `fit` has run.
     let mut message = vec![0u8; 8];
     let (w, h) = downscale_bgra_into(
         &mut message,

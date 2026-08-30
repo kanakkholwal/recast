@@ -1,20 +1,13 @@
-use recast_scene::AudioGraph;
+use recast_scene::{AudioGraph, LayerId};
 
 use crate::caption::CaptionFrame;
 use crate::eval::FrameParams;
+use crate::render::{FrameInputs, RenderStats};
 use crate::session::{OutputSize, Session};
+use crate::yuv::{SourcePlanes, YuvError};
 
-/// What a render reads FROM: anything that can answer "what does the frame at
-/// output time T contain".
-///
-/// `Session` implements it over a captured `Scene`. An authored composition
-/// will implement it too. Export, capture and the CLI are written against this
-/// trait rather than against `Scene`, so a second document kind does not fork
-/// the render path — which is the one thing the engine rewrite forbids.
-///
-/// `FrameParams` is the compositor's input language, not the scene's: it is
-/// geometry, background, cursor, shadows, layers and annotations. Producing it
-/// is the whole contract.
+/// What a render reads FROM: what the frame at output time T contains.
+/// GPU-free on purpose, so analysis and the agent plane stay headless.
 pub trait RenderSource {
     fn output_size(&self) -> OutputSize;
 
@@ -23,10 +16,36 @@ pub trait RenderSource {
 
     fn frame_at(&self, output_time: f64) -> FrameParams;
 
-    /// `&mut` because laying out captions grows the glyph atlas.
-    fn caption_frame(&mut self, output_time: f64) -> CaptionFrame;
+    /// Which layer a decoded screen picture belongs to. `None` means the
+    /// document has no screen track, which an authored composition may not.
+    fn screen_layer(&self) -> Option<LayerId>;
 
     fn audio(&self) -> &AudioGraph;
+}
+
+/// A [`RenderSource`] that can also draw itself. Layout and draw stay behind
+/// one implementor because a caption's glyph cache is 1:1 with its compositor.
+pub trait Renderable: RenderSource {
+    /// `&mut` because laying out captions rasterises into the glyph cache.
+    fn caption_frame(&mut self, output_time: f64) -> CaptionFrame;
+
+    /// A texture sized for one decoded picture, to be filled by
+    /// [`Self::decode_source`] and handed back through `FrameInputs`.
+    fn source_texture(&self, width: u32, height: u32) -> wgpu::Texture;
+
+    /// Uploads one decoded picture and converts it to linear light.
+    fn decode_source(
+        &mut self,
+        planes: &SourcePlanes<'_>,
+        target: &wgpu::Texture,
+    ) -> Result<(), YuvError>;
+
+    /// Renders into a scene-sized texture the implementor reuses across calls.
+    fn render_to_texture(
+        &mut self,
+        output_time: f64,
+        inputs: &FrameInputs<'_>,
+    ) -> (wgpu::Texture, RenderStats);
 }
 
 impl RenderSource for Session {
@@ -42,12 +61,38 @@ impl RenderSource for Session {
         self.evaluate(output_time)
     }
 
-    fn caption_frame(&mut self, output_time: f64) -> CaptionFrame {
-        Self::caption_frame(self, output_time)
+    fn screen_layer(&self) -> Option<LayerId> {
+        Self::screen_layer(self)
     }
 
     fn audio(&self) -> &AudioGraph {
         &self.scene().audio
+    }
+}
+
+impl Renderable for Session {
+    fn caption_frame(&mut self, output_time: f64) -> CaptionFrame {
+        Self::caption_frame(self, output_time)
+    }
+
+    fn source_texture(&self, width: u32, height: u32) -> wgpu::Texture {
+        Self::source_texture(self, width, height)
+    }
+
+    fn decode_source(
+        &mut self,
+        planes: &SourcePlanes<'_>,
+        target: &wgpu::Texture,
+    ) -> Result<(), YuvError> {
+        Self::decode_source(self, planes, target)
+    }
+
+    fn render_to_texture(
+        &mut self,
+        output_time: f64,
+        inputs: &FrameInputs<'_>,
+    ) -> (wgpu::Texture, RenderStats) {
+        Self::render_to_texture(self, output_time, inputs)
     }
 }
 
@@ -66,7 +111,7 @@ mod tests {
     }
 
     /// A second implementor standing in for an authored composition, proving
-    /// nothing in the trait requires a `Scene`.
+    /// nothing in the read half requires a `Scene` or a GPU.
     struct Stub {
         audio: AudioGraph,
     }
@@ -84,8 +129,8 @@ mod tests {
         fn frame_at(&self, _output_time: f64) -> FrameParams {
             unimplemented!("the stub only exercises the non-GPU half")
         }
-        fn caption_frame(&mut self, _output_time: f64) -> CaptionFrame {
-            unimplemented!("the stub only exercises the non-GPU half")
+        fn screen_layer(&self) -> Option<LayerId> {
+            None
         }
         fn audio(&self) -> &AudioGraph {
             &self.audio
@@ -99,5 +144,20 @@ mod tests {
         };
         assert_eq!(duration_of(&stub), 4.5);
         assert_eq!(size_of(&stub).width, 1920);
+    }
+
+    /// `Stub` implements `RenderSource` and NOT `Renderable`, so this
+    /// compiling is the assertion: the read half needs no adapter.
+    #[test]
+    fn the_read_half_is_usable_without_a_renderer() {
+        fn read_only(source: &impl RenderSource) -> f64 {
+            source.output_duration()
+        }
+        assert_eq!(
+            read_only(&Stub {
+                audio: AudioGraph::default()
+            }),
+            4.5
+        );
     }
 }
