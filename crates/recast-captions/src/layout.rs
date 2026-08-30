@@ -29,8 +29,7 @@ pub fn caption_top_frac(
     if position == "center" {
         return None;
     }
-    // Signed: positive moves the caption inward over the video, negative tucks
-    // it outward into the padding.
+    // Signed: positive moves the caption inward over the video, negative tucks it outward into the padding.
     let offset = offset_pct / 100.0;
     let cap = cap.clamp(0.0, MAX_CAP_FRAC);
     let max_top = (1.0 - cap).max(0.0);

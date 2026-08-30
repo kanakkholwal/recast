@@ -33,8 +33,7 @@ export interface CursorSpriteBundle {
 	pixelSize: number;
 }
 
-// Keyed by `${style}:${size}`; SVG strings and size don't change between
-// consecutive exports of the same project.
+// Keyed by style and size: neither the SVG strings nor the size change between exports of the same project.
 const cache = new Map<string, CursorSpriteBundle>();
 
 /**
@@ -64,9 +63,7 @@ export async function rasterizeCursorSprites(
 		if (pressed) press = pressed;
 	}
 
-	// Right-click / drag are emitted ONLY when the style ships distinct art.
-	// Rust falls back to press → rest per-frame when these are absent, so we
-	// don't waste a decode shipping duplicates of `press`.
+	// Emitted only when the style ships distinct art: Rust falls back per frame, so duplicates would waste a decode.
 	const uv = (h: { x: number; y: number }): [number, number] => [h.x / 64, h.y / 64];
 	const rightPress = style.rightPressedSvg
 		? ((await renderSvgToDataUrl(style.rightPressedSvg, px)) ?? undefined)

@@ -37,9 +37,7 @@ export function reactorKey(opts: {
 	ip: string;
 	sessionId: string;
 }): string {
-	// Account id first (stable, and never leaves the server), then IP, then the
-	// browser session so anonymous viewers with an unresolved IP don't all
-	// collapse onto one shared token.
+	// Account id first (stable and server-only), then IP, then the browser session, so unresolved IPs don't share one token.
 	const basis = opts.userId
 		? `uid:${opts.userId}`
 		: opts.ip

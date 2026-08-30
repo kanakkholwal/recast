@@ -1,6 +1,4 @@
-// Post-recording mouse-path smoothing: Gaussian window kills tremor/quantisation
-// jitter; anchoring to exact click x/y keeps press targets pixel-perfect
-// (otherwise smoothing rounds the corner through a click and misses the target).
+// Gaussian smoothing kills tremor, while click anchoring keeps press targets pixel-perfect through a rounded corner.
 
 export interface CursorSampleLike {
 	timestampUs: number;
@@ -42,8 +40,7 @@ export function smoothingStrengthToSigmaMs(strength: number): number {
  * cosine-shaped anchor window. Preserves timestamps and boolean fields.
  */
 export function smoothCursorPath(raw: CursorSampleLike[], opts: SmoothingOptions): SmoothResult {
-	// Detect click-down transitions even when smoothing is off; callers still
-	// use these for the visualisation.
+	// Detect click-down transitions even with smoothing off; callers still use these for the visualisation.
 	const clickAnchors: ClickAnchor[] = [];
 	for (let i = 1; i < raw.length; i++) {
 		const prev = raw[i - 1];
@@ -63,8 +60,7 @@ export function smoothCursorPath(raw: CursorSampleLike[], opts: SmoothingOptions
 	const windowUs = sigmaUs * 3; // ±3σ catches ~99.7% of the weight
 	const snapUs = Math.max(0, opts.snapWindowMs) * 1000;
 
-	// Sliding-window Gaussian; lo..hi advance monotonically because samples are
-	// time-sorted. O(N·w) where w = samples inside ±3σ.
+	// lo and hi advance monotonically because samples are time-sorted: O(N*w) for w samples inside 3 sigma.
 	const smoothed: CursorSampleLike[] = new Array(raw.length);
 	let lo = 0;
 	let hi = 0;
@@ -100,8 +96,7 @@ export function smoothCursorPath(raw: CursorSampleLike[], opts: SmoothingOptions
 		}
 	}
 
-	// Cosine snap ramp: falloff=1 at the click timestamp, 0 at the window edge,
-	// so the path glides into the exact click x/y and out without a seam.
+	// Cosine snap ramp, 1 at the click timestamp and 0 at the window edge, so the path glides through without a seam.
 	if (opts.snapToClicks && snapUs > 0 && clickAnchors.length > 0) {
 		for (const anchor of clickAnchors) {
 			for (let i = 0; i < smoothed.length; i++) {

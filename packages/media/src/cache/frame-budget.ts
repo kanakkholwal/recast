@@ -50,12 +50,10 @@ export function frameBudget(width: number, height: number): FrameBudget {
 				)
 			: MAX_TOTAL_FRAMES;
 
-	// Reserve up to 4 for the scout holdout, shrinking it first as the budget
-	// tightens (the primary cache matters more for steady playback).
+	// Reserve up to 4 for the scout holdout, shrinking it first as the budget tightens; the primary cache matters more.
 	const holdoutMax = Math.min(4, Math.max(2, total - 5));
 	const cacheMax = Math.max(4, total - holdoutMax);
-	// Don't decode further ahead than the cache can hold, or those frames are
-	// evicted on arrival (wasted decode + extra surface churn).
+	// Don't decode further ahead than the cache holds, or those frames are evicted on arrival.
 	const decodeAhead = Math.max(3, Math.min(6, cacheMax - 1));
 
 	return { cacheMax, holdoutMax, decodeAhead };

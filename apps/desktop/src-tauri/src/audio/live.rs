@@ -192,8 +192,7 @@ fn a_pause_shortens_the_track_by_exactly_its_length() {
     );
     for track in tracks {
         track.report();
-        // Two flag transitions, each noticed within a poll, on top of the
-        // ordinary slack.
+        // Two flag transitions, each noticed within a poll, on top of the ordinary slack.
         track.assert_reaches(take.elapsed - paused_for, TOLERANCE * 2);
     }
 }

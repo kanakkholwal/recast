@@ -46,8 +46,7 @@ export async function probeSource(file: File): Promise<ProbeResult> {
 	const size = checkFileSize(file.size, inputBudget());
 	if (!size.ok) return { ok: false, suggestDesktop: true, reason: size.reason ?? "" };
 
-	// Imported here, not at module scope: this pulls MediaBunny in, and the
-	// landing page must stay light until someone actually drops a file.
+	// Imported here, not at module scope: this pulls MediaBunny in, and the landing page stays light until a file drops.
 	const { openInput } = await import("@recast/media");
 	let input: Awaited<ReturnType<typeof openInput>> | null = null;
 	try {

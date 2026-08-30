@@ -11,8 +11,7 @@ describe("verdictFrom", () => {
 		expect(v.canEdit).toBe(true);
 	});
 
-	// Firefox/Safari without WebCodecs: the editor cannot decode at all, so the
-	// dropzone must be closed rather than failing after the file is chosen.
+	// Without WebCodecs the editor can't decode at all, so the dropzone must close rather than fail after a file is chosen.
 	it("blocks editing when a hard requirement is missing", () => {
 		for (const missing of ["videoDecoder", "workers", "webgl2"] as const) {
 			const v = verdictFrom({ ...ok, [missing]: false });
@@ -22,8 +21,7 @@ describe("verdictFrom", () => {
 		}
 	});
 
-	// Decode without encode: editing and preview work, export doesn't. Letting
-	// them edit and only failing at export would waste the whole session.
+	// Decode without encode: editing works and export doesn't, and failing only at export would waste the session.
 	it("allows editing but warns when encode is unavailable", () => {
 		const v = verdictFrom({ ...ok, videoEncoder: false });
 		expect(v.level).toBe("no-export");

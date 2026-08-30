@@ -51,12 +51,10 @@ async function submit(e: SubmitEvent) {
 		);
 		name = "";
 		open = false;
-		// Active org has been switched server-side by setActive — re-pull
-		// every loader so the sidebar swaps over to the new team.
+		// setActive switched the org server-side, so re-pull every loader and let the sidebar swap over.
 		await invalidateAll();
 	} finally {
-		// Always release so a thrown rejection (network drop, abort) can't
-		// strand the submit button in a disabled state.
+		// Always release, so a thrown rejection can't strand the submit button disabled.
 		creating = false;
 	}
 }

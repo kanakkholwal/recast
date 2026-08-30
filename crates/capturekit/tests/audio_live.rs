@@ -112,16 +112,7 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
                     .validate_buffer(buffer.bytes().len())
                     .expect("a buffer that is not whole sample frames");
 
-                // Every buffer must begin exactly where the samples before it
-                // ended, measured from the START OF ITS RUN rather than from the
-                // previous buffer. Summing per-buffer durations rounds on every
-                // step and drifts, which is the very thing a sample-counted
-                // timeline exists to avoid, so it cannot also be the yardstick.
-                // This also catches accumulated drift the pairwise check never
-                // could.
-                //
-                // A run ends where the source SAYS it broke. Continuity is the
-                // contract between declared breaks, not across them.
+                // Every buffer must begin where its RUN's samples ended, not where the previous buffer did: summing per-buffer durations drifts. A declared break ends a run.
                 if buffer.is_discontinuous() {
                     breaks += 1;
                     run_start = None;
@@ -152,8 +143,7 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
     }
     capture.stop().expect("release the endpoint");
 
-    // A silent desktop still owes a second of samples. Without gap filling this
-    // comes back near zero and every later sound lands early.
+    // A silent desktop still owes a second of samples; without gap filling every later sound lands early.
     let covered = format.duration_of(frames);
     assert!(
         covered >= Duration::from_millis(700),
@@ -161,11 +151,7 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
     );
 
     assert!(first_pts.is_some(), "no buffers arrived at all");
-    // A stream that kept up cannot deliver more audio than time has passed,
-    // plus whatever was buffered when it opened. Catches a device delivering at
-    // a rate other than the one it declared, which the continuity check above
-    // cannot see because it is measured in that same wrong rate. Skipped where
-    // the source declared a break, since then it is not the same stream.
+    // A stream that kept up can't deliver more audio than elapsed time plus its open buffer; skipped across a declared break.
     let real_time = started.elapsed();
     assert!(
         covered <= real_time + Duration::from_millis(300),
@@ -177,8 +163,7 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
         "the loopback declared {breaks} break(s) in {real_time:?} of an idle desktop"
     );
 
-    // Silence must arrive promptly, not only when a read times out: an encoder
-    // fed one buffer per timeout stalls its own pipeline.
+    // Silence must arrive promptly, not only on a read timeout: one buffer per timeout stalls an encoder's pipeline.
     assert!(
         worst_wait < Duration::from_millis(180),
         "a buffer took {worst_wait:?}, so silence is only produced on timeout"

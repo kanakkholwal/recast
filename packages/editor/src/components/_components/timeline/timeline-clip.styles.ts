@@ -1,15 +1,4 @@
-// The clip surface, in one place. Every lane paints a block the same way and
-// differs only by hue, so the classes live here rather than being retyped (and
-// drifting) in five components.
-//
-// Anatomy, following Premiere/Resolve: a SOLID body in the lane's fill colour,
-// the label inside it in near-white, and the bright lane accent reserved for
-// the waveform and the state outlines. Blocks used to be a 20-35% wash of the
-// accent behind a 2px left spine, which read as a tint of the lane background
-// rather than an object you can pick up.
-//
-// Class strings must stay literal: Tailwind scans source text, so a composed
-// name like `bg-lane-${tone}-fill` would never be generated.
+// The clip surface in one place: a solid body in the lane fill with a near-white label, the bright accent reserved for the waveform and outlines. Class strings must stay literal, since Tailwind scans source text.
 
 export type LaneTone = "zoom" | "markup" | "music" | "audio" | "cut";
 

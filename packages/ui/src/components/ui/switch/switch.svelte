@@ -20,8 +20,7 @@ let {
 		"peer group inline-flex h-6.5 w-10.5 shrink-0 cursor-pointer items-center rounded-full border border-transparent outline-none transition-colors duration-200",
 		"focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 		"data-[state=checked]:bg-primary",
-		// Filled grey off-track (Apple style); the inset ring still carries the
-		// 3:1 boundary the low-contrast fill can't guarantee on a card.
+		// Filled grey off-track (Apple style); the inset ring carries the 3:1 boundary the low-contrast fill can't.
 		"data-[state=unchecked]:bg-muted-foreground/25 data-[state=unchecked]:ring-1 data-[state=unchecked]:ring-inset data-[state=unchecked]:ring-border-control/60",
 		"disabled:cursor-not-allowed disabled:opacity-50",
 		className,

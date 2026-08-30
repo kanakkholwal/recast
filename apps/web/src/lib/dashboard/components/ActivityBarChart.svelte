@@ -11,8 +11,7 @@ let {
 const max = $derived(Math.max(1, ...data.map((d) => d.views)));
 const total = $derived(data.reduce((s, d) => s + d.views, 0));
 
-// Thin the x-axis to a handful of evenly-spaced ticks so 14/30-day ranges
-// don't collapse into an unreadable wall of labels.
+// Thin the x-axis to a few evenly-spaced ticks, or a 30-day range collapses into a wall of labels.
 const xTicks = $derived(data.length > 8 ? 6 : undefined);
 
 const chartConfig = {

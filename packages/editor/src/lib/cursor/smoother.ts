@@ -1,7 +1,4 @@
-// Client for the cursor-smoothing worker: keeps the raw track in the worker,
-// debounces + supersedes rapid slider changes, and falls back to a synchronous
-// pass if the worker can't be created. Owns no rendering; callers apply the
-// result (the smoothed sample array) however they like.
+// Client for the cursor-smoothing worker: keeps the raw track there, supersedes rapid slider changes, and falls back to a sync pass.
 
 import { createEditorWorker } from "../host-hooks";
 import { type CursorSampleLike, type SmoothingOptions, smoothCursorPath } from "./smoothing";
@@ -12,8 +9,7 @@ type ResultMsg =
 	| { type: "loadFailed"; message: string };
 type Listener = (samples: CursorSampleLike[]) => void;
 
-// Coalesce slider drags; long enough to skip intermediate values, short enough
-// to feel immediate on the first change.
+// Long enough to skip intermediate slider values, short enough to feel immediate on the first change.
 const DEBOUNCE_MS = 60;
 
 export class CursorSmoother {
@@ -30,8 +26,7 @@ export class CursorSmoother {
 			this.#worker.onmessage = (e: MessageEvent<ResultMsg>) => {
 				const msg = e.data;
 				if ("type" in msg) {
-					// The worker couldn't read the URL itself (asset-protocol access is
-					// the host's business, not ours) — fall back to shipping the array.
+					// The worker couldn't read the URL itself (asset-protocol access is the host's business), so ship the array.
 					if (msg.type === "loadFailed")
 						this.#worker?.postMessage({ type: "load", raw: this.#raw });
 					return;

@@ -1,6 +1,5 @@
 <script lang="ts">
-// Brand mark — Facebook. See `github.svelte` for why brand glyphs are inline
-// SVGs (lucide 1.x dropped them). Path from simple-icons.
+// Brand mark for Facebook; see `github.svelte` for why brand glyphs are inline SVGs. Path from simple-icons.
 import type { SVGAttributes } from "svelte/elements";
 
 interface Props extends SVGAttributes<SVGSVGElement> {

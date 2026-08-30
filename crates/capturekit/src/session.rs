@@ -192,8 +192,7 @@ impl SessionBuilder {
             });
         }
 
-        // Read once, after every source is open: a source that took a second to
-        // negotiate must not shift the timeline the others are already on.
+        // Read once, after every source is open: a slow-negotiating source must not shift the timeline the others use.
         let origin = os::now();
 
         let handles = opened

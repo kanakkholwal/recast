@@ -50,6 +50,5 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	});
 };
 
-// Allow GET too so a simple `curl` or a browser pageload can invoke it
-// for ops smoke-testing. Same auth requirement.
+// GET is allowed too, so a curl or browser load can smoke-test it under the same auth requirement.
 export const GET = POST;

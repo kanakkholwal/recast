@@ -43,8 +43,7 @@ describe("music clip model", () => {
 });
 
 describe("musicFadeFactor (preview ↔ export parity)", () => {
-	// 10s clip, 2s in, 3s out. Fades clamp to the play length (NOT half of it),
-	// matching the export's per-clip afade.
+	// Fades clamp to the play length, not half of it, matching the export's per-clip afade.
 	it("ramps in, holds, ramps out", () => {
 		expect(musicFadeFactor(0, 10, 2, 3)).toBeCloseTo(0, 6);
 		expect(musicFadeFactor(1, 10, 2, 3)).toBeCloseTo(0.5, 6);

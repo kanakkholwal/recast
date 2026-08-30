@@ -20,8 +20,7 @@ import { desktopConsent } from "$lib/stores/consent.svelte";
 
 export const analytics: AnalyticsClient = createAnalytics({
 	provider: createPostHogBrowserProvider(),
-	// Dev builds never track: only packaged/production output emits analytics,
-	// so `tauri dev` and `vite dev` don't pollute the PostHog project.
+	// Dev builds never track, so `tauri dev` and `vite dev` don't pollute the PostHog project.
 	enabled: !import.meta.env.DEV && Boolean(POSTHOG_KEY),
 	initialConsent: {
 		product: desktopConsent.product,
@@ -31,11 +30,9 @@ export const analytics: AnalyticsClient = createAnalytics({
 		apiKey: POSTHOG_KEY ?? "",
 		host: POSTHOG_HOST,
 		source: "desktop",
-		// localStorage (not cookies): custom-scheme webview origins don't carry
-		// cookies reliably.
+		// localStorage, not cookies: custom-scheme webview origins don't carry cookies reliably.
 		persistence: "localStorage",
-		// A screen recorder must never autocapture clicks or record its own UI,
-		// and route pageviews are meaningless across multiple Tauri windows.
+		// A screen recorder must never autocapture clicks, and route pageviews are meaningless across Tauri windows.
 		autocapture: false,
 		capturePageview: false,
 		disableSessionRecording: true,

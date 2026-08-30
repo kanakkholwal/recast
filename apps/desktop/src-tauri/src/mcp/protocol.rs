@@ -128,8 +128,7 @@ fn call_tool(params: &Value, host: &impl ToolHost) -> Result<Value, CallError> {
         .cloned()
         .unwrap_or_else(|| json!({}));
 
-    // A verb that fails is a tool result the model can read and retry, not a
-    // protocol error: `isError` is exactly what MCP reserves for this.
+    // A failed verb is a tool result the model can read and retry, which is exactly what MCP reserves `isError` for.
     Ok(match host.call(tool.verb, arguments) {
         Ok(value) => tool_result(&value, false),
         Err(message) => tool_result(&Value::String(message), true),

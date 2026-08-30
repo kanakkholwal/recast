@@ -64,8 +64,7 @@ pub fn split_annex_b(data: &[u8]) -> Vec<&[u8]> {
     }
     for (n, &start) in starts.iter().enumerate() {
         let end = match starts.get(n + 1) {
-            // Back off the next start code, and the extra leading zero when it
-            // is the four-byte form.
+            // Back off the next start code, plus the extra leading zero when it is the four-byte form.
             Some(&next) => {
                 let mut end = next - 3;
                 if end > start && data[end - 1] == 0 {

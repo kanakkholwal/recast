@@ -16,8 +16,7 @@ const UNKNOWN_FRAME_BYTES = 3840 * 2160 * 4;
 
 /** Per-entry byte estimate for budget accounting. */
 export function estimateFrameBytes(frame: CachedFrame): number {
-	// `VideoFrame` has codedWidth/codedHeight and no width/height; reading the
-	// wrong pair yields NaN and silently disables every cap.
+	// `VideoFrame` has codedWidth and codedHeight, not width and height, and reading the wrong pair yields NaN, disabling every cap.
 	const w = "codedWidth" in frame ? frame.codedWidth : frame.width;
 	const h = "codedHeight" in frame ? frame.codedHeight : frame.height;
 	if (!Number.isFinite(w) || !Number.isFinite(h)) return UNKNOWN_FRAME_BYTES;

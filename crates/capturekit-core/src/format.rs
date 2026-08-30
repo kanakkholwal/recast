@@ -124,8 +124,7 @@ impl PixelFormat {
     /// Only the final row of the final plane is allowed to stop at its own width,
     /// since nothing follows it that a short buffer could truncate.
     pub fn buffer_len(self, width: u32, height: u32, stride: u32) -> Result<usize, CaptureError> {
-        // Before the stride check: an odd width also inflates the chroma row, so
-        // the wrong complaint would surface first and hide the real problem.
+        // Before the stride check: an odd width also inflates the chroma row, so the wrong complaint would surface first.
         if self.is_subsampled() && (width % 2 == 1 || height % 2 == 1) {
             return Err(CaptureError::OddDimensions {
                 format: self,

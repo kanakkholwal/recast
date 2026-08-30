@@ -9,10 +9,7 @@ import type { RequestHandler } from "./$types";
 
 type SessionShape = { user: { id: string; role?: string; activeOrganizationId?: string | null } };
 
-// Scopes settable from the share menu. `workspace` is canonical; `team` is its
-// legacy alias and both are accepted. `selected` is intentionally NOT here:
-// switching to an allowlist needs invitees, which this endpoint can't take —
-// callers create a fresh `selected` link via POST /api/recasts/[id]/share.
+// `team` is the legacy alias for `workspace`. `selected` is excluded: an allowlist needs invitees this endpoint can't take.
 const VALID = new Set(["public", "workspace", "team", "private"] as const);
 type Visibility = "public" | "workspace" | "team" | "private";
 
@@ -52,8 +49,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	if (!VALID.has(visibility as Visibility)) {
 		error(400, "Invalid visibility value");
 	}
-	// Normalize the legacy `team` alias to canonical `workspace` so new writes
-	// stop persisting the deprecated value (schema: workspace is canonical).
+	// Normalize the legacy `team` alias so new writes stop persisting the deprecated value.
 	const next: Visibility = visibility === "team" ? "workspace" : (visibility as Visibility);
 
 	// Authorize against the share + its recast's workspace in one shared check.
@@ -64,10 +60,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	let organizationId: string | null = null;
 	if (next === "workspace") {
 		const explicit = typeof body.organizationId === "string" ? body.organizationId : null;
-		// Default to the recast's own workspace — the correct gate, and what
-		// share creation uses. An explicit override must be a workspace the
-		// caller actually belongs to (assertWorkspaceMember lets global admins
-		// through and throws 403 otherwise).
+		// Default to the recast's own workspace; an explicit override must be one the caller belongs to, and admins pass while others 403.
 		organizationId = explicit ?? manage.workspaceId ?? session.user.activeOrganizationId ?? null;
 		if (!organizationId) {
 			error(400, "Team visibility requires a workspace");

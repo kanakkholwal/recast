@@ -33,8 +33,7 @@ async function submit(e: SubmitEvent) {
 				error: (err) => (err as Error)?.message ?? "Couldn't send the reset email.",
 			},
 		);
-		// We tell the user the link was sent regardless of whether the email
-		// exists — standard pattern, prevents account enumeration.
+		// Report the link as sent whether or not the email exists, which is what prevents account enumeration.
 		sent = true;
 	} finally {
 		loading = false;

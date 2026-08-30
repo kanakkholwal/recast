@@ -377,8 +377,7 @@ fn every_uv_matches_the_atlas_the_frame_ended_with() {
             "uv {:?} is outside the atlas",
             quad.uv
         );
-        // The quad is drawn at its packed pixel size, so the uv span has to be
-        // that many texels of the FINAL atlas.
+        // The quad is drawn at its packed pixel size, so the uv span must be that many texels of the FINAL atlas.
         let span_x = (u1 - u0) * width as f32;
         let span_y = (v1 - v0) * height as f32;
         assert!(
@@ -409,8 +408,7 @@ fn a_short_wrapped_line_is_centred_rather_than_left_flush() {
         &long,
         1.5,
     );
-    // Grouped by the baseline (these letters have no descender), because glyph
-    // TOPS differ within a row: 'b' has an ascender and 'a' does not.
+    // Grouped by baseline, since glyph TOPS differ within a row: 'b' has an ascender and 'a' does not.
     let mut rows: Vec<(i32, f32, f32)> = Vec::new();
     for quad in &frame.glyphs {
         let key = (quad.rect[1] + quad.rect[3]).round() as i32;

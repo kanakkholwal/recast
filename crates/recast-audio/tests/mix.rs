@@ -75,8 +75,7 @@ fn a_forty_four_one_source_arrives_at_the_master_rate() {
     assert_eq!(mix.len(), 48_000 * 2);
     let peak = peak_between(&mix, 0.1, 0.9);
     assert!((peak - 0.5).abs() < 0.02, "peaked at {peak}");
-    // Zero crossings prove the pitch survived: a wrong ratio moves them even
-    // when the level looks right.
+    // Zero crossings prove the pitch survived: a wrong ratio moves them even when the level looks right.
     let left: Vec<f32> = mix[9_600 * 2..38_400 * 2]
         .iter()
         .step_by(2)

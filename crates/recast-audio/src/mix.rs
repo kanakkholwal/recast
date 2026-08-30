@@ -145,8 +145,7 @@ impl Mixer {
         &self.master
     }
 
-    // NOT `clamp`: it passes NaN straight through, where `max` returns the other
-    // side and folds a non-finite duration to zero. That is the whole guard.
+    // NOT `clamp`: it passes NaN through, while `max` returns the other side and folds a non-finite duration to zero.
     #[allow(clippy::manual_clamp)]
     pub fn total_frames(&self) -> u64 {
         let seconds = self.master.duration_sec.max(0.0).min(MAX_OUTPUT_SECONDS);
@@ -232,8 +231,7 @@ impl Mixer {
     pub fn render_all(&mut self) -> Vec<f32> {
         self.reset();
         let mut out = vec![0.0f32; self.total_frames() as usize * MASTER_CHANNELS];
-        // One call rather than a block loop: the sources are random-access, so
-        // blocking buys nothing here and the ducking envelope stays in one piece.
+        // One call rather than a block loop: the sources are random-access, so blocking buys nothing and the ducking envelope stays whole.
         self.render_into(&mut out);
         if self.master.normalize {
             let gain = normalizing_gain(&out, self.master.target_lufs, self.master.ceiling);
@@ -286,8 +284,7 @@ fn render_track(
         if rel >= play {
             return;
         }
-        // A run is the stretch of output frames reading a contiguous piece of
-        // the source: it ends where a loop wraps, or where the clip does.
+        // A run is the stretch of output frames reading a contiguous piece of the source, ending where a loop or the clip does.
         let (phase, run_end) = if loop_span.is_finite() {
             let cycle = (rel / loop_span).floor();
             (

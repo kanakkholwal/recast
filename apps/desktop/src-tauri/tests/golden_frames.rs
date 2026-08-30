@@ -56,8 +56,7 @@ fn fixtures() -> Vec<(&'static str, RenderState)> {
     padded.background_type = "color".into();
     padded.background_value = "#1e293b".into();
 
-    // Border radius, drop shadow and gradients are pre-rasterised PNGs handed to
-    // the plan, so they cannot be exercised through `build_export_plan_with` alone.
+    // Border radius, drop shadow and gradients are pre-rasterised PNGs, so `build_export_plan_with` alone can't exercise them.
     let mut zoomed = padded.clone();
     zoomed.zoom_regions = vec![serde_json::from_value(serde_json::json!({
         "start": 0.2,
@@ -264,8 +263,7 @@ fn the_current_export_compositor_matches_its_goldens() {
         for (slot, frame) in rendered.iter().enumerate() {
             let key = format!("{name}-{}", SAMPLE_FRAMES[slot]);
             let png = dir.join(format!("{key}.png"));
-            // Read the previous image BEFORE overwriting, or the delta below compares
-            // this frame against itself and always reports "within tolerance".
+            // Read the previous image BEFORE overwriting, or the delta compares the frame against itself and always passes.
             let previous = png.exists().then(|| read_png(&png));
             write_png(&png, frame, geometry_for(&state));
 

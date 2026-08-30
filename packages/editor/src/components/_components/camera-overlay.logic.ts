@@ -1,6 +1,4 @@
-// Pure geometry for the camera bubble overlay: where it sits on the canvas,
-// its shape's border-radius, and the drag clamp. The .svelte owns the video
-// element, sync effects, and pointer wiring.
+// Pure geometry for the camera bubble: placement, corner radius and the drag clamp. The component owns the wiring.
 
 import type { CanvasGeometry } from "../../lib/canvas-geometry";
 import { bezierY, type Easing } from "../../lib/easing/cubic-bezier";
@@ -31,9 +29,7 @@ export function bubblePlacementStyle(
 	return `left:${left}%;top:${top}%;width:${width}%;`;
 }
 
-// Drop-shadow geometry as FRACTIONS of the bubble's size, so it's resolution-
-// independent and the Rust export can mirror it exactly (see camera.rs
-// CAMERA_SHADOW_* — these MUST stay in lockstep). Strength scales all three.
+// Fractions of the bubble's size, so it is resolution-independent and camera.rs's CAMERA_SHADOW_* can mirror it exactly.
 export const CAMERA_SHADOW_BLUR_FRACTION = 0.14;
 export const CAMERA_SHADOW_OFFSET_FRACTION = 0.05;
 export const CAMERA_SHADOW_MAX_OPACITY = 0.6;
@@ -258,8 +254,7 @@ export function keyframesFromMotionSegments(
 	const out: CameraKeyframe[] = [];
 	const push = (atSec: number, placement: CameraPlacement) => {
 		const last = out[out.length - 1];
-		// Two segments meeting at one instant: the later one wins, matching the
-		// segment walk, which adopted each segment's `to` as it passed.
+		// Two segments meeting at one instant: the later wins, matching the walk that adopts each segment's `to`.
 		if (last && Math.abs(last.atSec - atSec) < 1e-6) out[out.length - 1] = { atSec, placement };
 		else out.push({ atSec, placement });
 	};
@@ -271,8 +266,7 @@ export function keyframesFromMotionSegments(
 		push(s.end, clampPlacement({ x: s.toX, y: s.toY, width: s.toWidth, height: s.toHeight }));
 	}
 	const head = out[0];
-	// The bubble sat at `defaultPlacement` until the first move. Only pin it when
-	// it actually differs — holding the first keyframe already covers the rest.
+	// Only pin the head when it differs from `defaultPlacement`; holding the first keyframe covers the rest.
 	if (head.atSec > 0 && !samePlacement(head.placement, defaultPlacement)) {
 		out.unshift({ atSec: 0, placement: clampPlacement(defaultPlacement) });
 	}

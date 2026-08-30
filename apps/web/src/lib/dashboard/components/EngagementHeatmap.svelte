@@ -5,9 +5,7 @@ import * as Chart from "$components/ui/chart/index.js";
 import { type EngagementMoment, engagementHeatmap } from "$lib/dashboard/activity";
 import { formatDuration } from "$lib/dashboard/format";
 
-// "Which moments did viewers actually react to" — reactions + comments
-// bucketed across the video's runtime. The tallest bar is the moment people
-// loved; hovering a bar shows its timestamp + split.
+// Reactions and comments bucketed across the runtime: the tallest bar is the moment people loved.
 let {
 	moments,
 	durationSec,
@@ -20,8 +18,7 @@ const heat = $derived(engagementHeatmap(moments, durationSec, 24));
 const totalReactions = $derived(moments.filter((m) => m.kind === "reaction").length);
 const totalComments = $derived(moments.filter((m) => m.kind === "comment").length);
 
-// Two hues, not two opacities of one: opacity alone is not a reliable way to
-// tell stacked bands apart.
+// Two hues, not two opacities of one: opacity alone can't reliably tell stacked bands apart.
 const series = [
 	{
 		key: "reactions",

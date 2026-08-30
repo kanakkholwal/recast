@@ -25,8 +25,7 @@ const prefersReducedMotion =
 let devices = $state<(AudioDeviceInfo | CameraDeviceInfo)[]>([]);
 let currentSelectedId = $state<string | null>(selectedId);
 let isLoading = $state(true);
-// Set only when camera access is a blocker (no API / refused), distinct from
-// an empty list (no camera plugged in); drives an actionable empty state.
+// Set only when camera access is blocked, distinct from an empty list, so the empty state stays actionable.
 let accessError = $state<{ reason: CameraAccessReason; message: string } | null>(null);
 
 const isMic = deviceType === "mic";
@@ -51,8 +50,7 @@ async function fetchDevices() {
 		if (isMic) {
 			devices = await getAudioDevices();
 		} else {
-			// From the WebView's MediaDevices so the deviceId is one getUserMedia
-			// accepts. Non-virtual first, so the default below prefers a real webcam.
+			// From the WebView's MediaDevices, so the deviceId is one getUserMedia accepts; non-virtual first, so the default is a real webcam.
 			devices = mapCameras(await enumerateCameras());
 		}
 		if (!currentSelectedId) {

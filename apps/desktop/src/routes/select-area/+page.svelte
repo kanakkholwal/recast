@@ -109,8 +109,7 @@ function onKey(e: KeyboardEvent) {
 	if (capturing) return;
 	if (e.key === "Escape") {
 		e.preventDefault();
-		// Esc always exits. Users expect the window to close. Use the
-		// explicit "Redraw" button to clear a selection without exiting.
+		// Esc always exits, as users expect; Redraw clears a selection without leaving.
 		cancel();
 	} else if (e.key === "Enter" && rect) {
 		e.preventDefault();
@@ -121,8 +120,7 @@ function onKey(e: KeyboardEvent) {
 // Live derived rect for display while dragging.
 const liveRect = $derived(dragging ? rectFromPoints(startX, startY, curX, curY) : rect);
 
-// Toolbar position, clamped to the viewport so it stays reachable when the
-// selection lands near the bottom or right edge of the virtual desktop.
+// Clamped to the viewport so the toolbar stays reachable when the selection lands near an edge.
 const toolbarPos = $derived.by(() =>
 	rect ? clampToolbar(rect, window.innerWidth, window.innerHeight) : { left: 0, top: 0 },
 );
@@ -239,8 +237,7 @@ const toolbarPos = $derived.by(() =>
 </div>
 
 <style>
-  /* The Tauri overlay window must be fully transparent so the screen
-     beneath shows through the dim layer rendered in the page. */
+  /* The overlay window must be fully transparent so the screen shows through the page's dim layer. */
   :global(html),
   :global(body) {
     background: transparent !important;

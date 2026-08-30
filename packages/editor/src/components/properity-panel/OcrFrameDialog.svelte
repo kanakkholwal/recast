@@ -1,9 +1,5 @@
 <script lang="ts">
-// Inspector for one screen state: the frame that was read, every element the OCR
-// engine found drawn in place over it, and the same elements as a readable list.
-// This is the surface that answers "why did it produce THAT?", so the picture and
-// the structured output have to be visibly the same thing: a box on the frame and
-// its row in the list are one element, and highlighting either highlights both.
+// Inspector for one screen state: the frame, the boxes drawn in place, and the same elements as a list, kept visibly identical.
 
 import { Check, Copy, SquareDashedMousePointer } from "@recast/icons";
 import { Badge } from "@recast/ui/badge";
@@ -22,13 +18,10 @@ interface Props {
 }
 let { span, open, onOpenChange, onSeek }: Props = $props();
 
-// Two ways to read the same frame: the raw capture, and the capture with every
-// recognized box drawn on it. Toggling between them is how you check the OCR
-// against what was actually on screen. Defaults to annotated (the reason to open).
+// Raw capture versus annotated capture is how you check the OCR against what was on screen; annotated is the default.
 let annotated = $state(true);
 
-// Hover/focus is a transient preview; a click pins the element so it survives the
-// pointer moving away. Highlighting either the box or the row lights up both.
+// Hover is a transient preview and a click pins the element; highlighting either surface lights up both.
 let previewed = $state<number | null>(null);
 let pinned = $state<number | null>(null);
 const active = $derived(previewed ?? pinned);

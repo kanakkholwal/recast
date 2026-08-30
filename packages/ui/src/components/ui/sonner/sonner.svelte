@@ -53,12 +53,7 @@ let { ...restProps }: SonnerProps = $props();
     --info-text: var(--color-foreground);
     --info-border: var(--color-border);
 
-    /* Pin the close button to the top-right corner *inside* the card. Sonner's
-       default is a floating circle that sits half-outside the top-left edge
-       (--toast-close-button-start: 0, transform: translate(-35%, -35%)) — we
-       override every var that drives its position so it lands at top-right,
-       inset 8px on each axis, matching the &lt;X&gt; affordance on the
-       auto-updater / what's-new corner cards. */
+    /* Sonner's default close button floats half-outside the top-left, so override every var that positions it to sit inset at top-right. */
     --toast-close-button-start: unset;
     --toast-close-button-end: 0;
     --toast-close-button-transform: translate(-8px, 8px);

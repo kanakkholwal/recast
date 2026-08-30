@@ -43,8 +43,7 @@ let {
 } = $props();
 
 const Placeholder = $derived(placeholderIcon);
-// The extension lives in the type badge, so the title drops it; the card
-// shell's `title` attribute still carries the full filename.
+// The extension lives in the type badge, so the title drops it; the shell's `title` still carries the full name.
 const displayName = $derived(entry.filename.replace(/\.[^.]+$/, "") || entry.filename);
 const sizeLabel = $derived(formatSize(entry.sizeBytes));
 const dateLabel = $derived(libraryDate(entry.created));

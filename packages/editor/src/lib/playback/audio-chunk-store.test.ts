@@ -18,8 +18,7 @@ describe("keepInWindow", () => {
 	});
 
 	it("drops chunks ahead of the window — the backward-seek leak", () => {
-		// Played to 25 min, then jumped back to the start. The old one-sided evict
-		// kept everything ahead of the marker, stranding that window forever.
+		// Played to 25 min, then jumped back: the old one-sided evict kept everything ahead and stranded that window.
 		const resident = [
 			{ startSec: 1500, durationSec: 4 },
 			{ startSec: 1504, durationSec: 4 },

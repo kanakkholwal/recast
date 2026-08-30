@@ -61,9 +61,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 				ne(recast.status, "archived"),
 			);
 
-	// One trip: recast rows + their most-recent share's slug + aggregated
-	// view count. We materialize the aggregate via a lateral-ish subquery
-	// so a recast with five shares still produces one row.
+	// One trip: rows plus the most-recent share slug and an aggregated view count, so five shares still produce one row.
 	const rows = await db
 		.select({
 			id: recast.id,
@@ -82,8 +80,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 			lastViewedAt: recast.lastViewedAt,
 			views: recastViewsSql(),
 			latestShareSlug: recastLatestShareSlugSql(),
-			// Tag id array per recast (resolved against the workspace tag list
-			// by the client). `[]` when untagged.
+			// Tag ids per recast, resolved against the workspace tag list by the client; empty when untagged.
 			tags: recastTagIdsSql(),
 		})
 		.from(recast)
@@ -98,8 +95,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		recasts: await Promise.all(
 			rows.map(async (r) => ({
 				...r,
-				// `videoUrl` is a bare object key — sign it into a playable URL,
-				// matching the page loaders and the share page.
+				// `videoUrl` is a bare object key, signed here into a playable URL like the page loaders and the share page do.
 				videoUrl: await resolvePlaybackUrl(r.videoUrl),
 				// Normalize SQL `bigint`s and `number`s to plain numbers.
 				sizeBytes: Number(r.sizeBytes),

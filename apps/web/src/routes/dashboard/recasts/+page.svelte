@@ -75,15 +75,13 @@ let newFolderName = $state("");
 let selectedIds = $state(new Set<string>());
 const selectionMode = $derived(selectedIds.size > 0);
 
-// Drag-and-drop onto the library opens the shared upload dialog with the
-// dropped file staged; the header + empty-state buttons open it empty.
+// A drop onto the library opens the shared upload dialog pre-staged; the header buttons open it empty.
 let dragDepth = $state(0);
 const isDraggingFile = $derived(dragDepth > 0);
 
 const searching = $derived(query.trim() !== "");
 
-// A folder browser that hid matches in other folders would be a search box
-// that lies, so searching always scopes to the whole library.
+// A folder browser that hid matches elsewhere would be a search box that lies, so search scopes to the whole library.
 const visible = $derived(
 	filterAndSortRecasts(recastsStore.items, {
 		query,
@@ -316,8 +314,7 @@ async function bulkDelete() {
 	const ids = [...selectedIds];
 	for (const id of ids) recastsStore.remove(id);
 	clearSelection();
-	// Settled, not all: one failure among ten does not un-delete the nine that
-	// succeeded, so the server is the only honest source for what is left.
+	// Settled, not all: one failure among ten doesn't un-delete the nine, so the server is the only honest source.
 	const results = await Promise.allSettled(ids.map((id) => api.deleteRecast(id)));
 	const failed = results.filter((r) => r.status === "rejected").length;
 	acting = false;

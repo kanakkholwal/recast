@@ -60,8 +60,7 @@ import {
 
 const reduced = $derived(prefersReducedMotion());
 
-// Same three hues the hero shelf uses, so the closing recap reads as the
-// same spine rather than a new set of tags.
+// The same three hues the hero shelf uses, so the closing recap reads as the same spine, not a new set.
 const stepGlyph = {
 	tangerine: "text-tag-tangerine",
 	lavender: "text-tag-lavender",

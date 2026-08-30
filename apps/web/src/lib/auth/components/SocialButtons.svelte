@@ -3,9 +3,7 @@ import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { authClient, type SocialProvider } from "$lib/auth/client";
 
-// `providers` comes from the (auth) layout's server load, which reads the
-// configured OAuth env pairs — a provider without credentials never gets a
-// button that would dead-end on "provider not found".
+// From the (auth) layout's load of the configured OAuth env pairs, so a credential-less provider never gets a dead-end button.
 let {
 	providers = [],
 	callbackURL = "/dashboard",
@@ -22,8 +20,7 @@ async function signInWith(provider: SocialProvider) {
 	if (pending) return;
 	pending = provider;
 	const { error } = await authClient.signIn.social({ provider, callbackURL });
-	// On success the browser has already left for the provider; only a
-	// failure gets back here.
+	// On success the browser has already left for the provider, so only a failure gets back here.
 	if (error) {
 		toast.error(error.message ?? `Couldn't sign in with ${LABELS[provider]}.`);
 		pending = null;

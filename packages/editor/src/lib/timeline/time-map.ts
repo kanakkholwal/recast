@@ -159,11 +159,7 @@ export function buildGapMap(map: TimeMap): TimeMap {
  * seam), matching cuts.ts, where a time inside a cut maps to the cut's start.
  */
 export function originalToOutput(map: TimeMap, t: number): number {
-	// Binary search for the first span with `origEnd >= t` — identical to the
-	// linear "first span where t <= origEnd" (a time before that span's start
-	// collapses onto its seam). Spans are ordered and non-overlapping, so origEnd
-	// is non-decreasing. The waveform lane evaluates this per bucket over ~2000
-	// buckets, so at high cut counts the old O(spans) scan dominated a zoom.
+	// Binary search: spans are ordered and non-overlapping, and the waveform lane's per-bucket scan made the old O(spans) walk dominate a zoom.
 	const spans = map.spans;
 	let lo = 0;
 	let hi = spans.length;

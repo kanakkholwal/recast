@@ -32,8 +32,7 @@ describe("formatTimeByMode", () => {
 });
 
 describe("formatRulerTick", () => {
-	// The bug: ticks 0.5s apart were all floored to a whole second, so a
-	// zoomed-in ruler printed "0:00, 0:00, 0:01, 0:01".
+	// The bug: ticks 0.5s apart were floored to whole seconds, so a zoomed ruler printed the same label twice.
 	it("keeps sub-second ticks distinct", () => {
 		const interval = 0.5;
 		const labels = [0, 0.5, 1, 1.5, 2].map((t) => formatRulerTick(t, "seconds", 60, interval));

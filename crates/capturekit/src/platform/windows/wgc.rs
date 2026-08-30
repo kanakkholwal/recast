@@ -64,8 +64,7 @@ pub(crate) struct WgcSource {
     closed: bool,
 }
 
-// SAFETY: the frame pool is created free-threaded, and every object here is used
-// only from the thread that owns the source. The bound satisfies `FrameSource`.
+// SAFETY: the frame pool is free-threaded and every object here is used only from the thread that owns the source.
 unsafe impl Send for WgcSource {}
 
 impl WgcSource {
@@ -76,9 +75,7 @@ impl WgcSource {
                 operation: "capture a window on this build of Windows",
             });
         }
-        // WinRT activation needs COM on this thread. Idempotent: S_FALSE and
-        // RPC_E_CHANGED_MODE both mean it was already initialised, and the
-        // apartment is not ours to own.
+        // WinRT activation needs COM here. Idempotent: S_FALSE and RPC_E_CHANGED_MODE both mean it was already initialised.
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         }
@@ -132,8 +129,7 @@ impl WgcSource {
         )
         .map_err(d3d::err)?;
         let session = frame_pool.CreateCaptureSession(&item).map_err(d3d::err)?;
-        // Both are Windows 11 setters; older builds simply lack them, so a
-        // failure here is not a reason to abandon the capture.
+        // Both are Windows 11 setters that older builds simply lack, so a failure isn't a reason to abandon the capture.
         let _ = session.SetIsBorderRequired(false);
         let _ = session.SetIsCursorCaptureEnabled(opts.cursor == CursorMode::Include);
         session.StartCapture().map_err(d3d::err)?;

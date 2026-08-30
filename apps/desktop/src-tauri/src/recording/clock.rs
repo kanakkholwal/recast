@@ -179,8 +179,7 @@ mod tests {
 
     #[test]
     fn effective_elapsed_excludes_paused_spans() {
-        // Measured as "how far did the clock advance across the pause", not as
-        // an absolute reading: a loaded CI runner can stretch either sleep.
+        // Measured as how far the clock advanced across the pause, not as an absolute reading: CI can stretch either sleep.
         let clock = RecordingClock::new(Instant::now());
         std::thread::sleep(Duration::from_millis(20));
         clock.pause();

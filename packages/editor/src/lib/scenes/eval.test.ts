@@ -16,8 +16,7 @@ describe("evalSegmentTransform", () => {
 		expect(evalSegmentTransform(anim, 5, 0, 10)).toEqual(SCENE_IDENTITY);
 	});
 	it("caps each ramp to 40% of the window so a hold always remains", () => {
-		// 1s clip, both ramps 1s → each caps to 0.4s; the centre is a hold, so the
-		// two never overlap (the anti-wobble guard).
+		// A 1s clip with 1s ramps caps each to 0.4s, leaving a hold between them: the anti-wobble guard.
 		const anim: SegmentAnim = { start: 0, in: lin, out: lin };
 		expect(evalSegmentTransform(anim, 0.2, 0, 1).opacity).toBeCloseTo(0.5, 6); // mid entrance
 		expect(evalSegmentTransform(anim, 0.5, 0, 1)).toEqual(SCENE_IDENTITY); // hold

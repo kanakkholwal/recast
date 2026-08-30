@@ -41,8 +41,7 @@ pub(crate) struct TextPass {
 
 impl TextPass {
     pub(crate) fn new(device: &wgpu::Device) -> Self {
-        // Its own layout rather than `sampled_texture_layout`: the canvas size
-        // is read by the vertex stage, which that one does not make visible.
+        // Its own layout: the canvas size is read by the vertex stage, which `sampled_texture_layout` doesn't expose.
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("text"),
             entries: &[
@@ -83,8 +82,7 @@ impl TextPass {
             bind_group_layouts: &[Some(&layout)],
             immediate_size: 0,
         });
-        // An instance buffer rather than a storage buffer: WebGL2 has no storage
-        // buffers, and instanced arrays are core ES3.
+        // An instance buffer, not a storage buffer: WebGL2 has none, and instanced arrays are core ES3.
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("text"),
             layout: Some(&pipeline_layout),

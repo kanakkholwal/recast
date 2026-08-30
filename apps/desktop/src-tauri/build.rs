@@ -17,8 +17,7 @@ fn main() {
 /// final link. Naming it here is what a clang-driven link would have done.
 fn link_clang_runtime() {
     let Some(dir) = runtime_dir() else {
-        // Better a link error naming the real symbol than a build script that
-        // fails on a machine whose toolchain is laid out differently.
+        // Better a link error naming the real symbol than a build script failing on a differently laid-out toolchain.
         println!("cargo:warning=libclang_rt.osx.a not found; @available may not link");
         return;
     };

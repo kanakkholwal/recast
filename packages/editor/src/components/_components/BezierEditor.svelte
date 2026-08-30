@@ -21,8 +21,7 @@ interface Props {
 
 let { value, onchange, label, description, size = 176, disabled = false }: Props = $props();
 
-// viewBox is the unit square plus the overshoot band so bounce/spring handles
-// (y outside [0,1]) stay grabbable. y is flipped at render time (SVG y grows down).
+// The unit square plus the overshoot band, so bounce handles stay grabbable; y is flipped at render time.
 const VB_MIN = -EASING_OVERSHOOT;
 const VB_SPAN = 1 + EASING_OVERSHOOT * 2;
 
@@ -68,9 +67,7 @@ function updateHandle(which: "p1" | "p2", x: number, y: number) {
 	}
 }
 
-// The handles carry `role="slider"` and were focusable, but nothing listened
-// for keys: a keyboard user heard "Control point 1, slider" and could not move
-// it. Left/Right walk x, Up/Down walk y, Shift for a coarse step.
+// The handles were focusable but nothing listened for keys: arrows walk x and y, with Shift for a coarse step.
 function handleKey(which: "p1" | "p2", e: KeyboardEvent) {
 	if (disabled) return;
 	const step = e.shiftKey ? KEY_STEP_COARSE : KEY_STEP;
@@ -123,8 +120,7 @@ function handleEnd(e: PointerEvent) {
 	activePointerId = null;
 }
 
-// Dragging clamped y; typing did not, so `y1: 50` parked the handle far
-// outside the viewBox where no pointer could reach it again.
+// Dragging clamped y but typing did not, so `y1: 50` parked the handle outside the viewBox, unreachable.
 function setField(field: keyof Easing, n: number) {
 	onchange({ ...value, [field]: clampEasingCoord(field, n) });
 }

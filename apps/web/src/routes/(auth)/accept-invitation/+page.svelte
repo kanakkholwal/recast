@@ -30,9 +30,7 @@ async function accept() {
 		});
 		if (error) throw new Error(error.message ?? "Couldn't accept the invitation.");
 		toast.success(`Welcome to ${data.invite.orgName}.`, { id: toastId });
-		// Force-rerun every loader so the dashboard's auth + team gate
-		// sees the new membership / active-org cookie immediately;
-		// without this the gate can bounce the user back to onboarding.
+		// Re-run every loader so the dashboard's team gate sees the new membership rather than bouncing back to onboarding.
 		await invalidateAll();
 		await goto("/dashboard", { invalidateAll: true });
 	} catch (err) {

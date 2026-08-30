@@ -19,9 +19,7 @@ export default defineConfig({
 			ignored: ["**/src-tauri/**"],
 		},
 		fs: {
-			// @recast/editor spawns workers via `new URL(..., import.meta.url)`, served
-			// as direct file requests from the sibling package's source — allow the
-			// workspace root so they resolve ("outside serving allow list" otherwise).
+			// @recast/editor spawns workers from the sibling package's source, so the workspace root must be servable.
 			allow: [searchForWorkspaceRoot(process.cwd())],
 		},
 	},

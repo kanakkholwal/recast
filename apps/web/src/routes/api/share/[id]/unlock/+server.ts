@@ -12,10 +12,7 @@ const BodySchema = z.object({
 	password: z.string().min(1).max(200),
 });
 
-// 7-day cookie — outlives a normal viewing session but rotates often
-// enough that a leaked device doesn't have permanent access. The
-// share's password column doesn't store an issued-at, so the only
-// invalidation lever is rotating BETTER_AUTH_SECRET.
+// A 7-day cookie outlives a viewing session but rotates often; with no issued-at column, rotating BETTER_AUTH_SECRET is the only other lever.
 const COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 /**
@@ -33,8 +30,7 @@ const COOKIE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
  * (caller shouldn't be calling unlock then).
  */
 export const POST: RequestHandler = async ({ params, request, cookies, getClientAddress }) => {
-	// Throttle password attempts per share+IP before touching the DB or hashing,
-	// so this can't be used to brute-force `share.passwordHash`.
+	// Throttle per share and IP before touching the DB or hashing, so this can't brute-force `share.passwordHash`.
 	const limited = await enforceRateLimit(
 		{ getClientAddress },
 		{ bucket: "share-unlock", id: params.id, limit: 10, windowMs: 60_000 },

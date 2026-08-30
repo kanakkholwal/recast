@@ -33,9 +33,7 @@ const settleSeekWindow = () => new Promise((r) => setTimeout(r, 60));
 
 const FPS = 30;
 const FRAME_SEC = 1 / FPS;
-// Mirror the worker: decode-ahead is a FRAME budget, not a duration. A fixed
-// 0.75s outran the cache, so frames were evicted before the playhead reached
-// them — the picture updated ~6 times in 2s.
+// Decode-ahead is a FRAME budget, not a duration: a fixed 0.75s outran the cache and the picture updated ~6 times in 2s.
 const LOOKAHEAD_SEC = frameBudget(1920, 1080).decodeAhead / FPS;
 
 class StreamingWorker {
@@ -216,8 +214,7 @@ describe("seek vs playhead policy", () => {
 		src.frameAt(5);
 		src.frameAt(5.016);
 		expect(worker.seeks).toBe(1);
-		// Seeks are rate limited so a drag can't rebuild a decoder per pointer
-		// move; wait past the window to observe the next one as its own seek.
+		// Seeks are rate limited so a drag can't rebuild a decoder per move; wait past the window for the next one.
 		await settleSeekWindow();
 		src.frameAt(1); // scrub back
 		expect(worker.seeks).toBe(2);

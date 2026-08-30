@@ -1,5 +1,4 @@
-// Display helpers for annotations: kind-aware label and icon. Used by the
-// layer panel, the status rail, and the selected-annotation header.
+// Kind-aware label and icon, used by the layer panel, the status rail and the selected-annotation header.
 
 import type { IconComponent } from "@recast/icons";
 import { ArrowUpRight, Circle, Droplets, ImageIcon, Square, Type as TypeIcon } from "@recast/icons";

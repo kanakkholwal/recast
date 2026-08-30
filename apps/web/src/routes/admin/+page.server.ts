@@ -15,9 +15,7 @@ import type { PageServerLoad } from "./$types";
  * specific Postgres error instead of one opaque "Failed query".
  */
 export const load: PageServerLoad = async (event) => {
-	// Defense-in-depth: every admin load re-asserts admin rather than trusting the
-	// parent layout load to have run first. A refactor that detaches this page
-	// from the layout must not silently expose user PII / audit log / sub counts.
+	// Defense in depth: every admin load re-asserts admin, so detaching this page from the layout can't expose PII.
 	await requireAdmin(event);
 
 	const db = getDb();

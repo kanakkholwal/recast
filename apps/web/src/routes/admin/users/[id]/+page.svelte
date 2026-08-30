@@ -31,8 +31,7 @@ let { data } = $props();
 
 const t = $derived(data.target);
 
-// Seed editable form state from the initial server load so it doesn't
-// reset itself when a form action returns and re-runs the load.
+// Seeded from the initial load, so it doesn't reset itself when a form action returns and re-runs the load.
 let role = $state(untrack(() => data.target.role ?? "user"));
 let status = $state(untrack(() => data.target.status ?? "active"));
 let name = $state(untrack(() => data.target.name ?? ""));
@@ -71,8 +70,7 @@ async function impersonate() {
 				error: (err) => (err as Error)?.message ?? "Couldn't start impersonation.",
 			},
 		);
-		// Cookie has been swapped to the impersonation session — leave admin
-		// and land in the impersonated user's dashboard.
+		// The cookie is now the impersonation session, so leave admin and land in the impersonated user's dashboard.
 		window.location.href = "/dashboard";
 	} finally {
 		impersonating = false;

@@ -399,9 +399,7 @@ fn every_fixture_matches_its_golden() {
     }
 
     if updating() {
-        // The input textures are committed too: the wasm arm loads these bytes
-        // rather than porting the generators, so a change to the pattern reaches
-        // both arms at once.
+        // The input textures are committed too: the wasm arm loads these bytes, so a pattern change reaches both arms.
         for (name, generate) in [
             ("source", source_pixels as fn() -> Vec<u8>),
             ("background", background_pixels as fn() -> Vec<u8>),
@@ -424,8 +422,7 @@ fn every_fixture_matches_its_golden() {
         "no golden committed for {missing:?}; run with UPDATE_GOLDENS=1 and read the diff"
     );
     if !gates {
-        // Loud, and never silent: a suite that opts out quietly reads exactly
-        // like one that passed.
+        // Loud, never silent: a suite that opts out quietly reads exactly like one that passed.
         eprintln!(
             "goldens were rendered on {}, this is {here}: reporting only.\n  {}",
             recorded.as_deref().unwrap_or("an unrecorded adapter"),
@@ -478,8 +475,7 @@ fn the_tolerance_is_tight_enough_to_catch_a_small_shift() {
         .expect("the plain fixture");
     let frame = render(ctx, &scene_for(&all, plain), plain.time);
     let mut nudged = frame.pixels.clone();
-    // One row shifted by one pixel: the smallest geometry error worth calling a
-    // regression, and invisible to any per-pixel assertion next door.
+    // One row shifted by a pixel: the smallest geometry error worth calling a regression, and invisible per-pixel.
     let row = (frame.height / 2 * frame.width * 4) as usize;
     let width = (frame.width * 4) as usize;
     nudged.copy_within(row..row + width - 4, row + 4);

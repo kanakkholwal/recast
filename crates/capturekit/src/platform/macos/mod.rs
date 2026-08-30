@@ -24,8 +24,7 @@ pub(crate) use pointer::source as pointer_source;
 pub(crate) fn capabilities() -> Capabilities {
     Capabilities {
         backend: content::BACKEND,
-        // `SCContentFilter` takes an exclusion list of any windows at all, which
-        // is the only one of the three that can hide a stranger's window.
+        // `SCContentFilter` takes an exclusion list of any windows, the only one of the three that can hide a stranger's window.
         exclusion: ExclusionSupport::AnyWindow,
         window_capture: true,
         camera_capture: true,
@@ -33,8 +32,7 @@ pub(crate) fn capabilities() -> Capabilities {
         display_enumeration: true,
         region_crop: RegionCrop::DuringAcquisition,
         cursor_in_frame: true,
-        // Position and shape come from a separate CoreGraphics call, not with
-        // the sample buffer, so they are not on the frame clock yet.
+        // Position and shape come from a separate CoreGraphics call, so they are not on the frame clock yet.
         cursor_samples: false,
         cursor_pointer: true,
         cursor_buttons: true,
@@ -53,8 +51,7 @@ pub(crate) fn permission(kind: PermissionKind) -> Permission {
             if CGPreflightScreenCaptureAccess() {
                 Permission::Granted
             } else {
-                // TCC does not distinguish "never asked" from "refused" through
-                // this call, and asking again is harmless when it is the former.
+                // TCC can't distinguish never-asked from refused here, and asking again is harmless in the former case.
                 Permission::NotDetermined
             }
         }
@@ -115,9 +112,7 @@ pub(crate) fn cameras() -> Result<Vec<capturekit_core::Camera>> {
 }
 
 pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameSource>> {
-    // Every path checks first: ScreenCaptureKit answers a process without the
-    // grant by returning an empty content list, which reads as "no displays"
-    // rather than as the permission problem it is.
+    // ScreenCaptureKit answers an ungranted process with an empty content list, which reads as 'no displays'.
     if !permission(PermissionKind::Screen).is_usable() {
         return Err(CaptureError::PermissionDenied(PermissionKind::Screen));
     }

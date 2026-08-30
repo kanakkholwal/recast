@@ -41,8 +41,7 @@ export function parseKaraokeCue(body: string, cueStart: number, cueEnd: number):
 	let cursor = 0;
 	let pendingStart = cueStart;
 	let match: RegExpExecArray | null;
-	// Walk the body, splitting on timestamp tags. Text before a tag belongs to
-	// the previously-opened start; the tag opens the next word's start.
+	// Text before a tag belongs to the previously opened start, and the tag opens the next word's.
 	while ((match = tag.exec(body)) !== null) {
 		const chunk = body.slice(cursor, match.index).trim();
 		if (chunk) tokens.push({ start: pendingStart, text: chunk });

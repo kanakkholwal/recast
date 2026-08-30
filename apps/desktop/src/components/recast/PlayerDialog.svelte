@@ -16,17 +16,13 @@ let {
 	onclose: () => void;
 } = $props();
 
-// Tauri's asset:// URL, needed because the WebView can't read raw OS
-// paths. Recomputed if the parent swaps `entry` in place (rename flow).
+// The WebView can't read raw OS paths; recomputed if the parent swaps `entry` in place, as the rename flow does.
 const src = $derived(convertFileSrc(entry.path));
 
-// GIF (and other image) exports can't play in the video element, so they get
-// an <img> preview instead. GIFs loop on their own.
+// Image exports can't play in the video element, so they get an <img> preview; GIFs loop on their own.
 const isImage = $derived(isImageFile(entry.filename));
 
-// Auto-load a caption sidecar written next to the export (foo.vtt / foo.srt).
-// The Rust side returns WebVTT (converting .srt); we hand it to the player as
-// a blob-URL <track>, so a previewed file shows its captions with no project.
+// Rust returns WebVTT (converting .srt), handed to the player as a blob-URL track, so a previewed file shows captions with no project.
 let captionSrc = $state<string | null>(null);
 $effect(() => {
 	if (isImage) {

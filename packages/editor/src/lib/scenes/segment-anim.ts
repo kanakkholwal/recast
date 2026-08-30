@@ -19,9 +19,7 @@ export const MIN_ANIM_MS = 100;
 export const MAX_ANIM_MS = 2000;
 export const DEFAULT_ANIM_MS = 500;
 
-// Per-kind magnitude defaults. Shared by the evaluator (../scenes/eval.ts) and
-// the intensity slider (intensityRange, below); mirrored verbatim in the Rust
-// export (render/scene_anim.rs); keep the three in lockstep.
+// Shared by the evaluator and the intensity slider, and mirrored verbatim in render/scene_anim.rs; keep the three in lockstep.
 export const DEFAULT_SLIDE = 0.6; // fraction of the canvas travelled
 export const DEFAULT_SCALE_DELTA = 0.3; // grow-from / settle-to delta
 export const DEFAULT_POP_DELTA = 0.35;
@@ -159,8 +157,7 @@ export function defaultSpec(
 		easing,
 	};
 	if (kind === "slide") spec.dir = side === "in" ? "left" : "right";
-	// Balanced leaves intensity unset (the evaluator's per-kind default); other
-	// tones bake a scaled, clamped intensity so the style is visible.
+	// Balanced leaves intensity unset for the evaluator's default; other tones bake a scaled, clamped value.
 	if (tp.intensityScale !== 1) {
 		const r = intensityRange(kind);
 		if (r) spec.intensity = Math.min(r.max, Math.max(r.min, r.default * tp.intensityScale));

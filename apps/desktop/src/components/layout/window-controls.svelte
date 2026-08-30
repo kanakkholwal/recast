@@ -10,8 +10,7 @@ const winBtn =
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
 
-  // `mac` → faux traffic lights (top-left); `win` → min/max/close (top-right).
-  // Caller picks the variant via platform(); this just draws and wires it.
+  // `mac` draws faux traffic lights and `win` draws min/max/close; the caller picks the variant via platform().
   let { kind, class: className }: { kind: "mac" | "win"; class?: string } =
     $props();
 
@@ -26,8 +25,7 @@ const winBtn =
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       const win = getCurrentWindow();
       isMaximized = await win.isMaximized();
-      // Keep the maximize/restore glyph in sync with OS-driven resizes
-      // (snap, double-click titlebar, etc.).
+      // Keep the maximize glyph in sync with OS-driven resizes such as snap or a titlebar double-click.
       unlisten = await win.onResized(async () => {
         isMaximized = await win.isMaximized();
       });

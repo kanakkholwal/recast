@@ -3,12 +3,7 @@ import { MousePointer2 } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
 
-// Wraps a headline word in a decorative "selected object" frame: primary
-// bounding box, corner resize handles, and a cursor arrow. It says the thing
-// you ship is editable, which is the whole product promise. The chrome is
-// aria-hidden and sits as a sibling of the real text (never a parent), so a
-// child with its own clip container (TextLoop) can't clip the handles, and
-// the absolute box tracks the child's width as it animates.
+// A decorative selected-object frame around a headline word. The chrome is aria-hidden and a sibling of the text, so a child's clip container can't clip the handles.
 let { children, class: className }: { children: Snippet; class?: string } = $props();
 
 // Handles pinned just outside each corner of the box.

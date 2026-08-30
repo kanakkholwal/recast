@@ -24,14 +24,7 @@ pub(crate) fn append_output_tail(
     speed_segments: &[SpeedSegment],
     has_generated_inputs: bool,
 ) -> OutputTail {
-    // The input-side `-t` trims the source media, but filtergraph generators
-    // such as `color=...` are infinite by default, so the encode needs an
-    // output-side cap or it runs forever.
-    //
-    // Cap at the REAL post-edit length: cuts drop frames and per-segment speed
-    // warps them. Capping at the raw span would bake a frozen tail (the cut and
-    // sped-away time, since `overlay` repeats the last frame) and would truncate
-    // a slowed clip.
+    // Filtergraph generators are infinite, so cap the output at the REAL post-edit length: the raw span bakes a frozen tail and truncates a slowed clip.
     let output_cap = output_duration_cap(&request.format, duration, speed_segments);
     if output_cap > 0.0 {
         args.extend(["-t".to_string(), format!("{output_cap:.3}")]);
@@ -46,8 +39,7 @@ pub(crate) fn append_output_tail(
         args.push("-shortest".to_string());
     }
 
-    // CC-BY music requires credit, so bake the attribution into the output's
-    // `comment` metadata (skipped for GIF — it carries no audio to credit).
+    // CC-BY music requires credit, so bake the attribution into the output's comment metadata; GIF has no audio to credit.
     if request.format != "gif" {
         if let Some(comment) = build_credits_comment(&request.render_state.music_clips) {
             args.extend(["-metadata".to_string(), format!("comment={comment}")]);

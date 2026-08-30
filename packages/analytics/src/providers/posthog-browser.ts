@@ -27,15 +27,11 @@ export function createPostHogBrowserProvider(): Provider {
 				api_host: cfg.host,
 				persistence: cfg.persistence,
 				autocapture: cfg.autocapture,
-				// `history_change` captures the initial load AND SPA navigations
-				// (SvelteKit uses the History API), so single-page route changes
-				// still register as pageviews. Desktop passes false (multi-window
-				// app — route pageviews are meaningless; we emit explicit events).
+				// `history_change` covers the initial load and SPA navigations; desktop passes false and emits explicit events instead.
 				capture_pageview: cfg.capturePageview ? "history_change" : false,
 				capture_pageleave: cfg.capturePageview,
 				disable_session_recording: cfg.disableSessionRecording,
-				// Only ever create a person profile once we've identified a user —
-				// keeps anonymous, cookieless visitors from minting person rows.
+				// Only create a person profile once a user is identified, so anonymous visitors mint no person rows.
 				person_profiles: "identified_only",
 				bootstrap: cfg.bootstrapDistinctId ? { distinctID: cfg.bootstrapDistinctId } : undefined,
 			});
@@ -56,9 +52,7 @@ export function createPostHogBrowserProvider(): Provider {
 		},
 
 		captureError(err: ScrubbedError) {
-			// PostHog Error Tracking ingests `$exception` events. We hand it a
-			// pre-scrubbed payload; the raw stack goes in as text since we don't
-			// ship a frame parser client-side.
+			// Error Tracking ingests `$exception`; the payload is pre-scrubbed and the stack goes in as text, with no client-side frame parser.
 			ph?.capture("$exception", {
 				$exception_list: [
 					{
@@ -88,12 +82,7 @@ export function createPostHogBrowserProvider(): Provider {
 
 		upgradePersistence() {
 			if (!config) return;
-			// Mutate the stored config so an in-flight `init()` (still awaiting the
-			// dynamic import) stands PostHog up already-upgraded — `config` is the
-			// same object `init()` reads its options from before calling
-			// `posthog.init`. This is also why the init-time `disableSessionRecording`
-			// flag no longer gates replay here: upgradePersistence is only ever
-			// called to *enable* replay (web consent), so we flip it on.
+			// Mutate the stored config so an in-flight `init()` stands PostHog up already upgraded; this is only ever called to enable replay.
 			config.persistence = "localStorage+cookie";
 			config.disableSessionRecording = false;
 			if (!ph) return; // a pending init() will apply the upgraded config

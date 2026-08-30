@@ -47,8 +47,7 @@ pub fn peek_recast_project(path: String) -> AppResult<ProjectMetadata> {
 }
 
 fn peek_recast_project_inner(path: &std::path::Path) -> anyhow::Result<ProjectMetadata> {
-    // File::open propagates "not found" vs "permission denied" distinctly,
-    // which the frontend's toast surfaces verbatim.
+    // File::open distinguishes not-found from permission-denied, which the frontend's toast surfaces verbatim.
     let file = File::open(path)?;
     let mut archive = ZipArchive::new(file)?;
     let mut entry = archive.by_name("metadata.json")?;

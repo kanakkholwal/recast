@@ -7,8 +7,7 @@ use rusqlite::Connection;
 
 /// Ordered DDL steps. After step at index `i` runs, `user_version` becomes `i + 1`.
 const MIGRATIONS: &[&str] = &[
-    // v1: export queue. One row per export job. The heavy render-state payload
-    // lives in a file referenced by `payload_path`, never in the DB.
+    // v1: one row per export job; the heavy render-state payload lives in a file at `payload_path`, never in the DB.
     "CREATE TABLE export_jobs (
         id           TEXT PRIMARY KEY,
         filename     TEXT NOT NULL,
@@ -33,8 +32,7 @@ pub fn run(conn: &Connection) -> rusqlite::Result<()> {
     let current = current.max(0) as usize;
     for (i, ddl) in MIGRATIONS.iter().enumerate().skip(current) {
         conn.execute_batch(ddl)?;
-        // `user_version` can't be bound as a parameter; the value is a trusted
-        // in-code constant, so string interpolation here is safe.
+        // `user_version` can't be bound as a parameter, and the value is a trusted in-code constant.
         conn.pragma_update(None, "user_version", (i + 1) as i64)?;
     }
     Ok(())

@@ -19,9 +19,7 @@ export async function resolveBackgroundSrc(value: string): Promise<string> {
 		if (!wire || wire.startsWith("#")) return "";
 		return resolve(wire);
 	}
-	// Defensive: keep gradient/colour values away from the resolver, since a
-	// stray write leaving a CSS gradient here while type briefly reads "image"
-	// would otherwise log a bogus "File does not exist" via the asset protocol.
+	// Defensive: a stray CSS gradient reaching the resolver while type briefly reads 'image' logs a bogus missing-file error.
 	if (value.includes("gradient(") || value.startsWith("#")) return "";
 	if (value.startsWith("asset:") && !value.startsWith("asset://")) {
 		const id = value.slice("asset:".length);

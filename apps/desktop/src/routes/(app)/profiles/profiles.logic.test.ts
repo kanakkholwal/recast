@@ -40,8 +40,7 @@ describe("isDraftDirty", () => {
 		}
 	});
 
-	// Only prompt about losing something real: whitespace and a device pointer
-	// that save would strip anyway are not changes worth a dialog.
+	// Only prompt about losing something real: whitespace and a pointer save would strip aren't worth a dialog.
 	it("ignores name whitespace", () => {
 		expect(isDraftDirty(profile({ name: "  Meeting  " }), profile())).toBe(false);
 	});

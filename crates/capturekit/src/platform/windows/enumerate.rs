@@ -82,8 +82,7 @@ fn display_mode(device: &[u16]) -> Option<DEVMODEW> {
 /// `dmPelsWidth` is the mode the hardware is actually running, so it does not
 /// move with the caller's DPI awareness the way a monitor rect does.
 fn physical_bounds(mode: DEVMODEW) -> Rect {
-    // SAFETY: `dmPosition` is the active member for a display device, which is
-    // what `EnumDisplaySettingsW` was asked about.
+    // SAFETY: `dmPosition` is the active member for a display device, which is what `EnumDisplaySettingsW` was asked about.
     let position = unsafe { mode.Anonymous1.Anonymous2.dmPosition };
     Rect::new(position.x, position.y, mode.dmPelsWidth, mode.dmPelsHeight)
 }
@@ -205,8 +204,7 @@ fn is_listable(window: HWND, title: &str) -> bool {
 }
 
 pub(crate) fn windows() -> Result<Vec<Window>> {
-    // Window rects have no mode to read, so the awareness scope is the only way
-    // to get physical pixels out of `GetWindowRect`.
+    // Window rects have no mode to read, so the awareness scope is the only way to get physical pixels from `GetWindowRect`.
     let _physical = PhysicalPixels::scope();
     let mut handles: Vec<HWND> = Vec::new();
     unsafe {

@@ -30,8 +30,7 @@ export function morph(
 	return {
 		duration: reduced ? 0 : (params.duration ?? 320),
 		easing: params.easing ?? cubicOut,
-		// `u` = 1 - t: at t=0 the element is painted at its previous (`from`)
-		// rect, then settles into the new (`to`) rect.
+		// `u` is 1 - t: at t=0 the element paints at its previous rect, then settles into the new one.
 		css: (t, u) =>
 			`transform-origin: top left; transform: translate(${u * dx}px, ${u * dy}px) scale(${t + u * dw}, ${t + u * dh});`,
 	};

@@ -12,8 +12,7 @@ import {
 	shortcutsDialog,
 } from "$lib/shortcuts/registry.svelte";
 
-// The list is static (declared once in the registry); compute the grouping
-// and the Mod+/ display tokens a single time.
+// The list is static (declared once in the registry), so group it and build the display tokens a single time.
 const groups = shortcutsByCategory();
 const openTokens = formatChordTokens("Mod+/");
 

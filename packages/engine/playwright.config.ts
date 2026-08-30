@@ -10,8 +10,7 @@ const PORT = 5599;
  */
 export default defineConfig({
 	testDir: "./test/golden",
-	// One worker: the fixtures share a GPU, and two headless Chromiums
-	// compositing at once is how a golden run becomes flaky.
+	// One worker: the fixtures share a GPU, and two headless Chromiums compositing at once makes a golden run flaky.
 	workers: 1,
 	fullyParallel: false,
 	reporter: process.env.CI ? "list" : "line",
@@ -22,8 +21,7 @@ export default defineConfig({
 			args: [
 				"--enable-unsafe-webgpu",
 				"--enable-features=Vulkan",
-				// Headless Chromium has no display; without this it refuses a GPU
-				// adapter entirely and the harness never starts.
+				// Headless Chromium has no display and refuses a GPU adapter without this, so the harness never starts.
 				"--use-angle=default",
 				"--use-gl=angle",
 				"--ignore-gpu-blocklist",

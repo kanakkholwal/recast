@@ -1,6 +1,4 @@
-// Static data for the /features page. Extracted from +page.svelte so
-// the page file stays focused on layout. Each export is its own const so
-// the bundler can tree-shake whatever the page doesn't actually use.
+// Static data for /features, one const per export so the bundler can tree-shake what the page doesn't use.
 
 import {
 	AiWand,
@@ -84,9 +82,7 @@ export const stabilityChip: Record<"stable" | "beta", { label: string; cls: stri
 	beta: { label: "Beta", cls: "bg-tag-tangerine/12 text-tag-tangerine" },
 };
 
-// Side-by-side comparison rows. Each row: a feature label + the
-// comparison value per product. The tone of the value is set by
-// the renderer in the page (primary chip vs muted text).
+// Each row is a feature label plus a value per product; the page's renderer sets the tone.
 export const gapRows = [
 	{
 		feature: "Recording profiles (capture presets)",
@@ -132,8 +128,7 @@ export const gapRows = [
 	},
 ];
 
-// Catalog of every built-in affordance. `tag` is the module it belongs to
-// (Capture, Edit, Export…), rendered as the card's kicker.
+// `tag` is the module it belongs to, rendered as the card's kicker.
 export const supports: Array<{
 	icon: any;
 	tag: string;
@@ -269,8 +264,7 @@ export const supports: Array<{
 	},
 ];
 
-// Share destinations. Drive ships today; the rest are the roadmap, and the
-// page marks them as such rather than implying they all work.
+// Drive ships today; the rest are roadmap, and the page marks them as such rather than implying they work.
 export const integrations: Integration[] = [
 	{ icon: BrandGoogleDrive, label: "Google Drive", live: true },
 	{ icon: BrandSlack, label: "Slack" },

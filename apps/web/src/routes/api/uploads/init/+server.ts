@@ -154,10 +154,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	}
 
-	// `upload` is a discriminated union from files-sdk:
-	//   PUT  → { method: "PUT", url, headers? }
-	//   POST → { method: "POST", url, fields }
-	// Client picks the right `fetch()` shape based on `method`.
+	// `upload` is a discriminated union from files-sdk, and the client picks its fetch shape from `method`.
 	return json({
 		ok: true,
 		recastId,

@@ -15,8 +15,7 @@ import {
 	Waves,
 } from "@recast/icons";
 
-// The contribution kinds a pack can add. These map 1:1 to the editor's
-// pickers, so the page reads as "this shows up where you already work".
+// Contribution kinds map 1:1 to the editor's pickers, so the page reads as 'this shows up where you already work'.
 export const kinds = [
 	{
 		icon: MousePointer2,

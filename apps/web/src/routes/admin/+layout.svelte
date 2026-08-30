@@ -17,10 +17,7 @@ import { settingsStore } from "$lib/dashboard/store.svelte";
 
 let { children, data } = $props();
 
-// Admin shares the dashboard's inset shell + sidebar, just with the admin
-// nav and no org switcher. The sidebar footer reads the profile from the
-// shared store, so hydrate it from this layout's load (which exposes
-// `data.admin`, not `data.user`).
+// Admin reuses the dashboard shell with its own nav and no org switcher, so hydrate the profile from this layout's `data.admin`.
 onMount(() => {
 	settingsStore.value.profile.name = data.admin.name || data.admin.email;
 	settingsStore.value.profile.email = data.admin.email;

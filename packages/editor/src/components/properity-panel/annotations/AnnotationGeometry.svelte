@@ -33,8 +33,7 @@ function applyArrow(updates: Partial<{ x1: number; y1: number; x2: number; y2: n
 	store.updateAnnotation(annotation.id, { kind: { ...annotation.kind, ...updates } });
 }
 
-// Field wiring: a drag pushes undo once at its start and previews without undo;
-// a typed/keyed edit stays one undo entry per commit, as the old inputs did.
+// A drag pushes undo once at its start and previews without it; a typed edit stays one undo entry per commit.
 function field(apply: (v: number) => void) {
 	return {
 		onDragStart: () => store.pushUndoState(),
@@ -50,8 +49,7 @@ function field(apply: (v: number) => void) {
 	};
 }
 
-// Frame-relative alignment. For boxes we move the whole rect; for arrows we
-// shift both endpoints by the same delta so direction is preserved.
+// Boxes move as a whole rect; arrows shift both endpoints by the same delta so direction is preserved.
 function alignFrame(axis: "x" | "y", anchor: "start" | "center" | "end") {
 	store.pushUndoState();
 	const box = normaliseBox(annotation.kind);

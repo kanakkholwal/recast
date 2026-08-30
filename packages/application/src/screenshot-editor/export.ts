@@ -27,8 +27,7 @@ export async function snapshot(node: HTMLElement, spec: ExportSpec): Promise<Blo
 		quality: lossy ? (spec.quality ?? 0.95) : undefined,
 		scale: spec.scale,
 		filter: exportFilter,
-		// JPEG has no alpha; give it an opaque backing so transparent stages don't
-		// turn black. WebP/PNG keep their alpha.
+		// JPEG has no alpha, so give it an opaque backing or a transparent stage turns black; WebP and PNG keep theirs.
 		backgroundColor: spec.format === "jpeg" ? "#ffffff" : undefined,
 	});
 	if (!blob) throw new Error("export failed to produce an image");

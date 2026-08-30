@@ -46,8 +46,7 @@ pub(crate) fn create_device(
 ) -> Result<(ID3D11Device, ID3D11DeviceContext)> {
     let mut device = None;
     let mut context = None;
-    // A device built against an explicit adapter must not also name a driver
-    // type; D3D11CreateDevice rejects the pair.
+    // A device built against an explicit adapter must not also name a driver type; D3D11CreateDevice rejects the pair.
     let driver_type = if adapter.is_some() {
         D3D_DRIVER_TYPE_UNKNOWN
     } else {
@@ -198,9 +197,7 @@ impl Readback {
         } else {
             stride as usize * self.height as usize
         };
-        // SAFETY: `Map` succeeded, so `pData` points at `DepthPitch` readable
-        // bytes of this subresource, and the mapping stays open until `unmap`,
-        // which takes `&mut self` and so cannot run while this borrow lives.
+        // SAFETY: `Map` succeeded, so `pData` covers `DepthPitch` bytes, and `unmap` takes `&mut self` so it can't run under this borrow.
         let bytes = unsafe { core::slice::from_raw_parts(mapped.pData.cast::<u8>(), len) };
         Ok((bytes, stride))
     }

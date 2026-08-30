@@ -1,9 +1,4 @@
-// Pure helpers extracted from Timeline.svelte so subviews share them and they stay unit-testable.
-//
-// Timecode formatting is NOT defined here. It lives in `$lib/editor/time`, which
-// the transport also reads, so the timeline and the player can't drift onto
-// different clocks (they did: one showed output time, the other original time).
-// Re-exported so the timeline subviews keep a single local import.
+// Pure helpers extracted from Timeline.svelte; timecode formatting lives in `$lib/editor/time`, so the ruler and transport can't drift apart.
 
 import { formatRulerTick, type TimeMode } from "../../../lib/editor/time";
 
@@ -51,13 +46,7 @@ export interface TimeMarker {
 	emphasis: boolean;
 }
 
-// ---- Zoom ------------------------------------------------------------------
-//
-// Zoom is expressed as a multiple of "the whole clip fits the viewport", so the
-// ceiling has to be derived from the clip's length, not fixed. It used to be a
-// flat 5x, which made maximum magnification a function of how long you recorded:
-// a 30-minute screencast bottomed out at 2.5 px/sec, i.e. 0.04px per frame, and
-// could not be trimmed precisely at all.
+// --- Zoom is a multiple of 'whole clip fits the viewport', so the ceiling comes from clip length: a flat 5x left a 30-minute recording untrimmable.
 
 /** Ceiling in pixels per second: ~6px per frame at 60fps, enough to aim at one. */
 export const MAX_PIXELS_PER_SECOND = 400;
@@ -105,8 +94,7 @@ export function rulerInterval(pixelsPerSecond: number): number {
 	return 1;
 }
 
-// Major ruler labels. Formatted through the shared clock so the ruler agrees
-// with the playhead standing on it, including in Frames mode.
+// Formatted through the shared clock so the ruler agrees with the playhead standing on it, Frames mode included.
 export function buildTimeMarkers(
 	duration: number,
 	pixelsPerSecond: number,
@@ -128,10 +116,7 @@ export function buildTimeMarkers(
 	return markers;
 }
 
-// Filled SVG envelope path for an audio waveform, built in output-pixel space
-// (each bucket at `xOf(bucketTime)`) so buckets inside a removed cut collapse
-// onto the seam. `range` clips to a kept window (in/out); null keeps everything.
-// `amp` is the peak half-height; `mid` is height/2.
+// Built in output-pixel space so buckets inside a removed cut collapse onto the seam; `range` clips to a kept window.
 export function buildWaveformPath(p: {
 	waveform: ReadonlyArray<number>;
 	duration: number;

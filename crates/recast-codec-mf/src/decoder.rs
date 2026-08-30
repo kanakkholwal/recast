@@ -67,8 +67,7 @@ impl VideoReader {
             let mut attributes = None;
             MFCreateAttributes(&mut attributes, 1)?;
             let attributes = attributes.ok_or(DecodeError::Unsupported)?;
-            // Lets the reader insert a converter, which is what makes asking
-            // for NV12 work whatever the file actually holds.
+            // Lets the reader insert a converter, which is what makes asking for NV12 work whatever the file holds.
             attributes.SetUINT32(&MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, 1)?;
             MFCreateSourceReaderFromURL(&HSTRING::from(path.as_os_str()), &attributes)?
         };
@@ -100,8 +99,7 @@ impl VideoReader {
             let duration = reader
                 .GetPresentationAttribute(MF_SOURCE_READER_MEDIASOURCE.0 as u32, &MF_PD_DURATION)
                 .ok()
-                // Media Foundation stores the duration unsigned, but the
-                // signed form is legal and some sources use it.
+                // Media Foundation stores the duration unsigned, but the signed form is legal and some sources use it.
                 .and_then(|value| match value.Anonymous.Anonymous.vt {
                     VT_UI8 => Some(value.Anonymous.Anonymous.Anonymous.uhVal as i64),
                     VT_I8 => Some(value.Anonymous.Anonymous.Anonymous.hVal),
@@ -145,8 +143,7 @@ impl VideoReader {
             if flags & MF_SOURCE_READERF_ENDOFSTREAM.0 as u32 != 0 {
                 return Ok(None);
             }
-            // The reader can renegotiate mid-file, and the size is what every
-            // caller sized its buffers from.
+            // The reader can renegotiate mid-file, and the size is what every caller sized its buffers from.
             if flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED.0 as u32 != 0 {
                 self.info = Self::read_info(&self.reader)?;
             }

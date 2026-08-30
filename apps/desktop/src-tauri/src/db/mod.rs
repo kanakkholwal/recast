@@ -50,8 +50,7 @@ impl Db {
             let _ = std::fs::create_dir_all(parent);
         }
         let conn = Connection::open(&path)?;
-        // WAL so readers (list_export_jobs) never block the worker's writes;
-        // NORMAL is durable enough under WAL; foreign_keys on for future tables.
+        // WAL so readers never block the worker's writes, NORMAL is durable enough under it, and foreign keys are on for later tables.
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;

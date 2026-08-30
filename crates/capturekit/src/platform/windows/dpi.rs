@@ -15,9 +15,7 @@ pub(crate) struct PhysicalPixels(DPI_AWARENESS_CONTEXT);
 
 impl PhysicalPixels {
     pub(crate) fn scope() -> Self {
-        // Null means the context was rejected, which is what Windows before
-        // 10 1607 does. Those builds predate per-monitor scaling anyway, so
-        // their logical points already are physical pixels.
+        // Null means the context was rejected, as Windows before 10 1607 does; those builds predate per-monitor scaling anyway.
         Self(unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) })
     }
 }

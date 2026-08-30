@@ -38,8 +38,7 @@ describe("progressValue", () => {
 	});
 
 	it("clamps an overshooting sampler past 100", () => {
-		// The scan's total is estimated from the container duration, which can
-		// undershoot the real frame count.
+		// The total is estimated from the container duration, which can undershoot the real frame count.
 		expect(progressValue(progress({ phase: "sampling", done: 28, total: 27 }))).toBe(100);
 	});
 });

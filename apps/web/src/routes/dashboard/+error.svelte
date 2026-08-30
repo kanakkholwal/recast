@@ -2,9 +2,7 @@
 import { page } from "$app/state";
 import SectionError from "$lib/components/SectionError.svelte";
 
-// Scoped boundary: a dashboard page's load error (or a streamed-promise
-// rejection) renders here — inside the dashboard shell — instead of
-// escalating to the root full-page error and losing the sidebar + header.
+// Scoped boundary: a page load error renders inside the dashboard shell rather than losing the sidebar and header.
 const status = $derived(page.status);
 const message = $derived(page.error?.message ?? "");
 </script>

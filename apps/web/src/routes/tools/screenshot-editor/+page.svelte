@@ -38,8 +38,7 @@ import {
 
 const jsonLd = $derived(buildEditorJsonLd(page.url.origin));
 
-// Stated once, on the rule under the hero. The old page also had a hero pill,
-// a three-up privacy panel and a line in the CTA saying the same thing.
+// Stated once, on the rule under the hero: the old page repeated it in a pill, a panel and the CTA.
 const heroFacts = [
 	{ icon: WifiOff, label: "Runs offline" },
 	{ icon: ShieldCheck, label: "Nothing is uploaded" },
@@ -348,8 +347,7 @@ const steps = [
 </main>
 
 <style>
-	/* Illustration only: a literal rendering of a bare, unstyled screenshot, so
-	   the colours are fixed by design and do not follow the app theme. */
+	/* Illustration only: a literal bare screenshot, so these colours are fixed by design and don't follow the theme. */
 	.shot {
 		display: flex;
 		flex-direction: column;

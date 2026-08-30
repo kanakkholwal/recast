@@ -3,8 +3,7 @@ import { emailField, isValidEmail, normalizeEmail } from "./email";
 
 describe("normalizeEmail", () => {
 	it("produces the canonical stored form", () => {
-		// share_member.email and user.email are both written normalized, so
-		// allowlist lookups only match if input is normalized the same way.
+		// Both columns are written normalized, so an allowlist lookup only matches input normalized the same way.
 		expect(normalizeEmail("  Kanak@Example.COM ")).toBe("kanak@example.com");
 	});
 });
@@ -25,8 +24,7 @@ describe("isValidEmail", () => {
 	});
 
 	it("rejects the malformed cases the old hand-rolled regex let through", () => {
-		// Each of these passed /^[^\s@]+@[^\s@]+\.[^\s@]+$/ and would have been
-		// written to the DB as a permanently unreachable address.
+		// Each of these passed the old naive regex and would have been written to the DB as a permanently unreachable address.
 		for (const a of [
 			"a@b..com",
 			"a@-example.com",

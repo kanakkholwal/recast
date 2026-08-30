@@ -79,8 +79,7 @@ async function loadSuggestions() {
 					options: SENSITIVITY_PRESETS[sensitivity],
 				})
 			: [];
-		// Drop anything already removed by a cut, or previously dismissed,
-		// then surface the strongest candidates first.
+		// Drop anything already cut or previously dismissed, then surface the strongest candidates first.
 		pending = result
 			.filter(
 				(s) =>
@@ -96,8 +95,7 @@ async function loadSuggestions() {
 	}
 }
 
-// Zoom regions and annotations a cut must not bisect: splitting one would
-// need overlay-time surgery the MVP intentionally avoids.
+// Zoom regions and annotations a cut must not bisect: splitting one needs overlay-time surgery the MVP avoids.
 const blockers = $derived.by(() => [
 	...store.zoomRegions.map((z) => ({ start: z.start, end: z.end })),
 	...store.annotations.map((a) => ({ start: a.start, end: a.end })),

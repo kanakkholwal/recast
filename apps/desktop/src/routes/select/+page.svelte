@@ -41,8 +41,7 @@ let isFetching = $state(true);
 let pickerError = $state<string | null>(null);
 // Last region remembered between sessions (loaded from config).
 let lastRegion = $state<TargetSource | null>(null);
-// Filter for the screens/windows lists; reset when the tab changes so a stale
-// query never hides everything on the next tab.
+// Reset when the tab changes, so a stale query never hides everything on the next tab.
 let query = $state("");
 $effect(() => {
 	void tab;
@@ -52,9 +51,7 @@ $effect(() => {
 onMount(() => {
 	fetchSources();
 
-	// Open on the tab the caller asked for (home mode tiles pass ?tab=window,
-	// ?tab=region&autostart=1, etc.), and jump straight into the area drag when
-	// the region intent asked to autostart.
+	// Open on the tab the caller asked for, jumping straight into the area drag when the region intent set autostart.
 	const wantTab = page.url.searchParams.get("tab");
 	if (wantTab === "monitor" || wantTab === "window" || wantTab === "region") {
 		tab = wantTab;

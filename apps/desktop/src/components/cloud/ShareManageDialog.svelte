@@ -37,8 +37,7 @@ let save = $state<() => Promise<boolean>>(async () => true);
 let saving = $state(false);
 let loading = $state(true);
 let deleting = $state(false);
-// Deleting the cloud copy revokes a link other people may already hold, so
-// it asks first — like every other destructive action in the app.
+// Deleting the cloud copy revokes a link other people may hold, so it asks first, like every destructive action.
 let confirmDelete = $state(false);
 
 async function onSave() {

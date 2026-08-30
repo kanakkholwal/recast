@@ -320,8 +320,7 @@ pub(crate) fn planes_of<'a>(frame: &SourcePlanes<'a>) -> Result<Vec<Plane<'a>>, 
                 got: plane.stride,
             });
         }
-        // The last row needs only its own width, not a whole stride, which is
-        // exactly what a tightly packed buffer gives.
+        // The last row needs only its own width, not a whole stride, which is what a tightly packed buffer gives.
         let need = plane.stride as usize * (h as usize - 1) + row as usize;
         if plane.bytes.len() < need {
             return Err(YuvError::ShortPlane {
@@ -549,8 +548,7 @@ mod tests {
             )),
             Err(YuvError::ShortPlane { index: 0, .. })
         ));
-        // Luma fits, chroma does not, which is the case a length check on the
-        // whole buffer would still catch but a per-plane one has to attribute.
+        // Luma fits and chroma does not: a whole-buffer length check would catch it, but a per-plane one must attribute it.
         let half_chroma = vec![0u8; 20];
         assert!(matches!(
             planes_of(&frame(
@@ -607,8 +605,7 @@ mod tests {
     /// must not be required to carry the padding it does not have.
     #[test]
     fn a_padded_plane_needs_stride_times_rows_minus_one_plus_a_row() {
-        // Stride 6 over a 4-wide plane, so the padding is real and the last row
-        // is the only one that does not carry it.
+        // Stride 6 over a 4-wide plane, so the padding is real and the last row is the only one without it.
         let luma = vec![0u8; 6 * 5 + 4];
         let chroma = vec![0u8; 6 * 2 + 4];
         let planes = [

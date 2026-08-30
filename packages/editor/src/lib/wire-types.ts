@@ -359,8 +359,7 @@ export interface ExtCaptionPresetContribution {
 	outlineWidth: number;
 	outlineColor: string;
 	maxLines: number;
-	// New pill/highlight fields, optional so packs authored before them still
-	// load (the registry mapping fills defaults from DEFAULT_CAPTION_STYLE).
+	// Optional so packs authored before them still load; the registry mapping fills defaults from DEFAULT_CAPTION_STYLE.
 	mutedColor?: string;
 	boxPaddingXEm?: number;
 	boxPaddingYEm?: number;

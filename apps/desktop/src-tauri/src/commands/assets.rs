@@ -222,8 +222,7 @@ pub async fn ensure_assets_installed(
         ..Default::default()
     };
 
-    // Thumbs first — tiny, finish quickly, unblock the picker UI before the
-    // multi-megabyte full-res downloads run.
+    // Thumbs first: they are tiny and unblock the picker UI before the multi-megabyte full-res downloads run.
     for entry in manifest.assets.iter() {
         if let (Some(thumb_name), Some(thumb_url), Some(thumb_hash)) = (
             entry.thumb_filename.as_ref(),
@@ -252,8 +251,7 @@ pub async fn ensure_assets_installed(
         }
     }
 
-    // Persist the resolved manifest so subsequent launches can hydrate from
-    // disk without a network round-trip.
+    // Persist the resolved manifest so later launches hydrate from disk without a network round-trip.
     let lock_path = dir.join("manifest.lock.json");
     if let Ok(json) = serde_json::to_vec_pretty(&manifest) {
         let _ = crate::commands::system::write_replace_async(&lock_path, &json).await;

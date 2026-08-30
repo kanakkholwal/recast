@@ -56,9 +56,7 @@ type TabType = {
 	hint: string;
 };
 
-// Clip/Zoom/Markup are selection-driven (the effects below force the panel to
-// them when you select on the timeline), so a clip with no button would strand
-// the panel; every id here has a rail button.
+// Clip, Zoom and Markup are selection-driven, so every id here needs a rail button or the panel strands.
 const TABS: TabType[] = [
 	{
 		id: "canvas",
@@ -90,14 +88,7 @@ const TABS: TabType[] = [
 		group: "composition",
 		hint: "Volume and mute.",
 	},
-	// TODO: re-enable when we have a music panel. The audio panel is enough for now.
-	// {
-	// 	id: "music",
-	// 	label: "Music",
-	// 	icon: AudioLines,
-	// 	group: "composition",
-	// 	hint: "Background music and voiceover.",
-	// },
+	// TODO: re-add a music tab; the audio panel covers it for now.
 	{
 		id: "captions",
 		label: "Captions",
@@ -171,8 +162,7 @@ const groupedTabs = $derived(
 	GROUP_ORDER.map((g) => visibleTabs.filter((t) => t.group === g)).filter((g) => g.length > 0),
 );
 
-// A host that drops the active section (or a stale persisted one) would leave
-// the rail with nothing selected and the body blank.
+// A host that drops the active section would leave the rail with nothing selected and the body blank.
 $effect(() => {
 	const tabs = visibleTabs;
 	untrack(() => {

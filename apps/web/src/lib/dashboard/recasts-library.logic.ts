@@ -46,8 +46,7 @@ export function filterAndSortRecasts(items: Recast[], f: RecastFilter): Recast[]
 	});
 }
 
-// Only react to external FILE drags — internal card→folder drags carry
-// "text/recast-id", so they never trip the upload overlay.
+// Only external FILE drags: internal card-to-folder drags carry their own type and never trip the upload overlay.
 export function isFileDrag(e: DragEvent): boolean {
 	return Array.from(e.dataTransfer?.types ?? []).includes("Files");
 }

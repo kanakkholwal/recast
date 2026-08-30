@@ -54,8 +54,7 @@ function getDpr(): number {
 	return window.devicePixelRatio || 1;
 }
 
-// Thin wrappers over the pure geometry: bind the canvas dims + store to the
-// shared projections so call sites stay two-arg.
+// Thin wrappers binding canvas dims and the store to the shared projections, so call sites stay two-arg.
 function videoRectPx(): { x: number; y: number; w: number; h: number } {
 	if (!canvasEl) return { x: 0, y: 0, w: 0, h: 0 };
 	return videoRectPxPure(canvasEl.width, canvasEl.height, store.metadata, store.padding);
@@ -265,16 +264,14 @@ onDestroy(() => {
 	resizeObserver?.disconnect();
 });
 
-// The RAF loop already reads the store each frame; touching these keeps the
-// Svelte 5 effect graph wired.
+// The rAF loop already reads the store each frame; touching these keeps the effect graph wired.
 $effect(() => {
 	void store.selectedZoomRegionId;
 	void store.zoomRegions;
 	void store.padding;
 });
 
-// Off the Focus tab the overlay hides and stops swallowing pointer events so
-// clicks reach the AnnotationOverlay / preview underneath.
+// Off the Focus tab the overlay hides and stops swallowing pointer events, so clicks reach the layers beneath.
 const isActive = $derived(store.activePanel === "focus" && store.selectedZoomRegionId !== null);
 </script>
 

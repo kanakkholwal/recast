@@ -56,8 +56,7 @@ impl Session {
     /// Rebuilds the evaluator, because a scene edit can move the time map and
     /// the canvas geometry. Cheap: no GPU resources are touched.
     pub fn set_scene(&mut self, mut scene: Scene) {
-        // The pointer path and the transcript arrive on their own channels, so a
-        // scene edit that does not carry them must not drop what is loaded.
+        // The pointer path and transcript arrive on their own channels, so a scene edit without them must not drop what is loaded.
         if scene.cursor_track.is_none() {
             scene.cursor_track = self.scene.cursor_track.take();
         }
@@ -84,9 +83,7 @@ impl Session {
     /// the style's own family.
     pub fn set_caption_font(&mut self, data: Vec<u8>, index: u32) -> bool {
         let Some(face) = FontFace::from_bytes(std::sync::Arc::new(data), index) else {
-            // Bytes we cannot read leave the working face alone. On wasm32 there
-            // is no resolution to fall back on, so dropping it would turn
-            // captions off for the rest of the session.
+            // Unreadable bytes leave the working face alone: on wasm32 there is no fallback, so dropping it would kill captions for the session.
             return false;
         };
         self.caption_face = Some(CaptionFace::Host(face));
@@ -631,8 +628,7 @@ mod tests {
         assert!(session.set_caption_font(bytes, 0));
         let after = session.caption_frame(1.2);
         assert_eq!(after.glyphs.len(), before.glyphs.len());
-        // Bytes we cannot read are refused. That they leave the working face in
-        // place only shows on wasm32, where nothing re-resolves behind it.
+        // Unreadable bytes are refused, and leaving the working face in place only shows on wasm32, where nothing re-resolves.
         assert!(!session.set_caption_font(vec![0, 1, 2, 3], 0));
     }
 

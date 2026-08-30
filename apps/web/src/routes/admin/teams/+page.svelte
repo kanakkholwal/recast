@@ -10,8 +10,7 @@ import InlineError from "$lib/components/InlineError.svelte";
 
 let { data } = $props();
 
-// Client-side filtering — the list is capped at 200 rows and streamed whole,
-// so filtering in the browser is instant (no round-trip, no debounce).
+// The list is capped at 200 rows and streamed whole, so browser filtering is instant with no round-trip.
 let q = $state("");
 let planFilter = $state("all");
 const PLAN_LABEL: Record<string, string> = {

@@ -70,8 +70,7 @@ pub(crate) async fn ensure_caption_font_file(
     family: &str,
     weight: u32,
 ) -> Result<PathBuf, String> {
-    // A per-family dir keeps `fontsdir` tiny — libass scans everything in it, so
-    // pointing at one shared dir with many fonts would slow font matching.
+    // A per-family dir keeps `fontsdir` tiny: libass scans everything in it, so one shared dir would slow matching.
     let safe: String = family
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
@@ -167,8 +166,7 @@ mod tests {
 
     #[test]
     fn extract_font_url_skips_other_extensions_to_the_requested_one() {
-        // A css2 body can carry several formats; the picker must match on `ext`,
-        // not just take the first url().
+        // A css2 body can carry several formats, so the picker must match on `ext` rather than take the first url().
         let css = "src: url(https://x/a.woff2) format('woff2'), \
                    url(https://x/a.ttf) format('truetype');";
         assert_eq!(

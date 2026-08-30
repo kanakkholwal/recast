@@ -54,9 +54,7 @@ fn detect_gpu() -> GpuInfo {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        // Only claim a GPU we can prove. `nvidia-smi` confirms CUDA; otherwise
-        // report CPU mode (a discrete/integrated GPU may exist but we can't rely
-        // on an ASR-capable accelerated backend without more native probing).
+        // Only claim a GPU we can prove: `nvidia-smi` confirms CUDA, and anything else reports CPU without more native probing.
         match nvidia_name() {
             Some(name) => GpuInfo {
                 available: true,

@@ -7,8 +7,7 @@ import { desktopConsent } from "$lib/stores/consent.svelte";
 
 let { onclose }: { onclose: () => void } = $props();
 
-// Mirror the store into local reactive state so the switches feel instant;
-// commit on "Continue".
+// Mirrored into local state so the switches feel instant; committed on Continue.
 let product = $state(desktopConsent.product);
 let errors = $state(desktopConsent.errors);
 

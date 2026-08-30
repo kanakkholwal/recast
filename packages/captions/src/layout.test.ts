@@ -47,8 +47,7 @@ describe("captionTopFrac", () => {
 	});
 
 	it("keeps the whole Offset range live on a full-bleed video (no dead clamp)", () => {
-		// Full-bleed video: bottom edge == frame bottom. Baseline anchors at the
-		// frame edge, so positive Offset still lifts the caption up visibly.
+		// Full-bleed video: the baseline anchors at the frame edge, so a positive Offset still lifts the caption visibly.
 		const full = { top: 0, bottom: 1 };
 		const base = captionTopFrac("bottom", 0, cap, full)!;
 		const lifted = captionTopFrac("bottom", 8, cap, full)!;

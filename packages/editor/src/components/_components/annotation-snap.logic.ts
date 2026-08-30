@@ -1,6 +1,4 @@
-// Snap-anchor construction shared by the 2D annotation overlay and the HTML
-// text layer. Both build the same frame-edge + per-annotation box anchor set,
-// so they MUST stay in one place or the two surfaces snap to different guides.
+// Shared by the 2D overlay and the HTML text layer: one place, or the two surfaces snap to different guides.
 
 import { FRAME_ANCHORS, type SnapAnchor } from "../../lib/annotations/snap";
 import { normaliseBox } from "../../lib/annotations/uv";

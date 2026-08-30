@@ -81,8 +81,7 @@ function applyPreset(preset: FadePreset) {
 	store.updateAudioSettings({ fadeIn: preset.in, fadeOut: preset.out });
 }
 
-// Matching preset drives the Segmented selection; a custom slider value
-// leaves nothing selected.
+// A matching preset drives the Segmented selection; a custom slider value leaves nothing selected.
 const activePreset = $derived(activePresetLabel(store.audioSettings));
 const fadePresetOptions = $derived([
 	...FADE_PRESETS.map((p) => ({ value: p.label, label: p.label })),
@@ -94,10 +93,7 @@ const envelopePath = (fadeIn: number, fadeOut: number): string =>
 	envelopePathBase(fadeIn, fadeOut, store.clipDuration || 1);
 const formatClipDuration = (): string => clock(store.clipDuration || 0);
 
-// Per-source gain only reaches the export when the source is a SEPARATE track:
-// `effective_audio_gain` (commands/editor.rs) ignores system/mic gain for
-// muxed `AudioKind::Source` audio. Showing sliders for a track that doesn't
-// exist meant setting mic gain to 180% on a recording with no mic.
+// Per-source gain only reaches the export for a SEPARATE track, so a slider for an absent track let mic gain be set on a recording with no mic.
 const hasSystemTrack = $derived(Boolean(store.audioPath));
 const hasMicTrack = $derived(Boolean(store.microphonePath));
 

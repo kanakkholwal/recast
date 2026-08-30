@@ -51,9 +51,7 @@ pub fn save_autosave(project_path: &Path, edits_json: &str) -> Result<()> {
     let save_path = dir.join(&filename);
     let temp_path = dir.join(format!("{filename}.tmp"));
 
-    // Atomic write: temp file → fsync → rename. `fs::rename` replaces the old
-    // file in one step; deleting it first would leave a window with no
-    // recoverable state at all, which defeats the point of crash recovery.
+    // Temp, fsync, rename: `fs::rename` replaces in one step, while deleting first leaves a window with no recoverable state.
     {
         let mut file = fs::File::create(&temp_path)?;
         file.write_all(serde_json::to_string_pretty(&state)?.as_bytes())?;

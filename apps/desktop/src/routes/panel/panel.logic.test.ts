@@ -350,8 +350,7 @@ describe("deviceOutcome", () => {
 		expect([outcome.on, outcome.warning]).toEqual([false, null]);
 	});
 
-	/// The panel tears the camera preview down differently for the two, so the
-	/// distinction has to survive.
+	// The panel tears the camera preview down differently for the two, so the distinction has to survive.
 	it("keeps missing and none distinguishable", () => {
 		const missing = deviceOutcome({ kind: "missing", requestedLabel: "X" }, "P", "camera", name);
 		const none = deviceOutcome({ kind: "none" }, "P", "camera", name);

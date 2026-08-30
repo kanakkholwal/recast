@@ -5,8 +5,7 @@ import { Kbd } from "@recast/ui/kbd";
 import { cn } from "@recast/ui/utils";
 import { commandPalette } from "$lib/stores/command-palette.svelte";
 
-// Trigger-only; the dialog and ⌘K binding live in CommandPaletteHost
-// (mounted at the root layout, so it works on sidebar-less routes).
+// Trigger only: the dialog and its chord live in CommandPaletteHost at the root layout, so sidebar-less routes work.
 let { iconOnly } = $props<{ iconOnly?: boolean }>();
 </script>
 

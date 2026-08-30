@@ -102,6 +102,8 @@ function scan(file, text) {
 	while ((m = re.exec(text)) !== null) {
 		if (m[0].startsWith("/**") || !m[0].includes("\n")) continue;
 		if (DIRECTIVE.test(m[0])) continue;
+		// A comment opens at line start or after an operator; a glob inside a string swallowed real code.
+		if (!/(^|[\s({[,=;:>])$/.test(text.slice(Math.max(0, m.index - 1), m.index))) continue;
 		const line = text.slice(0, m.index).split(/\r?\n/).length;
 		const span = m[0].split(/\r?\n/).length;
 		out.push({ line, endLine: line + span - 1, kind: `${span}-line /* */ block` });

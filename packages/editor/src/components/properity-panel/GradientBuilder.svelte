@@ -31,17 +31,14 @@ interface Props {
 
 let { store, recents, onRememberColor }: Props = $props();
 
-// Local editing draft so dragging a stop doesn't round-trip through the store
-// every pointer-move; streamed back via setBackgroundLive (coalesced undo). It
-// serialises to the same CSS string both renderers (preview + Rust export) parse.
+// A local draft so dragging a stop doesn't round-trip the store per pointer-move; it serialises to the CSS both renderers parse.
 let gradientDraft = $derived<GradientSpec>(
 	parseGradient(store.backgroundType === "gradient" ? store.backgroundValue : DEFAULT_GRADIENT),
 );
 let selectedStop = $state(0);
 let gradientBarEl = $state<HTMLDivElement | null>(null);
 
-// Reconcile the draft on outside changes (undo/redo, preset click). The
-// serialise-compare stops our own live edits from bouncing back into the drag.
+// Reconcile on outside changes; the serialise-compare stops our own live edits bouncing back into the drag.
 $effect(() => {
 	if (store.backgroundType !== "gradient") return;
 	const current = store.backgroundValue;
@@ -53,8 +50,7 @@ $effect(() => {
 
 const gradientCss = $derived(serializeGradient(gradientDraft));
 
-// Live commit (drag gestures) → single coalesced undo entry. Discrete edits
-// (add/remove stop) pass `live=false` for a clean, individually-undoable step.
+// Drag gestures coalesce into one undo entry; discrete edits pass `live=false` for an individually-undoable step.
 function commitGradient(next: GradientSpec, live = true) {
 	gradientDraft = next;
 	const value = serializeGradient(next);
@@ -98,8 +94,7 @@ function removeStop(i: number) {
 	selectedStop = Math.min(selectedStop, stops.length - 1);
 }
 
-// Drag a stop handle along the bar. Streams position live; the whole drag
-// coalesces to one undo entry via `setBackgroundLive`.
+// Streams position live; the whole drag coalesces to one undo entry via `setBackgroundLive`.
 function startStopDrag(e: PointerEvent, i: number) {
 	e.preventDefault();
 	selectedStop = i;

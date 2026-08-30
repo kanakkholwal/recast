@@ -17,8 +17,7 @@ const releases = $derived(data.releases);
 let selected = $state(0);
 const current = $derived(releases[selected] ?? releases[0]);
 
-// Deep links: /changelog#v0.3.1 opens that release, and selecting one updates
-// the hash so the URL is shareable.
+// A hash deep-links to a release, and selecting one updates the hash so the URL stays shareable.
 $effect(() => {
 	const tag = decodeURIComponent(location.hash.replace(/^#/, ""));
 	if (!tag) return;

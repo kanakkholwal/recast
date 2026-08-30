@@ -1,11 +1,4 @@
-// Shared reduced-motion signal for the web app.
-//
-// Svelte's `transition:`/`in:`/`out:` directives run through the Web Animations
-// API, which the global `@media (prefers-reduced-motion: reduce)` override in
-// app.css cannot reach. Any mount/scroll transition that should honour the
-// user's motion preference has to gate on this in JS. Init is eager at module
-// load (not lazy inside the getter) so reads stay side-effect-free and safe to
-// call from a `$derived`.
+// Svelte transitions run through WAAPI, which the CSS reduced-motion override can't reach, so gate on this in JS; init is eager so reads stay side-effect-free.
 let reduced = $state(false);
 
 if (typeof window !== "undefined" && typeof window.matchMedia === "function") {

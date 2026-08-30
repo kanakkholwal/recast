@@ -1,15 +1,5 @@
 #!/usr/bin/env node
-// Cross-platform dispatcher for the local development setup.
-//
-// This is a convenience wrapper for re-runs once Node.js is already
-// installed. On a brand-new machine (no Node yet), run the OS-specific
-// bootstrap script directly instead:
-//
-//   Windows:        powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
-//   macOS / Linux:  bash scripts/setup.sh
-//
-// Any arguments are forwarded to the underlying script, e.g.
-//   pnpm setup:ffmpeg -- --skip-build
+// Convenience wrapper for re-runs once Node exists; on a fresh machine run scripts/setup.ps1 or scripts/setup.sh directly. Args are forwarded.
 
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";

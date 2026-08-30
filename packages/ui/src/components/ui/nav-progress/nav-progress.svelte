@@ -38,10 +38,7 @@ const progress = new Tween(0, { duration: () => duration, easing: cubicOut });
 
 let visible = $state(false);
 let trickleInterval: ReturnType<typeof setInterval> | null = null;
-// Bumped on every effect run. Deferred completion work (the `.then` and
-// `setTimeout` below) captures the value at schedule time and bails if a
-// newer navigation has started — otherwise stale callbacks can hide the
-// bar mid-way through a chained navigation.
+// Deferred completion work captures this at schedule time and bails on a newer navigation, or a stale callback hides the bar mid-way.
 let navGeneration = 0;
 
 function startTrickle() {

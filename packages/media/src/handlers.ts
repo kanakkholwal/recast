@@ -177,9 +177,7 @@ const videoToGif: ConvertHandler = async (job, ctx) => {
 		if (!track) throw new ConvertError("bad-input", "No video track found.");
 		const duration = await input.computeDuration();
 		const frameCount = Math.max(1, Math.floor(duration * fps));
-		// Only a width is set, so height follows the source aspect ratio and no
-		// `fit` mode applies. Resolution is the lever that matters here: a GIF
-		// scaled up from 480px is what reads as "pixelated".
+		// Only a width is set, so height follows the source aspect; resolution is the lever, since a GIF scaled up from 480px reads as pixelated.
 		const sink = new CanvasSink(track, { width, fit: "contain" });
 		const gif = createGifWriter({ maxColors: colors, dither: job.options.gifDither !== false });
 		const delayMs = 1000 / fps;

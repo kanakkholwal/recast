@@ -46,11 +46,7 @@ export function captionTopFrac(
 	video: Pick<VideoRect, "top" | "bottom">,
 ): number | null {
 	if (position === "center") return null;
-	// Signed: positive Offset moves the caption INWARD over the video, negative
-	// tucks it OUTWARD into the padding. The baseline is the on-frame edge (the
-	// video edge, or the frame edge for a full-bleed video), so every slider value
-	// is live — anchoring on the raw video edge left the whole positive range
-	// dead-clamped whenever the video reached the frame edge.
+	// Signed against the on-frame edge, so every slider value is live; anchoring on the raw video edge dead-clamped the positive range at full bleed.
 	const offset = offsetPct / 100;
 	const cap = Math.max(0, Math.min(MAX_CAP_FRAC, capFrac));
 	const maxTop = Math.max(0, 1 - cap);

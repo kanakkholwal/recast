@@ -71,8 +71,7 @@ function createAgentSession() {
 			}
 			store.pushUndoState();
 			store.loadRenderState(incoming);
-			// The store now matches disk exactly, so it is by definition clean.
-			// Without this the 30s autosave would write our own adopt back out.
+			// The store matches disk exactly, so it is clean by definition; otherwise autosave writes our own adopt back out.
 			store.markSaved(Date.now());
 		} finally {
 			reconciling = false;
@@ -114,8 +113,7 @@ function createAgentSession() {
 					session = event.session;
 					return;
 				}
-				// A branch change touches the journal, never the project, so
-				// reconciling on it would pull the state we already have.
+				// A branch change touches the journal, never the project, so reconciling on it would pull state we already have.
 				if (event.type !== "state-changed") return;
 				if (event.projectPath !== opts.projectPath) return;
 				if (event.summary) note(event.summary);
@@ -129,8 +127,7 @@ function createAgentSession() {
 				try {
 					session = await driver.getSession();
 				} catch {
-					// A backend that can't answer leaves us idle rather than blocking
-					// the editor behind a lock we can't see.
+					// A backend that can't answer leaves us idle rather than blocking the editor behind a lock we can't see.
 				}
 			})();
 

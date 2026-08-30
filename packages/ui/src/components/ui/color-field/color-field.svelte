@@ -50,10 +50,7 @@ const HEX_REGEX = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 		class: className,
 	}: ColorFieldProps = $props();
 
-	// Row affordance matches <SliderControl> in geometry, typography, and
-	// state. The hex text is its own affordance — hovering it for 800ms
-	// reveals an editable pill (DialKit's hover-to-type pattern). Clicking
-	// the swatch (or any non-hex region) opens the full picker popover.
+	// Matches <SliderControl> in geometry and state: hovering the hex reveals an editable pill, and the swatch opens the picker.
 
 	const HOVER_REVEAL_MS = 800;
 

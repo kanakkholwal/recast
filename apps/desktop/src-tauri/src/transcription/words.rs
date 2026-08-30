@@ -198,12 +198,7 @@ pub(crate) fn fill_segment_words(segments: &mut [TranscriptSegment]) {
     }
 }
 
-// - Engine result mapping -
-//
-// Both engines feed captions the same way: the ggml engine and the remote path
-// each reduce their reply to these plain (ms) structs and call `build_segments`,
-// so on-device and remote captions come out identical. Plain structs also let the
-// mapping be unit-tested without a model or a network call.
+// --- Engine result mapping: both engines reduce their reply to these plain ms structs and call `build_segments`, so on-device and remote captions come out identical and unit-testable.
 
 /// A segment row, reduced to what caption mapping needs (used only when a reply
 /// carries no per-word timing). Times in ms.
@@ -240,9 +235,7 @@ pub(crate) fn build_segments(
     segs: &[RawSeg],
     words: &[RawWord],
 ) -> Vec<TranscriptSegment> {
-    // 1. Prefer real word timing over the model's own segmentation. A model that
-    //    returns the whole utterance as one segment (Parakeet) must not become a
-    //    single caption line when it carried per-word times.
+    // Prefer real word timing over the model's segmentation: a model returning one segment must not become one caption line.
     let flat: Vec<TranscriptWord> = words
         .iter()
         .filter_map(|w| {
@@ -426,8 +419,7 @@ mod tests {
 
     #[test]
     fn build_prefers_real_word_timing_over_model_segmentation() {
-        // Parakeet-style: ONE segment covering the whole clip, but real per-word
-        // times. Words must win so it becomes word-timed lines, not one blob line.
+        // Parakeet-style: one segment covering the clip but real per-word times, so words must win over the blob line.
         let words = vec![
             rw(0, 300, "hello"),
             rw(300, 600, "world."),

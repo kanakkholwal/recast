@@ -156,8 +156,7 @@ mod tests {
 
     #[test]
     fn ticks_convert_at_a_frequency_that_does_not_divide_evenly() {
-        // 3 579 545 Hz, an awkward frequency chosen so seconds and remainder
-        // both contribute.
+        // An awkward frequency chosen so both the seconds and the remainder contribute.
         let t = Timestamp::from_ticks(3_579_545 * 2 + 1, 3_579_545);
         assert_eq!(t.as_nanos(), 2_000_000_279);
     }

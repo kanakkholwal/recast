@@ -18,8 +18,7 @@ export function deviceFromUA(ua: string | null | undefined): DeviceClass {
 	if (!ua) return "desktop";
 	const s = ua.toLowerCase();
 
-	// Tablets first — iPad reports "Macintosh" on iPadOS 13+, so also catch the
-	// touch-Mac signal; Android tablets are "Android" WITHOUT "mobile".
+	// Tablets first: iPadOS 13+ reports Macintosh, so catch the touch-Mac signal, and Android tablets lack 'mobile'.
 	if (
 		/ipad|tablet|kindle|silk|playbook/.test(s) ||
 		(/android/.test(s) && !/mobile/.test(s)) ||
@@ -52,8 +51,7 @@ export function referrerHost(
 		if (url.protocol !== "http:" && url.protocol !== "https:") return null;
 		const host = url.hostname.toLowerCase().replace(/^www\./, "");
 		if (!host) return null;
-		// Drop self-referrals (in-app navigation, the share page reloading itself)
-		// — they aren't an acquisition source.
+		// Drop self-referrals (in-app navigation, the page reloading itself): they aren't an acquisition source.
 		if (selfOrigin) {
 			try {
 				const selfHost = new URL(selfOrigin).hostname.toLowerCase().replace(/^www\./, "");

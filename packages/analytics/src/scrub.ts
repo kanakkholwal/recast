@@ -42,8 +42,7 @@ export function redact(input: string): string {
 
 /** Stable, low-cardinality fingerprint so the same error groups together. */
 function fingerprint(name: string, message: string): string {
-	// Normalize volatile bits (numbers, the redaction tokens) out of the message
-	// so "failed after 1234ms" and "failed after 5678ms" share a fingerprint.
+	// Normalize volatile bits out of the message, so 'failed after 1234ms' and 'failed after 5678ms' share a fingerprint.
 	const normalized = `${name}:${message}`
 		.replace(/\d+/g, "#")
 		.replace(/<[a-z]+>/g, "#")

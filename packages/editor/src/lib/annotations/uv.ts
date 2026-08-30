@@ -1,5 +1,4 @@
-// Pure UV ↔ canvas geometry shared by the 2D annotation overlay and the HTML
-// text layer. Both MUST use the same math or they drift when zoom/padding change.
+// Pure UV and canvas geometry shared by the 2D overlay and the HTML text layer, or they drift as zoom and padding change.
 
 import { canvasToUV, normaliseBox, type Rect, uvToCanvas } from "@recast/render";
 import {
@@ -10,8 +9,7 @@ import {
 import { computeCanvasGeometry } from "../canvas-geometry";
 import { evalZoom, type ZoomRegionLike } from "./eval";
 
-// The pure projection (Rect, uvToCanvas, canvasToUV, normaliseBox) now lives in
-// @recast/render; re-exported so existing importers of `./uv` keep one site.
+// The pure projection lives in @recast/render; re-exported so existing importers of `./uv` keep one site.
 export { canvasToUV, normaliseBox, type Rect, uvToCanvas };
 
 /** Composition (frame + padding) width in source pixels. */

@@ -14,8 +14,7 @@
 
 import { tryGetEditorServices } from "./editor/services";
 
-// Null on a host with no on-device store: every install/cache path no-ops and
-// the UI keeps its remote URLs.
+// Null on a host with no on-device store: every install and cache path no-ops and the UI keeps its remote URLs.
 const assetService = () => tryGetEditorServices()?.assets ?? null;
 
 import { assetsStore } from "../stores/assets-store.svelte";

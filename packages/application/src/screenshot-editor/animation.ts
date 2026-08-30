@@ -1,8 +1,4 @@
-// Keyframe animation engine ported from the reference app: a preset is a set of
-// tracks, each track a list of keyframes over time; playback interpolates the
-// animatable properties at any moment and the stage applies them as a live CSS
-// transform + opacity. The same interpolation drives the video export, so the
-// clip matches the preview exactly.
+// A preset is tracks of keyframes over time; playback interpolates the animatable properties, and the video export uses the same interpolation.
 
 export type Easing =
 	| "linear"

@@ -38,8 +38,7 @@ async function newestSourceTime(dir) {
 		return newest;
 	}
 	for (const entry of entries) {
-		// `target` is where cargo writes; walking it costs seconds and tells us
-		// nothing about whether the inputs moved.
+		// `target` is where cargo writes: walking it costs seconds and says nothing about whether the inputs moved.
 		if (entry.name === "target" || entry.name === ".git") continue;
 		const path = join(dir, entry.name);
 		if (entry.isDirectory()) {

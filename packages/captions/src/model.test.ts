@@ -104,9 +104,7 @@ describe("pillBox", () => {
 
 describe("VTT karaoke parsing", () => {
 	it("parses word timings out of a cue body", () => {
-		// Literal, not round-tripped through a TS serializer: Rust writes the VTT
-		// (`transcription/subtitles.rs to_vtt`), so this pins the parser against
-		// the real wire format rather than against our own encoder.
+		// Literal, not round-tripped: Rust writes the VTT, so this pins the parser against the real wire format.
 		const body = "<00:00:04.120>but <00:00:04.380>it's <00:00:04.600>a";
 		const parsed = parseKaraokeCue(body, 4.12, 5.0);
 		expect(parsed.map((p) => p.text)).toEqual(["but", "it's", "a"]);

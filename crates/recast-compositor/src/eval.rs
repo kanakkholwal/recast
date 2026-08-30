@@ -926,8 +926,7 @@ mod tests {
         );
         let ev = Evaluator::new(&scene, source());
         let step = 1.0 / 60.0;
-        // A ramp covers 1.0 of scale in 0.5s, so a single 60 fps frame can move
-        // it by about 0.06. Anything past that is a jump, not a ramp.
+        // A ramp covers 1.0 of scale in 0.5s, so one 60 fps frame moves it about 0.06; more than that is a jump.
         let budget = 0.08;
         let mut previous: Option<f32> = None;
         let mut t = 0.5;

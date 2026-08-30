@@ -148,8 +148,7 @@ pub fn follow_placement(
         dy = 0.0;
     }
 
-    // Redundant with `bubble_rect`'s own canvas clamp, kept because this
-    // function mirrors `applyZoomFollow` and the preview clamps here too.
+    // Redundant with `bubble_rect`'s own clamp, kept because this mirrors `applyZoomFollow`, which clamps here too.
     CameraPlacement {
         x: (bcx + dx - width / 2.0).clamp(0.0, 1.0 - width),
         y: (bcy + dy - height / 2.0).clamp(0.0, 1.0 - height),

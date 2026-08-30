@@ -78,9 +78,7 @@ impl OcrEngine for OcrsEngine {
             .prepare_input(source)
             .map_err(|e| format!("prepare input: {e}"))?;
 
-        // The documented four-step pipeline: detect word boxes, group them into
-        // lines in reading order, then recognize. `get_text()` would discard the
-        // geometry we need for structured output.
+        // Detect boxes, group into reading-order lines, then recognize: `get_text()` would discard the geometry we need.
         let words = self
             .inner
             .detect_words(&input)

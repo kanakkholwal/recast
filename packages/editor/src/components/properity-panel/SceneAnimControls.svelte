@@ -17,9 +17,7 @@ import PropRow from "./PropRow.svelte";
 import PropSelect from "./PropSelect.svelte";
 import SliderRow from "./SliderRow.svelte";
 
-// One side (entrance or exit) of a segment's scene animation. Reads/writes the
-// spec through `store.setSegmentAnim` (coalesced undo). Kept dumb: all state is
-// the store's; this only maps controls onto a SceneAnimSpec.
+// One side of a segment's scene animation, kept dumb: all state is the store's and this only maps controls onto the spec.
 
 interface Props {
 	store: EditorStore;

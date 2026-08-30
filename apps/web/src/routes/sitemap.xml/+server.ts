@@ -6,8 +6,7 @@ import type { RequestHandler } from "./$types";
 
 export const prerender = true;
 
-// Public, indexable pages. Private areas (dashboard, admin, auth, share) are
-// intentionally excluded — they're noindex and disallowed in robots.txt.
+// Public, indexable pages; private areas are noindex and disallowed in robots.txt.
 const STATIC_PATHS = [
 	"/",
 	"/features",
@@ -20,9 +19,7 @@ const STATIC_PATHS = [
 	"/privacy-policy",
 	"/terms-of-service",
 	"/tools",
-	// The screenshot editor is not a WebCodecs worker op, so it is absent from
-	// TOOLS and has to be listed by hand. Its landing page is the indexable one;
-	// /tools/screenshot-editor/edit is the client-only app and stays out.
+	// The screenshot editor isn't a WebCodecs tool, so it is listed by hand; only its landing page is indexable.
 	"/tools/screenshot-editor",
 	// One route: the editor is a client-only island on this same URL.
 	"/playground",
@@ -38,12 +35,10 @@ function siteOrigin(fallback: string): string {
 
 export const GET: RequestHandler = async ({ url }) => {
 	const origin = siteOrigin(url.origin);
-	// Only published posts: `listPosts` drops drafts in production, so an
-	// unfinished article is never advertised to a crawler.
+	// `listPosts` drops drafts in production, so an unfinished article is never advertised to a crawler.
 	const posts = await listPosts();
 	const architecture = await listDocs();
-	// `lastmod` only where we actually know it (posts carry a date); a fabricated
-	// date on every static page trains crawlers to ignore the signal.
+	// `lastmod` only where we know it: a fabricated date on every static page trains crawlers to ignore the signal.
 	const entries: Array<{ path: string; lastmod?: string }> = [
 		...STATIC_PATHS.map((path) => ({ path })),
 		...TOOLS.map((t) => ({ path: `/tools/${t.slug}` })),

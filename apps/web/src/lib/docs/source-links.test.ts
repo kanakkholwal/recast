@@ -16,8 +16,7 @@ describe("repoPath", () => {
 		expect(repoPath("ffmpeg.rs")).toBe("apps/desktop/src-tauri/src/ffmpeg.rs");
 	});
 
-	/// `mod.rs` names a dozen real files, so linking it would send readers to the
-	/// wrong one. It stays plain code.
+	// `mod.rs` names a dozen real files, so linking it would send readers to the wrong one; it stays plain code.
 	it("refuses a bare filename that could be any of several files", () => {
 		expect(repoPath("mod.rs")).toBeNull();
 	});
@@ -58,8 +57,7 @@ describe("sourceUrl", () => {
 		expect(sourceUrl("mod.rs")).toBeNull();
 	});
 
-	/// Line numbers were stripped from the docs; a stray one must not produce a
-	/// link to a file that does not exist.
+	// Line numbers were stripped from the docs, and a stray one must not link to a file that doesn't exist.
 	it("gives nothing back for a path that still carries a line number", () => {
 		expect(sourceUrl("recording/mod.rs:541")).toBeNull();
 	});

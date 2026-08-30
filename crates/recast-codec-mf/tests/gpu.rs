@@ -261,11 +261,7 @@ fn encode_with(name: &str, mut render: impl FnMut(&Harness, u32)) -> Option<Path
 
     for index in 0..FRAMES {
         let value = index as u64 + 1;
-        // Both halves of the handshake. Before drawing, wait until the
-        // conversion has TAKEN the previous frame, or this draw overwrites a
-        // picture that was never read. After drawing, signal so the conversion
-        // knows the picture has landed. Neither side reports anything when one
-        // is missing; the frame simply comes back wrong.
+        // Both halves of the handshake: wait until the conversion took the previous frame, then signal that this one landed.
         if index > 0 {
             harness
                 .gpu_consumed
@@ -279,9 +275,7 @@ fn encode_with(name: &str, mut render: impl FnMut(&Harness, u32)) -> Option<Path
             .ok()?;
 
         harness.d3d.wait_for(&harness.drawn, value).ok()?;
-        // A fresh frame each time: the encoder is asynchronous and still holds
-        // the last one, so converting into a single surface would overwrite a
-        // picture it had not read yet.
+        // A fresh frame each time: the encoder is asynchronous and still holds the last one.
         let frame = harness.nv12.frame().ok()?;
         harness
             .d3d
@@ -335,8 +329,7 @@ fn a_frame_drawn_by_wgpu_decodes_back_to_the_colours_it_was_given() {
         .expect("a read")
         .expect("at least one frame");
 
-    // Sampled well clear of the boundaries, where chroma subsampling and the
-    // encoder both blur across the edge.
+    // Sampled well clear of the boundaries, where chroma subsampling and the encoder both blur across the edge.
     let wanted = [
         ("red", 20, 60, expected_luma(1.0, 0.0, 0.0)),
         ("green", 100, 140, expected_luma(0.0, 1.0, 0.0)),
@@ -379,8 +372,7 @@ fn no_frame_arrives_carrying_the_one_before_it() {
     while let Some(frame) = reader.next_frame().expect("a read") {
         let want = grey_luma(frame_level(index));
         let got = band(&frame.data, 40, 280);
-        // Tighter than one step of the ramp, which is what makes a frame from
-        // the wrong place in the sequence a failure rather than noise.
+        // Tighter than one step of the ramp, which makes a frame from the wrong place a failure rather than noise.
         assert!(
             (got - want).abs() < 3.0,
             "frame {index} decoded to {got}, wanted about {want}; \

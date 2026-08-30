@@ -71,9 +71,7 @@ export function aspectClass(aspect: string): string {
 	}
 }
 
-// ── Keyboard-grid navigation model ──────────────────────────────────────────
-// Builds the per-category grid layout and computes cursor moves; the component
-// keeps the reactive state, DOM refs, and focus/scroll effects.
+// --- Keyboard-grid navigation: builds the per-category layout and cursor moves; the component keeps state, refs and effects.
 
 export interface Cell<T> {
 	preset: T;
@@ -107,8 +105,7 @@ export function groupPresets<T extends PresetLike>(
 	if (query.trim()) return [["Results", filtered]];
 	const map = new Map<string, T[]>();
 	for (const p of filtered) {
-		// The pinned copy is the only one — listing it twice made the cursor pass
-		// over the same preset at two different indices.
+		// The pinned copy is the only one: listing it twice made the cursor pass the same preset at two indices.
 		if (p === current) continue;
 		if (!map.has(p.category)) map.set(p.category, []);
 		map.get(p.category)!.push(p);

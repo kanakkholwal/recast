@@ -119,8 +119,7 @@ export async function gateShareAccess(
 			error(500, "Unknown visibility");
 	}
 
-	// Password gate (orthogonal to visibility) — same unlock cookie the
-	// page loader and video endpoint mint.
+	// The password gate is orthogonal to visibility and uses the same unlock cookie the loader and video endpoint mint.
 	if (s.passwordHash) {
 		const got = cookies.get(unlockCookieName(s.slug));
 		const expected = await unlockToken(s.slug);
@@ -129,9 +128,7 @@ export async function gateShareAccess(
 		}
 	}
 
-	// Manage = share owner, an owner/admin of the recast's workspace, or a
-	// global admin — see `resolveShareManage` (shared with the page loader and
-	// the settings/access endpoints so all four agree on who can moderate).
+	// Manage is the share owner, a workspace owner or admin, or a global admin; `resolveShareManage` keeps all four callers agreeing.
 	let canManage = false;
 	if (session?.user) {
 		const mng = await resolveShareManage(s.slug, session.user.id);

@@ -8,8 +8,7 @@ export type Integration = { icon: IconComponent; label: string; live?: boolean }
 import { Reveal } from "@recast/ui/reveal";
 import { cn } from "@recast/ui/utils";
 
-// Scattered field of destinations. Empty cells are load-bearing: a full grid
-// reads as a finished list, a sparse one reads as a set still filling up.
+// Empty cells are load-bearing: a full grid reads as finished, a sparse one as a set still filling up.
 let {
 	items,
 	columns = 5,

@@ -47,11 +47,7 @@ export const load: PageServerLoad = async ({ url, request }) => {
 		};
 	}
 
-	// Code present but no session → bounce through login with a return URL.
-	// The /login page reads ?next= and re-routes after sign-in (see
-	// (auth)/login/+page.svelte). When the user lands back here their
-	// session cookie is set and the deviceVerify call below will bind the
-	// deviceCode row to them.
+	// A code with no session bounces through login with a return URL; back here the cookie is set and deviceVerify binds the row.
 	if (!session) {
 		const returnTo = `/device?user_code=${encodeURIComponent(userCode)}`;
 		throw redirect(303, `/login?next=${encodeURIComponent(returnTo)}`);

@@ -27,8 +27,7 @@ export type UploadDenial =
 			capBytes: number;
 	  };
 
-// Encoders round to even (and occasionally +2/+4) dimensions, so allow a small
-// slack above the plan cap — 720p landing at 722–728 isn't "over 720p".
+// Encoders round to even dimensions, so allow slack: 720p landing at 722 isn't over 720p.
 const RESOLUTION_SLACK_PX = 8;
 
 /**

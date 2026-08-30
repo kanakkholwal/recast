@@ -90,9 +90,7 @@ fn export_seconds(ffmpeg: &Path, source: &Path, spec: SourceSpec, state: &Render
         args.push("-map".into());
         args.push(format!("[{}]", plan.video_map.trim_matches(['[', ']'])));
     }
-    // The generated `color` background is an infinite source and is the overlay
-    // base, so without an explicit cap the graph never ends. Same invariant
-    // `append_output_tail` enforces in the real export.
+    // The generated background is an infinite source and the overlay base, so without a cap the graph never ends, as `append_output_tail` enforces.
     args.push("-t".into());
     args.push(format!("{:.3}", state.trim_end - state.trim_start));
     for arg in [

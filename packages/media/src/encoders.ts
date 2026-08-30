@@ -41,15 +41,13 @@ export function createGifWriter(options: GifWriterOptions = {}): GifWriter {
 	return {
 		addFrame(rgba, width, height, delayMs) {
 			const data = rgba instanceof Uint8Array ? rgba : new Uint8Array(rgba.buffer);
-			// Palette from the CLEAN frame, mapping from the dithered one: the
-			// dither should scatter quantisation error, not skew colour selection.
+			// Palette from the CLEAN frame, mapping from the dithered one: dither should scatter error, not skew colour choice.
 			const palette = quantize(data, maxColors);
 			const source = dither ? orderedDither(data, width, height, strength) : data;
 			const index = applyPalette(source as unknown as Uint8Array, palette);
 			enc.writeFrame(index, width, height, {
 				palette,
-				// GIF stores delay in centiseconds. Rounding here rather than
-				// letting gifenc truncate keeps 12fps at 8cs instead of drifting.
+				// GIF stores delay in centiseconds; rounding here rather than letting gifenc truncate keeps 12fps at 8cs.
 				delay: Math.max(20, Math.round(delayMs / 10) * 10),
 			});
 		},

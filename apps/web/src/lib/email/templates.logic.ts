@@ -218,9 +218,7 @@ export function renderTemplate<N extends TemplateName>(name: N, data: TemplateDa
 	return templates[name](data);
 }
 
-// Tiny helper used only inside this file — anything richer should call
-// the exported `strong()` from ./layout. Kept private so callers don't
-// hand-roll HTML strings outside the template registry.
+// Private on purpose: anything richer should call the exported `strong()` rather than hand-roll HTML.
 function escapeText(s: string): string {
 	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

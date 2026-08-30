@@ -26,8 +26,7 @@ export function getServerEnv(): ServerEnv {
 		console.info("[NODE_ENV]:", rawEnv.NODE_ENV);
 	}
 
-	// Skip validation while Vite is collecting the prerender manifest — env
-	// isn't available there and prerendered pages don't need it anyway.
+	// Skip validation while Vite collects the prerender manifest: env isn't available and prerendered pages don't need it.
 	if (building) {
 		cached = serverEnvSchema.parse({
 			DATABASE_URL: "postgres://build-time-stub",

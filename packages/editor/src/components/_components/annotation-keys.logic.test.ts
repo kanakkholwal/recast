@@ -15,8 +15,7 @@ function chord(
 }
 
 describe("nudgeVectorPx", () => {
-	// The player tooltips advertise bare arrows as frame-step. A selected shape
-	// must not quietly take them over.
+	// The player tooltips advertise bare arrows as frame-step, so a selected shape must not quietly take them over.
 	it("ignores bare arrows so the transport keeps them", () => {
 		for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
 			expect(nudgeVectorPx(chord(key))).toBeNull();

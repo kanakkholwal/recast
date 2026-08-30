@@ -49,8 +49,7 @@ async function archiveStaleFreeRecasts(): Promise<{
 	const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 	const db = getDb();
 
-	// SELECT only Free-plan workspaces. Pro / Enterprise rows fall
-	// through this filter, matching their `expireAfterNoViewsDays: null`.
+	// Free-plan workspaces only; Pro and Enterprise fall through, matching their null `expireAfterNoViewsDays`.
 	const candidates = await db
 		.select({
 			id: recast.id,
@@ -142,17 +141,13 @@ async function hardDeleteArchivedFreeRecasts(): Promise<{
 	let count = 0;
 
 	for (const row of candidates) {
-		// Best-effort R2 delete — the blob is already nominally gone after
-		// the archive step, but a half-successful archive could have left
-		// it around. Treat 404 as success.
+		// Best-effort delete: the blob is nominally gone after archiving, but a half-successful archive could leave it. 404 is success.
 		try {
 			await deleteObject(row.videoUrl);
 		} catch (err) {
 			r2Failures++;
 			console.error(`[expire] R2 hard-delete failed for ${row.id}`, err);
-			// Continue with row delete anyway — orphan blobs are reclaimed
-			// by a future R2 lifecycle rule rather than blocking the DB
-			// cleanup forever.
+			// Continue with the row delete: orphan blobs are reclaimed by a lifecycle rule rather than blocking cleanup forever.
 		}
 
 		await db.transaction(async (tx) => {

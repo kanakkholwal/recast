@@ -19,10 +19,7 @@ import { formatUserCode, normalizeUserCode } from "./device-code.logic";
 
 let { data } = $props();
 
-// Manual code-entry input — only used if the desktop didn't pre-fill via
-// verification_uri_complete (i.e. the user typed the URL or wrote the
-// code down). Initialized once from data.userCode — if the user navigates
-// (the only way `data` changes here), the page remounts anyway.
+// Only used when the desktop didn't pre-fill the code; initialized once, since any `data` change remounts the page.
 let manualCode = $state("");
 $effect(() => {
 	manualCode = data.userCode ?? "";
@@ -38,9 +35,7 @@ async function submitManualCode() {
 	if (!code) return;
 	manualSubmitting = true;
 	try {
-		// Navigating to /device?user_code=... re-runs the +page.server.ts
-		// load, which redirects unauthenticated users to /login first and
-		// only then calls the plugin's GET /device (session-binding step).
+		// Navigating re-runs the load, which redirects unauthenticated users to /login before the session-binding step.
 		await goto(`/device?user_code=${encodeURIComponent(code)}`, {
 			invalidateAll: true,
 		});
@@ -61,9 +56,7 @@ async function approve() {
 		toast.success("Device signed in. Return to the desktop app.", {
 			id: toastId,
 		});
-		// The desktop poller picks this up within `interval` seconds. No
-		// auto-redirect: the user came here from the desktop and likely
-		// wants to switch back manually.
+		// The desktop poller picks this up within `interval` seconds; no auto-redirect, since the user came from the desktop.
 		await invalidateAll();
 	} catch (err) {
 		toast.error((err as Error)?.message ?? "Couldn't approve the device.", {
@@ -96,10 +89,7 @@ async function deny() {
 	}
 }
 
-// Status returned by GET /device — "pending" means waiting on user
-// approval (the normal case after a fresh device.code call); "approved"
-// is what we transition into right after the user clicks Approve (the
-// load function re-runs via invalidateAll); "denied" means rejected.
+// 'pending' waits on approval, 'approved' follows the Approve click via invalidateAll, and 'denied' is a rejection.
 const deviceStatus = $derived((data.device as { status?: string } | null)?.status ?? null);
 
 const deviceTitle = $derived(

@@ -455,8 +455,7 @@ fn one_compositor_decodes_frames_of_changing_shape() {
         &frame(&big, PlaneLayout::Nv12, color, W, H),
     );
 
-    // Same size, different layout: the planes have to be reallocated for the
-    // channel count even though nothing about the shape moved.
+    // Same size, different layout: the planes reallocate for the channel count even though the shape didn't move.
     let planar = pack(PlaneLayout::I420, W, H, quadrants([RED, GREEN, BLUE, MID]));
     let swapped = decode_with(
         ctx,
@@ -484,8 +483,7 @@ fn one_compositor_decodes_frames_of_changing_shape() {
         middle.at(1, 1)
     );
 
-    // Back to the first shape, which has to reallocate again rather than read
-    // the smaller planes it just wrote.
+    // Back to the first shape, which must reallocate again rather than read the smaller planes it just wrote.
     let again = decode_with(
         ctx,
         &mut compositor,

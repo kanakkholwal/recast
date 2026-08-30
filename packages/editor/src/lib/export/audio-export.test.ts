@@ -38,9 +38,7 @@ describe("planAudioSpans", () => {
 	});
 });
 
-// The parity requirement: audio must land on the same output timeline the
-// picture does. `outputToSource` is what the preview clock uses, so the two
-// have to agree at every span boundary.
+// Audio must land on the same output timeline as the picture, so it has to agree with `outputToSource` at every boundary.
 describe("audio/video parity", () => {
 	const cases: Region[][] = [
 		[{ start: 0, end: 10 }],
@@ -58,9 +56,7 @@ describe("audio/video parity", () => {
 	it("starts each span at the source time the video clock reads just inside it", () => {
 		for (const regions of cases) {
 			for (const span of planAudioSpans(regions)) {
-				// Well inside, not on the edge: `outputToSource` holds a tolerance
-				// band around a boundary and resolves it to the PREVIOUS region's
-				// end, so the boundary itself is ambiguous by design.
+				// Well inside, not on the edge: `outputToSource` resolves its tolerance band to the previous region's end.
 				const delta = 0.01;
 				const justInside = span.outputStart + delta;
 				if (justInside >= span.outputEnd) continue;
@@ -139,8 +135,7 @@ describe("applyFade", () => {
 		expect(Array.from(ch)).toEqual(Array(10).fill(0.5));
 	});
 
-	// A chunk decoded mid-timeline must fade by its absolute position, not its
-	// offset within the chunk.
+	// A chunk decoded mid-timeline must fade by its absolute position, not its offset within the chunk.
 	it("honours the chunk's offset into the output", () => {
 		const ch = new Float32Array(10).fill(1);
 		applyFade(ch, 10, 2, 0.5, 0, 1);

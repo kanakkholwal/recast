@@ -20,8 +20,7 @@ const reduced = $derived(prefersReducedMotion());
 let active = $state(-1);
 const open = $derived(active >= 0);
 
-// Measured from the active panel and the active trigger, so the container can
-// animate between two known boxes instead of jumping.
+// Measured from the active panel and trigger, so the container animates between two known boxes instead of jumping.
 let panels = $state<(HTMLElement | null)[]>([]);
 let triggers = $state<(HTMLElement | null)[]>([]);
 let row: HTMLElement | undefined = $state();
@@ -50,9 +49,7 @@ $effect(() => {
 	measure();
 });
 
-// --- Hover intent -------------------------------------------------------
-// A diagonal path from a trigger to the panel below leaves the row for a
-// frame; closing instantly would make the menu unusable.
+// --- Hover intent: a diagonal path to the panel leaves the row for a frame, and closing instantly would make the menu unusable.
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 function cancelClose() {
 	if (closeTimer) clearTimeout(closeTimer);

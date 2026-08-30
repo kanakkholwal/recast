@@ -106,10 +106,7 @@ describe("pruneSegmentSpeeds", () => {
 });
 
 describe("speed parity (shared fixtures with Rust export)", () => {
-	// Loaded VERBATIM by the Rust export test too
-	// (editor.rs::warped_duration_matches_shared_parity_fixtures). The frontend
-	// playback time-map's output duration must equal the export's warped duration
-	// for every case, or the two speed models have drifted. trimStart is 0.
+	// The Rust export test loads these verbatim: the playback map's output duration must equal the export's warped duration.
 	for (const c of speedParity.cases) {
 		it(`warped duration: ${c.name}`, () => {
 			const segments = deriveSegments({

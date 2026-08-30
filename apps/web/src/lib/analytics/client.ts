@@ -35,8 +35,7 @@ const env = getPublicEnv();
 
 export const analytics: AnalyticsClient = createAnalytics({
 	provider: createPostHogBrowserProvider(),
-	// Dev builds never track — only real production (`vite build`) output emits
-	// analytics, so local development doesn't pollute the PostHog project.
+	// Dev builds never track, so local development doesn't pollute the PostHog project.
 	enabled: browser && !import.meta.env.DEV && Boolean(env.PUBLIC_POSTHOG_KEY),
 	initialConsent: { product: true, errors: true },
 	// Web: init on load so PostHog's automatic pageview fires immediately.

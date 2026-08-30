@@ -34,15 +34,13 @@ import {
 
 let { data } = $props();
 
-// Seed editable form state once from the URL-driven `data.filters` — we
-// don't want a later page navigation to clobber what the user just typed.
+// Seeded once from the URL-driven filters, so a later navigation can't clobber what the user just typed.
 let q = $state(untrack(() => data.filters.q));
 let searchField = $state<"email" | "name">(untrack(() => data.filters.field));
 let roleFilter = $state<string>(untrack(() => data.filters.role ?? "all"));
 let statusFilter = $state<string>(untrack(() => data.filters.status ?? "all"));
 
-// Human labels for the filter controls — the raw enum values ("all",
-// "pending") read as unfinished in the UI.
+// Human labels: the raw enum values read as unfinished in the UI.
 const FIELD_LABEL: Record<string, string> = { email: "Email", name: "Name" };
 const ROLE_LABEL: Record<string, string> = { all: "All roles", user: "Users", admin: "Admins" };
 const STATUS_LABEL: Record<string, string> = {
@@ -83,8 +81,7 @@ function applyFilters(reset = true) {
 	);
 }
 
-// Live search — debounced so we don't navigate on every keystroke. Enter
-// (form submit) applies immediately and cancels the pending debounce.
+// Debounced so we don't navigate on every keystroke; Enter applies immediately and cancels the pending debounce.
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 function debouncedSearch() {
 	clearTimeout(searchTimer);

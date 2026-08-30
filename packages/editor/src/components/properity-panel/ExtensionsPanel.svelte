@@ -31,8 +31,7 @@ let installingUrl = $state(false);
 let index = $state<RegistryIndexEntry[] | null>(null);
 let loadingIndex = $state(false);
 
-// Addressed by id so the dialog resolves entry + installed reactively (reflects
-// install/uninstall without re-opening).
+// Addressed by id, so the dialog resolves entry and installed state reactively without being re-opened.
 let dialogOpen = $state(false);
 let selectedId = $state<string | null>(null);
 

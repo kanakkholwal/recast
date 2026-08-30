@@ -35,8 +35,7 @@ $effect(() => {
 	if (open) {
 		error = null;
 		busy = false;
-		// Cancel takes focus, so Enter on a destructive prompt backs out rather
-		// than confirming. Deliberate accepts still need one deliberate move.
+		// Cancel takes focus, so Enter on a destructive prompt backs out; accepting still needs one deliberate move.
 		queueMicrotask(() => cancelEl?.focus());
 	}
 });
@@ -59,9 +58,7 @@ function close() {
 	onOpenChange(false);
 }
 
-// On the window, not on a wrapper div: the footer buttons are siblings of the
-// body, so a handler scoped to the body never saw a keypress once focus moved
-// to Cancel — which is where focus starts.
+// On the window, not a wrapper: the footer buttons are siblings of the body, where focus starts on Cancel.
 function onWindowKeydown(e: KeyboardEvent) {
 	if (!open || busy) return;
 	if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {

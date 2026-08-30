@@ -59,8 +59,7 @@ export const load: PageServerLoad = async ({ request }) => {
 		.where(eq(userTable.id, userId))
 		.limit(1);
 
-	// Streamed — the team header (name, plan, seat cap) renders immediately
-	// while the member list + pending invites fill in.
+	// Streamed: the team header renders immediately while members and pending invites fill in.
 	const members = db
 		.select({
 			id: memberTable.id,
@@ -133,8 +132,7 @@ export const actions: Actions = {
 			return fail(400, { error: "Logo must be a https URL." });
 		}
 
-		// Slug uniqueness — let Postgres own the check, but surface a clean
-		// error rather than a 500.
+		// Let Postgres own slug uniqueness, but surface a clean error rather than a 500.
 		try {
 			await getAuth().api.updateOrganization({
 				headers: request.headers,
@@ -166,13 +164,7 @@ export const actions: Actions = {
 			return fail(400, { error: "Invalid role" });
 		}
 
-		// Public sign-up is closed in production, so a brand-new invitee who
-		// isn't on the waitlist couldn't otherwise create an account to
-		// accept the invitation. Pre-create a `status=active` user row so the
-		// magic-link sign-in (and /accept-invitation) flow has something to
-		// find. If a row already exists — active, pending, or banned — we
-		// leave it untouched. Pending invitees get promoted to active so the
-		// invitation supersedes the waitlist queue.
+		// Public sign-up is closed, so pre-create an active user row for the magic-link flow to find; a pending row is promoted and any other is left untouched.
 		const db = getDb();
 		const [existing] = await db
 			.select({ id: userTable.id, status: userTable.status })
@@ -185,10 +177,7 @@ export const actions: Actions = {
 				email,
 				name: email.split("@")[0]!,
 				status: "active",
-				// Owner-vouched: the invite IS the verification. Skipping this
-				// makes Better Auth's accept-invitation reject the session with
-				// "email not verified" when the invitee signs in for the first
-				// time via magic link.
+				// Owner-vouched: the invite IS the verification, or accept-invitation rejects the first magic-link session.
 				emailVerified: true,
 			});
 		} else if (existing.status === "pending") {

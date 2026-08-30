@@ -231,8 +231,7 @@ fn the_track_resolves_a_whole_frame_in_one_call() {
     let placed = track
         .resolve(88_000, source, settings, |t| t)
         .expect("a placement");
-    // 8 ms after the click the anchor weight is 0.996, not 1, so the position
-    // is very near the click target without being exactly on it.
+    // 8 ms after the click the anchor weight is 0.996, so the position is very near the target without being on it.
     close(placed.x, 299.999786 / 1920.0);
     close(placed.y, 160.001497 / 1080.0);
     close(placed.alpha, 1.0);

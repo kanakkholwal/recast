@@ -77,9 +77,7 @@ fn every_camera_has_a_name_a_stable_id_and_at_least_one_mode() {
                 "{} has an empty mode",
                 camera.name
             );
-            // A webcam advertises the same geometry once per native subtype, and
-            // capturekit converts them all to one format: without deduplication
-            // the list is three copies of every mode.
+            // A webcam advertises the same geometry per native subtype, so without deduplication the list is three copies of every mode.
             assert!(
                 !camera.formats[..index].contains(mode),
                 "{} lists {}x{} @ {:?} twice",
@@ -132,8 +130,7 @@ fn a_camera_stream_delivers_frames_of_the_size_it_negotiated() {
         (desc.width * desc.height * 4) as usize,
         "the frame is not the size it was described as"
     );
-    // A camera that hands back a cleared buffer looks identical to a working one
-    // in every dimension check above.
+    // A camera handing back a cleared buffer looks identical to a working one in every dimension check above.
     assert!(
         frame.bytes().iter().any(|byte| *byte != 0),
         "{} delivered a blank frame",

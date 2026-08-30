@@ -401,16 +401,14 @@ impl BranchStore {
             }
             Ok(_) => {}
             Err(JournalError::NoSuchBranch(_)) => {
-                // Sweeping first is what makes the cap count live branches
-                // rather than crashed agents' leftovers.
+                // Sweeping first is what makes the cap count live branches rather than crashed agents' leftovers.
                 self.sweep(branch.created_at_ms);
                 let open = self.list().len();
                 if open >= MAX_BRANCHES_PER_PROJECT {
                     return Err(JournalError::TooManyBranches(open));
                 }
             }
-            // A corrupt journal might hold work, so it blocks the id rather
-            // than being silently replaced.
+            // A corrupt journal might hold work, so it blocks the id rather than being silently replaced.
             Err(other) => return Err(other),
         }
         self.save(branch)

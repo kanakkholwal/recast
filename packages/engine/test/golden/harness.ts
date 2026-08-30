@@ -114,6 +114,5 @@ window.__golden = {
 	},
 };
 
-// Playwright waits on this rather than on `load`, so a module-eval failure is a
-// timeout with a console error rather than a silent missing global.
+// Playwright waits on this rather than `load`, so a module-eval failure is a timeout with a console error.
 document.documentElement.dataset.goldenReady = "1";

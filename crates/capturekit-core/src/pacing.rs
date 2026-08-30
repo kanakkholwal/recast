@@ -91,8 +91,7 @@ impl Pacer {
         let origin = *self.origin.get_or_insert(now);
         let elapsed = now.saturating_since(origin).as_nanos() as u64;
         let interval = self.interval.as_nanos() as u64;
-        // Guarded at construction, but a caller could still reach here with a
-        // pacer built from a zero-length interval on a platform with no timer.
+        // Guarded at construction, but a caller could still arrive with a pacer built from a zero-length interval.
         if interval == 0 {
             return None;
         }
@@ -101,8 +100,7 @@ impl Pacer {
         if self.emitted >= due {
             return None;
         }
-        // Everything older than the catch-up window is abandoned rather than
-        // emitted, so a stall costs frames instead of memory.
+        // Everything older than the catch-up window is abandoned rather than emitted, so a stall costs frames, not memory.
         let behind = due - self.emitted;
         if behind > u64::from(self.max_catch_up) {
             let dropped = behind - u64::from(self.max_catch_up);

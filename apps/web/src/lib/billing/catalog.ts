@@ -121,8 +121,7 @@ export const PLANS: Record<PlanId, Plan> = {
 			sso: false,
 		},
 	},
-	// Starting point for a contract, not a live entitlement — every number here
-	// is overridden per agreement via the workspace's `*Limit` columns.
+	// A starting point for a contract, not a live entitlement: every number is overridden per agreement.
 	enterprise: {
 		id: "enterprise",
 		name: "Enterprise",

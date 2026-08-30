@@ -70,8 +70,7 @@ impl AacEncoder {
         // SAFETY: as above.
         unsafe { transform.SetInputType(0, &input, 0) }?;
 
-        // SAFETY: reading back the type the encoder settled on, which is where
-        // the AudioSpecificConfig appears.
+        // SAFETY: reading back the type the encoder settled on, which is where the AudioSpecificConfig appears.
         let config = unsafe {
             let settled = transform.GetOutputCurrentType(0)?;
             let mut blob = std::ptr::null_mut();

@@ -109,9 +109,7 @@ const alignItems = $derived(
       0 0 6px rgba(0, 0, 0, 0.7);
   }
 
-  /* Per-chunk entrance. The parent re-mounts this component on chunk change
-     (via {#key}), which replays the animation. `none` gets no rule. The pop
-     comes from scale(0.97)->1 + a strong ease-out, NOT a bouncy overshoot. */
+  /* The parent re-mounts on chunk change via {#key}, replaying this; the pop is scale 0.97 to 1 with a strong ease-out, not an overshoot. */
   .entrance-fade {
     animation: rc-cap-fade var(--rc-entrance-ms, 125ms) ease-out both;
   }
@@ -150,8 +148,7 @@ const alignItems = $derived(
     }
   }
 
-  /* Reduced motion: keep the word visible and let colour still convey progress
-     (comprehension), but drop all movement. */
+  /* Reduced motion: keep the word visible and let colour still convey progress, but drop all movement. */
   @media (prefers-reduced-motion: reduce) {
     .entrance-fade,
     .entrance-pop,

@@ -40,9 +40,7 @@ async function createTeam(e: SubmitEvent) {
 		});
 		if (error) throw new Error(error.message ?? "Couldn't create the team.");
 		toast.success(`Welcome to ${target}.`, { id: toastId });
-		// invalidateAll forces the dashboard layout's server load to rerun
-		// with the freshly created membership + active-org cookie; without
-		// it the gate at /dashboard can bounce straight back to onboarding.
+		// invalidateAll reruns the dashboard layout's load with the fresh membership, or its gate bounces back to onboarding.
 		await invalidateAll();
 		await goto("/dashboard", { invalidateAll: true });
 	} catch (err) {
@@ -50,8 +48,7 @@ async function createTeam(e: SubmitEvent) {
 			id: toastId,
 		});
 	} finally {
-		// Always release — a thrown rejection (network drop, abort) must
-		// not leave the button permanently disabled.
+		// Always release: a thrown rejection must not leave the button permanently disabled.
 		creating = false;
 	}
 }

@@ -137,9 +137,7 @@ pub fn build_timeline(
             .filter(|t| !t.is_empty())
             .collect();
 
-        // Tick even for a frame that merges away, so a run of unchanged frames still
-        // advances the bar. They cost a full OCR pass each; only their output is
-        // discarded.
+        // Tick even for a frame that merges away: it cost a full OCR pass, and only its output is discarded.
         let tick = |builds: &[Build], on_tick: &mut dyn FnMut(ReadTick)| {
             on_tick(ReadTick {
                 done: i as u64 + 1,
@@ -363,9 +361,7 @@ mod tests {
 
     #[test]
     fn progress_ticks_once_per_frame_even_when_a_frame_merges_away() {
-        // Three frames, two of them the same screen: the bar must still reach 3/3.
-        // Every frame costs a full OCR pass, so a merged frame that skipped its tick
-        // would stall the bar for a third of the run.
+        // Three frames, two the same screen: every frame costs an OCR pass, so a merged one skipping its tick stalls the bar.
         let frames = vec![frame(0.0), frame(1.0), frame(2.0)];
         let engine = StubEngine::new(vec![
             vec!["File"],

@@ -54,19 +54,7 @@ impl RecordingPipeline {
 
     pub fn push(&self, frame: Arc<[u8]>) {
         if self.queue.push(frame).is_err() {
-            // The queue is full — the encoder is falling behind the
-            // pacer. Increment the counter and surface the condition in
-            // the log so a recording that comes out choppy has a paper
-            // trail. Capacity is sized by `RecordingManager::start` based
-            // on the capture resolution (≤256 MB BGRA budget), so the
-            // queue holds anywhere from ~8 frames at 4K to 180 at 720p.
-            //
-            // We log loudly on the first drop of each session so the
-            // problem is visible the moment it starts, then dampen to
-            // once per ~5 s of sustained dropping (every 300th drop at
-            // 60 fps) to avoid flooding the log if the encoder stays
-            // behind. The atomic `fetch_add` returns the PRE-increment
-            // value, so we treat `0` as "this is the first drop".
+            // The encoder is behind the pacer. Log loudly on the session's first drop, then once per ~5s of sustained dropping; `fetch_add` returns the pre-increment value, so 0 is the first.
             let prev = self.stats.dropped_frames.fetch_add(1, Ordering::Relaxed);
             if prev == 0 {
                 log::warn!(
@@ -276,10 +264,7 @@ pub fn spawn_capture_loop(
             let first_us = at.saturating_duration_since(timeline.origin()).as_micros() as u64;
             video_start.mark_at(at);
             emit(&mut sink, &last_frame, first_us, source.as_ref(), &stats)?;
-            // Anchor the exact schedule at the warmup frame. `emitted` counts
-            // frames pushed since `pacer_base`; tick `emitted+1` is the next
-            // deadline. Both reset on resume so a paused span is excluded
-            // without being "caught up" as lag.
+            // Anchored at the warmup frame, with both reset on resume so a paused span is excluded rather than caught up as lag.
             let mut pacer_base = Instant::now();
             let mut emitted: u64 = 0;
             let mut was_paused = false;

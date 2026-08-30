@@ -7,10 +7,7 @@ import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
 import PropSelect from "./PropSelect.svelte";
 
-// The one easing control. Intent-named presets lead, a live preview shows what
-// they feel like, and the raw curve stays behind a disclosure. Both zoom and
-// annotations used to hand-roll the in/out switch plus graph around
-// BezierEditor, and annotations shipped no presets at all.
+// One easing control: intent-named presets lead, a live preview shows the feel, and the raw curve stays behind a disclosure.
 interface Props {
 	/** One curve, or both ramps when a feature eases in and out separately. */
 	value: Easing | { in: Easing; out: Easing };
@@ -24,8 +21,7 @@ interface Props {
 let { value, onpick, ondrag, size = 200 }: Props = $props();
 
 const isPair = $derived(typeof value === "object" && "in" in value);
-// Which ramp the graph edits. Panel-local state that belonged here, not in
-// every caller.
+// Which ramp the graph edits: panel-local state that belonged here, not in every caller.
 let ramp = $state<"in" | "out">("in");
 const active = $derived(isPair ? (value as { in: Easing; out: Easing })[ramp] : (value as Easing));
 
@@ -34,8 +30,7 @@ const presets = $derived(
 	registry.list("easing").map((e) => ({ id: e.id, label: e.label, value: e.value.value })),
 );
 
-// In pair mode a preset only counts as active when BOTH ramps use it, otherwise
-// picking it would silently change the ramp you are not looking at.
+// In pair mode a preset is active only when BOTH ramps use it, or picking it silently changes the unseen ramp.
 function presetActive(p: Easing): boolean {
 	if (!isPair) return easingEquals(active, p);
 	const v = value as { in: Easing; out: Easing };
@@ -53,9 +48,7 @@ function pickPreset(id: string) {
 	if (preset) onpick({ ...preset.value });
 }
 
-// Looping playhead for the preview. rAF stops on its own when the window is
-// hidden, and `t` is written from the callback so the effect depends only on the
-// reduced-motion flag, never on the curve being dragged.
+// rAF stops itself when the window is hidden, and `t` is written from the callback so the effect never depends on the curve.
 const PREVIEW_MS = 1400;
 let reduced = $state(false);
 let t = $state(0);

@@ -25,8 +25,7 @@ fn every_descriptor_is_named_and_identified() {
     for encoder in enumerate_encoders() {
         assert!(!encoder.name.trim().is_empty(), "{encoder:?} has no name");
         assert!(!encoder.id.trim().is_empty(), "{encoder:?} has no clsid");
-        // A transform flagged software must not be attributed to a GPU vendor,
-        // or the ranking would put it above real hardware.
+        // A transform flagged software must not be attributed to a GPU vendor, or ranking puts it above real hardware.
         if !encoder.hardware {
             assert_eq!(encoder.vendor, Vendor::Software, "{encoder:?}");
         }

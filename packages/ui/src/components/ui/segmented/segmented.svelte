@@ -46,8 +46,7 @@ export interface SegmentedProps<T extends string = string> {
 		"aria-labelledby": ariaLabelledby,
 	}: SegmentedProps<T> = $props();
 
-	// Animated pill that slides under the active segment. First render skips
-	// the transition so the pill doesn't fly in from `left: 0` on mount.
+	// The first render skips the transition so the pill doesn't fly in from `left: 0` on mount.
 	let containerEl: HTMLDivElement | null = $state(null);
 	let pillLeft = $state<number | null>(null);
 	let pillWidth = $state<number | null>(null);
@@ -68,8 +67,7 @@ export interface SegmentedProps<T extends string = string> {
 	}
 
 	$effect(() => {
-		// Re-measure when value/options/size change. ResizeObserver covers
-		// container width changes (e.g. panel resize) so the pill stays glued.
+		// Re-measure on value, options and size changes; the ResizeObserver covers container resizes.
 		void value;
 		void options.length;
 		void size;
@@ -84,8 +82,7 @@ export interface SegmentedProps<T extends string = string> {
 	});
 
 	$effect(() => {
-		// Flip the animate flag one tick after first measurement so subsequent
-		// value changes animate but the initial render snaps in place.
+		// Flip the flag a tick after the first measurement, so later value changes animate but the initial render snaps.
 		if (pillLeft !== null && pillWidth !== null && !hasAnimated) {
 			queueMicrotask(() => {
 				hasAnimated = true;
@@ -93,9 +90,7 @@ export interface SegmentedProps<T extends string = string> {
 		}
 	});
 
-	// Roving tabindex + arrow keys: the ARIA radiogroup contract. Without it each
-	// segment was its own tab stop and arrows did nothing, so a panel of these
-	// cost a dozen tab presses to cross.
+	// Roving tabindex is the ARIA radiogroup contract: without it every segment was a tab stop and arrows did nothing.
 	let buttons = $state<(HTMLButtonElement | null)[]>([]);
 	const selectableIndexes = $derived(
 		options.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i !== -1),

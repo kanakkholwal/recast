@@ -317,8 +317,7 @@ fn block_origin(
     let canvas_h = canvas.1.max(1) as f64;
     let v_top = video.y / canvas_h;
     let v_bottom = (video.y + video.h) / canvas_h;
-    // The actual pill height, which is tighter than the max-lines estimate the
-    // auto-box path has to use.
+    // The actual pill height, which is tighter than the max-lines estimate the auto-box path has to use.
     let cap = pill.height / canvas_h;
     let y = match caption_top_frac(&style.position, style.offset_pct, cap, v_top, v_bottom) {
         Some(frac) => frac * canvas_h,

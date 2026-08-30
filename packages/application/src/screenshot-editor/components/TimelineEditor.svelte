@@ -43,8 +43,7 @@ const MIN_CLIP_MS = 200;
     return Math.max(0, Math.min(editor.timelineDuration, x / pxPerMs));
   }
 
-  // Grabbing anything on the timeline stops playback so the RAF advance doesn't
-  // fight the drag (which would make the playhead jitter).
+  // Grabbing the timeline stops playback, so the rAF advance can't fight the drag and jitter the playhead.
   function stopPlay() {
     if (editor.playing) editor.playing = false;
   }

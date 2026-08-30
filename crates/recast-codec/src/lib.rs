@@ -61,8 +61,7 @@ impl Vendor {
     /// text, so one matcher serves both while they coexist.
     pub fn guess(name: &str) -> Self {
         let name = name.to_ascii_lowercase();
-        // Ordered by how specific the marker is: "amf" appears inside longer
-        // AMD names, and "intel" inside several Intel transform names.
+        // Ordered by marker specificity: 'amf' appears inside longer AMD names, and 'intel' inside several Intel ones.
         for (needle, vendor) in [
             ("nvenc", Self::Nvidia),
             ("nvidia", Self::Nvidia),
@@ -115,8 +114,7 @@ fn preference_rank(descriptor: &EncoderDescriptor) -> u8 {
         Vendor::Amd => 2,
         Vendor::Intel => 3,
         Vendor::OtherHardware => 4,
-        // A software-vendor descriptor claiming hardware is a backend bug; rank
-        // it below every real hardware encoder rather than trusting the flag.
+        // A software vendor claiming hardware is a backend bug: rank it below every real hardware encoder.
         Vendor::Software => 99,
     }
 }

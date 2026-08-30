@@ -28,8 +28,5 @@ pub mod timeline;
 #[cfg(all(test, feature = "ocr"))]
 mod harness;
 
-// NOTE: `read_video_text` is deliberately NOT re-exported here. `#[tauri::command]`
-// generates a companion `__cmd__*` item in the module that DEFINES the command, and
-// a `pub use` does not carry it along, so `generate_handler!` must be given the
-// defining path (`ocr::command::read_video_text`).
+// `read_video_text` is deliberately not re-exported: `#[tauri::command]` generates a companion item a `pub use` doesn't carry, so `generate_handler!` needs the defining path.
 pub use command::run;

@@ -13,9 +13,7 @@ import type { EditorStore } from "../../stores/editor-store.svelte";
 import type { CursorSampleLike } from "../cursor/smoothing";
 import type { ZoomSuggestion } from "../wire-types";
 
-// Asymmetric window: short lead-in, long hold. With the default 0.35 s ramps
-// this leaves a ~2 s plateau at full zoom; a symmetric 1 s window held only
-// ~0.3 s and read as a flicker.
+// Asymmetric window (short lead-in, long hold): a symmetric 1s held only ~0.3s and read as a flicker.
 export const ZOOM_LEAD_IN = 0.6; // before the trigger
 export const ZOOM_HOLD = 2.4; // after the trigger
 // Floor when a neighbour forces a shrink: shorter barely clears the ramps.

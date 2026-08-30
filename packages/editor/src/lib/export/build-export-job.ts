@@ -70,8 +70,7 @@ async function preloadAnnotationBitmaps(
 	await Promise.all(
 		[...paths].map(async (p) => {
 			try {
-				// Rasterised-text annotations carry a data: URL; file refs go through
-				// the host's resolver.
+				// Rasterised-text annotations carry a data: URL; file refs go through the host's resolver.
 				const src = p.startsWith("data:") ? p : getEditorServices().resolveAssetUrl(p);
 				out.push([p, await createImageBitmap(await (await fetch(src)).blob())]);
 			} catch {
@@ -118,25 +117,21 @@ export async function buildExportJob(
 			? await loadCursorSprites(cs.style, resolveCursorDataUrl).catch(() => [])
 			: [];
 
-	// Neither the engine nor Rust has a font rasteriser, so a text annotation
-	// reaches the scene as a pre-rendered image at composition resolution. This
-	// is the same substitution the native export does.
+	// Neither the engine nor Rust has a font rasteriser, so text reaches the scene pre-rendered at composition resolution.
 	const annotations = store.annotationsGloballyHidden
 		? []
 		: await expandTextAnnotations(store.annotationsByZ, width, height);
 	const annotationImages = await preloadAnnotationBitmaps(annotations);
 
 	const captionTrack = buildCaptionTrack(store);
-	// Copied, not handed over: the resolver caches these bytes for the session,
-	// and transferring the buffer would detach the cache for every later export.
+	// Copied, not handed over: the resolver caches these bytes, and transferring would detach the cache for later exports.
 	const font = captionTrack
 		? await resolveEngineFont(store.captionStyle.fontFamily, store.captionStyle.fontWeight)
 		: null;
 
 	// De-proxy every store-sourced field so the job survives `postMessage`.
 	return {
-		// The rasterised annotations replace the authored ones; everything else is
-		// the value the preview hands the engine, unchanged.
+		// The rasterised annotations replace the authored ones; everything else is what the preview hands the engine.
 		scene: { ...toStatic(store.toRenderState()), annotations: toStatic(annotations) },
 		timeMap: toStatic(timeMap),
 		outputDurationSec,

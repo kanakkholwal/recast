@@ -3,14 +3,7 @@ import { Camera, Mic, Video } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 import { prefersReducedMotion } from "$lib/motion-core";
 
-// Region capture, shown as the interaction rather than as a menu of it. A
-// selection is dragged across a mock desktop, snaps to a size readout, and the
-// capture bar rises under it. A command palette listing "Record region" tells
-// you the feature exists; this shows what it feels like.
-//
-// Geometry is percentages of the stage so the mock scales with its container.
-// One timeline drives everything, so the marquee, the readout and the bar can
-// never disagree about which phase they are in.
+// Region capture shown as the interaction, not a menu of it. Geometry is percentages of the stage, and one timeline drives every part so they can't disagree about the phase.
 type Phase = "idle" | "dragging" | "armed" | "recording";
 
 const reduced = $derived(prefersReducedMotion());
@@ -41,8 +34,7 @@ const phase = $derived.by<Phase>(() => {
 	return current;
 });
 
-// Drag progress 0..1 across the dragging window, eased so the marquee decelerates
-// into its final size instead of stopping dead.
+// Drag progress across the dragging window, eased so the marquee decelerates into its final size.
 const drag = $derived.by(() => {
 	if (reduced || phase === "armed" || phase === "recording") return 1;
 	if (phase === "idle") return 0;
@@ -161,8 +153,7 @@ const elapsedLabel = $derived.by(() => {
 </div>
 
 <style>
-	/* Dimming must darken in both themes: a foreground-tinted scrim brightens
-	   the excluded area in dark mode. */
+	/* Dimming must darken in both themes: a foreground-tinted scrim brightens the excluded area in dark mode. */
 	.scrim {
 		position: absolute;
 		background-color: oklch(0% 0 0 / 0.1);

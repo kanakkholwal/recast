@@ -1,7 +1,5 @@
 <script lang="ts">
-// Search is the spine of a library page, so it owns its own shortcuts:
-// `/` focuses it from anywhere on the page, Escape empties it without moving
-// focus away. The page just says what is being searched.
+// Search owns its own shortcuts: '/' focuses it from anywhere and Escape empties it without moving focus.
 import { Search, X } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { onMount } from "svelte";

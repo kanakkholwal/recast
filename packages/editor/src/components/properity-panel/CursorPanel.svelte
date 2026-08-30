@@ -21,8 +21,7 @@ import PanelSection from "./PanelSection.svelte";
 import PropRow from "./PropRow.svelte";
 import PropSelect from "./PropSelect.svelte";
 
-// Named so the swatch announces "Amber", not "#f59e0b". Deliberately vivid:
-// this ring sits on top of the recording and has to survive busy content.
+// Named so the swatch announces 'Amber', not a hex; deliberately vivid, since this ring must survive busy content.
 const highlightColors: { label: string; value: string }[] = [
 	{ label: "Blue", value: "#3b82f6" },
 	{ label: "Red", value: "#ef4444" },
@@ -320,8 +319,7 @@ function applySmoothingPreset(id: string) {
             <EasingControl
               value={store.cursorMotionEasing}
               onpick={(next) => {
-                // The setter pushes its own undo entry; a second push here
-                // made one Ctrl+Z look like a no-op.
+                // The setter pushes its own undo entry; a second push here made one Ctrl+Z look like a no-op.
                 store.cursorMotionEasing = next;
               }}
               ondrag={(next) => store.setCursorMotionEasingLive(next)}

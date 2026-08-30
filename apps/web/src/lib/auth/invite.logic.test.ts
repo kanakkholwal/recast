@@ -10,8 +10,7 @@ import {
 
 describe("resetTokenIdentifier", () => {
 	it("matches the identifier Better Auth looks the token up under", () => {
-		// If this prefix ever drifts from better-auth's password.mjs, every
-		// invite link silently 400s with INVALID_TOKEN. Pin it.
+		// If this prefix drifts from better-auth's password.mjs, every invite link silently 400s, so pin it.
 		expect(resetTokenIdentifier("abc123")).toBe("reset-password:abc123");
 	});
 });

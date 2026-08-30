@@ -189,8 +189,7 @@ fn every_case_renders_inside_the_frame_budget() {
     let mut over = Vec::new();
     for (name, width, height, extra) in cases() {
         let ms = frame_time_ms(ctx, &scene_with(&extra), width, height);
-        // 4K is four times the pixels, and the budget scales with them rather
-        // than pretending one number fits every resolution.
+        // 4K is four times the pixels, and the budget scales with them rather than pretending one number fits every resolution.
         let budget = if width > 2000 {
             BUDGET_MS * 4.0
         } else {
@@ -202,8 +201,7 @@ fn every_case_renders_inside_the_frame_budget() {
         }
     }
     if software {
-        // Reported, not enforced: a software adapter's numbers say nothing about
-        // the machine a user runs on, and gating on them makes CI a coin toss.
+        // Reported, not enforced: a software adapter's numbers say nothing about a user's machine, and gating makes CI a coin toss.
         eprintln!("software adapter: budgets measured but not enforced");
         return;
     }

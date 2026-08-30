@@ -65,8 +65,7 @@ pub fn section_path(section: &str) -> String {
 /// Unrecognised keys fall back to `frame`, so a new editor toggle is never
 /// dropped on round-trip even before this table learns about it.
 pub fn section_for_key(key: &str) -> &'static str {
-    // Export-time cursor sprites are bulky data-URIs — keep them out of the
-    // cursor *settings* section. Checked first because they also start "cursor".
+    // Export-time cursor sprites are bulky data URIs, kept out of cursor settings; checked first, since they also start 'cursor'.
     if key.starts_with("cursorSprite") {
         return SECTION_OVERLAYS;
     }
@@ -324,8 +323,7 @@ mod tests {
 
     #[test]
     fn canonical_string_is_order_independent() {
-        // Two objects with the same content but different insertion order must
-        // serialize identically (sorted keys + id-sorted arrays).
+        // Two objects with the same content but different insertion order must serialize identically.
         let a = json!({ "b": 1, "a": 2, "arr": [{ "id": "y" }, { "id": "x" }] });
         let b = json!({ "a": 2, "arr": [{ "id": "x" }, { "id": "y" }], "b": 1 });
         assert_eq!(

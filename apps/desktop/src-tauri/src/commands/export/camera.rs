@@ -37,8 +37,7 @@ pub(crate) fn camera_shadow_geom(strength: f64, bubble_w: u32) -> Option<CameraS
     let blur_px = CAMERA_SHADOW_BLUR_FRACTION * s * bw;
     let offset_px = CAMERA_SHADOW_OFFSET_FRACTION * s * bw;
     let opacity = CAMERA_SHADOW_MAX_OPACITY * s;
-    // Bottom clearance past the silhouette must cover the blur spread (~2×) plus
-    // the downward offset; a couple of extra px guards against rounding.
+    // Bottom clearance must cover the blur spread (about 2x) plus the downward offset, with a couple of px for rounding.
     let padding = (blur_px * 2.0 + offset_px + 2.0).ceil().max(1.0) as u32;
     Some(CameraShadowGeom {
         blur_px,
@@ -271,8 +270,7 @@ pub(crate) fn build_camera_follow_exprs(
         ));
     }
 
-    // Keyframed base: it glides across the WHOLE timeline (even outside zoom
-    // regions), so sample uniformly and compose the follow where it applies.
+    // A keyframed base glides across the WHOLE timeline, so sample uniformly and compose the follow where it applies.
     let duration = (trim_end - trim_start).max(0.0);
     if duration <= 0.0 {
         return None;
@@ -343,8 +341,7 @@ mod tests {
 
     #[test]
     fn placement_is_clamped_into_the_canvas() {
-        // x sits within bounds; y would place the bubble past the bottom edge, so
-        // it clamps to canvas_h - h.
+        // x sits within bounds; y would put the bubble past the bottom edge, so it clamps to canvas_h minus h.
         let (x, y, w, h) = camera_bubble_rect(&placement(0.8, 0.8, 0.2), &geom());
         assert_eq!((w, h), (384, 384));
         assert_eq!(x, 1576); // 40 + 0.8*1920 = 1576, within max_x 1616
@@ -382,8 +379,7 @@ mod tests {
 
     #[test]
     fn follow_height_is_width_times_aspect_on_a_wide_video() {
-        // Mirrors camera-overlay.logic.test.ts: square in pixels, so height =
-        // width * aspect for a 16:9 frame.
+        // Mirrors camera-overlay.logic.test.ts: square in pixels, so height is width times aspect on a 16:9 frame.
         let aspect = 16.0 / 9.0;
         let r = camera_follow_placement(&placement(0.4, 0.4, 0.15), 1.5, 0.1, 0.1, 1.0, aspect);
         assert!((r.width - 0.225).abs() < 1e-9, "width {}", r.width); // 0.15 * 1.5
@@ -497,8 +493,7 @@ mod tests {
         let rs = std::slice::from_ref(&region);
         // Outside the region → identity.
         assert_eq!(camera_follow_scale_at(rs, -1.0, 1.0, lin).0, 1.0);
-        // Duration 1s, linear: halfway through ramp-in (t=0.5) → activation 0.5 →
-        // scale = 1 + 0.5*(2-1) = 1.5; focus = region centre.
+        // Duration 1s linear: halfway through ramp-in gives activation 0.5, so scale 1.5 and focus at the region centre.
         let (s, cx, cy) = camera_follow_scale_at(rs, 0.5, 1.0, lin);
         assert!((s - 1.5).abs() < 1e-6, "scale {s}");
         assert!((cx - 0.3).abs() < 1e-9 && (cy - 0.7).abs() < 1e-9);

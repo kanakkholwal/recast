@@ -169,8 +169,7 @@ setEditorServices(untrack(() => services));
 
 const storage = typeof localStorage === "undefined" ? null : localStorage;
 
-// Layout: the host may drive it (bindable, e.g. from a URL) or leave it to us,
-// in which case we seed from localStorage and remember changes.
+// The host may drive layout (bindable, e.g. from a URL) or leave it to us, in which case localStorage seeds it.
 const seeded = parseLayout(storage?.getItem(LAYOUT_KEY) ?? null);
 let sidebarOpen = $state(showSidebar ?? seeded.sidebar);
 let timelineOpen = $state(showTimeline ?? seeded.timeline);
@@ -211,9 +210,7 @@ $effect(() => {
 });
 
 
-// --- panel sizing ---
-// Measured so the timeline's ceiling is a share of the space actually
-// available, not a fixed number that overwhelms a short window.
+// --- Panel sizing, measured so the timeline's ceiling is a share of the available space, not a fixed number.
 let editorColumnH = $state(0);
 let sidebarWidth = $state(
 	clampSidebarWidth(readStoredNumber(storage?.getItem(SIDEBAR_WIDTH_KEY) ?? null, SIDEBAR_DEFAULT_WIDTH_PX)),
@@ -226,8 +223,7 @@ let resizingTimeline = $state(false);
 
 const timelineMax = $derived(timelineMaxHeight(editorColumnH));
 
-// Re-clamp when the window changes, so a panel sized in a big window doesn't
-// swallow a small one.
+// Re-clamp on window changes, so a panel sized in a big window doesn't swallow a small one.
 $effect(() => {
 	const column = editorColumnH;
 	untrack(() => {
@@ -249,8 +245,7 @@ $effect(() => {
 
 function handleTimeUpdate() {
 	if (onTimeUpdate) return onTimeUpdate();
-	// The WebCodecs clock owns `store.currentTime`; echoing the element's time
-	// while it free-runs through the un-cut source snaps playback across cuts.
+	// The WebCodecs clock owns `store.currentTime`; echoing the free-running element snaps playback across cuts.
 	if (webcodecsActive || !videoEl) return;
 	store.currentTime = videoEl.currentTime;
 }

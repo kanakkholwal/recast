@@ -16,8 +16,7 @@ let inputRef = $state<HTMLInputElement | null>(null);
 let listRef = $state<HTMLDivElement | null>(null);
 let contentHeight = $state(0);
 
-// Safe on every mount: registerMany dedupes by id. The Mod+K open shortcut
-// lives in the central registry (general.palette), not a window listener here.
+// Safe on every mount, since registerMany dedupes by id; the open shortcut lives in the central registry.
 onMount(() => {
 	commandPalette.registerMany(buildGlobalCommands());
 });
@@ -35,8 +34,7 @@ const filtered = $derived(rankCommands(commandPalette.commands, query));
 
 const grouped = $derived.by<[string, PaletteCommand[]][]>(() => groupCommands(filtered, query));
 
-// Flat order used for keyboard navigation; mirrors render order so the
-// selected index always points at a real button.
+// Mirrors render order, so the selected index always points at a real button.
 const flatItems = $derived(grouped.flatMap(([, cmds]) => cmds));
 
 $effect(() => {

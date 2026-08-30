@@ -268,9 +268,7 @@ impl FrameSource for MockSource {
             return Err(CaptureError::Lost(reason));
         }
         let Some(frame) = self.frames.get(self.served).cloned() else {
-            // A real backend blocks for the timeout before admitting it has
-            // nothing. A mock that answers instantly turns a caller's busy-wait
-            // into a passing test.
+            // A real backend blocks for the timeout before admitting it has nothing; answering instantly would pass a busy-wait.
             std::thread::sleep(timeout);
             return Err(CaptureError::Timeout(timeout));
         };

@@ -48,9 +48,7 @@ interface RecordingProfileV1 {
 export const PROFILES_STORAGE_KEY = "recast-recording-profiles";
 export const PROFILES_ENABLED_STORAGE_KEY = "recast-profiles-enabled";
 
-// Global capture quality + frame rate. Capture-WIDE preferences (like the
-// global countdown), so they live outside profile records, kept clear of
-// `capSig` and the combination cap, applied to every recording.
+// Capture-wide preferences like the global countdown, so they live outside profile records and apply to every recording.
 
 export const RECORDING_QUALITY_STORAGE_KEY = "recast-recording-quality";
 export const RECORDING_FPS_STORAGE_KEY = "recast-recording-fps";
@@ -204,8 +202,7 @@ function isV2(p: unknown): p is RecordingProfile {
  * unparseable, or every entry was unrecognizable. Never throws.
  */
 export function loadProfiles(): RecordingProfile[] {
-	// `safeStorage` returns [] for missing key / no-window / malformed JSON,
-	// so every empty-ish case funnels into the seed below.
+	// `safeStorage` returns an empty array for a missing key or malformed JSON, so every empty case funnels into the seed.
 	const parsed = safeStorage.get<unknown[]>(PROFILES_STORAGE_KEY, []);
 	if (!Array.isArray(parsed) || parsed.length === 0) return seedProfiles();
 

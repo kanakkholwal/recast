@@ -384,8 +384,7 @@ mod tests {
 
     #[test]
     fn duration_and_frame_count_round_trip_at_an_awkward_rate() {
-        // 44 100 does not divide a second evenly, which is where a naive
-        // conversion loses samples.
+        // 44 100 doesn't divide a second evenly, which is where a naive conversion loses samples.
         let format = AudioFormat::new(44_100, 2, SampleFormat::I16);
         let frames = format.frames_in_duration(Duration::from_millis(1_000));
         assert_eq!(frames, 44_100);

@@ -119,8 +119,7 @@ mod tests {
         let input = sine(44_100, 440.0, 44_100);
         let out = convert(&input, 44_100, 48_000);
         assert!(out.len().abs_diff(48_000) <= 1, "produced {}", out.len());
-        // A steady sine holds its RMS through a correct resample; a broken
-        // normalisation shows up here before it shows up as pitch.
+        // A steady sine holds its RMS through a correct resample, so a broken normalisation shows up before pitch does.
         let (a, b) = (rms(&input), rms(&out));
         assert!((a - b).abs() < 0.01, "rms {a} became {b}");
     }

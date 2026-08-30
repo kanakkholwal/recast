@@ -1,10 +1,6 @@
-/* @recast/application — global styles the feature components rely on.
-   Import once at the app entry: `import "@recast/application/styles.css";`.
-   Utility classes still come from the app's Tailwind build via `@source`; this
-   file is only for the few things utilities can't express. */
+/* Global styles for @recast/application, imported once at the app entry; only what Tailwind utilities can't express. */
 
-/* Checkerboard behind transparent screenshots so alpha reads as "see-through"
-   rather than as a solid fill. Theme-aware via the app's color-scheme tokens. */
+/* Checkerboard behind transparent screenshots so alpha reads as see-through rather than a solid fill. */
 .recast-shot-checkerboard {
   --recast-checker: color-mix(in srgb, currentColor 8%, transparent);
   background-color: transparent;

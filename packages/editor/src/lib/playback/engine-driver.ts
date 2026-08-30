@@ -89,14 +89,11 @@ export class PreviewEngineDriver {
 		try {
 			this.#engine.setScene(json);
 		} catch (err) {
-			// Thrown from a reactive effect this would strand the engine on the
-			// last scene it accepted, and every later edit would silently do
-			// nothing. Say so instead.
+			// Thrown from a reactive effect this would strand the engine on its last scene and silently ignore every later edit.
 			console.error("preview engine refused the scene:", err);
 			return false;
 		}
-		// The layer ids are assigned during migration, so they can move when the
-		// scene changes shape.
+		// Layer ids are assigned during migration, so they can move when the scene changes shape.
 		this.#screenLayer = this.#engine.screenLayerId ?? null;
 		this.#cameraLayer = this.#engine.cameraLayerId ?? null;
 		// The ring belongs to a layer id, so a new id means a new ring.

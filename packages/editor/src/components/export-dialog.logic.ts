@@ -5,8 +5,7 @@
  */
 
 import type { TimelineCut } from "../lib/timeline/cuts";
-// Runtime import via relative path (not `$lib`): this module is unit-tested and
-// the standalone vitest config has no `$lib` alias.
+// Relative path, not `$lib`: this module is unit-tested and the standalone vitest config has no `$lib` alias.
 import { totalCutDuration } from "../lib/timeline/cuts";
 
 export interface FpsOption {

@@ -85,12 +85,7 @@ pub(crate) fn append_codec_args(
                     crate::ffmpeg::preferred_h264_encoder(),
                 )
             };
-            // Software x264 at `slow`/`slower` on a 4K frame is far below realtime
-            // and is what turned a ~40s export into minutes on GPU-less machines.
-            // Hardware encoders aren't preset-bound this way, so cap only libx264:
-            // slow→medium at the same CRF is ~2x faster for a barely-visible size
-            // change. The 4K profile's default is `slow`, so this only bites the
-            // pathological software-4K path.
+            // Software x264 at slow on a 4K frame is far below realtime; cap only libx264, where slow to medium is ~2x faster at the same CRF.
             let chosen_x264_preset = speed.x264_preset().unwrap_or(profile.mp4_preset);
             let x264_preset = if matches!(encoder, crate::encoder::h264::H264Encoder::Libx264) {
                 cap_software_x264_preset(chosen_x264_preset)
@@ -116,9 +111,7 @@ pub(crate) fn append_codec_args(
                     "aac".to_string(),
                     "-b:a".to_string(),
                     "192k".to_string(),
-                    // Pin the delivered format. Without this the output takes
-                    // whichever source survived the mix, so a session with only
-                    // a 16 kHz mono headset mic shipped a 16 kHz mono export.
+                    // Pin the delivered format: otherwise the output takes whichever source survived the mix, so a 16 kHz mic shipped a 16 kHz export.
                     "-ar".to_string(),
                     "48000".to_string(),
                     "-ac".to_string(),

@@ -29,8 +29,7 @@ let stopping = $state(false);
 async function stop() {
 	if (stopping) return;
 	stopping = true;
-	// Wrapped in try/finally so a thrown rejection (network drop, aborted
-	// fetch) can't strand the button in a permanently-disabled state.
+	// try/finally so a thrown rejection can't strand the button permanently disabled.
 	try {
 		await toast.promise(
 			(async () => {
@@ -43,9 +42,7 @@ async function stop() {
 				error: (err) => (err as Error)?.message ?? "Couldn't stop impersonating.",
 			},
 		);
-		// Hard reload so every server load re-runs against the restored
-		// admin cookie. SvelteKit's `invalidateAll()` would leave the same
-		// module instances around and we want a clean slate.
+		// A hard reload re-runs every server load against the restored admin cookie; `invalidateAll()` keeps the same module instances.
 		window.location.href = "/admin";
 	} finally {
 		stopping = false;

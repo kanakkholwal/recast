@@ -140,8 +140,7 @@ impl GlyphAtlas {
                 top: mask.top,
             })
         });
-        // A refusal is cached too, so a full atlas stops re-rasterising; `reset`
-        // is what frees it.
+        // A refusal is cached too, so a full atlas stops re-rasterising; `reset` is what frees it.
         self.entries.insert(key, placed);
         placed
     }

@@ -60,8 +60,7 @@ function bestOffset(
 			dot += a * input[ref + i];
 			energy += a * a;
 		}
-		// Normalising by the candidate's own energy stops the search from always
-		// picking the loudest window instead of the best-aligned one.
+		// Normalising by the candidate's own energy stops the search always picking the loudest window.
 		const score = dot / Math.sqrt(energy + EPS);
 		if (score > bestScore) {
 			bestScore = score;
@@ -86,8 +85,7 @@ export function timeStretch(
 	const outLength = Math.max(0, Math.floor(input.length / rate));
 	if (outLength === 0) return new Float32Array(0);
 
-	// Frame must fit the input twice over for the search to have anywhere to go;
-	// below that a fragment is short enough that resampling is inaudible.
+	// The frame must fit the input twice over for the search to move; below that resampling is inaudible.
 	let frame = Math.min(Math.round(FRAME_SEC * sampleRate), Math.floor(input.length / 4) * 2);
 	frame -= frame % 2;
 	if (frame < MIN_FRAME) return resampleLinear(input, rate);
@@ -125,8 +123,7 @@ export function timeStretch(
 		prevChosen = chosen;
 	}
 
-	// Hann at 50% hop sums to unity in the steady state but tapers at both
-	// edges; dividing by the actual window sum keeps gain flat end to end.
+	// Hann at a 50% hop sums to unity in steady state but tapers at the edges, so divide by the actual window sum.
 	for (let i = 0; i < outLength; i++) {
 		if (norm[i] > EPS) out[i] /= norm[i];
 	}

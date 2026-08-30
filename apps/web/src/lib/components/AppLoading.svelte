@@ -4,16 +4,7 @@ import { navigating } from "$app/state";
 import Logo from "$lib/logo.svelte";
 import { isAppArea } from "../../routes/layout.logic";
 
-// Branded, full-surface loading screen for client-side navigations *into* a
-// product area (SvelteKit's answer to Next's loading.tsx). The thin
-// <NavProgress /> bar still runs everywhere; this fuller loader only appears
-// for /dashboard and /share/* targets. A short delay keeps instant
-// navigations from flashing it.
-//
-// Deliberately the same plate as the hard-load splash in app.html and the
-// desktop boot screen — a soft nav and a cold start should not look like two
-// different products. app.html has to inline its copy of this (it paints
-// before any CSS loads), so the two move together by hand.
+// The fuller loader for navigations into a product area, on the same plate as app.html's splash and the desktop boot screen; app.html inlines its copy, so the two move together by hand.
 const SHOW_DELAY_MS = 160;
 
 let show = $state(false);

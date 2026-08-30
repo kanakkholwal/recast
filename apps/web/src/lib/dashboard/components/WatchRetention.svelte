@@ -3,17 +3,14 @@ import { TrendingDown } from "@recast/icons";
 import { AreaChart } from "layerchart";
 import * as Chart from "$components/ui/chart/index.js";
 
-// Watch-retention survival curve: share of plays that reached each decile of
-// the video. Shows WHERE viewers drop off, which an average watch % hides.
+// Share of plays reaching each decile: it shows WHERE viewers drop off, which an average watch percentage hides.
 let {
 	data,
 }: {
 	data: { pct: number; reached: number }[];
 } = $props();
 
-// Retention is full at the very start of the video, so anchor the curve at
-// (0%, 100%) when there are plays — the drop-off then reads from a full
-// baseline, the way Instagram/YouTube retention graphs do.
+// Anchor at 100% when there are plays, so drop-off reads from a full baseline like every retention graph.
 const hasViews = $derived(data.some((d) => d.reached > 0));
 const curve = $derived(hasViews ? [{ pct: 0, reached: 100 }, ...data] : data);
 

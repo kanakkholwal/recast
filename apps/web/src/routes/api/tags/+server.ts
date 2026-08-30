@@ -70,8 +70,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		.from(tag)
 		.where(and(eq(tag.workspaceId, workspaceId), eq(tag.name, name)))
 		.limit(1);
-	// The conflict fired but the row is gone (concurrent delete / collation
-	// mismatch). Don't ship a 200 with `tag: undefined` — fail loudly instead.
+	// The conflict fired but the row is gone, so fail loudly rather than ship a 200 with an undefined tag.
 	if (!existing) error(500, "Tag creation conflicted but the existing tag could not be found");
 	return json({ ok: true, tag: existing });
 };

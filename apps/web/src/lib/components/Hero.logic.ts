@@ -24,9 +24,7 @@ export type HeroStep = {
 	caption: string;
 };
 
-// The product's three beats, and the hero's tab shelf. Order is the spine of
-// the whole page (Record → Polish → Share), so it must not be re-sorted here
-// without re-sorting the sections below the fold.
+// Order is the spine of the whole page, so it must not be re-sorted here without re-sorting the sections below.
 export const steps: HeroStep[] = [
 	{
 		id: "record",

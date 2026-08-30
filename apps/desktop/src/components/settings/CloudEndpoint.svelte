@@ -18,8 +18,7 @@ let config = $state<CloudApiConfig | null>(null);
 let input = $state("");
 let saving = $state(false);
 
-// Dirty only when the trimmed input differs from what's persisted. An empty
-// input with no override saved is not dirty (nothing to clear).
+// Dirty only when the trimmed input differs from what is persisted; an empty input with no override is not dirty.
 const dirty = $derived(config !== null && input.trim() !== (config.overrideUrl ?? ""));
 
 async function load() {

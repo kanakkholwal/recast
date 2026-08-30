@@ -37,8 +37,7 @@ async function resend() {
 }
 
 async function refresh() {
-	// User clicked the link in another tab → re-run loaders so the gate
-	// sees the new `emailVerified` and lets them through.
+	// The link may have been clicked in another tab, so re-run loaders and let the gate see the new verified flag.
 	if (checking) return;
 	checking = true;
 	try {

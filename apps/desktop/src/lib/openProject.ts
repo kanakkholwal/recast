@@ -66,8 +66,7 @@ export async function openProjectInNewWindow(path: string): Promise<void> {
  *   - Not a valid project → "Not a valid Recast project".
  */
 export async function openProjectFromExternalPath(path: string): Promise<void> {
-	// Best-effort guard: a failed IPC treats it as "not recording" rather than
-	// blocking the open.
+	// Best-effort guard: a failed IPC reads as not-recording rather than blocking the open.
 	let recording = false;
 	try {
 		recording = await isRecordingActive();

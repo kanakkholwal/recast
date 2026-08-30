@@ -8,8 +8,7 @@ fn default_bounce_speed_ms() -> f64 {
     220.0
 }
 
-// Defaults mirror the editor's cursor-smoothing presets (see
-// editor-store.svelte.ts: snapToClicks/snapWindowMs default true / 80 ms).
+// Defaults mirror the editor's cursor-smoothing presets in editor-store.svelte.ts (true, 80 ms).
 fn default_snap_to_clicks() -> bool {
     true
 }
@@ -147,9 +146,7 @@ pub struct RenderState {
     pub music_clips: Vec<AudioClip>,
     #[serde(default)]
     pub camera_overlay: CameraOverlaySettings,
-    // Hybrid-raster cursor sprite. Populated by the JS export trigger
-    // when the active style is non-`dot`; the soft-dot path is unchanged
-    // when these are `None`.
+    // Populated by the JS export trigger for a non-dot style; the soft-dot path is unchanged when these are None.
     #[serde(default)]
     pub cursor_sprite_rest: Option<String>,
     #[serde(default)]

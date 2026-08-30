@@ -326,9 +326,7 @@ pub struct CaptionSidecar {
     pub transcript: crate::transcription::Transcript,
 }
 
-// Serialize as well as Deserialize: the export queue persists the whole request
-// (render state included) to a payload file on disk so a queued job can run after
-// its editor is closed and survive an app restart. Heavy but self-contained.
+// Serialize too: the queue persists the whole request to a payload file, so a job survives its editor closing and an app restart.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportRequest {
@@ -405,11 +403,7 @@ pub struct CaptureIntent {
 }
 
 pub struct AppState {
-    // `Arc` so `stop_recording` can hand an owned handle to a `spawn_blocking`
-    // worker. `stop()` joins the encoder/capture threads and (with a paused
-    // camera) runs a 30s+ FFmpeg re-encode; doing that on Tauri's main thread
-    // froze the macOS WebView until it finished. All other callers reach the
-    // manager through `Deref`, so the `Arc` is transparent to them.
+    // `Arc` so `stop_recording` can hand an owned handle to a blocking worker; its join plus a 30s FFmpeg re-encode froze the macOS WebView.
     pub recording_manager: Arc<crate::recording::RecordingManager>,
     pub last_file_path: parking_lot::Mutex<Option<String>>,
     /// Read-mostly (output dir, tray pref, telemetry consent, cloud URL are read

@@ -81,9 +81,7 @@ fn dev_telemetry_suppressed() -> bool {
 /// fuller scrubber; this is the Rust parity pass for native payloads.
 fn scrub(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    // Tokenize on whitespace and redact any token that looks like a path or
-    // an email. Coarser than the JS regex set but covers the high-risk cases
-    // (home directories, absolute paths, emails) without pulling in `regex`.
+    // Redact any whitespace token that looks like a path or email: coarser than the JS regexes but needs no `regex` dep.
     for (i, token) in input.split_whitespace().enumerate() {
         if i > 0 {
             out.push(' ');
@@ -192,10 +190,7 @@ pub fn capture_exception(app: &AppHandle, name: &str, message: &str, stack: Opti
     });
 
     let url = format!("{}/i/v0/e/", host.trim_end_matches('/'));
-    // Detached — never joined. A panic may fire on a thread with no tokio
-    // context, so we stand up a tiny current-thread runtime just for this send.
-    // `Builder::spawn` returns a Result (vs `thread::spawn`, which panics if the
-    // OS can't create a thread) so this can't double-panic inside the panic hook.
+    // Detached, with its own current-thread runtime since a panic may fire without one; `Builder::spawn` returns a Result, so it can't double-panic.
     let _ = std::thread::Builder::new().spawn(move || {
         let Ok(rt) = tokio::runtime::Builder::new_current_thread()
             .enable_all()

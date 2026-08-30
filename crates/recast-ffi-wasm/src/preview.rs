@@ -103,9 +103,7 @@ impl PreviewEngine {
             ..Default::default()
         };
 
-        // The surface must come from the instance the device is built on, so the
-        // instance is created here and handed to the context rather than the
-        // context making a second one of its own.
+        // The surface must come from the instance the device is built on, so it is created here and handed to the context.
         let instance = GpuContext::instance_for(&options);
         let surface = instance
             .create_surface(target)
@@ -290,8 +288,7 @@ impl PreviewEngine {
 
         self.ctx.queue().copy_external_image_to_texture(
             &wgpu::CopyExternalImageSourceInfo {
-                // `VideoFrame::clone` is the JS method, which returns a Result;
-                // this is the Rust handle clone, which does not copy the frame.
+                // `VideoFrame::clone` is the JS method returning a Result; this is the Rust handle clone, which copies nothing.
                 source: wgpu::ExternalImageSource::VideoFrame(Clone::clone(frame)),
                 origin: wgpu::Origin2d::ZERO,
                 flip_y: false,
@@ -527,9 +524,7 @@ impl PreviewEngine {
         };
         self.configure_surface(width, height);
 
-        // A dropped frame is a skip, not an error: the browser reports Timeout
-        // and Occluded routinely, and turning either into a JS exception would
-        // tear the preview down over a minimised window.
+        // A dropped frame is a skip, not an error: Timeout and Occluded are routine, and throwing would tear the preview down.
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,

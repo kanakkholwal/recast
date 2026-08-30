@@ -40,9 +40,7 @@ function toggleHide() {
 	store.annotationsGloballyHidden = !store.annotationsGloballyHidden;
 }
 
-// Tool hotkeys live with the tools they drive. Unlike the markup panel, this
-// component stays mounted on every tab, so the tab check is explicit rather
-// than a side effect of when it happens to be rendered.
+// This component stays mounted on every tab, so the tab check is explicit rather than a side effect of rendering.
 function handleHotkey(event: KeyboardEvent) {
 	if (!onTab) return;
 	if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -87,9 +85,7 @@ function handleHotkey(event: KeyboardEvent) {
               aria-pressed={active}
               class={cn(
                 BAR_BTN,
-                // A filled accent, not the bar's raised pill: an armed tool
-                // changes what a click on the picture does, which is a stronger
-                // claim than "this view option is on".
+                // A filled accent, not the bar's raised pill: an armed tool changes what a click does, a stronger claim than a view option.
                 active && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
               )}
             >

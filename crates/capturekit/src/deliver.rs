@@ -179,14 +179,12 @@ impl AudioQueue {
             return;
         };
         if queued.total.saturating_add(bytes.len()) > capacity {
-            // Refusing the new samples rather than evicting the old keeps what
-            // is already queued intact; the caller asked for those first.
+            // Refusing the new samples rather than evicting keeps what is queued intact; the caller asked for those first.
             queued.broke = true;
             return;
         }
         queued.total += bytes.len();
-        // A run that a refusal has already ended cannot take more samples:
-        // appending would splice them onto the far side of the hole.
+        // A run a refusal already ended can't take more samples: appending would splice them onto the far side of the hole.
         let continues = !queued.broke && !queued.runs.is_empty();
         if continues {
             if let Some(run) = queued.runs.back_mut() {

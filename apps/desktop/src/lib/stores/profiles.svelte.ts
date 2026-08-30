@@ -38,10 +38,7 @@ function createProfilesStore() {
 	let profiles = $state<RecordingProfile[]>([]);
 	let enabled = $state(true);
 	let hydrated = $state(false);
-	// Signature of the set we last pushed to (or adopted from) the backend. When
-	// our own `set_profiles` echoes back as `recording-profiles:changed`, this
-	// lets us skip the redundant re-assign. Best-effort only; loop-safety does
-	// not depend on it (the listener never pushes).
+	// Signature of the last set pushed or adopted, so our own echo skips a redundant re-assign; loop-safety doesn't depend on it.
 	let lastSynced = "";
 	// One-shot: hydrate is idempotent across the many onMount call sites.
 	let hydratePromise: Promise<void> | null = null;
@@ -63,8 +60,7 @@ function createProfilesStore() {
 
 	async function doHydrate() {
 		if (typeof window !== "undefined") {
-			// Cross-window sync rides the backend broadcast (Tauri `emit` reaches
-			// every webview). The listener only assigns; it never pushes back.
+			// Cross-window sync rides the backend broadcast; the listener only assigns and never pushes back.
 			listen<ProfilesSnapshot>(RECORDING_PROFILES_CHANGED_EVENT, (event) => {
 				const snap = event.payload;
 				if (signature(snap.profiles, snap.enabled) === lastSynced) return;
@@ -82,12 +78,10 @@ function createProfilesStore() {
 			} = reconcileProfileHydration(snap, legacy);
 			setState(next, nextEnabled);
 			if (push) pushToBackend();
-			// The backend is now authoritative; drop the pre-backend key so it
-			// can't linger or drift.
+			// The backend is authoritative now, so drop the pre-backend key before it can linger or drift.
 			clearLegacyProfileStorage();
 		} catch {
-			// Backend unreachable (e.g. a non-Tauri context): fall back to the
-			// legacy read so the UI still shows something. Leave the key in place.
+			// Backend unreachable (a non-Tauri context): fall back to the legacy read and leave the key in place.
 			const legacy = readLegacyProfiles();
 			if (legacy) setState(ensureExactlyOneDefault(legacy.profiles), legacy.enabled);
 		} finally {

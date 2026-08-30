@@ -17,8 +17,7 @@ const TIMESCALE: u32 = 25;
 /// else's parser. ffprobe ships beside the app already.
 fn ffprobe() -> Option<PathBuf> {
     let ffmpeg = recast_testkit::ffmpeg_path()?;
-    // The bundled sidecars carry the target triple, so ffprobe sits beside
-    // ffmpeg under the SAME decorated name rather than a bare one.
+    // The bundled sidecars carry the target triple, so ffprobe sits beside ffmpeg under the same decorated name.
     let name = ffmpeg
         .file_name()?
         .to_str()?
@@ -43,8 +42,7 @@ fn elementary_stream(ffmpeg: &Path, out: &Path) -> bool {
             "libx264",
             "-preset",
             "ultrafast",
-            // No B-frames: composition offsets are a separate concern and this
-            // test is about the container.
+            // No B-frames: composition offsets are a separate concern and this test is about the container.
             "-bf",
             "0",
             "-f",
@@ -75,8 +73,7 @@ fn probe_field(ffprobe: &Path, file: &Path, entry: &str) -> String {
         .stdin(Stdio::null())
         .output()
         .expect("ffprobe runs");
-    // ffprobe ends lines with CRLF on Windows, and a multi-field query is
-    // compared line by line.
+    // ffprobe ends lines with CRLF on Windows, and a multi-field query is compared line by line.
     String::from_utf8_lossy(&out.stdout)
         .replace("\r\n", "\n")
         .trim()

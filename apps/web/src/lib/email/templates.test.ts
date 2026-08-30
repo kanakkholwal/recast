@@ -40,8 +40,7 @@ describe.each(ALL)("$name", ({ name, data }) => {
 	});
 
 	it("puts the action URL in both the html and the plain-text body", () => {
-		// Dev with no RESEND_API_KEY prints only `text` to stdout, so the link
-		// has to survive there or local testing is impossible.
+		// Dev without a Resend key prints only `text`, so the link must survive there or local testing is impossible.
 		expect(r.text).toContain(data.url);
 		expect(r.html).toContain(data.url as string);
 	});

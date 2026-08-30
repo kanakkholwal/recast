@@ -88,8 +88,7 @@ describe("planAudioSchedule", () => {
 			{ start: 6, end: 10 },
 		];
 		const chunks = planAudioSchedule(regions, 5);
-		// The first chunk (output 0..4) is fully behind; the second starts at 4
-		// output, so it begins immediately with a 2s offset into its source.
+		// The first chunk is fully behind; the second starts at output 4, so it begins at once with a 2s source offset.
 		expect(chunks).toHaveLength(1);
 		expect(chunks[0]?.bufferOffset).toBe(7);
 		expect(chunks[0]?.duration).toBe(3);
@@ -100,8 +99,7 @@ describe("planAudioSchedule", () => {
 		const chunks = planAudioSchedule(regions, 0);
 		expect(chunks[0]?.duration).toBe(4);
 		expect(chunks[0]?.rate).toBe(2);
-		// 4 source seconds at 2x occupy 2 output seconds; the output-time
-		// span is recorded for resync/debugging.
+		// 4 source seconds at 2x occupy 2 output seconds; the output span is recorded for resync and debugging.
 		expect(chunks[0]?.outEnd - chunks[0]?.outStart).toBe(2);
 	});
 
@@ -132,8 +130,7 @@ describe("planAudioScheduleWindow", () => {
 	];
 
 	it("equals planAudioSchedule on the scheduling-critical fields over the full window", () => {
-		// outStart/outEnd differ by design (window clips them; planAudioSchedule keeps
-		// the region's full span) — they're debug-only. The load-bearing fields match.
+		// outStart and outEnd differ by design and are debug-only; the load-bearing fields match.
 		const key = (c: ScheduledChunk) => ({
 			whenDelay: c.whenDelay,
 			bufferOffset: c.bufferOffset,
@@ -148,8 +145,7 @@ describe("planAudioScheduleWindow", () => {
 	});
 
 	it("clips regions to the output window and anchors whenDelay to the play-from time", () => {
-		// Anchor at output 0, schedule only output [5, 7]. Region 2 occupies output
-		// [4, 8] (source [6, 10]); the [5, 7] slice is source [7, 9].
+		// Region 2 occupies output [4,8] from source [6,10], so the [5,7] slice is source [7,9].
 		const chunks = planAudioScheduleWindow(regions, 0, 5, 7);
 		expect(chunks).toHaveLength(1);
 		expect(chunks[0]?.bufferOffset).toBeCloseTo(7, 6);

@@ -32,15 +32,13 @@ pub(crate) fn transcribe_gguf(
         .session()
         .map_err(|e| format!("open ggml session: {e}"))?;
 
-    // Default timestamps = Auto (richest the model supports). Only pass a language
-    // hint; leave task = Transcribe and the rest at their defaults.
+    // Timestamps default to Auto (the richest the model supports); only the language hint is passed.
     let opts = RunOptions {
         language: language.map(|s| s.to_string()),
         ..Default::default()
     };
 
-    // The native abort callback is the only thing that can interrupt inference
-    // part-way; without it Cancel would just hide a run still burning the CPU.
+    // The native abort callback is the only thing that interrupts inference; without it Cancel just hides a running CPU burn.
     let token = CancelToken::new();
     session.set_cancel_token(&token);
     cancel::install(&token);
@@ -54,8 +52,7 @@ pub(crate) fn transcribe_gguf(
         }
     })?;
 
-    // Shape varies by family (Whisper: many segments; Parakeet: one segment +
-    // per-word times). Logged so a missing-timing report can be diagnosed.
+    // Shape varies by family (Whisper many segments, Parakeet one plus word times), so log it for missing-timing reports.
     log::info!(
         "ggml {model_id}: kind={:?} segments={} words={} tokens={}",
         result.timestamp_kind,

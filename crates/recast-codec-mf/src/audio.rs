@@ -103,16 +103,14 @@ impl AudioReader {
 }
 
 fn float_samples(sample: &IMFSample) -> Result<Vec<f32>, DecodeError> {
-    // SAFETY: one contiguous buffer, read under a lock, reinterpreted as the
-    // float samples the media type asked for.
+    // SAFETY: one contiguous buffer, read under a lock, reinterpreted as the float samples the media type asked for.
     unsafe {
         let buffer = sample.ConvertToContiguousBuffer()?;
         let mut start = std::ptr::null_mut();
         let mut length = 0u32;
         buffer.Lock(&mut start, None, Some(&mut length))?;
         let bytes = std::slice::from_raw_parts(start, length as usize);
-        // Copied through `from_le_bytes` rather than transmuted: the buffer has
-        // no alignment guarantee, and a misaligned f32 read is undefined.
+        // Copied via `from_le_bytes`, not transmuted: the buffer has no alignment guarantee and a misaligned f32 read is UB.
         let samples = bytes
             .as_chunks::<4>()
             .0

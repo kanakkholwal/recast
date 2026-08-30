@@ -22,8 +22,7 @@ describe("tagActivatesOnSpace", () => {
 		expect(tagActivatesOnSpace("A", false)).toBe(false);
 	});
 
-	// The regression this exists for: a div with role="button" has no Space
-	// handler of its own, so standing down would swallow the key entirely.
+	// A div with role=button has no Space handler of its own, so standing down would swallow the key entirely.
 	it("keeps Space for plain elements, including role=button divs", () => {
 		expect(tagActivatesOnSpace("DIV")).toBe(false);
 		expect(tagActivatesOnSpace("SPAN")).toBe(false);

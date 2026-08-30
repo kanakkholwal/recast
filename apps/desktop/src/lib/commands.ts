@@ -21,9 +21,7 @@ import { getOutputDir, launchRecordingPanel, openFileLocation } from "$lib/ipc";
 import { chordLabel } from "$lib/shortcuts/registry.svelte";
 import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
 
-// Open external URLs via the Tauri opener plugin: `window.open` in WebView2
-// pops an in-app (often blocked) window instead of the default browser. Dynamic
-// import keeps this usable from the web build, which falls back to `window.open`.
+// `window.open` in WebView2 pops an in-app window instead of the browser; the dynamic import keeps this usable from the web build.
 async function openExternal(url: string) {
 	try {
 		const { openUrl } = await import("@tauri-apps/plugin-opener");

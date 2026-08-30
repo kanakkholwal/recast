@@ -42,8 +42,7 @@ describe("mediaRefExtension", () => {
 		expect(mediaRefExtension(toMediaRef(new Blob(["x"], { type: "video/webm" })))).toBe("webm");
 	});
 
-	// A dotted name with no real extension must not be mistaken for one, or an
-	// unrelated suffix could match the unsupported-container list.
+	// A dotted name with no real extension must not be mistaken for one, or an unrelated suffix matches the unsupported list.
 	it("ignores a suffix that is not extension-shaped", () => {
 		const file = new File(["x"], "clip.finalversion", { type: "video/mp4" });
 		expect(mediaRefExtension(toMediaRef(file))).toBe("mp4");

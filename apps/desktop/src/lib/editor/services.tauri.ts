@@ -119,8 +119,7 @@ export const tauriEditorServices: EditorServices = {
 		uninstall: uninstallExtension,
 	},
 	exportSink: {
-		// Rust muxes the audio into this video-only mp4 (`-c:v copy`), so the
-		// bytes land in a temp file rather than coming back as a Blob.
+		// Rust muxes audio into this video-only mp4 with `-c:v copy`, so the bytes land in a temp file rather than a Blob.
 		deliver: (bytes) => saveBrowserExportVideo(exactBuffer(bytes)),
 		enqueue: (job) => enqueueExport(job as Parameters<typeof enqueueExport>[0]),
 	},

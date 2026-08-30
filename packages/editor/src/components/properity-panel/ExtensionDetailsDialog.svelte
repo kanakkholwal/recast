@@ -48,8 +48,7 @@ interface Props {
 
 let { open = $bindable(), entry, installed }: Props = $props();
 
-// Installed packs already carry the manifest; for a registry entry we fetch it
-// (the index only has summary metadata) so contents show before install.
+// Installed packs carry the manifest; a registry entry only has summary metadata, so fetch it to show contents pre-install.
 let manifest = $state<ExtensionManifest | null>(null);
 let loadingManifest = $state(false);
 // Guards the load effect against re-fetching the same target on every re-run.
@@ -123,9 +122,7 @@ function bgThumbUrl(bg: { thumb?: string; asset: string }): string | null {
 	return a?.thumbUrl ?? a?.url ?? null;
 }
 
-// Which action is in flight, so the matching button shows a spinner + verb.
-// GOTCHA: `installed`/`entry` are reactive props that go null the moment the
-// store updates, so handlers must capture any name/id for the toast BEFORE awaiting.
+// GOTCHA: `installed` and `entry` go null the moment the store updates, so capture any name for the toast BEFORE awaiting.
 let pending = $state<null | "install" | "update" | "uninstall">(null);
 
 async function onInstall() {

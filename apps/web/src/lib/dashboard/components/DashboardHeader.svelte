@@ -37,8 +37,7 @@ const crumb = $derived.by(() => {
 	return { section, sub };
 });
 
-// On the dashboard home the search lives in the hero, so the header trigger
-// stands down there to avoid two search bars on one screen.
+// On the dashboard home the search lives in the hero, so the header trigger stands down to avoid two search bars.
 const isHome = $derived(page.url.pathname === "/dashboard");
 </script>
 

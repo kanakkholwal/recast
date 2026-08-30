@@ -48,11 +48,7 @@ export const folder = pgTable(
 		index("folder_workspace_idx").on(t.workspaceId),
 		index("folder_workspace_parent_idx").on(t.workspaceId, t.parentId),
 		index("folder_workspace_path_idx").on(t.workspaceId, t.path),
-		// Sibling folders must have distinct names under the same parent.
-		// Postgres treats NULLs as distinct, so two root folders named "Foo"
-		// would slip through this — the app layer must collapse parent=NULL
-		// to a sentinel before comparing (or add a partial unique index in
-		// a follow-up migration).
+		// Siblings need distinct names, but Postgres treats NULLs as distinct, so the app must collapse a null parent to a sentinel first.
 		unique("folder_parent_name_key").on(t.workspaceId, t.parentId, t.name),
 	],
 );

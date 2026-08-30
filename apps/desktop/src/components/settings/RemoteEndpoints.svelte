@@ -78,8 +78,7 @@ async function save() {
 	busy = true;
 	try {
 		const saved = await setRemoteAsrEndpoint(toEndpoint(form));
-		// Only touch the key when the user typed one; blank on edit keeps the
-		// stored key.
+		// Only touch the key when the user typed one: blank on edit keeps the stored key.
 		if (keyInput.trim()) await setRemoteAsrKey(saved.id, keyInput.trim());
 		toast.success(editingId ? "Endpoint updated" : "Endpoint added");
 		closeForm();

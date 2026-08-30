@@ -18,8 +18,7 @@
 mod audio;
 mod backend;
 mod capturer;
-// Push backends only. X11 polls the server, so a Linux build without the portal
-// never hands a frame over between threads.
+// Push backends only: X11 polls the server, so a Linux build without the portal never hands a frame across threads.
 #[cfg(any(windows, target_os = "macos", feature = "wayland"))]
 mod deliver;
 mod image;
@@ -108,8 +107,7 @@ pub fn shot_with(target: Target, opts: &ShotOptions) -> Result<Image> {
     let mut backend = os::open(&target, &platform::OpenOptions::from(opts))?;
     let image = shot::grab_one(backend.as_mut(), opts, requested_at);
     let stopped = backend.stop();
-    // The frame is the point; a failure to release the source after taking it is
-    // worth logging, not worth failing a screenshot the caller already has.
+    // The frame is the point: a failed release is worth logging, not worth failing a screenshot the caller already has.
     if let Err(err) = stopped {
         log::debug!("releasing the capture source after a shot failed: {err}");
     }

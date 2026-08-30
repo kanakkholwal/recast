@@ -109,5 +109,4 @@ describe("perf budgets — enforced against real code", () => {
 	});
 });
 
-// Bundle rows are gated in ./bundle.test.ts. Still unenforced (needs a browser
-// harness): TTFF, scrub p95, frame-to-glass, INP, audio drift.
+// Bundle rows are gated in ./bundle.test.ts; TTFF, scrub p95, frame-to-glass, INP and audio drift still need a browser harness.

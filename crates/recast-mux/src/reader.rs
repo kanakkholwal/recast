@@ -478,9 +478,7 @@ fn read_ctts(data: &[u8], ctts: Range<usize>, samples: usize) -> Vec<i32> {
     for i in 0..count {
         let at = ctts.start + 8 + i * 8;
         let run = u32be(data, at) as usize;
-        // Version 1 made the offset signed, which is how a stream with B frames
-        // keeps its first presentation time at zero. Version 0 stores the same
-        // bits unsigned and never uses the top one, so one cast reads both.
+        // Version 1 signs the offset so a B-frame stream starts at zero; version 0 never uses the top bit, so one cast reads both.
         let offset = u32be(data, at + 4) as i32;
         out.extend(std::iter::repeat_n(
             offset,
@@ -625,8 +623,7 @@ mod tests {
     /// a decoder needs the coded one.
     #[test]
     fn the_coded_size_comes_from_the_sample_entry_not_the_track_header() {
-        // Six reserved bytes, the data reference index, and the predefined
-        // block, then the dimensions, then out to where the extensions start.
+        // Six reserved bytes, the data reference index and the predefined block, then the dimensions and the extensions.
         let mut body = vec![0u8; 24];
         body.extend_from_slice(&1_440u16.to_be_bytes());
         body.extend_from_slice(&1_080u16.to_be_bytes());

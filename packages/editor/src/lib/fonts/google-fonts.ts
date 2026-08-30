@@ -1,8 +1,4 @@
-// Shared on-demand Google Fonts loader, used by captions (and reusable by
-// annotations). A font is fetched + cached on device by the host's asset service
-// on first use, then registered with the document via the FontFace API so any
-// element using that family renders it. The full searchable catalog can come
-// later; this curated set covers the common display/caption choices.
+// A font is fetched and cached on first use, then registered via FontFace so any element using the family renders it.
 import { getEditorServices } from "../editor/services";
 
 /** Curated, searchable set of popular Google Fonts offered in pickers. */

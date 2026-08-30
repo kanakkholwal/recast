@@ -194,8 +194,7 @@ pub fn annotation_params(
 
     let shape = match &annotation.kind {
         AnnotationKind::Rect { x, y, w, h, radius } => {
-            // Width and height go negative while the user drags; the UI flips
-            // the rect on release, and the renderer must not wait for that.
+            // Width and height go negative mid-drag; the UI flips the rect on release, and the renderer can't wait for that.
             let (left, top) = (x.min(x + w), y.min(y + h));
             let (px, py) = to_canvas(left, top);
             let (fx, fy) = to_canvas(left + w.abs(), top + h.abs());

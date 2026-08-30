@@ -63,16 +63,14 @@ describe("caption presets", () => {
 		}
 	});
 
-	// Subtle means short. Anything past ~200ms reads as a performance rather
-	// than a caption appearing.
+	// Subtle means short: past ~200ms it reads as a performance rather than a caption appearing.
 	it("keeps entrances short", () => {
 		for (const p of CAPTION_PRESETS) {
 			expect(p.style.animation?.entranceMs ?? 0, p.id).toBeLessThanOrEqual(200);
 		}
 	});
 
-	// Accent colours should read as a tint, not a highlighter. Fully saturated
-	// greens and yellows are what made the old set look dated.
+	// Accents should read as a tint, not a highlighter; fully saturated greens and yellows dated the old set.
 	it("uses restrained accent colours", () => {
 		for (const p of CAPTION_PRESETS) {
 			const anim = p.style.animation;
@@ -81,8 +79,7 @@ describe("caption presets", () => {
 		}
 	});
 
-	// The type contract says mutedColor must clear 4.5:1 against the pill fill,
-	// not merely against the spoken colour. Unspoken words are still text.
+	// mutedColor must clear 4.5:1 against the pill fill, not merely the spoken colour: unspoken words are still text.
 	it("keeps unspoken words legible on the pill", () => {
 		for (const p of CAPTION_PRESETS) {
 			if (p.style.background !== "box") continue;

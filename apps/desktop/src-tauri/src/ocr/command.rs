@@ -102,9 +102,7 @@ pub async fn run(
         return Err(format!("video not found: {video_path}"));
     }
 
-    // Only announce a download when there is one to do. Flashing a "downloading"
-    // phase on every run (the models are fetched exactly once, ever) would train
-    // the reader to ignore the phase label.
+    // Only announce a download when there is one: a phase that flashes on every run trains the reader to ignore it.
     let progress = Arc::new(on_progress);
     let paths = if models::models_present(app) {
         models::model_paths(app)?
@@ -127,10 +125,7 @@ pub async fn run(
     let timeline = tokio::task::spawn_blocking(move || -> Result<VideoTextTimeline, String> {
         let (_, _, duration) = probe_dims(&media)?;
 
-        // Per-stage timings. OCR dominates by a wide margin, and in a debug build
-        // the rten inference is orders of magnitude slower than release, so these
-        // numbers are the first thing to look at when a read feels slow. They ride
-        // out on the result, so the review UI can show them too.
+        // OCR dominates, and debug-build rten inference is orders of magnitude slower, so these timings ride out on the result.
         let sink = Arc::clone(&progress);
         let mut throttle = Throttle::new(move |p| sink(p));
 
@@ -149,9 +144,7 @@ pub async fn run(
         })?;
         let sample_ms = t0.elapsed().as_millis() as u64;
 
-        // Close the sampling bar at whatever it actually walked. The estimate from
-        // the container's duration can undershoot the real frame count, which would
-        // otherwise leave the bar parked at 97%.
+        // Close the bar at what it actually walked: the duration-derived estimate can undershoot and park it at 97%.
         throttle.send(
             OcrProgress::new("sampling", scanned, scanned, frames.len() as u64),
             true,
@@ -203,8 +196,7 @@ pub async fn run(
     .await
     .map_err(|e| format!("ocr task join: {e}"))??;
 
-    // Terminal phase, sent only once the result is in hand, so a consumer's bar and
-    // its summary can never disagree about whether the read finished.
+    // Terminal phase, sent only with the result in hand, so a consumer's bar and summary can't disagree.
     finished(OcrProgress::new(
         "done",
         timeline.stats.frames_read as u64,

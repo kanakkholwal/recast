@@ -909,11 +909,7 @@ mod tests {
     }
 }
 
-// `async` + `spawn_blocking`: the Linux path runs `gdbus ... .status()`, which
-// blocks on a D-Bus round-trip (and its timeout) to the file manager. Sync
-// commands run on the macOS/Linux UI thread, so that round-trip would briefly
-// freeze the window. The Windows/macOS branches only `spawn()` (non-blocking),
-// but routing all three through a worker keeps the command uniformly off-thread.
+// Async plus spawn_blocking: the Linux path blocks on a D-Bus round-trip, and sync commands run on the UI thread.
 #[tauri::command]
 pub async fn open_file_location(path: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || open_file_location_blocking(path))

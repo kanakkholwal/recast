@@ -76,20 +76,17 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 
 	const stat = await statObject(key);
 	if (!stat || stat.contentLength === 0) {
-		// The PUT never landed (or was empty) — clean up a stray empty object and
-		// tell the client to retry.
+		// The PUT never landed, so clean up the stray empty object and tell the client to retry.
 		if (stat) await deleteObject(key).catch(() => {});
 		return json({ ok: false, reason: "upload_missing" }, { status: 410 });
 	}
 
-	// Persist the bare key and sign it on read (like the video), so the cover
-	// works regardless of whether a public CDN is configured/serving.
+	// Persist the bare key and sign on read, so the cover works whether or not a public CDN is serving.
 	const posterUrl = key;
 	const db = getDb();
 	await db.update(recast).set({ posterUrl, updatedAt: new Date() }).where(eq(recast.id, row.id));
 
-	// Drop the previous poster blob. Skip when it's the same key (shouldn't
-	// happen — versions differ) or an external/legacy URL we don't own.
+	// Skip when it is the same key or an external legacy URL we don't own.
 	const oldKey = objectKeyFromStored(row.posterUrl);
 	if (oldKey && oldKey !== key) {
 		await deleteObject(oldKey).catch((err) => {
@@ -100,8 +97,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 		});
 	}
 
-	// Return a directly displayable URL so the client can swap the thumbnail
-	// without a full reload (public URL as-is, or a fresh signed GET).
+	// Return a displayable URL so the client can swap the thumbnail without a full reload.
 	const displayUrl = await resolvePlaybackUrl(posterUrl);
 	return json({ ok: true, posterUrl: displayUrl });
 };

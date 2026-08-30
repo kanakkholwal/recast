@@ -31,9 +31,7 @@ import SilenceReviewPopover from "../../SilenceReviewPopover.svelte";
 import ZoomSuggestionsPopover from "../../ZoomSuggestionsPopover.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
-// Three clusters: EDIT (split + trim to playhead) · INSERT (focus/suggest/
-// silence) · VIEW (zoom + display options). Popovers are portalled because the
-// timeline lives in an `overflow-hidden` slide wrapper that would clip them.
+// Three clusters (edit, insert, view); popovers are portalled because the timeline's overflow-hidden wrapper would clip them.
 
 interface Props {
 	store: EditorStore;
@@ -104,9 +102,7 @@ let {
 const trimHint =
 	"Trim start / Trim end keep the middle. Cut removes a section between two clicks. Split breaks the clip at the playhead so you can delete or re-speed one piece.";
 
-// `splitAt` already returns false for a split that can't land (clip edges, a
-// point inside a removed range, or one that already exists) but the caller
-// discarded that, so the button and the S key both silently did nothing.
+// `splitAt` already refuses a split that can't land, but the caller discarded that, so the button silently did nothing.
 const canSplit = $derived(store.canSplitAt(store.currentTime));
 const splitTitle = $derived(
 	canSplit
@@ -120,18 +116,14 @@ let showSilence = $state(false);
 // Counts only silence-detected cuts; manual ripple deletes shouldn't inflate this.
 const silenceCutCount = $derived(store.cuts.filter((c) => c.source === "silence").length);
 
-// How many export-affecting effects are currently switched off. Surfaced as a
-// badge on the Layers button so "my cuts didn't apply" is visible without
-// opening the menu: this is the state that changes the output file, unlike the
-// lane-visibility toggles above it (which are purely cosmetic).
+// A badge for export-affecting effects that are off, so 'my cuts didn't apply' is visible without opening the menu.
 const effectsOff = $derived(
 	(store.cutsEnabled ? 0 : 1) +
 		(store.focusEnabled ? 0 : 1) +
 		(store.annotationsGloballyHidden ? 1 : 0),
 );
 
-// Shared control styling: flat, quiet segments (the studio mockups' tool row),
-// clusters separated by hairlines rather than boxed trays.
+// Flat, quiet segments with hairline separators rather than boxed trays.
 const GROUP = "flex items-center gap-0.5";
 const SEG =
 	"flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground disabled:opacity-40";

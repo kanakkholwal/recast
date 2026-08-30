@@ -277,8 +277,7 @@ pub fn set_profiles(
     enabled: bool,
 ) -> ProfilesSnapshot {
     let state = app.state::<AppState>();
-    // Snapshot under the write lock, drop it, THEN write to disk — never hold
-    // the lock across the disk write (matches the config-store discipline).
+    // Snapshot under the lock, drop it, then write: never hold the lock across a disk write, as the config store does.
     let to_save = {
         let mut guard = state.profiles.write();
         guard.profiles = profiles;

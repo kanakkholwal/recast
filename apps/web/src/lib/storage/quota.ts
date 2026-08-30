@@ -7,8 +7,7 @@ import { currentDeliveryPeriodStart, type PlanKey, type QuotaSnapshot } from "./
 
 export * from "./quota.logic";
 
-// Drizzle's transaction callback yields a tx-bound instance with the same query
-// surface but a different concrete type — strip `$client` so both are assignable.
+// Drizzle's transaction yields a tx-bound instance with the same query surface but a different type, so strip `$client`.
 type DbLike = Omit<ReturnType<typeof getDb>, "$client">;
 
 /**

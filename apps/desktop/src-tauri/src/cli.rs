@@ -1011,9 +1011,7 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             control(cli, "screen.read", json!({ "path": abs.to_string_lossy() }))
         }
         Command::Transcribe(args) => {
-            // The model_id we hand to the Transcript is informational only —
-            // the engine doesn't read it. Default to the file stem so the
-            // smoke test output identifies which GGUF was used.
+            // The model_id is informational (the engine ignores it); default to the file stem so smoke output names the GGUF.
             let model_id = args
                 .model
                 .file_stem()
@@ -1040,9 +1038,7 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
                 let _ = emit(frame, cli.format);
             })
         }
-        // Phase A (read-only): every verb hits `load_editor_document` /
-        // `list_export_jobs` through the existing control channel. Each takes
-        // a single `path`/`id` arg, so no JSON-patch surface here yet.
+        // Read-only verbs hit `load_editor_document` and `list_export_jobs` over the control channel, each taking one arg.
         Command::Project { action } => project_dispatch(cli, action),
         Command::Editor { action } => editor_dispatch(cli, action),
         Command::Export { action } => export_dispatch(cli, action),
@@ -1886,8 +1882,7 @@ fn build_start_params(args: &StartArgs) -> Result<Value, String> {
         params.insert("region".into(), parse_region(spec)?);
     }
 
-    // Option flags only apply to the explicit path; the stored intent carries
-    // its own. Without a target, the flags are ignored (the intent wins).
+    // Option flags apply only to an explicit path; without a target the stored intent wins and they are ignored.
     if !params.contains_key("targetType") {
         return Ok(Value::Object(params));
     }
@@ -2034,9 +2029,7 @@ fn block_on<T, E: std::fmt::Display>(
 /// throughout; YAML is a render-time convenience for human eyes.
 fn emit<T: Serialize>(value: &T, format: Option<Format>) -> Result<(), String> {
     let format = format.unwrap_or_else(|| {
-        // A terminal reader wants YAML; a pipe or `$x = recast ...` capture
-        // wants machine-parseable JSON. `is_terminal` reflects the rebound
-        // console handle on Windows too (see attach_parent_console).
+        // A terminal wants YAML and a pipe wants JSON; `is_terminal` reflects the rebound console handle on Windows too.
         if std::io::stdout().is_terminal() {
             Format::Yaml
         } else {
@@ -2078,8 +2071,7 @@ fn attach_parent_console() {
     };
 
     unsafe {
-        // A valid inherited stdout (redirect or existing console) is
-        // authoritative: keep it so output reaches the caller's pipe/file.
+        // A valid inherited stdout (a redirect or existing console) is authoritative, so output reaches the caller's pipe.
         if let Ok(handle) = GetStdHandle(STD_OUTPUT_HANDLE) {
             if !handle.is_invalid() {
                 return;

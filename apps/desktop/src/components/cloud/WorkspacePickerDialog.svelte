@@ -36,8 +36,7 @@ let {
 let chosen = $state<string | null>(null);
 let remember = $state(false);
 
-// Re-seed the selection each time the dialog opens so a prior cancel doesn't
-// leak into the next share. Defaults to the active workspace, else the first.
+// Re-seeded on open so a prior cancel can't leak into the next share; defaults to the active workspace, else the first.
 $effect(() => {
 	if (open) {
 		chosen = activeId ?? workspaces[0]?.id ?? null;

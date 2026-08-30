@@ -67,8 +67,7 @@ const devices = $derived(deviceBreakdown(activity));
 const traffic = $derived(trafficBreakdown(activity));
 const returning = $derived(returningViewers(activity));
 
-// A number with nothing to compare it to can't be judged, which is the one
-// job of an analytics page. "All time" has no prior window, so it shows none.
+// A number with nothing to compare it to can't be judged, and All time has no prior window, so it shows none.
 const stats = $derived([
 	{
 		icon: Eye,

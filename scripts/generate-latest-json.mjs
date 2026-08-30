@@ -30,12 +30,7 @@ const tag = arg("tag");
 const repo = arg("repo");
 const dir = arg("dir", ".");
 const out = arg("out", "latest.json");
-// Comma-separated updater platform keys that MUST be present, e.g.
-// "windows-x86_64,linux-x86_64,darwin-aarch64,darwin-x86_64". When set, a
-// missing key is a hard error instead of a skipped-with-warning — this is
-// what stops a release from silently publishing a manifest that omits a
-// platform (a build leg that failed early, or a bundle target that never
-// produced an updater artifact). Leave unset for partial/single-platform runs.
+// Required platform keys: when set, a missing one is a hard error, so a failed build leg can't silently publish a partial manifest.
 const require = (arg("require", "") || "")
 	.split(",")
 	.map((s) => s.trim())
@@ -53,9 +48,7 @@ const sigs = readdirSync(dir).filter((f) => f.endsWith(".sig"));
 
 const pick = (predicate) => sigs.find(predicate);
 
-// Map each updater platform key to the signature of the bundle it installs.
-// Windows updates via the NSIS installer (`-setup.exe`); macOS via the
-// arch-tagged `.app.tar.gz`; Linux via the AppImage.
+// Each platform key maps to the bundle it installs: NSIS setup on Windows, arch-tagged app.tar.gz on macOS, AppImage on Linux.
 const targets = [
 	{
 		key: "windows-x86_64",

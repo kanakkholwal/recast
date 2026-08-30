@@ -18,8 +18,7 @@ export function createRateTracker() {
 			return undefined;
 		}
 		const dt = (now - prev.time) / 1000;
-		// Too soon since the last sample: keep the last estimate, don't divide by
-		// a near-zero interval.
+		// Too soon since the last sample: keep the previous estimate rather than divide by a near-zero interval.
 		if (dt < 0.2) return prev.rate || undefined;
 		const inst = Math.max(0, (bytes - prev.bytes) / dt);
 		const rate = prev.rate ? prev.rate * 0.6 + inst * 0.4 : inst;

@@ -33,8 +33,7 @@ export async function runExportJob(
 			height: job.height,
 			fps: job.fps,
 			outputDurationSec: job.outputDurationSec,
-			// Rebuilt here, not in the job: the branded MediaBunny `Quality` cannot
-			// cross `postMessage`.
+			// Rebuilt here, not in the job: the branded MediaBunny `Quality` cannot cross `postMessage`.
 			encodingConfig: videoEncodingConfigFor(job.quality),
 			assets: {
 				backgroundImage: job.backgroundImage,
@@ -49,8 +48,7 @@ export async function runExportJob(
 			signal: runtime.signal,
 		});
 	} finally {
-		// Every bitmap the job owns, deduped and idempotent, so an early throw
-		// (engine init, say) cannot leak the sprites.
+		// Every bitmap the job owns, deduped and idempotent, so an early throw can't leak the sprites.
 		closeJobBitmaps(job);
 	}
 }

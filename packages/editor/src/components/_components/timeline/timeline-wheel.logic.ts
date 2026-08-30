@@ -21,8 +21,7 @@ export function wheelIntent(event: WheelGesture, canScrollVertically: boolean): 
 		return { kind: "zoom", direction: deltaY < 0 ? 1 : -1 };
 	}
 
-	// Shift+wheel is the explicit pan gesture; browsers report it as deltaX on
-	// some platforms and deltaY on others, so take whichever moved.
+	// Shift+wheel is the explicit pan gesture, reported as deltaX on some platforms and deltaY on others.
 	if (event.shiftKey) {
 		const delta = deltaY !== 0 ? deltaY : deltaX;
 		return delta === 0 ? { kind: "none" } : { kind: "horizontal", delta };
@@ -33,8 +32,7 @@ export function wheelIntent(event: WheelGesture, canScrollVertically: boolean): 
 	}
 
 	if (deltaY === 0) return { kind: "none" };
-	// With nothing below the fold a vertical notch would do nothing, so keep
-	// panning the timeline the way it did before lanes could stack.
+	// With nothing below the fold a vertical notch would do nothing, so keep panning as it did before lanes stacked.
 	return canScrollVertically
 		? { kind: "vertical", delta: deltaY }
 		: { kind: "horizontal", delta: deltaY };

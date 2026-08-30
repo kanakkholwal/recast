@@ -27,9 +27,7 @@ function handleKeydown(e: KeyboardEvent) {
 
 	e.preventDefault();
 	toggleMode();
-	// Read AFTER toggleMode so the toast reflects the NEW mode. mode is
-	// a reactive store from mode-watcher; `.current` updates synchronously
-	// on toggle so this is the destination, not the previous value.
+	// Read AFTER toggleMode: `mode.current` updates synchronously, so this is the destination, not the previous value.
 	toast.info(`Switched to ${mode.current === "dark" ? "dark" : "light"} mode`, { duration: 1600 });
 }
 

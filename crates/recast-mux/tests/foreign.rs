@@ -14,9 +14,7 @@ const FRAMES: u32 = 50;
 /// timescales, its own `stsc` runs and its own box order.
 fn foreign_file(name: &str, args: &[&str]) -> Option<PathBuf> {
     let Some(ffmpeg) = recast_testkit::ffmpeg_path() else {
-        // Loud, and never silent: a suite that skips itself looks identical to
-        // one that passes, which is how the ffprobe tests here once proved
-        // nothing for four green runs.
+        // Loud, never silent: a suite that skips itself looks identical to one that passes, which proved nothing for four runs.
         eprintln!("skipping: no ffmpeg sidecar to build a foreign file with");
         return None;
     };
@@ -182,8 +180,7 @@ fn a_file_with_b_frames_carries_composition_offsets() {
         video.samples.iter().any(|s| s.composition_offset != 0),
         "no composition offsets in a stream encoded with B frames"
     );
-    // Presentation order is a permutation of decode order, so the set of
-    // presentation times has to be as large as the sample count.
+    // Presentation order is a permutation of decode order, so the set of presentation times must match the sample count.
     let mut times: Vec<i64> = video
         .samples
         .iter()

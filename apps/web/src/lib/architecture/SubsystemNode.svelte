@@ -28,8 +28,7 @@ const node = $derived(data as Data);
 <Handle type="source" position={Position.Right} isConnectable={false} />
 
 <style>
-	/* Border-first, like every other container on the site: one hairline at full
-	   strength. The phase reads from the dot, not from a tinted edge. */
+	/* Border-first like every container on the site: one hairline at full strength, with the phase read from the dot. */
 	.node {
 		display: flex;
 		flex-direction: column;
@@ -66,8 +65,7 @@ const node = $derived(data as Data);
 		background-color: var(--phase-hue);
 	}
 
-	/* One hue per phase, matching the Record, Polish and Share spine on the
-	   landing page. An artifact is neutral: a file is not a step. */
+	/* One hue per phase, matching the landing page's spine; an artifact is neutral, since a file is not a step. */
 	.dot[data-phase="record"] {
 		--phase-hue: var(--color-tag-tangerine);
 	}

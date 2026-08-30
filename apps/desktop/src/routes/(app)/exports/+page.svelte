@@ -55,8 +55,7 @@ const lib = createLibraryPage({
 	load: listExports,
 	matchExtension: true,
 	onEntryRemoved: (entry) => {
-		// Local file is gone: drop upload records so the row doesn't return next
-		// session claiming a copy. Remote objects are left untouched.
+		// The local file is gone, so drop upload records; remote objects are left untouched.
 		void gdrive.forgetUpload(entry.path);
 		void cloudShare.forget(entry.path);
 	},

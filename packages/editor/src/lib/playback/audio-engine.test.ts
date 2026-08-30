@@ -53,8 +53,7 @@ describe("musicPlaybackMode", () => {
 	});
 
 	it("falls back to buffering when the duration is unknown", () => {
-		// Metadata probes fail outside a browser and on some containers; the
-		// buffered path is the one every other test pins.
+		// Metadata probes fail outside a browser and on some containers, and the buffered path is what every other test pins.
 		expect(musicPlaybackMode(Number.NaN)).toBe("buffer");
 		expect(musicPlaybackMode(0)).toBe("buffer");
 		expect(musicPlaybackMode(Number.POSITIVE_INFINITY)).toBe("buffer");

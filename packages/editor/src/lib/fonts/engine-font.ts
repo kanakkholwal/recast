@@ -15,8 +15,7 @@ export interface EngineFont {
 	data: Uint8Array;
 }
 
-// Successes only. A failure here is usually the first-use download, so caching
-// it would strand the font for the rest of the session.
+// Successes only: a failure here is usually the first-use download, and caching it would strand the font.
 const cache = new Map<string, EngineFont>();
 
 /**

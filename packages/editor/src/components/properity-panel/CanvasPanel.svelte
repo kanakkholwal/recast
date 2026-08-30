@@ -78,11 +78,7 @@ function rememberColor(color: string) {
 	recents = pushRecentColor(color);
 }
 
-// Mode tabs only choose which preset list is shown; they don't mutate the
-// background (only an explicit preset pick does), so browsing other modes
-// keeps the applied background intact.
-// Overridable $derived: re-syncs when the store's type changes, and the tab's
-// onValueChange writes over it for browsing. No $effect needed to mirror it.
+// Mode tabs only choose which preset list shows, so browsing keeps the applied background; an overridable $derived re-syncs on store changes with no mirroring effect.
 let displayedMode = $derived<BackgroundType>(store.backgroundType);
 
 let blurValue = $state(0);

@@ -38,8 +38,7 @@ export const load: PageServerLoad = async (event) => {
 		.limit(1);
 	if (!team) error(404, "Team not found");
 
-	// Members streamed — team metadata (name, plan, slug) renders immediately,
-	// the member list fills in.
+	// Members are streamed, so team metadata renders immediately while the list fills in.
 	const members = db
 		.select({
 			id: memberTable.id,

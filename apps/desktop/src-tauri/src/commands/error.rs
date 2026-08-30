@@ -41,8 +41,7 @@ impl AppError {
     }
 }
 
-// A bare string is by far the most common ad-hoc error today; accept it so
-// `.ok_or_else(|| "…".to_string())?` and friends migrate with just `?`.
+// A bare string is the most common ad-hoc error today, so accepting it lets those sites migrate with just `?`.
 impl From<String> for AppError {
     fn from(message: String) -> Self {
         Self::Message(message)
@@ -82,8 +81,7 @@ mod tests {
         let err: AppError = anyhow::anyhow!("root cause")
             .context("outer context")
             .into();
-        // `{:#}` joins the chain with `: ` — the same text the old
-        // `format!("{e:#}")` sites produced.
+        // `{:#}` joins the chain with a colon, the same text the old `format!` sites produced.
         assert_eq!(err.to_string(), "outer context: root cause");
     }
 

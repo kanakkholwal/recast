@@ -8,8 +8,7 @@ use crate::source::SampleSource;
 /// and it stops a corrupt project asking for a gain of a thousand.
 fn percent(value: f64) -> f32 {
     if !value.is_finite() {
-        // `clamp` passes NaN straight through, and a NaN gain silences the whole
-        // mix rather than one track. Unity is what an absent value means here.
+        // `clamp` passes NaN through, and a NaN gain silences the whole mix; unity is what an absent value means.
         return 1.0;
     }
     (value / 100.0).clamp(0.0, 4.0) as f32
@@ -66,9 +65,7 @@ pub fn mixer_for(graph: &AudioGraph, duration_sec: f64, sources: SceneSources) -
     let mut mixer = Mixer::new(master);
 
     for (kind, source) in sources.recordings {
-        // The master gain is the master node's now, so each recording carries
-        // only its own trim. The FFmpeg graph had to fold both into one filter
-        // because it had nowhere else to put the master.
+        // The master node owns the master gain now, so each recording carries only its own trim, unlike the FFmpeg graph.
         let (gain, muted) = match kind {
             RecordingKind::Source => (1.0, false),
             RecordingKind::System => (percent(settings.system_volume), settings.system_muted),

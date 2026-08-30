@@ -22,9 +22,7 @@ import PropSelect from "./PropSelect.svelte";
 import SceneAnimControls from "./SceneAnimControls.svelte";
 import SliderRow from "./SliderRow.svelte";
 
-// Contextual controls for the clip/segment selected on the timeline. Auto-opened
-// by PropertiesPanel when `selectedClipStart` is set (mirrors the Focus tab for
-// zoom regions). Speed writes go through `store.setSegmentSpeed` (coalesced undo).
+// Auto-opened by PropertiesPanel when a clip is selected, mirroring the Focus tab; speed writes coalesce their undo.
 
 interface Props {
 	store: EditorStore;
@@ -57,8 +55,7 @@ const speedPresetOptions = $derived([
 	...(activeSpeedPreset ? [] : [{ value: "custom", label: "Custom" }]),
 ]);
 
-// A seam sits before this clip when a cut removed content between it and the
-// previous segment. That's where a transition smooths the jump.
+// A seam sits before this clip where a cut removed content, which is where a transition smooths the jump.
 const prevSeg = $derived(
 	selected && selected.index > 0
 		? (store.segments.find((s) => s.index === selected.index - 1) ?? null)

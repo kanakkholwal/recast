@@ -100,8 +100,7 @@ function run(command, args, cwd, env) {
 	}
 }
 
-// Idempotent, and cheap when already present. Without it a job that has Rust
-// but has never built for the web fails deep inside cargo instead of here.
+// Idempotent and cheap when present; without it a Rust box that never built for web fails deep inside cargo.
 run("rustup", ["target", "add", "wasm32-unknown-unknown"], repoRoot);
 
 const version = await pinnedBindgenVersion();
@@ -124,11 +123,7 @@ for (const { feature, outName } of VARIANTS) {
 			feature,
 		],
 		cratesRoot,
-		// REQUIRED, not a nicety. `VideoFrame` sits behind this cfg in web-sys, and
-		// without it wgpu-hal's GLES backend compiles the VideoFrame texture upload
-		// as `unimplemented!()` — so every decoded frame panics the moment the
-		// engine lands on WebGL2. Appended so a RUSTFLAGS already in the
-		// environment is not silently dropped.
+		// REQUIRED: `VideoFrame` sits behind this cfg, and without it wgpu-hal's GLES upload is `unimplemented!()`. Appended so an existing RUSTFLAGS survives.
 		{ RUSTFLAGS: `${process.env.RUSTFLAGS ?? ""} --cfg=web_sys_unstable_apis`.trim() },
 	);
 	run(
@@ -136,9 +131,7 @@ for (const { feature, outName } of VARIANTS) {
 		[
 			"--target",
 			"web",
-			// The generated `.d.ts` names every closure with a codegen hash that
-			// changes on each build, so it can never be a committed artifact.
-			// `wasm/*.d.ts` is hand-written against the same surface instead.
+			// The generated `.d.ts` names closures with a per-build codegen hash, so `wasm/*.d.ts` is hand-written instead.
 			"--no-typescript",
 			"--out-dir",
 			outDir,

@@ -56,8 +56,7 @@ describe("pickDefaultModelId", () => {
 	});
 
 	it("skips a model whose runtime is unavailable even if it is the default", () => {
-		// A default model whose runtime isn't usable here (e.g. a remote endpoint
-		// with no key) must not be auto-selected over a usable on-device model.
+		// A default model whose runtime isn't usable here must not be auto-selected over a usable on-device one.
 		const models = [
 			model({ id: "remote", isDefault: true, runtimeAvailable: false }),
 			model({ id: "parakeet" }),
@@ -144,8 +143,7 @@ describe("captionStyleMatchesPreset", () => {
 	});
 
 	it("treats an absent animation as its resolved default on both sides", () => {
-		// A preset with no animation vs a style with no animation still matches
-		// (both resolve identically), so the readout does not falsely say Custom.
+		// A preset with no animation and a style with no animation resolve identically, so the readout must not say Custom.
 		const plainVal = { ...val, animation: undefined } as CaptionPresetValue;
 		const plainCs: CaptionStyle = { ...cs(), animation: undefined };
 		expect(captionStyleMatchesPreset(plainCs, plainVal)).toBe(true);
@@ -189,8 +187,7 @@ describe("elapsedLabel", () => {
 		expect(elapsedLabel(125_000)).toBe("2:05");
 	});
 
-	// A negative delta means the clock moved backwards mid-run; showing "-3s"
-	// would look like a bug in the progress readout.
+	// A negative delta means the clock moved backwards mid-run, and '-3s' would look like a bug in the readout.
 	it("never renders a negative time", () => {
 		expect(elapsedLabel(-3_000)).toBe("0s");
 	});

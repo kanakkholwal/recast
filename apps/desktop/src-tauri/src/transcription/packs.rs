@@ -64,8 +64,7 @@ fn to_caption_model(c: CaptionModelContribution) -> Result<CaptionModel, String>
     if !is_safe_ext_id(&c.id) {
         return Err(format!("unsafe model id '{}'", c.id));
     }
-    // The engine must actually run on the declared runtime, or the availability
-    // gate and the transcribe arm would disagree.
+    // The engine must run on the declared runtime, or the availability gate and the transcribe arm disagree.
     if c.engine.runtime() != c.runtime {
         return Err(format!(
             "engine '{:?}' does not run on runtime '{:?}' (model '{}')",
@@ -113,9 +112,7 @@ fn to_caption_model(c: CaptionModelContribution) -> Result<CaptionModel, String>
         min_ram_bytes: c.min_ram_bytes,
         source: ModelSource::Extension,
         remote: None,
-        // Catalog presentation metadata is curated for the built-in entries; a
-        // pack gets the neutral defaults (no scores, no badges, never
-        // "Recommended") rather than a way to self-promote in the picker.
+        // A pack gets neutral defaults (no scores or badges) rather than a way to self-promote in the picker.
         capabilities: Default::default(),
         language_count: None,
         speed_score: None,

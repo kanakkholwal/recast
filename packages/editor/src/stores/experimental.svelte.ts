@@ -55,9 +55,7 @@ const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 const STORAGE_KEY = "recast-experimental-flags";
 
 function createExperimentalStore() {
-	// Merges saved JSON over DEFAULTS so adding a flag later keeps existing
-	// choices. Tauri v2 webviews share a localStorage origin, so a flip in the
-	// settings window reaches open editor windows without a reload.
+	// Merged over DEFAULTS so a new flag keeps existing choices; Tauri webviews share an origin, so a flip reaches open editors.
 	const flags = new PersistedState<Record<ExperimentalFlag, boolean>>(STORAGE_KEY, DEFAULTS);
 
 	return {

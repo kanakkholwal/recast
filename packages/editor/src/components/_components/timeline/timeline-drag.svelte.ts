@@ -1,11 +1,6 @@
 import { getContext, setContext } from "svelte";
 
-// Which lane card is under an active pointer gesture. Read by the timeline to
-// pin that card's row for the length of the drag; the layout otherwise re-packs
-// on every pointer move and the card jumps rows out from under the cursor.
-//
-// Context, not the store: this is per-gesture view state, and the store's
-// snapshot/undo/serialization has no business seeing it.
+// Pins the dragged card's row for the gesture, or the layout re-packs on every move and the card jumps out from under the cursor. Context, not the store: per-gesture view state has no place in undo or serialization.
 
 const KEY = Symbol("timeline-lane-drag");
 

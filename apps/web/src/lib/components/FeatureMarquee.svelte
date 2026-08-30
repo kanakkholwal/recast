@@ -12,16 +12,7 @@ export type MarqueeFeature = {
 <script lang="ts">
 import { cn } from "@recast/ui/utils";
 
-// The editor tour as one slow horizontal loop rather than a rail the visitor
-// has to drag. The track holds the list twice and translates exactly -50%, so
-// the seam lands on an identical frame and the loop is invisible.
-//
-// The second copy is aria-hidden: it is the same content, and a screen reader
-// should hear the tour once.
-//
-// Card art is vector only. Screenshots in a 64s loop are a lot of bytes for
-// something that scrolls past, and they age with every UI change; a duotone
-// glyph over an animated ring stays on-system and weighs nothing.
+// One slow loop: the track holds the list twice and translates -50%, so the seam lands on an identical frame. The second copy is aria-hidden, and the art is vector only so it never ages with the UI.
 let {
 	items,
 	/** Seconds for one full pass. Slow on purpose — this is ambient, not a carousel. */
@@ -100,8 +91,7 @@ const badgeLabel = { auto: "Auto", manual: "Manual" } as const;
 </div>
 
 <style>
-	/* Cross-fade at both edges so cards dissolve into the page instead of being
-	   sliced by the container. */
+	/* Cross-fade at both edges so cards dissolve into the page instead of being sliced by the container. */
 	.marquee {
 		-webkit-mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
 		mask-image: linear-gradient(to right, transparent, #000 6%, #000 94%, transparent);
@@ -165,9 +155,7 @@ const badgeLabel = { auto: "Auto", manual: "Manual" } as const;
 		}
 	}
 
-	/* The global reduced-motion guard collapses animation-duration to 0.01ms,
-	   which would snap the track to its end frame. Kill every loop outright and
-	   let the rail be an ordinary scroller instead. */
+	/* The global reduced-motion guard collapses duration to 0.01ms, snapping the track to its end frame, so kill the loops. */
 	@media (prefers-reduced-motion: reduce) {
 		.track,
 		.breathe,

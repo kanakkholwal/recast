@@ -16,14 +16,12 @@ onMount(() => {
 	settingsStore.value.profile.email = data.user.email;
 });
 
-// Reactive re-hydration of quota — re-runs when the loader returns a
-// new snapshot (e.g. after `invalidateAll()` post-upload).
+// Re-runs when the loader returns a new quota snapshot, such as after an `invalidateAll()` post-upload.
 $effect(() => {
 	quotaStore.hydrate(data.quota ?? null);
 });
 
-// Has this workspace ever published a recast (active or archived)? Drives the
-// upload dialog's endowed-progress framing for genuine first-timers.
+// Whether this workspace ever published a recast, which drives the upload dialog's endowed-progress framing.
 const firstUpload = $derived(
 	(data.quota?.usage.activeRecastsCount ?? 0) + (data.quota?.usage.archivedRecastsCount ?? 0) === 0,
 );

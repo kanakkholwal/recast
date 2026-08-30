@@ -27,9 +27,7 @@ $effect(() => {
 const firstName = $derived(settingsStore.value.profile.name.split(/\s+/)[0] ?? "there");
 const activity = $derived(data.activity);
 
-// Hero — performance summary. All figures are real: lifetime total views
-// from the recast rows, and a genuine last-7-days trend from the recent
-// activity slice (no fabricated deltas).
+// Every figure is real: lifetime views from the recast rows, and a genuine 7-day trend from the activity slice.
 const totalViews = $derived(recastsStore.items.reduce((s, r) => s + r.views, 0));
 const spark14 = $derived(viewsByDay(activity, 14));
 const last7 = $derived(spark14.slice(7).reduce((s, b) => s + b.views, 0));
@@ -39,13 +37,10 @@ const viewers = $derived(uniqueViewers(activity));
 const completion = $derived(completionRate(activity));
 const avgWatch = $derived(avgWatchPct(activity));
 
-// An empty workspace gets one instruction, not five empty panels. Storage,
-// activity and rankings all read zero on day one and bury the only action
-// that matters.
+// An empty workspace gets one instruction, not five panels reading zero and burying the only action that matters.
 const isEmpty = $derived(recastsStore.items.length === 0);
 
-// Library facts. Storage lives in the usage meter, with its bar and its cap —
-// a second bare number here said the same thing with less.
+// Storage lives in the usage meter with its bar and cap; a second bare number here said the same with less.
 const libraryStats = $derived([
 	{ icon: Video, label: "Recasts", value: String(recastsStore.items.length) },
 	{ icon: Cloud, label: "On cloud", value: String(recastsStore.cloudCount) },

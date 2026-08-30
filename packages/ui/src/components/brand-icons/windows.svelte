@@ -1,8 +1,5 @@
 <script lang="ts">
-// Brand mark — Microsoft Windows. Same Lucide-compatible prop surface
-// as LinuxBrand and AppleBrand (numeric `size` + `class` +
-// `currentColor`), so it drops into the same call sites. Path from
-// simple-icons.
+// Brand mark for Windows, with the same Lucide-compatible prop surface as the others. Path from simple-icons.
 import type { SVGAttributes } from "svelte/elements";
 
 interface Props extends SVGAttributes<SVGSVGElement> {

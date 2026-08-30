@@ -109,10 +109,7 @@ class MediabunnyTileProvider implements TileProvider {
 		onChange: () => void,
 		durationSec?: number,
 	): Promise<MediabunnyTileProvider> {
-		// No `fetch().arrayBuffer()` here anymore: the worker reads the source
-		// lazily, so the main thread never holds the whole recording. That
-		// whole-file buffer (~600MB, doubled by the worker's Blob copy) was the
-		// single largest allocation when opening a 4K clip.
+		// The worker reads the source lazily, so the main thread never holds the whole recording (~600MB on a 4K clip).
 		const worker = createEditorWorker("filmstrip");
 		try {
 			await new Promise<void>((resolve, reject) => {
@@ -236,14 +233,12 @@ class MediabunnyTileProvider implements TileProvider {
 	#onMessage(msg: FromFilmstripWorker): void {
 		if (msg.type === "error") {
 			console.error("filmstrip worker:", msg.message);
-			// A per-request decode error carries its id: release it so the tile can
-			// be re-requested and #idToKey/#inflight don't grow without bound.
+			// Release the id so the tile can be re-requested and the id and inflight maps don't grow without bound.
 			if (msg.id !== undefined) this.#release(msg.id);
 			return;
 		}
 		if (msg.type === "drop") {
-			// Evicted, not failed — release it so it can be re-requested when it
-			// scrolls back in, and stay quiet.
+			// Evicted, not failed: release it so it can be re-requested when it scrolls back in, and stay quiet.
 			this.#release(msg.id);
 			return;
 		}

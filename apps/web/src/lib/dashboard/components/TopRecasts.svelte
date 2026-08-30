@@ -4,8 +4,7 @@ import { formatCount } from "$lib/dashboard/format";
 import type { Recast } from "$lib/dashboard/store.svelte";
 import EmptyState from "./EmptyState.svelte";
 
-// What is actually working, ranked. Bars are relative to the leader, so the
-// shape reads at a glance without an axis.
+// Bars are relative to the leader, so the shape reads at a glance without an axis.
 let { recasts, limit = 4 }: { recasts: Recast[]; limit?: number } = $props();
 
 const ranked = $derived(

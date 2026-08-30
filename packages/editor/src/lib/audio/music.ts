@@ -123,10 +123,7 @@ export function clipDisplayName(clip: AudioClip): string {
 	return base || "Audio";
 }
 
-// ---- Timeline editing (move / trim / split) ---------------------------------
-//
-// All output-axis, pure, and shared by the interactive lane so preview + export
-// (which already read startOutputSec/offsetSec/durationSec) follow for free.
+// --- Timeline editing: output-axis and pure, shared with the interactive lane so preview and export follow for free.
 
 /** Shortest a clip may be trimmed to (seconds). */
 export const MIN_CLIP_DURATION = 0.1;

@@ -69,8 +69,7 @@ function rebuild(reason) {
 rebuild("initial build");
 
 const server = createServer((req, res) => {
-	// decodeURIComponent throws URIError on malformed percent-encoding; a single
-	// bad request must not take down the watcher/server loop.
+	// `decodeURIComponent` throws on malformed percent-encoding, and one bad request must not take down the server loop.
 	let path;
 	try {
 		path = decodeURIComponent((req.url ?? "/").split("?")[0]);

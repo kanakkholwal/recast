@@ -19,10 +19,7 @@ import { Command as CommandPrimitive } from "bits-ui";
 import { commandPalette } from "$lib/dashboard/command-palette.svelte";
 import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 
-// The single command dialog + the global ⌘K binding. Mounted once (in the
-// header); every trigger opens THIS. Styled to match the desktop palette —
-// tall input, roomy rows, group headings, and a keyboard-hint footer — while
-// bits-ui handles filtering + keyboard navigation.
+// Mounted once in the header, so every trigger opens THIS; styled to match the desktop palette while bits-ui handles filtering.
 
 interface Entry {
 	title: string;

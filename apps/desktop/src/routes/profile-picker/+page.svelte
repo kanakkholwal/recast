@@ -29,8 +29,7 @@ const prefersReducedMotion =
 let highlightedId = $state<string | null>(initialSelected);
 
 onMount(() => {
-	// Profiles load from the backend now (async); highlight the default once
-	// they arrive rather than reading synchronously on mount.
+	// Profiles load async now, so highlight the default once they arrive rather than reading synchronously on mount.
 	void profilesStore.hydrate().then(() => {
 		if (!highlightedId) {
 			const def = profilesStore.default();

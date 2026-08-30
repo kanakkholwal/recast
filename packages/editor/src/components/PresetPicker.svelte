@@ -259,8 +259,7 @@ function overlay(node: HTMLElement) {
 	};
 }
 
-// Svelte transitions are JS-driven, so the global prefers-reduced-motion CSS
-// block never reaches them. Zero duration is the opt-out.
+// Svelte transitions are JS-driven, so the global reduced-motion CSS never reaches them; zero duration is the opt-out.
 const motion = $derived(prefersReducedMotion.current ? 0 : 1);
 </script>
 

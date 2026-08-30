@@ -1257,8 +1257,7 @@ impl Compositor {
         width: u32,
         height: u32,
     ) {
-        // The hotspot, not the centre, lands on the cursor position: an arrow
-        // points from its tip and a centred one would sit half a sprite low.
+        // The hotspot, not the centre, lands on the cursor position: an arrow points from its tip.
         let uniform = SpriteUniform {
             rect: [
                 cursor.x - sprite.hotspot[0] * cursor.sprite_px,
@@ -1434,8 +1433,7 @@ fn background_uniform(
                 ];
             }
         }
-        // An image that has not arrived yet renders as the fallback grey rather
-        // than as an undefined surface; the editor loads it asynchronously.
+        // An image that hasn't arrived renders as fallback grey rather than an undefined surface; the editor loads it async.
         BackgroundParams::Asset { .. } => match image {
             Some(image) => {
                 let scale = cover_fit_scale((width, height), (image.width, image.height));
@@ -1474,8 +1472,7 @@ fn plan_from_sigma(sigma: f32, width: u32, height: u32) -> Option<BlurPlan> {
     if sigma < 0.5 {
         return None;
     }
-    // Widening the stride past MAX_BLUR_TAPS keeps the loop bounded; bilinear
-    // filtering hides the gap at these radii.
+    // Widening the stride past MAX_BLUR_TAPS keeps the loop bounded, and bilinear filtering hides the gap at these radii.
     let stride = (sigma * 3.0 / MAX_BLUR_TAPS).max(1.0);
     let sigma_in_steps = sigma / stride;
     let taps = (sigma_in_steps * 3.0).ceil().clamp(1.0, MAX_BLUR_TAPS);

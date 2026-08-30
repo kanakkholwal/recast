@@ -70,8 +70,7 @@ export function constantTimeEquals(a: string, b: string): boolean {
 	return mismatch === 0;
 }
 
-// URL-safe base64 of the (ASCII) email so it survives a cookie value next to
-// the hex token, separated by a "." that base64url never emits.
+// URL-safe base64 so the email survives beside the hex token, separated by a dot base64url never emits.
 function b64urlEncode(s: string): string {
 	return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

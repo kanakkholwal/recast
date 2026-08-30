@@ -1,7 +1,6 @@
 import { quantizeToFrame } from "./timeline-helpers";
 
-// Snap resolver for drag/resize on region cards. Returns both the snapped
-// value and which target produced it so callers can draw a guide at the snap.
+// Returns both the snapped value and which target produced it, so callers can draw a guide at the snap.
 
 export type SnapKind =
 	| "playhead"
@@ -50,9 +49,7 @@ export interface SnapResult {
 	target: SnapTarget | null;
 }
 
-// Lock to the nearest target within `toleranceTime`, else fall through to the
-// frame grid so writes never land sub-frame. Targets are checked in array order;
-// pass the most intentful first (playhead, in/out) so they win ties.
+// Nearest target within tolerance, else the frame grid so writes never land sub-frame; pass the most intentful first.
 export function snapTime(
 	candidate: number,
 	targets: SnapTarget[],

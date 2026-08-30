@@ -1,8 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
 
-// MediaBunny builds a fresh `VideoDecoder` per `getCanvas` call, so overlapping
-// calls mean overlapping hardware decoders. This sink counts the overlap.
+// MediaBunny builds a fresh `VideoDecoder` per `getCanvas`, so overlapping calls mean overlapping hardware decoders.
 const state = vi.hoisted(() => ({ live: 0, peak: 0, calls: 0 }));
 
 vi.mock("@recast/media/mediabunny", () => ({
@@ -70,8 +69,7 @@ describe("filmstrip worker decode serialization", () => {
 
 	beforeEach(async () => {
 		send({ type: "init", src: {} as never, tileHeightPx: 90, durationSec: 60 });
-		// Let any drain still running from the previous test finish before the
-		// counters are zeroed, or its decodes land in this test's numbers.
+		// Let a drain from the previous test finish before zeroing counters, or its decodes land in this test's numbers.
 		await waitFor(() => state.live === 0 && posted.some((m) => m.type === "ready"));
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		posted = [];
@@ -81,8 +79,7 @@ describe("filmstrip worker decode serialization", () => {
 	});
 
 	it("never runs two decodes at once, even across separate decode messages", async () => {
-		// Two rAF flushes landing back to back — the pre-fix dispatcher started a
-		// concurrent drain loop per message.
+		// Two rAF flushes back to back: the pre-fix dispatcher started a concurrent drain loop per message.
 		send({
 			type: "decode",
 			requests: [
@@ -146,8 +143,7 @@ describe("filmstrip worker decode serialization", () => {
 		const firstTile = posted.findIndex((m) => m.type === "tile");
 		const storyboardStarted = posted.findIndex((m) => m.type === "storyboard");
 		expect(firstTile).toBeGreaterThanOrEqual(0);
-		// Tiles land before the storyboard reply (or it errored out on the missing
-		// OffscreenCanvas in node — either way it did not preempt the strip).
+		// Tiles land before the storyboard reply, so either way it did not preempt the strip.
 		if (storyboardStarted >= 0) expect(storyboardStarted).toBeGreaterThan(firstTile);
 		expect(state.peak).toBe(1);
 	});

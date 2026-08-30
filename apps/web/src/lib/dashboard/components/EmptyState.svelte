@@ -4,9 +4,7 @@ import type { Snippet } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 
-// Shared empty/zero state: glyph + title + description + optional action.
-// Replaces the bespoke dashed-border blocks repeated across the library,
-// archived tab, and the side rails.
+// Shared empty state, replacing the bespoke dashed-border blocks repeated across the library, archive and rails.
 let {
 	icon: Icon,
 	title,

@@ -98,8 +98,7 @@ fn build() -> Option<Built> {
         height: HEIGHT,
         timescale: TIMESCALE,
     });
-    // The parameter sets have to be known before the initialisation segment, so
-    // the stream is walked once to find them.
+    // The parameter sets must be known before the initialisation segment, so the stream is walked once to find them.
     let mut config = AvcConfig::default();
     let mut samples = Vec::new();
     for unit in split_access_units(&stream) {

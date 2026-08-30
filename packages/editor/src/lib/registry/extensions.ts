@@ -52,8 +52,7 @@ async function loadSvg(path: string): Promise<string | null> {
  * of entries registered.
  */
 export async function registerExtension(ext: InstalledExtension): Promise<number> {
-	// Always start from a clean slate for this extension so re-registration
-	// (toggle/reinstall) never leaves stale entries behind.
+	// Start from a clean slate so re-registration (toggle or reinstall) never leaves stale entries behind.
 	registry.unregisterExtension(ext.manifest.id);
 	if (!ext.enabled) return 0;
 
@@ -112,9 +111,7 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 			log.warn("registry", "ext_background_missing_asset", { extId, id: b.id });
 			continue;
 		}
-		// Prefer an explicit thumb asset, then the hydrated per-asset thumbnail
-		// the installer downloaded, and only fall back to decoding the full-res
-		// image as a thumbnail when neither exists.
+		// Prefer an explicit thumb, then the hydrated per-asset thumbnail, and only then decode the full-res image.
 		const thumbPath = (b.thumb && assets.get(b.thumb)?.path) || mainAsset.thumbPath || full;
 		entries.push({
 			id: extEntryId(extId, b.id),
@@ -170,8 +167,7 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 		});
 	}
 
-	// Caption themes: the whole style payload travels in the manifest (no
-	// hydrated asset), so this maps the contribution fields straight across.
+	// Caption themes carry their whole style payload in the manifest, so contribution fields map straight across.
 	for (const p of contributes.captionPresets ?? []) {
 		entries.push({
 			id: extEntryId(extId, p.id),
@@ -187,8 +183,7 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 				align: p.align,
 				offsetPct: p.offsetPct,
 				color: p.color,
-				// New pill/highlight fields default from the base style so packs
-				// authored before they existed still register a complete look.
+				// New pill and highlight fields default from the base style, so older packs still register a complete look.
 				mutedColor: p.mutedColor ?? DEFAULT_CAPTION_STYLE.mutedColor,
 				uppercase: p.uppercase,
 				letterSpacing: p.letterSpacing,

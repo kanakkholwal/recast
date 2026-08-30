@@ -158,8 +158,7 @@ impl<'a> BranchService<'a> {
 
         let base = load_project(project)?;
         let proposed = branch.materialize(&base.render).map_err(AppError::msg)?;
-        // A retried idem key proposes nothing new, so re-judging it would let a
-        // project edited out of band turn a settled no-op into a failure.
+        // A retried idem key proposes nothing new, so re-judging it would turn a settled no-op into a failure.
         if outcome.is_recorded() {
             if let Err(issues) = super::validate_render_state(&proposed, base.duration) {
                 return Err(rejected(id, &issues));

@@ -39,12 +39,7 @@ fn shareable_content() -> Result<Retained<SCShareableContent>> {
             let message = if content.is_null() {
                 Err(error_text(error))
             } else {
-                // Retained here and released by the receiver: the handler's own
-                // reference dies with its autorelease pool, which drains long
-                // before the waiting thread wakes.
-                //
-                // SAFETY: non-null, and ScreenCaptureKit guarantees the object
-                // is live for the duration of this handler.
+                // SAFETY: non-null and live for this handler. Retained here and released by the receiver, since the handler's own reference dies with its autorelease pool.
                 let retained = unsafe { Retained::retain(content) };
                 match retained {
                     Some(retained) => Ok(Retained::into_raw(retained) as usize),
@@ -97,8 +92,7 @@ fn display_of(sc: &SCDisplay) -> Display {
     let frame = unsafe { sc.frame() };
     let points = (frame.size.width as u32, frame.size.height as u32);
     let (width, height, refresh) = physical_mode(id).unwrap_or((points.0, points.1, 0.0));
-    // Backing scale, derived rather than assumed: an external 1x display beside
-    // a Retina panel has a different one, and a fixed 2.0 would be wrong on both.
+    // Backing scale derived, not assumed: an external 1x display beside a Retina panel differs, and a fixed 2.0 is wrong on both.
     let scale = if points.0 > 0 {
         width as f32 / points.0 as f32
     } else {
@@ -160,8 +154,7 @@ fn window_of(sc: &SCWindow, displays: &[Display], scale: f32) -> Window {
             .map_or(0, |app| unsafe { app.processID() }.max(0) as u32),
         display: display_for(&bounds, displays),
         bounds,
-        // ScreenCaptureKit does not report minimisation directly; a window that
-        // is not on screen is one there is nothing to capture from.
+        // ScreenCaptureKit doesn't report minimisation, and a window not on screen has nothing to capture from.
         is_minimized: !on_screen,
         is_on_screen: on_screen,
     }
@@ -181,8 +174,7 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
         .iter()
         .map(|display| display_of(&display))
         .collect();
-    // Window frames are in the global point space, so one scale serves them all;
-    // the primary display defines it, as the window server does.
+    // Window frames are in the global point space, so the primary display's scale serves them all, as the window server does.
     let scale = displays
         .iter()
         .find(|display| display.is_primary)

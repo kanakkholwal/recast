@@ -6,8 +6,7 @@ import { webConsent } from "$lib/analytics/consent.svelte";
 
 let showBanner = $state(false);
 
-// Basic, anonymous, cookieless metrics already run without this banner. The
-// banner only asks to *upgrade*: persistent profile + session replay.
+// Anonymous cookieless metrics already run; the banner only asks to upgrade to a profile and session replay.
 function accept() {
 	webConsent.accept();
 	analytics.upgradePersistence();

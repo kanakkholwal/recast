@@ -24,8 +24,7 @@ let {
 let posterFailed = $state(false);
 const showPoster = $derived(!!recast.posterUrl && !posterFailed);
 
-// Whole days until the hard-delete sweep purges this row. Clamped at 0 —
-// a row past its window is just awaiting the next sweep.
+// Whole days until the hard-delete sweep, clamped at 0: a row past its window is just awaiting the next sweep.
 const daysLeft = $derived(Math.max(0, Math.ceil((recast.deletesAt - Date.now()) / 86_400_000)));
 const urgent = $derived(daysLeft <= 3);
 </script>

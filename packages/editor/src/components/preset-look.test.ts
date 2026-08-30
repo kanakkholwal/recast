@@ -45,8 +45,7 @@ describe("commitLook", () => {
 });
 
 describe("previewLook", () => {
-	// presetId feeds the picker's `currentId`; changing it mid-preview regrouped
-	// the list, moved the cursor, and re-fired the preview until the app died.
+	// presetId feeds the picker's cursor, so changing it mid-preview regrouped the list and re-fired until the app died.
 	it("never changes the applied preset id", () => {
 		expect(previewLook(preset, current).presetId).toBe("focus");
 		expect(previewLook(preset, { ...current, presetId: null }).presetId).toBeNull();

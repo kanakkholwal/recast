@@ -1,6 +1,5 @@
 <script lang="ts">
-// One sort vocabulary for every library page. The two pages used to disagree
-// on the Size icon (Film vs Download) for the same concept.
+// One sort vocabulary for every library page: the two pages used to disagree on the Size icon for one concept.
 
 import { Clock, HardDrive, SortAsc } from "@recast/icons";
 import { buttonVariants } from "@recast/ui/button";

@@ -131,8 +131,7 @@ const DEFAULT_SWATCHES: string[] = [
 	const hasEyedropper = typeof window !== "undefined" && "EyeDropper" in window;
 
 	async function pickWithEyedropper() {
-		// `EyeDropper` is a Chromium-only API; gated above so we don't surface
-		// the button on browsers/webviews that lack it.
+		// `EyeDropper` is Chromium-only and gated above, so the button never appears where it is missing.
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const Picker: any = (window as any).EyeDropper;
 		if (!Picker) return;

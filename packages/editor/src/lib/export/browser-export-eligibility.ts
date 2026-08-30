@@ -19,11 +19,7 @@ export function resolveExportFps(store: EditorStore): number {
 	return store.exportFps && store.exportFps > 0 ? store.exportFps : (srcFps ?? 30);
 }
 
-// Above this pixel throughput the browser pipeline (decode + WebGL + WebCodecs on
-// one GPU, alongside the live preview) over-subscribes the GPU and loses its
-// context mid-render. Route such sources to the Rust compositor, which handles
-// them reliably. 1080p60 is the highest tier verified in the browser; 1080p120
-// and 4K land here. Raise this as the browser path proves out on more hardware.
+// Above this throughput the browser pipeline over-subscribes the GPU and loses its context, so route to Rust; 1080p60 is the highest verified tier.
 const SAFE_EXPORT_THROUGHPUT = 1920 * 1080 * 60;
 
 /** Why a project can't use the browser export path (so the caller falls back to

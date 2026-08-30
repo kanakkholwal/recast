@@ -81,9 +81,7 @@ fn sampler_keeps_one_frame_per_scene() {
     let mut ticks: Vec<SampleTick> = Vec::new();
     let frames = sample_frames(&video, &opts, &mut |t| ticks.push(t)).expect("sample");
 
-    // The bar must count every frame the decoder walked, not just the kept ones.
-    // ~27 at the 3fps coarse rate over 9s; the exact count depends on how ffmpeg's
-    // fps filter rounds the tail, so this asserts the magnitude, not a hard number.
+    // The bar counts every frame the decoder walked, not just kept ones; ffmpeg's fps rounding makes the tail approximate.
     let last = ticks.last().expect("at least one tick");
     assert!(
         (26..=28).contains(&last.scanned),
@@ -91,13 +89,11 @@ fn sampler_keeps_one_frame_per_scene() {
         last.scanned
     );
     assert!(ticks.iter().all(|t| t.total > 0), "duration was probed");
-    // A tick reports the keeps made BEFORE its own frame was judged, so the running
-    // count only ever climbs and never overshoots the result.
+    // A tick reports keeps made BEFORE its own frame was judged, so the running count only climbs and never overshoots.
     assert!(ticks.windows(2).all(|w| w[0].kept <= w[1].kept));
     assert!(ticks.iter().all(|t| (t.kept as usize) <= frames.len()));
 
-    // 9s at the 3fps coarse rate is ~27 candidate frames; only the 3 scene starts
-    // carry new information.
+    // 9s at the 3fps coarse rate is ~27 candidate frames, and only the 3 scene starts carry new information.
     assert_eq!(
         frames.len(),
         3,

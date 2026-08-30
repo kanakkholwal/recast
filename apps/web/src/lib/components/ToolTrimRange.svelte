@@ -73,8 +73,7 @@ const KEY_STEP = 0.5;
     }
   }
 
-  // Clicking the track scrubs the preview rather than moving a handle, so the
-  // two gestures never fight each other.
+  // Clicking the track scrubs the preview rather than moving a handle, so the two gestures never fight.
   function scrub(e: PointerEvent) {
     if (drag || !onseek) return;
     onseek(secondsAt(e.clientX));

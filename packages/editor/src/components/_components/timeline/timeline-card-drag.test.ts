@@ -12,8 +12,7 @@ import type { SnapTarget } from "./timeline-snap";
 const FPS = 60;
 const PPS = 100;
 
-// An uncollapsed axis: original time maps straight to output pixels, so the
-// tests read in seconds and only exercise the drag maths.
+// An uncollapsed axis: original time maps straight to output pixels, so the tests read in seconds.
 function geometry(over: Partial<CardDragGeometry> = {}): CardDragGeometry {
 	return {
 		origin: { start: 2, end: 4 },
@@ -30,8 +29,7 @@ function geometry(over: Partial<CardDragGeometry> = {}): CardDragGeometry {
 }
 
 describe("dragEngaged", () => {
-	// The bug this exists for: the first pointermove of a click-to-select wrote
-	// a new start/end and pushed an undo entry, so selecting a card nudged it.
+	// The bug: the first pointermove of a click-to-select wrote a new start and pushed undo, so selecting nudged the card.
 	it("ignores travel below the threshold", () => {
 		expect(dragEngaged(100, 100)).toBe(false);
 		expect(dragEngaged(100 + DRAG_THRESHOLD_PX - 1, 100)).toBe(false);
@@ -70,8 +68,7 @@ describe("precision scaling", () => {
 		expect(result.end).toBeCloseTo(4 + 1 * PRECISION_SCALE);
 	});
 
-	// Precision is applied to pointer travel, so re-seeding the anchor when the
-	// modifier flips mid-drag leaves the card exactly where it was.
+	// Precision applies to pointer travel, so re-seeding the anchor on a mid-drag flip leaves the card where it was.
 	it("is a no-op at zero travel, whatever the scale", () => {
 		for (const scale of [1, PRECISION_SCALE]) {
 			const result = computeCardMove(geometry({ clientX: 40, startClientX: 40, scale }));
@@ -92,8 +89,7 @@ describe("snap bypass", () => {
 		expect(result.guide?.kind).toBe("playhead");
 	});
 
-	// Dropping the targets is how the components bypass magnetism mid-drag; the
-	// result must still land on the frame grid, never sub-frame.
+	// Dropping the targets is how components bypass magnetism; the result must still land on the frame grid.
 	it("falls through to the frame grid with no targets", () => {
 		const result = computeCardMove(geometry({ clientX: 150, startClientX: 0, snapTargets: [] }));
 		expect(result.guide).toBeNull();

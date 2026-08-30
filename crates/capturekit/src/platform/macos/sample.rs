@@ -40,13 +40,11 @@ pub(super) fn accept_video(slot: &FrameSlot, sample: &CMSampleBuffer) {
         let time = unsafe { sample.presentation_time_stamp() };
         let pts = match time.timescale {
             0 => Timestamp::ZERO,
-            // The host time clock, the same one every macOS source stamps, so a
-            // session lines its tracks up by subtracting one origin.
+            // The host time clock every macOS source stamps, so a session lines its tracks up by subtracting one origin.
             scale => Timestamp::from_ticks(time.value, i64::from(scale)),
         };
         let len = stride * height;
-        // SAFETY: the buffer is locked, so `base` points at `stride * height`
-        // readable bytes until the unlock below.
+        // SAFETY: the buffer is locked, so `base` covers stride times height readable bytes until the unlock below.
         let source = unsafe { core::slice::from_raw_parts(base.cast::<u8>(), len) };
         slot.publish(
             Delivered {

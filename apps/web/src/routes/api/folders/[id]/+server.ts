@@ -107,8 +107,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	try {
 		await db.transaction(async (tx) => {
 			if (moved) {
-				// Rewrite descendants first (prefix swap). Excludes self; self is
-				// updated below with its new parentId too.
+				// Rewrite descendants first by prefix swap, excluding self, which gets its new parentId below.
 				await tx
 					.update(folder)
 					.set({

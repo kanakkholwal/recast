@@ -1,4 +1,2 @@
-// The landing page is static marketing copy, so prerender it to plain HTML that
-// search engines can index. The editor itself is client-only and lives at
-// /tools/screenshot-editor/edit.
+// Static marketing copy, prerendered for indexing; the client-only editor lives at /edit.
 export const prerender = true;

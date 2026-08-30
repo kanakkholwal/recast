@@ -81,8 +81,7 @@ fn run_adapter(adapter: &wgpu::Adapter, info: &wgpu::AdapterInfo) -> Result<f64>
     let (device, queue) =
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
 
-    // The D3D11 device must sit on the same physical adapter or OpenSharedHandle
-    // fails; matching by DXGI vendor/device id is what makes a hybrid GPU work.
+    // The D3D11 device must sit on the same physical adapter or OpenSharedHandle fails, so match by DXGI ids.
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1()? };
     let mut chosen: Option<IDXGIAdapter1> = None;
     for index in 0.. {
@@ -145,8 +144,7 @@ fn run_adapter(adapter: &wgpu::Adapter, info: &wgpu::AdapterInfo) -> Result<f64>
     let mut shared_texture: Option<ID3D11Texture2D> = None;
     unsafe { d3d11.CreateTexture2D(&desc, Some(&initial), Some(&mut shared_texture))? };
     let shared_texture = shared_texture.context("shared texture was not created")?;
-    // Without this the D3D12 device reads the texture before D3D11's upload has
-    // landed and every pixel comes back zero. Cross-device sharing is not implicitly ordered.
+    // Cross-device sharing isn't implicitly ordered, so without this D3D12 reads before D3D11's upload lands.
     let d3d11_context = context.clone().context("no d3d11 context")?;
     unsafe { d3d11_context.Flush() };
     println!("d3d11: created {WIDTH}x{HEIGHT} BGRA shared texture (context flushed)");

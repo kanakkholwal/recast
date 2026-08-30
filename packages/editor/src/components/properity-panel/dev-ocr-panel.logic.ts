@@ -20,8 +20,7 @@ export type RunStatus = "idle" | "running" | "ready" | "error";
 export function progressValue(p: OcrProgress | null): number | null {
 	if (!p || p.total <= 0) return null;
 	const pct = (p.done / p.total) * 100;
-	// The sampler's total is estimated from the container duration, which can
-	// undershoot the real frame count. Clamp rather than render a 104% bar.
+	// The total is estimated from the container duration, so clamp rather than render a 104% bar.
 	return Math.min(100, Math.max(0, pct));
 }
 

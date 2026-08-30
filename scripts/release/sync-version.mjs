@@ -1,23 +1,5 @@
 #!/usr/bin/env node
-// Rewrite the build manifests to the release version derived from a git tag.
-//
-// Source files keep "0.0.0-0" as a placeholder so local `tauri build`
-// artifacts are obviously dev-stamped; the "-0" numeric pre-release is
-// required by the Windows MSI bundler, which rejects non-numeric or
-// >65535 pre-release identifiers. Releases are cut by tag, and this
-// script is the single source of truth that rewrites the placeholder
-// into the real version across:
-//
-//   - apps/desktop/src-tauri/tauri.conf.json   (drives bundle filenames)
-//   - apps/desktop/package.json                (workspace version)
-//   - apps/desktop/src-tauri/Cargo.toml        ([package].version line)
-//
-// Usage:
-//   TAG=v1.2.3 node scripts/release/sync-version.mjs
-//   node scripts/release/sync-version.mjs --tag v1.2.3
-//
-// Refuses to run if the tag resolves to the dev placeholder ("0.0.0-0")
-// or an empty string.
+// Rewrites tauri.conf.json, package.json and Cargo.toml from the git tag; sources keep the 0.0.0-0 placeholder, whose numeric pre-release the MSI bundler requires.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -58,8 +40,7 @@ const tauriConf = resolve(REPO_ROOT, "apps/desktop/src-tauri/tauri.conf.json");
 const cargoToml = resolve(REPO_ROOT, "apps/desktop/src-tauri/Cargo.toml");
 const pkgJson = resolve(REPO_ROOT, "apps/desktop/package.json");
 
-// tauri.conf.json — drives the bundled artifact filenames
-// (e.g. recast_${version}_x64_en-US.msi).
+// tauri.conf.json drives the bundled artifact filenames.
 {
 	const json = JSON.parse(readFileSync(tauriConf, "utf8"));
 	json.version = version;
@@ -75,10 +56,7 @@ const pkgJson = resolve(REPO_ROOT, "apps/desktop/package.json");
 	console.log(`  package.json:    ${json.version}`);
 }
 
-// Cargo.toml — only the [package] version line, leave dep versions alone.
-// The [package] section is the first table in the file and the first
-// `version = "..."` line we encounter belongs to it. Replace exactly
-// once; subsequent matches (in dep versions) are left untouched.
+// Only the [package] version: it is the first table, so replacing the first match leaves dep versions alone.
 {
 	const lines = readFileSync(cargoToml, "utf8").split(/\r?\n/);
 	const versionLineRe = /^version\s*=\s*"[^"]*"\s*$/;

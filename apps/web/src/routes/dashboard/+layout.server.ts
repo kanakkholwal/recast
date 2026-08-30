@@ -69,9 +69,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 		.where(eq(memberTable.userId, session.user.id))
 		.orderBy(desc(memberTable.createdAt));
 
-	// Pending invitations addressed to this email — streamed so the dashboard
-	// shell + sidebar render immediately. Consumed downstream (e.g. invite
-	// banners); the query keeps running but no longer blocks initial paint.
+	// Streamed so the shell and sidebar render immediately; consumed downstream by the invite banners.
 	const pendingInvites = db
 		.select({
 			id: invitationTable.id,
@@ -88,8 +86,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 			and(eq(invitationTable.email, session.user.email), eq(invitationTable.status, "pending")),
 		);
 
-	// No memberships → onboarding. /onboarding/team is OUTSIDE /dashboard so
-	// this redirect doesn't loop.
+	// No memberships means onboarding; /onboarding/team sits outside /dashboard, so this can't loop.
 	if (memberships.length === 0) {
 		redirect(303, "/onboarding/team");
 	}
@@ -99,9 +96,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 		!activeOrganizationId ||
 		!memberships.find((m) => m.organizationId === activeOrganizationId)
 	) {
-		// Session lost activeOrganizationId (or it points at a team the user
-		// no longer belongs to). Restore from the user's default workspace when
-		// possible, otherwise pick the most recent membership.
+		// The session lost its activeOrganizationId, so restore the default workspace or the most recent membership.
 		const fallback =
 			memberships.find((m) => m.organizationId === userPrefs?.defaultWorkspaceId) ??
 			memberships[0]!;
@@ -118,10 +113,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 
 	const activeMembership = memberships.find((m) => m.organizationId === activeOrganizationId)!;
 
-	// Live quota snapshot for the active workspace — feeds the sidebar
-	// usage meter, the upload-button enable state, and the
-	// transparency surface on settings/billing. Coerce Infinity to null
-	// so the JSON payload survives `JSON.stringify` (which drops it).
+	// Coerce Infinity to null so the quota snapshot survives `JSON.stringify`, which drops it.
 	const snap = await getQuotaSnapshot(activeMembership.organizationId);
 	const finite = (n: number): number | null => (Number.isFinite(n) ? n : null);
 	const delivery = snap ? deliveryState(snap) : null;

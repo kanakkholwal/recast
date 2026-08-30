@@ -30,8 +30,7 @@ pub fn ensure_screen_recording() -> Result<()> {
     #[cfg(target_os = "macos")]
     {
         if !macos::screen_recording_authorized() {
-            // Surfaces the system dialog on first run; on a prior denial it
-            // no-ops and the message below tells the user where to fix it.
+            // Surfaces the system dialog on first run; after a denial it no-ops and the message below points at the fix.
             macos::request_screen_recording();
             return Err(anyhow::anyhow!(
                 "Screen Recording permission is required to record. Grant Recast \
@@ -60,10 +59,7 @@ pub fn cursor_tracking_authorized() -> bool {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    // The CoreGraphics screen-capture consent API (macOS 10.15+) and the
-    // Accessibility trust check live in system frameworks Tauri already links.
-    // Declaring the three stable C entry points directly avoids pulling a
-    // heavyweight objc2 / core-graphics crate just for three boolean calls.
+    // Declaring the three stable C entry points directly avoids pulling in objc2 or core-graphics for three boolean calls.
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
         // Both return C `bool` (`_Bool`), which maps to Rust `bool`.
@@ -73,9 +69,7 @@ mod macos {
 
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
-        // `AXIsProcessTrusted` returns CoreFoundation `Boolean`
-        // (`typedef unsigned char Boolean`), NOT C `_Bool` — read it as `u8`
-        // and compare, rather than risk a non-0/1 byte as Rust `bool`.
+        // `AXIsProcessTrusted` returns a CoreFoundation `Boolean` (unsigned char), so read it as `u8` rather than `bool`.
         fn AXIsProcessTrusted() -> u8;
     }
 
@@ -85,8 +79,7 @@ mod macos {
     }
 
     pub fn request_screen_recording() -> bool {
-        // SAFETY: argument-less CoreGraphics call; shows the consent prompt the
-        // first time and returns the (possibly still-pending) grant state.
+        // SAFETY: argument-less CoreGraphics call; it shows the consent prompt once and returns the grant state.
         unsafe { CGRequestScreenCaptureAccess() }
     }
 

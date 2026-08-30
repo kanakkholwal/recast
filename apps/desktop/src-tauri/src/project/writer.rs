@@ -32,10 +32,7 @@ pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
 
     match result {
         Ok(()) => {
-            // `fs::rename` already replaces an existing target atomically
-            // (MOVEFILE_REPLACE_EXISTING on Windows, rename(2) elsewhere).
-            // Deleting first would open a window where the project exists only
-            // as the .tmp — a crash there loses it outright.
+            // `fs::rename` already replaces the target atomically; deleting first would leave a window where only the .tmp exists.
             fs::rename(&temp_path, &request.output_path)
                 .context("failed to atomically rename project file")?;
             Ok(request.output_path)
@@ -95,8 +92,7 @@ fn write_project_inner(path: &Path, request: &ProjectWriteRequest) -> Result<()>
         copy_file(cam_path, &mut writer)?;
     }
 
-    // Flush to disk before the caller renames: without it, power loss can leave
-    // a renamed-into-place file that is partial or zero-length.
+    // Flush before the caller renames: without it, power loss can leave a renamed-into-place file that is partial.
     writer.finish()?.sync_all()?;
     Ok(())
 }
@@ -131,8 +127,7 @@ pub fn update_project_edits(project_path: &Path, edits_json: &str) -> Result<()>
 
     match result {
         Ok(()) => {
-            // Replace in one step — see `write_project` for why the old file is
-            // not deleted first.
+            // Replace in one step; see `write_project` for why the old file isn't deleted first.
             fs::rename(&temp_path, project_path)
                 .context("failed to atomically rename project file")?;
             Ok(())

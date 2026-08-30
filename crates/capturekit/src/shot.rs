@@ -121,8 +121,7 @@ fn acquire_fresh(
         newest = Some(image);
     }
 
-    // Every frame predated the request. The source is idle rather than broken, so
-    // the newest stale frame is a better answer than an error.
+    // Every frame predated the request, so the source is idle rather than broken and the newest stale frame beats an error.
     newest.ok_or(CaptureError::Timeout(opts.timeout))
 }
 

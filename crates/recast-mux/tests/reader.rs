@@ -153,8 +153,7 @@ fn a_track_reports_its_length_in_seconds() {
 fn a_truncated_file_is_an_error_rather_than_a_panic() {
     let data = written(10, 10);
     for cut in [8, 64, data.len() / 3, data.len() - 1] {
-        // Either it parses what is there or it says the file is broken; what it
-        // must never do is index past the end.
+        // It may parse what is there or call the file broken; what it must never do is index past the end.
         let _ = Mp4Reader::new(&data[..cut]);
     }
 }

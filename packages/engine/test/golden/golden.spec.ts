@@ -123,8 +123,7 @@ test("every fixture matches its golden through the browser build", async ({ page
 			drifted.push(
 				`${fixture.name}: max ${delta.maxChannel} mean ${delta.meanChannel.toFixed(3)} over ${delta.differingPixels} differing px`,
 			);
-			// Next to its golden, so the two can be compared by eye. Numbers say a
-			// frame drifted; only the picture says how. Gitignored.
+			// Written next to its golden so the two compare by eye: numbers say a frame drifted, only the picture says how.
 			await sharp(Buffer.from(result.pixels), {
 				raw: { width: result.width, height: result.height, channels: 4 },
 			})
@@ -138,8 +137,7 @@ test("every fixture matches its golden through the browser build", async ({ page
 		throw new Error(`recorded the wasm adapter as ${here}; re-run without UPDATE_GOLDENS`);
 	}
 	if (!gates) {
-		// Loud, and never silent: a suite that opts out quietly reads exactly like
-		// one that passed.
+		// Loud, never silent: a suite that opts out quietly reads exactly like one that passed.
 		console.warn(
 			`the wasm goldens were measured on ${recorded ?? "an unrecorded stack"}, this is ${here}: reporting only.\n  ` +
 				(drifted.length ? drifted.join("\n  ") : "every fixture still matched"),

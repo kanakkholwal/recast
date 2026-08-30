@@ -66,8 +66,7 @@ pub fn integrated_lufs(stereo: &[f32]) -> Option<f64> {
         return None;
     }
 
-    // K-weight both channels once, then square: the block loop is a moving sum
-    // over these, so filtering per block would redo three quarters of the work.
+    // K-weight both channels once, then square: the block loop is a moving sum, so per-block filtering would redo the work.
     let mut squared = vec![0.0f64; frames * 2];
     for channel in 0..2 {
         let mut shelf = BiquadState::default();
@@ -129,8 +128,7 @@ pub fn normalizing_gain(stereo: &[f32], target: f64, ceiling: f32) -> f32 {
     if peak <= 0.0 {
         return gain;
     }
-    // Attenuating to the ceiling is the honest move: raising the mix and then
-    // clipping it would meet the target on paper and distort in fact.
+    // Attenuating to the ceiling is honest: raising the mix and clipping meets the target on paper and distorts in fact.
     gain.min(ceiling / peak)
 }
 
@@ -183,8 +181,7 @@ mod tests {
         let alone = integrated_lufs(&speech).unwrap();
         speech.resize(speech.len() + R128_RATE as usize * 2 * 10, 0.0);
         let with_tail = integrated_lufs(&speech).unwrap();
-        // Ungated, ten seconds of silence after three of tone reads about 6 LU
-        // lower, so this margin is wide on purpose and still decisive.
+        // Ungated, ten seconds of silence after three of tone reads about 6 LU lower, so this margin is wide but decisive.
         assert!(
             (alone - with_tail).abs() < 0.5,
             "a silent tail moved the reading from {alone} to {with_tail}"
@@ -257,8 +254,7 @@ mod tests {
     #[test]
     fn the_ceiling_outranks_the_target() {
         let mut bursts = tone(4.0, 1_000.0, 0.9);
-        // 10 ms of tone every 400 ms: loud peaks, quiet programme. The period
-        // matches the gating block, so every block holds the same energy.
+        // 10 ms of tone every 400 ms: the period matches the gating block, so every block holds the same energy.
         let (period, burst) = (R128_RATE as usize * 2 / 5, R128_RATE as usize / 100);
         for frame in 0..bursts.len() / 2 {
             if frame % period >= burst {

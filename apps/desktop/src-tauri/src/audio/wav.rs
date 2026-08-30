@@ -315,8 +315,7 @@ mod tests {
 
     #[test]
     fn block_align_and_byte_rate_follow_the_container_width() {
-        // 24-in-32 arrives as a 4-byte container, and describing it as 16-bit is
-        // what plays a recording back fast and distorted.
+        // 24-in-32 arrives as a 4-byte container, and calling it 16-bit is what plays a recording back fast and distorted.
         let f = WavFormat::new(48_000, 2, 32, SampleFormat::Int);
         assert_eq!(f.block_align(), 8);
         let h = header_of(f, 0);
@@ -391,9 +390,7 @@ mod tests {
 
     #[test]
     fn a_corrected_track_plays_back_over_the_span_it_was_captured_in() {
-        // The property that actually keeps audio locked to the picture: after
-        // correction, frames / declared_rate == the wall-clock span. The frame
-        // pacer holds the video to that same span exactly.
+        // The property that keeps audio locked to the picture: after correction, frames over declared rate equals the wall-clock span.
         for drift in [0.998_f64, 0.9995, 1.0005, 1.002] {
             let declared = 48_000u32;
             let span = Duration::from_secs(200);

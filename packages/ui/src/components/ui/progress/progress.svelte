@@ -10,9 +10,7 @@ let {
 	...restProps
 }: ProgressPrimitive.RootProps = $props();
 
-// `null` means the work is real but uncountable (a phase that has not reported a
-// total yet). bits-ui maps it to aria-valuenow="indeterminate"; the bar shows a
-// travelling sliver so it still reads as running rather than stuck at zero.
+// `null` means real but uncountable work: bits-ui maps it to indeterminate, and the travelling sliver reads as running.
 const indeterminate = $derived(value == null);
 const pct = $derived(
 	indeterminate ? 0 : Math.min(100, Math.max(0, ((value ?? 0) / (max || 1)) * 100)),
@@ -51,8 +49,7 @@ const pct = $derived(
 		}
 	}
 
-	/* A frozen sliver parked at the left would read as "33% done". Fill the track
-	   instead, so the bar says "running, amount unknown". */
+	/* A frozen sliver at the left would read as '33% done', so fill the track: running, amount unknown. */
 	@media (prefers-reduced-motion: reduce) {
 		.indeterminate {
 			width: 100%;

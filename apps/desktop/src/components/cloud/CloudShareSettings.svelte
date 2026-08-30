@@ -46,10 +46,7 @@ let {
 type ExpiryChoice = "keep" | "never" | "7d" | "30d";
 
 let views = $state(0);
-// Set until the server's current settings are known. Every control below
-// defaults to "public / no password / never", so showing the form before the
-// prime lands would misreport a private link and make "Remove password"
-// unreachable — `buildShareUpdate` would diff against the wrong baseline.
+// Showing the form before the prime lands would misreport a private link and make Remove password unreachable, since `buildShareUpdate` would diff the wrong baseline.
 let primeError = $state<string | null>(null);
 let visibility = $state<Visibility>("public");
 let initialVisibility = $state<Visibility>("public");

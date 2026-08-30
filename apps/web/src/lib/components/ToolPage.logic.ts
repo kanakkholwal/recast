@@ -7,8 +7,7 @@
 import type { ToolControl, ToolDef } from "$lib/tools/registry";
 import type { ToolOptions } from "$lib/tools/worker-protocol";
 
-// Option keys whose <select> values are strings in the DOM but must reach the
-// worker as numbers (bitrate presets, dimensions chosen from a menu, etc.).
+// Option keys whose select values are DOM strings but must reach the worker as numbers.
 export const NUMERIC_KEYS = [
 	"width",
 	"height",
@@ -104,8 +103,7 @@ export function buildToolJsonLd(tool: ToolDef, origin = ""): string {
 			applicationSubCategory: "Video Converter",
 			operatingSystem: "Web",
 			browserRequirements: "Requires a browser with WebCodecs support, such as Chrome or Edge.",
-			// No install step and nothing to grant: worth stating, because it is
-			// the differentiator against every server-side converter.
+			// No install step and nothing to grant: worth stating, since it is the differentiator against server-side converters.
 			permissions: "none",
 			isAccessibleForFree: true,
 			featureList: features,

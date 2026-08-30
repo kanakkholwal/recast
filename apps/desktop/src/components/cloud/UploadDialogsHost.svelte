@@ -14,9 +14,7 @@ import GdriveUploadDialog from "./GdriveUploadDialog.svelte";
 const sharePath = $derived(cloudShare.foregroundPath);
 const driveId = $derived(gdrive.foregroundId);
 
-// One foreground dialog at a time: two modals must never stack. If a rapid
-// double-trigger foregrounds both, keep the cloud one and background the Drive
-// upload (it stays live and reopenable from the activity center).
+// One foreground dialog at a time: on a double-trigger keep the cloud one and background Drive, which stays reopenable.
 $effect(() => {
 	if (sharePath && driveId) gdrive.setForeground(null);
 });

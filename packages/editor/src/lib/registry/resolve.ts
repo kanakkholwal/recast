@@ -1,6 +1,4 @@
-// Registry resolvers: stored id/value → what a consumer needs. Resolvers never
-// throw: a missing `ext:` id (pack uninstalled) degrades to a built-in default
-// and logs, so export/preview can't crash on a removed pack.
+// Resolvers never throw: a missing `ext:` id degrades to a built-in default and logs, so export and preview can't crash.
 
 import { log } from "../log";
 import { registry } from "./registry.svelte";

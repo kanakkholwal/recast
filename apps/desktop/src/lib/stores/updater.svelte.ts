@@ -60,8 +60,7 @@ function createUpdaterStore() {
 	}
 
 	async function runCheck() {
-		// Production-only: `tauri dev` ships an unsigned, unpublished build with
-		// nothing to compare against `latest.json`.
+		// Production only: `tauri dev` ships an unsigned, unpublished build with nothing to compare against `latest.json`.
 		if (import.meta.env.DEV) return;
 		if (!(await isTauriApp())) return;
 		if (status === "checking" || status === "downloading") return;

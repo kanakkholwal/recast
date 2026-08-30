@@ -50,8 +50,7 @@ describe("resizeCameraSquare", () => {
 
 	it("keeps the bubble square in PIXELS on a wide video (height = width*aspect)", () => {
 		const aspect = 16 / 9;
-		// tl anchor = bottom-right corner (0.94, 0.08 + 0.22*aspect). Drag the
-		// top-left inward; the result must stay square in pixels.
+		// The tl anchor is the bottom-right corner: drag the top-left inward and the result must stay square in pixels.
 		const r = resizeCameraSquare(base, "br", 0.86, 0.5, aspect);
 		expect(r.height).toBeCloseTo(r.width * aspect, 6);
 		// Anchor (top-left) stays fixed.
@@ -257,9 +256,7 @@ describe("keyframesFromMotionSegments", () => {
 	});
 
 	it("reproduces the recorded path when evaluated", () => {
-		// Two moves with a pause between: 0.1 → 0.2 over [2,3], hold, then
-		// 0.2 → 0.3 over [5,6]. This is what the segment walk used to describe
-		// and nothing rendered.
+		// Two moves with a pause between, which is what the segment walk used to describe while nothing rendered.
 		const kfs = keyframesFromMotionSegments([at(2, 0.1), at(5, 0.2)], dflt);
 		expect(cameraPlacementAt(dflt, kfs, 0, EASE_LIN).x).toBeCloseTo(0.1, 6);
 		expect(cameraPlacementAt(dflt, kfs, 2.5, EASE_LIN).x).toBeCloseTo(0.15, 6);

@@ -3,11 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { SAMPLE_CLIP } from "./sample";
 
-// `sample.ts` copies the URL instead of importing it, so the landing page's
-// bundle stays small. This test is what stops that copy from drifting.
-//
-// Read as text rather than imported: `routes/data.ts` pulls @recast/icons,
-// which doesn't resolve in a plain-node test run.
+// `sample.ts` copies the URL rather than importing it, to keep the landing bundle small, and this test stops that copy drifting. Read as text, since `routes/data.ts` pulls @recast/icons.
 const dataSource = readFileSync(
 	fileURLToPath(new URL("../../routes/data.ts", import.meta.url)),
 	"utf8",
@@ -31,8 +27,7 @@ describe("SAMPLE_CLIP", () => {
 		expect(SAMPLE_CLIP.src).toBe(raw);
 	});
 
-	// Handing over the already-polished take would demo the output as if it were
-	// the input — there'd be nothing left for the visitor to do.
+	// Handing over the polished take would demo the output as the input, leaving the visitor nothing to do.
 	it("is not the polished take", () => {
 		const polished = clipSrc("polished");
 		expect(polished).toBeTruthy();

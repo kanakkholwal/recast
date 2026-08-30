@@ -1,24 +1,4 @@
-// Edit maths for the video spine: the gestures that move a clip block's own
-// start/end, on the original-recording axis.
-//
-// The spine is DERIVED (kept = [trimStart, trimEnd] − cuts, sliced by splits),
-// so a block has no free position to drag to: the output axis is gapless by
-// construction. The three edits that are expressible are the three real NLE
-// trims, and each one changes the start or end time of a block:
-//
-//   roll   — an interior split boundary. Left block's end and right block's
-//            start move together; total length is unchanged.
-//   slide  — a seam (a removed range between two blocks). The removed window
-//            moves as a unit: left block's end and right block's start both
-//            shift, the amount removed is unchanged.
-//   slip   — a block's body, when a removed range sits on BOTH sides. The
-//            block's source window shifts inside its slot; it stays put on the
-//            output axis while its frames scroll (exactly what slip looks like
-//            in Premiere).
-//
-// Trimming the outer edges is `trimStart`/`trimEnd` and lives in the clip bar's
-// in/out handles; changing how much a cut removes is the Cuts lane. Neither is
-// duplicated here.
+// Spine edits on the original-recording axis: roll moves an interior split boundary, slide moves a removed window as a unit, and slip shifts a block's source window inside its slot. Outer trims and cut sizing live elsewhere.
 
 import { quantizeToFrame } from "./timeline-helpers";
 
@@ -94,8 +74,7 @@ export function buildSpineHandles(shape: SpineShape): SpineHandle[] {
 			continue;
 		}
 
-		// The gap is one removed range. More than one cut inside it means an
-		// un-merged pair; leave it alone rather than guess which one to move.
+		// The gap is one removed range; more than one cut inside means an un-merged pair, so leave it rather than guess.
 		const inside = shape.cuts.filter(
 			(c) => c.start >= left.end - EPS && c.end <= right.start + EPS,
 		);

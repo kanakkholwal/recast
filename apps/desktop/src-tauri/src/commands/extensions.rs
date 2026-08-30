@@ -356,8 +356,7 @@ pub fn list_installed_extensions(app: AppHandle) -> AppResult<Vec<InstalledExten
             out.push(build_installed(&dir, manifest, enabled));
         }
     }
-    // `read_dir` yields no defined order, so sort by id to keep startup
-    // hydration (and thus registry registration / picker order) stable.
+    // `read_dir` has no defined order, so sort by id to keep hydration and picker order stable.
     out.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
     Ok(out)
 }

@@ -50,8 +50,7 @@ let {
 const chart = useChart();
 const chartCtx = getChartContext();
 
-// Filter to series with defined values (important for item-based charts like Pie/Arc
-// where only the hovered item has a value)
+// Only series with defined values: on item-based charts like Pie, just the hovered item has one.
 const visibleSeries = $derived(
 	chartCtx.tooltip.series.filter((s: TooltipPayload) => s.value !== undefined),
 );

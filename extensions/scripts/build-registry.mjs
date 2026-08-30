@@ -64,10 +64,7 @@ function buildPack(dir, base) {
 	const packId = src.id;
 
 	const assets = src.assets.map((a) => {
-		// Guard against a malicious/edited pack pointing `file` outside its own
-		// dir (e.g. `../../secrets`) — CI verifies packs, but this also protects
-		// maintainers running the build script directly. Mirror the schema's
-		// `^assets/<name>$` shape, then confirm the resolved path stays inside.
+		// Guard a pack pointing `file` outside its own dir: mirror the schema's shape, then confirm the resolved path stays inside.
 		if (typeof a.file !== "string" || !/^assets\/[^/\\]+$/.test(a.file)) {
 			throw new Error(
 				`${packId}: asset "${a.id}" has invalid file "${a.file}" (must be assets/<filename>)`,

@@ -205,8 +205,7 @@ pub fn remote_models(app: &AppHandle) -> Vec<CaptionModel> {
             min_ram_bytes: None,
             source: ModelSource::Remote,
             remote: Some(ep),
-            // The server owns the real model, so we can't honestly score it or
-            // claim capabilities on its behalf.
+            // The server owns the real model, so we can't honestly score it or claim capabilities on its behalf.
             capabilities: Default::default(),
             language_count: None,
             speed_score: None,
@@ -263,9 +262,7 @@ fn secs_to_ms(v: f64) -> i64 {
 /// preferred and grouped into display lines; otherwise `segments[]`; otherwise a
 /// single block from `text`. Pure, so it's unit-tested.
 pub(crate) fn response_to_segments(body: &Value, total_secs: f64) -> Vec<TranscriptSegment> {
-    // OpenAI word rows use the key `word`; segment rows use `text`. Times are in
-    // seconds on both. A server that ignores the word-granularity request simply
-    // returns no `words[]`, and build_segments falls back to segments/text.
+    // OpenAI word rows key on `word` and segment rows on `text`; a server ignoring word granularity returns no `words[]`.
     let words: Vec<RawWord> = body
         .get("words")
         .and_then(Value::as_array)
@@ -340,11 +337,7 @@ pub async fn transcribe_remote(
         .part("file", file_part)
         .text("model", endpoint.model.clone())
         .text("response_format", "verbose_json")
-        // Ask for word-level timestamps so captions render word-by-word like the
-        // on-device engine. OpenAI wants `timestamp_granularities[]` as a repeated
-        // field; also request `segment` so a fallback has data. A server that
-        // doesn't support it ignores the fields (build_segments then uses whatever
-        // shape came back).
+        // Ask for word timestamps (OpenAI wants a repeated field) plus segment as a fallback; a server without support ignores both.
         .text("timestamp_granularities[]", "word")
         .text("timestamp_granularities[]", "segment");
     // Omit for auto-detect; a bogus/empty value would make some servers 400.
@@ -472,8 +465,7 @@ mod tests {
 
     #[test]
     fn response_prefers_words_over_coarse_segments() {
-        // Word timestamps requested + returned: they win over a single coarse
-        // segment so remote captions render word-by-word like on-device.
+        // Word timestamps win over a single coarse segment, so remote captions render word-by-word like on-device.
         let body = json!({
             "text": "hello world. foo",
             "segments": [ { "start": 0.0, "end": 2.0, "text": "hello world. foo" } ],

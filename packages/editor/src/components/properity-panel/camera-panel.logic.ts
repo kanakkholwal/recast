@@ -77,8 +77,7 @@ export function labelFor(preset: CameraPositionPreset): string {
  */
 export function dotStyleFor(preset: CameraPositionPreset): string {
 	if (preset === "custom") return "left:50%;top:50%;transform:translate(-50%,-50%);";
-	// Detect each axis by token: the ids mix 'row-col' ('top-left') and 'col-row'
-	// ('left-center') conventions, so a positional split mis-places the dot.
+	// Detect each axis by token: the ids mix row-col and col-row conventions, so a positional split misplaces the dot.
 	const tokens = preset.split("-");
 	const col = tokens.includes("left") ? "left" : tokens.includes("right") ? "right" : "center";
 	const row = tokens.includes("top") ? "top" : tokens.includes("bottom") ? "bottom" : "center";

@@ -1,35 +1,5 @@
 #!/usr/bin/env node
-// Promote pending changesets into a new CHANGELOG.md section.
-//
-// Usage:
-//   pnpm release:prepare <version>      # explicit version, e.g. "0.1.6" or "v0.1.6"
-//   pnpm release:prepare --dry-run …    # preview without writing files
-//
-// What it does:
-//   1. Reads `.changeset/*.md` (excluding README.md and config.json) and
-//      parses YAML-ish frontmatter for the `recast-desktop` bump kind plus
-//      the optional `kind:` field (added | changed | fixed | deprecated;
-//      default: changed).
-//   2. Validates the requested version is a sane bump from the latest
-//      released version in CHANGELOG.md (warns on downgrades / skips, does
-//      not block — final call is the maintainer's).
-//   3. Builds a new `## [<version>] — <today>` section by merging:
-//        a) anything currently sitting under `## [Unreleased]` in CHANGELOG.md
-//        b) the entries collected from `.changeset/*.md`, grouped by kind.
-//      Preserves any existing `### Highlights` block under [Unreleased].
-//   4. Inserts that section above the previous topmost release, leaves a
-//      fresh empty `## [Unreleased]` placeholder above it.
-//   5. Deletes consumed changeset files (keeps README.md, config.json, and
-//      any file starting with "_" so authors can stash drafts).
-//   6. Re-runs `sync-desktop-changelog.mjs` so the desktop typed RELEASES
-//      array reflects the new section immediately.
-//
-// What it does NOT do:
-//   - Does not write source-file versions. The 0.0.0-0 placeholder
-//     strategy means tauri.conf.json / Cargo.toml / package.json stay at
-//     the placeholder; the release workflow rewrites them from the git tag.
-//   - Does not commit, tag, or push. The maintainer reviews the diff and
-//     does that themselves.
+// Promotes pending changesets into a new CHANGELOG.md section, merging [Unreleased], deleting consumed changesets and re-syncing the desktop array. It never writes versions, commits or tags.
 
 import { spawnSync } from "node:child_process";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -45,8 +15,7 @@ const CHANGELOG_PATH = join(REPO_ROOT, "CHANGELOG.md");
 const CHANGESETS_DIR = join(REPO_ROOT, ".changeset");
 const SYNC_SCRIPT = join(__dirname, "sync-desktop-changelog.mjs");
 
-// Official SemVer 2.0.0 regex (semver.org). Anchored, so trailing junk like
-// "1.2.3foo" or invalid pre-release identifiers are rejected.
+// Official SemVer 2.0.0 regex, anchored so trailing junk like '1.2.3foo' is rejected.
 const SEMVER_RE =
 	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
@@ -168,10 +137,7 @@ function isoToday() {
 }
 
 function splitSections(markdown) {
-	// Split CHANGELOG.md into { preamble, unreleased, releases } where
-	// unreleased is the [Unreleased] block (header included) or null,
-	// and releases is the rest of the file from the first non-Unreleased
-	// `## [` onwards.
+	// Split into preamble, the [Unreleased] block (header included) or null, and the rest from the first other release heading.
 	const lines = markdown.split(/\r?\n/);
 	let unreleasedStart = -1;
 	let releasesStart = -1;

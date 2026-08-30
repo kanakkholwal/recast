@@ -104,8 +104,7 @@ pub fn resolve_font(family: &str, weight: u32, custom_dir: Option<&Path>) -> Opt
         if upem <= 0.0 {
             return None;
         }
-        // Denominator libass uses (see module doc). ttf-parser reports the
-        // windows descender negative, so this is a subtraction.
+        // The denominator libass uses; ttf-parser reports the windows descender negative, so this is a subtraction.
         let (win_asc, win_desc) = match face.tables().os2 {
             Some(os2) => (
                 os2.windows_ascender() as f64,

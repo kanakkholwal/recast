@@ -18,12 +18,7 @@ export interface LocalIconProps extends SVGAttributes<SVGSVGElement> {
 </script>
 
 <script lang="ts">
-  // Lucide-compatible custom-icon base. The prop surface matches a Lucide icon
-  // (`size` / `color` / `strokeWidth` / `absoluteStrokeWidth` / `class` +
-  // currentColor stroke), so a `<LocalIcon iconNode={…} />` drops into the same
-  // call sites and a `size-*` class overrides the width/height attrs via CSS.
-  // Documented exception to AGENTS.md §4 "Lucide icons only", alongside
-  // `brand-icons` — for first-party glyphs Lucide doesn't ship.
+  // A Lucide-compatible prop surface so custom glyphs drop into the same call sites; a documented exception to the Lucide-only rule.
   import { cn } from "@recast/ui/utils";
   import type { Snippet } from "svelte";
 

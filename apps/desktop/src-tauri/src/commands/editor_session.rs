@@ -76,9 +76,7 @@ fn is_pid_alive(pid: u32) -> bool {
         let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
             return false;
         };
-        // The handle itself is a proof of existence: a successfully opened
-        // handle (even on a zombie we can't signal) means the kernel still
-        // has the PID. Close it immediately; we don't need to wait.
+        // The handle is proof of existence: opening one at all means the kernel still has the PID, so close it immediately.
         if handle.is_invalid() {
             return false;
         }

@@ -36,8 +36,7 @@ const pct = $derived(
 		? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
 		: null,
 );
-// Byte + ETA readout during the transfer so a multi-minute upload feels
-// in-control (e.g. "12.3 MB of 45.0 MB · ~40s left").
+// Byte and ETA readout, so a multi-minute upload feels in-control rather than stalled.
 const transferLabel = $derived.by(() => {
 	if (!upload || upload.totalBytes <= 0) return null;
 	const size = `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`;

@@ -43,8 +43,7 @@ import {
 let osLabel = $state("Unknown");
 let osVersion = $state("");
 let osArch = $state("");
-// Raw key ("windows" / "macos" / …) so rows can branch on it without
-// string-matching the localized label. Empty until loadOsInfo resolves.
+// The raw platform key, so rows can branch without string-matching the localized label; empty until loadOsInfo resolves.
 let platform = $state("");
 
 let diagnostics = $state<FfmpegDiagnostics | null>(null);
@@ -52,8 +51,7 @@ let encoders = $state<EncoderAvailability[]>([]);
 let probing = $state(true);
 let probeError = $state<string | null>(null);
 
-// Capture-support matrix: what this device's native APIs can actually
-// record, probed at runtime rather than hardcoded per platform.
+// What this device's native APIs can actually record, probed at runtime rather than hardcoded per platform.
 let captureCaps = $state<CaptureCapabilities | null>(null);
 let captureProbing = $state(true);
 let captureError = $state<string | null>(null);
@@ -87,9 +85,7 @@ async function loadEngine() {
 	probing = true;
 	probeError = null;
 	try {
-		// ffmpeg metadata returns fast; the encoder matrix spawns ffmpeg per
-		// hardware candidate (up to ~2s cold), so kick both off together and
-		// let the matrix fill in when it resolves.
+		// The encoder matrix spawns ffmpeg per hardware candidate (~2s cold), so start both and let it fill in later.
 		const [diag, enc] = await Promise.all([
 			diagnoseFfmpeg().catch(() => null),
 			probeVideoEncoders(),

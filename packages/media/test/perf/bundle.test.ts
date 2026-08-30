@@ -42,9 +42,7 @@ describe("bundle budgets (REQUIREMENTS.md §3)", () => {
 	});
 
 	it("the barrel is tree-shakable", async () => {
-		// Regression guard, two ways: MediaBunny used to be re-exported from the
-		// barrel, and the package never declared `sideEffects: false`. Either
-		// alone made a lone `MediaError` import cost 61 KB gz instead of 0.2.
+		// Two regressions: MediaBunny re-exported from the barrel, and no `sideEffects: false`; either made one import cost 61 KB.
 		const kb = await bundleGzKb(`
 			import { MediaError } from './src/index';
 			console.log(MediaError);
@@ -61,8 +59,7 @@ describe("bundle budgets (REQUIREMENTS.md §3)", () => {
 	});
 
 	it("the conversion worker surface stays under budget", async () => {
-		// On-demand chunk: apps/web's client.ts is types-only and spawns the
-		// worker lazily, so this never blocks first paint.
+		// apps/web's client.ts is types-only and spawns the worker lazily, so this never blocks first paint.
 		const kb = await bundleGzKb(`
 			import { handlers, runConversion, outputFormatFor } from './src/index';
 			console.log(handlers, runConversion, outputFormatFor);

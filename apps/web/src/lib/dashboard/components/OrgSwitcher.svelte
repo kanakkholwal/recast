@@ -53,19 +53,11 @@ async function setActive(id: string) {
 				error: (err) => (err as Error)?.message ?? "Couldn't switch team.",
 			},
 		);
-		// Point the recast cache at the new team before reloading, so the
-		// fresh load restores its scope instead of flashing the old team's
-		// cached list. Then hard-reload the workspace home: a soft
-		// `invalidateAll()` left the previous team's data on screen because
-		// the client stores + any deep route tied to the old org don't fully
-		// reset. A full-document navigation guarantees the server re-resolves
-		// the new active org and every store re-inits from it.
+		// Point the cache at the new team, then hard-reload: a soft `invalidateAll()` left the old team's data on screen because client stores don't fully reset.
 		recastsStore.hintWorkspace(id);
 		window.location.assign("/dashboard");
 	} finally {
-		// Always clear — a thrown rejection must not strand the row in
-		// the "switching…" pseudo-loading state. (On success the reload
-		// unloads the page before this matters.)
+		// Always clear, so a thrown rejection can't strand the row in its switching state.
 		switching = null;
 	}
 }

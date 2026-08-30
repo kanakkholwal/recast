@@ -27,11 +27,7 @@ import {
 
 const EPS = 1e-4;
 
-// Below this a segment is too short to animate, so it stays static. Each ramp is
-// capped to this fraction of the window so a hold always remains between the two
-// sides. Together they stop tiny fragments (e.g. from aggressive silence-cutting)
-// from sitting in a permanent in→out ramp, a constant wobble. Mirrored in the
-// Rust export evaluator (render/scene_anim.rs); keep the two in lockstep.
+// Below this a segment stays static, and each ramp caps to a fraction of the window so tiny fragments never wobble. Mirrored in render/scene_anim.rs.
 const MIN_ANIMATABLE_SEC = 0.2;
 const MAX_SIDE_FRACTION = 0.4;
 

@@ -18,8 +18,7 @@ const session = authClient.useSession();
 const user = $derived($session.data?.user ?? null);
 const signedIn = $derived(Boolean(user));
 
-// A signed-in visitor gets their own initial, not another text link that looks
-// like navigation. It says "this is your account" the way no icon does.
+// A signed-in visitor gets their initial, not another text link that looks like navigation.
 const initial = $derived((user?.name || user?.email || "?").trim().charAt(0).toUpperCase());
 
 // Navigating from inside the sheet should leave it closed.

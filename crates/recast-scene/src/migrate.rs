@@ -53,12 +53,10 @@ pub fn to_scene(state: &RenderState) -> Scene {
 
     Scene {
         schema: SCHEMA_VERSION,
-        // The v1 state never carried the pointer path: it lives in its own file
-        // and the editor attaches it after migrating.
+        // The v1 state never carried the pointer path: it lives in its own file and the editor attaches it after migrating.
         cursor_track: None,
         captions: state.caption_style.clone(),
-        // The words live in their own file, like the pointer path; the editor
-        // attaches them after migrating.
+        // The words live in their own file, like the pointer path, and the editor attaches them after migrating.
         caption_track: None,
         flags: SceneFlags {
             focus: state.focus_enabled,
@@ -583,9 +581,7 @@ mod tests {
             "these keys are still at their default, so the round-trip test cannot see them: {untouched:?}"
         );
 
-        // A `skip_serializing_if = "Option::is_none"` field that is None in both
-        // is in NEITHER object, so the comparison above cannot see it at all.
-        // The count is the tripwire: a new field means a new fixture value.
+        // A skipped-when-None field is in NEITHER object, so the comparison can't see it; the count is the tripwire.
         assert_eq!(
             populated.len(),
             RENDER_STATE_KEYS,

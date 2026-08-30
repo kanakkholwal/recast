@@ -76,9 +76,7 @@ pub fn to_stereo(frame: &[f32], out: &mut [f32; 2]) {
         1 => *out = [frame[0], frame[0]],
         2 => *out = [frame[0], frame[1]],
         _ => {
-            // Everything past the front pair is spread evenly across both sides,
-            // which keeps a 5.1 centre and surrounds audible without a matrix we
-            // have no way to verify against a real decoder.
+            // Everything past the front pair spreads evenly across both sides, keeping a 5.1 centre audible without an unverifiable matrix.
             let rest: f32 = frame[2..].iter().sum::<f32>() / (frame.len() - 2) as f32;
             *out = [frame[0] + rest * 0.5, frame[1] + rest * 0.5];
         }

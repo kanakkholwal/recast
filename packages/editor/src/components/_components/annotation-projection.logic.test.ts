@@ -26,9 +26,7 @@ describe("annotationZoom", () => {
 		expect(annotationZoom("frame", ZOOM, 5, true).scale).toBe(1);
 	});
 
-	// The composite stops zooming when focus is off and the
-	// export drops the regions outright (services/export.ts). Projecting markup
-	// through zoom anyway put preview shapes where neither of those put them.
+	// With focus off the composite stops zooming and the export drops the regions, so projecting markup through zoom misplaces it.
 	it("ignores zoom for video-anchored markup when focus is disabled", () => {
 		expect(annotationZoom("video", ZOOM, 5, false).scale).toBe(1);
 	});

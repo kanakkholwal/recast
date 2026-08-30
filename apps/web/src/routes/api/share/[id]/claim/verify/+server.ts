@@ -32,14 +32,12 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 	if (!email || !token) redirect(303, `${sharePath}?claim=invalid`);
 
 	const expected = await grantToken(slug, email);
-	// Constant-time compare — this validates an HMAC-derived capability token,
-	// so avoid leaking a timing side-channel on the prefix match.
+	// Constant-time compare: this validates an HMAC-derived capability token, so a prefix timing leak matters.
 	if (!constantTimeEquals(token, expected)) {
 		redirect(303, `${sharePath}?claim=invalid`);
 	}
 
-	// Re-check the allowlist + that the share is still invite-only. An owner
-	// who removed the invitee (or changed visibility) revokes the link here.
+	// Re-check the allowlist and that the share is still invite-only, so removing an invitee revokes the link.
 	const db = getDb();
 	const [s] = await db
 		.select({ visibility: share.visibility })

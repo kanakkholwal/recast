@@ -3,9 +3,7 @@ import { LoaderCircle } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import * as Dialog from "@recast/ui/dialog";
 
-// Confirmation for actions that destroy something. Deleting a recast takes
-// its shares, views and comments with it, and archiving drops the video
-// file; neither is undoable, so neither should be one click from a menu.
+// Deleting takes shares, views and comments with it and archiving drops the file; neither is undoable.
 let {
 	open = $bindable(false),
 	title,
