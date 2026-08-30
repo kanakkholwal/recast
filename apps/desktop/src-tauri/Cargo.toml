@@ -32,6 +32,8 @@ path = "src/main.rs"
 
 [dev-dependencies]
 recast-testkit = { path = "../../../crates/recast-testkit" }
+# Scripts an audio device, so the recorder's own loop is testable without one.
+capturekit = { path = "../../../crates/capturekit", features = ["serde", "mock"] }
 # Both engines have to be reachable from one test binary to diff them.
 recast-compositor = { path = "../../../crates/recast-compositor" }
 recast-gpu = { path = "../../../crates/recast-gpu" }

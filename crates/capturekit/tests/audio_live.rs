@@ -169,7 +169,7 @@ fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
     let real_time = started.elapsed();
     assert!(
         covered <= real_time + Duration::from_millis(300),
-        "{covered:?} of samples from {real_time:?} of capture ({breaks} break(s),          {inserted_silence} inserted). More audio than time means the source is          inventing it, which no continuity check can see: they are all measured          in the same wrong rate."
+        "{covered:?} of samples from {real_time:?} of capture ({breaks} break(s),          {inserted_silence} inserted, {frames} frames at {format:?}). More audio than          time means the source is inventing it, which no continuity check can see:          they are all measured in the same wrong rate."
     );
     // A break is a source saying it lost samples; an idle desktop loses none.
     assert!(
@@ -383,4 +383,31 @@ fn a_refused_open_releases_its_interfaces_before_closing_the_apartment() {
     })
     .join()
     .expect("no thread faulted on a refused open");
+}
+
+/// Opening must not sit out the readiness timeout.
+///
+/// The stream used to report itself only when it ENDED, so a successful open
+/// waited the whole timeout, and the queue filled with audio from before the
+/// capture was asked for: a 1.2s take came back holding 5.2s of samples.
+#[test]
+fn opening_a_loopback_reports_ready_on_connect_not_on_exit() {
+    let _device = exclusive();
+    let Some(_) = devices_or_skip() else {
+        return;
+    };
+    let started = std::time::Instant::now();
+    let mut capture = match audio_loopback().build() {
+        Ok(capture) => capture,
+        Err(err) => {
+            eprintln!("skipped: no loopback endpoint to open: {err}");
+            return;
+        }
+    };
+    let took = started.elapsed();
+    capture.stop().expect("release the endpoint");
+    assert!(
+        took < Duration::from_secs(2),
+        "opening a loopback took {took:?}, so it waited for something rather than connecting"
+    );
 }

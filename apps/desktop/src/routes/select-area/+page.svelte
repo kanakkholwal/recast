@@ -3,7 +3,6 @@ import { Crop } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
 import { captureRegionShot } from "$lib/ipc";
@@ -24,10 +23,12 @@ const mode = overlayMode(window.location.search);
 let capturing = $state(false);
 let failure = $state<string | null>(null);
 
-// Overlay spans all monitors from the virtual-desktop origin, so pointer
-// coords are virtual-desktop pixels, which is what the Rust resolver expects.
-let originX = $state(0);
-let originY = $state(0);
+// Read on confirm, not on mount: the window is positioned after it is built.
+async function virtualOrigin(): Promise<{ x: number; y: number }> {
+	const pos = await getCurrentWindow().outerPosition();
+	const scale = window.devicePixelRatio || 1;
+	return { x: Math.round(pos.x / scale), y: Math.round(pos.y / scale) };
+}
 
 let dragging = $state(false);
 let startX = $state(0);
@@ -37,19 +38,6 @@ let curY = $state(0);
 
 // Last drawn rect (frozen after pointerup so the user can confirm).
 let rect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
-
-onMount(() => {
-	// Window position, to convert local pointer coords to global.
-	const win = getCurrentWindow();
-	win
-		.outerPosition()
-		.then((pos) => {
-			const scale = window.devicePixelRatio || 1;
-			originX = Math.round(pos.x / scale);
-			originY = Math.round(pos.y / scale);
-		})
-		.catch(() => {});
-});
 
 function onPointerDown(e: PointerEvent) {
 	dragging = true;
@@ -81,7 +69,14 @@ function onPointerUp(e: PointerEvent) {
 
 async function confirm() {
 	if (!rect || capturing) return;
-	const payload = toRegionPayload(rect, { x: originX, y: originY }, window.devicePixelRatio || 1);
+	let origin: { x: number; y: number };
+	try {
+		origin = await virtualOrigin();
+	} catch (e) {
+		failure = e instanceof Error ? e.message : String(e);
+		return;
+	}
+	const payload = toRegionPayload(rect, origin, window.devicePixelRatio || 1);
 	if (mode === "record") {
 		emit("region-selected", payload);
 		getCurrentWindow().close();

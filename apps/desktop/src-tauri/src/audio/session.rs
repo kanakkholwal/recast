@@ -369,3 +369,158 @@ mod tests {
         );
     }
 }
+
+/// The `run` loop itself, driven by a scripted device.
+///
+/// Its timeout and error arms are the ones a real device will not perform on
+/// demand, and they are exactly the arms that decide whether a quiet take keeps
+/// wall time or a dead one spins a core.
+#[cfg(test)]
+mod run_tests {
+    use super::{run, POLL_TIMEOUT};
+    use crate::audio::track::TrackWriter;
+    use crate::audio::wav::WavFormat;
+    use crate::recording::TrackStart;
+    use capturekit::mock::{MockAudio, MockAudioSource};
+    use capturekit::{AudioCapturer, AudioFormat, LostReason, SampleFormat};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    const FORMAT: AudioFormat = AudioFormat {
+        sample_rate: 48_000,
+        channels: 2,
+        sample_format: SampleFormat::I16,
+    };
+
+    struct Fixture {
+        path: std::path::PathBuf,
+        stop: Arc<AtomicBool>,
+    }
+
+    impl Fixture {
+        fn new(name: &str) -> Self {
+            let dir = std::env::temp_dir().join("recast-run-loop");
+            let _ = std::fs::create_dir_all(&dir);
+            Self {
+                path: dir.join(format!("{name}-{}.wav", std::process::id())),
+                stop: Arc::new(AtomicBool::new(false)),
+            }
+        }
+
+        /// Run the real loop against `script`, stopping it once the device has
+        /// been read `answers` times, or sooner if the loop ends on its own.
+        ///
+        /// Counted rather than timed: the mock sleeps out every timeout, so a
+        /// fixed sleep here would race those and go flaky under load. The loop
+        /// runs on its own thread so an arm that ENDS the take returns straight
+        /// away instead of waiting for a count it will never reach.
+        ///
+        /// Returns the track and how many times the device was actually read.
+        fn drive(&self, script: Vec<MockAudio>, answers: usize) -> (std::path::PathBuf, usize) {
+            let source = MockAudioSource::new(FORMAT, script);
+            let reads = source.reads();
+            let released = source.released();
+            let capturer = AudioCapturer::scripted(source);
+            let writer = TrackWriter::new(
+                "test",
+                self.path.clone(),
+                WavFormat::of(FORMAT).expect("a writable format"),
+                Arc::new(AtomicBool::new(false)),
+                TrackStart::new(Instant::now()),
+            )
+            .expect("the writer opens");
+
+            let stop = Arc::clone(&self.stop);
+            let loop_thread = std::thread::spawn(move || run(capturer, writer, &stop, "test"));
+
+            let deadline = Instant::now() + POLL_TIMEOUT * 40;
+            while reads.load(Ordering::Relaxed) < answers
+                && !loop_thread.is_finished()
+                && Instant::now() < deadline
+            {
+                std::thread::sleep(core::time::Duration::from_millis(1));
+            }
+            self.stop.store(true, Ordering::Release);
+            let path = loop_thread
+                .join()
+                .expect("the loop thread joins")
+                .expect("the loop finishes");
+            assert!(
+                released.load(Ordering::Relaxed),
+                "the loop returned without releasing the device"
+            );
+            (path, reads.load(Ordering::Relaxed))
+        }
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    /// The timeout arm KEEPS READING. A quiet microphone answers nothing all
+    /// day, and a loop that treated that as the end would truncate the take to
+    /// its first silent moment.
+    ///
+    /// What the tick inside that arm is for — measuring a pause from the clock
+    /// rather than from deliveries — is pinned separately, on the writer, by
+    /// `track::tests::a_pause_a_silent_device_delivered_nothing_across_is_still_measured`.
+    #[test]
+    fn a_device_that_only_times_out_is_read_again_rather_than_ending_the_take() {
+        let fixture = Fixture::new("timeout");
+        let (path, reads) = fixture.drive(vec![], 4);
+        assert!(
+            reads >= 3,
+            "the loop read {reads} times before stopping, so a timeout ended it"
+        );
+        // A file LENGTH cannot tell an empty take apart: the header predates the loop.
+        assert_eq!(
+            crate::audio::wav::wav_data_bytes(&path),
+            Some(0),
+            "a take of nothing but timeouts should hold no samples"
+        );
+    }
+
+    /// A lost device ENDS the loop. capturekit calls it recoverable and reports
+    /// it with no wait, so retrying would spin a core for the rest of the take.
+    #[test]
+    fn a_lost_device_ends_the_loop_rather_than_spinning() {
+        let fixture = Fixture::new("lost");
+        let started = Instant::now();
+        let (path, reads) = fixture.drive(vec![MockAudio::Lost(LostReason::DeviceLost)], 40);
+        let took = started.elapsed();
+        assert_eq!(reads, 1, "the loop read again after the device was lost");
+        assert!(
+            took < POLL_TIMEOUT * 20,
+            "the loop ran {took:?} after the device was lost, so it did not stop on it"
+        );
+        assert_eq!(
+            crate::audio::wav::wav_data_bytes(&path),
+            Some(0),
+            "the take was not finalised into a readable WAV"
+        );
+    }
+
+    /// Samples reach the file, so the two arms above are measured against a
+    /// loop that does write when there is something to write.
+    #[test]
+    fn samples_reach_the_track() {
+        let fixture = Fixture::new("samples");
+        let frames = 480;
+        let (path, _) = fixture.drive(
+            vec![
+                MockAudio::silence(0, FORMAT, frames),
+                MockAudio::silence(10_000_000, FORMAT, frames),
+            ],
+            3,
+        );
+        let written = std::fs::metadata(&path).expect("the track exists").len();
+        let payload = frames as u64 * FORMAT.bytes_per_frame() as u64 * 2;
+        assert!(
+            written >= payload,
+            "wrote {written} bytes for {payload} bytes of samples"
+        );
+    }
+}

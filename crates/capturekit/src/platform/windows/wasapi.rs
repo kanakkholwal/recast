@@ -16,7 +16,7 @@ use windows::Win32::System::Com::StructuredStorage::PropVariantToStringAlloc;
 use windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 use windows::Win32::UI::Shell::PropertiesSystem::PROPERTYKEY;
 
-use super::com::ComScope;
+use super::com::{ComScope, Scoped};
 use crate::backend::{AudioSource, RawAudio};
 
 pub(crate) const BACKEND: &str = "wasapi";
@@ -48,36 +48,18 @@ fn err(source: windows::core::Error) -> CaptureError {
     CaptureError::backend(BACKEND, source)
 }
 
-/// The device enumerator and the apartment it was made in.
+/// The device enumerator, and the apartment it was made in.
 ///
-/// A struct rather than a tuple, because a tuple gets destructured into two
-/// locals and LOCALS DROP IN REVERSE: the apartment would close first, and
-/// releasing a COM object into a torn-down apartment faults instead of failing.
-/// Struct fields drop in declaration order, so this order is the contract.
-/// Declare it before anything made from it and never take it apart early.
-struct Enumerator {
-    device: IMMDeviceEnumerator,
-    _com: ComScope,
-}
-
-impl Enumerator {
-    /// Hand the apartment on, releasing the enumerator first.
-    ///
-    /// For a caller that outlives this scope: the apartment has to stay open for
-    /// as long as anything made in it is still alive.
-    fn into_scope(self) -> ComScope {
-        self._com
-    }
-}
+/// Declare it before anything made from it, and never take it apart early: the
+/// ordering that keeps a release from landing in a closed apartment is
+/// [`Scoped`]'s field order, not the caller's.
+type Enumerator = Scoped<IMMDeviceEnumerator>;
 
 /// WASAPI is COM, so a bare capture thread has to join an apartment first.
 fn enumerator() -> Result<Enumerator> {
     let scope = ComScope::mta();
     let device = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }.map_err(err)?;
-    Ok(Enumerator {
-        device,
-        _com: scope,
-    })
+    Ok(Scoped::new(device, scope))
 }
 
 fn device_id(device: &IMMDevice) -> Result<AudioDeviceId> {
@@ -167,12 +149,12 @@ pub(crate) fn devices() -> Result<Vec<AudioDevice>> {
         (eCapture, AudioDirection::Input),
         (eRender, AudioDirection::Loopback),
     ] {
-        let default_id = unsafe { enumerator.device.GetDefaultAudioEndpoint(flow, eConsole) }
+        let default_id = unsafe { enumerator.value.GetDefaultAudioEndpoint(flow, eConsole) }
             .ok()
             .and_then(|device| device_id(&device).ok());
         let collection = unsafe {
             enumerator
-                .device
+                .value
                 .EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE)
         }
         .map_err(err)?;
@@ -238,7 +220,7 @@ impl WasapiSource {
         let endpoint = match device {
             Some(id) => {
                 let wide: Vec<u16> = id.0.encode_utf16().chain(core::iter::once(0)).collect();
-                unsafe { enumerator.device.GetDevice(PCWSTR(wide.as_ptr())) }.map_err(|error| {
+                unsafe { enumerator.value.GetDevice(PCWSTR(wide.as_ptr())) }.map_err(|error| {
                     if error.code() == E_NOTFOUND {
                         CaptureError::NotFound {
                             kind: "audio device",
@@ -250,7 +232,7 @@ impl WasapiSource {
                 })?
             }
             None => {
-                unsafe { enumerator.device.GetDefaultAudioEndpoint(flow, eConsole) }.map_err(err)?
+                unsafe { enumerator.value.GetDefaultAudioEndpoint(flow, eConsole) }.map_err(err)?
             }
         };
 

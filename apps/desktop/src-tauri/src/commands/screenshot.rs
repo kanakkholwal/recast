@@ -146,6 +146,9 @@ pub async fn capture_region_shot(
 /// rather than stacking another transparent full-screen window over it.
 const OVERLAY_LABEL: &str = "screenshot-region";
 
+/// The recording region picker's window, which the source page listens to.
+const PICKER_LABEL: &str = "region-picker";
+
 /// Open the region overlay across every display.
 ///
 /// Sized and placed in PHYSICAL pixels from capturekit's own enumeration rather
@@ -153,38 +156,60 @@ const OVERLAY_LABEL: &str = "screenshot-region";
 /// otherwise be unreachable, and a monitor above or left of the primary puts the
 /// origin in negative space that a window pinned to (0, 0) never covers.
 pub fn open_region_overlay(app: &tauri::AppHandle) -> Result<(), String> {
+    open_overlay(
+        app,
+        OVERLAY_LABEL,
+        "/select-area?mode=screenshot",
+        "Capture Area",
+    )
+}
+
+/// Open the RECORDING region picker over the whole virtual desktop.
+///
+/// The same overlay as the screenshot one, sized here rather than in the
+/// frontend: `window.screen` reports the primary display in logical points, so
+/// a second monitor was unselectable and a monitor above or left of the primary
+/// put the origin in negative space a window pinned to (0, 0) never covers.
+/// Async on purpose: a sync command runs on the main thread, and building a
+/// window there waits on the event loop the command is already blocking.
+#[tauri::command]
+pub async fn open_area_picker(app: tauri::AppHandle) -> Result<(), String> {
+    open_overlay(&app, PICKER_LABEL, "/select-area", "Select Area")
+}
+
+/// Place a borderless overlay across every display, in PHYSICAL pixels.
+fn open_overlay(app: &tauri::AppHandle, label: &str, url: &str, title: &str) -> Result<(), String> {
     use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
 
-    if let Some(existing) = app.get_webview_window(OVERLAY_LABEL) {
+    if let Some(existing) = app.get_webview_window(label) {
         return existing.set_focus().map_err(|e| e.to_string());
     }
     let displays = capturekit::displays().map_err(|e| format!("{e:#}"))?;
     let bounds = crate::capture::virtual_bounds(&displays)
         .ok_or("no displays to put the capture overlay on")?;
 
-    let window = WebviewWindowBuilder::new(
-        app,
-        OVERLAY_LABEL,
-        WebviewUrl::App("/select-area?mode=screenshot".into()),
-    )
-    .title("Capture Area")
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .resizable(false)
-    .shadow(false)
-    .build()
-    .map_err(|e| e.to_string())?;
+    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
+        .title(title)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .build()
+        .map_err(|e| e.to_string())?;
 
     // Physical pixels: the builder takes logical points, and that conversion is the Retina half-size bug.
-    window
+    let placed = window
         .set_position(PhysicalPosition::new(bounds.x, bounds.y))
-        .map_err(|e| e.to_string())?;
-    window
-        .set_size(PhysicalSize::new(bounds.width, bounds.height))
-        .map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())
+        .and_then(|()| window.set_size(PhysicalSize::new(bounds.width, bounds.height)))
+        .and_then(|()| window.set_focus());
+    if let Err(error) = placed {
+        // Left alive it holds the label and covers the screen; a retry only focuses it.
+        let _ = window.close();
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 /// Where shots land inside the output directory, beside the recordings rather

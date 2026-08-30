@@ -112,6 +112,19 @@ pub struct AudioCapturer {
 }
 
 impl AudioCapturer {
+    /// Wrap a scripted source, so a recorder's own loop can be driven with no
+    /// device: its timeout and error arms are the ones a real device will not
+    /// exercise on demand.
+    #[cfg(any(test, feature = "mock"))]
+    #[must_use]
+    pub fn scripted(source: crate::mock::MockAudioSource) -> Self {
+        let desc = crate::backend::AudioSource::describe(&source).clone();
+        Self {
+            backend: Box::new(source),
+            desc,
+        }
+    }
+
     /// What the backend negotiated, which is not always what was asked for.
     #[must_use]
     pub const fn describe(&self) -> &AudioDesc {

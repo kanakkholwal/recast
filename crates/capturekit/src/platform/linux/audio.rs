@@ -1,5 +1,6 @@
 use core::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -32,6 +33,9 @@ const ENUMERATE_TIMEOUT: Duration = Duration::from_secs(2);
 /// Four seconds of 48 kHz stereo float, which is far past any read interval a
 /// recorder uses and still bounded.
 const QUEUE_BYTES: usize = 4 * 48_000 * 2 * 4;
+
+/// How long to wait for the stream to connect before calling the open failed.
+const OPEN_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn failed(message: String) -> CaptureError {
     CaptureError::backend(BACKEND, std::io::Error::other(message))
@@ -233,7 +237,9 @@ impl PipewireAudioSource {
                 let timeline = Arc::clone(&negotiated);
                 let target = device.map(|id| id.0.clone());
                 move || {
-                    let outcome = run_stream(target, direction, &queue, &quit, &timeline);
+                    let outcome =
+                        run_stream(target, direction, &queue, &quit, &timeline, &ready_tx);
+                    // Only a failure is news: a connected stream already reported.
                     let _ = ready_tx.send(outcome.clone());
                     if let Err(message) = outcome {
                         log::error!("pipewire audio ended: {message}");
@@ -243,10 +249,20 @@ impl PipewireAudioSource {
             })
             .map_err(|error| CaptureError::backend(BACKEND, error))?;
 
-        // The loop reports only a setup failure before it starts running, so a
-        // timeout here means it got as far as running, which is success.
-        if let Ok(Err(message)) = ready_rx.recv_timeout(Duration::from_secs(5)) {
-            return Err(failed(message));
+        // The signal means CONNECTED: anything else hands back a silent, empty track.
+        match ready_rx.recv_timeout(OPEN_TIMEOUT) {
+            Ok(Ok(())) => {}
+            Ok(Err(message)) => return Err(failed(message)),
+            Err(RecvTimeoutError::Timeout) => {
+                return Err(failed(format!(
+                    "the audio stream did not connect within {OPEN_TIMEOUT:?}"
+                )))
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(failed(
+                    "the audio thread stopped before the stream connected".to_string(),
+                ))
+            }
         }
 
         Ok(Self {
@@ -274,6 +290,7 @@ fn run_stream(
     queue: &Arc<AudioQueue>,
     quit: &Arc<AtomicBool>,
     timeline: &Arc<Mutex<Timeline>>,
+    ready: &std::sync::mpsc::Sender<core::result::Result<(), String>>,
 ) -> core::result::Result<(), String> {
     pipewire::init();
     let main_loop = MainLoopRc::new(None).map_err(|e| e.to_string())?;
@@ -382,6 +399,8 @@ fn run_stream(
         .map_err(|e| e.to_string())?;
 
     let _timer = quit_timer(&main_loop, quit, Duration::from_millis(50))?;
+    // Last, so nothing that can still fail reports success to the caller.
+    let _ = ready.send(Ok(()));
     main_loop.run();
     Ok(())
 }

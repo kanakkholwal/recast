@@ -11,6 +11,7 @@ import {
 import { Button } from "@recast/ui/button";
 import * as Tabs from "@recast/ui/tabs";
 import { cn } from "@recast/ui/utils";
+import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
@@ -19,7 +20,6 @@ import { scale } from "svelte/transition";
 import { page } from "$app/state";
 import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
 import { getDisplays, getLastSource, getWindows } from "$lib/ipc";
-import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
 import {
 	buildSources,
 	filterByType,
@@ -37,6 +37,8 @@ let sources: TargetSource[] = $state([]);
 let selectedSource: TargetSource | null = $state(null);
 let tab = $state<"monitor" | "window" | "region">("monitor");
 let isFetching = $state(true);
+// Why the overlay would not open, shown where the button that opens it is.
+let pickerError = $state<string | null>(null);
 // Last region remembered between sessions (loaded from config).
 let lastRegion = $state<TargetSource | null>(null);
 // Filter for the screens/windows lists; reset when the tab changes so a stale
@@ -91,21 +93,15 @@ onMount(() => {
 });
 
 async function openAreaPicker() {
-	// Oversize to cover the whole virtual desktop across multiple monitors.
-	await spawnOverlayWindow("region-picker", {
-		url: "/select-area",
-		title: "Select Area",
-		width: window.screen.availWidth,
-		height: window.screen.availHeight,
-		x: 0,
-		y: 0,
-		decorations: false,
-		transparent: true,
-		alwaysOnTop: true,
-		skipTaskbar: true,
-		resizable: false,
-		maximized: true,
-	});
+	pickerError = null;
+	try {
+		// Sized in Rust: `window.screen` is the primary display, in logical points.
+		await invoke("open_area_picker");
+	} catch (e) {
+		// Refusing silently leaves a button that looks broken.
+		pickerError = String(e);
+		console.error(e);
+	}
 }
 
 async function fetchSources() {
@@ -268,6 +264,12 @@ function isSelected(source: TargetSource) {
             Drag to select · Esc to cancel
           </p>
         </button>
+
+        {#if pickerError}
+          <p role="alert" class="text-[10px] text-destructive">
+            Could not open the area picker: {pickerError}
+          </p>
+        {/if}
 
         {#if lastRegion && !sources.some((s) => s.type === "region")}
           <button

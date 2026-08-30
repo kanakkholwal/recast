@@ -600,6 +600,7 @@ pub fn run() {
             commands::dismiss_export_job,
             commands::retry_export_job,
             commands::screenshot::capture_region_shot,
+            commands::screenshot::open_area_picker,
             commands::get_audio_devices,
             commands::get_camera_devices,
             commands::validate_camera_source,
