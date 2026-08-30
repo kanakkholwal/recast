@@ -72,6 +72,35 @@
   /* One near-white for every label and the selection outline: the fill carries lane identity, not the text. */
   --lane-on: oklch(0.99 0 0);
 
+  /* Canvas-timeline palette. */
+  --tl-surface: #1c1c1c;
+  --tl-surface-muted: #292929;
+  --tl-border: #1c1c1c;
+  --tl-border-input: #3e3f41;
+  --tl-ring: #008cff;
+  --tl-scrubber: #f43535;
+  --tl-ruler-tick: rgba(53, 53, 53, 1);
+  --tl-ruler-text: rgba(120, 120, 120, 1);
+  --tl-label: #d4d4d8;
+  --tl-video-bg: #0f3c8a;
+  --tl-video-primary: #70a7ff;
+  --tl-video-on: #cce0ff;
+  --tl-zoom-bg: #066284;
+  --tl-zoom-primary: #5ab9dd;
+  --tl-zoom-on: #dbeaf0;
+  --tl-markup-bg: #933325;
+  --tl-markup-primary: #d98a7a;
+  --tl-markup-on: #faedeb;
+  --tl-caption-bg: #7b1e5a;
+  --tl-caption-primary: #aa317b;
+  --tl-caption-on: #f9dced;
+  --tl-audio-bg: #004732;
+  --tl-audio-primary: #0dbf8a;
+  --tl-audio-on: #cbfaed;
+  --tl-music-bg: #4827b0;
+  --tl-music-primary: #9a7ff0;
+  --tl-music-on: #e7dffb;
+
   --border: oklch(0.91 0 0);
   --border-subtle: oklch(0% 0 0 / 0.05);
   /* Control boundaries must clear 3:1 (WCAG 1.4.11); the decorative hairline is 1.31:1 on a white card. */

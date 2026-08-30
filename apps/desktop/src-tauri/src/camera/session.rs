@@ -222,6 +222,21 @@ pub fn stop(session: u64) {
     }
 }
 
+/// Release the camera whatever its session token, for a preview window that is
+/// already gone.
+///
+/// [`stop`] needs the token the window was told, and a window destroyed without
+/// running its teardown never sends it — the panel closes the preview with a raw
+/// `close()`, so the webview dies with the token. Without this the capture
+/// thread runs forever and the camera light stays on.
+pub fn release() {
+    let taken = slot().lock().ok().and_then(|mut held| held.take());
+    if let Some(running) = taken {
+        log::info!("camera released: its preview window is gone");
+        shut_down(running);
+    }
+}
+
 /// Begin writing the live camera to `dest`. The session must already be running.
 pub fn attach_recorder(
     dest: PathBuf,
@@ -297,6 +312,17 @@ fn shut_down(running: Running) {
     let _ = running.thread.join();
 }
 
+/// Whether the pump may wait for another frame after `error`.
+///
+/// Only a timeout. Every other error means the backend's delivery worker has
+/// finished — `Slot::end` is set — and `next_frame` then returns instantly
+/// forever. Continuing on one of those is not a retry, it is a hot loop
+/// re-sending the last frame over IPC as fast as the CPU allows, which reads as
+/// a preview frozen on its first frame plus an unexplained CPU spike.
+const fn keep_pumping(error: &capturekit::CaptureError) -> bool {
+    matches!(error, capturekit::CaptureError::Timeout(_))
+}
+
 fn pump(
     mut capturer: capturekit::Capturer,
     geometry: CameraGeometry,
@@ -314,7 +340,11 @@ fn pump(
         let frame = match capturer.next_frame(POLL) {
             Ok(frame) => frame,
             // A USB hiccup holds the last frame rather than tearing the preview down.
-            Err(_) => continue,
+            Err(error) if keep_pumping(&error) => continue,
+            Err(error) => {
+                log::error!("camera preview stopped: {error}");
+                break;
+            }
         };
         // Size is negotiated once; a short buffer must never reach the encoder.
         if frame.desc().width != geometry.width || frame.desc().height != geometry.height {
@@ -357,6 +387,85 @@ fn deliver(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A timeout already cost `POLL`, so looping on it cannot spin.
+    #[test]
+    fn a_timeout_keeps_the_preview_waiting() {
+        assert!(keep_pumping(&capturekit::CaptureError::Timeout(POLL)));
+    }
+
+    /// The bug this guards: the delivery worker ends on ANY read failure, and
+    /// `next_frame` then returns instantly forever. Looping burned a core and
+    /// re-sent the first frame until the window closed.
+    #[test]
+    fn an_ended_source_stops_the_pump_instead_of_spinning() {
+        for reason in [
+            capturekit::LostReason::AccessLost,
+            capturekit::LostReason::DeviceLost,
+        ] {
+            let error = capturekit::CaptureError::Lost(reason);
+            assert!(
+                !keep_pumping(&error),
+                "{error} kept the pump running on a dead capturer"
+            );
+        }
+    }
+
+    /// `Lost` is `is_recoverable`, so recoverability is the wrong question here:
+    /// the capturer is finished either way and only a fresh open could help.
+    #[test]
+    fn recoverability_does_not_keep_a_finished_capturer_alive() {
+        let error = capturekit::CaptureError::Lost(capturekit::LostReason::AccessLost);
+        assert!(error.is_recoverable());
+        assert!(!keep_pumping(&error));
+    }
+
+    /// The whole preview path, against a real device: does the sink actually
+    /// receive MOVING pictures, or one frame forever?
+    ///
+    /// capturekit's own live test proves the device delivers distinct frames, so
+    /// a failure here is in this file.
+    #[test]
+    #[ignore = "live: opens the real camera"]
+    fn the_preview_sink_receives_moving_pictures() {
+        let Ok(cameras) = super::super::devices() else {
+            return;
+        };
+        let Some(camera) = cameras.first() else {
+            return;
+        };
+        let seen: Arc<Mutex<Vec<u64>>> = Arc::new(Mutex::new(Vec::new()));
+        let sink: FrameSink = {
+            let seen = seen.clone();
+            Box::new(move |message| {
+                let mut hash = 1469598103934665603u64;
+                for chunk in message.chunks(997) {
+                    hash ^= u64::from(chunk[0]);
+                    hash = hash.wrapping_mul(1099511628211);
+                }
+                if let Ok(mut held) = seen.lock() {
+                    held.push(hash);
+                }
+            })
+        };
+        let geometry = start(&camera.name, sink).expect("open the camera");
+        thread::sleep(Duration::from_secs(2));
+        stop(geometry.session);
+
+        let held = seen.lock().expect("sink lock");
+        let distinct: std::collections::HashSet<u64> = held.iter().copied().collect();
+        assert!(
+            held.len() > 5,
+            "only {} frame(s) reached the sink",
+            held.len()
+        );
+        assert!(
+            distinct.len() > 1,
+            "{} frames reached the sink but carried {} distinct image(s)",
+            held.len(),
+            distinct.len()
+        );
+    }
 
     #[test]
     fn a_preview_frame_carries_its_own_dimensions() {

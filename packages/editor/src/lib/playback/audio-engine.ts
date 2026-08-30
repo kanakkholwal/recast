@@ -29,6 +29,7 @@ import {
 	type Region,
 	sliceChunksForPlayback,
 } from "./audio-schedule";
+import { rescheduleDecision } from "./reschedule-throttle";
 import { timeStretch } from "./time-stretch";
 
 /**
@@ -226,6 +227,10 @@ export class AudioTimelineEngine {
 	#musicGen = 0;
 	// Aborts the in-flight decode on a scrub, or a stale 12s window blocks the fresh one until the next top-up.
 	#abort: AbortController | null = null;
+	// Throttle state for `reschedule`; the newest request always wins.
+	#pendingReschedule: { regions: ReadonlyArray<Region>; fromOutputTime: number } | null = null;
+	#rescheduleTimer: ReturnType<typeof setTimeout> | null = null;
+	#lastRescheduleMs = Number.NEGATIVE_INFINITY;
 
 	private constructor(ctx: AudioContext, tracks: AudioTrack[], fadeGain: GainNode) {
 		this.#ctx = ctx;
@@ -728,14 +733,44 @@ export class AudioTimelineEngine {
 	/**
 	 * Re-plan playback to a new OUTPUT time: on a scrub, or when the cut set
 	 * changes while playing. No-op while paused (the next `play` will schedule).
+	 *
+	 * Throttled, because `#schedule` tears the whole graph down: a drag emits one
+	 * call per pointer move, and unthrottled that aborted every decode before it
+	 * could make a sound. Latest-wins with a trailing run, so the sound still
+	 * lands where the user let go. Mirrors the video source's seek limiter.
 	 */
 	reschedule(regions: ReadonlyArray<Region>, fromOutputTime: number): void {
-		this.#schedule(regions, fromOutputTime);
+		this.#pendingReschedule = { regions, fromOutputTime };
+		const decision = rescheduleDecision(
+			performance.now(),
+			this.#lastRescheduleMs,
+			this.#rescheduleTimer !== null,
+		);
+		if (decision.act === "coalesce") return;
+		if (decision.act === "now") {
+			this.#flushReschedule();
+			return;
+		}
+		this.#rescheduleTimer = setTimeout(() => {
+			this.#rescheduleTimer = null;
+			this.#flushReschedule();
+		}, decision.afterMs);
+	}
+
+	#flushReschedule(): void {
+		const pending = this.#pendingReschedule;
+		if (!pending) return;
+		this.#pendingReschedule = null;
+		this.#lastRescheduleMs = performance.now();
+		this.#schedule(pending.regions, pending.fromOutputTime);
 	}
 
 	dispose(): void {
 		this.#stopActive();
 		this.#stopTopUp();
+		if (this.#rescheduleTimer !== null) clearTimeout(this.#rescheduleTimer);
+		this.#rescheduleTimer = null;
+		this.#pendingReschedule = null;
 		this.#abort?.abort();
 		this.#disposeMusic();
 		this.#scheduled = false;

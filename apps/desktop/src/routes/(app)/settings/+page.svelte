@@ -1,42 +1,4 @@
 <script lang="ts">
-import { afterNavigate, replaceState } from "$app/navigation";
-import { page } from "$app/state";
-import SectionCard from "$components/layout/SectionCard.svelte";
-import SettingsRow from "$components/layout/SettingsRow.svelte";
-import StudioPage from "$components/layout/StudioPage.svelte";
-import Logo from "$components/logo.svelte";
-import RecastMark from "$components/recast-mark.svelte";
-import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
-import CloudSignIn from "$components/settings/CloudSignIn.svelte";
-import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
-import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
-import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
-import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
-import { config } from "$constants/app";
-import { syncConsent } from "$lib/analytics/client";
-import {
-	type CliInstallStatus,
-	cliInstallStatus,
-	getCliAutoInstall,
-	getCloseToTray,
-	getDisplays,
-	getHidePanelFromCapture,
-	getLastSource,
-	getOutputDir,
-	getWindowTransparency,
-	installCli,
-	setCliAutoInstall,
-	setCloseToTray,
-	setHidePanelFromCapture,
-	setOutputDir,
-	setWindowTransparency,
-	uninstallCli,
-} from "$lib/ipc";
-import { desktopConsent } from "$lib/stores/consent.svelte";
-import { LAYOUT_MODES, type LayoutMode, layoutMode } from "$lib/stores/layout-mode.svelte";
-import { profilesStore } from "$lib/stores/profiles.svelte";
-import { type CountdownSeconds, recordingCountdown } from "$lib/stores/recording-countdown.svelte";
-import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
 import {
 	loadRecordingFps,
 	loadRecordingQuality,
@@ -89,13 +51,54 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { platform } from "@tauri-apps/plugin-os";
 import { onMount, untrack } from "svelte";
+import { afterNavigate, replaceState } from "$app/navigation";
+import { page } from "$app/state";
+import SectionCard from "$components/layout/SectionCard.svelte";
+import SettingsRow from "$components/layout/SettingsRow.svelte";
+import StudioPage from "$components/layout/StudioPage.svelte";
+import Logo from "$components/logo.svelte";
+import RecastMark from "$components/recast-mark.svelte";
+import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
+import CloudSignIn from "$components/settings/CloudSignIn.svelte";
+import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
+import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
+import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
+import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
+import { config } from "$constants/app";
+import { syncConsent } from "$lib/analytics/client";
+import {
+	type CliInstallStatus,
+	cliInstallStatus,
+	getCliAutoInstall,
+	getCloseToTray,
+	getDisplays,
+	getHidePanelFromCapture,
+	getLastSource,
+	getNativeEncoder,
+	getOutputDir,
+	getWindowTransparency,
+	installCli,
+	nativeEncoderAvailable,
+	setCliAutoInstall,
+	setCloseToTray,
+	setHidePanelFromCapture,
+	setNativeEncoder,
+	setOutputDir,
+	setWindowTransparency,
+	uninstallCli,
+} from "$lib/ipc";
+import { desktopConsent } from "$lib/stores/consent.svelte";
+import { LAYOUT_MODES, type LayoutMode, layoutMode } from "$lib/stores/layout-mode.svelte";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import { type CountdownSeconds, recordingCountdown } from "$lib/stores/recording-countdown.svelte";
+import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
+import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
 import {
 	DEFAULT_SETTINGS_TAB,
 	parseSettingsTab,
 	SETTINGS_TAB_PARAM,
 	type SettingsTab,
 } from "./settings-tabs";
-import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
 
 type Theme = "light" | "dark" | "system";
 type EditorBehavior = "navigate" | "new-window";
@@ -108,6 +111,9 @@ let countdown = $state<CountdownSeconds>(3);
 let closeToTray = $state(true);
 let windowTransparency = $state(false);
 let hidePanelFromCapture = $state(true);
+// Backed by AppConfig, not the experimental store: the backend reads it before any window exists.
+let nativeEncoder = $state(false);
+let nativeEncoderSupported = $state(false);
 // Content protection is a compile-time no-op on Linux, so the toggle is shown disabled rather than pretending.
 const isLinux = platform() === "linux";
 // Global recording prefs, read by the recording panel via shared localStorage.
@@ -273,6 +279,12 @@ async function fetchSettings() {
 		// Older builds or non-Tauri preview, so keep the optimistic default.
 	}
 	try {
+		nativeEncoderSupported = await nativeEncoderAvailable();
+		nativeEncoder = await getNativeEncoder();
+	} catch {
+		// Older builds without the commands: leave it off and unsupported.
+	}
+	try {
 		cliAutoInstall = await getCliAutoInstall();
 	} catch {
 		// The optimistic default is fine; settings just won't reflect an explicit off toggle without the command.
@@ -311,6 +323,17 @@ async function toggleHidePanelFromCapture() {
 		await setHidePanelFromCapture(next);
 	} catch (e) {
 		hidePanelFromCapture = !next;
+		toast.error(`Could not update setting: ${e}`);
+	}
+}
+
+async function toggleNativeEncoder() {
+	const next = !nativeEncoder;
+	nativeEncoder = next;
+	try {
+		await setNativeEncoder(next);
+	} catch (e) {
+		nativeEncoder = !next;
 		toast.error(`Could not update setting: ${e}`);
 	}
 }
@@ -840,6 +863,31 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               />
             </SettingsRow>
           {/each}
+        </SectionCard>
+
+        <SectionCard
+          id="settings-native-encoder"
+          label="Recording writer"
+          description="Which encoder writes your recordings to disk."
+        >
+          {#snippet icon()}
+            <Cpu class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Use the GPU writer instead of FFmpeg"
+            description={!nativeEncoderSupported
+              ? "Not available on this machine. The GPU writer needs Windows and a Media Foundation H.264 encoder."
+              : nativeEncoder
+                ? "Recordings are encoded on the GPU and written directly, with no FFmpeg process and no frame copies through system memory. A cropped recording still falls back to FFmpeg."
+                : "Recordings are piped to FFmpeg. The GPU writer is faster and copies nothing through system memory, but has run on fewer machines."}
+          >
+            <Switch
+              checked={nativeEncoderSupported && nativeEncoder}
+              disabled={!nativeEncoderSupported}
+              onCheckedChange={() => toggleNativeEncoder()}
+              aria-label="Use the GPU writer instead of FFmpeg"
+            />
+          </SettingsRow>
         </SectionCard>
 
         <!-- Gated behind `remoteTranscription`: response formats vary

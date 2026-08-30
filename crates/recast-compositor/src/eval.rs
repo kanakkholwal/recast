@@ -33,11 +33,33 @@ impl Affine2 {
     /// A centred zoom: samples a `1/scale`-sized window of the source around
     /// `(center_x, center_y)`, clamped so the window never leaves the frame.
     pub fn zoom(scale: f32, center_x: f32, center_y: f32) -> Self {
+        Self::zoom_ramp(scale, scale, center_x, center_y)
+    }
+
+    /// A zoom at a point on its ramp. The window is exactly `1/scale` (so the
+    /// zoom amount is the eased scale, and overlap handover stays continuous),
+    /// while the window CENTRE travels in a straight line from the frame centre
+    /// toward its destination as the ramp runs. The destination is clamped ONCE
+    /// against `final_scale` — never per frame — because a per-frame clamp
+    /// against the ever-widening `1/scale` window releases x and y from the
+    /// bound at different times, arcing the pan (preview defect D-1).
+    pub fn zoom_ramp(scale: f32, final_scale: f32, center_x: f32, center_y: f32) -> Self {
         let scale = scale.max(1.0);
+        let final_scale = final_scale.max(scale);
         let window = 1.0 / scale;
+        // Destination centre, clamped against the FINAL window only.
+        let half_final = 0.5 / final_scale;
+        let dcx = center_x.clamp(half_final, 1.0 - half_final);
+        let dcy = center_y.clamp(half_final, 1.0 - half_final);
+        // Straight-line progress: 0 at scale 1 (frame centre), 1 at final scale.
+        let progress = if final_scale > 1.0 {
+            ((scale - 1.0) / (final_scale - 1.0)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let cx = 0.5 + progress * (dcx - 0.5);
+        let cy = 0.5 + progress * (dcy - 0.5);
         let half = window * 0.5;
-        let cx = center_x.clamp(half, 1.0 - half);
-        let cy = center_y.clamp(half, 1.0 - half);
         Self {
             sx: window,
             shx: 0.0,
@@ -465,8 +487,9 @@ impl Evaluator {
 
         let zoom = active_zoom(&zooms, source_time);
         let transform = match zoom {
-            Some(region) => Affine2::zoom(
+            Some(region) => Affine2::zoom_ramp(
                 region.scale_at(source_time) as f32,
+                region.scale as f32,
                 region.center_x as f32,
                 region.center_y as f32,
             ),
@@ -878,6 +901,45 @@ mod tests {
             (1.0 / mid.sx - 1.9).abs() < 1e-3,
             "40 regions collapsed the zoom to {}",
             1.0 / mid.sx
+        );
+    }
+
+    /// D-1: an off-centre zoom must pan STRAIGHT toward its target as it ramps.
+
+    #[test]
+    fn an_off_centre_zoom_pans_along_a_straight_line() {
+        let scene = scene_with(
+            r#""zoomRegions": [{"start":1.0,"end":6.0,"scale":4.0,"rampIn":2.0,"rampOut":0.0,"centerX":0.8,"centerY":0.65}],"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        // Window centre in source uv.
+        let centre = |t: f64| {
+            let tr = screen_layer(&ev.evaluate(&scene, t)).transform;
+            (tr.tx + tr.sx * 0.5, tr.ty + tr.sy * 0.5)
+        };
+        let (x0, y0) = centre(1.001);
+        let mut ratio: Option<f32> = None;
+        let mut t = 1.2;
+        while t < 3.0 {
+            let (x, y) = centre(t);
+            let (dx, dy) = (x - x0, y - y0);
+            if dx.abs() > 1e-4 && dy.abs() > 1e-4 {
+                let r = dx / dy;
+                if let Some(r0) = ratio {
+                    assert!(
+                        (r - r0).abs() < 2e-3,
+                        "pan curved: ratio {r0} -> {r} at t {t:.2}"
+                    );
+                }
+                ratio = Some(r);
+            }
+            t += 0.1;
+        }
+        assert!(ratio.is_some(), "the ramp never moved the centre");
+        let (xh, yh) = centre(4.0);
+        assert!(
+            (xh - 0.8).abs() < 1e-3 && (yh - 0.65).abs() < 1e-3,
+            "hold centre landed at ({xh}, {yh}), not the authored target"
         );
     }
 

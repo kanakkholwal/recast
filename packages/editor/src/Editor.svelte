@@ -98,6 +98,7 @@ import { motionDuration } from "./lib/motion.svelte";
 import EditorToolbar from "./components/EditorToolbar.svelte";
 import PropertiesPanel from "./components/properity-panel/PropertiesPanel.svelte";
 import Timeline from "./components/Timeline.svelte";
+import TimelineCanvas from "./components/_components/timeline/TimelineCanvas.svelte";
 import VideoPlayerControls from "./components/VideoPlayerControls.svelte";
 import VideoPreview from "./components/VideoPreview.svelte";
 import {
@@ -220,6 +221,16 @@ let timelineHeight = $state(
 );
 let resizingSidebar = $state(false);
 let resizingTimeline = $state(false);
+
+// Dev flag for the Stage-A canvas timeline, so it can be compared live against
+// the DOM one without a rebuild. Toggle via the chip, persisted to localStorage.
+const TL_CANVAS_KEY = "recast:tl-canvas";
+// Default ON for testing the canvas timeline; the chip flips back to the DOM one.
+let timelineCanvasFlag = $state(storage?.getItem(TL_CANVAS_KEY) !== "0");
+function toggleTimelineCanvas() {
+	timelineCanvasFlag = !timelineCanvasFlag;
+	storage?.setItem(TL_CANVAS_KEY, timelineCanvasFlag ? "1" : "0");
+}
 
 const timelineMax = $derived(timelineMaxHeight(editorColumnH));
 
@@ -350,9 +361,11 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 	{/if}
 	{@render banner?.()}
 
-	<div class="flex min-h-0 flex-1 overflow-hidden">
-		<!-- Preview + playback + timeline -->
-		<div bind:clientHeight={editorColumnH} class="flex min-h-0 flex-1 flex-col overflow-hidden">
+	<div bind:clientHeight={editorColumnH} class="flex min-h-0 flex-1 flex-col overflow-hidden">
+		<!-- Top row: preview + right-rail properties panel. -->
+		<div class="flex min-h-0 flex-1 overflow-hidden">
+			<!-- Preview + playback -->
+			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 			<div
 				bind:this={previewContainerEl}
 				class="bg-background flex min-h-0 flex-1 flex-col items-center justify-center px-2 pt-1.5 pb-1"
@@ -388,44 +401,6 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 				/>
 			</div>
 
-			<!-- `slide` (axis:y) animates the wrapper height to 0 while the inner keeps
-			     its height, so the preview reclaims the space smoothly. -->
-			{#if timelineOpen && !exportPanel}
-				<div
-					class="shrink-0 overflow-hidden"
-					transition:slide={{ axis: "y", duration: motionDuration(280), easing: cubicOut }}
-				>
-					<!-- Height on the INNER div: `slide` animates the wrapper's own
-					     height, so the two would otherwise fight over one property. -->
-					<div class="relative" style="height: {timelineHeight}px;">
-						<div
-							role="slider"
-							tabindex="0"
-							aria-orientation="horizontal"
-							aria-label="Resize timeline"
-							aria-valuemin={TIMELINE_MIN_HEIGHT_PX}
-							aria-valuemax={timelineMax}
-							aria-valuenow={timelineHeight}
-							onpointerdown={startTimelineResize}
-							onkeydown={onTimelineHandleKey}
-							class="group absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize focus-visible:outline-none"
-						>
-							<div
-								class="bg-border/50 group-hover:bg-primary/60 group-focus-visible:bg-primary my-auto h-px w-full transition-colors {resizingTimeline
-									? 'bg-primary!'
-									: ''}"
-							></div>
-						</div>
-						<Timeline
-							{store}
-							{videoEl}
-							{tileProvider}
-							{filmstripVersion}
-							readOnly={timelineReadOnly}
-						/>
-					</div>
-				</div>
-			{/if}
 		</div>
 
 		<!-- Right rail. Editing shows the properties panel; a host running an
@@ -473,6 +448,55 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 					/>
 				</div>
 			</aside>
+		{/if}
+		</div>
+
+		<!-- Timeline: FULL WIDTH along the bottom, under both preview and properties. -->
+		{#if timelineOpen && !exportPanel}
+			<div
+				class="shrink-0 overflow-hidden"
+				transition:slide={{ axis: "y", duration: motionDuration(280), easing: cubicOut }}
+			>
+				<div class="relative" style="height: {timelineHeight}px;">
+					<div
+						role="slider"
+						tabindex="0"
+						aria-orientation="horizontal"
+						aria-label="Resize timeline"
+						aria-valuemin={TIMELINE_MIN_HEIGHT_PX}
+						aria-valuemax={timelineMax}
+						aria-valuenow={timelineHeight}
+						onpointerdown={startTimelineResize}
+						onkeydown={onTimelineHandleKey}
+						class="group absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize focus-visible:outline-none"
+					>
+						<div
+							class="bg-border/50 group-hover:bg-primary/60 group-focus-visible:bg-primary my-auto h-px w-full transition-colors {resizingTimeline
+								? 'bg-primary!'
+								: ''}"
+						></div>
+					</div>
+					{#if timelineCanvasFlag}
+						<TimelineCanvas {store} {videoEl} {tileProvider} {filmstripVersion} bind:loopEnabled />
+					{:else}
+						<Timeline
+							{store}
+							{videoEl}
+							{tileProvider}
+							{filmstripVersion}
+							readOnly={timelineReadOnly}
+						/>
+					{/if}
+					<button
+						type="button"
+						onclick={toggleTimelineCanvas}
+						title="Toggle the Stage-A canvas timeline (dev)"
+						class="absolute bottom-1.5 right-2 z-30 rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+					>
+						{timelineCanvasFlag ? "canvas ✓" : "canvas"}
+					</button>
+				</div>
+			</div>
 		{/if}
 	</div>
 	{@render overlays?.()}

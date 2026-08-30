@@ -71,9 +71,61 @@ impl core::ops::Sub for Timestamp {
     }
 }
 
+/// Seconds per grid step for authored times. One microsecond: finer than any
+/// frame rate resolves, coarse enough that `f64` holds it exactly for the
+/// length of a recording, and `format!("{:.6}")` is then a lossless encoding.
+pub const TIME_QUANTUM: f64 = 1e-6;
+
+/// Snaps an authored time onto [`TIME_QUANTUM`].
+///
+/// Two jobs. It stops arithmetic dust (`0.1 + 0.2` = `0.30000000000000004`)
+/// accumulating across edits, and it makes the six-decimal text projection a
+/// LOSSLESS encoding rather than a lossy one — which is what lets an agent's
+/// edit round-trip back into the tree unchanged.
+///
+/// Non-finite input is returned untouched: clamping it here would hide a bug
+/// that the caller's own validation should reject.
+#[must_use]
+pub fn quantize_secs(secs: f64) -> f64 {
+    if !secs.is_finite() {
+        return secs;
+    }
+    // Divide by 1e6, never multiply by 1e-6: only the division is correctly rounded to the printed decimal.
+    (secs * 1e6).round() / 1e6
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quantizing_clears_arithmetic_dust() {
+        assert_eq!(quantize_secs(0.1 + 0.2), 0.3);
+        assert_eq!(quantize_secs(1.9999999999999998), 2.0);
+    }
+
+    #[test]
+    fn a_quantized_time_survives_six_decimals_exactly() {
+        for raw in [0.1 + 0.2, 1.0 / 3.0, 59.94, 12.3456789, -0.7] {
+            let q = quantize_secs(raw);
+            let text = format!("{q:.6}");
+            // NaN on a parse failure fails the assert below; the crate denies `expect`.
+            let parsed = text.parse::<f64>().unwrap_or(f64::NAN);
+            assert_eq!(parsed, q, "{raw} -> {text} did not round-trip");
+        }
+    }
+
+    #[test]
+    fn quantizing_is_idempotent() {
+        let once = quantize_secs(1.0 / 3.0);
+        assert_eq!(quantize_secs(once), once);
+    }
+
+    #[test]
+    fn a_non_finite_time_is_left_for_the_caller_to_reject() {
+        assert!(quantize_secs(f64::NAN).is_nan());
+        assert_eq!(quantize_secs(f64::INFINITY), f64::INFINITY);
+    }
 
     #[test]
     fn round_trips_seconds() {

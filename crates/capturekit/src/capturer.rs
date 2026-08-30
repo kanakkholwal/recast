@@ -328,6 +328,13 @@ impl Capturer {
     /// timeline never gains a hole the caller was not told about.
     fn wait_for_slot(&mut self, timeout: Duration) -> Result<Timestamp> {
         let started = Instant::now();
+        // Drain before the pacer is asked: a slow consumer always has a slot due on entry, which starved the source into repeating one frame forever. Once on entry, or the call storing the opening frame drains past it.
+        if self.held.filled {
+            let Self { backend, held, .. } = self;
+            while let Ok(raw) = backend.next_frame(Duration::ZERO) {
+                held.store(&raw);
+            }
+        }
         loop {
             if self.held.filled {
                 if let Some(slot) = self.pacer.as_mut().and_then(|p| p.next_due(os::now())) {
@@ -569,6 +576,32 @@ mod tests {
         assert!(fill.is_repeat());
         assert_eq!(fill.bytes()[0], 0x10, "the repeat lost the pixels");
         assert_eq!(capturer.repeated_frames(), 1);
+    }
+
+    /// A consumer slower than the pace must still see the source's newest
+    /// frame. It used to see the FIRST one forever.
+    ///
+    /// `wait_for_slot` asked the pacer before polling the backend. A slow caller
+    /// always has a slot due on entry, so it returned that slot and never
+    /// touched the source again — every frame after the first was a repeat, for
+    /// the life of the capture. That is what froze the camera preview on its
+    /// opening frame: downscaling and posting 1280x720 over IPC cannot keep up
+    /// with a 30fps grid, so the backend was starved from the second frame on.
+    #[test]
+    fn a_consumer_slower_than_the_pace_still_sees_new_frames() {
+        let mut capturer = paced(6);
+        let mut fills = Vec::new();
+        for _ in 0..6 {
+            let frame = capturer.next_frame(PATIENT).expect("a slot");
+            fills.push(frame.bytes()[0]);
+            // The work the real consumer does between frames, longer than a slot.
+            std::thread::sleep(Duration::from_millis(SLOT_MS * 3));
+        }
+        let distinct: std::collections::HashSet<u8> = fills.iter().copied().collect();
+        assert!(
+            distinct.len() > 1,
+            "a slow consumer saw one image {fills:?}: the pacer starved the source"
+        );
     }
 
     /// The point of constant pacing: slots land on the grid whatever the source

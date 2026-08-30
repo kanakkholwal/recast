@@ -356,17 +356,17 @@ export function applyZoomFollow(
 	const height = Math.min(1, width * aspect);
 	const bcx = base.x + base.width / 2;
 	const bcy = base.y + baseH / 2;
-	let dx = bcx - zoom.cx;
-	let dy = bcy - zoom.cy;
-	const len = Math.hypot(dx, dy);
+	// The away-from-focus direction is SCREEN-SPACE, but bcx-cx / bcy-cy are UV
+	// and one UV-x unit is videoW px while one UV-y unit is videoH px
+	// (aspect = videoW/videoH). Normalise in pixels (videoH as the unit), then
+	// take the drift back to UV per axis, or the angle is wrong on a wide frame.
+	// Mirror of Rust `follow_placement` (D-2); keep in lockstep.
 	const drift = amount * DRIFT_MAX;
-	if (len > 1e-4) {
-		dx = (dx / len) * drift;
-		dy = (dy / len) * drift;
-	} else {
-		dx = 0;
-		dy = 0;
-	}
+	const px = (bcx - zoom.cx) * aspect;
+	const py = bcy - zoom.cy;
+	const len = Math.hypot(px, py);
+	const dx = len > 1e-4 ? ((px / len) * drift) / aspect : 0;
+	const dy = len > 1e-4 ? (py / len) * drift : 0;
 	return {
 		x: Math.max(0, Math.min(1 - width, bcx + dx - width / 2)),
 		y: Math.max(0, Math.min(1 - height, bcy + dy - height / 2)),

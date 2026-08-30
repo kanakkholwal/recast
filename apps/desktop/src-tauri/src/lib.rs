@@ -537,6 +537,9 @@ pub fn run() {
             commands::set_close_to_tray,
             commands::get_cli_auto_install,
             commands::set_cli_auto_install,
+            commands::get_native_encoder,
+            commands::set_native_encoder,
+            commands::native_encoder_available,
             commands::get_hide_panel_from_capture,
             commands::set_hide_panel_from_capture,
             commands::get_window_transparency,
@@ -618,6 +621,21 @@ pub fn run() {
                         let _ = w.show();
                         let _ = w.set_focus();
                     }
+                }
+            }
+
+            // Rust owns the release: the panel closes the preview with a raw `close()`, skipping its teardown.
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } = &event
+            {
+                // A replacement under the same label means this was a reopen, not a close.
+                if label == "camera-preview"
+                    && app_handle.get_webview_window("camera-preview").is_none()
+                {
+                    crate::camera::session::release();
                 }
             }
 

@@ -122,6 +122,11 @@ pub struct RecordingOptions {
     /// [`crate::encoder::RecordingQuality::resolve`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<String>,
+    /// Prefer the FFmpeg-free GPU writer. Mirrored from `AppConfig`, which the
+    /// command layer reads; the env override is applied further down so a
+    /// developer can force it without touching settings.
+    #[serde(default)]
+    pub native_encoder: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +156,7 @@ impl Default for RecordingOptions {
             camera_device_id: None,
             fps: None,
             quality: None,
+            native_encoder: false,
         }
     }
 }
@@ -296,11 +302,24 @@ struct CameraOverlayTracker {
     last_at_secs: Option<f64>,
 }
 
-/// Opt-in for the FFmpeg-free recording writer.
+/// Forces the FFmpeg-free writer on or off regardless of the setting: `1` on,
+/// `0` off. Unset defers to `AppConfig::native_encoder`.
 ///
 /// The native path is complete but has only run on this machine; until it has
-/// recorded on other people's hardware, FFmpeg stays the default.
+/// recorded on other people's hardware, the setting defaults off.
 const NATIVE_ENCODER_ENV: &str = "RECAST_NATIVE_ENCODER";
+
+/// Whether this recording should try the native writer: the env override if one
+/// is set, otherwise the user's setting.
+///
+/// Pure, so the precedence is testable without an app handle or a registry.
+fn native_opt_in(setting: bool, env: Option<&str>) -> bool {
+    match env {
+        Some("1") => true,
+        Some("0") => false,
+        _ => setting,
+    }
+}
 
 /// Whether this recording writes through the GPU encoder, and why not if not.
 struct NativeChoice {
@@ -374,8 +393,9 @@ fn writer_for(
     (Box::new(QueueSink::new(pipeline.clone())), Cadence::Fixed)
 }
 
-fn native_encoding_choice(target: &CaptureTarget) -> NativeChoice {
-    let opted_in = std::env::var(NATIVE_ENCODER_ENV).is_ok_and(|v| v == "1");
+fn native_encoding_choice(target: &CaptureTarget, setting: bool) -> NativeChoice {
+    let env = std::env::var(NATIVE_ENCODER_ENV).ok();
+    let opted_in = native_opt_in(setting, env.as_deref());
     #[cfg(windows)]
     let (platform_supported, encoder_available) = (true, crate::encoder::native::available());
     #[cfg(not(windows))]
@@ -601,7 +621,7 @@ impl RecordingManager {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pause_flag = Arc::new(AtomicBool::new(false));
         // Settled before the source opens: the writer decides where frames must live.
-        let native = native_encoding_choice(&target);
+        let native = native_encoding_choice(&target, options.native_encoder);
         if let Some(reason) = native.refused {
             log::info!("native encoder not used: {reason}");
         }
@@ -1396,7 +1416,7 @@ mod sync_live_tests {
 
 #[cfg(test)]
 mod native_choice_tests {
-    use super::native_refusal;
+    use super::{native_opt_in, native_refusal};
 
     #[test]
     fn every_condition_met_takes_the_native_path() {
@@ -1415,6 +1435,39 @@ mod native_choice_tests {
         assert!(reasons.iter().all(Option::is_some), "{reasons:?}");
         let distinct: std::collections::HashSet<_> = reasons.iter().collect();
         assert_eq!(distinct.len(), 4, "each refusal owes its own reason");
+    }
+
+    /// Unset, the setting decides. This is the shipping path: a user who has
+    /// never heard of the env var gets exactly what Settings says.
+    #[test]
+    fn without_the_override_the_setting_decides() {
+        assert!(native_opt_in(true, None));
+        assert!(!native_opt_in(false, None));
+    }
+
+    /// The override forces BOTH ways. An override that could only turn the
+    /// writer on would leave no way to reproduce an FFmpeg-path bug on a
+    /// machine whose settings have it enabled.
+    #[test]
+    fn the_env_override_wins_in_both_directions() {
+        assert!(native_opt_in(false, Some("1")), "1 did not force it on");
+        assert!(!native_opt_in(true, Some("0")), "0 did not force it off");
+    }
+
+    /// A typo must not silently flip the encoder. Anything that is not an
+    /// explicit 1 or 0 defers to the setting rather than guessing.
+    #[test]
+    fn an_unrecognised_override_defers_to_the_setting() {
+        for value in ["", "true", "yes", "2", "on"] {
+            assert!(
+                native_opt_in(true, Some(value)),
+                "{value:?} overrode a true setting"
+            );
+            assert!(
+                !native_opt_in(false, Some(value)),
+                "{value:?} overrode a false setting"
+            );
+        }
     }
 
     /// An unsupported platform is reported as such even when nothing else is

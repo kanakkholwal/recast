@@ -1,4 +1,31 @@
 <script lang="ts">
+import { page } from "$app/state";
+import { checkCapability, loadCapabilities } from "$lib/capabilities";
+import {
+	type AudioDeviceInfo,
+	type CameraValidationResult,
+	CAPTURE_INTENT_CHANGED_EVENT,
+	type CaptureIntentState,
+	excludeWindowFromCapture,
+	getAudioDevices,
+	getCameraDevices,
+	getCaptureIntent,
+	getDisplays,
+	getLastSource,
+	pauseRecording,
+	type RecordingOptions,
+	refreshTray,
+	resumeRecording,
+	setCaptureIntent,
+	setLastSource,
+	startRecording,
+	stopRecording,
+	validateCameraSource,
+} from "$lib/ipc";
+import { isBrowserDeviceId } from "$lib/runtime/device-id";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
+import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
 import {
 	type BrowserCamera,
 	isVirtualCameraLabel,
@@ -40,33 +67,6 @@ import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { Tween } from "svelte/motion";
 import { fade, scale } from "svelte/transition";
-import { page } from "$app/state";
-import { checkCapability, loadCapabilities } from "$lib/capabilities";
-import {
-	type AudioDeviceInfo,
-	CAPTURE_INTENT_CHANGED_EVENT,
-	type CameraValidationResult,
-	type CaptureIntentState,
-	excludeWindowFromCapture,
-	getAudioDevices,
-	getCameraDevices,
-	getCaptureIntent,
-	getDisplays,
-	getLastSource,
-	pauseRecording,
-	type RecordingOptions,
-	refreshTray,
-	resumeRecording,
-	setCaptureIntent,
-	setLastSource,
-	startRecording,
-	stopRecording,
-	validateCameraSource,
-} from "$lib/ipc";
-import { isBrowserDeviceId } from "$lib/runtime/device-id";
-import { profilesStore } from "$lib/stores/profiles.svelte";
-import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
-import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
 import LogoWave from "./LogoWave.svelte";
 import {
 	buildCaptureIntent,
@@ -79,7 +79,6 @@ import {
 	sourceFromIntent,
 	type TargetSource,
 	targetToLastSource,
-	targetTypeToIntent,
 } from "./panel.logic";
 
 // Too small for its own Toaster: emit `ui:toast` for the main window; alert() if emit throws.
@@ -391,7 +390,10 @@ onMount(() => {
 						.then((displays) => {
 							const hz = displays.find((d) => d.id === restoredId)?.refreshHz;
 							if (hz && selectedSource && selectedSource.id === restoredId) {
-								selectedSource = { ...selectedSource, refreshHz: hz };
+								selectedSource = {
+									...selectedSource,
+									refreshHz: hz,
+								};
 							}
 						})
 						.catch(() => undefined);
@@ -1071,391 +1073,357 @@ function phaseOut(node: HTMLElement) {
 }
 </script>
 
-<!-- Padding gives the panel's drop-shadow room; the window is transparent so
-     it shows the desktop through. -->
 <div class="flex h-dvh w-dvw items-center justify-center px-4 py-3">
-  <div
-    class="group/panel relative flex h-11 shrink-0 items-center justify-center overflow-hidden no-scrollbar rounded-xl border border-border/60 bg-card/95 shadow-craft-floating ring-1 ring-inset ring-foreground/10 backdrop-blur-xl"
-    style="width: {barWidth.current}px"
-  >
-    <!-- Content is `w-fit`; the bar tweens to follow it, centered, so collapse
-       and expand are one symmetric motion. -->
-    <div
-      bind:this={barContentEl}
-      class="relative flex w-fit shrink-0 items-center justify-center gap-1 p-2"
-    >
-      {#if phase === "countdown"}
-        <!-- Depleting ring with the ticking second (click to start now), status, Cancel. -->
-        <div
-          class="flex w-fit items-center gap-2 pl-1"
-          in:fade={{ duration: 200, delay: 80, easing: cubicOut }}
-          out:phaseOut
-        >
-          <!-- The whole disc is a "start now" affordance. -->
-          <button
-            type="button"
-            onclick={startNow}
-            onmousedown={(e: MouseEvent) => e.stopPropagation()}
-            title="Start now"
-            aria-label={`Recording starts in ${countdownValue} seconds, click to start now`}
-            class="group/cd relative flex size-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            <svg
-              class="absolute inset-0 size-7 -rotate-90"
-              viewBox="0 0 36 36"
-              aria-hidden="true"
-            >
-              <circle
-                cx="18"
-                cy="18"
-                r="16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="3"
-                class="text-primary/15"
-              />
-              <circle
-                cx="18"
-                cy="18"
-                r="16"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="3"
-                stroke-linecap="round"
-                class="text-primary"
-                stroke-dasharray={RING_C}
-                stroke-dashoffset={RING_C * (1 - countdownProgress)}
-              />
-            </svg>
-            <!-- On hover the second yields to a play glyph to reveal the skip affordance. -->
-            {#key countdownValue}
-              <span
-                in:scale={{
-                  start: prefersReducedMotion ? 1 : 0.5,
-                  duration: prefersReducedMotion ? 0 : 220,
-                  easing: cubicOut,
-                }}
-                class="font-mono text-[12px] font-bold leading-none tabular-nums text-primary transition-opacity group-hover/cd:opacity-0"
-              >
-                {countdownValue}
-              </span>
-            {/key}
-            <PlayFilled
-              size={11}
-              class="absolute text-primary opacity-0 transition-opacity group-hover/cd:opacity-100"
-            />
-          </button>
+	<div
+		class="group/panel relative flex h-11 shrink-0 items-center justify-center overflow-hidden no-scrollbar rounded-xl border border-border/60 bg-card/95 shadow-craft-floating ring-1 ring-inset ring-foreground/10 backdrop-blur-xl"
+		style="width: {barWidth.current}px"
+	>
+		{#snippet CountDownPhase()}
+			<button
+				type="button"
+				onclick={startNow}
+				onmousedown={(e: MouseEvent) => e.stopPropagation()}
+				title="Start now"
+				aria-label={`Recording starts in ${countdownValue} seconds, click to start now`}
+				class="group/cd relative flex size-7 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+			>
+				<svg
+					class="absolute inset-0 size-7 -rotate-90"
+					viewBox="0 0 36 36"
+					aria-hidden="true"
+				>
+					<circle
+						cx="18"
+						cy="18"
+						r="16"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="3"
+						class="text-primary/15"
+					/>
+					<circle
+						cx="18"
+						cy="18"
+						r="16"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="3"
+						stroke-linecap="round"
+						class="text-primary"
+						stroke-dasharray={RING_C}
+						stroke-dashoffset={RING_C * (1 - countdownProgress)}
+					/>
+				</svg>
+				<!-- On hover the second yields to a play glyph to reveal the skip affordance. -->
+				{#key countdownValue}
+					<span
+						in:scale={{
+							start: prefersReducedMotion ? 1 : 0.5,
+							duration: prefersReducedMotion ? 0 : 220,
+							easing: cubicOut,
+						}}
+						class="font-mono text-[12px] font-bold leading-none tabular-nums text-primary transition-opacity group-hover/cd:opacity-0"
+					>
+						{countdownValue}
+					</span>
+				{/key}
+				<PlayFilled
+					size={11}
+					class="absolute text-primary opacity-0 transition-opacity group-hover/cd:opacity-100"
+				/>
+			</button>
 
-          <span class="flex shrink-0 flex-col leading-tight">
-            <span
-              class="whitespace-nowrap text-[11px] font-semibold tracking-tight text-foreground"
-            >
-              Get ready…
-            </span>
-            <span
-              class="whitespace-nowrap text-[10px] font-medium tabular-nums text-muted-foreground"
-            >
-              Starting in {countdownValue}s
-            </span>
-          </span>
+			<span class="flex shrink-0 flex-col leading-tight">
+				<span
+					class="whitespace-nowrap text-[11px] font-semibold tracking-tight text-foreground"
+				>
+					Get ready…
+				</span>
+				<span
+					class="whitespace-nowrap text-[10px] font-medium tabular-nums text-muted-foreground"
+				>
+					Starting in {countdownValue}s
+				</span>
+			</span>
+		{/snippet}
 
-          <Button
-            onclick={cancelCountdown}
-            onmousedown={(e: MouseEvent) => e.stopPropagation()}
-            size="icon-sm"
-            variant="ghost"
-            title="Cancel (Esc)"
-            aria-label="Cancel countdown"
-          >
-            <X size={12} stroke={2.5} class="text-destructive" />
-          </Button>
-        </div>
-      {:else if phase === "recording"}
-        <!-- Status (live dot + elapsed) + captured-source glyphs + pause/stop/close. -->
-        <div
-          class="flex w-fit items-center gap-2 pl-0.5 pr-1"
-          in:fade={{ duration: 200, delay: 80, easing: cubicOut }}
-          out:phaseOut
-        >
-          <!-- Drag grip: the panel stays movable while recording, like idle. -->
-          <div
-            data-tauri-drag-region
-            class="flex h-7 w-3.5 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-muted-foreground active:cursor-grabbing"
-            title="Drag to move"
-            aria-label="Drag panel"
-          >
-            <GripVertical size={12} stroke={2} class="pointer-events-none" />
-          </div>
+		{#snippet RecordingPhase()}
+			<LogoWave size="20" active={micOn && !isPaused} class="shrink-0" />
 
-          <!-- Logo doubles as the live mic meter: its three bars animate while the
-               mic captures, static brand mark when the mic is off or paused. -->
-          <LogoWave size="20" active={micOn && !isPaused} class="shrink-0" />
+			<span
+				class="relative ml-0.5 flex size-2 shrink-0"
+				aria-hidden="true"
+			>
+				{#if !isPaused}
+					<span
+						class="absolute inline-flex size-full rounded-full bg-destructive opacity-60 motion-safe:animate-ping"
+					></span>
+				{/if}
+				<span
+					class="relative inline-flex size-2 rounded-full {isPaused
+						? 'bg-muted-foreground'
+						: 'bg-destructive'}"
+				></span>
+			</span>
 
-          <span class="relative ml-0.5 flex size-2 shrink-0" aria-hidden="true">
-            {#if !isPaused}
-              <span
-                class="absolute inline-flex size-full rounded-full bg-destructive opacity-60 motion-safe:animate-ping"
-              ></span>
-            {/if}
-            <span
-              class="relative inline-flex size-2 rounded-full {isPaused
-                ? 'bg-muted-foreground'
-                : 'bg-destructive'}"
-            ></span>
-          </span>
+			<span class="flex shrink-0 flex-col gap-0.5 leading-tight">
+				<span
+					class="text-[10px] font-bold uppercase tracking-widest {isPaused
+						? 'text-muted-foreground'
+						: 'text-destructive'}"
+				>
+					{isPaused ? "Paused" : "Recording"}
+				</span>
+				<span
+					class="font-mono text-[13px] font-semibold leading-none tabular-nums tracking-tight text-foreground"
+				>
+					{timer}
+				</span>
+			</span>
 
-          <span class="flex shrink-0 flex-col gap-0.5 leading-tight">
-            <span
-              class="text-[10px] font-bold uppercase tracking-widest {isPaused
-                ? 'text-muted-foreground'
-                : 'text-destructive'}"
-            >
-              {isPaused ? "Paused" : "Recording"}
-            </span>
-            <span
-              class="font-mono text-[13px] font-semibold leading-none tabular-nums tracking-tight text-foreground"
-            >
-              {timer}
-            </span>
-          </span>
+			{#if cameraOn}
+				<span
+					class="shrink-0 border-l border-border/50 pl-2 text-muted-foreground"
+					title="Camera on"
+					aria-hidden="true"
+				>
+					<Camera size={12} stroke={2} />
+				</span>
+			{/if}
 
-          {#if cameraOn}
-            <span
-              class="shrink-0 border-l border-border/50 pl-2 text-muted-foreground"
-              title="Camera on"
-              aria-hidden="true"
-            >
-              <Camera size={12} stroke={2} />
-            </span>
-          {/if}
+			<ButtonGroup>
+				<Button
+					onclick={togglePause}
+					onmousedown={(e: MouseEvent) => e.stopPropagation()}
+					size="icon-sm"
+					variant={isPaused ? "success_soft" : "secondary"}
+					title={isPaused ? "Resume Recording" : "Pause Recording"}
+				>
+					{#if isPaused}
+						<PlayFilled size={13} />
+					{:else}
+						<PauseFilled size={13} />
+					{/if}
+				</Button>
+				<Button
+					onclick={toggleRecording}
+					onmousedown={(e: MouseEvent) => e.stopPropagation()}
+					disabled={isStopping}
+					size="icon-sm"
+					variant="destructive_soft"
+					title="Stop recording"
+					aria-label="Stop recording"
+				>
+					<SquareFilled size={10} class="text-destructive" />
+				</Button>
+			</ButtonGroup>
+		{/snippet}
+		{#snippet IdlePhase()}
+			<Button
+				onclick={toggleRecording}
+				onmousedown={(e: MouseEvent) => e.stopPropagation()}
+				size="icon-sm"
+				variant="default"
+				title="Start Recording"
+			>
+				<RecordFilled size={14} />
+			</Button>
 
-          <ButtonGroup>
-            <Button
-              onclick={togglePause}
-              onmousedown={(e: MouseEvent) => e.stopPropagation()}
-              size="icon-sm"
-              variant={isPaused ? "success_soft" : "secondary"}
-              title={isPaused ? "Resume Recording" : "Pause Recording"}
-            >
-              {#if isPaused}
-                <PlayFilled size={13} />
-              {:else}
-                <PauseFilled size={13} />
-              {/if}
-            </Button>
-            <Button
-              onclick={toggleRecording}
-              onmousedown={(e: MouseEvent) => e.stopPropagation()}
-              disabled={isStopping}
-              size="icon-sm"
-              variant="destructive_soft"
-              title="Stop recording"
-              aria-label="Stop recording"
-            >
-              <SquareFilled size={10} class="text-destructive" />
-            </Button>
-          </ButtonGroup>
+			{#if !isRecording}
+				<div class="inline-flex" out:fade={{ duration: 120 }}>
+					<Button
+						size="sm"
+						disabled={isRecording}
+						onclick={() => openSourceSelector()}
+						onmousedown={(e: MouseEvent) => e.stopPropagation()}
+						variant="ghost"
+						class="group/source hover:scale-none"
+					>
+						{#if selectedSource?.type === "window"}
+							<AppWindow
+								size={12}
+								stroke={2}
+								class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
+							/>
+						{:else if selectedSource?.type === "region"}
+							<Crop
+								size={12}
+								stroke={2}
+								class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
+							/>
+						{:else}
+							<Monitor
+								size={12}
+								stroke={2}
+								class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
+							/>
+						{/if}
+						<span
+							class="max-w-35 truncate text-[12px] font-semibold tracking-tight text-foreground/60 group-hover/source:text-foreground/90 transition-colors"
+						>
+							{selectedSource?.label ?? "Select source"}
+						</span>
+						{#if !isRecording}
+							<ChevronDown
+								size={10}
+								stroke={3}
+								class="shrink-0 text-foreground/20 transition-transform group-hover/source:translate-y-0.5"
+							/>
+						{/if}
+					</Button>
+				</div>
+			{/if}
 
-          <Button
-            onclick={closePanel}
-            onmousedown={(e: MouseEvent) => e.stopPropagation()}
-            title="Close"
-            size="icon-sm"
-            variant="ghost"
-          >
-            <X size={10} stroke={2} class="shrink-0 text-destructive" />
-          </Button>
-        </div>
-      {:else}
-        <!-- Idle phase: full control set. -->
-        <div
-          class="flex w-fit items-center gap-1"
-          in:fade={{ duration: 200, delay: 80, easing: cubicOut }}
-          out:phaseOut
-        >
-          <!-- The whole bar is a drag region; the grip makes that discoverable. -->
-          <div
-            data-tauri-drag-region
-            class="flex h-7 w-4 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-muted-foreground active:cursor-grabbing"
-            title="Drag to move"
-            aria-label="Drag panel"
-          >
-            <GripVertical size={12} stroke={2} class="pointer-events-none" />
-          </div>
-          <!-- Begins the countdown, or captures immediately when countdown is off. -->
-          <Button
-            onclick={toggleRecording}
-            onmousedown={(e: MouseEvent) => e.stopPropagation()}
-            size="icon-sm"
-            variant="default"
-            title="Start Recording"
-          >
-            <RecordFilled size={14} />
-          </Button>
+			<!-- While recording, drop `ml-auto` so Close packs tight next to the transport. -->
+			<div
+				class="shrink-0 px-1 inline-flex items-center gap-1"
+				class:ml-auto={!isRecording}
+			>
+				{#if !isRecording}
+					<div
+						class="inline-flex items-center gap-1"
+						out:fade={{ duration: 120 }}
+					>
 
-          <!-- Hidden once recording starts (source is locked in). Fade is on a wrapping
-       div since Svelte transitions can't bind to a component. -->
-          {#if !isRecording}
-            <div class="inline-flex" out:fade={{ duration: 120 }}>
-              <Button
-                size="sm"
-                disabled={isRecording}
-                onclick={() => openSourceSelector()}
-                onmousedown={(e: MouseEvent) => e.stopPropagation()}
-                variant="ghost"
-                class="group/source hover:scale-none"
-              >
-                {#if selectedSource?.type === "window"}
-                  <AppWindow
-                    size={12}
-                    stroke={2}
-                    class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
-                  />
-                {:else if selectedSource?.type === "region"}
-                  <Crop
-                    size={12}
-                    stroke={2}
-                    class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
-                  />
-                {:else}
-                  <Monitor
-                    size={12}
-                    stroke={2}
-                    class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
-                  />
-                {/if}
-                <span
-                  class="max-w-35 truncate text-[12px] font-semibold tracking-tight text-foreground/60 group-hover/source:text-foreground/90 transition-colors"
-                >
-                  {selectedSource?.label ?? "Select source"}
-                </span>
-                {#if !isRecording}
-                  <ChevronDown
-                    size={10}
-                    stroke={3}
-                    class="shrink-0 text-foreground/20 transition-transform group-hover/source:translate-y-0.5"
-                  />
-                {/if}
-              </Button>
-            </div>
-          {/if}
+						{#if profilesStore.enabled && profilesStore.profiles.length > 0}
+							<Button
+								size="icon-sm"
+								variant={profileFlash
+									? "default_soft"
+									: "ghost"}
+								disabled={isRecording}
+								onclick={openProfilePicker}
+								onmousedown={(e: MouseEvent) =>
+									e.stopPropagation()}
+								title={activeProfile
+									? `Profile: ${activeProfile.name}. Click to switch.`
+									: "Switch profile"}
+								aria-label="Switch profile"
+							>
+								<SlidersIcon size={13} stroke={2} />
+							</Button>
+						{/if}
 
-          <!-- While recording, drop `ml-auto` so Close packs tight next to the transport. -->
-          <div
-            class="shrink-0 px-1 inline-flex items-center gap-1"
-            class:ml-auto={!isRecording}
-          >
-            {#if !isRecording}
-              <div
-                class="inline-flex items-center gap-1"
-                out:fade={{ duration: 120 }}
-              >
-                <!-- Opens a separate window, not a popover, because the panel is too short to host
-         an in-place dropdown without resizing. -->
-                {#if profilesStore.enabled && profilesStore.profiles.length > 0}
-                  <Button
-                    size="icon-sm"
-                    variant={profileFlash ? "default_soft" : "ghost"}
-                    disabled={isRecording}
-                    onclick={openProfilePicker}
-                    onmousedown={(e: MouseEvent) => e.stopPropagation()}
-                    title={activeProfile
-                      ? `Profile: ${activeProfile.name}. Click to switch.`
-                      : "Switch profile"}
-                    aria-label="Switch profile"
-                  >
-                    <SlidersIcon size={13} stroke={2} />
-                  </Button>
-                {/if}
+						<!-- Device toggles -->
+						<ButtonGroup>
+							<!-- System audio -->
+							<Button
+								size="icon-sm"
+								variant={systemAudioOn
+									? "default_soft"
+									: "outline"}
+								disabled={isRecording}
+								onclick={toggleSystemAudio}
+								onmousedown={(e: MouseEvent) =>
+									e.stopPropagation()}
+								title={systemAudioOn
+									? "System audio: on"
+									: "System audio: off"}
+							>
+								{#if systemAudioOn}
+									<Volume size={14} stroke={2} />
+								{:else}
+									<VolumeOff size={14} stroke={2} />
+								{/if}
+							</Button>
 
-                <!-- Device toggles -->
-                <ButtonGroup>
-                  <!-- System audio -->
-                  <Button
-                    size="icon-sm"
-                    variant={systemAudioOn ? "default_soft" : "outline"}
-                    disabled={isRecording}
-                    onclick={toggleSystemAudio}
-                    onmousedown={(e: MouseEvent) => e.stopPropagation()}
-                    title={systemAudioOn
-                      ? "System audio: on"
-                      : "System audio: off"}
-                  >
-                    {#if systemAudioOn}
-                      <Volume size={14} stroke={2} />
-                    {:else}
-                      <VolumeOff size={14} stroke={2} />
-                    {/if}
-                  </Button>
+							<!-- micWarning (from applyProfile) surfaces in the tooltip, not a toast. -->
+							<Button
+								variant={micOn
+									? micWarning
+										? "destructive_soft"
+										: "default_soft"
+									: micWarning
+										? "destructive_soft"
+										: "outline"}
+								size="icon-sm"
+								disabled={isRecording}
+								onclick={toggleMic}
+								onmousedown={(e: MouseEvent) =>
+									e.stopPropagation()}
+								title={micOn
+									? `Mic: ${selectedMicName}${micWarning ? `. ${micWarning}` : ""}`
+									: micWarning
+										? `Microphone: off. ${micWarning}`
+										: "Microphone: off"}
+							>
+								{#if micOn}
+									<Mic size={14} stroke={2} />
+								{:else}
+									<MicOff size={14} stroke={2} />
+								{/if}
+							</Button>
 
-                  <!-- micWarning (from applyProfile) surfaces in the tooltip, not a toast. -->
-                  <Button
-                    variant={micOn
-                      ? micWarning
-                        ? "destructive_soft"
-                        : "default_soft"
-                      : micWarning
-                        ? "destructive_soft"
-                        : "outline"}
-                    size="icon-sm"
-                    disabled={isRecording}
-                    onclick={toggleMic}
-                    onmousedown={(e: MouseEvent) => e.stopPropagation()}
-                    title={micOn
-                      ? `Mic: ${selectedMicName}${micWarning ? `. ${micWarning}` : ""}`
-                      : micWarning
-                        ? `Microphone: off. ${micWarning}`
-                        : "Microphone: off"}
-                  >
-                    {#if micOn}
-                      <Mic size={14} stroke={2} />
-                    {:else}
-                      <MicOff size={14} stroke={2} />
-                    {/if}
-                  </Button>
-
-                  <!-- cameraWarning (profile apply) and cameraValidation (device probe) both
-           surface in the tooltip; either wins the destructive_soft tint. -->
-                  <Button
-                    disabled={isRecording}
-                    onclick={toggleCamera}
-                    onmousedown={(e: MouseEvent) => e.stopPropagation()}
-                    variant={cameraOn
-                      ? cameraValidation?.status === "error" || cameraWarning
-                        ? "destructive_soft"
-                        : "default_soft"
-                      : cameraWarning
-                        ? "destructive_soft"
-                        : "outline"}
-                    size="icon-sm"
-                    title={cameraOn
-                      ? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? `. ${cameraValidation.statusMessage}` : ""}${cameraWarning ? `. ${cameraWarning}` : ""}`
-                      : cameraWarning
-                        ? `Camera: off. ${cameraWarning}`
-                        : "Camera: off"}
-                  >
-                    {#if cameraOn}
-                      <Camera size={14} stroke={2} />
-                    {:else}
-                      <CameraOff size={14} stroke={2} />
-                    {/if}
-                  </Button>
-                </ButtonGroup>
-              </div>
-            {/if}
-            <!-- Close -->
-            <Button
-              onclick={closePanel}
-              onmousedown={(e: MouseEvent) => e.stopPropagation()}
-              title="Close"
-              size="icon-sm"
-              variant="ghost"
-            >
-              <X size={10} stroke={2} class="shrink-0 text-destructive" />
-            </Button>
-          </div>
-        </div>
-      {/if}
-    </div>
-  </div>
+					
+							<Button
+								disabled={isRecording}
+								onclick={toggleCamera}
+								onmousedown={(e: MouseEvent) =>
+									e.stopPropagation()}
+								variant={cameraOn
+									? cameraValidation?.status === "error" ||
+										cameraWarning
+										? "destructive_soft"
+										: "default_soft"
+									: cameraWarning
+										? "destructive_soft"
+										: "outline"}
+								size="icon-sm"
+								title={cameraOn
+									? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? `. ${cameraValidation.statusMessage}` : ""}${cameraWarning ? `. ${cameraWarning}` : ""}`
+									: cameraWarning
+										? `Camera: off. ${cameraWarning}`
+										: "Camera: off"}
+							>
+								{#if cameraOn}
+									<Camera size={14} stroke={2} />
+								{:else}
+									<CameraOff size={14} stroke={2} />
+								{/if}
+							</Button>
+						</ButtonGroup>
+					</div>
+				{/if}
+			</div>
+		{/snippet}
+		<div
+			bind:this={barContentEl}
+			class="relative flex w-fit shrink-0 items-center justify-center gap-1 p-2"
+		>
+			<div
+				class="flex w-fit items-center gap-2 pl-0.5 pr-1"
+				in:fade={{ duration: 200, delay: 80, easing: cubicOut }}
+				out:phaseOut
+			>
+				<div
+					data-tauri-drag-region
+					class="flex h-7 w-3.5 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-muted-foreground active:cursor-grabbing"
+					title="Drag to move"
+					aria-label="Drag panel"
+				>
+					<GripVertical
+						size={12}
+						stroke={2}
+						class="pointer-events-none"
+					/>
+				</div>
+				{#if phase === "countdown"}
+					{@render CountDownPhase()}
+				{:else if phase === "recording"}
+					{@render RecordingPhase()}
+				{:else}
+					{@render IdlePhase()}
+				{/if}
+				<Button
+					onclick={() => phase === "countdown" ? cancelCountdown() : closePanel()}
+					onmousedown={(e: MouseEvent) => e.stopPropagation()}
+					title="Close"
+					size="icon-sm"
+					variant="ghost"
+				>
+					<X size={10} stroke={2} class="shrink-0 text-destructive" />
+				</Button>
+			</div>
+		</div>
+	</div>
 </div>

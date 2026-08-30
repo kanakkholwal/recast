@@ -1,0 +1,5 @@
+# Thresholds mirrored from biome.json so Rust and TypeScript are held to one
+# standard. Changing one without the other is the drift this file exists to stop.
+too-many-arguments-threshold = 7      # biome useMaxParams is 5; see the note in Cargo.toml
+too-many-lines-threshold = 120        # biome complexity/noExcessiveLinesPerFunction
+cognitive-complexity-threshold = 15   # biome complexity/noExcessiveCognitiveComplexity

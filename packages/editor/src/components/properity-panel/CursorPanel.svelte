@@ -156,7 +156,7 @@ function applySmoothingPreset(id: string) {
         {/if}
       {/snippet}
       <div
-        class="grid grid-cols-5 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
+        class="grid grid-cols-4 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
       >
         {#each registry.list("cursor") as style (style.id)}
           {@const isActive = store.cursorSettings.style === style.id}
@@ -183,7 +183,7 @@ function applySmoothingPreset(id: string) {
               src={svgSwatchUrl(style.value.svg)}
               alt={style.label}
               draggable="false"
-              class="size-10"
+              class="size-10 shadow-(0_0_0_1px_color-mix(in_srgb,var(--color-foreground)_85%,transparent))"
               layout="constrained"
               aria-hidden="true"
             />

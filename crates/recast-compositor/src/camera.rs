@@ -137,16 +137,20 @@ pub fn follow_placement(
     let bcx = base.x + base.width / 2.0;
     let bcy = base.y + base_h / 2.0;
 
-    let (mut dx, mut dy) = (bcx - cx, bcy - cy);
-    let len = (dx * dx + dy * dy).sqrt();
+    // The away-from-focus direction is a SCREEN-SPACE one, but `bcx-cx` / `bcy-cy`
+    // are UV, and one UV-x unit is `video_w` px while one UV-y unit is `video_h`
+    // px (aspect = video_w/video_h). Normalising the UV pair treats them as the
+    // same unit, so the drift angle is wrong on a non-square frame (D-2).
+    // Normalise in pixels (video_h as the unit), then take the drift back to UV
+    // per axis. Drift magnitude stays a fraction of the frame height.
     let drift = amount * DRIFT_MAX;
-    if len > 1e-4 {
-        dx = dx / len * drift;
-        dy = dy / len * drift;
+    let (px, py) = ((bcx - cx) * aspect, bcy - cy);
+    let len = (px * px + py * py).sqrt();
+    let (dx, dy) = if len > 1e-4 {
+        (px / len * drift / aspect, py / len * drift)
     } else {
-        dx = 0.0;
-        dy = 0.0;
-    }
+        (0.0, 0.0)
+    };
 
     // Redundant with `bubble_rect`'s own clamp, kept because this mirrors `applyZoomFollow`, which clamps here too.
     CameraPlacement {
@@ -408,6 +412,46 @@ mod tests {
             drifted_centre > resting_centre,
             "the bubble drifted toward the focus, not away: {drifted_centre} vs {resting_centre}"
         );
+    }
+
+    /// D-2: the bubble must drift along the SCREEN-SPACE away-from-focus
+    /// direction, not the UV one. On 16:9 the two differ, and the old code
+    /// normalised the UV pair, pulling the drift toward vertical. Asserts the
+    /// drift is collinear with the screen-space away vector on a non-square frame.
+    #[test]
+    fn zoom_follow_drifts_along_the_screen_direction_not_the_uv_one() {
+        let aspect = 16.0 / 9.0;
+        let base = CameraPlacement {
+            x: 0.425,
+            y: 0.267,
+            width: 0.15,
+            height: 0.15 * aspect,
+        };
+        let (fx, fy) = (0.3, 0.3);
+        let out = follow_placement(&base, 1.5, fx, fy, 1.0, aspect);
+
+        let base_h = base.width * aspect;
+        let (bcx, bcy) = (base.x + base.width / 2.0, base.y + base_h / 2.0);
+        // Both vectors in screen pixels (video_h as the unit).
+        let away = ((bcx - fx) * aspect, bcy - fy);
+        let drift = (
+            (out.x + out.width / 2.0 - bcx) * aspect,
+            out.y + out.height / 2.0 - bcy,
+        );
+        let mag = away.0.hypot(away.1) * drift.0.hypot(drift.1);
+        assert!(
+            mag > 1e-9,
+            "a vector was degenerate: away {away:?} drift {drift:?}"
+        );
+        // Collinear: the normalised cross product is ~0, and pointing the same way.
+        let cross = (away.0 * drift.1 - away.1 * drift.0) / mag;
+        let dot = away.0 * drift.0 + away.1 * drift.1;
+        assert!(
+            cross.abs() < 1e-3,
+            "drift off the screen-away direction by {:.2} deg",
+            cross.asin().to_degrees()
+        );
+        assert!(dot > 0.0, "the bubble drifted toward the focus, not away");
     }
 
     #[test]

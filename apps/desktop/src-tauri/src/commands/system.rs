@@ -287,6 +287,43 @@ pub fn set_window_transparency(
     Ok(())
 }
 
+/// Whether the FFmpeg-free GPU writer is enabled. `native_encoder_available`
+/// reports whether this machine could honour it, so the UI can disable the
+/// toggle rather than offering a switch that silently does nothing.
+#[tauri::command]
+pub fn get_native_encoder(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.config.read().native_encoder)
+}
+
+#[tauri::command]
+pub fn set_native_encoder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> AppResult<()> {
+    let snapshot = {
+        let mut config = state.config.write();
+        config.native_encoder = enabled;
+        config.clone()
+    };
+    save_config(&app, &snapshot);
+    Ok(())
+}
+
+/// Whether this machine has what the native writer needs. Windows plus a Media
+/// Foundation H.264 encoder; anywhere else the answer is a flat no.
+#[tauri::command]
+pub fn native_encoder_available() -> bool {
+    #[cfg(windows)]
+    {
+        crate::encoder::native::available()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 #[tauri::command]
 pub fn get_hide_panel_from_capture(state: State<'_, AppState>) -> AppResult<bool> {
     Ok(state.config.read().hide_panel_from_capture)

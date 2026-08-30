@@ -22,3 +22,10 @@ inefficient_to_string = "deny"
 redundant_else = "deny"
 uninlined_format_args = "deny"
 unnested_or_patterns = "deny"
+
+# Mirrored from biome.json so Rust and TypeScript are held to one standard.
+# Thresholds live in clippy.toml next to this file.
+too_many_arguments = "deny"           # biome complexity/useMaxParams
+unused_async = "deny"                 # biome suspicious/useAwait
+too_many_lines = "deny"               # biome complexity/noExcessiveLinesPerFunction
+

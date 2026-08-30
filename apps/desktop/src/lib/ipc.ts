@@ -960,6 +960,23 @@ export function excludeWindowFromCapture(label: string): Promise<void> {
 	return invoke<void>("exclude_window_from_capture", { label });
 }
 
+/** Whether recordings are written by the FFmpeg-free GPU writer.
+ *  Backed by `AppConfig.native_encoder` (default off). */
+export function getNativeEncoder(): Promise<boolean> {
+	return invoke<boolean>("get_native_encoder");
+}
+
+export function setNativeEncoder(enabled: boolean): Promise<void> {
+	return invoke<void>("set_native_encoder", { enabled });
+}
+
+/** Whether this machine can honour the native writer (Windows + an MF H.264
+ *  encoder). False elsewhere, so the toggle is shown disabled rather than
+ *  silently doing nothing. */
+export function nativeEncoderAvailable(): Promise<boolean> {
+	return invoke<boolean>("native_encoder_available");
+}
+
 /** Whether the floating recording panel is hidden from screen recordings.
  *  Backed by `AppConfig.hide_panel_from_capture` (default on). */
 export function getHidePanelFromCapture(): Promise<boolean> {

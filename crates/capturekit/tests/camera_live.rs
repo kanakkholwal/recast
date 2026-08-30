@@ -250,3 +250,53 @@ fn a_camera_delivers_frames_of_the_size_it_settled_on_not_the_size_asked_for() {
     assert_eq!(frame.stride(), desc.width * 4);
     capture.stop().expect("release the camera");
 }
+
+/// The camera must deliver NEW PIXELS, not just new timestamps.
+///
+/// `a_camera_stream_keeps_producing_frames_that_move_forward` asserts only that
+/// `pts` advances, which `Pacing::Constant` guarantees whatever the device does:
+/// the pacer invents a slot per interval and repeats the held bytes into it. A
+/// camera that delivered one frame and died passes that test and freezes every
+/// preview built on it, which is exactly what shipped.
+#[test]
+fn a_camera_stream_delivers_new_pixels_not_just_new_timestamps() {
+    let _exclusive = exclusive();
+    let camera = require_camera!();
+    let mut capture = capturer(Target::Camera(camera.id))
+        .frame_rate(15)
+        .build()
+        .expect("open the camera");
+
+    let mut fresh = 0;
+    let mut repeats = 0;
+    let mut distinct: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    for index in 0..20 {
+        let frame = capture
+            .next_frame(Duration::from_secs(5))
+            .unwrap_or_else(|err| panic!("frame {index}: {err}"));
+        if frame.is_repeat() {
+            repeats += 1;
+        } else {
+            fresh += 1;
+        }
+        // A cheap content hash: a frozen sensor still varies by a bit or two.
+        let bytes = frame.bytes();
+        let mut hash = 1469598103934665603u64;
+        for chunk in bytes.chunks(997) {
+            hash ^= u64::from(chunk[0]);
+            hash = hash.wrapping_mul(1099511628211);
+        }
+        distinct.insert(hash);
+    }
+    capture.stop().expect("release the camera");
+
+    assert!(
+        fresh > 1,
+        "only {fresh} frame(s) came from the device; {repeats} were pacer repeats"
+    );
+    assert!(
+        distinct.len() > 1,
+        "20 frames carried {} distinct image(s): the device stopped and the pacer repeated it",
+        distinct.len()
+    );
+}

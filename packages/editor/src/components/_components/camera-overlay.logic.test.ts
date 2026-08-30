@@ -201,6 +201,23 @@ describe("applyZoomFollow", () => {
 		);
 	});
 
+	it("drifts along the SCREEN direction, not the UV one, on a wide frame (D-2)", () => {
+		const aspect = 16 / 9;
+		const b = { x: 0.425, y: 0.267, width: 0.15, height: 0.15 * aspect };
+		const zoom = { scale: 1.5, cx: 0.3, cy: 0.3 };
+		const r = applyZoomFollow(b, zoom, { enabled: true, strength: 1 }, aspect);
+		const baseH = b.width * aspect;
+		const bc = { x: b.x + b.width / 2, y: b.y + baseH / 2 };
+		// Both vectors in screen pixels (videoH as the unit).
+		const away = [(bc.x - zoom.cx) * aspect, bc.y - zoom.cy];
+		const drift = [(r.x + r.width / 2 - bc.x) * aspect, r.y + r.height / 2 - bc.y];
+		const mag = Math.hypot(away[0], away[1]) * Math.hypot(drift[0], drift[1]);
+		expect(mag).toBeGreaterThan(1e-9);
+		// Collinear (cross ~ 0) and pointing away (dot > 0).
+		expect(Math.abs((away[0] * drift[1] - away[1] * drift[0]) / mag)).toBeLessThan(1e-3);
+		expect(away[0] * drift[0] + away[1] * drift[1]).toBeGreaterThan(0);
+	});
+
 	it("keeps the grown+drifted bubble fully inside the frame", () => {
 		for (const cx of [0, 0.5, 1]) {
 			const r = applyZoomFollow(base, { scale: 2.5, cx, cy: cx }, { enabled: true, strength: 1 });

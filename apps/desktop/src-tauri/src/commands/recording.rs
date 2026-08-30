@@ -47,6 +47,9 @@ pub async fn start_recording(
     // All blocking: enumeration can stall, Wayland negotiates a portal dialog, and start() spawns processes. Sync commands run on the UI thread on macOS and Linux.
     let manager = state.recording_manager.clone();
     let output_dir = get_active_output_dir(&state);
+    // Settings own the writer choice, so a stale payload cannot pick an encoder behind the user's back.
+    let mut options = options.unwrap_or_default();
+    options.native_encoder = crate::commands::system::load_config(&app).native_encoder;
     // A recording repeating one frame looks exactly like a working one.
     let notifier = app.clone();
     let notify = move |notice: crate::capture::CaptureNotice| {
@@ -69,7 +72,7 @@ pub async fn start_recording(
                 CaptureTarget::resolve(&target_type, target_id)?
             };
             let warnings = manager
-                .start(target, output_dir, options.unwrap_or_default(), notify)
+                .start(target, output_dir, options, notify)
                 .inspect_err(|e| log::error!("start_recording failed: {e:#}"))?;
             Ok(RecordingStartResult { warnings })
         })

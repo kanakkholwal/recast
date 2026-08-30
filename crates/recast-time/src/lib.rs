@@ -27,7 +27,7 @@ pub use speed::{
     clamp_speed, prune_segment_speeds, segment_speed_at, segment_speed_at_time, set_segment_speed,
     SegmentSpeed, MAX_SEGMENT_SPEED, MIN_SEGMENT_SPEED,
 };
-pub use timestamp::Timestamp;
+pub use timestamp::{quantize_secs, Timestamp, TIME_QUANTUM};
 
 // No monotonic clock on wasm32: `Instant::now` compiles there and then panics.
 #[cfg(all(feature = "clock", not(target_arch = "wasm32")))]

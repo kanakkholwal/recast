@@ -218,6 +218,13 @@ pub struct AppConfig {
     /// is sticky, and an install that errored once doesn't loop forever.
     #[serde(default)]
     pub cli_install_attempted: bool,
+    /// Record through the FFmpeg-free GPU writer (Media Foundation + our own
+    /// muxer) instead of piping frames to FFmpeg. Windows-only, and refused for
+    /// a cropped recording whose metadata would then disagree with the file.
+    /// Default off: the native path is complete and tested but has only run on
+    /// the author's hardware. `RECAST_NATIVE_ENCODER=1` overrides for testing.
+    #[serde(default)]
+    pub native_encoder: bool,
 }
 
 fn default_cli_auto_install() -> bool {
@@ -251,6 +258,7 @@ impl Default for AppConfig {
             window_transparency: false,
             cli_auto_install: true,
             cli_install_attempted: false,
+            native_encoder: false,
         }
     }
 }
