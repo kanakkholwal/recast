@@ -86,8 +86,8 @@ describe("usageView delivery", () => {
 
 	// Regression: snapshots cached before `delivery` existed hydrate without it, and a non-optional read crashed the sidebar.
 	it("survives a cached quota that predates the delivery field", () => {
-		const stale = quota();
-		delete (stale as Partial<QuotaSnapshot>).delivery;
+		const { delivery: _delivery, ...rest } = quota();
+		const stale = rest as QuotaSnapshot;
 		expect(() => usageView(stale)).not.toThrow();
 		expect(usageView(stale).deliveryBytes).toBe(0);
 		expect(usageView(stale).deliveryLimit).toBeNull();

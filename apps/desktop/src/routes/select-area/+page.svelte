@@ -26,8 +26,8 @@ let failure = $state<string | null>(null);
 // Read on confirm, not on mount: the window is positioned after it is built.
 async function virtualOrigin(): Promise<{ x: number; y: number }> {
 	const pos = await getCurrentWindow().outerPosition();
-	const scale = window.devicePixelRatio || 1;
-	return { x: Math.round(pos.x / scale), y: Math.round(pos.y / scale) };
+	const dpr = window.devicePixelRatio || 1;
+	return { x: Math.round(pos.x / dpr), y: Math.round(pos.y / dpr) };
 }
 
 let dragging = $state(false);

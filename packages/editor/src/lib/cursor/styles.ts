@@ -137,7 +137,7 @@ export function cursorStyleDataUrl(id: CursorStyleId, state: CursorStyleState = 
 	if (cached) return cached;
 	const style = getCursorStyle(id);
 	const svg = cursorStyleSvg(style, state);
-	const url = "data:image/svg+xml;utf8," + encodeURIComponent(svg.trim().replace(/\n\s*/g, " "));
+	const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg.trim().replace(/\n\s*/g, " "))}`;
 	dataUrlCache.set(key, url);
 	return url;
 }

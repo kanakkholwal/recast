@@ -26,7 +26,7 @@ export type EyebrowVariant = VariantProps<typeof eyebrowVariants>["variant"];
 
 	type Props = WithElementRef<HTMLAttributes<HTMLSpanElement>> & {
 		// Permissive on purpose: accepts both functional and legacy class icon components without forcing a shape.
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// biome-ignore lint/suspicious/noExplicitAny: accepts both functional and legacy class icon components.
 		icon?: any;
 		variant?: EyebrowVariant;
 		children: Snippet;

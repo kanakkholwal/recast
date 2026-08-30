@@ -32,7 +32,7 @@ function togglePlayback() {
 	for (const v of [rawVideo, polishedVideo]) {
 		if (!v) continue;
 		if (userPaused) v.pause();
-		else void v.play().catch(() => {});
+		else void v.play().catch(() => undefined);
 	}
 }
 

@@ -104,7 +104,7 @@ function createAgentSession() {
 		/** Subscribe for one project. Returns a cleanup fn for `$effect`. */
 		bind(opts: BindOptions): () => void {
 			const driver = getAgentSessionDriver();
-			if (!driver) return () => {};
+			if (!driver) return () => undefined;
 			let disposed = false;
 			let unsubscribe: (() => void) | undefined;
 

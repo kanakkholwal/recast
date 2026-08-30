@@ -94,18 +94,18 @@ describe("cameraPlacementAt", () => {
 });
 
 describe("upsertCameraKeyframe", () => {
-	const base: CameraKeyframe[] = [
+	const existing: CameraKeyframe[] = [
 		{ atSec: 1, placement: { x: 0.1, y: 0, width: 0.2, height: 0.2 } },
 		{ atSec: 3, placement: { x: 0.7, y: 0, width: 0.2, height: 0.2 } },
 	];
 
 	it("inserts a new keyframe in sorted order", () => {
-		const r = upsertCameraKeyframe(base, 2, { x: 0.4, y: 0, width: 0.2, height: 0.2 });
+		const r = upsertCameraKeyframe(existing, 2, { x: 0.4, y: 0, width: 0.2, height: 0.2 });
 		expect(r.map((k) => k.atSec)).toEqual([1, 2, 3]);
 	});
 
 	it("replaces a keyframe within epsilon of an existing time", () => {
-		const r = upsertCameraKeyframe(base, 3.01, { x: 0.9, y: 0, width: 0.2, height: 0.2 });
+		const r = upsertCameraKeyframe(existing, 3.01, { x: 0.9, y: 0, width: 0.2, height: 0.2 });
 		expect(r).toHaveLength(2);
 		expect(r[1].placement.x).toBeCloseTo(0.9, 6);
 	});
@@ -389,23 +389,23 @@ describe("repairing an over-long recorded move", () => {
 		easeIn: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
 		easeOut: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
 	});
-	const base = { x: 0.2, y: 0.2, width: 0.16, height: 0.29 };
+	const startPlacement = { x: 0.2, y: 0.2, width: 0.16, height: 0.29 };
 
 	/** Projects that recorded before the dead zone landed carry one segment for
 	 *  the whole take. Replaying it verbatim drifts the bubble across the entire
 	 *  video, which is what the file says and not what happened. */
 	it("holds the start placement instead of gliding for the whole recording", () => {
-		const frames = keyframesFromMotionSegments([glide(0.15, 153.47)], base);
+		const frames = keyframesFromMotionSegments([glide(0.15, 153.47)], startPlacement);
 		const times = frames.map((f) => f.atSec);
 		expect(times[times.length - 1]).toBeCloseTo(153.47, 6);
 		expect(times[times.length - 2]).toBeCloseTo(153.47 - MAX_RECORDED_MOVE_SECS, 6);
 		// Held at the start placement until the move begins.
-		expect(cameraPlacementAt(base, frames, 60).x).toBeCloseTo(0.2, 6);
-		expect(cameraPlacementAt(base, frames, 153.47).x).toBeCloseTo(0.6, 6);
+		expect(cameraPlacementAt(startPlacement, frames, 60).x).toBeCloseTo(0.2, 6);
+		expect(cameraPlacementAt(startPlacement, frames, 153.47).x).toBeCloseTo(0.6, 6);
 	});
 
 	it("leaves a move short enough to be a real drag alone", () => {
-		const frames = keyframesFromMotionSegments([glide(1, 3)], base);
+		const frames = keyframesFromMotionSegments([glide(1, 3)], startPlacement);
 		expect(frames.map((f) => f.atSec)).toEqual([1, 3]);
 	});
 });

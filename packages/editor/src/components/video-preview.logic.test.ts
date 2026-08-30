@@ -189,7 +189,7 @@ describe("classifyMbError", () => {
 });
 
 describe("overlapping zoom regions", () => {
-	const region = (over: Record<string, unknown>) =>
+	const overlapping = (over: Record<string, unknown>) =>
 		({
 			id: "z",
 			start: 0,
@@ -205,12 +205,12 @@ describe("overlapping zoom regions", () => {
 			...over,
 		}) as never;
 
-	/** Latest-start-wins handed over at the incoming region's ramp START, which
+	/** Latest-start-wins handed over at the incoming overlapping's ramp START, which
 	 *  snapped the zoom to ~1 for a frame. Everything riding it flickered. */
 	it("hands over without a step", () => {
 		const regions = [
-			region({ start: 1, end: 8, scale: 2 }),
-			region({ start: 5, end: 12, scale: 2.5 }),
+			overlapping({ start: 1, end: 8, scale: 2 }),
+			overlapping({ start: 5, end: 12, scale: 2.5 }),
 		];
 		let previous: number | null = null;
 		for (let t = 0.5; t < 12.5; t += 1 / 60) {
@@ -220,20 +220,20 @@ describe("overlapping zoom regions", () => {
 		}
 	});
 
-	it("keeps the tighter region in force", () => {
+	it("keeps the tighter overlapping in force", () => {
 		const regions = [
-			region({ start: 0, end: 10, scale: 3, rampIn: 0, rampOut: 0 }),
-			region({ start: 4, end: 6, scale: 1.2, rampIn: 0, rampOut: 0 }),
+			overlapping({ start: 0, end: 10, scale: 3, rampIn: 0, rampOut: 0 }),
+			overlapping({ start: 4, end: 6, scale: 1.2, rampIn: 0, rampOut: 0 }),
 		];
 		expect(evaluateZoomAt(regions, 5).scale).toBeCloseTo(3, 6);
 	});
 
 	/** Rust picks the same winner, or the preview and the export disagree about
 	 *  where the frame is pointing. */
-	it("matches the compositor on a nested region", () => {
+	it("matches the compositor on a nested overlapping", () => {
 		const regions = [
-			region({ start: 0, end: 10, scale: 1.5, rampIn: 0, rampOut: 0 }),
-			region({ start: 4, end: 6, scale: 3, rampIn: 0, rampOut: 0 }),
+			overlapping({ start: 0, end: 10, scale: 1.5, rampIn: 0, rampOut: 0 }),
+			overlapping({ start: 4, end: 6, scale: 3, rampIn: 0, rampOut: 0 }),
 		];
 		expect(evaluateZoomAt(regions, 5).scale).toBeCloseTo(3, 6);
 	});

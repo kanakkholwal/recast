@@ -48,7 +48,7 @@ function loadModule(backend: EngineBackend): Promise<EngineModule> {
 
 const canvas = {} as HTMLCanvasElement;
 
-async function engine(backend?: EngineBackend | "auto", nav?: { gpu?: unknown }) {
+function engine(backend?: EngineBackend | "auto", nav?: { gpu?: unknown }) {
 	return PreviewEngine.create(canvas, {
 		backend,
 		loadModule,

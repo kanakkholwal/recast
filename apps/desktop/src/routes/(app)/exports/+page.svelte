@@ -124,7 +124,7 @@ async function shareToCloud(entry: RecordingEntry) {
 }
 
 function beginCloudShare(path: string, title: string, workspaceId: string | undefined = undefined) {
-	void cloudShare.share(path, title, workspaceId).catch(() => {});
+	void cloudShare.share(path, title, workspaceId).catch(() => undefined);
 	requestAnimationFrame(() => cloudShare.setForeground(path));
 }
 

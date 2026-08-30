@@ -1,11 +1,12 @@
 <script lang="ts">
+import type { IconComponent } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 import { untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 
 type Feature = {
-	icon: any;
+	icon: IconComponent;
 	tag: string;
 	title: string;
 	description: string;

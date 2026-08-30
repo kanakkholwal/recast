@@ -33,7 +33,7 @@ let { store, targetEl, hasCamera, previewTime = 0 }: Props = $props();
 
 const geom = $derived.by(() => {
 	const m = store.metadata;
-	if (!m || !m.width || !m.height) return null;
+	if (!m?.width || !m.height) return null;
 	return computeCanvasGeometry(m.width, m.height, store.padding, store.outputAspect);
 });
 

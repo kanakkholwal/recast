@@ -35,7 +35,7 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 			continue;
 		}
 		const k = a.kind;
-		const rendered = await renderTextToDataUrl(k, canvasWidth, canvasHeight);
+		const rendered = renderTextToDataUrl(k, canvasWidth, canvasHeight);
 		if (!rendered) {
 			// Drop the annotation rather than fail the whole export.
 			console.warn("rasterize-text: failed to render text annotation, skipping", k.content);
@@ -59,11 +59,11 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 	return out;
 }
 
-async function renderTextToDataUrl(
+function renderTextToDataUrl(
 	k: Extract<Annotation["kind"], { kind: "text" }>,
 	canvasWidth: number,
 	canvasHeight: number,
-): Promise<{ url: string; heightPx: number } | null> {
+): { url: string; heightPx: number } | null {
 	// UV box → export-canvas pixels.
 	const boxW = Math.max(1, Math.round(Math.abs(k.w) * canvasWidth));
 	const boxH = Math.max(1, Math.round(Math.abs(k.h) * canvasHeight));

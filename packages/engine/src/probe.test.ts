@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/useAwait: the fakes mirror the async WebGPU adapter API under test.
 import { describe, expect, it, vi } from "vitest";
 import { detectBackend } from "./probe";
 

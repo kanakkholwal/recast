@@ -7,7 +7,7 @@ function cmd(over: Partial<PaletteCommand> = {}): PaletteCommand {
 		id: over.title ?? "c",
 		title: "Export video",
 		category: "Export",
-		action: () => {},
+		action: () => undefined,
 		...over,
 	};
 }

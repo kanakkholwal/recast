@@ -9,7 +9,7 @@ describe("performance instrumentation (REQUIREMENTS.md §5)", () => {
 		vi.stubGlobal("performance", {
 			now: () => 500,
 			measure: (name: string, opts: { start: number; end: number }) => calls.push({ name, opts }),
-			clearMeasures: () => {},
+			clearMeasures: () => undefined,
 		});
 		measureSince("seek-latency", 200);
 		expect(calls).toHaveLength(1);
@@ -22,7 +22,7 @@ describe("performance instrumentation (REQUIREMENTS.md §5)", () => {
 		let cleared = 0;
 		vi.stubGlobal("performance", {
 			now: () => 1,
-			measure: () => {},
+			measure: () => undefined,
 			clearMeasures: () => cleared++,
 		});
 		for (let i = 0; i < 250; i++) measureSince("decode", 0);

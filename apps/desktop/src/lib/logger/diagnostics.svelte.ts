@@ -22,7 +22,7 @@ function createDiagnosticsStore() {
 		.then((backend) => {
 			if (typeof backend === "boolean") state.current = backend;
 		})
-		.catch(() => {});
+		.catch(() => undefined);
 
 	return {
 		/** Reactive: read inside an `$effect`/`$derived` to track changes. */
@@ -32,7 +32,7 @@ function createDiagnosticsStore() {
 		/** Persist the choice to localStorage (cross-window) AND Rust (log level). */
 		set(value: boolean) {
 			state.current = value;
-			void setDiagnosticLogging(value).catch(() => {});
+			void setDiagnosticLogging(value).catch(() => undefined);
 		},
 	};
 }

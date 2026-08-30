@@ -25,7 +25,7 @@ import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { buildRegistry, DIST_DIR, EXT_ROOT } from "./build-registry.mjs";
 
-const PORT = Number(4422);
+const PORT = 4422;
 const BASE_URL = `http://localhost:${PORT}`.replace(/\/+$/, "");
 const DEBOUNCE_MS = 150;
 

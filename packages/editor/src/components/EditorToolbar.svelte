@@ -110,7 +110,8 @@ let lookBeforePreview: PresetLook | null = null;
 
 // Preview writes are transient and several setters push undo of their own, so browsing buried the real edit.
 function previewPreset(preset: Preset) {
-	const before = (lookBeforePreview ??= readLook());
+	lookBeforePreview ??= readLook();
+	const before = lookBeforePreview;
 	store.withoutUndo(() => writeLook(previewLook(preset, before)));
 }
 

@@ -73,7 +73,7 @@ $effect(() => {
 	loaded = false;
 	if (!src) return;
 	void tick().then(() => {
-		if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) loaded = true;
+		if (imgEl?.complete && imgEl.naturalWidth > 0) loaded = true;
 	});
 });
 

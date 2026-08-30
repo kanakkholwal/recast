@@ -5,7 +5,7 @@ import { ArrowUpRight, Circle, Droplets, ImageIcon, Square, Type as TypeIcon } f
 import type { Annotation, AnnotationKindName } from "../../stores/editor-store.svelte";
 
 export function kindLabel(a: Annotation): string {
-	if (a.name && a.name.trim()) return a.name.trim();
+	if (a.name?.trim()) return a.name.trim();
 	switch (a.kind.kind) {
 		case "rect":
 			return "Rectangle";

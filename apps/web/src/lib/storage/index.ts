@@ -230,7 +230,7 @@ export function objectKeyFromStored(value: string | null | undefined): string | 
 	if (!/^https?:\/\//.test(v)) return v; // already a bare key
 	const base = cached?.publicBaseUrl;
 	if (!base) return null;
-	const prefix = base.replace(/\/$/, "") + "/";
+	const prefix = `${base.replace(/\/$/, "")}/`;
 	if (!v.startsWith(prefix)) return null;
 	try {
 		return decodeURI(v.slice(prefix.length));

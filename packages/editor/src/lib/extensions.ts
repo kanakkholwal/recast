@@ -45,7 +45,8 @@ export function compareSemver(a: string, b: string): number {
 
 /** True when `latest` is a strictly newer version than the `installed` one. */
 export function hasUpdate(installed: string, latest: string | undefined): boolean {
-	return !!latest && compareSemver(latest, installed) > 0;
+	if (!latest) return false;
+	return compareSemver(latest, installed) > 0;
 }
 
 /** Curated registry index URL (browse gallery). Override via env. */

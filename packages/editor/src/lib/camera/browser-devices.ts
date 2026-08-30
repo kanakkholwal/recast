@@ -81,12 +81,12 @@ export async function enumerateCameras(): Promise<BrowserCamera[]> {
 	// No videoinput means no camera: return empty rather than probing and popping a needless prompt.
 	if (!devices.some((d) => d.kind === "videoinput")) return [];
 
-	const labelsPopulated = devices.some((d) => d.kind === "videoinput" && !!d.label);
+	const labelsPopulated = devices.some((d) => d.kind === "videoinput" && Boolean(d.label));
 	if (!labelsPopulated) {
 		// Labels stay blank until capture is authorized once; probing unlocks them and surfaces a silent block.
 		try {
 			const probe = await media.getUserMedia({ video: true });
-			probe.getTracks().forEach((t) => t.stop());
+			for (const t of probe.getTracks()) t.stop();
 		} catch (e) {
 			if (isPermissionDenied(e)) {
 				throw new CameraAccessError(

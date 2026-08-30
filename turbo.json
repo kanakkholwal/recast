@@ -1,5 +1,6 @@
 {
 	"$schema": "https://v2-9-14.turborepo.dev/schema.json",
+	"globalEnv": ["BASE_URL", "GH_REPO", "RELEASE_TAG", "TAG"],
 	"tasks": {
 		"prepare": {
 			"cache": false

@@ -35,13 +35,13 @@ const waveformPath = $derived(
 	}),
 );
 
-const hasAudio = $derived(!!store.audioPath || !!store.microphonePath);
+const hasAudio = $derived(Boolean(store.audioPath) || Boolean(store.microphonePath));
 const surface = clipSurface("audio");
 
 // The waveform is a MIX of whichever sources were captured, and nothing else in the editor says which.
 const sourceLabel = $derived.by(() => {
-	const system = !!store.audioPath;
-	const mic = !!store.microphonePath;
+	const system = Boolean(store.audioPath);
+	const mic = Boolean(store.microphonePath);
 	if (system && mic) return "System + Mic";
 	if (mic) return "Microphone";
 	return "System audio";

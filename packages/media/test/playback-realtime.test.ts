@@ -96,7 +96,9 @@ class StreamingWorker {
 		}
 	}
 
-	terminate(): void {}
+	terminate(): void {
+		// the fake worker owns no thread to stop
+	}
 	addEventListener = vi.fn();
 	removeEventListener = vi.fn();
 	dispatchEvent = vi.fn();

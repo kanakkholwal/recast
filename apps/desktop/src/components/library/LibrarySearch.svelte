@@ -18,7 +18,7 @@ onMount(() => {
 	const onKey = (e: KeyboardEvent) => {
 		const t = e.target as HTMLElement | null;
 		const typing =
-			!!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+			t !== null && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
 		if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
 			el?.focus();

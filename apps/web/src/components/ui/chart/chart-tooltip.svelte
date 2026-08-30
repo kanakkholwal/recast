@@ -5,7 +5,7 @@ import type { HTMLAttributes } from "svelte/elements";
 import { cn, type WithElementRef, type WithoutChildren } from "$lib/utils.js";
 import { getPayloadConfigFromPayload, type TooltipPayload, useChart } from "./chart-utils.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: shadcn-svelte's formatter contract: the value comes from arbitrary chart data.
 function defaultFormatter(value: any, _payload: TooltipPayload[]) {
 	return `${value}`;
 }
@@ -32,7 +32,7 @@ let {
 	labelKey?: string;
 	hideIndicator?: boolean;
 	labelClassName?: string;
-	labelFormatter?: // eslint-disable-next-line @typescript-eslint/no-explicit-any
+	labelFormatter?: // biome-ignore lint/suspicious/noExplicitAny: shadcn-svelte's formatter contract: the value comes from arbitrary chart data.
 	((value: any, payload: TooltipPayload[]) => string | number | Snippet) | null;
 	formatter?: Snippet<
 		[

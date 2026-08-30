@@ -40,7 +40,7 @@ interface HostHooks {
 }
 
 const noop: HostHooks = {
-	analytics: { capture: () => {} },
+	analytics: { capture: () => undefined },
 	workers: {
 		create: (name) => {
 			// Loud on purpose: a silently-missing worker degrades to no decode.
@@ -50,7 +50,7 @@ const noop: HostHooks = {
 			);
 		},
 	},
-	shortcuts: { chordLabel: () => "", registerShortcutHandlers: () => () => {} },
+	shortcuts: { chordLabel: () => "", registerShortcutHandlers: () => () => undefined },
 	exportActivity: { renderingInBrowser: false },
 };
 

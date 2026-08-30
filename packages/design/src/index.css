@@ -317,7 +317,6 @@
   scrollbar-color:
     color-mix(in srgb, var(--foreground) 15%, transparent) transparent;
   scroll-behavior: smooth;
-  scrollbar-width: thin;
 }
 
 .scrollbar-transparent::-webkit-scrollbar {

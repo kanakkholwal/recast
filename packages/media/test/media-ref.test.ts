@@ -68,7 +68,7 @@ describe("mediaRefSource", () => {
 		vi.doMock("mediabunny", () => ({
 			BlobSource: class {
 				readonly tag = "blob";
-				constructor(readonly blob: Blob) {}
+				constructor(readonly source: Blob) {}
 			},
 			UrlSource: class {
 				readonly tag = "url";

@@ -160,7 +160,7 @@ function createBranchReview() {
 			selectedId = null;
 			changes = [];
 			error = null;
-			if (!driver?.branches) return () => {};
+			if (!driver?.branches) return () => undefined;
 
 			let disposed = false;
 			let unsubscribe: (() => void) | undefined;

@@ -22,18 +22,13 @@ function parseArgs(args) {
 	return out;
 }
 
-function normalize(v) {
-	return v.replace(/^v/, "").trim();
+function normalize(raw) {
+	return raw.replace(/^v/, "").trim();
 }
 
-function escapeRegex(s) {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function extractSection(markdown, version) {
-	const lines = markdown.split(/\r?\n/);
+function extractSection(source, target) {
+	const lines = source.split(/\r?\n/);
 	const headerRe = /^##\s+\[([^\]]+)\]/;
-	const target = version;
 	let start = -1;
 	let end = lines.length;
 	for (let i = 0; i < lines.length; i++) {
@@ -71,5 +66,5 @@ if (!body) {
 	exit(2);
 }
 
-if (outPath) await writeFile(outPath, body + "\n", "utf8");
-stdout.write(body + "\n");
+if (outPath) await writeFile(outPath, `${body}\n`, "utf8");
+stdout.write(`${body}\n`);

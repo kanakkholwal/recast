@@ -27,8 +27,6 @@
  */
 
 import type { MediaRef } from "@recast/media";
-// biome-ignore lint/style/noRestrictedImports: this worker composes
-// MediaBunny through `@recast/media`, the allowed channel (see the override in biome.json).
 import { ALL_FORMATS, CanvasSink, Input, mediaRefSource } from "@recast/media/mediabunny";
 // One definition, shared with the provider: the redeclared copies had already drifted.
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";

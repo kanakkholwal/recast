@@ -43,7 +43,7 @@ export function zoomScaleAt(r: ZoomRegion, timeSec: number): number {
 	const holdStart = r.start + rampIn;
 	const holdEnd = r.end - rampOut;
 	let phase: number;
-	let curve;
+	let curve: Easing;
 	let atHold = false;
 	if (timeSec < holdStart) {
 		phase = rampIn > 0 ? (timeSec - r.start) / rampIn : 1;

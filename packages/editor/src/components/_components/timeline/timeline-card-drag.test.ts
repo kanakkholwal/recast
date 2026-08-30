@@ -65,7 +65,7 @@ describe("precision scaling", () => {
 			minDuration: 0.1,
 		});
 		expect(result.start).toBeCloseTo(2);
-		expect(result.end).toBeCloseTo(4 + 1 * PRECISION_SCALE);
+		expect(result.end).toBeCloseTo(4 + PRECISION_SCALE);
 	});
 
 	// Precision applies to pointer travel, so re-seeding the anchor on a mid-drag flip leaves the card where it was.

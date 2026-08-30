@@ -246,7 +246,7 @@ function createExportActivityStore() {
 		if (status === "success") {
 			toast.success("Export complete", { description: it.filename });
 			void notifyJobDone("Export complete", baseName(path ?? it.filename));
-			void refreshTray(null).catch(() => {});
+			void refreshTray(null).catch(() => undefined);
 		} else if (status === "cancelled") {
 			toast.info("Export cancelled");
 		} else {
@@ -371,8 +371,8 @@ function createExportActivityStore() {
 					item.progress = 0;
 				}
 				void enqueueExport({ ...req.spec.params, exportId: req.id }).catch((e) => {
-					const it = find(req.id);
-					if (it) finishFeedback(it, "error", undefined, messageOf(e));
+					const entry = find(req.id);
+					if (entry) finishFeedback(entry, "error", undefined, messageOf(e));
 				});
 			}
 		} finally {

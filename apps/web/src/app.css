@@ -1,3 +1,4 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: the only uses are the reduced-motion overrides, which must win the cascade. */
 @import "@recast/design/index.css";
 @import "tailwindcss";
 
@@ -20,6 +21,7 @@
 	font-display: swap;
 }
 @font-face {
+	/* biome-ignore lint/suspicious/noDuplicateProperties: one @font-face per weight is how a family is declared. */
 	font-family: "Satoshi";
 	src: url("/fonts/Satoshi-500.woff2") format("woff2");
 	font-weight: 500;
@@ -210,6 +212,11 @@
 		overflow-x: hidden;
 	}
 
+	h1, h2, h3, h4, h5, h6 {
+		@apply text-foreground;
+		line-height: 1.15;
+	}
+
 	/* Display type is Satoshi 500 at normal tracking; Inter handles 30px and below. */
 	[data-site="marketing"] h1,
 	[data-site="marketing"] h2 {
@@ -237,12 +244,7 @@
 		@apply text-foreground;
 	}
 
-	h1, h2, h3, h4, h5, h6 {
-		@apply text-foreground;
-		line-height: 1.15;
-	}
-
-	a:has(href),
+	a[href],
 	button:not([disabled]) {
 		cursor: pointer;
 	}

@@ -30,7 +30,7 @@ const ALL: { name: TemplateName; data: Record<string, unknown> }[] = [
 ];
 
 describe.each(ALL)("$name", ({ name, data }) => {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// biome-ignore lint/suspicious/noExplicitAny: the table drives every template, so the per-template data union is erased on purpose.
 	const r = renderTemplate(name, data as any);
 
 	it("has a subject and both bodies", () => {

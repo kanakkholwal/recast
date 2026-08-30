@@ -83,7 +83,7 @@ let editorImgErrored = $state<Record<string, boolean>>({});
 let openFaq = $state<number | null>(0);
 
 function dragScroll(node: HTMLElement) {
-	const reduced =
+	const noMotion =
 		typeof window !== "undefined" &&
 		window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -129,7 +129,7 @@ function dragScroll(node: HTMLElement) {
 		} catch {
 			// Some browsers throw if the capture was already released; ignore.
 		}
-		if (reduced) return;
+		if (noMotion) return;
 
 		const first = samples[0];
 		const last = samples[samples.length - 1];

@@ -94,7 +94,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		});
 	} catch (e) {
 		// Unique (workspace, parentId, name) — a sibling already has this name.
-		const msg = String((e as Error)?.message ?? e);
+		const msg = (e as Error)?.message ?? String(e);
 		if (msg.includes("folder_parent_name_key")) {
 			error(409, "A folder with that name already exists here");
 		}

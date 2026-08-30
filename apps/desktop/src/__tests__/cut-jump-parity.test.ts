@@ -27,7 +27,7 @@ import {
 	timeMapFromSegments,
 } from "@recast/editor/lib/timeline/time-map";
 import { describe, expect, it } from "vitest";
-import type { TranscriptSegment, TranscriptWord } from "$lib/ipc";
+import type { TranscriptSegment } from "$lib/ipc";
 
 const N_ITERATIONS = 50;
 const CUT = { start: 10, end: 12 };
@@ -41,7 +41,6 @@ const segments = (() => {
 	return out;
 })();
 const timeMap = timeMapFromSegments(segments);
-const outputDuration = timeMap.outputDuration;
 
 describe("cut-jump parity: the playback surface is correct across a cut", () => {
 	it(`50 iterations of seek-and-span-lookup complete in p95 < 250ms`, () => {

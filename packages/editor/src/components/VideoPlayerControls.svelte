@@ -77,7 +77,7 @@ let isFullscreen = $state(false);
 // Mirror the browser's fullscreen state so the toggle icon reflects reality.
 $effect(() => {
 	const handler = () => {
-		isFullscreen = !!document.fullscreenElement;
+		isFullscreen = Boolean(document.fullscreenElement);
 	};
 	document.addEventListener("fullscreenchange", handler);
 	return () => document.removeEventListener("fullscreenchange", handler);

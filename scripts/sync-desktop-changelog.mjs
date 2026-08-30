@@ -118,7 +118,7 @@ function collapseWhitespace(s) {
 
 function renderReleasesBlock(releases) {
 	const out = [];
-	out.push(REGION_START + ", auto-generated, do not edit by hand");
+	out.push(`${REGION_START}, auto-generated, do not edit by hand`);
 	out.push("export const RELEASES: readonly ChangelogRelease[] = [");
 	for (const r of releases) {
 		out.push("\t{");

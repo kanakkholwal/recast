@@ -1,6 +1,6 @@
 <script lang="ts">
 import { cn } from "@recast/ui/utils";
-import { IconSearch } from "@tabler/icons-svelte";
+import { Search } from "@recast/icons";
 import { Command as CommandPrimitive } from "bits-ui";
 import * as InputGroup from "../input-group";
 
@@ -33,7 +33,7 @@ let {
 			bind:value
 		/>
 		<InputGroup.Addon>
-			<IconSearch class="size-4 shrink-0 opacity-50" />
+			<Search class="size-4 shrink-0 opacity-50" />
 		</InputGroup.Addon>
 	</InputGroup.Root>
 </div>

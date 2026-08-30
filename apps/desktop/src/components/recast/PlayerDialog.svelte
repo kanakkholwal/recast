@@ -38,7 +38,7 @@ $effect(() => {
 			url = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
 			captionSrc = url;
 		})
-		.catch(() => {});
+		.catch(() => undefined);
 	return () => {
 		cancelled = true;
 		if (url) URL.revokeObjectURL(url);

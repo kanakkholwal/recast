@@ -274,6 +274,7 @@ export function exportTimeMap(map: {
  * it off the same way. Progress + completion are observed via the queue (see
  * `listExportJobs` / `export-state`), not a returned promise of the output path.
  */
+// biome-ignore lint/suspicious/useAwait: `async` turns enqueueViaSink's synchronous throw into a rejection callers already .catch().
 export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
 	// Returns any auto-repairs the backend applied, so a caller can surface a verify-this notice; empty means none.
 	return enqueueViaSink({

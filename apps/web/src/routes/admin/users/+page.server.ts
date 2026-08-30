@@ -75,7 +75,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const list: Promise<ListUsersResult> = getAuth().api.listUsers({
 		headers: event.request.headers,
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// biome-ignore lint/suspicious/noExplicitAny: better-auth's listUsers query type is narrower than the filters the admin UI sends.
 		query: query as any,
 	}) as Promise<ListUsersResult>;
 

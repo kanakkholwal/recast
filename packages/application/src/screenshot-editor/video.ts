@@ -246,7 +246,7 @@ export async function exportVideoWebM(
 		track.stop();
 		return new Blob(chunks, { type: "video/webm" });
 	} finally {
-		bitmaps.forEach((b) => b.close());
+		for (const b of bitmaps) b.close();
 		persp.style.perspective = saved.perspective;
 		tilt.style.transform = saved.transform;
 		tilt.style.opacity = saved.opacity;

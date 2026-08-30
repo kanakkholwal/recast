@@ -33,10 +33,10 @@ export function parseColor(input: string): { r: number; g: number; b: number; a:
 			.filter(Boolean)
 			.map((p) => p.trim());
 		if (parts.length < 3) return null;
-		const r = Math.round(+parts[0]);
-		const g = Math.round(+parts[1]);
-		const b = Math.round(+parts[2]);
-		const a = parts[3] !== undefined ? clamp01(+parts[3]) : 1;
+		const r = Math.round(Number(parts[0]));
+		const g = Math.round(Number(parts[1]));
+		const b = Math.round(Number(parts[2]));
+		const a = parts[3] !== undefined ? clamp01(Number(parts[3])) : 1;
 		if ([r, g, b].some(Number.isNaN)) return null;
 		return { r, g, b, a };
 	}

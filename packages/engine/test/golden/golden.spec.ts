@@ -56,7 +56,7 @@ async function fixtures(): Promise<FixtureFile> {
  */
 const ADAPTER_FILE = join(GOLDENS, "ADAPTER.wasm");
 
-async function recordedAdapter(): Promise<string | null> {
+function recordedAdapter(): Promise<string | null> {
 	return readFile(ADAPTER_FILE, "utf8")
 		.then((s) => s.trim())
 		.catch(() => null);

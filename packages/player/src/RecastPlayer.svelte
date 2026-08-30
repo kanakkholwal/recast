@@ -473,6 +473,7 @@ const errorMessage = $derived.by(() => {
 
 // A reused component otherwise keeps the previous clip's view-start and progress high-water mark.
 $effect(() => {
+	// biome-ignore lint/suspicious/noUnusedExpressions: the bare read is the effect's dependency.
 	src;
 	engagement.reset();
 	mediaError = null;
@@ -557,7 +558,7 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (!videoEl || !isFinite(currentTime)) return;
+	if (!videoEl || !Number.isFinite(currentTime)) return;
 	if (Math.abs(videoEl.currentTime - currentTime) > 0.05) {
 		videoEl.currentTime = Math.max(0, currentTime);
 	}

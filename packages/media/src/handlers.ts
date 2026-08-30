@@ -275,7 +275,7 @@ function canvasRgba(canvas: HTMLCanvasElement | OffscreenCanvas): Uint8ClampedAr
 	return ctx2d.getImageData(0, 0, canvas.width, canvas.height).data;
 }
 
-async function canvasToBlob(
+function canvasToBlob(
 	canvas: HTMLCanvasElement | OffscreenCanvas,
 	fmt: "png" | "jpeg",
 ): Promise<Blob> {

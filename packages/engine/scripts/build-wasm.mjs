@@ -53,17 +53,17 @@ async function exists(path) {
 	}
 }
 
-async function ensureBindgen(version) {
+async function ensureBindgen(pinned) {
 	const exe = join(toolsDir, process.platform === "win32" ? "wasm-bindgen.exe" : "wasm-bindgen");
 	if (await exists(exe)) {
 		const found = spawnSync(exe, ["--version"], { encoding: "utf8" }).stdout?.trim();
-		if (found === `wasm-bindgen ${version}`) return exe;
+		if (found === `wasm-bindgen ${pinned}`) return exe;
 		await rm(exe, { force: true });
 	}
 
 	const triple = hostTriple();
-	const url = `https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${version}/wasm-bindgen-${version}-${triple}.tar.gz`;
-	console.log(`fetching wasm-bindgen ${version} for ${triple}`);
+	const url = `https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${pinned}/wasm-bindgen-${pinned}-${triple}.tar.gz`;
+	console.log(`fetching wasm-bindgen ${pinned} for ${triple}`);
 	const response = await fetch(url);
 	if (!response.ok) throw new Error(`download failed: ${response.status} ${url}`);
 
@@ -79,7 +79,7 @@ async function ensureBindgen(version) {
 			"-C",
 			toolsDir,
 			"--strip-components=1",
-			`wasm-bindgen-${version}-${triple}/${process.platform === "win32" ? "wasm-bindgen.exe" : "wasm-bindgen"}`,
+			`wasm-bindgen-${pinned}-${triple}/${process.platform === "win32" ? "wasm-bindgen.exe" : "wasm-bindgen"}`,
 		],
 		toolsDir,
 	);

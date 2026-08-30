@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	activeWordIndex,
-	chunkWords,
-	isStaticAnimation,
-	resolveCaptionAnimation,
-} from "./chunking";
+import { activeWordIndex, isStaticAnimation, resolveCaptionAnimation } from "./chunking";
 import { karaokeCentiseconds, spokenWordCount } from "./highlight";
 import { breakIntoLines } from "./linebreak";
 import { pillBox } from "./geometry";

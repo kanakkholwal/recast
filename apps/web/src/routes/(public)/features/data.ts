@@ -19,17 +19,14 @@ import {
 	HardDrive,
 	HardDriveUpload,
 	Highlighter,
+	type IconComponent,
 	Keyboard,
 	Layers,
 	Layout,
-	MemoryStick,
 	MousePointer2,
 	Pause,
 	Scissors,
-	ShieldCheck,
-	Sparkles,
 	Target,
-	UserX,
 	VolumeX,
 	WifiOff,
 	Zap,
@@ -130,7 +127,7 @@ export const gapRows = [
 
 // `tag` is the module it belongs to, rendered as the card's kicker.
 export const supports: Array<{
-	icon: any;
+	icon: IconComponent;
 	tag: string;
 	title: string;
 	description: string;

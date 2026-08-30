@@ -89,7 +89,7 @@ const placements = $derived.by(() => {
 	const map = new Map<string, Interval | null>();
 	for (const sug of pending) {
 		const centerSec = sug.timestampUs / 1_000_000;
-		const key = sug.timestampUs + "-" + sug.reason;
+		const key = `${sug.timestampUs}-${sug.reason}`;
 		map.set(key, planPlacement(occupied, bounds.start, bounds.end, centerSec));
 	}
 	return map;

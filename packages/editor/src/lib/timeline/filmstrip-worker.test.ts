@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/useAwait: the fakes mirror MediaBunny's async API, which is what the worker is written against.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
 
@@ -14,7 +15,9 @@ vi.mock("@recast/media/mediabunny", () => ({
 		async computeDuration() {
 			return 60;
 		}
-		dispose() {}
+		dispose() {
+			// the fake sink holds nothing to release
+		}
 	},
 	CanvasSink: class {
 		async getCanvas() {

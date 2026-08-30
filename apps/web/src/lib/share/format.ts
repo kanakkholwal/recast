@@ -46,8 +46,7 @@ export function parseCommentText(text: string): CommentSegment[] {
 	const re = /\[(\d{1,2}(?::\d{2}){1,2})\]|\b(\d{1,2}:\d{2}(?::\d{2})?)\b|@([A-Za-z][\w]{0,31})/g;
 	const out: CommentSegment[] = [];
 	let lastIdx = 0;
-	let m: RegExpExecArray | null;
-	while ((m = re.exec(text)) !== null) {
+	for (let m = re.exec(text); m !== null; m = re.exec(text)) {
 		if (m.index > lastIdx) out.push({ kind: "text", text: text.slice(lastIdx, m.index) });
 		if (m[1] !== undefined)
 			out.push({ kind: "timestamp", seconds: parseTimeToken(m[1]), raw: m[1] });

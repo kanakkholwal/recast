@@ -1,3 +1,4 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: the only uses are reduced-motion and view-transition overrides, which must win the cascade. */
 @import "tailwindcss";
 @import "@recast/design/index.css";
 

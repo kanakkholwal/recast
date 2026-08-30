@@ -1,7 +1,7 @@
 <script lang="ts">
 import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
-import { IconMinus } from "@tabler/icons-svelte";
-import { IconCheck } from "@tabler/icons-svelte";
+import { Minus } from "@recast/icons";
+import { Check } from "@recast/icons";
 import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
 
@@ -34,9 +34,9 @@ let {
 			data-slot="context-menu-checkbox-item-indicator"
 		>
 			{#if indeterminate}
-				<IconMinus  />
+				<Minus  />
 			{:else if checked}
-				<IconCheck  />
+				<Check  />
 			{/if}
 		</span>
 		{@render childrenProp?.()}

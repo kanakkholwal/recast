@@ -4,13 +4,13 @@ import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/
 
 const lastUpdated = "May 30, 2026";
 
-type Section = {
+type PolicySection = {
 	heading: string;
 	paragraphs?: string[];
 	bullets?: { term?: string; body: string }[];
 };
 
-const sections: Section[] = [
+const sections: PolicySection[] = [
 	{
 		heading: "Acceptance",
 		paragraphs: [

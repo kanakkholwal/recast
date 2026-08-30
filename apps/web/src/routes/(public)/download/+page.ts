@@ -50,7 +50,7 @@ export const load: PageLoad = async ({ fetch, setHeaders }) => {
 				linuxRpm: linuxRpm?.browser_download_url ?? null,
 			},
 		};
-	} catch (error) {
+	} catch {
 		// Fallback if the API fails or no release has been published yet
 		return {
 			version: "Latest",

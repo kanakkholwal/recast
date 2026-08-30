@@ -71,7 +71,7 @@ describe("undercutting Loom", () => {
 	});
 
 	it("widens the gap as the team grows", () => {
-		const solo = 1 - priceForSeats("pro", 1)! / (LOOM_MONTHLY * 1);
+		const solo = 1 - priceForSeats("pro", 1)! / LOOM_MONTHLY;
 		const team = 1 - priceForSeats("pro", 5)! / (LOOM_MONTHLY * 5);
 		expect(team).toBeGreaterThan(solo);
 	});

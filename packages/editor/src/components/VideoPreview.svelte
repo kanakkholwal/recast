@@ -51,6 +51,7 @@ interface Props {
 	cameraOffsetMs?: number;
 	onTimeUpdate: () => void;
 	/** Return `true` if the host looped (moved the transport) instead of stopping. */
+	// biome-ignore lint/suspicious/noConfusingVoidType: a handler may return true or nothing at all.
 	onEnded: () => boolean | void;
 	onLoadedMetadata: () => void;
 	onReady: () => void;
@@ -401,7 +402,7 @@ const SCOUT_READY_EPS = 0.1;
 /** True when the scout has the post-cut frame decoded and ready to sample. */
 function scoutReadyAt(t: number): boolean {
 	return (
-		!!scoutEl &&
+		scoutEl !== null &&
 		!scoutEl.seeking &&
 		scoutEl.readyState >= 2 &&
 		scoutEl.videoWidth > 0 &&

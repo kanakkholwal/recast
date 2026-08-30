@@ -96,7 +96,7 @@ $effect(() => {
 
 const blocked = $derived(capability?.supported === false);
 const blockedReason = $derived(capability && !capability.supported ? capability.reason : null);
-const phase = $derived(resolvePhase(blocked, busy, !!resultUrl, !!file));
+const phase = $derived(resolvePhase(blocked, busy, Boolean(resultUrl), Boolean(file)));
 const isVideoInput = $derived((file?.type ?? "").startsWith("video/"));
 const outputKind = $derived(outputKindFor(resultMime));
 

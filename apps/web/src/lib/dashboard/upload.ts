@@ -449,7 +449,7 @@ export async function uploadRecastFile(
 		const videoUpload = init?.upload as SignedEnvelope | undefined;
 		const posterUpload = init?.posterUpload as SignedEnvelope | undefined;
 		const recastId = init?.recastId as string;
-		if (!videoUpload || videoUpload.method?.toUpperCase() !== "PUT") {
+		if (videoUpload?.method?.toUpperCase() !== "PUT") {
 			throw new Error("This storage provider isn't supported by the web uploader yet.");
 		}
 

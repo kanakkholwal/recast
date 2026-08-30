@@ -229,7 +229,7 @@ function renderSection({ version, date, highlights, byKind }) {
 		for (const it of items) out.push(`- ${it}`);
 		out.push("");
 	}
-	return out.join("\n").trim() + "\n";
+	return `${out.join("\n").trim()}\n`;
 }
 
 function renderEmptyUnreleased() {

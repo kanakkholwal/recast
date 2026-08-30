@@ -340,7 +340,7 @@ function drawSnapGuides(ctx: CanvasRenderingContext2D, t: number) {
 
 	ctx.save();
 	ctx.strokeStyle = selectionPalette().accentMuted;
-	ctx.lineWidth = 1 * dpr;
+	ctx.lineWidth = dpr;
 	ctx.setLineDash([4 * dpr, 3 * dpr]);
 
 	for (const g of snapGuides) {

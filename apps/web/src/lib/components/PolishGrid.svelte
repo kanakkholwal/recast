@@ -1,13 +1,12 @@
 <script lang="ts">
-import { Check } from "@recast/icons";
+import { Check, type IconComponent } from "@recast/icons";
 import { Reveal } from "@recast/ui/reveal";
 import { cn } from "@recast/ui/utils";
 import { prefersReducedMotion } from "$lib/motion-core";
 
 // A soft Applied highlight ticks through the cards, slower than Step 1 so the two don't compete; reduced motion shows the grid still.
 type Feature = {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	icon: any;
+	icon: IconComponent;
 	title: string;
 	description: string;
 };

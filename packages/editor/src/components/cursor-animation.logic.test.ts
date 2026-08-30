@@ -118,7 +118,13 @@ describe("press lookups near the end of a long timeline", () => {
 				return Reflect.get(target, prop, recv);
 			},
 		});
-		return { proxy, reads: () => reads, reset: () => void (reads = 0) };
+		return {
+			proxy,
+			reads: () => reads,
+			reset: () => {
+				reads = 0;
+			},
+		};
 	}
 
 	it("does not rescan the whole track per frame", () => {

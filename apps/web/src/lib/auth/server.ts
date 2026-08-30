@@ -265,7 +265,7 @@ function buildPlugins() {
 			const cap = hasPaidTeam ? USER_TEAM_OWNERSHIP_CAPS.paid : USER_TEAM_OWNERSHIP_CAPS.free;
 			return owned.length < cap;
 		},
-		membershipLimit: async (_u, org) => {
+		membershipLimit: (_u, org) => {
 			const o = org as { plan?: string; seatLimit?: number | null };
 			// A negotiated seat count overrides the plan's ceiling.
 			return limitsFor(planOf(o.plan).id, { seatLimit: o.seatLimit }).members;

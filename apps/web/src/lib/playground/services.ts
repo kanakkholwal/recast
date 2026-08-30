@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/useAwait: EditorServices declares these methods as Promise-returning; the browser host has nothing to await.
 /**
  * The browser implementation of {@link EditorServices}. Every native capability
  * is simply absent, so the editor hides those surfaces rather than offering

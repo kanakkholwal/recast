@@ -44,7 +44,7 @@ export const GET: RequestHandler = async ({ params, url, cookies }) => {
 		.from(share)
 		.where(eq(share.slug, slug))
 		.limit(1);
-	if (!s || s.visibility !== "selected") {
+	if (s?.visibility !== "selected") {
 		redirect(303, `${sharePath}?claim=invalid`);
 	}
 	const [allowed] = await db

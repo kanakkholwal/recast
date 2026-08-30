@@ -82,7 +82,7 @@ onMount(() => {
 			const remembered = lastRegionToSource(last);
 			if (remembered) lastRegion = remembered;
 		})
-		.catch(() => {});
+		.catch(() => undefined);
 
 	return () => {
 		unlistenRegion.then((fn) => fn());

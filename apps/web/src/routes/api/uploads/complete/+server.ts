@@ -105,7 +105,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// A 0-byte upload is an aborted PUT that still returned 2xx; clean up and 422 so the client treats it as a failure.
 	if (actualBytes === 0) {
-		await deleteObject(row.videoUrl).catch(() => {});
+		await deleteObject(row.videoUrl).catch(() => undefined);
 		await db.delete(recast).where(eq(recast.id, row.id));
 		return json({ ok: false, reason: "empty_upload" }, { status: 422 });
 	}
@@ -119,7 +119,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			Number.isFinite(snapshot.limits.playbackMaxHeight) &&
 			body.height > snapshot.limits.playbackMaxHeight + 8
 		) {
-			await deleteObject(row.videoUrl).catch(() => {});
+			await deleteObject(row.videoUrl).catch(() => undefined);
 			await db.delete(recast).where(eq(recast.id, row.id));
 			return json(
 				{
@@ -136,7 +136,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		const projected = snapshot.usage.storageBytes + actualBytes;
 		if (projected > snapshot.limits.storageBytes) {
-			await deleteObject(row.videoUrl).catch(() => {});
+			await deleteObject(row.videoUrl).catch(() => undefined);
 			await db.delete(recast).where(eq(recast.id, row.id));
 			return json(
 				{

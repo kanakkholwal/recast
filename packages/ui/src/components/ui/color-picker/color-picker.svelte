@@ -132,7 +132,7 @@ const DEFAULT_SWATCHES: string[] = [
 
 	async function pickWithEyedropper() {
 		// `EyeDropper` is Chromium-only and gated above, so the button never appears where it is missing.
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// biome-ignore lint/suspicious/noExplicitAny: EyeDropper is Chromium-only and absent from lib.dom.
 		const Picker: any = (window as any).EyeDropper;
 		if (!Picker) return;
 		try {

@@ -1,5 +1,6 @@
 import { error, json } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
+import type { SignedUpload } from "files-sdk";
 import { getDb } from "$lib/db";
 import { recast } from "$lib/db/schema";
 import { authorizeRecast } from "$lib/server/recast-guard";
@@ -40,7 +41,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	const version = newVersion();
 	const key = posterObjectKey(row.workspaceId, row.id, version);
 
-	let upload;
+	let upload: SignedUpload;
 	try {
 		upload = await signUploadUrl({ key, contentType: "image/webp" });
 	} catch (err) {
@@ -77,7 +78,7 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 	const stat = await statObject(key);
 	if (!stat || stat.contentLength === 0) {
 		// The PUT never landed, so clean up the stray empty object and tell the client to retry.
-		if (stat) await deleteObject(key).catch(() => {});
+		if (stat) await deleteObject(key).catch(() => undefined);
 		return json({ ok: false, reason: "upload_missing" }, { status: 410 });
 	}
 

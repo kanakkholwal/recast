@@ -14,7 +14,7 @@ function tick() {
 	if (step >= reel.length - slides.length) {
 		setTimeout(() => {
 			snapping = true;
-			step = step - slides.length;
+			step -= slides.length;
 			// Two rAFs: the first commits the new step with transitions off, the second restores them.
 			requestAnimationFrame(() => {
 				requestAnimationFrame(() => {

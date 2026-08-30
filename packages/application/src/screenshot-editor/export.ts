@@ -52,7 +52,7 @@ export function canCopyImage(): boolean {
 	return (
 		typeof ClipboardItem !== "undefined" &&
 		typeof navigator !== "undefined" &&
-		!!navigator.clipboard?.write
+		Boolean(navigator.clipboard?.write)
 	);
 }
 

@@ -84,7 +84,7 @@ export function resolveCursorDataUrl(id: string, state: CursorState): string | n
 	const sprite = resolveCursorSprite(id);
 	if (!sprite) return null;
 	const svg = cursorSpriteSvg(sprite, state);
-	const url = "data:image/svg+xml;utf8," + encodeURIComponent(svg.trim().replace(/\n\s*/g, " "));
+	const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg.trim().replace(/\n\s*/g, " "))}`;
 	cursorDataUrlCache.set(key, url);
 	return url;
 }

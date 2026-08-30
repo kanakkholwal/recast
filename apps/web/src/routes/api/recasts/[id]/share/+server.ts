@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { getDb } from "$lib/db";
-import { organization, recast, share, shareMember, user } from "$lib/db/schema";
+import { organization, share, shareMember, user } from "$lib/db/schema";
 import { publicEnv } from "$lib/env/public";
 import { authorizeRecast } from "$lib/server/recast-guard";
 import { hashSharePassword, verifySharePassword } from "$lib/share/password";
@@ -62,7 +62,7 @@ const BodySchema = z
  *
  * Returns `{ slug, shareUrl }`. Caller turns shareUrl into a clickable.
  */
-export const POST: RequestHandler = async ({ params, request, url }) => {
+export const POST: RequestHandler = async ({ params, request }) => {
 	let raw: unknown;
 	try {
 		raw = await request.json();

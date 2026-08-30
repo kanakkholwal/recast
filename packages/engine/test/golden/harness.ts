@@ -47,7 +47,7 @@ async function live(): Promise<PreviewEngine> {
 }
 
 /** RGBA bytes to an `ImageBitmap` the engine can take. */
-async function bitmapFrom(rgba: number[], width: number, height: number): Promise<ImageBitmap> {
+function bitmapFrom(rgba: number[], width: number, height: number): Promise<ImageBitmap> {
 	const data = new ImageData(new Uint8ClampedArray(rgba), width, height);
 	return createImageBitmap(data);
 }

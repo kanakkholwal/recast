@@ -23,14 +23,6 @@ import {
 
 const CUT = { start: 10, end: 12 };
 const RECORDING_SEC = 60;
-const segments = (() => {
-	const out: { start: number; end: number; index: number }[] = [];
-	out.push({ start: 0, end: CUT.start, index: 0 });
-	out.push({ start: CUT.end, end: RECORDING_SEC, index: 1 });
-	return out;
-})();
-const timeMap = timeMapFromSegments(segments);
-
 describe("layers and annotations: visibility across a cut", () => {
 	// A layer is drawn only while the playhead is in the kept portion of its window; cut-crossing layers are clipped.
 
@@ -159,7 +151,7 @@ describe("timeMap integration: roundtrip output ↔ original across multiple cut
 		const out: { start: number; end: number; index: number }[] = [];
 		// One segment per kept interval, using `keptRegions` so the test asserts the helper agrees with the segments.
 		const regs = keptRegions(0, 60, cuts);
-		regs.forEach((r, i) => out.push({ start: r.start, end: r.end, index: i }));
+		for (const [i, r] of regs.entries()) out.push({ start: r.start, end: r.end, index: i });
 		return out;
 	})();
 	const map = timeMapFromSegments(keptSegs);

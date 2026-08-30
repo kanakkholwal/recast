@@ -44,7 +44,7 @@ const pkgJson = resolve(REPO_ROOT, "apps/desktop/package.json");
 {
 	const json = JSON.parse(readFileSync(tauriConf, "utf8"));
 	json.version = version;
-	writeFileSync(tauriConf, JSON.stringify(json, null, 2) + "\n");
+	writeFileSync(tauriConf, `${JSON.stringify(json, null, 2)}\n`);
 	console.log(`  tauri.conf.json: ${json.version}`);
 }
 
@@ -52,7 +52,7 @@ const pkgJson = resolve(REPO_ROOT, "apps/desktop/package.json");
 {
 	const json = JSON.parse(readFileSync(pkgJson, "utf8"));
 	json.version = version;
-	writeFileSync(pkgJson, JSON.stringify(json, null, 2) + "\n");
+	writeFileSync(pkgJson, `${JSON.stringify(json, null, 2)}\n`);
 	console.log(`  package.json:    ${json.version}`);
 }
 

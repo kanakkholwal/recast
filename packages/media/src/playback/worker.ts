@@ -268,7 +268,7 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 	// Kill the previous decoder NOW: a superseded run blocks in `for await`, so a scrub stacks one live decoder per pointer move.
 	const previous = activeSamples;
 	activeSamples = null;
-	if (previous) await previous.return(undefined).catch(() => {});
+	if (previous) await previous.return(undefined).catch(() => undefined);
 	if (myRun !== runId || disposed) return;
 	const samples = sink.samples(startSec);
 	activeSamples = samples;
@@ -320,7 +320,7 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 		if (myRun === runId) deliveredSec = Number.NaN;
 		if (activeSamples === samples) activeSamples = null;
 		// Release the generator's decoder resources when superseded mid-stream.
-		await samples.return(undefined).catch(() => {});
+		await samples.return(undefined).catch(() => undefined);
 	}
 }
 

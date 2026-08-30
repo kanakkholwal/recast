@@ -12,14 +12,6 @@
 
 import type { TranscriptWord } from "./types";
 
-interface Cue {
-	start: number;
-	end: number;
-	words: TranscriptWord[];
-	/** Plain text, used when a cue carries no per-word timing. */
-	text: string;
-}
-
 /** `00:00:12.340` (or `12.340`, `1:02.5`) -> seconds. */
 export function parseVttTime(stamp: string): number {
 	const parts = stamp.split(":");
@@ -40,9 +32,8 @@ export function parseKaraokeCue(body: string, cueStart: number, cueEnd: number):
 	const tokens: { start: number; text: string }[] = [];
 	let cursor = 0;
 	let pendingStart = cueStart;
-	let match: RegExpExecArray | null;
 	// Text before a tag belongs to the previously opened start, and the tag opens the next word's.
-	while ((match = tag.exec(body)) !== null) {
+	for (let match = tag.exec(body); match !== null; match = tag.exec(body)) {
 		const chunk = body.slice(cursor, match.index).trim();
 		if (chunk) tokens.push({ start: pendingStart, text: chunk });
 		pendingStart = parseVttTime(match[0].slice(1, -1));

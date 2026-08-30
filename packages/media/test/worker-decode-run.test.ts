@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/useAwait: the fakes mirror MediaBunny's async iterator API the worker consumes.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -131,7 +132,9 @@ vi.mock("mediabunny", () => ({
 		async computeDuration() {
 			return 60;
 		}
-		dispose() {}
+		dispose() {
+			// the fake sink holds nothing to release
+		}
 	},
 }));
 

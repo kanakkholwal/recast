@@ -29,9 +29,9 @@ export async function getTauriTheme() {
 	}
 }
 export async function listenToTauriTheme(cb: (theme: string) => void) {
-	if (!browser) return () => {};
+	if (!browser) return () => undefined;
 	const isTauri = await isTauriApp();
-	if (!isTauri) return () => {};
+	if (!isTauri) return () => undefined;
 
 	try {
 		const { getCurrentWindow } = await import("@tauri-apps/api/window");
@@ -41,6 +41,6 @@ export async function listenToTauriTheme(cb: (theme: string) => void) {
 		return unlisten;
 	} catch (e) {
 		console.error(e);
-		return () => {};
+		return () => undefined;
 	}
 }

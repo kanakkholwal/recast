@@ -7,17 +7,19 @@
 	<script>
 		(() => {
 			try {
-				var stored = localStorage.getItem("mode-watcher-mode");
-				var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-				var resolved = stored && stored !== "system" ? stored : (prefersDark ? "dark" : "light");
-				var root = document.documentElement;
+				const stored = localStorage.getItem("mode-watcher-mode");
+				const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+				const resolved = stored && stored !== "system" ? stored : (prefersDark ? "dark" : "light");
+				const root = document.documentElement;
 				if (resolved === "dark") {
 					root.classList.add("dark");
 					root.setAttribute("data-theme", "dark");
 				} else {
 					root.setAttribute("data-theme", "light");
 				}
-			} catch (_) {}
+			} catch (_) {
+				// Storage can be unavailable in private mode; the OS preference still applies.
+			}
 		})();
 	</script>
 	%sveltekit.head%
@@ -30,7 +32,7 @@
 			     black disc, which vanished against the dark boot background. Also
 			     drops a network request from the cold-start path. -->
 			<span class="logo-pop boot-logo">
-				<svg viewBox="0 0 584 584" fill="none" xmlns="http://www.w3.org/2000/svg">
+				<svg viewBox="0 0 584 584" fill="none" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
 					<path d="M200.12 204.56C200.12 167.8 170.32 138 133.56 138C96.7999 138 67 167.8 67 204.56V378.64C67 415.4 96.7999 445.2 133.56 445.2C170.32 445.2 200.12 415.4 200.12 378.64V204.56Z" fill="currentColor" />
 					<path d="M358.84 204.56C358.84 167.8 329.04 138 292.28 138C255.52 138 225.72 167.8 225.72 204.56V378.64C225.72 415.4 255.52 445.2 292.28 445.2C329.04 445.2 358.84 415.4 358.84 378.64V204.56Z" fill="currentColor" />
 					<path d="M517.56 204.56C517.56 167.8 487.76 138 451 138C414.24 138 384.44 167.8 384.44 204.56V378.64C384.44 415.4 414.24 445.2 451 445.2C487.76 445.2 517.56 415.4 517.56 378.64V204.56Z" fill="currentColor" />

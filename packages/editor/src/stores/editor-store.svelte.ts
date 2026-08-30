@@ -482,8 +482,6 @@ export function createEditorStore() {
 				fadeOut: loaded.fadeOut,
 				normalizeLoudness: loaded.normalizeLoudness ?? false,
 			};
-		} else {
-			audioSettings = audioSettings;
 		}
 		// Camera overlay was captured but never restored, which silently destroyed overlay edits on undo.
 		if (s.cameraOverlay) {
@@ -573,19 +571,19 @@ export function createEditorStore() {
 		}
 	}
 
-	function setBackground(selection: BackgroundSelection) {
-		const hasChanged = backgroundType !== selection.type || backgroundValue !== selection.value;
+	function setBackground(next: BackgroundSelection) {
+		const hasChanged = backgroundType !== next.type || backgroundValue !== next.value;
 		if (!hasChanged) return;
 		pushUndoState();
-		backgroundType = selection.type;
-		backgroundValue = selection.value;
+		backgroundType = next.type;
+		backgroundValue = next.value;
 		// A backdrop close in luminance to the recording leaves no visible edge; only ever turned on, never off.
-		if (!shadow.enabled && backgroundNeedsShadow(selection.value)) {
+		if (!shadow.enabled && backgroundNeedsShadow(next.value)) {
 			shadow = { ...shadow, enabled: true };
 			log.info("background", "auto-enabled drop shadow for low-separation backdrop");
 		}
 		// `value` can be a long wallpaper/gradient string, so log only the type.
-		log.info("background", "changed", { type: selection.type });
+		log.info("background", "changed", { type: next.type });
 	}
 
 	/**
@@ -659,7 +657,7 @@ export function createEditorStore() {
 
 	// 'Detached' is just 'a voice clip exists', so there is no separate flag to keep in sync.
 	const audioDetached = $derived(musicClips.some((c) => c.role === "voice"));
-	const canDetachAudio = $derived(!!(audioPath || microphonePath));
+	const canDetachAudio = $derived(Boolean(audioPath || microphonePath));
 	const voiceClips = $derived(musicClips.filter((c) => c.role === "voice"));
 	const musicOnlyClips = $derived(musicClips.filter((c) => c.role !== "voice"));
 
@@ -1710,8 +1708,6 @@ export function createEditorStore() {
 				fadeOut: loaded.fadeOut,
 				normalizeLoudness: loaded.normalizeLoudness ?? false,
 			};
-		} else {
-			audioSettings = audioSettings;
 		}
 		transcript = state.transcript ?? null;
 		captionStyle = state.captionStyle

@@ -269,8 +269,8 @@ function handleTextPointerMove(e: PointerEvent, a: Annotation) {
 	const t = playbackTime();
 	const css = pointerToCss(e);
 	const target = e.currentTarget as HTMLElement;
-	const startX = +(target.dataset.dragStartX ?? "0");
-	const startY = +(target.dataset.dragStartY ?? "0");
+	const startX = Number(target.dataset.dragStartX ?? "0");
+	const startY = Number(target.dataset.dragStartY ?? "0");
 	const moved = Math.hypot(css.x - startX, css.y - startY) >= CLICK_DRAG_THRESHOLD_PX;
 	if (!moved && !drag.moved) return;
 	// Push undo once, when the drag actually starts moving.

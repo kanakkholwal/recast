@@ -1,6 +1,6 @@
 <script lang="ts">
 import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
-import { IconCheck } from "@tabler/icons-svelte";
+import { Check } from "@recast/icons";
 import { cn, type WithoutChild } from "@recast/ui/utils";
 
 let {
@@ -26,7 +26,7 @@ let {
 			data-slot="dropdown-menu-radio-item-indicator"
 		>
 			{#if checked}
-				<IconCheck  />
+				<Check  />
 			{/if}
 		</span>
 		{@render childrenProp?.({ checked })}

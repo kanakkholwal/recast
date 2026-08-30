@@ -13,7 +13,7 @@ import { setSidebar } from "./context.svelte";
 let {
 	ref = $bindable(null),
 	open = $bindable(true),
-	onOpenChange = () => {},
+	onOpenChange = () => undefined,
 	class: className,
 	style,
 	children,
@@ -29,7 +29,7 @@ const sidebar = setSidebar({
 		open = value;
 		onOpenChange(value);
 
-		// This sets the cookie to keep the sidebar state.
+		// biome-ignore lint/suspicious/noDocumentCookie: cookieStore is Chromium-only; document.cookie is the portable write.
 		document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
 	},
 });

@@ -773,7 +773,7 @@ export function exportScreenText(body: string, destPath: string): Promise<void> 
  *  have a path but no audio track. */
 export function hasTranscribableAudio(paths: (string | null | undefined)[]): Promise<boolean> {
 	return invoke<boolean>("has_transcribable_audio", {
-		paths: paths.filter((p): p is string => !!p),
+		paths: paths.filter((p): p is string => Boolean(p)),
 	});
 }
 

@@ -83,7 +83,7 @@ describe("perf budgets (REQUIREMENTS.md §3 — non-negotiable)", () => {
  */
 describe("perf budgets — enforced against real code", () => {
 	function frame(w: number, h: number) {
-		return { width: w, height: h, close: () => {} } as unknown as CachedFrame;
+		return { width: w, height: h, close: () => undefined } as unknown as CachedFrame;
 	}
 
 	it("FrameCache defaults to the §3 decoded-frame memory cap", () => {

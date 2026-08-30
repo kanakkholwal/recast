@@ -42,7 +42,7 @@ $effect(() => {
 		if (!el) return;
 		if (i === current) {
 			el.currentTime = 0;
-			void el.play().catch(() => {});
+			void el.play().catch(() => undefined);
 		} else {
 			el.pause();
 		}

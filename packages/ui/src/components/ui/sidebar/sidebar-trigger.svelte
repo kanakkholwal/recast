@@ -1,6 +1,6 @@
 <script lang="ts">
 import { Button } from "../button";
-import { IconLayoutSidebar } from "@tabler/icons-svelte";
+import { PanelLeft } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 import type { ComponentProps } from "svelte";
 import { useSidebar } from "./context.svelte";
@@ -31,6 +31,6 @@ const sidebar = useSidebar();
 	}}
 	{...restProps}
 >
-	<IconLayoutSidebar  />
+	<PanelLeft  />
 	<span class="sr-only">Toggle Sidebar</span>
 </Button>

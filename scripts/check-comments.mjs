@@ -13,36 +13,36 @@ const SHEBANG = /^#!/;
 /** Sentinel base meaning "whatever is in the index", for the pre-commit hook. */
 const STAGED = Symbol.for("staged");
 
-function git(args) {
-	return execFileSync("git", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 })
+function git(argv) {
+	return execFileSync("git", argv, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 })
 		.split("\n")
 		.filter(Boolean);
 }
 
-function mergeBase(since) {
+function mergeBase(ref) {
 	try {
-		return execFileSync("git", ["merge-base", "HEAD", since], { encoding: "utf8" }).trim() || since;
+		return execFileSync("git", ["merge-base", "HEAD", ref], { encoding: "utf8" }).trim() || ref;
 	} catch {
-		return since;
+		return ref;
 	}
 }
 
-function targetFiles(base) {
-	if (base === STAGED)
+function targetFiles(from) {
+	if (from === STAGED)
 		return git(["diff", "--cached", "--name-only", "--diff-filter=ACMR"]).filter((f) =>
 			EXTS.test(f),
 		);
-	if (!base) return git(["ls-files"]).filter((f) => EXTS.test(f));
-	const changed = git(["diff", "--name-only", "--diff-filter=ACMR", base, "--"]);
+	if (!from) return git(["ls-files"]).filter((f) => EXTS.test(f));
+	const changed = git(["diff", "--name-only", "--diff-filter=ACMR", from, "--"]);
 	// A brand-new file is absent from `git diff`, so it would ship unchecked.
 	const untracked = git(["ls-files", "--others", "--exclude-standard"]);
 	return [...new Set([...changed, ...untracked])].filter((f) => EXTS.test(f));
 }
 
 /** Line numbers this change added or rewrote, so untouched prose is not our problem. */
-function addedLines(base, file) {
+function addedLines(from, path) {
 	const range =
-		base === STAGED ? ["diff", "--cached", "-U0", "--", file] : ["diff", "-U0", base, "--", file];
+		from === STAGED ? ["diff", "--cached", "-U0", "--", path] : ["diff", "-U0", from, "--", path];
 	const hunks = git(range).filter((l) => l.startsWith("@@"));
 	// No hunks means the file is untracked: all of it is new.
 	if (hunks.length === 0) return null;
@@ -98,8 +98,7 @@ function scan(file, text) {
 
 	// Block comments: /** */ is JSDoc and exempt, plain /* */ is not.
 	const re = /\/\*[\s\S]*?\*\//g;
-	let m;
-	while ((m = re.exec(text)) !== null) {
+	for (let m = re.exec(text); m !== null; m = re.exec(text)) {
 		if (m[0].startsWith("/**") || !m[0].includes("\n")) continue;
 		if (DIRECTIVE.test(m[0])) continue;
 		// A comment opens at line start or after an operator; a glob inside a string swallowed real code.

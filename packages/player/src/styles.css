@@ -1,3 +1,6 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: media-chrome ships its own shadow-DOM defaults these have to beat. */
+/* biome-ignore-all lint/style/noHexColors: the chrome is theme-independent by design, so these are literals, not tokens. */
+/* biome-ignore-all lint/nursery/noDuplicateSelectors: the .recast-player blocks are grouped by concern (font, layout, chrome). */
 /* Chrome stays dark and glassy regardless of host theme: the player always sits over black frames. */
 
 .recast-player,

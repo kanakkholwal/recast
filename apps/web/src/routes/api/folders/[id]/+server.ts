@@ -125,7 +125,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			await tx.update(folder).set(self).where(eq(folder.id, f.id));
 		});
 	} catch (e) {
-		const msg = String((e as Error)?.message ?? e);
+		const msg = (e as Error)?.message ?? String(e);
 		if (msg.includes("folder_parent_name_key")) {
 			error(409, "A folder with that name already exists here");
 		}

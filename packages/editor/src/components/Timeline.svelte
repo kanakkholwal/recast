@@ -228,15 +228,15 @@ function selectionSpan(): { start: number; end: number } | null {
 	const sel = store.selection;
 	if (!sel) return null;
 	if (sel.kind === "zoom") {
-		const r = store.zoomRegions.find((r) => r.id === sel.id);
+		const r = store.zoomRegions.find((z) => z.id === sel.id);
 		return r ? { start: r.start, end: r.end } : null;
 	}
 	if (sel.kind === "annotation") {
-		const a = store.annotations.find((a) => a.id === sel.id);
+		const a = store.annotations.find((ann) => ann.id === sel.id);
 		return a ? { start: a.start, end: a.end } : null;
 	}
 	if (sel.kind === "cut") {
-		const c = store.cuts.find((c) => c.id === sel.id);
+		const c = store.cuts.find((cut) => cut.id === sel.id);
 		return c ? { start: c.start, end: c.end } : null;
 	}
 	return null;
@@ -430,8 +430,8 @@ const aspectRatioLabel = $derived.by(() => {
 function seekToPosition(clientX: number) {
 	if (!timelineEl || duration <= 0) return;
 	const rect = timelineEl.getBoundingClientRect();
-	const scrollLeft = timelineEl.scrollLeft;
-	const x = clientX - rect.left + scrollLeft;
+	const scrolled = timelineEl.scrollLeft;
+	const x = clientX - rect.left + scrolled;
 	// OUTPUT px → original time via the cut model (raw `x / pps` would make the playhead trail past each cut).
 	const time = Math.max(0, Math.min(duration, tOf(x)));
 	store.currentTime = time;
@@ -770,6 +770,7 @@ function handleResize() {
 
 // Hiding a lane can make the browser clamp scrollTop to 0, so resync or the rail keeps a stale offset.
 $effect(() => {
+	// biome-ignore lint/suspicious/noUnusedExpressions: the bare read is the effect's dependency.
 	lanes.length;
 	untrack(() => handleScroll());
 });

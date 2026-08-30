@@ -335,7 +335,7 @@ $effect(() => {
 	return () => {
 		cancelled = true;
 		unbind();
-		void releaseEditorWrite(editorWriterId).catch(() => {});
+		void releaseEditorWrite(editorWriterId).catch(() => undefined);
 	};
 });
 
@@ -356,7 +356,7 @@ onDestroy(() => {
 	log.clearRecast();
 	// Clear autosave on clean exit.
 	if (documentPath) {
-		clearAutosave(documentPath).catch(() => {});
+		clearAutosave(documentPath).catch(() => undefined);
 	}
 	// Keep a live export tracked in the activity center after navigation; only drop the foreground flag.
 	exportActivity.minimize();
@@ -817,7 +817,7 @@ async function loadDocument() {
 					.then((m) => {
 						store.captionAudioDurationSec = m.duration > 0 ? m.duration : null;
 					})
-					.catch(() => {});
+					.catch(() => undefined);
 			}
 		}
 		store.waveform = [];
@@ -835,11 +835,11 @@ async function loadDocument() {
 		await tick();
 		videoEl?.load();
 		// Defer the thumbnail strip, filmstrip decoder and auto-zoom pass to idle; on 4K all three decode the same file and spiked open.
-		const loadedPath = document.projectPath;
+		const openedPath = document.projectPath;
 		const filmstripSrc = videoSrc;
 		runWhenIdle(() => {
-			if (documentPath !== loadedPath) return;
-			void loadThumbnailStrip(loadedPath);
+			if (documentPath !== openedPath) return;
+			void loadThumbnailStrip(openedPath);
 			void setupTileProvider(filmstripSrc);
 			void maybeRunAutoZoom();
 		});
@@ -966,7 +966,7 @@ $effect(() => {
 		return;
 	}
 	let lastTs: number | null = null;
-	function tick(now: number) {
+	function step(now: number) {
 		const target = exportFinalizing ? 99.5 : Math.min(99.5, Math.max(0, myItem?.progress ?? 0));
 		const dt = lastTs === null ? 16 : Math.max(1, Math.min(64, now - lastTs));
 		lastTs = now;
@@ -976,9 +976,9 @@ $effect(() => {
 		const next = displayPct + (target - displayPct) * k;
 		// Never animate backwards; the export is monotonic so the ring should be too.
 		displayPct = Math.max(displayPct, next);
-		easeRafHandle = requestAnimationFrame(tick);
+		easeRafHandle = requestAnimationFrame(step);
 	}
-	easeRafHandle = requestAnimationFrame(tick);
+	easeRafHandle = requestAnimationFrame(step);
 	return () => {
 		if (easeRafHandle !== null) {
 			cancelAnimationFrame(easeRafHandle);
@@ -1322,7 +1322,7 @@ const cloudTile = $derived(
 		{
 			checking: checkingDestination === "cloud",
 			phase: exportPath ? cloudShare.uploads[exportPath]?.status : undefined,
-			hasRecord: !!exportPath && !!cloudShare.getRecordForPath(exportPath),
+			hasRecord: exportPath ? Boolean(cloudShare.getRecordForPath(exportPath)) : false,
 		},
 	),
 );
@@ -1332,7 +1332,7 @@ const driveTile = $derived(
 		{
 			checking: checkingDestination === "drive",
 			phase: exportPath ? uploadForPath(gdrive.uploads, exportPath)?.status : undefined,
-			hasRecord: !!exportPath && !!gdrive.getRecordForPath(exportPath),
+			hasRecord: exportPath ? Boolean(gdrive.getRecordForPath(exportPath)) : false,
 		},
 	),
 );

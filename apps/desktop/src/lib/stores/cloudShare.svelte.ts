@@ -279,7 +279,7 @@ function createCloudShareStore() {
 		if (!u) return;
 		const { title, workspaceId, captionsTranscript } = u;
 		dismiss(path);
-		void share(path, title, workspaceId, captionsTranscript).catch(() => {});
+		void share(path, title, workspaceId, captionsTranscript).catch(() => undefined);
 	}
 
 	/** Delete the cloud copy (blob + row + shares). Local file untouched. */

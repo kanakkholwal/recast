@@ -117,7 +117,7 @@ onMount(() => {
 	const unlistenStarted = listen<{ startedAtUnixMs: number }>("camera-recording-started", () => {
 		void reportPreviewState();
 	});
-	const unlistenStopped = listen("camera-recording-stopped", () => {});
+	const unlistenStopped = listen("camera-recording-stopped", () => undefined);
 
 	// Push preview state on actual window changes: the old 350ms poll hit a Rust mutex three times a second while idle.
 	const unlistenResize = getCurrentWindow().onResized(({ payload }) => {
@@ -188,7 +188,7 @@ function stopCamera() {
 	// Releases the device; any recording was already finalized by stop_recording.
 	frames = null;
 	if (session === 0) return;
-	void stopCameraPreview(session).catch(() => {});
+	void stopCameraPreview(session).catch(() => undefined);
 	session = 0;
 }
 

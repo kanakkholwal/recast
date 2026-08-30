@@ -38,7 +38,7 @@ function engineStub() {
 let engine: ReturnType<typeof engineStub>;
 const canvas = {} as HTMLCanvasElement;
 
-async function driver() {
+function driver() {
 	return PreviewEngineDriver.create({
 		canvas,
 		create: (async () => engine) as never,
@@ -66,7 +66,7 @@ describe("scene sync", () => {
 	 *  engine on the last one it took and silence every later edit. */
 	it("reports a refused scene rather than throwing into the effect", async () => {
 		const d = await driver();
-		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
 		engine.setScene.mockImplementation(() => {
 			throw new Error("missing field padding");
 		});
@@ -291,7 +291,7 @@ describe("background and cursor", () => {
 	 *  whole preview down with it. */
 	it("warns rather than throwing when the engine refuses a track", async () => {
 		const d = await driver();
-		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 		engine.setCursorTrack.mockImplementation(() => {
 			throw new Error("missing field x");
 		});

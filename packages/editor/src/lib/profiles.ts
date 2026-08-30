@@ -113,7 +113,7 @@ function camSlot(p: Pick<RecordingProfile, "camera" | "cameraDeviceId">): string
  * id; trailing segment is the countdown slot. See `COUNTDOWN_OPTIONS`.
  */
 export function capSig(p: RecordingProfile): string {
-	return `${+p.systemAudio}|${micSlot(p)}|${camSlot(p)}|${countdownToken(p.countdown)}`;
+	return `${Number(p.systemAudio)}|${micSlot(p)}|${camSlot(p)}|${countdownToken(p.countdown)}`;
 }
 
 /** Enforce the "exactly one default" invariant in-place (returns a new array). */

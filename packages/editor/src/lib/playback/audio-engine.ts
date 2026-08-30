@@ -243,8 +243,7 @@ export class AudioTimelineEngine {
 		const Ctx: typeof AudioContext | undefined =
 			typeof AudioContext !== "undefined"
 				? AudioContext
-				: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-					(globalThis as any).webkitAudioContext;
+				: (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 		if (!Ctx) throw new Error("Web Audio API unavailable");
 
 		const ctx = new Ctx();
@@ -494,7 +493,7 @@ export class AudioTimelineEngine {
 		el.onended = spec.loop
 			? () => {
 					el.currentTime = spec.offsetSec;
-					void el.play().catch(() => {});
+					void el.play().catch(() => undefined);
 				}
 			: null;
 		if (whenDelay <= 0.001) begin();

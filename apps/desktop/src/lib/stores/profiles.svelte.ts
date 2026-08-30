@@ -65,7 +65,7 @@ function createProfilesStore() {
 				const snap = event.payload;
 				if (signature(snap.profiles, snap.enabled) === lastSynced) return;
 				setState(ensureExactlyOneDefault(snap.profiles), snap.enabled);
-			}).catch(() => {});
+			}).catch(() => undefined);
 		}
 
 		try {
@@ -93,7 +93,8 @@ function createProfilesStore() {
 	 *  is populated, so callers that need it immediately (panel default-profile,
 	 *  picker highlight) can await it. */
 	function hydrate(): Promise<void> {
-		return (hydratePromise ??= doHydrate());
+		hydratePromise ??= doHydrate();
+		return hydratePromise;
 	}
 
 	return {

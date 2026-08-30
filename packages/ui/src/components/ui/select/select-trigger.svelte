@@ -1,7 +1,7 @@
 <script lang="ts">
 import { Select as SelectPrimitive } from "bits-ui";
 import { cn, type WithoutChild } from "@recast/ui/utils";
-import { IconSelector } from "@tabler/icons-svelte";
+import { Selector } from "@recast/icons";
 
 let {
 	ref = $bindable(null),
@@ -25,5 +25,5 @@ let {
 	{...restProps}
 >
 	{@render children?.()}
-	<IconSelector class="text-muted-foreground size-4 pointer-events-none" />
+	<Selector class="text-muted-foreground size-4 pointer-events-none" />
 </SelectPrimitive.Trigger>

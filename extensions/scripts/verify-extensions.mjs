@@ -366,9 +366,9 @@ function validatePack(dir) {
 		let buf;
 		try {
 			buf = readFileSync(abs);
-		} catch (e) {
+		} catch (err) {
 			// A directory, broken symlink or unreadable file is per-asset: record it and keep going so CI reports every issue.
-			res.err(`${w}: could not read file ${a.file}: ${e.message}`);
+			res.err(`${w}: could not read file ${a.file}: ${err.message}`);
 			continue;
 		}
 		const type = expectedType.get(a.id);

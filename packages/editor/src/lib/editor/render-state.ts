@@ -23,7 +23,6 @@ import type { Easing } from "../easing/cubic-bezier";
 import type { MotionTone, SegmentAnim } from "../scenes/segment-anim";
 import type { TimelineCut } from "../timeline/cuts";
 import type { SegmentSpeed } from "../timeline/segment-speed";
-import type { Segment } from "../timeline/segments";
 
 /** Transcript model. Lives here, not in `ipc-types`, because it is part of the
  *  project document (`EditorRenderState.transcript`) — the wire types depend on
@@ -651,8 +650,6 @@ export interface DeleteSelectionResult {
 // Re-exported so existing `editor-store` import sites keep working; the list lives in a test-importable module.
 export { PANEL_TABS, type PanelTab } from "./panel-tabs";
 
-import type { PanelTab } from "./panel-tabs";
-
 /** Active timeline pointer tool. `select` is the default (scrub/drag/select);
  *  `razor` arms the click-to-cut tool. A tool is state of the whole timeline,
  *  not of the focused element, so it lives here where every lane can read it and
@@ -733,8 +730,7 @@ export function parseGradient(value: string): GradientSpec {
 
 	const stopRe = /(#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4}))(?:\s+(-?\d+(?:\.\d+)?)%)?/g;
 	const raw: { color: string; pos: number | null }[] = [];
-	let m: RegExpExecArray | null;
-	while ((m = stopRe.exec(value)) !== null) {
+	for (let m = stopRe.exec(value); m !== null; m = stopRe.exec(value)) {
 		raw.push({
 			color: normalizeHex(m[1]),
 			pos: m[2] != null ? clampNum(parseFloat(m[2]), 0, 100) : null,

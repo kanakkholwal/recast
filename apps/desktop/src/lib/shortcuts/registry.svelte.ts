@@ -387,7 +387,7 @@ export function registerShortcutHandlers(map: Record<string, Handler>): () => vo
 
 function isEditableTarget(t: EventTarget | null): boolean {
 	const el = t as HTMLElement | null;
-	if (!el || !el.tagName) return false;
+	if (!el?.tagName) return false;
 	const tag = el.tagName;
 	return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
 }

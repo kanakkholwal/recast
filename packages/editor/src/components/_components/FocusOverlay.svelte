@@ -244,7 +244,9 @@ function handlePointerUp(e: PointerEvent) {
 	if (drag) {
 		try {
 			(e.currentTarget as Element).releasePointerCapture(e.pointerId);
-		} catch {}
+		} catch {
+			// The pointer was already released, which is not a failure of this handler.
+		}
 		drag = null;
 	}
 }

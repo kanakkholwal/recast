@@ -1,6 +1,6 @@
 <script lang="ts">
 import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
-import { IconCheck } from "@tabler/icons-svelte";
+import { Check } from "@recast/icons";
 import { cn, type WithoutChild } from "@recast/ui/utils";
 
 let {
@@ -26,7 +26,7 @@ let {
 			data-slot="context-menu-radio-item-indicator"
 		>
 			{#if checked}
-				<IconCheck  />
+				<Check  />
 			{/if}
 		</span>
 		{@render childrenProp?.({ checked })}

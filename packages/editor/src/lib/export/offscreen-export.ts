@@ -257,7 +257,7 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		}
 		throw err;
 	} finally {
-		for (const it of iterators) await it.return(undefined).catch(() => {});
+		for (const it of iterators) await it.return(undefined).catch(() => undefined);
 		input.dispose();
 		camInput?.dispose();
 		engine.destroy();

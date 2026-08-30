@@ -74,7 +74,7 @@ describe("caption presets", () => {
 	it("uses restrained accent colours", () => {
 		for (const p of CAPTION_PRESETS) {
 			const anim = p.style.animation;
-			if (!anim || anim.emphasis !== "color") continue;
+			if (anim?.emphasis !== "color") continue;
 			expect(saturation(anim.emphasisColor), `${p.id} accent`).toBeLessThanOrEqual(0.7);
 		}
 	});

@@ -302,7 +302,7 @@ function recordView(event: "start" | "ended") {
 				referrer: event === "start" ? document.referrer || null : null,
 			}),
 			keepalive: true,
-		}).catch(() => {});
+		}).catch(() => undefined);
 	} catch {
 		// Never let a metrics beacon disrupt playback.
 	}
@@ -870,7 +870,7 @@ onMount(() => {
 let isFullscreen = $state(false);
 onMount(() => {
 	if (!browser) return;
-	const sync = () => (isFullscreen = !!document.fullscreenElement);
+	const sync = () => (isFullscreen = Boolean(document.fullscreenElement));
 	document.addEventListener("fullscreenchange", sync);
 	sync();
 	return () => document.removeEventListener("fullscreenchange", sync);

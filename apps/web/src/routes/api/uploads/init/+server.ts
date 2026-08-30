@@ -1,5 +1,6 @@
 import { error, json } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
+import type { SignedUpload } from "files-sdk";
 import { z } from "zod";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
@@ -118,7 +119,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		status: "draft",
 	});
 
-	let upload;
+	let upload: SignedUpload;
 	try {
 		upload = await signUploadUrl({ key, contentType: body.contentType });
 	} catch (err) {
@@ -129,7 +130,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	// Best-effort and non-fatal: a failure just skips the poster, and the video is the only required asset.
-	let posterUpload;
+	let posterUpload: SignedUpload | undefined;
 	try {
 		posterUpload = await signUploadUrl({
 			key: posterObjectKey(workspaceId, recastId),
@@ -141,7 +142,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	// Captions track PUT (WebVTT), same best-effort contract as the poster.
-	let captionsUpload;
+	let captionsUpload: SignedUpload | undefined;
 	if (body.hasCaptions) {
 		try {
 			captionsUpload = await signUploadUrl({

@@ -109,8 +109,8 @@ describe("summaryRows", () => {
 		expect(byLabel["Frames read"]).toBe("12 of 90");
 		expect(byLabel["Screen states"]).toBe("5");
 		expect(byLabel["Text elements"]).toBe("47");
-		expect(byLabel["Scan"]).toBe("800ms");
-		expect(byLabel["Read"]).toBe("4.7s · 390ms/frame");
+		expect(byLabel.Scan).toBe("800ms");
+		expect(byLabel.Read).toBe("4.7s · 390ms/frame");
 	});
 
 	it("does not divide by zero when nothing was read", () => {

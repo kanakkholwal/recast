@@ -85,7 +85,6 @@ function tilt(id: string, label: string, transform: Partial<Transform3D>): Persp
 	return { id, label, transform: t3d(transform) };
 }
 
-const NO_BORDER = { width: 0, color: "#ffffff" };
 const FLAT: Transform3D = { ...DEFAULT_TRANSFORM };
 const NO_MOCKUP = { kind: "none" as const, theme: "light" as const, url: "example.com" };
 

@@ -29,7 +29,7 @@ export function autoplayInView(node: HTMLVideoElement) {
 			}
 			if (entry.isIntersecting) {
 				// play() rejects when the tab can't autoplay and the poster stays, so swallow it rather than throw.
-				void node.play().catch(() => {});
+				void node.play().catch(() => undefined);
 			} else {
 				node.pause();
 			}

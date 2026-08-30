@@ -65,7 +65,7 @@ function seedRecordings(): Recast[] {
 			id: "rec_walkthrough",
 			title: "Series A — product walkthrough",
 			durationSec: 252,
-			createdAt: now - 1 * DAY,
+			createdAt: now - DAY,
 			sizeBytes: 191_000_000,
 			source: "cloud",
 			provider: "Cloudinary",

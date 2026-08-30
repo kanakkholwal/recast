@@ -76,7 +76,9 @@ $effect(() => {
 	return () => window.removeEventListener("resize", onResize);
 });
 const isCompactDialog = $derived(isCompactViewport(viewportWidth));
-const showDevicePanel = $derived(!isCompactDialog && !!draft && (draft.microphone || draft.camera));
+const showDevicePanel = $derived(
+	!isCompactDialog && draft !== null && (draft.microphone || draft.camera),
+);
 const dialogWidth = $derived(computeDialogWidth(viewportWidth, showDevicePanel));
 
 onMount(() => {

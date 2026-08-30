@@ -234,7 +234,7 @@ function applyIntentToPanel(intent: CaptureIntentState) {
 						};
 					}
 				})
-				.catch(() => {});
+				.catch(() => undefined);
 		}
 	}
 
@@ -288,7 +288,7 @@ $effect(() => {
 	// Canonical compare: the backend echo omits nulls we send, so a raw JSON compare loops forever.
 	if (canonicalIntent(next) === canonicalIntent(lastIntent)) return;
 	lastIntent = next;
-	setCaptureIntent(next).catch(() => {});
+	setCaptureIntent(next).catch(() => undefined);
 });
 
 async function refreshCameraValidation(deviceId: string | null) {
@@ -340,7 +340,7 @@ onMount(() => {
 	const unlistenSource = listen<TargetSource>("source-selected", (event) => {
 		selectedSource = event.payload;
 		// Persist for next launch.
-		setLastSource(targetToLastSource(event.payload)).catch(() => {});
+		setLastSource(targetToLastSource(event.payload)).catch(() => undefined);
 	});
 
 	// Listen for device selection from picker windows
@@ -394,7 +394,7 @@ onMount(() => {
 								selectedSource = { ...selectedSource, refreshHz: hz };
 							}
 						})
-						.catch(() => {});
+						.catch(() => undefined);
 				}
 				return;
 			}
@@ -410,7 +410,7 @@ onMount(() => {
 				}
 			});
 		})
-		.catch(() => {})
+		.catch(() => undefined)
 		// After the last source is restored, so 'screen' wins and the picker modes open on a sensible base.
 		.finally(() => void applyCaptureIntent(page.url.searchParams.get("intent")));
 

@@ -35,7 +35,7 @@ const clip = (value: string | null, max: number, fallback = "") => {
 	return trimmed.length > max ? `${trimmed.slice(0, max - 1).trimEnd()}…` : trimmed;
 };
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = ({ url }) => {
 	const title = clip(url.searchParams.get("title"), 90, "Record. Polish. Share.");
 	const description = clip(
 		url.searchParams.get("description"),

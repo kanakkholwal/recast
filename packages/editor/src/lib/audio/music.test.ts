@@ -149,8 +149,7 @@ describe("voice clips (detached recording audio)", () => {
 
 	it("music clips (incl. legacy role-less) are not voice", () => {
 		expect(isVoiceClip(defaultAudioClip("m", { kind: "local", path: "/x.mp3" }))).toBe(false);
-		const legacy = { ...defaultAudioClip("l", { kind: "local", path: "/x.mp3" }) };
-		delete (legacy as { role?: unknown }).role;
+		const { role: _role, ...legacy } = defaultAudioClip("l", { kind: "local", path: "/x.mp3" });
 		expect(isVoiceClip(legacy as AudioClip)).toBe(false);
 	});
 });

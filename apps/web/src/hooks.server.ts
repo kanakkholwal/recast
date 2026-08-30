@@ -11,7 +11,7 @@ if (!building) {
 	getPublicEnv();
 }
 
-export const handle: Handle = async ({ event, resolve }) => {
+export const handle: Handle = ({ event, resolve }) => {
 	// `auth: getAuth()` is an argument, so it evaluates before svelteKitHandler's own building guard, and on a box with no DATABASE_URL that threw a 500 on every prerendered page.
 	if (building) return resolve(event);
 	return svelteKitHandler({ event, resolve, auth: getAuth(), building });

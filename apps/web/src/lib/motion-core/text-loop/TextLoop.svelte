@@ -30,7 +30,7 @@ function gsapTransition(node: HTMLElement, { direction }: { direction: "in" | "o
 	if (direction === "in") {
 		if (isFirst) {
 			gsap.set(node, { yPercent: 0, opacity: 1, filter: "blur(0px)" });
-			return { duration: 0, tick: () => {} };
+			return { duration: 0, tick: () => undefined };
 		}
 
 		if (parent) {
@@ -53,7 +53,7 @@ function gsapTransition(node: HTMLElement, { direction }: { direction: "in" | "o
 				ease: "back.out(1.2)",
 			},
 		);
-		return { duration: 900, tick: () => {} };
+		return { duration: 900, tick: () => undefined };
 	}
 
 	if (parent) parent.style.width = `${parent.offsetWidth}px`;
@@ -70,7 +70,7 @@ function gsapTransition(node: HTMLElement, { direction }: { direction: "in" | "o
 		duration: 0.2,
 		ease: "power2.in",
 	});
-	return { duration: 300, tick: () => {} };
+	return { duration: 300, tick: () => undefined };
 }
 
 onMount(() => {

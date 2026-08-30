@@ -153,6 +153,19 @@
 			}
 		},
 		{
+			"includes": ["**/*.svg"],
+			"linter": {
+				"rules": {
+					"a11y": {
+						"noSvgWithoutTitle": "off"
+					},
+					"style": {
+						"noHexColors": "off"
+					}
+				}
+			}
+		},
+		{
 			"includes": ["packages/icons/**"],
 			"linter": {
 				"rules": {
