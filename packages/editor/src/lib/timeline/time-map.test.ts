@@ -23,9 +23,7 @@ function span(origStart: number, origEnd: number, speed = 1) {
 }
 
 describe("originalToOutput binary search parity", () => {
-	// Reference linear scan: exactly the pre-optimization implementation. The
-	// binary-search version must agree with it for every input, including gaps,
-	// span interiors, seam-exact times, and out-of-range.
+	// Reference linear scan, exactly the pre-optimization implementation; the binary search must agree on every input.
 	function linearOriginalToOutput(map: ReturnType<typeof buildTimeMap>, t: number): number {
 		for (const s of map.spans) {
 			if (t < s.origStart) return s.outStart;
@@ -125,8 +123,7 @@ describe("originalToOutput / outputToOriginal (general map)", () => {
 	});
 
 	it("maps everything to 0 when the map is empty (all cut away)", () => {
-		// A fully-cut timeline yields no kept spans; both directions degrade to 0
-		// rather than reading past an empty span list.
+		// A fully-cut timeline has no kept spans, so both directions degrade to 0 rather than reading past an empty list.
 		const empty = buildTimeMap([]);
 		expect(empty.spans).toHaveLength(0);
 		expect(empty.outputDuration).toBe(0);
@@ -156,9 +153,7 @@ describe("spanAtOriginal", () => {
 });
 
 describe("speed=1 reduces exactly to the cut translation map", () => {
-	// Same shared fixtures the Rust export and cuts.test.ts assert against: at
-	// speed 1 the general map's output duration must equal the kept duration, and
-	// its mapping must match cuts.originalToOutput up to the trim-start offset.
+	// The same shared fixtures Rust and cuts.test.ts assert against: at 1x, output duration must equal kept duration.
 	for (const c of parityFixtures.cases) {
 		it(`matches fixture: ${c.name}`, () => {
 			const cuts = c.cuts.map(([s, e], i) => cut(s, e, `fx-${i}`));
@@ -172,8 +167,7 @@ describe("speed=1 reduces exactly to the cut translation map", () => {
 
 			expect(map.outputDuration).toBeCloseTo(c.expectedKeptDuration, 6);
 
-			// The general map's output axis starts at trimStart; the cut map's starts
-			// at original 0. They must agree once that constant offset is removed.
+			// The general map starts at trimStart and the cut map at original 0; they agree once that offset is removed.
 			const offset = cutOriginalToOutput(cuts, c.trimStart);
 			const normalized = normalizeCuts(cuts);
 			for (const seg of segments) {
@@ -189,8 +183,7 @@ describe("speed=1 reduces exactly to the cut translation map", () => {
 });
 
 describe("displayTimeMap (trim-drag axis) reduces to the full-duration cut map at 1x", () => {
-	// While trimming the timeline swaps onto this full-recording axis; at 1x it
-	// must match the cut translation map over [0, duration] so the layout matches.
+	// The trim-drag axis must match the cut translation map at 1x over the whole duration, or the layout shifts.
 	const DURATION = 12;
 	for (const c of parityFixtures.cases) {
 		if (c.trimEnd > DURATION) continue;
@@ -311,10 +304,7 @@ describe("toRegions", () => {
 });
 
 describe("kept axis vs trim-display axis", () => {
-	// The trim-drag axis intentionally re-exposes the trimmed head/tail so the
-	// handle can move across the whole source. Anything that PLAYS or EXPORTS
-	// must read the kept axis instead, or a trim held down while exporting
-	// puts the trimmed-off content back into the output.
+	// The trim-drag axis re-exposes the trimmed head and tail, so anything that PLAYS or EXPORTS must read the kept axis.
 	const SHAPE = {
 		trimStart: 5,
 		trimEnd: 15,

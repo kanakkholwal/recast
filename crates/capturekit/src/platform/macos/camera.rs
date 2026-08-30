@@ -53,15 +53,12 @@ fn video_media_type() -> Option<&'static NSString> {
 /// stops reporting external cameras on recent systems.
 fn discover() -> Retained<NSArray<AVCaptureDevice>> {
     let mut kinds = Vec::with_capacity(2);
-    // Read as raw pointers, never as the `&'static` the binding declares.
-    // `AVCaptureDeviceTypeExternal` is macOS 14 and weak-linked, so on macOS 13
-    // the symbol resolves to null and taking a reference to it is undefined.
+    // Read as raw pointers: `AVCaptureDeviceTypeExternal` is macOS 14 and weak-linked, so on macOS 13 the symbol is null.
     for slot in [
         core::ptr::addr_of!(AVCaptureDeviceTypeBuiltInWideAngleCamera),
         core::ptr::addr_of!(AVCaptureDeviceTypeExternal),
     ] {
-        // SAFETY: reading the pointer the symbol holds, without forming a
-        // reference to whatever it points at until it is known non-null.
+        // SAFETY: reading the pointer the symbol holds, without forming a reference until it is known non-null.
         let raw = unsafe { slot.cast::<*const AVCaptureDeviceType>().read() };
         if !raw.is_null() {
             kinds.push(unsafe { &*raw });
@@ -237,8 +234,7 @@ pub(crate) struct AvfCameraSource {
     stopped: bool,
 }
 
-// SAFETY: `AVCaptureSession` and its output are thread-safe Objective-C objects
-// and the slot is explicitly synchronised. The bound satisfies `FrameSource`.
+// SAFETY: `AVCaptureSession` and its output are thread-safe ObjC objects and the slot is explicitly synchronised.
 unsafe impl Send for AvfCameraSource {}
 
 impl AvfCameraSource {
@@ -264,11 +260,9 @@ impl AvfCameraSource {
         let delegate = CameraOutput::new(Arc::clone(&slot));
         let output = unsafe { AVCaptureVideoDataOutput::new() };
         unsafe {
-            // BGRA rather than the device's native '420v', so every source in
-            // this crate delivers one pixel format.
+            // BGRA rather than the device's native 420v, so every source in this crate delivers one pixel format.
             output.setVideoSettings(Some(&bgra_settings()));
-            // The slot keeps only the newest buffer, so holding late ones back
-            // would add latency and nothing else.
+            // The slot keeps only the newest buffer, so holding late ones back would add latency and nothing else.
             output.setAlwaysDiscardsLateVideoFrames(true);
         }
         if !unsafe { session.canAddOutput(&output) } {
@@ -276,8 +270,7 @@ impl AvfCameraSource {
         }
         unsafe { session.addOutput(&output) };
 
-        // Serial: buffers must reach the slot in the order the device produced
-        // them, and a concurrent queue would let two deliveries race the swap.
+        // Serial: buffers must reach the slot in device order, and a concurrent queue would let two deliveries race the swap.
         let queue = dispatch2::DispatchQueue::new(
             "com.capturekit.camera",
             dispatch2::DispatchQueueAttr::SERIAL,
@@ -311,9 +304,7 @@ impl AvfCameraSource {
             stopped: false,
         };
 
-        // `startRunning` returns before the device is producing, and the size it
-        // settles on is only knowable from a real frame. Waiting for one here
-        // means `describe()` is right before the caller ever reads it.
+        // `startRunning` returns before the device produces, and the size it settles on is only knowable from a real frame.
         source.next_frame(FIRST_FRAME)?;
         Ok(source)
     }
@@ -331,8 +322,7 @@ impl FrameSource for AvfCameraSource {
     }
 
     fn region(&self) -> Option<Rect> {
-        // The session picks a device mode rather than cropping to a rectangle,
-        // so a region is a resolution request and not a crop.
+        // The session picks a device mode rather than cropping, so a region is a resolution request, not a crop.
         None
     }
 

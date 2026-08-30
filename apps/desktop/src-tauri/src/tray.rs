@@ -67,9 +67,7 @@ pub fn is_recording_active() -> bool {
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let menu = build_menu(app)?;
 
-    // The default icon is configured in tauri.conf.json so this should always
-    // be present — but a missing icon is a recoverable degradation (the app
-    // works without a tray), not a reason to abort startup.
+    // A missing icon is a recoverable degradation (the app works without a tray), not a reason to abort startup.
     let Some(icon) = app.default_window_icon().cloned() else {
         log::warn!("no default window icon; skipping system tray");
         return Ok(());
@@ -411,8 +409,7 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         }
         MENU_ID_OPEN_OUTPUT => open_output_folder(app),
         MENU_ID_CHECK_UPDATES => {
-            // Surface the window first so the corner card the frontend
-            // surfaces is actually visible.
+            // Surface the window first, so the corner card the frontend shows is actually visible.
             show_main_window(app);
             let _ = app.emit("updater:check-from-tray", ());
         }
@@ -429,18 +426,14 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         }
         other if other.starts_with(MENU_ID_RECENT_EXPORTS_PREFIX) => {
             let path = other[MENU_ID_RECENT_EXPORTS_PREFIX.len()..].to_string();
-            // Reveal in file manager. `open_file_location` is async; the
-            // handler is sync, so spawn it rather than dropping the future
-            // unrun (which silently did nothing).
+            // `open_file_location` is async and this handler is sync, so spawn it rather than drop the future unrun.
             tauri::async_runtime::spawn(async move {
                 let _ = crate::commands::system::open_file_location(path).await;
             });
         }
         other if other.starts_with(MENU_ID_RECENT_PROJECTS_PREFIX) => {
             let path = other[MENU_ID_RECENT_PROJECTS_PREFIX.len()..].to_string();
-            // Open (not reveal) — the `.recast` file-association routes through
-            // single-instance back to the running window. `open_path` delegates
-            // to the OS's default handler for the extension.
+            // Open, not reveal: the `.recast` association routes through single-instance back to the running window.
             if let Err(e) = app.opener().open_path(&path, None::<&str>) {
                 log::warn!("open project failed: {e}");
             }
@@ -450,10 +443,7 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
 }
 
 fn handle_tray_icon_event(tray: &tauri::tray::TrayIcon, event: TrayIconEvent) {
-    // Left-click toggles the main window on Windows/Linux. macOS opens the
-    // menu on left-click natively (set `show_menu_on_left_click(true)` if we
-    // ever want explicit macOS-style click-to-open-menu), and the tray crate
-    // passes the same Click event through. The toggle is harmless there.
+    // Left-click toggles the main window on Windows and Linux; macOS opens the menu natively and the toggle is harmless.
     if let TrayIconEvent::Click {
         button: MouseButton::Left,
         button_state: MouseButtonState::Up,

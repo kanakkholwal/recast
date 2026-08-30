@@ -83,10 +83,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const db = getDb();
 
-	// Membership check. We don't trust the session's activeOrganizationId
-	// alone — a stale active-org pointer (e.g. after being kicked from a
-	// team) should fail closed, not silently let the user upload into a
-	// workspace they're no longer in.
+	// Don't trust the session's activeOrganizationId alone: a stale pointer must fail closed, not upload into a left workspace.
 	await assertWorkspaceMember(session.user.id, workspaceId);
 
 	const snapshot = await getQuotaSnapshot(workspaceId);
@@ -114,8 +111,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		width: body.width,
 		height: body.height,
 		fps: body.fps,
-		// Stored as the R2 key (relative). Absolute URLs are derived at
-		// read time so we can swap buckets or CDNs without rewriting rows.
+		// Stored as the relative key; absolute URLs are derived at read time so buckets or CDNs can swap without rewriting rows.
 		videoUrl: key,
 		provider: "r2",
 		source: "cloud",
@@ -126,17 +122,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	try {
 		upload = await signUploadUrl({ key, contentType: body.contentType });
 	} catch (err) {
-		// Roll back the draft row — leaving it would count against the
-		// active-recasts cap (once /complete bumps usage) for a recast
-		// that was never uploadable.
+		// Roll back the draft row: leaving it would count against the active-recasts cap for something never uploadable.
 		await db.delete(recast).where(eq(recast.id, recastId));
 		console.error("[uploads/init] sign failed", err);
 		error(500, "Could not generate upload URL");
 	}
 
-	// Also sign a poster PUT (a single WebP frame). Best-effort and
-	// non-fatal: if it fails, the client simply skips the poster and the
-	// recast keeps a null `posterUrl`. The video is the only required asset.
+	// Best-effort and non-fatal: a failure just skips the poster, and the video is the only required asset.
 	let posterUpload;
 	try {
 		posterUpload = await signUploadUrl({

@@ -65,8 +65,7 @@ let advancedWasOpen = $state(false);
     { value: "quality", label: "Quality", desc: "Slower, smallest file" },
   ];
 
-  // Swatch is a brand-tinted intensity ramp (faint to full primary) so it reads
-  // as "more color richness", not a red/amber/green judgement of good vs bad.
+  // A brand-tinted intensity ramp, so it reads as more colour richness, not a good-versus-bad judgement.
   const gifQualities: {
     value: GifQuality;
     label: string;
@@ -119,8 +118,7 @@ let advancedWasOpen = $state(false);
 
   const sourceFps = $derived(clampSourceFps(store.metadata?.fps));
   const fpsOptions = $derived(buildFpsOptions(sourceFps));
-  // Reads the store directly rather than `isGif` (declared below) to avoid a
-  // use-before-declaration.
+  // Reads the store directly rather than `isGif`, which is declared below.
   const showFps = $derived(
     store.exportFormat !== "gif" && fpsOptions.length > 1,
   );
@@ -146,8 +144,7 @@ let advancedWasOpen = $state(false);
         store.trimEnd < sourceDuration),
   );
 
-  // What the export actually produces. The quality preset is a BOUND, so a
-  // portrait clip at "HD" is 608x1080, so the preset label alone misleads.
+  // The quality preset is a BOUND, so a portrait clip at HD is 608x1080 and the preset label alone misleads.
   const outRes = $derived(
     outputResolution(
       store.metadata?.width ?? 0,
@@ -215,8 +212,7 @@ let advancedWasOpen = $state(false);
     store.updateGifSettings({ fps: null });
   }
 
-  // Loop-count stepper (2x..5x). "Once" already covers a single play, so the
-  // numeric range starts at 2. Stepping while on Forever/Once switches to count.
+  // 'Once' already covers a single play, so the range starts at 2; stepping from Forever or Once switches to count.
   const LOOP_MIN = 2;
   const LOOP_MAX = 5;
   const loopCount = $derived(
@@ -231,10 +227,7 @@ let advancedWasOpen = $state(false);
     setLoop(Math.min(LOOP_MAX, Math.max(LOOP_MIN, loopCount + delta)));
   }
 
-  // Frame rate + Speed are power-user tuning, tucked behind a disclosure so the
-  // common Format/Quality choices lead. Module-level so it survives the panel's
-  // per-phase remount: someone who always tunes Speed shouldn't reopen it every
-  // single export.
+  // Module-level so the disclosure survives the panel's per-phase remount and a Speed-tuner needn't reopen it every export.
   let advancedOpen = $state(advancedWasOpen);
   $effect(() => {
     advancedWasOpen = advancedOpen;
@@ -560,9 +553,7 @@ let advancedWasOpen = $state(false);
 </div>
 
 <style>
-  /* Native buttons default to the arrow cursor. Every raw button in this panel
-     is a selectable toggle or action, so show the pointer (disabled ones keep
-     the default). */
+  /* Every raw button here is a toggle or action, so show the pointer; disabled ones keep the default. */
   button:not(:disabled) {
     cursor: pointer;
   }

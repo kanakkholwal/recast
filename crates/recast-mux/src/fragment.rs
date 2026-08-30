@@ -172,10 +172,7 @@ impl FragmentedWriter {
         buf.u32(self.sequence);
         buf.close();
 
-        // Where each track's data offset was written, so it can be filled in
-        // once the size of `moof` is known. Same shape as the progressive
-        // writer's two-pass `moov`: the value depends on the size of the box
-        // that holds it.
+        // Where each track's data offset was written, filled in once `moof`'s size is known; the same two-pass shape as `moov`.
         let mut patches = Vec::new();
         if !video.is_empty() {
             let at = write_traf(&mut buf, VIDEO_TRACK, self.video_time, &video);
@@ -190,8 +187,7 @@ impl FragmentedWriter {
         buf.close();
 
         let mut out = buf.into_bytes();
-        // `default-base-is-moof` makes every offset relative to the first byte
-        // of `moof`, so the base is the size of `moof` plus the `mdat` header.
+        // `default-base-is-moof` makes offsets relative to `moof`'s first byte, so the base is its size plus the `mdat` header.
         let base = out.len() + 8;
         let payload: usize = video_bytes + audio.iter().map(|s| s.data.len()).sum::<usize>();
         let size = mdat_size(payload).ok_or(FragmentError::TooLarge(payload))?;
@@ -216,21 +212,17 @@ impl FragmentedWriter {
 fn write_traf(buf: &mut BoxBuf, track: u32, decode_time: u64, samples: &[Pending]) -> usize {
     buf.open(b"traf");
 
-    // `default-base-is-moof` (0x020000). Without it the offsets are relative to
-    // the start of the FILE, which a fragment written on its own cannot know.
+    // Without `default-base-is-moof`, offsets are relative to the FILE start, which a standalone fragment cannot know.
     buf.open_full(b"tfhd", 0, 0x02_0000);
     buf.u32(track);
     buf.close();
 
-    // Version 1: a long recording overflows a 32-bit decode time, and the
-    // fragment that crosses the boundary would land at the start of the file.
+    // Version 1: a long recording overflows a 32-bit decode time, and the crossing fragment would land at the file start.
     buf.open_full(b"tfdt", 1, 0);
     buf.u64(decode_time);
     buf.close();
 
-    // Data offset, then duration, size, flags and composition offset per sample.
-    // Version 1 so the composition offset is signed, which is what keeps a
-    // stream with B frames starting at zero.
+    // Version 1 so the composition offset is signed, which keeps a stream with B frames starting at zero.
     let flags = 0x0001 | 0x0100 | 0x0200 | 0x0400 | 0x0800;
     buf.open_full(b"trun", 1, flags);
     buf.u32(samples.len() as u32);

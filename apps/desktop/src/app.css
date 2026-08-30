@@ -246,13 +246,7 @@ input[type="number"]:has(class) {
 [type="button"] {
 	cursor: pointer;
 }
-/*
- * Page transitions — View Transitions API
- *
- * Apple-like motion: subtle cross-fade with a hair of depth (scale + Y nudge),
- * shaped by the SF spring curve. Direction comes from `data-nav-direction` on
- * <html>, set in the root layout's onNavigate hook.
- */
+/* Page transitions: a subtle cross-fade with a hair of depth, direction from `data-nav-direction` set in onNavigate. */
 ::view-transition-old(root),
 ::view-transition-new(root) {
 	animation-duration: 280ms;
@@ -299,11 +293,7 @@ input[type="number"]:has(class) {
 	}
 }
 
-/*
- * Persistent chrome — sidebar + titlebar shouldn't morph during page swaps.
- * Naming them takes them out of the default `root` snapshot so only the page
- * body cross-fades, exactly like a native macOS pane swap.
- */
+/* Naming the sidebar and titlebar takes them out of the root snapshot, so only the page body cross-fades. */
 [data-sidebar="sidebar"] {
 	view-transition-name: recast-sidebar;
 }
@@ -319,9 +309,7 @@ input[type="number"]:has(class) {
 	animation-duration: 0.01ms;
 }
 
-/* R/P/S nav layering during a page view-transition. The bar (incl. the shelf
- * fill) sits lowest; the active pill morphs above it; the tab labels ride on
- * top so the sliding pill never paints over the text/icons. */
+/* Nav layering during a page transition: bar lowest, active pill above it, labels on top so the pill never covers text. */
 ::view-transition-group(recast-topnav) {
 	z-index: 20;
 }
@@ -341,13 +329,7 @@ input[type="number"]:has(class) {
 }
 
 
-/*
- * OS-native layout: a real, full-width window titlebar sits at the very top,
- * outside the sidebar/content shell. The shadcn sidebar container is
- * viewport-fixed (`fixed inset-y-0 h-svh`), so shift it down below the titlebar
- * instead of letting it span the whole viewport. Keep `--os-titlebar-h` in sync
- * with the header's `h-10` and the provider's `top-10`.
- */
+/* The shadcn sidebar container is viewport-fixed, so shift it below the titlebar; keep `--os-titlebar-h` in sync with `h-10`. */
 .os-native-shell {
 	--os-titlebar-h: 2.5rem;
 }
@@ -356,12 +338,7 @@ input[type="number"]:has(class) {
 	height: calc(100svh - var(--os-titlebar-h));
 }
 
-/*
- * Translucent window backdrop (Win11 Mica, macOS vibrancy). The class lands on
- * <html> via windowBackdrop.ts when "Window transparency" is on. The frame,
- * sidebar, and titlebar go see-through so the OS material shows; the content
- * card keeps its surface so text stays readable.
- */
+/* Frame, sidebar and titlebar go see-through so the OS material shows; the content card keeps its surface for readability. */
 :root.window-transparent body {
 	background-color: transparent;
 	background-image: none;

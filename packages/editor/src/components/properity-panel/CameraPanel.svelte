@@ -38,16 +38,14 @@ let { store, cameraPath, cameraCapture = "legacy" }: Props = $props();
 const hasCamera = $derived(Boolean(cameraPath));
 const availability = $derived(cameraAvailability(cameraCapture, hasCamera));
 
-// Video pixel aspect. The bubble is square in pixels, so its UV height is
-// `width * aspect`; the presets need it to anchor vertically on a wide frame.
+// The bubble is square in pixels, so its UV height is width times aspect; the presets need it to anchor on a wide frame.
 const videoAspect = $derived(
 	store.metadata?.height ? store.metadata.width / store.metadata.height : 1,
 );
 
 const perCut = $derived(store.cameraOverlay.keyframes.length > 0);
 
-// The placement being edited: in per-cut mode it's the glide value at the
-// playhead (the keyframe you're setting); else the static placement.
+// In per-cut mode this is the glide value at the playhead (the keyframe being set); else the static placement.
 const currentBase = $derived(
 	cameraPlacementAt(
 		store.cameraOverlay.defaultPlacement,
@@ -57,8 +55,7 @@ const currentBase = $derived(
 	),
 );
 
-// Derived from the placement so a preview drag onto a corner re-highlights
-// the matching chip without a re-click.
+// Derived from the placement, so a drag onto a corner re-highlights the matching chip without a re-click.
 const activePreset = $derived(cameraPresetFromPlacement(currentBase, videoAspect));
 
 function applyPreset(preset: CameraPositionPreset) {
@@ -69,8 +66,7 @@ function applyPreset(preset: CameraPositionPreset) {
 }
 
 function setSize(size: number) {
-	// Anchor the resize on the current preset corner so the bubble doesn't
-	// drift; custom placements just scale from their top-left.
+	// Anchor the resize on the current preset corner so the bubble doesn't drift; custom scales from its top-left.
 	if (activePreset === "custom") {
 		store.setCameraPlacement({
 			...currentBase,
@@ -82,8 +78,7 @@ function setSize(size: number) {
 	store.setCameraPlacement(cameraPlacementFromPreset(activePreset, size, undefined, videoAspect));
 }
 
-// 3×3 grid mirroring the spatial position each chip represents, so users
-// pick by location rather than reading labels.
+// A 3x3 grid mirroring the position each chip represents, so users pick by location rather than reading labels.
 const presetGrid: Array<CameraPositionPreset | null> = [
 	"top-left",
 	"top-center",

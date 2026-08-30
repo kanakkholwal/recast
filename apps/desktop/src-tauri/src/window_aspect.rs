@@ -18,9 +18,7 @@ mod imp {
     use std::ffi::c_void;
     use std::sync::OnceLock;
 
-    // `parking_lot::Mutex` can't poison — a panic in the `WM_SIZING` subclass
-    // callback while holding this lock would otherwise poison it and abort the
-    // process on the next aspect-ratio operation.
+    // `parking_lot::Mutex` can't poison: a panic in the `WM_SIZING` subclass while holding this would abort the process.
     use parking_lot::Mutex;
 
     use tauri::AppHandle;
@@ -96,9 +94,7 @@ mod imp {
             first
         };
 
-        // SetWindowSubclass must run on the window's owning (UI) thread —
-        // cross-thread proc-chain edits are rejected by the OS. Only install
-        // once; subsequent ratio changes flow through the registry above.
+        // SetWindowSubclass must run on the window's UI thread, and only once; later ratio changes flow through the registry.
         if first {
             let _ = app.run_on_main_thread(move || unsafe {
                 let hwnd = HWND(hwnd_raw as *mut c_void);
@@ -130,16 +126,13 @@ mod imp {
         let cur_w = (rect.right - rect.left).max(1);
         let cur_h = (rect.bottom - rect.top).max(1);
 
-        // The control strip is fixed height; only the video region scales with
-        // the ratio, so strip it off before the aspect math and add it back to
-        // the final window height.
+        // The control strip is fixed height, so strip it off before the aspect math and add it back to the final height.
         let chrome = c.chrome.max(0);
         let max_w = max_w.max(c.min_w);
         let max_vid_h = ((max_w as f64) / c.ratio).round() as i32;
         let min_vid_h = (((c.min_w as f64) / c.ratio).round() as i32).max(1);
 
-        // Vertical-only edges (top/bottom) are height-led; everything else
-        // (left/right + all four corners) is width-led.
+        // Top and bottom edges are height-led; everything else, including all four corners, is width-led.
         let (new_w, new_h) = if edge == WMSZ_TOP || edge == WMSZ_BOTTOM {
             let vid_h = (cur_h - chrome).clamp(min_vid_h, max_vid_h.max(min_vid_h));
             ((vid_h as f64 * c.ratio).round() as i32, vid_h + chrome)
@@ -174,10 +167,7 @@ mod imp {
                 let key = hwnd.0 as isize;
                 let constraint = registry().lock().get(&key).copied();
                 if let Some(c) = constraint {
-                    // lParam is an LPRECT the OS uses as the new window bounds.
-                    // We edit it in place, then still chain to tao's proc so its
-                    // internal size bookkeeping stays in sync — we already keep
-                    // the rect inside tao's min/max, so it won't fight us.
+                    // lParam is the OS's new-bounds LPRECT: edit it in place, then chain to tao's proc so its size bookkeeping stays in sync.
                     let rect = &mut *(lparam.0 as *mut RECT);
                     let max_w = ((monitor_work_width(hwnd) as f64) * c.max_fraction).round() as i32;
                     constrain_rect(rect, wparam.0 as u32, c, max_w);
@@ -185,9 +175,7 @@ mod imp {
                 DefSubclassProc(hwnd, msg, wparam, lparam)
             }
             WM_NCDESTROY => {
-                // Drop our entry and detach the subclass before the window
-                // goes away (documented best practice — the chain is otherwise
-                // freed for us, but this keeps the registry from leaking).
+                // Detach before the window goes away: the chain is freed for us, but this keeps the registry from leaking.
                 registry().lock().remove(&(hwnd.0 as isize));
                 let _ = RemoveWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID);
                 DefSubclassProc(hwnd, msg, wparam, lparam)

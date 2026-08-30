@@ -15,8 +15,7 @@ mod audio;
 mod cancel;
 mod capabilities;
 mod engine;
-// The on-device engine (transcribe.cpp / ggml). On by default; absent in a
-// `--no-default-features` build, which then transcribes via remote endpoints.
+// On by default; absent in a `--no-default-features` build, which then transcribes via remote endpoints.
 #[cfg(feature = "ggml")]
 mod ggml;
 mod models;
@@ -37,14 +36,12 @@ use models::{CaptionModel, Engine as ModelEngine, ModelSource, Runtime};
 
 use crate::commands::error::{AppError, AppResult};
 
-// Reused by silence detection to fetch the Silero VAD model (vad-rs needs an
-// external silero_vad.onnx; the download/verify path lives in `models`).
+// Reused by silence detection to fetch the Silero VAD model; the download and verify path lives in `models`.
 pub(crate) use models::{download_file, models_dir};
 
 // - Transcript data model (mirrors the planned project-format `transcript` section) -
 
-// The model itself lives in `recast-captions`, shared with the compositor so
-// the burn-in and the preview cannot disagree about a caption.
+// The model lives in `recast-captions`, shared with the compositor so burn-in and preview can't disagree.
 pub use recast_captions::{CaptionAnimation, CaptionStyle, TranscriptWord};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,9 +158,7 @@ pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelIn
         .map(|m| {
             let runtime = m.engine.runtime();
             let downloadable = !m.files.is_empty();
-            // Availability is evaluated differently for a remote endpoint (is a
-            // key configured?) than a local model (runtime built + device caps +
-            // files present).
+            // A remote endpoint is available when a key is configured; a local model needs runtime, device caps and files.
             let (installed, runnable, runtime_available, warning) = match m.remote.as_ref() {
                 Some(ep) => {
                     let has_key = remote::has_key(&ep.id);
@@ -175,8 +170,7 @@ pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelIn
                     let installed = models::is_installed(&app, &m).unwrap_or(false);
                     let (rt_available, rt_reason) = models::runtime_status(runtime);
                     let (runnable, device_warning) = evaluate(&m, &caps);
-                    // An unavailable runtime is the dominant blocker, so its reason
-                    // wins over a soft device caveat when both apply.
+                    // An unavailable runtime is the dominant blocker, so its reason wins over a soft device caveat.
                     (
                         installed,
                         runnable,
@@ -303,8 +297,7 @@ pub async fn transcribe_project(
     let model = models::find(&app, &model_id)
         .ok_or_else(|| AppError::msg(format!("unknown caption model: {model_id}")))?;
 
-    // Availability gate: a remote model needs a stored key; a local model needs
-    // its runtime built, the device to support it, and its files present.
+    // Availability gate: a remote model needs a stored key, a local one its runtime, device support and files.
     let remote_ep = model.remote.clone();
     match remote_ep.as_ref() {
         Some(ep) => {
@@ -338,8 +331,7 @@ pub async fn transcribe_project(
         phase: "extracting".into(),
     });
 
-    // Decode audio to 16 kHz mono f32 off the UI thread (CPU + ffmpeg), for both
-    // paths.
+    // Decode to 16 kHz mono f32 off the UI thread (CPU plus ffmpeg), for both paths.
     let sources: Vec<String> = [audio_path, microphone_path]
         .into_iter()
         .flatten()
@@ -365,8 +357,7 @@ pub async fn transcribe_project(
     });
 
     let transcript = match remote_ep.as_ref() {
-        // Remote: the network call is async, so it must NOT run on a blocking
-        // thread. The key is read here in Rust and never crosses IPC.
+        // Remote: the network call is async, so it must NOT run on a blocking thread. The key never crosses IPC.
         Some(ep) => {
             let key = remote::read_key(&ep.id)
                 .ok_or_else(|| AppError::from("Add an API key for this endpoint first."))?;
@@ -386,8 +377,7 @@ pub async fn transcribe_project(
         }
     };
 
-    // The remote path can't be interrupted mid-request; drop its result rather
-    // than overwrite a transcript the user asked to stop replacing.
+    // The remote path can't be interrupted mid-request, so drop its result rather than overwrite a stopped transcript.
     if cancel::is_requested() {
         return Err(AppError::from(cancel::CANCELLED_MSG));
     }
@@ -565,8 +555,7 @@ mod tests {
 
     #[test]
     fn default_animation_is_static() {
-        // The default spec (line chunks, no emphasis, no entrance) must take the
-        // static one-Dialogue-per-line generator path.
+        // The default spec (line chunks, no emphasis, no entrance) must take the static one-Dialogue-per-line path.
         assert!(CaptionAnimation::default().is_static());
     }
 
@@ -593,8 +582,7 @@ mod tests {
 
     #[test]
     fn highlight_resolves_absent_to_active() {
-        // A pre-highlight project (field absent) must keep the legacy per-word
-        // behaviour, so `highlight()` returns "active"; a fresh default is static.
+        // A pre-highlight project keeps the legacy per-word behaviour, while a fresh default is static.
         let legacy = CaptionAnimation {
             highlight: None,
             ..Default::default()
@@ -605,8 +593,7 @@ mod tests {
 
     #[test]
     fn caption_style_default_mirrors_loom_preset() {
-        // Guards B1 (Rust/TS default drift). These must equal DEFAULT_CAPTION_STYLE
-        // in @recast/captions (the Loom preset). Update both together.
+        // Guards Rust/TS default drift: these must equal DEFAULT_CAPTION_STYLE in @recast/captions. Update both together.
         let d = CaptionStyle::default();
         assert_eq!(d.font_weight, 600);
         assert_eq!(d.font_size_pct, 3.8);

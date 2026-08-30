@@ -68,8 +68,7 @@ impl SharedSurface {
 impl Drop for SharedSurface {
     fn drop(&mut self) {
         if !self.handle.0.is_null() {
-            // SAFETY: created by `CreateSharedHandle` here and closed once,
-            // because `SharedSurface` is neither Copy nor Clone.
+            // SAFETY: created by `CreateSharedHandle` here and closed once, since `SharedSurface` is neither Copy nor Clone.
             let _ = unsafe { CloseHandle(self.handle) };
         }
     }
@@ -94,8 +93,7 @@ impl SyncFence {
 
 fn duplicate(handle: HANDLE) -> Result<isize, EncodeError> {
     let mut copy = HANDLE::default();
-    // SAFETY: `handle` is ours and stays open; the duplicate belongs to the
-    // caller, who closes it.
+    // SAFETY: `handle` is ours and stays open; the duplicate belongs to the caller, who closes it.
     unsafe {
         let process = GetCurrentProcess();
         DuplicateHandle(
@@ -157,15 +155,13 @@ impl Nv12Converter {
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
-            // The video processor writes through a render-target view, and the
-            // encoder reads it as a shader resource.
+            // The video processor writes through a render-target view; the encoder reads it as a shader resource.
             BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
             CPUAccessFlags: 0,
             MiscFlags: 0,
         };
         let mut texture = None;
-        // SAFETY: the description is fully initialised and the out parameter is
-        // checked below.
+        // SAFETY: the description is fully initialised and the out parameter is checked below.
         unsafe {
             self.device
                 .CreateTexture2D(&desc, None, Some(&mut texture))?
@@ -190,9 +186,7 @@ impl D3dContext {
     pub fn new() -> Result<Self, EncodeError> {
         let mut device = None;
         let mut context = None;
-        // SAFETY: out parameters are freshly declared and checked below.
-        // VIDEO_SUPPORT is what makes `ID3D11VideoDevice` available at all;
-        // BGRA_SUPPORT is what lets the compositor's format be a render target.
+        // SAFETY: out parameters are checked below. VIDEO_SUPPORT provides `ID3D11VideoDevice`, BGRA_SUPPORT the render target.
         unsafe {
             D3D11CreateDevice(
                 None,
@@ -209,11 +203,9 @@ impl D3dContext {
         let device = device.ok_or_else(|| EncodeError::Media(missing("D3D11 device")))?;
         let context = context.ok_or_else(|| EncodeError::Media(missing("D3D11 context")))?;
 
-        // Media Foundation calls into this device from its own threads. Without
-        // multithread protection that is a data race the driver will not report.
+        // Media Foundation calls in from its own threads: without multithread protection that is an unreported data race.
         let multithread: ID3D11Multithread = context.cast()?;
-        // SAFETY: setting a flag on the device's own context. The return is
-        // the PREVIOUS setting, not a status.
+        // SAFETY: setting a flag on the device's own context; the return is the PREVIOUS setting, not a status.
         let _ = unsafe { multithread.SetMultithreadProtected(true) };
 
         let mut token = 0u32;
@@ -255,14 +247,12 @@ impl D3dContext {
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: (D3D11_BIND_RENDER_TARGET.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
             CPUAccessFlags: 0,
-            // NTHANDLE is what makes the handle openable by D3D12, which is the
-            // backend wgpu uses here. The plain SHARED flag alone is D3D11 only.
+            // NTHANDLE is what makes the handle openable by D3D12, the backend wgpu uses here; plain SHARED is D3D11 only.
             MiscFlags: (D3D11_RESOURCE_MISC_SHARED.0 | D3D11_RESOURCE_MISC_SHARED_NTHANDLE.0)
                 as u32,
         };
         let mut texture = None;
-        // SAFETY: the description is fully initialised and the out parameter is
-        // checked; no initial data means an undefined but allocated surface.
+        // SAFETY: the description is fully initialised and the out parameter checked; no initial data leaves it allocated but undefined.
         unsafe {
             self.device
                 .CreateTexture2D(&desc, None, Some(&mut texture))?
@@ -343,18 +333,14 @@ impl D3dContext {
             OutputHeight: height,
             Usage: D3D11_VIDEO_USAGE_PLAYBACK_NORMAL,
         };
-        // SAFETY: the description is fully initialised; both calls return owned
-        // interfaces.
+        // SAFETY: the description is fully initialised and both calls return owned interfaces.
         let (enumerator, processor) = unsafe {
             let enumerator = self.video.CreateVideoProcessorEnumerator(&content)?;
             let processor = self.video.CreateVideoProcessor(&enumerator, 0)?;
             (enumerator, processor)
         };
 
-        // SAFETY: configuring the processor we just created. Both colour spaces
-        // are set explicitly: the default guess differs by driver, which is the
-        // classic source of an export that is fine on one machine and washed
-        // out on another.
+        // SAFETY: configuring the processor just created. Both colour spaces are explicit, since the driver default is why an export washes out on one machine.
         unsafe {
             self.video_context.VideoProcessorSetStreamColorSpace(
                 &processor,
@@ -384,13 +370,10 @@ impl D3dContext {
     pub fn shared_fence(&self) -> Result<SyncFence, EncodeError> {
         let device: ID3D11Device5 = self.device.cast()?;
         let mut created = None;
-        // SAFETY: creating a fence on our own device, out parameter checked
-        // below. SHARED is what lets the other API open it at all.
+        // SAFETY: creating a fence on our own device, out parameter checked below; SHARED is what lets the other API open it.
         unsafe { device.CreateFence(0, D3D11_FENCE_FLAG_SHARED, &mut created)? };
         let fence: ID3D11Fence = created.ok_or_else(|| EncodeError::Media(missing("fence")))?;
-        // SAFETY: the fence was created with the sharing flag this needs.
-        // GENERIC_ALL rather than SYNCHRONIZE: the narrower right is accepted
-        // here and then rejected at the other end's OpenSharedHandle.
+        // GENERIC_ALL rather than SYNCHRONIZE: the narrower right is accepted here and then rejected at the other end's OpenSharedHandle.
         let handle = unsafe { fence.CreateSharedHandle(None, GENERIC_ALL.0, None)? };
         Ok(SyncFence { fence, handle })
     }
@@ -416,12 +399,7 @@ impl D3dContext {
     /// overwrites the picture before the conversion has taken it.
     pub fn signal(&self, fence: &SyncFence, value: u64) -> Result<(), EncodeError> {
         let context: ID3D11DeviceContext4 = self.context.cast()?;
-        // SAFETY: enqueueing a signal on our own context, then flushing.
-        //
-        // The flush is contract, not something our tests prove: a signal sitting
-        // in an unsubmitted command buffer is a fence the other API waits on
-        // forever. D3D11 flushes on its own eventually, which is why removing
-        // this still passes here and is no reason to rely on it.
+        // SAFETY: enqueueing a signal on our own context. The flush is contract: an unsubmitted signal is a fence the other API waits on forever.
         unsafe {
             context.Signal(&fence.fence, value)?;
             context.Flush();
@@ -495,10 +473,7 @@ impl D3dContext {
             },
         };
 
-        // SAFETY: both views are created against the enumerator the processor
-        // came from, which is what makes the blt below legal. The stream struct
-        // hands ownership of the input view to `ManuallyDrop`, and it is taken
-        // back before returning so the view is released exactly once.
+        // SAFETY: both views come from the processor's own enumerator, and `ManuallyDrop` hands the input view back so it is released exactly once.
         unsafe {
             let mut input = None;
             self.video.CreateVideoProcessorInputView(

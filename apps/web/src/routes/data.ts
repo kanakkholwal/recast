@@ -54,8 +54,7 @@ export const beforeAfterClips: Array<{
 	},
 ];
 
-// Cloud preview features — the "more than a Drive link" promise. Kept
-// short on purpose: this is a teaser, not a feature page.
+// Kept short on purpose: this is a teaser, not a feature page.
 export const cloudFeatures = [
 	{
 		icon: BarChart3,
@@ -201,8 +200,7 @@ export const polishFeatures = [
 	},
 ];
 
-// Recording-side superpowers. Two beats — kept short so the section
-// reads as marketing copy, not a feature catalog.
+// Two beats, kept short so the section reads as marketing copy, not a feature catalog.
 export const recordingFeatures = [
 	{
 		icon: Layers,
@@ -231,8 +229,7 @@ export const shareFeatures = [
 	},
 ];
 
-// "Make it yours" beat — extensions as proof of the no-lock-in moat, not a
-// generic "marketplace". Stays a supporting note under the core wedge.
+// Extensions as proof of the no-lock-in moat, not a generic marketplace; a supporting note under the core wedge.
 export const extensionBeat = [
 	{
 		icon: MousePointer2,
@@ -258,22 +255,7 @@ export const extensionBeat = [
 	},
 ];
 
-// "Inside the editor" — honest tour of every tool a non-editor user will
-// actually touch. Each card is tagged `auto` (it happens for you) or
-// `manual` (you reach for it when you want control).
-//
-// SCREENSHOT ASSET SLOTS — drop these PNG files into static/screenshots/
-// to light up each card. Until a file exists, the matching card falls
-// back to its `icon` rendered as the hero glyph (still looks deliberate,
-// not "missing image"). Target dimensions: 880×560 (16:10), tightly
-// cropped to the feature, dark mode. PNG ≤300 KB.
-//
-//   feat-smart-zoom.png       — editor canvas mid-zoom toward a click
-//   feat-silence-trim.png     — timeline with silence regions highlighted
-//   feat-cursor-smoothing.png — split / before-after of cursor path
-//   feat-zoom-regions.png     — timeline with a manual focus region
-//   feat-annotations.png      — frame with arrow + circle + text overlay
-//   feat-camera-bubble.png    — webcam bubble showing shape/border options
+// Each card is tagged auto or manual, and falls back to its icon until a matching static/screenshots PNG exists (880x560, dark, under 300 KB).
 export type FeatureKind = "auto" | "manual";
 export const editorFeatures: Array<{
 	kind: FeatureKind;
@@ -323,9 +305,7 @@ export const editorFeatures: Array<{
 	},
 ];
 
-// FAQ. Answers map to claims made elsewhere on this page (offline, free app +
-// paid Cloud, auto-polish, camera, platforms) so nothing here over-promises.
-// One-open-at-a-time; first item open so the pattern reads on load.
+// Answers map to claims made elsewhere on this page so nothing over-promises; the first item is open on load.
 export const faqs: Array<{ q: string; a: string }> = [
 	{
 		q: "Is Recast a browser extension or a desktop app?",
@@ -361,8 +341,7 @@ export const faqs: Array<{ q: string; a: string }> = [
 	},
 ];
 
-// FAQPage schema. Built from the same `faqs` array the section renders, so
-// the structured data always matches the visible copy (Google requires it).
+// Built from the same `faqs` array the section renders, since Google requires the structured data to match.
 export const faqJsonLd = JSON.stringify({
 	"@context": "https://schema.org",
 	"@type": "FAQPage",
@@ -386,9 +365,7 @@ export const kindChip: Record<FeatureKind, { label: string; dot: string; ring: s
 	},
 };
 
-// Three-up detail rows closing each pillar section. Deliberately separate from
-// the longer `recordingFeatures` / `polishFeatures` / `shareFeatures` copy: this
-// row is scanned, not read, so each line is one claim.
+// Scanned, not read: one claim per line, deliberately separate from the longer pillar copy.
 export const recordColumns = [
 	{
 		icon: Monitor,

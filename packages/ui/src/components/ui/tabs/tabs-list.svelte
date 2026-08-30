@@ -7,8 +7,7 @@ export const tabsListVariants = tv({
 			default: "gap-2-list-variant-default bg-muted",
 			line: "rounded-lg p-[3px] group-data-horizontal/tabs:h-9 data-[variant=line]:rounded-none-variant-line gap-1 bg-transparent",
 			soft: 'bg-muted/60 [&_[data-slot="tabs-trigger"][data-state=active]_svg]:text-primary [&_[data-slot="tabs-trigger"][data-state=active]]:text-foreground [&_[data-slot="tabs-trigger"]]:text-muted-foreground [&_[data-slot="tabs-trigger"]:hover]:text-foreground [&_[data-slot="tabs-trigger"]]:shadow-transparent',
-			// Bare nav rail: no list chrome; the active trigger rides a dark
-			// bg-foreground pill (same language as the app's notched top nav).
+			// Bare nav rail: no list chrome, and the active trigger rides a dark pill like the app's notched top nav.
 			pill: 'bg-transparent p-0 [&_[data-slot="tabs-trigger"]]:text-muted-foreground [&_[data-slot="tabs-trigger"]:hover:not([data-state=active])]:text-foreground [&_[data-slot="tabs-trigger"][data-state=active]]:text-background [&_[data-slot="tabs-trigger"][data-state=active]]:bg-foreground [&_[data-slot="tabs-trigger"]]:shadow-transparent',
 		},
 	},
@@ -35,16 +34,12 @@ export type TabsListVariant = VariantProps<typeof tabsListVariants>["variant"];
 		variant?: TabsListVariant;
 	} = $props();
 
-	// Floating active indicator. Measures the currently-active trigger and
-	// Tweens position/size to it, so switching tabs slides the fill from
-	// one trigger to the next instead of snapping. Driven entirely by DOM
-	// observation so it stays decoupled from bits-ui's value state.
+	// Measures the active trigger and tweens to it, so tabs slide rather than snap; DOM-driven, so it stays decoupled from bits-ui state.
 	let indicatorVisible = $state(false);
 	let isVertical = $state(false);
 	let firstMeasure = true;
 
-	// The indicator slides via Tween (rAF), which the CSS prefers-reduced-motion
-	// override can't reach; honor the setting in JS so it snaps instead.
+	// The tween runs on rAF, which the CSS reduced-motion override can't reach, so honour the setting in JS.
 	let reduced = $state(false);
 	$effect(() => {
 		if (typeof window === "undefined") return;
@@ -81,10 +76,7 @@ export type TabsListVariant = VariantProps<typeof tabsListVariants>["variant"];
 			el.dataset.orientation === "vertical" ||
 			el.closest('[data-orientation="vertical"]') !== null;
 
-		// Snap on first measure so the indicator doesn't grow from (0,0) —
-		// fighting the dialog/page enter motion. Subsequent updates Tween.
-		// Snap on the first measure (so it doesn't grow from 0,0 against page-enter
-		// motion) and whenever the user asked for reduced motion; otherwise Tween.
+		// Snap on the first measure (so it doesn't grow from 0,0 against page-enter motion) and under reduced motion; otherwise tween.
 		const duration = firstMeasure || reduced ? 0 : 260;
 		x.set(nx, { duration });
 		y.set(ny, { duration });
@@ -123,9 +115,7 @@ export type TabsListVariant = VariantProps<typeof tabsListVariants>["variant"];
 	class={cn(
 		"relative",
 		tabsListVariants({ variant }),
-		// When the floating indicator is live, suppress each trigger's own
-		// active background/shadow so the indicator owns the visual. Triggers
-		// get z-10 so their label + icon sit above the indicator pill.
+		// While the indicator is live, suppress each trigger's own active background so the indicator owns the visual.
 		indicatorVisible &&
 			variant !== "line" && [
 				"[&_[data-slot=tabs-trigger][data-state=active]]:!bg-transparent",

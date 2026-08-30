@@ -60,9 +60,7 @@ impl PressFrameState {
 /// Cursor displacement (source px) during a hold beyond which it's a drag.
 const DRAG_THRESHOLD_PX: f64 = 8.0;
 
-// MUST mirror the constants in apps/desktop/src/components/editor/VideoPreview.svelte
-// (`PRESS_*_US`, `PRESS_LIFT`, `PRESS_PUNCH`, `PRESS_BOUNCE`). Drift here
-// means preview and export disagree on click feel.
+// MUST mirror the `PRESS_*` constants in VideoPreview.svelte: drift means preview and export disagree on click feel.
 const PRESS_MIN_HOLD_US: i64 = 320_000;
 const PRESS_LINGER_US: i64 = 320_000;
 const PRESS_PREROLL_US: i64 = 320_000;
@@ -98,9 +96,7 @@ pub fn press_state_at(ts_us: i64, events: &[PressEvent]) -> PressFrameState {
     for &ev in events {
         let down = ev.down_us as i64;
         let up = ev.up_us as i64;
-        // holdEnd: latest of (release + LINGER) and (down + MIN_HOLD) so
-        // both flash clicks and long holds get a visible post-release dwell
-        // on the pressed sprite. Mirrors VideoPreview.svelte's pressStateAt.
+        // holdEnd is the later of release plus LINGER and down plus MIN_HOLD, so flash clicks and long holds both dwell visibly.
         let hold_end = (up + PRESS_LINGER_US).max(down + PRESS_MIN_HOLD_US);
         let vis_start = down - PRESS_PREROLL_US - PRESS_VIS_RAMP_US;
         let vis_end = hold_end + PRESS_POSTROLL_US + PRESS_VIS_RAMP_US;
@@ -306,10 +302,7 @@ pub fn click_bounce_scale(t_ms: f64, duration_ms: f64, amplitude: f64) -> f64 {
     }
     // Normalised time in [-1, 1] across the window.
     let n = (t_ms / duration_ms).clamp(-1.0, 1.0);
-    // Apple's Materials team uses ~0.12 of the parameter as the visible
-    // amplitude; multiplying by amplitude_factor lets the slider's "1×" look
-    // like a real macOS bounce while "5×" still has headroom for cinematic
-    // squash demos without going non-physical.
+    // About 0.12 of the parameter is the visible amplitude, so the slider's 1x looks like a real bounce and 5x still has headroom.
     const PER_UNIT_DELTA: f64 = 0.12;
     let amp = amplitude * PER_UNIT_DELTA;
 
@@ -321,9 +314,7 @@ pub fn click_bounce_scale(t_ms: f64, duration_ms: f64, amplitude: f64) -> f64 {
         return 1.0 - dip;
     }
 
-    // Post-impact damped oscillation.
-    // exp(-4n) decays to ~1.8% of starting amplitude by n=1; cos(2πn·1.5)
-    // gives a single overshoot that lands just below 1.0 then settles back.
+    // exp(-4n) decays to ~1.8% by n=1, and the cosine gives one overshoot that settles just below 1.0.
     let damp = (-4.0 * n).exp();
     let osc = (std::f64::consts::TAU * n * 1.5).cos();
     1.0 + amp * damp * osc
@@ -345,9 +336,7 @@ pub fn idle_sway_offset(t_ms: f64, amplitude: f64, velocity_px_per_s: f64) -> (f
     if amp_px < 1e-3 {
         return (0.0, 0.0);
     }
-    // Two slightly out-of-phase axes so the path traces a Lissajous-like
-    // figure rather than a straight line. Periods are coprime to avoid a
-    // visible "loop" point.
+    // Two slightly out-of-phase axes trace a Lissajous figure; coprime periods avoid a visible loop point.
     let t_s = t_ms / 1000.0;
     let dx = amp_px * (std::f64::consts::TAU * t_s * 0.7).sin();
     let dy = amp_px * (std::f64::consts::TAU * t_s * 0.9 + 1.2).sin();
@@ -365,9 +354,7 @@ pub fn motion_blur_step_alpha(i: usize, steps: usize, strength: f64) -> f64 {
     }
     let t = (i as f64) / (steps as f64);
     let s = strength.clamp(0.0, 1.0);
-    // Quadratic falloff reads more like real motion blur than linear —
-    // most of the brightness sits near the current position, the tail
-    // dims fast.
+    // Quadratic falloff reads more like real motion blur than linear: brightness sits near the current position.
     s * (1.0 - t).powi(2) * 0.5
 }
 

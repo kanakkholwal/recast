@@ -48,8 +48,7 @@ let {
 
 let capturing = $state(false);
 
-// Copy the current frame to the clipboard as PNG. `navigator.clipboard.write`
-// works on Tauri (tauri://localhost is a secure context). Pause first so the captured pixels match.
+// `navigator.clipboard.write` works on Tauri (a secure context); pause first so the captured pixels match.
 async function copyFrameToClipboard() {
 	if (capturing || !captureFrame) return;
 	capturing = true;
@@ -92,26 +91,20 @@ async function toggleFullscreen() {
 	if (fullscreenTargetEl) await fullscreenTargetEl.requestFullscreen();
 }
 
-// Fullscreen puts ONLY the preview container on screen, so the timeline isn't
-// there to scrub with however `showScrubber` was resolved — leaving fullscreen
-// with no transport at all whenever the timeline happened to be open.
+// Fullscreen shows only the preview, so without this, leaving it with the timeline open left no transport at all.
 const scrubberVisible = $derived(showScrubber || isFullscreen);
 
-// OUTPUT (post-cut) time: readout/scrubber reflect the edited length and can't land
-// in a removed region. `store.currentTime` stays the source of truth (original time); we map to output only for display + seek.
+// OUTPUT time for display and seek only; `store.currentTime` stays the source of truth in original time.
 const timeMap = $derived(store.timeMap);
 const fullDuration = $derived(store.metadata?.duration ?? 0);
 const outputDuration = $derived(originalToOutput(timeMap, fullDuration));
 const currentOutput = $derived(originalToOutput(timeMap, store.currentTime));
 
-// Output time under the pointer while scrubbing, or null when the store owns the
-// position. The thumb used to be driven by `store.currentTime`, so it fought the
-// drag whenever a seek landed late.
+// Null when the store owns the position: driving the thumb from `store.currentTime` fought the drag on a late seek.
 let scrubOutput = $state<number | null>(null);
 const displayOutput = $derived(scrubOutput ?? currentOutput);
 
-// Same formatter and same Time-display setting as the timeline, so the readout
-// and the playhead can't show two different numbers for one moment.
+// Same formatter and Time-display setting as the timeline, so the readout and the playhead can't disagree.
 const fps = $derived(store.metadata?.fps || 60);
 const currentTimeFormatted = $derived(formatTimeByMode(displayOutput, store.timeMode, fps));
 const durationFormatted = $derived(formatTimeByMode(outputDuration, store.timeMode, fps));
@@ -123,11 +116,7 @@ const progressFraction = $derived(
 	outputDuration > 0 ? Math.min(1, Math.max(0, displayOutput / outputDuration)) : 0,
 );
 
-// A range input's thumb travels between its own half-widths, not 0→100%, so a
-// fill sized at a flat `fraction * 100%` only lines up with the thumb at the two
-// ends and drifts by up to a quarter thumb in between. Both the fill's width and
-// the thumb's centre are placed with THIS expression, so they cannot disagree at
-// any position, and it needs no measurement of the track.
+// A range thumb travels between its own half-widths, so a flat percentage fill drifts; both fill and thumb use this expression.
 const progressOffset = $derived(
 	`calc(${progressFraction} * (100% - ${THUMB_PX}px) + ${THUMB_PX / 2}px)`,
 );
@@ -143,26 +132,19 @@ function togglePlay() {
 	}
 }
 
-// Every seek here goes through `store.seek`, which moves the playhead AND the
-// registered transport. Writing `videoEl.currentTime` directly left the system
-// and microphone audio elements behind, so a frame-step or a scrub desynced
-// sound from picture on the <video> path.
+// `store.seek` moves the playhead AND the transport; writing `videoEl.currentTime` left the audio elements behind.
 function stepFrame(direction: number) {
 	if (!store.metadata) return;
-	// Step on the OUTPUT axis so stepping past a cut boundary lands on the next
-	// kept frame instead of inside the removed range.
+	// Step on the OUTPUT axis so stepping past a cut lands on the next kept frame, not inside the removed range.
 	store.seek(frameStepOutput(timeMap, store.metadata, store.currentTime, direction));
 }
 
-// The scrubber is in output time; map back to original (skipping over collapsed
-// cuts) before driving the transport.
+// The scrubber is output time; map back to original, skipping collapsed cuts, before driving the transport.
 function seekToOutput(outputTime: number) {
 	store.seek(outputToOriginal(timeMap, outputTime));
 }
 
-// Coalesced to one seek per frame. `oninput` fires per pointer-pixel and each
-// seek now moves three media elements, so writing straight through thrashed the
-// decoder for positions no one ever saw.
+// One seek per frame: `oninput` fires per pointer-pixel, and each seek moves three media elements.
 let scrubRaf: number | null = null;
 
 function flushScrub() {

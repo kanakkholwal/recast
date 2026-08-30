@@ -286,8 +286,7 @@ fn a_zoom_moves_the_seam_because_the_shader_samples_a_smaller_window() {
     let zoom = render(ctx, &zoomed, 5.0, true);
 
     let row = SRC_H / 4;
-    // Centre 0.25 with a half-width window puts the sampled window at u 0..0.5,
-    // which is entirely inside the red half.
+    // Centre 0.25 with a half-width window samples u 0..0.5, which is entirely inside the red half.
     let sample = zoom.at(SRC_W - 3, row);
     assert!(
         close(sample, [255, 0, 0, 255], 2),
@@ -760,8 +759,7 @@ fn an_image_annotations_own_opacity_fades_it() {
     );
     let image = image_texture(ctx, 8, 8);
     let (x, y) = (SRC_W / 2, SRC_H / 2);
-    // Blue rises from the frame's own value to the asset's magenta, so a half
-    // opacity has to land strictly between the two.
+    // Blue rises from the frame's own value to the asset's magenta, so half opacity must land strictly between.
     let none = render_with_annotation_image(ctx, &scene_with(""), None).at(x, y)[2];
     let full =
         render_with_annotation_image(ctx, &scene_with(IMAGE_ANNOTATION), Some(&image)).at(x, y)[2];
@@ -915,9 +913,7 @@ fn a_wide_camera_feed_is_cropped_into_the_bubble_rather_than_squashed() {
         CAM_BANDS,
         "a square feed should land band for band"
     );
-    // Twice as wide: a centre crop keeps the middle half, so only the two inner
-    // bands survive and each covers half the bubble. A stretch would show all
-    // four.
+    // Twice as wide: a centre crop keeps the middle half, so only the two inner bands survive; a stretch shows all four.
     let wide = bubble_bands(&render_with_camera(ctx, &scene, 64, 32));
     assert_eq!(
         wide,
@@ -1019,8 +1015,7 @@ fn an_enabled_camera_bubble_draws_over_the_card_and_a_disabled_one_does_not() {
         .iter()
         .all(|l| !l.visible || l.dest.w as u32 != SRC_W / 4));
 
-    // The bubble shares the screen layer's source here, so it must at least
-    // paint SOMETHING inside its rect rather than leaving the card showing.
+    // The bubble shares the screen layer's source, so it must paint SOMETHING rather than leave the card showing.
     let _ = render(ctx, &with_camera, 5.0, true);
 }
 
@@ -1208,9 +1203,7 @@ fn blurring_a_background_does_not_change_its_overall_brightness() {
     let sharp = render_background(ctx, &wallpaper(0.0), Some((&image, SRC_W, SRC_H)));
     let soft = render_background(ctx, &wallpaper(60.0), Some((&image, SRC_W, SRC_H)));
 
-    // Averaged in linear light, because that is where the blur happens. The
-    // sRGB-encoded mean legitimately rises when a dark and a bright pixel are
-    // mixed linearly, so measuring there would fail on correct output.
+    // Averaged in linear light, where the blur happens: the sRGB mean legitimately rises and would fail correct output.
     let mean = |r: &Rendered| {
         let total: f64 = r
             .pixels
@@ -1398,8 +1391,7 @@ fn the_hotspot_decides_where_the_sprite_sits() {
         }
     };
 
-    // Hotspot at the top-left corner pushes the sprite down and right, so the
-    // pixel just above the cursor is no longer covered.
+    // A top-left hotspot pushes the sprite down and right, so the pixel just above the cursor is no longer covered.
     let centred = render_with([0.5, 0.5]);
     let cornered = render_with([0.0, 0.0]);
     let above = (CURSOR_AT.0, CURSOR_AT.1 - 8);
@@ -1437,8 +1429,7 @@ fn a_transparent_sprite_does_not_erase_what_is_under_it() {
 #[test]
 fn presenting_into_a_smaller_target_scales_rather_than_cropping() {
     let Some(ctx) = context() else { return };
-    // Padding puts background on every side, so a crop is visible as a missing
-    // border rather than as a shifted picture.
+    // Padding puts background on every side, so a crop shows as a missing border rather than a shifted picture.
     let scene = scene_with(r#""padding": 20.0,"#);
     let ev = Evaluator::new(
         &scene,
@@ -1478,8 +1469,7 @@ fn presenting_into_a_smaller_target_scales_rather_than_cropping() {
         height: out_h,
     };
 
-    // Background survives at BOTH ends. Under a crop the far corner would hold
-    // the middle of the video instead.
+    // Background survives at BOTH ends; under a crop the far corner would hold the middle of the video.
     for corner in [
         (1, 1),
         (out_w - 2, 1),
@@ -1594,8 +1584,7 @@ fn a_glyph_quad_paints_inside_its_rect_and_nowhere_else() {
     let Some(face) = text_face() else { return };
     let scene = scene_with("");
     let mut atlas = recast_text::GlyphAtlas::new(256, 1024);
-    // Small enough to sit whole inside the 64x32 canvas, so clipping cannot
-    // stand in for the assertions below.
+    // Small enough to sit whole inside the 64x32 canvas, so clipping can't stand in for the assertions below.
     let g = packed_glyph(&mut atlas, &face, "M", 20.0);
 
     let blank = render_with_text(ctx, &scene, &mut atlas, Vec::new(), true);

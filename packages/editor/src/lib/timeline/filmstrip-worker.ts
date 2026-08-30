@@ -28,13 +28,9 @@
 
 import type { MediaRef } from "@recast/media";
 // biome-ignore lint/style/noRestrictedImports: this worker composes
-// MediaBunny primitives through `@recast/media` (the allowed channel —
-// see the override in biome.json). Same scope rule as the other worker
-// files in this package.
+// MediaBunny through `@recast/media`, the allowed channel (see the override in biome.json).
 import { ALL_FORMATS, CanvasSink, Input, mediaRefSource } from "@recast/media/mediabunny";
-// One definition, shared with the provider. This file used to redeclare both
-// unions and they had already drifted (`ready` grew four fields here that the
-// worker never sent).
+// One definition, shared with the provider: the redeclared copies had already drifted.
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -53,17 +49,14 @@ let disposed = false;
 
 async function init(src: MediaRef, hPx: number, durationSec?: number): Promise<void> {
 	tileHeightPx = hPx;
-	// Both ref kinds read lazily: UrlSource range-requests, BlobSource slices a
-	// disk-backed File. What pinned ~600MB per 4K session was a Blob materialized
-	// from the whole file — never do that (see MediaRef's docs).
+	// Both ref kinds read lazily; a Blob materialized from the whole file is what pinned ~600MB per 4K session.
 	input = new Input({
 		source: mediaRefSource(src),
 		formats: ALL_FORMATS,
 	});
 	const track = await input.getPrimaryVideoTrack();
 	if (!track) throw new Error("Filmstrip: no video track in input.");
-	// Trust the caller's ffprobe duration; computeDuration() walks every fragment
-	// of a fragmented MP4, which over a streamed source means many range reads.
+	// Trust the caller's ffprobe duration: computeDuration() walks every fragment, which is many range reads.
 	videoDurationSec =
 		durationSec && Number.isFinite(durationSec) ? durationSec : await input.computeDuration();
 	const w = await track.getCodedWidth();
@@ -91,8 +84,7 @@ let storyboardQueued = false;
 let draining = false;
 
 function enqueueDecode(requests: readonly DecodeRequest[]): void {
-	// Newest batch first: it reflects where the user is now, so a scroll doesn't
-	// wait behind tiles that have already left the viewport.
+	// Newest batch first: it reflects where the user is now, so a scroll doesn't wait on tiles already off-screen.
 	pending = [...requests, ...pending];
 	if (pending.length > MAX_PENDING) {
 		for (const dropped of pending.splice(MAX_PENDING)) {
@@ -110,12 +102,10 @@ async function decodeOne(req: DecodeRequest): Promise<void> {
 		const src = wrapped.canvas as OffscreenCanvas;
 		const blob = await canvasToJpeg(src);
 		if (disposed) return;
-		// A Blob is structured-cloneable but NOT transferable; listing it
-		// throws and loses the whole tile.
+		// A Blob is structured-cloneable but NOT transferable; listing it throws and loses the whole tile.
 		post({ type: "tile", id: req.id, blob, width: src.width, height: src.height });
 	} catch (err) {
-		// Carry the request id so the provider clears it from in-flight;
-		// without it the tile is wedged forever and the id/inflight maps grow.
+		// Carry the request id so the provider clears it from in-flight, or the tile wedges and the maps grow.
 		post({
 			type: "error",
 			id: req.id,
@@ -140,15 +130,13 @@ async function drain(): Promise<void> {
 				await decodeOne(req);
 				continue;
 			}
-			// Visible tiles always win; the storyboard is hover-scrub polish and
-			// runs only once the strip has nothing left to fill.
+			// Visible tiles always win; the storyboard is hover-scrub polish and runs only once the strip is full.
 			if (storyboardQueued) {
 				storyboardQueued = false;
 				try {
 					await buildStoryboard();
 				} catch (err) {
-					// A throw here must not abandon queued tiles: they would never be
-					// answered, and the provider wedges them in-flight forever.
+					// A throw here must not abandon queued tiles: they would never be answered and would stay in-flight forever.
 					post({
 						type: "error",
 						message: err instanceof Error ? err.message : String(err),
@@ -164,9 +152,7 @@ async function drain(): Promise<void> {
 }
 
 async function canvasToJpeg(src: OffscreenCanvas): Promise<Blob> {
-	// Re-encode at the tile's native size. Quality 0.82 is the visual sweet
-	// spot for thumbnails; the editor doesn't read EXIF or any deep
-	// metadata, so the lossy path is fine.
+	// Re-encode at native size; 0.82 is the thumbnail sweet spot and the editor reads no EXIF.
 	const blob = await src.convertToBlob({ type: "image/jpeg", quality: 0.82 });
 	return blob;
 }

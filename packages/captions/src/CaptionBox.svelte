@@ -1,17 +1,9 @@
 <script lang="ts">
-// Presentational caption renderer shared by the desktop editor preview and
-// the web player overlay. It owns the LOOK (pill, typography, per-word colour,
-// entrance) and nothing else: no store, no clock, no time mapping. The parent
-// resolves which chunk is active and how far speech has progressed, then hands
-// this component the words plus `spokenCount` / `activeIndex`.
-//
-// Styling is component-scoped CSS on purpose. Workspace packages that ship
-// Tailwind utility classes must be registered in each app's `@source`, or the
-// classes purge in release builds only; scoped CSS sidesteps that entirely.
-import type { CaptionAnimation, CaptionStyle, TranscriptWord } from "./types";
-import { breakIntoLines } from "./linebreak";
-import { wordColor, wordScaled } from "./word-render";
+// Presentational only: it owns the look, while the parent resolves which chunk is active. Scoped CSS, since utility classes from a workspace package purge unless registered in each app's @source.
 import { withAlpha } from "./color";
+import { breakIntoLines } from "./linebreak";
+import type { CaptionAnimation, CaptionStyle, TranscriptWord } from "./types";
+import { wordColor, wordScaled } from "./word-render";
 
 let {
 	words,
@@ -55,8 +47,7 @@ const rootStyle = $derived.by(() => {
 		parts.push(
 			`background: ${withAlpha(style.backgroundColor, style.backgroundOpacity / 100)}`,
 			`padding: ${style.boxPaddingYEm}em ${style.boxPaddingXEm}em`,
-			// CSS clamps a radius larger than half the box to a stadium, which
-			// matches geometry.pillBox's explicit clamp on the export side.
+			// CSS clamps a radius larger than half the box to a stadium, matching geometry.pillBox's export-side clamp.
 			`border-radius: ${style.boxRadiusEm}em`,
 		);
 	}
@@ -96,8 +87,7 @@ const alignItems = $derived(
     display: inline-flex;
     flex-direction: column;
     max-width: 100%;
-    /* A word turning muted -> bright animates on colour only (paint), never a
-       keyframe, so rapid retriggers and scrubbing retarget mid-flight. */
+    /* Muted to bright animates on colour only, never a keyframe, so rapid retriggers and scrubbing retarget mid-flight. */
   }
   .rc-cap-line {
     white-space: pre;

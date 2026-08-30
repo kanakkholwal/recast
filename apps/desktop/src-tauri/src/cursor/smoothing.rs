@@ -2,9 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::CursorSample;
 
-// Per-frame cursor smoothing & interpolation now run in the WebGL2 preview
-// compositor (src/components/editor/VideoPreview.svelte). Only idle / zoom
-// detection — needed at recording-stop time — remains in this module.
+// Per-frame smoothing runs in the WebGL2 preview compositor; only idle and zoom detection remain here.
 
 //  Idle detection
 
@@ -75,15 +73,7 @@ pub fn detect_idle_periods(
     periods
 }
 
-//  Path smoothing (export-side port of smoothing.ts)
-//
-// The WebGL preview smooths the cursor path in `smoothing.ts`
-// (`smoothCursorPath`) but the export compositor historically read the RAW
-// track, so a smoothed preview and a raw export disagreed — and once a zoom
-// magnified that gap it read as the cursor being "way off". This is an EXACT
-// port so the two paths produce the same trajectory frame-for-frame. Click
-// timing/positions are NOT taken from here — those come from the raw press
-// events — so smoothing can never shift where/when a click lands.
+// --- Path smoothing: an EXACT port of `smoothCursorPath` so preview and export share a trajectory. Click timing and position come from the raw press events, so smoothing can never move a click.
 
 /// One smoothed cursor sample. Position is f64 (sub-pixel, matching the
 /// preview); timestamps and button flags are preserved from the raw sample.
@@ -134,9 +124,7 @@ pub fn smooth_cursor_path(
     let snap_us = snap_window_ms.max(0.0) * 1000.0;
     let inv_2sigma2 = 1.0 / (2.0 * sigma_us * sigma_us);
 
-    // Gaussian smoothing with a monotonically-advancing window. Sums read the
-    // RAW positions (never the partially-written output), so writing `out[i]`
-    // in-place is safe and matches the JS exactly.
+    // Sums read the RAW positions, never the partially written output, so writing `out[i]` in place matches the JS.
     let mut lo = 0usize;
     let mut hi = 0usize;
     for i in 0..n {
@@ -165,9 +153,7 @@ pub fn smooth_cursor_path(
         }
     }
 
-    // Click anchor: cosine ramp from smoothed → click → smoothed inside the
-    // snap window (falloff = 1 at the click timestamp, 0 at the edge), so the
-    // path glides through the exact captured click x/y without a seam.
+    // Cosine ramp from smoothed to click and back inside the snap window, so the path glides through the captured x/y.
     if snap_to_clicks && snap_us > 0.0 {
         // Rising-edge click anchors detected from RAW samples.
         let mut anchors: Vec<(i64, f64, f64)> = Vec::new();
@@ -196,30 +182,7 @@ pub fn smooth_cursor_path(
     out
 }
 
-//  Zoom trigger detection
-//
-// A zoom should land where the viewer *needs* to look — a deliberate
-// interaction the user lingered on — not on every stray click. The old
-// detector emitted one trigger per click-down, so a recording with 40 clicks
-// produced ~40 zoom suggestions and the editor felt like it was zooming
-// constantly.
-//
-// The refined pipeline below mirrors what polished screen-recorder tools do:
-//
-//   1. Cluster — consecutive clicks close in time *and* space are one
-//      interaction (double-clicks, drag-selects, typing into a field), so
-//      they collapse to a single candidate.
-//   2. Score — each candidate gets a confidence in [0,1] from how
-//      deliberate it looks: did the cursor travel a long way to get there
-//      (a targeted action) and did it dwell afterwards (the user is
-//      actually looking at the result)? Drive-by clicks score low and are
-//      dropped.
-//   3. Settle — "settled after fast motion" only counts when the move
-//      covered real ground *and* the cursor then held still for a real
-//      beat, not a 3-sample flicker.
-//   4. Select — greedily keep the highest-scoring candidates subject to a
-//      minimum spacing, a same-spot guard, and an overall density budget
-//      (~one zoom per 9 s of footage) so the result reads as intentional.
+// --- Zoom trigger detection: cluster nearby clicks into one interaction, score how deliberate each looks, require a real settle, then greedily keep the best under a spacing and density budget.
 
 /// A suggested zoom region based on cursor activity.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -249,16 +212,12 @@ pub enum ZoomTriggerReason {
     SettleAfterMotion,
 }
 
-//  Tunables -
-// Clicks closer than this in time AND space are the same interaction.
+// --- Tunables. Clicks closer than this in time AND space are the same interaction.
 const CLICK_CLUSTER_GAP_US: u64 = 1_400_000;
 const CLICK_CLUSTER_RADIUS_PX: f64 = 160.0;
-// Two kept triggers must be at least this far apart. The placed zoom window
-// runs ~3 s (a short lead-in plus a long hold), so this leaves a small gap
-// between consecutive zooms instead of letting them stack back-to-back.
+// The placed zoom window runs ~3s, so this leaves a gap instead of letting two zooms stack back to back.
 const MIN_TRIGGER_GAP_US: u64 = 3_500_000;
-// A trigger landing within this radius of an earlier kept trigger (and not
-// far apart in time) is "the same place" — a second zoom there adds nothing.
+// A trigger this close to an earlier kept one is the same place, and a second zoom there adds nothing.
 const SAME_SPOT_RADIUS_PX: f64 = 220.0;
 // Density budget: at most ~one trigger per this much footage on average.
 const TRIGGER_BUDGET_US: u64 = 9_000_000;
@@ -379,10 +338,7 @@ fn cluster_click_candidates(
         let last = cluster.last().unwrap();
         let first_ts = first.timestamp_us;
         let last_ts = last.timestamp_us;
-        // Focus the zoom on the *final* click of the interaction — the target
-        // the user ended on. A centroid would strand the focus point in the
-        // empty space between two clicks, which reads as "off" from where the
-        // user actually clicked.
+        // Focus the final click of the interaction: a centroid strands the focus in the empty space between two clicks.
         let (cx, cy) = (last.x, last.y);
 
         // Base confidence: a click on its own is weak evidence.
@@ -425,8 +381,7 @@ fn settle_candidates(samples: &[CursorSample]) -> Vec<Candidate> {
             i += 1;
             continue;
         }
-        // Fast-motion run starts here; advance through the deceleration
-        // until the cursor drops below the settle speed.
+        // A fast-motion run starts here; advance through the deceleration until the cursor drops below the settle speed.
         let run_start = i;
         let mut j = i;
         while j < samples.len() && sample_speed(&samples[j]) > SETTLE_SPEED_PX_S {
@@ -488,8 +443,7 @@ pub fn detect_zoom_triggers(
         .saturating_sub(samples.first().map(|s| s.timestamp_us).unwrap_or(0));
     let budget = ((span / TRIGGER_BUDGET_US) as usize).max(1);
 
-    // 3: greedy selection by score — strongest candidate first — enforcing
-    // a minimum gap and a same-spot guard against everything kept so far.
+    // Greedy selection by score, strongest first, enforcing the minimum gap and same-spot guard against what is kept.
     candidates.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)

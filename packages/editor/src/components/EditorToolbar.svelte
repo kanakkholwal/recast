@@ -34,11 +34,7 @@ interface Props {
 	onexport?: () => void;
 	onsave?: () => void | Promise<void>;
 	isSaving?: boolean;
-	// Drives the Export button's label/icon/action:
-	//   export   idle, opens the export surface
-	//   close    options picker is open, closes it
-	//   minimize export surface is foregrounded, sends it to the activity center
-	//   show     export is running/finished but minimized, reopens it
+	// Drives the Export button: export opens, close dismisses the picker, minimize sends it to the activity center, show reopens.
 	exportMode?: "export" | "close" | "minimize" | "show";
 	/** Whether this editor's export is actively encoding (for the minimized
 	 *  "Exporting…" label). */
@@ -63,9 +59,7 @@ let {
 	onToggleTimeline,
 }: Props = $props();
 
-// The panel/timeline toggles are meaningless while the export surface owns the
-// layout, so they're disabled then rather than silently doing nothing. (A
-// minimized export is back in the normal editing layout, so they stay live.)
+// The toggles are meaningless while the export surface owns the layout, so they disable rather than silently no-op.
 const exportOpen = $derived(exportMode === "close" || exportMode === "minimize");
 
 const toggleClass = (active: boolean) =>
@@ -83,9 +77,7 @@ let showRevertConfirm = $state(false);
 onMount(() =>
 	registerShortcutHandlers({
 		"editor.presets": () => {
-			// The export surface owns the rail and its own Esc routing. Opening the
-			// picker over it strands Esc between two handlers, and the export one
-			// cancels the render. Every other editor chord already bails here.
+			// The export surface owns Esc routing, and opening the picker over it strands Esc between two handlers.
 			if (exportOpen) return;
 			showPresetsPicker = !showPresetsPicker;
 		},
@@ -113,13 +105,10 @@ function writeLook(look: PresetLook) {
 	store.lastAppliedPresetId = look.presetId;
 }
 
-// The look to fall back to if the picker is dismissed. Captured on the first
-// preview so undo history stays clean while the cursor moves around.
+// The look to restore if the picker is dismissed, captured on the first preview so undo history stays clean.
 let lookBeforePreview: PresetLook | null = null;
 
-// Preview writes are transient, and several store setters push undo history of
-// their own — left unsuppressed, browsing the picker buried the real edit under
-// an undo entry per keystroke and flagged the project dirty.
+// Preview writes are transient and several setters push undo of their own, so browsing buried the real edit.
 function previewPreset(preset: Preset) {
 	const before = (lookBeforePreview ??= readLook());
 	store.withoutUndo(() => writeLook(previewLook(preset, before)));
@@ -132,8 +121,7 @@ function restoreBeforePreview() {
 }
 
 function applyPreset(preset: Preset) {
-	// Rewind the preview first so undo lands on the look the user started with,
-	// not whatever the cursor last hovered over.
+	// Rewind the preview first, so undo lands on the look the user started with, not the last hover.
 	const before = lookBeforePreview ?? readLook();
 	lookBeforePreview = null;
 	store.withoutUndo(() => writeLook(before));
@@ -159,8 +147,7 @@ const activePreset = $derived.by(() => {
 	return PRESETS.find((p) => p.id === id) ?? null;
 });
 
-// The action (open / close / minimize / show) is decided by the parent from
-// exportMode; this just forwards the click.
+// The parent decides the action from exportMode; this just forwards the click.
 function onExportClick() {
 	onexport?.();
 }

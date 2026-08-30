@@ -148,15 +148,11 @@ pub fn to_ass(
     font: &RenderFont,
 ) -> String {
     let font_name = &font.ass_name;
-    // Rendered pixel height (matches the preview's `fontSizePct`cqh). All pixel
-    // geometry (spacing, outline, shadow, margins) is in this PlayRes space.
+    // Rendered pixel height (the preview's `fontSizePct`cqh); all pixel geometry lives in this PlayRes space.
     let css_px = (style.font_size_pct / 100.0 * play_h as f64).max(8.0);
-    // The value written into the Style `Fontsize` field: corrected so libass's
-    // winAscent+winDescent scaling lands the glyphs at `css_px` (see text_measure).
+    // Corrected so libass's winAscent plus winDescent scaling lands the glyphs at `css_px` (see text_measure).
     let font_size = css_px * font.ass_scale;
-    // An embedded font ships at its exact weight, so don't let libass synthesize
-    // bold on top of it (double-bolding). For a fallback system face, only bold
-    // from 700+ (600 = semibold should read as regular, not heavy).
+    // An embedded font ships at its exact weight, so only synthesize bold for a fallback face at 700 or above.
     let bold = if !font.embedded && style.font_weight >= 700 {
         -1
     } else {
@@ -167,9 +163,7 @@ pub fn to_ass(
 
     let anim = style.animation.clone().unwrap_or_default();
     let primary = ass_color(&style.color, 0.0);
-    // SecondaryColour is the pre-highlight colour in ASS. We colour words with
-    // inline `\c` overrides (so emphasis + progressive compose), not karaoke, so
-    // it is only a sensible default; keep it equal to primary.
+    // Words are coloured with inline `\c`, not karaoke, so SecondaryColour is only a sensible default.
     let outline_col = ass_color(&style.outline_color, 0.0);
     // ASS BackColour alpha: 00 = opaque, FF = transparent (inverse of our %).
     let back_col = ass_color(&style.background_color, 100.0 - style.background_opacity);
@@ -180,11 +174,7 @@ pub fn to_ass(
         _ => (1, outline_px, 0.0),
     };
 
-    // Place captions relative to the VIDEO rect, not the frame: top/bottom sit
-    // in the padding outside the video (mirrors `captionTopFrac` in
-    // $lib/captions/layout.ts). We anchor the caption's TOP and let it grow down,
-    // so both use the ASS top band (7-9); centre uses the middle band (4-6),
-    // which libass auto-centres on the frame == the (centred) video.
+    // Anchor the caption's TOP against the VIDEO rect (ASS band 7-9); centre uses 4-6, which libass centres on the frame.
     let v_top = video.y as f64 / play_h.max(1) as f64;
     let v_bottom = (video.y + video.h) as f64 / play_h.max(1) as f64;
     let cap = caption_height_frac(style.font_size_pct, style.max_lines);
@@ -199,8 +189,7 @@ pub fn to_ass(
             Some(top_frac) => (7, (top_frac * play_h as f64).round() as i32),
         };
     let alignment = band + h_offset;
-    // Constrain the text box to the video's horizontal extent (+ a small inset)
-    // so captions line up with the video content, not the letterbox bars.
+    // Constrain to the video's horizontal extent so captions line up with content, not the letterbox bars.
     let inset = (video.w as f64 * 0.04).round() as i32;
     let margin_l = video.x as i32 + inset;
     let margin_r = (play_w as i32 - (video.x + video.w) as i32).max(0) + inset;
@@ -210,8 +199,7 @@ pub fn to_ass(
     out.push_str("ScriptType: v4.00+\n");
     out.push_str("WrapStyle: 0\n");
     out.push_str("ScaledBorderAndShadow: yes\n");
-    // libass disables kerning unless asked; the browser preview kerns by default,
-    // so without this the burn-in is subtly wider on kern-heavy text.
+    // libass disables kerning unless asked, so without this the burn-in is subtly wider than the preview.
     out.push_str("Kerning: yes\n");
     out.push_str(&format!("PlayResX: {play_w}\nPlayResY: {play_h}\n\n"));
 
@@ -320,9 +308,7 @@ pub fn split_transcript_by_spans(t: &Transcript, spans: &[(f64, f64)]) -> Transc
                     })
                 })
                 .collect();
-            // A split piece is its own cue: its own id, and the half of the line
-            // actually spoken here rather than the whole line repeated on both
-            // sides. An unsplit segment keeps its identity untouched.
+            // A split piece is its own cue carrying the half actually spoken here; an unsplit segment keeps its identity.
             let text = if split && !words.is_empty() {
                 words
                     .iter()
@@ -450,8 +436,7 @@ impl LayoutCtx<'_> {
         let ph = self.play_h.max(1) as f64;
         let v_top = self.video.y as f64 / ph;
         let v_bottom = (self.video.y + self.video.h) as f64 / ph;
-        // Use the ACTUAL pill height for the vertical clamp (more precise than
-        // the max-lines estimate the auto-box path relies on).
+        // The ACTUAL pill height is more precise than the max-lines estimate the auto-box path relies on.
         let cap = pill_h / ph;
         let pill_y = match caption_top_frac(
             &self.style.position,
@@ -560,9 +545,7 @@ fn emit_animated_segment(
     }
 
     let runs = chunk_words(&seg.words, anim);
-    // Per-word events are needed when a word's colour depends on progress
-    // (progressive highlight) or the active word is emphasised. Otherwise every
-    // word is the base colour and one event per chunk suffices.
+    // Per-word events only when a word's colour depends on progress or the active word is emphasised.
     let per_word = anim.highlight() == "progressive" || anim.emphasis != "none";
 
     for (i, run) in runs.iter().enumerate() {
@@ -574,8 +557,7 @@ fn emit_animated_segment(
             seg.end
         };
 
-        // Exact rounded pill only when the chunk fits one line (multi-line keeps
-        // the square auto box, whose height libass sizes correctly).
+        // Exact rounded pill only for a single line; multi-line keeps the square auto box libass sizes correctly.
         let single_line =
             break_into_lines(run, style.max_chars_per_line, style.max_lines).len() == 1;
         let line_text = run
@@ -588,8 +570,7 @@ fn emit_animated_segment(
         } else {
             None
         };
-        // In pill mode the text is `\pos`-anchored inside the pill and the auto
-        // box is made transparent so only the rounded pill shows.
+        // In pill mode the text is `\pos`-anchored inside the pill and the auto box is made transparent.
         let pos_prefix = pill.as_ref().map_or(String::new(), |p| {
             format!(
                 "{{\\an7\\pos({:.0},{:.0})\\3a&HFF&\\4a&HFF&}}",
@@ -627,8 +608,7 @@ fn emit_animated_segment(
             } else {
                 String::new()
             };
-            // At word j's window, words 0..=j are spoken and j is the active word,
-            // matching the preview's spokenWordCount/activeWordIndex at that time.
+            // At word j's window, words 0..=j are spoken and j is active, matching the preview at that time.
             push_dialogue_layer(
                 out,
                 text_layer,
@@ -1021,8 +1001,7 @@ mod tests {
     }
 
     fn style_bold(ass: &str) -> i32 {
-        // Style line: ...,BackColour,Bold,Italic,... → Bold is the field after the
-        // 7th comma of the "Style: Default,..." line.
+        // Bold is the field after the 7th comma of the `Style: Default,...` line.
         let line = ass
             .lines()
             .find(|l| l.starts_with("Style: Default,"))
@@ -1106,8 +1085,7 @@ mod tests {
         let top = caption_top_frac("bottom", 0.0, cap, 0.15, 0.85).unwrap();
         assert!(top >= 0.85 - 1e-9);
         assert!(top + cap <= 1.0 + 1e-9);
-        // Full-bleed video: baseline at the frame edge, positive Offset still lifts
-        // the caption up (inward) — no dead clamp across the range.
+        // Full-bleed video: baseline at the frame edge, and a positive Offset still lifts the caption inward.
         let base = caption_top_frac("bottom", 0.0, cap, 0.0, 1.0).unwrap();
         let lifted = caption_top_frac("bottom", 8.0, cap, 0.0, 1.0).unwrap();
         assert!((base - (1.0 - cap)).abs() < 1e-9);
@@ -1159,10 +1137,7 @@ mod tests {
         ))));
     }
 
-    // Manual render check (not run in CI): drives the REAL to_ass with a system
-    // font resolved through text_measure, writing an ASS a human renders via
-    // ffmpeg to confirm the rounded pill hugs the text.
-    //   cargo test --lib render_pill_ass_for_manual_inspection -- --ignored --nocapture
+    // Manual render check (ignored in CI): writes an ASS a human renders via ffmpeg to confirm the pill hugs the text.
     #[test]
     #[ignore]
     fn render_pill_ass_for_manual_inspection() {
@@ -1226,8 +1201,7 @@ mod tests {
 
     #[test]
     fn no_measure_face_keeps_the_square_auto_box_no_pill() {
-        // Tests build RenderFont via rf() (measure: None), so even a box style
-        // must NOT draw a \p1 pill — the square BorderStyle:3 auto box stays.
+        // Tests build RenderFont with measure: None, so even a box style must keep the square auto box, not a pill.
         let style = CaptionStyle {
             background: "box".into(),
             animation: Some(CaptionAnimation {
@@ -1255,8 +1229,7 @@ mod tests {
         let t = transcript(words(&[(4.12, 4.38, "but"), (4.38, 4.6, "it's")]));
         let vtt = to_vtt(&t);
         assert!(vtt.starts_with("WEBVTT"));
-        // Each word carries a leading inline timestamp; a tag-blind player still
-        // sees the plain words.
+        // Each word carries a leading inline timestamp; a tag-blind player still sees the plain words.
         assert!(vtt.contains("<00:00:04.120>but <00:00:04.380>it's"));
 
         // A segment without word timing falls back to plain cue text.
@@ -1283,8 +1256,7 @@ mod tests {
             (1.0, 1.5, "three"),
         ]));
         let ass = to_ass(&t, &style, 1920, 1080, full_vr(), 0.0, 10.0, &rf(false));
-        // 3 words -> 3 word-window events; the first (only "one" spoken) must paint
-        // the later words with the muted colour (#a1a1aa -> BGR &Haaa1a1&).
+        // The first of 3 word-window events must paint the later words with the muted colour.
         assert_eq!(dialogues(&ass).len(), 3);
         let first = dialogues(&ass)[0].to_lowercase();
         assert!(first.contains("&haaa1a1&"), "unspoken words muted: {first}");

@@ -30,8 +30,7 @@ use crate::render::graph::RenderState;
 /// to consume every input frame before emitting its one output, so the
 /// encoder's `out_time_us` stayed at 0 the entire palette phase and the bar
 /// sat at 0% while only the elapsed counter ticked.
-// ffmpeg invocation with many discrete inputs (paths, trim window, durations);
-// bundling them into a struct wouldn't add clarity here.
+// Many discrete inputs (paths, trim window, durations); bundling them into a struct wouldn't add clarity.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_gif_palette_prepass(
     app: &AppHandle,
@@ -66,8 +65,7 @@ pub(crate) fn run_gif_palette_prepass(
     args.extend(["-i".to_string(), source_path.to_string_lossy().to_string()]);
 
     let base_vf = build_gif_palette_prepass_filter(options, output_scale_filter);
-    // Drop cut ranges and close the gaps before fps-resample + palettegen, so
-    // the palette is built only from kept frames.
+    // Drop cut ranges before fps-resample and palettegen, so the palette is built only from kept frames.
     let vf = match cut_select {
         Some(cs) if !cs.is_empty() => format!("{cs},{base_vf}"),
         _ => base_vf,
@@ -161,16 +159,14 @@ pub(crate) fn run_gif_palette_prepass(
         })
         .map_err(|e| format!("failed to spawn palette stdout drain: {e}"))?;
 
-    // Poll cancel_flag while waiting for the child so a user cancel kills the
-    // palette pre-pass mid-run instead of waiting for it to finish first.
+    // Poll cancel_flag while waiting so a user cancel kills the palette pre-pass mid-run.
     let exit_status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
             Ok(None) => {
                 if cancel_flag.load(Ordering::Acquire) {
                     let _ = child.kill();
-                    // Reap it: on Unix a killed child stays a zombie until
-                    // waited on, so a cancelled GIF export leaked one each time.
+                    // Reap it: on Unix a killed child stays a zombie until waited on, so a cancelled GIF export leaked one each time.
                     let _ = child.wait();
                     break Err("export cancelled".to_string());
                 }
@@ -253,13 +249,10 @@ pub(crate) struct GifPassOutput {
 pub(crate) async fn run_gif_pass(p: GifPassParams<'_>) -> Result<GifPassOutput, GifPassError> {
     let resolved_fps = p.gif_settings.fps.unwrap_or(p.gif_fps);
     let gif_max_colors = p.gif_settings.max_colors();
-    // `GifFilterOptions` holds a `&str` for dither, so we can't build the struct
-    // here and then move it into a `'static` spawn_blocking closure. Stash the
-    // owned String, reconstruct the struct inside each closure.
+    // `GifFilterOptions` holds a `&str`, so stash the owned String and rebuild the struct inside each `'static` closure.
     let gif_dither_owned: String = p.gif_settings.dither.clone();
 
-    // Transient 2-pass palette file — unique per run so concurrent exports don't
-    // clobber each other's palette.
+    // Unique per run so concurrent exports don't clobber each other's palette.
     let palette_stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -269,11 +262,7 @@ pub(crate) async fn run_gif_pass(p: GifPassParams<'_>) -> Result<GifPassOutput, 
         std::process::id()
     ));
 
-    // Cuts AND per-segment speed apply to GIF too, but its two-pass palette path
-    // runs before the generic (MP4/WebM-only) cut+speed stage, so build the same
-    // select+setpts warp here and inject it into both the palette pre-pass and
-    // the main pass. GIF has no audio, so there's no atempo counterpart; the
-    // downstream `fps=` resamples the warped PTS to CFR.
+    // GIF's two-pass palette runs before the generic cut and speed stage, so build the same select+setpts warp for both passes.
     let gif_cut_select: Option<String> = {
         let export_cuts = collect_export_cuts(p.render_state, p.trim_start, p.trim_end);
         let gif_speed_segments = resolve_speed_segments(
@@ -293,8 +282,7 @@ pub(crate) async fn run_gif_pass(p: GifPassParams<'_>) -> Result<GifPassOutput, 
                 String::new()
             };
             let setpts = if gif_speed_active {
-                // Single-quote: the warp expression contains commas the
-                // filtergraph parser would otherwise read as separators.
+                // Single-quote: the warp expression's commas would otherwise read as filtergraph separators.
                 format!(
                     "setpts='({})/TB'",
                     build_speed_setpts_expr(&gif_speed_segments)
@@ -365,14 +353,10 @@ pub(crate) async fn run_gif_pass(p: GifPassParams<'_>) -> Result<GifPassOutput, 
         return Err(GifPassError::Cancelled);
     }
 
-    // Wire the palette PNG in as the last FFmpeg input. GIF mode skips audio
-    // inputs entirely, so input ordering up to this point is:
-    //   0=source, 1..=extra_inputs, [cursor]
-    // Palette appends after that.
+    // Palette is the LAST input: GIF skips audio, so ordering is source, extra_inputs, cursor, then palette.
     let palette_input_args = ["-i".to_string(), palette_path.to_string_lossy().to_string()];
 
-    // Drop cut ranges before the palette-use stage so removed frames never reach
-    // the GIF (the generic cut stage is MP4/WebM-only).
+    // Drop cut ranges before palette-use so removed frames never reach the GIF; the generic cut stage is MP4 and WebM only.
     let mut filter_complex = p.filter_complex;
     let mut video_map = p.video_map;
     if let Some(ref cs) = gif_cut_select {

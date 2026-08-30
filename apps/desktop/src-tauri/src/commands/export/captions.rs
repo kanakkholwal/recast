@@ -50,10 +50,7 @@ pub(crate) async fn append_caption_burn_in(
         Some(t) => t,
         None => return Ok(None),
     };
-    // libass is a separate `--enable-libass` build flag, so an otherwise complete
-    // FFmpeg can be missing the `ass` filter entirely. Caught here, before the
-    // graph is built, so the user gets a fix instead of FFmpeg's bare
-    // `No such filter: 'ass'` in the export log.
+    // libass is a separate build flag, so catch a missing `ass` filter here instead of FFmpeg's bare error mid-export.
     if !crate::ffmpeg::has_filter("ass") {
         return Err(AppError::msg(format!(
             "Captions can't be burned in: the FFmpeg at {} was built without libass (no `ass` filter). \
@@ -68,9 +65,7 @@ pub(crate) async fn append_caption_burn_in(
         .get("captionStyle")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    // Embed the preset's font so it renders in the burn instead of a libass
-    // fallback. System/generic faces are skipped (libass resolves them); a fetch
-    // failure degrades to the fallback, never blocks export.
+    // Embed the preset's font so it renders in the burn; system faces are skipped and a fetch failure degrades, never blocks.
     let family = crate::transcription::subtitles::first_family(&style.font_family);
     let is_system = crate::transcription::subtitles::is_system_family(&family);
     let fontsdir: Option<String> = if is_system {
@@ -84,11 +79,7 @@ pub(crate) async fn append_caption_burn_in(
             }
         }
     };
-    // Resolve the exact face libass will use, off the font file: its match name
-    // (legacy family, so a non-RIBBI weight like Inter-600 = "Inter SemiBold"
-    // resolves instead of falling back to Arial) and the size correction (libass
-    // scales Fontsize by winAscent+winDescent, not the em box). The name we search
-    // is the mapped generic for system faces, else the family itself.
+    // Resolve the exact face off the font file: its legacy match name (so Inter-600 isn't Arial) and libass's winAscent plus winDescent size correction.
     let search_name = if is_system {
         crate::transcription::subtitles::ass_font_name(&style.font_family)
     } else {

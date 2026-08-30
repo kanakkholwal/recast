@@ -136,9 +136,7 @@ impl H264Encoder {
         let mode = match asynchronous {
             false => Mode::Sync,
             true => {
-                // An async transform stays locked until the caller says it
-                // understands the event protocol.
-                // SAFETY: reading and writing the transform's own attributes.
+                // SAFETY: reading and writing the transform's own attributes; an async transform stays locked until the caller opts in.
                 unsafe {
                     let attributes = transform.GetAttributes()?;
                     attributes.SetUINT32(&MF_TRANSFORM_ASYNC_UNLOCK, 1)?;
@@ -150,12 +148,10 @@ impl H264Encoder {
             }
         };
 
-        // The manager has to be set before the media types: a D3D-aware
-        // transform advertises different input types once it has a device.
+        // The manager must be set before the media types: a D3D-aware transform advertises different inputs once it has a device.
         let gpu = match context {
             Some(context) if is_d3d_aware(&transform) => {
-                // SAFETY: the manager outlives the message, which only stores a
-                // reference the transform add-refs itself.
+                // SAFETY: the manager outlives the message, which only stores a reference the transform add-refs itself.
                 unsafe {
                     transform.ProcessMessage(
                         MFT_MESSAGE_SET_D3D_MANAGER,
@@ -221,8 +217,7 @@ impl H264Encoder {
     }
 
     fn configure(&mut self) -> Result<(), EncodeError> {
-        // Output first: an H.264 transform will not accept an input type until
-        // it knows what it is producing.
+        // Output first: an H.264 transform won't accept an input type until it knows what it is producing.
         let attributes = [
             (MF_MT_MAJOR_TYPE, Value::Guid(MFMediaType_Video)),
             (MF_MT_SUBTYPE, Value::Guid(MFVideoFormat_H264)),
@@ -317,8 +312,7 @@ impl H264Encoder {
     fn submit(&mut self, sample: IMFSample) -> Result<Vec<EncodedSample>, EncodeError> {
         match &self.mode {
             Mode::Sync => {
-                // SAFETY: the sample lives for the call, and stream 0 is the
-                // only one an encoder MFT exposes.
+                // SAFETY: the sample lives for the call, and stream 0 is the only one an encoder MFT exposes.
                 unsafe { self.transform.ProcessInput(0, &sample, 0) }?;
                 self.drain_available()
             }
@@ -340,8 +334,7 @@ impl H264Encoder {
                     break;
                 }
             }
-            // Waiting for a credit is also when output arrives: the transform
-            // interleaves the two events, so nothing has to be polled for.
+            // Waiting for a credit is also when output arrives: the transform interleaves the two events, so nothing is polled.
             match self.pump()? {
                 Some(produced) => out.push(produced),
                 None => continue,
@@ -389,9 +382,7 @@ impl H264Encoder {
         if matches!(self.mode, Mode::Sync) {
             return self.drain_available();
         }
-        // `draining` is cleared by the drain-complete event, which is the only
-        // signal that the transform has finished; a plain read loop would block
-        // forever once it has.
+        // `draining` is cleared by the drain-complete event, the only finish signal; a plain read loop would block forever.
         self.draining = true;
         let mut out = Vec::new();
         while self.draining {
@@ -461,9 +452,7 @@ pub(crate) fn pull_output(transform: &IMFTransform) -> Result<Option<EncodedSamp
 
 impl Drop for H264Encoder {
     fn drop(&mut self) {
-        // Releasing without ending the stream leaves a hardware session held on
-        // some drivers, which is the whole reason NVENC runs out of them.
-        // SAFETY: a shutdown message on a live transform.
+        // SAFETY: a shutdown message on a live transform. Releasing without ending the stream holds a hardware session on some drivers.
         unsafe {
             let _ = self
                 .transform
@@ -485,8 +474,7 @@ impl<T> TakeIfNeeded<T> for std::mem::ManuallyDrop<T> {
 }
 
 fn read_sample(sample: &IMFSample) -> Result<EncodedSample, EncodeError> {
-    // SAFETY: reading the attributes and the contiguous buffer of a sample the
-    // transform just handed us.
+    // SAFETY: reading the attributes and contiguous buffer of a sample the transform just handed us.
     unsafe {
         let timestamp = sample.GetSampleTime().unwrap_or(0);
         let duration = sample.GetSampleDuration().unwrap_or(0);
@@ -524,14 +512,10 @@ fn texture_sample(
     timestamp: i64,
     duration: i64,
 ) -> Result<IMFSample, windows::core::Error> {
-    // SAFETY: the texture outlives the call, and the sample holds its own
-    // reference to the surface from here on.
+    // SAFETY: the texture outlives the call, and the sample holds its own reference to the surface from here on.
     unsafe {
         let buffer = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, texture, 0, false)?;
-        // A DXGI buffer starts with a current length of zero, and a transform
-        // that checks it reads the frame as empty. NVENC does not check, so
-        // nothing here proves this line; the Intel and AMD transforms are
-        // reported to, and there is no way to test them from this machine.
+        // A DXGI buffer starts at length zero and a transform that checks it reads the frame as empty; NVENC doesn't check, so nothing here proves this line.
         let two_d: IMF2DBuffer = buffer.cast()?;
         buffer.SetCurrentLength(two_d.GetContiguousLength()?)?;
         let sample = MFCreateSample()?;

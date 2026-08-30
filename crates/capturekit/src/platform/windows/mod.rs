@@ -24,16 +24,14 @@ pub(crate) use pointer::source as pointer_source;
 pub(crate) fn capabilities() -> Capabilities {
     Capabilities {
         backend: "dxgi",
-        // No per-session exclude list exists. `SetWindowDisplayAffinity` is the
-        // mechanism, and only the excluded window's own process may call it.
+        // No per-session exclude list exists; `SetWindowDisplayAffinity` is the mechanism, and only the owning process may call it.
         exclusion: ExclusionSupport::OwnWindowsOnly,
         window_capture: wgc::is_supported(),
         camera_capture: true,
         window_enumeration: true,
         display_enumeration: true,
         region_crop: RegionCrop::DuringAcquisition,
-        // Only Graphics Capture can composite one. Desktop Duplication never
-        // does, and refuses `CursorMode::Include` rather than dropping it.
+        // Only Graphics Capture composites a cursor; Desktop Duplication refuses `CursorMode::Include` rather than dropping it.
         cursor_in_frame: wgc::is_supported(),
         cursor_samples: true,
         cursor_pointer: true,
@@ -48,13 +46,9 @@ pub(crate) fn capabilities() -> Capabilities {
 pub(crate) fn permission(kind: PermissionKind) -> Permission {
     match kind {
         PermissionKind::Screen => Permission::NotRequired,
-        // Camera and microphone are gated by the privacy settings, but only for
-        // packaged apps; a desktop process is told nothing until it opens the
-        // device. Reporting "not determined" keeps the caller from claiming a
-        // grant it does not have.
+        // Privacy settings gate only packaged apps; a desktop process is told nothing until it opens the device.
         PermissionKind::Camera | PermissionKind::Microphone => Permission::NotDetermined,
-        // `PermissionKind` is non-exhaustive; an unknown capability is not one
-        // this platform can claim to have granted.
+        // `PermissionKind` is non-exhaustive, and an unknown capability is not one this platform can claim to have granted.
         _ => Permission::NotDetermined,
     }
 }
@@ -101,8 +95,7 @@ pub(crate) fn open(target: &Target, opts: &OpenOptions) -> Result<Box<dyn FrameS
             };
             Ok(Box::new(dxgi::DxgiSource::open(*display, &opts)?))
         }
-        // Graphics Capture, not duplication plus a crop: a maximised or
-        // overlapped window is only separable at the OS compositor.
+        // Graphics Capture, not duplication plus a crop: a maximised or overlapped window is only separable at the compositor.
         Target::Window(id) => Ok(Box::new(wgc::WgcSource::open(*id, opts)?)),
         Target::Camera(id) => Ok(Box::new(mf::MfCameraSource::open(id, opts)?)),
     }

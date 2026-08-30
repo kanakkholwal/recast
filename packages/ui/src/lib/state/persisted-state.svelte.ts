@@ -107,15 +107,12 @@ export function inferSerializer<T>(initialValue: T): Serializer<T> {
 		};
 	}
 
-	// object | array | null | bigint | symbol | function → JSON, with a couple
-	// of shape guards so genuinely corrupt data falls back instead of poisoning
-	// the reactive value.
+	// Complex values go through JSON, with shape guards so corrupt data falls back instead of poisoning the value.
 	return {
 		serialize: (v) => JSON.stringify(v),
 		deserialize: (raw) => {
 			const parsed: unknown = JSON.parse(raw);
-			// An array key that deserialized to a non-array is corrupt — bail to
-			// the initial via the caller's catch.
+			// An array key that deserialized to a non-array is corrupt, so bail to the initial via the caller's catch.
 			if (Array.isArray(initialValue) && !Array.isArray(parsed)) {
 				throw new TypeError("expected an array");
 			}
@@ -150,8 +147,7 @@ export class PersistedState<T> {
 		this.#syncTabs = options.syncTabs ?? true;
 		this.#onError = options.onError;
 
-		// Read the persisted value synchronously so the very first reactive read
-		// already reflects storage — no flash of the default on hydrate.
+		// Read synchronously so the first reactive read already reflects storage, with no flash of the default.
 		this.#current = this.#read();
 
 		if (isBrowser && this.#syncTabs) this.#subscribe();
@@ -237,19 +233,14 @@ export class PersistedState<T> {
 	}
 
 	#subscribe(): void {
-		// Cross-document: native `storage` events fire in *other* windows/tabs
-		// that share this origin (Tauri v2 webviews do). `event.key` is null on a
-		// `clear()`, which we also honour by re-reading.
+		// Native `storage` fires in OTHER windows sharing this origin; `event.key` is null on `clear()`, which also re-reads.
 		this.#onStorage = (event: StorageEvent) => {
 			if (event.key !== null && event.key !== this.#key) return;
 			if (event.storageArea && event.storageArea !== this.#area()) return;
 			this.#current = this.#read();
 		};
 
-		// Same-document: native `storage` does NOT fire in the window that wrote
-		// it, so a second instance of the same key in this document wouldn't see
-		// the change. The custom channel covers that; the source guard stops an
-		// instance from reacting to its own write.
+		// Native `storage` never fires in the writing window, so the custom channel covers same-document instances; the source guard stops self-reaction.
 		this.#onSameDoc = (event: Event) => {
 			const detail = (event as CustomEvent<SameDocDetail>).detail;
 			if (!detail || detail.key !== this.#key || detail.area !== this.#storage) return;

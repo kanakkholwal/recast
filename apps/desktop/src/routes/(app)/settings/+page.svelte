@@ -99,10 +99,7 @@ import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./s
 
 type Theme = "light" | "dark" | "system";
 type EditorBehavior = "navigate" | "new-window";
-// Experimental + About + device/diagnostics collapse into one "Advanced"
-// section. Low-frequency, expert-facing config kept out of the main tabs.
-// The tab list itself lives in `settings-tabs.ts`, so links elsewhere in the app
-// can target a tab without importing this page.
+// Advanced folds experimental, about and diagnostics together; the tab list lives in `settings-tabs.ts`.
 
 let outputDir = $state("");
 let currentTheme = $state<Theme>("system");
@@ -111,9 +108,7 @@ let countdown = $state<CountdownSeconds>(3);
 let closeToTray = $state(true);
 let windowTransparency = $state(false);
 let hidePanelFromCapture = $state(true);
-// Content protection is a compile-time no-op on Linux (tao gates it to
-// macOS+Windows; X11/Wayland expose no per-window capture-exclusion API), so
-// the toggle is shown disabled there rather than pretending it does anything.
+// Content protection is a compile-time no-op on Linux, so the toggle is shown disabled rather than pretending.
 const isLinux = platform() === "linux";
 // Global recording prefs, read by the recording panel via shared localStorage.
 let recordingQuality = $state<RecordingQuality>("auto");
@@ -138,15 +133,13 @@ onMount(() => {
 	fetchSettings();
 	void refreshCliStatus();
 	profilesStore.hydrate();
-	// `mode-watcher-mode` is owned by mode-watcher; we only read it to reflect
-	// the current choice in the radio group.
+	// `mode-watcher-mode` is owned by mode-watcher; we only read it to reflect the choice in the radio group.
 	currentTheme = safeStorage.get<Theme>("mode-watcher-mode", currentTheme);
 	editorWindow = safeStorage.get<EditorBehavior>("recast-editor-window", editorWindow);
 	countdown = recordingCountdown.value;
 	recordingQuality = loadRecordingQuality();
 	recordingFps = loadRecordingFps() ?? 60;
-	// Gate fps options by the refresh of the display that'll actually be
-	// recorded (the last-selected source); re-sync when the source changes.
+	// Gate fps options by the refresh of the display that will actually be recorded; re-sync when the source changes.
 	void syncMaxRefresh();
 	const unlistenSource = listen("source-selected", () => void syncMaxRefresh());
 	return () => {
@@ -154,16 +147,13 @@ onMount(() => {
 	};
 });
 
-// --- Tab ⇄ URL ---
-// Reader first, so a deep-linked `?tab=` beats the default on the first flush.
-// Each effect reads only its own source and bails when the two already agree.
+// --- Tab and URL: reader first, so a deep-linked `?tab=` beats the default on the first flush.
 $effect(() => {
 	const fromUrl = parseSettingsTab(page.url.searchParams.get(SETTINGS_TAB_PARAM));
 	if (fromUrl && fromUrl !== untrack(() => activeTab)) activeTab = fromUrl;
 });
 
-// `replaceState` throws until the router has booted, and effects run during
-// hydration, which is earlier than that.
+// `replaceState` throws until the router has booted, and effects run during hydration, which is earlier.
 let routerReady = $state(false);
 afterNavigate(() => {
 	routerReady = true;
@@ -175,8 +165,7 @@ $effect(() => {
 	const url = untrack(() => new URL(page.url));
 	if (url.searchParams.get(SETTINGS_TAB_PARAM) === tab) return;
 	url.searchParams.set(SETTINGS_TAB_PARAM, tab);
-	// replaceState, not goto: the open tab is view state, and one history entry
-	// per tab click would make Back mean "previous tab".
+	// replaceState, not goto: the open tab is view state, and one entry per click would make Back mean 'previous tab'.
 	replaceState(
 		url,
 		untrack(() => page.state),
@@ -206,8 +195,7 @@ function updateRecordingFps(value: number) {
 
 const fpsOptions = $derived(computeFpsOptions(maxRefreshHz));
 
-// The stored preference is never mutated, so switching back to a high-refresh
-// display restores it.
+// The stored preference is never mutated, so switching back to a high-refresh display restores it.
 const effectiveFps = $derived(clampFps(recordingFps, fpsOptions));
 
 const recordingQualityOptions: {
@@ -272,8 +260,7 @@ async function fetchSettings() {
 	try {
 		closeToTray = await getCloseToTray();
 	} catch {
-		// Pre-tray builds or non-Tauri preview, so leave the default and let
-		// the UI render the optimistic value.
+		// Pre-tray builds or a non-Tauri preview: leave the default and let the UI render the optimistic value.
 	}
 	try {
 		windowTransparency = await getWindowTransparency();
@@ -288,8 +275,7 @@ async function fetchSettings() {
 	try {
 		cliAutoInstall = await getCliAutoInstall();
 	} catch {
-		// Optimistic default (true) is fine; settings just don't reflect
-		// an explicit off toggle if the command isn't available.
+		// The optimistic default is fine; settings just won't reflect an explicit off toggle without the command.
 	}
 }
 
@@ -408,9 +394,7 @@ const themes: { value: Theme; label: string; icon: IconComponent }[] = [
 	{ value: "system", label: "System", icon: Monitor },
 ];
 
-// Segmented-control option lists, derived from the tables above so labels
-// stay in one place. Values are strings (Segmented is string-keyed); numeric
-// settings parse back on change.
+// Derived from the tables above so labels stay in one place; Segmented is string-keyed, so numbers parse back on change.
 const themeSegments: SegmentedOption<Theme>[] = themes.map((t) => ({
 	value: t.value,
 	label: t.label,

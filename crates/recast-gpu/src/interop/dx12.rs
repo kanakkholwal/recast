@@ -19,8 +19,7 @@ impl OwnedHandle {
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
         if !self.0 .0.is_null() {
-            // SAFETY: the handle came from the caller's `SharedHandle` and is
-            // closed exactly once, here, because `OwnedHandle` is not Copy or Clone.
+            // SAFETY: the handle came from the caller's `SharedHandle` and closes exactly once, since `OwnedHandle` isn't Copy.
             let _ = unsafe { CloseHandle(self.0) };
         }
     }
@@ -55,12 +54,7 @@ pub fn import_texture(
         depth_or_array_layers: 1,
     };
 
-    // SAFETY: `as_hal` hands out the live DX12 device; `raw_device` is valid for
-    // the borrow. `texture_from_raw` adopts the D3D12 resource we just opened,
-    // whose dimensions and format we assert match `desc` (a mismatch is the
-    // caller's contract violation and would be caught by the golden tests).
-    // The hal borrow is dropped before `create_texture_from_hal`, which needs
-    // the device again.
+    // SAFETY: `as_hal` hands out the live device for the borrow and `texture_from_raw` adopts the resource just opened; the hal borrow drops before `create_texture_from_hal`.
     let texture = unsafe {
         let hal_device = ctx
             .device()
@@ -111,8 +105,7 @@ pub fn import_texture(
 pub fn import_fence(ctx: &GpuContext, handle: SharedHandle) -> Result<SharedFence, GpuError> {
     let owned = OwnedHandle::new(handle);
 
-    // SAFETY: same device borrow contract as `import_texture`. `OpenSharedHandle`
-    // takes ownership of nothing; `owned` still closes our duplicate.
+    // SAFETY: same device-borrow contract as `import_texture`; `OpenSharedHandle` takes no ownership, and `owned` still closes our duplicate.
     let fence = unsafe {
         let hal_device = ctx
             .device()
@@ -133,8 +126,7 @@ pub fn import_fence(ctx: &GpuContext, handle: SharedHandle) -> Result<SharedFenc
 }
 
 pub fn queue_signal(ctx: &GpuContext, fence: &Fence, value: u64) -> Result<(), GpuError> {
-    // SAFETY: same device borrow contract as `queue_wait`; `Signal` only
-    // enqueues, and transfers no ownership.
+    // SAFETY: same device-borrow contract as `queue_wait`; `Signal` only enqueues and transfers no ownership.
     unsafe {
         let hal_device = ctx
             .device()
@@ -148,8 +140,7 @@ pub fn queue_signal(ctx: &GpuContext, fence: &Fence, value: u64) -> Result<(), G
 }
 
 pub fn queue_wait(ctx: &GpuContext, fence: &Fence, value: u64) -> Result<(), GpuError> {
-    // SAFETY: `raw_queue` is valid for the hal borrow, and `Wait` only enqueues a
-    // GPU-side wait; it neither blocks the CPU nor transfers ownership.
+    // SAFETY: `raw_queue` is valid for the hal borrow, and `Wait` only enqueues a GPU-side wait.
     unsafe {
         let hal_device = ctx
             .device()

@@ -7,12 +7,7 @@ import { buildSnapTargets, type SnapTarget, snapLabel } from "./timeline-snap";
 import type { LaneCardLayout } from "./timeline-stack";
 import ZoomLayerCard from "./ZoomLayerCard.svelte";
 
-// Hosts zoom-region cards: builds the shared snap target list and paints
-// the guide line when a card reports an active snap during drag/resize.
-//
-// Drag on empty lane space to create a region, the same gesture the Cuts lane
-// uses. The two lanes look identical, so they must behave identically: this one
-// used to do nothing on drag and force a trip to the toolbar instead.
+// Hosts zoom cards, builds the shared snap targets, and drags on empty space to create a region: the Cuts lane looks identical, so it must behave identically.
 
 interface Props {
 	store: EditorStore;
@@ -30,8 +25,7 @@ interface Props {
 let { store, pixelsPerSecond, fps, duration, timeMode, layout, onCopy, onDuplicate }: Props =
 	$props();
 
-// Matches the toolbar's "Zoom" button, so a region reads the same however it
-// was made.
+// Matches the toolbar's Zoom button, so a region reads the same however it was made.
 const DEFAULT_SCALE = 1.8;
 // Below this a drag is a stray click, not a deliberate region.
 const MIN_REGION = 0.3;
@@ -73,13 +67,11 @@ function timeAt(clientX: number): number {
 }
 
 function onLaneDown(e: PointerEvent) {
-	// Only the bare lane background starts a create-drag; cards stop propagation
-	// in their own handlers.
+	// Only the bare lane background starts a create-drag; cards stop propagation in their own handlers.
 	if (e.target !== laneEl || duration <= 0 || e.button !== 0) return;
 	// The razor tool owns clicks timeline-wide: let this bubble to the scroller.
 	if (store.timelineTool === "razor") return;
-	// Bypassed track: refuse the edit rather than create a region that silently
-	// wouldn't apply. The inline hint says why.
+	// Bypassed track: refuse the edit rather than create a region that silently wouldn't apply.
 	if (!store.focusEnabled) return;
 	// Stop the timeline's scrub handler from also claiming this drag.
 	e.preventDefault();
@@ -107,8 +99,7 @@ function onLaneUp(e: PointerEvent) {
 	drag = null;
 }
 
-// Empty-state affordance: the lane used to explain how to add a region without
-// letting you do it. Punches in around the playhead, like the toolbar button.
+// The lane used to explain how to add a region without letting you; this punches in around the playhead.
 function addAtPlayhead() {
 	if (duration <= 0 || !store.focusEnabled) return;
 	const start = Math.max(store.inPoint, store.currentTime - 0.35);

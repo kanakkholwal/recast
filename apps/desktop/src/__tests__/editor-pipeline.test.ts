@@ -32,10 +32,7 @@ const segments = (() => {
 const timeMap = timeMapFromSegments(segments);
 
 describe("layers and annotations: visibility across a cut", () => {
-	// A layer is a UI element (shape, text, callout) anchored to original
-	// time. Editors expect the layer to be drawn only while the playhead
-	// is in the kept portion of the layer's window. Pre-cut-only layers
-	// shouldn't appear post-cut; cut-crossing layers are clipped.
+	// A layer is drawn only while the playhead is in the kept portion of its window; cut-crossing layers are clipped.
 
 	function layerWindow(layer: { start: number; end: number }, span: KeptSpan) {
 		const start = Math.max(layer.start, span.origStart);
@@ -71,10 +68,7 @@ describe("layers and annotations: visibility across a cut", () => {
 });
 
 describe("fade-in / fade-out: the fade envelope applies to the original window", () => {
-	// The export pipeline applies fades to the SOURCE window; the editor's
-	// preview shows a pre-faded framebuffer (the source is just muted at
-	// the boundaries). Tests pin the contract: the fade envelope is in
-	// source time, the cut-collapsed output drops the in-cut fade.
+	// The fade envelope is in source time, and the cut-collapsed output drops the in-cut fade.
 
 	function applyFade(
 		volume: number,
@@ -95,8 +89,7 @@ describe("fade-in / fade-out: the fade envelope applies to the original window",
 	}
 
 	it("a 1s fade-in on a 0.5s kept span is fully faded in (not partial)", () => {
-		// Boundary: the editor trims the fade to the visible window. A 0.5s
-		// kept span under a 1s fade is at the fade's tail.
+		// Boundary: a 0.5s kept span under a 1s fade sits at the fade's tail.
 		const volume = applyFade(1.0, 1.0, 0.5, 12.0, 12.5);
 		expect(volume).toBeGreaterThan(0);
 		expect(volume).toBeLessThanOrEqual(1);
@@ -128,11 +121,7 @@ describe("audio scheduling across a cut: kept regions + planAudioSchedule", () =
 	});
 
 	it("the cut collapses on the output axis (no silence gap)", () => {
-		// A cut at source [5, 7] on a 60s recording produces 58s of output. The
-		// kept regions [0, 5] and [7, 60] are laid end-to-end on the output
-		// axis as [0, 5] and [5, 58]. There is NO gap — the cut is silent by
-		// collapsing the two regions onto adjacent output intervals. Audio
-		// plays straight through.
+		// A cut at [5,7] on 60s gives 58s of output: the kept regions lie end-to-end with NO gap, so audio plays straight through.
 		const regions = keptRegions(0, RECORDING_SEC, [CUT]);
 		const chunks = planAudioSchedule(regions, 0);
 		expect(chunks).toHaveLength(2);
@@ -148,9 +137,7 @@ describe("audio scheduling across a cut: kept regions + planAudioSchedule", () =
 
 	it("starts scheduling from a post-cut output time", () => {
 		const regions = keptRegions(0, RECORDING_SEC, [CUT]);
-		// Output = 5 (inside the pre-cut region). The pre-cut chunk starts
-		// immediately at source 5 and runs for 5s. The post-cut chunk
-		// starts when the pre-cut ends.
+		// Output 5 is inside the pre-cut region, which starts at source 5 and runs 5s; the post-cut chunk starts when it ends.
 		const chunks = planAudioSchedule(regions, 5);
 		expect(chunks).toHaveLength(2);
 		expect(chunks[0]?.bufferOffset).toBe(5);
@@ -162,8 +149,7 @@ describe("audio scheduling across a cut: kept regions + planAudioSchedule", () =
 });
 
 describe("timeMap integration: roundtrip output ↔ original across multiple cuts", () => {
-	// Stress the round-trip with several cuts; the timeMap should
-	// preserve monotonicity and span membership across all of them.
+	// Several cuts: the timeMap must preserve monotonicity and span membership across all of them.
 	const cuts: Region[] = [
 		{ start: 5, end: 7 },
 		{ start: 20, end: 22 },
@@ -171,9 +157,7 @@ describe("timeMap integration: roundtrip output ↔ original across multiple cut
 	];
 	const keptSegs = (() => {
 		const out: { start: number; end: number; index: number }[] = [];
-		// One segment per kept interval. Uses `keptRegions` to compute the
-		// boundaries so the test asserts the helper agrees with the segments
-		// we'd build.
+		// One segment per kept interval, using `keptRegions` so the test asserts the helper agrees with the segments.
 		const regs = keptRegions(0, 60, cuts);
 		regs.forEach((r, i) => out.push({ start: r.start, end: r.end, index: i }));
 		return out;
@@ -185,8 +169,7 @@ describe("timeMap integration: roundtrip output ↔ original across multiple cut
 		let prevOut = -Infinity;
 		for (let t = 0; t < 60; t += 0.1) {
 			const o = outputToOriginal(map, t);
-			// In cut ranges, outputToOriginal collapses to the seam. Outside
-			// cuts, it's monotonic in t.
+			// Inside a cut range outputToOriginal collapses to the seam; outside cuts it is monotonic in t.
 			if (o >= prevOrig - 1e-6) {
 				const out = map.spans.find((s) => t >= s.outStart - 1e-6 && t <= s.outEnd + 1e-6);
 				if (out) {
@@ -200,8 +183,7 @@ describe("timeMap integration: roundtrip output ↔ original across multiple cut
 
 	it("every kept span is reachable from both directions", () => {
 		for (const s of map.spans) {
-			// From a point inside the span, outputToOriginal should land in
-			// the same span.
+			// From a point inside the span, outputToOriginal must land in the same span.
 			const mid = (s.outStart + s.outEnd) / 2;
 			const orig = outputToOriginal(map, mid);
 			expect(orig).toBeGreaterThanOrEqual(s.origStart - 1e-6);

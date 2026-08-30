@@ -187,8 +187,7 @@ pub fn sample_frames(
     configure_silent_command(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| format!("ffmpeg spawn: {e}"))?;
 
-    // Drain stderr on a side thread so a full pipe can never block ffmpeg while we
-    // read stdout. Bounded so an error spew cannot grow without limit.
+    // Drain stderr on a side thread so a full pipe can't block ffmpeg while we read stdout; bounded against a spew.
     let stderr = child.stderr.take();
     let stderr_handle = stderr.map(|mut s| {
         std::thread::spawn(move || {
@@ -213,11 +212,7 @@ pub fn sample_frames(
     };
     let mut frame = vec![0u8; frame_bytes];
 
-    // Retained frames are full-resolution RGBA (~5.8 MB at 1600x900) and nothing
-    // bounded them: a high-motion source kept thousands and ran the process out
-    // of memory. At the ceiling we halve what we hold and double the required
-    // spacing, so coverage stays whole-video at lower temporal resolution rather
-    // than truncating the tail.
+    // Retained RGBA frames are ~5.8 MB each and were unbounded; at the ceiling we halve holdings and double spacing, keeping whole-video coverage.
     let max_frames = (SAMPLE_BUDGET_BYTES / frame_bytes.max(1)).max(1);
     let mut gap_scale = 1.0f64;
 
@@ -238,10 +233,7 @@ pub fn sample_frames(
             kept: kept.len() as u64,
         });
 
-        // Skip footage the edit removed (outside the trim, or inside a cut) before
-        // doing any work on it. Decoding is one cheap streaming pass, but OCR is
-        // ~390ms a frame, so this is both a correctness fix (no spans for deleted
-        // content) and the cheapest speed win available.
+        // Skip footage the edit removed before doing any work: decode is one cheap pass, but OCR is ~390ms a frame.
         if !in_ranges(t, &opts.include_ranges) {
             continue;
         }
@@ -269,8 +261,7 @@ pub fn sample_frames(
         let dup = last_kept_t.is_some() && hamming(last_kept_hash, hash) <= opts.dedup_hamming;
         let keep = should_keep(t, last_kept_t, dup, forced, changed, opts);
 
-        // Once thinned, honour the widened spacing. Forced frames (a cursor
-        // click) are the whole reason the hook exists, so they still win.
+        // Once thinned, honour the widened spacing; forced frames are why the hook exists, so they still win.
         let spaced = last_kept_t.is_none_or(|last| t - last >= opts.min_gap_secs * gap_scale);
         if keep && (forced || spaced) {
             kept.push(SampledFrame {
@@ -339,8 +330,7 @@ fn is_changed(score: f32, recent_avg: f32, adaptive_ratio: f32) -> bool {
     if score <= MIN_ABS_SCORE {
         return false;
     }
-    // Coming out of a static run there is no meaningful average to divide by, so
-    // clearing the noise floor is enough.
+    // Coming out of a static run there is no meaningful average, so clearing the noise floor is enough.
     if recent_avg <= SCORE_EPS {
         return true;
     }
@@ -542,8 +532,7 @@ mod tests {
         assert_eq!(expected_frames(9.0, 3.0), 27);
         // Partial trailing frame still gets walked, so round up.
         assert_eq!(expected_frames(9.1, 3.0), 28);
-        // An unknown duration reports 0, which the UI reads as "indeterminate"
-        // rather than dividing by it.
+        // An unknown duration reports 0, which the UI reads as indeterminate rather than dividing by it.
         assert_eq!(expected_frames(0.0, 3.0), 0);
         assert_eq!(expected_frames(f64::NAN, 3.0), 0);
         assert_eq!(expected_frames(-1.0, 3.0), 0);
@@ -579,9 +568,7 @@ mod tests {
 
     #[test]
     fn color_mad_detects_constant_brightness_recolor() {
-        // Two colors with near-equal luma but different channels: a grayscale diff
-        // would miss this; color MAD must not. This is the whole reason the score
-        // is color-aware.
+        // Two colours with near-equal luma: a grayscale diff misses this, which is why the score is colour-aware.
         let red = RgbImage::from_pixel(8, 8, image::Rgb([180, 40, 40]));
         let green = RgbImage::from_pixel(8, 8, image::Rgb([40, 180, 40]));
         assert!(color_mad(&red, &green) > MIN_ABS_SCORE);
@@ -634,18 +621,14 @@ mod tests {
 
     #[test]
     fn should_keep_forced_beats_everything() {
-        // A click landing on a frame the screen barely changed on must still be
-        // sampled; this is the cursor hook's whole purpose. Forced even overrides
-        // the anti-spam gap.
+        // A click on a barely-changed frame must still be sampled; forced even overrides the anti-spam gap.
         assert!(should_keep(5.0, Some(4.0), true, true, false, &opts()));
         assert!(should_keep(4.1, Some(4.0), true, true, false, &opts()));
     }
 
     #[test]
     fn should_keep_lets_a_real_change_beat_the_duplicate_gate() {
-        // dHash compares a luma gradient, so two flat frames of different colours
-        // hash identically. A colour-aware change must therefore outrank the
-        // duplicate veto, or a theme swap on a low-texture screen is lost.
+        // dHash compares a luma gradient, so flat frames of different colours hash alike; colour-aware change must outrank the duplicate veto.
         assert!(should_keep(5.0, Some(4.0), true, false, true, &opts()));
     }
 

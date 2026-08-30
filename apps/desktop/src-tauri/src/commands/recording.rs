@@ -44,15 +44,7 @@ pub async fn start_recording(
     options: Option<RecordingOptions>,
     state: State<'_, AppState>,
 ) -> AppResult<RecordingStartResult> {
-    // Resolving the capture target enumerates monitors/windows (xcap's
-    // `Monitor::all`/`Window::all` can stall hundreds of ms), on Wayland
-    // negotiates the xdg-desktop-portal dialog, and `start()` then spawns the
-    // capture/encoder/audio/camera processes — all blocking. Tauri runs sync
-    // commands on the main thread, which on macOS (WKWebView) and Linux
-    // (WebKitGTK) also renders the UI, so doing this inline froze the window
-    // while "Start" was pressed (Windows' out-of-process WebView2 masked it).
-    // Mirror `stop_recording`: push the whole blocking body onto a worker so
-    // the UI thread — including the Wayland portal dialog — stays responsive.
+    // All blocking: enumeration can stall, Wayland negotiates a portal dialog, and start() spawns processes. Sync commands run on the UI thread on macOS and Linux.
     let manager = state.recording_manager.clone();
     let output_dir = get_active_output_dir(&state);
     // A recording repeating one frame looks exactly like a working one.
@@ -84,12 +76,10 @@ pub async fn start_recording(
         .await
         .map_err(|e| AppError::msg(format!("start_recording worker panicked: {e}")))?;
 
-    // Keep display + system awake for the capture (released in stop_recording).
-    // Only on success so a failed start doesn't leak a hold.
+    // Keep display and system awake for the capture (released in stop_recording); only on success, so a failed start leaks no hold.
     if outcome.is_ok() {
         state.power.acquire();
-        // Broadcast so observers (panel transport, tray, `recast watch`) reflect
-        // the recording regardless of who started it (UI button or CLI).
+        // Broadcast so the panel, tray and `recast watch` reflect the recording whoever started it.
         let _ = app.emit(
             "recording:started",
             serde_json::json!({ "startedAtUnixMs": Local::now().timestamp_millis() }),
@@ -103,44 +93,26 @@ pub async fn stop_recording(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> AppResult<String> {
-    // `stop()` joins the capture/cursor/encoder threads, finalizes the muxer,
-    // stops the audio/mic sessions, and `write_project` zips the media to disk.
-    // All of it is blocking CPU/IO.
-    //
-    // Tauri runs *synchronous* commands directly on the main thread. On macOS
-    // the WebView renders on that same thread, so running this inline froze the
-    // entire window after every recording — clicks/drag stopped landing until
-    // the work finished. Windows' out-of-process WebView2 kept painting, which
-    // is why the hang was macOS-only. Mirror `get_displays`/`export_video`: make
-    // the command `async` and push the whole blocking body onto a worker so the
-    // UI thread stays free to paint the "Saving…" transition. See the matching
-    // note on `AppState::recording_manager` (it's an `Arc` for this reason).
+    // `stop()` joins threads, finalizes the muxer and zips to disk; run inline on macOS's UI thread this froze the window after every recording.
     let manager = state.recording_manager.clone();
     let dest = recasts_dir(&state);
 
     let (project_path, warnings) =
         tauri::async_runtime::spawn_blocking(move || -> AppResult<(PathBuf, Vec<String>)> {
-            // `{:#}` formats the full anyhow chain (top message + every `.context()`
-            // below it), so the JS-side alert sees the real cause instead of just
-            // the outermost label. Without this, errors like "encoder thread
-            // panicked" hid the underlying FFmpeg-process exit code.
+            // `{:#}` formats the whole anyhow chain, so the JS alert sees the real cause, not just the outermost label.
             let artifacts = manager
                 .stop()
                 .inspect_err(|e| log::error!("stop_recording failed: {e:#}"))?;
             // Non-fatal capture issues (e.g. mic/camera failed) to toast after save.
             let warnings = artifacts.warnings.clone();
-            // Human-readable, sortable, searchable name (local time of capture) —
-            // e.g. `Recast_2026-05-16_14-30-22.recast`.
+            // Human-readable, sortable, searchable name built from the local capture time.
             let stamp = Local
                 .timestamp_millis_opt(artifacts.started_at_unix_ms as i64)
                 .single()
                 .unwrap_or_else(Local::now)
                 .format("%Y-%m-%d_%H-%M-%S");
             let final_path = super::unique_path(&dest, &format!("Recast_{stamp}"), "recast");
-            // The recording pipeline is the authoritative source for these values
-            // (crop dimensions from `CaptureTarget`, FPS pinned by the pacer at 60).
-            // Spawning ffprobe here just to confirm what we already know was
-            // adding 100–300ms to every stop, right when the UI wants to transition.
+            // The pipeline is authoritative for these values, and an ffprobe here added 100-300ms to every stop.
             let media_duration_ms =
                 if artifacts.stats.encoded_frames > 0 && artifacts.stats.nominal_fps > 0 {
                     (artifacts.stats.encoded_frames as f64 / artifacts.stats.nominal_fps as f64
@@ -157,17 +129,9 @@ pub async fn stop_recording(
                 video: ProjectVideoMetadata {
                     width: artifacts.capture_target.crop.width,
                     height: artifacts.capture_target.crop.height,
-                    // The pacer + encoder ran at the session's chosen capture rate
-                    // (default 60); persist that, not a hard-coded const, so the
-                    // editor and export source-fps detection are correct for
-                    // high-refresh recordings.
+                    // Persist the session's chosen capture rate, not a const, so source-fps detection is right for high-refresh recordings.
                     fps: artifacts.stats.nominal_fps,
-                    // The MEDIA's length, which is the encoded frame count at
-                    // the CFR the encoder wrote — not `stats.duration_ms`, the
-                    // wall clock of the session. They diverge exactly by the
-                    // dropped frames, and the wall clock is always the longer
-                    // of the two. `stats` keeps the wall clock; this is the
-                    // number the editor and the export validator agree on.
+                    // The MEDIA length (encoded frames at the written CFR), not `stats.duration_ms`: the wall clock is longer by the dropped frames.
                     duration_ms: media_duration_ms,
                 },
                 media: Some(ProjectMediaMetadata {
@@ -215,16 +179,14 @@ pub async fn stop_recording(
     // Finalized: release the sleep inhibitor from start_recording (success path).
     state.power.release();
 
-    // Surface non-fatal capture issues (mic/camera failed to record). The
-    // recording still saved; the frontend shows these as a warning toast.
+    // Non-fatal capture issues: the recording still saved, and the frontend shows these as a warning toast.
     if !warnings.is_empty() {
         let _ = app.emit("recording:warnings", &warnings);
     }
 
     *state.last_file_path.lock() = Some(project_path.to_string_lossy().to_string());
     let path_str = project_path.to_string_lossy().to_string();
-    // Broadcast so the panel/tray return to idle even for a CLI- or timeout-
-    // driven stop.
+    // Broadcast so the panel and tray return to idle even for a CLI- or timeout-driven stop.
     let _ = app.emit(
         "recording:stopped",
         serde_json::json!({ "projectPath": path_str }),
@@ -290,11 +252,7 @@ pub async fn stop_camera_preview(session: u64) -> AppResult<()> {
         .map_err(|e| AppError::msg(format!("stop_camera_preview join error: {e}")))
 }
 
-// `list_recasts`/`list_exports` are async + spawn_blocking: the scan does a
-// `read_dir` plus a `metadata()` stat per file, which adds up to hundreds of ms
-// on a library with many recordings — and on macOS/Linux a sync command runs on
-// the UI thread. Resolve the dir up front (cheap config read), then scan off the
-// main thread.
+// Async plus spawn_blocking: the scan stats every file, hundreds of ms on a big library, and a sync command runs on the UI thread.
 #[tauri::command]
 pub async fn list_recasts(state: State<'_, AppState>) -> AppResult<Vec<RecordingEntry>> {
     let dir = recasts_dir(&state);
@@ -349,19 +307,14 @@ fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEnt
                 .duration_since(std::time::SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
-            // Prefer birth time so the "Recorded Jul 18" label matches when the
-            // user took the recording, not when a background job last touched
-            // the file. Fall back to mtime on filesystems (most Linux) where
-            // birth time isn't exposed; behavior is unchanged there.
+            // Prefer birth time so the label matches when the recording was taken; fall back to mtime where it isn't exposed.
             let created = meta
                 .created()
                 .ok()
                 .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(modified);
-            // Only `.recast` carries a format; the probe reads just the zip
-            // central directory, and this whole scan is already off the main
-            // thread (spawn_blocking).
+            // Only `.recast` carries a format, and the probe reads just the zip central directory.
             let needs_migration = file_ext == "recast" && crate::project::is_legacy_project(&path);
             entries.push(RecordingEntry {
                 filename: entry.file_name().to_string_lossy().to_string(),

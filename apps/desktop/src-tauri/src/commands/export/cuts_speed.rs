@@ -44,10 +44,7 @@ pub(crate) fn collect_export_cuts(
     let mut merged: Vec<(f64, f64)> = Vec::with_capacity(cuts.len());
     for cut in cuts {
         match merged.last_mut() {
-            // Adjacency tolerance MUST match the frontend's `normalizeCuts` EPS
-            // (1e-4 in apps/desktop/src/lib/timeline/cuts.ts) so the editor's
-            // collapsed timeline and this export agree on segment boundaries to
-            // the same precision. See cut-parity tests on both sides.
+            // Tolerance MUST match the frontend's `normalizeCuts` EPS so both agree on segment boundaries. See the cut-parity tests.
             Some(last) if cut.0 <= last.1 + CUT_MERGE_EPS => last.1 = last.1.max(cut.1),
             _ => merged.push(cut),
         }
@@ -66,14 +63,7 @@ pub(crate) fn build_cut_select_expr(cuts: &[(f64, f64)]) -> String {
     format!("not({})", terms.join("+"))
 }
 
-//  Per-segment speed (Cap-style "edit this cut differently") -
-//
-// Overlays (zoom/cursor/blur) are computed on the continuous post-trim timeline
-// and cuts are applied last as a pure frame-drop (see the main pass below), so
-// speed slots in at the same tail point as a timing warp — no evaluator needs to
-// change. The kept-segment + speed math mirrors the frontend time-map
-// (apps/desktop/src/lib/timeline/{segments,segment-speed,time-map}.ts) and is
-// parity-tested against the shared speed-parity.json fixture.
+// --- Per-segment speed: a tail-point timing warp, so no overlay evaluator changes; parity-tested against speed-parity.json.
 
 /// Clamp mirroring MIN/MAX_SEGMENT_SPEED in segment-speed.ts; a bad value → 1×.
 fn clamp_segment_speed(speed: f64) -> f64 {
@@ -98,8 +88,7 @@ fn make_speed_segment(
     segment_speeds: &[crate::render::graph::SegmentSpeed],
     trim_start: f64,
 ) -> SpeedSegment {
-    // Anchors are ORIGINAL-recording seconds; a post-trim segment's original
-    // start is `start + trim_start`.
+    // Anchors are ORIGINAL-recording seconds, so a post-trim segment's original start is `start + trim_start`.
     let anchor = start + trim_start;
     let speed = segment_speeds
         .iter()
@@ -314,8 +303,7 @@ pub(crate) fn build_speed_audio_filter(amap: &str, segs: &[SpeedSegment]) -> Str
         ));
         seg_labels.push(out);
     }
-    // FFmpeg has no `aconcat`; audio is concatenated with the `concat` filter
-    // configured for audio only (v=0:a=1).
+    // FFmpeg has no `aconcat`; audio uses the `concat` filter configured audio-only (v=0:a=1).
     parts.push(format!("{}concat=n={n}:v=0:a=1[acut]", seg_labels.join("")));
     parts.join(";")
 }
@@ -346,9 +334,7 @@ pub(crate) fn append_cut_speed_stage(
     let (mut complex, video_label) = match filter_complex.take() {
         Some(existing) => (existing, video_map.clone()),
         None => {
-            // No filtergraph yet: seed one and fold in any pending output-side
-            // filters (e.g. a quality downscale) so they aren't lost now that
-            // `-vf` no longer applies.
+            // Seed a filtergraph and fold in pending output-side filters, which are lost now that `-vf` no longer applies.
             let mut seed = String::new();
             let prefix = if output_filters.is_empty() {
                 String::new()
@@ -364,19 +350,14 @@ pub(crate) fn append_cut_speed_stage(
         complex.push(';');
     }
     complex.push_str(&video_label);
-    // Drop cut frames (select), then re-time survivors. At 1× this is the uniform
-    // CFR re-stamp (unchanged); with speed it's the piecewise warp, and the output
-    // `-r` resamples the warped PTS back to CFR (dropping / duplicating frames as
-    // the speed demands).
+    // Drop cut frames, then re-time the survivors; the output `-r` resamples the warped PTS back to CFR.
     let select_prefix = if has_cuts {
         format!("select='{select_expr}',")
     } else {
         String::new()
     };
     let setpts = if speed_active {
-        // Single-quote the value: the warp expression contains commas
-        // (if(lt(T,…),…,…)) that the filtergraph parser would otherwise read as
-        // filter separators — same reason `select='…'` is quoted above.
+        // Single-quote the value: the warp expression's commas would otherwise read as filter separators.
         format!("setpts='({})/TB'", build_speed_setpts_expr(speed_segments))
     } else {
         "setpts=N/FRAME_RATE/TB".to_string()
@@ -385,8 +366,7 @@ pub(crate) fn append_cut_speed_stage(
     *video_map = "[vcut]".to_string();
     if let Some(amap) = audio_map.take() {
         if speed_active {
-            // Per-segment atrim+atempo+concat keeps audio length matched to the
-            // warped video, pitch-preserved (atempo time-stretches).
+            // Per-segment atrim, atempo and concat keep audio length matched to the warped video, pitch preserved.
             complex.push_str(&format!(
                 ";{}",
                 build_speed_audio_filter(&amap, speed_segments)
@@ -491,8 +471,7 @@ mod cut_export_tests {
 
     #[test]
     fn wire_spans_are_clipped_to_the_trimmed_stream() {
-        // A stale map reaching past both edges must not address time the
-        // trimmed input does not contain.
+        // A stale map reaching past both edges must not address time the trimmed input does not contain.
         let wire = vec![span(0.0, 20.0, 1.0)];
         let segs = resolve_speed_segments(Some(&wire), 12.0, &[], &[], &[], 2.0);
         assert_eq!(shape(&segs), vec![(0.0, 12.0, 1.0)]);
@@ -526,16 +505,13 @@ mod cut_export_tests {
         // Non-GIF caps at the real content length — this is the frozen-tail fix.
         assert!((output_duration_cap("mp4", 8.0, &segs) - 6.0).abs() < 1e-9);
         assert!((output_duration_cap("webm", 8.0, &segs) - 6.0).abs() < 1e-9);
-        // GIF now warps too (its palette path applies the same select+setpts), so
-        // the cap follows the warped length — capping at the raw 8s span would
-        // leave a frozen tail on the sped-up stream.
+        // GIF warps too, so the cap follows the warped length; the raw span would leave a frozen tail.
         assert!((output_duration_cap("gif", 8.0, &segs) - 6.0).abs() < 1e-9);
     }
 
     #[test]
     fn output_cap_keeps_raw_span_for_cuts_only_gif() {
-        // No speed change (all 1×): GIF keeps the raw trimmed span (it loops and
-        // has no infinite tail to freeze), even though the kept content is shorter.
+        // All 1x: GIF keeps the raw trimmed span, since it loops and has no infinite tail to freeze.
         let segs = vec![seg(0.0, 3.0, 1.0), seg(5.0, 8.0, 1.0)];
         assert!((output_duration_cap("gif", 8.0, &segs) - 8.0).abs() < 1e-9);
         // Non-GIF still collapses to the kept length (6s here).
@@ -571,8 +547,7 @@ mod cut_export_tests {
 
     #[test]
     fn clamp_segment_speed_guards_bad_values_and_clamps_range() {
-        // Non-positive / non-finite collapse to 1× (never 0 → no atempo hang or
-        // setpts divide-by-zero downstream).
+        // Non-positive or non-finite collapse to 1x, never 0: no atempo hang or setpts divide-by-zero.
         assert_eq!(clamp_segment_speed(0.0), 1.0);
         assert_eq!(clamp_segment_speed(-2.0), 1.0);
         assert_eq!(clamp_segment_speed(f64::NAN), 1.0);
@@ -600,8 +575,7 @@ mod cut_export_tests {
 
     #[test]
     fn select_expr_keeps_everything_outside_the_cuts() {
-        // The export drops frames where this expression is false. Two cuts →
-        // keep = not(in cut A OR in cut B).
+        // The export drops frames where this is false, so two cuts means keep = not(in A or in B).
         let expr = build_cut_select_expr(&[(1.5, 2.0), (4.0, 5.5)]);
         assert_eq!(expr, "not(between(t,1.500,2.000)+between(t,4.000,5.500))");
     }
@@ -616,16 +590,14 @@ mod cut_export_tests {
 
     #[test]
     fn ripple_delete_in_middle_offsets_into_post_trim_time() {
-        // Project trimmed to [10,20]; a ripple-deleted clip at original [12,14]
-        // must reach ffmpeg as post-trim [2,4] (the input is seeked by -ss 10).
+        // Trimmed to [10,20]: a ripple-deleted clip at original [12,14] must reach ffmpeg as post-trim [2,4].
         let cuts = collect_export_cuts(&state_with_cuts(vec![cut(12.0, 14.0)]), 10.0, 20.0);
         assert_eq!(cuts, vec![(2.0, 4.0)]);
     }
 
     #[test]
     fn cut_outside_trim_is_dropped_and_straddling_is_clamped() {
-        // [0,5] is entirely before the trim → dropped; [8,12] straddles the in
-        // point → clamped to [10,12] → post-trim [0,2].
+        // [0,5] is entirely pre-trim and dropped; [8,12] straddles the in point and clamps to post-trim [0,2].
         let cuts = collect_export_cuts(
             &state_with_cuts(vec![cut(0.0, 5.0), cut(8.0, 12.0)]),
             10.0,
@@ -652,12 +624,7 @@ mod cut_export_tests {
 
     #[test]
     fn kept_duration_matches_shared_parity_fixtures() {
-        // Anti-drift guard. This loads the SAME json the frontend asserts against
-        // (cuts.test.ts → "cut/export parity"). For every case, this export's
-        // output duration — (trim length) minus the merged cut spans — must equal
-        // `expectedKeptDuration`, which the frontend also matches against its
-        // collapsed-timeline length. If the two cut models ever diverge, one of
-        // these two tests fails.
+        // Anti-drift guard on the SAME json cuts.test.ts asserts against; a divergence fails one of the two tests.
         let raw = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../../packages/editor/src/lib/timeline/__fixtures__/cut-parity.json"
@@ -691,10 +658,7 @@ mod cut_export_tests {
 
     #[test]
     fn warped_duration_matches_shared_parity_fixtures() {
-        // Anti-drift guard for per-segment speed. Loads the SAME json the frontend
-        // asserts against (segment-speed.test.ts → "speed parity"). For every case
-        // the export's warped output duration must equal the frontend time-map's,
-        // or the two speed models have diverged. All cases use trimStart=0.
+        // Anti-drift guard for per-segment speed against the same json segment-speed.test.ts uses; all cases trimStart=0.
         let raw = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../../packages/editor/src/lib/timeline/__fixtures__/speed-parity.json"

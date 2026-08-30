@@ -37,17 +37,10 @@ const geom = $derived.by(() => {
 	return computeCanvasGeometry(m.width, m.height, store.padding, store.outputAspect);
 });
 
-// Video pixel aspect. The bubble is square in pixels, so its UV height is
-// `width * aspect` — used by resize + zoom-follow so nothing distorts or
-// mis-anchors on a non-square (e.g. 16:9) recording.
+// The bubble is square in pixels, so its UV height is width times aspect; resize and zoom-follow both use it.
 const videoAspect = $derived(geom ? geom.videoW / geom.videoH : 1);
 
-// The rendered placement = the saved base, then the zoom-follow effect (grow +
-// drift away from the active zoom's focus). Editing writes the BASE; this only
-// shifts what's drawn. Identity when zoom-follow is off, focus is bypassed, or
-// no zoom is active at the playhead.
-// Base placement at original time `t`: the static defaultPlacement, or the
-// per-cut keyframes gliding between positions.
+// Rendered placement is the saved base plus zoom-follow; editing writes the BASE, and this only shifts what is drawn.
 function baseAt(t: number) {
 	return cameraPlacementAt(
 		store.cameraOverlay.defaultPlacement,
@@ -57,11 +50,7 @@ function baseAt(t: number) {
 	);
 }
 
-// The div's LAYOUT box, deliberately NOT a function of the playhead: it moved
-// with the ~25 Hz store clock while the transform below is written per rAF, and
-// the two landing in different frames is what made the bubble judder whenever
-// the base was actually moving (a live-recorded glide, or a zoom-follow). It
-// only changes on an edit now, which re-lays-out and re-transforms together.
+// The LAYOUT box deliberately ignores the playhead: the 25 Hz store clock and the per-rAF transform landing in different frames made the bubble judder.
 const layoutPlacement = $derived(store.cameraOverlay.defaultPlacement);
 const bubbleStyle = $derived(bubblePlacementStyle(geom, layoutPlacement));
 const borderRadius = $derived(
@@ -70,14 +59,9 @@ const borderRadius = $derived(
 
 let outerEl: HTMLDivElement | null = $state(null);
 
-// The grow/drift, expressed as a `transform` (translate% + scale) relative to
-// the base box, so per-frame growth is GPU-composited and never triggers
-// layout. Written IMPERATIVELY (below) rather than through Svelte reactivity so
-// it updates once per rAF in lockstep with the display — same cadence as the
-// zoom shader. `translateZ(0)` keeps the bubble on its own compositor layer.
+// Written imperatively as a transform so growth is GPU-composited once per rAF in lockstep with the display, never triggering layout.
 function followTransform(t: number): string {
-	// Everything the playhead affects lives in this transform, so the layout box
-	// never moves underneath it.
+	// Everything the playhead affects lives in this transform, so the layout box never moves underneath it.
 	const layout = layoutPlacement;
 	if (layout.width <= 0) return "translateZ(0)";
 	const b = baseAt(t);
@@ -100,15 +84,13 @@ function followTransform(t: number): string {
 	return `translate(${d.tx.toFixed(4)}%, ${d.ty.toFixed(4)}%) scale(${d.scale.toFixed(5)}) translateZ(0)`;
 }
 
-// Paused / scrub / edit: reactive write so the bubble tracks the playhead and
-// edits exactly. (Reads store.currentTime + the overlay/zoom deps.)
+// Paused, scrub or edit: a reactive write so the bubble tracks the playhead and edits exactly.
 $effect(() => {
 	if (store.isPlaying || !outerEl) return;
 	outerEl.style.transform = followTransform(store.currentTime);
 });
 
-// Playing: own rAF loop writing the transform from the unthrottled picture
-// clock, so the grow is as buttery as the shader (no reactive-flush hop).
+// Playing: an rAF loop off the unthrottled picture clock, so the grow matches the shader with no reactive-flush hop.
 $effect(() => {
 	if (!store.isPlaying) return;
 	const el = outerEl;
@@ -133,8 +115,7 @@ function clientToVideoUv(clientX: number, clientY: number): { x: number; y: numb
 	};
 }
 
-// Drag-to-reposition. UV deltas are relative to the rendered video rect (not the
-// canvas, so padding doesn't bias motion); pushUndoState at pointerdown = one undo entry.
+// UV deltas are relative to the rendered video rect so padding doesn't bias motion; one undo entry per drag.
 let isDragging = $state(false);
 let dragStartClient = { x: 0, y: 0 };
 let dragStartUv = { x: 0, y: 0 };

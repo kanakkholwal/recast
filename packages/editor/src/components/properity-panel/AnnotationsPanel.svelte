@@ -56,8 +56,7 @@ const selected = $derived<Annotation | null>(
 	store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
 );
 
-// Insert a ready-styled title/lower-third: a positioned text annotation plus a
-// legibility glow. The user edits the placeholder text in place.
+// A positioned text annotation plus a legibility glow; the user edits the placeholder in place.
 function insertTitle(preset: TitlePreset) {
 	store.annotationTool = null;
 	store.addAnnotation(preset.build(), undefined, undefined, {
@@ -86,8 +85,7 @@ function updateSelected(updates: Partial<Annotation>, trackUndo = false) {
 	store.updateAnnotation(selected.id, updates);
 }
 
-// Curves only. Resetting rampIn/rampOut from here changed the Fade in / Fade
-// out sliders in the Timing section above, with no hint that it would.
+// Curves only: resetting rampIn and rampOut here changed the Timing sliders above with no hint it would.
 function resetCurves() {
 	if (!selected) return;
 	store.pushUndoState();
@@ -108,14 +106,11 @@ function resetFades() {
 
 const toolHint = $derived(toolHintFor(store.annotationTool));
 
-// NLE accessors, matching FocusPanel: `outPoint` resolves the legacy
-// `trimEnd === 0` sentinel.
+// NLE accessors matching FocusPanel: `outPoint` resolves the legacy `trimEnd === 0` sentinel.
 const clipIn = $derived(store.inPoint);
 const clipOut = $derived(store.outPoint);
 
-// An annotation timed outside the trim never plays, and the Rust side silently
-// repairs it at export ("annotation_out_of_trim" in validate_render_state), so
-// it has to be visible and fixable here instead.
+// An annotation outside the trim never plays and Rust silently repairs it at export, so it must be fixable here.
 const outOfClip = $derived(selected !== null && isOutsideClip(selected, clipIn, clipOut));
 
 function fitToClip() {
@@ -627,8 +622,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             updateSelected({ easeIn: { ...next }, easeOut: { ...next } });
           }}
           ondrag={(next, which) => {
-            // Fires per pointermove; coalesce so a whole curve drag is one undo
-            // entry, not one per frame.
+            // Fires per pointermove, so coalesce a whole curve drag into one undo entry.
             store.pushUndoStateCoalesced(`anno-curve-${a.id}-${which}`, 500);
             updateSelected(which === "out" ? { easeOut: next } : { easeIn: next });
           }}

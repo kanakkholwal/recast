@@ -38,8 +38,7 @@ import {
 } from "./_components/timeline/timeline-stack";
 import { wheelIntent } from "./_components/timeline/timeline-wheel.logic";
 
-// Orchestrator: owns the scroll container, sizing, transport (JKL/speed),
-// keyboard routing, and the click-to-seek scrubber. Subviews live under `_components/timeline/`.
+// Orchestrator: scroll container, sizing, transport, keyboard routing and click-to-seek. Subviews live in `_components/timeline/`.
 
 interface Props {
 	store: EditorStore;
@@ -65,31 +64,19 @@ let isDraggingPlayhead = $state(false);
 let timelineWidth = $state(900);
 // Horizontal scroll offset, tracked so the clip bar can virtualize its tiles.
 let scrollLeft = $state(0);
-// Lane content shares the scroller's x-origin (no left padding), so the clip
-// bar's viewport math needs no offset.
+// Lane content shares the scroller's x-origin, so the clip bar's viewport math needs no offset.
 const LANE_PAD = 0;
 
 const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0] as const;
 let playbackSpeed = $state(1.0);
 
-// Gap between lanes. Fixed lane heights come from timeline-stack, shared with
-// the components that render them; stacking lanes report theirs via `cardLayout`.
+// Fixed lane heights come from timeline-stack; stacking lanes report theirs via `cardLayout`.
 const LANE_GAP = 6;
 
-// Lives in the store, not here: the transport readout under the video reads it
-// too, so one setting flips every timecode in the editor at once.
+// In the store, not here: the transport readout reads it too, so one setting flips every timecode.
 const timeMode = $derived(store.timeMode);
 
-// Layer visibility (the toolbar's Layers menu). The clip track is always shown
-// (the editing spine); the Audio lane is its own track and owns the waveform
-// outright, so hiding it hides the envelope everywhere. Zoom/Markup/Cuts lanes
-// show/hide independently. Persisted to localStorage so the choice survives
-// reopening the editor.
-// Zoom and Markup default to AUTO (`null`): shown once they hold something,
-// hidden while empty. Every lane visible by default made the panel tall enough
-// to squeeze the preview, and two of the four were usually empty. A lane the
-// user has toggled stores a real boolean and stops following its content, so an
-// explicit choice is never overridden.
+// Persisted lane visibility; zoom and markup default to AUTO (null) because four always-on lanes squeezed the preview, and a user toggle stores a boolean that stops following content.
 const VIEW_KEY = "recast.timeline.view";
 /** `null` = follow the lane's content. */
 type LanePref = boolean | null;
@@ -106,8 +93,7 @@ function loadView(): {
 			if (raw) {
 				const v = JSON.parse(raw);
 				return {
-					// Migrate the old `clipContent: "waveform" | "thumbnails"` radio: anyone
-					// who had chosen the waveform still wants to see it, now as an overlay.
+					// Migrate the old `clipContent` radio: anyone who chose the waveform still wants it, now as an overlay.
 					waveform: typeof v.waveform === "boolean" ? v.waveform : v.clipContent === "waveform",
 					// Anyone with a stored boolean chose it before auto existed; keep it.
 					zoom: typeof v.zoom === "boolean" ? v.zoom : null,
@@ -129,8 +115,7 @@ let zoomLanePref = $state<LanePref>(_view.zoom);
 let markupLanePref = $state<LanePref>(_view.markup);
 const showZoomLane = $derived(zoomLanePref ?? store.zoomRegions.length > 0);
 const showMarkupLane = $derived(markupLanePref ?? store.annotations.length > 0);
-// "Show cut gaps" lives in the store (it reshapes the render axis every lane
-// reads); seed it from the persisted view pref on mount.
+// Lives in the store since it reshapes the render axis every lane reads; seeded from the persisted pref.
 onMount(() => {
 	store.showCutGaps = _view.gaps;
 });
@@ -141,8 +126,7 @@ $effect(() => {
 			VIEW_KEY,
 			JSON.stringify({
 				waveform: showAudioLane,
-				// The PREF, not the resolved value: persisting the resolved boolean
-				// would freeze a lane the moment its content happened to appear.
+				// The PREF, not the resolved value: persisting the boolean would freeze a lane the moment content appeared.
 				zoom: zoomLanePref,
 				markup: markupLanePref,
 				cuts: showCutLane,
@@ -154,8 +138,7 @@ $effect(() => {
 	}
 });
 
-// JKL transport (Avid/Premiere): consecutive L/J cycles 1×→2×→4×, K parks.
-// J drives reverse via a rAF loop (browsers don't reliably support negative playbackRate).
+// JKL transport: L/J cycle 1x, 2x, 4x and K parks. J reverses via rAF, since negative playbackRate is unreliable.
 let shuttleDirection = $state<-1 | 0 | 1>(0);
 let shuttleSpeedIndex = $state(0);
 const SHUTTLE_SPEEDS = [1, 2, 4];
@@ -163,9 +146,7 @@ let reverseFrame = 0;
 
 $effect(() => {
 	if (!videoEl) return;
-	// Legacy <video> path: the element IS the clock, so per-segment clip speed
-	// must ride on its playbackRate (the warped output clock only exists on the
-	// WebCodecs path). Re-evaluated as the playhead crosses into each segment.
+	// Legacy <video> path: the element is the clock, so per-segment speed must ride on its playbackRate.
 	const segSpeed = store.segmentSpeedAtTime(store.currentTime);
 	const transport =
 		shuttleDirection === 1 ? SHUTTLE_SPEEDS[shuttleSpeedIndex] * playbackSpeed : playbackSpeed;
@@ -201,18 +182,11 @@ $effect(() => {
 	}
 });
 
-// Auto-follow: while playing, keep the playhead in view. Only acts once the
-// playhead crosses the leading/trailing margin, so manual scrolling mid-play
-// is left alone until it actually runs off-screen; then we page it back near
-// the left margin. No-op when everything already fits (scrollLeft stays 0).
+// Only acts once the playhead crosses the margin, so manual scrolling mid-play is left alone until it runs off-screen.
 $effect(() => {
 	if (!store.isPlaying || isDraggingPlayhead || !timelineEl) return;
 	const px = xOf(store.currentTime);
-	// Cached, not read off the element: this runs on every ~25Hz `currentTime`
-	// publish, and a `clientWidth`/`scrollLeft` read followed by a `scrollLeft`
-	// write in the same effect forces a synchronous layout of a subtree holding
-	// the whole ruler. Untracked because that write fires the scroll handler,
-	// which sets `scrollLeft` — tracking it would make this effect re-enter.
+	// Cached and untracked: reading clientWidth then writing scrollLeft forces a full ruler layout, and the write re-enters this effect.
 	untrack(() => {
 		const view = timelineWidth;
 		const left = scrollLeft;
@@ -223,8 +197,7 @@ $effect(() => {
 	});
 });
 
-// Trim/playhead writes round to the nearest frame so preview and export agree
-// on the first/last kept frame; sub-frame values cause off-by-one mismatches.
+// Round to the nearest frame so preview and export agree on the first and last kept frame.
 function effectiveFps(): number {
 	return effFps(store.metadata?.fps);
 }
@@ -250,10 +223,7 @@ function zoomToFit() {
 	});
 }
 
-// The [start, end] of whatever is selected, in original time, or null. Drives
-// Zoom-to-selection for any timed selection (zoom region, annotation, cut), not
-// just a focus region. A clip selection has no meaningful frame-to (it is the
-// spine), so it returns null.
+// Drives Zoom-to-selection for any timed selection; a clip selection is the spine, so it returns null.
 function selectionSpan(): { start: number; end: number } | null {
 	const sel = store.selection;
 	if (!sel) return null;
@@ -294,9 +264,7 @@ function zoomToSelection() {
 	});
 }
 
-// Output seconds under the pointer, BEFORE the time-map. Trim drags map this
-// through a map FROZEN at drag-start, so the collapsed clip's left edge (which
-// sits at output 0) isn't a degenerate input.
+// Trim drags map this through a map FROZEN at drag-start, so the collapsed clip's left edge isn't a degenerate input.
 function clientXToOutput(clientX: number): number {
 	if (!timelineEl || pixelsPerSecond <= 0) return 0;
 	const rect = timelineEl.getBoundingClientRect();
@@ -323,9 +291,7 @@ function nudgeTrim(which: "in" | "out", direction: 1 | -1, second = false) {
 }
 
 const duration = $derived(store.metadata?.duration ?? 0);
-// The axis lanes render on: `store.renderMap`. Normally OUTPUT time (cuts
-// collapse to zero width, each kept segment warped by its speed); with "Show cut
-// gaps" on, cuts get real width instead. Playback/export stay on the collapsed map.
+// Normally OUTPUT time; with 'Show cut gaps' cuts get real width. Playback and export stay on the collapsed map.
 const outputDuration = $derived(store.renderMap.outputDuration);
 const pixelsPerSecond = $derived(
 	outputDuration > 0 ? (timelineWidth * store.timelineZoom) / outputDuration : 100,
@@ -334,20 +300,13 @@ const totalWidth = $derived(Math.max(outputDuration * pixelsPerSecond, timelineW
 // Canonical axis transforms: every lane positions with `xOf` and resolves pointers with `tOf`.
 const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
 const tOf = (x: number) => outputToOriginal(store.renderMap, x / pixelsPerSecond);
-// The playhead reads on the OUTPUT axis, same as the ruler beneath it and the
-// transport readout above it. Showing `store.currentTime` (original time) here
-// made the chip disagree with the ruler it sits on the moment a cut existed.
+// The playhead reads on the OUTPUT axis like the ruler; original time made the chip disagree once a cut existed.
 const playheadOutput = $derived(originalToOutput(store.renderMap, store.currentTime));
 const clipLeft = $derived(xOf(store.inPoint));
 const clipRight = $derived(xOf(store.outPoint));
 const clipWidth = $derived(Math.max(clipRight - clipLeft, 0));
 
-// Stacking lanes: one layout each, computed here and handed down, so the track
-// rail and the lane body read the same height. The rail used to hard-code each
-// lane's height as a Tailwind class, which broke as soon as a lane could grow.
-//
-// The card under an active drag keeps the row it started on (see `pinnedRows`),
-// so it stays under the cursor while everything else flows around it.
+// One layout per stacking lane, so rail and body share a height; a dragged card keeps its start row (see `pinnedRows`).
 const laneDrag = provideLaneDrag();
 let pinnedRows = $state<ReadonlyMap<string, number> | null>(null);
 
@@ -356,8 +315,7 @@ const zoomRowsLive = $derived(
 );
 const markupRowsLive = $derived(cardLayout(store.annotations, xOf));
 
-// Snapshot the dragged card's row once, at the start of the gesture. Reads the
-// unpinned layouts untracked so this can't feed back into the pinned ones.
+// Snapshot the dragged card's row once; reads the unpinned layouts untracked so it can't feed back.
 $effect(() => {
 	const id = laneDrag.cardId;
 	if (!id) {
@@ -385,8 +343,7 @@ const zoomLayout = $derived(
 const markupLayout = $derived(
 	cardLayout(store.annotations, xOf, { pinnedRows: pinnedRows ?? undefined }),
 );
-// Audio clips are stored in OUTPUT seconds, not original time, so they get their
-// own projection: output seconds -> render-axis pixels.
+// Audio clips are stored in OUTPUT seconds, so they need their own projection to render-axis pixels.
 const clipXOf = (outputSec: number) => store.outputToRenderSec(outputSec) * pixelsPerSecond;
 const clipSpans = (clips: AudioClip[]) =>
 	clips.map((c) => ({
@@ -490,9 +447,7 @@ function handleTimelinePointerDown(event: PointerEvent) {
 		razorClickAt(event.clientX);
 		return;
 	}
-	// Clicking bare timeline deselects. Cards stop propagation, but clip blocks
-	// deliberately don't (the click has to seek too), so they mark themselves
-	// `data-selectable` and we leave their selection alone.
+	// Clip blocks deliberately bubble (the click must seek too), so they mark `data-selectable` to keep their selection.
 	if (!(event.target as HTMLElement).closest("[data-selectable]")) {
 		store.clearSelection();
 	}
@@ -501,11 +456,7 @@ function handleTimelinePointerDown(event: PointerEvent) {
 	seekToPosition(event.clientX);
 }
 
-// Coalesce pointer moves to one rAF: hover + drag-seek each did a
-// getBoundingClientRect (a forced layout), and a drag also fanned out the full
-// `store.currentTime` write — synchronously, per event. High-Hz mice fire well
-// above 60/s, so this bounds that work to once per frame with no perceptible
-// scrub lag.
+// One rAF per frame: hover and drag-seek each forced a layout and fanned out a full `currentTime` write per event.
 let pendingPointer: { x: number; y: number } | null = null;
 let pointerRaf: number | null = null;
 function processPointer() {
@@ -520,8 +471,7 @@ function handleTimelinePointerMove(event: PointerEvent) {
 	if (pointerRaf === null) pointerRaf = requestAnimationFrame(processPointer);
 }
 
-// A clip block lets pointerdown bubble so a click still seeks, then tells us to
-// drop the scrub once the same gesture turns out to be a slip.
+// A clip block bubbles pointerdown so a click still seeks, then drops the scrub if the gesture turns out to be a slip.
 function cancelScrub() {
 	if (pointerRaf !== null) {
 		cancelAnimationFrame(pointerRaf);
@@ -532,8 +482,7 @@ function cancelScrub() {
 }
 
 function handleTimelinePointerUp() {
-	// Land the final position immediately — the last queued rAF may be up to a
-	// frame stale, and a scrub must end exactly where the pointer was released.
+	// Land the final position now: the last queued rAF may be a frame stale, and a scrub must end where released.
 	if (pointerRaf !== null) {
 		cancelAnimationFrame(pointerRaf);
 		pointerRaf = null;
@@ -543,15 +492,7 @@ function handleTimelinePointerUp() {
 	isDraggingPlayhead = false;
 }
 
-// Razor (Cut) tool: when armed, the scroller stops seeking and instead takes
-// two clicks to carve a manual cut. The first click sets `razorAnchor`; the
-// second commits `addCut(lo, hi)`. Stays armed for repeated cuts until toggled
-// off or Esc. While armed the cursor is a scissor and a destructive preview
-// band shows the span that will be removed.
-// The tool lives in the store, not here: a tool is a mode of the whole
-// timeline, and every lane needs to read it to decline the gesture the tool
-// owns (else a razor click over the Cuts/Zoom lane starts a create-drag
-// instead of carving). Local state couldn't reach them.
+// Razor: two clicks carve a cut, staying armed until Esc. The tool lives in the store so every lane can decline the gesture it owns.
 const razorActive = $derived(store.timelineTool === "razor");
 let razorAnchor = $state<number | null>(null);
 
@@ -560,22 +501,19 @@ function toggleRazor() {
 	razorAnchor = null;
 }
 
-// Any other edit action exits the Cut tool, so the armed state always reflects
-// the last action (clicking Split while Cut is armed switches to Split).
+// Any other edit action exits Cut, so the armed state always reflects the last action.
 function disarmRazor() {
 	store.timelineTool = "select";
 	razorAnchor = null;
 }
 
-// Esc: cancel a pending anchor first, then disarm. Registered so the route can
-// exit the tool even when the scroller never held focus.
+// Cancels a pending anchor first, then disarms; registered so the route can exit without scroller focus.
 function exitTool() {
 	if (razorAnchor !== null) razorAnchor = null;
 	else disarmRazor();
 }
 
-// Jump the playhead to the in/out point (Home/End). Extracted so the route can
-// drive it without the scroller holding focus.
+// Extracted so the route can drive Home and End without the scroller holding focus.
 function seekToEdge(which: "in" | "out") {
 	if (duration <= 0) return;
 	const t = which === "in" ? store.inPoint : Math.max(store.inPoint, store.outPoint - frameStep());
@@ -588,8 +526,7 @@ function splitAtPlayhead() {
 	store.splitAt(store.currentTime);
 }
 
-// Snap a razor point to the playhead, clip in/out, and zoom/markup region
-// edges (falls through to the frame grid otherwise) so cuts land precisely.
+// Snaps to the playhead, clip in/out and region edges, falling through to the frame grid.
 function razorSnap(rawOriginal: number): number {
 	const targets = buildSnapTargets({
 		playhead: store.currentTime,
@@ -603,8 +540,7 @@ function razorSnap(rawOriginal: number): number {
 	return snapTime(rawOriginal, targets, tolerance, effectiveFps()).time;
 }
 
-// Original time under the pointer, clamped then snapped to the razor's click
-// resolution (so a cut lands on the same frame preview and export use).
+// Clamped, then snapped to the razor's click resolution so a cut lands on the frame preview and export use.
 function clientXToOriginal(clientX: number): number {
 	if (!timelineEl) return 0;
 	const rect = timelineEl.getBoundingClientRect();
@@ -625,8 +561,7 @@ function razorClickAt(clientX: number) {
 	if (store.addCut(lo, hi, "manual")) store.mergeCuts();
 }
 
-// Hover-scrub: a frame thumbnail (decoded by the filmstrip provider) follows
-// the cursor over the timeline, with the output timecode under it.
+// Hover-scrub: a decoded frame thumbnail follows the cursor, with the output timecode under it.
 let hover = $state<{
 	clientX: number;
 	clientY: number;
@@ -634,10 +569,7 @@ let hover = $state<{
 	outputSec: number;
 	originalSec: number;
 } | null>(null);
-// Preferred hover image: a cell from the storyboard sprite (one decode for the
-// whole clip, then every position is an instant CSS crop). The first read also
-// kicks off the build. `previewAt` (per-position decode) is only the fallback
-// shown for the brief moment before the sprite is ready.
+// A storyboard sprite cell (one decode, then CSS crops); `previewAt` only covers the moment before it is ready.
 const HOVER_PREVIEW_H = 64;
 const hoverCell = $derived.by(() => {
 	void filmstripVersion;
@@ -654,9 +586,7 @@ const hoverUrl = $derived.by(() => {
 	return tileProvider.previewAt(hover.originalSec);
 });
 
-// Last-resort hover frame: the nearest frame of the coarse Rust strip. The
-// WebCodecs sprite/tiles are better, but when the decoder yields nothing the
-// preview used to sit there as an empty grey box. A coarse frame beats none.
+// Last resort: the nearest coarse Rust strip frame, because an empty grey box is worse than a rough one.
 const hoverStripUrl = $derived.by(() => {
 	if (!hover || hoverCell || hoverUrl) return undefined;
 	const strip = store.thumbnailStrip;
@@ -763,8 +693,7 @@ function handleTimelineKeydown(event: KeyboardEvent) {
 		}
 	}
 
-	// Alt+[ shrinks from head, Alt+] from tail (Shift = 1s). Match `event.code`
-	// because shifted brackets become "{"/"}" on some layouts.
+	// Match `event.code`: shifted brackets become other characters on some layouts.
 	if (event.altKey && event.code === "BracketLeft") {
 		event.preventDefault();
 		nudgeTrim("in", 1, event.shiftKey);
@@ -790,11 +719,7 @@ function handleTimelineKeydown(event: KeyboardEvent) {
 		splitAtPlayhead();
 	}
 
-	// Delete is NOT handled here. It's a document-level command over the current
-	// selection, owned by the editor page: three handlers used to claim it (this
-	// one, the zoom card, the annotation overlay) and resolve against DOM focus
-	// instead of the selection, so it could destroy the object you weren't
-	// looking at, or two objects at once.
+	// Delete is NOT handled here: it is a document-level command over the selection, owned by the editor page.
 
 	// J/K/L transport (see shuttle state above).
 	if (event.key === "k" || event.key === "K") {
@@ -831,8 +756,7 @@ function handleTimelineKeydown(event: KeyboardEvent) {
 	}
 }
 
-// The zoom ceiling depends on clip length and viewport width, so a persisted
-// zoom (or a window resize) can land outside the legal range. Pull it back.
+// A persisted zoom or a window resize can land outside the legal ceiling, so pull it back.
 $effect(() => {
 	if (outputDuration <= 0 || timelineWidth <= 0) return;
 	const legal = clampTimelineZoom(store.timelineZoom, outputDuration, timelineWidth);
@@ -844,8 +768,7 @@ function handleResize() {
 	timelineWidth = timelineEl.clientWidth;
 }
 
-// Hiding a lane can shrink the content until the browser clamps scrollTop back
-// to 0; resync so the rail never keeps an offset the track no longer has.
+// Hiding a lane can make the browser clamp scrollTop to 0, so resync or the rail keeps a stale offset.
 $effect(() => {
 	lanes.length;
 	untrack(() => handleScroll());
@@ -854,8 +777,7 @@ $effect(() => {
 function handleScroll() {
 	if (!timelineEl) return;
 	scrollLeft = timelineEl.scrollLeft;
-	// Written straight to the node, not through state: a reactive round-trip
-	// would land a frame late and shear the labels off their lanes mid-scroll.
+	// Written straight to the node: a reactive round-trip lands a frame late and shears the labels off their lanes.
 	if (railInnerEl) railInnerEl.style.transform = `translateY(${-timelineEl.scrollTop}px)`;
 }
 
@@ -865,9 +787,7 @@ function handleTimelineWheel(event: WheelEvent) {
 	const canScrollVertically = timelineEl.scrollHeight - timelineEl.clientHeight > 1;
 	const intent = wheelIntent(event, canScrollVertically);
 
-	// The scroller owns both axes, so a vertical notch is left to the browser:
-	// native scrolling is smoother than anything we'd write, and `handleScroll`
-	// still fires to carry the rail along.
+	// The scroller owns both axes, so a vertical notch is left to the browser; `handleScroll` still carries the rail.
 	if (intent.kind === "none" || intent.kind === "vertical") return;
 
 	if (intent.kind === "zoom") {
@@ -876,8 +796,7 @@ function handleTimelineWheel(event: WheelEvent) {
 		const anchorX = event.clientX - rect.left;
 		// Anchor in OUTPUT seconds so the point under the cursor stays put across the zoom.
 		const anchorOut = duration > 0 ? (timelineEl.scrollLeft + anchorX) / pixelsPerSecond : 0;
-		// Multiplicative, so one wheel notch covers the same proportion of the
-		// range whether the clip is 10 seconds or 30 minutes long.
+		// Multiplicative, so one notch covers the same proportion whether the clip is 10 seconds or 30 minutes.
 		const nextZoom = clampTimelineZoom(
 			store.timelineZoom * (intent.direction > 0 ? 1.12 : 1 / 1.12),
 			outputDuration,
@@ -1011,9 +930,7 @@ onMount(() => {
 	handleResize();
 	const observer = new ResizeObserver(handleResize);
 	if (timelineEl) observer.observe(timelineEl);
-	// The route-level keyboard handler drives these so the toolbar's S/C/I/O
-	// keycaps are honest whether or not the scroller holds focus. Unregistered
-	// on unmount, so they no-op while the timeline is collapsed.
+	// Driven by the route handler so the toolbar keycaps stay honest without scroller focus; unregistered on unmount.
 	const offCommands = store.registerTimelineCommands({
 		splitAtPlayhead,
 		toggleRazor,

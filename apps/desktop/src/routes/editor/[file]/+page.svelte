@@ -121,22 +121,17 @@ interface Props {
 
 let { data }: Props = $props();
 
-// Context copy of the app-scoped services, so the editor tree reads them the
-// same way it will once it lives in @recast/editor.
+// Context copy of the app-scoped services, matching how @recast/editor will read them.
 setEditorServices(tauriEditorServices);
 
 const store = createEditorStore();
 
 let videoEl: HTMLVideoElement | null = $state(null);
-// True while the WebCodecs engine drives the picture (its clock owns
-// `store.currentTime`). When set, handleTimeUpdate must NOT echo
-// `videoEl.currentTime`, because the element free-runs through the un-cut recording,
-// so feeding its time to the store snaps playback back across a cut.
+// Engine drives the clock; echoing videoEl.currentTime here snaps playback back across cuts.
 let webcodecsActive = $state(false);
 // WYSIWYG screenshot (composite, not raw frame); bound from VideoPreview.
 let captureFrame = $state<(() => Promise<Blob | null>) | undefined>(undefined);
-// Loop-within-trim. Lives here because both `ended` and `timeupdate` end-of-clip
-// paths need handling here, with one source of truth for pause-vs-loop.
+// Loop-within-trim: here so `ended` and `timeupdate` share one pause-vs-loop decision.
 let loopEnabled = $state(false);
 
 // Persisted sidebar/timeline visibility; missing or malformed falls back to all visible.
@@ -156,20 +151,11 @@ $effect(() => {
 			JSON.stringify({ sidebar: showSidebar, timeline: showTimeline }),
 		);
 	} catch {
-		// localStorage can throw in private-mode/quota edge cases. The toggle
-		// still works for the session, it just won't be remembered.
+		// localStorage can throw in private mode; the toggle works, it just isn't remembered.
 	}
 });
 
-// --- View state ⇄ URL ---
-// Two layers, not two sources of truth: localStorage above is "my usual layout"
-// and seeds a fresh open, while the URL describes THIS view and wins whenever it
-// carries a param. So a shared link opens as sent, and opening the editor from
-// the library still respects the remembered layout.
-//
-// Reader declared first, so a deep-linked param beats the seeded defaults on the
-// first flush. Each effect reads only its own source and bails when the two
-// already agree, so they converge instead of ping-ponging.
+// --- View state ⇄ URL: a URL param beats the remembered layout; reader effect first so deep links win. ---
 $effect(() => {
 	const params = page.url.searchParams;
 	const tab = parsePanelTab(params.get(PANEL_PARAM), import.meta.env.DEV);
@@ -182,9 +168,7 @@ $effect(() => {
 	});
 });
 
-// `replaceState` throws until the router has booted, and effects run during
-// hydration, which is earlier than that. The first `afterNavigate` (type
-// "enter" on initial load) is the earliest guaranteed-safe point.
+// `replaceState` throws until the router boots; the first `afterNavigate` is the earliest safe point.
 let routerReady = $state(false);
 afterNavigate(() => {
 	routerReady = true;
@@ -203,9 +187,7 @@ $effect(() => {
 		next,
 	);
 	if (!url) return;
-	// replaceState, not goto: this is view state. One history entry per tab click
-	// or panel toggle would make Back mean "undo my last toggle" rather than
-	// "previous page".
+	// replaceState, not goto: view state must not put a history entry behind every toggle.
 	replaceState(
 		url,
 		untrack(() => page.state),
@@ -216,20 +198,16 @@ let previewContainerEl: HTMLElement | null = $state(null);
 let videoSrc = $state("");
 let systemAudioSrc = $state("");
 let micAudioSrc = $state("");
-// Sample-accurate cut-aware audio for BOTH preview paths (no seeking → no
-// drift). If it can't init/decode, the preview plays silent.
+// Cut-aware audio for both preview paths; if init/decode fails the preview plays silent.
 let audioEngine: AudioTimelineEngine | null = $state(null);
 let audioEngineTried = false;
-// Bumped whenever the document changes or the editor is destroyed, so an
-// engine that finishes decoding afterwards knows it is stale.
+// Bumped on document change/destroy so an engine that finishes decoding later knows it is stale.
 let audioEngineGen = 0;
 let cursorPath = $state<string | null>(null);
 let cameraPath = $state<string | null>(null);
-// Why the camera track is or isn't there; the path alone can't tell the editor
-// whether the camera was off or the project simply predates camera capture.
+// Separates camera-off from a project predating camera capture; the path alone cannot.
 let cameraCapture = $state<CameraCapture>("legacy");
-// Measured at capture: how far each companion track lags video frame 0. The
-// preview has to apply the same shift the export does or the two disagree.
+// Per-track capture lag; preview must apply the same shift as export or the two disagree.
 let trackOffsets = $state(resolveTrackOffsets(undefined));
 let cameraSrc = $state("");
 let documentPath = $state("");
@@ -238,18 +216,13 @@ let error = $state("");
 let loadedPath = $state("");
 let thumbnailToken = 0;
 
-// Density-based filmstrip: a WebCodecs tile provider (or null, when the clip
-// bar falls back to the stretched Rust strip). `filmstripVersion` bumps as
-// decoded tiles land so the bar repaints. Clip-bar height (h-12) in CSS px.
+// 48 = clip-bar h-12 in CSS px; a null tileProvider means the stretched Rust strip.
 const FILMSTRIP_TILE_HEIGHT = 48;
 let tileProvider = $state<TileProvider | null>(null);
 let filmstripVersion = $state(0);
 let tileProviderToken = 0;
 
-// Preview owns decode priority: the shared DecoderBudget pauses the filmstrip's
-// decoder while the preview is busy — playing OR scrubbing (seeks thrash the
-// decoder while isPlaying is false) — so the two never over-subscribe the GPU's
-// decode sessions. The filmstrip registers as a lease in setupTileProvider.
+// Preview owns decode priority: DecoderBudget pauses the filmstrip decoder while playing or scrubbing.
 let unregisterFilmstripLease: (() => void) | null = null;
 let scrubBusyTimer: ReturnType<typeof setTimeout> | undefined;
 let lastPreviewTime = -1;
@@ -271,9 +244,7 @@ $effect(() => {
 	}
 });
 
-// Legacy-format gate: a v1 `.recast` must be migrated before the editor
-// touches it. `migrationDone` distinguishes a confirmed update (→ reload)
-// from a dismissal (→ leave, don't open an un-migrated project).
+// A v1 `.recast` must migrate first; migrationDone separates a confirmed update (reload) from a dismissal (leave).
 let showMigration = $state(false);
 let migrationDone = false;
 
@@ -281,8 +252,7 @@ let migrationDone = false;
 const AUTOSAVE_INTERVAL_MS = 30_000;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 
-// Sonner dedupes on id, so a disk-full autosave retrying every 30s shows one
-// persistent toast rather than a stream of them.
+// Sonner dedupes on id, so a retrying autosave shows one toast instead of a stream.
 const AUTOSAVE_TOAST_ID = "autosave-failed";
 let autosaveFailing = false;
 
@@ -290,9 +260,7 @@ function startAutosave() {
 	stopAutosave();
 	autosaveTimer = setInterval(async () => {
 		if (!documentPath || isLoading) return;
-		// Skip the full-state serialize when nothing changed since the last
-		// save/autosave. Most idle ticks are clean, so the 30s timer stays off
-		// the main thread entirely until there's real work to persist.
+		// Most idle ticks are clean, so skip the full serialize until there is real work to persist.
 		if (!store.isDirty) return;
 		try {
 			const editsJson = JSON.stringify(store.toRenderState());
@@ -302,8 +270,7 @@ function startAutosave() {
 				toast.dismiss(AUTOSAVE_TOAST_ID);
 			}
 		} catch (err) {
-			// Autosave is the only thing protecting 30s of edits, so a disk-full
-			// or locked file must not fail in the console alone.
+			// Autosave is all that protects 30s of edits, so a failure must not stay in the console.
 			console.warn("Autosave failed:", err);
 			autosaveFailing = true;
 			toast.error("Autosave isn't working", {
@@ -323,9 +290,7 @@ function stopAutosave() {
 	}
 }
 
-// Project write-lock + agent listener. The GUI is a first-class holder, so an
-// agent that patches this project while it's open is refused rather than
-// silently racing the autosave above.
+// The GUI is a first-class lock holder, so an agent patching this open project is refused, not raced.
 const editorWriterId = `ui:${crypto.randomUUID().slice(0, 8)}`;
 
 /** Re-read the saved edits after a branch lands, so the editor shows what was
@@ -347,8 +312,7 @@ $effect(() => {
 	let cancelled = false;
 
 	acquireEditorWrite(path, editorWriterId).catch((err) => {
-		// An agent already holds it: stay read-only rather than pretending we own
-		// the project. `agentSession.active` drives the banner + inert panels.
+		// An agent already holds it: stay read-only; agentSession.active drives the banner and inert panels.
 		if (!cancelled) log.warn("editor", "write-lock unavailable", { err: String(err) });
 	});
 
@@ -375,14 +339,11 @@ $effect(() => {
 	};
 });
 
-// Tell the export store a panel-hosting editor is on screen. A fresh editor
-// never has the panel open yet, so clear any stale foreground left by an
-// "Open export" click from another route.
+// A fresh editor has no panel open yet, so clear stale foreground from another route's "Open export".
 onMount(() => {
 	exportActivity.setEditorPresent(true);
 	exportActivity.minimize();
-	// Re-adopt a still-running/queued export for THIS project so its panel (ring
-	// or "Queued") can be reopened after navigating back.
+	// Re-adopt a running/queued export for this project so its panel survives navigating back.
 	const mine = exportActivity.items.find(
 		(i) => i.filePath === data.filePath && (i.status === "running" || i.status === "queued"),
 	);
@@ -397,24 +358,16 @@ onDestroy(() => {
 	if (documentPath) {
 		clearAutosave(documentPath).catch(() => {});
 	}
-	// Leave any in-flight/finished export in the store so it keeps tracking in
-	// the activity center after navigation (the Rust process + global state
-	// listener outlive this page). Just drop the foreground flag so the bell
-	// shows it instead of assuming its panel is still on screen.
+	// Keep a live export tracked in the activity center after navigation; only drop the foreground flag.
 	exportActivity.minimize();
 });
 
-// Seek video + audio back to trimStart and resume. Used by both loop paths
-// (timeupdate and ended); returns true so the timeupdate handler can bail.
+// Seeks video + audio to trimStart and resumes; returns true so the timeupdate handler can bail.
 function loopBackToStart(): boolean {
 	if (!videoEl) return false;
 	const start = store.trimStart || 0;
 	videoEl.currentTime = start;
-	// WebCodecs path: the picture clock is the transport and the <video> stays
-	// paused by design, so play()ing it just races that effect and rejects with
-	// AbortError. Publishing the position is the whole handoff — VideoPreview
-	// re-seats the clock onto it when we return true, and the audio engine
-	// reschedules off the same backward jump.
+	// WebCodecs path: the <video> stays paused by design, so play()ing it just rejects with AbortError.
 	if (webcodecsActive) {
 		store.currentTime = start;
 		return true;
@@ -430,12 +383,10 @@ function loopBackToStart(): boolean {
 function handleTimeUpdate() {
 	if (!videoEl) return;
 	if (store.isPlaying) {
-		// Legacy <video> path only: in the WebCodecs path the clock owns time and
-		// audio, so echoing this element's time would fight it across cuts.
+		// Legacy <video> path only: in the WebCodecs path the clock owns time and audio.
 		if (webcodecsActive) return;
 		store.currentTime = videoEl.currentTime;
-		// Loop only matters when trimEnd is below the natural duration; the
-		// natural end uses the `ended` event (more precise than the ~250ms tick).
+		// Loop only matters below the natural duration; the natural end uses `ended`, not this ~250ms tick.
 		if (loopEnabled && store.metadata) {
 			const trimEnd = store.trimEnd > 0 ? store.trimEnd : store.metadata.duration;
 			if (
@@ -450,9 +401,7 @@ function handleTimeUpdate() {
 	}
 }
 
-// Returns true when we looped, so the WebCodecs caller keeps its clock running
-// instead of stopping. Loop wins over stop-at-end: the short-circuit avoids the
-// pause calls below racing loopBackToStart.
+// Returns true when we looped, so the WebCodecs caller keeps its clock running and skips the pause below.
 function handleVideoEnded(): boolean {
 	if (loopEnabled && videoEl) {
 		return loopBackToStart();
@@ -462,21 +411,13 @@ function handleVideoEnded(): boolean {
 	return false;
 }
 
-// Slave the audio engine to the cut-aware picture clock so it skips the same
-// cuts. Normal playback stays locked at 1×; the only corrections are one snap
-// per cut boundary and per seek. Audio that falls behind by more than this is
-// nudged forward; audio that runs ahead of a stalled picture is NOT rewound
-// (that replays a slice as a live echo). See reconcileAvDrift.
+// Drift before audio is nudged forward; audio ahead of a stalled picture is never rewound (that echoes).
 const AUDIO_SYNC_THRESHOLD = 0.12;
-// A cut crossing or scrub jumps the playhead far past one publish quantum;
-// detecting it snaps audio exactly on cuts of any length, including short ones.
+// A jump this far past one publish quantum means a cut crossing or scrub, so audio snaps on cuts of any length.
 const AUDIO_JUMP = 0.12;
-// How far the audio may lead a stalled picture before we advance the PICTURE
-// to catch up (a brief visual skip) instead of leaving the gap. Bounds the
-// lip-sync drift that a decode stall under load would otherwise accumulate.
+// Audio lead over a stalled picture before the PICTURE is advanced instead; bounds lip-sync drift under load.
 const AUDIO_MAX_LEAD = 0.5;
-// A reschedule tears down and restarts every source node. Correcting at rAF
-// rate would restart the graph 60×/s and stutter far worse than the drift.
+// A reschedule restarts every source node; correcting at rAF rate would stutter far worse than the drift.
 const RESYNC_COOLDOWN_MS = 250;
 let audioSyncRaf: number | null = null;
 let lastAudioTarget = -1;
@@ -494,9 +435,7 @@ function syncAudioToClock() {
 		lastAudioTarget = -1;
 		return;
 	}
-	// Track the picture even while the engine has no audible position yet, or the
-	// gap the picture covered during that window reads as a jump afterwards and
-	// triggers a reschedule the audio never needed.
+	// Track the picture even before the engine has an audible position, or the covered gap later reads as a jump.
 	const pictureOut = originalToOutput(store.timeMap, videoEl.currentTime);
 	const jumped = lastAudioTarget >= 0 && Math.abs(pictureOut - lastAudioTarget) > AUDIO_JUMP;
 	lastAudioTarget = pictureOut;
@@ -530,26 +469,20 @@ function stopAudioClockSync() {
 }
 onDestroy(stopAudioClockSync);
 onDestroy(() => {
-	// Bump first: an engine still decoding here would otherwise resolve into a
-	// destroyed component and never be disposed.
+	// Bump first: an engine still decoding would resolve into a destroyed component and never be disposed.
 	audioEngineGen++;
 	audioEngine?.dispose();
 });
 onDestroy(disposeTileProvider);
 
-// Kept audio regions and current OUTPUT time: what the Web Audio engine
-// schedules against. Read straight off the kept time map rather than rebuilt
-// from segments + a speed lookup, so the audio schedule cannot disagree with
-// the axis the picture clock and the export both use. `keptTimeMap`, never
-// `timeMap`: the latter un-collapses to the whole recording mid trim-drag.
+// `keptTimeMap`, never `timeMap`: the latter un-collapses to the whole recording mid trim-drag.
 function audioRegions() {
 	return toRegions(store.keptTimeMap);
 }
 function outputNow() {
 	return originalToOutput(store.timeMap, store.currentTime);
 }
-// Lazily build the engine on first playback. Tried once; on failure the
-// preview plays silent rather than dragging a second audio path along.
+// Tried once; on failure the preview plays silent rather than dragging a second audio path along.
 async function ensureAudioEngine() {
 	if (audioEngine || audioEngineTried) return;
 	audioEngineTried = true;
@@ -560,17 +493,13 @@ async function ensureAudioEngine() {
 			{ src: systemAudioSrc, kind: "system", offsetSec: trackOffsets.audioMs / 1000 },
 			{ src: micAudioSrc, kind: "mic", offsetSec: trackOffsets.microphoneMs / 1000 },
 		]);
-		// Decoding both tracks takes seconds on a long recording, and the file can
-		// change or the editor close in that window. Adopting a stale engine
-		// stranded its AudioContext — an OS audio thread — plus both fully decoded
-		// PCM buffers, and left the new file early-returning on a truthy engine.
+		// Decode takes seconds on a long recording; adopting a stale engine strands its AudioContext and both PCM buffers.
 		if (gen !== audioEngineGen) {
 			eng.dispose();
 			return;
 		}
 		const s = store.audioSettings;
-		// Detached: the recording's audio plays as voice clips, so the monolithic
-		// source tracks are muted here (the clips path carries it).
+		// Detached: the recording's audio plays as voice clips, so the monolithic source tracks are muted.
 		const detached = store.audioDetached;
 		eng.setMasterVolume(s.volume, s.muted);
 		eng.setTrackVolume("system", detached ? 0 : s.systemVolume, detached || s.systemMuted);
@@ -583,9 +512,7 @@ async function ensureAudioEngine() {
 	}
 }
 
-// Play/pause the engine in lockstep with `isPlaying`, on both preview paths.
-// The rAF reconciler runs only on the legacy path, where the <video> element —
-// not the engine — is the clock.
+// Lockstep with `isPlaying` on both paths; the rAF reconciler runs only on the legacy path, where the <video> is the clock.
 $effect(() => {
 	const playing = store.isPlaying;
 	const wc = webcodecsActive;
@@ -593,8 +520,7 @@ $effect(() => {
 
 	if (playing) {
 		void ensureAudioEngine();
-		// `outputNow()` reads store.currentTime, which the legacy path publishes
-		// only at 4 Hz; the element's own time is the current one.
+		// `outputNow()` reads store.currentTime, which the legacy path publishes at only 4 Hz; the element's time is current.
 		const from = untrack(() =>
 			wc || !videoEl ? outputNow() : originalToOutput(store.timeMap, videoEl.currentTime),
 		);
@@ -603,9 +529,7 @@ $effect(() => {
 				untrack(() => audioRegions()),
 				from,
 			);
-			// Seed the reconciler at the position we just started from. Left at -1
-			// it reads the first frame as a jump and reschedules the graph it is
-			// still starting.
+			// Seed the reconciler at the position we started from; left at -1 the first frame reads as a jump.
 			lastAudioTarget = from;
 		}
 	} else {
@@ -616,8 +540,7 @@ $effect(() => {
 	else stopAudioClockSync();
 });
 
-// Reschedule the engine only on a seek/loop (output jump) or a kept-regions
-// edit. Crossing a cut doesn't move gapless OUTPUT time, so it doesn't trigger.
+// Output jump that counts as a seek/loop; crossing a cut doesn't move gapless OUTPUT time, so it never fires.
 const ENGINE_RESEEK_JUMP = 0.15;
 let engineSyncOut = -1;
 let lastRegionsKey = "";
@@ -641,13 +564,10 @@ $effect(() => {
 	if (jumped || editsChanged) eng.reschedule(regions, out);
 });
 
-// Apply volume/mute from the store's audio settings. The master is the product
-// of the per-track gains so the user can keep system audio loud and mute just
-// the mic, or vice versa. Master mute still zeros both.
+// Master is the product of the per-track gains, so mic and system audio still mute independently.
 $effect(() => {
 	const settings = store.audioSettings;
-	// Detached audio: the monolithic source tracks are silenced (voice clips
-	// carry the recording audio); guards against double-playing the un-cut source.
+	// Detached audio: source tracks are silenced so the un-cut source can't double-play under the voice clips.
 	const detached = store.audioDetached;
 	audioEngine?.setMasterVolume(settings.volume, settings.muted);
 	audioEngine?.setTrackVolume(
@@ -678,22 +598,14 @@ function buildMusicSpecs(): MusicClipSpec[] {
 	}));
 }
 
-// Re-decode/re-schedule music whenever the clip set changes (add/remove/edit).
-// Reads the clips reactively; the engine dedupes decode work per call.
+// Reads the clips reactively on every add/remove/edit; the engine dedupes decode work per call.
 $effect(() => {
 	const specs = buildMusicSpecs();
 	void store.timeMap.outputDuration; // reschedule fill length on edit
 	audioEngine?.setMusicClips(specs);
 });
 
-// Transport seek for `store.seek()`: seeks from outside the player (a
-// transcript line, chapters, …). Most in-player seeks (timeline scrub,
-// frame-step) already set `videoEl.currentTime` themselves; this gives panels
-// the same reach. Moving the <video> works for both the legacy path and the
-// WebCodecs path: paused → `seeked` realigns the picture clock; playing → the
-// draw loop re-seats the clock off the changed `store.currentTime`. Setting
-// `currentTime` alone failed mid-playback because the next time-publish (legacy)
-// overwrote it before the seek took.
+// External seeks move the <video> so both paths realign off it; setting `currentTime` alone loses to the next legacy time-publish.
 $effect(() => {
 	const off = store.registerSeekHandler((t) => {
 		if (videoEl) videoEl.currentTime = t;
@@ -701,22 +613,16 @@ $effect(() => {
 	return off;
 });
 
-// Snap audio to the video time on scrub. Skipped on the WebCodecs path, where
-// audio follows the clock and snapping to seeks would fight it.
+// Skipped on the WebCodecs path, where audio follows the clock and snapping to seeks would fight it.
 function handleVideoSeeked() {
 	if (!videoEl || webcodecsActive) return;
 	const t = videoEl.currentTime;
-	// Publish the jumped position immediately. During playback the <video>
-	// cut-skip seeks to cut.end, but `store.currentTime` otherwise only catches
-	// up on the next 4 Hz `timeupdate`, so captions/overlays (which key off
-	// `store.currentTime`) lagged the cut by up to ~250 ms. Snap them here.
+	// Publish the jumped position now; captions/overlays keyed off `store.currentTime` otherwise lag a cut by ~250 ms.
 	store.currentTime = t;
-	// The rAF reconciler treats this as a jump and resnaps the engine; doing it
-	// here too would restart the graph twice for one seek.
+	// No resnap here: the rAF reconciler already treats this as a jump, and both would restart the graph twice.
 }
 
-// Frame-step on the OUTPUT axis so stepping across a cut lands on the next
-// kept frame, never inside a removed range. `store.currentTime` stays original.
+// Steps on the OUTPUT axis so a step across a cut lands on the next kept frame, never inside a removed range.
 function frameStepSeek(direction: 1 | -1) {
 	if (!store.metadata) return;
 	const orig = frameStepOutput(store.timeMap, store.metadata, store.currentTime, direction);
@@ -746,8 +652,7 @@ function disposeTileProvider() {
 	tileProvider = null;
 }
 
-// Build the WebCodecs filmstrip provider for the opened media. Tokened so a
-// rapid reopen disposes a provider that resolves after we moved on.
+// Tokened so a rapid reopen disposes a provider that resolves after we moved on.
 async function setupTileProvider(url: string) {
 	const token = ++tileProviderToken;
 	disposeTileProvider();
@@ -774,8 +679,7 @@ async function setupTileProvider(url: string) {
 }
 
 async function loadThumbnailStrip(path: string) {
-	// Skip without a usable duration: bumping the token would cancel an in-flight
-	// strip, and a 0-duration source just yields black frames.
+	// Skip without a duration: bumping the token would cancel an in-flight strip, and 0-duration yields black frames.
 	const duration = store.metadata?.duration ?? 0;
 	if (duration <= 0) return;
 
@@ -811,11 +715,7 @@ async function loadWaveform() {
 		console.warn("Waveform extraction failed", err);
 		store.waveform = [];
 	}
-	// Warm the silence-detection cache off the back of the waveform pass (one
-	// FFmpeg decode at a time, never on the load path). The result is discarded
-	// here. `detectSilence` writes it to the file-identity cache the review
-	// popover reads, so opening that popover is instant. Default options match
-	// the popover's "balanced" sensitivity.
+	// Warms the silence cache off the waveform pass (result discarded here) so the review popover opens instantly.
 	void warmSilenceCache();
 }
 
@@ -850,9 +750,7 @@ function handleVideoError() {
 	isLoading = false;
 }
 
-// Run after the editor is interactive, so heavy secondary work never competes
-// with the preview's cold start. Same idle mechanism the waveform uses; fires
-// at browser-idle or the timeout, whichever comes first.
+// Defers heavy secondary work off the preview's cold start; fires at browser-idle or the timeout.
 function runWhenIdle(fn: () => void, timeout = 2000) {
 	if (typeof requestIdleCallback === "function") {
 		requestIdleCallback(fn, { timeout });
@@ -873,8 +771,7 @@ async function loadDocument() {
 	trackOffsets = resolveTrackOffsets(undefined);
 	cameraSrc = "";
 	videoEl?.pause();
-	// Tear down the previous file's engine; it rebuilds on first play. The bump
-	// also disowns one still decoding, which `dispose()` alone cannot reach.
+	// The bump also disowns an engine still decoding, which `dispose()` alone cannot reach.
 	audioEngineGen++;
 	audioEngine?.dispose();
 	audioEngine = null;
@@ -911,10 +808,7 @@ async function loadDocument() {
 		store.recordingPath = document.mediaPath;
 		store.audioPath = document.audioPath ?? null;
 		store.microphonePath = document.microphonePath ?? null;
-		// Probe the transcribed audio's true (wall-clock) duration so captions can
-		// be rescaled onto the video's frame-time axis (count-based CFR makes them
-		// differ, drifting captions toward the end). Mic is the speech source; fall
-		// back to system audio. Best-effort — on failure the scale stays 1.
+		// Captions ride the audio's wall-clock axis; count-based CFR makes it differ, so rescale onto frame time.
 		store.captionAudioDurationSec = null;
 		{
 			const capAudioPath = document.microphonePath ?? document.audioPath;
@@ -927,8 +821,7 @@ async function loadDocument() {
 			}
 		}
 		store.waveform = [];
-		// Lazy: the idle-scheduled effect below extracts the waveform once the
-		// editor is interactive, so the ffmpeg pass never competes with load.
+		// Lazy: the idle effect below extracts the waveform, so the ffmpeg pass never competes with load.
 		waveformRequested = false;
 		systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
 		micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
@@ -937,17 +830,11 @@ async function loadDocument() {
 		// Absent from an older backend: unknowable, so `legacy` — never "off".
 		cameraCapture = document.cameraCapture ?? "legacy";
 		cameraSrc = cameraPath ? convertFileSrc(cameraPath) : "";
-		// Mount the editor body (VideoPreview renders only when !isLoading) so the
-		// <video> exists before load().
+		// Mount the editor body (VideoPreview renders only when !isLoading) so the <video> exists before load().
 		isLoading = false;
 		await tick();
 		videoEl?.load();
-		// The preview now owns the main thread through its cold start. Defer the
-		// three heavy secondary decoders — the Rust thumbnail strip, the filmstrip
-		// tile decoder, and the cursor auto-zoom pass — to browser-idle. On a 4K
-		// clip these each decode the same file; firing them alongside the preview
-		// is what spiked open. The path guard drops them if a newer document opened
-		// in the meantime.
+		// Defer the thumbnail strip, filmstrip decoder and auto-zoom pass to idle; on 4K all three decode the same file and spiked open.
 		const loadedPath = document.projectPath;
 		const filmstripSrc = videoSrc;
 		runWhenIdle(() => {
@@ -980,8 +867,7 @@ function onMigrationOpenChange(open: boolean) {
 	}
 }
 
-// On first load, place a focus region at each detected click + settle. The
-// `autoZoomApplied` document flag stops reopens from repopulating cleared regions.
+// `autoZoomApplied` stops a reopen from repopulating regions the user cleared.
 let autoZoomRunning = false;
 
 async function maybeRunAutoZoom() {
@@ -1026,8 +912,7 @@ async function runAutoZoom(opts: { silentEmpty?: boolean; undoOnError?: boolean 
 		}
 	} catch (err) {
 		console.warn("Auto-zoom failed:", err);
-		// Analysis throws before it mutates anything, so on a regenerate the only
-		// change is the caller's clear — which `clearAutoZooms` pushed undo for.
+		// Analysis throws before mutating, so the only change is the caller's clear, which pushed undo.
 		toast.error("Couldn't generate focus moments", {
 			description: opts.undoOnError
 				? "Your previous focus moments were removed. Undo to bring them back."
@@ -1040,21 +925,17 @@ async function runAutoZoom(opts: { silentEmpty?: boolean; undoOnError?: boolean 
 }
 
 function regenerateAutoZoom() {
-	// Only offer Undo if the clear actually pushed an undo entry, otherwise the
-	// button would revert whatever unrelated edit came before it.
+	// Only offer Undo when the clear pushed an entry, or the button reverts whatever edit came before.
 	const hadAuto = store.zoomRegions.some((z) => z.source === "auto");
 	store.clearAutoZooms();
 	store.autoZoomApplied = false;
 	void runAutoZoom({ silentEmpty: false, undoOnError: hadAuto });
 }
 
-// Export lifecycle UI. The exportActivity store owns the queue + run; this
-// editor tracks the item it enqueued (myExportId) and maps it back to the
-// values the export snippets read.
+// exportActivity owns the queue and run; this editor only tracks the item it enqueued.
 let myExportId = $state<string | null>(null);
 const myItem = $derived(myExportId ? exportActivity.item(myExportId) : null);
-// True while this editor rasterizes its edits (buildExportRenderState) before
-// the item is enqueued: the frontend "preparing" window with its sub-steps.
+// True while this editor rasterizes its edits before enqueue: the frontend 'preparing' window.
 let buildingExport = $state(false);
 const isExportingHere = $derived(buildingExport || myItem?.status === "running");
 
@@ -1066,16 +947,13 @@ const exportHasProgress = $derived((myItem?.progress ?? 0) > 0);
 // Items ahead of this editor's queued export (the running one counts).
 const queueAhead = $derived(myExportId ? exportActivity.queuePosition(myExportId) : 0);
 
-// The one minimal export stage, driving the themed loader + labels. Prepare =
-// snapshot/rasterize (buildingExport) or pre-first-frame; render = frame loop
-// (determinate); finalise = mux (browser) / FFmpeg tail (Rust).
+// prepare = snapshot/rasterize or pre-first-frame; render = frame loop; finalise = mux or FFmpeg tail.
 type ExportStage = "prepare" | "render" | "finalise";
 const exportStage = $derived<ExportStage>(
 	exportFinalizing ? "finalise" : buildingExport || !exportHasProgress ? "prepare" : "render",
 );
 
-// Eased display percentage: raw FFmpeg progress is jumpy, so lerp the ring
-// toward it each animation tick while exporting.
+// Raw FFmpeg progress is jumpy, so lerp the ring toward it each animation tick.
 let displayPct = $state(0);
 let easeRafHandle: number | null = null;
 $effect(() => {
@@ -1120,8 +998,7 @@ function exportEtaMs(): number | null {
 	});
 }
 
-// Terminal result of THIS editor's export, read from its queue item. The store
-// owns the run + toasts + notification; the snippets just read this.
+// Terminal result of THIS editor's export; the store owns the run, toasts and notification.
 type ExportResult =
 	| { kind: "success"; path: string }
 	| { kind: "cancelled" }
@@ -1145,9 +1022,7 @@ async function handleExport() {
 	exportNow = Date.now();
 
 	try {
-		// Resolve the export engine FIRST — it decides whether the render state needs
-		// its visual half. The beta toggle IS the gate; the resolver still falls back
-		// per capability/eligibility.
+		// Engine first: it decides whether the render state needs its visual half. The beta toggle is the gate.
 		const wantBrowser = experimentalStore.isEnabled("browserExportBeta");
 		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
 		const engine = chooseExportEngine({
@@ -1162,15 +1037,12 @@ async function handleExport() {
 			hardwareAccelerated: capability?.hardwareAccelerated ?? false,
 		});
 
-		// Build the render state (audio cuts/speed + metadata; for Rust ALSO the
-		// text→PNG / cursor sprites it composites). The browser engine composites those
-		// itself in buildExportJob, so skip that rasterization here — no double work.
+		// The browser engine composites text and cursor itself in buildExportJob, so skip that raster here.
 		const { renderState: finalRenderState, metadata: meta } = await buildExportRenderState(store, {
 			skipVisualRaster: engine.engine === "browser",
 		});
 
-		// Warn (but don't block) if any image annotation can't be loaded. The
-		// export skips them silently otherwise, shipping a video with them gone.
+		// Warn but don't block: the export otherwise drops unloadable image annotations silently.
 		const missingImages = await findMissingImageAnnotations(store);
 		if (missingImages.length > 0) {
 			const names = missingImages.map(basename).join(", ");
@@ -1179,8 +1051,7 @@ async function handleExport() {
 			);
 		}
 
-		// A blur can't follow a zoom in the export, so warn so a redaction doesn't
-		// silently slide off the thing it was covering.
+		// A blur can't follow a zoom in the export, so warn before a redaction slides off its target.
 		if (hasBlurUnderZoom(store)) {
 			toast.warning(
 				"A blur overlaps a zoom. In the export it can't follow the zoom and may not cover the zoomed content. Set the blur's Anchor to Frame if it should stay in a fixed spot.",
@@ -1201,8 +1072,7 @@ async function handleExport() {
 			durationSec: meta ? Math.round(meta.duration) : undefined,
 		});
 
-		// Params the backend mux/export job needs, shared by both engines. The stable
-		// route path is `filePath`; the actual media path is `inputPath`.
+		// `filePath` is the stable route path; `inputPath` is the actual media.
 		const params = {
 			inputPath: documentPath || data.filePath,
 			format: store.exportFormat,
@@ -1214,16 +1084,11 @@ async function handleExport() {
 			fps: store.exportFormat === "gif" ? undefined : store.exportFps,
 			// No-op unless a transcript exists and caption options are enabled.
 			captions: buildCaptionExport(store),
-			// The axis the preview just played. Sending it makes the backend
-			// replay this exact timeline rather than re-deriving one from cuts,
-			// splits and speed anchors and hoping the two agree. `keptTimeMap`,
-			// not `timeMap`: the latter un-collapses to the whole recording mid
-			// trim-drag, which would export the trimmed-off head and tail.
+			// `keptTimeMap`, not `timeMap`: the latter un-collapses mid trim-drag and would export the trimmed head and tail.
 			timeMap: exportTimeMap(store.keptTimeMap),
 		};
 
-		// Performance snapshot for the `export_completed` event — source metrics the
-		// export time is correlated against. Emitted by the store when it finishes.
+		// Source metrics the export time is correlated against; the store emits them on `export_completed`.
 		const src = store.metadata;
 		const telemetry: ExportTelemetry = {
 			engine: engine.engine === "browser" ? "browser" : "rust",
@@ -1239,16 +1104,11 @@ async function handleExport() {
 		};
 
 		if (engine.engine === "browser") {
-			// Browser render shares this GPU + decoder; pause preview playback so the
-			// two don't fight for it. The frame stays up and scrubbable — just not
-			// auto-playing. (Rust exports don't touch the GPU, so they stay live.)
+			// Browser render shares this GPU and decoder, so stop playback; the frame stays up and scrubbable.
 			store.isPlaying = false;
-			// The rate the browser renderer encodes at (shared with the eligibility gate
-			// so a source it deemed light enough renders at the fps it judged).
+			// Shared with the eligibility gate, so a source it deemed light renders at the fps it judged.
 			const renderFps = resolveExportFps(store);
-			// Snapshot the scene now (store alive); the app-scoped render queue composites
-			// it off the main thread and hands the video to the backend — so the export
-			// survives closing this editor, and a second export queues behind it.
+			// Snapshot while the store is alive, so the export survives closing this editor and queues behind others.
 			const job = await buildExportJob(store, {
 				videoUrl: videoSrc,
 				cameraUrl: cameraSrc,
@@ -1285,8 +1145,7 @@ async function handleExport() {
 	}
 }
 
-// Cancel this editor's export: the store stops a running one (or drops it from
-// the queue if it hasn't started).
+// The store stops a running export, or drops it from the queue if it hasn't started.
 function handleCancelExport() {
 	if (myExportId) void exportActivity.cancel(myExportId);
 }
@@ -1297,10 +1156,7 @@ function dismissExportResult() {
 	exportActivity.minimize();
 }
 
-// Watch the finished export in the in-app player. Opening it dismisses the
-// export panel so the player isn't behind it. Size and created come from the
-// exports listing (accurate); a minimal entry is the fallback so playback
-// never hinges on the listing succeeding.
+// Size and created come from the exports listing; a minimal entry keeps playback off that listing's success.
 let playTarget = $state<RecordingEntry | null>(null);
 
 async function playExportedFile() {
@@ -1325,11 +1181,9 @@ async function playExportedFile() {
 	dismissExportResult();
 }
 
-// Options phase is UI-only (the picker before Export); progress/result phases
-// derive from the pipeline state, so the dialog is one surface that morphs.
+// Options is UI-only; progress and result derive from pipeline state, so one surface morphs.
 let exportOptionsOpen = $state(false);
-// The panel reflects only the export THIS editor enqueued (myItem), plus its
-// own options picker. A queued item waits behind the running one.
+// The panel reflects only the export this editor enqueued; a queued item waits behind the running one.
 const exportPhase: ExportPanelPhase | null = $derived(
 	buildingExport
 		? "progress"
@@ -1347,13 +1201,10 @@ const exportPhase: ExportPanelPhase | null = $derived(
 								? "options"
 								: null,
 );
-// The panel is shown only when a phase is active AND it's foregrounded.
-// Minimizing keeps the export alive but hands tracking to the activity center.
+// Minimizing keeps the export alive and hands tracking to the activity center.
 const isExportFlowOpen = $derived(exportPhase !== null && exportActivity.foreground);
 
-// The control focus was on when the export flow opened, so we can hand focus
-// back when it closes (the panel moves focus into itself on open). Without this,
-// closing the panel strands focus on <body> and keyboard users lose their place.
+// The panel takes focus on open, so without a return target closing it strands focus on <body>.
 let exportReturnFocus: HTMLElement | null = null;
 let exportWasOpen = false;
 $effect(() => {
@@ -1367,8 +1218,7 @@ $effect(() => {
 	exportWasOpen = open;
 });
 
-// Drives the toolbar Export button: open the surface, close the picker,
-// minimize a running/finished export to the activity center, or reopen it.
+// Drives the toolbar Export button: open, close the picker, minimize to the activity center, or reopen.
 type ExportButtonMode = "export" | "close" | "minimize" | "show";
 const exportButtonMode: ExportButtonMode = $derived(
 	exportPhase === null
@@ -1383,8 +1233,7 @@ const exportButtonMode: ExportButtonMode = $derived(
 function onExportButton() {
 	switch (exportButtonMode) {
 		case "export":
-			// Remember where focus was (the Export button) so we can restore it when
-			// the flow closes; the panel takes focus on open.
+			// Remember the Export button so focus returns here when the flow closes.
 			exportReturnFocus = document.activeElement as HTMLElement | null;
 			openExportOptions();
 			break;
@@ -1400,8 +1249,7 @@ function onExportButton() {
 	}
 }
 
-// Silence cuts only. Manual ripple deletes are always honoured, so they must
-// not trip the "enable Silence detection" banner. Only auto cuts depend on it.
+// Silence cuts only: manual ripple deletes must not trip the 'enable Silence detection' banner.
 const silenceCutCount = $derived(store.cuts.filter((c) => c.source === "silence").length);
 
 function openExportOptions() {
@@ -1420,8 +1268,7 @@ function confirmExportOptions() {
 	void handleExport();
 }
 
-// Esc per phase: cancel a running export, dismiss a finished one, close the
-// picker (which returns the timeline and properties panel).
+// Esc per phase: cancel a running export, dismiss a finished one, or close the picker.
 function handleExportEscape() {
 	if (myItem?.status === "running" || myItem?.status === "queued") {
 		handleCancelExport();
@@ -1465,9 +1312,7 @@ async function revealExportInFolder() {
 	}
 }
 
-// `init()` is a network round-trip, and until it resolves the tile has nothing
-// to read from the store. Without this the button sat dead for a beat and got
-// clicked again, which is how a single export ended up uploaded three times.
+// `init()` is a round-trip; without this the button sat dead and got re-clicked, uploading one export three times.
 let checkingDestination = $state<"cloud" | "drive" | null>(null);
 
 const exportPath = $derived(exportResult?.kind === "success" ? exportResult.path : null);
@@ -1501,14 +1346,12 @@ async function copyToClipboard(text: string, label: string) {
 	}
 }
 
-// Push the latest export to Drive, or route to Settings to connect first
-// (connecting opens a browser tab, which can't happen from this card).
+// Routes to Settings when not connected: connecting opens a browser tab, which can't happen from this card.
 async function uploadExportToDrive() {
 	if (exportResult?.kind !== "success" || driveTile.disabled) return;
 	const path = exportResult.path;
 	const link = gdrive.getRecordForPath(path)?.webViewLink;
-	// A finished upload turns the tile into its own link: re-uploading on a
-	// second click is never what "Copy link" means.
+	// A finished upload turns the tile into its own link, so a second click copies rather than re-uploads.
 	if (link && driveTile.status === "done") return copyToClipboard(link, "Drive link");
 
 	checkingDestination = "drive";
@@ -1519,8 +1362,7 @@ async function uploadExportToDrive() {
 			void goto(settingsHref("cloud"));
 			return;
 		}
-		// Byte progress lives in the foreground dialog (and the activity center
-		// once minimized); the tile only reports state. The store toasts the outcome.
+		// Byte progress lives in the dialog and activity center; the tile only reports state.
 		const id = gdrive.startUpload(path);
 		requestAnimationFrame(() => gdrive.setForeground(id));
 	} finally {
@@ -1528,8 +1370,7 @@ async function uploadExportToDrive() {
 	}
 }
 
-// Share the export to Recast Cloud and copy the link; routes to Settings if
-// not signed in.
+// Shares the export to Recast Cloud and copies the link; routes to Settings if not signed in.
 async function shareCurrentExportToCloud() {
 	if (exportResult?.kind !== "success" || cloudTile.disabled) return;
 	const path = exportResult.path;
@@ -1549,10 +1390,7 @@ async function shareCurrentExportToCloud() {
 	}
 
 	const title = basename(path)?.replace(/\.[^.]+$/, "") ?? "Recast";
-	// Fire-and-forget, then foreground on the next frame: the store seeds its
-	// entry synchronously, and the rAF lets any closing overlay settle before a
-	// second modal opens (bits-ui hands focus back otherwise, and the dialog
-	// never appears). The store owns the success/failure toasts.
+	// The rAF before foregrounding lets a closing overlay settle, or bits-ui takes focus back and the dialog never appears.
 	const shared = cloudShare
 		.share(path, title, undefined, buildCloudCaptionTranscript(store))
 		.catch(() => null);
@@ -1566,17 +1404,14 @@ async function shareCurrentExportToCloud() {
 	}
 }
 
-// `navigator.share` exposure is static; sample once so the button renders
-// without a reactive read. Same for the host OS, which names and marks the sheet
-// this opens — "Windows share" beats a generic node on a machine that has one.
+// Exposure is static, so sample once; the OS name marks the sheet ('Windows share' beats a generic node).
 const shareSupported = isShareSupported();
 const shareTarget = shareTargetFor(platform());
 
 async function shareExportedFile() {
 	if (exportResult?.kind !== "success") return;
 	const fileName = basename(exportResult.path) ?? "recording";
-	// OS share sheets can't attach a local file everywhere; fall back to a
-	// recorded Drive link if this export already has one.
+	// OS share sheets can't attach a local file everywhere; fall back to a recorded Drive link.
 	const fallbackLink = gdrive.getRecordForPath(exportResult.path)?.webViewLink;
 	const result = await shareRecording({
 		path: exportResult.path,
@@ -1614,11 +1449,7 @@ let isSaving = $state(false);
 async function handleSave() {
 	if (!documentPath || isSaving || isLoading) return;
 	isSaving = true;
-	// Paint the saving state before the synchronous serialize so the button
-	// reflects the click immediately. The serialize itself stays on the main
-	// thread by necessity, because Tauri's IPC bridge JSON-encodes command args on the
-	// main thread anyway, so a worker would only add a proxy-stripping clone of
-	// equal cost; the win is gating autosave on isDirty (see startAutosave).
+	// Serialize stays on the main thread: Tauri JSON-encodes command args there anyway, so a worker only adds a clone.
 	await tick();
 	try {
 		const editsJson = JSON.stringify(store.toRenderState());
@@ -1634,8 +1465,7 @@ async function handleSave() {
 	}
 }
 
-// Bind the editor's mod-combo shortcuts to the central registry for the life
-// of this route. Each bails while the export flow dialog owns the screen.
+// Each handler bails while the export flow dialog owns the screen.
 onMount(() =>
 	registerShortcutHandlers({
 		"editor.undo": () => {
@@ -1660,8 +1490,7 @@ function handleKeydown(e: KeyboardEvent) {
 	// Bail on auto-repeat so a held key counts once.
 	if (e.defaultPrevented || e.repeat) return;
 
-	// The export panel owns Esc routing while open; bail so global shortcuts
-	// (play/pause, frame step) don't fire behind it.
+	// The export panel owns Esc routing while open; bail so global shortcuts don't fire behind it.
 	if (isExportFlowOpen) return;
 
 	// Never hijack typing in inputs / textareas / contenteditable.
@@ -1674,16 +1503,10 @@ function handleKeydown(e: KeyboardEvent) {
 		return;
 	}
 
-	// Mod-combo shortcuts are owned by the central registry; bail on Ctrl/⌘ so a
-	// combo never trips a plain-key action below.
+	// Mod combos belong to the central registry; bail so one never trips a plain-key action below.
 	if (e.ctrlKey || e.metaKey) return;
 
-	// Timeline editing commands (S/C/I/O/Home/End). These used to fire only when
-	// the timeline scroller held DOM focus, so the keycaps in the toolbar lied
-	// whenever focus sat anywhere else. Now they run at document scope, delegating
-	// to the timeline's registered handlers (which own the frame math). Shift/Alt
-	// variants stay scroller-local; a dropdown/popover open (isOverlayOpen) or a
-	// collapsed timeline (no registered commands) makes them no-op.
+	// Document scope, not scroller focus, or the toolbar keycaps lie; Shift/Alt variants stay scroller-local.
 	const runTimelineCommand = (run: (c: NonNullable<typeof store.timelineCommands>) => void) => {
 		const c = store.timelineCommands;
 		if (!c || !store.metadata || e.shiftKey || e.altKey || isOverlayOpen()) return;
@@ -1694,10 +1517,7 @@ function handleKeydown(e: KeyboardEvent) {
 	// Plain keys: play/pause, frame step, fullscreen.
 	switch (e.key) {
 		case " ":
-			// Buttons and links fire their click on Space KEYUP, so preventing the
-			// keydown here would make every focused control in the editor dead to
-			// the keyboard. The focused control wins; Space only reaches the
-			// transport when nothing activatable holds focus.
+			// Buttons fire click on Space KEYUP, so preventing keydown here would leave every focused control dead.
 			if (activatesOnSpace(document.activeElement)) return;
 			e.preventDefault();
 			if (!videoEl) return;
@@ -1724,17 +1544,13 @@ function handleKeydown(e: KeyboardEvent) {
 				void previewContainerEl.requestFullscreen();
 			}
 			break;
-		// Delete acts on the SELECTION, never on whatever holds DOM focus. It lives
-		// here, at document scope, because the timeline, the zoom card and the
-		// annotation overlay each used to claim it: Delete could remove the object
-		// you weren't looking at, or two objects on one keypress.
+		// Delete acts on the SELECTION, not DOM focus; three surfaces used to claim it and could remove two objects at once.
 		case "Delete":
 		case "Backspace": {
 			const removed = store.deleteSelection();
 			if (!removed) return;
 			e.preventDefault();
-			// A clip delete closes the gap; park the playhead on the join so it lands
-			// on a kept frame rather than inside the removed range.
+			// A clip delete closes the gap; park the playhead on the join so it lands on a kept frame.
 			if (removed.joinAt !== null) {
 				store.seek(removed.joinAt);
 				if (videoEl) videoEl.currentTime = removed.joinAt;
@@ -1764,11 +1580,7 @@ function handleKeydown(e: KeyboardEvent) {
 			runTimelineCommand((c) => c.seekToEdge("out"));
 			break;
 		case "Escape":
-			// Exit an armed tool first (the razor's emergency exit works from
-			// anywhere now, not just when the scroller has focus), then deselect.
-			// The annotation overlay cancels its own tool on Escape and
-			// preventDefaults when it does, so we never fight it (bail on
-			// defaultPrevented above).
+			// Exit an armed tool before deselecting; the annotation overlay preventDefaults its own Escape, so we never fight it.
 			if (store.timelineTool === "razor") {
 				store.timelineCommands?.exitTool();
 				e.preventDefault();
@@ -1791,9 +1603,7 @@ $effect(() => {
 	videoEl.muted = true;
 });
 
-// Extract the waveform lazily: defer to browser idle (best-effort) so the
-// ffmpeg pass runs after the editor is interactive, never on the load path.
-// The latch keeps the reactive re-runs from scheduling it more than once.
+// Idle-deferred so the ffmpeg pass never runs on the load path; the latch stops re-runs re-scheduling it.
 $effect(() => {
 	if (store.waveform.length > 0 || waveformRequested) return;
 	if (!store.audioPath && !store.microphonePath) return;

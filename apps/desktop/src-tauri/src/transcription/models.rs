@@ -77,9 +77,7 @@ pub enum ModelSource {
 /// decide if a model is offerable.
 pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
     match runtime {
-        // The on-device engine needs the `ggml` feature (transcribe.cpp compiled
-        // in). A `--no-default-features` build reports it unavailable, so the UI
-        // falls back to remote endpoints.
+        // The on-device engine needs the `ggml` feature, so a no-default-features build reports it unavailable.
         #[cfg(feature = "ggml")]
         Runtime::Ggml => (true, None),
         #[cfg(not(feature = "ggml"))]
@@ -87,8 +85,7 @@ pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
             false,
             Some("On-device transcription isn't available in this build.".into()),
         ),
-        // Remote availability is decided per-endpoint (is a key stored?), so the
-        // global gate is always "not available" with guidance.
+        // Remote availability is per-endpoint (is a key stored?), so the global gate is always unavailable with guidance.
         Runtime::Remote => (
             false,
             Some("Configure a remote transcription endpoint to use this model.".into()),
@@ -338,8 +335,7 @@ pub fn registry() -> Vec<CaptionModel> {
         .scored(85, 89)
         .langs(1)
         .caps(false, false, false, TimestampGranularity::Token),
-        // NVIDIA Nemotron streaming ASR. transcribe.cpp runs it under its
-        // `parakeet` architecture (same encoder family), so no engine work.
+        // transcribe.cpp runs Nemotron under its `parakeet` architecture (same encoder family), so no engine work.
         ggml_model(
             "nemotron-streaming-3.5",
             "Nemotron Streaming 3.5",
@@ -365,10 +361,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             60_000_000,
             false,
-            // SHA-256 of the GGUF at the URL above — pinned 2026-07-15
-            // against `handy-computer/whisper-base-gguf` HEAD. Mismatches
-            // at download time are auto-detected (`download_file` at
-            // `models.rs:357-367`); re-pin when upgrading the URL.
+            // SHA-256 of the GGUF above, pinned 2026-07-15; `download_file` detects mismatches, so re-pin when the URL changes.
             Some("8E0FEB7BC35780353CF31821018E601BB7B7CFF6C9A0E17ADA5A5DB23F4DB867"),
         )
         .scored(99, 71)
@@ -420,8 +413,7 @@ pub fn all_models(app: &AppHandle) -> Vec<CaptionModel> {
             models.push(m);
         }
     }
-    // User-configured remote endpoints. Their ids are namespaced (`remote:<id>`)
-    // so they can't collide with built-ins or packs.
+    // Remote endpoint ids are namespaced `remote:<id>` so they can't collide with built-ins or packs.
     models.extend(super::remote::remote_models(app));
     models
 }
@@ -569,9 +561,7 @@ mod tests {
 
     #[test]
     fn ggml_availability_tracks_the_feature() {
-        // The on-device engine needs the `ggml` feature (transcribe.cpp compiled
-        // in); a `--no-default-features` build must report it unavailable so the
-        // UI falls back to remote endpoints.
+        // The on-device engine needs the `ggml` feature, so a no-default-features build must report it unavailable.
         let (available, reason) = runtime_status(Runtime::Ggml);
         assert_eq!(available, cfg!(feature = "ggml"));
         assert_eq!(reason.is_none(), cfg!(feature = "ggml"));
@@ -579,8 +569,7 @@ mod tests {
 
     #[test]
     fn remote_runtime_is_never_globally_available() {
-        // Remote availability is decided per-endpoint (key present), so the
-        // global gate is always "not available" with a reason.
+        // Remote availability is per-endpoint, so the global gate is always unavailable with a reason.
         let (available, reason) = runtime_status(Runtime::Remote);
         assert!(!available);
         assert!(reason.is_some());

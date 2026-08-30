@@ -9,8 +9,7 @@
  * restarts decode. Frames transfer back as OffscreenCanvas.
  */
 
-// This worker now lives INSIDE `packages/media`, so it imports MediaBunny
-// directly rather than bouncing through the package barrel.
+// Lives inside `packages/media`, so it imports MediaBunny directly rather than through the package barrel.
 import {
 	ALL_FORMATS,
 	Input,
@@ -184,8 +183,7 @@ async function init(
 	hints: { durationSec?: number; fps?: number } = {},
 ): Promise<void> {
 	disposed = false;
-	// Per-step timing: a slow open used to surface only as a 30s timeout with no
-	// indication of which container call was walking the file.
+	// Per-step timing: a slow open used to surface only as a 30s timeout, with no sign which call walked the file.
 	let stepAt = performance.now();
 	const step = (label: string) => {
 		if (!DIAG) return;
@@ -193,9 +191,7 @@ async function init(
 		console.log(`[mb-worker] init ${label} ${(now - stepAt).toFixed(0)}ms`);
 		stepAt = now;
 	};
-	// `UrlSource` fetches internally; on Tauri desktop the asset-protocol URLs
-	// (`asset://localhost/...`, `tauri://...`) flow through the webview's network
-	// layer. A `blob` ref slices the File instead — never a whole-file fetch.
+	// `UrlSource` fetches internally; a `blob` ref slices the File instead, never a whole-file fetch.
 	input = new Input({
 		source: mediaRefSource(src),
 		formats: ALL_FORMATS,
@@ -208,34 +204,25 @@ async function init(
 		const track = await input.getPrimaryVideoTrack();
 		if (!track) throw new Error("No video track in the input.");
 		step("getPrimaryVideoTrack");
-		// Parsing the container proves nothing about decodability — HEVC on a
-		// Windows box without the codec extension parses fine and then throws on
-		// the first decode, seconds later, with the picture already "ready".
+		// Parsing proves nothing about decodability: HEVC without the codec extension parses, then throws seconds later.
 		if (!(await track.canDecode())) {
 			const codec = await track.getCodec();
 			throw new WorkerError("unsupported", `This system can't decode ${codec ?? "this"} video.`);
 		}
 		step("canDecode");
-		// Nothing reads this duration — it exists only to fill the `ready`
-		// payload — yet `computeDuration()` walks every fragment of a fragmented
-		// MP4. On a 600MB 4K recording that alone blew the 30s init timeout.
-		// Trust the host's ffprobe value when it has one.
+		// `computeDuration()` walks every fragment of a fragmented MP4, which alone blew the 30s init timeout on a 600MB 4K file.
 		const durationSec = hints.durationSec ?? (await input.computeDuration());
 		step("computeDuration");
-		// `codedWidth` is the sync deprecated getter (returns 0 until
-		// metadata loads); prefer the async variant for the ready payload.
+		// `codedWidth` is the sync deprecated getter and returns 0 until metadata loads.
 		const width = await track.getCodedWidth();
 		const height = await track.getCodedHeight();
 		step("codedDimensions");
-		// Samples, not canvases: the frames go straight to the consumer, so no
-		// per-frame canvas allocation and no canvas→VideoFrame copy.
+		// Samples, not canvases: no per-frame canvas allocation and no canvas-to-VideoFrame copy.
 		sink = new VideoSampleSink(track, { hardwareAcceleration: await decodeAcceleration(track) });
-		// Real rate, not a hardcoded 30: the source derives each frame's
-		// duration from it, and telemetry cohorts on it.
+		// Real rate, not a hardcoded 30: the source derives each frame's duration from it, and telemetry cohorts on it.
 		let fps = 30;
 		try {
-			// Same story as duration: sampling packets means reading them, and the
-			// host already knows the real rate from ffprobe.
+			// Sampling packets means reading them, and the host already knows the real rate from ffprobe.
 			const hinted = hints.fps && Number.isFinite(hints.fps) && hints.fps > 0;
 			const stats = hinted ? null : await track.computePacketStats(120);
 			if (hinted) {
@@ -246,10 +233,7 @@ async function init(
 		} catch {
 			/* keep the default */
 		}
-		// Decode-ahead is a frame count, not a duration. The consumer uploads
-		// each frame to its own texture and releases it immediately, so the
-		// bound is its texture ring — leave two slots of headroom so a frame
-		// isn't overwritten before the playhead reaches it.
+		// Decode-ahead is a frame count bounded by the consumer's texture ring, with two slots of headroom.
 		const ahead = Math.max(2, textureRingFrames(width, height) - 2);
 		lookaheadSec = ahead / Math.max(1, fps);
 		step("packetStats");
@@ -281,10 +265,7 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 	let sent = 0;
 	let parked = false;
 	if (DIAG) console.log(`[mb-worker] run ${seq} from ${startSec.toFixed(3)}s`);
-	// Kill the previous run's decoder NOW. A superseded run is blocked in
-	// `for await` until its first sample arrives, so it cannot notice it has
-	// been replaced — during a scrub that stacks up one live decoder per
-	// pointer move and exhausts the pool.
+	// Kill the previous decoder NOW: a superseded run blocks in `for await`, so a scrub stacks one live decoder per pointer move.
 	const previous = activeSamples;
 	activeSamples = null;
 	if (previous) await previous.return(undefined).catch(() => {});
@@ -297,15 +278,13 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 				sample.close();
 				break;
 			}
-			// The sample keeps its own frame, so ours must be closed separately —
-			// transferring it hands that responsibility to the consumer.
+			// The sample keeps its own frame, so ours closes separately; transferring hands that to the consumer.
 			const frame = sample.toVideoFrame();
 			const timestamp = sample.timestamp;
 			const width = frame.codedWidth;
 			const height = frame.codedHeight;
 			sample.close();
-			// Post the REAL presentation timestamp, not the requested one: the
-			// cache keys on it, and the reader looks up by nearest-at-or-before.
+			// Post the REAL presentation timestamp: the cache keys on it and the reader looks up nearest-at-or-before.
 			post({ type: "frame", seq, originalSec: timestamp, frame, width, height }, [frame]);
 			sent++;
 			deliveredSec = timestamp;
@@ -337,8 +316,7 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 			const why = disposed ? "disposed" : myRun !== runId ? "superseded" : "end-of-stream";
 			console.log(`[mb-worker] run ${seq} ended after ${sent} frames (${why})`);
 		}
-		// Stop absorbing seeks into a run that is no longer streaming, or a
-		// target inside its old window would be silently dropped.
+		// Stop absorbing seeks into a run that is no longer streaming, or a target in its old window is dropped.
 		if (myRun === runId) deliveredSec = Number.NaN;
 		if (activeSamples === samples) activeSamples = null;
 		// Release the generator's decoder resources when superseded mid-stream.
@@ -414,16 +392,12 @@ function handleMessage(e: MessageEvent<ToMediabunnyWorker>): void {
 	switch (msg.type) {
 		case "init":
 			void init(msg.src, { durationSec: msg.durationSec, fps: msg.fps }).catch((err) => {
-				// init() already posts an error message; just log here for the
-				// developer console and bail.
+				// init() already posts an error message; this line is only for the developer console.
 				console.error("[mb-worker] init failed:", err);
 			});
 			return;
 		case "seek":
-			// A drag issues near-identical targets back to back. If the live run
-			// is already streaming through this point, moving its playhead is
-			// enough — superseding would kill a warm decoder and hold the
-			// picture on the last frame for the whole restart.
+			// A drag repeats near-identical targets: moving the live run's playhead beats killing a warm decoder.
 			if (runCovers(msg.originalSec)) {
 				playheadSec = msg.originalSec;
 				notifyPlayhead();
@@ -431,9 +405,7 @@ function handleMessage(e: MessageEvent<ToMediabunnyWorker>): void {
 			}
 			// A jump: supersede the current run and decode from the new point.
 			prefetchedSec = Number.NaN;
-			// Supersede BEFORE waking. A run parked on backpressure only
-			// re-checks runId once woken, so waking it first just re-parks it,
-			// and it holds its VideoDecoder until some unrelated later message.
+			// Supersede BEFORE waking: a run parked on backpressure re-checks runId only once woken, so it would re-park holding its decoder.
 			runId++;
 			notifyPlayhead();
 			void runFrom(msg.seq, msg.originalSec);

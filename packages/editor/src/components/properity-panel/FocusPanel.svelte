@@ -57,26 +57,21 @@ const selected = $derived<ZoomRegion | null>(
 	store.zoomRegions.find((r) => r.id === store.selectedZoomRegionId) ?? null,
 );
 
-// Listed in timeline order (by start time) so the panel scans the same way the
-// timeline reads, left to right, and numbered so a row correlates with the
-// "Region N" detail header.
+// Listed in timeline order so the panel scans left to right like the timeline, and numbered to match 'Region N'.
 const orderedRegions = $derived([...store.zoomRegions].sort((a, b) => a.start - b.start));
 const selectedIndex = $derived(
 	selected ? orderedRegions.findIndex((r) => r.id === selected.id) : -1,
 );
 
-// NLE accessors, not raw trim fields: `outPoint` resolves the legacy
-// `trimEnd === 0` sentinel, which the timeline lane already respects.
+// NLE accessors, not raw trim fields: `outPoint` resolves the legacy `trimEnd === 0` sentinel.
 const clipIn = $derived(store.inPoint);
 const clipOut = $derived(store.outPoint);
 
-// Overlapping regions are ambiguous in preview and the FFmpeg export SUMS
-// their zoom instead of picking one, so they get called out, not hidden.
+// Overlapping regions are ambiguous and the FFmpeg export SUMS their zoom, so they are called out, not hidden.
 const overlapping = $derived(new Set(overlappingZoomIds(store.zoomRegions)));
 const outOfClip = (r: ZoomRegion) => isOutsideClip(r, clipIn, clipOut);
 
-// Zoom is only legible with the playhead inside the region, so selecting one
-// parks the playhead at the moment it reaches full scale.
+// Zoom is only legible with the playhead inside the region, so selecting one parks it at full scale.
 function focusMoment(r: ZoomRegion) {
 	const half = Math.max(0, (r.end - r.start) * 0.5);
 	return Math.min(r.end - 0.01, r.start + Math.min(Math.max(0, r.rampIn), half) + 0.01);
@@ -91,8 +86,7 @@ const playheadInSelected = $derived(
 	selected ? store.currentTime > selected.start && store.currentTime < selected.end : true,
 );
 
-// Null when the playhead leaves no room, which disables the button instead of
-// snapping the edge somewhere the user didn't point at.
+// Null when the playhead leaves no room, disabling the button instead of snapping the edge somewhere unasked.
 const startFromPlayhead = $derived(
 	selected ? retimeStart(selected, store.currentTime, clipIn) : null,
 );
@@ -162,9 +156,7 @@ function updateSelected(updates: Partial<ZoomRegion>, trackUndo = false) {
 	store.updateZoomRegion(selected.id, updates);
 }
 
-// Curves only. It used to reset rampIn/rampOut too, which are Timing controls:
-// a button in one section silently changing another section's values is the same
-// trap `recenterFocus` is careful to avoid.
+// Curves only: it used to reset rampIn and rampOut, and a button silently changing another section is the trap `recenterFocus` avoids.
 function resetCurves() {
 	if (!selected) return;
 	store.pushUndoState();
@@ -174,8 +166,7 @@ function resetCurves() {
 	});
 }
 
-// The focus point only: scale and motion blur sit in the same section now, and
-// Recenter must not quietly reset those too.
+// The focus point only: scale and motion blur share this section and must not be quietly reset.
 function recenterFocus() {
 	if (!selected) return;
 	store.pushUndoState();

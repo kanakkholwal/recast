@@ -65,8 +65,7 @@ pub fn render_border_radius_mask(
             let qx = px.abs() - hx + r;
             let qy = py.abs() - hy + r;
             let sd = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - r;
-            // 1-pixel smooth edge keeps the corners from looking jagged when
-            // the source video has high contrast against its background.
+            // A 1-pixel smooth edge keeps the corners from looking jagged against a high-contrast background.
             let coverage = (1.0 - smoothstep(-1.0, 0.0, sd)).clamp(0.0, 1.0);
             let v = (coverage * 255.0).round().clamp(0.0, 255.0) as u8;
             img.put_pixel(x, y, Rgba([v, v, v, 255]));
@@ -151,8 +150,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
 
     let mut img = RgbaImage::new(req.canvas_width, req.canvas_height);
 
-    // Video rect's centre on the canvas — the preview computes
-    // `videoCenter = padding + halfSize`. We do the same in canvas pixels.
+    // The video rect's centre on the canvas, matching the preview's padding plus half-size, in canvas pixels.
     let half_w = req.video_width as f64 / 2.0;
     let half_h = req.video_height as f64 / 2.0;
     let cx = req.padding as f64 + half_w;
@@ -160,9 +158,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
 
     let spread = req.spread.max(0.0);
     let blur_px = req.blur.max(0.5);
-    // The shader's corner radius for the shadow rect: `r + spread*0.5`. We
-    // additionally clamp to the half-extent of the spread-expanded rect so
-    // very large radii on small rects degrade gracefully (full ellipse).
+    // The shader's shadow radius is r + spread*0.5, clamped to the half-extent so large radii degrade to an ellipse.
     let shadow_r = (req.video_border_radius + spread * 0.5)
         .min((half_w + spread).min(half_h + spread))
         .max(0.0);
@@ -172,9 +168,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
 
     for y in 0..req.canvas_height {
         for x in 0..req.canvas_width {
-            // Same coordinate transform as the shader:
-            //     shadowP = (canvasPx - videoCenter) - offsetPx
-            // SDF then evaluated against `halfSize + spread`.
+            // Same transform as the shader: shadowP = (canvasPx - videoCenter) - offsetPx, then the SDF against halfSize + spread.
             let px = (x as f64 + 0.5) - cx;
             let py = (y as f64 + 0.5) - cy - req.offset_y;
             let hx = half_w + spread;
@@ -183,9 +177,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
             let qy = py.abs() - hy + shadow_r;
             let sd = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - shadow_r;
             let coverage = (1.0 - smoothstep(0.0, blur_px, sd)).clamp(0.0, 1.0);
-            // No `1 - videoCoverage` clip here: the FFmpeg side overlays
-            // the video AFTER this shadow layer, so the video physically
-            // covers any shadow underneath the rect — no need to mask.
+            // No video-coverage clip: FFmpeg overlays the video AFTER this layer, so it physically covers the shadow.
             let alpha = (coverage * opacity_norm * 255.0).round().clamp(0.0, 255.0) as u8;
             img.put_pixel(x, y, Rgba([sr, sg, sb, alpha]));
         }
@@ -347,8 +339,7 @@ fn parse_css_gradient(value: &str) -> Option<(f64, Vec<GradStop>)> {
         let mut tokens = part.split_whitespace();
         let hex = tokens.next().unwrap_or("");
         let (r, g, b) = parse_hex_rgb(hex)?;
-        // Alpha (8-digit hex) — premultiplied over black on rasterisation so a
-        // translucent stop reads the same as the preview's clear-to-black.
+        // Alpha is premultiplied over black on rasterisation, so a translucent stop matches the preview's clear-to-black.
         let a = {
             let t = hex.trim_start_matches('#');
             if t.len() == 8 {

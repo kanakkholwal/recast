@@ -8,10 +8,7 @@ import type { Annotation, AnnotationAnchor, EditorStore } from "../../stores/edi
 import { IDENTITY_ZOOM, withAlpha } from "./annotation-draw.logic";
 import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
 
-// HTML layer (sibling to the 2D AnnotationOverlay) so text gets the WebView's
-// full glyph rendering and contenteditable inline editing.
-// PARITY: export rasterizes each text annotation to a PNG (lib/export/rasterize-text.ts);
-// Rust never sees fonts.
+// An HTML layer so text gets the WebView's glyph rendering; export rasterizes each to a PNG, so Rust never sees fonts.
 
 interface Props {
 	store: EditorStore;
@@ -25,8 +22,7 @@ interface Props {
 
 let { store, videoEl, targetEl, previewTime }: Props = $props();
 
-// Fetch + register any Google fonts used by text annotations so they render
-// in preview (and are available before export rasterizes the text).
+// Register the Google fonts text annotations use, so they render in preview and before export rasterizes.
 $effect(() => {
 	for (const a of store.annotations) {
 		if (a.kind.kind === "text") ensureFontLoaded(a.kind.fontFamily, a.kind.fontWeight);
@@ -60,8 +56,7 @@ function rectCssFor(a: { anchor?: AnnotationAnchor }) {
 		: videoRectPx(layerSize.w, layerSize.h, store.metadata, store.padding, store.outputAspect);
 }
 
-// Mirrors AnnotationOverlay.zoomFor: `focusEnabled` off means neither the
-// composite nor the export applies zoom, so neither should the text layer.
+// Mirrors AnnotationOverlay.zoomFor: with `focusEnabled` off neither composite nor export zooms, so nor does this.
 function zoomForA(a: { anchor?: AnnotationAnchor }, t: number) {
 	if (a.anchor === "frame" || !store.focusEnabled) return IDENTITY_ZOOM;
 	return evalZoom(store.zoomRegions, t);
@@ -89,12 +84,10 @@ function playbackTime(): number {
 
 function tick_() {
 	rafHandle = null;
-	// Fallback only while the size is still unknown; the $effect below keeps it
-	// live once the element is observed.
+	// Fallback only while the size is unknown; the effect below keeps it live once the element is observed.
 	if ((layerSize.w <= 0 || layerSize.h <= 0) && layerEl) measureLayer();
 	_frame++;
-	// Only the moving picture needs a per-frame re-derive; `styleFor` reads
-	// `videoEl.currentTime`, which is invisible to the reactive graph.
+	// Only the moving picture needs a per-frame re-derive; `styleFor` reads `videoEl.currentTime`, invisible to the reactive graph.
 	if (store.isPlaying) scheduleTick();
 }
 
@@ -114,11 +107,7 @@ function measureLayer() {
 	layerSize = { w: r.width, h: r.height };
 }
 
-// Track the layer size with a ResizeObserver. A $effect (not onMount) so it
-// re-attaches when `layerEl` binds. `targetEl` (the parent's bind:this) is
-// still null at this child's onMount, which is why the old onMount observer
-// never attached and `layerSize` froze, drifting the text off its selection
-// box on any preview resize. Observe the always-present local `layerEl`.
+// An effect, not onMount: `targetEl` is still null at this child's mount, so the old observer never attached and text drifted on resize.
 $effect(() => {
 	const el = layerEl;
 	if (!el) return;
@@ -131,8 +120,7 @@ $effect(() => {
 	return () => ro.disconnect();
 });
 
-// Re-derive positions when the state they depend on moves. While paused this
-// replaces the old per-frame tick entirely.
+// While paused this replaces the old per-frame tick entirely.
 $effect(() => {
 	void previewTime;
 	void store.currentTime;
@@ -170,18 +158,11 @@ function styleFor(a: Annotation): string {
 	const br = uvToCss(a, x + w, y + h, t);
 	const cssW = Math.max(0, br.x - tl.x);
 	const cssH = Math.max(0, br.y - tl.y);
-	// Size the font and glow off the annotation's ANCHOR rect, not the full
-	// layer. The export rasterizes at comp resolution then scales the raster
-	// into the anchor rect (video rect for video-anchored, comp rect for
-	// frame-anchored), so a video-anchored text shrinks with the video whenever
-	// there's padding. Using layerSize.h/.w here made preview font/wrap comp-
-	// relative and drifted off the exported glyphs. `glow.blur × rect.w` mirrors
-	// draw_image_shadow's `glow.blur × (uv_to_canvas(1)−uv_to_canvas(0))`.
+	// Size font and glow off the ANCHOR rect, not the layer: the export scales its comp-resolution raster into that rect, so layer-relative sizing drifted off the exported glyphs.
 	const rect = rectCssFor(a);
 	const fontSizePx = k.fontSize * rect.h;
 	const z = a.zIndex ?? 0;
-	// Glow → CSS drop-shadow so the preview matches the exported text (which
-	// rasterizes to an image and picks up the same glow via draw_image_shadow).
+	// Glow becomes a CSS drop-shadow so the preview matches the exported text's draw_image_shadow.
 	const g = a.glow;
 	const glowFilter = g
 		? `filter: drop-shadow(0 0 ${Math.max(0, g.blur * rect.w).toFixed(2)}px ${withAlpha(g.color, g.opacity)})`
@@ -208,8 +189,7 @@ function styleFor(a: Annotation): string {
 function startEditing(a: Annotation) {
 	if (a.kind.kind !== "text") return;
 	if (a.locked) return;
-	// Remember the pre-edit text so Escape can cancel, and defer undo to commit
-	// so a select/enter that changes nothing doesn't push a no-op entry.
+	// Remember the pre-edit text for Escape, and defer undo to commit so a no-change edit pushes nothing.
 	editStartContent = a.kind.content;
 	editingId = a.id;
 	void tick().then(() => {
@@ -230,8 +210,7 @@ function commitEditing(a: Annotation, el: HTMLElement) {
 	if (a.kind.kind !== "text") return;
 	const content = el.innerText.replace(/​/g, "");
 	editingId = null;
-	// Emptied text → drop it rather than leave an invisible layer the canvas
-	// hit-test can't select (only removable from the layer panel otherwise).
+	// Emptied text is dropped rather than left as an invisible layer the canvas hit-test can't select.
 	if (content.trim() === "") {
 		store.removeAnnotation(a.id);
 		return;
@@ -245,8 +224,7 @@ function commitEditing(a: Annotation, el: HTMLElement) {
 function handleKeyDown(e: KeyboardEvent, a: Annotation) {
 	if (e.key === "Escape") {
 		e.preventDefault();
-		// Cancel: restore the pre-edit text before blur so commit sees no change
-		// (Svelte won't reset the contenteditable when the store value is equal).
+		// Cancel: restore the pre-edit text before blur, so commit sees no change.
 		const el = e.currentTarget as HTMLElement;
 		if (a.kind.kind === "text") el.innerText = editStartContent;
 		el.blur();
@@ -276,9 +254,7 @@ function handleTextPointerDown(e: PointerEvent, a: Annotation) {
 		pointerStartUV: pointerUV,
 		moved: false,
 	};
-	// Selecting on press matches Figma/Keynote, so the rest of the panel
-	// updates immediately even before the user commits to a drag. Undo is
-	// pushed on the first real move (below), so a pure select doesn't bloat it.
+	// Select on press, like Figma: the panel updates before a drag commits, and undo is pushed on the first real move.
 	store.selectedAnnotationId = a.id;
 
 	// Stash the press position on the element for the threshold check.

@@ -99,8 +99,7 @@ fn resolve_paths(app: Option<&tauri::AppHandle>) -> FfmpegPaths {
         }
     }
 
-    // Fall back to PATH lookup. This is intentionally last because PATH may
-    // contain broken package-manager shims.
+    // PATH lookup last, because PATH may contain broken package-manager shims.
     let ffmpeg = PathBuf::from(format!("ffmpeg{EXE_SUFFIX}"));
     let ffprobe = PathBuf::from(format!("ffprobe{EXE_SUFFIX}"));
     if is_usable_pair(&ffmpeg, &ffprobe) {
@@ -286,9 +285,7 @@ impl StderrTail {
 
 impl Drop for StderrTail {
     fn drop(&mut self) {
-        // If `collect()` was already called the handle is gone. Otherwise detach
-        // the thread — the child has closed stderr by the time a `StderrTail` is
-        // dropped on an error path, so the pump reaches EOF and exits on its own.
+        // If `collect()` already ran the handle is gone; otherwise detach, since the child has closed stderr and the pump hits EOF.
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
@@ -310,14 +307,11 @@ fn pump_stderr_tail(
                 tail.push_str(&String::from_utf8_lossy(&chunk[..n]));
                 if tail.len() > STDERR_TAIL_LIMIT {
                     let mut cut = tail.len() - STDERR_TAIL_LIMIT;
-                    // Prefer a newline boundary so the tail starts on a clean
-                    // line; fall back to the raw offset.
+                    // Prefer a newline boundary so the tail starts on a clean line; fall back to the raw offset.
                     if let Some(nl) = tail[cut..].find('\n') {
                         cut += nl + 1;
                     }
-                    // `drain` panics on a non-char boundary (lossy decoding can
-                    // leave multi-byte chars straddling chunks), so back off to
-                    // the nearest boundary first.
+                    // `drain` panics off a char boundary, and lossy decoding can straddle chunks, so back off first.
                     while cut < tail.len() && !tail.is_char_boundary(cut) {
                         cut += 1;
                     }
@@ -353,14 +347,7 @@ pub fn ffprobe_path() -> &'static PathBuf {
 /// → `libx264` (CPU). Cached for the process lifetime; each probe costs
 /// ~300–500ms cold, so we stop at the first one that works.
 pub fn preferred_h264_encoder() -> &'static str {
-    // Cache only a WORKING HARDWARE encoder — that can't regress mid-session.
-    // The software fallback is deliberately NOT cached: the usual cause is a
-    // TRANSIENT miss (NVENC's 3-session consumer-card limit while a recording or
-    // preview still holds a session, or a momentarily busy driver), and caching
-    // it pinned libx264 for the WHOLE app run even after the GPU freed — turning
-    // every subsequent export ~5-10x slower, silently. Re-probing on the next
-    // export costs ~1-2s, which is noise against a minutes-long software encode,
-    // and lets hardware recover the instant it's free.
+    // Cache only a WORKING HARDWARE encoder: a software fallback is usually a transient NVENC-session miss, and caching it pinned libx264 for the whole run.
     static CACHED_HW: OnceLock<&'static str> = OnceLock::new();
     if let Some(hw) = CACHED_HW.get() {
         return hw;
@@ -425,8 +412,7 @@ pub struct EncoderAvailability {
 /// spawns FFmpeg (~300–500 ms cold); callers should run this off the UI
 /// thread.
 pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
-    // (name, label, vendor, family, hardware, extra_args). H.264 first so
-    // the `active` lookup below lands on the codec the recorder uses.
+    // (name, label, vendor, family, hardware, extra_args). H.264 first so the `active` lookup lands on the recorder's codec.
     #[allow(clippy::type_complexity)] // one-off literal table; a type alias wouldn't help
     let candidates: [(&str, &str, &str, &str, bool, &[&str]); 10] = [
         (
@@ -499,14 +485,10 @@ pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
 
     let mut list: Vec<EncoderAvailability> = candidates
         .into_iter()
-        // Only probe encoders that can exist on this OS — skipping the rest
-        // avoids a guaranteed-to-fail spawn and its noisy FFmpeg stderr (e.g.
-        // VideoToolbox on Windows, NVENC/AMF/QSV on macOS).
+        // Probe only encoders that can exist on this OS, avoiding a guaranteed-to-fail spawn and its noisy stderr.
         .filter(|c| encoder_applies_to_platform(c.0))
         .map(|(name, label, vendor, family, hardware, extra)| {
-            // libx264 ships in every bundled build and always initializes —
-            // skip the spawn for it. Everything else (hardware paths and
-            // libx265, which isn't guaranteed compiled in) gets a real probe.
+            // libx264 ships in every bundled build and always initializes, so skip its spawn; everything else gets a real probe.
             let available = if name == "libx264" {
                 true
             } else {
@@ -524,11 +506,7 @@ pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
         })
         .collect();
 
-    // First available candidate (H.264 priority order preserved above) is
-    // what the recorder picks — identical logic to `preferred_h264_encoder`,
-    // computed here from the probe results so we don't double-probe the
-    // chain. libx264 is always available, so this always resolves to an
-    // H.264 row before reaching the HEVC section.
+    // Same order as `preferred_h264_encoder`, computed from the probe results so the chain isn't probed twice.
     if let Some(idx) = list.iter().position(|e| e.available) {
         list[idx].active = true;
     }
@@ -559,13 +537,7 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
         "error",
         "-f",
         "lavfi",
-        // 320x240, NOT a tiny 64x64. NVENC enforces a minimum frame size
-        // (H.264 ~145x49, HEVC larger) and rejects anything smaller with
-        // "Frame Dimension less than the minimum supported value" — which
-        // made this probe report every NVENC-capable GPU as unavailable and
-        // silently dropped the recorder to CPU x264 on machines that have a
-        // working NVIDIA encoder. 320x240 clears every hardware encoder's
-        // minimum while staying cheap to init.
+        // 320x240, not 64x64: NVENC enforces a minimum frame size and rejected the tiny probe, reporting every NVENC GPU unavailable.
         "-i",
         "nullsrc=s=320x240:d=0.04",
         "-c:v",
@@ -577,10 +549,7 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
     match command.output() {
         Ok(out) if out.status.success() => true,
         Ok(out) => {
-            // Expected for any hardware encoder this machine can't use. FFmpeg
-            // writes a multi-line failure dump to stderr; log only the first
-            // meaningful line, at debug, so a normal dev run isn't flooded with
-            // benign probe noise (the result is surfaced in Settings anyway).
+            // Expected for hardware this machine can't use: log only the first meaningful line, at debug, so dev runs aren't flooded.
             let reason = String::from_utf8_lossy(&out.stderr)
                 .lines()
                 .map(str::trim)

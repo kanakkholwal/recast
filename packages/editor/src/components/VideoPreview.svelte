@@ -99,32 +99,23 @@ let containerEl: HTMLDivElement | null = $state(null);
 /** Shrink-wrap around the canvas so the annotation overlay can sit on top of
  * it at the same rendered rect regardless of letterboxing. */
 let previewRectEl: HTMLDivElement | null = $state(null);
-// Per-FRAME picture time for smooth DOM overlays (camera bubble). store.currentTime
-// is throttled to ~25Hz to spare the timeline/waveform fan-out; the camera grow
-// tracks the zoom curve, so it reads this instead to stay as smooth as the shader.
-// null until the loop has drawn once: draw() early-returns while metadata or GL
-// is missing, and pinning the overlays to a stale 0 is worse than letting them
-// fall back to the <video> transport.
+// Per-frame picture time for smooth DOM overlays; store.currentTime is throttled to ~25Hz. Null until draw() has run once.
 let smoothPreviewTime = $state<number | null>(null);
 let isReady = $state(false);
 /** The camera feed. The compositor draws the bubble, so the preview owns the
  *  element and hands it frames; the overlay is only its hit target. */
 let cameraEl = $state<HTMLVideoElement | null>(null);
-// Internal decoder that pre-decodes the first post-cut frame to mask the
-// primary element's seek latency. Only seeked once per cut, never played.
+// Pre-decodes the first post-cut frame to mask the primary element's seek latency; seeked, never played.
 let scoutEl = $state<HTMLVideoElement | null>(null);
 
 let lastBgKey = "";
 /// The Rust/wgpu compositor, the only renderer the preview has.
 let engineDriver = $state<PreviewEngineDriver | null>(null);
 let engineFailed = $state<string | null>(null);
-// One line per session so a wrong backend or an empty composite is visible
-// without turning on verbose logging.
+// One line per session, so a wrong backend or an empty composite shows without verbose logging.
 let loggedEngineFrame = false;
 let loggedFallbackFrameError = false;
-// Rolling composite times for the engine path, reported once per window while
-// playing. This is the second half of the WebGPU decision: whether it is
-// available, and whether it holds the frame budget at this resolution.
+// Rolling composite times, reported once per window while playing: does WebGPU hold the frame budget here?
 let engineFrameMs: number[] = [];
 let engineWindowStartedAt = 0;
 
@@ -147,21 +138,11 @@ function reportEngineFrameTimes(now: number) {
 	engineFrameMs = [];
 	engineWindowStartedAt = now;
 }
-// Preview engine: `MediabunnyVideoSource` runs in a Web Worker and
-// owns the MediaBunny Input + CanvasSink lifecycle. The composite samples
-// a frame WE decode, not the <video> element's pixels, so jumping over a
-// cut never waits on the native seek. The <video> element still drives
-// the clock and audio sync (hybrid). When `create` fails (MediaBunny
-// can't decode the file — see `unsupported-formats.ts` for the list),
-// `mbSource` stays null and the draw loop falls back to the `<video>`
-// element automatically. `mbSource` is not $state (read only from the
-// imperative draw loop); `mbReady` is, because the markup and the
-// pause-the-transport effect both branch on it.
+// Worker-side MediaBunny source: the composite samples a frame WE decode, so a cut never waits on a native seek; null falls back to <video>.
 let mbSource: MediabunnyVideoSource | null = null;
 let mbReady = $state(false);
 let loadedMbSrc = "";
-// One user-facing notice per source when the hardware preview drops to the
-// <video> fallback — otherwise a release failure is a silent blank screen.
+// One notice per source when the hardware preview drops to <video>, or the failure is a silent blank screen.
 let mbFallbackNotified = false;
 function notifyPreviewFallback(reason: string) {
 	if (mbFallbackNotified) return;
@@ -170,34 +151,24 @@ function notifyPreviewFallback(reason: string) {
 		description: `Hardware preview couldn't start for this video (${reason}). Playback works; scrubbing may be slower.`,
 	});
 }
-// Automatic recovery from a transient decode failure — a GPU-process reset
-// (TDR) under scrub-thrash kills the decoder + GL context but is recoverable;
-// without this the preview degraded to <video> for the rest of the session.
+// A GPU-process reset under scrub-thrash kills the decoder but is recoverable; without this the session stayed on <video>.
 const MB_RECOVER_DELAY_MS = 400;
 let mbRecoverAttempts = 0;
 let mbHealthyFrames = 0;
 let mbRecoverTimer: ReturnType<typeof setTimeout> | undefined;
 let mbRecoverNonce = $state(0);
-// True once the engine has presented a frame. An early
-// return from draw() clears to BLACK; we re-render the last frame instead, and
-// this guards that.
+// True once the engine has presented a frame; an early return from draw() would otherwise clear to black.
 let hasRenderedFrame = false;
 /** Worst |video − audio| seen this session; reported with the perf sample. */
 let maxAvDriftSec = 0;
 const audioStall = new AudioStallMonitor();
 let audioStalledReported = false;
-// Last original time published to store.currentTime. Throttled because the write
-// fans out to overlays/timeline/waveform; every-rAF writes starve frame delivery.
+// Throttled: the write fans out to overlays, timeline and waveform, and every-rAF writes starve frame delivery.
 let lastPublishedTime = -1;
-// Guards the end-of-timeline stop so it fires once per play session, not every
-// frame while the clock sits clamped at the end. Reset when playback (re)starts.
+// Fires the end-of-timeline stop once per play session, not every frame while the clock sits clamped.
 let endHandled = false;
 
-// Gapless OUTPUT-time clock that drives the PICTURE in the WebCodecs path. A
-// <video> element's currentTime STALLS during its own seek, so borrowing it as
-// the clock freezes the picture at every cut. This free-running integrator
-// never stalls. Map output→original (outputToOriginal) for frame/cursor/zoom
-// lookup; the <video> element stays the audio/seek transport and follows.
+// A free-running OUTPUT clock drives the picture: a <video> currentTime stalls during its own seek and freezes every cut.
 const picClock = new PlaybackClock();
 
 // RAF handle for coalescing reactive redraws
@@ -211,12 +182,9 @@ let smoother: CursorSmoother | null = null;
 let idlePeriods: IdlePeriodJS[] = [];
 let loadedCursorPath = "";
 
-// Signature of the inputs that drive smoothing. Recomputing only when this
-// changes keeps playback cheap even on long recordings.
+// Recomputing only when this signature changes keeps playback cheap on long recordings.
 let smoothingSignature = "";
-/// Bumped on every write to `cursorSamples`. The engine keys its upload on this
-/// rather than on the smoothing signature, which changes when smoothing is
-/// requested rather than when the result lands.
+// The engine keys its upload on this, not the smoothing signature, which changes on request rather than result.
 let cursorVersion = 0;
 
 let pressEvents: PressEvent[] = [];
@@ -249,9 +217,7 @@ async function loadBackgroundIfNeeded() {
 	if (!engineDriver) return;
 	const type = store.backgroundType;
 	const value = store.backgroundValue;
-	// Including the resolved cache path in the key ensures the texture
-	// re-loads when an `asset:<id>` download lands after an initial miss,
-	// or when the thumbnail lands before the full-res does.
+	// The resolved cache path is in the key, so the texture reloads when a late `asset:<id>` download lands.
 	let resolvedForKey = value;
 	if (value.startsWith("asset:") && !value.startsWith("asset://")) {
 		const id = value.slice("asset:".length);
@@ -274,9 +240,7 @@ async function loadBackgroundIfNeeded() {
 	try {
 		const resolvedSrc = await resolveBackgroundSrc(value);
 		if (!resolvedSrc) {
-			// Asset not yet cached (first-run offline, or still downloading).
-			// Fall through to flat-background rendering until a later tick
-			// re-runs this effect once the cache populates.
+			// Not cached yet (first-run offline or still downloading); flat background until a later tick re-runs this.
 			return;
 		}
 		const img = new Image();
@@ -319,9 +283,7 @@ async function loadCursorTrackIfNeeded() {
 		store.cursorSamplesRaw = cursorSamplesRaw;
 		// Idle spans feed the browser export's idle-hide fade (parity with preview).
 		store.cursorIdlePeriods = idlePeriods;
-		// Press events come from raw samples, smoothing-independent.
-		// Rebuild once per track load; the result is keyed by sample
-		// timestamps, which never move regardless of smoothing settings.
+		// Press events come from raw samples, keyed by timestamps, which smoothing never moves.
 		pressEvents = buildPressEvents(cursorSamplesRaw);
 		if (!smoother) {
 			smoother = new CursorSmoother((samples) => {
@@ -330,8 +292,7 @@ async function loadCursorTrackIfNeeded() {
 				requestRedraw();
 			});
 		}
-		// By URL: the worker re-reads the track itself rather than us paying a
-		// structured clone of ~225k sample objects on the main thread.
+		// By URL: the worker re-reads the track rather than us cloning ~225k sample objects on the main thread.
 		smoother.load(cursorSamplesRaw, url);
 		ensureSmoothingCurrent();
 	} catch (err) {
@@ -344,12 +305,7 @@ async function loadCursorTrackIfNeeded() {
 	}
 }
 
-// Recompute the smoothed cursor path whenever the inputs change. Called once
-// per draw(): cheap signature check, real work only on deltas. The signature
-// is set immediately (in-flight marker) so the per-frame call doesn't re-fire
-// the request while the worker runs; the result is applied async via the
-// smoother's callback. `sigmaMs <= 0` is the raw path, applied inline since
-// there's nothing to compute.
+// Called once per draw(): the signature is set immediately as an in-flight marker so the per-frame call can't re-fire it.
 function ensureSmoothingCurrent() {
 	if (cursorSamplesRaw.length === 0) {
 		cursorVersion++;
@@ -375,9 +331,7 @@ function ensureSmoothingCurrent() {
 	});
 }
 
-//  Per-frame memoization
-// The draw loop runs at 60fps during playback; these recompute-on-change
-// caches stop it re-parsing/re-allocating identical values every frame.
+// --- Per-frame memoization: the draw loop runs at 60fps, so these caches stop identical re-parses every frame.
 let geomCache: ReturnType<typeof computeCanvasGeometry> | null = null;
 let geomSig = "";
 function currentGeometry() {
@@ -391,9 +345,7 @@ function currentGeometry() {
 	return geomCache;
 }
 
-// Container CSS size, cached by the ResizeObserver so the draw loop never
-// reads clientWidth/clientHeight — a forced synchronous reflow every frame,
-// made worse by the overlays that dirty layout on the same tick.
+// Cached by the ResizeObserver: reading clientWidth in the draw loop forces a synchronous reflow every frame.
 let containerW = 0;
 let containerH = 0;
 
@@ -414,8 +366,7 @@ function resizeCanvas() {
 	const cssW = Math.max(1, Math.floor(compW * scale));
 	const cssH = Math.max(1, Math.floor(compH * scale));
 
-	// Render at devicePixelRatio for crispness, capped at the composition's
-	// native resolution (no point upscaling) and at 2160p to bound GPU cost.
+	// devicePixelRatio for crispness, capped at the composition's native resolution and at 2160p.
 	const dpr = Math.min(window.devicePixelRatio || 1, 2);
 	const maxDim = 2160;
 	let bufW = Math.min(Math.round(cssW * dpr), compW, maxDim);
@@ -434,29 +385,17 @@ function resizeCanvas() {
 	return true;
 }
 
-//  Render
-// Target time of an in-flight cut-skip seek. draw() issues each skip ONCE
-// rather than re-assigning currentTime every frame while the decoder is
-// still seeking (which thrashes it into a multi-second stall).
+// --- Render. Each cut-skip seek is issued ONCE: re-assigning currentTime mid-seek thrashes the decoder into a stall.
 let cutSkipTarget: number | null = null;
-// Time the scout element is currently seeking/seeked to, so we don't
-// re-issue the same pre-decode seek every frame.
+// Where the scout is seeking, so the same pre-decode seek is not re-issued every frame.
 let scoutSeekTarget: number | null = null;
 
-// How early (s) to start pre-decoding the post-cut frame on the SCOUT
-// element, and how early to actually jump the primary. The scout window is
-// larger so the post-cut frame is decoded and ready by the time we reach
-// the boundary, so that decoded frame masks the primary's seek latency.
+// Scout pre-decode lead and primary jump lead (s); the wider scout window has the post-cut frame ready at the boundary.
 const SCOUT_PRESEEK_LOOKAHEAD = 0.6;
 const CUT_JUMP_LOOKAHEAD = 0.12;
-// WebCodecs cross-cut decode-ahead: how far ahead (in OUTPUT seconds) of an
-// upcoming cut to start warming the post-cut GOP on the worker's scout
-// decoder, so crossing the cut doesn't freeze while the primary re-decodes
-// from a keyframe. Wants to cover the post-cut GOP's decode time; ~1s GOP
-// recordings are well covered, longer-GOP legacy files are partially helped.
+// OUTPUT-seconds lead for warming the post-cut GOP on the worker's scout decoder; covers ~1s GOPs fully.
 const WC_PREFETCH_LOOKAHEAD = 2.0;
-// How close the scout's landed time must be to the cut end to treat its
-// frame as a valid stand-in (a seek may land a frame or two off target).
+// A seek can land a frame or two off target, so this is how close the scout must be to stand in.
 const SCOUT_READY_EPS = 0.1;
 
 /** True when the scout has the post-cut frame decoded and ready to sample. */
@@ -475,30 +414,20 @@ function draw() {
 	if (!engineDriver) return;
 	if (!resizeCanvas()) return;
 
-	// Refresh the smoothed cursor path if any of its inputs changed since
-	// the last frame. Signature-based guard keeps this effectively free
-	// (one string compare) when nothing's changed.
+	// Signature guard makes this one string compare when nothing changed since the last frame.
 	ensureSmoothingCurrent();
 
-	// Picture time. WebCodecs path: the gapless OUTPUT clock is master
-	// (output→original feeds frame/cursor/zoom); the <video>/audio transport
-	// follows but is never read for the picture, so its seek stalls can't
-	// freeze playback. Legacy path: the <video> currentTime is the clock.
+	// WebCodecs: the gapless OUTPUT clock is master, so <video> seek stalls can't freeze the picture. Legacy: <video> is the clock.
 	const usingPicClock = mbReady;
 	let playbackTime: number;
 	if (usingPicClock && store.isPlaying) {
-		// External scrub while playing: the timeline/controls set
-		// store.currentTime to a value we didn't publish ourselves. Re-seat the
-		// clock onto it so seeking works mid-playback instead of snapping back.
-		// (We compare against our own last publish, so this never fires for the
-		// values WE wrote.)
+		// External scrub while playing: re-seat the clock on a currentTime we didn't publish, or the seek snaps back.
 		if (Math.abs(store.currentTime - lastPublishedTime) > 0.05) {
 			picClock.seek(originalToOutput(store.timeMap, store.currentTime));
 			lastPublishedTime = store.currentTime;
 			endHandled = false;
 		}
-		// Audio runs on the sound card's clock, the picture on wall time. Pull
-		// the picture back onto audio once the gap is perceptible.
+		// Audio runs on the sound card's clock and the picture on wall time; pull back once the gap is perceptible.
 		const audioTime = audioPositionSec?.() ?? null;
 		const sync = resolveAvSync({
 			videoTime: picClock.time,
@@ -515,56 +444,34 @@ function draw() {
 		}
 		// Playing: the gapless output clock is the master.
 		playbackTime = outputToOriginal(store.timeMap, picClock.time);
-		// Reached the end of the edited timeline. Ask the host BEFORE stopping:
-		// it may want to loop, and stopping first would flip isPlaying
-		// false→true within one tick, which Svelte batches into no change at
-		// all — the play/pause effect never re-seeds, so the clock stays
-		// clamped at the end and the picture sticks on the last frame.
+		// Ask the host before stopping: a false-then-true isPlaying flip in one tick batches to no change and the picture sticks.
 		if (picClock.atEnd && !endHandled) {
 			if (onEnded?.() === true) {
 				// The host moved the transport; follow it and keep playing.
 				picClock.seek(originalToOutput(store.timeMap, store.currentTime));
 				lastPublishedTime = store.currentTime;
 			} else {
-				// The clock clamps at its duration, so without this the picture
-				// would freeze on the last frame while still "playing" (and the
-				// decoder would sit idle). Hitting play again restarts from the
-				// top (see the seed below).
+				// The clock clamps at its duration, so without this the picture freezes on the last frame while still 'playing'.
 				endHandled = true;
 				store.isPlaying = false;
 			}
 		}
-		// Publish to the store (drives overlays/timeline/audio) at ~25 Hz, not
-		// every rAF frame, because that fan-out is expensive and was starving decoded-
-		// frame delivery. Always publish on a backward step or a jump so cuts
-		// and seeks stay exact.
+		// ~25 Hz, not every rAF: the fan-out starved frame delivery. Always publish on a backward step or a jump.
 		if (playbackTime >= lastPublishedTime + 0.04 || playbackTime < lastPublishedTime) {
 			store.currentTime = playbackTime;
 			lastPublishedTime = playbackTime;
 		}
-		// Keep the <video> transport roughly aligned so the legacy fallback can
-		// take over mid-playback. It stays paused here (see the effect below),
-		// so this is a cheap single-frame seek, not continuous decode.
+		// Keeps the paused <video> roughly aligned so the legacy fallback can take over mid-playback.
 		if (videoEl && !videoEl.seeking && Math.abs(videoEl.currentTime - playbackTime) > 0.25) {
 			videoEl.currentTime = playbackTime;
 		}
 	} else if (usingPicClock) {
-		// Paused on the MediaBunny path: the store owns the time. Reading the
-		// <video> here would tie us to an element we keep paused (it must not
-		// decode in parallel with the worker), whose currentTime only tracks
-		// within the 0.25s alignment tolerance below.
+		// Paused on the MediaBunny path, so the store owns time; the element must not decode alongside the worker.
 		playbackTime = store.currentTime;
 	} else {
-		// Legacy path: the <video> transport owns the time, so a scrub or
-		// frame-step sets it directly. handleSeeked realigns the picture
-		// clock so resuming continues from here.
+		// Legacy path: the <video> owns time, and handleSeeked realigns the picture clock so resume continues from here.
 		playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
-		// Publish from this rAF loop, NOT from the element's `timeupdate`: that
-		// event fires on a ~250ms tick, so everything reading store.currentTime
-		// (the scrubber, the playhead, overlays) advanced in visible ~4Hz steps.
-		// Same ~25Hz throttle as the WebCodecs branch above, and only while
-		// playing — paused, the store owns the position and echoing the element
-		// back would fight a scrub.
+		// From rAF, not `timeupdate`: that ~250ms tick made the scrubber, playhead and overlays advance in visible 4Hz steps.
 		if (
 			store.isPlaying &&
 			(playbackTime >= lastPublishedTime + 0.04 || playbackTime < lastPublishedTime)
@@ -574,27 +481,13 @@ function draw() {
 		}
 	}
 
-	// Publish the per-frame clock for smooth overlays (unthrottled, unlike the
-	// store fan-out above). One number write; only the camera bubble reads it.
+	// Unthrottled, unlike the store fan-out above: one number write, read only by the camera bubble.
 	smoothPreviewTime = playbackTime;
 
-	// Legacy-path cut skip: two decoders leapfrog the removed gap.
-	//   1. As the playhead nears a cut, the SCOUT pre-decodes the first
-	//      post-cut frame (cut.end), well ahead of the boundary.
-	//   2. At the boundary the PRIMARY jumps to cut.end (keeps store time &
-	//      audio correct); while it settles we sample the scout's already-
-	//      decoded frame, so there's no visible freeze. Both land on the same
-	//      time/content, so the swap is seamless.
-	// Seek issued ONCE per cut: re-assigning currentTime mid-seek thrashes the
-	// decoder into a multi-second stall. Scrubbing into a cut stays allowed
-	// (gated on isPlaying); `cutsEnabled` off bypasses it.
+	// Legacy cut skip: the scout pre-decodes cut.end while the primary jumps there, so the swap hides the seek. Issued once per cut.
 	let frameEl: HTMLVideoElement | null = videoEl;
 	const activeCuts = store.effectiveCuts;
-	// Legacy <video> cut-skip (scout + primary seek). OFF for the WebCodecs
-	// path: its output clock is gapless, so there's no gap to skip. Crossing a
-	// cut is just the scheduler resetting to the post-cut GOP, and the frame
-	// selector holds (never steps back) until that GOP decodes. Critically we
-	// must NOT decode through the removed region, which would flood the decoder.
+	// Off for the WebCodecs path: its output clock is gapless, and decoding through a removed region would flood the decoder.
 	if (!mbReady && videoEl && store.isPlaying && activeCuts.length > 0) {
 		const cut = activeCuts.find(
 			(c) => playbackTime + SCOUT_PRESEEK_LOOKAHEAD >= c.start && playbackTime < c.end - 0.02,
@@ -609,8 +502,7 @@ function draw() {
 					/* scout not ready to seek yet; retried next frame */
 				}
 			}
-			// (2) At the boundary, jump the primary and mask its seek with the
-			//     scout's pre-decoded frame.
+			// At the boundary, jump the primary and mask its seek with the scout's pre-decoded frame.
 			if (playbackTime + CUT_JUMP_LOOKAHEAD >= cut.start) {
 				if (cutSkipTarget !== cut.end && !videoEl.seeking) {
 					cutSkipTarget = cut.end;
@@ -620,13 +512,11 @@ function draw() {
 					// Draw the scout's frame this tick, no visible freeze.
 					frameEl = scoutEl;
 				} else {
-					// Scout not ready (e.g. sparse keyframes): hold the last
-					// frame until the primary settles, as before.
+					// Scout not ready (sparse keyframes): hold the last frame until the primary settles.
 					return;
 				}
 			} else {
-				// Approaching but not yet at the boundary: keep playing the
-				// primary normally; the jump hasn't happened.
+				// Approaching but not yet at the boundary: keep playing the primary normally.
 				cutSkipTarget = null;
 			}
 		} else {
@@ -636,12 +526,7 @@ function draw() {
 		}
 	}
 
-	// Cross-cut decode-ahead: if playback will cross a cut within the lookahead
-	// window, warm the post-cut GOP on the worker's scout decoder NOW so the
-	// crossing is seamless instead of freezing while the primary re-decodes
-	// from a keyframe. Output time is gapless, so we look ahead in OUTPUT time
-	// and map back to original to find the next cut we'll reach. Issued every
-	// frame while approaching; the worker dedupes per post-cut GOP.
+	// Warms the post-cut GOP on the worker's scout decoder before a crossing; the worker dedupes per GOP.
 	if (usingPicClock && store.isPlaying && mbSource && mbReady && activeCuts.length > 0) {
 		const lookaheadOrig = outputToOriginal(store.timeMap, picClock.time + WC_PREFETCH_LOOKAHEAD);
 		const upcoming = activeCuts.find((c) => c.start > playbackTime && c.start <= lookaheadOrig);
@@ -650,8 +535,7 @@ function draw() {
 
 	{
 		const engineStartedAt = performance.now();
-		// The engine evaluates the scene itself, so it takes OUTPUT time; the
-		// original-axis `playbackTime` is only used to pick a decoded frame.
+		// The engine evaluates the scene itself, so it takes OUTPUT time; `playbackTime` only picks a decoded frame.
 		const outputTime = usingPicClock
 			? picClock.time
 			: originalToOutput(store.timeMap, playbackTime);
@@ -668,8 +552,7 @@ function draw() {
 				Math.max(0, Math.round(floorSec * 1e6)),
 			);
 		} else if (frameEl && frameEl.readyState >= 2 && frameEl.videoWidth > 0) {
-			// `<video>` fallback: there is no decode stream to ring, so the frame
-			// is uploaded and bound in the same tick.
+			// `<video>` fallback: no decode stream to ring, so the frame uploads and binds in the same tick.
 			const tUs = Math.max(0, Math.round(playbackTime * 1e6));
 			let frame: VideoFrame | null = null;
 			try {
@@ -677,9 +560,7 @@ function draw() {
 				engineDriver.putScreenFrame(frame, tUs);
 				bound = engineDriver.bindScreenFrame(tUs, 0);
 			} catch (err) {
-				// The element reports readyState 2 before it holds a decodable
-				// frame, so this fires on every source change. Once per source is
-				// enough to notice a real failure.
+				// readyState 2 arrives before a decodable frame, so this fires on every source change; once is enough.
 				if (!loggedFallbackFrameError) {
 					loggedFallbackFrameError = true;
 					console.warn("preview engine could not take the fallback frame:", err);
@@ -716,11 +597,7 @@ function draw() {
 }
 
 function requestRedraw() {
-	// While playing, `startVideoFrameLoop` already draws every rAF. This handle is
-	// separate from `wcRafHandle`, so without this guard the ~25Hz `currentTime`
-	// publish from inside draw() re-entered here and scheduled a SECOND full
-	// composite — ~85 draws/sec instead of 60. `stopVideoFrameLoop` paints once on
-	// the way out so a change made mid-playback isn't stranded.
+	// Without this guard the ~25Hz publish inside draw() re-entered and scheduled a second composite (~85 draws/sec).
 	if (wcRafHandle !== null) return;
 	if (rafHandle !== null) return;
 	rafHandle = requestAnimationFrame(() => {
@@ -729,16 +606,14 @@ function requestRedraw() {
 			draw();
 			if (paintFailed) paintFailed = false;
 		} catch (err) {
-			// Paused, a throw here leaves the last good frame on screen, so every
-			// later edit silently appears to do nothing. Say so instead.
+			// Paused, a throw leaves the last good frame up and every later edit appears to do nothing.
 			console.error("preview draw() failed:", err);
 			paintFailed = true;
 		}
 	});
 }
 
-//  Playback frame loop (rAF)
-// rAF handle for the preview playback loop (see startVideoFrameLoop).
+// --- Playback frame loop (rAF); see startVideoFrameLoop.
 let wcRafHandle: number | null = null;
 // Consecutive draw() failures; a bad frame must not kill the loop.
 let drawErrors = 0;
@@ -746,12 +621,7 @@ let drawErrors = 0;
 let paintFailed = $state(false);
 
 function startVideoFrameLoop() {
-	// Drive the loop with rAF, not the <video> element's requestVideoFrameCallback:
-	// rVFC fires only when the element presents a new frame, which STALLS during
-	// the seek we issue at a cut, the very moment we must keep painting. draw()
-	// reads the master clock (the WebCodecs picture clock when active, else
-	// videoEl.currentTime), so an rAF loop stays smooth across cuts on both the
-	// WebCodecs path and the <video> fallback.
+	// rAF, not requestVideoFrameCallback: rVFC stalls during the seek we issue at a cut, exactly when we must keep painting.
 	if (wcRafHandle !== null) return;
 	const loop = () => {
 		try {
@@ -759,8 +629,7 @@ function startVideoFrameLoop() {
 			drawErrors = 0;
 			if (paintFailed) paintFailed = false;
 		} catch (err) {
-			// A bad frame must not kill the loop (a dead loop freezes the preview
-			// and reads as a crash). Log once, tolerate transients, stop if persistent.
+			// A dead loop freezes the preview and reads as a crash: log once, tolerate transients, stop if persistent.
 			if (drawErrors++ === 0) console.error("preview draw() failed:", err);
 			if (drawErrors > 120) {
 				console.error("preview draw() failing persistently; stopping loop");
@@ -778,8 +647,7 @@ function stopVideoFrameLoop() {
 	if (wcRafHandle !== null) {
 		cancelAnimationFrame(wcRafHandle);
 		wcRafHandle = null;
-		// Property changes during playback were swallowed by the guard in
-		// `requestRedraw`; paint once now so the paused frame is current.
+		// `requestRedraw` swallowed property changes during playback; paint once so the paused frame is current.
 		requestRedraw();
 	}
 }
@@ -819,9 +687,7 @@ $effect(() => {
 /** Playback we suspended on hide, to restore on show. */
 let resumeOnVisible = false;
 
-// devicePixelRatio has no change event, and ResizeObserver stays silent when
-// only the scale factor changes — dragging the window to a monitor at a
-// different DPI while paused would otherwise leave the buffer at the old DPR.
+// devicePixelRatio has no change event and ResizeObserver ignores scale-only changes, so a DPI move kept the old buffer.
 let dprQuery: MediaQueryList | null = null;
 function watchDpr() {
 	dprQuery?.removeEventListener("change", onDprChange);
@@ -849,9 +715,7 @@ function onVisibilityChange() {
 	}
 }
 
-// Engine scene sync. Reads the whole render state, so this effect re-runs on
-// any store write; the driver drops an unchanged scene rather than rebuilding
-// the evaluator for nothing.
+// Reads the whole render state, so it re-runs on any store write; the driver drops an unchanged scene.
 $effect(() => {
 	if (!engineDriver) return;
 	const state = store.toRenderState();
@@ -860,9 +724,7 @@ $effect(() => {
 	untrack(() => {
 		if (!engineDriver) return;
 		if (meta?.width && meta?.height) engineDriver.setSourceSize(meta.width, meta.height);
-		// Before the scene: the axis is what output time MEANS, and a scene
-		// carrying a cut this map drops would otherwise resolve one frame on the
-		// old axis.
+		// Before the scene: the axis defines what output time MEANS, or a dropped cut resolves on the old axis.
 		engineDriver.setTimeMap(timeMap);
 		engineDriver.syncScene(state);
 		requestRedraw();
@@ -910,9 +772,7 @@ function syncEngineFrameInputs() {
  *  annotations alone does not re-decode every asset. */
 let engineImageKey = "";
 
-// Assets for image annotations. The compositor draws them, so it needs the
-// decoded bitmap; a path that fails to decode simply never uploads and the
-// annotation is skipped rather than drawn as a placeholder.
+// A path that fails to decode never uploads, so the annotation is skipped rather than drawn as a placeholder.
 $effect(() => {
 	if (!engineDriver) return;
 	const paths = [
@@ -952,8 +812,7 @@ async function loadAnnotationImages(paths: string[], key: string) {
 	for (const image of images.values()) image.close();
 }
 
-// Pointer sprites for the engine path. A style with no sprite uploads nothing,
-// which is what leaves the engine drawing its dot.
+// A style with no sprite uploads nothing, which leaves the engine drawing its dot.
 $effect(() => {
 	if (!engineDriver) return;
 	const style = store.cursorSettings.style;
@@ -964,9 +823,7 @@ $effect(() => {
 	});
 });
 
-// The camera recorder starts at its own instant, so `cameraOffsetMs` maps
-// between the two tracks. Tolerance avoids re-seeking on micro-jitter between
-// two HTMLVideoElement clocks.
+// `cameraOffsetMs` maps between the tracks; the tolerance avoids re-seeking on micro-jitter between two clocks.
 $effect(() => {
 	void store.currentTime;
 	if (!cameraEl || !videoEl) return;
@@ -1032,16 +889,11 @@ function runMbRecover() {
 	mbRecoverNonce++;
 }
 
-// MediaBunny frame source (re)created when the media src changes. Owns its own
-// worker + decoder; disposed and rebuilt per source. A decode failure (e.g.
-// an unsupported codec — see `unsupported-formats.ts` in @recast/media) leaves
-// mbSource null so draw() falls back to the <video> element automatically.
+// Owns its worker and decoder, rebuilt per source; a decode failure leaves mbSource null and draw() uses <video>.
 $effect(() => {
-	// Prefer the ref: a `blob:` URL through UrlSource can degrade to a
-	// whole-file fetch, while a File ref slices lazily off disk.
+	// Prefer the ref: a `blob:` URL through UrlSource can degrade to a whole-file fetch, a File ref slices lazily.
 	const src: MediaRef | null = video ?? (videoSrc ? { kind: "url", url: videoSrc } : null);
-	// Read so a recovery bump re-runs this effect; the rebuild also resets
-	// loadedMbSrc, so the same-src guard below doesn't short-circuit it.
+	// Read so a recovery bump re-runs this; the rebuild resets loadedMbSrc so the same-src guard can't short-circuit.
 	void mbRecoverNonce;
 	// No src: tear down any live engine and fall back to the <video> path.
 	if (!src) {
@@ -1081,21 +933,17 @@ $effect(() => {
 				return;
 			}
 			rebuildFrameRing(source.width, source.height);
-			// Upload and hand back in the same tick. Holding decoded frames is
-			// what starved the decoder at 4K until it stopped emitting.
+			// Upload and hand back in the same tick: holding decoded frames starved the 4K decoder until it stopped emitting.
 			source.onFrameDecoded = (frame, tsUs) => {
 				engineDriver?.putScreenFrame(frame, tsUs);
-				// Frames flowing again after a recovery: clear the streak so a
-				// later, unrelated failure gets its full retry budget.
+				// Frames flowing again after a recovery: clear the streak so a later failure gets its full retry budget.
 				if (mbRecoverAttempts > 0 && ++mbHealthyFrames > 30) {
 					mbRecoverAttempts = 0;
 					mbHealthyFrames = 0;
 				}
 			};
 			source.onFrame = () => requestRedraw();
-			// A dead decode run freezes the picture. A transient GPU reset gets a
-			// bounded auto-rebuild; a permanent failure (unsupported codec) hands
-			// back to <video>, which is worse quality but still moves.
+			// A transient GPU reset gets a bounded auto-rebuild; a permanent failure hands back to <video>.
 			source.onError = (err) => {
 				if (mbSource !== source) return;
 				const recover = shouldRecoverMbSource(err.code, mbRecoverAttempts);
@@ -1142,9 +990,7 @@ $effect(() => {
 			mbSource = source;
 			mbReady = true;
 			webcodecsActive = true;
-			// Seed the picture clock to the current transport so flipping onto
-			// the MediaBunny path (which may happen mid-playback, once demux
-			// finishes) doesn't jump.
+			// Seed to the current transport so flipping onto the MediaBunny path mid-playback doesn't jump.
 			picClock.setDuration(originalToOutput(store.timeMap, store.outPoint));
 			picClock.seek(originalToOutput(store.timeMap, videoEl?.currentTime ?? 0));
 			if (store.isPlaying) picClock.play();
@@ -1168,25 +1014,21 @@ $effect(() => {
 	void loadCursorTrackIfNeeded();
 });
 
-// The worker decodes the picture, so a playing <video> would decode the same
-// file a second time and compete for the decoder's output surfaces. Keep it
-// paused as a seek-only transport; it stays mounted for the fallback path.
+// A playing <video> would decode the same file twice and fight for output surfaces; keep it a seek-only transport.
 $effect(() => {
 	void store.isPlaying;
 	if (!videoEl) return;
 	if (mbReady) {
 		if (!videoEl.paused) videoEl.pause();
 	} else if (store.isPlaying && videoEl.paused) {
-		// Falling back mid-playback (a dead decode run) leaves the element
-		// paused, since the page only plays it on the transport transition.
+		// Falling back mid-playback leaves the element paused, since the page only plays it on the transport transition.
 		void videoEl.play().catch(() => {
 			/* rejects without a gesture; the transport will retry */
 		});
 	}
 });
 
-// Background (re)load when type/value changes, or when an asset:<id>
-// download lands and the cached path becomes available.
+// Reloads on type or value change, and when an `asset:<id>` download makes the cached path available.
 $effect(() => {
 	void store.backgroundType;
 	void store.backgroundValue;
@@ -1214,29 +1056,18 @@ $effect(() => {
 	requestRedraw();
 });
 
-// Start/stop the per-video-frame draw loop with playback. In the WebCodecs
-// path, also run the picture clock so output time advances while playing.
+// Starts and stops the draw loop with playback, and runs the picture clock on the WebCodecs path.
 $effect(() => {
-	// A browser export shares this GPU + decoder. Suspend continuous playback while
-	// it renders (that 60fps decode loop is what starved the export's context), but
-	// leave the frame up and paused scrubs live — it stays watchable. isPlaying is
-	// untouched, so playback auto-resumes when the render finishes.
+	// A browser export shares this GPU and decoder; suspend playback but leave the frame up and scrubbable.
 	const suspendForExport = exportActivity.renderingInBrowser;
 	if (store.isPlaying && !suspendForExport) {
-		// Seed + start the picture clock ONLY on the paused→playing transition.
-		// This effect ALSO re-runs whenever effectiveCuts/outPoint change; the
-		// `!picClock.playing` guard stops those re-runs from re-seeding the clock
-		// to the (lagging) <video> time mid-playback, which jumped it BACKWARD
-		// and forced the decoder into a reset-thrash (the ~8 fps bug).
+		// Seed only on the paused-to-playing transition: cut/outPoint re-runs jumped the clock BACKWARD into decoder thrash.
 		if (!picClock.playing) {
 			// Capture the end state before setDuration re-clamps the time.
 			const wasAtEnd = picClock.atEnd;
-			// Duration = output (post-cut) length of the kept region, so the
-			// clock clamps at the true end of the edited timeline.
+			// Duration is the output length of the kept region, so the clock clamps at the true end of the edit.
 			picClock.setDuration(originalToOutput(store.timeMap, store.outPoint));
-			// Restart from the top if we'd just finished; otherwise resume from
-			// the current transport position. (Seeding blindly from the <video>
-			// time parked the clock at the end on replay → stuck frame.)
+			// Restart from the top if we just finished; seeding blindly from <video> parked the clock at the end on replay.
 			picClock.seek(wasAtEnd ? 0 : originalToOutput(store.timeMap, videoEl?.currentTime ?? 0));
 			picClock.play();
 			endHandled = false;
@@ -1251,9 +1082,7 @@ $effect(() => {
 
 // Hook video element events
 function handleSeeked() {
-	// While PAUSED, a scrub/frame-step moved the transport, so realign the
-	// picture clock to it. During play the clock is the master, so ignore the
-	// `seeked` events our own drift-correction triggers.
+	// Paused, a scrub moved the transport, so realign; during play the clock is master and its own seeks are ignored.
 	if (!store.isPlaying && videoEl) {
 		picClock.seek(originalToOutput(store.timeMap, videoEl.currentTime));
 	}
@@ -1266,9 +1095,7 @@ function handleLoadedData() {
 	onReady();
 }
 
-// True when the user is actively editing annotations AND the global hide
-// is off. The scrim/ring/canvas-tint key off this single derived so the
-// visual model lives in one place.
+// Scrim, ring and canvas tint all key off this one derived, so the visual model lives in one place.
 const isAnnotationActive = $derived(
 	store.activePanel === "annotations" && !store.annotationsGloballyHidden,
 );

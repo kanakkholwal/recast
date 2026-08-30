@@ -39,8 +39,7 @@ import {
 	WINDOW_RADIUS,
 } from "./camera-preview.logic";
 
-// Cached max logical size; aspect-snap helpers clamp against it because the
-// OS max-size only bounds drag-resize, not our programmatic setSize calls.
+// The OS max-size only bounds drag-resize, not our programmatic setSize calls, so aspect-snap clamps against this.
 let maxLogicalW = $state(640);
 let maxLogicalH = $state(360);
 
@@ -95,8 +94,7 @@ function paint(message: ArrayBuffer) {
 }
 
 onMount(() => {
-	// Make the WebView see-through so only the inner rounded container paints;
-	// the OS window is already transparent, so corners show the desktop.
+	// Make the WebView see-through so only the inner rounded container paints and the corners show the desktop.
 	const html = document.documentElement;
 	const body = document.body;
 	html.style.background = "transparent";
@@ -121,8 +119,7 @@ onMount(() => {
 	});
 	const unlistenStopped = listen("camera-recording-stopped", () => {});
 
-	// Push preview state only on actual window changes, not on a poll
-	// (the old 350ms poll hit a Rust mutex thrice a second even when idle).
+	// Push preview state on actual window changes: the old 350ms poll hit a Rust mutex three times a second while idle.
 	const unlistenResize = getCurrentWindow().onResized(({ payload }) => {
 		void snapToAspect(payload.width, payload.height);
 		void reportPreviewState();
@@ -196,17 +193,13 @@ function stopCamera() {
 }
 
 function closeWindow() {
-	// Tell the panel the user dismissed the preview so its camera toggle syncs.
-	// Only the user paths (this button + Escape) run through here; the panel's
-	// own programmatic closes use a raw close() and must not flip the toggle.
+	// Only the user paths run through here; the panel's programmatic closes use a raw close() and must not flip the toggle.
 	void emit("camera-preview-closed");
 	stopCamera();
 	getCurrentWindow().close();
 }
 
-// Apply OS min/max size constraints. Cap is keyed off screen width; every
-// aspect is landscape-or-square (ratio ≥ 1) so a square max box bounds the
-// window by width without clipping the proportional height.
+// Every aspect is landscape-or-square, so a square max box bounds the window by width without clipping the height.
 async function applySizeConstraints() {
 	const {
 		maxLogicalW: maxW,
@@ -230,9 +223,7 @@ async function applySizeConstraints() {
 	void applyNativeAspectLock();
 }
 
-// Hand the aspect ratio to the Windows-native WM_SIZING constraint so drag
-// resizes proportionally. No-op off Windows, where `snapToAspect` is the
-// fallback. The drag rect is in physical pixels, so the min crosses as such.
+// Windows-native WM_SIZING lock for proportional drag resizes; elsewhere `snapToAspect` is the fallback.
 async function applyNativeAspectLock() {
 	try {
 		const ratio = ASPECT_RATIO[aspect];
@@ -282,8 +273,7 @@ async function snapToAspect(physWidth: number, physHeight: number) {
 	if (isSnapping) return;
 	const factor = window.devicePixelRatio || 1;
 	const w = physWidth / factor;
-	// Drag deltas arrive as *window* dimensions, so peel off the control strip to
-	// get the video box the aspect ratio actually governs.
+	// Drag deltas arrive as window dimensions, so peel off the control strip to get the box the ratio governs.
 	const videoH = physHeight / factor - CONTROL_BAR_HEIGHT;
 	const target = ASPECT_RATIO[aspect];
 	const expectedVideoH = w / target;
@@ -308,8 +298,7 @@ async function snapToAspect(physWidth: number, physHeight: number) {
 function cycleAspect() {
 	const nextIndex = (ASPECTS.indexOf(aspect) + 1) % ASPECTS.length;
 	const next = ASPECTS[nextIndex];
-	// Circle → rounded off 1:1; a circle on a non-square box renders as an
-	// ellipse the editor's composited bubble doesn't support.
+	// Circle falls back to rounded off 1:1: on a non-square box it renders as an ellipse the editor can't composite.
 	if (next !== "1:1" && shape === "circle") {
 		shape = "rounded";
 	}
@@ -513,8 +502,7 @@ function handleKeydown(e: KeyboardEvent) {
 </div>
 
 <style>
-  /* Hide the scrollbar + gutter for this page only so the rounded corners read
-     through to the desktop (the global stylesheet sets scrollbar-gutter: stable). */
+  /* Page-local scrollbar hide so the rounded corners read through to the desktop. */
   :global(html) {
     background: transparent !important;
     scrollbar-width: none;

@@ -120,27 +120,14 @@ impl ExportSpeed {
 }
 
 pub fn build_output_scale_filter(profile: ExportProfile) -> Option<String> {
-    // libx264 + yuv420p (the chroma subsampling for our MP4 output) requires
-    // even width AND even height. Without enforcement, fitting an arbitrary
-    // source (e.g. 1599×962) into a preset bound (1280×720) preserves the
-    // aspect ratio and produces 1195×720 — the encoder fails to open with
-    // "width not divisible by 2".
-    //
-    // FFmpeg 4.4+ exposes `force_divisible_by=2` on the scale filter, but
-    // the version of FFmpeg we bundle isn't pinned, so we use the
-    // version-agnostic trick: chain a second scale with `trunc(.../2)*2`.
-    // It's effectively a no-op when the previous stage produced even
-    // dimensions, and snaps down by one pixel when it didn't. `neighbor`
-    // sampling on the second pass keeps it cheap (no resample math) and
-    // avoids any smear on the ±1px adjustment.
+    // libx264 + yuv420p need even w/h; chain `trunc(../2)*2` with `neighbor`, since the bundled FFmpeg may predate `force_divisible_by`.
     match (profile.max_width, profile.max_height) {
         (Some(max_width), Some(max_height)) => Some(format!(
             "scale=w='min(iw,{max_width})':h='min(ih,{max_height})':force_original_aspect_ratio=decrease:flags=lanczos,\
              scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2':flags=neighbor"
         )),
         _ => Some(
-            // "source" quality has no resize, but window/region captures can
-            // still be odd-dimensioned. Apply only the even-dim snap.
+            // 'source' quality skips the resize, but window and region captures can still be odd, so apply the even-dim snap.
             "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2':flags=neighbor".to_string(),
         ),
     }
@@ -211,18 +198,10 @@ pub fn append_subtitles_to_complex(
     } else {
         format!("[{current_video_map}]")
     };
-    // Escape the filename for FFmpeg's TWO-level filtergraph parse:
-    //   1. Single quotes protect the value at the filterchain level (so it isn't
-    //      split on `,`/`;`/`[`).
-    //   2. The drive colon must ALSO survive the filter-OPTION parse, which
-    //      splits options on `:` — single quotes alone don't stop that (hence the
-    //      original "No option name near '/Users/...'"). Backslash-escape it so
-    //      that level unescapes `\:` back to `:` for libass.
-    // Forward slashes work for libass and dodge backslash-escaping of separators.
+    // Two-level parse: quotes protect the filterchain level, and the drive colon needs `\:` to survive the filter-option split.
     let escape = |p: &str| p.replace('\\', "/").replace(':', "\\:");
     let safe = escape(ass_path);
-    // `fontsdir` points libass at a directory of TTFs so a preset's branded font
-    // actually renders in the burn (otherwise libass falls back to a system face).
+    // `fontsdir` points libass at the preset's TTFs, or it falls back to a system face.
     let fonts = fontsdir
         .map(|d| format!(":fontsdir='{}'", escape(d)))
         .unwrap_or_default();
@@ -323,18 +302,13 @@ pub fn append_camera_overlay_to_complex(
     } = params;
     let (cam, bx, by, bw, bh, mirror) = (*cam, *bx, *by, *bw, *bh, *mirror);
     let hflip = if mirror { "hflip," } else { "" };
-    // Match the preview's `object-fit: cover`: scale the camera to COVER the
-    // bubble (preserve aspect, fill), then crop the overflow — never stretch a
-    // non-square webcam into the square (that distorted the picture in export).
-    // The mask/shadow PNGs are already bw×bh, so they keep a plain scale.
+    // Matches the preview's `object-fit: cover`: scale to cover then crop, never stretch a non-square webcam into the square.
     let cam_cover = format!("scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}");
 
     let mut stages: Vec<String> = Vec::new();
 
     match anim {
-        // Fixed placement: scale straight to the bubble rect. Sizes are constant,
-        // so the mask/camera alphamerge never sees a size mismatch. The optional
-        // shadow PNG is overlaid at `bubble_xy - padding` just under the bubble.
+        // Fixed placement scales straight to the bubble rect, so mask and camera sizes always match at alphamerge.
         None => {
             let cam_chain = match mask_input_index {
                 Some(mask_idx) => format!(
@@ -362,13 +336,7 @@ pub fn append_camera_overlay_to_complex(
                 "{base_map}[vcam_shaped]overlay={bx}:{by}:format=auto{out_label}"
             ));
         }
-        // Animated placement (zoom-follow / per-cut keyframes). CRITICAL: build the
-        // shaped bubble at FIXED native size and apply the single `eval=frame`
-        // scale to the MERGED stream. Scaling the camera and the (looped-image)
-        // mask independently with `eval=frame` evaluates the size expression at
-        // each input's OWN pts — and the mask image streams at a different frame
-        // rate — so their per-frame sizes diverge and `alphamerge` fails with
-        // EINVAL. One post-merge scale keeps them locked (verified against ffmpeg).
+        // Build the bubble at FIXED native size and scale the MERGED stream: independent `eval=frame` scales resolve on each input's own pts and alphamerge fails EINVAL.
         Some(a) => {
             stages.push(match mask_input_index {
                 Some(mask_idx) => format!(
@@ -379,10 +347,7 @@ pub fn append_camera_overlay_to_complex(
                 None => format!("[{cam}:v]{hflip}{cam_cover},format=yuva420p[vcam_native]"),
             });
             match shadow {
-                // Bake the shadow UNDER the bubble at native size (the padded
-                // canvas needs alpha, hence yuva420p above), then scale the whole
-                // composite by the size expr so shadow + bubble grow/track together
-                // with ONE expression per axis.
+                // Bake the shadow under the bubble at native size, then scale the composite so both track with one expression per axis.
                 Some(sh) => {
                     let ratio_w = sh.canvas_w as f64 / bw.max(1) as f64;
                     let ratio_h = sh.canvas_h as f64 / bh.max(1) as f64;
@@ -495,9 +460,7 @@ pub fn build_gif_paletteuse_external_complex(
         _ => "dither=bayer:bayer_scale=5".to_string(),
     };
     let fps = options.fps.max(1);
-    // Pin input chain to GIF fps + output scale, then pair with the pre-baked
-    // palette via paletteuse. Two filter stages because paletteuse takes two
-    // input pads and we need a labelled intermediate to feed it.
+    // Two stages: paletteuse takes two input pads, so the fps and scale chain needs a labelled intermediate.
     let chain = format!(
         "{normalized_input}fps={fps}{scale_clause}[_gifv];[_gifv][{palette_input_index}:v]paletteuse={dither_clause}:diff_mode=rectangle{final_label}"
     );
@@ -554,9 +517,7 @@ mod camera_overlay_tests {
 
     #[test]
     fn camera_is_cover_cropped_not_stretched() {
-        // Parity with the preview's `object-fit: cover`: the camera scales to
-        // COVER + crops, never stretches into the square. The mask keeps a plain
-        // scale (it is already bw×bh).
+        // Parity with `object-fit: cover`: the camera covers and crops; the mask keeps a plain scale, already bw by bh.
         let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &base_params());
         assert!(complex.contains(
             "[2:v]hflip,scale=200:200:force_original_aspect_ratio=increase,crop=200:200,format=yuva420p[vcam_pre]"
@@ -574,8 +535,7 @@ mod camera_overlay_tests {
             canvas_h: 248,
         });
         let (complex, _) = append_camera_overlay_to_complex(Some("PRE"), "vbg", &p);
-        // Shadow PNG normalised + overlaid at bubble_xy - padding, then the bubble
-        // composites on top of the shadowed background [vcam_bg].
+        // Shadow is normalised and overlaid at bubble_xy minus padding, then the bubble composites on top.
         assert!(complex.contains("[4:v]format=rgba[vcam_shadow]"));
         assert!(complex.contains("[vbg][vcam_shadow]overlay=76:56"));
         assert!(complex.contains("[vcam_bg][vcam_shaped]overlay=100:80"));
@@ -591,10 +551,7 @@ mod camera_overlay_tests {
 
     #[test]
     fn animated_no_shadow_alphamerges_at_native_size_then_scales_once() {
-        // Regression: the mask must scale to a FIXED native size (200:200), NOT
-        // with the per-frame size expr. Independent eval=frame scales on the
-        // camera and the looped-image mask desync (different pts) → alphamerge
-        // EINVAL. The single eval=frame scale lives on the merged stream.
+        // Regression: the mask must scale to a FIXED native size, or independent eval=frame scales desync and alphamerge fails EINVAL.
         let mut p = base_params();
         p.anim = Some(anim());
         let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &p);
@@ -616,8 +573,7 @@ mod camera_overlay_tests {
             canvas_h: 240,
         });
         let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &p);
-        // Bubble merged at native size, shadow padded under it, one composite scale
-        // (ratio 240/200 = 1.2), and the overlay tracks bubble - scaled padding.
+        // Bubble merged at native size, shadow padded under it, one composite scale, and the overlay tracks bubble minus scaled padding.
         assert!(complex.contains("[vcam_pre][vcam_mask]alphamerge[vcam_native]"));
         assert!(complex.contains("[vcam_native]pad=240:240:20:20:color=#00000000[vcam_padded]"));
         assert!(complex.contains("[vcam_sh][vcam_padded]overlay=0:0[vcam_comp]"));
@@ -821,8 +777,7 @@ mod gif_tests {
 
 #[cfg(test)]
 mod blur_tests {
-    // Assertions use `2*r + 1 <= dim` (odd kernel size fits the plane); the
-    // `+ 1` is the kernel semantics, so keep it over clippy's `2*r < dim`.
+    // `2*r + 1 <= dim` is the kernel semantics (an odd kernel fits the plane), so keep it over clippy's `2*r < dim`.
     #![allow(clippy::int_plus_one)]
     use super::*;
 
@@ -955,8 +910,7 @@ mod blur_tests {
 
     #[test]
     fn radius_huge_clamps_to_127() {
-        // Large region so boxblur's hard ceiling (127) — not the region size —
-        // is the binding limit.
+        // Large enough that boxblur's hard ceiling of 127, not the region size, is the binding limit.
         let regs = [BlurRegion {
             radius: 9999,
             w: 1024,
@@ -1075,9 +1029,7 @@ mod blur_tests {
 
     #[test]
     fn end_clamped_above_start() {
-        // Pathological project state: end < start. Filter should still emit
-        // a valid enable expression with end = start (so no exception, just
-        // a zero-length window).
+        // Pathological end < start must still emit a valid enable expression, as a zero-length window.
         let regs = [region_with("glass", 5.0, 1.0)];
         let (chain, _) = build_annotation_blur_complex(None, "vout", &regs);
         assert!(
@@ -1145,10 +1097,7 @@ mod export_profile_tests {
                 assert!(w >= 320 && h >= 240, "{quality}: bounds {w}x{h} too small");
             }
             assert!(!p.mp4_preset.is_empty(), "{quality}: empty x264 preset");
-            // The output scale filter always ends with the even-dimension snap
-            // (libx264 + yuv420p needs even w/h); bounded profiles additionally
-            // fit-within their max box. The unbounded "source" profile omits the
-            // fit step — that's correct, not a bug.
+            // Every profile ends with the even-dimension snap; only bounded ones also fit within their max box.
             let bounded = p.max_width.is_some();
             if let Some(f) = build_output_scale_filter(p) {
                 assert!(
@@ -1267,9 +1216,7 @@ mod export_retention_tests {
                     if cw < 4 || ch < 4 {
                         return None;
                     }
-                    // 12% of the short edge gives a redaction-grade cap:
-                    // 1080p → ~130, clamped to FFmpeg boxblur's hard max of
-                    // 127. The previous 5% cap left text readable.
+                    // 12% of the short edge is redaction-grade (1080p gives ~130, clamped to boxblur's 127); the old 5% left text readable.
                     let max_dim = canvas_w.min(canvas_h) as f64 * 0.12;
                     let radius = (strength.clamp(0.0, 1.0) * max_dim)
                         .round()
@@ -1553,8 +1500,7 @@ mod blur_serde_tests {
 
 #[cfg(test)]
 mod gif_settings_tests {
-    // Tests mutate one `GifSettings` across successive asserts, so the
-    // default-then-reassign pattern is intentional (not a struct-init case).
+    // Tests mutate one `GifSettings` across successive asserts, so default-then-reassign is intentional.
     #![allow(clippy::field_reassign_with_default)]
     use super::super::types::GifSettings;
     use serde_json::json;
@@ -1686,10 +1632,7 @@ pub fn build_annotation_blur_complex(
         format!("[{input_label}]")
     };
 
-    // Each region produces three nodes:
-    //   [in] split  → [main_i][src_i]
-    //   [src_i] crop=… , boxblur=… , (optional)drawbox=color  → [blur_i]
-    //   [main_i][blur_i] overlay=x:y:enable='between(t,start,end)' → [in_{i+1}]
+    // Each region becomes a split, then crop plus boxblur (plus an optional drawbox), then an enable-gated overlay back onto the main copy.
     let mut lines: Vec<String> = Vec::new();
     let mut current_in = normalized_input;
 
@@ -1703,28 +1646,15 @@ pub fn build_annotation_blur_complex(
         };
         let blur_label = format!("[blur_done_{i}]");
 
-        // Split the current input. FFmpeg's split takes labels directly,
-        // no `=` between filter name and outputs.
+        // FFmpeg's split takes labels directly, with no `=` between the filter name and its outputs.
         lines.push(format!("{current_in}split{main_label}{src_label}"));
 
-        // Crop + box-blur the source copy.
-        //
-        // boxblur rejects a radius larger than `(min(plane_w, plane_h) - 1) / 2`
-        // for EACH plane, and under 4:2:0 the chroma plane is half-size, so it
-        // caps lower than luma. We therefore clamp each radius to its OWN plane:
-        // a small blur region can't request a radius bigger than itself. This
-        // was the "Invalid luma_param radius value 84 ... must be <= 81" export
-        // crash — a heavy blur on a small region. (127 is boxblur's hard ceiling;
-        // luma_power=3 stacks three passes so even a region-limited radius still
-        // obliterates detail for redaction. Luma stays as strong as the region
-        // allows; chroma may be softer without weakening the redaction.)
+        // Clamp the radius per PLANE: 4:2:0 chroma is half-size and caps lower, which crashed exports with 'radius must be <= 81'.
         let w = region.w.max(2);
         let h = region.h.max(2);
         let x = region.x.max(0);
         let y = region.y.max(0);
-        // FFmpeg requires `2*radius + 1 <= plane_dim`, i.e. radius <=
-        // (dim-1)/2 per plane. A region too small to support even radius 1
-        // resolves to 0 (a valid boxblur no-op) rather than an invalid literal.
+        // A region too small for even radius 1 resolves to 0, a valid boxblur no-op, rather than an invalid literal.
         let requested = region.radius.clamp(1, 127) as i32;
         let luma_max = (w.min(h) - 1) / 2;
         let chroma_max = ((w / 2).min(h / 2) - 1) / 2;
@@ -1734,12 +1664,7 @@ pub fn build_annotation_blur_complex(
             "{src_label}crop={w}:{h}:{x}:{y},boxblur=luma_radius={luma_r}:luma_power=3:chroma_radius={chroma_r}:chroma_power=3"
         );
 
-        // Tint variants overlay a translucent solid colour over the
-        // already-blurred crop using `drawbox` with `t=fill`. `glass`
-        // skips the tint pass entirely.
-        // Tint alpha tracks strength: 0.15 → 0.95 across the slider, so the
-        // strength control doubles as a redaction dial. Master opacity still
-        // multiplies on top. Mirrors the preview side in BlurAnnotationLayer.
+        // Tint alpha tracks strength (0.15 to 0.95) so the slider doubles as a redaction dial; `glass` skips the pass.
         let opacity = region.opacity.clamp(0.0, 1.0);
         let strength = region.strength.clamp(0.0, 1.0);
         let base_alpha = 0.15 + 0.80 * strength;
@@ -1755,17 +1680,14 @@ pub fn build_annotation_blur_complex(
                     base_alpha * opacity
                 ))
             }
-            // glass: pile a faint grey wash on past strength=0.6 so the
-            // glass variant also redacts when pushed hard.
+            // glass: add a faint grey wash past strength 0.6 so it redacts too when pushed hard.
             _ if strength > 0.6 => Some(format!("gray@{:.3}", ((strength - 0.6) * 0.6) * opacity)),
             _ => None,
         };
         if let Some(rgba) = tint_rgba {
             tail.push_str(&format!(",drawbox=x=0:y=0:w=iw:h=ih:color={rgba}:t=fill"));
         }
-        // Rounded corners: give the blurred crop a rounded-rect alpha so the
-        // overlay leaves the sharp video showing in the cut corners (matches the
-        // preview). Clamp to half the shorter side (fully rounded).
+        // A rounded alpha on the blurred crop leaves sharp video in the cut corners; clamped to half the shorter side.
         let corner = region.corner_px.min((w.min(h) as f64) / 2.0);
         if corner >= 1.0 {
             tail.push_str(&rounded_alpha_filter(corner));
@@ -1773,8 +1695,7 @@ pub fn build_annotation_blur_complex(
         tail.push_str(&blur_label);
         lines.push(tail);
 
-        // Overlay the blurred crop back onto the main copy at the
-        // region's position, gated on the enable window.
+        // Overlay the blurred crop back onto the main copy at the region's position, gated on the enable window.
         let enable = format!(
             "between(t\\,{start:.4}\\,{end:.4})",
             start = region.start_secs.max(0.0),
@@ -1832,10 +1753,7 @@ pub fn summarize_ffmpeg_error(stderr: &[u8]) -> String {
         return "FFmpeg failed without returning a detailed error.".into();
     }
 
-    // Prefer the lines that actually say what went wrong. FFmpeg prints the
-    // real diagnostic FIRST and then a long epilogue (output stream listing,
-    // faststart pass, muxing overhead, "Conversion failed!"), so taking the
-    // tail reported the least informative 12 lines of every failure.
+    // FFmpeg prints the real diagnostic FIRST then a long epilogue, so taking the tail reported the least informative lines.
     let diagnostics: Vec<&str> = lines
         .iter()
         .copied()
@@ -2006,8 +1924,7 @@ Error opening input files: No such file or directory
 
     #[test]
     fn a_cause_captured_live_beats_whatever_the_tail_holds() {
-        // The tail is pure epilogue, exactly as it arrives on a long export
-        // once the rotating buffer has drained the real message away.
+        // Pure epilogue, exactly as it arrives on a long export once the rotating buffer has drained the real message.
         let captured = vec![
             "[aist#2:0/pcm_s16le @ 0x1] Error submitting packet to decoder: Invalid data found when processing input"
                 .to_string(),
@@ -2070,9 +1987,7 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
         return Err("File not found".into());
     }
 
-    // ffprobe is spawned on every editor open (100–500 ms cold) and again
-    // during thumbnail generation. The result is immutable for a given file,
-    // so serve it from the file-identity disk cache when available.
+    // ffprobe costs 100-500 ms cold and its result is immutable per file, so serve it from the file-identity cache.
     if let Some(cached) = crate::cache::get::<VideoMetadata>("probe", &[path], 0) {
         return Ok(cached);
     }
@@ -2141,8 +2056,7 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
                 codec,
                 size_bytes,
             };
-            // Only the successful probe is cached — the zeroed fallback below
-            // represents a probe failure and must not be pinned.
+            // Only a successful probe is cached; the zeroed fallback below must not be pinned.
             crate::cache::put("probe", &[path], 0, &meta);
             Ok(meta)
         }

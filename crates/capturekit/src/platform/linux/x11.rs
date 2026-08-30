@@ -92,9 +92,7 @@ pub(crate) fn displays() -> Result<Vec<Display>> {
                 .reply()
                 .map_err(failed)?;
             Ok(Display {
-                // RandR monitor names are unique per screen, so their atom is a
-                // stable id; the monitor list index is not, as it renumbers when
-                // an output is unplugged.
+                // RandR monitor names are unique per screen, so their atom is stable; the list index renumbers on unplug.
                 id: DisplayId(u64::from(monitor.name)),
                 name: String::from_utf8_lossy(&name.name).into_owned(),
                 bounds: Rect::new(
@@ -103,8 +101,7 @@ pub(crate) fn displays() -> Result<Vec<Display>> {
                     u32::from(monitor.width),
                     u32::from(monitor.height),
                 ),
-                // X11 has no per-monitor scale: toolkits derive one from DPI, and
-                // the pixels here are always physical.
+                // X11 has no per-monitor scale: toolkits derive one from DPI, and these pixels are always physical.
                 scale_factor: 1.0,
                 refresh_hz: refresh_of(&session, &monitor),
                 is_primary: monitor.primary,
@@ -185,8 +182,7 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
         .map_err(failed)?
         .reply()
         .map_err(failed)?;
-    // A window manager that publishes no client list is not one this can
-    // enumerate; reporting nothing beats guessing from the whole window tree.
+    // A window manager publishing no client list isn't enumerable; reporting nothing beats guessing from the window tree.
     let Some(handles) = listed.value32() else {
         return Ok(Vec::new());
     };
@@ -196,8 +192,7 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
         let Ok(Ok(geometry)) = session.conn.get_geometry(handle).map(|c| c.reply()) else {
             continue;
         };
-        // Geometry is relative to the parent the window manager reparented it
-        // into, so it has to be translated to get desktop coordinates.
+        // Geometry is relative to the parent the window manager reparented into, so translate it to desktop coordinates.
         let Ok(Ok(origin)) = session
             .conn
             .translate_coordinates(handle, session.screen.root, 0, 0)
@@ -399,8 +394,7 @@ impl X11Source {
                 kind: "display",
                 id: display.0,
             })?;
-        // The root window spans every monitor, so the monitor's own position in
-        // the screen is where its pixels start.
+        // The root window spans every monitor, so the monitor's position in the screen is where its pixels start.
         let surface = monitor.bounds;
         let grab = match opts.region {
             Some(region) => region.offset_by(&surface).fit_inside(&surface).ok_or(
@@ -462,8 +456,7 @@ impl X11Source {
         rotation: Rotation,
         opts: &OpenOptions,
     ) -> Result<Self> {
-        // Negotiated once at open: a per-frame check would cost a round trip
-        // for an answer that cannot change while the connection lives.
+        // Negotiated once at open: a per-frame check costs a round trip for an answer that cannot change.
         let cursor = session.enable_xfixes().then(Cursor::default);
         Ok(Self {
             session,
@@ -500,8 +493,7 @@ impl FrameSource for X11Source {
     }
 
     fn next_frame(&mut self, _timeout: Duration) -> Result<RawFrame<'_>> {
-        // GetImage is a synchronous grab with no timestamp of its own, so the
-        // moment of the call is the only honest answer.
+        // GetImage is a synchronous grab with no timestamp, so the moment of the call is the only honest answer.
         let pts = now();
         let reply = self
             .session
@@ -517,8 +509,7 @@ impl FrameSource for X11Source {
             )
             .map_err(failed)?
             .reply()
-            // A window that closed, or a display that was unplugged, both surface
-            // here as a request against a drawable the server no longer has.
+            // A closed window and an unplugged display both surface as a request against a drawable the server lost.
             .map_err(|_| CaptureError::Lost(LostReason::WindowClosed))?;
 
         if reply.depth != 24 && reply.depth != 32 {
@@ -527,12 +518,10 @@ impl FrameSource for X11Source {
                 operation: "read a visual that is not 24 or 32 bits deep",
             });
         }
-        // Sampled next to the grab rather than on a poller of its own, so the
-        // cursor and the pixels it sits on share one instant.
+        // Sampled next to the grab, so the cursor and the pixels it sits on share one instant.
         let sample = self.sample_cursor(pts);
         self.frame = reply.data;
-        // Z_PIXMAP pads each scanline to the server's bitmap unit, which is 32
-        // bits on every modern server, so a 32-bit-per-pixel row is already whole.
+        // Z_PIXMAP pads each scanline to the bitmap unit, 32 bits on every modern server, so a 32bpp row is already whole.
         let stride = self.grab.width * 4;
         capturekit_core::PixelFormat::Bgra8.validate_buffer(
             self.grab.width,

@@ -226,8 +226,7 @@ fn check_exclusion(requested: &[WindowId]) -> Result<()> {
     let capabilities = os::capabilities();
     let detail = match capabilities.exclusion {
         ExclusionSupport::AnyWindow => return Ok(()),
-        // Ownership is checked by the backend, which is the only layer that can
-        // ask the OS who owns a window.
+        // Ownership is checked by the backend, the only layer that can ask the OS who owns a window.
         ExclusionSupport::OwnWindowsOnly => return Ok(()),
         ExclusionSupport::None => "this session gives a client no say in what the capture contains",
     };
@@ -308,11 +307,7 @@ impl Capturer {
         } = self;
         let raw = backend.next_frame(timeout)?;
         let pts = clock.admit(raw.pts);
-        // The cursor belongs to this frame, so it carries the frame's corrected
-        // timestamp rather than the raw one the backend read. Desktop
-        // Duplication reports the origin for a frame with no new content, which
-        // the clock moves forward; a cursor left behind would then sit on a
-        // different timeline from the pixels it was sampled with.
+        // The cursor carries the frame's corrected timestamp; a raw one would sit on a different timeline from its pixels.
         let cursor = raw.cursor.map(|sample| CursorSample { pts, ..sample });
         Ok(Frame {
             pts,
@@ -344,8 +339,7 @@ impl Capturer {
                 return Err(CaptureError::Timeout(timeout));
             }
             let budget = timeout - elapsed;
-            // Nothing held yet means nothing to repeat, so the first frame is
-            // worth the whole budget however far off the slot is.
+            // Nothing held means nothing to repeat, so the first frame is worth the whole budget however far off the slot is.
             let wait = if self.held.filled {
                 self.until_slot(budget)
             } else {
@@ -354,8 +348,7 @@ impl Capturer {
             let Self { backend, held, .. } = self;
             match backend.next_frame(wait) {
                 Ok(raw) => held.store(&raw),
-                // An idle source is what pacing exists to cover, so keep waiting
-                // for the slot rather than passing a timeout to the caller.
+                // An idle source is what pacing exists to cover, so keep waiting for the slot rather than timing out the caller.
                 Err(err) if err.is_recoverable() => {}
                 Err(err) => return Err(err),
             }
@@ -386,8 +379,7 @@ impl Capturer {
             gpu: None,
             bytes: &self.held.bytes,
             stride: self.held.stride,
-            // A repeat carries no damage of its own, and empty already means
-            // "assume everything changed"; `is_repeat` is the signal to act on.
+            // A repeat carries no damage, and empty already means assume-everything-changed; `is_repeat` is the signal to act on.
             dirty: if repeat {
                 DirtyRects::unknown()
             } else {

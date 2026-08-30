@@ -111,8 +111,7 @@ pub fn codec_args(encoder: H264Encoder, purpose: EncodePurpose<'_>) -> Vec<Strin
 fn realtime_capture_args(encoder: H264Encoder, quality: RecordingQuality) -> Vec<String> {
     use H264Encoder::*;
     use RecordingQuality::*;
-    // Args AFTER `-c:v <name>` — the codec name is emitted once, below, via
-    // `ffmpeg_name()` so it isn't restated in every arm.
+    // Args AFTER `-c:v <name>`: the codec name is emitted once below via `ffmpeg_name()`.
     let tail: &[&str] = match (encoder, quality) {
         (VideoToolbox, Balanced) => &["-realtime", "1", "-pix_fmt", "yuv420p"],
         (VideoToolbox, High) => &["-realtime", "1", "-b:v", "10M", "-pix_fmt", "yuv420p"],
@@ -164,8 +163,7 @@ fn realtime_capture_args(encoder: H264Encoder, quality: RecordingQuality) -> Vec
             "-pix_fmt",
             "yuv420p",
         ],
-        // Intel Quick Sync — `global_quality` is its constant-quality knob; QSV
-        // takes `nv12`, not `yuv420p`.
+        // Quick Sync: `global_quality` is its constant-quality knob, and QSV takes `nv12`, not `yuv420p`.
         (Qsv, Balanced) => &["-preset", "veryfast", "-pix_fmt", "nv12"],
         (Qsv, High) => &[
             "-preset",
@@ -183,8 +181,7 @@ fn realtime_capture_args(encoder: H264Encoder, quality: RecordingQuality) -> Vec
             "-pix_fmt",
             "nv12",
         ],
-        // libx264 software fallback. Balanced keeps zerolatency/ultrafast so
-        // weak CPUs don't drop; higher tiers drop zerolatency and lower CRF.
+        // libx264 fallback: Balanced keeps zerolatency and ultrafast so weak CPUs don't drop; higher tiers lower CRF.
         (Libx264, Balanced) => &[
             "-preset",
             "ultrafast",
@@ -361,8 +358,7 @@ mod tests {
             )
         }
 
-        // Regression guard: the default tier must be byte-identical to the
-        // pre-refactor recorder args so existing recordings don't change.
+        // Regression guard: the default tier must stay byte-identical to the pre-refactor recorder args.
         #[test]
         fn balanced_tier_reproduces_historical_args_exactly() {
             assert_eq!(
@@ -438,15 +434,12 @@ mod tests {
             ] {
                 for q in [RecordingQuality::High, RecordingQuality::Pristine] {
                     let args = realtime(enc, q);
-                    // Never emit a 4:4:4 pixel format — the editor preview can't
-                    // decode it.
+                    // Never emit a 4:4:4 pixel format: the editor preview can't decode it.
                     assert!(
                         !args.iter().any(|a| a.contains("444")),
                         "{enc}/{q:?} must stay 4:2:0, got {args:?}"
                     );
-                    // Must carry an explicit quality target (cq / qp /
-                    // global_quality / crf / q:v) so it's higher quality than
-                    // Balanced.
+                    // Must carry an explicit quality target, so it is higher quality than Balanced.
                     assert!(
                         args.iter().any(|a| matches!(
                             a.as_str(),
@@ -462,8 +455,7 @@ mod tests {
     mod export {
         use super::*;
 
-        // Representative resolved knobs — the test asserts arg *structure/order*,
-        // not the real Speed/QualityProfile values.
+        // Representative resolved knobs: the test asserts arg structure and order, not the real profile values.
         fn params() -> ExportEncodeParams<'static> {
             ExportEncodeParams {
                 nvenc_preset: "p5",
@@ -482,8 +474,7 @@ mod tests {
             )
         }
 
-        // Regression guard: byte-identical to the pre-refactor inline export
-        // match, so exported files don't change.
+        // Regression guard: byte-identical to the pre-refactor inline export match, so exported files don't change.
         #[test]
         fn reproduces_historical_export_args_exactly() {
             assert_eq!(

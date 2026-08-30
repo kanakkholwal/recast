@@ -76,9 +76,7 @@ struct Response {
     error: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Server (app side)
-// ---------------------------------------------------------------------------
+// --- Server (app side) ---
 
 /// Start the control server on a background thread. Non-fatal on failure: the
 /// GUI still works, the CLI just can't reach this instance.
@@ -132,8 +130,7 @@ fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
     let listener = match ListenerOptions::new().name(name).create_sync() {
         Ok(listener) => listener,
         Err(e) => {
-            // Another live instance already owns the socket; that is expected on
-            // a second launch, not an error worth surfacing every time.
+            // Another live instance already owns the socket: expected on a second launch, not worth surfacing.
             if connect().is_ok() {
                 log::debug!("cli control server already running in another instance");
                 return Ok(());
@@ -143,8 +140,7 @@ fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
     };
     log::info!("cli control server listening on {socket}");
 
-    // One thread per connection so a long-lived `watch` never blocks other
-    // commands (`status`, `rec ...`) from being accepted and answered.
+    // One thread per connection so a long-lived `watch` never blocks `status` or `rec` from being answered.
     for incoming in listener.incoming() {
         match incoming {
             Ok(mut stream) => {
@@ -198,8 +194,7 @@ fn handle_conn(app: &tauri::AppHandle, stream: &mut Stream, token: &str) -> Resu
     if req.token != token {
         return write_response(stream, &err_response("unauthorized".into()));
     }
-    // `watch` takes over the connection and streams frames until the client
-    // hangs up, rather than returning a single response.
+    // `watch` takes over the connection and streams frames until the client hangs up.
     if req.method == "watch" {
         return handle_watch(app, stream, &req.params);
     }
@@ -464,16 +459,14 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                     .and_then(Value::as_bool)
                     .unwrap_or(false),
             };
-            // xcap capture can stall; safe here because each connection runs on
-            // its own thread, never the GTK/main thread.
+            // xcap capture can stall; safe here because each connection runs on its own thread, never the GTK thread.
             let shot = crate::commands::screenshot::capture_app_window(app, label, &opts)?;
             serde_json::to_value(shot).map_err(|e| e.to_string())
         }
         "rec.start" => {
             // Read the auto-stop before `params` is consumed below.
             let timeout_ms = params.get("timeoutMs").and_then(Value::as_u64);
-            // Explicit target flags are a one-off; without them we record the
-            // stored capture intent (set via `recast select`/`set`).
+            // Explicit target flags are a one-off; without them we record the stored capture intent.
             let explicit = params.get("targetType").and_then(|v| v.as_str()).is_some();
             let (target_type, target_id, region, options) = if explicit {
                 let p: StartParams = serde_json::from_value(params).map_err(|e| e.to_string())?;
@@ -496,8 +489,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 state,
             ))
             .map_err(|e| e.to_string())?;
-            // Backend-owned auto-stop: survives the CLI process exiting. Only
-            // stops if still recording (a manual stop first is a no-op).
+            // Backend-owned auto-stop survives the CLI process exiting, and no-ops if a manual stop came first.
             if let Some(ms) = timeout_ms {
                 schedule_auto_stop(app.clone(), ms);
             }
@@ -517,17 +509,13 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             crate::commands::resume_recording(state).map_err(|e| e.to_string())?;
             Ok(Value::Null)
         }
-        // On-device OCR of a video into a structured text timeline. No previews:
-        // an agent consumes the structured elements, not base64 images.
+        // On-device OCR of a video into a structured text timeline; an agent reads elements, not base64 images.
         "screen.read" => {
             let path = params
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("screen.read requires a path")?;
-            // block_on is safe here: each connection runs on its own thread. No
-            // previews (an agent reads the structured elements, not base64 images)
-            // and no range filter: the CLI is handed a bare file with no edit
-            // context, so the whole thing is the clip.
+            // block_on is safe: each connection has its own thread. The CLI is handed a bare file, so the whole thing is the clip.
             let timeline = tauri::async_runtime::block_on(crate::ocr::run(
                 app,
                 path,
@@ -537,13 +525,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             ))?;
             serde_json::to_value(timeline).map_err(|e| e.to_string())
         }
-        // Phase A (read-only): editor + export introspection for CLI agents.
-        // Each path loads the project on demand through the same
-        // `load_editor_document`/`list_export_jobs` paths the GUI uses; nothing
-        // here mutates state, so the future `EditorSession` write-lock doesn't
-        // need to be touched for v1.
-        // Where an agent starts. Without this it has no way to learn a project
-        // path, and every other project verb requires one.
+        // Where an agent starts: without it there is no way to learn a project path, and every other verb needs one.
         "project.list" => {
             let entries = tauri::async_runtime::block_on(crate::commands::list_recasts(state))
                 .map_err(stringify)?;
@@ -606,9 +588,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             .map_err(|e| e.to_string())?;
             serde_json::to_value(doc.render_state.annotations).map_err(|e| e.to_string())
         }
-        // Read-only queue inspection. `export.show` filters the same list by
-        // id; the surface stays small because the queue is a single SQLite
-        // table and a second method would just be SELECT * WHERE id=?.
+        // `export.show` filters the same list by id; a second method would just be SELECT * WHERE id=?.
         "export.list" => {
             let jobs = tauri::async_runtime::block_on(crate::commands::list_export_jobs(state))
                 .map_err(|e| e.to_string())?;
@@ -627,9 +607,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .ok_or_else(|| format!("no export job with id '{id}'"))?;
             serde_json::to_value(job).map_err(|e| e.to_string())
         }
-        // Phase B write-lifecycle. `editor-session:changed` is emitted by each
-        // verb that takes/releases the lock so a `recast watch editor` stream
-        // sees the transition in real time.
+        // Every lock verb emits `editor-session:changed`, so a `recast watch editor` stream sees the transition live.
         "editor.lock" => {
             use crate::commands::types::EditorWriterKind;
             let path_str = params
@@ -684,8 +662,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
         "editor.session" => serde_json::to_value(crate::commands::snapshot(state.inner()))
             .map_err(|e| e.to_string()),
         "editor.patch" => {
-            // Replace the project's render state with the supplied JSON.
-            // Validates against the source's metadata before any disk write.
+            // Replaces the render state with the supplied JSON, validated against the source metadata before any disk write.
             let path_str = params
                 .get("path")
                 .and_then(Value::as_str)
@@ -745,15 +722,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             let op = Op::CutAdd { start, end };
             apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
-        // ---- Timeline: cuts, zoom regions, split points, segment speeds, scene animations, annotations.
-        // The targeted verbs that follow each share the same shape:
-        //   • look up a row by either an id (annotations) or a value match (cuts,
-        //     split points, scene animations) or a positional index (zoom regions,
-        //     segment speeds).
-        //   • mutate, validate, persist — all routed through `patch_render_state`
-        //     so the lock/validator/event semantics stay identical across verbs.
-        // The result is whatever the closure returned; dispatch arms rebuild
-        // the wire payload outside the closure for clarity.
+        // --- Timeline verbs: each looks a row up by id, value or index, then mutates through `patch_render_state` so lock, validator and event semantics stay identical.
         "editor.cut.list" => {
             let path_str = params
                 .get("path")
@@ -783,9 +752,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .and_then(Value::as_str)
                 .ok_or("editor.cut.remove requires a writerId")?
                 .to_string();
-            // Identify by index. Falls back to `(start, end)` match when an
-            // `--index` wasn't provided; the validator guarantees no
-            // overlap, so `start==start && end==end` is unambiguous.
+            // Falls back to a `(start, end)` match without `--index`; the validator forbids overlap, so it is unambiguous.
             let target_index: Option<usize> = match params.get("index").cloned() {
                 Some(serde_json::Value::Number(n)) => Some(
                     n.as_u64()
@@ -1194,10 +1161,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             };
             apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
-        // Universal mutator: any scalar/struct field via dotted JSON pointer.
-        // Used as the escape hatch for every field that doesn't get its own
-        // targeted verb. `--value` accepts a JSON value (string for strings,
-        // number, true/false, array, object).
+        // Escape hatch for any field without its own targeted verb; `--value` accepts any JSON value.
         "editor.set" => {
             let path_str = params
                 .get("path")
@@ -1374,8 +1338,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             } else {
                 None
             };
-            // Validate `--speed` against the same enum the encode uses
-            // (`fast` | `balanced` | `quality`), if supplied.
+            // Validate `--speed` against the same enum the encode uses, when supplied.
             if let Some(ref s) = speed {
                 if !matches!(s.as_str(), "fast" | "balanced" | "quality") {
                     return Err(format!(
@@ -1416,8 +1379,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 quality,
                 speed,
                 render_state,
-                // The CLI has no editor session, so there is no resolved time
-                // map to replay; the export derives it from the render state.
+                // The CLI has no editor session, so the export derives the time map from the render state.
                 time_map: None,
                 gif_settings,
                 fps,
@@ -1703,9 +1665,7 @@ fn write_token() -> Result<String, String> {
     Ok(token)
 }
 
-// ---------------------------------------------------------------------------
-// Client (CLI side)
-// ---------------------------------------------------------------------------
+// --- Client (CLI side) ---
 
 /// Send one request to the running app and return its result value. Auto-launches
 /// the app (unless `auto_launch` is false) and waits up to `timeout_ms` for the

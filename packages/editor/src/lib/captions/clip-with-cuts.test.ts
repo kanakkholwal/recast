@@ -44,9 +44,7 @@ describe("keptCaptionSpans", () => {
 	});
 
 	it("reuses the merged result for the same spans array", () => {
-		// Called once per rendered caption frame; rebuilding over every span each
-		// time was the cost. Identity, not deep equality — the time map is a
-		// `$derived.by`, so a new array IS the invalidation signal.
+		// Called once per rendered caption frame, so identity, not deep equality: a new array IS the invalidation signal.
 		const spans = [
 			{ origStart: 0, origEnd: 5 },
 			{ origStart: 6, origEnd: 10 },
@@ -62,8 +60,7 @@ describe("keptCaptionSpans", () => {
 	});
 
 	it("does not hand back a merged array that aliases its input spans", () => {
-		// The cached result is now shared between callers, so merging must copy —
-		// mutating `origEnd` in place would corrupt the caller's time map.
+		// The cached result is shared between callers, so merging must copy or it corrupts the caller's time map.
 		const input = [
 			{ origStart: 0, origEnd: 5 },
 			{ origStart: 5, origEnd: 10 },
@@ -174,23 +171,19 @@ describe("activeClippedSegment", () => {
 	});
 
 	it("returns null when no segment overlaps the visible window", () => {
-		// nowOrig = 5.5 is inside the visible window but the only segment
-		// overlapping it would need to be the [4, 8] one. Verify with a
-		// span that excludes all segments.
+		// nowOrig 5.5 is inside the visible window, so verify with a span that excludes every segment.
 		const tightSpan: KeptSpan = { origStart: 3.5, origEnd: 3.8 };
 		expect(activeClippedSegment(segments, tightSpan, 3.6)).toBeNull();
 	});
 
 	it("returns the segment clipped to a single boundary crossing the cut", () => {
-		// Segment [4, 8] crosses the cut at 5. Inside the kept span [5, 10]
-		// only [5, 8] is visible. nowOrig = 5.5 is in the visible window.
+		// Segment [4,8] crosses the cut at 5, so only [5,8] is visible inside the kept span.
 		const result = activeClippedSegment(segments, SPAN, 5.5);
 		expect(result?.visible).toEqual({ start: 5, end: 8 });
 	});
 
 	it("returns the segment clipped at the other boundary too", () => {
-		// Segment [8, 12] crosses the cut end at 10. Visible = [8, 10].
-		// nowOrig = 9.0 is in the visible window.
+		// Segment [8,12] crosses the cut end at 10, so the visible part is [8,10].
 		const result = activeClippedSegment(segments, SPAN, 9.0);
 		expect(result?.visible).toEqual({ start: 8, end: 10 });
 	});

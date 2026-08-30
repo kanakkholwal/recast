@@ -40,8 +40,7 @@ class FakeWorker {
 	postMessage(msg: unknown, _transfer?: Transferable[]): void {
 		if (this.#terminated) return;
 		this.#messages.push(msg as WorkerMsg);
-		// The real worker replies to `init` with `ready` after its input +
-		// sink come up. Mirror that here so the source's static create resolves.
+		// The real worker replies to `init` with `ready`, so mirror that or the source's static create never resolves.
 		const m = msg as WorkerMsg;
 		if (m.type === "init") {
 			queueMicrotask(() => {
@@ -108,13 +107,9 @@ describe("MediabunnyVideoSource — supersede + cut-jump behavior", () => {
 
 	beforeEach(() => {
 		worker = new FakeWorker();
-		// Replace the global Worker constructor with a factory that hands back
-		// our fake. `vi.stubGlobal` keeps the rest of the world's globals
-		// intact and resets after each test.
+		// `vi.stubGlobal` swaps the Worker constructor for our fake and restores the rest after each test.
 		vi.stubGlobal("Worker", (() => worker) as unknown as typeof Worker);
-		// Capability check: `static create` rejects when VideoFrame or
-		// OffscreenCanvas are missing. Stub them as no-constructible classes
-		// so the check passes without real implementations.
+		// `static create` rejects without VideoFrame or OffscreenCanvas, so stub them as non-constructible classes.
 		vi.stubGlobal("VideoFrame", FakeFrame as unknown as typeof VideoFrame);
 		vi.stubGlobal("OffscreenCanvas", class {} as unknown);
 	});
@@ -127,8 +122,7 @@ describe("MediabunnyVideoSource — supersede + cut-jump behavior", () => {
 		const src = await MediabunnyVideoSource.create("asset://localhost/test.mp4", {
 			createWorker: () => worker as unknown as Worker,
 		});
-		// Static `create` resolves once the worker posts `ready`. The fake
-		// does this via `queueMicrotask`; let microtasks drain.
+		// The fake posts `ready` via `queueMicrotask`, so let microtasks drain.
 		await new Promise<void>((r) => queueMicrotask(() => r()));
 		await new Promise<void>((r) => queueMicrotask(() => r()));
 		return src;
@@ -165,8 +159,7 @@ describe("MediabunnyVideoSource — supersede + cut-jump behavior", () => {
 		const seq1 = seek1?.seq ?? -1;
 		expect(seq1).toBeGreaterThan(0);
 
-		// Seeks are rate limited, so two jumps inside one window collapse into
-		// one. Wait past the window to get a genuinely separate second seek.
+		// Seeks are rate limited, so two jumps in one window collapse; wait past it for a genuinely separate seek.
 		await new Promise((r) => setTimeout(r, 60));
 
 		// Second seek: 12.0 (post-cut, supersedes the first).
@@ -179,9 +172,7 @@ describe("MediabunnyVideoSource — supersede + cut-jump behavior", () => {
 		// Worker replies to the stale (first) seek.
 		worker.receiveFrame(seq1, 5.0);
 		await new Promise<void>((r) => queueMicrotask(() => r()));
-		// Stale frame dropped: inFlightSeq is still 2 (seq1 didn't match),
-		// so the cache is empty. We verify by checking the next receiveFrame
-		// is processed (seq2 matches inFlightSeq=2).
+		// Stale frame dropped: inFlightSeq is still 2, so the cache is empty and the next matching frame proves it.
 
 		// Reply to the FRESH (still-in-flight) seek.
 		worker.receiveFrame(seq2, 12.0);
@@ -252,8 +243,7 @@ describe("seek rate limiting", () => {
 
 	it("collapses a burst of drag seeks into one, keeping the final target", async () => {
 		const src = await build();
-		// A drag fires one jump per pointer move. Unthrottled, each started a
-		// fresh decode run with its own decoder.
+		// A drag fires one jump per pointer move; unthrottled, each started a fresh decode run with its own decoder.
 		for (let i = 0; i < 30; i++) src.advanceTo(i * 3);
 		const seeks = worker.messages.filter((m) => m.type === "seek");
 		expect(seeks.length).toBe(1);

@@ -75,9 +75,7 @@ pub(crate) fn run_encode(
         .stderr(Stdio::piped());
     crate::ffmpeg::configure_silent_command(&mut command);
 
-    // Log the full invocation so a crash (ffmpeg segfaults print nothing to
-    // stderr) is still diagnosable — this is the only record of which encoder /
-    // filters / inputs were in play when it died.
+    // ffmpeg segfaults print nothing to stderr, so this is the only record of encoder, filters and inputs when it dies.
     log::info!("export: ffmpeg args: {}", args.join(" "));
 
     let mut child = command
@@ -93,8 +91,7 @@ pub(crate) fn run_encode(
         .take()
         .ok_or_else(|| "ffmpeg stderr pipe not available".to_string())?;
 
-    // Shared state consumed by the stderr parser (progress events) and the
-    // watchdog (stall detection).
+    // Shared by the stderr parser (progress events) and the watchdog (stall detection).
     let last_progress = Arc::new(Mutex::new(Instant::now()));
     let last_progress_secs = Arc::new(Mutex::new(-1.0_f64));
     let killed_by_timeout = Arc::new(AtomicBool::new(false));
@@ -102,25 +99,13 @@ pub(crate) fn run_encode(
     let finalizing_seen = Arc::new(AtomicBool::new(false));
     let near_end_seen = Arc::new(AtomicBool::new(false));
     let progress_end_seen = Arc::new(AtomicBool::new(false));
-    // Latched the first time the stderr parser parses a progress block.
-    // The watchdog uses this to apply a longer budget during ffmpeg's
-    // cold-start window (filter_complex parse, NVENC surface alloc, VP9
-    // first-pass init) before falling back to the tighter steady-state
-    // timeout once frames start flowing.
+    // Latched on the first progress block: the watchdog allows a longer cold-start budget until frames flow.
     let first_progress_seen = Arc::new(AtomicBool::new(false));
 
-    // Parse stderr line-by-line. Progress blocks (key=value lines) get
-    // filtered out; only genuine log output is appended to the 8 KB error
-    // ring buffer used for post-mortem in the failure path. `out_time_us=`
-    // lines drive the UI `export-progress` emits, and `progress=end`
-    // signals the encoder has finished and only the mux trailer remains.
+    // Progress blocks are filtered out; only real log output enters the 8 KB ring, and `progress=end` means only the trailer remains.
     let stderr_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
     let stderr_buf_writer = stderr_buf.clone();
-    // Diagnostic lines are kept SEPARATELY from the rotating tail above.
-    // FFmpeg names the cause while opening its inputs and then prints
-    // kilobytes of stream listings and shutdown noise, so on any real export
-    // the cause had already been drained out of the 8 KB tail by the time the
-    // run failed — every failure reported its own epilogue instead.
+    // Kept apart from the rotating tail: FFmpeg names the cause while opening inputs, then prints kilobytes that flush it out.
     let stderr_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let stderr_errors_writer = stderr_errors.clone();
     let stderr_last_progress = last_progress.clone();
@@ -137,10 +122,7 @@ pub(crate) fn run_encode(
         .spawn(move || {
             let mut reader = std::io::BufReader::new(stderr);
             let mut logged_near_done = false;
-            // Read raw bytes per line and lossy-decode, rather than `.lines()`
-            // (which yields `Result<String>` and stops at the FIRST non-UTF-8 line
-            // — silently dropping any real error printed after it, so the failure
-            // path then reports "no detailed error").
+            // Raw bytes, not `.lines()`: that stops at the first non-UTF-8 line and drops any real error printed after it.
             let mut raw: Vec<u8> = Vec::new();
             loop {
                 raw.clear();
@@ -153,33 +135,22 @@ pub(crate) fn run_encode(
                     raw.pop();
                 }
                 let line = String::from_utf8_lossy(&raw).into_owned();
-                // FFmpeg progress blocks are key=value lines terminated by
-                // `progress=continue` (between blocks) or `progress=end`
-                // (final block). Treat all of these as non-log noise.
+                // Progress blocks are key=value lines ending in `progress=continue` or `progress=end`; all of it is non-log noise.
                 if let Some(progress_secs) = parse_ffmpeg_progress_seconds(&line) {
                     let effective_duration = expected_output_secs;
-                    // Watchdog proof-of-life: any parseable progress line
-                    // means ffmpeg is alive. Don't gate this on out_time
-                    // advancing — on Windows/NVENC we regularly see
-                    // back-to-back blocks with unchanged `out_time_us`
-                    // while surfaces flush or a GOP is primed, and
-                    // waiting for advancement starved the watchdog reset.
+                    // Any parseable progress line is proof of life: Windows NVENC repeats `out_time_us`, and gating on advance starved the watchdog.
                     {
                         let mut guard = stderr_last_progress.lock();
                         *guard = Instant::now();
                     }
-                    // First progress line ever → flip the startup-grace
-                    // flag and log it so post-mortems can see how long
-                    // filter_complex/NVENC warmup took.
+                    // The first progress line flips the startup-grace flag, and the log shows how long filter_complex and NVENC warmup took.
                     if !stderr_first_progress_seen.swap(true, Ordering::AcqRel) {
                         log::info!(
                             "export: first progress parsed at T+{}ms",
                             encode_started_at.elapsed().as_millis()
                         );
                     }
-                    // UI emit gate: only publish a new pct when out_time
-                    // actually advanced. Redundant emits would spam the
-                    // progress bar with the same value.
+                    // Only publish when out_time actually advanced; redundant emits spam the bar with the same value.
                     let advanced = {
                         let mut last_secs = stderr_last_progress_secs.lock();
                         if progress_secs > *last_secs + 0.01 {
@@ -202,10 +173,7 @@ pub(crate) fn run_encode(
                     {
                         stderr_near_end_seen.store(true, Ordering::Release);
                     }
-                    // Log the moment we cross 99.5% so post-mortems of
-                    // "stuck at 99%" reports can locate the gap between
-                    // here and the eventual `progress=end` / drain-thread
-                    // exit in the captured stderr tail.
+                    // Log the 99.5% crossing so 'stuck at 99%' reports can locate the gap before `progress=end`.
                     if !logged_near_done && pct >= 99.5 {
                         logged_near_done = true;
                         log::info!(
@@ -214,11 +182,7 @@ pub(crate) fn run_encode(
                             encode_started_at.elapsed().as_millis()
                         );
                     }
-                    // For 2-pass GIF the pre-pass owns 0..40% and this
-                    // pass owns 40..100%; for everything else it's 0..100.
-                    // Scaling here (vs. at every progress emit site) keeps
-                    // the 100% terminal emits below honest — they always
-                    // mean "done", not "60% done because we're in pass 2".
+                    // The GIF pre-pass owns 0..40% and this pass 40..100%; scaling here keeps the terminal 100% emits honest.
                     let scaled_pct = progress_band.at(pct);
                     emit_export_state(
                         &stderr_app,
@@ -226,14 +190,7 @@ pub(crate) fn run_encode(
                     );
                     continue;
                 }
-                // `progress=end` means FFmpeg has finished encoding and
-                // is about to write the container trailer / exit. Flip
-                // the UI to finalizing NOW rather than waiting for the
-                // pipes to close — on Windows stderr close can lag the
-                // actual encoder finish by seconds, which manifested as
-                // the bar sitting at 100% with no state change. Also
-                // stamp `last_progress` so the watchdog gives the trailer
-                // write its own fresh budget.
+                // Flip to finalizing on `progress=end`: Windows stderr close can lag the encoder by seconds, parking the bar at 100%.
                 if line.trim() == "progress=end" {
                     stderr_progress_end_seen.store(true, Ordering::Release);
                     if !stderr_finalizing_seen.swap(true, Ordering::AcqRel) {
@@ -257,9 +214,7 @@ pub(crate) fn run_encode(
                 if is_ffmpeg_progress_key_line(&line) {
                     continue;
                 }
-                // Everything else is real log output. Capture anything that
-                // names a cause first, so it survives regardless of where in
-                // the stream it appeared.
+                // Capture anything that names a cause first, so it survives wherever in the stream it appeared.
                 if crate::commands::ffmpeg::is_diagnostic_line(&line) {
                     let mut errors = stderr_errors_writer.lock();
                     if errors.len() < crate::commands::ffmpeg::MAX_RETAINED_ERRORS {
@@ -281,9 +236,7 @@ pub(crate) fn run_encode(
         })
         .map_err(|e| format!("failed to spawn stderr drain thread: {e}"))?;
 
-    // Stdout carries nothing useful now that progress is on stderr, but we
-    // still need to drain it — closing or ignoring the pipe can cause
-    // FFmpeg to hit EPIPE on any stray write (e.g. `-report`) and abort.
+    // Stdout carries nothing now, but an undrained pipe can make FFmpeg hit EPIPE on a stray write and abort.
     let stdout_thread = std::thread::Builder::new()
         .name("recast-export-stdout".into())
         .spawn(move || {
@@ -298,14 +251,7 @@ pub(crate) fn run_encode(
         })
         .map_err(|e| format!("failed to spawn stdout drain thread: {e}"))?;
 
-    // Spawn the watchdog thread — narrow responsibility: only kill the
-    // child if it stops producing progress for >60s (genuine stall) OR if
-    // the user-facing cancel flag flips. Previous versions also auto-
-    // emitted `export-finalizing` when progress went quiet for 1.5s, but
-    // that fired falsely on Windows when FFmpeg's pipe buffering batched
-    // progress into multi-second bursts, flipping the UI to "Finalizing"
-    // mid-encode and leaving it there. Finalization is now reserved for
-    // FFmpeg's explicit `progress=end` signal.
+    // Kills only on a >60s progress stall or user cancel: the old quiet-means-finalizing rule fired falsely on Windows buffering.
     let watchdog_last_progress = last_progress.clone();
     let watchdog_killed = killed_by_timeout.clone();
     let watchdog_cancel_flag = cancel_flag.clone();
@@ -324,20 +270,9 @@ pub(crate) fn run_encode(
             .spawn(move || {
                 const ENCODE_TIMEOUT: Duration = Duration::from_secs(60);
                 const NEAR_END_TIMEOUT: Duration = Duration::from_secs(20);
-                // Startup grace: ffmpeg can take a long time to emit its
-                // first progress block when filter_complex parsing, NVENC
-                // surface allocation, or VP9 first-pass init runs before
-                // the first frame is output. Use a bigger budget until
-                // that first progress line arrives, then fall back to
-                // ENCODE_TIMEOUT for steady state.
+                // filter_complex parsing, NVENC surface alloc and VP9 first-pass all run before the first frame, so grant a bigger budget.
                 const FIRST_PROGRESS_TIMEOUT: Duration = Duration::from_secs(120);
-                // `FINALIZING_TIMEOUT` is a *no-file-growth* bound, not a
-                // wall-clock cap on the finalizing phase. While FFmpeg is
-                // legitimately writing the mux trailer the output file grows
-                // continuously — we watch for that below and stamp
-                // `watchdog_last_progress` on every size increase, so slow-
-                // but-productive trailer writes keep us out of the timeout.
-                // 60s of *no growth whatsoever* is a real stall.
+                // A no-file-growth bound, not a wall-clock cap: the trailer write grows the file and stamps liveness, so only zero growth stalls.
                 const FINALIZING_TIMEOUT: Duration = Duration::from_secs(60);
                 const POLL_INTERVAL: Duration = Duration::from_millis(250);
                 let mut last_file_size: u64 = 0;
@@ -356,13 +291,7 @@ pub(crate) fn run_encode(
                         return;
                     }
                     let in_finalizing = watchdog_progress_end_seen.load(Ordering::Acquire);
-                    // File-size growth as a liveness signal. Applies in both
-                    // phases: during the encode the output file is already
-                    // being written as GOPs complete, and during finalizing
-                    // the trailer mux continues to grow the file. If the
-                    // file is growing we know ffmpeg is alive and productive,
-                    // regardless of whether the stderr progress thread has
-                    // been able to refresh the stamp yet.
+                    // File growth is liveness in both phases, independent of whether the stderr thread has refreshed the stamp yet.
                     if let Ok(meta) = std::fs::metadata(&watchdog_output_path) {
                         let size = meta.len();
                         if size > last_file_size {
@@ -412,8 +341,7 @@ pub(crate) fn run_encode(
             })
             .map_err(|e| format!("failed to spawn watchdog thread: {e}"))?;
 
-    // Wait for the I/O drain threads to finish. Both unblock when FFmpeg
-    // closes its respective pipes, which happens as it's exiting.
+    // Both drain threads unblock when FFmpeg closes its pipes, which happens as it exits.
     let _ = stdout_thread.join();
     let _ = stderr_thread.join();
     log::info!(
@@ -421,10 +349,7 @@ pub(crate) fn run_encode(
         encode_started_at.elapsed().as_millis()
     );
 
-    // Redundant-but-idempotent final emit: if `progress=end` wasn't seen
-    // (e.g. FFmpeg was killed before finishing), make sure the UI still
-    // gets a finalizing flip before `export-done` arrives so the dialog
-    // has a consistent visual sequence.
+    // Idempotent: if `progress=end` never arrived, the UI still gets a finalizing flip before `export-done`.
     if !killed_by_user.load(Ordering::Acquire)
         && !killed_by_timeout.load(Ordering::Acquire)
         && !finalizing_seen.swap(true, Ordering::AcqRel)
@@ -439,14 +364,7 @@ pub(crate) fn run_encode(
 
     let expected_output_duration = expected_output_secs;
 
-    // Pipes are closed, which means ffmpeg has finished writing the file.
-    // Probe the output NOW and, if it's usable, emit `success` to the UI
-    // immediately — we should not make the user watch "Writing video
-    // file…" while we wait for the OS to reap the child process. On
-    // Windows that reap can legitimately take hundreds of ms to a couple
-    // of seconds after stdio close. The reap still happens below, but
-    // its only job now is to reap cleanly; its latency no longer blocks
-    // the user-visible completion.
+    // Pipes closed means the file is written, so probe and report success now rather than waiting on a reap that takes seconds on Windows.
     let early_success_emitted = if !killed_by_user.load(Ordering::Acquire)
         && !killed_by_timeout.load(Ordering::Acquire)
         && progress_end_seen.load(Ordering::Acquire)
@@ -466,11 +384,7 @@ pub(crate) fn run_encode(
         false
     };
 
-    // Pull the child back out and wait for its exit status. Stdout has
-    // already closed, so FFmpeg should be on its last gasp (trailer write +
-    // teardown). A well-behaved exit happens within milliseconds. We still
-    // bound the wait with a hard timeout — if it takes longer than
-    // POST_CLOSE_TIMEOUT we force-kill so the ffmpeg process doesn't leak.
+    // Stdout has closed, so exit should take milliseconds; POST_CLOSE_TIMEOUT force-kills rather than leaking the process.
     let mut child = {
         let mut guard = child_handle.lock();
         guard.take()
@@ -508,23 +422,14 @@ pub(crate) fn run_encode(
         early_success_emitted
     );
 
-    // If we already told the UI the export succeeded based on the probe
-    // of a fully-written file, the reap outcome (clean exit or forced
-    // kill) is bookkeeping — the file is good either way. Return Ok so
-    // the caller's Promise resolves cleanly.
+    // The UI already succeeded off a probe of a complete file, so the reap outcome is only bookkeeping.
     if early_success_emitted {
         return Ok(output_path_str);
     }
 
     if forced_exit {
         let output_path = Path::new(&output_path_str);
-        // Force-kill happens only after the I/O drain threads exited
-        // (pipes already closed = FFmpeg finished writing) AND we waited
-        // POST_CLOSE_TIMEOUT for the process to reap. If `progress_end`
-        // was seen, the encoder definitely got through the trailer write
-        // before this point — the salvage probe then confirms the file is
-        // playable. Without `progress_end` we can't trust the output even
-        // if probe succeeds; refuse rather than ship a corrupted file.
+        // With `progress_end` the encoder finished before the kill and the probe confirms playability; without it, refuse the file.
         let encode_completed = progress_end_seen.load(Ordering::Acquire);
         if encode_completed && completed_export_looks_usable(output_path, expected_output_duration)
         {
@@ -549,8 +454,7 @@ pub(crate) fn run_encode(
     }
 
     if killed_by_user.load(Ordering::Acquire) {
-        // Clean up the half-written output file so the exports list doesn't
-        // show a broken artifact from the aborted run.
+        // Remove the half-written output so the exports list doesn't show a broken artifact from the aborted run.
         let _ = std::fs::remove_file(&output_path_str);
         emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
         return Err("export cancelled".to_string());
@@ -558,14 +462,7 @@ pub(crate) fn run_encode(
 
     if killed_by_timeout.load(Ordering::Acquire) {
         let output_path = Path::new(&output_path_str);
-        // Salvage path: only trust the on-disk file if FFmpeg actually
-        // signalled `progress=end` before the watchdog fired. That means
-        // the encoder finished writing every frame and we killed it
-        // partway through the trailer write — `completed_export_looks_usable`
-        // can probe successfully on the partial mux result, but the moov
-        // atom may be incomplete. Without `progress=end` we were killed
-        // mid-encode and the output is almost certainly truncated;
-        // refuse to surface a corrupted file as a successful export.
+        // Trust the file only if `progress=end` arrived: killed mid-encode it is truncated, and a probe can still pass on a partial mux.
         let encode_completed = progress_end_seen.load(Ordering::Acquire);
         if encode_completed && completed_export_looks_usable(output_path, expected_output_duration)
         {
@@ -588,10 +485,7 @@ pub(crate) fn run_encode(
         } else {
             "export timed out: ffmpeg produced no progress for 60s"
         };
-        // Surface whatever ffmpeg last said so this error is actionable
-        // without needing to re-instrument. The stderr ring buffer holds
-        // up to 8 KB; take the final line (or two) to keep the message
-        // scannable.
+        // Take the final line or two of the 8 KB ring, so the error is actionable and still scannable.
         let stderr_tail = {
             let guard = stderr_buf.lock();
             let text = String::from_utf8_lossy(&guard).into_owned();
@@ -616,10 +510,7 @@ pub(crate) fn run_encode(
 
     if !status.success() {
         let stderr_bytes = stderr_buf.lock().clone();
-        // The toast only gets a summary; keep the WHOLE invocation and stderr in
-        // the log so a report that quotes the toast can still be traced back.
-        // Logged at ERROR because release builds default to Warn, which would
-        // drop the `info!` copy of the args written before the spawn.
+        // ERROR level because release defaults to Warn and would drop the `info!` copy of the args logged before the spawn.
         log::error!(
             "export: ffmpeg failed (status {:?})
   args: {}
@@ -632,10 +523,7 @@ pub(crate) fn run_encode(
             String::from_utf8_lossy(&stderr_bytes)
         );
         let _ = std::fs::remove_file(&output_path_str);
-        // Include the exit code: when stderr carries no diagnostic (e.g. ffmpeg was
-        // killed by the OS, crashed, or aborted before logging), the code is the
-        // only signal — a large Windows code like 3221225477 (0xC0000005) means a
-        // crash, not a normal encode error.
+        // Without a diagnostic line the code is the only signal: a large Windows code like 0xC0000005 means a crash, not an encode error.
         let code = status
             .code()
             .map(|c| c.to_string())
@@ -648,23 +536,14 @@ pub(crate) fn run_encode(
         return Err(err_msg);
     }
 
-    // Log stderr tail even on success so we can diagnose silent warnings
-    // (e.g. mux trailer problems) that produce a "valid" exit code but a
-    // broken file.
+    // Log the tail on success too, to catch warnings that give a valid exit code and a broken file.
     let stderr_bytes = stderr_buf.lock().clone();
     if !stderr_bytes.is_empty() {
         let tail = String::from_utf8_lossy(&stderr_bytes);
         log::info!("export ffmpeg stderr tail: {tail}");
     }
 
-    // On the happy path (status 0 + progress=end observed) we trust
-    // FFmpeg's own exit as the integrity signal — spawning ffprobe here
-    // just to re-verify what we already know would park the UI in
-    // "Finalizing…" for the duration of that probe, which is exactly the
-    // hang symptom users hit. Corruption guards remain on the salvage
-    // paths above (force-kill, watchdog-kill) where the exit code isn't
-    // trustworthy. `_expected_output_duration` kept in scope to make the
-    // salvage branches' dependency explicit.
+    // On status 0 with `progress=end` we trust FFmpeg's exit: an extra ffprobe would park the UI in Finalizing, the exact hang users hit.
     let _ = expected_output_duration;
 
     let output_path = Path::new(&output_path_str);
@@ -679,10 +558,7 @@ pub(crate) fn run_encode(
         }
     }
 
-    // Final 100% ping + an `export-done` event with the result. The
-    // frontend uses `export-done` to transition the dialog to the success
-    // state immediately — decoupled from the `exportVideo` Promise, which
-    // may take an extra beat to resolve through Tauri's IPC layer.
+    // The frontend transitions on `export-done`, decoupled from the `exportVideo` Promise, which resolves a beat later through IPC.
     emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
     emit_export_state(
         &app,

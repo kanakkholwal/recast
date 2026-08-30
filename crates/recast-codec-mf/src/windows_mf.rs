@@ -86,8 +86,7 @@ pub(crate) fn encoder_activates(category: GUID, major: GUID, subtype: GUID) -> V
         guidMajorType: major,
         guidSubtype: subtype,
     };
-    // SORTANDFILTER is what makes the system's own preference the array order,
-    // which the selection policy then keeps for ties.
+    // SORTANDFILTER makes the system's own preference the array order, which the selection policy keeps for ties.
     let flags = MFT_ENUM_FLAG(
         MFT_ENUM_FLAG_HARDWARE.0
             | MFT_ENUM_FLAG_SYNCMFT.0
@@ -97,8 +96,7 @@ pub(crate) fn encoder_activates(category: GUID, major: GUID, subtype: GUID) -> V
 
     let mut activates: *mut Option<IMFActivate> = std::ptr::null_mut();
     let mut count: u32 = 0;
-    // SAFETY: `activates` and `count` are the out-params the API documents, and
-    // the array it allocates is freed below.
+    // SAFETY: `activates` and `count` are the documented out-params, and the array it allocates is freed below.
     let enumerated = unsafe {
         MFTEnumEx(
             category,
@@ -117,22 +115,19 @@ pub(crate) fn encoder_activates(category: GUID, major: GUID, subtype: GUID) -> V
     let slots = unsafe { std::slice::from_raw_parts_mut(activates, count as usize) };
     let mut found = Vec::with_capacity(slots.len());
     for slot in slots.iter_mut() {
-        // Taking the interface out moves ownership here, so the release happens
-        // when it drops rather than being leaked with the array.
+        // Taking the interface out moves ownership here, so it releases on drop rather than leaking with the array.
         if let Some(activate) = slot.take() {
             found.push(activate);
         }
     }
-    // SAFETY: MFTEnumEx allocated this array with CoTaskMemAlloc, and every
-    // interface in it has been taken out above.
+    // SAFETY: MFTEnumEx allocated this array with CoTaskMemAlloc, and every interface has been taken out above.
     unsafe { CoTaskMemFree(Some(activates as *const c_void)) };
     found
 }
 
 fn describe(activate: &IMFActivate, codec: VideoCodec) -> Option<EncoderDescriptor> {
     let name = allocated_string(activate, &MFT_FRIENDLY_NAME_Attribute)?;
-    // Only hardware transforms carry the hardware URL, so its presence is the
-    // system's own answer rather than a guess from the name.
+    // Only hardware transforms carry the hardware URL, so its presence is the system's answer, not a guess from the name.
     let hardware = allocated_string(activate, &MFT_ENUM_HARDWARE_URL_Attribute).is_some();
     // SAFETY: reading a GUID attribute that every registered MFT carries.
     let clsid = unsafe { activate.GetGUID(&MFT_TRANSFORM_CLSID_Attribute) }.ok()?;
@@ -151,8 +146,7 @@ fn describe(activate: &IMFActivate, codec: VideoCodec) -> Option<EncoderDescript
 fn allocated_string(activate: &IMFActivate, key: &GUID) -> Option<String> {
     let mut value = windows::core::PWSTR::null();
     let mut length = 0u32;
-    // SAFETY: the API writes a CoTaskMem string we free below; a missing
-    // attribute returns an error and leaves `value` null.
+    // SAFETY: the API writes a CoTaskMem string freed below; a missing attribute errors and leaves `value` null.
     unsafe {
         activate
             .GetAllocatedString(key, &mut value, &mut length)

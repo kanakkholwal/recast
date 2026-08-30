@@ -57,8 +57,7 @@ let { store, videoEl, targetEl, previewTime }: Props = $props();
 
 let canvasEl: HTMLCanvasElement | null = $state(null);
 let rafHandle: number | null = null;
-// Container CSS size, cached from a ResizeObserver so the rAF loop doesn't
-// force a layout with getBoundingClientRect() every frame.
+// Cached from a ResizeObserver so the rAF loop never forces a layout per frame.
 let targetSize = { w: 0, h: 0 };
 
 //  Drag / placement state
@@ -69,8 +68,7 @@ type DragState =
 			id: string;
 			startX: number; // UV (top-left for boxes; x1 for arrows)
 			startY: number;
-			// For arrows, also keep the second endpoint so we can move both
-			// together while preserving the arrow's orientation/length.
+			// Arrows keep the second endpoint too, so a move preserves orientation and length.
 			startX2?: number;
 			startY2?: number;
 			pointerStartUV: { x: number; y: number };
@@ -86,23 +84,16 @@ type DragState =
 			id: string;
 			anchor: { x: number; y: number };
 	  };
-// $state so `canvasCursor` recomputes when a gesture starts: as a plain local
-// its "grabbing" branch could never fire, because only `hoverHandle` re-ran the
-// derived and hover is deliberately frozen for the duration of a drag.
+// `$state` so `canvasCursor` recomputes on gesture start: hover is frozen during a drag, so its branch could never fire.
 let drag: DragState = $state(null);
-// Undo is pushed on the first real move of a move/resize drag, not at
-// pointer-down, so a pure select-click leaves no no-op entry. Placement
-// pushes via addAnnotation, so it starts "already pushed".
+// Undo is pushed on the first real move, so a select-click leaves no no-op entry; placement already pushed.
 let dragUndoPushed = true;
-// Active snap guides for the current drag, in UV space. Cleared on
-// pointerup. Capped to 4 simultaneous guides to avoid visual noise.
+// Active snap guides in UV space, cleared on pointerup and capped at 4 to avoid visual noise.
 let snapGuides: SnapAnchor[] = $state([]);
-// What's under the pointer, used purely for cursor affordance ("grab" on
-// body, "nwse-resize" / "ns-resize" / etc on handles). Cleared on leave.
+// Purely cursor affordance ('grab' on the body, resize cursors on handles); cleared on leave.
 let hoverHandle: HandleName | null | "tool" = $state(null);
 
-// Thin wrappers around shared geometry modules; this file owns rendering +
-// interaction state, not the math.
+// Thin wrappers over shared geometry: this file owns rendering and interaction, not the math.
 function getDpr(): number {
 	return window.devicePixelRatio || 1;
 }
@@ -210,8 +201,7 @@ function drawSelection(ctx: CanvasRenderingContext2D, a: Annotation, t: number) 
 	const w = bottomRight.x - topLeft.x;
 	const h = bottomRight.y - topLeft.y;
 
-	// Soft outer ring then the crisp primary border, mirroring the recording
-	// area selection's `border-primary ring-primary/40`.
+	// Soft outer ring then the crisp primary border, mirroring the recording area selection.
 	ctx.strokeStyle = palette.accentRing;
 	ctx.lineWidth = 3 * dpr;
 	ctx.strokeRect(x, y, w, h);
@@ -294,9 +284,7 @@ function drawHoverFlash(ctx: CanvasRenderingContext2D, a: Annotation, t: number)
 
 //  Frame loop
 
-// Whether the last draw put anything on the canvas. A `clearRect` over a
-// full-viewport DPR layer dirties it for the compositor every frame even when
-// there is nothing to draw — which is the common case.
+// A `clearRect` over a full-viewport DPR layer dirties it for the compositor even with nothing to draw.
 let paintedLastFrame = false;
 
 function draw() {
@@ -318,9 +306,7 @@ function draw() {
 
 	const t = playbackTime();
 
-	// Selection adornment + hover-flash only show on the Annotations tab so
-	// the editing handles don't clutter the preview while the user is on
-	// other panels.
+	// Handles only show on the Annotations tab, so they don't clutter the preview from other panels.
 	if (store.activePanel === "annotations") {
 		const hover =
 			store.hoveredAnnotationId && store.hoveredAnnotationId !== store.selectedAnnotationId
@@ -331,8 +317,7 @@ function draw() {
 		const sel = store.annotations.find((a) => a.id === store.selectedAnnotationId);
 		if (sel && !sel.hidden) {
 			drawSelection(ctx, sel, t);
-			// Live dimensions while actively sizing (place/resize), not on idle
-			// selection or plain moves, so the chip appears only when it helps.
+			// Live dimensions only while sizing, not on idle selection or plain moves, so the chip appears when it helps.
 			if (drag && (drag.kind === "place" || drag.kind === "resize") && drag.id === sel.id) {
 				drawSizeBadge(ctx, sel, t);
 			}
@@ -402,10 +387,7 @@ function scheduleRedraw() {
 
 function resizeToContainer() {
 	if (!canvasEl) return;
-	// Fallback: if the cached size is still unknown (target not yet laid out
-	// when the observer was set up), measure live so the canvas never gets
-	// stuck at 1x1. A 1x1 backing stretched over the preview renders the first
-	// near-white handle as a full-screen white wash.
+	// Measure live if the cached size is still unknown: a 1x1 backing stretched over the preview renders as a white wash.
 	if ((targetSize.w <= 0 || targetSize.h <= 0) && targetEl) {
 		const r = targetEl.getBoundingClientRect();
 		targetSize = { w: r.width, h: r.height };
@@ -463,10 +445,7 @@ function handlePointerDown(e: PointerEvent) {
 			return;
 		}
 		if (hit === "body") {
-			// Body of the already-selected annotation → start moving immediately.
-			// We deliberately skip the pickAnnotation path here so the annotation
-			// can be moved during fade-in / fade-out windows where evalOpacity
-			// would otherwise filter it out of the hit-test.
+			// Skip pickAnnotation so a selected annotation stays movable during fade windows, where evalOpacity would filter it out.
 			(e.currentTarget as Element).setPointerCapture(e.pointerId);
 			const pointerUV = unprojectA(selected, pt.x, pt.y, t);
 			if (selected.kind.kind === "arrow") {
@@ -605,8 +584,7 @@ function applySnap(
 	}
 	const anchors = buildAnnotationSnapAnchors(store.annotations, dragId);
 	const result = snap(ux, uy, anchors, 0.005, true);
-	// Cap to 4 simultaneous guides (one per axis is the typical case; never
-	// more than 2 from this fn, but keep the cap for safety).
+	// Cap at 4: this function never emits more than 2, but the cap is cheap safety.
 	snapGuides = result.guides.slice(0, 4);
 	return { x: result.x, y: result.y };
 }
@@ -647,12 +625,10 @@ function handlePointerMove(e: PointerEvent) {
 	const f = frameDims();
 	const dragAnno = store.annotations.find((x) => x.id === drag!.id) ?? {};
 	const rawUv = unprojectA(dragAnno, pt.x, pt.y, t);
-	// Alt held bypasses snap, matching Figma. Snap is per-axis so an annotation
-	// can lock to a horizontal guide while still tracking the cursor vertically.
+	// Alt bypasses snap, matching Figma; snap is per-axis, so one axis can lock while the other tracks the cursor.
 	const uv = applySnap(rawUv.x, rawUv.y, drag.id, e.altKey);
 
-	// First real move of a move/resize commits one undo entry (placement
-	// pushed at creation).
+	// The first real move commits one undo entry; placement already pushed at creation.
 	if (!dragUndoPushed) {
 		store.pushUndoState();
 		dragUndoPushed = true;
@@ -706,8 +682,7 @@ function handlePointerMove(e: PointerEvent) {
 			anno.kind.kind === "image" ||
 			anno.kind.kind === "blur"
 		) {
-			// Snap the box's own edges/center to guides (not the raw cursor), so a
-			// move aligns the annotation itself. Alt or the snap toggle bypasses.
+			// Snap the box's own edges and centre, not the raw cursor, so a move aligns the annotation itself.
 			const rawDx = rawUv.x - drag.pointerStartUV.x;
 			const rawDy = rawUv.y - drag.pointerStartUV.y;
 			const bx = drag.startX + rawDx;
@@ -798,8 +773,7 @@ function handlePointerUp(e: PointerEvent) {
 	scheduleRedraw();
 	if (!drag) return;
 	(e.currentTarget as Element).releasePointerCapture(e.pointerId);
-	// Drop snap guides immediately on release so the preview returns to
-	// a clean state on click (no lingering guides between drags).
+	// Drop guides on release, so a click doesn't leave them lingering between drags.
 	snapGuides = [];
 	if (drag.kind === "place") {
 		const anno = store.annotations.find((a) => a.id === drag!.id);
@@ -812,9 +786,7 @@ function handlePointerUp(e: PointerEvent) {
 				anno.kind.kind === "blur"
 			) {
 				if (Math.abs(anno.kind.w) < 0.01 || Math.abs(anno.kind.h) < 0.01) {
-					// A click with no drag places a default-sized shape rather than
-					// cancelling. Text already worked this way; arming the Rectangle
-					// tool and clicking used to produce nothing at all.
+					// A click with no drag places a default-sized shape; arming Rectangle and clicking used to produce nothing.
 					const box = clickPlacedBox(drag.anchor.x, drag.anchor.y, f.w, f.h);
 					store.updateAnnotation(drag.id, { kind: { ...anno.kind, ...box } });
 					store.selectedAnnotationId = drag.id;
@@ -840,8 +812,7 @@ function handlePointerUp(e: PointerEvent) {
 				}
 			}
 		}
-		// After placement, drop the tool so the user doesn't create stacked
-		// shapes on their next click. Matches Figma/Keynote behaviour.
+		// Drop the tool after placement so the next click doesn't stack shapes. Matches Figma and Keynote.
 		store.annotationTool = null;
 	} else if (drag.kind === "resize" || drag.kind === "move") {
 		const anno = store.annotations.find((a) => a.id === drag!.id);
@@ -891,9 +862,7 @@ function nudgeBy(dxUV: number, dyUV: number) {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
-	// Typing surfaces own every key. Escape especially: TextAnnotationLayer uses
-	// it to cancel an inline text edit, and clearing the selection here too meant
-	// one Escape both reverted the text AND closed the panel that was editing it.
+	// Typing surfaces own every key: clearing the selection on Escape also closed the panel editing the text.
 	if (isEditableTarget(e.target)) return;
 	if (e.key === "Escape") {
 		if (store.annotationTool) {
@@ -905,13 +874,9 @@ function handleKeyDown(e: KeyboardEvent) {
 		}
 		return;
 	}
-	// Delete is owned by the editor page and acts on the current selection, so it
-	// is deliberately not handled here. This listener is on `window`, so claiming
-	// Delete meant a clip-scoped Delete elsewhere could ALSO delete a selected
-	// annotation on the same keypress.
+	// Delete is owned by the editor page: this window listener claiming it let one keypress delete two objects.
 
-	// Z-order shortcuts and duplicate, gated to annotations tab + selection
-	// so they don't fight other editor surfaces.
+	// Z-order and duplicate are gated to the annotations tab with a selection, so they don't fight other surfaces.
 	if (
 		store.activePanel === "annotations" &&
 		store.selectedAnnotationId &&
@@ -945,9 +910,7 @@ function handleKeyDown(e: KeyboardEvent) {
 		const dx = nudge.dx / Math.max(1, r.w);
 		const dy = nudge.dy / Math.max(1, r.h);
 		e.preventDefault();
-		// Coalesce a held/repeated arrow key into one undo entry (same key the
-		// timeline layer card uses), so Ctrl+Z reverts the nudge, not an
-		// unrelated earlier edit.
+		// Coalesce a held arrow key into one undo entry, so Ctrl+Z reverts the nudge, not an earlier edit.
 		store.pushUndoStateCoalesced(`nudge-annotation-${store.selectedAnnotationId}`, 600);
 		nudgeBy(dx, dy);
 	}
@@ -955,9 +918,7 @@ function handleKeyDown(e: KeyboardEvent) {
 
 //  Lifecycle
 
-// Track the container size. A $effect (not onMount) so it re-establishes if
-// `targetEl` arrives after mount, and getBoundingClientRect (rendered size)
-// so a scaled/letterboxed preview maps to the right backing resolution.
+// An effect, not onMount, so it re-establishes if `targetEl` arrives late; rendered size maps a letterboxed preview correctly.
 $effect(() => {
 	const el = targetEl;
 	if (!el) return;
@@ -974,8 +935,7 @@ $effect(() => {
 	return () => ro.disconnect();
 });
 
-// Repaint on the state the drawing actually depends on. `targetSize` is a plain
-// local, so its call sites schedule directly.
+// `targetSize` is a plain local, so its call sites schedule the repaint directly.
 $effect(() => {
 	void store.annotationsByZ;
 	void previewTime;
@@ -987,9 +947,7 @@ $effect(() => {
 	void store.annotationTool;
 	void snapGuides;
 	void store.isPlaying;
-	// Projection inputs: without these, changing padding, aspect or a zoom
-	// region while paused left the markup drawn against the previous geometry
-	// until something else happened to trigger a frame.
+	// Projection inputs: without them, changing padding, aspect or zoom while paused left markup on the old geometry.
 	void store.padding;
 	void store.outputAspect;
 	void store.metadata;
@@ -1007,10 +965,7 @@ onDestroy(() => {
 	disposeCanvasTokens();
 });
 
-// Editing is annotations-tab-only everywhere else in this file (selection chrome,
-// nudge, z-order), and TextAnnotationLayer gates its own pointer-events the same
-// way. The canvas didn't, so a click on the Audio or Captions tab could select
-// and drag a shape with no handles drawn to show it had happened.
+// The canvas must gate on the tab like everything else: a click on Audio or Captions could drag a shape with no handles drawn.
 const interactive = $derived(
 	store.activePanel === "annotations" && !store.annotationsGloballyHidden,
 );

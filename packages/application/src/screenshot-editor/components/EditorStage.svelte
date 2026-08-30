@@ -16,10 +16,7 @@ export interface EditorStageProps {
 
   let { editor, stageEl = $bindable(null) }: EditorStageProps = $props();
 
-  // When an animation is active, its interpolated properties drive the framed
-  // content (overriding the static 3D controls); else the static look. In
-  // keyframe mode the stage stays editable (static) while paused, so the user
-  // can set a look and capture it; playback still previews the animation.
+  // An active animation's interpolated properties override the static 3D controls; paused keyframe mode stays editable.
   const anim = $derived.by(() => {
     const preset = editor.activePreset;
     if (!preset) return null;
@@ -27,15 +24,11 @@ export interface EditorStageProps {
     return propsAtTime(preset, editor.animationTime);
   });
   const perspective = $derived(anim ? anim.perspective : editor.transform.perspective);
-  // The static/animated 3D transform, then the user's image-size multiplier so
-  // "Scale" reads as resizing the shot within the padded stage.
+  // The 3D transform, then the user's size multiplier, so Scale reads as resizing the shot within the padded stage.
   const framedTransform = $derived(
     `${anim ? propsToTransform(anim) : transformCss(editor.transform)} scale(${editor.imageScale / 100})`,
   );
-  // Animation opacity composes with the persistent image opacity for a PRESET
-  // (the preset animates a 0..1 fade on top of the user's opacity). In keyframe
-  // mode the captured opacity already IS the user's imageOpacity, so use it
-  // directly to avoid squaring it.
+  // A preset animates a fade on top of the user's opacity; keyframe mode already captured it, so don't square it.
   const framedOpacity = $derived(
     anim
       ? editor.keyframeMode
@@ -62,8 +55,7 @@ export interface EditorStageProps {
   const shadow = $derived(shadowCss(editor.shadow));
   const border = $derived(borderCss(editor.frame.border));
 
-  // Ruler tick positions (px from the origin) at the configured interval. Capped
-  // so a tiny interval can't render thousands of labels; extras clip.
+  // Ruler ticks at the configured interval, capped so a tiny interval can't render thousands of labels.
   const rulerTicks = $derived.by(() => {
     const step = Math.max(10, editor.rulerInterval);
     const ticks: number[] = [];
@@ -71,8 +63,7 @@ export interface EditorStageProps {
     return ticks;
   });
 
-  // Style-frame wrapper (glass/outline/solid card around the shot). When active,
-  // the drop shadow moves to the wrapper so it hugs the card, not the raw image.
+  // With a style frame active the drop shadow moves to the wrapper, so it hugs the card, not the raw image.
   const styleActive = $derived(
     editor.imageStyle.preset !== "default" && editor.mockup.kind === "none",
   );
@@ -212,22 +203,19 @@ export interface EditorStageProps {
     box-sizing: border-box;
   }
   .recast-shot-frame .recast-shot-image {
-    /* Percent padding on the wrapper already reserved space; let the image use
-       what remains without its own max clamp fighting the wrapper. */
+    /* The wrapper's percent padding already reserved space, so the image needs no max clamp of its own. */
     max-width: 100%;
     max-height: 100%;
   }
 
-  /* Backdrop paint layer. Slightly over-inset so an applied blur doesn't reveal
-     hard edges at the stage border. */
+  /* Backdrop paint layer, slightly over-inset so an applied blur doesn't reveal hard edges at the stage border. */
   .recast-shot-bg {
     position: absolute;
     inset: -8%;
     z-index: 0;
   }
 
-  /* Procedural grain, tinted by the layer's opacity. Inline SVG keeps it
-     self-contained and export-safe (no external asset). */
+  /* Procedural grain tinted by the layer's opacity; inline SVG keeps it self-contained and export-safe. */
   .recast-shot-noise {
     position: absolute;
     inset: 0;
@@ -309,9 +297,7 @@ export interface EditorStageProps {
     z-index: 1;
   }
 
-  /* Perspective wrapper so the framed content can tilt in 3D; both layers fill
-     the padded stage so a mockup's 100% sizing still resolves. Sits above the
-     backdrop/noise layers. */
+  /* Perspective wrapper for the 3D tilt; both layers fill the padded stage so a mockup's 100% sizing resolves. */
   .recast-shot-persp {
     position: relative;
     z-index: 1;

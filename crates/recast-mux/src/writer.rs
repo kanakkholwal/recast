@@ -40,8 +40,7 @@ struct TrackBuffer {
 impl TrackBuffer {
     fn push(&mut self, data: &[u8], duration: u32, is_sync: bool, composition_offset: i32) {
         self.table.push(Sample {
-            // Filled in during layout: a sample's place in `mdat` is not known
-            // until both tracks have been interleaved.
+            // Filled in during layout: a sample's place in `mdat` isn't known until both tracks are interleaved.
             offset: 0,
             size: data.len() as u32,
             duration,
@@ -131,10 +130,7 @@ impl Mp4Writer {
             return None;
         }
         let record = self.avc.record()?;
-        // An audio track we cannot describe, or were never given a sample for,
-        // is dropped rather than written: a silent track looks like a mix bug,
-        // which is harder to chase than a missing one. The second case is a
-        // recording whose microphone was off, where the format is still set.
+        // An undescribed or sample-less audio track is dropped: a silent track looks like a mix bug and is harder to chase.
         let undescribed = self
             .audio_format
             .as_ref()
@@ -146,10 +142,7 @@ impl Mp4Writer {
 
         let payload = self.interleave();
         let ftyp = self.ftyp();
-        // moov's own size depends on the chunk offsets, which depend on where
-        // mdat lands, which depends on moov's size. Writing it once with a
-        // placeholder settles the size, then again with the real offsets: the
-        // second pass cannot change the size, because only offset VALUES move.
+        // moov's size depends on offsets that depend on where mdat lands, so a placeholder pass settles the size first.
         let probe = self.moov(&record, 0);
         let mdat_header = mdat_header_len(payload.len());
         let payload_start = (ftyp.len() + probe.len() + mdat_header) as u64;
@@ -182,8 +175,7 @@ impl Mp4Writer {
             .unwrap_or(1.0);
 
         while video_at < self.video.payloads.len() || audio_at < self.audio.payloads.len() {
-            // Whichever track is further behind goes next, so a player reading
-            // forward always has both streams to hand.
+            // Whichever track is further behind goes next, so a player reading forward always has both streams to hand.
             let take_video = audio_at >= self.audio.payloads.len()
                 || (video_at < self.video.payloads.len() && video_time <= audio_time);
             if take_video {
@@ -465,8 +457,7 @@ fn write_esds(buf: &mut BoxBuf, config: &[u8]) {
     // DecoderSpecificInfo: the AudioSpecificConfig itself.
     let specific = descriptor(0x05, config);
 
-    // DecoderConfigDescriptor: MPEG-4 audio (0x40) in an audio stream (0x15).
-    // The buffer size and bitrates are zero, which is legal and unread.
+    // DecoderConfigDescriptor: MPEG-4 audio (0x40) in an audio stream (0x15); the zero sizes are legal and unread.
     let mut decoder = vec![0x40, 0x15, 0, 0, 0];
     decoder.extend_from_slice(&[0; 8]);
     decoder.extend_from_slice(&specific);
@@ -672,8 +663,7 @@ mod tests {
         w.push_sample(&[0, 0, 0, 2, 0x65, 1], 1000, true);
         let data = w.finish().expect("a file");
         let avc1 = find(&data, b"avc1").expect("avc1");
-        // Fields start after the four type bytes, then 24 of reserved and
-        // pre_defined before the dimensions.
+        // Fields start after the four type bytes, then 24 of reserved and pre_defined before the dimensions.
         let dims = avc1 + 4 + 24;
         assert_eq!(&data[dims..dims + 2], &640u16.to_be_bytes());
         assert_eq!(&data[dims + 2..dims + 4], &360u16.to_be_bytes());

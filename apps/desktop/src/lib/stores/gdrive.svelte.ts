@@ -51,9 +51,7 @@ function createGdriveStore() {
 	 */
 	const uploadHistory = $state<Record<string, GdriveUploadRecord>>({});
 
-	// Id of the upload shown in the foreground dialog, if any. The activity
-	// center hides this one so it isn't doubled; clearing it (minimize) hands
-	// tracking back to the activity center.
+	// The activity center hides the foreground upload so it isn't doubled; clearing it hands tracking back.
 	let foregroundId = $state<string | null>(null);
 
 	// Per-upload transfer-rate estimate, feeding the dialog's ETA readout.
@@ -75,10 +73,7 @@ function createGdriveStore() {
 				connecting = false;
 			},
 		);
-		// Byte progress now streams on each upload's own channel (see `upload`),
-		// and success rides the resolved `gdriveUpload` promise. Only `connected`
-		// (a connection broadcast) and `upload-error` (carries the cancelled/failed
-		// distinction, and backs up the corner card) stay as global events.
+		// Progress streams on each upload's channel and success resolves the promise; only `connected` and `upload-error` stay global.
 		await listen<{ uploadId: string; message: string; cancelled: boolean }>(
 			"gdrive:upload-error",
 			({ payload }) => {
@@ -145,8 +140,7 @@ function createGdriveStore() {
 		try {
 			await gdriveDisconnect();
 		} catch (e) {
-			// Clearing state here would claim the account is disconnected while the
-			// token is still on disk. Sibling `connect()` rethrows for the same reason.
+			// Clearing state here would claim the account is disconnected while the token is still on disk.
 			console.error("[gdrive] disconnect failed", e);
 			throw e;
 		}
@@ -201,8 +195,7 @@ function createGdriveStore() {
 				};
 			});
 			rate.clear(uploadId);
-			// Success is the resolved result (the data the old `upload-complete`
-			// event carried), so update the card + history here.
+			// Success is the resolved result, so update the card and history here.
 			const existing = uploads[uploadId];
 			if (existing) {
 				uploads[uploadId] = {
@@ -218,14 +211,11 @@ function createGdriveStore() {
 				webViewLink: result.webViewLink,
 				uploadedAt: Math.floor(Date.now() / 1000),
 			};
-			// Matches the Recast Cloud share toast so both activity-center uploads
-			// confirm the same way.
+			// Matches the Recast Cloud share toast so both activity-center uploads confirm the same way.
 			toast.success("Uploaded to Google Drive.", { description: fileName });
 		} catch (e) {
 			rate.clear(uploadId);
-			// A user cancel also rejects here. `cancelUpload` flips the status to
-			// "cancelled" first (the detached `gdrive:upload-error` event backs
-			// that up), so only a genuine failure toasts.
+			// A user cancel also rejects here, and `cancelUpload` already flipped the status, so only a genuine failure toasts.
 			const existing = uploads[uploadId];
 			if (existing?.status === "cancelled") return;
 			if (existing && existing.status !== "error") {
@@ -245,8 +235,7 @@ function createGdriveStore() {
 	}
 
 	async function cancelUpload(uploadId: string) {
-		// Flip the status optimistically so `runUpload`'s catch can tell a cancel
-		// from a real failure before the Rust error event arrives.
+		// Flip the status optimistically so `runUpload`'s catch can tell a cancel from a real failure.
 		const ex = uploads[uploadId];
 		if (ex && ex.status === "uploading") {
 			uploads[uploadId] = { ...ex, status: "cancelled" };
@@ -256,8 +245,7 @@ function createGdriveStore() {
 			await gdriveCancelUpload(uploadId);
 		} catch (e) {
 			console.error("[gdrive] cancel failed", e);
-			// The transfer is still running. Leaving it "cancelled" makes
-			// `runUpload`'s catch swallow whatever really happens to it.
+			// The transfer is still running; leaving it cancelled makes `runUpload`'s catch swallow whatever happens to it.
 			const now = uploads[uploadId];
 			if (now?.status === "cancelled") uploads[uploadId] = { ...now, status: "uploading" };
 			toast.error(`Couldn't cancel the upload: ${(e as Error)?.message ?? e}`);

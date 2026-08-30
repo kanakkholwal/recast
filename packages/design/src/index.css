@@ -2,12 +2,7 @@
 
 @custom-variant dark (&:where([data-theme="dark"], .dark, .dark *, [data-theme="dark"] *));
 
-/* =============================================================
-   Token system
-   - Surfaces: canvas → surface-1 → surface-2 (lift, not opacity)
-   - Text:    ink + ink-muted (binary hierarchy)
-   - Accent split three ways — see the Action/Signal/Brand block below.
-   ============================================================= */
+/* --- Token system: canvas to surface-1 to surface-2 by lift, binary ink hierarchy, accent split three ways. */
 
 :root,
 [data-theme="light"] {
@@ -33,12 +28,7 @@
   --popover: oklch(100% 0.00011 271.152);
   --popover-foreground: oklch(21.342% 0.00002 271.152);
 
-  /* Indigo, not the old lime. Lime cannot be legible on white and stay lime —
-     sRGB has no dark saturated corner at h126, so it measured 1.95:1 as a focus
-     ring. h264 holds its hue from L0.45–0.75 and is the most separable candidate
-     from --destructive under protanopia/deuteranopia, which matters because the
-     CTA and the Stop button are this app's two highest-stakes controls.
-     Both values are inside sRGB; the ceiling at L0.70 is C0.156. */
+  /* Indigo, not lime: sRGB has no dark saturated corner at h126, so lime measured 1.95:1 as a focus ring, while h264 stays separable from --destructive under CVD. */
   --primary: oklch(0.52 0.20 264);
   --primary-foreground: oklch(1 0 0);
 
@@ -66,63 +56,27 @@
   --info: oklch(0.6 0.118 184.704);
   --info-foreground: oklch(0.985 0 0);
 
-  /* Timeline lane accents.
-     One hue per lane, so a block's colour tells you which lane it belongs to
-     without reading the rail. Assignment follows editing convention rather than
-     brand, because these are read against Premiere/Resolve muscle memory:
-       cut    h 25   red — removal. The only warm hue on the timeline, so warm
-                     reliably means destructive.
-       audio  h 150  green — the recorded-audio colour every NLE uses.
-       music  h 195  teal — the audio family, one step off the voice green so
-                     the two audio lanes are siblings, not twins.
-       zoom   h 255  blue — a picture effect, and the conventional video-clip hue.
-       markup h 310  violet — graphics/titles, clear of the cut red.
-     Two earlier mistakes this replaces. (1) Reusing semantic tokens: markup on
-     `warning` h43 and cuts on `destructive` h25 sat 18 degrees apart and read as
-     one orange-red. (2) Anchoring zoom on the brand lime h128 — lime is a
-     YELLOW-green, so a lime CLIP BODY read as olive. Brand belongs to --primary;
-     a categorical scale has no business being pinned to it.
-     Chroma stays under the brand's 0.21 so five accents on screen support the UI
-     instead of competing with it.
-     Caveat: wheel distance is not CVD distance. cut (h25) and audio (h150) sit on
-     the red-green axis that dichromats collapse, so lane identity must never rest
-     on hue alone — the rail label, the cut lane's diagonal hatch, and block shape
-     all keep carrying it. */
+  /* One hue per lane on NLE convention (cut red, audio green, music teal, zoom blue, markup violet); hue alone never carries identity, since cut and audio sit on the axis dichromats collapse. */
   --lane-cut: oklch(0.56 0.16 25);
   --lane-zoom: oklch(0.54 0.13 255);
   --lane-audio: oklch(0.55 0.13 150);
   --lane-markup: oklch(0.54 0.14 310);
   --lane-music: oklch(0.56 0.10 195);
 
-  /* Clip BODY fills. The accents above are the lane's identity colour — a
-     hairline, an icon, a waveform. A clip is a solid object, and painting it as
-     a 20-35% wash of the accent made every block read as a faint tint of the
-     lane background instead of a thing you can pick up.
-     Chroma is held BELOW the accent's: a body is a large area, and the same
-     chroma that reads as a crisp hairline reads as poster paint across a whole
-     block. Lightness carries near-white label text at ~4.8:1, so the label
-     lives INSIDE the clip the way Premiere and Resolve place it. */
+  /* Clip BODY fills, chroma held below the accents: the chroma that reads as a crisp hairline reads as poster paint across a block. */
   --lane-cut-fill: oklch(0.52 0.13 25);
   --lane-zoom-fill: oklch(0.50 0.11 255);
   --lane-audio-fill: oklch(0.50 0.10 150);
   --lane-markup-fill: oklch(0.50 0.12 310);
   --lane-music-fill: oklch(0.51 0.09 195);
-  /* One near-white for every clip label and the selection outline: the text
-     colour must not carry lane identity (the fill already does), and five
-     tinted whites would only drift apart. */
+  /* One near-white for every label and the selection outline: the fill carries lane identity, not the text. */
   --lane-on: oklch(0.99 0 0);
 
   --border: oklch(0.91 0 0);
   --border-subtle: oklch(0% 0 0 / 0.05);
-  /* Boundaries that identify a control (inputs, selects, checkboxes) must clear
-     3:1 per WCAG 1.4.11 — the decorative hairline above is 1.31:1 on a white
-     card and cannot do that job. 3.64:1 on white. */
+  /* Control boundaries must clear 3:1 (WCAG 1.4.11); the decorative hairline is 1.31:1 on a white card. */
   --border-control: oklch(0.62 0 0);
-  /* Input surface — used as the fill for text fields and the off-state track
-     for toggles. Sits ~5% below the white card/popover surfaces so a field reads
-     as a subtle recess (not a hard gray pill) while a toggle track is still
-     legible. The old .922 was ~8% under white, which looked heavy on light
-     dialogs; going much lighter than this fades the toggle track out. */
+  /* Sits ~5% below the card so a field reads as a subtle recess; the old .922 looked heavy and lighter fades the toggle track. */
   --input: oklch(0.945 0 0);
   --ring: var(--primary);
 
@@ -130,9 +84,7 @@
 
   --noise-bg: linear-gradient(oklch(97.357% 0.00561 84.444), oklch(97.357% 0.00561 84.444));
 
-  /* Framer spacing scale — raw vars, NOT in @theme to avoid Tailwind
-     utility-namespace collisions (max-w-md, text-sm, etc.).
-     Use as: padding: var(--space-lg);  margin-block: var(--space-section); */
+  /* Raw vars, NOT in @theme: Tailwind's spacing namespace would collide with max-w-md, text-sm and friends. */
   --space-hair: 1px;
   --space-xxs: 0.25rem;   /* 4px  */
   --space-xs: 0.5rem;     /* 8px  */
@@ -143,8 +95,7 @@
   --space-xxl: 2.5rem;    /* 40px */
   --space-section: 6rem;  /* 96px */
 
-  /* Framer letter-spacing scale — raw vars, applied via inline style or
-     component classes. Not in @theme to avoid `tracking-*` overrides. */
+  /* Raw vars applied inline or by class; keeping them out of @theme avoids overriding `tracking-*`. */
   --tracking-display-xxl: -5.5px;
   --tracking-display-xl: -4.25px;
   --tracking-display-lg: -3.1px;
@@ -215,10 +166,7 @@
   --lane-markup: oklch(0.74 0.15 310);
   --lane-music: oklch(0.76 0.11 195);
 
-  /* Clip body fills. Darker than the light-mode set so a block sits ON the
-     dark lane rather than glowing off it, while still clearing 4.5:1 for the
-     near-white label. The bright accents above stay the waveform and hairline
-     colour, so a clip reads as fill + accent, not one flat slab. */
+  /* Darker than the light set so a block sits ON the dark lane rather than glowing off it, still 4.5:1 for the label. */
   --lane-cut-fill: oklch(0.47 0.12 25);
   --lane-zoom-fill: oklch(0.45 0.10 255);
   --lane-audio-fill: oklch(0.45 0.09 150);
@@ -226,14 +174,11 @@
   --lane-music-fill: oklch(0.46 0.08 195);
   --lane-on: oklch(0.98 0 0);
 
-  /* Sits above --card (0.27) so a card outline reads as an edge, not a seam.
-     The old 0.239 was darker than the surface it bounded. */
+  /* Above --card (0.27) so an outline reads as an edge; the old 0.239 was darker than the surface it bounded. */
   --border: oklch(0.32 0 0);
   --border-subtle: oklch(100% 0.00011 271.152 / 0.05);
   --border-control: oklch(0.55 0 0);  /* 3.11:1 on --card */
-  /* Input surface — lifted above the card (0.27) and popover (0.205) surfaces so
-     a filled field reads clearly in dark dialogs. The old 0.301 sat ~3% over the
-     card, which all but vanished; 0.34 keeps a visible recess without glowing. */
+  /* Lifted above the card and popover surfaces so a filled field reads in dark dialogs; the old 0.301 all but vanished. */
   --input: oklch(0.34 0 0);
   --ring: var(--primary);
 
@@ -310,17 +255,9 @@
   --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-heading: 'Geist Variable', sans-serif;
 
-  /* NOTE: Framer's spacing (--space-*) and letter-spacing (--tracking-*)
-     scales live in :root as raw CSS variables, NOT here in @theme.
-     Reason: Tailwind v4's `--spacing-*` and `--tracking-*` namespaces
-     control utility classes (max-w-md, text-xs, tracking-tight) and
-     defining named keys here collapses widths and breaks tooltips. */
+  /* Framer's --space-* and --tracking-* live in :root, not @theme: named keys there collapse widths and break tooltips. */
 
-  /* - Elevation (Framer's four shadow signatures) -
-     Level 0 — flat (no shadow)
-     Level 1 — surface lift (use surface-1/-2, no shadow)
-     Level 2 — light-edge + drop (floating cards, modals)
-     Level 3 — blue ring (focused / selected)            */
+  /* --- Elevation: 0 flat, 1 surface lift (no shadow), 2 light-edge plus drop, 3 focus ring. */
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
@@ -388,8 +325,7 @@
   height: 8px
 }
 
-/* These were `hsl(var(--primary))` against oklch() tokens — invalid, so every
-   declaration was dropped and the scrollbar fell back to the UA default. */
+/* These were `hsl(var(--primary))` against oklch tokens, so every declaration was dropped to the UA default. */
 .scrollbar-transparent::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -423,9 +359,7 @@ li:has([class]) {
   list-style: none;
 }
 
-/* `button[type="button"]:has(class) { all: unset }` lived here. `:has(class)`
-   matches a <class> descendant, so it never fired — but one typo away from
-   stripping focus rings and disabled states off every classed button. */
+/* Removed: `:has(class)` matches a <class> descendant, so it never fired, and it was a typo away from stripping focus rings. */
 html {
   scroll-behavior: smooth;
   scrollbar-width: thin;

@@ -7,8 +7,7 @@
 
 import { getEditorServices } from "../editor/services";
 
-// The native render queue. Absent on hosts where the browser compositor is the
-// only engine, which surface the failure rather than silently exporting nothing.
+// The native render queue; absent where the browser compositor is the only engine, which surfaces the failure.
 function enqueueViaSink(job: unknown): Promise<string[]> {
 	const enqueue = getEditorServices().exportSink?.enqueue;
 	if (!enqueue) throw new Error("this host has no native export queue");
@@ -63,11 +62,7 @@ export async function buildExportRenderState(
 	const renderState = store.toRenderState();
 	const meta = store.metadata;
 
-	// Browser engine: the mux job reads only audio/cuts/speed, and buildExportJob
-	// rasterizes the visuals itself — so skip the text/cursor raster passes.
-	// Annotations are dropped entirely: the mux never draws them, and Rust only
-	// knows pre-rasterized (image) annotations, so raw `text` kinds would fail to
-	// deserialize. Cuts still gate the audio warp.
+	// The browser engine rasterizes visuals itself, so skip those passes; annotations are dropped because Rust only knows image kinds.
 	if (skipVisualRaster) {
 		return {
 			renderState: {
@@ -89,8 +84,7 @@ export async function buildExportRenderState(
 	hooks?.onText?.(hasText ? "running" : "done");
 	hooks?.onCursor?.(hasStyledCursor ? "running" : "done");
 
-	// Run both hybrid-raster passes in parallel: independent, and the cursor SVG
-	// decode is non-trivial on cold boot (Image() onload is async even for blobs).
+	// Independent, and the cursor SVG decode is non-trivial cold, since Image() onload is async even for blobs.
 	const [expandedAnnotations, cursorSprites] = await Promise.all([
 		expandTextAnnotations(renderState.annotations, canvasW, canvasH).then((r) => {
 			hooks?.onText?.("done");
@@ -108,8 +102,7 @@ export async function buildExportRenderState(
 		...renderState,
 		annotations: store.annotationsGloballyHidden ? [] : expandedAnnotations,
 		zoomRegions: store.focusEnabled ? renderState.zoomRegions : [],
-		// `effectiveCuts` = the flag-gated, lane-enabled subset, so the export
-		// matches the previewed edit. Inactive cuts stay on the store, not here.
+		// `effectiveCuts` is the flag-gated, lane-enabled subset, so the export matches the previewed edit.
 		cuts: store.effectiveCuts,
 		cursorSpriteRest: cursorSprites?.rest,
 		cursorSpritePress: cursorSprites?.press,
@@ -201,8 +194,7 @@ export { toOutputTimeTranscript };
  * unconditionally ("only export captions when there are captions").
  */
 export function buildCaptionExport(store: EditorStore): CaptionExportPayload {
-	// captionTranscript is rescaled onto the video/timeMap axis so the sidecar cue
-	// times line up with the exported frames (audio-vs-video CFR drift fix).
+	// Rescaled onto the video and timeMap axis so sidecar cue times line up with the exported frames.
 	const transcript = store.captionTranscript;
 	const opts = store.captionExport;
 	if (!transcript || transcript.segments.length === 0) {
@@ -283,9 +275,7 @@ export function exportTimeMap(map: {
  * `listExportJobs` / `export-state`), not a returned promise of the output path.
  */
 export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
-	// Returns any auto-repairs the backend applied to the render state (e.g. a
-	// too-long trim_end clamped to the real video length) so a UI caller can
-	// surface a "verify this" notice. Empty = nothing needed repair.
+	// Returns any auto-repairs the backend applied, so a caller can surface a verify-this notice; empty means none.
 	return enqueueViaSink({
 		inputPath: opts.inputPath,
 		format: opts.format,

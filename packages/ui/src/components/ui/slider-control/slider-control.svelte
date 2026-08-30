@@ -72,11 +72,7 @@ function snapToDecile(v: number, min: number, max: number): number {
 		formatValue,
 	}: SliderControlProps = $props();
 
-	// `Row control` design — one card, label left, value right, animated fill
-	// behind both. Click-anywhere snaps with a spring; drag scrubs in real
-	// time; cursor past the track edges rubber-bands the row to telegraph the
-	// clamp. Mirrors the geometry of <ColorField> so a stacked panel reads as
-	// one form.
+	// Row control: one card, label left, value right, animated fill behind both; mirrors <ColorField> so a stacked panel reads as one form.
 
 	const CLICK_THRESHOLD = 3;
 	const DEAD_ZONE = 24;
@@ -96,9 +92,7 @@ function snapToDecile(v: number, min: number, max: number): number {
 	let isDragging = $state(false);
 	let isHovered = $state(false);
 	let isValueHovered = $state(false);
-	// The value is ALWAYS typeable. It used to unlock only after an 800ms hover,
-	// which meant keyboard and touch users could never enter an exact number into
-	// any of the ~45 sliders in the editor -- in a precision tool.
+	// Always typeable: the old 800ms hover unlock meant keyboard and touch users could never enter an exact number.
 	const isValueEditable = $derived(!disabled);
 	let showInput = $state(false);
 	let inputValue = $state("");
@@ -107,10 +101,7 @@ function snapToDecile(v: number, min: number, max: number): number {
 	// svelte-ignore state_referenced_locally
 	const initialPercent = ((value - min) / Math.max(max - min, 1e-9)) * 100;
 
-	// Spring-driven motion. Drag scrubs commit instant (no animation), and
-	// click-snap / release commits animate. Rubber-band stretches the track
-	// outward when the cursor pulls past either edge. Handle scale/opacity
-	// dodge when the thumb position would collide with label/value text.
+	// Drag scrubs commit instantly, click-snap and release animate, and rubber-band stretches the track past either edge.
 	const fillPercent = new Spring(initialPercent, {
 		stiffness: 0.25,
 		damping: 0.7,
@@ -179,8 +170,7 @@ function snapToDecile(v: number, min: number, max: number): number {
 	const percentage = $derived(percentFromValue(value));
 	const isActive = $derived(isInteracting || isHovered);
 
-	// When the thumb would overlap the label or value text, dim+squish it so
-	// the row's typography stays the visual priority.
+	// When the thumb would overlap the label or value, dim and squish it so typography stays the priority.
 	const leftThreshold = $derived.by(() => {
 		const w = trackEl?.offsetWidth;
 		if (w && labelEl) {
@@ -212,8 +202,7 @@ function snapToDecile(v: number, min: number, max: number): number {
 	});
 
 	$effect(() => {
-		// Keep fill spring in sync with external value changes (without
-		// re-animating during drag).
+		// Keep the fill spring in sync with external value changes without re-animating during a drag.
 		const p = percentFromValue(value);
 		if (!isInteracting) {
 			fillPercent.set(p, { instant: false });
@@ -235,8 +224,7 @@ function snapToDecile(v: number, min: number, max: number): number {
 		}
 	});
 
-	// Hash marks. When discrete steps are sparse, show one per step; otherwise
-	// fall back to ten decile marks for visual rhythm.
+	// Sparse discrete steps get one mark each; otherwise ten decile marks give visual rhythm.
 	const discreteSteps = $derived((max - min) / Math.max(step, 1e-9));
 	const marks = $derived.by(() => {
 		if (!showHashMarks) return [];
@@ -428,9 +416,7 @@ function snapToDecile(v: number, min: number, max: number): number {
 		}
 	}
 
-	// Inline transform/width strings — bound to spring `.current` for
-	// reactivity. The rubber-band shifts the *track* (not the wrapper) so the
-	// row's outline doesn't visibly move; only the fillable region stretches.
+	// Bound to spring `.current` for reactivity; the rubber-band shifts the track, not the wrapper, so the outline stays put.
 	const trackStyle = $derived(
 		`width: calc(100% + ${Math.abs(rubberStretchPx.current)}px); transform: translateX(${rubberStretchPx.current < 0 ? rubberStretchPx.current : 0}px);`,
 	);

@@ -139,8 +139,7 @@ fn boxes(data: &[u8], range: Range<usize>) -> Result<Vec<Child>, ReadError> {
         else {
             return Err(ReadError::Truncated("box header"));
         };
-        // 1 means the real size is a 64-bit field after the type; 0 means the
-        // box runs to the end of its parent.
+        // 1 means the real size is a 64-bit field after the type; 0 means the box runs to the end of its parent.
         let (header, size) = match size {
             1 => {
                 if at + 16 > range.end {
@@ -178,8 +177,7 @@ fn child(
 
 fn read_track(data: &[u8], trak: Range<usize>) -> Result<Track, ReadError> {
     let tkhd = child(data, trak.clone(), b"tkhd")?;
-    // Every read below goes through the bounds-safe helpers: this parses files
-    // off disk, and a truncated download must be an error, never a panic.
+    // Bounds-safe helpers throughout: this parses files off disk, so a truncated download must error, never panic.
     let (id, display) = read_tkhd(data, &tkhd);
 
     let mdia = child(data, trak.clone(), b"mdia")?;
@@ -202,9 +200,7 @@ fn read_track(data: &[u8], trak: Range<usize>) -> Result<Track, ReadError> {
         timescale,
         duration,
         format: entry.format,
-        // The CODED size, from the sample entry, with the track header's
-        // display size as the fallback. They differ whenever the pixels are not
-        // square, and a decoder wants the coded one.
+        // The CODED size from the sample entry, falling back to the track header's display size; a decoder wants the coded one.
         width: if entry.width > 0 {
             entry.width
         } else {
@@ -226,8 +222,7 @@ fn read_track(data: &[u8], trak: Range<usize>) -> Result<Track, ReadError> {
 /// bytes of the header whichever version it is.
 fn read_tkhd(data: &[u8], tkhd: &Range<usize>) -> (u32, (u16, u16)) {
     let version = data.get(tkhd.start).copied().unwrap_or(0);
-    // The header grew when the times went 64-bit, and every field after them
-    // moves with it.
+    // The header grew when the times went 64-bit, so every field after them moves with it.
     let id_at = if version == 1 {
         tkhd.start + 20
     } else {
@@ -322,15 +317,12 @@ fn audio_specific_config(esds: &[u8]) -> Vec<u8> {
             return Vec::new();
         }
         match tag {
-            // ES_ID and flags, then the DecoderConfigDescriptor. A stream
-            // dependency or a URL would add fields, and neither is ever written
-            // for audio in an MP4.
+            // ES_ID and flags, then the DecoderConfigDescriptor; a stream dependency or URL would add fields MP4 audio never writes.
             0x03 => {
                 at = body + 3;
                 wanted = 0x04;
             }
-            // Object type, stream type, buffer size and bitrates, then the
-            // DecoderSpecificInfo.
+            // Object type, stream type, buffer size and bitrates, then the DecoderSpecificInfo.
             0x04 => {
                 at = body + 13;
                 wanted = 0x05;
@@ -385,8 +377,7 @@ fn read_samples(data: &[u8], stbl: &Range<usize>) -> Result<Vec<SampleRef>, Read
     let composition = find(b"ctts")
         .map(|ctts| read_ctts(data, ctts, sizes.len()))
         .unwrap_or_else(|| vec![0; sizes.len()]);
-    // No `stss` means every sample is a sync sample, which is how an audio
-    // track says so.
+    // No `stss` means every sample is a sync sample, which is how an audio track says so.
     let sync: Option<Vec<u32>> = find(b"stss").map(|stss| read_u32_table(data, stss));
 
     let mut out = Vec::with_capacity(sizes.len());

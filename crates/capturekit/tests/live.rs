@@ -114,9 +114,7 @@ fn a_region_shot_is_cropped_during_acquisition_not_afterwards() {
     .expect("capture a region");
 
     assert_eq!((image.width(), image.height()), (320, 240));
-    // Read back at the region's size, so the pixels outside it never crossed the
-    // bus. A host-side crop would have produced the same dimensions from a
-    // full-display readback, which is what this is guarding against.
+    // Read back at the region's size, so pixels outside it never crossed the bus; a host-side crop would look identical.
     assert!(
         image.bytes().len() < display.bounds.area() as usize * 4,
         "the whole display was read back to serve a 320x240 region"
@@ -222,8 +220,7 @@ fn a_constant_rate_capture_fills_the_slots_an_idle_desktop_leaves_empty() {
             slot + 1
         );
     }
-    // The slots are real time, not a counter: 15 of them at 30fps take half a
-    // second whatever the desktop was doing.
+    // The slots are real time, not a counter: 15 at 30fps take half a second whatever the desktop was doing.
     let owed = Duration::from_millis(1000 * (SLOTS as u64 - 1) / u64::from(FPS));
     assert!(
         elapsed >= owed,
@@ -249,8 +246,7 @@ fn a_snapshot_from_a_running_stream_is_the_same_size_as_its_frames() {
         .expect("open a stream");
     let image = capture
         .snapshot(&ShotOptions {
-            // The stream is already running, so its next frame is by definition
-            // current: there is no stale accumulated frame to discard.
+            // The stream is already running, so its next frame is current and there is no stale frame to discard.
             warmup: Warmup::None,
             ..ShotOptions::default()
         })
@@ -315,8 +311,7 @@ fn a_window_shot_is_the_size_of_the_window_not_the_display() {
             );
             assert!(has_content(image.bytes()));
         }
-        // A window can close between enumeration and capture, and Graphics
-        // Capture is absent before Windows 10 2004.
+        // A window can close between enumeration and capture, and Graphics Capture is absent before Windows 10 2004.
         Err(err) => eprintln!("skipped: {} could not be captured: {err}", window.title),
     }
 }
@@ -365,8 +360,7 @@ fn the_reported_capabilities_match_what_the_platform_actually_does() {
         let listed = displays().expect("claims display enumeration");
         assert!(!listed.is_empty());
     }
-    // A backend that lists no devices must SAY so rather than return an empty
-    // list, which reads as "this machine has no audio".
+    // A backend listing no devices must SAY so; an empty list reads as 'this machine has no audio'.
     assert_eq!(
         caps.audio_device_enumeration,
         capturekit::audio_devices().is_ok(),
@@ -390,8 +384,7 @@ fn the_reported_capabilities_match_what_the_platform_actually_does() {
 fn a_session_puts_audio_and_video_on_the_same_timeline() {
     let _exclusive = exclusive();
     let display = require_desktop!();
-    // Loopback rather than a microphone: every desktop has a render endpoint,
-    // and an idle one now delivers inserted silence rather than nothing.
+    // Loopback rather than a microphone: every desktop has a render endpoint, and an idle one delivers inserted silence.
     if let Err(err) = capturekit::audio_loopback().build() {
         eprintln!("skipped: no loopback device to pair with the display: {err}");
         return;
@@ -437,8 +430,7 @@ fn a_session_puts_audio_and_video_on_the_same_timeline() {
     let (Some(screen), Some(system)) = (screen, system) else {
         panic!("only {furthest:?} delivered, so one track produced nothing at all");
     };
-    // A track on its own origin is off by however long that clock has been
-    // running, which on Windows is uptime. Half a second is the sync budget.
+    // A track on its own origin is off by however long that clock has run, which on Windows is uptime; half a second is the budget.
     let drift = screen.max(system) - screen.min(system);
     assert!(
         drift < Duration::from_millis(500),
@@ -483,8 +475,7 @@ fn a_session_runs_several_streams_off_one_clock() {
 
     assert_eq!(session.track_count(), 2);
 
-    // Both tracks must deliver, and every timestamp must sit on the session
-    // timeline rather than on each source's own origin.
+    // Both tracks must deliver, and every timestamp must sit on the session timeline, not each source's own origin.
     let deadline = std::time::Instant::now() + Duration::from_secs(6);
     let mut seen: std::collections::BTreeSet<String> = Default::default();
     while std::time::Instant::now() < deadline && seen.len() < 2 {

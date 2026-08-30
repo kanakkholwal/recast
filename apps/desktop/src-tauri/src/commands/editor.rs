@@ -171,9 +171,7 @@ fn append_audio_to_complex(
         return None;
     }
 
-    // Drop fully-silenced sources: leaving a muted input in the amix would let
-    // it average the others back down. This is the fix for per-source mute/gain
-    // being ignored at export.
+    // Drop fully-silenced sources: a muted input left in the amix averages the others back down.
     let live: Vec<(usize, f64, AudioKind)> = audio_inputs
         .iter()
         .map(|&(idx, kind)| (idx, effective_audio_gain(settings, kind), kind))
@@ -240,9 +238,7 @@ fn append_audio_to_complex(
         ));
     }
 
-    // EBU R128 loudness normalize on the final mix: -14 LUFS is the common social
-    // target (YouTube/Spotify-ish), -1 dBTP ceiling. Single-pass — a measured
-    // two-pass is a later refinement.
+    // -14 LUFS / -1 dBTP is the common social target; single-pass, a measured two-pass is later work.
     if settings.normalize_loudness {
         segments.push("[aout]loudnorm=I=-14:TP=-1:LRA=11[aoutn]".to_string());
         return Some((segments.join(";"), "[aoutn]".into()));
@@ -346,8 +342,7 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
             trim_end: media_duration,
             ..RenderState::default()
         };
-        // A missing edits.json is a fresh project (expected → defaults). A parse
-        // FAILURE, though, would silently discard every edit, so surface it.
+        // A missing edits.json is a fresh project, but a parse FAILURE would silently discard every edit.
         let mut render_state: RenderState = match fs::read_to_string(&project.edits_path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
                 log::error!(
@@ -358,10 +353,7 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
             }),
             Err(_) => default_state(),
         };
-        // Heal projects saved before `media_duration_secs` existed: their
-        // `trim_end` came from the wall clock and overshoots the encoded file,
-        // which makes `enqueue_export` reject the state the app itself wrote.
-        // Clamping costs nothing — there are no frames out there to keep.
+        // Projects predating `media_duration_secs` took trim_end from the wall clock and overshoot the encoded file.
         if media_duration > 0.0 && render_state.trim_end > media_duration {
             render_state.trim_end = media_duration;
         }
@@ -376,12 +368,10 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
                 .microphone_path
                 .map(|p| p.to_string_lossy().to_string()),
             camera_path: project.camera_path.map(|p| p.to_string_lossy().to_string()),
-            // `media` is absent on bundles written before it existed, which is
-            // exactly the case the editor must not describe as "camera off".
+            // `media` is absent on bundles written before it existed, which must not read as 'camera off'.
             camera_capture: match project.metadata.media.as_ref() {
                 Some(media) if media.has_camera => CameraCapture::Separate,
-                // Asked for but never arrived. Older bundles default this false,
-                // so they fall through to `Off` exactly as before.
+                // Asked for but never arrived; older bundles default this false and fall through to `Off`.
                 Some(media) if media.camera_requested => CameraCapture::Failed,
                 Some(_) => CameraCapture::Off,
                 None => CameraCapture::Legacy,
@@ -414,8 +404,7 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
         audio_path: None,
         microphone_path: None,
         camera_path: None,
-        // A plain video opened directly: no camera was recorded for it, which is
-        // what `Off` says. `Legacy` would claim it's an old Recast bundle.
+        // No camera was recorded for a plain video; `Legacy` would claim it is an old Recast bundle.
         camera_capture: CameraCapture::Off,
         track_offsets: Default::default(),
         metadata: metadata.clone(),
@@ -566,8 +555,7 @@ where
     .map_err(|e| e.to_string())?;
 
     crate::commands::record_activity(state);
-    // `commit` persists AND broadcasts the lock, so the GUI learns an agent took
-    // the project on the agent's first patch rather than only on the next poll.
+    // `commit` persists AND broadcasts the lock, so the GUI learns on the agent's first patch, not the next poll.
     crate::commands::editor_session::commit(state, app);
     let _ = app.emit("editor-state:changed", serde_json::json!({ "path": path }));
     Ok(result)
@@ -632,9 +620,7 @@ pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<Str
         repairs.push("Cuts past the video end were trimmed".to_string());
     }
 
-    // Annotations: clamp each into [trim_start, trim_end] with a forward window.
-    // Repairs the `annotation_end_before_start` / `annotation_out_of_trim` cases —
-    // e.g. an annotation added while the playhead was parked past the trim end.
+    // Clamp each annotation into [trim_start, trim_end] with a forward window; repairs out-of-trim adds.
     let (ts, te) = (s.trim_start, s.trim_end);
     if te > ts + VALIDATION_EPS {
         let mut fixed = false;
@@ -682,9 +668,7 @@ pub fn validate_render_state(
             reason: "finite".into(),
         });
     }
-    // Only a strict `trim_end < trim_start` is an error: the fresh-project
-    // default is `trim_end == trim_start == 0.0` and that's a valid
-    // (zero-duration) state the editor holds until first content is loaded.
+    // Only a strict `trim_end < trim_start` is an error: a fresh project holds 0.0 == 0.0 until content loads.
     if s.trim_end < s.trim_start - VALIDATION_EPS {
         issues.push(ValidationIssue {
             field: "trimEnd".into(),
@@ -719,9 +703,7 @@ pub fn validate_render_state(
                 reason: "cut_end_before_start".into(),
             });
         }
-        // Allow a small slop so an end-user dragging a cut edge against the
-        // trim handle doesn't bounce on the validator; deeper math already
-        // clamps at the export anyway.
+        // Slop so dragging a cut edge against the trim handle doesn't bounce the validator; export clamps anyway.
         if c.start < s.trim_start - VALIDATION_EPS || c.end > s.trim_end + VALIDATION_EPS {
             issues.push(ValidationIssue {
                 field: format!("cuts/{i}"),
@@ -907,9 +889,7 @@ pub fn validate_render_state(
                 }
             }
             AnnotationKind::Unsupported => {
-                // Older projects can carry an Unsupported variant after a
-                // forward-compat change; carrying it through is fine, but its
-                // position never had any value to validate against. No-op.
+                // An Unsupported variant from a forward-compat change has no position to validate. No-op.
             }
         }
     }
@@ -933,8 +913,7 @@ pub fn validate_render_state(
             reason: "cursor_size_negative".into(),
         });
     }
-    // `cursor_smoothing` is exposed as a 0..100 slider on the UI; the
-    // historical default is 50.0 and the export treats it as a percent.
+    // Exposed as a 0..100 slider; the historical default is 50.0 and the export reads it as a percent.
     if !s.cursor_smoothing.is_finite() || !(0.0..=100.0).contains(&s.cursor_smoothing) {
         issues.push(ValidationIssue {
             field: "cursorSmoothing".into(),
@@ -1039,8 +1018,7 @@ mod project_timeline_tests {
 
     #[test]
     fn speed_warp_shortens_output_at_2x() {
-        // Anchors are ORIGINAL seconds; first kept segment starts at trim_start=0,
-        // so a 2× override anchored at original t=0 covers the whole clip.
+        // Anchors are ORIGINAL seconds, so a 2x override anchored at t=0 covers the whole clip.
         let st = RenderState {
             trim_end: 10.0,
             segment_speeds: vec![sp(0.0, 2.0)],
@@ -1081,8 +1059,7 @@ mod audio_mix_tests {
         // A late loopback track is padded, an early mic track has its head cut.
         assert!(complex.contains("adelay=240:all=1"), "{complex}");
         assert!(complex.contains("atrim=start=0.180"), "{complex}");
-        // Alignment has to precede the edit trim: trim_start is video time, so
-        // trimming an unaligned track cuts the wrong samples.
+        // Alignment must precede the edit trim: trim_start is video time, so an unaligned track cuts the wrong samples.
         let align = complex.find("adelay=240").expect("align");
         let trim = complex.find("atrim=start=2.000").expect("edit trim");
         assert!(align < trim, "alignment must come first: {complex}");
@@ -1365,8 +1342,7 @@ mod validate_tests {
 
     #[test]
     fn repair_clamps_trim_end_past_source_so_validation_passes() {
-        // Pre-fix regression: a wall-clock trim_end past the CFR-encoded video
-        // (27.102 session → 26.625 of video) is rejected by the validator.
+        // Pre-fix regression: a wall-clock trim_end past the CFR video (27.102 vs 26.625) is rejected by the validator.
         let mut st = RenderState {
             trim_start: 0.0,
             trim_end: 27.102,
@@ -1376,8 +1352,7 @@ mod validate_tests {
             reason(&validate_render_state(&st, 26.625).unwrap_err(), "trimEnd"),
             Some("trim_end_exceeds_source"),
         );
-        // Repair clamps it to the real duration and reports the change; the same
-        // state now validates.
+        // Repair clamps to the real duration and reports the change; the same state now validates.
         let repairs = repair_render_state(&mut st, 26.625);
         assert_eq!(st.trim_end, 26.625);
         assert!(!repairs.is_empty());
@@ -1418,8 +1393,7 @@ mod validate_tests {
 
     #[test]
     fn repair_fixes_annotation_end_before_start_so_validation_passes() {
-        // Reproduces the report: annotations added while the playhead was parked
-        // at/past the trim end got end <= start (or past trim), failing validation.
+        // Reproduces the report: annotations added at or past the trim end got end <= start and failed validation.
         let mut st = RenderState {
             trim_start: 0.0,
             trim_end: 10.0,
@@ -1581,11 +1555,7 @@ mod validate_tests {
 
 #[tauri::command]
 pub async fn generate_thumbnails(path: String, count: u32) -> AppResult<Vec<String>> {
-    // Sync ffmpeg/ffprobe calls run on Tauri's main thread by default,
-    // freezing the UI (clicks/touch/window-drag) for the duration. Move the
-    // whole pipeline onto a blocking worker so the event loop stays free —
-    // /recasts fires this once per recording in parallel from JS, and the
-    // serialised main-thread ffmpeg spawns produced multi-second freezes.
+    // Sync ffmpeg on Tauri's main thread froze the UI, and /recasts fires this once per recording in parallel.
     tauri::async_runtime::spawn_blocking(move || generate_thumbnails_blocking(path, count))
         .await
         .map_err(|e| AppError::msg(format!("generate_thumbnails join error: {e}")))?
@@ -1600,12 +1570,7 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
         .map(|value| value.recording_path.clone())
         .unwrap_or(input);
 
-    // Thumbnails are identical for a given (file, count) until the recording
-    // changes — so reuse a disk-cached strip across editor opens instead of
-    // re-running the full FFmpeg decode every time (the dominant "slow load").
-    // Keyed by the media file's identity; invalidated automatically when it
-    // changes. `count` is the discriminator so the poster (count=1) and the
-    // timeline strip don't collide.
+    // Cached per (media identity, count) so reopens skip the decode; count keeps the poster and the strip apart.
     if let Some(cached) =
         crate::cache::get::<Vec<String>>("thumbs", &[media_path.as_path()], count as u64)
     {
@@ -1619,8 +1584,7 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
 
     let scale_width = if count <= 2 { 480 } else { 240 };
 
-    // The single-frame poster path stays a fast `-ss` seek + `-vframes 1`
-    // — that's a single decode at the requested timestamp, no full read.
+    // Poster stays a single `-ss` seek + `-vframes 1`: one decode at the timestamp, no full read.
     if count == 1 {
         let timestamp = meta.duration * 0.25;
         let poster = extract_single_thumbnail(&media_path, timestamp, scale_width)
@@ -1637,13 +1601,7 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
         return Ok(poster);
     }
 
-    // Timeline strip path: collect every thumbnail in ONE FFmpeg invocation
-    // using `fps=count/duration` + a sequential output pattern. Previously
-    // we spawned `count` separate FFmpeg processes (~200 ms codec init
-    // each), which compounded into ~4 s of blocking work on low-end
-    // dual-core CPUs before any thumbnail showed up. One spawn one decode
-    // pass is dramatically faster — and bumps from O(count × init) to
-    // O(decode) total wall time.
+    // One FFmpeg invocation via `fps=count/duration`; `count` separate spawns cost ~200 ms of codec init each.
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -1653,10 +1611,7 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
         .join(format!("{}-{stamp}", std::process::id()));
     let _ = fs::create_dir_all(&temp_dir);
 
-    // `fps=count/duration` samples `count` frames evenly across the
-    // timeline. `vsync vfr` keeps FFmpeg from duplicating or dropping
-    // frames to match a constant output rate — we want exactly the
-    // samples the filter produces.
+    // `vsync vfr` stops FFmpeg duplicating or dropping frames to hit a constant rate; we want the filter's samples.
     let fps_expr = format!("{count}/{:.6}", meta.duration.max(0.001));
     let vf = format!("fps={fps_expr},scale={scale_width}:-1");
     let pattern = temp_dir.join("thumb-%04d.jpg");
@@ -1681,9 +1636,7 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
-        // FFmpeg's image2 muxer numbers from 1 and may produce ±1 frame
-        // around the requested `count` depending on rounding — read what's
-        // actually there and trim to `count`.
+        // image2 numbers from 1 and can land one frame either side of `count`, so read what is there and trim.
         for index in 1..=count {
             let thumb_path = temp_dir.join(format!("thumb-{index:04}.jpg"));
             if let Ok(data) = fs::read(&thumb_path) {
@@ -1699,16 +1652,10 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
         }
     }
 
-    // Best-effort *recursive* removal of the per-invocation subdir. `remove_dir`
-    // (non-recursive) silently fails when image2 emits ±1 extra frame past
-    // `count` or the loop breaks early, leaking the whole dir until the next
-    // startup sweep — on a long editor session that's gigabytes of orphaned
-    // JPEGs. `remove_dir_all` takes the stragglers with it. Ignore failure
-    // (parallel invocations / filesystem races).
+    // Recursive: `remove_dir` leaks the whole dir when image2 emits an extra frame, gigabytes over a long session.
     let _ = fs::remove_dir_all(&temp_dir);
 
-    // Persist the strip so the next open of this recording skips the decode.
-    // Only cache a complete strip — a partial/failed run shouldn't be pinned.
+    // Only cache a complete strip; a partial or failed run should not be pinned.
     if !thumbnails.is_empty() {
         crate::cache::put("thumbs", &[media_path.as_path()], count as u64, &thumbnails);
     }
@@ -1878,8 +1825,7 @@ pub(crate) async fn run_mux_job(
     }
     let input_path = PathBuf::from(&request.input_path);
 
-    // GIF has no audio to mux: the browser video is already composited + warped,
-    // so we only run the 2-pass palette on it (no cuts/speed re-apply).
+    // GIF has no audio to mux and the browser video is already warped, so only the 2-pass palette runs.
     if request.format == "gif" {
         return mux_browser_gif(
             &app,
@@ -1893,8 +1839,7 @@ pub(crate) async fn run_mux_job(
     }
 
     let project = open_project_if_needed(&input_path)?;
-    // Measured at capture: how far each companion track lags video frame 0.
-    // Missing on pre-offset bundles, which then align at 0 as they always did.
+    // Per-track capture lag; missing on pre-offset bundles, which align at 0 as they always did.
     let track_offsets = project
         .as_ref()
         .and_then(|p| p.metadata.media.as_ref())
@@ -1909,8 +1854,7 @@ pub(crate) async fn run_mux_job(
     let (trim_start, trim_end) = graph.trim_range();
     let duration = (trim_end - trim_start).max(0.0);
 
-    // Input 0 = the browser video (video only); audio inputs follow, indexed so
-    // append_audio_to_complex references the right streams.
+    // Input 0 = the browser video; audio inputs follow, indexed for append_audio_to_complex.
     let mut args: Vec<String> = vec![
         "-y".to_string(),
         "-i".to_string(),
@@ -1934,11 +1878,7 @@ pub(crate) async fn run_mux_job(
                 (&project.audio_path, AudioKind::System),
                 (&project.microphone_path, AudioKind::Mic),
             ] {
-                // `exists()` is not enough: a capture that never received a
-                // packet leaves a valid header-only WAV, and a zero-sample
-                // input makes FFmpeg abort the whole graph with "Invalid data
-                // found when processing input" once amix meets the concat
-                // speed warp. Carrying no audio, it has nothing to contribute.
+                // `exists()` is not enough: a header-only WAV with zero samples aborts the whole graph once amix meets concat.
                 let Some(path) = path
                     .as_ref()
                     .filter(|p| crate::audio::wav::wav_has_samples(p))
@@ -1973,9 +1913,7 @@ pub(crate) async fn run_mux_job(
         }
     }
 
-    // Audio graph: build the source/system/mic mix, warp it to the output timeline
-    // (cuts + speed — the browser video is ALREADY warped, so only audio needs it),
-    // then mix in the music clips.
+    // The browser video is ALREADY warped, so only audio takes the cuts/speed warp before the music mix.
     let mut filter_complex: Option<String> = None;
     let mut audio_map = append_audio_to_complex(
         None,
@@ -2028,9 +1966,7 @@ pub(crate) async fn run_mux_job(
         .unwrap_or_else(|| "Recast_export".to_string());
     let output_path = super::unique_path(&output_dir, &source_stem, "mp4");
 
-    // Same command-line-length guard as the main export path: a project with
-    // many music/voice clips builds a long adelay/amix graph, and Windows caps
-    // the command line at ~32 KB ("filename or extension is too long").
+    // Windows caps the command line at ~32 KB, and many music or voice clips build a long adelay/amix graph.
     let mut mux_script_path: Option<PathBuf> = None;
     if let Some(ref fc) = filter_complex {
         if fc.len() > FILTER_COMPLEX_SCRIPT_THRESHOLD {
@@ -2071,12 +2007,7 @@ pub(crate) async fn run_mux_job(
             "2".to_string(),
         ]);
     }
-    // The browser video IS the output timeline (already composited and warped),
-    // so it defines the length. Without this the encode runs until every audio
-    // input is exhausted: a cut or sped-up edit left a tail of audio past the
-    // end of the picture, and a LOOPING music clip (`-stream_loop -1`) never
-    // ends at all, so the export only stopped when the watchdog killed it.
-    // `run_export_job` gets this from `append_output_tail`; this path never did.
+    // Without `-shortest` a cut or sped-up edit leaves an audio tail, and a looping music clip never ends.
     if audio_map.is_some() {
         args.push("-shortest".to_string());
     }
@@ -2113,8 +2044,7 @@ pub(crate) async fn run_mux_job(
 
     match task_result {
         Ok(Ok(path)) => {
-            // The browser video was a pre-encode temp; the muxed output supersedes
-            // it. Kept on failure so a retry can re-mux without re-rendering.
+            // The browser video was a pre-encode temp; kept on failure so a retry re-muxes without re-rendering.
             let _ = std::fs::remove_file(&browser_video);
             Ok(path)
         }
@@ -2276,21 +2206,16 @@ pub(crate) async fn run_export_job(
     let state = app.state::<AppState>();
     let export_id = request.export_id.clone();
 
-    // Keep display + system awake for the whole export. RAII: released on every
-    // return path (success, `?` error, cancel) when this scope ends.
+    // RAII: the display/system wake lease is released on every return path, including `?` and cancel.
     let _power = state.power.lease();
 
-    // Install a fresh cancellation token for this run, scoped to the export
-    // session id that the frontend also uses to filter state events.
+    // Scoped to the export session id the frontend also uses to filter state events.
     let cancel_flag = Arc::new(AtomicBool::new(false));
     state
         .export_cancel
         .lock()
         .insert(export_id.clone(), cancel_flag.clone());
-    // RAII, like the power lease above: the token is removed on EVERY exit,
-    // including the `?`s during prep. Hand removal left an entry stranded for
-    // the process lifetime whenever prep failed, and a stale token poisons the
-    // next export that reuses the id.
+    // RAII removal on EVERY exit: hand removal stranded a token when prep failed, poisoning the next run on that id.
     let _cancel_token = CancelTokenGuard {
         app: app.clone(),
         export_id: export_id.clone(),
@@ -2301,16 +2226,12 @@ pub(crate) async fn run_export_job(
         ExportStateEvent::preparing(&export_id, "Preparing export"),
     );
 
-    // Per-stage wall-clock instrumentation (export-perf plan, step 1): attribute
-    // the total to prep / cursor pre-render / encode so the pipeline is optimised
-    // against measured numbers, not guesses. Emitted at info, correlated with the
-    // frontend by `export_id`.
+    // Per-stage wall clock (prep / cursor pre-render / encode), logged at info and correlated by `export_id`.
     let export_start = Instant::now();
 
     let input_path = PathBuf::from(&request.input_path);
     let project = open_project_if_needed(&input_path)?;
-    // Measured at capture: how far each companion track lags video frame 0.
-    // Missing on pre-offset bundles, which then align at 0 as they always did.
+    // Per-track capture lag; missing on pre-offset bundles, which align at 0 as they always did.
     let track_offsets = project
         .as_ref()
         .and_then(|p| p.metadata.media.as_ref())
@@ -2327,17 +2248,10 @@ pub(crate) async fn run_export_job(
     let graph = RenderGraph::from_state(&request.render_state);
     let (trim_start, trim_end) = graph.trim_range();
     let duration = (trim_end - trim_start).max(0.0);
-    // Snapshot the source's full duration to use as a progress-denominator
-    // fallback when the render state has no Trim node (duration == 0).
+    // Progress-denominator fallback for a render state with no Trim node (duration == 0).
     let source_duration = metadata.duration.max(0.0);
     let profile = resolve_export_profile(&request.quality);
-    // Output frame rate (MP4/WebM). Default = source rate, so the export keeps
-    // the original smoothness with no resampling. A user selection is clamped to
-    // never exceed the source — we only ever downsample, never duplicate frames
-    // (which would bloat the file without adding motion). The target drives the
-    // composite background rate, the looped-input rate, and the cursor overlay
-    // rate so the whole graph runs at one consistent rate (see the 25fps-default
-    // judder bug fixed alongside this). GIF ignores it (uses gif_settings.fps).
+    // Defaults to the source rate and only ever downsamples; also pins the background, looped-image and cursor rates.
     let source_fps = if metadata.fps.is_finite() && metadata.fps >= 1.0 {
         metadata.fps
     } else {
@@ -2348,8 +2262,7 @@ pub(crate) async fn run_export_job(
         .filter(|f| f.is_finite() && *f >= 1.0)
         .map(|f| f.min(source_fps))
         .unwrap_or(source_fps);
-    // Encoder effort axis, orthogonal to the resolution profile. Defaults to
-    // Balanced (historical settings) when absent/unknown.
+    // Encoder effort, orthogonal to the resolution profile; Balanced when absent or unknown.
     let speed = ExportSpeed::from_request(request.speed.as_deref().unwrap_or("balanced"));
     let output_scale_filter = build_output_scale_filter(profile);
     let output_dir = get_active_output_dir(&state).join("exports");
@@ -2359,9 +2272,7 @@ pub(crate) async fn run_export_job(
         "webm" => "webm",
         _ => "mp4",
     };
-    // Name the export after its source recording, with a Finder/Explorer-style
-    // counter suffix (` (1)`, ` (2)`, …) when the same recording is exported
-    // more than once — so exports stay searchable and easy to correlate.
+    // Named after the source recording, with an Explorer-style counter suffix on repeat exports.
     let source_stem = input_path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -2369,8 +2280,7 @@ pub(crate) async fn run_export_job(
         .unwrap_or_else(|| "Recast_export".to_string());
     let output_path = super::unique_path(&output_dir, &source_stem, extension);
 
-    // Backend processing trace, correlated with the frontend's `export_started`
-    // line by `export_id`. Info level → captured in dev and in diagnostic mode.
+    // Correlated with the frontend's `export_started` by `export_id`; info level, so dev and diagnostic mode keep it.
     log::info!(
         "export[{}] start: {}x{} dur={:.1}s format={} quality={} speed={} -> {}",
         export_id,
@@ -2392,9 +2302,7 @@ pub(crate) async fn run_export_job(
         .ok()
         .map(|base| base.join("assets"));
 
-    // Static layers (corner mask, drop shadow, gradient, pre-baked wallpaper).
-    // `layers` owns their temp-file guards, so it must stay alive until the
-    // encode below has read them.
+    // `layers` owns the temp-file guards for the static layers, so it must outlive the encode that reads them.
     let layers = crate::commands::export::raster::rasterize_static_layers(
         &mut request,
         metadata.width,
@@ -2412,15 +2320,10 @@ pub(crate) async fn run_export_job(
     let border_radius_mask_path = layers.border_radius_mask.as_ref().map(|m| m.path.clone());
     let drop_shadow_mask_path = layers.drop_shadow_mask.as_ref().map(|m| m.path.clone());
     let gradient_bg_path = layers.gradient_bg.as_ref().map(|m| m.path.clone());
-    // Rebuild the graph so the export plan sees the (possibly) pre-baked
-    // background. `trim_start`/`trim_end` were already read above and the
-    // background swap doesn't affect them.
+    // Rebuild so the plan sees a pre-baked background; trim was read above and the swap doesn't affect it.
     let graph = RenderGraph::from_state(&request.render_state);
 
-    // Scene entrance/exit animations on the video layer. Derived on the same
-    // post-trim kept-segment windows as speed (cuts + splits) so an animation's
-    // window lines up with its clip; the tail cut+speed stage then re-times it,
-    // exactly like zoom. `None` when nothing animates → the static overlay path.
+    // Derived on the same post-trim kept-segment windows as speed, so the tail cut+speed stage re-times them like zoom.
     let scene_overlay = if request.render_state.scene_animations.is_empty() {
         None
     } else {
@@ -2468,19 +2371,13 @@ pub(crate) async fn run_export_job(
     } else {
         source_duration
     };
-    // Prep (probe + masks + plan) is everything up to here; time the cursor/
-    // overlay pre-render separately — it's the plan's prime perf suspect.
+    // Prep (probe + masks + plan) ends here; the cursor/overlay pre-render is timed apart as the prime suspect.
     let prep_ms = export_start.elapsed().as_millis();
     let cursor_render_start = Instant::now();
-    // NOT gated on the drop shadow: that's composited separately as a static PNG
-    // in the graph (`drop_shadow_mask` → `compose_shadow_stage`), so including it
-    // here ran the whole per-frame overlay pre-render just to emit empty frames.
-    // Annotation glows still qualify via the `annotations` clause.
+    // Not gated on the drop shadow: it composites as a static PNG, so including it pre-rendered empty frames.
     let needs_overlay =
         request.render_state.cursor_enabled || !request.render_state.annotations.is_empty();
-    // Surface the cursor/annotation pre-render — it's the longest prep sub-step
-    // (it renders every output frame before the encode starts), so a plain
-    // "Preparing…" here reads as a hang.
+    // The pre-render walks every output frame before the encode, so a plain 'Preparing' here reads as a hang.
     if needs_overlay && overlay_duration > 0.0 {
         emit_export_state(
             &app,
@@ -2515,9 +2412,7 @@ pub(crate) async fn run_export_job(
         "export[{export_id}] timing: prep={prep_ms}ms cursor_overlay={cursor_ms}ms (ran={cursor_ran})"
     );
 
-    // The filter graph is the export's dominant cost (a single-threaded,
-    // expression-heavy composite starves the GPU encoder). Parallelise it across
-    // cores — pure performance, byte-identical output (every filter still runs).
+    // The filtergraph is the dominant cost and single-threaded; parallelising it is byte-identical output.
     let filter_threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
@@ -2526,14 +2421,7 @@ pub(crate) async fn run_export_job(
         "-loglevel".to_string(),
         "error".to_string(),
         "-y".to_string(),
-        // Progress reporting goes to stderr (pipe:2), not stdout (pipe:1).
-        // On Windows with NVENC + a non-trivial filter_complex, FFmpeg's pipe:1
-        // progress writes get batched — we've observed 40 s of silence followed
-        // by a single burst of lines right before `progress=end`, which made
-        // the UI sit on "Preparing…" for the entire encode. Stderr is flushed
-        // per progress block on every Windows build we've tested, so routing
-        // here gives us real-time updates from the very first GOP.
-        // `-stats_period 0.1` forces 100 ms updates.
+        // Progress on stderr: Windows NVENC batches pipe:1 writes into one burst before `progress=end`. `-stats_period 0.1` forces 100 ms.
         "-progress".to_string(),
         "pipe:2".to_string(),
         "-stats_period".to_string(),
@@ -2551,10 +2439,7 @@ pub(crate) async fn run_export_job(
     }
     args.extend(["-i".to_string(), source_video.to_string_lossy().to_string()]);
 
-    // `-loop 1` on a still image defaults to 25 fps. A wallpaper/gradient/image
-    // background is the BASE of the composite overlay, so leaving it at 25 fps
-    // would force the whole export to 25 fps (frame-dropping the 60 fps source
-    // into judder). Pin every looped image input to the source frame rate.
+    // `-loop 1` defaults to 25 fps and the background is the composite base, so pin looped images to the source rate.
     let loop_fps = target_fps;
     for input in &export_plan.extra_inputs {
         args.extend([
@@ -2574,20 +2459,7 @@ pub(crate) async fn run_export_job(
         args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
     }
 
-    //  Camera overlay
-    //
-    // Composite the project's `camera.mp4` onto the screen video at the
-    // bubble's UV-space placement. Coordinates mirror `CameraOverlay.svelte`
-    // exactly so preview and export agree to the pixel:
-    //   - bubble_w == bubble_h (Phase 1 enforces 1:1 in CSS)
-    //   - dimensions derived from `video_w` so the bubble is square in
-    //     screen pixels regardless of source aspect
-    //   - position offset by `video_x/video_y` so padding doesn't bias the
-    //     placement
-    //
-    // Shape clipping is done via a one-shot rounded-rect alpha mask
-    // rendered at bubble dimensions and `alphamerge`d with the camera
-    // stream. Square shape skips the mask entirely.
+    // Camera overlay mirrors CameraOverlay.svelte: square bubble sized off video_w, offset by video_x/y, non-square clipped by an alphamerge mask.
     let camera_overlay_settings = &request.render_state.camera_overlay;
     let camera_path = if camera_overlay_settings.enabled {
         project
@@ -2603,9 +2475,7 @@ pub(crate) async fn run_export_job(
         (path.clone(), bubble_x, bubble_y, bubble_w, bubble_h)
     });
 
-    // Pre-render the rounded-rect mask matching the bubble's shape. Square
-    // shape needs no mask (mask_input_index stays None and the filter chain
-    // skips the alphamerge stage).
+    // Square needs no mask: mask_input_index stays None and the chain skips alphamerge.
     let camera_mask: Option<MaskResult> = if let Some(&(_, _, _, bw, bh)) = camera_bubble.as_ref() {
         let radius_px = match camera_overlay_settings.shape.as_str() {
             "circle" => bw as f64 / 2.0,
@@ -2627,10 +2497,7 @@ pub(crate) async fn run_export_job(
         .as_ref()
         .map(|_| 1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize);
     if let Some((ref path, _, _, _, _)) = camera_bubble {
-        // The webcam recorder starts in another webview, so its track begins at
-        // its own instant. Shift the whole input rather than patching both
-        // branches of the overlay graph; negative PTS frames are dropped, which
-        // is exactly the head-trim an early camera needs.
+        // The webcam recorder starts in another webview; shifting the input drops negative-PTS frames as the head trim.
         if let Some(shift) = camera_input_offset_secs(track_offsets.camera_ms) {
             args.extend(["-itsoffset".to_string(), format!("{shift:.3}")]);
         }
@@ -2650,9 +2517,7 @@ pub(crate) async fn run_export_job(
         ]);
     }
 
-    // Camera drop shadow: a padded black silhouette of the bubble shape, scaled
-    // + positioned by FFmpeg to follow the bubble. Mirrors the preview's
-    // box-shadow (cameraShadowStyle). `None` when the shadow strength is 0.
+    // Padded black silhouette scaled and positioned by FFmpeg, mirroring the preview's box-shadow; None at strength 0.
     let camera_shadow: Option<(MaskResult, u32, u32, u32)> =
         if let Some(&(_, _, _, bw, bh)) = camera_bubble.as_ref() {
             match camera_shadow_geom(camera_overlay_settings.shadow, bw) {
@@ -2713,8 +2578,7 @@ pub(crate) async fn run_export_job(
         _ => None,
     };
 
-    // Detached audio: the recording's own audio is now edited as `voice` clips,
-    // so the monolithic source/system/mic tracks are dropped (the clips carry it).
+    // Detached audio: the recording's own audio is edited as `voice` clips, so the monolithic tracks are dropped.
     let audio_detached = request
         .render_state
         .music_clips
@@ -2739,9 +2603,7 @@ pub(crate) async fn run_export_job(
                 (&project.audio_path, AudioKind::System),
                 (&project.microphone_path, AudioKind::Mic),
             ] {
-                // See the matching note in `run_mux_job`: a header-only WAV
-                // exists but carries no samples, and feeding one to the graph
-                // aborts the export.
+                // See `run_mux_job`: a header-only WAV exists but carries no samples, and feeding one aborts the export.
                 let Some(path) = path
                     .as_ref()
                     .filter(|p| crate::audio::wav::wav_has_samples(p))
@@ -2756,8 +2618,7 @@ pub(crate) async fn run_export_job(
                 args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
             }
         }
-        // Music / extra-audio clips. Looping clips get `-stream_loop -1` (an
-        // input-level flag); the filter stage trims them to the output length.
+        // Looping clips take input-level `-stream_loop -1`; the filter stage trims them to the output length.
         for clip in &request.render_state.music_clips {
             if clip.muted || clip.gain <= 0.0 {
                 continue;
@@ -2794,15 +2655,10 @@ pub(crate) async fn run_export_job(
             (initial_filter_complex, initial_video_map)
         };
 
-    // Camera overlay: composited after the cursor so the speaker bubble
-    // sits on top of any branding mark and below the annotation blur (which
-    // a user might want to apply over their own face).
+    // After the cursor, so the bubble sits above a branding mark and below a blur the user may put over their face.
     if let (Some(cam_idx), Some((_, bx, by, bw, bh))) = (camera_input_index, camera_bubble.as_ref())
     {
-        // Per-cut keyframe glide + zoom-follow grow/drift over time (mirrors the
-        // preview's cameraPlacementAt ∘ applyZoomFollow). None → the fixed
-        // placement, byte-identical to before when there are no keyframes and
-        // zoom-follow is off.
+        // Mirrors the preview's cameraPlacementAt then applyZoomFollow; None keeps the fixed placement byte-identical.
         let camera_anim = if camera_overlay_settings.zoom_follow
             || !camera_overlay_settings.keyframes.is_empty()
         {
@@ -2846,9 +2702,7 @@ pub(crate) async fn run_export_job(
         video_map_after_cursor = new_map;
     }
 
-    // Annotation blur regions — applied AFTER the cursor overlay so the blur
-    // sits over the composited cursor too (same z-order as in the preview),
-    // but BEFORE GIF palettization so the palette captures the blurred pixels.
+    // After the cursor overlay so the blur covers it too, but before GIF palettization so the palette sees blurred pixels.
     let blur_regions = crate::commands::export::blur::blur_regions(
         &request.render_state.annotations,
         &canvas_geom,
@@ -2864,8 +2718,7 @@ pub(crate) async fn run_export_job(
         video_map_after_cursor = new_map;
     }
 
-    // Burn captions into the trimmed-but-uncut axis so the cut/speed stage
-    // re-times them with the rest; no-op without a transcript, and GIF skips it.
+    // Burned on the trimmed-but-uncut axis so the cut/speed stage re-times captions with everything else.
     if let Some((new_complex, new_map)) = append_caption_burn_in(
         &app,
         &request,
@@ -2883,14 +2736,7 @@ pub(crate) async fn run_export_job(
         video_map_after_cursor = new_map;
     }
 
-    // For GIF, route through a 2-pass pipeline. Pass 1 here (synchronous,
-    // before the main spawn_blocking) generates the palette PNG so the main
-    // pass can use a paletteuse-only chain. The single-pass alternative
-    // (`split→palettegen/paletteuse` in one filter graph) buffers every input
-    // frame inside palettegen before emitting the palette, so the encoder's
-    // `out_time_us` stays at 0 the entire palette phase — the UI sat at 0%
-    // while only the elapsed counter moved. Splitting the passes lets us
-    // emit real progress: pre-pass owns 0..40%, main pass owns 40..100%.
+    // GIF pass 1 emits the palette separately: single-pass palettegen buffers every frame and pins progress at 0%.
     let mut output_filters: Vec<String> = Vec::new();
     let gif_settings: GifSettings = request.gif_settings.clone().unwrap_or_default();
     let mut palette_temp_path: Option<PathBuf> = None;
@@ -2964,17 +2810,9 @@ pub(crate) async fn run_export_job(
         })
     };
 
-    // Silence/manual cuts — drop the cut ranges from the middle of the
-    // timeline. `select`/`aselect` discard the cut frames and `setpts`/
-    // `asetpts` re-stitch the survivors into a gapless stream. This runs at
-    // the *end* of the chain: everything upstream (zoom, cursor, blur) was
-    // computed on the continuous post-trim timeline and stays correct —
-    // select only removes frames, it never reinterprets time. GIF has its own
-    // paletteuse tail, so cuts there would need separate handling; skipped.
+    // Cuts run at the END of the chain: select only removes frames, so upstream zoom/cursor/blur stay correct. GIF skipped.
     let export_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
-    // Per-segment speed (Cap-style) warps the survivors' timing on top of the cut
-    // drop — same tail-of-chain point, so upstream overlays stay correct. The
-    // segments and their warped duration mirror the frontend time-map (parity).
+    // Per-segment speed warps the survivors on top of the cut drop; the segments mirror the frontend time map.
     let speed_segments = resolve_speed_segments(
         request.time_map.as_ref(),
         duration,
@@ -2995,8 +2833,7 @@ pub(crate) async fn run_export_job(
         speed_active,
     );
 
-    // Mix music/extra-audio clips onto the finished (output-time) audio. Runs
-    // after cut/speed so the clips sit on the same output timeline the viewer sees.
+    // After cut/speed, so music clips sit on the same output timeline the viewer sees.
     if !music_inputs.is_empty() {
         let out_dur = warped_output_duration(&speed_segments);
         if let Some((seg, map)) = build_music_stage(&music_inputs, audio_map.as_deref(), out_dur) {
@@ -3010,9 +2847,7 @@ pub(crate) async fn run_export_job(
         }
     }
 
-    // Merge any output-side filters (e.g. the final scale) into the complex graph
-    // BEFORE emitting it, so the string handed to FFmpeg is final. (Previously
-    // this happened after the args were built, patching the arg slot in place.)
+    // Merge output-side filters before emitting, so the string handed to FFmpeg is final.
     if !output_filters.is_empty() && filter_complex_after_cursor.is_some() {
         let (complex_filter, map_label) = append_output_filters_to_complex(
             filter_complex_after_cursor.as_deref().unwrap_or_default(),
@@ -3023,12 +2858,7 @@ pub(crate) async fn run_export_job(
         video_map_after_cursor = map_label;
     }
 
-    // Dense zoom/camera LUT expressions can push the filtergraph past Windows'
-    // ~32 KB command-line limit ("The filename or extension is too long",
-    // os error 206). Above a threshold, pass it via `-filter_complex_script
-    // <file>` (read from disk, no command-line cost) instead of inline. The
-    // file is removed after the encode finishes — and lives in temp, not the
-    // output dir, so a killed export leaves no junk beside the user's videos.
+    // Dense LUT expressions blow Windows' ~32 KB command line (os error 206), so spill to `-filter_complex_script` in temp.
     let mut filter_script_path: Option<PathBuf> = None;
     if let Some(ref filter_complex) = filter_complex_after_cursor {
         if filter_complex.len() > FILTER_COMPLEX_SCRIPT_THRESHOLD {
@@ -3076,8 +2906,7 @@ pub(crate) async fn run_export_job(
     )
     .expected_output_secs;
 
-    // Snapshot inputs+filter+maps before the codec tail so a hardware-encoder
-    // crash can be re-run with software from the same base command.
+    // Snapshot inputs, filter and maps before the codec tail so a hardware crash can retry with software.
     let base_args = args.clone();
     append_codec_args(
         &mut args,
@@ -3093,19 +2922,13 @@ pub(crate) async fn run_export_job(
     let output_path_str = output_path.to_string_lossy().to_string();
     // (the full command is logged once inside run_encode at spawn.)
 
-    // Record which encoder/decoder actually ran — the plan's #1 open question
-    // (hardware vs the libx264 software fallback). Read off the emitted args so it
-    // stays correct across every format/branch. Captured before `args` moves into
-    // the encode task below.
+    // Read the encoder off the emitted args so it stays right across formats; captured before `args` moves.
     let video_encoder = args
         .iter()
         .position(|a| a == "-c:v")
         .and_then(|i| args.get(i + 1).cloned())
         .unwrap_or_else(|| "unknown".to_string());
-    // Hardware h264 encoders (NVENC/AMF/QSV/VideoToolbox) can segfault mid-encode
-    // on some drivers/content (Windows exit 0xC0000005). Pre-build a software-x264
-    // variant of the SAME command so the encode task can retry once rather than
-    // hard-failing. Only h264/mp4 has a hardware encoder to fall back from.
+    // Hardware h264 can segfault mid-encode (0xC0000005), so prebuild the same command with software x264 for one retry.
     let sw_retry_args = if ["nvenc", "amf", "qsv", "videotoolbox"]
         .iter()
         .any(|k| video_encoder.contains(k))
@@ -3125,8 +2948,7 @@ pub(crate) async fn run_export_job(
     } else {
         None
     };
-    // `-hwaccel auto` may still fall back to software internally, so report the
-    // requested mode rather than claiming hardware.
+    // `-hwaccel auto` can still fall back internally, so report the requested mode rather than claiming hardware.
     let decode_mode = args
         .iter()
         .position(|a| a == "-hwaccel")
@@ -3135,19 +2957,13 @@ pub(crate) async fn run_export_job(
         .unwrap_or_else(|| "software".to_string());
     log::info!("export[{export_id}] encoder={video_encoder} decode={decode_mode} filter_threads={filter_threads}");
 
-    // Spawn FFmpeg in a background thread so the UI stays responsive.
-    // Watchdog: if 60s pass without a progress line, kill the child.
-    // Clone the handle so we retain one outside the closure for the
-    // panic-fallback emit in the match below.
+    // Background thread with a 60s no-progress watchdog; the handle is cloned for the panic-fallback emit below.
     let app_for_fallback = app.clone();
-    // Move a CLONE into the encode task, not the original: `state` (derived from
-    // `app`) is still needed below to remove the cancel token, so `app` must
-    // outlive the task rather than be moved into it.
+    // A CLONE moves into the encode task: `app` must outlive it to remove the cancel token below.
     let app_for_task = app.clone();
     let export_id_for_task = export_id.clone();
     let export_id_for_fallback = export_id.clone();
-    // Clones so the software-x264 retry (see `sw_retry_args`) can run inside the
-    // same task after a hardware-encoder crash, reusing the same output + inputs.
+    // Clones so the software-x264 retry runs inside the same task, reusing the same output and inputs.
     let retry_app = app.clone();
     let retry_export_id = export_id.clone();
     let retry_output = output_path_str.clone();
@@ -3185,8 +3001,7 @@ pub(crate) async fn run_export_job(
     })
     .await;
 
-    // The cancel token is now owned by `_cancel_token` (RAII), so it survives
-    // `?` and panics. This drop is just the cursor overlay's temp dir.
+    // The cancel token is RAII-owned by `_cancel_token`; this drop is just the cursor overlay's temp dir.
     drop(cursor_overlay);
     if let Some(p) = palette_temp_path.as_ref() {
         let _ = std::fs::remove_file(p);
@@ -3198,9 +3013,7 @@ pub(crate) async fn run_export_job(
     match task_result {
         Ok(inner) => {
             if inner.is_ok() {
-                // One correlated summary line: total wall-clock and the stage
-                // breakdown. The encode's own duration is logged inside the task
-                // ("child exited at T+…ms" / "success emitted at T+…ms").
+                // One correlated line: total wall clock plus stage breakdown; the encode logs its own duration inside the task.
                 log::info!(
                     "export[{export_id}] timing: total={}ms prep={prep_ms}ms cursor_overlay={cursor_ms}ms (ran={cursor_ran}) encoder={video_encoder} decode={decode_mode}",
                     export_start.elapsed().as_millis()
@@ -3209,8 +3022,7 @@ pub(crate) async fn run_export_job(
             inner.map_err(Into::into)
         }
         Err(join_err) => {
-            // spawn_blocking only errors on panic; surface it so the frontend
-            // can show a real failure dialog instead of hanging on the Promise.
+            // spawn_blocking only errors on panic; surface it so the frontend shows a failure instead of hanging.
             let err_msg = format!("export task failed: {join_err}");
             emit_export_state(
                 &app_for_fallback,
@@ -3230,8 +3042,7 @@ pub fn cancel_export(export_id: String, state: State<'_, AppState>) -> AppResult
     if let Some(flag) = state.export_cancel.lock().get(&export_id) {
         flag.store(true, Ordering::Release);
     }
-    // No installed token → no active export. Treat as a no-op rather than
-    // an error so double-clicks on Cancel don't surface a confusing toast.
+    // No installed token means no active export; a no-op keeps a double-clicked Cancel from toasting.
     Ok(())
 }
 

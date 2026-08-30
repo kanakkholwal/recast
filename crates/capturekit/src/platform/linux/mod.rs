@@ -67,8 +67,7 @@ pub(crate) fn displays() -> Result<Vec<Display>> {
 
 pub(crate) fn windows() -> Result<Vec<Window>> {
     match session() {
-        // The portal picks the window itself, through its own dialog, and does
-        // not let a client enumerate them. That is the whole point of it.
+        // The portal picks the window through its own dialog and lets no client enumerate them, which is its whole point.
         #[cfg(feature = "wayland")]
         Session::Wayland => Ok(Vec::new()),
         #[cfg(not(feature = "wayland"))]
@@ -87,9 +86,7 @@ pub(crate) fn capabilities() -> Capabilities {
     match session() {
         Session::Wayland => Capabilities {
             backend: "pipewire",
-            // The compositor owns the frame and gives a client no say in what is
-            // in it. There is no portal API for excluding a window, so an
-            // exclusion request here is refused rather than silently dropped.
+            // The compositor owns the frame and there is no portal API for excluding a window, so a request is refused, not dropped.
             exclusion: ExclusionSupport::None,
             window_capture: true,
             camera_capture: true,
@@ -113,11 +110,9 @@ pub(crate) fn capabilities() -> Capabilities {
             camera_capture: true,
             window_enumeration: true,
             display_enumeration: true,
-            // `GetImage` crops server-side, so nothing outside the rectangle
-            // crosses the socket.
+            // `GetImage` crops server-side, so nothing outside the rectangle crosses the socket.
             region_crop: RegionCrop::DuringAcquisition,
-            // The root window image never contains the pointer; XFixes reports
-            // it alongside instead.
+            // The root window image never contains the pointer; XFixes reports it alongside instead.
             cursor_in_frame: false,
             cursor_samples: true,
             cursor_pointer: true,
@@ -131,8 +126,7 @@ pub(crate) fn capabilities() -> Capabilities {
 
 pub(crate) fn permission(kind: PermissionKind) -> Permission {
     match (kind, session()) {
-        // The portal asks every time a session is opened, and there is no way to
-        // query a standing answer, so the honest report is "you will be asked".
+        // The portal asks every time a session opens and exposes no standing answer, so the honest report is 'you will be asked'.
         (PermissionKind::Screen, Session::Wayland) => Permission::NotDetermined,
         (PermissionKind::Screen, Session::X11) => Permission::NotRequired,
         (PermissionKind::Camera, _) => v4l2::permission(),

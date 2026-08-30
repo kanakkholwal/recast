@@ -22,28 +22,23 @@ import { workerHost } from "$lib/workers";
 
 let { children } = $props();
 
-// App-scoped, not editor-scoped: the export queue and the asset helpers run
-// outside any editor component and still need the Tauri implementations.
+// App-scoped, not editor-scoped: the export queue and asset helpers run outside any editor component.
 setEditorServicesForApp(tauriEditorServices);
-// The editor package defaults these to no-ops; hand it the real ones so
-// telemetry, shortcut chords and the export-render pause keep working.
+// The editor package defaults these to no-ops; the real ones keep telemetry, chords and the export pause working.
 setEditorHostHooks({
 	analytics,
 	workers: workerHost,
 	shortcuts: { chordLabel, registerShortcutHandlers },
 	exportActivity,
 });
-// Lets the editor observe agent edits + the project write-lock. Without a
-// driver installed the listener stays idle, which is the web build's behaviour.
+// Without a driver installed the listener stays idle, which is the web build's behaviour.
 setAgentSessionDriver(tauriAgentSessionDriver);
 setLogSink(log);
 
 // First-run privacy prompt, shown once in the main window only.
 let showFirstRun = $state(false);
 
-// Analytics + global error capture. Overlay windows are skipped; the main
-// window owns `app_opened` / identify / the first-run prompt. Editor windows
-// still get error capture (gated by the errors-consent flag in the client).
+// Overlay windows are skipped; the main window owns app_opened, identify and the first-run prompt.
 onMount(() => {
 	if (isTransparentRoute) return;
 
@@ -65,8 +60,7 @@ onMount(() => {
 
 		if (!desktopConsent.hasSeenFirstRun) showFirstRun = true;
 
-		// Alias anonymous events to the cloud account on sign-in; no-op without
-		// a `userId`, leaving only the anonymous install id tracked.
+		// Alias anonymous events to the cloud account on sign-in; a missing `userId` leaves only the install id.
 		const unlisten = await listen<{ userId?: string | null }>("auth:signed-in", ({ payload }) => {
 			if (payload?.userId) analytics.identify(payload.userId);
 			analytics.capture("cloud_connected");
@@ -118,8 +112,7 @@ import { desktopConsent } from "$lib/stores/consent.svelte";
 
 const isTransparentRoute = $derived(isOverlayRoute(page.url.pathname));
 
-// Cross-window toast bridge: transparent-route windows are too narrow to host
-// a Sonner card, so they emit `ui:toast` and we render via the main Toaster.
+// Transparent-route windows are too narrow for a Sonner card, so they emit `ui:toast` for the main Toaster.
 type UiToastPayload = {
 	level: "error" | "warning" | "info" | "success";
 	message: string;
@@ -148,14 +141,11 @@ onMount(() => {
 	};
 });
 
-// System-tray bridge. Main-window handlers cover tray actions when no
-// recording is active; panel/overlay routes own the ones scoped to them.
+// Main-window handlers cover tray actions when no recording is active; panel and overlay routes own their own.
 onMount(() => {
 	if (isTransparentRoute) return;
 	const offToggle = listen("tray:record-toggle", async () => {
-		// If a panel is open it owns the toggle, so do nothing here (avoid
-		// stealing focus mid-stop). Otherwise open /panel; it restores the last
-		// source on mount. Label must stay in sync with launchRecordingPanel() in ipc.ts.
+		// An open panel owns the toggle, so don't steal focus mid-stop. The label must match launchRecordingPanel() in ipc.ts.
 		const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
 		const all = await getAllWebviewWindows();
 		const hasPanel = all.some((w) => w.label === "recording-panel");
@@ -171,12 +161,7 @@ onMount(() => {
 	};
 });
 
-// OS file-association bridge. Cold start: Rust stashes argv in AppState and we
-// drain it via take_pending_open_file. Warm start: single-instance forwards
-// argv and emits `app://open-recast`. Both funnel through
-// openProjectFromExternalPath, which always spawns a fresh editor window
-// (never navigates main). Gated to the main window so secondary windows don't
-// race to spawn. Editor windows are labelled `editor-*`, see the check below.
+// Cold start drains argv from AppState, warm start gets `app://open-recast`; both spawn a fresh editor window, main-window only.
 onMount(() => {
 	if (isTransparentRoute) return;
 	let cancelled = false;
@@ -215,8 +200,7 @@ onMount(() => {
 			else unlistenFn = fn;
 		});
 
-		// Global hotkey (Alt+Shift+R while idle) asks the main window to bring up
-		// the recording panel. Stop/pause are routed to the panel itself in Rust.
+		// Alt+Shift+R while idle asks the main window for the panel; stop and pause route to the panel in Rust.
 		const unlistenLaunchPanel = listen("global-shortcut:launch-panel", () => {
 			void launchRecordingPanel();
 		});
@@ -225,8 +209,7 @@ onMount(() => {
 			else unlistenPanelFn = fn;
 		});
 
-		// recast:// deep links. Cold start: getCurrent() returns the launch URL.
-		// Warm start: onOpenUrl fires. Both route through handleDeepLink.
+		// Cold start: getCurrent() returns the launch URL. Warm start: onOpenUrl fires. Both route through handleDeepLink.
 		try {
 			const { getCurrent, onOpenUrl } = await import("@tauri-apps/plugin-deep-link");
 			const startUrls = await getCurrent();
@@ -253,8 +236,7 @@ onMount(() => {
 	};
 });
 
-// Translucent backdrop for the app windows (main, editor). Overlays opt out.
-// Re-applies live when the setting is toggled from anywhere.
+// Translucent backdrop for the app windows; overlays opt out, and it re-applies live when the setting is toggled.
 onMount(() => {
 	if (isTransparentRoute) return;
 	void applyWindowBackdrop();
@@ -264,8 +246,7 @@ onMount(() => {
 	};
 });
 
-// macOS-style page transitions via the View Transitions API. Skipped for
-// overlay windows and reduced-motion (CSS handles that case too).
+// View Transitions for page changes, skipped for overlay windows and reduced motion (CSS covers that too).
 onNavigate((navigation) => {
 	if (typeof document === "undefined") return;
 	if (!("startViewTransition" in document)) return;
@@ -298,8 +279,7 @@ onMount(async () => {
 
 	if (await isTauriApp()) {
 		const theme = await getTauriTheme();
-		// Defer to the OS theme when the user hasn't picked light/dark. Read-only;
-		// mode-watcher owns this key.
+		// Defer to the OS theme when the user hasn't picked; read-only, since mode-watcher owns this key.
 		const stored = safeStorage.get<string>("mode-watcher-mode", "");
 		if (theme && (!stored || stored === "system")) {
 			setMode(theme);
@@ -307,10 +287,7 @@ onMount(async () => {
 	}
 });
 
-// Logs modifier-involved keydowns to trace "phantom shortcut" reports. Gated
-// through log.debug (dev / diagnostic only). If a bare-modifier `key`
-// ("Control"/"Meta") triggers an action, it's a stale HMR listener, so restart
-// `pnpm tauri dev`. The same keydown logged twice means listeners are leaking.
+// Traces phantom-shortcut reports: a bare-modifier key firing an action means a stale HMR listener, and a doubled log means leaking listeners.
 function logKeyDiagnostic(e: KeyboardEvent) {
 	if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) return;
 	const t = e.target as HTMLElement | null;
@@ -327,9 +304,7 @@ function logKeyDiagnostic(e: KeyboardEvent) {
 	});
 }
 
-// Swallow lone-modifier keydowns in the CAPTURE phase (before any bubble
-// listener) so stale HMR ghosts can't act on them. A real combo like Ctrl+B
-// carries `key === "b"` and propagates normally. `$effect` re-registers on HMR.
+// Swallowed in the CAPTURE phase so stale HMR ghosts can't act on them; a real combo carries a non-modifier key.
 const BARE_MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta", "OS", "AltGraph"]);
 $effect(() => {
 	const swallowBareModifier = (e: KeyboardEvent) => {

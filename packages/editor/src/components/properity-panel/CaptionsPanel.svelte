@@ -1,7 +1,6 @@
 <script lang="ts" module>
 type StyleView = "style" | "motion" | "text";
-// Survives the panel unmounting when you switch rail tabs, so coming back to
-// Captions puts you where you left off.
+// Survives the panel unmounting on a rail-tab switch, so returning to Captions restores the view.
 let lastView: StyleView = "style";
 </script>
 
@@ -77,8 +76,7 @@ interface Props {
 }
 let { store }: Props = $props();
 
-// Absent on hosts with no on-device ASR (web): the whole generate surface —
-// model picker, download, probe — hides and import stays the only way in.
+// Absent on hosts with no on-device ASR: the whole generate surface hides and import is the only way in.
 const services = getEditorServices();
 const asr = services.transcription;
 const captionFiles = services.captionFiles;
@@ -101,9 +99,7 @@ let phase = $state<string>("");
 let error = $state<string | null>(null);
 let transcriptQuery = $state("");
 
-// No percentage to report: the Rust side runs inference as one blocking call and
-// only emits coarse phases. Elapsed time is the honest substitute for a spinner
-// that could sit there for minutes.
+// Rust runs inference as one blocking call with coarse phases, so elapsed time is the honest substitute for a percentage.
 let startedAt = 0;
 let elapsedMs = $state(0);
 $effect(() => {
@@ -116,14 +112,9 @@ $effect(() => {
 
 const selected = $derived(models.find((m) => m.id === selectedModelId) ?? null);
 const usable = $derived(models.filter((m) => m.installed && m.runnable && m.runtimeAvailable));
-// Remote endpoints transcribe over HTTP, so they work even where the on-device
-// engine isn't in the build (Intel Mac). Their presence lets us offer captions
-// there instead of a dead end.
+// Remote endpoints transcribe over HTTP, so captions work even where the on-device engine isn't in the build.
 const hasRemoteModels = $derived(models.some((m) => m.source === "remote"));
-// A recording can have an audio path but no actual audio stream (mic + system
-// audio off), so `hasAudio` is the ffprobe result, not just path existence.
-// `null` = not yet probed → fall back to path presence so the UI doesn't flash
-// the empty state before the probe resolves.
+// A recording can have an audio path with no stream, so this is the ffprobe result; `null` falls back to path presence.
 let audioProbe = $state<boolean | null>(null);
 const pathHasAudio = $derived(!!(store.audioPath || store.microphonePath));
 const hasAudio = $derived(audioProbe ?? pathHasAudio);
@@ -153,8 +144,7 @@ $effect(() => {
 		.then((present) => {
 			if (!cancelled) audioProbe = present;
 		})
-		// Don't hard-block on a probe failure. Let the transcribe call be the
-		// authority (it reports "no audio" if the extract is truly empty).
+		// Don't hard-block on a probe failure; the transcribe call is the authority on 'no audio'.
 		.catch(() => {
 			if (!cancelled) audioProbe = true;
 		});
@@ -172,8 +162,7 @@ async function refresh() {
 	if (!asr) return;
 	try {
 		const list = await asr.listModels();
-		// Remote endpoints are an experimental surface; hide them (and any models
-		// they contribute) unless the user opted in.
+		// Remote endpoints are experimental: hide them and any models they contribute unless the user opted in.
 		const showRemote = experimentalStore.isEnabled("remoteTranscription");
 		models = showRemote ? list : list.filter((m) => m.source !== "remote");
 		if (!selectedModelId || !models.some((m) => m.id === selectedModelId)) {
@@ -251,9 +240,7 @@ async function generate() {
 			},
 		});
 	} catch (e) {
-		// Keep whatever transcript is already loaded: this runs as "Regenerate"
-		// with real data on screen, and `transcript` is not in the undo snapshot,
-		// so clearing it here is unrecoverable.
+		// Keep the loaded transcript: this runs as Regenerate, and `transcript` isn't in the undo snapshot.
 		if (!`${e}`.includes(TRANSCRIBE_CANCELLED)) error = `${e}`;
 	} finally {
 		transcribing = false;
@@ -277,9 +264,7 @@ async function exportSubs(format: "srt" | "vtt") {
 	const t = store.transcript;
 	if (!t || !captionFiles) return;
 	try {
-		// Map onto the output timeline (trim + cuts + speed) so cues line up with
-		// the exported video, not the raw recording, using the same warp the export
-		// dialog and Cloud track apply.
+		// Map onto the output timeline with the same warp the export dialog and the Cloud track apply.
 		await captionFiles.exportSidecar(toOutputTimeTranscript(store.timeMap, t), format);
 		toast.success(`Exported ${format.toUpperCase()}`);
 	} catch (e) {
@@ -337,23 +322,19 @@ function rememberColor(c: string) {
 	recents = pushRecentColor(c);
 }
 
-// Caption themes from the asset registry: built-ins first, extension packs
-// appended. Applying one overwrites the style fields but keeps `enabled`.
+// Built-ins first, then extension packs; applying one overwrites the style fields but keeps `enabled`.
 const captionPresets = $derived(registry.list("captionPreset"));
 // The theme picker preloads its own fonts; this only covers the applied style.
 function applyPreset(style: Partial<CaptionStyle>) {
 	store.updateCaptionStyle(style);
 }
-// The preset matching the current style exactly (so the picker shows the
-// active theme), or null once the user has tweaked away from any preset.
+// The preset matching the current style exactly, or null once the user tweaks away from any preset.
 const activeTheme = $derived.by(() => {
 	const cs = store.captionStyle;
 	return captionPresets.find((p) => captionStyleMatchesPreset(cs, p.value)) ?? null;
 });
 
-// The transcript line under the playhead, highlighted so you can follow along
-// as it plays. Deliberately no auto-scroll: yanking the scroll position while
-// someone is reading is worse than a still list.
+// Deliberately no auto-scroll: yanking the scroll position while someone is reading is worse than a still list.
 const activeSegmentId = $derived.by(() => {
 	const t = store.currentTime;
 	const segs = store.transcript?.segments ?? [];
@@ -369,11 +350,7 @@ const visibleSegments = $derived(
 	filterSegments(store.transcript?.segments ?? [], transcriptQuery),
 );
 
-// Transcription that SUCCEEDED but returned nothing. Distinct from an error
-// (which sets `error`) and from a recording with no audio track at all
-// (`hasAudio`): here the model ran and genuinely heard no speech: silence, or
-// music/room tone only. Without this the panel just re-rendered its empty
-// pre-transcribe self, which reads as "the button did nothing".
+// Transcription that SUCCEEDED with nothing: the model ran and heard no speech, which the empty pre-transcribe state read as the button doing nothing.
 const noSpeechFound = $derived(
 	!!store.transcript && store.transcript.segments.length === 0 && !error,
 );

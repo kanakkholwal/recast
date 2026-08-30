@@ -284,12 +284,7 @@ impl RecordingManager {
 
 impl Drop for RecordingManager {
     fn drop(&mut self) {
-        // A session still present at manager-drop time means the recording never
-        // went through `stop()` (a panic unwound the owner). Reap it so we don't
-        // orphan the capture/audio/mic FFmpeg children, which on macOS/Linux are
-        // subprocesses that keep recording and hold the device (a stuck mic /
-        // screen grab), and so no capture thread spins forever. The normal path
-        // already took the session out, so this usually finds `None`.
+        // A session left at drop means `stop()` never ran: reap it, or the capture, audio and mic children keep holding devices.
         self.abort_for_shutdown();
     }
 }
@@ -440,9 +435,7 @@ impl RecordingSession {
     /// is the abnormal-path equivalent.
     fn abort(self) {
         self.stop_flag.store(true, Ordering::Release);
-        // Joining lets each thread run its own cleanup: the capture thread drops
-        // its `CaptureSource` (which kills the screen-capture FFmpeg child), and
-        // the encoder/cursor threads finalize and exit.
+        // Joining lets each thread run its own cleanup: the capture thread drops its `CaptureSource`, killing the FFmpeg child.
         let _ = self.capture_handle.join();
         let _ = self.cursor_handle.join();
         if let Some(encoder) = self.encoder_handle {
@@ -494,9 +487,7 @@ impl RecordingManager {
         };
         let corner_radius = update.corner_radius.clamp(0.0, 0.5);
 
-        // Active session is the source of truth during recording. Pending is
-        // snapshotted into the session at `start()` and persisted back at
-        // `stop()`, so we don't double-write on every preview tick.
+        // The active session is the source of truth while recording; pending is snapshotted at start and written back at stop.
         let mut guard = self.session.lock();
         if let Some(session) = guard.as_mut() {
             let tracker = &mut session.camera_overlay;
@@ -518,12 +509,7 @@ impl RecordingManager {
                         .map(|segment| extends_current_move(segment, last_at, now_secs))
                         .unwrap_or(false);
 
-                    // Bound memory + serialized project size on long sessions
-                    // with sustained camera movement: once the segment list hits
-                    // the cap, fold further moves into the last segment (same as
-                    // the extend path) instead of growing the Vec without limit.
-                    // 4096 deliberate moves is far beyond any real session given
-                    // the 0.45 s drag-coalescing window above.
+                    // Cap the segment list so a long session with sustained camera movement can't grow the Vec without limit.
                     const MAX_MOTION_SEGMENTS: usize = 4096;
                     let at_cap = tracker.overlay.motion_segments.len() >= MAX_MOTION_SEGMENTS;
 
@@ -552,9 +538,7 @@ impl RecordingManager {
                             source: "live-recorded".into(),
                         });
                     }
-                    // Only an accepted move advances the reference, so a drag
-                    // slower than the dead zone accumulates rather than being
-                    // filtered away one tick at a time.
+                    // Only an accepted move advances the reference, so a drag slower than the dead zone accumulates instead of being filtered away.
                     tracker.last_placement = Some(placement);
                 }
             } else {
@@ -567,8 +551,7 @@ impl RecordingManager {
         }
         drop(guard);
 
-        // Pre-recording: keep pending in sync so `start()` snapshots the
-        // user's latest preview state into the new session.
+        // Pre-recording: keep pending in sync so `start()` snapshots the user's latest preview state.
         let mut pending = self.pending_camera_overlay.lock();
         pending.enabled = true;
         pending.mirror = update.mirror;
@@ -591,23 +574,13 @@ impl RecordingManager {
             return Err(anyhow!("recording is already running"));
         }
 
-        // macOS gates screen capture behind the Screen Recording TCC permission,
-        // which is SEPARATE from the Accessibility grant the cursor tracker
-        // needs. Without it FFmpeg avfoundation spawns but yields zero frames —
-        // the old behaviour was a silently-empty recording the user only
-        // discovered at stop(), with the UI timer ticking the whole time. Fail
-        // fast here (and trigger the system prompt) so the timer never starts on
-        // a dead capture. No-op on Windows/Linux.
+        // macOS Screen Recording TCC is separate from Accessibility; without it avfoundation yields zero frames and the take is silently empty.
         crate::permissions::ensure_screen_recording()?;
 
         std::fs::create_dir_all(&output_dir)?;
-        // Resolve the capture rate + quality tier up front. Both the pacer and
-        // the encoder must agree on `recording_fps` (the encoder declares it as
-        // `-framerate`, the pacer emits exactly that many frames/sec), and the
-        // chosen rate is persisted into the project metadata at stop().
+        // The pacer and encoder must agree on `recording_fps`, and the chosen rate is persisted into project metadata at stop().
         let recording_fps = resolve_recording_fps(options.fps);
-        // `"auto"` (the default) resolves against the probed encoder: hardware
-        // → High, software → Balanced. Explicit tiers pass through unchanged.
+        // 'auto' resolves against the probed encoder: hardware to High, software to Balanced. Explicit tiers pass through.
         let recording_quality = crate::encoder::RecordingQuality::resolve(
             options.quality.as_deref(),
             crate::ffmpeg::preferred_h264_encoder(),
@@ -637,8 +610,7 @@ impl RecordingManager {
             crate::capture::create_capture_source(&target, recording_fps, native.frame_mode())?;
         target.adopt_source_size(source.width(), source.height());
 
-        // Frame queue is capped by memory, not frame count: 180 BGRA frames is
-        // ~6 GB at 4K and OOM'd low-end machines when the encoder fell behind.
+        // Capped by memory, not frame count: 180 BGRA frames is ~6 GB at 4K and OOM'd low-end machines.
         let queue_capacity = queue_capacity_for(target.source.width, target.source.height);
         if !native.chosen {
             let frame_bytes = frame_bytes_bgra(target.source.width, target.source.height);
@@ -652,8 +624,7 @@ impl RecordingManager {
         let pipeline = RecordingPipeline::new(queue_capacity);
         let mut warnings = Vec::new();
 
-        // Cursor sampling needs Accessibility on macOS; recording works without
-        // it, so warn rather than block — the track just has gaps until granted.
+        // Cursor sampling needs macOS Accessibility, but recording works without it, so the track just has gaps.
         if !crate::permissions::cursor_tracking_authorized() {
             warnings.push(
                 "Cursor tracking is off — grant Recast in System Settings → \
@@ -663,8 +634,7 @@ impl RecordingManager {
             );
         }
 
-        // Each track marks its own first sample against `started_at`; stop()
-        // turns the differences into the offsets the muxer aligns by.
+        // Each track marks its first sample against `started_at`; stop() turns the differences into the muxer's offsets.
         let video_start = TrackStart::new(started_at);
         let audio_start = TrackStart::new(started_at);
         let microphone_start = TrackStart::new(started_at);
@@ -721,16 +691,13 @@ impl RecordingManager {
                     origin_y: target.crop.y,
                     width: target.crop.width,
                     height: target.crop.height,
-                    // macOS samples the cursor in logical points but the video is
-                    // physical pixels; lift samples by the display's scale so they
-                    // line up. 1.0 on Windows/Linux (already physical) → unchanged.
+                    // macOS samples the cursor in logical points while the video is physical pixels; 1.0 elsewhere leaves it unchanged.
                     scale: target.scale_factor,
                 },
             ) {
                 Ok(handle) => handle,
                 Err(e) => {
-                    // Capture + encoder are already live; tear both down so a failed
-                    // start doesn't orphan them.
+                    // Capture and encoder are already live, so tear both down or a failed start orphans them.
                     stop_flag.store(true, Ordering::Release);
                     let _ = capture_handle.join();
                     if let Some(encoder) = encoder_handle {
@@ -740,8 +707,7 @@ impl RecordingManager {
                 }
             }
         } else {
-            // No-op placeholder so the session shape (and `stop()`'s join) is
-            // unchanged; it yields an empty cursor track immediately.
+            // No-op placeholder keeping the session shape and `stop()`'s join unchanged; yields an empty cursor track.
             match std::thread::Builder::new()
                 .name("recast-cursor-disabled".into())
                 .spawn(CursorTrack::default)
@@ -758,13 +724,7 @@ impl RecordingManager {
             }
         };
 
-        // Start system/loopback audio capture — but only when the user asked
-        // for it. Gating here (mirroring the microphone/camera blocks below) is
-        // what makes the "System audio" toggle real: loopback used to run
-        // unconditionally, so it recorded *everything* on the default output —
-        // including Recast's own editor playback — which is the record-while-
-        // previewing echo. When off, `stop()` falls back to a silent WAV so
-        // downstream muxing still has a track.
+        // Gated on the toggle: loopback used to run unconditionally and recorded Recast's own playback, which is the preview echo.
         let audio_session = if options.system_audio {
             let session = AudioCaptureSession::start(AudioCaptureConfig {
                 output_path: audio_path.clone(),
@@ -822,8 +782,7 @@ impl RecordingManager {
         }
 
         let mut camera_overlay = self.pending_camera_overlay.lock().clone();
-        // The authoritative value (a delivered track) is set at stop; enable on
-        // intent here so the editor shows the overlay while the file lands.
+        // Enable on intent so the editor shows the overlay while the file lands; stop() sets the authoritative value.
         camera_overlay.enabled = camera_requested;
 
         *guard = Some(RecordingSession {
@@ -864,12 +823,7 @@ impl RecordingManager {
 
         session.stop_flag.store(true, Ordering::Release);
 
-        // Reap ALL capture threads and OS sessions before propagating any error.
-        // `session` is already out of the session mutex, so anything we skip
-        // tearing down here (because an earlier `?` returned) is orphaned for the
-        // process lifetime — a spinning thread plus, for audio/camera, a live
-        // FFmpeg child or capture device. So join every thread and stop every
-        // session first, then surface the first failure.
+        // Join every thread and stop every session before propagating: an early `?` would orphan a thread plus a live FFmpeg child.
         let capture_join = session.capture_handle.join();
         let cursor_join = session.cursor_handle.join();
         let encoder_join = session.encoder_handle.take().map(JoinHandle::join);
@@ -906,8 +860,7 @@ impl RecordingManager {
             track_offsets
         );
 
-        // Resolve the system-audio path: the captured file, else a silence
-        // fallback so downstream always has a track to mux.
+        // The captured file, else a silence fallback so downstream always has a track to mux.
         let mut has_system_audio = has_system_audio;
         let audio_path = match audio_stop {
             Some(Ok(path)) => path,
@@ -924,11 +877,7 @@ impl RecordingManager {
             }
         };
 
-        // WASAPI loopback delivers NOTHING while no application is rendering
-        // audio, so a session where nothing played leaves a valid but
-        // header-only WAV. That is not a captured track, and an empty input
-        // breaks the export's filter graph outright, so replace it with real
-        // silence of the right length and stop claiming system audio.
+        // WASAPI loopback delivers nothing while no app renders audio, and that header-only WAV breaks the export's filter graph.
         if !crate::audio::wav::wav_has_samples(&audio_path) {
             let duration = session.clock.effective_elapsed().as_secs_f64();
             log::info!(
@@ -939,10 +888,7 @@ impl RecordingManager {
             has_system_audio = false;
         }
 
-        // Non-fatal capture issues to surface to the user after the save. A
-        // requested mic/camera track that failed (device in use, or on macOS
-        // Camera/Microphone permission denied so the device produced no frames)
-        // otherwise vanished silently: the recording succeeds minus that track.
+        // A requested mic or camera track that failed otherwise vanished silently: the recording succeeds minus that track.
         let mut warnings: Vec<String> = Vec::new();
 
         // Microphone path if its capture succeeded.
@@ -998,9 +944,7 @@ impl RecordingManager {
             session.recording_fps,
         );
 
-        // Persist the user's latest overlay settings (mirror, shape, corner
-        // radius, etc.) back to pending so the next recording inherits them.
-        // Don't copy motion_segments — those are session-local.
+        // Persist overlay settings back to pending so the next recording inherits them; motion_segments stay session-local.
         {
             let final_overlay = &session.camera_overlay.overlay;
             let mut pending = self.pending_camera_overlay.lock();
@@ -1048,8 +992,7 @@ impl RecordingManager {
         if !session.clock.is_paused() {
             return Ok(());
         }
-        // Bank the pause duration before letting threads run again so they
-        // wake into a correct clock.
+        // Bank the pause duration before letting threads run again, so they wake into a correct clock.
         session.clock.resume();
         session.pause_flag.store(false, Ordering::Release);
         Ok(())
@@ -1174,10 +1117,7 @@ mod camera_motion_tests {
 mod options_tests {
     use super::*;
 
-    // The panel sends `systemAudio` (camelCase); it must land on `system_audio`
-    // and actually gate loopback in `start()`. This guards the serde bridge that
-    // the record-while-previewing echo fix depends on — if the rename or default
-    // regresses, the toggle silently goes dead again.
+    // Guards the serde bridge the echo fix depends on: `systemAudio` must land on `system_audio` and gate loopback.
     #[test]
     fn system_audio_toggle_deserializes_from_camel_case() {
         let off: RecordingOptions = serde_json::from_str(r#"{"systemAudio": false}"#).unwrap();
@@ -1192,8 +1132,7 @@ mod options_tests {
 
     #[test]
     fn system_audio_defaults_on_when_omitted() {
-        // A profile/older client that omits the field keeps the historical
-        // capture-by-default behaviour.
+        // A profile or older client that omits the field keeps the historical capture-by-default behaviour.
         let opts: RecordingOptions = serde_json::from_str("{}").unwrap();
         assert!(opts.system_audio);
         assert!(RecordingOptions::default().system_audio);
@@ -1235,8 +1174,7 @@ mod session_tests {
     /// origin, not the virtual desktop.
     #[test]
     fn crop_is_reported_relative_to_the_captured_source() {
-        // Source is the second monitor, so the crop's desktop-space x/y (2000,
-        // 50) must become source-relative (80, 50).
+        // The source is the second monitor, so desktop-space (2000, 50) must become source-relative (80, 50).
         let t = target(
             CaptureKind::Region,
             area(1920, 0, 1920, 1080),

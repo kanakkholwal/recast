@@ -66,9 +66,7 @@ pub(crate) fn devices() -> Result<Vec<AudioDevice>> {
     let mut devices = Vec::with_capacity(nodes.len());
     let mut seen_default = (false, false);
     for node in nodes.iter() {
-        // The daemon lists in creation order and names no default through the
-        // registry, so the first of each direction is the best answer available
-        // without a session manager round trip.
+        // The daemon lists in creation order and names no default, so the first of each direction is the best answer available.
         let is_default = match node.direction {
             AudioDirection::Input => !core::mem::replace(&mut seen_default.0, true),
             AudioDirection::Loopback => !core::mem::replace(&mut seen_default.1, true),
@@ -78,9 +76,7 @@ pub(crate) fn devices() -> Result<Vec<AudioDevice>> {
             name: node.description.clone(),
             direction: node.direction,
             is_default,
-            // What the graph will convert to, not what the hardware runs at:
-            // nothing here opens the device to ask, and reporting a guess about
-            // the hardware would be worse than reporting what is delivered.
+            // What the graph converts to, not the hardware rate: nothing here opens the device, and a guess would be worse.
             format: REQUESTED,
         });
     }
@@ -109,8 +105,7 @@ fn enumerate(found: &Arc<Mutex<Vec<Node>>>) -> core::result::Result<(), String> 
         })
         .register();
 
-    // The daemon replays every existing object before answering a sync, so one
-    // roundtrip is the whole list rather than a race against a timer.
+    // The daemon replays every existing object before answering a sync, so one roundtrip is the whole list.
     let done = Arc::new(AtomicBool::new(false));
     let _core_listener = core
         .add_listener_local()
@@ -208,9 +203,7 @@ pub(crate) struct PipewireAudioSource {
 
 impl PipewireAudioSource {
     pub(crate) fn open(device: Option<&AudioDeviceId>, direction: AudioDirection) -> Result<Self> {
-        // PipeWire's AUTOCONNECT falls back to the session manager's default
-        // when a named target does not exist, so an unknown device would
-        // silently record a different one. Checked here rather than trusted.
+        // AUTOCONNECT falls back to the session default when a named target is missing, so an unknown device would record another.
         if let Some(named) = device {
             let known = devices()?;
             if !known
@@ -303,9 +296,7 @@ fn run_stream(
         *pipewire::keys::MEDIA_ROLE => "Production",
     };
     if direction == AudioDirection::Loopback {
-        // Capturing an output means reading its monitor, and this is the flag
-        // that says so. Without it the stream connects to a source and a
-        // loopback silently records the microphone instead.
+        // Capturing an output means reading its monitor; without this flag a loopback silently records the microphone.
         props.insert(*pipewire::keys::STREAM_CAPTURE_SINK, "true");
     }
     if let Some(target) = target {
@@ -373,9 +364,7 @@ fn run_stream(
                 if samples.is_empty() {
                     return;
                 }
-                // A partial sample frame means the negotiated channel count and
-                // the buffer disagree; publishing it swaps the channels of
-                // everything after it rather than failing.
+                // A partial sample frame means the channel count and buffer disagree, and publishing it swaps channels from there on.
                 if let Err(err) = format.validate_buffer(samples.len()) {
                     queue.note_dropped_with("this stream's channel layout is unreadable", &err);
                     return;
@@ -408,8 +397,7 @@ fn run_stream(
 /// Translate a negotiated PipeWire format, or `None` for one capturekit cannot
 /// name.
 fn format_of(info: &AudioInfoRaw) -> Option<AudioFormat> {
-    // Only the interleaved little-endian layouts are asked for below, so
-    // anything else means the graph negotiated something this cannot read.
+    // Only interleaved little-endian layouts are requested, so anything else means the graph negotiated something unreadable.
     let sample_format = match info.format() {
         SpaAudioFormat::F32LE => SampleFormat::F32,
         SpaAudioFormat::S16LE => SampleFormat::I16,
@@ -471,11 +459,9 @@ impl AudioSource for PipewireAudioSource {
         Ok(RawAudio {
             pts,
             bytes: &self.current,
-            // PipeWire drives capture from the graph clock, so an idle sink
-            // still delivers buffers of real silence rather than nothing.
+            // PipeWire drives capture from the graph clock, so an idle sink still delivers buffers of real silence.
             silence: false,
-            // Set only when the queue had to refuse samples, which is a real
-            // break in the stream rather than a device hiccup.
+            // Set only when the queue had to refuse samples, which is a real break in the stream, not a device hiccup.
             discontinuous: lost,
         })
     }

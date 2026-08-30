@@ -77,13 +77,7 @@ export interface OffscreenExportOptions {
 	signal?: AbortSignal;
 }
 
-// MediaBunny's VideoDecoderWrapper.close isn't idempotent: on teardown the
-// samples-generator's cleanup AND our `input.dispose()` can both close the same
-// decoder, and the loser throws "Cannot call 'close' on a closed codec" as a
-// detached rejection we can't try/catch. Closing an already-closed codec is
-// harmless (the decode finished), so swallow just that one benign rejection.
-// Idempotent + context-scoped (dies with the worker; app-wide on the main thread,
-// where the message is specific enough to never hide a real bug).
+// MediaBunny's decoder close isn't idempotent, so a double close throws a detached rejection; swallow just that benign one.
 let codecCloseGuardInstalled = false;
 function installClosedCodecGuard() {
 	if (codecCloseGuardInstalled) return;
@@ -135,8 +129,7 @@ function applyAssets(engine: PreviewEngine, assets: EngineAssets | undefined) {
 		engine.setAnnotationImage(path, image);
 	}
 	if (assets.cursorTrack) engine.setCursorTrack(assets.cursorTrack);
-	// The font must land before the track: the layout measures glyphs, so a track
-	// set against the fallback face would keep the fallback's line breaks.
+	// The font must land before the track: layout measures glyphs, so a fallback face keeps the fallback's line breaks.
 	if (assets.captionFont && !engine.setCaptionFont(assets.captionFont)) {
 		console.warn("export: the caption font was rejected; falling back to the bundled face");
 	}
@@ -155,14 +148,12 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 	});
 	const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
 	let camInput: Input | null = null;
-	// Sample iterators to wind down in `finally`: abandoning one mid-iteration
-	// leaves its decoder and pre-decoded frames alive.
+	// Wound down in `finally`: abandoning an iterator mid-iteration leaves its decoder and pre-decoded frames alive.
 	const iterators: AsyncGenerator<unknown, void, unknown>[] = [];
 
 	try {
 		engine.setSourceSize(opts.sourceWidth, opts.sourceHeight);
-		// Before the scene: the time map is what output time MEANS, and a scene
-		// carrying a cut this map does not have would resolve on the old axis.
+		// Before the scene: the time map is what output time MEANS, or a scene with a missing cut resolves on the old axis.
 		engine.setTimeMap(opts.timeMap);
 		engine.setScene(opts.scene);
 		engine.setCanvasSize(opts.width, opts.height);
@@ -171,8 +162,7 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		const screenLayer = engine.screenLayerId;
 		if (screenLayer === undefined) throw new Error("export: the scene has no screen layer");
 		const cameraLayer = engine.cameraLayerId;
-		// One frame at a time: this loop binds what it just uploaded, so a ring
-		// deep enough for playback would only hold VRAM.
+		// One frame at a time: this loop binds what it just uploaded, so a playback-depth ring would only hold VRAM.
 		engine.setLayerRingCapacity(screenLayer, 2);
 		if (cameraLayer !== undefined) engine.setLayerRingCapacity(cameraLayer, 2);
 
@@ -198,10 +188,7 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		const frames = exportFrameCount(opts.fps, opts.outputDurationSec);
 		const frameDur = opts.fps > 0 ? 1 / opts.fps : 0;
 
-		// `sink.getSample(t)` builds a FRESH VideoDecoder per call and decodes from
-		// the preceding keyframe, so calling it per frame re-decoded each GOP once
-		// per output frame in it (~15x at our GOP of fps/2, ~60x for imported
-		// footage). `samplesAtTimestamps` decodes each packet at most once.
+		// `getSample(t)` builds a FRESH decoder per call and re-decodes the GOP; `samplesAtTimestamps` decodes each packet once.
 		const originalAt = (i: number) => outputToOriginal(opts.timeMap, exportFrameTime(i, opts.fps));
 		function* sampleTimes(shiftSec = 0): Generator<number> {
 			for (let i = 0; i < frames; i++) yield Math.max(0, originalAt(i) - shiftSec);
@@ -213,8 +200,7 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		iterators.push(mainSamples);
 		if (camSamples) iterators.push(camSamples);
 
-		// A GPU reset makes every draw a silent no-op, which would finalise an mp4
-		// that is one frozen frame from there on with no error anywhere.
+		// A GPU reset makes every draw a silent no-op, finalising an mp4 that is one frozen frame with no error anywhere.
 		let drewSomething = false;
 		for (let i = 0; i < frames; i++) {
 			if (opts.signal?.aborted) throw new Error("export cancelled");
@@ -227,14 +213,12 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 				try {
 					engine.putLayerFrame(screenLayer, vf, originalUs);
 				} finally {
-					// An upload throw must not strand the frame: a retained VideoFrame
-					// silently starves the decoder.
+					// An upload throw must not strand the frame: a retained VideoFrame silently starves the decoder.
 					vf.close();
 					sample.close();
 				}
 			}
-			// Floor 0: this loop uploads exactly the frame it wants, so there is no
-			// older segment in the ring to exclude.
+			// Floor 0: this loop uploads exactly the frame it wants, so no older ring segment needs excluding.
 			engine.bindLayerFrame(screenLayer, originalUs, 0);
 
 			if (camSamples && cameraLayer !== undefined) {

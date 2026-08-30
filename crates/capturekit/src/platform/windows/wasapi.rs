@@ -90,8 +90,7 @@ fn device_name(device: &IMMDevice) -> String {
 /// to report what the device runs at and let the caller resample.
 fn mix_format(client: &IAudioClient) -> Result<(AudioFormat, *mut WAVEFORMATEX)> {
     let raw = unsafe { client.GetMixFormat() }.map_err(err)?;
-    // SAFETY: `GetMixFormat` returns a valid, CoTaskMem-allocated header, and
-    // `format_of` reads past it only when the tag says a larger struct follows.
+    // SAFETY: `GetMixFormat` returns a valid CoTaskMem header, and `format_of` reads past it only when the tag says so.
     let format = unsafe { format_of(raw) }?;
     Ok((format, raw))
 }
@@ -105,9 +104,7 @@ fn mix_format(client: &IAudioClient) -> Result<(AudioFormat, *mut WAVEFORMATEX)>
 unsafe fn format_of(raw: *const WAVEFORMATEX) -> Result<AudioFormat> {
     let header = unsafe { *raw };
     let sample_format = if header.wFormatTag == WAVE_FORMAT_EXTENSIBLE {
-        // SAFETY: the tag says the header is really a WAVEFORMATEXTENSIBLE.
-        // Read unaligned: the struct is `packed(1)`, so a reference to the field
-        // would be misaligned even when the allocation itself is not.
+        // SAFETY: the tag says this really is a WAVEFORMATEXTENSIBLE. Read unaligned, since the struct is `packed(1)`.
         let subformat = unsafe {
             core::ptr::addr_of!((*raw.cast::<WAVEFORMATEXTENSIBLE>()).SubFormat).read_unaligned()
         };
@@ -132,8 +129,7 @@ fn integer_format(bits: u16) -> Result<SampleFormat> {
     match bits {
         16 => Ok(SampleFormat::I16),
         32 => Ok(SampleFormat::I32),
-        // 24-bit packed is a real WASAPI format and is not three bytes of an
-        // i32; refusing beats handing back samples shifted by a byte.
+        // 24-bit packed is a real WASAPI format, not three bytes of an i32; refusing beats samples shifted by a byte.
         _ => Err(CaptureError::Unsupported {
             backend: BACKEND,
             operation: "read a mix format that is not 16-bit, 32-bit or float",
@@ -206,8 +202,7 @@ pub(crate) struct WasapiSource {
     stopped: bool,
 }
 
-// SAFETY: the COM objects are created and used on one thread; the source is
-// moved to its capture thread before any call and never shared.
+// SAFETY: the COM objects are created and used on one thread; the source moves to its capture thread before any call.
 unsafe impl Send for WasapiSource {}
 
 impl WasapiSource {
@@ -239,8 +234,7 @@ impl WasapiSource {
         let client: IAudioClient = unsafe { endpoint.Activate(CLSCTX_ALL, None) }.map_err(err)?;
         let (format, raw) = mix_format(&client)?;
 
-        // Loopback reads a render endpoint's mix, which is the only way to hear
-        // what the system is playing without a virtual cable.
+        // Loopback reads a render endpoint's mix, the only way to hear system playback without a virtual cable.
         let flags = match direction {
             AudioDirection::Loopback => AUDCLNT_STREAMFLAGS_LOOPBACK,
             AudioDirection::Input => 0,
@@ -249,9 +243,7 @@ impl WasapiSource {
             client.Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
                 flags,
-                // A one-second buffer: shared mode ignores the exact value but
-                // uses it as a hint, and a generous one tolerates a stalled
-                // consumer without dropping samples.
+                // Shared mode treats this as a hint; a generous one-second buffer tolerates a stalled consumer without dropping samples.
                 10_000_000,
                 0,
                 raw,
@@ -349,16 +341,14 @@ impl AudioSource for WasapiSource {
         loop {
             let available = unsafe { self.capture.GetNextPacketSize() }.map_err(err)?;
             if available == 0 {
-                // Nothing is playing. Cover the time the device ran through with
-                // real silence rather than letting the track come out short.
+                // Nothing is playing: cover the time the device ran through with real silence rather than a short track.
                 let owed = self.owed_by_clock();
                 let chunk = self.desc.format.frames_in_duration(MAX_SILENCE);
                 if owed >= chunk {
                     return Ok(self.emit_silence(chunk, false));
                 }
                 if std::time::Instant::now() >= deadline {
-                    // Still owed something, just less than a chunk: deliver it
-                    // rather than reporting a timeout the caller cannot act on.
+                    // Still owed something, just under a chunk: deliver it rather than report a timeout the caller can't act on.
                     if owed > 0 {
                         return Ok(self.emit_silence(owed, false));
                     }
@@ -389,15 +379,12 @@ impl AudioSource for WasapiSource {
                 });
             }
 
-            // The device ran on while nothing arrived, which for a loopback
-            // endpoint means nothing was playing. The samples owed are real
-            // silence at a real position, not something to skip.
+            // The device ran on with nothing arriving, so the owed samples are real silence at a real position, not a skip.
             let local = local_position(&mut self.anchor, device_position, self.timeline.position());
             let gap = self.timeline.gap_before(local);
             let discontinuous = flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32 != 0;
             if gap > 0 {
-                // Release without consuming: this buffer is delivered next call,
-                // after the silence that belongs in front of it.
+                // Release without consuming: this buffer is delivered next call, after the silence that belongs in front of it.
                 let _ = unsafe { self.capture.ReleaseBuffer(0) };
                 let chunk = self.desc.format.frames_in_duration(MAX_SILENCE).min(gap);
                 return Ok(self.emit_silence(chunk, discontinuous));
@@ -406,12 +393,10 @@ impl AudioSource for WasapiSource {
             let bytes = self.desc.format.bytes_for(frames as usize);
             self.staging.clear();
             if flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0 || data.is_null() {
-                // WASAPI is allowed to hand back a null pointer for silence and
-                // expects the caller to write zeroes rather than read it.
+                // WASAPI may hand back a null pointer for silence and expects the caller to write zeroes instead of reading it.
                 self.staging.resize(bytes, 0);
             } else {
-                // SAFETY: `GetBuffer` succeeded, so `data` points at `frames`
-                // frames of this format, valid until `ReleaseBuffer`.
+                // SAFETY: `GetBuffer` succeeded, so `data` points at `frames` frames of this format, valid until `ReleaseBuffer`.
                 let source = unsafe { core::slice::from_raw_parts(data, bytes) };
                 self.staging.extend_from_slice(source);
             }

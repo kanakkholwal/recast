@@ -15,20 +15,13 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes("node_modules") ? undefined : true,
 			},
 
-			// Deployed to Cloudflare Workers (static assets + SSR worker). The
-			// build output lands in .svelte-kit/cloudflare; wrangler.jsonc points
-			// the deploy at it. See .github/workflows/deploy-web.yml.
+			// Cloudflare Workers: the build lands in .svelte-kit/cloudflare and wrangler.jsonc points the deploy at it.
 			adapter: adapter(),
 			prerender: {
-				// Without this, prerendered pages bake in SvelteKit's placeholder
-				// origin (http://sveltekit-prerender) as their <link rel=canonical>
-				// and og:url, pointing crawlers at a domain that does not exist.
+				// Without this, prerendered pages bake SvelteKit's placeholder origin into canonical and og:url.
 				origin: process.env.PUBLIC_APP_URL ?? "https://recast.li",
 
-				// Still fails the build, deliberately: a 500 here means /blog and
-				// /tools would ship broken, so 'warn'/'ignore' would only hide it.
-				// This exists to add the crawl context `handleError` cannot see —
-				// which page linked to the failing one, and how it was referenced.
+				// Still fails the build; this only adds the crawl context `handleError` can't see, such as which page linked to the failure.
 				handleHttpError: ({ status, path, referrer, referenceType, message }) => {
 					console.error(
 						`[prerender] ${status} ${path} (${referenceType} from ${referrer ?? "entry point"}) :: ${message}`,
@@ -37,21 +30,6 @@ export default defineConfig({
 				},
 			},
 
-			// cloudflare
-			// adapter: adapter({
-			// 	// See below for an explanation of these options
-			// 	config: undefined,
-			// 	platformProxy: {
-			// 		configPath: undefined,
-			// 		environment: undefined,
-			// 		persist: undefined
-			// 	},
-			// 	fallback: 'plaintext',
-			// 	routes: {
-			// 		include: ['/*'],
-			// 		exclude: ['<all>']
-			// 	}
-			// }),
 			alias: {
 				$components: "src/components",
 				$utils: "src/utils",
@@ -64,24 +42,15 @@ export default defineConfig({
 		docvia(docviaConfig),
 	],
 	clearScreen: false,
-	// `@takumi-rs/wasm` (used by /api/og) ships its WebAssembly binary as an
-	// asset. Externalised SSR deps skip Vite transforms, so Node would receive a
-	// raw `?url` specifier and crash — bundling the package lets Vite resolve and
-	// inline it (see assetsInlineLimit). The native `@takumi-rs/core` addon
-	// doesn't bundle on Vercel, so /api/og runs the wasm renderer instead.
+	// Externalised SSR deps skip Vite transforms, so Node gets a raw `?url` specifier and crashes; bundling lets Vite inline the wasm.
 	ssr: {
 		noExternal: ["@takumi-rs/wasm"],
 	},
 	build: {
-		// Base64-inline the takumi wasm so its bytes ship *inside* the /api/og
-		// server bundle. On Vercel the serverless function can't read the client/
-		// static assets dir takumi's stock loader expects, and the 5 MB binary is
-		// too large for an Edge function — inlining sidesteps both. Everything
-		// else keeps Vite's default size threshold (return undefined).
+		// Inline the takumi wasm: Vercel's function can't read the static assets dir, and 5 MB is too large for an Edge function.
 		assetsInlineLimit: (filePath) => (filePath.includes("takumi_wasm_bg") ? true : undefined),
 	},
-	// Surfaced as a global so analytics can tag every event with the running
-	// build. npm_package_version is set by the pnpm/npm script runner.
+	// Surfaced as a global so analytics can tag every event with the running build.
 	define: {
 		__APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? "0.0.0"),
 	},
@@ -93,11 +62,7 @@ export default defineConfig({
 			// tell vite to ignore watching `src-tauri`
 			ignored: ["**/src-tauri/**"],
 		},
-		// Warm up the routes / leaf files that get hit on practically every
-		// dev session. Vite kicks off transforms in parallel at boot so the
-		// first nav doesn't pay the cold-compile tax. Keep this list small
-		// and high-traffic — adding everything actually slows things down
-		// (parallel pressure on the worker pool).
+		// Warm the highest-traffic routes so the first nav skips the cold-compile tax; a long list only adds worker-pool pressure.
 		warmup: {
 			clientFiles: [
 				"./src/routes/+layout.svelte",
@@ -110,11 +75,7 @@ export default defineConfig({
 			],
 		},
 	},
-	// Pre-bundle the heavy / always-used deps so first request doesn't
-	// trigger a "new dep optimized, reloading" cascade. Without this, the
-	// first navigation in dev mode hits Vite's discovery path and forces
-	// a full client reload once new deps are found — extra noticeable on
-	// the share page (player + bits-ui) and dashboard (drizzle/auth client).
+	// Pre-bundle heavy deps so the first navigation doesn't hit Vite's discovery path and force a full client reload.
 	optimizeDeps: {
 		include: [
 			"@recast/icons",
@@ -126,14 +87,11 @@ export default defineConfig({
 			"svelte-sonner",
 			"tailwind-merge",
 			"tailwind-variants",
-			// posthog-js is a transitive dep of @recast/analytics (dynamic import);
-			// pre-bundle it so the first capture doesn't trigger a reload cascade.
+			// A transitive dep of @recast/analytics: pre-bundle it so the first capture doesn't trigger a reload cascade.
 			"posthog-js",
 		],
 		exclude: [
-			// Workspace packages — leave them out of prebundling so edits
-			// to packages/* hot-reload instantly instead of getting
-			// re-optimized as if they were external deps.
+			// Workspace packages stay unbundled so edits to packages/* hot-reload instead of being re-optimized as external deps.
 			"@recast/ui",
 			"@recast/design",
 			"@recast/icons",

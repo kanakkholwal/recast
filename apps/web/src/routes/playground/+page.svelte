@@ -1,10 +1,8 @@
 <script lang="ts">
-// Type-only: a value import here would statically bind the whole editor and
-// defeat the split below (rolldown reports INEFFECTIVE_DYNAMIC_IMPORT).
+// Type-only: a value import would statically bind the whole editor and defeat the split below.
 import type { Editor as EditorComponent, EditorStore, PanelTab } from "@recast/editor";
 import { createAudioEngineHost } from "@recast/editor";
-// Value import, but a leaf module with no editor deps — it doesn't drag the
-// editor bundle into the landing chunk.
+// A value import, but a leaf module with no editor deps, so it doesn't drag the editor bundle into the landing chunk.
 import { decoderBudget } from "@recast/editor/lib/playback/decoder-budget";
 import type { TileProvider } from "@recast/editor/lib/timeline/filmstrip-source";
 import { AlertTriangle, Download, Sparkles, Upload } from "@recast/icons";
@@ -26,8 +24,7 @@ let error = $state<string | null>(null);
 let showDesktopCta = $state(false);
 let fileInput = $state<HTMLInputElement | null>(null);
 
-// Probed on mount, not at module scope: this route is prerendered, so the
-// build-time environment would answer for every visitor.
+// Probed on mount, not at module scope: this route is prerendered, so build time would answer for every visitor.
 let support = $state<SupportVerdict | null>(null);
 onMount(() => {
 	support = checkSupport();
@@ -36,9 +33,7 @@ onMount(() => {
 const canEdit = $derived(support?.canEdit ?? true);
 const accept = ACCEPTED_EXTENSIONS.map((e) => `.${e}`).join(",");
 
-// --- Editor island ---
-// One route, two views. History state (not a second route) drives the swap, so
-// Back returns to the drop surface instead of leaving the site.
+// --- Editor island: history state, not a second route, drives the swap so Back returns to the drop surface.
 let Editor = $state<typeof EditorComponent | null>(null);
 let store = $state<EditorStore | null>(null);
 let panels = $state<readonly PanelTab[]>([]);
@@ -90,8 +85,7 @@ async function mountEditor() {
 	void buildTileProvider();
 }
 
-// Filmstrip thumbnails decode in their own worker off the picked File — the
-// main thread never holds the bytes.
+// Thumbnails decode in their own worker off the picked File, so the main thread never holds the bytes.
 async function buildTileProvider() {
 	const ref = playgroundSession.videoRef;
 	if (!ref) return;
@@ -116,9 +110,7 @@ async function buildTileProvider() {
 	}
 }
 
-// Preview owns decode priority: the shared budget pauses the filmstrip decoder
-// while the preview is playing or scrubbing, so the two never over-subscribe
-// the GPU's decode sessions.
+// Preview owns decode priority: the shared budget pauses the filmstrip decoder while the preview is busy.
 let unregisterLease: (() => void) | null = null;
 let scrubBusyTimer: ReturnType<typeof setTimeout> | undefined;
 let lastPreviewTime = -1;
@@ -142,8 +134,7 @@ $effect(() => {
 	}
 });
 
-// Popping back to the drop surface tears the editor down; a fresh pick rebuilds
-// it. Keeping a detached store alive across the swap only risks a stale decoder.
+// Popping back tears the editor down and a fresh pick rebuilds it; a detached store would only risk a stale decoder.
 $effect(() => {
 	if (editing) return;
 	untrack(() => {
@@ -197,8 +188,7 @@ const audioTracks = $derived(
 		? [{ src: playgroundSession.videoRef, kind: "system" as const }]
 		: undefined,
 );
-// The editor no longer builds this: an AudioContext is host-owned so a host
-// driving its own transport can't race a second engine.
+// The AudioContext is host-owned, so a host driving its own transport can't race a second engine.
 const audio = createAudioEngineHost(() => audioTracks);
 </script>
 

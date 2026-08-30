@@ -168,8 +168,7 @@ describe("decode run against MediaBunny sample semantics", () => {
 	});
 
 	afterEach(async () => {
-		// Stop any run still in flight, or it posts frames into the next test's
-		// buffer — the worker module outlives the per-test globals.
+		// Stop any run still in flight, or it posts frames into the next test's buffer: the module outlives per-test globals.
 		onmessage?.({ data: { type: "dispose" } });
 		await new Promise((r) => setTimeout(r, DECODER_STARTUP_MS * 2));
 		vi.unstubAllGlobals();
@@ -190,8 +189,7 @@ describe("decode run against MediaBunny sample semantics", () => {
 		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0));
 		expect(posted.filter((p) => p.msg.type === "error")).toEqual([]);
-		// Every frame must be in its message's transfer list, or it is structured-
-		// cloned (a full copy) instead of moved.
+		// Every frame must be in its message's transfer list, or it is structured-cloned instead of moved.
 		for (const p of frames()) expect(p.transfer).toContain(p.msg.frame);
 	});
 
@@ -200,15 +198,12 @@ describe("decode run against MediaBunny sample semantics", () => {
 		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(2));
 		await new Promise((r) => setTimeout(r, 100));
-		// A sample holds its own decode surface; leaking them exhausts the pool.
-		// (It parks on backpressure well before `framesAvailable`, by design.)
+		// A sample holds its own decode surface, and leaking them exhausts the pool.
 		expect([...openSamples].filter((s) => !s.closed)).toEqual([]);
 	});
 
 	it("bounds decode-ahead by the frame budget, not a fixed duration", async () => {
-		// 4K: frameBudget allows a handful of frames. A fixed 0.75s lookahead
-		// decoded ~45 frames per window against a 4-frame cache, and the churn
-		// (two full-frame allocations each) took the renderer down.
+		// 4K: a fixed 0.75s lookahead decoded ~45 frames per window against a 4-frame cache, and the churn killed the renderer.
 		videoWidth = 3840;
 		videoHeight = 2160;
 		framesAvailable = 600;
@@ -239,32 +234,25 @@ describe("decode run against MediaBunny sample semantics", () => {
 		await vi.waitFor(() => expect(liveRuns).toBe(1));
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0));
 
-		// Scrub elsewhere without ever sending a `playhead` — exactly what a
-		// paused click-to-click scrub does.
+		// Scrub elsewhere without ever sending a `playhead`, exactly what a paused click-to-click scrub does.
 		onmessage?.({ data: { type: "seek", seq: 2, originalSec: 30 } });
 		await vi.waitFor(() => expect(liveRuns).toBe(1), { timeout: 2000 });
 	});
 
 	it("tears down the previous run before starting the next", async () => {
-		// A superseded run is blocked in `for await` until its first sample
-		// arrives, so it cannot notice it has been replaced. Waiting for that
-		// left one live decoder per scrub tick until the pool was exhausted.
+		// A superseded run blocks in `for await` until its first sample, so waiting left one live decoder per scrub tick.
 		framesAvailable = 600;
 		await boot();
 		for (let i = 0; i < 20; i++) {
 			onmessage?.({ data: { type: "seek", seq: i + 1, originalSec: i * 5 } });
 		}
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0), { timeout: 2000 });
-		// Peak, not eventual: every run alive at the same instant is holding its
-		// own decoder, and a drag issues one seek per pointer move.
+		// Peak, not eventual: every run alive at one instant holds its own decoder, and a drag issues a seek per move.
 		expect(peakRuns).toBeLessThanOrEqual(2);
 	});
 
 	it("absorbs a seek the live run is already streaming through", async () => {
-		// A drag issues one seek per pointer move, all within a few frames of
-		// each other. Restarting for a target the run has already decoded pays
-		// full decoder startup and holds the picture on the last frame — which
-		// is the freeze that only clears when you drag again.
+		// Restarting for a target the run already decoded pays full decoder startup and freezes the picture until the next drag.
 		framesAvailable = 600;
 		await boot();
 		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
@@ -277,8 +265,7 @@ describe("decode run against MediaBunny sample semantics", () => {
 	});
 
 	it("restarts once the run that covered a target has ended", async () => {
-		// Coverage must die with the run, or a seek inside its old window is
-		// absorbed into nothing and no frame is ever decoded.
+		// Coverage must die with the run, or a seek inside its old window is absorbed and no frame is ever decoded.
 		framesAvailable = 4;
 		await boot();
 		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });

@@ -54,8 +54,7 @@ import {
 	summarize,
 } from "./profiles.logic";
 
-// mode = 'create' means draft is not yet in the store; mode = 'edit' means
-// draft mirrors an existing entry. Persistence only happens on Save.
+// 'create' means the draft isn't in the store yet, 'edit' means it mirrors an existing entry; persistence is on Save.
 let mode = $state<"create" | "edit" | null>(null);
 let draft = $state<RecordingProfile | null>(null);
 /** The profile the dialog opened with, for the unsaved-changes check. */
@@ -64,8 +63,7 @@ let discardPrompt = $state(false);
 let nameInputEl = $state<HTMLInputElement | null>(null);
 let query = $state("");
 
-// Refreshed each time the dialog opens since devices come and go between
-// recordings; camera enumeration may trigger a permission probe.
+// Refreshed each time the dialog opens, since devices come and go and camera enumeration can trigger a permission probe.
 let mics = $state<AudioDeviceInfo[]>([]);
 let cameras = $state<BrowserCamera[]>([]);
 let devicesLoading = $state(false);
@@ -83,8 +81,7 @@ const dialogWidth = $derived(computeDialogWidth(viewportWidth, showDevicePanel))
 
 onMount(() => {
 	profilesStore.hydrate();
-	// Devices are only ever read inside the dialog, so nothing is enumerated
-	// here. That matters for the camera specifically — see `loadCameras`.
+	// Devices are read only inside the dialog, so nothing enumerates here; that matters for the camera (see `loadCameras`).
 	return registerShortcutHandlers({ "profiles.new": addProfile });
 });
 
@@ -132,9 +129,7 @@ function openDialog(next: "create" | "edit", profile: RecordingProfile) {
 	});
 }
 
-// Deleting a profile is immediate and unrecoverable — there is no trash for
-// them the way there is for recordings — so it asks first, like every other
-// destructive action in the app.
+// Deleting a profile is immediate and unrecoverable, so it asks first like every destructive action in the app.
 let deleteTarget = $state<RecordingProfile | null>(null);
 
 function confirmDelete() {
@@ -175,15 +170,12 @@ function finishEditing() {
 	closeDialog();
 }
 
-// Soft nudge: another saved profile with identical capture settings. Profiles
-// are told apart by name, so this informs without blocking the save.
+// A soft nudge: profiles are told apart by name, so an identical-settings twin informs without blocking the save.
 const twin = $derived.by(() =>
 	draft ? profilesStore.twinOf(normalizeProfileForSave(draft)) : null,
 );
 
-// Every list that shows a profile identifies it by name, so two called the
-// same thing are indistinguishable. Informs rather than blocks, matching how
-// `twin` treats duplicate capture settings.
+// Every list identifies a profile by name, so two alike are indistinguishable; informs rather than blocks, like `twin`.
 const nameClash = $derived(draft ? nameClashOf(draft, profilesStore.profiles) : null);
 
 function closeDialog() {
@@ -215,8 +207,7 @@ function toggleDraft(field: "systemAudio" | "microphone" | "camera" | "isDefault
 	const nextValue = !draft[field];
 	draft = { ...draft, [field]: nextValue };
 
-	// When turning a device-bound capability ON, prefill the saved device
-	// from the current default so the dropdown isn't blank.
+	// Turning a device-bound capability on prefills the saved device from the current default, so the dropdown isn't blank.
 	if (field === "microphone" && nextValue && !draft.micDeviceId) {
 		const def = mics.find((d) => d.isDefault) ?? mics[0];
 		if (def) draft = { ...draft, micDeviceId: def.id, micLabel: def.name };
@@ -247,8 +238,7 @@ function setCameraSelection(id: string) {
 	draft = { ...draft, cameraDeviceId: dev.deviceId, cameraLabel: dev.label };
 }
 
-// `null` = inherit the global countdown; `0` = off. Derived from the shared
-// COUNTDOWN_OPTIONS so the picker and the combination math can't drift.
+// `null` inherits the global countdown and `0` is off; derived from COUNTDOWN_OPTIONS so picker and math can't drift.
 const countdownChoices: { value: number | null; label: string }[] = COUNTDOWN_OPTIONS.map(
 	(value) => ({
 		value,

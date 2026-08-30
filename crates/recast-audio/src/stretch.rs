@@ -61,9 +61,7 @@ fn best_offset(
             continue;
         }
         let position = position as usize;
-        // Accumulated in f64 to match the TypeScript, which computes every
-        // arithmetic step at double precision however the samples are stored.
-        // In f32 the sums drift enough to pick a different offset near a tie.
+        // f64 to match the TypeScript, which computes every step at double precision; in f32 the sums drift near a tie.
         let mut dot = 0.0f64;
         let mut energy = 0.0f64;
         let mut i = 0;
@@ -73,8 +71,7 @@ fn best_offset(
             energy += a * a;
             i += CORR_STRIDE;
         }
-        // Normalising by the candidate's own energy stops the search always
-        // picking the loudest window rather than the best-aligned one.
+        // Normalising by the candidate's own energy stops the search always picking the loudest window over the best-aligned.
         let score = dot / (energy + EPS as f64).sqrt();
         if score > best_score {
             best_score = score;
@@ -98,8 +95,7 @@ pub fn time_stretch(input: &[f32], rate: f64, sample_rate: u32) -> Vec<f32> {
         return Vec::new();
     }
 
-    // The frame has to fit the input twice over for the search to have anywhere
-    // to go; below that a fragment is short enough that resampling is inaudible.
+    // The frame must fit the input twice over for the search to move; below that, resampling a fragment is inaudible.
     let mut frame = ((FRAME_SEC * sample_rate as f64).round() as usize).min(input.len() / 4 * 2);
     frame -= frame % 2;
     if frame < MIN_FRAME {
@@ -141,8 +137,7 @@ pub fn time_stretch(input: &[f32], rate: f64, sample_rate: u32) -> Vec<f32> {
         s += 1;
     }
 
-    // Hann at a half hop sums to unity in the steady state but tapers at both
-    // edges; dividing by the actual window sum keeps the gain flat end to end.
+    // Hann at a half hop sums to unity in steady state but tapers at the edges, so divide by the actual window sum.
     for (sample, weight) in out.iter_mut().zip(norm) {
         if weight > EPS {
             *sample /= weight;
@@ -249,8 +244,7 @@ mod tests {
         let envelope: Vec<f32> = body.chunks(480).map(peak).collect();
         let high = envelope.iter().fold(0.0f32, |m, v| m.max(*v));
         let low = envelope.iter().fold(f32::INFINITY, |m, v| m.min(*v));
-        // Measured: the search holds this at 1.00, and taking the ideal offset
-        // instead drops it to 0.93.
+        // Measured: the search holds this at 1.00, while taking the ideal offset drops it to 0.93.
         assert!(
             low > high * 0.99,
             "the envelope beats between {low} and {high}"

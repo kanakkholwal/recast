@@ -1,6 +1,4 @@
-// Shared drag/resize/nudge maths for ZoomLayerCard and AnnotationLayerCard.
-// Cards differ only in the store method, MIN_DURATION and colours; the pointer
-// geometry (output-space delta mapped back through the display map) is identical.
+// Shared drag, resize and nudge maths for ZoomLayerCard and AnnotationLayerCard; only the store method and limits differ.
 
 import { frameStep } from "./timeline-helpers";
 import { type SnapTarget, snapTime } from "./timeline-snap";
@@ -30,8 +28,7 @@ export interface CardDragResult {
 	guide: SnapTarget | null;
 }
 
-// Everything a pointer gesture needs: the anchor bounds captured at pointer-down,
-// the current/start clientX, and the mappers that project through the collapsed axis.
+// The anchor bounds captured at pointer-down, the clientX pair, and the mappers that project through the collapsed axis.
 export interface CardDragGeometry {
 	origin: CardBounds;
 	clientX: number;
@@ -47,20 +44,13 @@ export interface CardDragGeometry {
 	scale?: number;
 }
 
-// Move an original-time anchor by the pointer's output-space delta, so the card
-// tracks the cursor on the collapsed (post-cut) axis.
-//
-// The delta stays in PIXELS. It used to be divided by `pps` before being added
-// to `xOf(orig)`, which is pixels — so the card advanced by delta/pps² seconds
-// and a 150px drag at 100px/s moved it 15ms instead of 1.5s. Dragging a zoom or
-// markup card looked like it did nothing.
+// The delta stays in PIXELS: dividing by `pps` before adding to `xOf(orig)` moved the card by delta over pps squared.
 function projectAnchor(g: CardDragGeometry, orig: number): number {
 	const deltaPx = (g.clientX - g.startClientX) * (g.scale ?? 1);
 	return g.tOf(g.xOf(orig) + deltaPx);
 }
 
-// Translate the whole card, snapping whichever edge is closer to a target so it
-// butts against neighbours from either side; span is preserved and clamped in [0, duration].
+// Snaps whichever edge is closer to a target so the card butts against neighbours from either side; span is preserved.
 export function computeCardMove(g: CardDragGeometry): CardDragResult {
 	const span = g.origin.end - g.origin.start;
 	const proposed = projectAnchor(g, g.origin.start);
@@ -102,8 +92,7 @@ export function computeCardResize(
 	return { start: g.origin.start, end: next, guide: snap.target };
 }
 
-// Keyboard nudge: Shift = 1s, plain = one frame. Alt resizes the trailing edge
-// instead of translating; otherwise span is preserved and clamped in [0, duration].
+// Shift is 1s and plain is one frame; Alt resizes the trailing edge instead of translating.
 export function computeCardNudge(p: {
 	origin: CardBounds;
 	direction: 1 | -1;

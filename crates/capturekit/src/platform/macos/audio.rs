@@ -122,8 +122,7 @@ fn samples_of(buffers: &[AudioBuffer], format: AudioFormat, out: &mut Vec<u8>) -
             if buffer.mData.is_null() {
                 &[][..]
             } else {
-                // SAFETY: the block buffer retained by the caller owns these
-                // bytes until it is dropped, after this returns.
+                // SAFETY: the block buffer the caller retains owns these bytes until it is dropped, after this returns.
                 unsafe {
                     core::slice::from_raw_parts(
                         buffer.mData.cast::<u8>(),
@@ -186,8 +185,7 @@ pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
         queue.note_dropped("a sample buffer arrived with no format description");
         return;
     };
-    // SAFETY: the description is an audio one, since this only runs for the
-    // audio output types; a non-audio description returns null and is refused.
+    // SAFETY: this runs only for audio output types; a non-audio description returns null and is refused.
     let asbd = unsafe { CMAudioFormatDescriptionGetStreamBasicDescription(&description) };
     if asbd.is_null() {
         queue.note_dropped("a sample buffer carried no audio stream description");
@@ -233,8 +231,7 @@ pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
     let time = unsafe { sample.presentation_time_stamp() };
     let pts = match time.timescale {
         0 => Timestamp::ZERO,
-        // The same host time clock the video output stamps, which is what makes
-        // an audio and a video track of one session line up with no correction.
+        // The same host-time clock the video output stamps, which is what makes audio and video line up uncorrected.
         scale => Timestamp::from_ticks(time.value, i64::from(scale)),
     };
     queue.publish(pts, &samples, QUEUE_BYTES);
@@ -256,8 +253,7 @@ pub(crate) struct SckAudioSource {
     stopped: bool,
 }
 
-// SAFETY: `SCStream` and the output object are thread-safe Objective-C objects
-// and the slot is explicitly synchronised. The bound satisfies `AudioSource`.
+// SAFETY: `SCStream` and the output object are thread-safe ObjC objects and the slot is explicitly synchronised.
 unsafe impl Send for SckAudioSource {}
 
 impl SckAudioSource {
@@ -298,8 +294,7 @@ impl SckAudioSource {
             AudioDirection::Loopback => SCStreamOutputType::Audio,
             AudioDirection::Input => SCStreamOutputType::Microphone,
         };
-        // Serial: buffers must reach the slot in the order the daemon produced
-        // them, and a concurrent queue would let two deliveries race the swap.
+        // Serial: buffers must reach the slot in daemon order, and a concurrent queue would let two deliveries race the swap.
         let deliveries = dispatch2::DispatchQueue::new(
             "com.capturekit.audio",
             dispatch2::DispatchQueueAttr::SERIAL,
@@ -326,9 +321,7 @@ impl SckAudioSource {
             _stopped: stopped,
             queue,
             desc: AudioDesc {
-                // What was asked for. The first delivery replaces it with what
-                // the daemon actually produced, which for a microphone is the
-                // device's own rate rather than this.
+                // What was asked for; the first delivery replaces it with what the daemon produced, which for a mic is the device rate.
                 format: REQUESTED,
                 device: AudioDeviceId(expected.to_string()),
                 direction,
@@ -344,8 +337,7 @@ impl SckAudioSource {
 fn configuration(direction: AudioDirection) -> Result<Retained<SCStreamConfiguration>> {
     let config = unsafe { SCStreamConfiguration::new() };
     unsafe {
-        // No screen output is ever added, so these only bound what the daemon
-        // sets aside for a video path nothing reads.
+        // No screen output is ever added, so these only bound what the daemon sets aside for a video path nothing reads.
         config.setWidth(2);
         config.setHeight(2);
         config.setSampleRate(REQUESTED.sample_rate as isize);
@@ -354,8 +346,7 @@ fn configuration(direction: AudioDirection) -> Result<Retained<SCStreamConfigura
     match direction {
         AudioDirection::Loopback => unsafe { config.setCapturesAudio(true) },
         AudioDirection::Input => {
-            // `captureMicrophone` is macOS 15. Asking an older system for it
-            // raises rather than returning, so the selector is checked first.
+            // `captureMicrophone` is macOS 15 and raises on older systems, so the selector is checked first.
             if !config.respondsToSelector(sel!(setCaptureMicrophone:)) {
                 return Err(unsupported("capture a microphone before macOS 15"));
             }
@@ -382,8 +373,7 @@ impl AudioSource for SckAudioSource {
         Ok(RawAudio {
             pts,
             bytes: &self.current,
-            // ScreenCaptureKit taps the mix continuously, so an idle system
-            // delivers real silence rather than nothing.
+            // ScreenCaptureKit taps the mix continuously, so an idle system delivers real silence rather than nothing.
             silence: false,
             // Set only when the queue had to refuse samples.
             discontinuous: lost,

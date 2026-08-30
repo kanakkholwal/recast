@@ -144,8 +144,7 @@ impl PortalSource {
             })
             .map_err(|error| CaptureError::backend(BACKEND, error))?;
 
-        // The loop reports only a setup failure before it starts running, so a
-        // timeout here means it got as far as running, which is success.
+        // The loop reports only a setup failure before running, so a timeout here means it got as far as running.
         if let Ok(Err(message)) = ready_rx.recv_timeout(Duration::from_secs(5)) {
             return Err(failed(message));
         }
@@ -179,8 +178,7 @@ fn run_stream(
     quit: &Arc<AtomicBool>,
 ) -> core::result::Result<(), String> {
     pipewire::init();
-    // The owned handles are the `*Rc` types; the bare `MainLoop`, `Context` and
-    // `Stream` are the borrowed views they deref to.
+    // The owned handles are the `*Rc` types; the bare `MainLoop`, `Context` and `Stream` are the borrowed views.
     let main_loop = MainLoopRc::new(None).map_err(|e| e.to_string())?;
     let context = ContextRc::new(&main_loop, None).map_err(|e| e.to_string())?;
     let core = context
@@ -236,8 +234,7 @@ fn run_stream(
                 let Some(bytes) = data.data() else { return };
                 let Ok(info) = format.lock() else { return };
                 let (width, height) = (info.size().width, info.size().height);
-                // Only the packed 32-bit layouts are handled; a compositor that
-                // negotiated planar YUV would be misread as BGRA otherwise.
+                // Only packed 32-bit layouts are handled; a compositor negotiating planar YUV would be misread as BGRA.
                 if !matches!(
                     info.format(),
                     VideoFormat::BGRx | VideoFormat::BGRA | VideoFormat::RGBx | VideoFormat::RGBA
@@ -275,8 +272,7 @@ fn run_stream(
         )
         .map_err(|e| e.to_string())?;
 
-    // Poll the quit flag from inside the loop rather than from outside it: the
-    // PipeWire main loop is not safe to signal from another thread.
+    // Poll the quit flag inside the loop: the PipeWire main loop isn't safe to signal from another thread.
     let loop_ref = main_loop.loop_();
     let _timer = {
         let weak = main_loop.downgrade();
@@ -386,8 +382,7 @@ impl FrameSource for PortalSource {
 
     fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>> {
         let meta = self.slot.take(timeout, &mut self.seen, &mut self.current)?;
-        // The portal reports its size before the stream negotiates one, and a
-        // compositor may renegotiate mid-stream, so the frame is the authority.
+        // The portal reports size before the stream negotiates one, and a compositor may renegotiate, so the frame is the authority.
         self.desc.width = meta.width;
         self.desc.height = meta.height;
         Ok(RawFrame {

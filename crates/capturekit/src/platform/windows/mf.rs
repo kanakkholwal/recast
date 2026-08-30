@@ -113,8 +113,7 @@ fn activations() -> Result<Vec<IMFActivate>> {
     }
     let mut found = Vec::with_capacity(count as usize);
     for index in 0..count as usize {
-        // Reading takes ownership of the reference the array held, which is what
-        // keeps this from leaking one per device.
+        // Reading takes ownership of the reference the array held, which is what keeps this from leaking one per device.
         if let Some(activate) = unsafe { raw.add(index).read() } {
             found.push(activate);
         }
@@ -144,8 +143,7 @@ pub(crate) fn cameras() -> Result<Vec<Camera>> {
         cameras.push(Camera {
             id: CameraId(id),
             name,
-            // Media Foundation enumerates in the order the class installer
-            // registered devices, and the first is what a camera app opens.
+            // Media Foundation enumerates in class-installer registration order, and the first is what a camera app opens.
             is_default: index == 0,
             formats: modes(activate).unwrap_or_default(),
         });
@@ -204,8 +202,7 @@ fn reader_for(source: &IMFMediaSource) -> Result<IMFSourceReader> {
     let mut attributes: Option<IMFAttributes> = None;
     unsafe { MFCreateAttributes(&mut attributes, 1) }.map_err(err)?;
     let attributes = attributes.ok_or_else(|| unsupported("describe a reader"))?;
-    // Without this the reader refuses any output format the device does not
-    // produce natively, and no webcam produces BGRA.
+    // Without this the reader refuses any output format the device doesn't produce natively, and no webcam produces BGRA.
     unsafe {
         attributes.SetUINT32(
             &MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,
@@ -237,9 +234,7 @@ fn negotiate(reader: &IMFSourceReader, size: (u32, u32)) -> Result<(u32, u32)> {
             .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
             .and_then(|()| wanted.SetGUID(&MF_MT_SUBTYPE, &MFVideoFormat_RGB32))
             .and_then(|()| wanted.SetUINT64(&MF_MT_FRAME_SIZE, pack_pair(size.0, size.1)))
-            // RGB32 defaults to bottom-up, which is how a camera preview ends up
-            // upside down. Asking for a positive stride makes the reader deliver
-            // top-down like every other source here.
+            // RGB32 defaults to bottom-up, which is how a camera preview ends up upside down; a positive stride gets top-down.
             .and_then(|()| wanted.SetUINT32(&MF_MT_DEFAULT_STRIDE, size.0.saturating_mul(4)))
     }
     .map_err(err)?;
@@ -295,8 +290,7 @@ impl MfCameraSource {
                 .map_err(|error| CaptureError::backend(BACKEND, error))?
         };
 
-        // A worker that dies before reporting drops the sender, so this ends
-        // rather than waiting for a device that will never open.
+        // A worker that dies before reporting drops the sender, so this ends instead of waiting on a device that never opens.
         let desc = match opened.recv() {
             Ok(result) => result,
             Err(_) => Err(unsupported("start a camera capture thread")),
@@ -342,8 +336,7 @@ fn run(
                 width,
                 height,
                 format: PixelFormat::Bgra8,
-                // Webcams deliver limited-range BT.601, which the reader's video
-                // processor has already expanded to full-range RGB by here.
+                // Webcams deliver limited-range BT.601, already expanded to full-range RGB by the reader's video processor.
                 color_space: ColorSpace::SRGB,
                 rotation: Rotation::None,
                 scale_factor: 1.0,
@@ -364,9 +357,7 @@ fn run(
     while !stopping.load(Ordering::Relaxed) {
         match read_one(&reader, width, height, slot, &mut scratch) {
             Ok(true) => {}
-            // End of stream: the device was unplugged or another process took it.
-            // Unplugged and taken-by-another-process both surface as the reader
-            // ending its stream, and Windows does not say which.
+            // End of stream: unplugged and taken-by-another-process both surface this way, and Windows doesn't say which.
             Ok(false) => {
                 log::info!("camera stream ended");
                 break;
@@ -406,8 +397,7 @@ fn read_one(
     {
         return Ok(false);
     }
-    // A null sample with no end-of-stream flag is the reader saying "nothing
-    // yet"; it happens around a format change and is not a failure.
+    // A null sample with no end-of-stream flag means 'nothing yet'; it happens around a format change.
     let Some(sample) = sample else {
         return Ok(true);
     };
@@ -431,15 +421,11 @@ fn read_one(
 
     if !base.is_null() && stride != 0 {
         let row_bytes = width.saturating_mul(4) as usize;
-        // SAFETY: the buffer is locked until the unlock below, so it addresses
-        // `height` rows of the pitch the lock reported.
+        // SAFETY: the buffer stays locked until the unlock below, so it addresses `height` rows of the reported pitch.
         unsafe { gather_rows(scratch, base, stride, row_bytes, height) };
         slot.publish(
             Delivered {
-                // Stamped from the same clock the screen and audio backends use.
-                // A camera's own sample time counts from when its stream
-                // started, so aligning it against a display by that would be
-                // meaningless.
+                // The shared clock, not the camera's own sample time, which counts from when its stream started.
                 pts: super::now(),
                 stride: row_bytes as u32,
                 width,
@@ -495,8 +481,7 @@ impl FrameSource for MfCameraSource {
     }
 
     fn region(&self) -> Option<Rect> {
-        // The reader scales to the requested size rather than cropping to it, so
-        // a region is a resolution request and not a crop.
+        // The reader scales to the requested size rather than cropping, so a region is a resolution request.
         None
     }
 
@@ -583,8 +568,7 @@ mod tests {
     #[test]
     fn a_negative_pitch_reads_the_rows_back_into_top_down_order() {
         let source = ladder();
-        // `Lock2D` reports the first scanline, which for a negative pitch is the
-        // last row in memory.
+        // `Lock2D` reports the first scanline, which for a negative pitch is the last row in memory.
         let first = unsafe { source.as_ptr().add((ROWS - 1) * ROW_BYTES) };
         let mut out = Vec::new();
         unsafe {

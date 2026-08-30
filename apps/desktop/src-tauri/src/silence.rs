@@ -106,8 +106,7 @@ impl SileroVad {
         let plan = tract_onnx::onnx()
             .model_for_path(path)
             .map_err(|e| map(e, "load"))?
-            // Pin input/output order + shapes so tract can optimize the graph.
-            // v5 input/output order: input, state, sr → output, stateN.
+            // Pin input/output order and shapes so tract can optimize the graph. v5 order: input, state, sr to output, stateN.
             .with_input_names(["input", "state", "sr"])
             .map_err(|e| map(e, "input names"))?
             .with_output_names(["output", "stateN"])
@@ -233,11 +232,7 @@ fn detect_blocking(
         return Err("no audio track available to analyse".into());
     }
 
-    // Detection is a pure function of the input files + options, but each run
-    // is a full FFmpeg decode plus per-frame model inference. Serve it from the
-    // file-identity disk cache so the editor opens instantly on reopen — and so
-    // the precompute kicked off at recording-stop is what the editor reads.
-    // The cursor track is a source too: re-recording it changes the scores.
+    // Each run is a full FFmpeg decode plus per-frame inference, so serve it from the identity cache; the cursor track is a source too.
     let mut sources: Vec<&Path> = inputs.iter().map(|p| Path::new(*p)).collect();
     if let Some(c) = cursor_path.filter(|c| Path::new(c).exists()) {
         sources.push(Path::new(c));
@@ -278,9 +273,7 @@ fn detect_blocking(
     }
     let total = samples.len() as f64 / RATE as f64;
 
-    // Per-frame speech probability. Silero is a stateful LSTM, so frames are
-    // scored in order; `reset` clears that state, and the short trailing frame
-    // is zero-padded to a full window. Samples are f32 in [-1, 1].
+    // Silero is a stateful LSTM, so frames are scored in order; the short trailing frame is zero-padded to a full window.
     let mut vad = SileroVad::new(silero_path)?;
     vad.reset()?;
     let mut probs: Vec<f32> = Vec::with_capacity(samples.len() / CHUNK + 1);
@@ -296,8 +289,7 @@ fn detect_blocking(
     // Non-speech runs as frame-index ranges, gated by minimum duration.
     let runs = silence_runs(&probs, frame_dur, opts.threshold, opts.min_audio_silence);
 
-    // Cursor-idle intervals — a confidence signal, not a gate. A missing track
-    // just means no cursor confirmation is available; candidates still stand.
+    // A confidence signal, not a gate: a missing cursor track just means no confirmation, and candidates still stand.
     let (cursor_idle, has_cursor) = match cursor_path {
         Some(p) if Path::new(p).exists() => {
             let bytes =
@@ -508,8 +500,7 @@ fn waveform_blocking(
     microphone_path: Option<&str>,
     buckets: usize,
 ) -> Result<Vec<f32>, String> {
-    // Visual fidelity only — 4 kHz mono is plenty for an envelope and keeps
-    // even hour-long recordings to a bounded buffer.
+    // Visual fidelity only: 4 kHz mono is plenty for an envelope and keeps hour-long recordings bounded.
     const WAVE_RATE: u32 = 4000;
 
     let inputs: Vec<&str> = [audio_path, microphone_path]
@@ -521,11 +512,7 @@ fn waveform_blocking(
         return Ok(Vec::new());
     }
 
-    // The peak envelope is a pure function of the input audio + bucket count,
-    // but computing it means a full FFmpeg decode of the whole track (1–3 s for
-    // long recordings). Serve it from the file-identity disk cache when the
-    // inputs are unchanged. Keyed by every input file's identity (+ bucket
-    // count), so adding/removing the mic track or re-recording invalidates it.
+    // Computing the envelope means a full decode (1-3s), so cache it keyed by every input's identity plus the bucket count.
     let input_paths: Vec<&Path> = inputs.iter().map(|p| Path::new(*p)).collect();
     if let Some(cached) = crate::cache::get::<Vec<f32>>("waveform", &input_paths, buckets as u64) {
         return Ok(cached);
@@ -595,16 +582,14 @@ mod tests {
 
     #[test]
     fn silence_runs_hysteresis_does_not_split_speech_on_a_single_dip() {
-        // 0.4 sits in the [release, threshold) band, so the speech run holds
-        // through it instead of fracturing into two silences.
+        // 0.4 sits in the release-to-threshold band, so the speech run holds through it instead of fracturing.
         let probs = [0.9, 0.9, 0.4, 0.9, 0.9];
         assert!(silence_runs(&probs, DUR, 0.5, 2.0).is_empty());
     }
 
     #[test]
     fn silence_runs_drops_runs_below_min_duration() {
-        // A single-frame gap (< 2 s) is discarded; the trailing 3-frame gap
-        // is kept and runs to the end.
+        // A single-frame gap under 2s is discarded; the trailing 3-frame gap is kept and runs to the end.
         assert!(silence_runs(&[0.1, 0.9, 0.9], DUR, 0.5, 2.0).is_empty());
         assert_eq!(
             silence_runs(&[0.9, 0.9, 0.1, 0.1, 0.1], DUR, 0.5, 2.0),
@@ -651,11 +636,7 @@ mod tests {
         assert_eq!(round3(2.0 / 3.0), 0.667);
     }
 
-    // Integration guard: the Silero model loads through tract and scores a
-    // frame, and digital silence reads as non-speech. The model isn't bundled
-    // — it's fetched to disk at runtime — so point this at a local copy via
-    // RECAST_SILERO_PATH; the test skips when that isn't set. This also verifies
-    // tract can optimize + run the model's Conv/LSTM graph (the migration off ort).
+    // Integration guard: the model is fetched at runtime, so point RECAST_SILERO_PATH at a local copy or the test skips.
     #[test]
     fn silero_model_loads_and_scores_silence_low() {
         let Ok(model) = std::env::var("RECAST_SILERO_PATH") else {

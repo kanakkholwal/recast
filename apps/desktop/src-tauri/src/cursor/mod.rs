@@ -247,9 +247,7 @@ pub fn spawn_cursor_capture(
             let mut next_tick = Instant::now() + SAMPLE_PERIOD;
 
             while !stop_flag.load(Ordering::Acquire) {
-                // While paused, stop sampling. The effective clock is frozen
-                // anyway; skipping keeps the track free of a run of
-                // identically-timestamped samples.
+                // While paused the effective clock is frozen, so skipping keeps the track free of identically-timestamped samples.
                 if clock.is_paused() {
                     thread::sleep(SAMPLE_PERIOD);
                     next_tick = Instant::now() + SAMPLE_PERIOD;
@@ -306,22 +304,18 @@ pub fn spawn_cursor_capture(
                     }
                 }
 
-                // Deadline-based sleep: target the next tick exactly,
-                // independent of how long the sampling itself took.
+                // Deadline-based sleep: target the next tick exactly, independent of how long the sampling took.
                 let now = Instant::now();
                 if next_tick > now {
                     thread::sleep(next_tick - now);
                 } else if now > next_tick + SAMPLE_PERIOD {
-                    // Fell more than one period behind (system stall, GC,
-                    // etc.). Reset the baseline so we don't fire a burst
-                    // of catch-up samples on the next recovery.
+                    // More than a period behind (a system stall), so reset the baseline instead of firing a burst of catch-up samples.
                     next_tick = now;
                 }
                 next_tick += SAMPLE_PERIOD;
             }
 
-            // Post-capture analysis: detect idle periods and zoom triggers.
-            // Idle: cursor within 5px radius for > 2 seconds.
+            // Post-capture analysis: idle is the cursor within a 5px radius for over 2 seconds.
             track.idle_periods = detect_idle_periods(&track.samples, 2_000_000, 5.0);
             track.zoom_triggers = detect_zoom_triggers(&track.samples, &track.clicks);
 
@@ -334,8 +328,7 @@ pub fn spawn_cursor_capture(
 
 /// Write a cursor track to a JSON file.
 pub fn write_cursor_track(path: &Path, track: &CursorTrack) -> Result<()> {
-    // Temp + fsync + rename: a truncated cursor.json makes the recording's
-    // cursor and zoom data unrecoverable.
+    // Temp, fsync, rename: a truncated cursor.json makes the recording's cursor and zoom data unrecoverable.
     let tmp = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(track)?;
     if let Err(e) = crate::commands::system::write_atomic(&tmp, path, &bytes) {

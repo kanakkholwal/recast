@@ -130,23 +130,16 @@ function fromDto(d: ExportJobDto): ExportItem {
 }
 
 function createExportActivityStore() {
-	// The queue as the backend reports it (queued + running + undismissed
-	// terminal), oldest first. Mutated in place (splice/push) so the array
-	// identity stays stable for Svelte reactivity.
+	// The queue as the backend reports it, oldest first; mutated in place so the array identity stays stable.
 	const items = $state<ExportItem[]>([]);
-	// Whether the editor's export panel is shown. Minimizing hands tracking to the
-	// activity center; reopening from there (or the toolbar) sets it back.
+	// Minimizing hands tracking to the activity center; reopening from there or the toolbar sets it back.
 	let foreground = $state(false);
-	// The item id the editor panel is currently showing (null during the options
-	// picker), so the activity center can hide just that one to avoid doubling.
+	// Null during the options picker; lets the activity center hide the one item the panel already shows.
 	let foregroundId = $state<string | null>(null);
-	// Whether an editor (which hosts the export panel) is mounted, so the activity
-	// center knows a "foregrounded" job actually has a panel on screen.
+	// Whether an editor hosting the export panel is mounted, so a foregrounded job really has a panel on screen.
 	let editorPresent = $state(false);
 
-	// Browser-render phase: pending render jobs + the in-flight one. The render runs
-	// HERE (app-scoped) so it survives closing its editor, serial (N=1) so two
-	// encoders never contend. The rendered video is then handed to the backend queue.
+	// The render runs app-scoped so it survives closing its editor, and serial so two encoders never contend.
 	type RenderReq = {
 		id: string;
 		job: ExportJob;
@@ -180,12 +173,10 @@ function createExportActivityStore() {
 				item.progress = Math.max(item.progress, p.progress);
 				item.phase = p.phase;
 			}
-			// hasRenderPhase is local-only (not in the DTO); carry it across so the
-			// backend mux keeps mapping onto the RENDER_MAX..100 tail.
+			// hasRenderPhase is local-only, so carry it across or the backend mux stops mapping onto the RENDER_MAX..100 tail.
 			if (p?.hasRenderPhase) {
 				item.hasRenderPhase = true;
-				// Keep the render's start (not the backend mux's) so total time + ETA
-				// span the whole render→mux, not just the fast tail.
+				// Keep the render's start, not the mux's, so total time and ETA span the whole run, not just the fast tail.
 				if (p.startedAt) item.startedAt = p.startedAt;
 			}
 			// Carry the other local-only fields so the finish telemetry stays complete.
@@ -195,8 +186,7 @@ function createExportActivityStore() {
 			if (p?.outputBytes != null) item.outputBytes = p.outputBytes;
 			return item;
 		});
-		// Keep local items still in the browser-render phase — the backend doesn't
-		// know about them until the render hands off, so they're absent from `rows`.
+		// Local items still rendering are absent from `rows`: the backend doesn't know them until the render hands off.
 		const localRenders = items.filter(
 			(i) =>
 				i.hasRenderPhase &&
@@ -209,8 +199,7 @@ function createExportActivityStore() {
 	/** Performance event on every terminal outcome: wall time vs source metrics,
 	 *  so we can see how long exports take for a given length/resolution/size. */
 	function emitCompletedTelemetry(it: ExportItem, status: "success" | "cancelled" | "error") {
-		// Browser render is timed monotonically (clock-safe, exact render start); the
-		// Rust path prefers the backend's authoritative wall span (SQLite start→finish).
+		// Browser render is timed monotonically; the Rust path prefers the backend's authoritative wall span.
 		const monotonicMs =
 			it.perfStartedAt != null ? Math.round(performance.now() - it.perfStartedAt) : undefined;
 		const wallMs =
@@ -269,8 +258,7 @@ function createExportActivityStore() {
 	function applyState(e: ExportStateEvent) {
 		const it = find(e.exportId);
 		if (!it) return;
-		// First live signal of processing → stamp the monotonic start (browser items
-		// already stamped it at render start; this covers the Rust path).
+		// The first live signal of processing stamps the monotonic start; browser items already stamped it at render start.
 		if (
 			it.perfStartedAt == null &&
 			(e.status === "started" || e.status === "preparing" || e.status === "progress")
@@ -375,9 +363,7 @@ function createExportActivityStore() {
 			if (renderAbort?.signal.aborted) {
 				if (item) finishFeedback(item, "cancelled");
 			} else {
-				// The browser render died (e.g. GPU context loss on a long/heavy export).
-				// Don't lose the user's export — fall back to the Rust compositor, which
-				// handles it reliably. No browserVideoPath ⇒ Rust composites from scratch.
+				// The browser render died (GPU context loss on a heavy export), so fall back to Rust, which composites from scratch.
 				console.warn("[exportActivity] browser render failed; falling back to Rust", err);
 				if (item) {
 					item.hasRenderPhase = false;
@@ -397,8 +383,7 @@ function createExportActivityStore() {
 		}
 	}
 
-	// Module-singleton wiring: hydrate once and keep the read-model live. Guarded to
-	// the browser so importing this during SSR/prerender doesn't touch Tauri.
+	// Hydrate once and keep the read-model live; browser-guarded so SSR or prerender never touches Tauri.
 	let initialized = false;
 	function ensureInit() {
 		if (initialized || !browser) return;
@@ -486,9 +471,7 @@ function createExportActivityStore() {
 			}
 			void enqueueExport({ ...spec.params, exportId: spec.id })
 				.then((repairs) => {
-					// The backend clamped a stale/out-of-range render state (e.g. a
-					// too-long trim_end from an older recording) so the export could run.
-					// Surface it so the result gets a manual sanity check.
+					// The backend clamped a stale render state so the export could run; surface it for a manual sanity check.
 					if (repairs.length > 0) {
 						toast.warning("Auto-repaired the timeline before export", {
 							description: `${repairs.join("; ")}. Please double-check the exported video.`,
@@ -540,8 +523,7 @@ function createExportActivityStore() {
 		/** Cancel/remove an item: a queued one is dropped; a running one is stopped.
 		 *  Optimistic locally, then reconciled via `export-jobs-changed`. */
 		async cancel(id: string) {
-			// Browser-render phase: abort the in-flight render, or drop a queued one —
-			// the backend has no job for it yet, so there's nothing to cancel there.
+			// Browser-render phase: abort the in-flight render or drop a queued one; the backend has no job to cancel yet.
 			if (id === renderingId) {
 				renderAbort?.abort();
 				return;

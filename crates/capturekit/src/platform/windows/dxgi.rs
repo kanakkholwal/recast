@@ -109,9 +109,7 @@ pub(crate) struct DxgiSource {
     next_retry_at: Option<Instant>,
 }
 
-// SAFETY: every COM object here is created and used on one thread. The bound
-// exists to satisfy `FrameSource`; a `DxgiSource` is moved to its capture
-// thread before any call and never shared between two.
+// SAFETY: every COM object is created and used on one thread; a `DxgiSource` moves to its capture thread before any call.
 unsafe impl Send for DxgiSource {}
 
 /// Release the mapped staging texture, where the capture has one at all.
@@ -123,10 +121,7 @@ fn unmap(readback: Option<&mut Readback>) {
 
 impl DxgiSource {
     pub(crate) fn open(display: DisplayId, opts: &OpenOptions) -> Result<Self> {
-        // Desktop Duplication never composites the cursor into the frame, so
-        // honouring `Include` here is impossible. Saying so beats handing back a
-        // recording with no cursor in it and no indication why; the pointer is
-        // reported as a sample on every frame instead.
+        // Desktop Duplication never composites the cursor, so `Include` is impossible; the pointer is reported per frame instead.
         if opts.cursor == crate::shot::CursorMode::Include {
             return Err(CaptureError::Unsupported {
                 backend: BACKEND,
@@ -138,9 +133,7 @@ impl DxgiSource {
         let (device, context) = d3d::create_device(Some(&adapter))?;
         let output_desc = unsafe { output.GetDesc() }.map_err(d3d::err)?;
         let duplication = unsafe { output1.DuplicateOutput(&device) }.map_err(|error| {
-            // Desktop Duplication is one-per-output-per-process. A second open
-            // reports only "the parameter is incorrect", which tells a caller
-            // nothing about the resource it is really contending for.
+            // Duplication is one per output per process, and a second open reports only 'the parameter is incorrect'.
             match error.code() {
                 E_INVALIDARG | E_ACCESSDENIED => CaptureError::AlreadyCaptured {
                     kind: "display",
@@ -251,8 +244,7 @@ impl DxgiSource {
             Ok(fresh) => {
                 let held = self.lost_since.map(|at| at.elapsed()).unwrap_or_default();
                 self.release_frame();
-                // Replaced wholesale rather than field by field: the old value
-                // owns COM handles, and its `Drop` is what releases them.
+                // Replaced wholesale rather than field by field: the old value owns COM handles that its `Drop` releases.
                 *self = fresh;
                 log::info!("dxgi duplication reacquired after {}ms", held.as_millis());
                 Ok(())
@@ -465,9 +457,7 @@ impl FrameSource for DxgiSource {
         };
         self.dirty = self.read_dirty(&info);
 
-        // A zero `LastPresentTime` means the desktop did not change and this is a
-        // cursor-only update. Reporting it as the origin is what keeps the warmup
-        // honest: a screenshot must not accept a frame with no new content.
+        // A zero `LastPresentTime` is a cursor-only update, and reporting the origin keeps warmup honest for a screenshot.
         let pts = Timestamp::from_ticks(info.LastPresentTime, self.qpc_frequency);
         self.cursor.update(&self.duplication, &info);
         let dirty = self.dirty.clone();

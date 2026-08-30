@@ -163,9 +163,7 @@ fn cache_dir_for(project_path: &Path) -> Result<PathBuf> {
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("project");
-    // Disambiguates same-named projects in different folders. `DefaultHasher` is
-    // deterministic within a toolchain; a bump costs one re-extraction, which the
-    // sweeper reclaims.
+    // Disambiguates same-named projects in different folders; a `DefaultHasher` bump costs one re-extraction.
     let mut hasher = DefaultHasher::new();
     project_path.to_string_lossy().hash(&mut hasher);
     Ok(env::temp_dir()
@@ -288,12 +286,7 @@ fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Res
     let mut entry = archive
         .by_name(name)
         .with_context(|| format!("missing {name} in project"))?;
-    // Size equality against the zip entry is what makes a save cheap: the media
-    // is byte-identical across saves, so this short-circuits and only the small
-    // `edits.json` is rewritten. Re-extracting would also TRUNCATE — and
-    // `File::create` does that instantly while the rewrite takes seconds on a
-    // large recording, so any reader mid-window sees a headerless file
-    // ("no video track").
+    // Size equality makes a save cheap, and re-extracting would TRUNCATE: `File::create` is instant while the rewrite takes seconds, so a reader mid-window sees a headerless file.
     if already_extracted(path, entry.size()) {
         return Ok(path.to_path_buf());
     }
@@ -310,8 +303,7 @@ fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Res
         }
         output.sync_all()?;
     }
-    // Rename is atomic within a directory: readers see the old file or the new
-    // one, never a partial.
+    // Rename is atomic within a directory: readers see the old file or the new one, never a partial.
     fs::rename(&partial, path)?;
     Ok(path.to_path_buf())
 }
@@ -361,8 +353,7 @@ mod backcompat_tests {
 /// Try to extract an optional entry from the archive. Returns None if the entry doesn't exist.
 fn try_extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Option<PathBuf> {
     let mut entry = archive.by_name(name).ok()?;
-    // Same reuse + atomic-publish rules as `extract_entry`; audio.wav is large
-    // enough to hit the same truncation window.
+    // Same reuse and atomic-publish rules as `extract_entry`; audio.wav is large enough to hit the same window.
     if already_extracted(path, entry.size()) {
         return Some(path.to_path_buf());
     }
@@ -418,9 +409,7 @@ mod extract_tests {
         fs::write(&project, b"original bundle").expect("write project");
         let before = cache_dir_for(&project).expect("cache dir");
 
-        // A save rewrites the bundle; `edits.json` grows, so the file length
-        // changes. Keying on length minted a whole new directory here and
-        // re-extracted the entire recording on the next open.
+        // A save grows `edits.json`, so keying on length minted a new directory and re-extracted the whole recording.
         fs::write(&project, b"bundle after a save, now longer").expect("rewrite project");
         let after = cache_dir_for(&project).expect("cache dir");
 
@@ -449,8 +438,7 @@ mod extract_tests {
         fs::create_dir_all(&fresh).expect("fresh");
         touch_last_used(&fresh);
 
-        // Zero TTL expires everything whose marker predates `now`; `fresh` was
-        // just touched, so only entries with no recent use should go.
+        // Zero TTL expires everything older than `now`; `fresh` was just touched, so only unused entries should go.
         sweep_cache_in(&root, Duration::from_secs(3600), u64::MAX);
         assert!(fresh.exists(), "recently used entry must survive");
 
@@ -488,9 +476,7 @@ mod extract_tests {
         extract_entry(&mut archive, "assets/recording.mp4", &target).expect("first extract");
         assert_eq!(fs::read(&target).expect("read"), b"video-bytes");
 
-        // Same length => treated as already extracted. Sentinel content proves
-        // the second call didn't truncate and rewrite: re-extracting a 637MB
-        // recording blanks it for seconds, and readers see a headerless file.
+        // Same length means already extracted; the sentinel proves the second call didn't truncate and rewrite.
         fs::write(&target, b"SENTINEL-XX").expect("sentinel");
         extract_entry(&mut archive, "assets/recording.mp4", &target).expect("second extract");
         assert_eq!(fs::read(&target).expect("read"), b"SENTINEL-XX");

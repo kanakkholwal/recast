@@ -46,8 +46,7 @@ export const GET: RequestHandler = async ({ request }) => {
 	const db = getDb();
 	const userId = session.user.id;
 
-	// Run the aggregate queries in parallel — they don't depend on each
-	// other and each is cheap (single-table indexed scan / counter read).
+	// Run in parallel: the aggregates don't depend on each other and each is a cheap indexed scan.
 	const [userRow, subRows, recastAgg, shareAgg, memberships, workspaceRecastCounts] =
 		await Promise.all([
 			db
@@ -62,8 +61,7 @@ export const GET: RequestHandler = async ({ request }) => {
 				.where(eq(userTable.id, userId))
 				.limit(1)
 				.then((rows) => rows[0] ?? null),
-			// One user can bill several workspaces, so fetch all and pick the row
-			// for the default upload target below.
+			// One user can bill several workspaces, so fetch all and pick the default upload target's row below.
 			db
 				.select({
 					organizationId: subscriptionTable.organizationId,
@@ -77,8 +75,7 @@ export const GET: RequestHandler = async ({ request }) => {
 			db
 				.select({
 					recordings: count(),
-					// Drizzle's `sum` returns string | null on PG for bigint columns;
-					// coerce after the fetch.
+					// Drizzle's `sum` returns string or null on PG for bigint columns, so coerce after the fetch.
 					storage: sum(recastTable.sizeBytes),
 				})
 				.from(recastTable)
@@ -95,9 +92,7 @@ export const GET: RequestHandler = async ({ request }) => {
 					),
 				)
 				.then((rows) => rows[0] ?? { active: 0 }),
-			// Workspaces the user belongs to — the desktop needs an explicit
-			// workspaceId for /api/uploads/init (its device session may not
-			// carry an activeOrganizationId).
+			// The desktop needs an explicit workspaceId for /api/uploads/init: its device session may carry no active org.
 			db
 				.select({
 					id: organizationTable.id,
@@ -108,10 +103,7 @@ export const GET: RequestHandler = async ({ request }) => {
 				.from(memberTable)
 				.innerJoin(organizationTable, eq(memberTable.organizationId, organizationTable.id))
 				.where(eq(memberTable.userId, userId)),
-			// Live (non-deleted) recast count per workspace the user belongs to.
-			// The inner join to `member` both scopes to the user's workspaces and,
-			// because each recast matches exactly one of the user's membership rows,
-			// keeps the count equal to the workspace's total recast count.
+			// The inner join to `member` scopes to the user's workspaces, and each recast matches one membership row, so counts stay exact.
 			db
 				.select({
 					workspaceId: recastTable.workspaceId,
@@ -131,8 +123,7 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	if (!userRow) throw error(404, "user_not_found");
 
-	// Default upload target: the user's saved default workspace if still valid,
-	// else the session's active org, else their first workspace.
+	// Default upload target: the saved default if still valid, else the session's active org, else the first workspace.
 	const recastCountByWorkspace = new Map(
 		workspaceRecastCounts.map((r) => [r.workspaceId, Number(r.count) || 0]),
 	);
@@ -152,8 +143,7 @@ export const GET: RequestHandler = async ({ request }) => {
 				? activeId
 				: workspaces[0]?.id) ?? null;
 
-	// Entitlements are workspace-scoped, so the reported plan is the default
-	// upload target's — not the user's, who may own workspaces on other plans.
+	// Entitlements are workspace-scoped, so the reported plan is the default target's, not the user's.
 	const defaultWorkspace = workspaces.find((w) => w.id === defaultWorkspaceId);
 	const plan = planOf(defaultWorkspace?.plan);
 	const sharesLimit = limitsFor(plan.id).activeRecasts;

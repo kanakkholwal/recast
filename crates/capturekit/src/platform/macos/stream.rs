@@ -98,8 +98,7 @@ pub(crate) struct SckSource {
     stopped: bool,
 }
 
-// SAFETY: `SCStream` and the output object are thread-safe Objective-C objects;
-// the frame slot is explicitly synchronised. The bound satisfies `FrameSource`.
+// SAFETY: `SCStream` and the output object are thread-safe ObjC objects, and the frame slot is explicitly synchronised.
 unsafe impl Send for SckSource {}
 
 fn configuration(
@@ -113,12 +112,10 @@ fn configuration(
         config.setHeight(size.height as usize);
         config.setPixelFormat(BGRA);
         config.setShowsCursor(opts.cursor == CursorMode::Include);
-        // Two is the smallest depth that lets the stream keep producing while
-        // one frame is being copied out.
+        // Two is the smallest depth that lets the stream keep producing while one frame is copied out.
         config.setQueueDepth(3);
         if let Some(rect) = source_rect {
-            // The crop ScreenCaptureKit applies while compositing, so the pixels
-            // outside it are never rendered, let alone copied.
+            // The crop ScreenCaptureKit applies while compositing, so pixels outside it are never rendered, let alone copied.
             config.setSourceRect(objc2_core_foundation::CGRect {
                 origin: objc2_core_foundation::CGPoint {
                     x: f64::from(rect.x),
@@ -165,8 +162,7 @@ impl SckSource {
                 Some(ProtocolObject::from_ref(&*stopped)),
             )
         };
-        // Serial: frames must reach the slot in the order the daemon produced
-        // them, and a concurrent queue would let two deliveries race the swap.
+        // Serial: frames must reach the slot in daemon order, and a concurrent queue would let two deliveries race the swap.
         let queue = DispatchQueue::new("com.capturekit.frames", DispatchQueueAttr::SERIAL);
         let protocol = ProtocolObject::from_ref(&*output);
         unsafe {
@@ -290,8 +286,7 @@ impl FrameSource for SckSource {
 
     fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>> {
         let meta = self.slot.take(timeout, &mut self.seen, &mut self.current)?;
-        // The stream can renegotiate its size on a display mode change, and the
-        // description has to follow or every consumer reads the wrong geometry.
+        // The stream can renegotiate size on a display-mode change, and the description must follow or consumers read wrong geometry.
         self.desc.width = meta.width;
         self.desc.height = meta.height;
         Ok(RawFrame {

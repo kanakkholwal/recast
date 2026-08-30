@@ -26,9 +26,7 @@ import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 import { type SnapResult, type SnapTarget } from "./timeline-snap";
 import { EDGE_HIT_OVERHANG_PX, edgeHandleWidth, ZOOM_ROW_HEIGHT_PX } from "./timeline-stack";
 
-// Three drag modes through one pointer-handler: move (shift both edges),
-// resize-start (move `start`), resize-end (move `end`). Undo is pushed on the
-// first real move so a select-click leaves no empty history entry.
+// One pointer handler, three modes (move, resize-start, resize-end); undo is pushed on the first real move.
 
 interface Props {
 	store: EditorStore;
@@ -90,13 +88,10 @@ let dragUndoPushed = false;
 const laneDrag = useLaneDrag();
 
 const isSelected = $derived(region.id === store.selectedZoomRegionId);
-// Output (post-cut) axis so regions sit on the same gapless line as clips;
-// a region overlapping a cut renders narrower (correct NLE behaviour).
+// Output axis so regions share the gapless line with clips; one overlapping a cut renders narrower, as an NLE does.
 const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
 const tOf = (xPx: number) => outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
-// Labels read on the output axis, like the ruler and the playhead. Regions are
-// STORED in original time, so printing that raw would name a timecode the
-// exported file never reaches once anything upstream is cut.
+// Labels read on the output axis: regions are STORED in original time, which names a timecode the export never reaches.
 const outSec = (t: number) => originalToOutput(store.renderMap, t);
 const showSubtitle = $derived(width >= 110);
 const handlePx = $derived(edgeHandleWidth(width));
@@ -129,14 +124,12 @@ function beginDrag(mode: DragMode, event: PointerEvent) {
 
 function onPointerMove(event: PointerEvent) {
 	if (!drag) return;
-	// A press is a click until it clears the threshold, so selecting a card
-	// can't nudge it or leave an undo entry that changed nothing.
+	// A press is a click until it clears the threshold, so selecting can't nudge it or leave a no-op undo entry.
 	if (!drag.engaged) {
 		if (!dragEngaged(event.clientX, drag.startClientX)) return;
 		drag.engaged = true;
 	}
-	// Shift can go down or up mid-drag; re-seed the anchor to the current
-	// pointer and bounds so the change in gearing never jumps the card.
+	// Re-seed the anchor and bounds on a Shift flip, so the change in gearing never jumps the card.
 	if (event.shiftKey !== drag.precision) {
 		drag.precision = event.shiftKey;
 		drag.startClientX = event.clientX;
@@ -186,8 +179,7 @@ function onPointerUp(_event: PointerEvent) {
 function onCardKeydown(event: KeyboardEvent) {
 	if (duration <= 0) return;
 
-	// Delete is owned by the editor page and acts on the selection (this card is
-	// the selection whenever it has focus), so it is deliberately not handled here.
+	// Delete is owned by the editor page and acts on the selection, so it is deliberately not handled here.
 
 	// Paste lives at timeline scope so regions land at the playhead, not here.
 	const isMod = event.ctrlKey || event.metaKey;

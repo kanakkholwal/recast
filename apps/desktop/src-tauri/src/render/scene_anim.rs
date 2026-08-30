@@ -24,9 +24,7 @@ const DEFAULT_SCALE_DELTA: f64 = 0.3;
 const DEFAULT_POP_DELTA: f64 = 0.35;
 const DEFAULT_ROTATE_DEG: f64 = 15.0;
 const ANCHOR_EPS: f64 = 1e-4;
-// Mirror scenes/eval.ts: a segment shorter than this stays static, and each ramp
-// caps to this fraction of the window, so tiny fragments (aggressive silence-cuts)
-// never sit in a permanent in→out wobble.
+// Mirrors scenes/eval.ts: shorter segments stay static and each ramp caps to this fraction, so fragments never wobble.
 const MIN_ANIMATABLE_SEC: f64 = 0.2;
 const MAX_SIDE_FRACTION: f64 = 0.4;
 
@@ -293,8 +291,7 @@ pub fn build_scene_overlay(
     // geq evaluates its expression with the uppercase time variable `T`.
     let opacity_expr = build_channel_expr(&op_seg, 1.0, "T");
 
-    // overlay top-left = video origin + translate(fraction·canvas) − recentre for
-    // the centred scale (video grows/shrinks about its own centre).
+    // Overlay top-left is the video origin plus translate, minus the recentre for a scale about the video's own centre.
     let x_expr = format!("{vx}+({tx_expr})*{cw}-{iw}*(({scale_expr})-1)/2");
     let y_expr = format!("{vy}+({ty_expr})*{ch}-{ih}*(({scale_expr})-1)/2");
 
@@ -318,9 +315,7 @@ mod tests {
     use super::super::easing::Easing;
     use super::*;
 
-    // The fixture stores easing as a 4-element array; SceneAnimSpec expects an
-    // Easing object. Re-map here so the Rust geometric evaluator is checked
-    // against the exact same cases as the TS evaluator (scenes/eval.test.ts).
+    // The fixture stores easing as a 4-element array, so re-map it and check Rust against the exact same TS cases.
     #[derive(Deserialize)]
     struct RawSpec {
         kind: String,
@@ -351,8 +346,7 @@ mod tests {
 
     #[test]
     fn geometric_transform_matches_shared_parity_fixture() {
-        // Same file scenes/eval.test.ts asserts against — proves the Rust export
-        // evaluator and the TS preview evaluator agree on slide/scale/shrink/pop.
+        // The same file scenes/eval.test.ts asserts against, proving the Rust and TS evaluators agree.
         let raw = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../../packages/editor/src/lib/scenes/__fixtures__/scene-parity.json"
@@ -442,8 +436,7 @@ mod tests {
         }];
         let ov = build_scene_overlay(&[(0.0, 4.0)], 0.0, &anims, &canvas, 1920, 1080)
             .expect("fade is an active animation");
-        // Fade drives only the alpha channel — no scale/rotate stages — and its
-        // LUT uses geq's uppercase time variable.
+        // Fade drives only alpha, with no scale or rotate stages, and its LUT uses geq's uppercase time variable.
         assert!(ov.scale_expr.is_none());
         assert!(ov.rotate_expr.is_none());
         let op = ov.opacity_expr.expect("opacity expr");
@@ -452,8 +445,7 @@ mod tests {
 
     #[test]
     fn tiny_segment_is_guarded_to_no_overlay() {
-        // A sub-MIN_ANIMATABLE_SEC window with a real slide anim must produce no
-        // overlay expressions — the export stays on the static path (no wobble).
+        // A sub-MIN_ANIMATABLE_SEC window must produce no overlay expressions, so the export stays on the static path.
         let canvas = CanvasGeometry {
             canvas_w: 1920,
             canvas_h: 1080,

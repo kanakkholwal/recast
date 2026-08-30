@@ -10,8 +10,7 @@ describe("cameraAvailability", () => {
 		expect(cameraAvailability("legacy", false).editable).toBe(false);
 	});
 
-	// The camera WAS switched on; blaming the user for not enabling it is the
-	// exact wrong thing to say, and a warning already fired at record time.
+	// The camera WAS switched on, so blaming the user for not enabling it is exactly the wrong thing to say.
 	it("does not tell a failed capture to turn the camera on", () => {
 		const failed = cameraAvailability("failed", false);
 		expect(failed.description).not.toMatch(/turn the camera on/i);
@@ -19,9 +18,7 @@ describe("cameraAvailability", () => {
 		expect(failed.title).not.toMatch(/no camera/i);
 	});
 
-	// The whole reason capture state is carried separately from the file path:
-	// "you left the camera off" is wrong for a project recorded before the
-	// camera could be captured at all.
+	// Why capture state is carried apart from the path: 'you left the camera off' is wrong for a pre-capture project.
 	it("distinguishes a camera that was off from a project that predates capture", () => {
 		const off = cameraAvailability("off", false).description;
 		const legacy = cameraAvailability("legacy", false).description;
@@ -30,16 +27,14 @@ describe("cameraAvailability", () => {
 		expect(legacy).toMatch(/predates/i);
 	});
 
-	// A recorded-but-missing track is a broken project, not a choice, and must
-	// never read as "no camera was recorded".
+	// A recorded-but-missing track is a broken project, not a choice, and must never read as 'no camera was recorded'.
 	it("calls out a recorded track whose file is missing", () => {
 		const missing = cameraAvailability("separate", false);
 		expect(missing.title).toMatch(/missing/i);
 		expect(missing.description).not.toMatch(/no camera was recorded/i);
 	});
 
-	// Every unavailable state must read differently; two identical messages mean
-	// one of them is guessing.
+	// Every unavailable state must read differently; two identical messages mean one of them is guessing.
 	it("gives each unavailable state its own wording", () => {
 		const descriptions = (["off", "failed", "legacy"] as const).map(
 			(c) => cameraAvailability(c, false).description,
@@ -59,8 +54,7 @@ describe("cameraAvailability", () => {
 });
 
 describe("dotStyleFor", () => {
-	// The preset ids mix conventions ('top-left' = row-col, 'left-center' =
-	// col-row), so these lock the token-based parsing against a regression.
+	// The preset ids mix conventions, so these lock the token-based parsing against a regression.
 	it("places corner presets by row and column", () => {
 		expect(dotStyleFor("top-left")).toContain("left:18%;");
 		expect(dotStyleFor("top-left")).toContain("top:18%;");

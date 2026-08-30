@@ -33,16 +33,13 @@ import { type ExportItem, exportActivity } from "$lib/stores/exportActivity.svel
 import { gdrive } from "$lib/stores/gdrive.svelte";
 import { cloudPhaseLabel, uploadPct } from "../corner-notifications.logic";
 
-// Cloud uploads shown in a foreground dialog are hidden here; they reappear
-// on minimize.
+// Cloud uploads shown in a foreground dialog are hidden here and reappear on minimize.
 const cloudItems = $derived(
 	cloudShare.activeUploads.filter((u) => u.sourcePath !== cloudShare.foregroundPath),
 );
 // Same for Drive: hide the one currently in its foreground dialog.
 const driveItems = $derived(gdrive.activeUploads.filter((u) => u.uploadId !== gdrive.foregroundId));
-// Export queue, hiding the one item whose panel is on screen in the editor
-// (foregrounded AND an editor mounted); on any other route every item stays
-// visible so a background export is never hidden with nowhere to show it.
+// Hide only the item whose panel is on screen in the editor; on any other route every item stays visible.
 const exportItems = $derived(
 	exportActivity.items.filter(
 		(it) =>
@@ -68,8 +65,7 @@ const exportPhaseLabel: Record<string, string> = {
 	cancelling: "Cancelling export",
 };
 
-// Browser render (0..95) + mux (95..100) is one continuous bar; the Rust path is
-// determinate only while encoding. Preparing/cancelling/Rust-finalizing pulse.
+// Browser render plus mux is one continuous bar; the Rust path is determinate only while encoding.
 function exportDeterminate(item: ExportItem): boolean {
 	if (item.hasRenderPhase) return item.phase === "rendering" || item.phase === "finalizing";
 	return item.phase === "encoding";
@@ -79,8 +75,7 @@ function exportProgressText(item: ExportItem): string {
 	return item.phase === "preparing" ? "Preparing…" : "";
 }
 
-// Ticking clock for the elapsed/ETA readouts; runs only while something is in
-// flight so it isn't an always-on timer.
+// Runs only while something is in flight, so it isn't an always-on timer.
 let now = $state(Date.now());
 $effect(() => {
 	if (!busy) return;
@@ -102,8 +97,7 @@ function exportEta(item: ExportItem): string {
 	return ms == null ? "" : `~${formatElapsed(ms)} left`;
 }
 
-// "Clear all" dismisses every FINISHED item across the panel, leaving anything
-// still in progress or queued/uploading. Reuses each store's per-item dismiss.
+// Dismisses every FINISHED item, leaving anything in progress or queued; reuses each store's per-item dismiss.
 const clearableExports = $derived(
 	exportItems.filter((i) => i.status !== "running" && i.status !== "queued"),
 );
@@ -121,9 +115,7 @@ function clearAll() {
 
 let open = $state(false);
 
-// A finished export opens the Exports page; an active/queued one reopens its
-// panel and navigates to the owning project (the render runs app-scoped, so its
-// editor may not be mounted).
+// A finished export opens the Exports page; an active one reopens its panel and navigates to the project.
 function openExportItem(item: ExportItem) {
 	open = false;
 	if (item.status === "success") {
@@ -142,9 +134,7 @@ async function showExportInFolder(path: string) {
 	}
 }
 
-// Reopen the foreground share dialog for a Recast Cloud upload: progress while
-// it runs, share settings once it lands. Closes the popover so the two
-// overlays don't fight.
+// Progress while it runs, share settings once it lands; closes the popover so the two overlays don't fight.
 function openShare(path: string) {
 	open = false;
 	cloudShare.setForeground(path);

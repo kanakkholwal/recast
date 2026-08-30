@@ -51,8 +51,7 @@ pub struct AudioSettings {
     pub volume: f64,
     #[serde(default)]
     pub muted: bool,
-    // Per-source gains/mutes, layered under the master. Defaulted so projects
-    // saved before these existed deserialize to unity (no silent gain change).
+    // Per-source gains and mutes under the master; defaulted so older projects deserialize to unity.
     #[serde(default = "default_audio_volume")]
     pub system_volume: f64,
     #[serde(default)]
@@ -334,10 +333,7 @@ impl Default for CameraOverlaySettings {
 mod tests {
     use super::{Annotation, AnnotationAnchor, AnnotationKind};
 
-    // Guards the IPC contract: the frontend sends camelCase keys, and the export
-    // pipeline must read `anchor` + the image `radius`/`stroke` it sends. A key
-    // mismatch here would silently drop the feature at export (as `segmentAnims`
-    // once did), so these assert the exact wire shape survives deserialization.
+    // Guards the IPC contract: a key mismatch silently drops the feature at export, as `segmentAnims` once did.
     #[test]
     fn annotation_anchor_and_image_controls_survive_frontend_json() {
         let raw = r##"{
@@ -395,10 +391,7 @@ mod tests {
         );
     }
 
-    // Rust has no text renderer (text reaches export pre-rasterized as an
-    // image), but a saved text annotation must survive the typed load
-    // round-trip (deserialize→reserialize) or every field is lost — it would
-    // otherwise fall through to `Unsupported` and reload as a broken kind.
+    // Rust has no text renderer, but a saved text annotation must survive the round-trip or it reloads as `Unsupported`.
     #[test]
     fn text_annotation_round_trips_and_keeps_its_kind() {
         let raw = r##"{
@@ -424,16 +417,14 @@ mod tests {
             }
             other => panic!("expected text kind, got {other:?}"),
         }
-        // Re-serialize: the tag must stay "text" (not "unsupported") and the
-        // camelCase field keys must be preserved for the JS load map.
+        // Re-serialize: the tag must stay 'text', and the camelCase keys must survive for the JS load map.
         let v = serde_json::to_value(&a).unwrap();
         assert_eq!(v["kind"]["kind"], "text");
         assert_eq!(v["kind"]["content"], "Hello");
         assert_eq!(v["kind"]["fontFamily"], "Inter");
     }
 
-    // The frontend sends `headSize`; without a per-variant rename_all it would
-    // never map and the export would silently use the default arrowhead size.
+    // The frontend sends `headSize`; without a per-variant rename_all it never maps and export uses the default.
     #[test]
     fn arrow_head_size_maps_from_camelcase() {
         let raw = r#"{"id":"a","start":0.0,"end":1.0,
@@ -591,12 +582,7 @@ pub enum RenderNode {
     Zoom(ZoomNode),
 }
 
-//  Annotations
-//
-// Phase 1 ships `rect` and `ellipse`. `kind` is a tagged union so future
-// arrow/polygon/text/image variants slot in without breaking serialisation
-// of existing projects. All positions are in video UV space (0..1) so they
-// track zoom/crop without re-projection.
+// --- Annotations: `kind` is a tagged union so new variants slot in without breaking existing projects, and positions are video UV (0..1).
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
@@ -664,10 +650,7 @@ pub enum AnnotationKind {
         h: f64,
     },
     /// Stroke-only directional callout. The head is drawn at (x2, y2).
-    // `rename_all` on the ENUM only renames variant NAMES, not fields inside a
-    // variant — so a multi-word field needs its own rename_all (or explicit
-    // rename) or the frontend's `headSize` never maps and export silently uses
-    // the default (and it's lost on reload).
+    // `rename_all` on the ENUM renames variants, not fields inside one, so a multi-word field needs its own rename.
     #[serde(rename_all = "camelCase")]
     Arrow {
         x1: f64,
@@ -793,8 +776,7 @@ pub struct Annotation {
     pub fill: String,
     pub kind: AnnotationKind,
 
-    // v2 envelope — every field defaulted so v1 projects keep loading. Order
-    // matches the TS `Annotation` interface in `editor-store.svelte.ts`.
+    // v2 envelope, every field defaulted so v1 projects keep loading; order matches the TS `Annotation` interface.
     /// User-renamed label. Falls back to a kind-derived label in the UI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,

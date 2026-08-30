@@ -19,10 +19,7 @@ fn config_path(app: &AppHandle) -> PathBuf {
     let dir = match app.path().app_data_dir() {
         Ok(dir) => dir,
         Err(e) => {
-            // `%TEMP%` is periodically purged by the OS, so settings (incl.
-            // telemetry consent + install_id) won't survive between sessions.
-            // Log it so a "my settings keep resetting" report is diagnosable
-            // rather than silent.
+            // `%TEMP%` is periodically purged, so settings (telemetry consent, install_id) won't survive; log it so resets are diagnosable.
             log::warn!(
                 "app_data_dir unavailable ({e}); using temp dir for config — \
                  settings may not persist between sessions"
@@ -39,11 +36,7 @@ pub fn load_config(app: &AppHandle) -> AppConfig {
         Ok(data) => match serde_json::from_str(&data) {
             Ok(config) => config,
             Err(e) => {
-                // A genuine parse failure (partial write, hand-edit, schema
-                // drift) — distinct from "no file yet". Silently resetting here
-                // would wipe all settings AND flip telemetry_errors back to its
-                // default-on, a privacy-relevant regression. Back the bad file
-                // up for diagnosis before falling back to defaults.
+                // A genuine parse failure, not 'no file yet': resetting silently would wipe settings and flip telemetry back on, so back the file up.
                 log::warn!(
                     "config at {} is unreadable ({e}); backing up to .bak and \
                      resetting to defaults",
@@ -80,10 +73,7 @@ pub(crate) fn save_config(app: &AppHandle, config: &AppConfig) {
             return;
         }
     };
-    // Atomic write: a plain `fs::write` truncates-then-writes, so a crash or
-    // power loss mid-write leaves a corrupt file that the next launch discards —
-    // wiping every setting. Write to a sibling temp file, fsync, then rename
-    // over the target (atomic on the same volume).
+    // Atomic write: `fs::write` truncates first, so a crash mid-write leaves a corrupt file the next launch discards.
     let tmp = path.with_extension("json.tmp");
     if let Err(e) = write_atomic(&tmp, &path, data.as_bytes()) {
         log::warn!("failed to persist config to {}: {e}", path.display());
@@ -319,11 +309,7 @@ pub async fn set_hide_panel_from_capture(
         config.clone()
     };
     save_config(&app, &snapshot);
-    // If the floating panel is currently open, apply the change right away.
-    // `set_content_protected` toggles both directions (Windows
-    // WDA_EXCLUDEFROMCAPTURE ⇄ WDA_NONE, macOS NSWindow.sharingType none ⇄
-    // readOnly) and the compositor honors it on the next captured frame, so a
-    // mid-recording flip is reflected immediately. No-op on Linux.
+    // `set_content_protected` toggles both directions and the compositor honors it next frame, so a mid-recording flip applies at once.
     if let Some(panel) = app.get_webview_window("recording-panel") {
         panel
             .set_content_protected(enabled)
@@ -415,8 +401,7 @@ pub fn set_diagnostic_logging(
     };
     save_config(&app, &snapshot);
     apply_log_level(enabled);
-    // Logged AFTER raising the level so the "enabled" transition is the first
-    // line in a fresh diagnostic session.
+    // Logged AFTER raising the level, so the enabled transition is the first line of a fresh diagnostic session.
     log::info!(
         "diagnostic logging {}",
         if enabled { "enabled" } else { "disabled" }
@@ -707,11 +692,7 @@ pub async fn validate_camera_source(device_id: String) -> AppResult<CameraValida
             });
         };
 
-        // Deep liveliness probe is Windows-only — it spawns FFmpeg with
-        // `-f dshow` against the device ID. On macOS/Linux we trust the
-        // enumeration's classification (which already flags known
-        // virtual-camera quirks) since AVFoundation / V4L2 don't have a
-        // cheap equivalent to dshow's "open and grab one frame" check.
+        // The deep liveliness probe is Windows-only; AVFoundation and V4L2 have no cheap 'open and grab one frame' equivalent.
         #[cfg(windows)]
         let (status, status_message) = probe_camera_device_health(&device.id)
             .unwrap_or_else(|| (device.status.clone(), device.status_message.clone()));
@@ -951,9 +932,7 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        // `open -R` is the Finder equivalent of `explorer /select,` —
-        // it opens Finder and highlights the file in its containing
-        // folder. Detached spawn; we never wait on Finder.
+        // `open -R` is Finder's equivalent of explorer select; a detached spawn, since we never wait on Finder.
         Command::new("open")
             .args(["-R", &path])
             .spawn()
@@ -961,13 +940,7 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
-        // No portable "reveal" — the closest cross-DE option is the
-        // D-Bus FileManager1 interface, supported by Nautilus, Dolphin,
-        // Nemo, Caja, and Thunar. Try that first via `gdbus`, then fall
-        // back to opening the parent directory with `xdg-open`. Both
-        // paths are best-effort: if neither tool is present we still
-        // succeed at the IPC level so the UI doesn't surface a hard
-        // failure for what is a quality-of-life shortcut.
+        // No portable reveal: try D-Bus FileManager1 via `gdbus`, then fall back to `xdg-open` on the parent; both best-effort.
         let p = std::path::Path::new(&path);
         let uri = format!("file://{}", p.display());
         let reveal = Command::new("gdbus")
@@ -1342,9 +1315,7 @@ fn build_capture_capabilities() -> CaptureCapabilities {
     }
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
-        // Unknown desktop platform: we have no backend wired yet, but this is a
-        // gap in our coverage rather than an OS that *can't* — so mark every row
-        // `planned` ("not available yet") instead of `unsupported`.
+        // No backend wired yet is a gap in our coverage, not an incapable OS, so mark every row planned, not unsupported.
         let pending = "Not implemented yet";
         CaptureCapabilities {
             platform: "other".into(),
@@ -1458,9 +1429,7 @@ pub async fn diagnose_ffmpeg() -> AppResult<FfmpegDiagnostics> {
                     missing.push(name.to_string());
                 }
             }
-            // Hardware encoders are informational, not required. Listing
-            // every vendor-specific codec the bundled FFmpeg supports so
-            // the diagnostics page reflects what's actually selectable.
+            // Hardware encoders are informational: list what the bundled FFmpeg supports so diagnostics reflect what is selectable.
             for hw in [
                 "h264_videotoolbox",
                 "h264_nvenc",
