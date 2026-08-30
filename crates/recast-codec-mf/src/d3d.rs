@@ -373,7 +373,7 @@ impl D3dContext {
         // SAFETY: creating a fence on our own device, out parameter checked below; SHARED is what lets the other API open it.
         unsafe { device.CreateFence(0, D3D11_FENCE_FLAG_SHARED, &mut created)? };
         let fence: ID3D11Fence = created.ok_or_else(|| EncodeError::Media(missing("fence")))?;
-        // GENERIC_ALL rather than SYNCHRONIZE: the narrower right is accepted here and then rejected at the other end's OpenSharedHandle.
+        // SAFETY: sharing a fence we just created. GENERIC_ALL rather than SYNCHRONIZE: the narrower right is accepted here and then rejected at the other end's OpenSharedHandle.
         let handle = unsafe { fence.CreateSharedHandle(None, GENERIC_ALL.0, None)? };
         Ok(SyncFence { fence, handle })
     }

@@ -11,6 +11,7 @@ import {
 	Gauge,
 	Highlighter,
 	Lock,
+	Maximize2,
 	Mic,
 	Pause,
 	Play,
@@ -25,7 +26,10 @@ import {
 } from "@recast/icons";
 import * as ContextMenu from "@recast/ui/context-menu";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
-import { onMount } from "svelte";
+import { onMount, untrack } from "svelte";
+import { kindLabel } from "../../../lib/annotations/kind-label";
+import { clipEndSec } from "../../../lib/audio/music";
+import { formatTimeByMode, frameStepOutput } from "../../../lib/editor/time";
 import { visibleTicks } from "../../../lib/timeline/canvas-ruler";
 import {
 	clampScroll,
@@ -36,6 +40,7 @@ import {
 	xToFrame,
 	zoomAt,
 } from "../../../lib/timeline/canvas-view";
+import { type FilmstripBlock, planFilmstrip } from "../../../lib/timeline/filmstrip";
 import type { Storyboard, TileProvider } from "../../../lib/timeline/filmstrip-source";
 import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
 import {
@@ -44,8 +49,6 @@ import {
 	type TimelineClip,
 	type TimelineRow,
 } from "../../../lib/timeline/view-model";
-import { clipEndSec } from "../../../lib/audio/music";
-import { kindLabel } from "../../../lib/annotations/kind-label";
 import type { EditorStore } from "../../../stores/editor-store.svelte";
 import { effectiveFps } from "./timeline-helpers";
 
@@ -79,21 +82,31 @@ const RULER_LABEL_Y = 18;
 const RULER_TICK_MAJOR = 9;
 const RULER_TICK_MINOR = 3;
 const ROW_H = 44;
+// Video rows are taller so the picture strip and the waveform each get a band
+// instead of overlapping (Diffusion splits them; a 44px row can't hold both).
+const VIDEO_ROW_H = 64;
+const WAVE_BAND = 22;
 const SUBROW_H = 30;
 const ROW_GAP = 3;
 const CLIP_RADIUS = 4;
 const CLIP_LABEL_X = 6;
-const CLIP_LABEL_Y = 13;
-const CLIP_LABEL_HEIGHT = 20;
-const CLIP_SM = 40;
+const CLIP_LABEL_HEIGHT = 18;
 const TRIM_HANDLE_PX = 10;
 const SNAP_PX = 10;
 const MIN_CLIP_FRAMES = 2;
 const TRACK_HEADER_W = 184;
 const SAMPLE_WIDTH = 2;
+const FILMSTRIP_TILE_HEIGHT = 48;
+const FILMSTRIP_TILE_WIDTH = 72;
 // The header floats over the canvas's left edge, so the canvas element stays
-// full width (responsive) and its time content begins after this gutter.
-const GUTTER = TRACK_HEADER_W;
+// full width (responsive) and its time content begins after this gutter. A small
+// pad keeps frame 0 off the panel edge (Diffusion's TIMELINE_PADDING_LEFT).
+const PAD_LEFT = 8;
+const GUTTER = TRACK_HEADER_W + PAD_LEFT;
+
+function rowHeight(kind: ClipKind): number {
+	return kind === "video" ? VIDEO_ROW_H : ROW_H;
+}
 
 const ZOOM_SENSITIVITY = 0.01;
 const ZOOM_DELTA_CLAMP = 50;
@@ -231,6 +244,8 @@ const rows = $derived.by<TimelineRow[]>(() => {
 interface LaidRow {
 	row: TimelineRow;
 	top: number;
+	/** Clip-band height (excludes the property sub-row). */
+	height: number;
 	expandable: boolean;
 	expanded: boolean;
 }
@@ -240,13 +255,14 @@ const rowLayout = $derived.by<LaidRow[]>(() => {
 	for (const row of rows) {
 		const expandable = PROP[row.kind] !== undefined && row.clips.length >= 1;
 		const expanded = expandable && expandedRows.has(row.id);
-		out.push({ row, top, expandable, expanded });
-		top += ROW_H + (expanded ? SUBROW_H : 0) + ROW_GAP;
+		const height = rowHeight(row.kind);
+		out.push({ row, top, height, expandable, expanded });
+		top += height + (expanded ? SUBROW_H : 0) + ROW_GAP;
 	}
 	return out;
 });
 const contentHeight = $derived(
-	rowLayout.reduce((h, l) => h + ROW_H + (l.expanded ? SUBROW_H : 0) + ROW_GAP, ROW_GAP),
+	rowLayout.reduce((h, l) => h + l.height + (l.expanded ? SUBROW_H : 0) + ROW_GAP, ROW_GAP),
 );
 const allClips = $derived(rows.flatMap((r) => r.clips));
 
@@ -257,11 +273,25 @@ const cutFrames = $derived.by<number[]>(() => {
 	return store.cuts.map((c) => originalToOutput(store.renderMap, c.start) * fps);
 });
 
+const EXPAND_KEY = "recast:tl-expanded";
+function persistExpanded(ids: Set<string>) {
+	try {
+		localStorage.setItem(EXPAND_KEY, JSON.stringify([...ids]));
+	} catch {}
+}
+function loadExpanded(): Set<string> {
+	try {
+		const raw = localStorage.getItem(EXPAND_KEY);
+		if (raw) return new Set(JSON.parse(raw) as string[]);
+	} catch {}
+	return new Set();
+}
 function toggleExpand(id: string) {
 	const next = new Set(expandedRows);
 	if (next.has(id)) next.delete(id);
 	else next.add(id);
 	expandedRows = next;
+	persistExpanded(next);
 	scrollY = clampScrollY(scrollY);
 }
 
@@ -303,6 +333,53 @@ function clearSelection() {
 	store.selectedAnnotationId = null;
 	store.selectedMusicClipId = null;
 }
+
+// Add a 2s zoom region at the playhead (original axis, where currentTime lives).
+function addZoomAtPlayhead() {
+	const s = store.currentTime;
+	const end = Math.min(store.outPoint, s + 2);
+	if (end > s) store.addZoomRegion(s, end);
+}
+
+// Delete whatever is selected: zoom / markup / audio clip, or ripple-delete the
+// selected video segment. The store methods push their own undo entry.
+function deleteSelected() {
+	if (store.selectedZoomRegionId) store.removeZoomRegion(store.selectedZoomRegionId);
+	else if (store.selectedAnnotationId) store.removeAnnotation(store.selectedAnnotationId);
+	else if (store.selectedMusicClipId) store.removeMusicClip(store.selectedMusicClipId);
+	else if (store.selectedClipStart !== null) store.deleteSegmentAt(store.selectedClipStart);
+}
+
+function zoomToFit() {
+	if (totalFrames <= 0) return;
+	view = clampScroll(
+		zoomAt({ scrollFrames: 0, resolution: (contentW * 0.98) / totalFrames }, 0, 1),
+		totalFrames,
+		contentW,
+	);
+}
+function zoomStep(factor: number) {
+	view = clampScroll(zoomAt(view, contentW / 2, factor), totalFrames, contentW);
+}
+
+// Step one frame on the OUTPUT axis (lands on the next kept frame across a cut).
+function stepFrame(dir: number) {
+	if (!store.metadata) return;
+	store.seek(frameStepOutput(store.timeMap, store.metadata, store.currentTime, dir));
+}
+// Mark in/out set the recording trim at the playhead; keep a forward window.
+function markIn() {
+	if (store.currentTime < store.outPoint - 0.05) store.trimStart = store.currentTime;
+}
+function markOut() {
+	if (store.currentTime > store.inPoint + 0.05) store.trimEnd = store.currentTime;
+}
+function resetTrim() {
+	store.trimStart = 0;
+	store.trimEnd = store.metadata?.duration ?? 0;
+}
+
+const SPEED_PRESETS = [0.5, 1, 1.5, 2] as const;
 
 // One storyboard sprite (cols×rows frame cells) is enough for a filmstrip —
 // far cheaper than per-tile decode. Loaded once; a new url reloads it.
@@ -465,22 +542,27 @@ function drawRows() {
 	for (let i = 0; i < rowLayout.length; i++) {
 		const laid = rowLayout[i];
 		const top = rowClipTop(laid);
-		const groupH = ROW_H + (laid.expanded ? SUBROW_H : 0);
+		const groupH = laid.height + (laid.expanded ? SUBROW_H : 0);
 		if (top + groupH < RULER_HEIGHT || top > cssH) continue;
 		// Row band.
 		ctx.fillStyle = tl.surfaceMuted;
 		ctx.globalAlpha = i % 2 === 0 ? 0.5 : 0.32;
-		roundRectPath(0, top, contentW, ROW_H, CLIP_RADIUS);
+		roundRectPath(0, top, contentW, laid.height, CLIP_RADIUS);
 		ctx.fill();
 		if (laid.expanded) {
 			// Property track band, a touch dimmer than the clip band.
 			ctx.globalAlpha = 0.22;
-			roundRectPath(0, top + ROW_H, contentW, SUBROW_H, CLIP_RADIUS);
+			roundRectPath(0, top + laid.height, contentW, SUBROW_H, CLIP_RADIUS);
 			ctx.fill();
 		}
 		ctx.globalAlpha = 1;
-		for (const clip of laid.row.clips) drawClip(clip, top);
+		for (const clip of laid.row.clips) drawClip(clip, top, laid.height);
 	}
+}
+
+/** Align a CSS-px value to a whole device pixel so edges stay crisp under DPR. */
+function snapDev(v: number): number {
+	return Math.round(v * dpr) / dpr;
 }
 
 // Silence-cut seams: a small neutral notch at the top of the lanes, never a
@@ -522,91 +604,185 @@ function truncate(text: string, maxPx: number): string {
 	return `${t}…`;
 }
 
-function drawClip(clip: TimelineClip, top: number) {
+function drawClip(clip: TimelineClip, top: number, h: number) {
 	if (!ctx) return;
-	const x = frameToX(clip.start, view);
-	const w = Math.max(2, clip.duration * view.resolution);
+	const x = snapDev(frameToX(clip.start, view));
+	const w = Math.max(2, snapDev(clip.duration * view.resolution));
 	if (x + w < 0 || x > contentW) return;
 	const paint = clipPaint[clip.kind];
-	const h = ROW_H;
+	const r: ClipRect = { x, w, y: top, h };
 
 	ctx.globalAlpha = clip.hidden ? 0.5 : 1;
-
 	ctx.fillStyle = paint.bg;
 	roundRectPath(x, top, w, h, CLIP_RADIUS);
 	ctx.fill();
 
+	drawClipContent(clip, r, paint);
+	if (w >= 24) drawClipLabel(clip, r, paint);
+	drawClipDecorations(clip, r, paint);
+	ctx.globalAlpha = 1;
+}
+
+// Video: picture strip on top, waveform in its own band below (never overlapped).
+function drawClipContent(clip: TimelineClip, r: ClipRect, paint: ClipPaint) {
+	const wave = hasWaveform();
 	if (clip.kind === "video") {
-		drawFilmstrip(x, w, top, h);
-		drawWaveformBars({ x, w, y: top, h }, paint.primary, true);
-	} else if (clip.kind === "audio") {
-		drawWaveformBars({ x, w, y: top, h }, paint.primary, false);
+		const picH = wave ? r.h - WAVE_BAND : r.h;
+		drawFilmstrip(clip, r.x, r.w, r.y, picH);
+		if (wave)
+			drawWaveformBars({ x: r.x, w: r.w, y: r.y + picH, h: WAVE_BAND }, paint.primary, 0.85);
+	} else if (clip.kind === "audio" && wave) {
+		drawWaveformBars(r, paint.primary, 1);
 	}
+}
 
-	if (w >= 24) {
-		ctx.save();
-		roundRectPath(x, top, w, h, CLIP_RADIUS);
-		ctx.clip();
-		ctx.fillStyle = paint.on;
-		ctx.font = "11px Inter, system-ui, sans-serif";
-		ctx.textBaseline = "middle";
-		ctx.textAlign = "left";
-		ctx.fillText(
-			truncate(clip.label, w - 2 * CLIP_LABEL_X),
-			x + CLIP_LABEL_X,
-			top + (h >= 32 ? CLIP_LABEL_Y : h / 2),
-		);
-		ctx.restore();
-	}
+// A translucent chip behind the label so it stays legible over the picture strip.
+function drawClipLabel(clip: TimelineClip, r: ClipRect, paint: ClipPaint) {
+	if (!ctx) return;
+	ctx.save();
+	roundRectPath(r.x, r.y, r.w, r.h, CLIP_RADIUS);
+	ctx.clip();
+	const label = truncate(clip.label, r.w - 2 * CLIP_LABEL_X);
+	const tw = ctx.measureText(label).width;
+	ctx.fillStyle = tl.surface;
+	ctx.globalAlpha = clip.hidden ? 0.3 : 0.55;
+	roundRectPath(r.x + 3, r.y + 3, tw + 8, CLIP_LABEL_HEIGHT, 3);
+	ctx.fill();
+	ctx.globalAlpha = clip.hidden ? 0.5 : 1;
+	ctx.fillStyle = paint.on;
+	ctx.font = "11px Inter, system-ui, sans-serif";
+	ctx.textBaseline = "middle";
+	ctx.textAlign = "left";
+	ctx.fillText(label, r.x + CLIP_LABEL_X + 1, r.y + 3 + CLIP_LABEL_HEIGHT / 2);
+	ctx.restore();
+}
 
-	if (clip.selected && canTrim(clip) && w > TRIM_HANDLE_PX * 2) {
+// Trim grips (on a selected editable clip) and the border/selection ring.
+function drawClipDecorations(clip: TimelineClip, r: ClipRect, paint: ClipPaint) {
+	if (!ctx) return;
+	if (clip.selected && canTrim(clip) && r.w > TRIM_HANDLE_PX * 2) {
 		ctx.fillStyle = paint.on;
 		ctx.globalAlpha = 0.55;
-		ctx.fillRect(x + 2, top + h / 2 - 6, 1.5, 12);
-		ctx.fillRect(x + w - 3.5, top + h / 2 - 6, 1.5, 12);
+		ctx.fillRect(r.x + 2, r.y + r.h / 2 - 6, 1.5, 12);
+		ctx.fillRect(r.x + r.w - 3.5, r.y + r.h / 2 - 6, 1.5, 12);
 		ctx.globalAlpha = clip.hidden ? 0.5 : 1;
 	}
-
 	ctx.save();
-	roundRectPath(x, top, w, h, CLIP_RADIUS);
+	roundRectPath(r.x, r.y, r.w, r.h, CLIP_RADIUS);
 	ctx.clip();
 	ctx.strokeStyle = clip.selected ? tl.ring : tl.border;
 	ctx.lineWidth = clip.selected ? 2 : 1;
-	roundRectPath(x, top, w, h, CLIP_RADIUS);
+	roundRectPath(r.x, r.y, r.w, r.h, CLIP_RADIUS);
 	ctx.stroke();
 	ctx.restore();
-
-	ctx.globalAlpha = 1;
 }
 
-function drawFilmstrip(x0: number, cw: number, y: number, h: number): void {
-	if (!ctx || !ensureStoryboard() || !sbImg || !sbMeta) return;
-	const meta = sbMeta;
-	const img = sbImg;
-	const tileW = Math.max(8, h * (meta.cellW / meta.cellH));
+function hasWaveform(): boolean {
+	return (store.waveform?.length ?? 0) >= 2 && (store.metadata?.duration ?? 0) > 0;
+}
+
+// object-fit: cover, from the whole image.
+function drawCover(img: HTMLImageElement, dx: number, dy: number, dw: number, dh: number) {
+	if (!ctx) return;
+	const iw = img.naturalWidth;
+	const ih = img.naturalHeight;
+	if (!iw || !ih) return;
+	const scale = Math.max(dw / iw, dh / ih);
+	const sw = dw / scale;
+	const sh = dh / scale;
+	ctx.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, dx, dy, dw, dh);
+}
+
+// object-fit: cover, from a sub-rect `s` of a sprite into `d`.
+function drawCoverCrop(img: HTMLImageElement, s: ClipRect, d: ClipRect) {
+	if (!ctx) return;
+	const scale = Math.max(d.w / s.w, d.h / s.h);
+	const cw = d.w / scale;
+	const ch = d.h / scale;
+	ctx.drawImage(img, s.x + (s.w - cw) / 2, s.y + (s.h - ch) / 2, cw, ch, d.x, d.y, d.w, d.h);
+}
+
+// Decoded tiles are object URLs owned by the provider; we only cache the Image.
+const tileImgs = new Map<string, HTMLImageElement>();
+function ensureTileImage(url: string): HTMLImageElement | null {
+	const cached = tileImgs.get(url);
+	if (cached) return cached.complete && cached.naturalWidth > 0 ? cached : null;
+	const img = new Image();
+	img.onload = () => scheduleDraw();
+	img.src = url;
+	tileImgs.set(url, img);
+	if (tileImgs.size > 320) {
+		const oldest = tileImgs.keys().next().value;
+		if (oldest) tileImgs.delete(oldest);
+	}
+	return null;
+}
+
+// Virtualized filmstrip: plan on-screen tiles, request their decode, draw each
+// decoded frame; a tile still decoding falls back to the coarse storyboard cell,
+// then to a muted fill — never solid black.
+function drawFilmstrip(clip: TimelineClip, x0: number, cw: number, y: number, h: number): void {
+	if (!ctx || h <= 0) return;
+	const seg = store.segments.find((s) => String(s.start) === clip.id);
+	if (!seg) return;
+	const outStartFrame = originalToOutput(store.renderMap, seg.start) * fps;
+	const block: FilmstripBlock = {
+		key: seg.start,
+		leftPx: outStartFrame * view.resolution,
+		widthPx: cw,
+		originalStart: seg.start,
+		originalEnd: seg.end,
+	};
+	const tiles = planFilmstrip(
+		[block],
+		{ leftPx: view.scrollFrames * view.resolution, widthPx: contentW },
+		{
+			tileWidthPx: FILMSTRIP_TILE_WIDTH,
+			tileHeightPx: Math.round(FILMSTRIP_TILE_HEIGHT * dpr),
+			overscanPx: 240,
+		},
+	);
+	tileProvider?.request(tiles);
+
 	ctx.save();
 	roundRectPath(x0, y, cw, h, CLIP_RADIUS);
 	ctx.clip();
-	ctx.globalAlpha = 0.92;
-	for (let tx = 0; tx < cw; tx += tileW) {
-		const outSec = xToFrame(x0 + tx + tileW / 2, view) / fps;
-		const origSec = outputToOriginal(store.renderMap, outSec);
-		const i = Math.max(
-			0,
-			Math.min(
-				meta.count - 1,
-				Math.floor((origSec / Math.max(meta.durationSec, 1e-6)) * meta.count),
-			),
-		);
-		const sx = (i % meta.cols) * meta.cellW;
-		const sy = Math.floor(i / meta.cols) * meta.cellH;
-		ctx.drawImage(img, sx, sy, meta.cellW, meta.cellH, x0 + tx, y, tileW, h);
-	}
+	ctx.fillStyle = tl.surfaceMuted;
+	ctx.globalAlpha = 0.6;
+	ctx.fillRect(x0, y, cw, h);
 	ctx.globalAlpha = 1;
+	for (const t of tiles) {
+		const tx = snapDev(x0 + t.offsetPx);
+		const tw = Math.ceil(t.widthPx) + 1;
+		const url = tileProvider?.get(t);
+		const img = url ? ensureTileImage(url) : null;
+		if (img) drawCover(img, tx, y, tw, h);
+		else drawStoryboardCell(tx, y, tw, h, t.sampleOriginalSec);
+	}
 	ctx.restore();
 }
 
-function drawWaveformBars(r: ClipRect, color: string, anchorBottom: boolean): void {
+function drawStoryboardCell(tx: number, y: number, tw: number, h: number, origSec: number): void {
+	if (!ctx || !ensureStoryboard() || !sbImg || !sbMeta) return;
+	const meta = sbMeta;
+	const i = Math.max(
+		0,
+		Math.min(meta.count - 1, Math.floor((origSec / Math.max(meta.durationSec, 1e-6)) * meta.count)),
+	);
+	drawCoverCrop(
+		sbImg,
+		{
+			x: (i % meta.cols) * meta.cellW,
+			y: Math.floor(i / meta.cols) * meta.cellH,
+			w: meta.cellW,
+			h: meta.cellH,
+		},
+		{ x: tx, y, w: tw, h },
+	);
+}
+
+// Recording waveform centred in its band. `alpha` dims it over the video strip.
+function drawWaveformBars(r: ClipRect, color: string, alpha: number): void {
 	if (!ctx) return;
 	const wf = store.waveform;
 	const dur = store.metadata?.duration ?? 0;
@@ -616,10 +792,9 @@ function drawWaveformBars(r: ClipRect, color: string, anchorBottom: boolean): vo
 	roundRectPath(r.x, r.y, r.w, r.h, CLIP_RADIUS);
 	ctx.clip();
 	ctx.fillStyle = color;
-	ctx.globalAlpha = anchorBottom ? 0.7 : 1;
+	ctx.globalAlpha = alpha;
 
-	const offsetY = r.h > CLIP_SM ? CLIP_LABEL_HEIGHT : 2;
-	const bandH = Math.max(2, r.h - offsetY - 3);
+	const bandH = Math.max(2, r.h - 3);
 	const inSec = store.inPoint;
 	const outSec = store.outPoint;
 
@@ -629,8 +804,7 @@ function drawWaveformBars(r: ClipRect, color: string, anchorBottom: boolean): vo
 		if (origSec < inSec - 0.01 || origSec > outSec + 0.01) continue;
 		const i = Math.max(0, Math.min(wf.length - 1, Math.floor((origSec / dur) * wf.length)));
 		const bh = Math.max((wf[i] ?? 0) * bandH, 1);
-		const top = anchorBottom ? r.y + r.h - 3 - bh : r.y + offsetY + (bandH - bh) / 2;
-		ctx.fillRect(r.x + sx, top, SAMPLE_WIDTH - 0.5, bh);
+		ctx.fillRect(snapDev(r.x + sx), r.y + (r.h - bh) / 2, SAMPLE_WIDTH - 0.4, bh);
 	}
 	ctx.globalAlpha = 1;
 	ctx.restore();
@@ -800,7 +974,7 @@ function canTrim(clip: TimelineClip): boolean {
 function clipAt(x: number, y: number): TimelineClip | null {
 	for (const laid of rowLayout) {
 		const top = rowClipTop(laid);
-		if (y < top || y >= top + ROW_H) continue;
+		if (y < top || y >= top + laid.height) continue;
 		for (let i = laid.row.clips.length - 1; i >= 0; i--) {
 			const clip = laid.row.clips[i];
 			const cx = frameToX(clip.start, view);
@@ -1000,6 +1174,10 @@ function onContextMenu(e: MouseEvent) {
 function menuDelete() {
 	const c = menuClip;
 	if (!c) return;
+	if (c.kind === "video") {
+		store.deleteSegmentAt(Number(c.id));
+		return;
+	}
 	store.pushUndoState();
 	if (c.kind === "zoom") store.removeZoomRegion(c.id);
 	else if (c.kind === "markup") store.removeAnnotation(c.id);
@@ -1018,16 +1196,28 @@ function menuToggleHidden() {
 function menuToggleLock() {
 	if (menuClip?.kind === "markup") store.toggleAnnotationLock(menuClip.id);
 }
-const menuCanEdit = $derived(menuClip?.kind === "zoom" || menuClip?.kind === "markup");
-const menuCanDelete = $derived(
-	menuClip != null &&
-		(menuClip.kind === "zoom" || menuClip.kind === "markup" || menuClip.kind === "audio"),
+function menuSetSpeed(v: number) {
+	if (menuClip?.kind === "video") store.setSegmentSpeed(Number(menuClip.id), v);
+}
+const menuSpeed = $derived(
+	menuClip?.kind === "video" ? store.segmentSpeedAt(Number(menuClip.id)) : 1,
 );
+const menuCanEdit = $derived(menuClip?.kind === "zoom" || menuClip?.kind === "markup");
+const menuCanDelete = $derived(menuClip != null && menuClip.kind !== "caption");
 
+// Normalize line/page wheel deltas so a physical mouse wheel pans/zooms the same
+// as a trackpad (Diffusion's normalizeWheel: LINE≈16px, PAGE≈600px).
+function normDelta(d: number, mode: number): number {
+	if (mode === 1) return d * 16;
+	if (mode === 2) return d * 600;
+	return d;
+}
 function onWheel(e: WheelEvent) {
 	e.preventDefault();
+	const dY = normDelta(e.deltaY, e.deltaMode);
+	const dX = normDelta(e.deltaX, e.deltaMode);
 	if (e.ctrlKey || e.metaKey) {
-		const clamped = Math.max(-ZOOM_DELTA_CLAMP, Math.min(ZOOM_DELTA_CLAMP, e.deltaY));
+		const clamped = Math.max(-ZOOM_DELTA_CLAMP, Math.min(ZOOM_DELTA_CLAMP, dY));
 		view = clampScroll(
 			zoomAt(view, localX(e), Math.exp(-clamped * ZOOM_SENSITIVITY)),
 			totalFrames,
@@ -1035,35 +1225,86 @@ function onWheel(e: WheelEvent) {
 		);
 		return;
 	}
-	const dxDominant = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+	const dxDominant = Math.abs(dX) > Math.abs(dY);
 	if (!e.shiftKey && !dxDominant && maxScrollY() > 0) {
-		scrollY = clampScrollY(scrollY + e.deltaY);
+		scrollY = clampScrollY(scrollY + dY);
 		return;
 	}
-	const dx = (dxDominant ? e.deltaX : e.deltaY) * SCROLL_X_SENSITIVITY;
+	const dx = (dxDominant ? dX : dY) * SCROLL_X_SENSITIVITY;
 	view = clampScroll(scrollByPixels(view, dx), totalFrames, contentW);
 }
 
 function onKeyDown(e: KeyboardEvent) {
-	if (e.key === "Home") {
-		e.preventDefault();
-		store.seek(0);
-	} else if (e.key === "End") {
-		e.preventDefault();
-		store.seek(outputToOriginal(store.renderMap, outputDurationSec));
+	// Transport keys belong to media-controller; the timeline owns editing keys.
+	if (e.metaKey || e.ctrlKey || e.altKey) return;
+	switch (e.key) {
+		case "Home":
+			e.preventDefault();
+			store.seek(0);
+			break;
+		case "End":
+			e.preventDefault();
+			store.seek(outputToOriginal(store.renderMap, outputDurationSec));
+			break;
+		case "Delete":
+		case "Backspace":
+			e.preventDefault();
+			deleteSelected();
+			break;
+		case "s":
+		case "S":
+			e.preventDefault();
+			splitAtPlayhead();
+			break;
+		case "z":
+		case "Z":
+			e.preventDefault();
+			addZoomAtPlayhead();
+			break;
+		case "f":
+		case "F":
+			e.preventDefault();
+			zoomToFit();
+			break;
+		case "+":
+		case "=":
+			e.preventDefault();
+			zoomStep(1.25);
+			break;
+		case "-":
+		case "_":
+			e.preventDefault();
+			zoomStep(0.8);
+			break;
+		case "ArrowLeft":
+			e.preventDefault();
+			stepFrame(-1);
+			break;
+		case "ArrowRight":
+			e.preventDefault();
+			stepFrame(1);
+			break;
+		case "[":
+			e.preventDefault();
+			markIn();
+			break;
+		case "]":
+			e.preventDefault();
+			markOut();
+			break;
+		case "k":
+		case "K":
+			e.preventDefault();
+			togglePlay();
+			break;
+		default:
+			break;
 	}
 }
 
+// Time readout respects the editor's Time-display mode (SMPTE / seconds / frames).
 function timecode(frame: number): string {
-	const f = Math.max(0, Math.round(frame));
-	const perSec = fps > 0 ? fps : 60;
-	const ff = (f % perSec).toString().padStart(2, "0");
-	const total = Math.floor(f / perSec);
-	const mm = Math.floor(total / 60)
-		.toString()
-		.padStart(2, "0");
-	const ss = (total % 60).toString().padStart(2, "0");
-	return `${mm}:${ss}:${ff}`;
+	return formatTimeByMode(frame / Math.max(fps, 1), store.timeMode, fps);
 }
 
 // The header column scrolls its rows with the canvas.
@@ -1071,6 +1312,7 @@ const headerScrollStyle = $derived(`transform:translateY(${-scrollY}px);padding-
 
 onMount(() => {
 	ctx = canvasEl?.getContext("2d", { alpha: false }) ?? null;
+	expandedRows = loadExpanded();
 	readColors();
 	sizeCanvas();
 
@@ -1090,7 +1332,32 @@ onMount(() => {
 		themeObserver.disconnect();
 		scheme.removeEventListener("change", readColors);
 		if (rafId) cancelAnimationFrame(rafId);
+		tileImgs.clear();
 	};
+});
+
+// The filmstrip decoder shares hardware with the preview; pause it while playing.
+$effect(() => {
+	tileProvider?.setDecodePaused(store.isPlaying);
+});
+
+// Keep the playhead in view while playing (auto-scroll like an NLE). Reads the
+// view untracked so writing scrollFrames doesn't re-trigger the effect.
+$effect(() => {
+	if (!store.isPlaying) return;
+	const pf = playheadFrame;
+	untrack(() => {
+		if (view.resolution <= 0) return;
+		const spanF = contentW / view.resolution;
+		const leftF = view.scrollFrames;
+		if (pf < leftF || pf > leftF + spanF - 4) {
+			view = clampScroll(
+				{ ...view, scrollFrames: Math.max(0, pf - spanF * 0.1) },
+				totalFrames,
+				contentW,
+			);
+		}
+	});
 });
 
 function redrawOn(..._deps: unknown[]): void {
@@ -1152,10 +1419,20 @@ const playheadLabel = $derived(
 					onclick={splitAtPlayhead}
 					disabled={totalFrames <= 0}
 					aria-label="Split at playhead"
-					title="Split at playhead"
+					title="Split at playhead (S)"
 					class="tl-btn"
 				>
 					<SquareSplitHorizontal class="size-4" />
+				</button>
+				<button
+					type="button"
+					onclick={addZoomAtPlayhead}
+					disabled={totalFrames <= 0}
+					aria-label="Add zoom at playhead"
+					title="Add zoom at playhead (Z)"
+					class="tl-btn"
+				>
+					<ZoomIn class="size-4" />
 				</button>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
@@ -1163,17 +1440,55 @@ const playheadLabel = $derived(
 							<Ellipsis class="size-4" />
 						</button>
 					</DropdownMenu.Trigger>
-					<DropdownMenu.Content size="sm" align="start" class="w-44">
+					<DropdownMenu.Content size="sm" align="start" class="w-52">
+						<DropdownMenu.Item onSelect={zoomToFit}>
+							<Maximize2 class="size-3.5" />
+							Zoom to fit
+						</DropdownMenu.Item>
 						<DropdownMenu.CheckboxItem checked={loopEnabled} onCheckedChange={(v) => (loopEnabled = v)}>
 							<Repeat class="size-3.5" />
 							Loop playback
 						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Label>Trim</DropdownMenu.Label>
+						<DropdownMenu.Item onSelect={markIn}>Mark in ([)</DropdownMenu.Item>
+						<DropdownMenu.Item onSelect={markOut}>Mark out (])</DropdownMenu.Item>
+						<DropdownMenu.Item onSelect={resetTrim}>Use full clip</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Label>Apply on export</DropdownMenu.Label>
 						<DropdownMenu.CheckboxItem
 							checked={store.cutsEnabled}
 							onCheckedChange={(v) => (store.cutsEnabled = v)}
 						>
 							<Scissors class="size-3.5" />
-							Apply silence cuts
+							Silence cuts
+						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.CheckboxItem
+							checked={!store.annotationsGloballyHidden}
+							onCheckedChange={(v) => (store.annotationsGloballyHidden = !v)}
+						>
+							<Highlighter class="size-3.5" />
+							Markup
+						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.Separator />
+						<DropdownMenu.Label>Time display</DropdownMenu.Label>
+						<DropdownMenu.CheckboxItem
+							checked={store.timeMode === "smpte"}
+							onCheckedChange={() => (store.timeMode = "smpte")}
+						>
+							Timecode
+						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.CheckboxItem
+							checked={store.timeMode === "seconds"}
+							onCheckedChange={() => (store.timeMode = "seconds")}
+						>
+							Seconds
+						</DropdownMenu.CheckboxItem>
+						<DropdownMenu.CheckboxItem
+							checked={store.timeMode === "frames"}
+							onCheckedChange={() => (store.timeMode = "frames")}
+						>
+							Frames
 						</DropdownMenu.CheckboxItem>
 						<DropdownMenu.Separator />
 						<DropdownMenu.Item onSelect={() => store.seek(0)}>Jump to start</DropdownMenu.Item>
@@ -1198,7 +1513,7 @@ const playheadLabel = $derived(
 					<div style="margin-bottom:{ROW_GAP}px">
 						<div
 							class="flex items-center gap-1.5 rounded-md px-1.5 transition-colors hover:bg-muted/40"
-							style="height:{ROW_H}px"
+							style="height:{laid.height}px"
 						>
 							{#if laid.expandable}
 								<button
@@ -1296,11 +1611,25 @@ const playheadLabel = $derived(
 						{#if menuClip.locked}<Unlock />Unlock{:else}<Lock />Lock{/if}
 					</ContextMenu.Item>
 				{/if}
+				{#if menuClip.kind === "video"}
+					<ContextMenu.Separator />
+					<ContextMenu.Item onSelect={splitAtPlayhead}>
+						<SquareSplitHorizontal />
+						Split at playhead
+					</ContextMenu.Item>
+					<ContextMenu.Label>Speed · {menuSpeed.toFixed(2)}×</ContextMenu.Label>
+					{#each SPEED_PRESETS as sp (sp)}
+						<ContextMenu.Item onSelect={() => menuSetSpeed(sp)}>
+							<Gauge />
+							{sp}×
+						</ContextMenu.Item>
+					{/each}
+				{/if}
 				{#if menuCanDelete}
 					<ContextMenu.Separator />
 					<ContextMenu.Item variant="destructive" onSelect={menuDelete}>
 						<Trash2 />
-						Delete
+						{menuClip.kind === "video" ? "Delete (ripple)" : "Delete"}
 					</ContextMenu.Item>
 				{/if}
 			{:else}

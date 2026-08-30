@@ -25,20 +25,28 @@ use h264::{EncodePurpose, H264Encoder};
 /// Capture backends deliver rows at the driver's own stride, and FFmpeg's
 /// `rawvideo` demuxer expects `width * 4` per row with no gaps.
 pub fn pack_rows(bytes: &[u8], stride: u32, width: u32, height: u32) -> Vec<u8> {
+    let mut packed = Vec::with_capacity(width as usize * 4 * height as usize);
+    pack_rows_into(&mut packed, bytes, stride, width, height);
+    packed
+}
+
+/// [`pack_rows`] reusing `dst`'s allocation. A live pump packs every frame, so
+/// allocating one is megabytes of churn per second at capture resolution.
+pub fn pack_rows_into(dst: &mut Vec<u8>, bytes: &[u8], stride: u32, width: u32, height: u32) {
     let row_bytes = width as usize * 4;
     let stride = stride as usize;
+    dst.clear();
     if stride == row_bytes {
-        return bytes.to_vec();
+        dst.extend_from_slice(bytes);
+        return;
     }
-    let mut packed = Vec::with_capacity(row_bytes * height as usize);
     for row in 0..height as usize {
         let start = row * stride;
         let Some(line) = bytes.get(start..start + row_bytes) else {
             break;
         };
-        packed.extend_from_slice(line);
+        dst.extend_from_slice(line);
     }
-    packed
 }
 
 /// Maximum stderr tail retained for diagnostics. The fatal line is always at
@@ -368,6 +376,26 @@ mod pack_rows_tests {
     fn a_short_buffer_yields_the_rows_it_actually_has() {
         let bytes = vec![1, 2, 3, 4, 0xFF, 0xFF, 5, 6];
         assert_eq!(pack_rows(&bytes, 6, 1, 2), vec![1, 2, 3, 4]);
+    }
+
+    /// The camera pump packs into one buffer for the life of the preview, so a
+    /// second frame must replace the first rather than append to it.
+    #[test]
+    fn packing_into_a_reused_buffer_leaves_only_the_latest_frame() {
+        let first = vec![1, 2, 3, 4, 0xFF, 0xFF, 5, 6, 7, 8, 0xFF, 0xFF];
+        let second = vec![9, 9, 9, 9, 0xFF, 0xFF, 8, 8, 8, 8, 0xFF, 0xFF];
+        let mut buffer = Vec::new();
+        super::pack_rows_into(&mut buffer, &first, 6, 1, 2);
+        super::pack_rows_into(&mut buffer, &second, 6, 1, 2);
+        assert_eq!(buffer, vec![9, 9, 9, 9, 8, 8, 8, 8]);
+    }
+
+    #[test]
+    fn packing_into_a_buffer_matches_the_allocating_form() {
+        let bytes = vec![1, 2, 3, 4, 0xFF, 0xFF, 5, 6, 7, 8, 0xFF, 0xFF];
+        let mut buffer = Vec::new();
+        super::pack_rows_into(&mut buffer, &bytes, 6, 1, 2);
+        assert_eq!(buffer, pack_rows(&bytes, 6, 1, 2));
     }
 }
 

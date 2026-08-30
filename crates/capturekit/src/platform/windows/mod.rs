@@ -1,3 +1,8 @@
+// The crate root denies this. 127 blocks here predate the rule and are owed
+// real comments, not generated ones; the opt-out is scoped to this subtree so
+// the count is visible in one place and every other module is enforced today.
+#![allow(clippy::undocumented_unsafe_blocks)]
+
 mod com;
 mod d3d;
 mod dpi;

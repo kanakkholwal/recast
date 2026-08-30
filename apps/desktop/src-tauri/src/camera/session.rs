@@ -17,9 +17,10 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use capturekit::Target;
 
-use super::scale::downscale_bgra;
-use crate::encoder::pack_rows;
-use crate::encoder::{spawn_encoder_loop, EncoderConfig, RecordingQuality};
+use super::scale::downscale_bgra_into;
+use crate::encoder::{
+    pack_rows, pack_rows_into, spawn_encoder_loop, EncoderConfig, RecordingQuality,
+};
 use crate::recording::pipeline::RecordingPipeline;
 use crate::recording::TrackStart;
 
@@ -350,7 +351,8 @@ fn pump(
         if frame.desc().width != geometry.width || frame.desc().height != geometry.height {
             continue;
         }
-        packed = pack_rows(
+        pack_rows_into(
+            &mut packed,
             frame.bytes(),
             frame.stride(),
             geometry.width,
@@ -374,11 +376,18 @@ fn deliver(
             }
         }
     }
-    let (small, w, h) = downscale_bgra(packed, geometry.width, geometry.height, PREVIEW_MAX_DIM);
-    let mut message = Vec::with_capacity(8 + small.len());
-    message.extend_from_slice(&w.to_le_bytes());
-    message.extend_from_slice(&h.to_le_bytes());
-    message.extend_from_slice(&small);
+    // Reduced straight into the message: the header is patched afterwards
+    // because the scaled size is only known once `fit` has run.
+    let mut message = vec![0u8; 8];
+    let (w, h) = downscale_bgra_into(
+        &mut message,
+        packed,
+        geometry.width,
+        geometry.height,
+        PREVIEW_MAX_DIM,
+    );
+    message[0..4].copy_from_slice(&w.to_le_bytes());
+    message[4..8].copy_from_slice(&h.to_le_bytes());
     if let Ok(send) = sink.lock() {
         send(message);
     }

@@ -54,6 +54,9 @@ jobs:
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all --check
+      # The engine is its own workspace, so the line above never reached it.
+      - name: Check formatting (engine crates)
+        run: cargo fmt --manifest-path crates/Cargo.toml --all --check
 
   lint:
     name: biome + comment rule
@@ -349,7 +352,19 @@ jobs:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test golden_frames
 
-     
+
+      # `--lib` above skips integration targets, so these two only ever ran by
+      # hand. Parity is the one gate on the FFmpeg and engine renderers agreeing;
+      # nothing else catches them drifting apart.
+      - name: Engine parity + perf baseline (Windows only)
+        if: ${{ matrix.platform.name == 'windows-x64' }}
+        env:
+          RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
+        run: |
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test engine_parity
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test perf_baseline
+
+
       - name: Clippy
         env:
           CARGO_PROFILE_RELEASE_LTO: "false"

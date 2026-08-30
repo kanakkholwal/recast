@@ -424,8 +424,7 @@ pub(crate) fn pull_output(transform: &IMFTransform) -> Result<Option<EncodedSamp
         dwStreamID: 0,
         pSample: std::mem::ManuallyDrop::new(match provides_samples {
             true => None,
-            // SAFETY: allocating the buffer the transform asked us for.
-            false => Some(unsafe { empty_sample(info.cbSize as usize) }?),
+            false => Some(empty_sample(info.cbSize as usize)?),
         }),
         dwStatus: 0,
         pEvents: std::mem::ManuallyDrop::new(None),
@@ -433,8 +432,9 @@ pub(crate) fn pull_output(transform: &IMFTransform) -> Result<Option<EncodedSamp
     let mut status = 0u32;
     // SAFETY: one buffer for the one stream.
     let result = unsafe { transform.ProcessOutput(0, &mut buffers, &mut status) };
+    // Unconditional, and before the error branch: both fields are owned by us on every path out.
+    let sample = drain(&mut buffers[0]);
     if let Err(error) = result {
-        let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffers[0].pSample);
         drop(sample);
         // Not an error: the transform simply has nothing for us yet.
         if error.code() == MF_E_TRANSFORM_NEED_MORE_INPUT {
@@ -443,11 +443,21 @@ pub(crate) fn pull_output(transform: &IMFTransform) -> Result<Option<EncodedSamp
         return Err(EncodeError::Media(error));
     }
 
-    let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffers[0].pSample);
     let Some(sample) = sample else {
         return Ok(None);
     };
     Ok(Some(read_sample(&sample)?))
+}
+
+/// Takes ownership of everything `ProcessOutput` wrote into the buffer.
+///
+/// `pEvents` is an OUT parameter whose reference belongs to the caller. Leaving
+/// it in place leaks one COM object per output sample on any transform that
+/// populates it, which over an export is per frame.
+fn drain(buffer: &mut MFT_OUTPUT_DATA_BUFFER) -> Option<IMFSample> {
+    let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffer.pSample);
+    drop(std::mem::ManuallyDrop::take_if_needed(&mut buffer.pEvents));
+    sample
 }
 
 impl Drop for H264Encoder {
@@ -497,12 +507,16 @@ fn read_sample(sample: &IMFSample) -> Result<EncodedSample, EncodeError> {
     }
 }
 
-/// SAFETY: the caller must give a non-zero size the transform asked for.
-unsafe fn empty_sample(size: usize) -> Result<IMFSample, windows::core::Error> {
-    let sample = MFCreateSample()?;
-    let buffer = MFCreateMemoryBuffer(size.max(1) as u32)?;
-    sample.AddBuffer(&buffer)?;
-    Ok(sample)
+/// An empty sample of `size` bytes for a transform that does not allocate its
+/// own. Safe: the size is clamped, so there is no precondition to violate.
+fn empty_sample(size: usize) -> Result<IMFSample, windows::core::Error> {
+    // SAFETY: MF allocates both objects and hands us the only references; `AddBuffer` takes its own.
+    unsafe {
+        let sample = MFCreateSample()?;
+        let buffer = MFCreateMemoryBuffer(size.max(1) as u32)?;
+        sample.AddBuffer(&buffer)?;
+        Ok(sample)
+    }
 }
 
 /// Wraps a D3D11 texture as a sample. No copy: the buffer refers to the

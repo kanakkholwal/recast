@@ -136,7 +136,10 @@ impl RenderFont {
 /// injected before the cut/speed stage, so times are on the trimmed-but-uncut
 /// axis and the later select/setpts re-times the burned pixels. `clip_len` caps
 /// the output.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the ASS header needs every style and geometry input at once"
+)]
 pub fn to_ass(
     t: &Transcript,
     style: &CaptionStyle,
@@ -357,7 +360,10 @@ fn push_dialogue(
 /// times onto the trimmed-but-uncut axis (subtract `offset`, clamp to
 /// `clip_len`). Skips fully out-of-range events. The pill draws on layer 0, the
 /// text on layer 1 so it sits on top.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one dialogue line: layer, timing, style and text are independent"
+)]
 fn push_dialogue_layer(
     out: &mut String,
     layer: u32,
@@ -491,7 +497,10 @@ fn pill_path(w: f64, h: f64, r: f64) -> String {
 }
 
 /// Emit the pill Dialogue (layer 0) for a chunk window.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "pill geometry and colour are independent knobs"
+)]
 fn emit_pill(
     out: &mut String,
     style: &CaptionStyle,

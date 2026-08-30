@@ -1826,3 +1826,50 @@ fn a_caption_on_the_scene_reaches_the_frame() {
     assert!(red > 0, "the pill did not draw");
     assert!(white > 0, "the glyphs did not draw");
 }
+
+/// The bug this guards: `render_to_texture` allocated a scene-sized texture on
+/// every call, so an export loop paid a 33 MB alloc-and-free per 4K frame.
+#[test]
+fn a_render_loop_allocates_one_output_texture_not_one_per_frame() {
+    let Some(ctx) = context() else { return };
+    let mut session = recast_compositor::Session::new(
+        ctx,
+        scene_with(""),
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    )
+    .expect("session");
+
+    for frame in 0..30 {
+        session.render_to_texture(f64::from(frame) / 30.0, &FrameInputs::new());
+    }
+
+    assert_eq!(session.output_allocations(), 1);
+}
+
+/// A handle kept from an earlier frame must stay readable: the loop reuses the
+/// texture, so callers that hold one are looking at the newest frame, not at
+/// freed memory.
+#[test]
+fn a_reused_output_texture_still_reads_back_at_full_size() {
+    let Some(ctx) = context() else { return };
+    let mut session = recast_compositor::Session::new(
+        ctx,
+        scene_with(""),
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    )
+    .expect("session");
+
+    let size = session.output_size();
+    let (first, _) = session.render_to_texture(0.0, &FrameInputs::new());
+    let (second, _) = session.render_to_texture(0.5, &FrameInputs::new());
+    let pixels = read_back(ctx, &second, size.width, size.height);
+
+    assert_eq!(first.width(), second.width());
+    assert_eq!(pixels.len(), (size.width * size.height * 4) as usize);
+}

@@ -117,7 +117,10 @@ impl CaptionFrame {
 /// Placement, chunking, line breaking and per-word colour all come from
 /// `recast-captions`, the same functions the ASS burn-in calls, so the only
 /// thing this adds is turning a shaped line into quads.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the caption layout inputs: style, words, clock, geometry, face and atlas are all independent"
+)]
 pub fn layout_caption(
     style: &CaptionStyle,
     words: &[TranscriptWord],
@@ -357,7 +360,10 @@ fn backing_pill(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one glyph run: pen state, face, style and atlas each vary independently"
+)]
 fn push_word(
     pending: &mut Vec<PendingQuad>,
     face: &FontFace,

@@ -31,6 +31,10 @@ pub struct Session {
     /// because re-rasterising a line every frame is the whole cost.
     caption_face: Option<CaptionFace>,
     atlas: GlyphAtlas,
+    /// Size-keyed output target for `render_to_texture`. An export runs this
+    /// per frame, where a fresh 4K texture is 33 MB of allocate-and-free.
+    output: Option<(u32, u32, wgpu::Texture)>,
+    output_allocations: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +54,8 @@ impl Session {
             compositor: Compositor::new(ctx)?,
             caption_face: None,
             atlas: GlyphAtlas::new(ATLAS_WIDTH, ATLAS_MAX_HEIGHT),
+            output: None,
+            output_allocations: 0,
         })
     }
 
@@ -207,21 +213,38 @@ impl Session {
         self.compositor.render(&params, inputs, target)
     }
 
-    /// Convenience for the harnesses and the CLI: renders into a fresh output
-    /// texture sized to the scene.
+    /// Renders into a scene-sized output texture, reused across calls at the
+    /// same size. The returned handle is refcounted, so holding it past the
+    /// next call keeps that frame alive rather than copying it.
     pub fn render_to_texture(
         &mut self,
         output_time: f64,
         inputs: &FrameInputs<'_>,
     ) -> (wgpu::Texture, RenderStats) {
         let size = self.output_size();
-        let target = self.compositor.output_texture(size.width, size.height);
+        let reuse =
+            matches!(&self.output, Some((w, h, _)) if *w == size.width && *h == size.height);
+        if !reuse {
+            let texture = self.compositor.output_texture(size.width, size.height);
+            self.output = Some((size.width, size.height, texture));
+            self.output_allocations += 1;
+        }
+        let Some((_, _, target)) = &self.output else {
+            unreachable!("the output texture was just created")
+        };
+        let target = target.clone();
         let stats = self.render(
             output_time,
             inputs,
             &target.create_view(&Default::default()),
         );
         (target, stats)
+    }
+
+    /// How many output textures this session has allocated. A steady render
+    /// loop must not grow this past one per distinct output size.
+    pub fn output_allocations(&self) -> u64 {
+        self.output_allocations
     }
 }
 

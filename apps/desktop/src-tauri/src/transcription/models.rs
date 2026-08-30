@@ -7,9 +7,9 @@
 //!
 //! NOTE ON DATA: every model is a single GGUF file hosted under the
 //! `handy-computer` HuggingFace org (the canonical transcribe.cpp catalog).
-//! `sha256` is left `None` for now (skip-verify with a warning) — pin the hashes
-//! before release once the exact files are locked. `download`/`transcribe` guard
-//! against an empty file list.
+//! Every built-in entry is sha256-pinned and `every_builtin_model_is_hash_pinned`
+//! keeps it that way: an unpinned GGUF is arbitrary bytes handed to a native
+//! parser. `download`/`transcribe` guard against an empty file list.
 
 use std::path::{Path, PathBuf};
 
@@ -260,7 +260,10 @@ impl CaptionModel {
 /// `is_installed` gate (downloaded mismatches auto-redownload; see
 /// `download_file` at `models.rs:357-367`). Compute via
 /// `tools/dev/pin-model-sha256.ps1` once per release.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a registry row: every column is independent data"
+)]
 fn ggml_model(
     id: &str,
     name: &str,
@@ -314,9 +317,9 @@ pub fn registry() -> Vec<CaptionModel> {
             "handy-computer/parakeet-tdt-0.6b-v3-gguf",
             "parakeet-tdt-0.6b-v3-Q8_0.gguf",
             vec!["multi".into()],
-            660_000_000,
+            739_508_576,
             true,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7"),
         )
         .scored(79, 88)
         .langs(25)
@@ -328,9 +331,9 @@ pub fn registry() -> Vec<CaptionModel> {
             "handy-computer/parakeet-tdt-0.6b-v2-gguf",
             "parakeet-tdt-0.6b-v2-Q8_0.gguf",
             vec!["en".into()],
-            660_000_000,
+            729_574_912,
             false,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("f0d0e99cebb6d3b83f1f7069b82b5d3c2e39a54545b0da039cb4bafd9c4e5caa"),
         )
         .scored(85, 89)
         .langs(1)
@@ -345,7 +348,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             751_094_240,
             false,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("b94545b313b3223fda7b2857a52681da813935c2127643d1e9ff0c23d988089c"),
         )
         .scored(84, 82)
         .langs(28)
@@ -374,9 +377,9 @@ pub fn registry() -> Vec<CaptionModel> {
             "handy-computer/whisper-small-gguf",
             "whisper-small-Q5_K_M.gguf",
             vec!["multi".into()],
-            190_000_000,
+            193_749_056,
             false,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("326cd00c3e7217c751667c7c1600eaf7e0de174e186ca2c16b4bf590251c3c3b"),
         )
         .scored(78, 80)
         .langs(99)
@@ -391,7 +394,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             831_538_144,
             false,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("09e6a65e7de377aa5b10bae24608bc6f8ca2ed04b3993ef10d4a02bcd9a82adf"),
         )
         .scored(42, 84)
         .langs(99)
@@ -590,6 +593,23 @@ mod tests {
                 "{} file is not a .gguf",
                 m.id
             );
+        }
+    }
+
+    /// An unpinned entry downloads over the network and goes straight into a
+    /// native GGUF parser with nothing checking the bytes.
+    #[test]
+    fn every_builtin_model_is_hash_pinned() {
+        for m in registry() {
+            for f in &m.files {
+                let pinned = f.sha256.as_deref().unwrap_or_default();
+                assert_eq!(pinned.len(), 64, "{} has no sha256 pin", m.id);
+                assert!(
+                    pinned.chars().all(|c| c.is_ascii_hexdigit()),
+                    "{} sha256 is not hex",
+                    m.id
+                );
+            }
         }
     }
 

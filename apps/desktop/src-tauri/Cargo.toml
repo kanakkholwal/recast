@@ -275,6 +275,9 @@ strip = "debuginfo"
 # `pedantic`: its top lints are cast_* and must_use_candidate, which are noise in
 # per-pixel and per-sample code rather than signals of bad code.
 [lints.clippy]
+# Stated here rather than relying on CI's `-D warnings`, so a local run and the
+# pipeline give the same answer. Matches the crates workspace.
+all = { level = "deny", priority = -1 }
 cloned_instead_of_copied = "deny"
 implicit_clone = "deny"
 inconsistent_struct_constructor = "deny"

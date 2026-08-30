@@ -49,13 +49,15 @@ unsafe extern "system" fn collect_monitor(
     _clip: *mut RECT,
     data: LPARAM,
 ) -> BOOL {
-    let monitors = &mut *(data.0 as *mut Vec<HMONITOR>);
+    // SAFETY: `data` is the `&mut Vec` this callback's own EnumDisplayMonitors call passed, alive for that call.
+    let monitors = unsafe { &mut *(data.0 as *mut Vec<HMONITOR>) };
     monitors.push(monitor);
     TRUE
 }
 
 unsafe extern "system" fn collect_window(window: HWND, data: LPARAM) -> BOOL {
-    let windows = &mut *(data.0 as *mut Vec<HWND>);
+    // SAFETY: `data` is the `&mut Vec` this callback's own EnumWindows call passed, alive for that call.
+    let windows = unsafe { &mut *(data.0 as *mut Vec<HWND>) };
     windows.push(window);
     TRUE
 }

@@ -2175,16 +2175,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
-name = "spike-d3d11-wgpu"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "pollster",
- "wgpu",
- "windows 0.62.2",
-]
-
-[[package]]
 name = "spirv"
 version = "0.4.0+sdk-1.4.341.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

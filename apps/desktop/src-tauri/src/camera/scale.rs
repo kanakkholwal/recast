@@ -10,11 +10,28 @@
 /// point-sampling: a webcam bubble shown at a third of capture size shimmers
 /// badly under nearest-neighbour.
 pub fn downscale_bgra(src: &[u8], width: u32, height: u32, max_dim: u32) -> (Vec<u8>, u32, u32) {
+    let mut out = Vec::new();
+    let (w, h) = downscale_bgra_into(&mut out, src, width, height, max_dim);
+    (out, w, h)
+}
+
+/// [`downscale_bgra`] appending to `out` instead of returning a new buffer, so
+/// a caller framing the pixels (an IPC header, say) writes one buffer not two.
+pub fn downscale_bgra_into(
+    out: &mut Vec<u8>,
+    src: &[u8],
+    width: u32,
+    height: u32,
+    max_dim: u32,
+) -> (u32, u32) {
     let (dst_w, dst_h) = fit(width, height, max_dim);
     if dst_w == width && dst_h == height {
-        return (src.to_vec(), width, height);
+        out.extend_from_slice(src);
+        return (width, height);
     }
-    let mut out = vec![0u8; dst_w as usize * dst_h as usize * 4];
+    let base = out.len();
+    out.resize(base + dst_w as usize * dst_h as usize * 4, 0);
+    let out = &mut out[base..];
     let row = width as usize * 4;
     for y in 0..dst_h as usize {
         let y0 = y * height as usize / dst_h as usize;
@@ -45,7 +62,7 @@ pub fn downscale_bgra(src: &[u8], width: u32, height: u32, max_dim: u32) -> (Vec
             }
         }
     }
-    (out, dst_w, dst_h)
+    (dst_w, dst_h)
 }
 
 /// The largest size within `max_dim` that keeps the source aspect ratio.
@@ -99,5 +116,26 @@ mod tests {
         let (out, w, h) = downscale_bgra(&src, 4, 4, 2);
         assert_eq!((w, h), (2, 2));
         assert_eq!(out.len(), 2 * 2 * 4);
+    }
+
+    /// The pump packs and scales every frame, so this must be able to write
+    /// into a buffer the caller keeps rather than returning a new one.
+    #[test]
+    fn scaling_into_a_buffer_appends_after_what_is_already_there() {
+        let src = vec![9u8; 4 * 4 * 4];
+        let mut out = vec![1, 2, 3, 4];
+        let (w, h) = downscale_bgra_into(&mut out, &src, 4, 4, 2);
+        assert_eq!((w, h), (2, 2));
+        assert_eq!(&out[..4], &[1, 2, 3, 4]);
+        assert_eq!(out.len(), 4 + 2 * 2 * 4);
+    }
+
+    #[test]
+    fn scaling_into_a_buffer_matches_the_allocating_form() {
+        let src: Vec<u8> = (0..4u32 * 4 * 4).map(|i| (i % 251) as u8).collect();
+        let (owned, w, h) = downscale_bgra(&src, 4, 4, 2);
+        let mut into = Vec::new();
+        assert_eq!(downscale_bgra_into(&mut into, &src, 4, 4, 2), (w, h));
+        assert_eq!(into, owned);
     }
 }

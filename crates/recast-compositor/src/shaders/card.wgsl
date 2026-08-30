@@ -119,10 +119,13 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         }
         source_uv = (source_uv - vec2<f32>(0.5)) * fit + vec2<f32>(0.5);
     }
-    var colour = sample_source(source_uv);
     let streak = card.flags.z;
+    // else, not an overwrite: the plain sample is a wasted fetch under blur.
+    var colour: vec4<f32>;
     if (streak > 0.0) {
         colour = dolly_blur(source_uv, streak);
+    } else {
+        colour = sample_source(source_uv);
     }
 
     var alpha = colour.a * opacity;

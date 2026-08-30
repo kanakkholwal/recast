@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["capturekit", "capturekit-core", "recast-audio", "recast-captions", "recast-codec", "recast-codec-mf", "recast-color", "recast-compositor", "recast-cursor", "recast-ffi-wasm", "recast-gpu", "recast-mux", "recast-scene", "recast-testkit", "recast-text", "recast-time", "spike-d3d11-wgpu"]
+members = ["capturekit", "capturekit-core", "recast-audio", "recast-captions", "recast-codec", "recast-codec-mf", "recast-color", "recast-compositor", "recast-cursor", "recast-ffi-wasm", "recast-gpu", "recast-mux", "recast-scene", "recast-testkit", "recast-text", "recast-time"]
+# Answered its question (see `.notes/05-spike-s1-result.md`) and is imported by
+# nothing. Kept on disk, out of the build: as a member every CI run compiled,
+# clippy'd and tested 523 lines to preserve a result already written down.
+exclude = ["spike-d3d11-wgpu"]
 
 # Groups take a negative priority so an individual lint below can override them.
 [workspace.lints.rust]
