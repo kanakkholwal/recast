@@ -27,10 +27,14 @@ concurrency:
 env:
   NODE_VERSION: "22"
 
+permissions:
+  contents: read
+
 jobs:
   release-extensions:
     name: Build registry + publish release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:

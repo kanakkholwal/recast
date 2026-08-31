@@ -14,6 +14,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 concurrency:
   group: release-desktop-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
@@ -31,6 +34,7 @@ jobs:
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     outputs:
@@ -114,6 +118,8 @@ jobs:
             rust_target: x86_64-pc-windows-msvc
             tauri_args: ""
     runs-on: ${{ matrix.platform.os }}
+    # A hung linker must not hold a release runner for the 360-minute default.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -162,22 +168,22 @@ jobs:
       - name: Read pinned toolchain
         id: rust
         shell: bash
-        run: |
-          channel=$(grep -m1 -oE 'channel[[:space:]]*=[[:space:]]*"[^"]+"' rust-toolchain.toml | grep -oE '"[^"]+"' | tr -d '"')
-          test -n "$channel"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/read-toolchain.sh
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.rust.outputs.channel }}
           targets: ${{ matrix.platform.rust_target }}
 
+      # BOTH workspaces, and `shared-key` alone: `crates/` was uncached so every release rebuilt the
+      # engine tree, and pairing `key` with `shared-key` only made the entry harder to hit.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "./apps/desktop/src-tauri -> target"
-          key: ${{ matrix.platform.rust_target }}
-          shared-key: tauri-${{ matrix.platform.name }}
+          workspaces: |
+            ./apps/desktop/src-tauri -> target
+            ./crates -> target
+          shared-key: release-${{ matrix.platform.rust_target }}
           cache-on-failure: true
 
       - name: Cache turbo build outputs
@@ -188,18 +194,12 @@ jobs:
           restore-keys: |
             turbo-${{ matrix.platform.os }}-
 
-      - name: Install Linux system dependencies
-        if: matrix.platform.os == 'ubuntu-24.04'
-        run: bash scripts/release/install-linux-deps.sh
-
-      # transcribe.cpp compiles ggml from source (needs CMake + a C/C++ compiler;
-      # ggml is vendored, no submodules). macOS/Windows runners ship CMake.
-      - name: Ensure CMake (Linux)
-        if: matrix.platform.os == 'ubuntu-24.04'
-        run: sudo apt-get install -y cmake
+      - name: Setup build environment
+        shell: bash
+        run: bash scripts/ci/setup-build-env.sh
 
       - name: Install workspace dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Cache FFmpeg sidecars
         id: ffmpeg-cache
@@ -274,23 +274,12 @@ jobs:
         shell: pwsh
         run: ./scripts/release/smoke-test-transcription.ps1
 
-      - name: Tag macOS updater bundle with arch
-        if: matrix.platform.os == 'macos-latest'
+      # One step for three per-OS branches; the dispatcher also fails loudly on an empty release-assets/.
+      - name: Package platform assets
+        shell: bash
         env:
           TAG: ${{ needs.create-release.outputs.tag_name }}
-          RUST_TARGET: ${{ matrix.platform.rust_target }}
-        run: bash scripts/release/rename-macos-updater-bundle.sh
-
-      - name: Package MSIX (Windows)
-        if: matrix.platform.os == 'windows-latest'
-        shell: pwsh
-        env:
-          TAG: ${{ needs.create-release.outputs.tag_name }}
-        run: ./scripts/release/package-msix.ps1 -RustTarget '${{ matrix.platform.rust_target }}'
-
-      - name: Prepare release assets
-        shell: pwsh
-        run: ./scripts/release/prepare-release-assets.ps1 -PlatformName '${{ matrix.platform.name }}' -RustTarget '${{ matrix.platform.rust_target }}'
+        run: bash scripts/release/package-platform.sh '${{ matrix.platform.name }}' '${{ matrix.platform.rust_target }}'
 
       - name: Attest release assets
         uses: actions/attest@v4
@@ -330,10 +319,11 @@ jobs:
   generate-manifest:
     name: Generate updater manifest
     needs: [create-release, build-desktop]
-    # Runs even when a build leg fails: the manifest script warns and skips platforms whose `.sig` is missing, so the legs that succeeded still publish.
-    # `!cancelled()` rather than `always()`, since a cancelled run should not produce a half-finished manifest; a zero-platform result errors loudly.
+    # Runs even when a build leg fails, so the failure is reported as a named missing platform rather than a skipped job.
+    # `--require` below still makes every platform mandatory, so this cannot publish a partial manifest.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -375,6 +365,7 @@ jobs:
     name: Publish release
     needs: [create-release, build-desktop, generate-manifest]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -393,6 +384,7 @@ jobs:
     # The script no-ops when HOMEBREW_TAP_TOKEN is unset, so this is safe to keep enabled before the tap exists: it just notices and exits 0.
     needs: [create-release, publish-release]
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -411,6 +403,7 @@ jobs:
     # The FIRST version must be submitted by hand; see scripts/release/WINGET_SETUP.md. Runs in parallel with the Homebrew job.
     needs: [create-release, publish-release]
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
     steps:

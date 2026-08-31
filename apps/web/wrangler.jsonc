@@ -1,0 +1,60 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+
+	// Top level IS the preview environment: `wrangler deploy` with no `--env` targets it.
+	// Production overrides live under `env.production` and are selected with `--env production`.
+	"name": "recast-web-preview",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"compatibility_date": "2026-08-01",
+
+	// postgres.js needs node:net/node:stream; without this flag the Worker fails at import time.
+	"compatibility_flags": ["nodejs_compat"],
+
+	"assets": {
+		"directory": ".svelte-kit/cloudflare",
+		"binding": "ASSETS"
+	},
+
+	"observability": {
+		"enabled": true
+	},
+
+	// Non-secret, per-environment. Secrets go through `wrangler secret put`, never this file.
+	"vars": {
+		"PUBLIC_APP_URL": "https://preview.recast.li"
+	},
+
+	// Hyperdrive pools Postgres connections globally so a Worker isolate does not open its own.
+	// Point it at Neon's DIRECT string, not the pooled one: Hyperdrive is the pool.
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "<preview-hyperdrive-id>"
+		}
+	],
+
+	"env": {
+		"production": {
+			"name": "recast-web",
+			// `vars`, `routes` and every binding are NOT inherited by a named environment; repeat them.
+			"vars": {
+				"PUBLIC_APP_URL": "https://recast.li"
+			},
+			"routes": [
+				{
+					"pattern": "recast.li",
+					"custom_domain": true
+				}
+			],
+			"hyperdrive": [
+				{
+					"binding": "HYPERDRIVE",
+					"id": "<production-hyperdrive-id>"
+				}
+			],
+			"observability": {
+				"enabled": true
+			}
+		}
+	}
+}

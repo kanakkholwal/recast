@@ -17,6 +17,10 @@ on:
       - "extensions/**"
       - ".github/workflows/verify-extensions.yml"
 
+concurrency:
+  group: verify-extensions-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -24,6 +28,7 @@ jobs:
   verify:
     name: Verify extension packs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v6

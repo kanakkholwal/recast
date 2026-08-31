@@ -4,7 +4,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use tauri::AppHandle;
 use tract_onnx::prelude::*;
@@ -230,32 +229,8 @@ fn detect_blocking(
         return Ok(cached);
     }
 
-    // Decode the mixed audio to mono s16le at our analysis rate.
-    let mut args: Vec<String> = vec!["-hide_banner".into(), "-nostats".into()];
-    for p in &inputs {
-        args.push("-i".into());
-        args.push((*p).to_string());
-    }
-    if inputs.len() > 1 {
-        args.push("-filter_complex".into());
-        args.push(format!("amix=inputs={}:normalize=0", inputs.len()));
-    }
-    args.extend([
-        "-ac".into(),
-        "1".into(),
-        "-ar".into(),
-        RATE.to_string(),
-        "-f".into(),
-        "s16le".into(),
-        "-".into(),
-    ]);
-    let pcm = ffmpeg_stdout(&args)?;
-    let samples: Vec<i16> = pcm
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|&c| i16::from_le_bytes(c))
-        .collect();
+    let decode_paths: Vec<&Path> = inputs.iter().map(|p| Path::new(*p)).collect();
+    let samples = crate::audio_decode::decode_mono(&decode_paths, RATE)?;
     if samples.len() < CHUNK {
         return Ok(Vec::new());
     }
@@ -268,7 +243,7 @@ fn detect_blocking(
     let mut window = [0f32; CHUNK];
     for chunk in samples.chunks(CHUNK) {
         for (i, slot) in window.iter_mut().enumerate() {
-            *slot = chunk.get(i).map(|s| *s as f32 / 32768.0).unwrap_or(0.0);
+            *slot = chunk.get(i).copied().unwrap_or(0.0);
         }
         probs.push(vad.compute(&window)?);
     }
@@ -433,25 +408,6 @@ fn round3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
 
-//  ffmpeg I/O
-
-/// Spawn ffmpeg and return its raw stdout bytes.
-fn ffmpeg_stdout(args: &[String]) -> Result<Vec<u8>, String> {
-    let mut cmd = Command::new(crate::ffmpeg::ffmpeg_path());
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    crate::ffmpeg::configure_silent_command(&mut cmd);
-    let output = cmd
-        .output()
-        .map_err(|e| format!("failed to run ffmpeg: {e}"))?;
-    if !output.status.success() {
-        return Err("ffmpeg exited with an error while decoding audio".into());
-    }
-    Ok(output.stdout)
-}
-
 //  Waveform extraction (the timeline-display backing data)
 
 /// Decodes a recording's audio to a compact peak envelope for the timeline.
@@ -494,32 +450,7 @@ fn waveform_blocking(
         return Ok(cached);
     }
 
-    let mut args: Vec<String> = vec!["-hide_banner".into(), "-nostats".into()];
-    for input in &inputs {
-        args.push("-i".into());
-        args.push((*input).to_string());
-    }
-    if inputs.len() > 1 {
-        args.push("-filter_complex".into());
-        args.push(format!("amix=inputs={}:normalize=0", inputs.len()));
-    }
-    args.extend([
-        "-ac".into(),
-        "1".into(),
-        "-ar".into(),
-        WAVE_RATE.to_string(),
-        "-f".into(),
-        "s16le".into(),
-        "-".into(),
-    ]);
-
-    let pcm = ffmpeg_stdout(&args)?;
-    let samples: Vec<i16> = pcm
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|&c| i16::from_le_bytes(c))
-        .collect();
+    let samples = crate::audio_decode::decode_mono(&input_paths, WAVE_RATE)?;
     if samples.len() < 2 {
         return Ok(Vec::new());
     }
@@ -534,10 +465,8 @@ fn waveform_blocking(
             .max(lo + 1);
         let peak = samples[lo..hi]
             .iter()
-            .map(|s| (*s as i32).unsigned_abs())
-            .max()
-            .unwrap_or(0);
-        *bucket = (peak as f32 / 32768.0).min(1.0);
+            .fold(0.0f32, |worst, s| worst.max(s.abs()));
+        *bucket = peak.min(1.0);
     }
     crate::cache::put("waveform", &input_paths, buckets as u64, &out);
     Ok(out)

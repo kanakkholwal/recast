@@ -20,8 +20,7 @@ const modes = [
 ] as const;
 </script>
 
-<!-- No StudioPage frame: the nav tab already labels this surface, so Home is a
-     full-bleed stage rather than a titled document. -->
+
 <div class="relative h-full min-h-0 overflow-y-auto no-scrollbar">
   <div
     class="relative mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center gap-9 px-6 py-12"

@@ -1,12 +1,9 @@
 name: CI Desktop App
 
-
 on:
-
   push:
     branches:
       - main
-
     paths:
       - "apps/desktop/**"
       - "packages/**"
@@ -25,6 +22,9 @@ concurrency:
   group: ci-desktop-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   NODE_VERSION: "24"
   RUST_BACKTRACE: "1"
@@ -34,92 +34,135 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  fmt:
-    name: rustfmt
+  # Cheap gates first, so the four compile legs never start on a run that has already failed.
+  quick:
+    name: fmt + lint + comments
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Read pinned toolchain
         id: rust
-        shell: bash
-        run: |
-          channel=$(grep -m1 -oE 'channel[[:space:]]*=[[:space:]]*"[^"]+"' rust-toolchain.toml | grep -oE '"[^"]+"' | tr -d '"')
-          test -n "$channel"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/read-toolchain.sh
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.rust.outputs.channel }}
           components: rustfmt
-      - name: Check formatting
-        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all --check
-      # The engine is its own workspace, so the line above never reached it.
-      - name: Check formatting (engine crates)
-        run: cargo fmt --manifest-path crates/Cargo.toml --all --check
 
-  lint:
-    name: biome + comment rule
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           run_install: false
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
       - name: Install workspace dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
+
       - name: Resolve base ref
         id: base
         run: |
+          set -euo pipefail
           base="${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}"
           git fetch --no-tags --depth=0 origin "$base"
           echo "ref=origin/$base" >> "$GITHUB_OUTPUT"
+
+      # Each gate reports independently: one failure must not hide the next.
+      - name: rustfmt (desktop)
+        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml --all --check
+      - name: rustfmt (engine crates)
+        if: ${{ !cancelled() }}
+        run: cargo fmt --manifest-path crates/Cargo.toml --all --check
+      - name: Biome lint (changed)
+        if: ${{ !cancelled() }}
+        run: pnpm exec biome lint --changed --since=${{ steps.base.outputs.ref }} --no-errors-on-unmatched .
+      - name: Biome format (changed)
+        if: ${{ !cancelled() }}
+        run: pnpm exec biome format --changed --since=${{ steps.base.outputs.ref }} --no-errors-on-unmatched .
       - name: Comment rule (changed)
+        if: ${{ !cancelled() }}
         run: node scripts/check-comments.mjs --since=${{ steps.base.outputs.ref }}
 
   ui-tests:
-    name: desktop UI unit tests
+    name: UI unit tests + typecheck
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - name: Install pnpm
-        uses: pnpm/action-setup@v4  # pnpm version comes from the root package.json `packageManager`
+        uses: pnpm/action-setup@v4
         with:
           run_install: false
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
-
       - name: Install workspace dependencies
-        run: pnpm install --no-frozen-lockfile
-      - name: Shared package unit tests
-        run: pnpm test:captions && pnpm test:media && pnpm test:editor && pnpm test:player && pnpm test:render && pnpm test:application
-      - name: Desktop UI unit tests
-        run: pnpm test:desktop
+        run: pnpm install --frozen-lockfile
+
+      # `pnpm test` chains every suite; turbo reports all failures rather than stopping at the first.
+      - name: Package + desktop unit tests
+        run: pnpm test:captions && pnpm test:media && pnpm test:editor && pnpm test:player && pnpm test:render && pnpm test:application && pnpm test:desktop
 
       - name: Verify every package declares a real check
+        if: ${{ !cancelled() }}
         run: node scripts/verify-package-scripts.mjs
-      - name: Typecheck shared packages
-        run: pnpm --filter "./packages/*" check
-      - name: Typecheck desktop frontend (svelte-check)
-        run: pnpm --filter recast-desktop check
+      - name: Typecheck workspace
+        if: ${{ !cancelled() }}
+        run: pnpm --filter "./packages/*" check && pnpm --filter recast-desktop check
+
+  # OS-independent gates, hoisted off the four compile legs where they ran 3x over.
+  engine:
+    name: engine crates + wasm
+    needs: [quick]
+    runs-on: ubuntu-24.04
+    # Three cold compilation passes over 17 crates: wasm32 build, release clippy --all-targets, and an MSRV check on a second toolchain.
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read pinned toolchain
+        id: rust
+        run: bash scripts/ci/read-toolchain.sh
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./crates -> target
+          shared-key: ci-engine-linux
+          cache-on-failure: true
+      - name: Setup build environment
+        run: bash scripts/ci/setup-build-env.sh
+
+      - name: Engine crates compile to wasm32
+        run: cargo build --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -p recast-compositor -p recast-scene -p recast-color -p recast-cursor -p recast-time -p recast-audio
+      - name: Clippy (wasm32)
+        if: ${{ !cancelled() }}
+        run: cargo clippy --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -- -D warnings
+      - name: Clippy (engine crates)
+        if: ${{ !cancelled() }}
+        run: cargo clippy --manifest-path crates/Cargo.toml --workspace --all-targets --release -- -D warnings
+      # The Linux portal stack sets the floor, so this must not be Windows-only: a Windows-only gate let a false 1.81 claim stand.
+      - name: capturekit MSRV (1.88)
+        if: ${{ !cancelled() }}
+        run: |
+          rustup toolchain install 1.88 --profile minimal
+          cargo +1.88 check --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-features
 
   compile:
     name: Compile (${{ matrix.platform.name }})
-
-    needs: [fmt]
+    needs: [quick, ui-tests]
     strategy:
       fail-fast: false
       matrix:
@@ -132,8 +175,8 @@ jobs:
             os: macos-latest
             rust_target: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin
-          # Intel Mac, cross-compiled on the arm64 runner because the native macos-13 image is being retired and its runners queue for hours.
-          # Proves the on-device engine builds for x86_64; `cross: true` skips the test run, since an x86_64 binary cannot execute on arm64.
+          # Intel Mac, cross-compiled on the arm64 runner because GitHub is retiring the native macos-13 image and its runners queue for hours.
+          # `cross: true` skips every RUN step below, since an x86_64 binary cannot execute on an arm64 host.
           - name: macos-x64
             os: macos-latest
             rust_target: x86_64-apple-darwin
@@ -146,9 +189,13 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     # The Windows leg measured ~50 min warm; this is headroom for a cold cache without letting a hung linker hold a runner for six hours.
     timeout-minutes: 90
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+      TRANSCRIBE_CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
+      CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
     steps:
-      - uses: actions/checkout@v7
-
+      - uses: actions/checkout@v4
 
       - name: Select Xcode (macOS)
         if: runner.os == 'macOS'
@@ -156,27 +203,20 @@ jobs:
         with:
           xcode-version: latest-stable
 
-
       - name: Install pnpm
-
         uses: pnpm/action-setup@v4
         with:
           run_install: false
-
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
-
       - name: Read pinned toolchain
         id: rust
         shell: bash
-        run: |
-          channel=$(grep -m1 -oE 'channel[[:space:]]*=[[:space:]]*"[^"]+"' rust-toolchain.toml | grep -oE '"[^"]+"' | tr -d '"')
-          test -n "$channel"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+        run: bash scripts/ci/read-toolchain.sh
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
@@ -184,7 +224,7 @@ jobs:
           targets: ${{ matrix.platform.rust_target }}
           components: clippy
 
-      # BOTH workspaces: `crates/` was never cached, so every run rebuilt the whole engine tree three times over.
+      # BOTH workspaces: `crates/` was never cached, so every run rebuilt the whole engine tree.
       # `shared-key` alone, since it replaces the automatic job key and pairing it with `key` only made the entry harder to hit.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -195,25 +235,18 @@ jobs:
           shared-key: ci-${{ matrix.platform.rust_target }}
           cache-on-failure: true
 
-      - name: Install Linux system dependencies
-        if: matrix.platform.os == 'ubuntu-24.04'
-        # Shared with release-desktop.yml. See the script for the
-        # PipeWire/libspa header version trap that the PPA resolves.
-        run: bash scripts/release/install-linux-deps.sh
-
-      # transcribe.cpp compiles ggml from source, so it needs CMake and a C/C++ compiler; only Linux lacks them. ggml is vendored, so no submodule checkout.
-      - name: Ensure CMake (Linux)
-        if: matrix.platform.os == 'ubuntu-24.04'
-        run: sudo apt-get install -y cmake
+      - name: Setup build environment
+        shell: bash
+        run: bash scripts/ci/setup-build-env.sh
 
       - name: Install workspace dependencies
-        run: pnpm install --no-frozen-lockfile
-
+        run: pnpm install --frozen-lockfile
 
       - name: Cache FFmpeg sidecars
         id: ffmpeg-cache
+        # A flaky restore must not sink the leg: on a cache error `cache-hit` stays falsy and the download step runs.
         continue-on-error: true
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: apps/desktop/src-tauri/binaries
           key: ci-ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}
@@ -223,123 +256,70 @@ jobs:
       - name: Download FFmpeg sidecars
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: bash
-        # `bash <file>`, not `./<file>`: the script is not necessarily +x on a Windows checkout, and the per-OS dispatchees are invoked the same way for the same reason.
+        # `bash <file>`, not `./<file>`: the script is not necessarily +x on a Windows checkout.
         run: bash ./scripts/release/ensure-ffmpeg.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
-
 
       - name: Compile desktop app (no bundle)
         env:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-
-          CARGO_PROFILE_RELEASE_LTO: "false"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-          TRANSCRIBE_CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
-          CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
         run: pnpm --filter recast-desktop tauri build --no-bundle ${{ matrix.platform.tauri_args }}
 
-      # Drives the built binary through real ggml inference, asserting no illegal-instruction or native abort fires.
-      # The GGUF cache key is shared with release-desktop.yml so a hit here is a hit there; `cross: true` legs skip, since x86_64 cannot run on arm64.
       - name: Cache smoke-test GGUF (Whisper-base, ~60 MB)
         if: ${{ !matrix.platform.cross }}
-        uses: actions/cache@v6
+        uses: actions/cache@v4
         with:
           path: models-cache/smoke-test
           key: smoke-gguf-${{ matrix.platform.rust_target }}-whisper-base-Q5_K_M
           restore-keys: |
             smoke-gguf-${{ matrix.platform.rust_target }}-
-      - name: Smoke test — ggml inference (${{ matrix.platform.name }})
+      # Drives the built binary through real ggml inference, asserting no illegal-instruction or native abort fires.
+      - name: Smoke test — ggml inference
         if: ${{ !matrix.platform.cross }}
         shell: pwsh
         run: ./scripts/release/smoke-test-transcription.ps1
 
-
-      - name: Run Rust unit tests
-        if: ${{ !matrix.platform.cross }}
-        env:
-          # Must match the compile step above, or cargo rebuilds every dependency at the other setting instead of reusing them.
-          CARGO_PROFILE_RELEASE_LTO: "false"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+      # `!cancelled()` on each: a failing test must not hide the clippy result behind it.
+      - name: Rust unit tests
+        if: ${{ !matrix.platform.cross && !cancelled() }}
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release ${{ matrix.platform.tauri_args }}
-
-
       - name: Engine crates
-        if: ${{ !matrix.platform.cross }}
+        if: ${{ !matrix.platform.cross && !cancelled() }}
         env:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
         run: cargo test --manifest-path crates/Cargo.toml --workspace --release
-
-
-      - name: capturekit backends (${{ matrix.platform.name }})
-        if: ${{ !matrix.platform.cross }}
+      - name: capturekit backends
+        if: ${{ !matrix.platform.cross && !cancelled() }}
         run: |
           cargo clippy --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-targets --all-features --release -- -D warnings
           cargo test --manifest-path crates/Cargo.toml -p capturekit-core --all-features --release
+      - name: Clippy (desktop)
+        if: ${{ !cancelled() }}
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --release ${{ matrix.platform.tauri_args }} -- -D warnings
 
-
-      # Every platform, not just Windows: the Linux portal stack sets the floor, so a Windows-only gate let a false 1.81 claim stand.
-      - name: capturekit MSRV (1.88)
-        if: ${{ !matrix.platform.cross }}
-        run: |
-          rustup toolchain install 1.88 --profile minimal
-          cargo +1.88 check --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-features
-
-
-      - name: capturekit live capture (Windows only)
-        if: ${{ matrix.platform.name == 'windows-x64' }}
+      # Windows is the only runner with a real desktop session and the GPU path these exercise.
+      - name: capturekit live capture
+        if: ${{ matrix.platform.name == 'windows-x64' && !cancelled() }}
         env:
           CAPTUREKIT_REQUIRE_DESKTOP: "1"
         run: cargo test --manifest-path crates/Cargo.toml -p capturekit --all-features --release
-
-      - name: Engine crates compile to wasm32
-        if: ${{ matrix.platform.name == 'windows-x64' }}
-        run: |
-          rustup target add wasm32-unknown-unknown
-          cargo build --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -p recast-compositor -p recast-scene -p recast-color -p recast-cursor -p recast-time -p recast-audio
-
-
-      - name: Clippy (wasm32)
-        if: ${{ matrix.platform.name == 'windows-x64' }}
-        run: cargo clippy --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -- -D warnings
-
-
-      - name: Preview engine artifacts
-        if: ${{ matrix.platform.name == 'windows-x64' }}
+      - name: Preview engine artifacts are committed
+        if: ${{ matrix.platform.name == 'windows-x64' && !cancelled() }}
+        shell: bash
         run: |
           pnpm --filter @recast/engine build
           test -z "$(git status --porcelain -- packages/engine/wasm)"
-
       - name: Engine golden frames (browser build)
-        if: ${{ matrix.platform.name == 'windows-x64' }}
+        if: ${{ matrix.platform.name == 'windows-x64' && !cancelled() }}
         run: |
           pnpm --filter @recast/engine exec playwright install --with-deps chromium
           pnpm --filter @recast/engine test:golden
-
-
-      - name: Export golden frames (Windows only)
-        if: ${{ matrix.platform.name == 'windows-x64' }}
-        env:
-          RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test golden_frames
-
-
       # `--lib` above skips integration targets, so these never ran in CI.
-      - name: Engine parity + perf assertions (Windows only)
-        if: ${{ matrix.platform.name == 'windows-x64' }}
+      - name: Golden frames + parity + perf
+        if: ${{ matrix.platform.name == 'windows-x64' && !cancelled() }}
         env:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
         run: |
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test golden_frames
           cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test engine_parity
           cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test perf_baseline
-
-
-      - name: Clippy
-        env:
-          CARGO_PROFILE_RELEASE_LTO: "false"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --release ${{ matrix.platform.tauri_args }} -- -D warnings
-
-
-      - name: Clippy (engine crates)
-        if: ${{ !matrix.platform.cross }}
-        run: cargo clippy --manifest-path crates/Cargo.toml --workspace --all-targets --release -- -D warnings
