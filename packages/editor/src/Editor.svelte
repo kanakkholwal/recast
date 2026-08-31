@@ -97,7 +97,6 @@ import { slide } from "svelte/transition";
 import { motionDuration } from "./lib/motion.svelte";
 import EditorToolbar from "./components/EditorToolbar.svelte";
 import PropertiesPanel from "./components/properity-panel/PropertiesPanel.svelte";
-import Timeline from "./components/Timeline.svelte";
 import AspectPicker from "./components/_components/AspectPicker.svelte";
 import MarkupControls from "./components/_components/MarkupControls.svelte";
 import StageViewControls from "./components/_components/StageViewControls.svelte";
@@ -243,15 +242,6 @@ let timelineHeight = $state(
 let resizingSidebar = $state(false);
 let resizingTimeline = $state(false);
 
-// Dev flag for the Stage-A canvas timeline (chip toggle, persisted) to compare live against the DOM one.
-const TL_CANVAS_KEY = "recast:tl-canvas";
-// Default ON for testing the canvas timeline; the chip flips back to the DOM one.
-let timelineCanvasFlag = $state(storage?.getItem(TL_CANVAS_KEY) !== "0");
-function toggleTimelineCanvas() {
-	timelineCanvasFlag = !timelineCanvasFlag;
-	storage?.setItem(TL_CANVAS_KEY, timelineCanvasFlag ? "1" : "0");
-}
-
 const timelineMax = $derived(timelineMaxHeight(editorColumnH));
 
 // Re-clamp on window changes, so a panel sized in a big window doesn't swallow a small one.
@@ -366,12 +356,14 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 		})}
 	{:else}
 		<div class="h-9 shrink-0">
+			<!-- exportMode is derived, not a prop: a host with no handler has no export to run, and a button that does nothing is worse than none. -->
 			<EditorToolbar
 				{store}
 				{filename}
 				{onexport}
 				{onsave}
 				{isSaving}
+				exportMode={onexport ? "export" : "none"}
 				showSidebar={sidebarOpen}
 				showTimeline={timelineOpen}
 				onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
@@ -507,25 +499,7 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 								: ''}"
 						></div>
 					</div>
-					{#if timelineCanvasFlag}
-						<TimelineCanvas {store} {videoEl} {tileProvider} {filmstripVersion} bind:loopEnabled />
-					{:else}
-						<Timeline
-							{store}
-							{videoEl}
-							{tileProvider}
-							{filmstripVersion}
-							readOnly={timelineReadOnly}
-						/>
-					{/if}
-					<button
-						type="button"
-						onclick={toggleTimelineCanvas}
-						title="Toggle the Stage-A canvas timeline (dev)"
-						class="absolute bottom-1.5 right-2 z-30 rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-					>
-						{timelineCanvasFlag ? "canvas ✓" : "canvas"}
-					</button>
+					<TimelineCanvas {store} {videoEl} {tileProvider} {filmstripVersion} bind:loopEnabled />
 				</div>
 			</div>
 		{/if}

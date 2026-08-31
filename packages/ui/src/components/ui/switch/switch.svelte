@@ -19,8 +19,8 @@ let {
 	...restProps
 }: Props & Record<string, unknown> = $props();
 
-// Off→on as 0→1. Heavy, deliberate travel: low stiffness + near-critical damping so it settles weighty without wobble.
-const pos = new Spring(checked ? 1 : 0, { stiffness: 0.055, damping: 0.9 });
+// Off→on as 0→1. Snappy travel with a light settle: enough stiffness to feel instant, damping high enough to avoid visible wobble.
+const pos = new Spring(checked ? 1 : 0, { stiffness: 0.2, damping: 0.78 });
 let pressed = $state(false);
 let thumbEl = $state<HTMLSpanElement | null>(null);
 
@@ -69,7 +69,7 @@ $effect(() => {
 	onpointerleave={() => (pressed = false)}
 	class={cn(
 		"group relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full px-1 outline-none",
-		"transition-colors duration-200 ease-out",
+		"transition-colors duration-150 ease-out",
 		"focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 		"disabled:cursor-not-allowed disabled:opacity-60",
 		checked ? "bg-primary" : "bg-muted-foreground/55",
@@ -81,7 +81,7 @@ $effect(() => {
 		<!-- Squish scales toward the destination edge, so the thumb leans into its travel like weight shifting. -->
 		<span
 			bind:this={thumbEl}
-			class="block size-5 rounded-full bg-background shadow-craft-md transition-transform duration-150 ease-out"
+			class="block size-5 rounded-full bg-background shadow-craft-md transition-transform duration-100 ease-out"
 			style="transform: scaleX({squish ? 1.14 : 1}) scaleY({squish ? 0.9 : 1}); transform-origin: {checked
 				? 'right'
 				: 'left'} center;"

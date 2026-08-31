@@ -239,6 +239,50 @@ clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
   it stops fighting the export (`exportActivity`; `store.isPlaying = false`
   at `+page.svelte`).
 
+## The native engine path
+
+A third route, behind the `engineExport` experimental flag: the SAME compositor
+run natively in Rust rather than in the preview window. `export_engine.rs`
+drives `Session` -> `FrameLoop` -> a codec backend.
+
+It exists because the browser route has a ceiling. Above 1080p60 the throughput
+gate sends work to the FFmpeg compositor, and WebCodecs is not always present.
+The native route has no ceiling and needs no browser, so the two together are a
+ladder rather than a duplicate: preview-window export for ordinary sources, the
+native engine for heavy ones.
+
+- **One renderer, two runtimes.** `browserExportBeta` loads
+  `recast_engine_webgpu.wasm`; `engineExport` links the same crates natively.
+  Neither is the old TypeScript compositor, which is deleted.
+- **Codec backends.** Media Foundation in process on Windows; elsewhere the
+  bundled FFmpeg encodes frames piped to its stdin (`recast-export::ffmpeg`).
+  Both are selectable at runtime, so the piped path is testable on the platform
+  that has a native one.
+- **RGBA becomes NV12 on the GPU** in a compute pass, byte-identical to the CPU
+  encoder it replaced and about nine times faster at 1080p. A canvas whose width
+  is not a multiple of four falls back to the CPU.
+- **Only a Windows MP4 is finished in process.** Every other format and platform
+  renders a video-only intermediate and hands it to `run_mux_job`, the same
+  mux-only tail the preview-window route uses.
+- **Every export logs what it did**: codec backend, pixel path, canvas, the
+  source size a quality cap shrank from, audio and captions. Quote that line
+  when an export looks wrong.
+
+### Where contributors can take it
+
+Deliberately incremental, and none of it blocks the rest of the pipeline:
+
+- **VideoToolbox on macOS** behind the same `Sink`/`Pictures` seam, which would
+  drop the FFmpeg encode pass and leave only the mux. The seam takes it with no
+  further change.
+- **Zero-copy on Windows**: render straight into a D3D11 shared texture for the
+  Media Foundation encoder, skipping the readback entirely. Proven viable in
+  `crates/spike-d3d11-wgpu`, which measures 0.170 ms a frame for the fence round
+  trip on a hybrid-GPU laptop.
+- **Retiring more FFmpeg spawns**: thumbnails, posters and the faststart remux
+  still shell out. GIF (`palettegen`/`paletteuse`) and WebM (VP9, Opus) have no
+  Rust replacement and are expected to keep using it.
+
 ## Related
 
 - [preview-engine.md](/architecture/preview-engine): the one compositor that

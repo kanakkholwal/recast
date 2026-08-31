@@ -35,6 +35,7 @@ import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { onMount, untrack } from "svelte";
 import { kindLabel } from "../../../lib/annotations/kind-label";
 import { clipEndSec } from "../../../lib/audio/music";
+import type { PanelTab } from "../../../lib/editor/panel-tabs";
 import { formatTimeByMode, frameStepOutput } from "../../../lib/editor/time";
 import { visibleTicks } from "../../../lib/timeline/canvas-ruler";
 import {
@@ -103,8 +104,6 @@ const MIN_CLIP_FRAMES = 2;
 const PLAYHEAD_GRAB_PX = 5;
 const TRACK_HEADER_W = 250;
 const SAMPLE_WIDTH = 2;
-const FILMSTRIP_TILE_HEIGHT = 48;
-const FILMSTRIP_TILE_WIDTH = 72;
 // Header is a flex sibling, so the canvas owns only the content region; a small left pad keeps frame 0 off the edge (Diffusion's TIMELINE_PADDING_LEFT).
 const GUTTER = 8;
 
@@ -886,12 +885,15 @@ function drawFilmstrip(clip: TimelineClip, x0: number, cw: number, y: number, h:
 		originalStart: seg.start,
 		originalEnd: seg.end,
 	};
+	// DS-style: size tiles to the source aspect so cover shows a whole frame per tile (not a cropped sliver), and scale with the strip height so a taller row shows larger frames.
+	const aspect = (store.metadata?.width ?? 16) / (store.metadata?.height ?? 9);
+	const tileW = Math.round(Math.max(48, Math.min(160, h * aspect)));
 	const tiles = planFilmstrip(
 		[block],
 		{ leftPx: view.scrollFrames * view.resolution, widthPx: contentW },
 		{
-			tileWidthPx: FILMSTRIP_TILE_WIDTH,
-			tileHeightPx: Math.round(FILMSTRIP_TILE_HEIGHT * dpr),
+			tileWidthPx: tileW,
+			tileHeightPx: Math.round(h * dpr),
 			overscanPx: 240,
 		},
 	);
@@ -1272,6 +1274,21 @@ function edgeZone(clip: TimelineClip, x: number): "l" | "r" | "body" {
 	return "body";
 }
 
+// A clip opens the panel that edits its kind, so clicking any tile (captions included) reveals its controls.
+const KIND_PANEL: Record<ClipKind, PanelTab> = {
+	video: "clip",
+	zoom: "focus",
+	markup: "annotations",
+	caption: "captions",
+	audio: "audio",
+	camera: "camera",
+};
+
+// Keyframe tracks open the panel that owns them, so their lane and diamonds are as clickable as a clip.
+const TRACK_PANEL: Record<string, PanelTab> = {
+	camera: "camera",
+};
+
 function selectClip(clip: TimelineClip) {
 	switch (clip.kind) {
 		case "video":
@@ -1289,6 +1306,7 @@ function selectClip(clip: TimelineClip) {
 		default:
 			break;
 	}
+	store.activePanel = KIND_PANEL[clip.kind];
 }
 
 function snapFrame(frame: number, exclude: TimelineClip): number {
@@ -1375,6 +1393,7 @@ function startKeyframeDrag(x: number, y: number, e: PointerEvent): boolean {
 	const sec = frameToOriginalSec(kf.frame);
 	clearSelection();
 	selectedKeyframeSec = sec;
+	store.activePanel = TRACK_PANEL[kf.row.track.source] ?? store.activePanel;
 	TRACK_HANDLERS[kf.row.track.source]?.seek(sec);
 	store.pushUndoState();
 	gesture = {
@@ -1403,8 +1422,26 @@ function onPointerDown(e: PointerEvent) {
 		return;
 	}
 	const clip = clipAt(x, y);
-	if (clip) startClipGesture(clip, x, e);
-	else clearSelection();
+	if (clip) {
+		startClipGesture(clip, x, e);
+		return;
+	}
+	// A bare track lane (an enabled camera with no keyframes) still opens its panel rather than clearing.
+	const track = trackLaneAt(y)?.track;
+	if (track && TRACK_PANEL[track.source]) {
+		store.activePanel = TRACK_PANEL[track.source];
+		return;
+	}
+	clearSelection();
+}
+
+function trackLaneAt(y: number): TimelineRow | null {
+	for (const laid of rowLayout) {
+		if (!laid.row.track) continue;
+		const top = rowClipTop(laid);
+		if (y >= top && y < top + laid.height) return laid.row;
+	}
+	return null;
 }
 
 function startClipGesture(clip: TimelineClip, x: number, e: PointerEvent) {
@@ -1830,7 +1867,7 @@ const playheadLabel = $derived(
 								<Scissors />
 								Trim
 							</DropdownMenu.SubTrigger>
-							<DropdownMenu.SubContent>
+							<DropdownMenu.SubContent class="max-w-44 w-fit">
 								<DropdownMenu.Item onSelect={markIn} size="sm"
 									>Mark in ([)</DropdownMenu.Item
 								>
@@ -1848,7 +1885,7 @@ const playheadLabel = $derived(
 								<Clock />
 								Time display
 							</DropdownMenu.SubTrigger>
-							<DropdownMenu.SubContent>
+							<DropdownMenu.SubContent class="max-w-44 w-fit">
 								<DropdownMenu.CheckboxItem
 									checked={store.timeMode === "smpte"}
 									onCheckedChange={() =>
@@ -1880,7 +1917,7 @@ const playheadLabel = $derived(
 								<Upload />
 								Apply on export
 							</DropdownMenu.SubTrigger>
-							<DropdownMenu.SubContent>
+							<DropdownMenu.SubContent class="max-w-44 w-fit">
 								<DropdownMenu.CheckboxItem
 									checked={store.cutsEnabled}
 									onCheckedChange={(v) =>

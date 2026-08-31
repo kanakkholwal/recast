@@ -426,7 +426,6 @@ const noSpeechFound = $derived(
       bind:open={pickerOpen}
       placeholder="Search models…"
       emptyText="No models found"
-      contentClass="w-72"
     >
       {#snippet trigger({ props })}
         <button
@@ -435,9 +434,9 @@ const noSpeechFound = $derived(
         >
           <span
             class={cn(
-              "grid size-7 shrink-0 place-items-center rounded-md",
+              "grid size-7 shrink-0 place-items-center rounded-lg ring-1 ring-inset ring-border/40",
               selected?.installed && selected?.runnable
-                ? "bg-ink/5 text-ink"
+                ? "bg-background text-foreground"
                 : "bg-muted/60 text-muted-foreground",
             )}
           >
@@ -448,7 +447,7 @@ const noSpeechFound = $derived(
             {/if}
           </span>
           <span class="min-w-0 flex-1">
-            <span class="block truncate text-[12px] font-semibold text-foreground">
+            <span class="block truncate text-[13px] font-semibold text-foreground">
               {selected?.displayName ?? "Select a model"}
             </span>
             {#if selected}
@@ -466,28 +465,30 @@ const noSpeechFound = $derived(
             <Command.Item
               value={`${m.displayName} ${m.family} ${m.engine}`}
               onSelect={() => pick(m.id)}
-              class="gap-2"
+              class="items-start"
             >
-              <span class="flex size-4 shrink-0 items-center justify-center">
-                {#if m.id === selectedModelId}<Check size={13} class="text-foreground" />{/if}
+              <span class="mt-0.5 flex size-4 shrink-0 items-center justify-center text-foreground">
+                {#if m.id === selectedModelId}<Check size={14} />{/if}
               </span>
-              <span class="min-w-0 flex-1 truncate text-[12px]">{m.displayName}</span>
-              {#if m.recommended}
-                <span
-                  class="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-                >
-                  Rec
+              <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span class="flex items-center gap-1.5">
+                  <span class="truncate">{m.displayName}</span>
+                  {#if m.recommended}
+                    <span
+                      class="shrink-0 rounded bg-foreground/8 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-muted-foreground"
+                    >
+                      Rec
+                    </span>
+                  {/if}
                 </span>
-              {/if}
+                <span class="truncate text-[10.5px] text-muted-foreground">
+                  {m.family} · {langLabel(m)}{#if m.approxSizeBytes} · {formatSize(m.approxSizeBytes)}{/if}{#if m.requiresGpu} · Needs GPU{:else if m.prefersGpu} · GPU faster{/if}
+                </span>
+              </span>
               {#if !m.runnable}
-                <Lock size={11} class="shrink-0 text-muted-foreground/70" />
+                <Lock size={13} class="mt-0.5 shrink-0 text-muted-foreground/70" />
               {:else if m.installed}
-                <Check size={11} class="shrink-0 text-success" />
-              {/if}
-              {#if m.approxSizeBytes}
-                <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                  {formatSize(m.approxSizeBytes)}
-                </span>
+                <Check size={13} class="mt-0.5 shrink-0 text-success" />
               {/if}
             </Command.Item>
           {/each}
@@ -498,45 +499,9 @@ const noSpeechFound = $derived(
     <!-- Selected-model detail -->
     {#if selected}
       <div class="mt-2.5 border-t border-border/40 pt-2.5">
-        <!-- Nine badges at 9px read as texture, not information. Only what
-             decides the pick stays inline: language, size, and whether this
-             machine can run it. The rest moved to one plain capability line. -->
-        <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
-          <span class="font-medium text-foreground">{selected.family}</span>
-          <span class="text-muted-foreground">·</span>
-          <span class="text-muted-foreground">{langLabel(selected)}</span>
-          {#if selected.approxSizeBytes}
-            <span class="text-muted-foreground">·</span>
-            <span class="tabular-nums text-muted-foreground">
-              {formatSize(selected.approxSizeBytes)}
-            </span>
-          {/if}
-          {#if selected.source === "extension"}
-            <span
-              class="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-            >
-              Extension
-            </span>
-          {:else if selected.source === "remote"}
-            <span class="rounded bg-warning/12 px-1.5 py-0.5 text-[11px] font-medium text-warning">
-              Experimental
-            </span>
-          {/if}
-          {#if selected.requiresGpu}
-            <span
-              class="rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive"
-            >
-              Needs GPU
-            </span>
-          {:else if selected.prefersGpu}
-            <span class="rounded bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning">
-              Faster with GPU
-            </span>
-          {/if}
-        </div>
-
+        <!-- Identity (family/language/size/GPU) now rides each picker row; this block keeps only what the row can't hold: the capability sentence, the comparison bars, and the action. -->
         {#if capabilityLine}
-          <p class="mt-1 text-[11px] text-muted-foreground">{capabilityLine}</p>
+          <p class="text-[11px] text-muted-foreground">{capabilityLine}</p>
         {/if}
 
         <!-- Relative comparison bars. Editorial scores for ranking models

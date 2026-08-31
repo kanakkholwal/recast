@@ -34,7 +34,8 @@ interface Props {
 	onsave?: () => void | Promise<void>;
 	isSaving?: boolean;
 	// Drives the Export button: export opens, close dismisses the picker, minimize sends it to the activity center, show reopens.
-	exportMode?: "export" | "close" | "minimize" | "show";
+	/** `"none"` hides the control entirely, for a host with no export to run. */
+	exportMode?: "export" | "close" | "minimize" | "show" | "none";
 	/** Whether this editor's export is actively encoding (for the minimized
 	 *  "Exporting…" label). */
 	exportRunning?: boolean;
@@ -263,7 +264,7 @@ function onExportClick() {
           Show export
         {/if}
       </Button>
-    {:else}
+    {:else if exportMode === "export"}
       <Button onclick={onExportClick} size="xs" class="gap-1.5 text-[11px]">
         <Upload size={12} />
         Export

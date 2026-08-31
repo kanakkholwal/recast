@@ -22,15 +22,15 @@ interface FlagMeta {
 export const FLAG_META: FlagMeta[] = [
 	{
 		key: "silenceDetection",
-		label: "Silence detection & cuts",
+		label: "Silence detection & cuts (alpha)",
 		description:
-			"Find quiet stretches with no cursor movement and skip them on playback and export.",
+			"Find quiet stretches with no cursor movement and skip them on playback and export. Alpha: the detector is being replaced, so where it puts a cut will change.",
 	},
 	{
 		key: "selfHosting",
-		label: "Self-hosting server endpoint",
+		label: "Self-hosting server endpoint (beta)",
 		description:
-			"Point the app at your own Recast Cloud server. Cloud isn't ready yet, so this is for early self-hosters only.",
+			"Point the app at your own Recast Cloud server instead of the hosted one. Beta: usable, but endpoints and stored shapes can still change between releases.",
 	},
 	{
 		key: "remoteTranscription",
@@ -40,15 +40,15 @@ export const FLAG_META: FlagMeta[] = [
 	},
 	{
 		key: "browserExportBeta",
-		label: "New export engine (beta)",
+		label: "Export in the preview window (beta)",
 		description:
-			"Render exports through the new browser engine so they match the preview exactly, instead of the FFmpeg compositor. Falls back automatically if your device can't. Early — compare an export before relying on it.",
+			"Run the engine in the preview window and encode with WebCodecs. Same renderer as the preview, so it matches exactly. Falls back automatically above 1080p60 and where WebCodecs is missing.",
 	},
 	{
 		key: "engineExport",
-		label: "Native engine export (alpha)",
+		label: "Export in the background (alpha)",
 		description:
-			"Render desktop exports with the same engine the preview draws, instead of the FFmpeg compositor. Captions, cursor and annotations are pinned to match; colour and blur can still differ slightly. Compare an export before relying on it.",
+			"Run the same engine natively instead of the FFmpeg compositor, with no resolution ceiling and no browser needed. Alpha: compare an export before relying on it, and quote the export log line if one looks wrong.",
 	},
 ];
 

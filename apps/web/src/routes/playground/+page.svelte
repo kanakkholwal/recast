@@ -196,10 +196,13 @@ const audio = createAudioEngineHost(() => audioTracks);
 <svelte:window onbeforeunload={beforeUnload} />
 
 <svelte:head>
-	<title>Video editor playground — edit a clip in your browser | Recast</title>
+	<title>Editor preview (unfinished) | Recast</title>
+	<!-- Unlisted while export is unfinished: off the nav and the sitemap, and not
+	     indexable, so the only way here is a link someone was given. -->
+	<meta name="robots" content="noindex,nofollow" />
 	<meta
 		name="description"
-		content="Try Recast's video editor in your browser. Drop in an MP4 or WebM and add backgrounds, zoom, annotations and captions, then export — no upload, no account. Your file never leaves your device."
+		content="An unfinished in-browser preview of the Recast editor. Editing and preview work; export does not. The desktop app is the finished one."
 	/>
 </svelte:head>
 
@@ -264,10 +267,14 @@ const audio = createAudioEngineHost(() => audioTracks);
 
 	<main class="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 pt-10 pb-20">
 		<div class="flex flex-col gap-4 text-center">
-			<h1 class="text-display-md font-semibold text-balance">The Recast editor, in your browser</h1>
+			<h1 class="text-display-md font-semibold text-balance">
+				Editor preview <span class="text-muted-foreground">(unfinished)</span>
+			</h1>
 			<p class="text-muted-foreground mx-auto max-w-xl text-pretty">
-				Drop in a clip and try the real editor — backgrounds, zoom, annotations, captions and a
-				proper timeline. Nothing is uploaded; your file is decoded on your own machine.
+				An early in-browser build of the Recast editor, kept for development. Editing and preview
+				work; <strong class="text-foreground">saving and export do not</strong> — use the desktop
+				app for anything you want to keep. Nothing is uploaded; your file is decoded on your own
+				machine.
 			</p>
 		</div>
 
@@ -345,7 +352,7 @@ const audio = createAudioEngineHost(() => audioTracks);
 			</div>
 			<div>
 				<h2 class="text-foreground mb-1 font-medium">The real editor</h2>
-				<p>Same timeline, preview and export the desktop app ships.</p>
+				<p>The same timeline and preview the desktop app ships. Export is not wired up here.</p>
 			</div>
 			<div>
 				<h2 class="text-foreground mb-1 font-medium">Recording lives in the app</h2>

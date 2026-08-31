@@ -21,8 +21,6 @@ const STATIC_PATHS = [
 	"/tools",
 	// The screenshot editor isn't a WebCodecs tool, so it is listed by hand; only its landing page is indexable.
 	"/tools/screenshot-editor",
-	// One route: the editor is a client-only island on this same URL.
-	"/playground",
 ];
 
 function siteOrigin(fallback: string): string {
