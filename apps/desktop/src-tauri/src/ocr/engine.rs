@@ -31,15 +31,8 @@ pub trait OcrEngine {
     fn source(&self) -> &'static str;
 }
 
-/// Pure-Rust ocrs on the rten runtime. The detection and recognition models are
-/// loaded ONCE at construction and reused for every frame; loading them per
-/// frame would dominate the runtime of a whole-video pass.
-///
-/// This is the only part of the OCR module that needs the ocrs/rten crates, so it
-/// is the only part behind the `ocr` feature. Everything else (frame sampling, the
-/// timeline shape, the command surface) compiles unconditionally and reports
-/// "not available in this build" without it, mirroring how `ggml` gates the
-/// on-device captions engine while its plumbing always compiles.
+/// Pure-Rust ocrs on rten; the detection and recognition models load ONCE, since per-frame loading would dominate a whole-video pass.
+/// The only part needing the ocrs crates, so the only part behind the `ocr` feature; everything else compiles and reports the engine as absent.
 #[cfg(feature = "ocr")]
 pub struct OcrsEngine {
     inner: Ocrs,

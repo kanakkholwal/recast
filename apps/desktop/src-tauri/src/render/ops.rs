@@ -121,12 +121,8 @@ pub enum Op {
     },
 }
 
-/// Apply one op in place, returning the verb's wire result.
-///
-/// # Errors
-/// Returns [`OpError`] when the op does not match the state (a missing id, an
-/// out-of-range index, a patch that breaks the target's shape). The state is
-/// left untouched in every error case.
+/// Applies one op in place, returning the verb's wire result.
+/// Errors with [`OpError`] on a missing id, an out-of-range index, or a patch that breaks the target's shape, leaving the state untouched in every case.
 pub fn apply_op(state: &mut RenderState, op: &Op) -> Result<Value, OpError> {
     match op {
         Op::Replace { state: next } => {

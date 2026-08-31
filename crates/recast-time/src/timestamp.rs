@@ -76,15 +76,8 @@ impl core::ops::Sub for Timestamp {
 /// length of a recording, and `format!("{:.6}")` is then a lossless encoding.
 pub const TIME_QUANTUM: f64 = 1e-6;
 
-/// Snaps an authored time onto [`TIME_QUANTUM`].
-///
-/// Two jobs. It stops arithmetic dust (`0.1 + 0.2` = `0.30000000000000004`)
-/// accumulating across edits, and it makes the six-decimal text projection a
-/// LOSSLESS encoding rather than a lossy one — which is what lets an agent's
-/// edit round-trip back into the tree unchanged.
-///
-/// Non-finite input is returned untouched: clamping it here would hide a bug
-/// that the caller's own validation should reject.
+/// Snaps an authored time onto [`TIME_QUANTUM`], stopping arithmetic dust accumulating and making the six-decimal text projection LOSSLESS so an agent's edit round-trips.
+/// Non-finite input is returned untouched: clamping here would hide a bug the caller's own validation should reject.
 #[must_use]
 pub fn quantize_secs(secs: f64) -> f64 {
     if !secs.is_finite() {

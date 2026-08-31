@@ -52,11 +52,8 @@ pub struct SampleOpts {
     /// Timestamps (seconds) that must be sampled regardless of change score, e.g.
     /// cursor clicks. Empty in slice 1 (cursor enrichment is a later layer).
     pub forced_timestamps: Vec<f64>,
-    /// Source-time ranges (seconds) that survive the current edit: the kept
-    /// segments after trim and cuts. Frames outside them are footage the user
-    /// removed, so reading them would produce spans for content that is not in the
-    /// video and would waste an OCR pass (~390ms) on each. EMPTY means the whole
-    /// file, which is what a headless/CLI caller with no edit context wants.
+    /// Source-time ranges surviving the current edit; frames outside them are removed footage, so reading them invents spans and wastes an OCR pass each.
+    /// EMPTY means the whole file, which is what a headless caller with no edit context wants.
     pub include_ranges: Vec<(f64, f64)>,
 }
 
@@ -139,12 +136,8 @@ fn even(n: u32) -> u32 {
     }
 }
 
-/// Sample the frames where the screen changed. One coarse decode pass, gated by
-/// dedup + adaptive change score + cadence bounds.
-///
-/// `on_tick` fires once per walked frame, including the ones skipped as outside
-/// the kept ranges, because the decode still pays for them and a progress bar that
-/// stalled through a cut would read as a hang.
+/// Samples the frames where the screen changed in one coarse decode pass, gated by dedup, an adaptive change score and cadence bounds.
+/// `on_tick` fires for skipped frames too, since the decode still pays for them and a bar stalling through a cut would read as a hang.
 pub fn sample_frames(
     media: &Path,
     opts: &SampleOpts,
@@ -309,11 +302,8 @@ const MIN_ABS_SCORE: f32 = 2.0;
 /// Guard so a near-zero rolling average does not blow the ratio up.
 const SCORE_EPS: f32 = 0.5;
 
-/// Whether a frame's change score counts as a real change. It must clear an
-/// absolute noise floor AND exceed `adaptive_ratio` times the recent average.
-/// Dividing by the recent average (rather than testing a fixed threshold) is what
-/// keeps a steady scroll from registering as a change on every frame while a real
-/// transition still stands out.
+/// Whether a frame's change score is a real change: it must clear an absolute noise floor AND exceed `adaptive_ratio` times the recent average.
+/// Dividing by the recent average rather than testing a fixed threshold is what keeps a steady scroll from registering every frame while a real transition still stands out.
 fn is_changed(score: f32, recent_avg: f32, adaptive_ratio: f32) -> bool {
     if score <= MIN_ABS_SCORE {
         return false;
@@ -341,25 +331,12 @@ fn in_ranges(t: f64, ranges: &[(f64, f64)]) -> bool {
     ranges.iter().any(|(start, end)| t >= *start && t < *end)
 }
 
-/// The keep decision for one coarse frame. Pure, so the whole matrix is testable.
-///
-/// Order matters. `duplicate` comes from the dHash gate, which compares a
-/// luma gradient and is therefore blind to colour: two flat frames of different
-/// colours hash the same. So a detected change has to beat the duplicate veto,
-/// or a theme swap on a low-texture screen would be dropped as a "duplicate"
-/// before the colour-aware score ever got a say.
 /// Memory ceiling for retained sample frames. Expressed as bytes rather than a
 /// frame count because frame size scales with the sampling resolution.
 const SAMPLE_BUDGET_BYTES: usize = 512 * 1024 * 1024;
 
-/// Owns the sampler's ffmpeg child and its stderr drain thread so both are
-/// reaped on EVERY exit path.
-///
-/// The frame loop below propagates with `?`. Without this, such an exit left
-/// ffmpeg decoding the rest of the video with nobody reading stdout — it never
-/// terminates — and the drain thread blocked forever on a pipe that never
-/// closed. There is no cancel signal into that loop, so a dropped guard is the
-/// only thing that can stop it.
+/// Owns the sampler's ffmpeg child and its stderr drain so both are reaped on EVERY exit path.
+/// The frame loop propagates with `?`, and there is no cancel signal into it, so a dropped guard is the only thing that stops ffmpeg decoding the rest of the video.
 struct SamplerChild {
     child: Option<std::process::Child>,
     stderr: Option<std::thread::JoinHandle<String>>,
@@ -395,6 +372,8 @@ impl Drop for SamplerChild {
     }
 }
 
+/// The keep decision for one coarse frame. Pure, so the whole matrix is testable.
+/// Order matters: the dHash gate is luma-only, so a colour-aware change must outrank the duplicate veto or a theme swap on a flat screen is dropped.
 fn should_keep(
     t: f64,
     last_kept_t: Option<f64>,

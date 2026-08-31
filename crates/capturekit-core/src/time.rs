@@ -69,12 +69,7 @@ impl Timestamp {
 }
 
 /// Forces a source's timestamps to advance.
-///
-/// Every backend here can repeat or reverse a timestamp: DXGI reports the
-/// accumulated frame's time, WGC can deliver two frames in one presentation tick,
-/// and PipeWire renegotiates its clock on a format change. A consumer that
-/// divides by the delta or sorts on it breaks on all three, so the correction
-/// belongs here once rather than in each backend.
+/// Every backend can repeat or reverse one (DXGI's accumulated time, WGC's two frames per tick, PipeWire's renegotiated clock), so the correction belongs here once.
 #[derive(Debug, Clone)]
 pub struct MonotonicClock {
     last: Option<Timestamp>,

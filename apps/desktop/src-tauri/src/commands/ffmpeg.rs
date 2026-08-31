@@ -50,13 +50,8 @@ pub fn resolve_export_profile(quality: &str) -> ExportProfile {
     }
 }
 
-/// Encoder *effort* axis, orthogonal to the resolution/quality `ExportProfile`.
-///
-/// This picks how hard each codec works for the SAME quality target — the
-/// CRF / cq values from `ExportProfile` are left untouched. It only moves the
-/// preset / cpu-used knobs, trading encode time against file size and a small
-/// amount of fidelity. `Balanced` reproduces the historical settings exactly,
-/// so existing exports are unchanged unless the user opts into Fast/Quality.
+/// Encoder effort axis, orthogonal to `ExportProfile`: it moves only the preset and cpu-used knobs, leaving the CRF and cq targets untouched.
+/// `Balanced` reproduces the historical settings exactly, so exports are unchanged unless the user opts into Fast or Quality.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExportSpeed {
     Fast,
@@ -213,14 +208,8 @@ pub fn append_subtitles_to_complex(
     (new_complex, out_label.to_string())
 }
 
-/// Parameters for `append_camera_overlay_to_complex`.
-///
-/// All pixel values are in **canvas pixels** (= source + padding × 2 with
-/// any letterbox bars), matching the coordinate space of every other overlay
-/// in the export filter graph.
-/// Time-varying camera bubble geometry (zoom-follow): FFmpeg `t`-expressions in
-/// output-stream time. `size_expr` drives both scale w and h (square). When set,
-/// the overlay animates; otherwise the fixed `bubble_*` pixels are used.
+/// Time-varying camera bubble geometry as FFmpeg `t`-expressions in output-stream time; `size_expr` drives both scale axes, and its absence means the fixed `bubble_*` pixels.
+/// All pixel values are canvas pixels (source plus padding, with any letterbox bars), matching every other overlay in the graph.
 #[derive(Debug, Clone)]
 pub struct CameraOverlayAnim {
     pub size_expr: String,
@@ -441,11 +430,8 @@ pub fn build_gif_paletteuse_external_complex(
     (new_complex, final_label.to_string())
 }
 
-/// Build the `-vf` filter for the GIF palette pre-pass (pass 1 of the 2-pass
-/// GIF export). Drives a standalone FFmpeg invocation that consumes the source
-/// at the GIF target fps + scale and writes the resulting palette to a single
-/// PNG. Kept separate from the pipeline filter_complex because the pre-pass
-/// only needs a flat `-vf` chain — no overlay inputs, no labelled pads.
+/// The `-vf` filter for the GIF palette pre-pass, driving a standalone FFmpeg run that consumes the source at target fps and scale and writes one palette PNG.
+/// Kept out of the pipeline `filter_complex` because the pre-pass needs only a flat chain, with no overlay inputs or labelled pads.
 pub fn build_gif_palette_prepass_filter(
     options: GifFilterOptions<'_>,
     inline_scale: Option<&str>,
@@ -1125,11 +1111,8 @@ mod export_profile_tests {
 
 #[cfg(test)]
 mod export_retention_tests {
-    //! End-to-end-style tests: verify that an `Annotation` carrying a `Blur`
-    //! kind survives the full pipeline from JSON → `RenderState` → filter
-    //! chain assembly, with the right region geometry preserved at every
-    //! step. Mirrors what `export_video` does on the live path, without
-    //! actually invoking ffmpeg (so the test stays hermetic and fast).
+    //! End-to-end tests that a `Blur` annotation survives JSON to `RenderState` to filter-chain assembly with its region geometry intact.
+    //! Mirrors what `export_video` does on the live path without invoking ffmpeg, so the tests stay hermetic and fast.
     use super::*;
     use crate::render::graph::RenderState;
     use crate::render::node_types::AnnotationKind;
@@ -1561,12 +1544,8 @@ pub struct BlurRegion<'a> {
     pub corner_px: f64,
 }
 
-/// A `,format=yuva420p,geq=…` snippet that sets the alpha plane to a
-/// rounded-rect mask (opaque inside, transparent in the cut corners of radius
-/// `r` px) while copying the colour planes. `ox`/`oy` measure how far a pixel
-/// lies outside the inner rect (the box shrunk by `r`); if that offset is past
-/// the corner arc the pixel is transparent. Commas are escaped `\,` like the
-/// `enable=` expression so the filtergraph parser hands geq clean args.
+/// A `format=yuva420p,geq` snippet setting alpha to a rounded-rect mask of radius `r` while copying the colour planes.
+/// `ox`/`oy` measure how far a pixel lies outside the inner rect, and past the corner arc it is transparent; commas are escaped so the filtergraph parser hands geq clean args.
 fn rounded_alpha_filter(r: f64) -> String {
     let r = format!("{r:.2}");
     format!(
@@ -1574,14 +1553,8 @@ fn rounded_alpha_filter(r: f64) -> String {
     )
 }
 
-/// Build a filter_complex chain that crops each `BlurRegion` out of the
-/// current video, runs `boxblur` on it, and `overlay`s the result back
-/// onto the main video — gated by an `enable=between(t,…)` expression so
-/// the blur is only visible during the annotation's lifetime.
-///
-/// The function is deterministic and pure: callers can unit-test it in
-/// isolation. Returns the new filter_complex string and the resulting
-/// video map label.
+/// Crops each `BlurRegion`, runs `boxblur`, and overlays it back, gated by `enable=between(t,…)` so the blur only shows during the annotation's lifetime.
+/// Deterministic and pure, so it unit-tests in isolation; returns the new `filter_complex` and the resulting video map label.
 pub fn build_annotation_blur_complex(
     filter_complex: Option<&str>,
     input_label: &str,
@@ -1686,11 +1659,8 @@ pub fn build_annotation_blur_complex(
     (combined, current_in)
 }
 
-/// Lines that should NOT count as part of the error context. We pipe
-/// progress to stderr (`-progress pipe:2 -stats_period 0.1`) so it
-/// streams in tens of times per second; without filtering, the last few
-/// stderr lines are always progress noise and the real diagnostic gets
-/// evicted.
+/// Lines that should NOT count as error context.
+/// Progress is piped to stderr tens of times a second, so without filtering the last stderr lines are always progress noise and the real diagnostic is evicted.
 fn is_progress_line(line: &str) -> bool {
     const PROGRESS_KEYS: &[&str] = &[
         "frame=",
@@ -1756,13 +1726,8 @@ const MAX_SUMMARY_LINES: usize = 8;
 /// runaway guard; a normal failure never reaches it.
 pub(crate) const MAX_RETAINED_ERRORS: usize = 32;
 
-/// The user-facing failure message: the diagnostic lines captured live, else a
-/// summary of whatever tail survived.
-///
-/// `errors` is collected as stderr streams precisely because the tail buffer
-/// rotates. FFmpeg states the cause while opening its inputs and then prints
-/// kilobytes of stream listings and shutdown noise, so on a long export the
-/// cause had always been evicted by the time the run failed.
+/// The user-facing failure message: the diagnostic lines captured live, else a summary of whatever tail survived.
+/// `errors` is collected as stderr streams precisely because the tail rotates: FFmpeg states the cause while opening inputs, then buries it under kilobytes of listings.
 pub fn summarize_ffmpeg_failure(errors: &[String], stderr_tail: &[u8]) -> String {
     if errors.is_empty() {
         return summarize_ffmpeg_error(stderr_tail);

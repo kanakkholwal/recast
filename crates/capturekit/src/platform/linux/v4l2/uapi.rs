@@ -5,15 +5,8 @@ use core::mem::size_of;
 use std::io;
 use std::os::unix::io::RawFd;
 
-/// Structs that are plain data, so an all-zero one is a valid one.
-///
-/// V4L2 requires unused fields to be zero, so every ioctl below starts from a
-/// zeroed struct rather than filling each field.
-///
-/// # Safety
-///
-/// The implementor must be inhabited by all-zero bytes: plain data, with no
-/// reference, `NonNull` or enum field.
+/// Structs that are plain data, so an all-zero one is valid; V4L2 wants unused fields zeroed, so every ioctl starts from a zeroed struct.
+/// # Safety: the implementor must be inhabited by all-zero bytes, with no reference, `NonNull` or enum field.
 pub(super) unsafe trait Zeroable: Sized {
     fn zeroed() -> Self {
         // SAFETY: the implementor promises all-zero is a valid value.
@@ -105,10 +98,7 @@ unsafe impl Zeroable for Capability {}
 
 impl Capability {
     /// What THIS node can do, which is not what the physical device can do.
-    ///
-    /// A UVC webcam exposes a capture node and a metadata node; only the
-    /// per-node `device_caps` tells them apart, and it holds a real answer only
-    /// when the driver sets the flag that says so.
+    /// A UVC webcam exposes a capture node and a metadata node, and only the per-node `device_caps` tells them apart, holding a real answer only when the driver sets its flag.
     pub fn node_caps(&self) -> u32 {
         if self.capabilities & CAP_DEVICE_CAPS == 0 {
             self.capabilities

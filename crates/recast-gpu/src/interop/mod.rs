@@ -96,10 +96,7 @@ impl SharedTexture {
 }
 
 /// Imports a shared texture handle with no host copy.
-///
-/// Cross-device sharing is NOT implicitly ordered: without a fence the importing
-/// device can read before the producer's writes land, and every pixel comes back
-/// zero with no error. Pair this with [`SharedFence`].
+/// Cross-device sharing is NOT implicitly ordered: without a fence the importer can read before the producer's writes land and every pixel comes back zero. Pair with [`SharedFence`].
 pub fn import_shared_texture(
     ctx: &GpuContext,
     handle: SharedHandle,

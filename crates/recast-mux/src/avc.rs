@@ -76,12 +76,8 @@ pub fn split_annex_b(data: &[u8]) -> Vec<&[u8]> {
     units
 }
 
-/// Groups an Annex B stream into access units, one per coded picture.
-///
-/// A unit ends at the NAL that starts the next picture: the VCL types (1..=5)
-/// are the pictures themselves, and any parameter sets or SEI in front of one
-/// belong to it. Good enough for streams with one slice per picture, which is
-/// everything our encoders produce.
+/// Groups an Annex B stream into access units, one per coded picture, ending at the NAL that starts the next.
+/// VCL types 1..=5 are the pictures, and parameter sets or SEI in front of one belong to it; good enough for the single-slice streams our encoders produce.
 pub fn split_access_units(data: &[u8]) -> Vec<Vec<u8>> {
     let mut units: Vec<Vec<u8>> = Vec::new();
     let mut seen_vcl = false;

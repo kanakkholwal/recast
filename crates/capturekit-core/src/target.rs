@@ -3,10 +3,7 @@ use crate::format::PixelFormat;
 use crate::geom::{Rect, Rotation};
 
 /// A monitor's stable identifier.
-///
-/// 64 bits because a Windows `HMONITOR` and a macOS `CGDirectDisplayID` are
-/// pointer-width and 32-bit respectively, and narrowing the first to fit the
-/// second is how two monitors end up sharing an id.
+/// 64 bits because a Windows `HMONITOR` is pointer-width and a macOS `CGDirectDisplayID` is 32-bit, and narrowing the first is how two monitors end up sharing an id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]

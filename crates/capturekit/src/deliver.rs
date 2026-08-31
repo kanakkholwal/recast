@@ -51,26 +51,15 @@ impl<M: Copy + Default> Slot<M> {
         self.arrived.notify_all();
     }
 
-    /// Report that no further frame will arrive, and wake whoever is waiting.
-    ///
-    /// The device was unplugged, the compositor closed the session, or another
-    /// process took it. Without this a consumer times out over and over on a
-    /// stream that will never produce again, which reads as a slow source rather
-    /// than a dead one.
+    /// Reports that no further frame will arrive and wakes whoever is waiting: the device was unplugged, the session closed, or another process took it.
+    /// Without it a consumer times out repeatedly on a dead stream, which reads as a slow source rather than a finished one.
     pub(crate) fn end(&self) {
         self.ended.store(true, Ordering::Release);
         self.arrived.notify_all();
     }
 
-    /// Wait for a buffer newer than `seen`, swapping it into `buffer`.
-    ///
-    /// Buffers already published are delivered even after [`Slot::end`]: a
-    /// stream that ends still owes its last one.
-    ///
-    /// Swapped rather than copied: the caller ends up owning the pixels it
-    /// reads and the delivery thread gets the previous buffer back to refill, so
-    /// neither side allocates after the first frame and neither can reallocate
-    /// under the other.
+    /// Waits for a buffer newer than `seen`; already-published buffers are delivered even after [`Slot::end`], since a finished stream still owes its last one.
+    /// Swapped rather than copied, so the caller owns the pixels and the delivery thread gets the old buffer to refill: neither side allocates after the first frame.
     pub(crate) fn take(
         &self,
         timeout: Duration,
@@ -97,15 +86,8 @@ impl<M: Copy + Default> Slot<M> {
     }
 }
 
-/// A push backend's audio handoff.
-///
-/// **Accumulates rather than keeping only the newest.** A dropped video frame is
-/// a repeated picture; a dropped audio buffer is a hole in the recording that
-/// nothing downstream can reconstruct, and every sample after it lands early.
-///
-/// Samples are kept in contiguous runs. A run ends where samples had to be
-/// refused, so the hole is reported on the run that FOLLOWS it rather than on
-/// the one before, and nothing is ever spliced across a gap.
+/// A push backend's audio handoff, which ACCUMULATES rather than keeping only the newest: a dropped audio buffer is an unreconstructable hole, not a repeated picture.
+/// Samples are kept in contiguous runs ending where one was refused, so a hole is reported on the FOLLOWING run and nothing is spliced across a gap.
 #[cfg(any(
     target_os = "macos",
     all(target_os = "linux", feature = "pipewire-audio")
@@ -202,11 +184,8 @@ impl AudioQueue {
         self.queued.lock().ok()?.format
     }
 
-    /// Record that a delivery could not be queued, and why.
-    ///
-    /// The samples are gone either way; what must not happen is losing them
-    /// silently. The gap is marked so the next run reports a discontinuity, and
-    /// the reason is kept for [`Self::take_drops`] to surface once.
+    /// Records that a delivery could not be queued, and why.
+    /// The samples are gone either way; what must not happen is losing them silently, so the gap is marked for the next run and the reason kept for [`Self::take_drops`].
     pub(crate) fn note_dropped(&self, reason: &str) {
         let Ok(mut queued) = self.queued.lock() else {
             return;
@@ -248,11 +227,8 @@ impl AudioQueue {
         self.arrived.notify_all();
     }
 
-    /// Wait for samples, swapping the oldest contiguous run into `buffer`.
-    ///
-    /// The bool is whether samples are missing between the previous run and this
-    /// one. Runs already queued are delivered even after [`AudioQueue::end`]: a
-    /// stream that ends still owes what it captured.
+    /// Waits for samples, swapping the oldest contiguous run into `buffer`; the bool says whether samples are missing between the previous run and this one.
+    /// Runs already queued are delivered even after [`AudioQueue::end`], since a stream that ends still owes what it captured.
     pub(crate) fn take(
         &self,
         timeout: Duration,

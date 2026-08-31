@@ -10,12 +10,8 @@ use super::engine::{OcrEngine, OcrsEngine};
 use super::frames::{probe_dims, sample_frames, SampleOpts, SampleTick};
 use super::timeline::{build_timeline, TimelineOpts};
 
-/// Build a video with `scenes` hard cuts between flat colours, each `secs` long.
-///
-/// Flat colour is deliberate: it is the case that breaks a naive detector. A solid
-/// frame has no luma gradient, so every scene hashes identically under dHash, and
-/// only the colour-aware score can tell them apart. If the sampler ever regresses
-/// to a grayscale or hash-only gate, this video is what catches it.
+/// Builds a video of `scenes` hard cuts between flat colours, each `secs` long.
+/// Flat colour is the case that breaks a naive detector: every scene hashes alike under dHash, so only the colour-aware score separates them.
 fn synth_video(dir: &Path, scenes: &[&str], secs: u32) -> Result<PathBuf, String> {
     let out = dir.join("synth.mp4");
     let mut cmd = Command::new(ffmpeg_path());
@@ -203,9 +199,7 @@ fn download_models(_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
     Ok((det, rec))
 }
 
-/// Where the time actually goes on a realistic clip. Prints per-stage timings so
-/// a slow read can be attributed rather than guessed at.
-///
+/// Where the time actually goes on a realistic clip, printing per-stage timings so a slow read is attributed rather than guessed at.
 /// Run it against both profiles to see the build-mode gap:
 /// ```text
 /// cargo test --lib ocr::harness::benchmark -- --ignored --nocapture

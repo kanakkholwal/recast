@@ -8,10 +8,7 @@ use capturekit::{Rect, ShotOptions, Target, Warmup};
 use image::RgbaImage;
 
 /// How long a picker thumbnail waits for a frame.
-///
-/// A picker opens one capture per row and does it serially, so the screenshot
-/// budget would make a ten-window list take twenty seconds. A row that misses
-/// this shows no thumbnail, which is what a Wayland row does anyway.
+/// A picker opens one capture per row serially, so the screenshot budget would make a ten-window list take twenty seconds; a row that misses this simply shows no thumbnail.
 const THUMBNAIL_TIMEOUT: Duration = Duration::from_millis(300);
 
 /// One frame of `target`, as RGBA at the size the backend delivers.
@@ -185,15 +182,8 @@ mod tests {
         assert_eq!(found.stable, 32 * 32 - 1);
     }
 
-    /// The region path resolves a virtual-desktop rectangle to a display and
-    /// crops during acquisition. Checked against an independent full-display
-    /// capture of the same pixels: a crop off by a display origin or a scale
-    /// factor still returns an image of the right SIZE, and only the content
-    /// says it came from the right PLACE.
-    ///
-    /// Live and `#[ignore]`d, like the other real-device tests: it needs a
-    /// desktop that is showing something and holding still, which a CI runner
-    /// (and a machine mid-build) is not.
+    /// Checks the region crop against an independent full-display capture: a crop off by an origin or a scale still returns the right SIZE, so only content proves the PLACE.
+    /// Live and `#[ignore]`d: it needs a desktop that is showing something and holding still, which a CI runner is not.
     #[test]
     #[ignore = "live: needs a real display showing static content"]
     fn a_region_capture_matches_the_same_crop_of_its_display() {

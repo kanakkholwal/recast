@@ -3,14 +3,12 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Resolves cuts into post-trim stream seconds, clamped to the kept window, sorted, and overlaps merged.
-/// Applies whatever it is handed: the frontend omits cuts whose feature is opted off, and this cannot re-check the flags.
-/// Two cut edges within this many seconds are treated as the same boundary and
-/// merged. Kept in lockstep with `EPS` in the frontend's cut/segment model
-/// (apps/desktop/src/lib/timeline/{cuts,segments}.ts) so the previewed edit and
-/// the export never disagree on where a segment begins or ends.
+/// Two cut edges within this many seconds are one boundary and merge.
+/// Kept in lockstep with `EPS` in the frontend's cut and segment model, so the preview and the export never disagree on where a segment begins.
 const CUT_MERGE_EPS: f64 = 1e-4;
 
+/// Resolves cuts into post-trim stream seconds, clamped to the kept window, sorted, and overlaps merged.
+/// Applies whatever it is handed: the frontend omits cuts whose feature is opted off, and this cannot re-check the flags.
 pub(crate) fn collect_export_cuts(
     render_state: &crate::render::graph::RenderState,
     trim_start: f64,
@@ -187,25 +185,14 @@ pub(crate) fn has_speed_change(segs: &[SpeedSegment]) -> bool {
     segs.iter().any(|s| (s.speed - 1.0).abs() > CUT_MERGE_EPS)
 }
 
-/// Warped output duration — the value the export and the frontend time-map must
-/// agree on. The FFmpeg pipeline expresses the same warp via `setpts`/`atempo`;
-/// this also drives the output-side `-t` cap so the encode stops at the real
-/// post-edit content length (cuts dropped + speed warped), not the raw trimmed
-/// span — otherwise the infinite background generators freeze the last frame
-/// past content-end. Parity-tested against the frontend time-map.
+/// Warped output duration, the value the export and the frontend time-map must agree on; parity-tested against it.
+/// It drives the `-t` cap so the encode stops at real post-edit length, or the infinite background generators freeze the last frame past content-end.
 pub(crate) fn warped_output_duration(segs: &[SpeedSegment]) -> f64 {
     segs.iter().map(|s| (s.end - s.start) / s.speed).sum()
 }
 
-/// Output-side `-t` cap (seconds): the real post-edit content length. Non-GIF
-/// exports run cuts + per-segment speed through select/setpts, so the stream is
-/// the warped duration — capping at the raw trimmed span would freeze the last
-/// frame over the infinite background for the cut/sped-away time (and truncate
-/// slow-motion, where warped > raw). GIF keeps the raw trimmed span for a plain
-/// cuts-only export (it loops and has no infinite audio/background tail to
-/// freeze), but once per-segment speed warps the stream it must follow the
-/// warped length — otherwise slow-motion (warped > raw) is truncated and a
-/// speed-up leaves a dangling tail.
+/// Output `-t` cap in seconds: the warped post-edit length, since capping at the raw span freezes the last frame over the cut-away time and truncates slow motion.
+/// GIF keeps the raw span for a cuts-only export (it loops, with no tail to freeze) but must follow the warped length once per-segment speed applies.
 pub(crate) fn output_duration_cap(
     format: &str,
     duration: f64,
@@ -293,13 +280,8 @@ pub(crate) fn build_speed_audio_filter(amap: &str, segs: &[SpeedSegment]) -> Str
     parts.join(";")
 }
 
-/// Append the tail-of-chain cut+speed stage to the export filter graph. Drops the
-/// cut ranges (`select`/`aselect`) and re-times survivors (`setpts`/`atempo`) —
-/// everything upstream (zoom, cursor, blur) was computed on the continuous
-/// post-trim timeline and stays correct, since select only removes frames. GIF is
-/// skipped (it has its own paletteuse tail). No-op when there are no cuts and no
-/// speed change. Extracted verbatim from `export_video`; mutates the filter
-/// accumulator, video/audio maps, and the pending output-filter list in place.
+/// Appends the tail cut and speed stage: `select` drops cut ranges and `setpts`/`atempo` re-time survivors, mutating the accumulator and maps in place.
+/// Upstream stages stay correct because they were computed on the continuous post-trim timeline and select only removes frames. GIF is skipped; no-op without cuts or speed.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn append_cut_speed_stage(
     filter_complex: &mut Option<String>,

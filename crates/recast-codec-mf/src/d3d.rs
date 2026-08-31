@@ -13,12 +13,8 @@ use windows::Win32::System::Threading::GetCurrentProcess;
 
 use crate::encoder::EncodeError;
 
-/// Full-range RGB in.
-///
-/// Two fields say this and the driver reads the OLDER one: `RGB_Range` is bit 1,
-/// where 0 is full, and `Nominal_Range` is bits 4 and 5, where 2 is 0-255.
-/// Setting only the newer field leaves the behaviour resting on bit 1 happening
-/// to default to the value we want, so both are stated.
+/// Full-range RGB in, stated through BOTH fields because the driver reads the older one.
+/// `RGB_Range` is bit 1 where 0 is full, `Nominal_Range` is bits 4-5 where 2 is 0-255; setting only the newer leaves the result resting on a default.
 #[allow(clippy::identity_op)] // The zero IS the statement: bit 1 is full-range RGB.
 const RGB_FULL: u32 = (0 << 1) | (2 << 4);
 /// BT.709 studio-range YCbCr out: `YCbCr_Matrix` is bit 2, and nominal range 1
@@ -112,11 +108,7 @@ impl Drop for SyncFence {
 }
 
 /// The video processor that turns BGRA into NV12, and the frames it fills.
-///
-/// The processor is created once; the frames are not, because a hardware
-/// encoder is ASYNCHRONOUS and holds a frame after `ProcessInput` returns.
-/// Converting into one surface over and over hands it a picture that the next
-/// conversion has already overwritten.
+/// The processor is created once but the frames are not: a hardware encoder is ASYNCHRONOUS and holds a frame after `ProcessInput`, so one reused surface gets overwritten under it.
 pub struct Nv12Converter {
     device: ID3D11Device,
     processor: ID3D11VideoProcessor,
@@ -130,12 +122,8 @@ impl Nv12Converter {
         (self.width, self.height)
     }
 
-    /// A fresh surface for one frame.
-    ///
-    /// Allocated per frame rather than pooled: the sample handed to the encoder
-    /// holds a reference to the texture, so COM keeps it alive exactly as long
-    /// as the encoder needs it and frees it the moment it does not. Reusing one
-    /// would need a way to observe that release, which the API does not offer.
+    /// A fresh surface for one frame, allocated per frame rather than pooled.
+    /// The sample handed to the encoder holds a reference, so COM keeps the texture alive exactly as long as needed; reusing one would need a release signal the API lacks.
     pub fn frame(&self) -> Result<Nv12Frame, EncodeError> {
         let desc = D3D11_TEXTURE2D_DESC {
             Width: self.width,
@@ -263,11 +251,8 @@ impl D3dContext {
         })
     }
 
-    /// Open a texture another API shared, rather than creating one here.
-    ///
-    /// This is the seam capture plugs into: a capturekit frame is already a
-    /// shared NT handle on this adapter, so opening it is what keeps the pixels
-    /// on the GPU from duplication all the way to the encoder.
+    /// Opens a texture another API shared, rather than creating one here.
+    /// This is the seam capture plugs into: a capturekit frame is already a shared NT handle on this adapter, so opening it keeps the pixels on the GPU all the way to the encoder.
     pub fn open_shared_texture(
         &self,
         handle: isize,
@@ -378,13 +363,8 @@ impl D3dContext {
         Ok(())
     }
 
-    /// Signals `value` once this device's queued work has run, and hands the
-    /// queue to the driver.
-    ///
-    /// The other half of the handshake. `wait_for` orders our read AFTER the
-    /// producer's draw; this orders the producer's NEXT draw after our read.
-    /// One shared surface with only the first half is a race: the producer
-    /// overwrites the picture before the conversion has taken it.
+    /// Signals `value` once this device's queued work has run, and hands the queue to the driver.
+    /// The other half of the handshake: `wait_for` orders our read after the producer's draw, and this orders its NEXT draw after our read, or one shared surface races.
     pub fn signal(&self, fence: &SyncFence, value: u64) -> Result<(), EncodeError> {
         let context: ID3D11DeviceContext4 = self.context.cast()?;
         // SAFETY: enqueueing a signal on our own context. The flush is contract: an unsubmitted signal is a fence the other API waits on forever.
@@ -395,11 +375,8 @@ impl D3dContext {
         Ok(())
     }
 
-    /// Fill a surface with BGRA rows from host memory.
-    ///
-    /// For a producer that starts on the CPU, which in practice means a test or
-    /// a benchmark. The live path never calls it: a capture frame is already a
-    /// texture, and uploading one is the copy this crate exists to avoid.
+    /// Fills a surface with BGRA rows from host memory, for a producer that starts on the CPU: in practice a test or a benchmark.
+    /// The live path never calls it, since a capture frame is already a texture and uploading one is the copy this crate exists to avoid.
     pub fn write_bgra(&self, target: &SharedSurface, pixels: &[u8]) -> Result<(), EncodeError> {
         let (width, height) = target.size();
         let expected = width as usize * height as usize * 4;
@@ -422,12 +399,8 @@ impl D3dContext {
         Ok(())
     }
 
-    /// Duplicate one NV12 frame into another, on this device.
-    ///
-    /// What a keepalive repeat uses. Re-reading the producer's shared surface
-    /// for a picture already converted would take the surface back from a
-    /// capture that has been told it is free to overwrite it, and nothing
-    /// orders the two, so the repeat could come out torn.
+    /// Duplicates one NV12 frame into another on this device, which is what a keepalive repeat uses.
+    /// Re-reading the producer's shared surface would take it back from a capture already told it may overwrite, and nothing orders the two, so the repeat could tear.
     pub fn copy_frame(&self, source: &Nv12Frame, target: &Nv12Frame) -> Result<(), EncodeError> {
         let source: windows::Win32::Graphics::Direct3D11::ID3D11Resource = source.texture.cast()?;
         let target: windows::Win32::Graphics::Direct3D11::ID3D11Resource = target.texture.cast()?;

@@ -32,12 +32,8 @@ pub struct PipelineSnapshot {
     pub encoded_frames: u64,
 }
 
-/// Packed frames waiting for the encoder thread, and what that thread's
-/// throughput looks like.
-///
-/// The frames carry no timing: the writer on the other end declares a fixed rate
-/// and derives every duration from the frame count, so a timestamp here would be
-/// a second answer to a question the pipe has already settled.
+/// Packed frames waiting for the encoder thread, and that thread's throughput.
+/// The frames carry no timing: the writer declares a fixed rate and derives durations from the count, so a timestamp here would answer a settled question twice.
 #[derive(Clone)]
 pub struct RecordingPipeline {
     queue: Arc<ArrayQueue<Arc<[u8]>>>,
@@ -85,11 +81,8 @@ impl RecordingPipeline {
     }
 }
 
-/// Where the capture loop sends a frame it has decided to emit.
-///
-/// The loop owns timing and recovery; the sink owns the encoder. Splitting them
-/// is what lets the same loop feed FFmpeg's stdin and the GPU encoder without a
-/// second copy of the pause, notice and stale-frame handling.
+/// Where the capture loop sends a frame it has decided to emit: the loop owns timing and recovery, the sink owns the encoder.
+/// Splitting them is what lets one loop feed FFmpeg's stdin and the GPU encoder without a second copy of the pause, notice and stale-frame handling.
 pub trait FrameSink: Send {
     fn accept(&mut self, frame: &CapturedFrame, pts_us: u64, width: u32, height: u32)
         -> Result<()>;
@@ -126,12 +119,8 @@ pub enum Cadence {
     /// when the source is idle. For a sink that has no timestamps and derives
     /// duration from frame count, which is every FFmpeg rawvideo pipe.
     Fixed,
-    /// Only the frames the source actually produced, plus a keepalive repeat so
-    /// a still desktop stays seekable. For a sink that stamps each sample, where
-    /// a repeat would be a byte cost for no information.
-    ///
-    /// Chosen only by the Windows GPU writer today, so off Windows nothing
-    /// constructs it.
+    /// Only the frames the source produced, plus a keepalive repeat so a still desktop stays seekable, for a sink that stamps each sample.
+    /// Chosen only by the Windows GPU writer today, so nothing constructs it elsewhere.
     #[cfg_attr(not(windows), allow(dead_code))]
     OnChange { keepalive: Duration },
 }

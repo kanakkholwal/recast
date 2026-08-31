@@ -52,7 +52,40 @@ fn resolve() -> &'static FfmpegPaths {
     PATHS.get_or_init(|| resolve_paths(None))
 }
 
+/// A user-supplied FFmpeg, taking priority over everything bundled or installed.
+/// `RECAST_FFPROBE` is optional: a pair normally lives in one directory.
+const FFMPEG_ENV: &str = "RECAST_FFMPEG";
+const FFPROBE_ENV: &str = "RECAST_FFPROBE";
+
+/// The pair named by the environment, if it is runnable.
+///
+/// Refused rather than half-used when it is not: falling back silently would
+/// hide a typo behind a bundled build that quietly ignores what was asked for.
+fn env_pair() -> Option<FfmpegPaths> {
+    let ffmpeg = PathBuf::from(std::env::var(FFMPEG_ENV).ok()?);
+    let ffprobe = match std::env::var(FFPROBE_ENV) {
+        Ok(explicit) => PathBuf::from(explicit),
+        Err(_) => ffmpeg.with_file_name(format!("ffprobe{EXE_SUFFIX}")),
+    };
+    if is_usable_pair(&ffmpeg, &ffprobe) {
+        log::info!(
+            "using the ffmpeg named by {FFMPEG_ENV}: {}",
+            ffmpeg.display()
+        );
+        return Some(FfmpegPaths { ffmpeg, ffprobe });
+    }
+    log::warn!(
+        "{FFMPEG_ENV} names {} but it and {} are not a runnable pair; falling back",
+        ffmpeg.display(),
+        ffprobe.display()
+    );
+    None
+}
+
 fn resolve_paths(app: Option<&tauri::AppHandle>) -> FfmpegPaths {
+    if let Some(paths) = env_pair() {
+        return paths;
+    }
     if let Some(paths) = find_bundled_pair(app) {
         return paths;
     }
@@ -147,12 +180,8 @@ fn find_bundled_pair(app: Option<&tauri::AppHandle>) -> Option<FfmpegPaths> {
     None
 }
 
-/// Well-known ffmpeg install prefixes, probed before the PATH fallback.
-///
-/// A Finder- or launcher-started `.app` inherits a minimal PATH (often just
-/// `/usr/bin:/bin`) that excludes Homebrew and MacPorts, so a PATH lookup alone
-/// reports "ffmpeg not found" even when it is installed. These are absolute, so
-/// they resolve regardless of the inherited PATH.
+/// Well-known ffmpeg install prefixes, probed before the PATH fallback, and absolute so they resolve regardless of the inherited PATH.
+/// A Finder-started `.app` inherits a minimal PATH excluding Homebrew and MacPorts, so a PATH lookup alone reports ffmpeg missing when it is installed.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn common_ffmpeg_dirs() -> &'static [&'static str] {
     #[cfg(target_os = "macos")]
@@ -350,12 +379,8 @@ pub fn preferred_h264_encoder() -> &'static str {
     "libx264"
 }
 
-/// Real availability of one H.264 encoder on THIS machine. Unlike
-/// `ffmpeg -encoders` (which only reports what was *compiled in* — the
-/// bundled binaries always ship NVENC/AMF/QSV), `available` reflects an
-/// actual 1-frame init probe, so it's true only when the GPU + driver
-/// combination can really encode. Surfaced to Settings → About so users
-/// can see exactly which hardware acceleration their device supports.
+/// Real availability of one H.264 encoder on THIS machine: `available` reflects an actual 1-frame init probe, not what was compiled in.
+/// Surfaced to Settings so users see exactly which hardware acceleration their GPU and driver combination can really do.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncoderAvailability {
@@ -555,12 +580,8 @@ pub fn has_filter(name: &str) -> bool {
     filters.contains(name)
 }
 
-/// Pull filter names out of `ffmpeg -filters` stdout.
-///
-/// Rows look like `.. ass  V->V  Render ASS subtitles...`: flag column, name,
-/// then an `in->out` spec. Requiring the arrow is what separates a real row from
-/// the legend block at the top (`T.. = Timeline support`), whose lines share the
-/// same leading-flag shape.
+/// Pulls filter names out of `ffmpeg -filters` stdout, where rows read as flags, name, then an `in->out` spec.
+/// Requiring the arrow is what separates a real row from the legend block at the top, whose lines share the same leading-flag shape.
 fn parse_filter_names(stdout: &str) -> std::collections::HashSet<String> {
     stdout
         .lines()
@@ -597,6 +618,29 @@ pub fn check_availability() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Bring-your-own FFmpeg: the pair is refused unless BOTH halves run, so a
+    /// path pointing at only one of them falls back instead of failing later
+    /// inside an export.
+    #[test]
+    fn an_unrunnable_override_is_refused_rather_than_half_used() {
+        let missing = std::env::temp_dir().join("recast-not-an-ffmpeg.exe");
+        assert!(!is_usable_pair(&missing, &missing));
+    }
+
+    /// The sidecar this repo ships is what a user-supplied one has to look like,
+    /// so it doubles as the positive case for the pair check.
+    #[test]
+    fn the_bundled_pair_is_usable() {
+        let Some(ffmpeg) = recast_testkit::ffmpeg_path() else {
+            return;
+        };
+        let ffprobe = ffmpeg.with_file_name(format!("ffprobe{EXE_SUFFIX}"));
+        if !ffprobe.exists() {
+            return;
+        }
+        assert!(is_usable_pair(&ffmpeg, &ffprobe));
+    }
     #[allow(unused_imports)]
     use super::*;
 

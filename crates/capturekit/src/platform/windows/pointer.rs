@@ -11,17 +11,11 @@ use super::dpi::PhysicalPixels;
 use crate::pointer::{Pointer, PointerSource};
 
 /// Reads the pointer through Win32.
-///
-/// `GetCursorPos` answers a DPI-unaware caller in logical points while the
-/// capture is physical, so every read is taken inside a per-thread DPI scope,
-/// the same one the display enumeration uses.
+/// `GetCursorPos` answers a DPI-unaware caller in logical points while the capture is physical, so every read happens inside the same per-thread DPI scope enumeration uses.
 pub(crate) struct WinPointer;
 
 /// Whether a virtual key is down right now.
-///
-/// The high bit of `GetAsyncKeyState` is the current state; the low bit means
-/// "was pressed since the last call" and would report a click the user already
-/// finished, so it is masked off.
+/// The high bit of `GetAsyncKeyState` is the current state; the low bit means pressed-since-last-call and would report a click the user already finished, so it is masked off.
 fn is_down(key: i32) -> bool {
     // SAFETY: reads a virtual-key state; no preconditions, no pointers.
     (unsafe { GetAsyncKeyState(key) } as u16 & 0x8000) != 0

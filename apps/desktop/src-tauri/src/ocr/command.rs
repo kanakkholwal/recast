@@ -14,12 +14,8 @@ use super::frames::{probe_dims, sample_frames, SampleOpts};
 use super::models;
 use super::timeline::{build_timeline, OcrStats, TimelineOpts, VideoTextTimeline};
 
-/// Progress of a read, as counted work rather than a spinner.
-///
-/// The units of `done`/`total` are whatever the phase counts: bytes while
-/// downloading, coarse frames while sampling, OCR'd frames while reading. A
-/// `total` of 0 means the phase cannot be counted yet and the UI should stay
-/// indeterminate instead of dividing by it.
+/// Progress of a read as counted work, the units being whatever the phase counts: bytes downloading, coarse frames sampling, OCR'd frames reading.
+/// A `total` of 0 means the phase cannot be counted yet, so the UI stays indeterminate instead of dividing by it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrProgress {
@@ -73,13 +69,8 @@ impl<F: Fn(OcrProgress)> Throttle<F> {
     }
 }
 
-/// Read `video_path` into a timeline. `on_progress` receives counted progress.
-/// `previews` attaches a small JPEG per span for review UIs.
-///
-/// `include_ranges` are the source-time ranges the edit actually keeps (the
-/// segments left after trim and cuts). Pass them from the editor so removed
-/// footage is never read; pass an empty list from a headless caller that has no
-/// edit context, which reads the whole file.
+/// Reads `video_path` into a timeline; `on_progress` receives counted progress and `previews` attaches a small JPEG per span.
+/// `include_ranges` are the source ranges the edit keeps, so removed footage is never read; an empty list reads the whole file.
 pub async fn run(
     app: &AppHandle,
     video_path: &str,
@@ -214,13 +205,8 @@ fn build_engine(
     Err("on-device OCR is not available in this build".into())
 }
 
-/// Read a recording into a timestamped, structured text timeline.
-///
-/// `includeRanges` are the `[start, end]` source-second pairs the edit keeps, so
-/// trimmed-off and cut-out footage is never read. The caller (the editor) owns the
-/// edit state, so it passes them in rather than the backend re-deriving them.
-///
-/// Experimental: surfaced only by the editor's dev-only OCR tab today.
+/// Reads a recording into a timestamped, structured text timeline. Experimental: surfaced only by the editor's dev-only OCR tab today.
+/// `includeRanges` are the source-second pairs the edit keeps, passed in because the caller owns the edit state rather than the backend re-deriving it.
 #[tauri::command]
 pub async fn read_video_text(
     app: AppHandle,
@@ -237,11 +223,8 @@ pub async fn read_video_text(
     Ok(timeline)
 }
 
-/// Write an already-serialized read to `dest_path` (chosen by the caller via the
-/// save dialog). The caller owns the format: the timeline lives in the frontend as
-/// a plain object, so it serializes there (JSON, or the readable Markdown the review
-/// panel builds) rather than shipping the whole thing back here just to stringify
-/// it. This command only owns the disk write, so it needs no `ocr` feature.
+/// Writes an already-serialized read to a caller-chosen `dest_path`; the caller owns the format, since the timeline is a plain frontend object that serializes there.
+/// This command owns only the disk write, so it needs no `ocr` feature.
 #[tauri::command]
 pub async fn export_screen_text(body: String, dest_path: String) -> AppResult<()> {
     tokio::fs::write(&dest_path, body)

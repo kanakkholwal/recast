@@ -58,12 +58,8 @@ unsafe fn open_fence(device: &ID3D11Device, handle: isize) -> ID3D11Fence {
     fence.expect("a fence")
 }
 
-/// Open the shared frame on `device`, wait for the fence, read it back, and
-/// release the surface.
-///
-/// This is the consumer an encoder would be, and both halves are mandatory. The
-/// wait orders this read after the producer's copy; the release lets the
-/// producer reuse the one surface it copies every frame into.
+/// Opens the shared frame on `device`, waits for the fence, reads it back, and releases the surface, which is the consumer an encoder would be.
+/// Both halves are mandatory: the wait orders this read after the producer's copy, and the release lets it reuse the one surface it copies into.
 fn read_shared(
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
@@ -181,15 +177,8 @@ fn the_readback_path_reports_no_gpu_handle() {
     assert!(!frame.bytes().is_empty());
 }
 
-/// One surface is reused for every frame, so the producer waits for the
-/// consumer to release the previous one before overwriting it.
-///
-/// Verified by mutation: dropping the consumer's release signal deadlocks both
-/// devices and this HANGS rather than asserting, because the stall is inside a
-/// GPU wait that no timeout of ours bounds. Run it with one.
-///
-/// Needs a desktop that is actually changing: under `Passthrough` an idle
-/// display produces nothing at all, which is not what this is measuring.
+/// One surface is reused per frame, so the producer waits for the consumer to release the previous one. Needs a desktop that is actually changing.
+/// Verified by mutation: dropping the release signal deadlocks both devices and this HANGS inside a GPU wait no timeout of ours bounds, so run it with one.
 #[test]
 #[ignore = "live: needs a real display with moving content"]
 fn frames_keep_arriving_while_a_consumer_reads_and_releases_each_one() {

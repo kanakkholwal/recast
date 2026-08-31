@@ -1,15 +1,7 @@
 name: Release Wallpaper Assets
 
-# Publishes a standalone GitHub Release containing full-res PNGs, WebP thumbs,
-# and the SHA-256 manifest consumed by the desktop app at runtime. This release
-# stream is intentionally decoupled from the app installer stream (`v*` tags)
-# so wallpaper refreshes don't require cutting a new app build, and app updates
-# don't force users to re-download ~150 MB of imagery.
-#
-# Triggers:
-#   - Push a tag matching `wallpapers-v*` → publishes automatically.
-#   - Manual `workflow_dispatch` → useful for first-cut or re-running against
-#     an existing tag.
+# Publishes full-res PNGs, WebP thumbs and the SHA-256 manifest the desktop app reads at runtime, as its own release stream.
+# Decoupled from the `v*` installer stream so wallpaper refreshes need no app build and app updates do not re-download ~150 MB. Triggers: a `wallpapers-v*` tag, or manual dispatch.
 
 on:
   push:
@@ -49,13 +41,9 @@ jobs:
         shell: bash
         run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
-      # pnpm version comes from the root package.json `packageManager` field.
-      # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
-      # while the repo had moved to 11.
+      # The version comes from the root package.json `packageManager` field; pinning it here silently drifted CI onto pnpm 10 while the repo had moved to 11.
       - name: Install pnpm
-        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
-        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
-        # installs the pinned version directly and never takes that path.
+        # Pinned to v4: v6 bootstraps an older pnpm then runs `pnpm self-update`, which crashes on our pinned version (pnpm/pnpm#12959).
         uses: pnpm/action-setup@v4
         with:
           run_install: false

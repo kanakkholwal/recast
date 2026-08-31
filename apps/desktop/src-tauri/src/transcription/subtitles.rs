@@ -22,12 +22,8 @@ pub fn to_srt(t: &Transcript) -> String {
     out
 }
 
-/// WebVTT with word-level inline cue timestamps when the segment carries word
-/// timing: the body leads with each word's `<HH:MM:SS.mmm>` tag so the web
-/// player can drive progressive highlight. A player that ignores the tags still
-/// shows the whole cue text, so this stays compatible with older recasts (and
-/// segments without word timing fall back to plain text). Mirrors
-/// `serializeKaraokeVtt` in @recast/captions.
+/// WebVTT carrying inline `<HH:MM:SS.mmm>` word tags when a segment has word timing, so the web player can drive progressive highlight.
+/// A player ignoring the tags still shows the whole cue, and segments without word timing fall back to plain text; mirrors `serializeKaraokeVtt`.
 pub fn to_vtt(t: &Transcript) -> String {
     let mut out = String::from("WEBVTT\n\n");
     for seg in &t.segments {
@@ -68,11 +64,8 @@ pub fn srt_to_vtt(srt: &str) -> String {
     out
 }
 
-/// Read a caption sidecar sitting next to `media_path` (e.g. `foo.mp4` →
-/// `foo.vtt` or `foo.srt`) and return it as WebVTT, or `None` when neither
-/// exists. Prefers `.vtt` (already WebVTT); converts `.srt`. The export queue
-/// writes these sidecars next to an export, so a shared/previewed file can carry
-/// captions with no loaded project.
+/// Reads a caption sidecar beside `media_path` and returns it as WebVTT, preferring `.vtt` and converting `.srt`, or `None` when neither exists.
+/// The export queue writes these next to an export, so a shared or previewed file carries captions with no loaded project.
 pub(crate) fn read_caption_sidecar(media_path: &std::path::Path) -> Option<String> {
     let vtt = media_path.with_extension("vtt");
     if let Ok(text) = std::fs::read_to_string(&vtt) {
@@ -127,15 +120,8 @@ impl RenderFont {
     }
 }
 
-/// Render a transcript to an ASS subtitle script for FFmpeg's `ass`/`subtitles`
-/// burn-in filter, styled from `CaptionStyle`. `play_w`/`play_h` are the canvas
-/// dimensions captions are laid out against (the composite size, pre-downscale),
-/// so font size / margins resolve in the same pixel space as the preview.
-/// `video` is the source-video rect inside that canvas — captions are placed in
-/// the padding relative to it. `offset` is the trim start (seconds): burn-in is
-/// injected before the cut/speed stage, so times are on the trimmed-but-uncut
-/// axis and the later select/setpts re-times the burned pixels. `clip_len` caps
-/// the output.
+/// Renders a transcript to an ASS script for the `subtitles` burn-in, laid out against `play_w`/`play_h` (the pre-downscale composite) so sizes match the preview.
+/// `video` is the source rect captions sit relative to, and `offset` is the trim start: burn-in precedes the cut/speed stage, which re-times the burned pixels.
 #[expect(
     clippy::too_many_arguments,
     reason = "the ASS header needs every style and geometry input at once"
@@ -508,15 +494,8 @@ fn emit_pill(
     push_dialogue_layer(out, 0, ds, de, offset, clip_len, &prefix, &body);
 }
 
-/// Emit the ASS events for one segment under an animation spec. Each display
-/// chunk is held until the next chunk starts (so single-word styles never blink
-/// to empty). When words need per-word colour (progressive highlight or active-
-/// word emphasis) the chunk is split into one sub-event per word window, each
-/// colouring every word by the same rule the preview uses; the first sub-event
-/// carries the entrance. When the chunk fits ONE line and the style is a box with
-/// a measurable font, an exact rounded pill (`\p1`, layer 0) is drawn behind the
-/// `\pos`-anchored text and the square auto box is suppressed; otherwise the
-/// Style's `BorderStyle:3` auto box handles the background.
+/// ASS events for one segment, each chunk held until the next starts so single-word styles never blink to empty.
+/// Per-word colour splits the chunk into one sub-event per word; a one-line chunk with a measurable font gets an exact `\p1` pill instead of the square auto box.
 fn emit_animated_segment(
     out: &mut String,
     ctx: &LayoutCtx,
@@ -619,11 +598,8 @@ fn emit_animated_segment(
     }
 }
 
-/// The run's words joined with spaces. Each word is wrapped in a `\c` colour
-/// override (from {@link word_color}) so progressive highlight and active-word
-/// accent compose; the active word additionally scales for `scale` emphasis.
-/// `active` is the currently-spoken word (None = none), `spoken` how many words
-/// are spoken. Mirrors `wordColor`/`wordScaled` in @recast/captions.
+/// The run's words joined with spaces, each wrapped in a `\c` override so progressive highlight and active-word accent compose; the active word also scales for emphasis.
+/// `active` is the currently-spoken word and `spoken` how many are; mirrors `wordColor` and `wordScaled` in @recast/captions.
 fn run_text(
     run: &[TranscriptWord],
     active: Option<usize>,

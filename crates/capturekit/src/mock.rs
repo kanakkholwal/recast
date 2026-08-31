@@ -42,10 +42,7 @@ impl MockAudio {
 }
 
 /// An audio device under the test's control.
-///
-/// The point is the RECORDER's loop, not this: a timeout arm that fails to keep
-/// the wall clock, or an error arm that spins instead of stopping, is invisible
-/// against a real device that never misbehaves on demand.
+/// The point is the RECORDER's loop: a timeout arm that fails to keep wall clock, or an error arm that spins instead of stopping, is invisible against a well-behaved real device.
 pub struct MockAudioSource {
     desc: AudioDesc,
     script: std::collections::VecDeque<MockAudio>,

@@ -12,12 +12,8 @@ use crate::deliver::{Delivered, FrameSlot};
 /// for.
 pub(super) const BGRA: u32 = u32::from_be_bytes(*b"BGRA");
 
-/// Copy one delivered pixel buffer into the slot.
-///
-/// Shared by ScreenCaptureKit and by the AVFoundation camera: both hand over a
-/// `CMSampleBuffer` wrapping a `CVPixelBuffer`, and both must not hold it
-/// locked across the consumer's work, which would starve a pool only a few
-/// frames deep. The copy is into a reused buffer, so it costs no allocation.
+/// Copies one delivered pixel buffer into the slot, shared by ScreenCaptureKit and the AVFoundation camera.
+/// Neither may hold the buffer locked across the consumer's work, which would starve a shallow pool; the copy targets a reused buffer, so it costs no allocation.
 pub(super) fn accept_video(slot: &FrameSlot, sample: &CMSampleBuffer) {
     let Some(image) = (unsafe { sample.image_buffer() }) else {
         return;

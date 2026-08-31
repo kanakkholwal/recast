@@ -17,10 +17,7 @@ pub struct EncodeConfig {
     pub frame_rate: (u32, u32),
     pub bitrate: u32,
     /// Frames between keyframes, or 0 to take the encoder's own default.
-    ///
-    /// A seek decodes from the keyframe before it, so footage that will be
-    /// scrubbed and cut wants them close together. NVIDIA's default is an
-    /// infinite GOP: one keyframe for the whole recording.
+    /// A seek decodes from the keyframe before it, so footage that will be scrubbed wants them close; NVIDIA's default is an infinite GOP, one keyframe for the whole recording.
     pub keyframe_interval: u32,
 }
 
@@ -167,12 +164,8 @@ impl H264Encoder {
         Ok(encoder)
     }
 
-    /// Ask for a keyframe every `keyframe_interval` frames.
-    ///
-    /// Two traps, both of which return S_OK and then do nothing: the value must
-    /// be VT_UI4, not VT_I4, and it must be set BEFORE the output media type.
-    /// Set afterwards, NVIDIA's transform reads the value back as its own
-    /// default. Best effort: a transform without the property still encodes.
+    /// Asks for a keyframe every `keyframe_interval` frames; best effort, since a transform without the property still encodes.
+    /// Two traps that both return S_OK and do nothing: the value must be VT_UI4, not VT_I4, and it must be set BEFORE the output media type.
     fn set_gop_size(&self) {
         if self.config.keyframe_interval == 0 {
             return;
@@ -181,11 +174,7 @@ impl H264Encoder {
     }
 
     /// Encode the next frame handed in as a keyframe.
-    ///
-    /// A frame-count GOP cannot express a time interval under VARIABLE RATE: an
-    /// idle desktop can produce fewer frames in a second than the GOP spans, so
-    /// a whole recording ends up with one keyframe. A caller that knows the
-    /// timestamps asks for these by time instead.
+    /// A frame-count GOP cannot express a time interval under VARIABLE RATE: an idle desktop produces fewer frames per second than the GOP spans, leaving one keyframe per recording.
     pub fn request_keyframe(&self) {
         self.set_codec_u32(&CODECAPI_AVEncVideoForceKeyFrame, 1);
     }

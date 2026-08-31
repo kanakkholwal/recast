@@ -1,16 +1,11 @@
 name: Verify Extensions
 
-# Gate for community extension PRs. Runs the zero-dependency verifier against
-# every pack under `extensions/packs/*` so a submission can't land unless its
-# manifest, asset files, SHA-256s and filename-safety all check out — the same
-# trust boundary the desktop installer enforces at install time. Node-only; no
-# dependency install step, so it's fast.
+# Gate for community extension PRs: runs the verifier over every pack so a submission cannot land unless its manifest, assets, SHA-256s and filenames check out.
+# The same trust boundary the desktop installer enforces at install time. Node-only, so there is no dependency install step.
 
 on:
-  # Push scoped to the default branch only; `pull_request` covers every other
-  # branch. Running push on "**" too double-fired CI on branches with an open PR
-  # (both `push` and `pull_request` triggered for the same SHA). Tag pushes don't
-  # match a `branches` filter, so `tags-ignore` is unnecessary.
+  # Push is scoped to the default branch because `pull_request` covers every other one; running push on "**" double-fired CI for the same SHA.
+  # Tag pushes do not match a `branches` filter, so `tags-ignore` is unnecessary.
   push:
     branches:
       - main

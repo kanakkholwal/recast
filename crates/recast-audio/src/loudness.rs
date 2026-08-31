@@ -109,12 +109,8 @@ pub fn integrated_lufs(stereo: &[f32]) -> Option<f64> {
     Some(loud(kept.iter().sum::<f64>() / kept.len() as f64))
 }
 
-/// Gain that puts `stereo` at `target` without letting a sample past `ceiling`.
-/// 1.0 when there is nothing to measure.
-///
-/// One measured pass over the finished mix, not the streaming estimate that
-/// single-pass `loudnorm` makes: export is offline, so the whole mix is already
-/// in hand and guessing buys nothing.
+/// Gain that puts `stereo` at `target` without letting a sample past `ceiling`, and 1.0 when there is nothing to measure.
+/// One measured pass over the finished mix rather than single-pass `loudnorm`'s streaming estimate: export is offline, so the whole mix is in hand and guessing buys nothing.
 pub fn normalizing_gain(stereo: &[f32], target: f64, ceiling: f32) -> f32 {
     let Some(measured) = integrated_lufs(stereo) else {
         return 1.0;

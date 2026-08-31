@@ -26,12 +26,8 @@ fn error_text(error: *mut NSError) -> String {
     error.localizedDescription().to_string()
 }
 
-/// Fetch the shareable content, blocking until ScreenCaptureKit answers.
-///
-/// **Never call this from the main thread.** ScreenCaptureKit answers on an
-/// internal queue, but the first call also triggers the TCC prompt, which needs
-/// the main run loop: blocking it here would deadlock the prompt against the
-/// wait.
+/// Fetches the shareable content, blocking until ScreenCaptureKit answers.
+/// NEVER call this from the main thread: the first call triggers the TCC prompt, which needs the main run loop, so blocking it deadlocks the prompt against the wait.
 fn shareable_content() -> Result<Retained<SCShareableContent>> {
     let (sender, receiver) = std::sync::mpsc::channel::<core::result::Result<usize, String>>();
     let handler = block2::RcBlock::new(

@@ -49,11 +49,7 @@ fn unsupported(operation: &'static str) -> CaptureError {
 }
 
 /// An `AudioBufferList` with room for every channel a Mac mixes.
-///
-/// The C type declares one buffer and is indexed past its end. Sizing the array
-/// up front and handing CoreMedia the real byte count is what keeps that in
-/// bounds; a stream with more channels is refused by CoreMedia rather than
-/// overflowing this.
+/// The C type declares one buffer and is indexed past its end, so sizing up front and passing the real byte count is what keeps that in bounds.
 #[repr(C)]
 struct ChannelBuffers {
     count: u32,
@@ -228,12 +224,8 @@ pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
     queue.publish(pts, &samples, QUEUE_BYTES);
 }
 
-/// System audio and the microphone, both through a ScreenCaptureKit stream.
-///
-/// A stream needs content to filter even when only its audio is wanted, so this
-/// opens the main display at a size and rate that cost nothing and adds no video
-/// output at all. That also means system audio carries the screen recording
-/// grant on macOS, which is the platform's rule rather than a choice here.
+/// System audio and microphone, both through a ScreenCaptureKit stream that opens the main display at a size and rate costing nothing, with no video output.
+/// A stream needs content to filter even for audio alone, which is also why system audio carries the screen-recording grant: the platform's rule, not a choice here.
 pub(crate) struct SckAudioSource {
     stream: Retained<SCStream>,
     _output: Retained<AudioOutput>,

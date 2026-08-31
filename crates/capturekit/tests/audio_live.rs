@@ -70,12 +70,8 @@ fn device_ids_are_unique_and_each_direction_has_at_most_one_default() {
     }
 }
 
-/// Loopback is the one that matters most here: it delivers nothing at all while
-/// nothing is playing, which is exactly the case a naive capture gets wrong.
-///
-/// The property under test is that the TIMELINE is continuous, not merely that
-/// bytes arrive: every buffer must start where the previous one ended, so the
-/// samples can be concatenated without drift.
+/// Loopback matters most here: it delivers nothing at all while nothing is playing, exactly the case a naive capture gets wrong.
+/// The property is that the TIMELINE is continuous, not merely that bytes arrive: every buffer must start where the previous ended, so samples concatenate without drift.
 #[test]
 fn loopback_delivers_a_continuous_timeline_even_when_nothing_is_playing() {
     let _device = exclusive();
@@ -352,10 +348,7 @@ fn a_refused_open_releases_its_interfaces_before_closing_the_apartment() {
 }
 
 /// Opening must not sit out the readiness timeout.
-///
-/// The stream used to report itself only when it ENDED, so a successful open
-/// waited the whole timeout, and the queue filled with audio from before the
-/// capture was asked for: a 1.2s take came back holding 5.2s of samples.
+/// The stream used to report itself only when it ENDED, so a successful open waited the whole timeout and the queue filled with pre-capture audio: a 1.2s take held 5.2s.
 #[test]
 fn opening_a_loopback_reports_ready_on_connect_not_on_exit() {
     let _device = exclusive();

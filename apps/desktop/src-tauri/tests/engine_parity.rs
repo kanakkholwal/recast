@@ -359,13 +359,8 @@ fn the_two_engines_are_diffed_fixture_by_fixture() {
     println!();
 }
 
-/// True when the TOP ROW does not vary. Gradients and images are pre-rasterised
-/// by `commands::export::raster`, which is private and is NOT reachable through
-/// `build_export_plan_with`, so a gradient fixture comes out of this harness
-/// flat. The top row is entirely background whenever there is padding, so its
-/// spread is the cheapest reliable check. Detected and reported rather than
-/// diffed, because a 255-channel delta against a background that was never drawn
-/// is not a parity signal.
+/// True when the top row does not vary, which is the cheapest reliable flat-frame check since padding makes that row entirely background.
+/// Gradients rasterise in a private module this harness cannot reach, so they come out flat; reported rather than diffed, as a delta against an undrawn background is no signal.
 fn is_flat(frame: &[u8], width: u32) -> bool {
     let row: Vec<&[u8; 4]> = frame
         .as_chunks::<4>()

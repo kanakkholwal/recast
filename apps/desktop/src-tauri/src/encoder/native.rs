@@ -31,11 +31,8 @@ const MF_TICKS_PER_SEC: i64 = 10_000_000;
 /// A player seeking into a gap has nothing to show, and a sample that never ends cannot be seeked past, so a keepalive repeat bounds both.
 pub const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(500);
 
-/// The longest a recording may go without a keyframe.
-///
-/// A seek decodes from the keyframe before it, so this is what a scrub costs.
-/// Measured in TIME, not frames: this writer is variable rate, and a still
-/// desktop produces far fewer frames per second than the rate it was opened at.
+/// The longest a recording may go without a keyframe, which is what a scrub costs, since a seek decodes from the keyframe before it.
+/// Measured in TIME, not frames: this writer is variable rate, and a still desktop produces far fewer frames per second than it was opened at.
 const KEYFRAME_INTERVAL_US: u64 = 500_000;
 
 /// Encodes capture frames straight from the GPU into a fragmented MP4.
@@ -142,11 +139,8 @@ impl NativeRecorder {
         })
     }
 
-    /// Encode one captured frame, stamped at `pts_us` on the recording clock.
-    ///
-    /// The previous sample's duration is only known now, which is what makes
-    /// this variable rate: the writer is always one frame behind. A handle whose
-    /// frame has already been taken is a keepalive rather than a new picture.
+    /// Encodes one captured frame stamped at `pts_us` on the recording clock.
+    /// The previous sample's duration is only known now, which is what makes this variable rate and keeps the writer one frame behind; an already-taken handle is a keepalive.
     pub fn push(&mut self, handle: &GpuHandle, pts_us: u64) -> Result<()> {
         if handle.ready_at <= self.released {
             return self.repeat(pts_us);
@@ -344,12 +338,8 @@ pub fn available() -> bool {
     select_preferred(&enumerate_encoders(), VideoCodec::H264).is_some()
 }
 
-/// The capture loop's sink for the zero-copy path.
-///
-/// Opens the encoder on FIRST FRAME, on the capture thread. The D3D device, the
-/// video processor and the Media Foundation transform are then all created and
-/// used by one thread, and none of them has to cross a thread boundary to get
-/// there.
+/// The capture loop's sink for the zero-copy path, opening the encoder on FIRST FRAME, on the capture thread.
+/// The D3D device, video processor and Media Foundation transform are then all created and used by one thread, so none has to cross a boundary.
 pub struct NativeSink {
     path: std::path::PathBuf,
     fps: u32,
@@ -499,12 +489,8 @@ mod tests {
     }
 }
 
-/// The writer end to end: capture texture in, MP4 out, probed back.
-///
-/// `duration_ticks` proves the arithmetic. Only reading the file proves the
-/// durations reached the container instead of being flattened to a constant.
-/// The oracle is ffprobe rather than `recast_mux::Mp4Reader`, which parses
-/// `moov` only and so reports no samples at all for a fragmented file.
+/// The writer end to end: capture texture in, MP4 out, probed back. Only reading the file proves the durations reached the container rather than being flattened.
+/// The oracle is ffprobe, not `recast_mux::Mp4Reader`, which parses `moov` only and reports no samples at all for a fragmented file.
 #[cfg(test)]
 mod live_tests {
     use super::*;

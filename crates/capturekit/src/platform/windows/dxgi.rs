@@ -296,13 +296,8 @@ impl DxgiSource {
     }
 }
 
-/// Cursor state accumulated across frames.
-///
-/// Desktop Duplication is edge-triggered on both halves: `PointerPosition` is
-/// meaningful only when `LastMouseUpdateTime` is non-zero, and a shape arrives
-/// only when it actually changed. A backend that read them per frame without
-/// remembering would report the cursor jumping to the origin and losing its
-/// image whenever it held still.
+/// Cursor state accumulated across frames, because Desktop Duplication is edge-triggered on both halves.
+/// `PointerPosition` means nothing unless `LastMouseUpdateTime` is set and a shape arrives only on change, so a stateless read jumps the cursor to the origin when it holds still.
 #[derive(Default)]
 struct Cursor {
     position: Option<(i32, i32)>,

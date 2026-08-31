@@ -112,11 +112,8 @@ pub struct RenderState {
     /// Per-segment speed overrides (empty = every segment plays at 1×).
     #[serde(default)]
     pub segment_speeds: Vec<SegmentSpeed>,
-    /// Per-segment scene animations — entrance/exit transforms on the video
-    /// layer, anchored to a segment's original start (empty = every segment
-    /// static). Read by the export to build the video-layer overlay LUT. The
-    /// frontend serialises these under `segmentAnims` (see the editor store); the
-    /// key must match or the export silently drops every animation to passthrough.
+    /// Per-segment entrance and exit transforms on the video layer, anchored to a segment's original start; empty means every segment is static.
+    /// The frontend serialises these under `segmentAnims`, and the key must match or the export silently drops every animation to passthrough.
     #[serde(rename = "segmentAnims", default)]
     pub scene_animations: Vec<super::anim::SegmentAnim>,
     /// Annotation overlays (rect/ellipse/arrow/image/blur; text arrives
@@ -124,15 +121,8 @@ pub struct RenderState {
     /// pass (`render/cursor_export.rs`) and the FFmpeg blur filter.
     #[serde(default)]
     pub annotations: Vec<Annotation>,
-    /// Drop shadow cast by the video rect.
-    ///
-    /// Rendered in both the WebGL preview and the export. On export, the
-    /// shadow is rasterised once as a canvas-sized RGBA PNG by
-    /// `render::mask_export::render_drop_shadow_mask` and overlaid onto the
-    /// background by `build_export_plan_with` before the video composite.
-    /// This bakes `blur`, `spread`, `offset_y`, `opacity`, and `color` into
-    /// the static PNG — no time-varying parameters are involved, so the
-    /// FFmpeg filter chain stays free of expression evaluation here.
+    /// Drop shadow cast by the video rect, rendered in both the preview and the export.
+    /// The export rasterises it once as a canvas-sized PNG, baking blur, spread, offset and colour in, so the filter chain needs no expression evaluation.
     #[serde(default)]
     pub shadow: ShadowSettings,
     #[serde(default)]

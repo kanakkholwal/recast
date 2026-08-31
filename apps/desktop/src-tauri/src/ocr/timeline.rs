@@ -96,12 +96,8 @@ pub struct TimelineOpts {
     pub previews: bool,
 }
 
-/// OCR every sampled frame and collapse near-identical neighbors into spans.
-/// `total_secs` closes the final span's end.
-///
-/// `on_tick` fires after every frame is recognized. This is the phase worth
-/// reporting: OCR runs at roughly a third of a second a frame, so it is where a
-/// read spends nearly all of its wall clock.
+/// OCRs every sampled frame and collapses near-identical neighbours into spans; `total_secs` closes the final span.
+/// `on_tick` fires after each recognition, the phase worth reporting: OCR runs at about a third of a second a frame, so it is nearly all the wall clock.
 pub fn build_timeline(
     frames: &[SampledFrame],
     total_secs: f64,

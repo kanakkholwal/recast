@@ -3,12 +3,8 @@
 
 use anyhow::Result;
 
-/// Ensure the OS-level permission required to capture the screen is granted.
-///
-/// On macOS, if Screen Recording is not authorized this triggers the system
-/// consent prompt and returns an error — the grant only takes effect on the
-/// next capture attempt, so the user grants it then presses Record again.
-/// No-op (always `Ok`) on Windows/Linux.
+/// Ensures the OS permission needed to capture the screen is granted; a no-op returning `Ok` off macOS.
+/// An unauthorized macOS triggers the consent prompt and errors, since the grant only takes effect on the next attempt: the user grants it, then presses Record again.
 pub fn ensure_screen_recording() -> Result<()> {
     #[cfg(target_os = "macos")]
     {

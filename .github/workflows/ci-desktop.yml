@@ -6,7 +6,7 @@ on:
   push:
     branches:
       - main
-   
+
     paths:
       - "apps/desktop/**"
       - "packages/**"
@@ -83,8 +83,6 @@ jobs:
           base="${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}"
           git fetch --no-tags --depth=0 origin "$base"
           echo "ref=origin/$base" >> "$GITHUB_OUTPUT"
-      # - name: Biome lint (changed)
-      #   run: pnpm exec biome lint --changed --since=${{ steps.base.outputs.ref }} --no-errors-on-unmatched .
       - name: Comment rule (changed)
         run: node scripts/check-comments.mjs --since=${{ steps.base.outputs.ref }}
 
@@ -103,14 +101,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
-    
+
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
       - name: Shared package unit tests
         run: pnpm test:captions && pnpm test:media && pnpm test:editor && pnpm test:player && pnpm test:render && pnpm test:application
       - name: Desktop UI unit tests
         run: pnpm test:desktop
-     
+
       - name: Verify every package declares a real check
         run: node scripts/verify-package-scripts.mjs
       - name: Typecheck shared packages
@@ -134,14 +132,8 @@ jobs:
             os: macos-latest
             rust_target: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin
-          # Intel Mac, CROSS-COMPILED on the arm64 runner (`--target
-          # x86_64-apple-darwin`). GitHub is retiring the native Intel image
-          # (macos-13), whose runners queue for hours, so we build x86_64 on the
-          # plentiful arm64 runner instead. This proves the on-device engine (ggml
-          # / transcribe.cpp) compiles for x86_64 (the old `ort` had no such
-          # build). `cross: true` skips the test RUN below (an x86_64 binary can't
-          # run on arm64 without Rosetta); the OS-agnostic tests already run on the
-          # macos-arm64 leg, so this stays a pure compile gate.
+          # Intel Mac, cross-compiled on the arm64 runner because the native macos-13 image is being retired and its runners queue for hours.
+          # Proves the on-device engine builds for x86_64; `cross: true` skips the test run, since an x86_64 binary cannot execute on arm64.
           - name: macos-x64
             os: macos-latest
             rust_target: x86_64-apple-darwin
@@ -152,20 +144,19 @@ jobs:
             rust_target: x86_64-pc-windows-msvc
             tauri_args: ""
     runs-on: ${{ matrix.platform.os }}
-    # The Windows leg measured ~50 min with a warm cache; this is headroom for
-    # a cold one without letting a hung linker hold a runner for six hours.
+    # The Windows leg measured ~50 min warm; this is headroom for a cold cache without letting a hung linker hold a runner for six hours.
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
- 
+
       - name: Select Xcode (macOS)
         if: runner.os == 'macOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-     
+
       - name: Install pnpm
 
         uses: pnpm/action-setup@v4
@@ -178,7 +169,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
-    
+
       - name: Read pinned toolchain
         id: rust
         shell: bash
@@ -193,11 +184,8 @@ jobs:
           targets: ${{ matrix.platform.rust_target }}
           components: clippy
 
-      # BOTH workspaces. `crates/` was never cached, so every run rebuilt the
-      # whole engine tree (wgpu and friends) from scratch three times over —
-      # `Engine crates`, `capturekit backends` and `Clippy (engine crates)`.
-      # `shared-key` alone: it replaces the automatic job key, so pairing it
-      # with `key` only made the entry harder to hit.
+      # BOTH workspaces: `crates/` was never cached, so every run rebuilt the whole engine tree three times over.
+      # `shared-key` alone, since it replaces the automatic job key and pairing it with `key` only made the entry harder to hit.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -213,9 +201,7 @@ jobs:
         # PipeWire/libspa header version trap that the PPA resolves.
         run: bash scripts/release/install-linux-deps.sh
 
-      # The on-device engine (transcribe.cpp) compiles ggml from source, so it
-      # needs CMake + a C/C++ compiler. macOS/Windows runners ship them; ensure
-      # CMake on Linux. (ggml is vendored in-tree, so no submodule checkout.)
+      # transcribe.cpp compiles ggml from source, so it needs CMake and a C/C++ compiler; only Linux lacks them. ggml is vendored, so no submodule checkout.
       - name: Ensure CMake (Linux)
         if: matrix.platform.os == 'ubuntu-24.04'
         run: sudo apt-get install -y cmake
@@ -223,7 +209,7 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
 
-     
+
       - name: Cache FFmpeg sidecars
         id: ffmpeg-cache
         continue-on-error: true
@@ -231,20 +217,16 @@ jobs:
         with:
           path: apps/desktop/src-tauri/binaries
           key: ci-ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}
-          # A restore key is a PREFIX. The old fallback was the exact key plus a
-          # trailing dash, which is longer than the key and so never matched.
+          # A restore key is a PREFIX; the old fallback was the exact key plus a dash, which is longer than the key and so never matched.
           restore-keys: |
             ci-ffmpeg-${{ env.FFMPEG_VERSION }}-
       - name: Download FFmpeg sidecars
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: bash
-        # Explicit `bash <file>` instead of `./<file>` — the dispatch shell
-        # script isn't necessarily +x on a Windows-checkout working tree,
-        # and the per-OS dispatchees (`download-ffmpeg-{windows,macos,linux}.*`)
-        # are always invoked via `bash`/`pwsh` explicitly for the same reason.
+        # `bash <file>`, not `./<file>`: the script is not necessarily +x on a Windows checkout, and the per-OS dispatchees are invoked the same way for the same reason.
         run: bash ./scripts/release/ensure-ffmpeg.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
 
-     
+
       - name: Compile desktop app (no bundle)
         env:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
@@ -256,18 +238,8 @@ jobs:
           CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
         run: pnpm --filter recast-desktop tauri build --no-bundle ${{ matrix.platform.tauri_args }}
 
-      # Smoke test — drives the built binary through real ggml inference
-      # and asserts no STATUS_ILLEGAL_INSTRUCTION / native abort fires.
-      #
-      # Cache + script instead of three separate prep steps. The cache
-      # key is shared with release-desktop.yml so a clean cache hit on
-      # CI is also a clean cache hit on release. The script itself is
-      # self-contained (handles platform detection, GGUF download with
-      # sanity-size floor, WAV synth, OS-conditional invocation, WER
-      # post-mortem scan); no other step prepares inputs for it.
-      #
-      # `cross: true` legs (macos-x64 cross-compiled on arm64) skip — the
-      # x86_64 binary can't execute on the arm64 host.
+      # Drives the built binary through real ggml inference, asserting no illegal-instruction or native abort fires.
+      # The GGUF cache key is shared with release-desktop.yml so a hit here is a hit there; `cross: true` legs skip, since x86_64 cannot run on arm64.
       - name: Cache smoke-test GGUF (Whisper-base, ~60 MB)
         if: ${{ !matrix.platform.cross }}
         uses: actions/cache@v6
@@ -281,40 +253,38 @@ jobs:
         shell: pwsh
         run: ./scripts/release/smoke-test-transcription.ps1
 
-     
+
       - name: Run Rust unit tests
         if: ${{ !matrix.platform.cross }}
         env:
-          # Must match the compile step above, or cargo rebuilds every
-          # dependency at the other setting instead of reusing them.
+          # Must match the compile step above, or cargo rebuilds every dependency at the other setting instead of reusing them.
           CARGO_PROFILE_RELEASE_LTO: "false"
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release ${{ matrix.platform.tauri_args }}
 
-     
+
       - name: Engine crates
         if: ${{ !matrix.platform.cross }}
         env:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
         run: cargo test --manifest-path crates/Cargo.toml --workspace --release
 
-    
+
       - name: capturekit backends (${{ matrix.platform.name }})
         if: ${{ !matrix.platform.cross }}
         run: |
           cargo clippy --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-targets --all-features --release -- -D warnings
           cargo test --manifest-path crates/Cargo.toml -p capturekit-core --all-features --release
 
-    
-      # Every platform, not just Windows: the Linux portal stack is what sets the
-      # floor, so a Windows-only gate let a false 1.81 claim stand.
+
+      # Every platform, not just Windows: the Linux portal stack sets the floor, so a Windows-only gate let a false 1.81 claim stand.
       - name: capturekit MSRV (1.88)
         if: ${{ !matrix.platform.cross }}
         run: |
           rustup toolchain install 1.88 --profile minimal
           cargo +1.88 check --manifest-path crates/Cargo.toml -p capturekit -p capturekit-core --all-features
 
-     
+
       - name: capturekit live capture (Windows only)
         if: ${{ matrix.platform.name == 'windows-x64' }}
         env:
@@ -327,7 +297,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
           cargo build --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -p recast-compositor -p recast-scene -p recast-color -p recast-cursor -p recast-time -p recast-audio
 
-     
+
       - name: Clippy (wasm32)
         if: ${{ matrix.platform.name == 'windows-x64' }}
         run: cargo clippy --manifest-path crates/Cargo.toml --target wasm32-unknown-unknown -p recast-ffi-wasm -- -D warnings
@@ -345,7 +315,7 @@ jobs:
           pnpm --filter @recast/engine exec playwright install --with-deps chromium
           pnpm --filter @recast/engine test:golden
 
-    
+
       - name: Export golden frames (Windows only)
         if: ${{ matrix.platform.name == 'windows-x64' }}
         env:
@@ -369,7 +339,7 @@ jobs:
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --release ${{ matrix.platform.tauri_args }} -- -D warnings
 
-    
+
       - name: Clippy (engine crates)
         if: ${{ !matrix.platform.cross }}
         run: cargo clippy --manifest-path crates/Cargo.toml --workspace --all-targets --release -- -D warnings

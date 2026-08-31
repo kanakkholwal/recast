@@ -147,10 +147,7 @@ impl ColorSpace {
     }
 
     /// Whether this description can describe `format` at all.
-    ///
-    /// An RGB buffer tagged with a luma-chroma matrix, or a YUV buffer tagged
-    /// `Identity`, means a backend mislabelled the frame. Catching it here beats
-    /// discovering it as a green tint in an export.
+    /// An RGB buffer tagged with a luma-chroma matrix, or a YUV one tagged `Identity`, means a backend mislabelled the frame; catching it here beats finding a green tint in an export.
     #[must_use]
     pub const fn is_consistent_with(self, format: PixelFormat) -> bool {
         format.is_rgb() == self.is_rgb()

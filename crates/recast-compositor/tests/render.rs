@@ -12,11 +12,7 @@ const SRC_H: u32 = 32;
 const MID_GREY: u8 = 128;
 
 /// One device for the whole binary, built on first use.
-///
-/// A context per test means one wgpu device per test running at once, and on a
-/// machine with no GPU those all land on the same software adapter. That is
-/// what crashed CI here; it is also several times the setup cost for tests that
-/// only ever render.
+/// A context per test means one wgpu device per concurrent test, and with no GPU they all land on the same software adapter, which is what crashed CI here.
 fn context() -> Option<&'static GpuContext> {
     static SHARED: std::sync::OnceLock<Option<GpuContext>> = std::sync::OnceLock::new();
     SHARED

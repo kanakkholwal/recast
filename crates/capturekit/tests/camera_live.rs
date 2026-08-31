@@ -250,12 +250,7 @@ fn a_camera_delivers_frames_of_the_size_it_settled_on_not_the_size_asked_for() {
 }
 
 /// The camera must deliver NEW PIXELS, not just new timestamps.
-///
-/// `a_camera_stream_keeps_producing_frames_that_move_forward` asserts only that
-/// `pts` advances, which `Pacing::Constant` guarantees whatever the device does:
-/// the pacer invents a slot per interval and repeats the held bytes into it. A
-/// camera that delivered one frame and died passes that test and freezes every
-/// preview built on it, which is exactly what shipped.
+/// `Pacing::Constant` invents a slot per interval and repeats the held bytes, so a camera that delivered one frame and died passes the pts test and freezes every preview.
 #[test]
 fn a_camera_stream_delivers_new_pixels_not_just_new_timestamps() {
     let _exclusive = exclusive();

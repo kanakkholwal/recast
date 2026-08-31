@@ -33,12 +33,8 @@ pub(crate) trait PointerSource: Send {
     fn read(&mut self) -> Option<Pointer>;
 }
 
-/// Reads the pointer and places it inside one captured surface.
-///
-/// Owns the coordinate mapping so every consumer does not redo it: a pointer
-/// outside the surface comes back as an absent sample rather than a clamped
-/// one, which is what lets a renderer hide the cursor instead of parking it on
-/// an edge.
+/// Reads the pointer and places it inside one captured surface, owning the coordinate mapping so no consumer redoes it.
+/// A pointer outside the surface comes back absent rather than clamped, which is what lets a renderer hide the cursor instead of parking it on an edge.
 pub struct PointerCapturer {
     source: Box<dyn PointerSource>,
     surface: Rect,
@@ -63,11 +59,8 @@ impl PointerCapturer {
         self.surface = surface;
     }
 
-    /// Sample the pointer, stamped at `pts`.
-    ///
-    /// `None` only when the OS refused the read, which is rare and transient
-    /// (a UAC or secure-desktop switch on Windows); a pointer that is merely
-    /// off the surface is `Some` with no position.
+    /// Samples the pointer, stamped at `pts`.
+    /// `None` only when the OS refused the read, which is rare and transient; a pointer merely off the surface is `Some` with no position.
     pub fn sample(&mut self, pts: Timestamp) -> Option<PointerSample> {
         let read = self.source.read()?;
         self.last_buttons = read.buttons;

@@ -23,10 +23,7 @@ use capturekit_core::{ColorSpaceRequest, Pacing, Rect, WindowId};
 use crate::shot::{CursorMode, ShotOptions};
 
 /// What every backend is opened with, whatever surface asked for it.
-///
-/// One struct for the one-shot and the streaming path: a screenshot is a
-/// recording that stops after one frame, so the two must not be able to
-/// negotiate different cursors, regions or colour spaces.
+/// One struct for the one-shot and streaming paths, since a screenshot is a recording that stops after one frame and the two must not negotiate different cursors or colour spaces.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct OpenOptions {
     pub cursor: CursorMode,

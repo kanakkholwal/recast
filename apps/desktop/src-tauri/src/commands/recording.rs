@@ -222,11 +222,8 @@ pub fn update_camera_preview_state(
         .update_camera_preview_state(state)?)
 }
 
-/// Open the camera and stream preview frames to the caller.
-///
-/// Cameras are exclusive, so this is also what takes the device away from the
-/// WebView: nothing else may hold it while a recording is running. Each frame is
-/// `width: u32le, height: u32le` then BGRA rows, reduced to preview size.
+/// Opens the camera and streams preview frames, which is also what takes the device away from the WebView, since cameras are exclusive.
+/// Each frame is `width: u32le, height: u32le` then BGRA rows, reduced to preview size.
 #[tauri::command]
 pub async fn start_camera_preview(
     device: String,

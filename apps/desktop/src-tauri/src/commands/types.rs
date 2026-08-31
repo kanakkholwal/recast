@@ -77,13 +77,8 @@ pub struct VideoMetadata {
     pub size_bytes: u64,
 }
 
-/// How the face camera was captured for this project.
-///
-/// The camera is always recorded to its OWN file and composited at export, so
-/// the overlay stays editable; this reports whether that file exists and, when
-/// it doesn't, WHY. The editor needs the reason: "camera was switched off" and
-/// "this project predates camera capture" both present as a missing file, and
-/// telling the user they forgot a toggle that didn't exist yet is wrong.
+/// How the face camera was captured: it is always recorded to its own file and composited at export, so the overlay stays editable.
+/// The reason a file is missing matters, since "switched off" and "project predates camera capture" look identical and blaming a toggle that did not exist is wrong.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub enum CameraCapture {
@@ -176,41 +171,28 @@ pub struct AppConfig {
     /// No effect on Linux, which has no per-window exclusion API.
     #[serde(default = "default_hide_panel_from_capture")]
     pub hide_panel_from_capture: bool,
-    /// Telemetry consent, mirrored from the frontend `consent.svelte.ts` store
-    /// so the native crash reporter (`telemetry.rs`) can read it without IPC.
-    ///
-    /// `telemetry_product` (behaviour analytics) is strictly opt-in — default
-    /// false. `telemetry_errors` (crash reporting) is default opt-in — default
-    /// true. `install_id` is the anonymous `distinct_id` shared with JS events.
+    /// Telemetry consent mirrored from the frontend store, so the native crash reporter reads it without IPC.
+    /// Product analytics is strictly opt-in and crash reporting is default-on; `install_id` is the anonymous `distinct_id` shared with JS events.
     #[serde(default)]
     pub telemetry_product: bool,
     #[serde(default = "default_telemetry_errors")]
     pub telemetry_errors: bool,
     #[serde(default)]
     pub install_id: Option<String>,
-    /// Self-hosting override for the Recast Cloud API base URL. `None` (the
-    /// default) means "use the bundled default endpoint". Set by self-hosters
-    /// in Settings → Cloud; validated to an absolute http(s) URL before it's
-    /// stored, and the resolver (`auth::cloud_api_url`) falls back to the
-    /// default if it's ever absent or malformed.
+    /// Self-hosting override for the cloud API base URL; `None` means the bundled default endpoint.
+    /// Validated to an absolute http(s) URL before storing, and the resolver falls back to the default if it is ever absent or malformed.
     #[serde(default)]
     pub cloud_api_url: Option<String>,
-    /// Opt-in verbose diagnostic logging. Off by default: release builds log
-    /// only warnings/errors. When the user flips this on in Settings →
-    /// Diagnostics, the runtime log level drops to Debug so backend processing
-    /// and editor-interaction logs (forwarded from the webview) are captured in
-    /// the rotating log file for a support bundle. See `apply_log_level`.
+    /// Opt-in verbose diagnostic logging, off by default so release builds log only warnings and errors.
+    /// Turning it on drops the runtime level to Debug, capturing backend and forwarded webview logs in the rotating file for a support bundle.
     #[serde(default)]
     pub diagnostic_logging: bool,
     /// Translucent window backdrop (Win11 Mica/Acrylic, macOS vibrancy). Off by
     /// default; solid on Win10 and unsupported GPUs regardless.
     #[serde(default)]
     pub window_transparency: bool,
-    /// Whether `setup()` should attempt to install the `recast` CLI on the
-    /// user's PATH on first launch. Default `true` — most users want the CLI
-    /// ready to drive Recast from a terminal or an AI agent. The settings
-    /// panel exposes an explicit toggle so a user who *removed* it can also
-    /// disable the auto-attempt.
+    /// Whether `setup()` tries to install the `recast` CLI on first launch; default true, since most users want it ready for a terminal or an agent.
+    /// The settings panel exposes a toggle so a user who removed it can also disable the auto-attempt.
     #[serde(default = "default_cli_auto_install")]
     pub cli_auto_install: bool,
     /// Whether we've already attempted the first-launch auto-install. We
@@ -218,11 +200,8 @@ pub struct AppConfig {
     /// is sticky, and an install that errored once doesn't loop forever.
     #[serde(default)]
     pub cli_install_attempted: bool,
-    /// Record through the FFmpeg-free GPU writer (Media Foundation + our own
-    /// muxer) instead of piping frames to FFmpeg. Windows-only, and refused for
-    /// a cropped recording whose metadata would then disagree with the file.
-    /// Default off: the native path is complete and tested but has only run on
-    /// the author's hardware. `RECAST_NATIVE_ENCODER=1` overrides for testing.
+    /// Record through the FFmpeg-free GPU writer instead of piping frames to FFmpeg; Windows-only, and refused for a cropped recording whose metadata would then disagree.
+    /// Default off because the native path, though complete and tested, has only run on the author's hardware; `RECAST_NATIVE_ENCODER=1` overrides.
     #[serde(default)]
     pub native_encoder: bool,
 }
@@ -418,22 +397,15 @@ pub struct AppState {
     // `Arc` so `stop_recording` can hand an owned handle to a blocking worker; its join plus a 30s FFmpeg re-encode froze the macOS WebView.
     pub recording_manager: Arc<crate::recording::RecordingManager>,
     pub last_file_path: parking_lot::Mutex<Option<String>>,
-    /// Read-mostly (output dir, tray pref, telemetry consent, cloud URL are read
-    /// on hot/concurrent paths; written only when the user changes a setting), so
-    /// a `RwLock` lets concurrent readers proceed without serializing. Writers
-    /// must mutate, snapshot, then drop the guard BEFORE calling `save_config` —
-    /// never hold the lock across the disk write.
+    /// Read-mostly (output dir, tray pref, telemetry consent and cloud URL are read on hot paths, written only on a settings change), so a `RwLock` lets readers proceed concurrently.
+    /// Writers must mutate, snapshot, then DROP the guard before calling `save_config`: never hold the lock across the disk write.
     pub config: parking_lot::RwLock<AppConfig>,
     /// Per-run cancellation tokens for active exports, keyed by export session id.
     /// `export_video` inserts a fresh `Arc<AtomicBool>` on entry and removes it on
     /// exit; `cancel_export` looks up a specific session and flips only that flag.
     pub export_cancel: Mutex<HashMap<String, Arc<AtomicBool>>>,
-    /// JoinHandle for the in-flight device-authorization poller. `auth_start`
-    /// replaces this; `auth_cancel` aborts it. Holding the handle (vs. an
-    /// `AbortHandle`) lets us also `await` it later for graceful shutdown if
-    /// we ever need it — for cancellation the handle's `abort()` method is
-    /// enough. Only one poller can be live at a time: `auth_start` rejects
-    /// when this is `Some`.
+    /// The in-flight device-authorization poller, replaced by `auth_start` and aborted by `auth_cancel`; only one may be live, so `auth_start` rejects when this is `Some`.
+    /// A `JoinHandle` rather than an `AbortHandle` so it can also be awaited for graceful shutdown later.
     pub auth_poller: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     /// `.recast` file path the OS handed us via argv on cold start. The
     /// frontend drains this on main-window mount with `take_pending_open_file`
@@ -466,29 +438,16 @@ pub struct AppState {
     /// of a queued item, retry). The worker `await`s this, then drains all queued
     /// jobs one at a time. See `commands::export_queue`.
     pub export_wake: Arc<tokio::sync::Notify>,
-    /// OS-wide hotkeys registered by the global-shortcut plugin in `setup()`.
-    /// Stored so the `run` block can unregister each on `RunEvent::Exit` /
-    /// `ExitRequested` — otherwise an unclean close (crash, force-kill from
-    /// Task Manager, dev/prod coexistence where one instance is killed while
-    /// another holds the slot) leaves the OS-level hotkey bound to a dead
-    /// process and the next launch logs `HotKey already registered` for the
-    /// lifetime of the OS. See `lib.rs::run`.
+    /// OS-wide hotkeys, stored so `run` can unregister each on exit.
+    /// An unclean close otherwise leaves the hotkey bound to a dead process, and every later launch logs `HotKey already registered` for the life of the OS.
     pub registered_shortcuts: Mutex<Vec<Shortcut>>,
-    /// Per-project editor write-lock. The CLI agent and the GUI user both go
-    /// through here so one of them holds the project at a time; the other sees
-    /// a structured `editor_locked` error (CLI) or a banner+disabled mutators
-    /// (GUI). See `commands::editor_session` for the helpers. Initialised empty
-    /// in `setup()`; `commands::editor_session::load_on_startup` may revive a
-    /// session from `recast_session.json` if the previous holder's PID is
-    /// still alive.
+    /// Per-project editor write-lock: the CLI agent and GUI user both go through it, so the loser sees `editor_locked` or a banner with disabled mutators.
+    /// Initialised empty in `setup()`; `load_on_startup` may revive a session from `recast_session.json` when the previous holder's PID is still alive.
     pub editor_session: parking_lot::RwLock<EditorSession>,
 }
 
-/// Who currently holds the editor write-lock, if anyone. Either side (UI,
-/// agent) goes through the same `EditorSession::try_acquire_write` API; the
-/// discriminator exists so the GUI can render "Agent `claude-…` is editing"
-/// specifically vs "you are editing" (the GUI is implicitly its own holder
-/// once it opens a project).
+/// Who currently holds the editor write-lock, if anyone; both the UI and an agent go through the same `try_acquire_write`.
+/// The discriminator exists so the GUI can say "Agent is editing" rather than "you are editing", since it is implicitly its own holder once a project is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EditorWriterKind {

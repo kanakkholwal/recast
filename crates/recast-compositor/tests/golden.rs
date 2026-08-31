@@ -47,11 +47,7 @@ fn load_fixtures() -> Fixtures {
 }
 
 /// One device for the whole binary, built on first use.
-///
-/// A context per test means one wgpu device per test running at once, and on a
-/// machine with no GPU those all land on the same software adapter. That is
-/// what crashed CI here; it is also several times the setup cost for tests that
-/// only ever render.
+/// A context per test means one wgpu device per concurrent test, and with no GPU they all land on the same software adapter, which is what crashed CI here.
 fn context() -> Option<&'static GpuContext> {
     static SHARED: std::sync::OnceLock<Option<GpuContext>> = std::sync::OnceLock::new();
     SHARED
@@ -321,12 +317,8 @@ fn updating() -> bool {
     std::env::var("UPDATE_GOLDENS").as_deref() == Ok("1")
 }
 
-/// Which adapter a golden set was rendered on.
-///
-/// Rasterisation, filtering and fp rounding all differ between drivers by more
-/// than a committed PNG can absorb, so a set made on one card is not a gate on
-/// another. Recording it lets a mismatch REPORT the delta instead of failing a
-/// machine that is not wrong, and keeps the gate real where it matches.
+/// Which adapter a golden set was rendered on; rasterisation, filtering and fp rounding differ between drivers by more than a committed PNG can absorb.
+/// Recording it lets a mismatch REPORT the delta instead of failing a machine that is not wrong, while keeping the gate real where it matches.
 fn adapter_id(ctx: &GpuContext) -> String {
     let info = ctx.info();
     format!("{} / {:?}", info.name, info.backend)
@@ -428,11 +420,8 @@ fn every_fixture_matches_its_golden() {
     );
 }
 
-/// A fixture that renders the same pixels as another is testing nothing, and it
-/// is not obvious from reading it. This is what caught border radius, drop
-/// shadow and gradients being invisible to the FFmpeg-side harness: they were
-/// pre-rasterised elsewhere, so the fixtures that set them were identical to the
-/// ones that did not.
+/// A fixture that renders the same pixels as another tests nothing, and reading it will not tell you so.
+/// This is what caught border radius, drop shadow and gradients being invisible to the FFmpeg harness: pre-rasterised elsewhere, their fixtures matched the ones without them.
 #[test]
 fn every_fixture_renders_a_distinct_frame() {
     let Some(ctx) = context() else { return };

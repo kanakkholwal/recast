@@ -35,6 +35,11 @@
 			"semicolons": "always"
 		}
 	},
+	"json": {
+		"formatter": {
+			"enabled": false
+		}
+	},
 	"css": {
 		"parser": {
 			"tailwindDirectives": true
@@ -141,6 +146,12 @@
 		}
 	},
 	"overrides": [
+		{
+			"includes": ["apps/desktop/src/constants/changelog.ts"],
+			"formatter": {
+				"enabled": false
+			}
+		},
 		{
 			"includes": ["**/*.svelte"],
 			"linter": {

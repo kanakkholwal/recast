@@ -31,11 +31,8 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
-/// Resolve the workspace to upload into. Honors an explicit id; otherwise
-/// asks `/api/desktop/profile` for the user's `defaultWorkspaceId` (active
-/// org, else first membership). Returns `None` only if the profile call
-/// fails or the user belongs to no workspace — in which case `init` falls
-/// back to the session's active org and surfaces a clear error if unset.
+/// Resolves the workspace to upload into, honouring an explicit id and otherwise asking the profile endpoint for `defaultWorkspaceId`.
+/// `None` only when that call fails or the user belongs to no workspace, in which case `init` falls back to the session's active org and errors clearly if unset.
 async fn resolve_workspace_id(
     client: &reqwest::Client,
     base: &str,
@@ -124,11 +121,8 @@ fn now_unix() -> u64 {
 
 // --- Events ---
 
-/// Live progress for an in-flight upload, streamed on the per-call `on_event`
-/// channel (one channel per upload → no path correlation). Terminal
-/// success/failure aren't repeated here: success rides the command's resolved
-/// `CloudShareResult`, failure its rejection (plus the `recast-cloud:error`
-/// broadcast below, for detached corner notifications).
+/// Live progress for an in-flight upload on the per-call `on_event` channel, one per upload, so nothing needs path correlation.
+/// Terminal states are not repeated here: success rides the resolved `CloudShareResult` and failure its rejection, plus a broadcast for detached notifications.
 #[derive(Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(crate) enum CloudUploadEvent {
@@ -195,12 +189,8 @@ pub struct CloudShareResult {
 
 // --- Commands ---
 
-/// Upload an already-exported MP4 to Recast Cloud and create a public share
-/// link. `path` is the exported file (the caller runs `export_video` first);
-/// `workspace_id` comes from `/api/desktop/profile`'s `defaultWorkspaceId`.
-///
-/// Returns the recast id + slug + share URL, and records the result in the
-/// local manifest so the library row can switch to a "manage" affordance.
+/// Uploads an already-exported MP4 and creates a public share link; the caller runs `export_video` first and passes a `workspace_id` from the profile endpoint.
+/// Returns the recast id, slug and share URL, and records it in the local manifest so the library row can switch to a manage affordance.
 #[tauri::command]
 pub async fn recast_cloud_upload(
     app: AppHandle,
@@ -463,10 +453,8 @@ pub async fn recast_cloud_upload(
     Ok(result)
 }
 
-/// Update an existing share's settings. All knobs optional:
-///   - `visibility`: "public" | "workspace" | "private" (None = unchanged)
-///   - `password`:   None = unchanged; "" = remove; else set (≥4 chars)
-///   - `expires_at`: None = unchanged; "" = clear; else ISO-8601 future date
+/// Updates an existing share; every knob is optional and `None` leaves it unchanged.
+/// `visibility` is public, workspace or private; `password` clears on "" and otherwise needs 4+ chars; `expires_at` clears on "" and otherwise takes an ISO-8601 future date.
 #[tauri::command]
 pub async fn recast_cloud_update_share(
     slug: String,
@@ -608,12 +596,7 @@ pub async fn recast_cloud_list_shares(recast_id: String) -> AppResult<serde_json
 }
 
 /// All locally-recorded cloud uploads, keyed by local export path.
-///
-/// Async + `spawn_blocking`: a plain `fn` Tauri command runs on the main
-/// (UI) thread, so its `std::fs` manifest read would block the webview — the
-/// macOS WKWebView freeze this project has been bitten by. The frontend
-/// already awaits this, so moving the read onto a blocking worker is
-/// transparent to call sites.
+/// Async plus `spawn_blocking`, since a sync command's `std::fs` manifest read runs on the UI thread and freezes the macOS WKWebView.
 #[tauri::command]
 pub async fn recast_cloud_list_uploads(app: AppHandle) -> HashMap<String, CloudUploadRecord> {
     tauri::async_runtime::spawn_blocking(move || read_manifest(&app))

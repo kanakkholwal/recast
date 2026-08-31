@@ -38,11 +38,7 @@ fn address(selector: u32, scope: u32) -> AudioObjectPropertyAddress {
 }
 
 /// Read a property whose size is known, as `T`.
-///
-/// # Safety
-///
-/// `T` must be the type CoreAudio documents for `selector` on `object`; a
-/// mismatch reads the wrong number of bytes into the wrong shape.
+/// # Safety: `T` must be the type CoreAudio documents for `selector` on `object`, or this reads the wrong byte count into the wrong shape.
 unsafe fn property<T>(
     object: AudioObjectID,
     selector: u32,
@@ -191,12 +187,8 @@ fn default_device(selector: u32) -> Option<AudioObjectID> {
     (id != 0).then_some(id)
 }
 
-/// Every audio device CoreAudio knows about.
-///
-/// A device with input channels is an input; one with output channels is
-/// reported as a loopback, because capturing an output means reading what it is
-/// playing. A device with both (an aggregate, or a USB headset) is listed twice,
-/// once per direction, which is what lets a picker show it in both places.
+/// Every audio device CoreAudio knows about; input channels make an input, output channels a loopback, since capturing an output means reading what it plays.
+/// A device with both is listed once per direction, which is what lets a picker show it in both places.
 pub(crate) fn devices() -> Result<Vec<AudioDevice>> {
     let ids = property_bytes(
         kAudioObjectSystemObject as AudioObjectID,

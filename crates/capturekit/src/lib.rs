@@ -40,12 +40,8 @@ pub use shot::{CursorMode, ShotOptions, Warmup};
 
 use platform::os;
 
-/// What this platform's capture backend can and cannot do.
-///
-/// Reported as data rather than left to `cfg`, so a caller asks once and branches
-/// on the answer. The API shape is identical on all three systems; only these
-/// values differ. Consult it before relying on exclusion, window enumeration or
-/// cursor samples, all of which one platform or another cannot provide.
+/// What this platform's capture backend can and cannot do, reported as data rather than left to `cfg` so a caller asks once and branches on the answer.
+/// Consult it before relying on exclusion, window enumeration or cursor samples, each of which some platform cannot provide.
 #[must_use]
 pub fn capabilities() -> Capabilities {
     os::capabilities()
@@ -112,10 +108,7 @@ pub fn audio_input() -> AudioCapturerBuilder {
 }
 
 /// Open a capture of what the system is playing.
-///
-/// A loopback device delivers nothing at all while nothing is playing, so the
-/// backend inserts real silence for the gaps rather than letting the track come
-/// out short. See [`AudioBuffer::is_inserted_silence`].
+/// A loopback device delivers nothing at all while nothing plays, so the backend inserts real silence for the gaps rather than letting the track come out short.
 #[must_use]
 pub fn audio_loopback() -> AudioCapturerBuilder {
     AudioCapturerBuilder::new(AudioDirection::Loopback)

@@ -16,12 +16,8 @@ use capturekit_core::{
 use crate::backend::{AudioSource, FrameSource};
 use crate::platform::OpenOptions;
 
-/// Which display server this session actually runs on.
-///
-/// `WAYLAND_DISPLAY` is checked first because XWayland sets `DISPLAY` too. That
-/// ordering matters more here than anywhere else: X11 capture under XWayland
-/// succeeds and returns a black or XWayland-only image, which looks like a
-/// capture bug rather than the wrong backend.
+/// Which display server this session actually runs on, checking `WAYLAND_DISPLAY` first because XWayland sets `DISPLAY` too.
+/// The ordering matters: X11 capture under XWayland succeeds and returns a black image, which looks like a capture bug rather than the wrong backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Session {
     Wayland,
@@ -151,11 +147,8 @@ pub(crate) fn now() -> Timestamp {
     Timestamp::from_nanos(spec.tv_sec.saturating_mul(1_000_000_000) + spec.tv_nsec)
 }
 
-/// Stop a PipeWire main loop from outside it.
-///
-/// The loop is not safe to signal from another thread, so the flag is polled
-/// from a timer inside it instead. `interval` is both the first firing and the
-/// repeat, so a caller that only wants a deadline passes the deadline.
+/// Stops a PipeWire main loop from outside it; the loop is not safe to signal from another thread, so the flag is polled from a timer inside it.
+/// `interval` is both the first firing and the repeat, so a caller wanting only a deadline passes the deadline.
 #[cfg(feature = "pipewire-audio")]
 pub(crate) fn quit_timer<'l>(
     main_loop: &'l pipewire::main_loop::MainLoopRc,

@@ -63,12 +63,8 @@ fn smooth_step_01(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// All click-relative state for a given moment. Picks the press event whose
-/// `down_us` is closest to `ts_us` among those whose influence window
-/// contains it — for sub-300 ms double-clicks this hands the curve to the
-/// upcoming click as soon as we're nearer to it than to the previous one.
-///
-/// `events` MUST be sorted ascending by `down_us`.
+/// All click-relative state at a moment, picking the press whose `down_us` is nearest among those whose influence window contains it. `events` MUST be sorted by `down_us`.
+/// For sub-300 ms double-clicks that hands the curve to the upcoming click as soon as it is the closer one.
 pub fn press_state_at(ts_us: i64, events: &[PressEvent]) -> PressFrameState {
     let mut best: Option<(PressEvent, i64, i64, i64, i64)> = None; // (ev, hold_end, vis_start, vis_end, abs_dt)
     for &ev in events {
@@ -213,13 +209,8 @@ pub fn click_anchor_at(ts_us: i64, events: &[PressEvent]) -> Option<(f64, f64, f
 const HIGHLIGHT_FADE_IN_US: i64 = 40_000;
 const HIGHLIGHT_FADE_OUT_US: i64 = 220_000;
 
-/// Pinned click-highlight envelope. Returns the CAPTURED click position
-/// (source px) and an alpha that rises the instant the click lands, holds
-/// through the press, then fades out. The ring is keyed to the raw click —
-/// NOT the (smoothed) cursor — so it marks exactly where and when the click
-/// happened even with smoothing on; riding the lagging cursor read as delayed,
-/// off-target feedback.
-/// `events` MUST be sorted ascending by `down_us`.
+/// Click-highlight envelope: the CAPTURED click position and an alpha that rises on impact, holds through the press, then fades. `events` MUST be sorted by `down_us`.
+/// Keyed to the raw click, not the smoothed cursor, or the ring rides the lagging position and reads as delayed, off-target feedback.
 pub fn click_highlight_at(ts_us: i64, events: &[PressEvent]) -> Option<(f64, f64, f64)> {
     let mut best: Option<PressEvent> = None;
     let mut best_dt = i64::MAX;
@@ -284,12 +275,8 @@ pub fn click_bounce_scale(t_ms: f64, duration_ms: f64, amplitude: f64) -> f64 {
     1.0 + amp * damp * osc
 }
 
-/// Add a small sinusoidal wobble (in source pixels) to an idle/slow cursor.
-///
-/// `amplitude` is the 0..1 slider; we map 1.0 to ±2 source pixels of sway,
-/// which reads as "alive" without ever drifting visibly off the click target.
-/// `velocity` is current cursor speed in source-px/sec — sway tapers to 0
-/// once the cursor is moving fast enough that the wobble would just smear.
+/// Adds a small sinusoidal wobble in source pixels to an idle or slow cursor; `amplitude` maps 1.0 to about two pixels of sway.
+/// It reads as alive without drifting off the click target, and tapers to zero once `velocity` is high enough that the wobble would just smear.
 pub fn idle_sway_offset(t_ms: f64, amplitude: f64, velocity_px_per_s: f64) -> (f64, f64) {
     if amplitude.abs() < 1e-6 {
         return (0.0, 0.0);
@@ -307,11 +294,8 @@ pub fn idle_sway_offset(t_ms: f64, amplitude: f64, velocity_px_per_s: f64) -> (f
     (dx, dy)
 }
 
-/// Per-step trail alpha for the motion-blur effect.
-///
-/// Returns the alpha for the i-th historical position (0 = current frame,
-/// `steps - 1` = oldest). Alpha falls off linearly and is scaled by the
-/// 0..1 strength slider so MB=0 contributes no visible trail.
+/// Per-step trail alpha for the motion-blur effect, for the i-th historical position where 0 is the current frame.
+/// Alpha falls off linearly and is scaled by the 0..1 strength slider, so a strength of 0 contributes no visible trail.
 pub fn motion_blur_step_alpha(i: usize, steps: usize, strength: f64) -> f64 {
     if strength <= 0.0 || steps == 0 {
         return 0.0;

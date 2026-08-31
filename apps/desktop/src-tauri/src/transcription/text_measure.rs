@@ -66,11 +66,8 @@ fn db() -> &'static Mutex<Db> {
     })
 }
 
-/// Resolve the face libass will use for `family` at `weight`, reading the size
-/// correction and the match name off the font file. `custom_dir` is the pack /
-/// download directory to also search (the same dir handed to libass via
-/// `fontsdir`); pass `None` for system families. Returns `None` when no face
-/// matches (caller falls back to the CSS name + no correction).
+/// Resolves the face libass will use for `family` at `weight`, reading the size correction and match name off the font file.
+/// `custom_dir` is the pack directory also handed to libass via `fontsdir`; pass `None` for system families. `None` when nothing matches, and the caller falls back to the CSS name.
 pub fn resolve_font(family: &str, weight: u32, custom_dir: Option<&Path>) -> Option<FontMatch> {
     let mut guard = db().lock().ok()?;
     if let Some(dir) = custom_dir {

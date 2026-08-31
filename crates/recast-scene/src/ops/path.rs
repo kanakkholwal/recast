@@ -90,13 +90,8 @@ pub fn resolve<'a>(root: &'a Value, path: &ScenePath) -> Option<&'a Value> {
     Some(at)
 }
 
-/// Walks `root` to the value at `path`, for writing.
-///
-/// Missing OBJECT keys are created on the way, because a scene serialises with
-/// `skip_serializing_if` on its optional fields: without this, setting one that
-/// is currently absent fails with "no such field" when the field plainly exists
-/// in the type. Missing array positions are not created, because inventing one
-/// would silently move every element after it.
+/// Walks `root` to the value at `path`, for writing. Missing OBJECT keys are created, since a scene serialises with `skip_serializing_if` and setting an absent field would fail.
+/// Missing array positions are NOT created, because inventing one would silently move every element after it.
 pub fn resolve_mut<'a>(root: &'a mut Value, path: &ScenePath) -> Option<&'a mut Value> {
     let mut at = root;
     for step in &path.steps {

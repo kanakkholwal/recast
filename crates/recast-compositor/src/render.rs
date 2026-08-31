@@ -387,12 +387,8 @@ impl Compositor {
         })
     }
 
-    /// Uploads one decoded frame's planes and converts them to linear light.
-    ///
-    /// The result goes into the layer pass as a plain `LayerInput` with
-    /// `needs_srgb_decode` false, because the decode already happened here.
-    /// Doing it as its own pass rather than inside the card shader means the
-    /// dolly blur's taps each cost one sample instead of three.
+    /// Uploads one decoded frame's planes and converts them to linear light, so the layer pass takes them with `needs_srgb_decode` false.
+    /// Its own pass rather than the card shader, because that way the dolly blur's taps each cost one sample instead of three.
     pub fn decode_source(
         &mut self,
         frame: &SourcePlanes<'_>,

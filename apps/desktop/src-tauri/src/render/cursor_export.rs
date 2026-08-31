@@ -30,11 +30,8 @@ use crate::render::node_types::{
 pub struct CursorOverlayRequest {
     /// Path to the cursor.json track file (from `.recast` project).
     pub cursor_track_path: PathBuf,
-    /// Comp dimensions (= source + padding × 2). The overlay PNG is
-    /// rendered at these dimensions even when the final canvas is larger
-    /// (aspect-changing preset). The caller composites it at the comp's
-    /// offset inside the canvas via the FFmpeg overlay filter, so we
-    /// don't pipe gigabytes of RGBA through stdin for a tall 9:16 canvas.
+    /// Comp dimensions, which the overlay PNG is rendered at even when the final canvas is larger under an aspect-changing preset.
+    /// The caller composites it at the comp's offset via the overlay filter, so a tall 9:16 canvas does not pipe gigabytes of RGBA through stdin.
     pub canvas_width: u32,
     pub canvas_height: u32,
     /// Source video dimensions (without padding).
@@ -1358,11 +1355,8 @@ fn box_blur_alpha(buf: &mut [f32], w: usize, h: usize, radius: usize) {
     }
 }
 
-/// Smooth idle-fade — mirror of `idleAlphaAt` in VideoPreview.svelte.
-/// Returns 1.0 when the cursor should be fully visible at `t_us`, 0.0
-/// inside an idle period (past the timeout + fade-in), and a linear ramp
-/// across 200 ms at each boundary so the cursor dissolves rather than
-/// blinks. The constants match the JS side exactly.
+/// Smooth idle-fade mirroring `idleAlphaAt` in the preview, with constants matching the JS side exactly.
+/// 1.0 when the cursor should be visible at `t_us`, 0.0 inside an idle period, and a 200 ms linear ramp at each boundary so it dissolves rather than blinks.
 fn cursor_idle_alpha(
     t_us: u64,
     idle_periods: &[crate::cursor::smoothing::IdlePeriod],

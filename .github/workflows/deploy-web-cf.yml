@@ -1,26 +1,16 @@
 name: Deploy Web to Cloudflare Workers
 
 on:
-  # push:
-  #   branches: 
-  #     - main
-  #   paths:
-  #     - 'apps/web/**'  
-  # pull_request:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'apps/web/**'  
-  workflow_dispatch: 
+  # Manual only: the web app deploys from deploy-web.yml, and two pipelines racing on main double-deployed.
+  workflow_dispatch:
 
-  
 concurrency:
-  group: deploy-web 
+  group: deploy-web
   cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  
+
 jobs:
   deploy:
     name: Build & deploy to CF Workers
@@ -28,7 +18,7 @@ jobs:
     permissions:
       contents: read
       deployments: write
-    environment: 
+    environment:
       name: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'production' || 'preview' }}
       url: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'https://recast.li' || 'https://preview.recast.li' }}
     steps:

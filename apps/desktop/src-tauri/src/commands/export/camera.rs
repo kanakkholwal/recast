@@ -47,11 +47,8 @@ pub(crate) fn camera_shadow_geom(strength: f64, bubble_w: u32) -> Option<CameraS
     })
 }
 
-/// Pixel rect `(x, y, w, h)` of the camera bubble, from its UV-space `placement`
-/// and the canvas geometry. The bubble is square in screen pixels (`w == h`,
-/// sized off `video_w` to match the preview's `aspect-ratio: 1`), and clamped
-/// into the canvas so an out-of-range placement (legacy project / hand-edited
-/// JSON) still yields a valid overlay.
+/// Pixel rect of the camera bubble from its UV placement and the canvas geometry; square in screen pixels, sized off `video_w` to match the preview's `aspect-ratio: 1`.
+/// Clamped into the canvas, so a legacy or hand-edited out-of-range placement still yields a valid overlay.
 pub(crate) fn camera_bubble_rect(
     placement: &CameraPlacement,
     geom: &CanvasGeometry,
@@ -71,13 +68,8 @@ pub(crate) fn camera_bubble_rect(
     (bubble_x, bubble_y, bubble_w, bubble_h)
 }
 
-/// Effective camera placement under the zoom-follow effect — the exact mirror of
-/// `applyZoomFollow` in `camera-overlay.logic.ts` (grow + drift away from the
-/// zoom focus, clamped on-screen), so preview and export agree. The bubble is
-/// square in *pixels*, so its UV height is `width * aspect` (aspect =
-/// videoW/videoH) — derived here, NOT read from `base.height`, so the drift
-/// centre and clamps are right on a non-square frame. Identity at rest
-/// (`scale≈1`) or zero strength.
+/// Camera placement under zoom-follow, mirroring `applyZoomFollow` exactly so preview and export agree; identity at rest or zero strength.
+/// The bubble is square in PIXELS, so its UV height is derived as `width * aspect` rather than read from `base.height`, or drift and clamps skew on a non-square frame.
 pub(crate) fn camera_follow_placement(
     base: &CameraPlacement,
     scale: f64,
@@ -189,12 +181,8 @@ fn camera_follow_scale_at(
     (1.0, 0.5, 0.5)
 }
 
-/// Time-varying camera bubble geometry for export: `(size_expr, x_expr, y_expr)`
-/// in output-stream `t`, from the per-cut keyframe glide (`camera_placement_at`)
-/// composed with zoom-follow (`camera_follow_placement`). `None` when the base is
-/// static AND no zoom-follow applies, so the caller uses the fixed overlay.
-/// Sampled at 20 Hz and collinear-merged, mirroring the main zoom LUT. Times map
-/// original→output as `- trim_start` (same convention as the zoom-follow LUT).
+/// Time-varying camera geometry as `(size_expr, x_expr, y_expr)` in output `t`, composing the keyframe glide with zoom-follow; `None` when static and unfollowed.
+/// Sampled at 20 Hz and collinear-merged like the main zoom LUT, with times mapped original to output as `- trim_start`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_camera_follow_exprs(
     regions: &[ZoomRegion],

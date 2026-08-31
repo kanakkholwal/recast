@@ -111,12 +111,8 @@ impl CaptionFrame {
     }
 }
 
-/// Lays out the caption visible at SOURCE time `t`, packing whatever glyphs it
-/// needs into `atlas`.
-///
-/// Placement, chunking, line breaking and per-word colour all come from
-/// `recast-captions`, the same functions the ASS burn-in calls, so the only
-/// thing this adds is turning a shaped line into quads.
+/// Lays out the caption visible at SOURCE time `t`, packing whatever glyphs it needs into `atlas`.
+/// Placement, chunking, line breaking and per-word colour all come from `recast-captions`, the same functions the ASS burn-in calls, so this only turns shaped lines into quads.
 #[expect(
     clippy::too_many_arguments,
     reason = "the caption layout inputs: style, words, clock, geometry, face and atlas are all independent"

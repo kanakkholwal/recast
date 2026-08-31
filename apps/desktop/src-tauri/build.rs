@@ -8,13 +8,8 @@ fn main() {
     tauri_build::build()
 }
 
-/// Link clang's compiler-rt builtins on macOS.
-///
-/// Objective-C `@available` lowers to a call to `___isPlatformVersionAtLeast`,
-/// which lives in compiler-rt rather than libSystem. Rust links with
-/// `-nodefaultlibs`, so a C or Objective-C dependency that uses `@available`
-/// (ggml-metal, through transcribe-cpp) leaves that symbol undefined at the
-/// final link. Naming it here is what a clang-driven link would have done.
+/// Links clang's compiler-rt builtins on macOS, which is what a clang-driven link would have done.
+/// `@available` lowers to `___isPlatformVersionAtLeast`, absent from libSystem, and Rust links with `-nodefaultlibs`, so ggml-metal leaves it undefined.
 fn link_clang_runtime() {
     let Some(dir) = runtime_dir() else {
         // Better a link error naming the real symbol than a build script failing on a differently laid-out toolchain.
@@ -25,11 +20,8 @@ fn link_clang_runtime() {
     println!("cargo:rustc-link-lib=static=clang_rt.osx");
 }
 
-/// The directory holding `libclang_rt.osx.a`.
-///
-/// Asked of the toolchain first, then searched: an Xcode release candidate can
-/// ship a clang whose reported runtime directory does not actually contain the
-/// static archives, which is how this fails on a CI image and nowhere else.
+/// The directory holding `libclang_rt.osx.a`, asked of the toolchain first and then searched.
+/// An Xcode release candidate can report a runtime directory that holds no static archives, which is how this fails on a CI image and nowhere else.
 fn runtime_dir() -> Option<PathBuf> {
     const ARCHIVE: &str = "libclang_rt.osx.a";
 

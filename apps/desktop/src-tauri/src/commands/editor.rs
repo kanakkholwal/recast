@@ -56,13 +56,8 @@ fn static_root() -> PathBuf {
     }
 }
 
-/// Pre-bake a wallpaper/image background to a canvas-sized, blurred PNG once, so
-/// the export filter graph doesn't re-scale and re-blur a *static* image on every
-/// frame — measured at ~19.5 ms/frame of pure waste on a 120 fps export (the blur
-/// of a still image is identical every frame). Uses the exact
-/// scale/crop/boxblur the graph would apply, so the composited result is
-/// pixel-identical to the per-frame path. Best-effort: returns `None` on any
-/// failure and the caller keeps the live per-frame background.
+/// Pre-bakes a static image background to a canvas-sized blurred PNG once, saving ~19.5 ms/frame of identical re-blur on a 120 fps export.
+/// Uses the exact scale, crop and blur the graph would, so the result is pixel-identical; returns `None` on any failure and the caller keeps the per-frame path.
 fn prebake_static_background(
     src: &Path,
     canvas_w: u32,
@@ -245,11 +240,8 @@ fn append_audio_to_complex(
     Some((segments.join(";"), "[aout]".into()))
 }
 
-/// Mix output-timeline music/extra-audio clips onto the finished source audio.
-/// `clips` pairs each live clip with its ffmpeg input index; `source_audio` is
-/// the edited recording's audio label (None when muted/absent). Each clip is
-/// trimmed into its source, gained, faded, and delayed onto the output timeline,
-/// then amixed with the source. Returns (extra filter segments, final map).
+/// Mixes output-timeline music clips onto the finished source audio; `clips` pairs each with its ffmpeg input index and `source_audio` is `None` when muted.
+/// Each clip is trimmed into its source, gained, faded and delayed onto the output timeline, then amixed; returns the extra filter segments and the final map.
 fn build_music_stage(
     clips: &[(usize, &crate::render::node_types::AudioClip)],
     source_audio: Option<&str>,
@@ -494,14 +486,8 @@ pub fn derive_project_timeline(
     }
 }
 
-/// Common load → mutate → validate → save cycle for every targeted editor
-/// verb in `control::dispatch`. The mutate closure returns its own result
-/// (used by `editor.zoom.add` etc. to return the new entry it just
-/// pushed).
-///
-/// Spawn-blocking the load + save calls is fine here: both already run on
-/// Tauri's blocking pool (`commands::load_editor_document` and
-/// `commands::save_project_edits` internally `spawn_blocking`).
+/// The load, mutate, validate, save cycle every targeted editor verb in `control::dispatch` shares; the mutate closure returns its own result.
+/// Spawn-blocking the load and save is fine: both already run on Tauri's blocking pool internally.
 pub(crate) fn patch_render_state<F, M>(
     state: &crate::commands::types::AppState,
     app: &tauri::AppHandle,
@@ -2044,11 +2030,8 @@ impl Drop for CancelTokenGuard {
     }
 }
 
-/// Mux a browser-rendered video (already composited AND warped to the output
-/// timeline) with the export's audio. Video is copied (`-c:v copy`); only the
-/// audio graph is (re)built here — the browser owns all compositing (Phase 4).
-/// Reuses run_export_job's queue/cancel/progress lifecycle and the shared audio
-/// helpers, which are index-parametric so the browser video can sit at input 0.
+/// Muxes a browser-rendered video, already composited and warped, with the export's audio; the video is copied and only the audio graph is rebuilt here.
+/// Reuses `run_export_job`'s queue, cancel and progress lifecycle and the index-parametric audio helpers, so the browser video can sit at input 0.
 pub(crate) async fn run_mux_job(
     app: AppHandle,
     request: ExportRequest,
@@ -3474,13 +3457,8 @@ pub async fn get_recoverable_sessions() -> Vec<crate::project::autosave::Autosav
         .unwrap_or_default()
 }
 
-/// Analyse a captured cursor track and return the list of moments that would
-/// make good auto-focus candidates (scored, clustered, density-limited).
-///
-/// Always recomputes via `detect_zoom_triggers` rather than trusting the
-/// `zoom_triggers` persisted in the track — clips recorded before a detector
-/// improvement would otherwise keep serving stale (often far noisier)
-/// suggestions. Detection is cheap (µs over the in-memory track).
+/// Scores, clusters and density-limits a captured cursor track into auto-focus candidates.
+/// Always recomputes rather than trusting the persisted `zoom_triggers`, or a clip recorded before a detector improvement keeps serving noisier suggestions.
 #[tauri::command]
 pub async fn suggest_zoom_regions(
     cursor_path: String,

@@ -7,11 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use super::display_at;
 
-/// A rectangle in physical device pixels, in virtual-desktop coordinates.
-///
-/// capturekit's own type: the capture stack, the encoder crop and the project
-/// file all describe rectangles, and one of them owning a private copy is how
-/// the two coordinate spaces drifted apart in the first place.
+/// A rectangle in physical device pixels, in virtual-desktop coordinates: capturekit's own type.
+/// The capture stack, the encoder crop and the project file all describe rectangles, and one of them owning a private copy is how the coordinate spaces drifted apart.
 pub type CaptureArea = Rect;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,12 +89,8 @@ impl CaptureTarget {
         (self.crop != self.source).then(|| self.crop.relative_to(&self.source))
     }
 
-    /// Take the frame size the opened source actually delivers.
-    ///
-    /// A backend that answered with a different size chose its own surface
-    /// rather than the one that was asked for, which is what the Wayland portal
-    /// always does. The crop goes with it: it was a rectangle of a surface that
-    /// is no longer being captured.
+    /// Takes the frame size the opened source actually delivers, which the Wayland portal always differs on.
+    /// The crop goes with it, since it described a rectangle of a surface that is no longer being captured.
     pub fn adopt_source_size(&mut self, width: u32, height: u32) {
         if self.source.width == width && self.source.height == height {
             return;

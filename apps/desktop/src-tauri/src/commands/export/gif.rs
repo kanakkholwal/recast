@@ -21,15 +21,8 @@ use crate::commands::ffmpeg::{
 use crate::commands::types::GifSettings;
 use crate::render::graph::RenderState;
 
-/// Pass 1 of the 2-pass GIF export. Consumes the source at the GIF's target
-/// fps + scale and writes a single palette PNG. The main encode pass then
-/// reads that palette as an external input and runs paletteuse on every
-/// frame, which streams in real time so the progress bar actually moves.
-///
-/// Single-pass `palettegen → paletteuse` was stalling the UI: palettegen has
-/// to consume every input frame before emitting its one output, so the
-/// encoder's `out_time_us` stayed at 0 the entire palette phase and the bar
-/// sat at 0% while only the elapsed counter ticked.
+/// Pass 1 of the 2-pass GIF export: consumes the source at target fps and scale, writing one palette PNG the main pass reads as an external input.
+/// Single-pass palettegen consumes every frame before emitting its one output, pinning `out_time_us` at 0 so the bar sat at 0% for the whole phase.
 // Many discrete inputs (paths, trim window, durations); bundling them into a struct wouldn't add clarity.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_gif_palette_prepass(

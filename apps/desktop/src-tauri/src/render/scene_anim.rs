@@ -103,11 +103,8 @@ fn presence(spec: &SceneAnimSpec, p: f64) -> Tf {
     t
 }
 
-/// The transform at time `t` within a segment's window `[start, end]`. Mirrors
-/// `evalSegmentTransform`: entrance eases 0→1 over `in.durationMs`, exit eases
-/// 1→0 over `out.durationMs`, hold between is identity. Each side caps to
-/// `MAX_SIDE_FRACTION` of the window and segments shorter than `MIN_ANIMATABLE_SEC`
-/// stay static — the anti-wobble guards.
+/// The transform at `t` within a segment's window, mirroring `evalSegmentTransform`: entrance eases 0 to 1, exit eases 1 to 0, and the hold between is identity.
+/// Anti-wobble guards cap each side at `MAX_SIDE_FRACTION` of the window and leave segments under `MIN_ANIMATABLE_SEC` static.
 fn eval_segment(anim: &SegmentAnim, t: f64, start: f64, end: f64) -> Tf {
     let win = (end - start).max(0.0);
     if win < MIN_ANIMATABLE_SEC {

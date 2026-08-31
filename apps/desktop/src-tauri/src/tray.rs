@@ -310,11 +310,8 @@ fn recent_exports(app: &AppHandle, limit: usize) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Top-N most recent `.recast` projects by mtime under `<output_dir>/recasts/`.
-/// Mirrors `jumplist::recent_recasts` so the tray and Windows Jump List show
-/// the same items. Duplicate filtering is per-source (not cross-source), so
-/// the two UIs might disagree if a project gets rewritten faster than the
-/// tray rebuild cadence — acceptable for a sync every few seconds.
+/// The most recent `.recast` projects by mtime, mirroring `jumplist::recent_recasts` so the tray and Jump List show the same items.
+/// Duplicate filtering is per-source, so the two can disagree if a project is rewritten faster than the tray rebuilds, which is fine at a few seconds.
 fn recent_projects(app: &AppHandle, limit: usize) -> Vec<(String, String)> {
     let Some(state) = app.try_state::<AppState>() else {
         return Vec::new();
@@ -465,15 +462,8 @@ fn toggle_main_window(app: &AppHandle) {
     rebuild_menu(app);
 }
 
-/// Tauri command — lets the frontend trigger a tray rebuild after state
-/// changes the Rust side can't observe directly:
-///   * recording start/stop (frontend passes `is_recording=Some(...)`,
-///     optionally `started_at_ms=Some(...)` for a future live-timer feature)
-///   * fresh export / project landed (frontend passes `is_recording=None`;
-///     we leave the cached recording flag alone and just rebuild for the new
-///     file list)
-///
-/// All three parameters are optional; `None` means "leave whatever's there".
+/// Lets the frontend trigger a tray rebuild after state Rust cannot observe: a recording start/stop, or a fresh export or project landing.
+/// All parameters are optional, and `None` leaves the cached value alone.
 #[tauri::command]
 pub fn refresh_tray(app: AppHandle, is_recording: Option<bool>, started_at_ms: Option<u64>) {
     if let Some(value) = is_recording {

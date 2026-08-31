@@ -86,12 +86,8 @@ impl MicOutput {
     }
 }
 
-/// A microphone or line input, through an `AVCaptureSession`.
-///
-/// ScreenCaptureKit can only tap the system default input and refuses any other
-/// name, so a picked device would fail the track outright. AVFoundation opens
-/// the device the user chose, and takes the Microphone TCC grant rather than the
-/// Screen Recording one, which is the honest permission for a microphone.
+/// A microphone or line input through an `AVCaptureSession`, which opens the device the user actually chose.
+/// ScreenCaptureKit can only tap the system default input; AVFoundation also takes the Microphone TCC grant rather than Screen Recording, the honest permission here.
 pub(crate) struct AvfMicSource {
     session: Retained<AVCaptureSession>,
     _output: Retained<AVCaptureAudioDataOutput>,

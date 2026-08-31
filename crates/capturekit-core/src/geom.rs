@@ -167,10 +167,7 @@ impl Rect {
     }
 
     /// The largest even-sized rectangle inside both `self` and `bounds`.
-    ///
-    /// Even because every subsampled format and most encoders reject odd
-    /// dimensions. Shrinks rather than grows, so the result never leaves
-    /// `bounds` and never reads past the captured frame.
+    /// Even because every subsampled format and most encoders reject odd dimensions; it shrinks rather than grows, so the result never reads past the captured frame.
     #[must_use]
     pub fn fit_inside(&self, bounds: &Self) -> Option<Self> {
         let clipped = self.intersect(bounds)?;
@@ -239,10 +236,7 @@ impl Rotation {
 }
 
 /// The regions of a frame that changed since the previous one.
-///
-/// **Empty means "assume everything changed", not "nothing changed".** Backends
-/// that cannot report damage return an empty set, and a consumer that reads it as
-/// "no work to do" freezes on those platforms.
+/// EMPTY means assume everything changed, not nothing: backends that cannot report damage return an empty set, and reading it as no-work-to-do freezes on those platforms.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DirtyRects {
     rects: Vec<Rect>,

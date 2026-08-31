@@ -431,11 +431,8 @@ mod tests {
 
     // Per-encoder argument construction and its regression guards moved to `encoder::h264` tests.
 
-    /// Simulate the encoder's emit accounting over a whole recording and
-    /// assert the load-bearing invariant: total frames written to FFmpeg
-    /// (real + compensating duplicates, including the post-loop flush) equals
-    /// the number the pacer captured — so 1 wall-clock second always maps to
-    /// 1 second of video PTS regardless of how many frames were dropped.
+    /// Simulates the encoder's emit accounting over a whole recording to assert the load-bearing invariant.
+    /// Frames written to FFmpeg, real plus compensating duplicates and the flush, must equal what the pacer captured, so one wall-clock second is always one second of PTS.
     fn total_emitted(captured: u64, drops: u64, cap: u64) -> u64 {
         assert!(drops <= captured);
         let real_frames = captured - drops; // frames that made it through the queue

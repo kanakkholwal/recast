@@ -33,11 +33,8 @@ mod imp {
         max_fraction: f64,
         /// Minimum width in physical pixels.
         min_w: i32,
-        /// Fixed, non-scaling vertical extent (physical px) reserved at the
-        /// bottom of the window for the control bar that lives *outside* the
-        /// rounded video so it never gets clipped. `ratio` applies to
-        /// `height - chrome`, so the visible bubble keeps its aspect while the
-        /// window is `chrome` px taller. 0 == video fills the window.
+        /// Fixed, non-scaling physical pixels reserved at the bottom for the control bar that sits OUTSIDE the rounded video, so it is never clipped.
+        /// `ratio` applies to `height - chrome`, so the bubble keeps its aspect while the window is that much taller; 0 means video fills the window.
         chrome: i32,
     }
 

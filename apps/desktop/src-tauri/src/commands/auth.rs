@@ -18,18 +18,12 @@ const KEYRING_ENTRY: &str = "cloud-session-token";
 const CLIENT_ID: &str = "recast-desktop";
 const DEFAULT_CLOUD_API_URL: &str = "https://recast.li";
 
-/// Self-hosting override for the cloud API base URL, cached in-process so the
-/// no-arg `cloud_api_url()` resolver (called from many sites that don't carry
-/// `AppState`) can read it without threading state everywhere. Mirrors
-/// `AppConfig.cloud_api_url`: seeded from disk on startup via
-/// `init_cloud_api_override`, updated by the `set_cloud_api_url` command.
+/// Self-hosting override for the cloud API base URL, cached in-process so the no-arg resolver can read it without threading `AppState` everywhere.
+/// Mirrors `AppConfig.cloud_api_url`: seeded from disk at startup and updated by the `set_cloud_api_url` command.
 static CLOUD_API_OVERRIDE: RwLock<Option<String>> = RwLock::new(None);
 
-/// Validate + normalize a user-supplied self-host URL. Accepts only an
-/// absolute `http`/`https` URL with a non-empty host; returns the
-/// trailing-slash-stripped form. `None` for anything malformed — the caller
-/// treats that as "no usable override" (setter rejects it; resolver ignores
-/// it and falls back to the default endpoint).
+/// Validates a user-supplied self-host URL, accepting only an absolute http(s) URL with a non-empty host and returning it without a trailing slash.
+/// `None` means no usable override: the setter rejects it and the resolver falls back to the default endpoint.
 pub(crate) fn normalize_api_url(raw: &str) -> Option<String> {
     let trimmed = raw.trim().trim_end_matches('/');
     if trimmed.is_empty() {
@@ -101,13 +95,8 @@ fn read_session_token() -> Option<String> {
     keyring_entry().ok().and_then(|e| e.get_password().ok())
 }
 
-/// Best-effort local token removal. Returns `Ok(())` even if the keyring
-/// entry can't be opened — the goal of this function is "make sure no token
-/// is usable from this process," not "successfully interact with the OS
-/// secrets store." If we can't open the entry we couldn't have read a token
-/// either, so the user is effectively signed out from the desktop's POV
-/// and surfacing an error to the UI ("Couldn't sign out") would be
-/// misleading.
+/// Best-effort local token removal, returning `Ok(())` even when the keyring entry will not open.
+/// The goal is that no token is usable from this process; an unopenable entry could not have been read either, so an error would only mislead.
 fn delete_session_token() -> Result<(), String> {
     let Ok(entry) = keyring_entry() else {
         return Ok(());
@@ -169,12 +158,8 @@ pub struct AuthUsage {
     shares_limit: Option<u64>,
 }
 
-/// One workspace (Better Auth `organization`) the signed-in user belongs to.
-/// Mirrors the `workspaces[]` entries `/api/desktop/profile` returns so the
-/// desktop can offer a target picker at share time. Uploads carry an explicit
-/// `workspaceId` and the server re-validates membership on
-/// `/api/uploads/init`, so a stale id fails closed rather than silently
-/// uploading into a team the user was removed from.
+/// One workspace the signed-in user belongs to, mirroring `/api/desktop/profile` so the desktop can offer a target picker at share time.
+/// Uploads carry an explicit `workspaceId` the server re-validates, so a stale id fails closed rather than uploading into a team the user left.
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Workspace {
@@ -219,12 +204,8 @@ pub struct AuthStatus {
     default_workspace_id: Option<String>,
 }
 
-/// Parses Better Auth's `/api/auth/get-session` response body into our
-/// `AuthStatus` (minimal — email/name/image only). Used as a fallback when
-/// the desktop profile endpoint isn't reachable. Returns `signed_in: true`
-/// with empty identity fields when the body is shaped unexpectedly — we
-/// already know the token was accepted (the caller checked status), so the
-/// user IS signed in even if we can't surface their display name.
+/// Parses Better Auth's session body into a minimal `AuthStatus`, used when the desktop profile endpoint is unreachable.
+/// An unexpected shape still returns `signed_in: true` with empty identity: the caller already saw the token accepted, so the user IS signed in.
 fn parse_session_body(body: &serde_json::Value) -> AuthStatus {
     let user = body.get("user");
     AuthStatus {
@@ -347,13 +328,8 @@ fn parse_profile_body(body: &serde_json::Value) -> AuthStatus {
     }
 }
 
-/// Kicks off a device-authorization sign-in. Returns immediately with the
-/// user code (for UI fallback) and spawns a background poller that emits
-/// `auth:signed-in` / `auth:denied` / `auth:expired` / `auth:error` events
-/// when the flow terminates.
-///
-/// Returns an error if a sign-in flow is already in progress, or if the
-/// user is already signed in (the caller should `auth_sign_out` first).
+/// Starts a device-authorization sign-in, returning the user code immediately and spawning a poller that emits `auth:signed-in`, `denied`, `expired` or `error`.
+/// Errors when a flow is already in progress, or when already signed in: the caller should `auth_sign_out` first.
 #[tauri::command]
 pub async fn auth_start(app: AppHandle, state: State<'_, AppState>) -> AppResult<AuthStartResult> {
     // Abort the previous poller first: `store_session_token` is synchronous, so an abort mid-write still leaves a token behind.
@@ -443,14 +419,8 @@ pub async fn auth_start(app: AppHandle, state: State<'_, AppState>) -> AppResult
     Ok(result)
 }
 
-/// Aborts the in-flight device-authorization poller (if any). Used when
-/// the user clicks Cancel in the Settings → Cloud panel — without this,
-/// the poller keeps running until the device code expires, and an
-/// approval in the browser tab would silently sign the desktop in even
-/// though the user has moved on from the flow.
-///
-/// Returns `Ok(())` whether or not a poller was running — Cancel is
-/// idempotent.
+/// Aborts the in-flight device-authorization poller; idempotent, returning `Ok(())` whether or not one was running.
+/// Without it the poller outlives Cancel, and a later browser approval would silently sign the desktop in.
 #[tauri::command]
 pub fn auth_cancel(state: State<'_, AppState>) -> AppResult<()> {
     if let Some(handle) = state.auth_poller.lock().take() {

@@ -271,15 +271,8 @@ fn display_for(bounds: &Rect, displays: &[Display]) -> DisplayId {
         .unwrap_or(DisplayId(0))
 }
 
-/// Display, region and window capture through `GetImage`.
-///
-/// The x, y, width and height handed to `GetImage` are a **server-side** crop:
-/// the X server copies only that rectangle, so a region capture never moves the
-/// rest of the screen across the socket. That is this backend's equivalent of the
-/// GPU crop the other two do.
-///
-/// No shared memory yet. `MIT-SHM` would avoid the socket round trip entirely and
-/// is the next thing to do here; the `shm` feature is already enabled for it.
+/// Display, region and window capture through `GetImage`, whose x/y/w/h are a server-side crop, so a region never moves the rest of the screen across the socket.
+/// No shared memory yet: `MIT-SHM` would drop the round trip entirely and the `shm` feature is already enabled for it.
 pub(crate) struct X11Source {
     session: Session,
     drawable: XWindow,
@@ -302,13 +295,8 @@ struct Cursor {
     serial: u32,
 }
 
-/// Where the cursor IMAGE starts, given the position XFixes reports.
-///
-/// XFixes answers with the hotspot's position on the screen, while every
-/// backend here reports the image's top-left, which is what Windows' Desktop
-/// Duplication gives. Reporting the hotspot instead offsets the drawn cursor by
-/// however far into its own image the point is, which for a standard arrow is a
-/// few pixels and for a crosshair is half its width.
+/// Where the cursor IMAGE starts, given the hotspot position XFixes reports.
+/// Every other backend reports the image top-left, so passing the hotspot through offsets the drawn cursor by a few pixels for an arrow and half its width for a crosshair.
 const fn image_origin(hotspot: (i32, i32), hot: (u32, u32), surface: &Rect) -> (i32, i32) {
     (
         hotspot.0 - hot.0 as i32 - surface.x,

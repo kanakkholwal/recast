@@ -66,11 +66,7 @@ impl RecordingClock {
 /// offsets are bounded by the recording length, so the max value is free.
 const UNSET: u64 = u64::MAX;
 
-/// When a capture track produced its first sample, measured against the shared
-/// session origin. Every track (screen, system audio, microphone, camera)
-/// starts at its own unpredictable instant, so the *difference* between two
-/// tracks' marks is the A/V offset that has to be corrected downstream.
-///
+/// When a capture track produced its first sample against the shared session origin; every track starts at its own instant, so the DIFFERENCE is the A/V offset to correct.
 /// Cheap to clone and lock-free: capture threads only ever call [`Self::mark`].
 #[derive(Clone, Debug)]
 pub struct TrackStart {
@@ -92,12 +88,8 @@ impl TrackStart {
         self.mark_at(Instant::now());
     }
 
-    /// Record `at` as this track's first sample.
-    ///
-    /// Audio arrives in buffers that cover time *before* they are handed over,
-    /// so the arrival instant is not the first sample's instant. Marking the
-    /// arrival puts the whole track late by one buffer, which on an idle
-    /// loopback is capturekit's 100 ms silence chunk: audible lip-sync error.
+    /// Records `at` as this track's first sample.
+    /// Audio buffers cover time BEFORE they are handed over, so marking arrival puts the track late by one buffer: capturekit's 100 ms chunk, an audible lip-sync error.
     pub fn mark_at(&self, at: Instant) {
         if self.first_us.load(Ordering::Relaxed) != UNSET {
             return;

@@ -193,13 +193,8 @@ impl PreviewEngine {
         self.session.set_caption_font(data, index)
     }
 
-    /// Where the pointer sits at `output_time`, in CANVAS PIXELS, as
-    /// `[x, y, alpha, spritePx, dotRadiusPx, slot, hlX, hlY, hlRadiusPx,
-    /// hlAlpha]`, or an empty array when there is nothing to draw.
-    ///
-    /// The engine draws the pointer itself; this exists so the host can place a
-    /// DOM overlay on top (a tooltip, a hit target) without re-deriving the
-    /// position from the scene.
+    /// Where the pointer sits at `output_time` in CANVAS PIXELS as `[x, y, alpha, spritePx, dotRadiusPx, slot, hlX, hlY, hlRadiusPx, hlAlpha]`, or empty when nothing is drawn.
+    /// The engine draws the pointer itself; this lets a host place a DOM overlay on top without re-deriving the position from the scene.
     #[wasm_bindgen(js_name = cursorAt)]
     pub fn cursor_at(&self, output_time: f64) -> Vec<f64> {
         let Some(cursor) = self.session.evaluate(output_time).cursor_draw else {

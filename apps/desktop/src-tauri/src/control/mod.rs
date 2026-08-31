@@ -250,11 +250,8 @@ fn watch_event_names(params: &Value) -> Vec<String> {
 /// Idle gap after which a keepalive goes out, so a dead client is noticed.
 const WATCH_KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// Stream events as `{seq, event, data}` frames until the client hangs up.
-///
-/// `since` replays from a cursor a previous connection reported, so an agent
-/// that reconnects picks up where it dropped. A cursor older than the ring gets
-/// a `watch.lagged` frame first: an incomplete stream is worth saying out loud.
+/// Streams events as `{seq, event, data}` frames until the client hangs up; `since` replays from a previous cursor so a reconnecting agent picks up where it dropped.
+/// A cursor older than the ring gets a `watch.lagged` frame first, because an incomplete stream is worth saying out loud.
 fn handle_watch(app: &tauri::AppHandle, stream: &mut Stream, params: &Value) -> Result<(), String> {
     let names = watch_event_names(params);
     let log = event_log(app);
@@ -1418,13 +1415,8 @@ fn now_unix_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Resolve the project's recorded transcript for a `CaptionSidecar`.
-///
-/// This is intentionally a no-op stub for now — the GUI export path is
-/// the canonical reader, and the CLI sidecar surfaces mirror only when
-/// a transcript exists. Callers should pass `--burn-captions` or
-/// `--caption-sidecar` only after verifying via `recast project show`
-/// that the project has a `transcript` populated in its render state.
+/// Resolves the project's recorded transcript for a `CaptionSidecar`; intentionally a stub, since the GUI export path is the canonical reader.
+/// Pass `--burn-captions` or `--caption-sidecar` only after `recast project show` confirms the render state has a transcript.
 fn doc_transcript(
     _state: &crate::commands::types::AppState,
     _path: &str,

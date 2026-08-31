@@ -15,11 +15,8 @@ pub fn spoken_word_count(words: &[TranscriptWord], t: f64) -> usize {
     n
 }
 
-/// Per-word centisecond durations for ASS `\k`, in chunk order.
-///
-/// Rounds the CUMULATIVE boundary and diffs consecutive boundaries, so the sum
-/// equals the rounded total exactly; rounding each word on its own accumulates
-/// drift across a line. Each word holds until the next one starts.
+/// Per-word centisecond durations for ASS `\k`, in chunk order, each word holding until the next starts.
+/// Rounds the CUMULATIVE boundary and diffs consecutive ones so the sum equals the rounded total; rounding each word alone accumulates drift across a line.
 pub fn karaoke_centiseconds(words: &[TranscriptWord], chunk_start: f64) -> Vec<i64> {
     let cs = |s: f64| ((s - chunk_start) * 100.0).round() as i64;
     let mut durations = Vec::with_capacity(words.len());

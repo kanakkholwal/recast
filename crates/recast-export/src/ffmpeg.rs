@@ -1,7 +1,5 @@
 //! An FFmpeg-backed codec pair for platforms with no in-process encoder.
-//!
-//! The compositing is still ours: FFmpeg only decodes the recording and encodes
-//! what the engine drew, the same division the browser renderer already ships.
+//! The compositing is still ours: FFmpeg only decodes the recording and encodes what the engine drew, the same division the browser renderer ships.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -126,10 +124,7 @@ impl SourceInfo {
 }
 
 /// A recording decoded through FFmpeg into NV12, one frame at a time.
-///
-/// Decoding is forced to a constant rate so a frame index is a time: a raw pipe
-/// carries no timestamps, and the alternative is trusting a variable-rate
-/// source to report its own.
+/// Decoding is forced to a constant rate so a frame index is a time: a raw pipe carries no timestamps, and the alternative is trusting a variable-rate source to report its own.
 pub struct FfmpegPictures {
     program: PathBuf,
     input: PathBuf,

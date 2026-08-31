@@ -346,14 +346,8 @@ fn opts_key(opts: &SilenceOptions) -> u64 {
 
 //  Audio analysis
 
-/// Walk per-frame speech probabilities and return the non-speech runs as
-/// half-open frame-index ranges `[start, end)`, keeping only those at least
-/// `min_dur` seconds long.
-///
-/// A two-threshold state machine provides hysteresis: a frame opens a speech
-/// run at `threshold` and only closes it once the score falls below
-/// `threshold - RELEASE_MARGIN`. Without the gap, one quiet frame inside a
-/// word would carve a real utterance into spurious micro-silences.
+/// Non-speech runs as half-open frame ranges, keeping only those at least `min_dur` seconds long.
+/// Two thresholds give hysteresis: without the release margin, one quiet frame inside a word would carve an utterance into spurious micro-silences.
 fn silence_runs(
     probs: &[f32],
     frame_dur: f64,
@@ -426,11 +420,8 @@ fn intersect(a: &[Interval], b: &[Interval]) -> Vec<Interval> {
 
 //  Confidence
 
-/// Blend three signals into a 0..1 score:
-///   - how confidently non-speech the audio is (`1 - mean_speech`),
-///   - how long the run is (saturating at 4 s),
-///   - cursor confirmation (only when a track was present), proportional to
-///     how much of the run the cursor sat idle through.
+/// Blends three signals into a 0..1 score: how confidently non-speech the audio is, how long the run is (saturating at 4 s), and cursor confirmation.
+/// The cursor term only applies when a track was present, and is proportional to how much of the run the cursor sat idle through.
 fn score(len: f64, mean_speech: f32, idle_frac: f64, has_cursor: bool) -> f32 {
     let audio_conf = (1.0 - mean_speech).clamp(0.0, 1.0) as f64;
     let len_score = (len / 4.0).min(1.0);
@@ -463,11 +454,8 @@ fn ffmpeg_stdout(args: &[String]) -> Result<Vec<u8>, String> {
 
 //  Waveform extraction (the timeline-display backing data)
 
-/// Decode a recording's audio to a compact peak envelope for the timeline.
-///
-/// Mic + system audio are mixed (if both exist), downsampled to a low rate,
-/// and reduced to `buckets` normalised peak values in [0,1]. The result is
-/// purely visual — it lets the user *see* where the silence is.
+/// Decodes a recording's audio to a compact peak envelope for the timeline.
+/// Mic and system audio are mixed if both exist, downsampled, and reduced to `buckets` normalised peaks; purely visual, so the user can SEE where the silence is.
 #[tauri::command]
 pub async fn extract_waveform(
     audio_path: Option<String>,

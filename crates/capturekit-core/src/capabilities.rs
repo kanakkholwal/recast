@@ -7,10 +7,7 @@ pub enum ExclusionSupport {
     /// Any window can be excluded, whoever owns it.
     AnyWindow,
     /// Only windows owned by the calling process.
-    ///
-    /// Windows has no per-session exclude list; the mechanism is
-    /// `SetWindowDisplayAffinity`, which the excluded window's own process must
-    /// call. Hiding your own overlay works; hiding someone else's does not.
+    /// Windows has no per-session exclude list: the mechanism is `SetWindowDisplayAffinity`, which the excluded window's own process must call, so hiding someone else's does not work.
     OwnWindowsOnly,
     /// No exclusion at all. The compositor decides what the capture contains and
     /// gives a client no say, which is the case under the Wayland portal.
@@ -69,11 +66,8 @@ pub struct Capabilities {
     /// Whether the OS reports cursor position and shape alongside frames.
     /// False on macOS, where ScreenCaptureKit attaches no pointer metadata to a sample. That is not the same as having no cursor at all: see [`cursor_pointer`](Self::cursor_pointer).
     pub cursor_samples: bool,
-    /// Whether the pointer can be read on demand, independently of frames.
-    ///
-    /// This is what lets a caller sample faster than it captures, and it is the
-    /// only cursor source on macOS. False under Wayland, which reports the
-    /// pointer to no client outside its own surfaces.
+    /// Whether the pointer can be read on demand, independently of frames, which is what lets a caller sample faster than it captures and is the only cursor source on macOS.
+    /// False under Wayland, which reports the pointer to no client outside its own surfaces.
     pub cursor_pointer: bool,
     /// Whether mouse buttons can be read at all.
     /// False under Wayland, which gives no client the global pointer-button state; a consumer there gets movement but can never see a click.

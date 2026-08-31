@@ -92,12 +92,8 @@ pub fn compute_canvas_geometry(
 pub struct SourceVideoMetadata {
     pub width: u32,
     pub height: u32,
-    /// Source frame rate. The generated background source (`color=`) MUST be
-    /// pinned to this — otherwise FFmpeg defaults the generator to 25 fps and,
-    /// because the background is the BASE of the composite `overlay`, the whole
-    /// export inherits 25 fps. A 60 fps recording then gets frame-dropped to 25,
-    /// which judders every motion (most visibly under a zoom). See
-    /// `build_color_background_filter`.
+    /// Source frame rate, which the generated `color=` background MUST be pinned to.
+    /// FFmpeg otherwise defaults that generator to 25 fps, and since the background is the composite's BASE the whole export inherits it, juddering a 60 fps recording.
     pub fps: f64,
 }
 
@@ -481,14 +477,8 @@ fn zoom_winner_at(regions: &[&ZoomRegion], t: f64) -> Option<usize> {
     best.map(|(index, _)| index)
 }
 
-/// Disjoint `(region_index, start, end)` windows in which each region actually
-/// applies. Only one zoom can apply at a time, but the filter graph SUMS every
-/// region's term (`wrap_flat_sum`), so overlapping regions would stack their
-/// zoom — two 1.8x regions rendering as 2.6x while the preview shows 1.8x.
-///
-/// Region starts and ends are exact edges; a handover BETWEEN two overlapping
-/// regions is found by sampling, because it happens where their eased scales
-/// cross rather than at either region's boundary.
+/// Disjoint windows in which each region actually applies: only one zoom can, but the graph SUMS every term, so overlaps would stack 1.8x twice as 2.6x.
+/// Starts and ends are exact edges; a handover between overlapping regions is sampled, because it falls where their eased scales cross, not at a boundary.
 fn disjoint_zoom_windows(regions: &[&ZoomRegion], time_offset: f64) -> Vec<(usize, f64, f64)> {
     let mut edges: Vec<f64> = Vec::new();
     for region in regions {
@@ -1124,14 +1114,8 @@ mod tests {
             .expect("plan")
     }
 
-    /// Without trim, the LUT t-values are timeline = output, and the filter
-    /// must include `between(t,1.0,...)` segments because the zoom region
-    /// starts at timeline 1.0.
-    /// The filter MUST be a `scale=eval=frame` + fixed-size `crop` chain.
-    /// The previous `crop=w='<expr>':h='<expr>'` form silently never fired
-    /// because ffmpeg's `crop` evaluates `w`/`h` only ONCE at filter init,
-    /// where `t = 0`; that was the actual root cause of "zoom missing in
-    /// exported videos". This test asserts the new shape directly.
+    /// The filter MUST be a `scale=eval=frame` plus fixed-size `crop` chain, which this asserts directly.
+    /// The previous `crop=w='<expr>'` form never fired, because ffmpeg evaluates `crop`'s `w`/`h` once at init where `t = 0`: the root cause of zoom missing from exports.
     #[test]
     fn zoom_filter_uses_scale_eval_frame_not_crop_wh_lut() {
         let state = render_state_with_zoom(0.0, 5.0, vec![region(1.0, 4.0, 1.5)]);
@@ -1156,12 +1140,8 @@ mod tests {
         );
     }
 
-    /// With trim_start = 2.0, the FFmpeg `t` is OUTPUT-stream time. A region
-    /// at timeline [3.0, 5.0] must appear in the LUT at output [1.0, 3.0].
-    /// Pre-fix, this assertion failed: the LUT had `between(t,3.0000,...)`
-    /// which never fires because the output never reaches t=3 (the visible
-    /// duration is 5 - 2 = 3 s, but scrubbing/preview seeing zoom at
-    /// timeline 3 expects it at output 1).
+    /// With `trim_start` at 2.0 the FFmpeg `t` is OUTPUT time, so a region at timeline [3.0, 5.0] must land in the LUT at output [1.0, 3.0].
+    /// Pre-fix the LUT held `between(t,3.0,...)`, which never fires because the visible duration is only 3 s.
     #[test]
     fn zoom_filter_shifts_lut_by_trim_start() {
         let state = render_state_with_zoom(2.0, 5.0, vec![region(3.0, 5.0, 1.5)]);
@@ -1179,12 +1159,8 @@ mod tests {
         );
     }
 
-    /// A zoom region whose entire timeline range precedes trim_start used
-    /// to produce a LUT whose t-values were negative — harmless to FFmpeg
-    /// (`between(t, -2.0, -1.0)` simply never fires) but a waste of filter
-    /// string. Now we prune those regions entirely, so the planner doesn't
-    /// emit a zoom prelude at all in this case. The test still verifies
-    /// "doesn't panic" and that the rest of the plan is intact.
+    /// A zoom region entirely before `trim_start` used to emit a LUT with negative t-values: harmless to FFmpeg but wasted filter string.
+    /// Those regions are pruned now, so no zoom prelude is emitted at all; this still checks it does not panic and the rest of the plan survives.
     #[test]
     fn zoom_region_entirely_before_trim_does_not_panic() {
         let state = render_state_with_zoom(5.0, 10.0, vec![region(1.0, 3.0, 1.5)]);
@@ -1329,10 +1305,7 @@ mod tests {
     }
 
     /// The generated `color=` background MUST carry an explicit `:r=<fps>`.
-    /// Without it FFmpeg defaults the generator to 25 fps, and since it's the
-    /// base of the composite overlay the whole export drops to 25 fps —
-    /// frame-dropping a 60 fps recording into juddery motion (the export-only
-    /// "shake", very visible under a zoom).
+    /// FFmpeg otherwise defaults that generator to 25 fps, and as the composite's base it drops the whole export there, juddering a 60 fps recording most visibly under a zoom.
     #[test]
     fn color_background_pins_source_framerate() {
         let state = RenderState {

@@ -9,12 +9,8 @@ use capturekit::{
     Warmup, WindowId,
 };
 
-/// The display to capture, or `None` when there is no desktop to capture from.
-///
-/// Skipping is allowed because a CI runner may have no session, no display or no
-/// screen-recording grant. It is NOT allowed to hide a regression, so the reasons
-/// are narrow: an empty display list, or a permission the platform has not given.
-/// A backend that errors for any other reason still fails the test.
+/// The display to capture, or `None` when there is no desktop; skipping is allowed because a CI runner may have no session, display or grant.
+/// It must not hide a regression, so the reasons are narrow: an empty display list, or a permission the platform has not given. Any other error still fails.
 fn primary() -> Option<Display> {
     if !permission(PermissionKind::Screen).is_usable() {
         return skip("screen capture is not permitted for this process");
@@ -365,13 +361,8 @@ fn the_reported_capabilities_match_what_the_platform_actually_does() {
     );
 }
 
-/// Two live streams on one timeline, both off the caller's thread.
-///
-/// Display and window rather than two displays: Desktop Duplication is
-/// one-per-output-per-process, so two display tracks would contend.
-/// The property an A/V recording rests on: audio and video land on ONE timeline,
-/// so lining them up is subtracting a single origin. A track that kept its own
-/// clock would still deliver, still look monotonic, and still be out of sync.
+/// Two live streams on one timeline, both off the caller's thread; display and window rather than two displays, since Desktop Duplication is one per output per process.
+/// The property an A/V recording rests on: a track keeping its own clock would still deliver, still look monotonic, and still be out of sync.
 #[test]
 fn a_session_puts_audio_and_video_on_the_same_timeline() {
     let _exclusive = exclusive();

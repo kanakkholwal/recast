@@ -36,12 +36,8 @@ struct Negotiated {
     size: Option<(u32, u32)>,
 }
 
-/// Run the portal handshake to completion.
-///
-/// There is no way to ask the portal what it would allow: consent is granted per
-/// session, by the user, in a dialog, and the answer arrives with the stream.
-/// That is why this blocks, and why `permission()` reports `NotDetermined`
-/// rather than pretending to know.
+/// Runs the portal handshake to completion, which is why it blocks.
+/// There is no way to ask the portal what it would allow: consent is granted per session in a dialog, and the answer arrives with the stream.
 fn negotiate(cursor: CursorMode) -> Result<Negotiated> {
     async_std::task::block_on(async {
         let proxy = Screencast::new().await.map_err(portal_error)?;
@@ -91,12 +87,8 @@ fn portal_error(error: ashpd::Error) -> CaptureError {
     }
 }
 
-/// The portal does not report per-monitor geometry, so a Wayland session offers
-/// one nominal display standing for "whatever the user picks in the dialog".
-///
-/// Enumerating real outputs would need `wlr-output-management` or a compositor
-/// protocol, and none is portable. Inventing entries the portal will not honour
-/// would be worse than one honest placeholder.
+/// The portal reports no per-monitor geometry, so a Wayland session offers one nominal display standing for whatever the user picks in the dialog.
+/// Enumerating real outputs needs a compositor protocol and none is portable; inventing entries the portal will not honour would be worse than one honest placeholder.
 pub(crate) fn displays() -> Result<Vec<Display>> {
     Ok(vec![Display {
         id: DisplayId(0),
@@ -298,11 +290,8 @@ fn run_stream(
     Ok(())
 }
 
-/// Ask for any packed 32-bit layout, at any size the compositor offers.
-///
-/// Offered as a choice rather than a demand: a compositor that cannot give BGRx
-/// picks another from the list, and one that cannot match the size range refuses
-/// the connection outright instead of sending frames nothing here can read.
+/// Asks for any packed 32-bit layout at any size the compositor offers, as a choice rather than a demand.
+/// One that cannot give BGRx picks another from the list, and one that cannot match the size range refuses outright instead of sending frames nothing here can read.
 fn video_params() -> core::result::Result<Vec<u8>, String> {
     use pipewire::spa::param::format::FormatProperties;
     use pipewire::spa::param::ParamType;

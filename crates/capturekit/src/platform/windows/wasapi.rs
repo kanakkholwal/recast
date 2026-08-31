@@ -49,10 +49,7 @@ fn err(source: windows::core::Error) -> CaptureError {
 }
 
 /// The device enumerator, and the apartment it was made in.
-///
-/// Declare it before anything made from it, and never take it apart early: the
-/// ordering that keeps a release from landing in a closed apartment is
-/// [`Scoped`]'s field order, not the caller's.
+/// Declare it before anything made from it and never take it apart early: what keeps a release from landing in a closed apartment is [`Scoped`]'s field order, not the caller's.
 type Enumerator = Scoped<IMMDeviceEnumerator>;
 
 /// WASAPI is COM, so a bare capture thread has to join an apartment first.
@@ -94,11 +91,7 @@ fn mix_format(client: &IAudioClient) -> Result<(AudioFormat, *mut WAVEFORMATEX)>
 }
 
 /// Read a wave header into the crate's own vocabulary.
-///
-/// # Safety
-///
-/// `raw` must point at a valid `WAVEFORMATEX`, and at a full
-/// `WAVEFORMATEXTENSIBLE` when its tag says so.
+/// # Safety: `raw` must point at a valid `WAVEFORMATEX`, and at a full `WAVEFORMATEXTENSIBLE` when its tag says so.
 unsafe fn format_of(raw: *const WAVEFORMATEX) -> Result<AudioFormat> {
     let header = unsafe { *raw };
     let sample_format = if header.wFormatTag == WAVE_FORMAT_EXTENSIBLE {
@@ -293,11 +286,7 @@ impl WasapiSource {
     }
 
     /// Sample frames the device should have produced by now but has not.
-    ///
-    /// An idle endpoint delivers NO packets, so a gap measured from a received
-    /// buffer's device position can never fire: there is no buffer. The stream
-    /// clock is the only thing still moving, so that is what the silence is
-    /// measured against.
+    /// An idle endpoint delivers no packets at all, so a gap measured from a received buffer can never fire; the stream clock is the only thing still moving.
     fn owed_by_clock(&self) -> u64 {
         let elapsed = super::now().saturating_since(self.origin);
         let expected = self.desc.format.frames_in_duration(elapsed);
@@ -305,15 +294,8 @@ impl WasapiSource {
     }
 }
 
-/// A reported device position translated into this capture's own frame count.
-///
-/// A capture stream's position counts from when the stream started, but a
-/// LOOPBACK stream is a render endpoint's, and that one started when the audio
-/// engine did — hours ago, millions of frames back. Taken literally it reads as
-/// a permanent enormous gap, and the source fills it with silence as fast as the
-/// caller can ask, burying the real audio under hours of it. The first packet
-/// fixes the offset, and the timeline's own position is what it is fixed to, so
-/// the two agree from that packet on.
+/// A reported device position translated into this capture's own frame count, anchored on the first packet.
+/// A loopback stream's position counts from when the audio engine started, so taken literally it reads as an enormous gap and buries the audio under hours of silence.
 fn local_position(anchor: &mut Option<u64>, device_position: u64, timeline: u64) -> u64 {
     let at = *anchor.get_or_insert_with(|| device_position.saturating_sub(timeline));
     device_position.saturating_sub(at)

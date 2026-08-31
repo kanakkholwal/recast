@@ -67,12 +67,8 @@ struct Pending {
     composition_offset: i32,
 }
 
-/// Writes fragmented MP4: an initialisation segment, then `moof` + `mdat`
-/// fragments.
-///
-/// The point is durability. A plain MP4 only becomes playable when `finish`
-/// writes the header, so an export killed at 90% leaves nothing. Every fragment
-/// here is complete on its own, so a file cut short plays up to the last one.
+/// Writes fragmented MP4: an initialisation segment, then `moof` plus `mdat` fragments.
+/// The point is durability: a plain MP4 is playable only once `finish` writes the header, while every fragment here is complete, so a file cut short plays up to the last one.
 #[derive(Default)]
 pub struct FragmentedWriter {
     video_format: VideoFormat,
@@ -147,12 +143,8 @@ impl FragmentedWriter {
         self.video.len() + self.audio.len()
     }
 
-    /// Emits everything pushed so far as one fragment and clears the buffer.
-    /// `None` when nothing is waiting.
-    ///
-    /// The caller decides the cadence. A fragment per second is the usual trade:
-    /// shorter means more `moof` overhead, longer means more work lost to a
-    /// crash, and one must stay under 4 GiB because its `mdat` header is 32 bit.
+    /// Emits everything pushed so far as one fragment and clears the buffer, or `None` when nothing is waiting.
+    /// The caller sets the cadence: shorter costs `moof` overhead, longer loses more to a crash, and one must stay under 4 GiB because its `mdat` header is 32-bit.
     pub fn fragment(&mut self) -> Result<Option<Vec<u8>>, FragmentError> {
         if self.video.is_empty() && self.audio.is_empty() {
             return Ok(None);

@@ -53,12 +53,8 @@ impl TrackBuffer {
     }
 }
 
-/// Builds a progressive MP4: `moov` is emitted before `mdat`, so a player can
-/// start on the first bytes instead of seeking to the end.
-///
-/// Samples are buffered because the sample tables carry offsets into `mdat`,
-/// and those are only known once `moov`'s own size is. That is the same trade
-/// `+faststart` makes, minus the second pass over the finished file.
+/// Builds a progressive MP4 with `moov` before `mdat`, so a player starts on the first bytes instead of seeking to the end.
+/// Samples are buffered because the sample tables carry `mdat` offsets that are known only once `moov` is sized: `+faststart`'s trade, minus the second pass.
 #[derive(Debug)]
 pub struct Mp4Writer {
     video_format: VideoFormat,
@@ -201,12 +197,8 @@ impl Mp4Writer {
         ftyp(false)
     }
 
-    /// `ftyp` and a `moov` whose sample tables are empty, plus the `mvex` that
-    /// says so. The header of a fragmented file, written once and never
-    /// rewritten. `None` until the parameter sets are known.
-    ///
-    /// Built from a writer holding no samples: the tables are empty because
-    /// there is nothing in them, not because anything special was done.
+    /// `ftyp` plus a `moov` with empty sample tables and the `mvex` that says so: a fragmented file's header, written once. `None` until the parameter sets are known.
+    /// Built from a writer holding no samples, so the tables are empty because there is nothing in them, not because anything special was done.
     pub fn initialization_segment(&self) -> Option<Vec<u8>> {
         let record = self.avc.record()?;
         let mut out = ftyp(true);
@@ -441,14 +433,8 @@ impl Mp4Writer {
     }
 }
 
-/// The `esds` box: an MPEG-4 elementary stream descriptor wrapping the
-/// `AudioSpecificConfig`, which is what tells a decoder the profile, rate and
-/// channel layout.
-///
-/// Built inside out. Every parser we can reach is lenient about descriptor
-/// lengths, so computing them by hand gives a file that plays here and breaks
-/// elsewhere; nesting finished byte strings makes each length exact by
-/// construction.
+/// The `esds` box: an MPEG-4 elementary stream descriptor wrapping the `AudioSpecificConfig`, which tells a decoder the profile, rate and channel layout.
+/// Built inside out, because parsers are lenient about descriptor lengths and hand-computing them yields a file that plays here and breaks elsewhere.
 fn write_esds(buf: &mut BoxBuf, config: &[u8]) {
     // DecoderSpecificInfo: the AudioSpecificConfig itself.
     let specific = descriptor(0x05, config);

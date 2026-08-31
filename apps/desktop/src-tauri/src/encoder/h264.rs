@@ -92,12 +92,8 @@ pub fn codec_args(encoder: H264Encoder, purpose: EncodePurpose<'_>) -> Vec<Strin
     }
 }
 
-/// Live-capture args. `Balanced` reproduces the pre-refactor recorder
-/// byte-for-byte (fast preset + low-latency tune, no explicit rate control) so
-/// existing recordings are unchanged; `High`/`Pristine` trade real-time
-/// headroom for fidelity via an explicit near-visually-lossless quality target.
-/// libx264 stays on `ultrafast` for `Balanced` so a weak, GPU-less CPU doesn't
-/// drop frames during capture.
+/// Live-capture args. `Balanced` reproduces the pre-refactor recorder byte-for-byte, so existing recordings are unchanged.
+/// `High` and `Pristine` trade real-time headroom for an explicit near-visually-lossless target; libx264 stays on `ultrafast` so a GPU-less CPU does not drop frames.
 fn realtime_capture_args(encoder: H264Encoder, quality: RecordingQuality) -> Vec<String> {
     use H264Encoder::*;
     use RecordingQuality::*;

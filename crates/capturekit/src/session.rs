@@ -23,12 +23,8 @@ impl From<&str> for TrackId {
 pub struct SessionFrame<'a> {
     /// Which stream produced it.
     pub track: &'a TrackId,
-    /// How far into the session the frame belongs.
-    ///
-    /// This, not [`Frame::pts`], is what aligns streams: every source on a given
-    /// OS already stamps the same monotonic clock (QPC on Windows, the host time
-    /// clock on macOS, `CLOCK_MONOTONIC` on Linux), so subtracting one origin
-    /// puts them all on one timeline without any drift correction.
+    /// How far into the session the frame belongs. This, not [`Frame::pts`], is what aligns streams.
+    /// Every source on a given OS already stamps the same monotonic clock, so subtracting one origin puts them all on one timeline with no drift correction.
     pub elapsed: Duration,
     /// The frame itself.
     pub frame: Frame<'a>,
@@ -143,11 +139,8 @@ impl SessionBuilder {
         self
     }
 
-    /// Add an audio stream, with the handler that will run on its capture thread.
-    ///
-    /// A microphone and a loopback capture are two tracks, not one: they are
-    /// separate devices on separate clocks of their own, and mixing them is the
-    /// consumer's decision, not this crate's.
+    /// Adds an audio stream, with the handler that runs on its capture thread.
+    /// A microphone and a loopback are two tracks, not one: separate devices on separate clocks, and mixing them is the consumer's decision rather than this crate's.
     #[must_use]
     pub fn audio<H>(
         mut self,
@@ -166,11 +159,8 @@ impl SessionBuilder {
         self
     }
 
-    /// Open every source and start them.
-    ///
-    /// Every source is opened before any is started, so a session that cannot be
-    /// satisfied fails without having recorded a partial one. If one source
-    /// fails, those already opened are dropped, which releases them.
+    /// Opens every source, then starts them.
+    /// Opening all before starting any means a session that cannot be satisfied fails without recording a partial one, and a failure drops the already-opened sources, releasing them.
     pub fn start(self) -> Result<Session> {
         let mut opened = Vec::with_capacity(self.tracks.len());
         for track in self.tracks {

@@ -301,6 +301,15 @@ mod live {
         let mut portrait = padded.clone();
         portrait.output_aspect = Some("9:16".into());
 
+        // A blurred backdrop is its own filter and its own engine pass, and nothing else here exercises either.
+        let mut blurred = padded.clone();
+        blurred.background_blur = 40.0;
+
+        // Trim alone moves the source axis; cut and speed are appended outside this harness's plan, so they stay unmeasured.
+        let mut trimmed = padded.clone();
+        trimmed.trim_start = 0.1;
+        trimmed.trim_end = 0.4;
+
         vec![
             ("plain", plain),
             ("padded", padded),
@@ -309,6 +318,8 @@ mod live {
             ("gradient", gradient),
             ("gradient-wide", gradient_wide),
             ("portrait-9x16", portrait),
+            ("background-blur", blurred),
+            ("trimmed", trimmed),
         ]
     }
 

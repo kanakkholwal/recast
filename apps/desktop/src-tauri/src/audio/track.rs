@@ -12,10 +12,7 @@ use crate::recording::clock::TrackStart;
 const MIN_DRIFT_SPAN: Duration = Duration::from_secs(5);
 
 /// Accumulates one capture's samples into a WAV, gated by the pause flag.
-///
-/// Split from the capture loop so everything deciding what lands in the file
-/// (pause gating, first-sample marking, the drift correction) is exercised
-/// without a device. The loop over it is identical on all three platforms.
+/// Split from the capture loop so pause gating, first-sample marking and drift correction are all exercised without a device; the loop over it is identical on every platform.
 pub(super) struct TrackWriter {
     label: &'static str,
     output_path: PathBuf,
@@ -78,11 +75,8 @@ impl TrackWriter {
         true
     }
 
-    /// Take one delivery, unless the recording is paused.
-    ///
-    /// Paused samples are dropped rather than written, which is what keeps the
-    /// WAV gap-free across a pause. The device is still drained by the caller,
-    /// so nothing overruns while this refuses.
+    /// Takes one delivery unless the recording is paused; paused samples are dropped rather than written, which keeps the WAV gap-free across a pause.
+    /// The caller still drains the device, so nothing overruns while this refuses.
     pub(super) fn accept(&mut self, samples: &[u8], inserted: bool, now: Instant) -> Result<()> {
         if !self.tick(now) {
             return Ok(());

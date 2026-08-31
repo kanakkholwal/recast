@@ -144,12 +144,8 @@ pub fn encode_matrix(color: &SourceColor) -> (Mat3, [f32; 3]) {
     (folded, [-luma_offset, neutral, neutral])
 }
 
-/// The code value that means no colour, as a sampler reports it.
-///
-/// NOT 0.5. Neutral is 2^(n-1) and a unorm texture normalises by 2^n - 1, so
-/// 8-bit neutral arrives as 128/255. Subtracting a half instead leaves every
-/// grey pixel faintly magenta, which is small enough to survive review and
-/// large enough to see on a gradient.
+/// The code value that means no colour, as a sampler reports it. NOT 0.5.
+/// Neutral is 2^(n-1) while a unorm texture normalises by 2^n - 1, so 8-bit neutral arrives as 128/255; subtracting a half leaves every grey faintly magenta.
 fn neutral_chroma(depth: u32) -> f32 {
     (1u32 << (depth - 1)) as f32 / ((1u32 << depth) - 1) as f32
 }
@@ -159,12 +155,8 @@ pub fn gamut_matrix(color: &SourceColor) -> Mat3 {
     convert_matrix(color.primaries, Primaries::Bt709)
 }
 
-/// How far to shift the chroma sample position, in chroma texels.
-///
-/// A linear sampler reading a half-width chroma plane at the luma UV lands a
-/// quarter of a chroma texel left of a co-sited sample, because the plane has
-/// half the texels and the sampler centres on its own. Vertical siting is
-/// already centred between rows, so only x moves.
+/// How far to shift the chroma sample position, in chroma texels; only x moves, since vertical siting is already centred between rows.
+/// A linear sampler reading a half-width plane at the luma UV lands a quarter texel left of a co-sited sample, because the plane has half the texels and it centres on its own.
 pub fn chroma_offset(color: &SourceColor, layout: PlaneLayout) -> [f32; 2] {
     let subsampled = layout.plane_size(1, 4, 4).0 < 4;
     if !subsampled || color.siting == ChromaSiting::Center {

@@ -36,13 +36,8 @@ impl Affine2 {
         Self::zoom_ramp(scale, scale, center_x, center_y)
     }
 
-    /// A zoom at a point on its ramp. The window is exactly `1/scale` (so the
-    /// zoom amount is the eased scale, and overlap handover stays continuous),
-    /// while the window CENTRE travels in a straight line from the frame centre
-    /// toward its destination as the ramp runs. The destination is clamped ONCE
-    /// against `final_scale` — never per frame — because a per-frame clamp
-    /// against the ever-widening `1/scale` window releases x and y from the
-    /// bound at different times, arcing the pan (preview defect D-1).
+    /// A zoom at a point on its ramp: the window is exactly `1/scale`, and its CENTRE travels straight from the frame centre toward the destination as the ramp runs.
+    /// The destination is clamped ONCE against `final_scale`, never per frame, or x and y leave the bound at different times and the pan arcs (preview defect D-1).
     pub fn zoom_ramp(scale: f32, final_scale: f32, center_x: f32, center_y: f32) -> Self {
         let scale = scale.max(1.0);
         let final_scale = final_scale.max(scale);

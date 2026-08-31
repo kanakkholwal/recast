@@ -19,11 +19,8 @@ pub(crate) struct StaticLayers {
     _prebaked_bg: Option<TempDirGuard>,
 }
 
-/// Rasterise everything static for this export.
-///
-/// Takes `request` mutably because pre-baking a wallpaper/image background
-/// rewrites `background_value` to the baked PNG and zeroes `background_blur` —
-/// the caller must rebuild its `RenderGraph` afterwards so the plan sees it.
+/// Rasterises everything static for this export.
+/// Takes `request` mutably because pre-baking a background rewrites `background_value` and zeroes the blur, so the caller must rebuild its `RenderGraph` afterwards.
 pub(crate) fn rasterize_static_layers(
     request: &mut ExportRequest,
     source_width: u32,

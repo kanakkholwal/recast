@@ -60,12 +60,8 @@ const NV21: Layout = Layout::SemiPlanar420 { u: 1, v: 0 };
 const RGB24: Layout = Layout::Rgb24 { r: 0, b: 2 };
 const BGR24: Layout = Layout::Rgb24 { b: 0, r: 2 };
 
-/// The FourCCs this backend accepts and how each is laid out, best first.
-///
-/// 4:2:2 outranks 4:2:0 because it keeps more chroma, and both outrank the
-/// 24-bit RGB modes because almost no webcam offers those above VGA. The order
-/// is what negotiation walks, so it decides what a device gets opened as.
-/// 'AR24' and 'XR24' are stored B, G, R, A despite what their names suggest.
+/// The FourCCs this backend accepts and their layouts, best first, since the order is what negotiation walks and so decides how a device opens.
+/// 4:2:2 outranks 4:2:0 for chroma and both outrank 24-bit RGB, which almost no webcam offers above VGA. 'AR24' and 'XR24' are stored B, G, R, A despite the names.
 pub(super) const SUPPORTED: &[(u32, Layout)] = &[
     (fourcc(b"YUYV"), YUYV),
     (fourcc(b"UYVY"), UYVY),

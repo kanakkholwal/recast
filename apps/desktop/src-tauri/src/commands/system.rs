@@ -173,14 +173,8 @@ pub fn default_output_dir(app: &AppHandle) -> PathBuf {
     base.join("Recast")
 }
 
-/// True on Linux + Wayland. xcap's per-source `capture_image()` triggers
-/// an `xdg-desktop-portal.ScreenCast` permission dialog *per source* on
-/// Wayland — calling it across every monitor/window during the picker hot
-/// path raises N consecutive dialogs and can stall the calling thread for
-/// seconds while the user dismisses each one. We deliberately skip the
-/// thumbnail entirely in that case; the picker remains usable from text
-/// labels alone, and we'll revisit this once we wire PipeWire directly
-/// (see `apps/desktop/docs/linux-native-recording.md` once written).
+/// True on Linux plus Wayland, where a per-source `capture_image()` raises one portal permission dialog PER SOURCE.
+/// Thumbnails are skipped entirely there: N consecutive dialogs stall the picker thread, and text labels keep it usable.
 fn is_wayland() -> bool {
     cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
@@ -325,11 +319,8 @@ pub fn get_hide_panel_from_capture(state: State<'_, AppState>) -> AppResult<bool
     Ok(state.config.read().hide_panel_from_capture)
 }
 
-/// Async on purpose: after persisting, it reflects the change on a *live*
-/// recording panel so the toggle is immediate rather than "next launch". The
-/// `set_content_protected` round-trip would deadlock the macOS main thread if
-/// this ran as a sync command (those run on the main thread) — see
-/// `exclude_window_from_capture`.
+/// Async on purpose: after persisting it reflects the change on a LIVE recording panel, so the toggle is immediate rather than next-launch.
+/// The `set_content_protected` round-trip would deadlock the macOS main thread if this ran as a sync command.
 #[tauri::command]
 pub async fn set_hide_panel_from_capture(
     app: AppHandle,
@@ -393,15 +384,8 @@ pub fn set_last_source(
     Ok(())
 }
 
-/// Apply the runtime log-level filter for the current diagnostic-logging
-/// setting. The tauri-plugin-log dispatch is built permissively (Trace), so
-/// this `log::set_max_level` is the single gate that decides what actually
-/// reaches the rotating file — for the Rust backend AND the webview logs the
-/// frontend forwards through the same plugin.
-///
-/// - off (default) → release builds stay quiet (Warn); debug builds keep Info.
-/// - on → Debug everywhere, capturing backend processing + editor-interaction
-///   traces for a support bundle.
+/// The single gate on what reaches the rotating log file, for the Rust backend and the webview logs forwarded through the same plugin.
+/// The plugin dispatch is built permissively, so off means Warn in release and Info in debug, and on means Debug everywhere.
 pub(crate) fn apply_log_level(diagnostic: bool) {
     let level = if diagnostic {
         log::LevelFilter::Debug
@@ -520,14 +504,8 @@ pub struct AudioDeviceInfo {
     pub is_default: bool,
 }
 
-/// List available audio input (microphone) devices.
-///
-/// `async` + `spawn_blocking` for the same reason as `get_camera_devices`:
-/// enumeration blocks — Linux spawns `pactl list short sources` and waits on
-/// the PulseAudio daemon; macOS spawns FFmpeg on the first (uncached) call;
-/// Windows walks the WASAPI endpoint COM API. Tauri runs sync commands on the
-/// main thread, which on macOS/Linux also renders the WebView, so a slow audio
-/// subsystem would freeze the UI. Push it onto a worker instead.
+/// Lists audio input devices; async plus `spawn_blocking` because enumeration blocks on `pactl`, an FFmpeg spawn, or the WASAPI COM walk.
+/// Tauri runs sync commands on the main thread, which also renders the WebView on macOS and Linux, so a slow audio subsystem would freeze the UI.
 #[tauri::command]
 pub async fn get_audio_devices() -> AppResult<Vec<AudioDeviceInfo>> {
     tauri::async_runtime::spawn_blocking(get_audio_devices_blocking)
@@ -968,15 +946,8 @@ pub async fn delete_file(path: String) -> AppResult<()> {
     .map_err(|e| AppError::msg(format!("delete task panicked: {e}")))?
 }
 
-/// Rename a file in place (same directory, new filename).
-/// Preserves the original extension by default if `new_name` has none.
-/// Returns the new absolute path on success.
-///
-/// Edge cases handled:
-/// - empty new name
-/// - name containing path separators or illegal chars
-/// - target filename already exists (reject, never overwrite)
-/// - source file missing
+/// Renames a file in place, keeping the original extension when `new_name` has none, and returns the new absolute path.
+/// Rejects an empty name, path separators or illegal characters, a missing source, and an existing target: it never overwrites.
 #[tauri::command]
 pub fn rename_file(path: String, new_name: String) -> AppResult<String> {
     let src = std::path::PathBuf::from(&path);
@@ -1030,14 +1001,8 @@ pub fn rename_file(path: String, new_name: String) -> AppResult<String> {
     Ok(dest.to_string_lossy().to_string())
 }
 
-/// Probe which video encoders actually initialize on this device (a real
-/// 1-frame encode per candidate, not just "compiled in"). Drives the
-/// Settings → About "Hardware acceleration" matrix so users can see which
-/// GPU encoder their machine supports and which one the recorder picks.
-///
-/// async + spawn_blocking because each hardware probe spawns FFmpeg and can
-/// take a few hundred ms cold — running it inline would freeze the GTK main
-/// thread on Linux (same rationale as `get_displays`).
+/// Probes which encoders actually initialize here with a real 1-frame encode, driving the Settings hardware-acceleration matrix.
+/// Async plus `spawn_blocking`: each hardware probe spawns FFmpeg and can take hundreds of ms cold, which would freeze the GTK main thread.
 #[tauri::command]
 pub async fn probe_video_encoders() -> AppResult<Vec<crate::ffmpeg::EncoderAvailability>> {
     tauri::async_runtime::spawn_blocking(crate::ffmpeg::probe_recordable_encoders)
@@ -1045,13 +1010,8 @@ pub async fn probe_video_encoders() -> AppResult<Vec<crate::ffmpeg::EncoderAvail
         .map_err(|e| AppError::msg(format!("probe_video_encoders join error: {e}")))
 }
 
-/// One capture-input capability and whether the *running* build can do it on
-/// *this* device. `backend` names the native API actually used (DXGI, PipeWire,
-/// AVFoundation, …) so the Settings panel can be specific instead of vague.
-/// Why a capability isn't usable — the distinction the UI needs to choose
-/// between "not supported on this OS" and "not available yet". `supported`
-/// stays as the plain boolean the Settings matrix already keys off; `status`
-/// refines the `false` case.
+/// Why a capability is not usable: the distinction the UI needs between "not supported on this OS" and "not available yet".
+/// `supported` stays the plain boolean the Settings matrix keys off, and this refines only its `false` case.
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CapabilityStatus {
@@ -1068,6 +1028,8 @@ pub enum CapabilityStatus {
     Planned,
 }
 
+/// One capture-input capability and whether the running build can do it on this device.
+/// `backend` names the native API actually used (DXGI, PipeWire, AVFoundation), so the Settings panel can be specific instead of vague.
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureCapability {
@@ -1325,11 +1287,8 @@ pub fn cli_install_status() -> crate::path_install::InstallStatus {
     crate::path_install::status()
 }
 
-/// Put `recast` on the user's PATH (the in-app "Install command line tool").
-///
-/// Async + `spawn_blocking`: this copies the whole release binary (tens of MB
-/// with ggml + ocr linked) and edits the registry / shell rc. A sync command
-/// runs on the main thread, which freezes the macOS WKWebView.
+/// Puts `recast` on the user's PATH, the in-app "Install command line tool".
+/// Async plus `spawn_blocking`: it copies tens of MB of release binary and edits the registry or shell rc, and a sync command would freeze the macOS WKWebView.
 #[tauri::command]
 pub async fn install_cli() -> AppResult<String> {
     tokio::task::spawn_blocking(|| crate::path_install::install().map_err(AppError::msg))

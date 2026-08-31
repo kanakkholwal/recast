@@ -86,12 +86,8 @@ struct CachedAccessToken {
 static ACCESS_TOKEN: Mutex<Option<CachedAccessToken>> = Mutex::new(None);
 static ACTIVE_UPLOADS: Mutex<Option<HashMap<String, Arc<AtomicBool>>>> = Mutex::new(None);
 
-/// Persistent record of which local exports have been uploaded to Drive,
-/// indexed by the local file path so the exports list can switch its menu
-/// from "Upload to Drive" to "Copy link / Re-upload" without hitting the
-/// network. Stored on disk as JSON in the app data dir — no database.
-/// Re-uploads overwrite the previous entry so users always see the latest
-/// Drive link.
+/// Which local exports have been uploaded to Drive, indexed by local path so the exports list can switch its menu without hitting the network.
+/// Plain JSON in the app data dir, no database; a re-upload overwrites the entry so users always see the latest Drive link.
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRecord {
@@ -870,11 +866,8 @@ pub(crate) struct GdriveUploadProgress {
     total_bytes: u64,
 }
 
-/// Resumable upload of `path` into the `/Recast/` folder. Streams the file in
-/// chunks, sending byte progress on the `on_progress` channel between chunks,
-/// and honors a cancel flag the frontend can flip via `gdrive_cancel_upload`.
-/// Resolves with the Drive file result; a detached `gdrive:upload-error` event
-/// still fires on failure (with the cancelled flag) for the corner card.
+/// Resumable upload into the `/Recast/` folder, streaming in chunks with byte progress on `on_progress` and honouring the frontend's cancel flag.
+/// Resolves with the Drive file result; a detached `gdrive:upload-error` still fires on failure, carrying the cancelled flag for the corner card.
 #[tauri::command]
 pub async fn gdrive_upload(
     app: AppHandle,

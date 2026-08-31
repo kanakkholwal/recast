@@ -171,15 +171,8 @@ enum Command {
         /// Path to the video file (e.g. an .mp4) to read.
         input: String,
     },
-    /// Transcribe an audio file against a downloaded `.gguf` model. Offline —
-    /// does not need the app or the GUI to be running. The CLI path into the
-    /// on-device engine; also used by the CI / release smoke test.
-    ///
-    /// SMOKE_TEST_VERB: the script `scripts/release/smoke-test-transcription.ps1`
-    /// calls this verb with these exact flag names. Rename the verb or change
-    /// any flag (`--input`, `--model`, `--out`, `--language`) and update the
-    /// script's `$TranscribeVerb` in the same commit. CI smoke tests will
-    /// start failing otherwise — that is by design, not noise.
+    /// Transcribe an audio file against a downloaded `.gguf`, offline and without the GUI running.
+    /// SMOKE_TEST_VERB: `smoke-test-transcription.ps1` calls these exact flags, so rename one and update the script in the same commit.
     Transcribe(TranscribeArgs),
     /// Stream backend events until interrupted. Frames carry a `seq`; pass the
     /// last one back as `--since` after a reconnect to replay what was missed.
@@ -360,13 +353,8 @@ enum EditorAction {
         #[arg(long, value_name = "ID")]
         writer_id: String,
     },
-    /// Universal mutator. Set any scalar/struct field in RenderState by
-    /// dotted-path JSON pointer; e.g. `borderRadius`, `cursorSize`,
-    /// `audioSettings.volume`, `cursorSettings.size`. Pair with
-    /// `--value <JSON>` (string for strings, number, true/false,
-    /// array, object). For array fields where you want to add or
-    /// remove entries use the targeted verbs (cut/zoom/split-point/
-    /// speed/animations/annotations) instead.
+    /// Universal mutator: sets any scalar or struct field in RenderState by dotted path, paired with `--value <JSON>`.
+    /// Use the targeted verbs (cut, zoom, split-point, speed, animations, annotations) to add or remove array entries.
     Set {
         path: String,
         /// Dotted JSON pointer inside `RenderState`, e.g. `borderRadius`, `cursorSize`, `audioSettings.volume`, `cursorSettings.size`, `annotations.0.fill`.
@@ -2035,14 +2023,8 @@ fn emit<T: Serialize>(value: &T, format: Option<Format>) -> Result<(), String> {
     Ok(())
 }
 
-/// Make stdout/stderr usable for the release GUI-subsystem exe, which has no
-/// console of its own.
-///
-/// If the caller already gave us a stdout (a console, or a pipe/file from
-/// `recast status > out.json` or `$j = recast status`), leave it: that is where
-/// the output must go, and clobbering it would break scripted capture. Only when
-/// there is no usable stdout (interactive shell launching the GUI-subsystem
-/// build) do we attach to the parent console and bind CONOUT$.
+/// Makes stdout usable for the GUI-subsystem exe, which has no console of its own.
+/// An existing stdout (a console, or a pipe from `recast status > out.json`) is left alone, since clobbering it would break scripted capture.
 #[cfg(windows)]
 fn attach_parent_console() {
     use windows::core::PCWSTR;

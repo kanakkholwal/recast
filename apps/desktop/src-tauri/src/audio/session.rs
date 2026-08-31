@@ -113,10 +113,7 @@ fn is_missing_device(err: &CaptureError) -> bool {
 }
 
 /// The device id to open, and the notice for a request that cannot be honoured.
-///
-/// A backend that cannot enumerate cannot name either, and refuses an id it did
-/// not issue; ignoring the request there records from the default rather than
-/// failing the track outright, and says so.
+/// A backend that cannot enumerate cannot name either and refuses an id it did not issue, so this records from the default rather than failing the track, and says so.
 fn named_device(requested: Option<&str>, can_name: bool) -> (Option<String>, Option<String>) {
     let Some(id) = requested.map(str::trim) else {
         return (None, None);
@@ -141,12 +138,8 @@ pub(super) struct TrackSession {
 }
 
 impl TrackSession {
-    /// Open the device and start capturing, or fail with why the device would
-    /// not open.
-    ///
-    /// The device is opened on the capture thread and the outcome handed back,
-    /// rather than opened here: WASAPI is COM, and an object created on a
-    /// caller's apartment is not the capture thread's to use.
+    /// Opens the device and starts capturing, or fails with why it would not open.
+    /// The open happens on the capture thread and the outcome is handed back: WASAPI is COM, and an object made on the caller's apartment is not the capture thread's to use.
     pub(super) fn start(
         source: Source,
         output_path: PathBuf,
@@ -238,11 +231,8 @@ fn open(
     Ok((capturer, writer, notices))
 }
 
-/// Whether the loop should read again after an error.
-///
-/// Only a timeout. `CaptureError::is_recoverable` also covers a lost device,
-/// but an audio backend reports that instantly and keeps reporting it, and this
-/// loop has no reopen: retrying it would spin a core for the rest of the take.
+/// Whether the loop should read again after an error; only a timeout qualifies.
+/// `is_recoverable` also covers a lost device, but an audio backend reports that instantly and forever, and this loop has no reopen, so retrying spins a core for the take.
 const fn keep_reading(err: &CaptureError) -> bool {
     matches!(err, CaptureError::Timeout(_))
 }
@@ -358,10 +348,7 @@ mod tests {
 }
 
 /// The `run` loop itself, driven by a scripted device.
-///
-/// Its timeout and error arms are the ones a real device will not perform on
-/// demand, and they are exactly the arms that decide whether a quiet take keeps
-/// wall time or a dead one spins a core.
+/// Its timeout and error arms are the ones a real device will not perform on demand, and exactly the ones deciding whether a quiet take keeps wall time or a dead one spins a core.
 #[cfg(test)]
 mod run_tests {
     use super::{run, POLL_TIMEOUT};
@@ -440,13 +427,8 @@ mod run_tests {
         }
     }
 
-    /// The timeout arm KEEPS READING. A quiet microphone answers nothing all
-    /// day, and a loop that treated that as the end would truncate the take to
-    /// its first silent moment.
-    ///
-    /// What the tick inside that arm is for — measuring a pause from the clock
-    /// rather than from deliveries — is pinned separately, on the writer, by
-    /// `track::tests::a_pause_a_silent_device_delivered_nothing_across_is_still_measured`.
+    /// The timeout arm KEEPS READING: a quiet microphone answers nothing all day, and treating that as the end would truncate the take at its first silent moment.
+    /// Measuring a pause from the clock rather than from deliveries is pinned separately, on the writer.
     #[test]
     fn a_device_that_only_times_out_is_read_again_rather_than_ending_the_take() {
         let fixture = Fixture::new("timeout");

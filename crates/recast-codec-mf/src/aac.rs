@@ -9,10 +9,7 @@ use crate::windows_mf::{encoder_activates, ensure_started};
 const HEAAC_HEADER: usize = 12;
 
 /// Encodes interleaved PCM into raw AAC frames.
-///
-/// Raw, not ADTS: MP4 stores bare frames and describes them with the
-/// `AudioSpecificConfig` in `esds`, so an ADTS header per frame would be
-/// duplicated metadata the demuxer then has to strip.
+/// Raw, not ADTS: MP4 stores bare frames and describes them via the `AudioSpecificConfig` in `esds`, so a per-frame header is duplicated metadata the demuxer must strip.
 pub struct AacEncoder {
     transform: IMFTransform,
     format: AudioFormat,

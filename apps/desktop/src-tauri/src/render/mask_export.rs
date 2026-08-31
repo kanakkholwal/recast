@@ -80,11 +80,8 @@ fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Inputs for the drop-shadow rasteriser. Mirrors the WebGL shader stanza in
-/// `VideoPreview.svelte` so the export visually matches the preview. All
-/// distances are in canvas pixels (= source pixels + padding × 2 — the
-/// preview's `vpToCanvas` factor is 1.0 here because we render directly at
-/// canvas resolution).
+/// Inputs for the drop-shadow rasteriser, mirroring the preview's WebGL stanza so the export matches it visually.
+/// All distances are canvas pixels; the preview's `vpToCanvas` factor is 1.0 here because this renders directly at canvas resolution.
 pub struct DropShadowRequest {
     /// Comp dimensions (= source + padding × 2). The PNG is rendered at
     /// these dims even when the final canvas is larger (aspect preset);
@@ -111,12 +108,8 @@ pub struct DropShadowRequest {
     pub color: String,
 }
 
-/// Pre-render the drop shadow as a transparent canvas-sized RGBA PNG. The
-/// rect's position, soft edge, spread, offset, colour, and opacity are all
-/// baked in, so the FFmpeg side can simply `overlay=0:0` it onto the
-/// background before compositing the video on top.
-///
-/// Returns `Ok(None)` when the shadow would be invisible (`opacity <= 0`).
+/// Pre-renders the drop shadow as a transparent canvas-sized PNG with position, softness, spread, offset, colour and opacity baked in, so FFmpeg can `overlay=0:0` it.
+/// Returns `Ok(None)` when the shadow would be invisible.
 pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResult>> {
     if req.canvas_width == 0 || req.canvas_height == 0 {
         return Err(anyhow!("drop-shadow canvas has zero dimension"));
@@ -203,11 +196,8 @@ pub struct CameraShadowRequest {
     pub padding: u32,
 }
 
-/// Pre-render the camera bubble's drop shadow as a transparent RGBA PNG sized
-/// `(bubble + 2·padding)`. Black silhouette, soft edge, offset and opacity baked
-/// in; the FFmpeg side scales it by the bubble's live size and overlays it just
-/// under the bubble. Mirrors the preview's `cameraShadowStyle` box-shadow.
-/// Returns `Ok(None)` when invisible (`opacity ≤ 0`).
+/// Pre-renders the camera bubble's drop shadow as a transparent PNG with silhouette, softness, offset and opacity baked in, mirroring the preview's `cameraShadowStyle`.
+/// FFmpeg scales it by the bubble's live size and overlays it just underneath; `Ok(None)` when it would be invisible.
 pub fn render_camera_shadow(req: CameraShadowRequest) -> Result<Option<MaskResult>> {
     if req.opacity <= 0.0 || req.bubble_w == 0 || req.bubble_h == 0 {
         return Ok(None);
@@ -294,11 +284,8 @@ struct GradStop {
     pos: f64,
 }
 
-/// Parse a CSS `linear-gradient(<deg>, <#hex> <pct>%, …)` string into an angle
-/// (radians) and a sorted list of stops. Mirrors the TS `parseGradient`: a
-/// missing angle defaults to 135°, missing positions distribute evenly, and at
-/// least two stops are always returned. Returns `None` only when no color can
-/// be found at all (caller falls back to a flat color).
+/// Parses a CSS `linear-gradient` into an angle in radians and a sorted stop list, mirroring the TS `parseGradient`.
+/// A missing angle defaults to 135°, missing positions distribute evenly, and at least two stops always come back; `None` only when no colour is found at all.
 fn parse_css_gradient(value: &str) -> Option<(f64, Vec<GradStop>)> {
     // Slice the comma-separated body inside the outermost parentheses.
     let inner = value
@@ -414,11 +401,8 @@ fn sample_gradient(stops: &[GradStop], t: f64) -> (f64, f64, f64) {
     (r * a, g * a, b * a)
 }
 
-/// Rasterise a CSS linear-gradient to an opaque PNG at the given canvas size so
-/// the FFmpeg export composites the exact gradient the preview shows (the
-/// pipeline otherwise collapses gradients to a flat color). The projection math
-/// is identical to the WebGL shader in `VideoPreview.svelte` — keep them in
-/// lockstep. Returns `Ok(None)` if the value carries no parseable color.
+/// Rasterises a CSS linear-gradient to an opaque PNG at canvas size, since the pipeline otherwise collapses gradients to a flat colour.
+/// The projection maths is identical to the preview's WebGL shader, so keep them in lockstep; `Ok(None)` when the value carries no parseable colour.
 pub fn render_gradient_background(
     value: &str,
     width: u32,

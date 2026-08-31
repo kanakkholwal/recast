@@ -25,11 +25,7 @@ const POLL: Duration = Duration::from_millis(250);
 const FIRST_FRAME: Duration = Duration::from_secs(4);
 
 /// How many times to reopen before giving up.
-///
-/// A source reader that has not delivered in `FIRST_FRAME` will not start by
-/// being waited on longer, but usually will on a fresh open: the device is
-/// briefly held by whatever released it last (a WebView probe, a closing
-/// preview, another app). Reopening beats a single long wait.
+/// A reader that missed `FIRST_FRAME` will not start by waiting longer but usually will on a fresh open, since the device is briefly held by whatever released it last.
 const OPEN_ATTEMPTS: u32 = 3;
 
 /// Pause between attempts, letting the previous holder finish releasing.
@@ -45,11 +41,8 @@ const PREVIEW_MAX_DIM: u32 = 480;
 /// Where preview frames go. Boxed so the camera thread does not depend on Tauri.
 pub type FrameSink = Box<dyn Fn(Vec<u8>) + Send + 'static>;
 
-/// The negotiated capture size, plus the token that identifies this session.
-///
-/// The panel closes the preview window and immediately opens a new one, so the
-/// old window's teardown can land after the new window's open. Stopping is
-/// keyed on this token, which means a stale window cannot close a live camera.
+/// The negotiated capture size, plus the token identifying this session.
+/// The panel reopens the preview immediately, so an old window's teardown can land after the new one's open; keying stop on this token means a stale window cannot close a live camera.
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CameraGeometry {
@@ -214,13 +207,8 @@ pub fn stop(session: u64) {
     }
 }
 
-/// Release the camera whatever its session token, for a preview window that is
-/// already gone.
-///
-/// [`stop`] needs the token the window was told, and a window destroyed without
-/// running its teardown never sends it — the panel closes the preview with a raw
-/// `close()`, so the webview dies with the token. Without this the capture
-/// thread runs forever and the camera light stays on.
+/// Releases the camera whatever its session token, for a preview window that is already gone.
+/// The panel closes the preview with a raw `close()`, so the webview dies holding the token [`stop`] needs, and the capture thread would run forever with the light on.
 pub fn release() {
     let taken = slot().lock().ok().and_then(|mut held| held.take());
     if let Some(running) = taken {
@@ -304,13 +292,8 @@ fn shut_down(running: Running) {
     let _ = running.thread.join();
 }
 
-/// Whether the pump may wait for another frame after `error`.
-///
-/// Only a timeout. Every other error means the backend's delivery worker has
-/// finished — `Slot::end` is set — and `next_frame` then returns instantly
-/// forever. Continuing on one of those is not a retry, it is a hot loop
-/// re-sending the last frame over IPC as fast as the CPU allows, which reads as
-/// a preview frozen on its first frame plus an unexplained CPU spike.
+/// Whether the pump may wait for another frame after `error`; only a timeout qualifies.
+/// Every other error means the delivery worker finished, so `next_frame` returns instantly forever: continuing is a hot loop re-sending the last frame over IPC.
 const fn keep_pumping(error: &capturekit::CaptureError) -> bool {
     matches!(error, capturekit::CaptureError::Timeout(_))
 }

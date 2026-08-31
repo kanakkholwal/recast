@@ -1,7 +1,5 @@
 //! The FFmpeg codec backend, exercised against a real binary.
-//!
-//! Run on every platform on purpose: it is the export path for macOS and Linux,
-//! and a Windows-only CI would never execute a line of it.
+//! Run on every platform on purpose: it is the export path for macOS and Linux, and a Windows-only CI would never execute a line of it.
 
 use std::path::Path;
 

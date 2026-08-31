@@ -16,12 +16,7 @@ pub enum CursorMode {
 }
 
 /// How many frames to throw away before trusting one.
-///
-/// The first frame out of a freshly opened source is routinely stale: DXGI's
-/// `AcquireNextFrame` can return an accumulated frame from before
-/// `DuplicateOutput`, and ScreenCaptureKit's first sample can predate the content
-/// becoming current. A screenshot that takes it shows the user the previous
-/// desktop, which is the bug most screenshot crates ship.
+/// The first out of a fresh source is routinely stale (DXGI's accumulated frame, ScreenCaptureKit's pre-current sample), which is the bug most screenshot crates ship.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Warmup {
     /// Discard frames until one is newer than the moment of the request.

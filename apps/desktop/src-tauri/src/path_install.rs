@@ -62,11 +62,8 @@ pub fn uninstall() -> Result<String, String> {
     platform::uninstall()
 }
 
-/// Stable per-user install directory — independent of the dev tree so
-/// uninstall is fully effective. The copy inside this directory is what
-/// `recast` resolves to in any shell; the symlink / registry entry in
-/// `install()` points at it. `uninstall()` deletes the file itself, so
-/// `recast` truly goes away.
+/// Stable per-user install directory, independent of the dev tree so uninstall is fully effective.
+/// The copy here is what `recast` resolves to in any shell, and `uninstall()` deletes the file itself, so the command truly goes away.
 fn stable_install_dir() -> PathBuf {
     #[cfg(unix)]
     {

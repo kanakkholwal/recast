@@ -58,11 +58,7 @@ impl WavFormat {
     }
 
     /// The WAV description of what a capturekit device negotiated.
-    ///
-    /// Sample bytes go into the file exactly as the device delivered them, so
-    /// this has to describe the container width rather than a nominal depth: a
-    /// header that says 24-bit over 24-in-32 samples plays back fast and
-    /// distorted.
+    /// Samples go in exactly as delivered, so this describes the CONTAINER width: a header claiming 24-bit over 24-in-32 samples plays back fast and distorted.
     pub fn of(format: capturekit::AudioFormat) -> Result<Self> {
         let (bits, kind) = match format.sample_format {
             capturekit::SampleFormat::I16 => (16, SampleFormat::Int),
@@ -224,23 +220,14 @@ pub fn wav_data_bytes(path: &Path) -> Option<u64> {
     Some(u32::from_le_bytes(header[40..44].try_into().ok()?) as u64)
 }
 
-/// Whether this track actually carries audio.
-///
-/// A capture that never received a packet still leaves a valid 44-byte
-/// header-only WAV behind. It is not merely useless downstream: feeding a
-/// zero-sample input into the export's `amix` alongside a `concat` speed warp
-/// makes FFmpeg abort the whole filter graph with "Invalid data found when
-/// processing input", so an empty track must never reach it.
+/// Whether this track actually carries audio; a capture that never received a packet still leaves a valid 44-byte header-only WAV.
+/// Not merely useless: a zero-sample input into the export's `amix` beside a `concat` speed warp aborts the whole filter graph.
 pub fn wav_has_samples(path: &Path) -> bool {
     wav_data_bytes(path).is_some_and(|bytes| bytes > 0)
 }
 
-/// Stand-in silence for a track that never captured, in the one format the
-/// whole pipeline assumes when there is no device to ask.
-///
-/// `duration_secs` must be the recording's PAUSE-EXCLUDED length: this track is
-/// muxed against a picture the frame pacer held to that clock, and wall-clock
-/// silence outruns it by every paused second.
+/// Stand-in silence for a track that never captured, in the one format the pipeline assumes when there is no device to ask.
+/// `duration_secs` must be PAUSE-EXCLUDED: the picture was held to that clock, and wall-clock silence outruns it by every paused second.
 pub fn write_track_silence(path: &Path, duration_secs: f64) -> Result<()> {
     write_silence_wav(path, 48_000, 2, duration_secs)
 }

@@ -45,11 +45,8 @@ fn unsupported(operation: &'static str) -> CaptureError {
     }
 }
 
-/// Start Media Foundation once for the process, and never shut it down.
-///
-/// `MFShutdown` is refcounted against `MFStartup`, but a library cannot know
-/// when the host is done with MF. Balancing every start with a stop would tear
-/// the platform down under a camera another part of the app still holds open.
+/// Starts Media Foundation once for the process, and never shuts it down.
+/// `MFShutdown` is refcounted against `MFStartup`, but a library cannot know when the host is done, and balancing them would tear MF down under a camera still held open.
 fn ensure_started() -> Result<()> {
     static STARTED: OnceLock<HRESULT> = OnceLock::new();
     let hr = *STARTED.get_or_init(|| unsafe {
@@ -150,10 +147,7 @@ pub(crate) fn cameras() -> Result<Vec<Camera>> {
 }
 
 /// The modes one device advertises, deduplicated and largest first.
-///
-/// Reported as what capturekit will deliver rather than as the device's own
-/// subtype: the reader converts, and a webcam lists the same geometry two or
-/// three times over MJPG, YUY2 and NV12.
+/// Reported as what capturekit will deliver rather than the device's own subtype, since the reader converts and a webcam lists the same geometry over MJPG, YUY2 and NV12.
 fn modes(activate: &IMFActivate) -> Result<Vec<CameraFormat>> {
     let source: IMFMediaSource = unsafe { activate.ActivateObject() }.map_err(err)?;
     let reader = reader_for(&source)?;
@@ -250,11 +244,8 @@ fn negotiate(reader: &IMFSourceReader, size: (u32, u32)) -> Result<(u32, u32)> {
 /// What the worker thread reports back once the device is open, or why it is not.
 type Opened = Result<SourceDesc>;
 
-/// A camera stream, read on a thread of its own.
-///
-/// `IMFSourceReader::ReadSample` blocks until the device produces a frame and
-/// nothing else may touch the reader while it does, so the reader is created on
-/// the worker and never leaves it. The caller sees only [`FrameSlot`].
+/// A camera stream read on a thread of its own, exposed to the caller only as a [`FrameSlot`].
+/// `ReadSample` blocks until the device produces a frame and nothing else may touch the reader meanwhile, so the reader is created on the worker and never leaves it.
 pub(crate) struct MfCameraSource {
     desc: SourceDesc,
     slot: Arc<FrameSlot>,
@@ -440,13 +431,8 @@ fn read_one(
     Ok(true)
 }
 
-/// Copies `height` scanlines top row first, whichever way MF laid them out.
-/// `Lock2D` returns the FIRST scanline, not the lowest address; a negative pitch is the RGB32 default and the reason an unhandled preview is upside down.
-///
-/// # Safety
-///
-/// `scanline0` must address `height` rows of `row_bytes` readable bytes, each
-/// `pitch` from the last.
+/// Copies `height` scanlines top row first, whichever way MF laid them out; `Lock2D` returns the FIRST scanline, not the lowest address.
+/// # Safety: `scanline0` must address `height` rows of `row_bytes` readable bytes, each `pitch` from the last.
 unsafe fn gather_rows(
     out: &mut Vec<u8>,
     scanline0: *const u8,

@@ -102,12 +102,8 @@ fn staging_texture(
     texture.ok_or_else(|| missing("create a staging texture"))
 }
 
-/// A CPU-readable copy of a GPU surface, plus the mapping that exposes it.
-///
-/// Holds the mapping open across the borrow of the frame it produced, so a
-/// consumer reads the driver's rows in place. Nothing is repacked to a tight
-/// stride: [`capturekit_core::PixelFormat::buffer_len`] already understands
-/// padding, and repacking every frame is what a capture path can least afford.
+/// A CPU-readable copy of a GPU surface plus the mapping that exposes it, held open across the frame's borrow so a consumer reads the driver's rows in place.
+/// Nothing is repacked to a tight stride: `buffer_len` already understands padding, and repacking every frame is what a capture path can least afford.
 pub(crate) struct Readback {
     context: ID3D11DeviceContext,
     resource: ID3D11Resource,
@@ -219,12 +215,8 @@ impl Drop for Readback {
 /// alone comes back `E_ACCESSDENIED`.
 const GENERIC_ALL: u32 = 0x1000_0000;
 
-/// A GPU-resident copy of the frame, plus the fence that says when it is ready.
-///
-/// The pixels never reach host memory: a consumer opens the texture on its own
-/// device and reads it there. Cross-device sharing is NOT implicitly ordered,
-/// so a consumer that samples before the fence reaches this frame's value reads
-/// zeroes, with no error raised anywhere.
+/// A GPU-resident copy of the frame plus the fence that says when it is ready; the pixels never reach host memory.
+/// Cross-device sharing is NOT implicitly ordered, so a consumer sampling before the fence reaches this frame's value reads zeroes with no error raised anywhere.
 pub(crate) struct SharedSurface {
     texture: ID3D11Texture2D,
     context: ID3D11DeviceContext4,
@@ -303,12 +295,8 @@ impl SharedSurface {
         })
     }
 
-    /// Copy `source` in and signal the fence, returning the value to wait for.
-    ///
-    /// Queues a wait for the consumer to release the PREVIOUS frame first. This
-    /// is a GPU-side wait, so the CPU does not block, but it does mean a
-    /// consumer that takes a handle and never signals `release` stalls the
-    /// capture. That is the contract [`GpuHandle`] states.
+    /// Copies `source` in and signals the fence, returning the value to wait for, after queueing a wait for the consumer to release the PREVIOUS frame.
+    /// That wait is GPU-side so the CPU never blocks, but a consumer that takes a handle and never signals `release` stalls the capture, as [`GpuHandle`] states.
     pub(crate) fn copy_from(
         &mut self,
         source: &ID3D11Texture2D,

@@ -10,14 +10,8 @@ use crate::commands::types::AppState;
 
 const DEFAULT_HOST: &str = "https://eu.i.posthog.com";
 
-/// PostHog project key. Honored from the environment in debug builds (so dev
-/// can point at a test project without recompiling); baked at compile time for
-/// release, deliberately ignoring the runtime env — same stance as
-/// `auth::cloud_api_url`, so an injected env can't redirect telemetry.
-///
-/// The `PUBLIC_` prefix is shared with the Svelte frontend (which reads the
-/// same `PUBLIC_POSTHOG_KEY` via Vite's `import.meta.env`) and the web app, so
-/// one injected value configures analytics on both sides of the app.
+/// PostHog project key: read from the environment in debug builds, baked in for release so an injected env cannot redirect telemetry.
+/// The `PUBLIC_` prefix is shared with the frontend and the web app, so one value configures analytics on both sides.
 fn posthog_key() -> Option<String> {
     #[cfg(debug_assertions)]
     {
@@ -42,11 +36,8 @@ fn posthog_host() -> String {
         .unwrap_or_else(|| DEFAULT_HOST.to_string())
 }
 
-/// Suppress all telemetry in debug builds so `tauri dev` never pollutes the
-/// PostHog project — the native parity of the JS clients' `!import.meta.env.DEV`
-/// gate. Opt back in with `PUBLIC_POSTHOG_ALLOW_DEV=1` to deliberately exercise
-/// the crash path against a test project (the same intent the debug env-read in
-/// `posthog_key` serves). Release builds always send, subject to consent.
+/// Suppresses telemetry in debug builds so `tauri dev` never pollutes the PostHog project, the native parity of the JS `!import.meta.env.DEV` gate.
+/// `PUBLIC_POSTHOG_ALLOW_DEV=1` opts back in to exercise the crash path against a test project; release builds always send, subject to consent.
 fn dev_telemetry_suppressed() -> bool {
     #[cfg(debug_assertions)]
     {
@@ -131,11 +122,8 @@ fn read_consent(app: &AppHandle) -> (bool, String) {
     }
 }
 
-/// Capture a scrubbed exception. Always fire-and-forget: the HTTP send happens
-/// on a detached thread with its own short-lived runtime, so telemetry can never
-/// block or stall the app — not even on the crashing thread during a panic. If
-/// the process exits before the send finishes, the report is simply dropped
-/// (best-effort delivery; reliability is never traded for blocking the app).
+/// Captures a scrubbed exception, always fire-and-forget: the HTTP send runs on a detached thread with its own short-lived runtime, so telemetry never stalls the app.
+/// If the process exits first the report is dropped, since reliability is not worth blocking on, not even on the crashing thread.
 pub fn capture_exception(app: &AppHandle, name: &str, message: &str, stack: Option<String>) {
     if dev_telemetry_suppressed() {
         return;

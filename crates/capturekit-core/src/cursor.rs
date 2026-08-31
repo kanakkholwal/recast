@@ -67,13 +67,7 @@ impl CursorShape {
     }
 
     /// Decode to straight (non-premultiplied) RGBA.
-    ///
-    /// **Inverting pixels cannot be represented.** Monochrome and masked-colour
-    /// cursors can ask to invert whatever is underneath, which needs the
-    /// destination this function does not have. Those pixels come back opaque
-    /// black, which is what they look like over a light background and is the
-    /// same choice every screenshot tool makes. A compositor that wants the real
-    /// thing has `bytes` and `kind` to do it properly.
+    /// Inverting pixels cannot be represented without the destination, so they come back opaque black, as every screenshot tool does; `bytes` and `kind` allow doing it properly.
     pub fn to_rgba(&self) -> Result<Vec<u8>, CaptureError> {
         match self.kind {
             CursorShapeKind::Color => self.decode_bgra(false),
@@ -168,14 +162,8 @@ impl CursorShape {
     }
 }
 
-/// Where a pointer read in virtual-desktop coordinates lands inside a captured
-/// surface, or `None` when it is outside it.
-///
-/// `scale` lifts a pointer the OS reports in logical points into the surface's
-/// physical pixels, which is what macOS needs and what everywhere else gets as
-/// an exact identity at `1.0`. Returning `None` rather than clamping is what
-/// lets a consumer hide the cursor when it leaves the recorded area instead of
-/// pinning it to an edge for the rest of the video.
+/// Where a virtual-desktop pointer read lands inside a captured surface, or `None` when outside; `scale` lifts logical points into physical pixels for macOS.
+/// `None` rather than a clamp is what lets a consumer hide the cursor leaving the recorded area instead of pinning it to an edge for the rest of the video.
 #[must_use]
 pub fn point_in_surface(point: (i32, i32), surface: &Rect, scale: f64) -> Option<(i32, i32)> {
     let (x, y) = point_offset_in_surface(point, surface, scale);
@@ -185,24 +173,16 @@ pub fn point_in_surface(point: (i32, i32), surface: &Rect, scale: f64) -> Option
     inside.then_some((x, y))
 }
 
-/// Where a pointer sits relative to a surface, whether or not it is on it.
-///
-/// The unclamped half of [`point_in_surface`]. A caller tracking movement needs
-/// this: an off-surface pointer collapsed to one position reads as stationary,
-/// which turns "the user moved the mouse away" into a detected idle period.
+/// Where a pointer sits relative to a surface, on it or not: the unclamped half of [`point_in_surface`].
+/// A caller tracking movement needs this, since an off-surface pointer collapsed to one position reads as stationary and turns moving away into a detected idle period.
 #[must_use]
 pub fn point_offset_in_surface(point: (i32, i32), surface: &Rect, scale: f64) -> (i32, i32) {
     let lift = |v: i32| (f64::from(v) * scale).round() as i32;
     (lift(point.0) - surface.x, lift(point.1) - surface.y)
 }
 
-/// Which mouse buttons were held at the instant of a sample.
-///
-/// Buttons are a property of the mouse, not of the captured surface, so they
-/// stay true while a drag leaves the surface. Backends that cannot read them
-/// report [`CursorButtons::NONE`] and set
-/// [`Capabilities::cursor_buttons`](crate::Capabilities::cursor_buttons) false,
-/// so a consumer can tell "no button" from "cannot know".
+/// Which mouse buttons were held at a sample; a property of the mouse, not the surface, so they stay true while a drag leaves it.
+/// Backends that cannot read them report [`CursorButtons::NONE`] and clear the capability, so a consumer tells "no button" from "cannot know".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]

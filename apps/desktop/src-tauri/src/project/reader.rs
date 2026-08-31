@@ -149,15 +149,8 @@ fn merge_section_files(archive: &mut ZipArchive<File>) -> Result<serde_json::Val
     Ok(format::merge_sections(sections))
 }
 
-/// Stable extraction directory for a project.
-///
-/// Keyed on the project's PATH alone — never its length or mtime. Keying on
-/// length meant every save minted a fresh directory and re-extracted the whole
-/// recording on the next open: three revisions of one 700 MB project left 2.1 GB
-/// of identical copies, and the re-extraction itself is a multi-hundred-MB
-/// synchronous flush that stalls the machine mid-edit. Per-asset freshness is
-/// `already_extracted`'s job, so a save that only rewrites `edits.json` reuses
-/// the media untouched.
+/// Stable extraction directory, keyed on the project PATH alone.
+/// Keying on length minted a fresh directory per save: three revisions of one 700 MB project left 2.1 GB of copies, each re-extraction a stalling synchronous flush.
 fn cache_dir_for(project_path: &Path) -> Result<PathBuf> {
     let stem = project_path
         .file_stem()
@@ -217,13 +210,8 @@ fn remove_entry(path: &Path) {
     }
 }
 
-/// Evict stale and excess extraction caches.
-///
-/// Call at STARTUP only. A time-based sweep during a session would delete assets
-/// out from under an open editor; at startup nothing is open, so every entry is
-/// safely evictable. Returns nothing because this is best-effort maintenance —
-/// a failure means the cache stays larger than intended, never that opening
-/// fails.
+/// Evicts stale and excess extraction caches. STARTUP only: a mid-session sweep would delete assets out from under an open editor.
+/// Best-effort, so it returns nothing; a failure means the cache stays larger than intended, never that opening fails.
 pub fn sweep_cache() {
     sweep_cache_in(
         &env::temp_dir().join(CACHE_ROOT),
@@ -312,11 +300,8 @@ fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Res
 mod backcompat_tests {
     use super::*;
 
-    /// Load every real `.recast` in `$RECAST_BACKCOMPAT_DIR` through the current
-    /// `open_project` and assert it parses. This is the concrete backward-
-    /// compatibility check: pre-change recasts must still deserialize against
-    /// the present `ProjectMetadata`/`RecordingStats` structs. Skips silently
-    /// when the env var is unset so normal `cargo test` is unaffected.
+    /// Loads every real `.recast` in `$RECAST_BACKCOMPAT_DIR` through the current `open_project` and asserts it parses, the concrete backward-compatibility check.
+    /// Skips silently when the env var is unset, so a normal `cargo test` is unaffected.
     #[test]
     fn opens_existing_recasts_from_dir() {
         let Some(dir) = std::env::var_os("RECAST_BACKCOMPAT_DIR") else {

@@ -76,11 +76,7 @@ fn io_failed(path: &str, action: &str, err: &io::Error) -> CaptureError {
 }
 
 /// A device error, classified so the caller knows whether to retry.
-///
-/// EBUSY becomes a recoverable loss because it is nearly always the previous
-/// holder still letting go (a browser tab, a closing preview), which a reopen a
-/// moment later resolves. A missing node never becomes recoverable, so an
-/// unplugged camera fails at once instead of after a retry loop.
+/// EBUSY is recoverable because it is nearly always the previous holder letting go; a missing node never is, so an unplugged camera fails at once.
 fn device_error(path: &str, action: &str, err: &io::Error) -> CaptureError {
     match err.raw_os_error() {
         Some(libc::EBUSY) => CaptureError::Lost(LostReason::AccessLost),
@@ -281,12 +277,8 @@ pub(crate) fn permission() -> capturekit_core::Permission {
     }
 }
 
-/// The mode to open, chosen from what the device offers.
-///
-/// Prefers the largest mode that still reaches the target rate, because a webcam
-/// that offers 720p at 10fps and 480p at 30fps offers the second one for a
-/// reason. Falls back to the fastest that fits, then to the smallest it has, so
-/// a device whose every mode is larger than the request still opens.
+/// The mode to open, preferring the largest that still reaches the target rate: a webcam offering 720p10 and 480p30 offers the second for a reason.
+/// Falls back to the fastest that fits, then the smallest available, so a device whose every mode exceeds the request still opens.
 fn choose_size(
     sizes: &[((u32, u32), Option<f32>)],
     want: (u32, u32),

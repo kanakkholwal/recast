@@ -13,12 +13,8 @@ pub fn caption_height_frac(font_size_pct: f64, max_lines: u32) -> f64 {
     (font_size_pct / 100.0 * max_lines.max(1) as f64 * LINE_FACTOR).min(MAX_CAP_FRAC)
 }
 
-/// Fraction-from-top of the caption block's top edge, the block growing
-/// downward. `None` means centre, which the caller resolves against the video.
-///
-/// The baseline is the clamped ON-FRAME edge rather than the raw video edge:
-/// anchoring on the raw edge left the whole positive offset range dead-clamped
-/// whenever the video reached the frame edge.
+/// Fraction-from-top of the caption block's top edge, growing downward; `None` means centre, which the caller resolves against the video.
+/// The baseline is the clamped ON-FRAME edge, since anchoring on the raw video edge left the whole positive offset range dead-clamped at full bleed.
 pub fn caption_top_frac(
     position: &str,
     offset_pct: f64,

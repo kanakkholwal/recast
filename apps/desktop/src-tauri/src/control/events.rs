@@ -88,12 +88,8 @@ impl EventLog {
         self.lock().next_seq
     }
 
-    /// Everything after `cursor` whose name is in `names`.
-    ///
-    /// `missed` counts events evicted before this watcher reached them, so a
-    /// slow client learns its stream has a hole instead of assuming continuity.
-    /// The returned cursor advances past filtered-out events too, so a watcher
-    /// subscribed to one group is not dragged back by traffic on another.
+    /// Everything after `cursor` whose name is in `names`; `missed` counts events evicted first, so a slow client learns its stream has a hole instead of assuming continuity.
+    /// The returned cursor advances past filtered-out events too, so a watcher on one group is not dragged back by traffic on another.
     pub fn since(&self, cursor: u64, names: &[String]) -> Replay {
         let ring = self.lock();
         let missed = match ring.oldest_seq() {

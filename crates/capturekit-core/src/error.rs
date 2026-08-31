@@ -19,12 +19,8 @@ pub enum CaptureError {
         id: u64,
     },
 
-    /// A source named by a string, rather than by a handle, that is gone or was
-    /// never there.
-    ///
-    /// Separate from [`CaptureError::NotFound`] because a camera is identified
-    /// by its device path and an audio endpoint by its node name. Narrowing
-    /// either to a number is how two devices end up looking like one.
+    /// A source named by a string rather than a handle, that is gone or was never there.
+    /// Separate from [`CaptureError::NotFound`] because a camera is a device path and an audio endpoint a node name: narrowing either to a number merges two devices into one.
     #[error("no {kind} matches {id:?}")]
     NotFoundNamed {
         /// What was being looked up.

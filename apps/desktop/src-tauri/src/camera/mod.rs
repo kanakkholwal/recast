@@ -21,12 +21,8 @@ pub fn devices() -> Result<Vec<Camera>, String> {
     capturekit::cameras().map_err(|e| e.to_string())
 }
 
-/// The camera a saved selection names.
-///
-/// Chromium labels a webcam `"USB2.0 HD UVC WebCam (3277:0029)"` while Media
-/// Foundation calls the same device `"USB2.0 HD UVC WebCam"`, so a profile saved
-/// before the backend owned the camera holds the browser spelling. Match exactly
-/// first, then ignore a trailing `(vid:pid)`.
+/// The camera a saved selection names, matched exactly first, then ignoring a trailing `(vid:pid)`.
+/// Chromium labels a webcam with that suffix and Media Foundation does not, so a profile saved before the backend owned the camera holds the browser spelling.
 pub fn find<'a>(cameras: &'a [Camera], query: &str) -> Option<&'a Camera> {
     if let Some(exact) = cameras.iter().find(|camera| camera.name == query) {
         return Some(exact);

@@ -95,11 +95,8 @@ impl AudioFormat {
         (duration.as_nanos() as u64).saturating_mul(u64::from(self.sample_rate)) / 1_000_000_000
     }
 
-    /// Check a buffer holds whole sample frames of this format.
-    ///
-    /// A partial frame means the reader and the device disagree about the channel
-    /// count, which shows up as a stutter or swapped channels rather than an
-    /// error, so it is worth refusing at the boundary.
+    /// Checks a buffer holds whole sample frames of this format.
+    /// A partial frame means the reader and device disagree on channel count, which surfaces as a stutter or swapped channels rather than an error, so refuse it at the boundary.
     pub fn validate_buffer(self, len: usize) -> Result<(), CaptureError> {
         let per_frame = self.bytes_per_frame();
         if per_frame == 0 {
@@ -198,12 +195,8 @@ impl AudioTimeline {
         self.next_frame
     }
 
-    /// Silent sample frames needed before a buffer that starts at
-    /// `device_position`.
-    ///
-    /// Zero when the device is where the timeline expects, or behind it: a
-    /// device position that goes backwards is a driver resetting its counter,
-    /// and inserting silence for it would push everything after it late.
+    /// Silent sample frames needed before a buffer that starts at `device_position`.
+    /// Zero when the device is where the timeline expects or behind it: a backwards position is a driver resetting its counter, and padding for it would push everything late.
     #[must_use]
     pub const fn gap_before(&self, device_position: u64) -> u64 {
         device_position.saturating_sub(self.next_frame)
@@ -232,15 +225,8 @@ impl AudioTimeline {
     }
 }
 
-/// Interleave one plane per channel into sample frames.
-///
-/// CoreAudio and PipeWire both deliver planar audio, one buffer per channel,
-/// while capturekit's contract is interleaved. Done here rather than in each
-/// backend because a stride mistake produces swapped or stuttering channels,
-/// which sounds like a bad device rather than like a bug.
-///
-/// `out` is cleared and reused, so a backend calling this per buffer allocates
-/// once. Returns the sample frames written.
+/// Interleaves one plane per channel into sample frames, since CoreAudio and PipeWire deliver planar but the contract is interleaved.
+/// Done here, not per backend, because a stride mistake sounds like a bad device rather than a bug. `out` is cleared and reused, so callers allocate once.
 pub fn interleave(
     planes: &[&[u8]],
     format: AudioFormat,

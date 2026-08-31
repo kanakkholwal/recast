@@ -2,15 +2,8 @@ use windows::Win32::UI::HiDpi::{
     SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 
-/// Makes Win32 report physical pixels to this thread for as long as it lives.
-///
-/// Without it, `GetMonitorInfoW` and `GetWindowRect` answer a DPI-unaware process
-/// in logical points: a 1920px display at 125% reports 1536, while the capture
-/// backends duplicate the real 1920. Enumeration and capture would then disagree
-/// on every scaled display.
-///
-/// Thread-local on purpose. `SetProcessDpiAwareness` is process-global and
-/// belongs to the application, not to a library it happens to link.
+/// Makes Win32 report physical pixels to this thread; without it a 1920px display at 125% enumerates as 1536 while capture duplicates the real 1920.
+/// Thread-local on purpose: `SetProcessDpiAwareness` is process-global and belongs to the application, not a library it links.
 pub(crate) struct PhysicalPixels(DPI_AWARENESS_CONTEXT);
 
 impl PhysicalPixels {

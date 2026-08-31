@@ -243,11 +243,8 @@ fn secs_to_ms(v: f64) -> i64 {
     (v * 1000.0).round() as i64
 }
 
-/// Map an OpenAI-compatible transcription response into caption segments via the
-/// shared `build_segments`, so remote captions come out identical to on-device:
-/// `words[]` (real word timing, requested via `timestamp_granularities[]`) is
-/// preferred and grouped into display lines; otherwise `segments[]`; otherwise a
-/// single block from `text`. Pure, so it's unit-tested.
+/// Maps an OpenAI-compatible response into caption segments through the shared `build_segments`, so remote captions come out identical to on-device. Pure, so it unit-tests.
+/// Real `words[]` timing is preferred and grouped into display lines, then `segments[]`, then a single block from `text`.
 pub(crate) fn response_to_segments(body: &Value, total_secs: f64) -> Vec<TranscriptSegment> {
     // OpenAI word rows key on `word` and segment rows on `text`; a server ignoring word granularity returns no `words[]`.
     let words: Vec<RawWord> = body

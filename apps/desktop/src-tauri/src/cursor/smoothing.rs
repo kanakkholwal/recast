@@ -418,11 +418,8 @@ fn settle_candidates(samples: &[CursorSample]) -> Vec<Candidate> {
     out
 }
 
-/// Detect moments that would be good candidates for auto-zoom.
-///
-/// See the module-level comment above for the four-stage pipeline. The
-/// returned triggers are sorted by timestamp and already pruned to a sane
-/// density — the caller can place them all without flooding the timeline.
+/// Detects moments that make good auto-zoom candidates, via the four-stage pipeline described at the top of the module.
+/// Triggers come back sorted by timestamp and pruned to a sane density, so the caller can place them all without flooding the timeline.
 pub fn detect_zoom_triggers(
     samples: &[CursorSample],
     clicks: &[super::CursorClickEvent],

@@ -63,10 +63,7 @@ pub trait CaptureSource: Send {
     fn capture_next(&mut self, timeout: Duration) -> Result<Option<CapturedFrame>>;
 
     /// Anything the user needs telling since the last call, taken once.
-    ///
-    /// Separate from `capture_next` because a loss is reported on the tick it
-    /// happens while frames keep being asked for, and because the recorder
-    /// forwards these to the UI rather than acting on them itself.
+    /// Separate from `capture_next` because a loss is reported on the tick it happens while frames keep being asked for, and the recorder forwards these rather than acting on them.
     fn take_notice(&mut self) -> Option<CaptureNotice> {
         None
     }
@@ -88,12 +85,8 @@ pub fn display_at(displays: &[Display], point: (i32, i32)) -> Option<&Display> {
         .or_else(|| displays.first())
 }
 
-/// The rectangle covering every display, in physical virtual-desktop pixels.
-///
-/// What a full-screen overlay has to span. Sizing it to the primary display
-/// instead leaves the other monitors unselectable, and on a layout with a
-/// monitor above or left of the primary the origin is negative, so it cannot be
-/// assumed to be (0, 0) either.
+/// The rectangle covering every display in physical virtual-desktop pixels, which is what a full-screen overlay must span.
+/// Sizing to the primary instead leaves other monitors unselectable, and a monitor above or left of it makes the origin negative rather than (0, 0).
 pub fn virtual_bounds(displays: &[Display]) -> Option<Rect> {
     displays
         .iter()

@@ -35,10 +35,7 @@ pub fn create_capture_source(
 }
 
 /// How long to wait between reopen attempts after a loss.
-///
-/// The recording repeats its last frame meanwhile, so retrying at the pacer's
-/// tick rate only spends CPU and fills the log; a display comes back from a mode
-/// change or a secure desktop on a human timescale.
+/// The recording repeats its last frame meanwhile, so retrying at the pacer's rate only burns CPU and fills the log; a display returns from a mode change on a human timescale.
 const REACQUIRE_INTERVAL: Duration = Duration::from_millis(500);
 
 /// A live capturekit capture, reopened in place when the source is lost.
@@ -59,12 +56,8 @@ struct CapturekitSource {
     interrupted: bool,
 }
 
-/// Open a capture that produces only what the source produced.
-///
-/// Pacing stays with the recording loop, which owns the wall-clock contract and
-/// the encoder's dropped-frame compensation. `readback_rate` is what a
-/// self-pacing caller still owes a push backend: WGC delivers on every repaint,
-/// and each readback maps GPU memory.
+/// Opens a capture that produces only what the source produced; pacing stays with the recording loop, which owns the wall-clock contract.
+/// `readback_rate` is what a self-pacing caller still owes a push backend: WGC delivers on every repaint, and each readback maps GPU memory.
 fn open_capturer(target: &Target, fps: u32, mode: FrameMode) -> Result<Capturer> {
     let mut builder = capturekit::capturer(target.clone())
         .readback_rate(fps)
@@ -217,11 +210,8 @@ impl CaptureSource for CapturekitSource {
     }
 }
 
-/// What capturekit should open for a resolved target.
-///
-/// The ids ARE capturekit's, because it is the only enumerator; a window it can
-/// no longer list falls back to the display the target recorded, which is what
-/// a window closed between the picker and the recording looks like.
+/// What capturekit should open for a resolved target; the ids ARE capturekit's, since it is the only enumerator.
+/// A window it can no longer list falls back to the display the target recorded, which is what a window closed between the picker and the recording looks like.
 fn resolve(target: &CaptureTarget) -> Target {
     if target.kind == CaptureKind::Window {
         return Target::Window(WindowId(target.id));
@@ -268,13 +258,8 @@ mod tests {
         assert_eq!(resolve(&screen), Target::Display(DisplayId(10)));
     }
 
-    /// The adapter end to end against the real backend: open the primary
-    /// display and read a frame of exactly the size it promised.
-    ///
-    /// Skipped where the platform lists no display (a headless runner) and under
-    /// the Wayland portal, whose "display" is a placeholder for whatever a human
-    /// picks in a dialog. Anywhere a real display is listed, this must produce a
-    /// frame rather than skip.
+    /// The adapter end to end against the real backend: open the primary display and read a frame of exactly the promised size.
+    /// Skipped only where no display is listed, or under the Wayland portal whose display is a placeholder for a human's dialog choice.
     #[test]
     fn the_primary_display_opens_and_delivers_a_frame_of_the_promised_size() {
         if !capturekit::capabilities().display_enumeration {

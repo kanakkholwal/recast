@@ -23,12 +23,8 @@ use pipeline::{
     spawn_capture_loop, Cadence, CaptureLoop, PipelineSnapshot, QueueSink, RecordingPipeline,
 };
 
-/// Frames per second emitted by the capture pacer and declared to the encoder.
-/// The pacer emits exactly this many frames per real-time second, and the
-/// encoder hands FFmpeg the same number as `-framerate`. Together they
-/// guarantee 1 second of wall-clock recording → 1 second of video PTS — the
-/// invariant the cursor track (timestamped in wall-clock μs) relies on for
-/// sync.
+/// Frames per second emitted by the pacer and declared to the encoder as `-framerate`.
+/// Together they guarantee one wall-clock second becomes one second of video PTS, the invariant the wall-clock-stamped cursor track relies on for sync.
 pub const RECORDING_FPS: u32 = 60;
 
 //  Shared types
@@ -45,10 +41,8 @@ pub struct RecordingStats {
     pub nominal_fps: u32,
 }
 
-/// Signed millisecond offsets of each companion track relative to video frame
-/// 0. Positive means the track started late and needs padding at its head;
-/// negative means it started early and its head must be trimmed. `None` means
-/// the track produced nothing, so consumers treat it as aligned.
+/// Signed millisecond offsets of each companion track against video frame 0: positive started late and needs head padding, negative started early and must be trimmed.
+/// `None` means the track produced nothing, so consumers treat it as aligned.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackOffsets {
@@ -272,14 +266,8 @@ impl Default for RecordingManager {
 }
 
 impl RecordingManager {
-    /// Reap a still-live session.
-    ///
-    /// Must be called explicitly from the app's exit handler: quitting from the
-    /// tray goes through `app.exit(0)`, which ends in `std::process::exit` and
-    /// therefore never runs destructors — so `Drop` alone could not save us. The
-    /// encoder survived by luck (its stdin closes, so it sees EOF), but the
-    /// audio, mic and camera children read from devices and kept running with
-    /// the mic and webcam held after Recast was gone.
+    /// Reaps a still-live session; must be called from the exit handler, since quitting via `app.exit(0)` ends in `std::process::exit` and runs no destructors.
+    /// The encoder survived on luck (its stdin closes), but the audio, mic and camera children held the devices after Recast was gone.
     pub fn abort_for_shutdown(&self) {
         if let Some(session) = self.session.lock().take() {
             log::warn!("aborting live recording session on shutdown");
@@ -358,10 +346,7 @@ impl NativeChoice {
 }
 
 /// The writer for this recording, and the cadence it needs.
-///
-/// The native writer stamps every sample, so it takes only the frames the source
-/// produced; FFmpeg reads a timestamp-less pipe and needs one frame per slot
-/// whether the desktop changed or not.
+/// The native writer stamps every sample so it takes only real frames, while FFmpeg reads a timestamp-less pipe and needs one frame per slot whether the desktop changed or not.
 fn writer_for(
     native: &NativeChoice,
     path: &std::path::Path,
@@ -439,11 +424,8 @@ struct RecordingSession {
 }
 
 impl RecordingSession {
-    /// Best-effort teardown for an abnormal shutdown (see `Drop for
-    /// RecordingManager`). Mirrors the reaping half of `stop()` without
-    /// assembling artifacts. `RecordingSession` deliberately does NOT implement
-    /// `Drop` so `stop()` can still move fields out of it; this consuming helper
-    /// is the abnormal-path equivalent.
+    /// Best-effort teardown for an abnormal shutdown, mirroring the reaping half of `stop()` without assembling artifacts.
+    /// `RecordingSession` deliberately does not implement `Drop`, so `stop()` can still move fields out of it; this consuming helper is the abnormal-path equivalent.
     fn abort(self) {
         self.stop_flag.store(true, Ordering::Release);
         // Joining lets each thread run its own cleanup: the capture thread drops its `CaptureSource`, killing the FFmpeg child.
@@ -1177,12 +1159,8 @@ mod session_tests {
         }
     }
 
-    /// The CaptureSource contract every backend must honour: the encoder is
-    /// configured for `source` dimensions and crops with THIS rectangle, so a
-    /// backend must emit full-`source`-sized frames. The X11 backend used to
-    /// pre-crop instead, so the encoder cropped an already-cropped buffer and
-    /// corrupted region/window recordings. Offsets are relative to the source
-    /// origin, not the virtual desktop.
+    /// The CaptureSource contract: the encoder is configured for `source` dimensions and crops with THIS rectangle, so backends must emit full-source frames.
+    /// X11 used to pre-crop, so the encoder cropped an already-cropped buffer and corrupted region recordings. Offsets are source-relative, not virtual-desktop.
     #[test]
     fn crop_is_reported_relative_to_the_captured_source() {
         // The source is the second monitor, so desktop-space (2000, 50) must become source-relative (80, 50).
@@ -1216,28 +1194,18 @@ mod session_tests {
     }
 }
 
-/// A/V sync against the real capture stack, with every source enabled.
-///
-/// Phase 5's exit criterion. The per-track unit tests cover the arithmetic;
-/// only this catches the tracks disagreeing about when zero is, because each is
-/// opened by a different OS API on its own schedule.
+/// A/V sync against the real capture stack with every source enabled, Phase 5's exit criterion.
+/// The per-track unit tests cover the arithmetic; only this catches the tracks disagreeing about when zero is, since each is opened by a different OS API on its own schedule.
 #[cfg(test)]
 mod sync_live_tests {
     use super::*;
 
-    /// Opening a capture device legitimately takes a few hundred milliseconds
-    /// (measured here: ~364ms for WASAPI loopback, ~739ms for the microphone),
-    /// and that latency is CORRECTED downstream from the offset this reports.
-    /// So the bound catches a garbage clock, not the latency itself: past a
-    /// second and a half nothing plausible is being measured.
+    /// Opening a capture device legitimately takes a few hundred milliseconds (~364ms for WASAPI loopback, ~739ms for the microphone), and that latency is corrected downstream.
+    /// So this bound catches a garbage clock rather than the latency itself: past a second and a half, nothing plausible is being measured.
     const PLAUSIBLE_OPEN_MS: i64 = 1_500;
 
-    /// The zero-copy writer driven by the REAL recorder, not by a test calling
-    /// `NativeRecorder` directly. Nothing else proves the capture loop hands it
-    /// GPU handles, that `stop()` closes the file, or that the result plays.
-    ///
-    /// Sets the opt-in for the whole process, so it must not run beside another
-    /// recording test.
+    /// The zero-copy writer driven by the REAL recorder: nothing else proves the capture loop hands it GPU handles, that `stop()` closes the file, or that the result plays.
+    /// Sets a process-wide opt-in, so it must not run beside another recording test.
     #[cfg(windows)]
     #[test]
     #[ignore = "live: records the real screen through the GPU encoder"]

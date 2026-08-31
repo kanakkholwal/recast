@@ -62,15 +62,8 @@ pub fn capture_window(id: u64, opts: &ShotOptions) -> Result<Screenshot, String>
     finalize(&img, "window", opts)
 }
 
-/// Capture the rectangle the region overlay dragged out.
-///
-/// `rect` is in physical virtual-desktop pixels, the one coordinate space the
-/// overlay and capturekit share. Which display it lands on and where it sits
-/// within that display are resolved by the same pure functions the recorder
-/// uses, so a region cannot mean one thing to a recording and another to a shot.
-///
-/// The crop happens during acquisition, on the GPU where there is one: the
-/// pixels outside the selection are never read back, let alone copied.
+/// Captures the region the overlay dragged out; `rect` is physical virtual-desktop pixels, resolved by the same pure functions the recorder uses.
+/// The crop happens during acquisition, on the GPU where there is one, so pixels outside the selection are never read back.
 pub fn capture_region(rect: RegionRect, opts: &ShotOptions) -> Result<Screenshot, String> {
     finalize(&grab_region_pixels(rect)?, "region", opts)
 }
@@ -100,13 +93,8 @@ fn copy_to_clipboard(app: &tauri::AppHandle, img: &RgbaImage) -> bool {
     }
 }
 
-/// Capture the region the overlay dragged out, for the screenshot flow.
-///
-/// Native resolution: the user is about to edit and export this, so the
-/// agent-facing longest-edge cap would throw away the pixels they came for.
-/// Also copies to the clipboard, which is what most screenshots are taken for.
-/// `spawn_blocking` because opening a capture source and reading a frame back
-/// blocks, and a sync command runs on the thread WKWebView paints on.
+/// Captures the dragged region at native resolution and copies it to the clipboard, since the user is about to edit and export these pixels.
+/// `spawn_blocking` because opening a source and reading a frame blocks, and a sync command runs on the thread WKWebView paints on.
 #[tauri::command]
 pub async fn capture_region_shot(
     app: tauri::AppHandle,
@@ -144,12 +132,8 @@ const OVERLAY_LABEL: &str = "screenshot-region";
 /// The recording region picker's window, which the source page listens to.
 const PICKER_LABEL: &str = "region-picker";
 
-/// Open the region overlay across every display.
-///
-/// Sized and placed in PHYSICAL pixels from capturekit's own enumeration rather
-/// than from the primary display's logical size: a second monitor would
-/// otherwise be unreachable, and a monitor above or left of the primary puts the
-/// origin in negative space that a window pinned to (0, 0) never covers.
+/// Opens the region overlay across every display, sized in PHYSICAL pixels from capturekit's own enumeration.
+/// The primary display's logical size would leave a second monitor unreachable and put an above-or-left origin in negative space no (0, 0) window covers.
 pub fn open_region_overlay(app: &tauri::AppHandle) -> Result<(), String> {
     open_overlay(
         app,
@@ -159,14 +143,8 @@ pub fn open_region_overlay(app: &tauri::AppHandle) -> Result<(), String> {
     )
 }
 
-/// Open the RECORDING region picker over the whole virtual desktop.
-///
-/// The same overlay as the screenshot one, sized here rather than in the
-/// frontend: `window.screen` reports the primary display in logical points, so
-/// a second monitor was unselectable and a monitor above or left of the primary
-/// put the origin in negative space a window pinned to (0, 0) never covers.
-/// Async on purpose: a sync command runs on the main thread, and building a
-/// window there waits on the event loop the command is already blocking.
+/// Opens the recording region picker over the whole virtual desktop, sized here rather than in the frontend.
+/// `window.screen` reports the primary display in logical points, which left a second monitor unselectable and put an above-or-left origin in uncovered negative space.
 #[tauri::command]
 pub async fn open_area_picker(app: tauri::AppHandle) -> Result<(), String> {
     open_overlay(&app, PICKER_LABEL, "/select-area", "Select Area")
@@ -217,15 +195,8 @@ fn screenshot_name() -> String {
     format!("Recast {}.png", now.format("%Y-%m-%d %H-%M-%S"))
 }
 
-/// Capture Recast's own UI so an agent can read the current app state (which
-/// screen is up, whether a dialog blocks, an error toast, the live timer).
-///
-/// Targets the given window label, else the focused Recast window, else the
-/// first one. Captures the monitor the window sits on and crops to the window
-/// rectangle during acquisition: non-intrusive (no raise or focus steal), and
-/// portable across all three OSes. The tradeoff is that another window
-/// overlapping ours shows through, but the app window is normally focused and on
-/// top when an agent asks.
+/// Captures Recast's own UI so an agent can read app state; targets the given label, else the focused window, else the first.
+/// Crops the containing monitor during acquisition: no raise or focus steal and portable, at the cost of an overlapping window showing through.
 pub fn capture_app_window(
     app: &tauri::AppHandle,
     label: Option<&str>,

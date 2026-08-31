@@ -1,14 +1,8 @@
 //! Box downscaling for the preview feed, done here where the pixels already live.
 //! Sending capture resolution over IPC is 110 MB/s at 720p30, for a bubble a few hundred pixels wide.
 
-/// A BGRA frame reduced so neither side exceeds `max_dim`, appended to `out`.
-///
-/// Averages every source pixel that lands in a destination pixel rather than
-/// point-sampling: a webcam bubble shown at a third of capture size shimmers
-/// badly under nearest-neighbour.
-///
-/// Appends rather than returning a buffer so a caller framing the pixels (an
-/// IPC header, say) writes one buffer instead of two.
+/// A BGRA frame reduced so neither side exceeds `max_dim`, averaging every source pixel that lands in a destination one; nearest-neighbour shimmers badly at a third of capture size.
+/// Appends rather than returning a buffer, so a caller framing the pixels writes one buffer instead of two.
 pub fn downscale_bgra_into(
     out: &mut Vec<u8>,
     src: &[u8],

@@ -10,11 +10,8 @@ use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-/// How a model runs. There are exactly two engines: `ggml` (on-device,
-/// transcribe.cpp) and `remote` (an OpenAI-compatible endpoint). The GGUF file
-/// decides the model architecture for the ggml engine, so the architecture
-/// (Parakeet / Whisper / ...) is display-only metadata (`CaptionModel::family`),
-/// not a separate code path.
+/// How a model runs. There are exactly two engines: `ggml` on-device and `remote` against an OpenAI-compatible endpoint.
+/// The GGUF file decides the architecture for ggml, so Parakeet or Whisper is display-only metadata rather than a separate code path.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
@@ -25,11 +22,8 @@ pub enum Engine {
     Remote,
 }
 
-/// The inference backend a model runs on. This is the axis the UI gates
-/// availability on: a `ggml` build ships the on-device engine, a
-/// `--no-default-features` build does not. Kept as its own enum (rather than
-/// folded into `Engine`) so the UI's `runtime` / `runtimeAvailable` contract is
-/// stable.
+/// The inference backend a model runs on, and the axis the UI gates availability on: a `ggml` build ships the on-device engine, a `--no-default-features` one does not.
+/// Kept as its own enum rather than folded into `Engine`, so the UI's `runtime` and `runtimeAvailable` contract stays stable.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Runtime {
@@ -161,14 +155,8 @@ pub struct ModelCapabilities {
     pub timestamps: TimestampGranularity,
 }
 
-/// How precisely a model reports WHEN each piece of text was said.
-///
-/// This is a hard requirement for captions, not a nicety: a caption without
-/// timing can't be placed on the timeline, clipped at a cut, or highlighted
-/// per word. A `None` model returns bare text, which `words.rs` then has to
-/// spread evenly across the whole clip — captions that drift further out of
-/// sync the longer you talk. 34 of the 65 models in the upstream catalog are
-/// `None`, so this must be checked before adding any model, not assumed.
+/// How precisely a model reports WHEN each piece of text was said: a hard requirement, since untimed captions cannot be placed, clipped at a cut, or highlighted.
+/// A `None` model returns bare text that `words.rs` spreads evenly, drifting further out of sync the longer you talk. 34 of the upstream catalog's 65 are `None`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TimestampGranularity {
@@ -236,14 +224,8 @@ impl CaptionModel {
     }
 }
 
-/// A built-in ggml model: one GGUF file from a `handy-computer` HuggingFace repo.
-/// `family` is the display group for the picker; the GGUF itself tells
-/// transcribe.cpp which architecture to run. `sha256` is the exact-byte
-/// SHA-256 of the file at the URL above — pinned releases need this to
-/// reject a corrupted / truncated / upstream-replaced download at the
-/// `is_installed` gate (downloaded mismatches auto-redownload; see
-/// `download_file` at `models.rs:357-367`). Compute via
-/// `tools/dev/pin-model-sha256.ps1` once per release.
+/// A built-in ggml model: one GGUF from a `handy-computer` repo, with `family` only the picker's display group since the file itself picks the architecture.
+/// `sha256` is exact-byte and pinned, rejecting a corrupted or upstream-replaced download at the `is_installed` gate; compute it with `tools/dev/pin-model-sha256.ps1`.
 #[expect(
     clippy::too_many_arguments,
     reason = "a registry row: every column is independent data"
@@ -287,11 +269,8 @@ fn ggml_model(
     }
 }
 
-/// The built-in model catalog: single-file GGUF models run by the ggml
-/// (transcribe.cpp) engine. Parakeet V3 (multilingual, word-timestamped) is the
-/// default. Whisper is offered as an alternative family. All entries are plain
-/// data and compile in every build; whether they can RUN is gated at runtime by
-/// `runtime_status` (the `ggml` feature).
+/// The built-in catalog of single-file GGUF models run by the ggml engine, with multilingual word-timestamped Parakeet V3 as the default and Whisper as an alternative.
+/// All entries are plain data and compile in every build; whether they can RUN is gated at runtime by `runtime_status`.
 pub fn registry() -> Vec<CaptionModel> {
     vec![
         ggml_model(
@@ -642,12 +621,8 @@ mod tests {
         }
     }
 
-    /// Captions are a timeline feature: without timing there is nothing to
-    /// place, clip at a cut, or highlight. Canary 180M Flash and Cohere
-    /// Transcribe were both shipped and pulled for exactly this — they
-    /// transcribe fine but emit `timestamps: none`, so their captions were
-    /// spread evenly across the clip and drifted. 34 of the 65 models in the
-    /// upstream catalog are `none`; check before adding, don't assume.
+    /// Captions are a timeline feature: without timing there is nothing to place, clip at a cut, or highlight.
+    /// Canary 180M Flash and Cohere Transcribe both shipped and were pulled for emitting no timestamps. 34 of the catalog's 65 are `none`, so check rather than assume.
     #[test]
     fn every_builtin_can_actually_time_its_captions() {
         for m in registry() {

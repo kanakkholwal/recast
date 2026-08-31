@@ -3,12 +3,8 @@ use objc2_core_graphics::{CGEvent, CGEventSource, CGEventSourceStateID, CGMouseB
 
 use crate::pointer::{Pointer, PointerSource};
 
-/// Reads the pointer through CoreGraphics.
-///
-/// ScreenCaptureKit attaches no pointer metadata to a sample, so this is the
-/// only way to place the cursor on macOS. Buttons come from the HID system
-/// state, which is a state query rather than an event tap, so it needs no Input
-/// Monitoring grant.
+/// Reads the pointer through CoreGraphics, the only way to place the cursor on macOS since ScreenCaptureKit attaches no pointer metadata.
+/// Buttons come from HID state, a query rather than an event tap, so it needs no Input Monitoring grant.
 pub(crate) struct CgPointer;
 
 fn is_down(button: CGMouseButton) -> bool {

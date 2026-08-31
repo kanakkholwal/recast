@@ -48,12 +48,8 @@ struct Node {
     direction: AudioDirection,
 }
 
-/// Every audio node the daemon knows about.
-///
-/// Unlike ScreenCaptureKit, PipeWire has a real object registry, so this is a
-/// list rather than a refusal. A sink is reported as a loopback device because
-/// capturing one means reading its monitor, which is what
-/// [`AudioDirection::Loopback`] names.
+/// Every audio node the daemon knows about; unlike ScreenCaptureKit, PipeWire has a real object registry, so this is a list rather than a refusal.
+/// A sink is reported as a loopback device, because capturing one means reading its monitor.
 pub(crate) fn devices() -> Result<Vec<AudioDevice>> {
     let found = Arc::new(Mutex::new(Vec::new()));
     enumerate(&found).map_err(failed)?;
@@ -143,13 +139,8 @@ fn node_of(props: &pipewire::spa::utils::dict::DictRef) -> Option<Node> {
     })
 }
 
-/// Where the stream is on its own sample timeline.
-///
-/// The pts of a buffer is the sample count before it, NOT the clock reading
-/// when it happened to arrive. A delivery thread is late by a variable amount,
-/// so stamping arrival leaves a hole wherever it was slower than usual, and a
-/// consumer that lines buffers up end to end then hears a gap that is not in
-/// the samples.
+/// Where the stream is on its own sample timeline: a buffer's pts is the sample count before it, NOT the clock reading when it arrived.
+/// A delivery thread is late by a variable amount, so stamping arrival leaves a hole and a consumer lining buffers up hears a gap that is not in the samples.
 struct Timeline {
     format: AudioFormat,
     /// Read from the frame clock at the first buffer, so the audio and video
@@ -409,11 +400,8 @@ fn format_of(info: &AudioInfoRaw) -> Option<AudioFormat> {
     Some(AudioFormat::new(info.rate(), channels, sample_format))
 }
 
-/// Ask for interleaved 32-bit float, the layout the graph mixes in.
-///
-/// Offered as a single format rather than a choice: PipeWire converts for free,
-/// and every other capturekit backend delivers interleaved samples, so accepting
-/// a planar layout here would put the burden on every consumer instead.
+/// Asks for interleaved 32-bit float, the layout the graph mixes in, offered as a single format rather than a choice.
+/// PipeWire converts for free and every other backend delivers interleaved, so accepting a planar layout here would put the burden on every consumer.
 fn audio_params() -> core::result::Result<Vec<u8>, String> {
     use pipewire::spa::pod::serialize::PodSerializer;
     use pipewire::spa::pod::Value;

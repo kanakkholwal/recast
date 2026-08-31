@@ -51,10 +51,7 @@ impl Permission {
     }
 
     /// Whether prompting the user could change the answer.
-    ///
-    /// False for `Denied`: macOS and Wayland both silently no-op a second
-    /// request, so a caller that keeps asking shows the user nothing and looks
-    /// broken. Send them to system settings instead.
+    /// False for `Denied`: macOS and Wayland both silently no-op a second request, so a caller that keeps asking shows nothing and looks broken. Send them to system settings.
     #[must_use]
     pub const fn is_requestable(self) -> bool {
         matches!(self, Self::NotDetermined)

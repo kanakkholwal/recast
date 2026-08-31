@@ -5,12 +5,8 @@ use crate::time::Timestamp;
 /// How the output timeline relates to what the source actually produced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pacing {
-    /// Hold a true constant frame rate, repeating the last frame when the source
-    /// produces nothing.
-    ///
-    /// A desktop that is not changing emits no frames at all on Desktop
-    /// Duplication or the portal, so a recording that just forwards the source
-    /// has gaps wherever the user paused. This fills them.
+    /// Hold a true constant frame rate, repeating the last frame when the source produces nothing.
+    /// An unchanging desktop emits nothing at all on Desktop Duplication or the portal, so a recording that just forwards the source has gaps wherever the user paused.
     Constant {
         /// Frames per second.
         fps: u32,
@@ -40,12 +36,8 @@ impl Pacing {
 /// The default ceiling on how many slots one catch-up may emit.
 const DEFAULT_MAX_CATCH_UP: u32 = 4;
 
-/// Turns wall-clock time into a constant-rate timeline.
-///
-/// Slot `n` is always `origin + n * interval`, computed from the origin rather
-/// than by adding an interval to the previous slot. Accumulating would drift:
-/// 60 fps is 16 666 666.66 ns, so a running sum is a millisecond out after a
-/// minute and the audio and video tracks visibly separate.
+/// Turns wall-clock time into a constant-rate timeline, where slot `n` is always `origin + n * interval`.
+/// Computed from the origin, not by adding to the previous slot: 60 fps is 16 666 666.66 ns, so a running sum is a millisecond out after a minute and A/V separates.
 #[derive(Debug, Clone)]
 pub struct Pacer {
     interval: Duration,
@@ -70,10 +62,7 @@ impl Pacer {
     }
 
     /// How many slots a single catch-up may emit before the rest are skipped.
-    ///
-    /// A process that stalls for five seconds at 60 fps owes 300 frames. Emitting
-    /// them all turns a hiccup into a memory spike and a wall of duplicate frames,
-    /// so the backlog is dropped and counted instead.
+    /// A five-second stall at 60 fps owes 300 frames, and emitting them all turns a hiccup into a memory spike and a wall of duplicates, so the backlog is dropped and counted.
     pub fn set_max_catch_up(&mut self, slots: u32) {
         self.max_catch_up = slots.max(1);
     }

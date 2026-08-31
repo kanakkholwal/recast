@@ -286,10 +286,7 @@ pub fn fit_scale(canvas: (u32, u32), max: (u32, u32)) -> f64 {
 }
 
 /// `source` scaled by `k`, snapped to even dimensions.
-///
-/// The canvas is derived from the source, and padding is a percentage of it, so
-/// scaling the source scales the whole composition. Everything is then drawn AT
-/// the output size rather than downsampled after the fact.
+/// The canvas derives from the source and padding is a percentage of it, so scaling the source scales the whole composition, drawn AT output size rather than downsampled after.
 #[must_use]
 pub fn scaled_source(source: SourceGeometry, k: f64) -> SourceGeometry {
     let even = |v: u32| -> u32 {
@@ -459,6 +456,39 @@ pub fn export_video(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The flag crosses the bridge as `engineExport`, and a rename on either
+    /// side would silently leave every export on the graph.
+    #[test]
+    fn the_flag_the_editor_sends_arrives_as_the_request_field() {
+        let sent = serde_json::json!({
+            "exportId": "e1",
+            "inputPath": "in.mp4",
+            "format": "mp4",
+            "quality": "source",
+            "renderState": RenderState::default(),
+            "engineExport": true,
+        });
+        let request: crate::commands::types::ExportRequest =
+            serde_json::from_value(sent).expect("the editor's payload");
+        assert!(request.engine_export);
+    }
+
+    /// A payload queued before the flag existed must not start rendering through
+    /// the engine when the app is updated under it.
+    #[test]
+    fn an_older_queued_payload_stays_on_the_graph() {
+        let sent = serde_json::json!({
+            "exportId": "e1",
+            "inputPath": "in.mp4",
+            "format": "mp4",
+            "quality": "source",
+            "renderState": RenderState::default(),
+        });
+        let request: crate::commands::types::ExportRequest =
+            serde_json::from_value(sent).expect("an older payload");
+        assert!(!request.engine_export);
+    }
 
     /// The env wins both ways, so a developer can force the graph back on a
     /// machine whose user turned the flag on, and the reverse.
@@ -916,13 +946,8 @@ mod live {
         );
     }
 
-    /// The most pixels darker than the pill's threshold that any one frame of
-    /// `path` shows in its bottom quarter, where a bottom caption sits.
-    ///
-    /// A count over every frame, not a mean at one index: the pill covers a few
-    /// percent of the band so its effect on a mean is inside the encoder's
-    /// rate-control noise, and picking a frame index assumes both a decode order
-    /// and that the index clears the entrance, which starts at alpha 0.
+    /// The most pixels darker than the pill's threshold that any one frame shows in its bottom quarter, where a bottom caption sits.
+    /// A count over every frame, not a mean at one index: the pill's effect on a mean is inside rate-control noise, and an index assumes a decode order and clearing the entrance.
     fn darkest_caption_band(path: &Path) -> usize {
         // The pill is #0b0b12 at 61% over a luma-220 source, so it lands near 93.
         const PILL_MAX_LUMA: u8 = 140;

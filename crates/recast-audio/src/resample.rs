@@ -47,12 +47,8 @@ impl Kernel {
         self.half
     }
 
-    /// Samples `channel` of an interleaved window at a fractional position.
-    /// `window` starts at source frame `window_start`.
-    ///
-    /// The taps are not renormalised per phase. At 32 taps the Blackman window
-    /// already holds their sum inside 2e-5 of unity, which is a hundred dB below
-    /// anything audible, and a divide in this loop is not free.
+    /// Samples `channel` of an interleaved window at a fractional position, with `window` starting at source frame `window_start`.
+    /// Taps are not renormalised per phase: at 32 taps the Blackman window holds their sum inside 2e-5 of unity, a hundred dB below audible, and a divide here is not free.
     pub fn sample(
         &self,
         window: &[f32],

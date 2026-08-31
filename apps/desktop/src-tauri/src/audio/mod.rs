@@ -30,13 +30,8 @@ pub struct AudioCaptureConfig {
 pub struct AudioCaptureSession(TrackSession);
 
 impl AudioCaptureSession {
-    /// Start capturing, or `None` when no loopback device is reachable.
-    ///
-    /// No platform here is guaranteed one: macOS needs the screen recording
-    /// grant, and a Linux host without PipeWire has nothing to read. The caller
-    /// writes the silence a `None` needs, because it owns the pause-aware clock
-    /// and a silence track measured on wall clock outruns the video by every
-    /// paused second.
+    /// Start capturing, or `None` when no loopback device is reachable: macOS needs the screen-recording grant and a Linux host without PipeWire has nothing to read.
+    /// The caller writes the silence a `None` needs, since it owns the pause-aware clock and a wall-clock silence track outruns the video by every paused second.
     pub fn start(config: AudioCaptureConfig) -> Option<Self> {
         match TrackSession::start(
             Source::Loopback,
@@ -87,10 +82,7 @@ impl MicrophoneCaptureSession {
     }
 
     /// Everything non-fatal the user should know about this track.
-    ///
-    /// The quality ceiling is read from the negotiated format rather than from a
-    /// device listing: the backend picks the endpoint, and enumerating to ask
-    /// activates every other one on the machine while the user waits.
+    /// The quality ceiling comes from the negotiated format, not a device listing: the backend picks the endpoint, and enumerating activates every other one while the user waits.
     pub fn warnings(&self) -> Vec<String> {
         let format = self.0.format();
         self.0

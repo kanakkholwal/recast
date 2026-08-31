@@ -111,13 +111,8 @@ fn write_edit_sections(
     Ok(())
 }
 
-/// Rewrite the `edits/` section files inside an existing v2 `.recast` archive in
-/// place, preserving all other entries (manifest, metadata, media) by raw-copying
-/// their compressed bytes — no decode/re-encode of media.
-///
-/// The write is atomic: a sibling `.recast.tmp` is produced first and only
-/// renamed over the original on success. Errors if the archive is not v2 (the
-/// editor migrates first), so a save can never produce a hybrid v1/v2 bundle.
+/// Rewrites the `edits/` sections of a v2 `.recast` in place, raw-copying every other entry's compressed bytes so media is never re-encoded.
+/// Atomic via a sibling `.recast.tmp` renamed on success, and it errors on a v1 archive so a save can never produce a hybrid bundle.
 pub fn update_project_edits(project_path: &Path, edits_json: &str) -> Result<()> {
     let temp_path = project_path.with_extension("recast.tmp");
 

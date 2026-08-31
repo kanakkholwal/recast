@@ -68,12 +68,8 @@ impl Frame<'_> {
         self.cursor.as_ref()
     }
 
-    /// The frame as a GPU handle, when the capturer was built with
-    /// [`CapturerBuilder::gpu_handles`].
-    ///
-    /// `bytes()` is empty in that mode: reading back a frame the caller asked to
-    /// keep on the GPU is the host copy the mode exists to avoid. Nothing is
-    /// implicitly ordered, so wait on the fence before sampling the texture.
+    /// The frame as a GPU handle, when built with [`CapturerBuilder::gpu_handles`].
+    /// `bytes()` is empty then: reading back is the host copy the mode exists to avoid. Nothing is implicitly ordered, so wait on the fence before sampling the texture.
     #[must_use]
     pub const fn gpu_handle(&self) -> Option<&GpuHandle> {
         self.gpu.as_ref()
@@ -85,12 +81,8 @@ impl Frame<'_> {
         self.desc
     }
 
-    /// Whether this frame repeats the previous one to hold the paced rate.
-    ///
-    /// Under [`Pacing::Constant`] an idle source still owes a frame every slot.
-    /// The pixels are the last ones the source produced, so an encoder can emit a
-    /// duplicate rather than compressing them again. Always false under
-    /// [`Pacing::Passthrough`], which invents nothing.
+    /// Whether this frame repeats the previous one to hold the paced rate; always false under [`Pacing::Passthrough`], which invents nothing.
+    /// Under [`Pacing::Constant`] an idle source still owes a frame per slot, and the pixels are the last real ones, so an encoder can emit a duplicate instead of recompressing.
     #[must_use]
     pub const fn is_repeat(&self) -> bool {
         self.repeat
@@ -162,13 +154,8 @@ impl CapturerBuilder {
         self
     }
 
-    /// Keep these windows out of the capture.
-    ///
-    /// Not best-effort. If the platform cannot honour the request,
-    /// [`CapturerBuilder::build`] fails rather than capturing a window the caller
-    /// asked to hide: exclusion is a privacy control, and silently ignoring one
-    /// records exactly what the user was promised would be left out. Check
-    /// [`crate::capabilities`] first to decide gracefully.
+    /// Keep these windows out of the capture. Not best-effort: [`CapturerBuilder::build`] fails when the platform cannot honour it.
+    /// Exclusion is a privacy control, so silently ignoring one records exactly what the user was promised would be left out; check [`crate::capabilities`] to decide gracefully.
     #[must_use]
     pub fn exclude_windows(mut self, windows: &[WindowId]) -> Self {
         self.opts.exclude = windows.to_vec();
@@ -182,11 +169,8 @@ impl CapturerBuilder {
         self
     }
 
-    /// Deliver frames as GPU handles rather than host bytes.
-    ///
-    /// The pixels never leave the GPU, which is what makes an encode path keep
-    /// up at 4K. `Frame::bytes()` is empty in this mode. Windows only today;
-    /// other backends ignore it and keep reading back.
+    /// Deliver frames as GPU handles rather than host bytes, so the pixels never leave the GPU, which is what keeps an encode path up at 4K.
+    /// `Frame::bytes()` is empty in this mode. Windows only today; other backends ignore it and keep reading back.
     #[must_use]
     pub fn gpu_handles(mut self, gpu_handles: bool) -> Self {
         self.opts.gpu_handles = gpu_handles;
@@ -228,12 +212,8 @@ fn check_exclusion(requested: &[WindowId]) -> Result<()> {
     })
 }
 
-/// The frame a paced capture last took from the source, kept so a slot the
-/// source produced nothing for can still be filled.
-///
-/// Constant pacing copies every frame it emits. That is the price of being able
-/// to repeat one: a backend's buffer is only valid until the next acquisition
-/// unmaps it, so there is nothing left to repeat by the time the gap is known.
+/// The frame a paced capture last took from the source, kept so a slot the source produced nothing for can still be filled.
+/// Constant pacing copies every frame it emits, which is the price of repeating one: a backend's buffer is unmapped by the next acquisition, before the gap is known.
 #[derive(Default)]
 struct Held {
     bytes: Vec<u8>,
@@ -276,15 +256,8 @@ impl Capturer {
         &self.desc
     }
 
-    /// Wait for the next frame.
-    ///
-    /// Under [`Pacing::Constant`] this returns one frame per slot whatever the
-    /// source did, repeating the last one over a gap. Under
-    /// [`Pacing::Passthrough`] it returns only what the source produced.
-    ///
-    /// Timestamps are forced to advance here and not in the one-shot path: a
-    /// stalled source is a pacing problem for a recording, but for a screenshot
-    /// it is the signal that the frame is stale.
+    /// Waits for the next frame: [`Pacing::Constant`] returns one per slot whatever the source did, repeating over a gap, while [`Pacing::Passthrough`] returns only real output.
+    /// Timestamps advance here, not in the one-shot path: a stalled source is a pacing problem for a recording but the staleness signal for a screenshot.
     pub fn next_frame(&mut self, timeout: Duration) -> Result<Frame<'_>> {
         if self.pacer.is_some() {
             let slot = self.wait_for_slot(timeout)?;
@@ -312,11 +285,8 @@ impl Capturer {
         })
     }
 
-    /// Drain the source until a slot falls due, and report which slot.
-    ///
-    /// A slot is only taken from the pacer once there is a frame to put in it, so
-    /// the pacer's count is the number of frames actually handed out and the
-    /// timeline never gains a hole the caller was not told about.
+    /// Drains the source until a slot falls due, and reports which slot.
+    /// A slot is only taken from the pacer once there is a frame for it, so the pacer's count is the frames actually handed out and the timeline never gains an unannounced hole.
     fn wait_for_slot(&mut self, timeout: Duration) -> Result<Timestamp> {
         let started = Instant::now();
         // Drain before the pacer is asked: a slow consumer always has a slot due on entry, which starved the source into repeating one frame forever. Once on entry, or the call storing the opening frame drains past it.
@@ -409,10 +379,7 @@ impl Capturer {
     }
 
     /// How many paced slots were filled with a repeat of the previous frame.
-    ///
-    /// A recording of a mostly idle desktop is nearly all repeats and that is
-    /// correct. A rate that stays high while the screen is busy is the signal
-    /// that the source cannot keep up with the pace it was asked for.
+    /// A mostly idle desktop is nearly all repeats and that is correct; a rate that stays high while the screen is busy is the signal that the source cannot keep the pace.
     #[must_use]
     pub const fn repeated_frames(&self) -> u64 {
         self.held.repeats
@@ -561,15 +528,8 @@ mod tests {
         assert_eq!(capturer.repeated_frames(), 1);
     }
 
-    /// A consumer slower than the pace must still see the source's newest
-    /// frame. It used to see the FIRST one forever.
-    ///
-    /// `wait_for_slot` asked the pacer before polling the backend. A slow caller
-    /// always has a slot due on entry, so it returned that slot and never
-    /// touched the source again — every frame after the first was a repeat, for
-    /// the life of the capture. That is what froze the camera preview on its
-    /// opening frame: downscaling and posting 1280x720 over IPC cannot keep up
-    /// with a 30fps grid, so the backend was starved from the second frame on.
+    /// A consumer slower than the pace must still see the source's newest frame; it used to see the FIRST one forever.
+    /// `wait_for_slot` asked the pacer before polling, and a slow caller always has a slot due on entry, which froze the camera preview on its opening frame.
     #[test]
     fn a_consumer_slower_than_the_pace_still_sees_new_frames() {
         let mut capturer = paced(6);

@@ -148,11 +148,7 @@ impl ClickTracker {
 }
 
 /// Pixel-space rectangle of the recorded frame inside the virtual desktop.
-///
-/// The OS reports the pointer in virtual-desktop space, with each monitor
-/// offset by its place in the arrangement, while the recorded video is
-/// frame-relative (0..width, 0..height). Without this, recording a secondary
-/// monitor or a region puts every sample outside the frame.
+/// The OS reports the pointer in virtual-desktop space while the video is frame-relative, so without this a secondary monitor or region puts every sample outside the frame.
 #[derive(Debug, Clone, Copy)]
 pub struct CursorCaptureFrame {
     /// Top-left of the recorded frame, in physical device pixels (same space

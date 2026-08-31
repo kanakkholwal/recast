@@ -30,7 +30,7 @@ if [ -n "$rust_files" ]; then
 	printf '%s\n' "$rust_files" | restage
 fi
 
-web_files=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|svelte|css|json|jsonc)$' || true)
+web_files=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|svelte|css)$' || true)
 if [ -n "$web_files" ]; then
 	say "biome format"
 	pnpm exec biome format --write --staged --no-errors-on-unmatched . >&2 ||

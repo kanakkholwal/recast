@@ -11,14 +11,8 @@ pub(crate) struct ComScope {
     owned: bool,
 }
 
-/// Hold the process MTA open for the rest of the run, once.
-///
-/// windows-rs caches activation factories and COM proxies in process globals.
-/// When the last apartment reference goes away the MTA is torn down and those
-/// cached pointers dangle, so the next call FAULTS instead of failing. Anything
-/// that opens and closes an apartment per unit of work hits that: a recorder
-/// per take, a test harness per test. `CoIncrementMTAUsage` keeps the apartment
-/// alive without joining it, and is deliberately never decremented.
+/// Holds the process MTA open for the rest of the run, once, via `CoIncrementMTAUsage` and deliberately never decremented.
+/// windows-rs caches factories in process globals, so tearing the MTA down dangles them and the next call FAULTS: a recorder per take hits exactly that.
 fn pin_mta() {
     static PINNED: OnceLock<()> = OnceLock::new();
     PINNED.get_or_init(|| {
@@ -40,14 +34,8 @@ impl ComScope {
     }
 }
 
-/// Something made inside an apartment, paired with the apartment itself.
-///
-/// The pairing is the point. Returned as a tuple and bound as `let (value,
-/// scope) = ...`, the two become separate locals and LOCALS DROP IN REVERSE:
-/// the apartment closes first, and releasing a COM object into a closed
-/// apartment faults instead of failing. Struct fields drop in DECLARATION
-/// order, so `value` before `scope` is the invariant, and it is pinned by
-/// `scoped_tests`.
+/// Something made inside an apartment, paired with the apartment itself; the pairing is the point.
+/// As a tuple they become separate locals and LOCALS DROP IN REVERSE, releasing a COM object into a closed apartment; struct fields drop in declaration order.
 pub(crate) struct Scoped<T, S = ComScope> {
     pub(crate) value: T,
     scope: S,

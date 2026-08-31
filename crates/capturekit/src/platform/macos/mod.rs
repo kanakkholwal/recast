@@ -59,11 +59,8 @@ pub(crate) fn permission(kind: PermissionKind) -> Permission {
     }
 }
 
-/// Ask TCC for screen recording.
-///
-/// The prompt appears once per application; afterwards this returns the standing
-/// answer without showing anything, which is why a `Denied` result has to send
-/// the user to System Settings rather than prompting again.
+/// Asks TCC for screen recording.
+/// The prompt appears once per application and afterwards this returns the standing answer silently, which is why a `Denied` result must send the user to System Settings.
 pub(crate) fn request_permission(kind: PermissionKind) -> Permission {
     match kind {
         PermissionKind::Screen => {
@@ -91,12 +88,8 @@ pub(crate) fn audio_devices() -> Result<Vec<AudioDevice>> {
     coreaudio::devices()
 }
 
-/// System audio through ScreenCaptureKit, inputs through AVFoundation.
-///
-/// ScreenCaptureKit is the only way to tap the output mix without a virtual
-/// driver, but it can capture only the DEFAULT input and refuses any other name.
-/// Inputs therefore go through AVFoundation, which opens the device the user
-/// picked and takes the Microphone grant rather than the Screen Recording one.
+/// System audio through ScreenCaptureKit, the only way to tap the output mix without a virtual driver, and inputs through AVFoundation.
+/// ScreenCaptureKit captures only the DEFAULT input, so AVFoundation opens the picked device and takes the Microphone grant instead of Screen Recording.
 pub(crate) fn open_audio(
     device: Option<&AudioDeviceId>,
     direction: AudioDirection,

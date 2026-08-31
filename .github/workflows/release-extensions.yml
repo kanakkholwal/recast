@@ -1,21 +1,7 @@
 name: Release Extensions Registry
 
-# Builds the installable asset-pack registry from `extensions/packs/*` and
-# publishes it as a standalone GitHub Release. The desktop app's Extensions tab
-# fetches the curated index from this release at
-# `releases/download/<tag>/index.json` and installs each pack from its
-# `<packId>.extension.json` manifest URL, so refreshing packs never requires
-# cutting a new app build.
-#
-# The build is zero-dependency (Node built-ins only — the same scripts you run
-# locally via `pnpm verify:extensions` / `pnpm build:extensions-registry`), so
-# there's no install step.
-#
-# Triggers:
-#   - Manual `workflow_dispatch` → the normal path; defaults to re-publishing
-#     the `extensions-v1` tag the desktop app pins.
-#   - Push a tag matching `extensions-v*` → publishes automatically, mirroring
-#     the wallpaper release stream.
+# Builds the asset-pack registry from `extensions/packs/*` and publishes it as its own GitHub Release, so refreshing packs never needs a new app build.
+# Zero-dependency (Node built-ins, the same scripts as `pnpm build:extensions-registry`), so there is no install step. Triggers: manual dispatch, or an `extensions-v*` tag.
 
 on:
   workflow_dispatch:

@@ -84,12 +84,8 @@ impl<'a> BranchService<'a> {
         Self { app, state }
     }
 
-    /// Fork a branch from the project's current state.
-    ///
-    /// # Errors
-    /// [`AppError`] if the app data directory is unavailable, the project cannot
-    /// be read, the id already holds proposed edits, or the project is at
-    /// [`journal::MAX_BRANCHES_PER_PROJECT`].
+    /// Forks a branch from the project's current state.
+    /// Errors when the app data directory is unavailable, the project cannot be read, the id already holds proposed edits, or the project is at [`journal::MAX_BRANCHES_PER_PROJECT`].
     pub fn create(
         &self,
         project: &str,
@@ -126,15 +122,8 @@ impl<'a> BranchService<'a> {
         self.store(project)?.load(id).map_err(AppError::msg)
     }
 
-    /// Record `ops` as one atomic entry, replaying and validating the branch
-    /// before persisting so a bad proposal is rejected here, where the author
-    /// can still fix it, rather than at apply time in front of the reviewer.
-    ///
-    /// A rejected append leaves the journal on disk untouched.
-    ///
-    /// # Errors
-    /// [`AppError`] wrapping a stale `expect_seq`, an op that no longer fits, a
-    /// resulting state that violates an invariant, or a failed write.
+    /// Records `ops` as one atomic entry, replaying and validating first so a bad proposal is rejected where the author can still fix it, not at apply time.
+    /// A rejected append leaves the journal untouched. Errors on a stale `expect_seq`, an op that no longer fits, a violated invariant, or a failed write.
     pub fn append(
         &self,
         project: &str,
@@ -206,14 +195,8 @@ impl<'a> BranchService<'a> {
         Ok(())
     }
 
-    /// Write the branch into the project, then delete it.
-    ///
-    /// Fast-forward only: materializing against the state the write-lock just
-    /// loaded is what rejects a project edited since the fork.
-    ///
-    /// # Errors
-    /// [`AppError`] wrapping `editor_locked`, a moved fork point, or a
-    /// validation failure on the resulting state.
+    /// Writes the branch into the project, then deletes it. Fast-forward only: materializing against the state the write-lock just loaded rejects a project edited since the fork.
+    /// Errors on `editor_locked`, a moved fork point, or a validation failure on the resulting state.
     pub fn apply(&self, project: &str, id: &BranchId, writer_id: &str) -> AppResult<ApplyReport> {
         let store = self.store(project)?;
         let branch = store.load(id).map_err(AppError::msg)?;

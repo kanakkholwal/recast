@@ -18,11 +18,8 @@ const FPS: u32 = 30;
 const FRAMES: u32 = 20;
 const FRAME_DURATION: i64 = 10_000_000 / FPS as i64;
 
-/// Four flat bands: red, green, and two greys. Between them they pin down all
-/// three colour decisions the video processor makes. Red separates BT.709 from
-/// BT.601, which greys cannot. The bright grey separates a full-range input from
-/// a studio-range one, which the saturated colours cannot, because both of their
-/// channels sit at the extremes and clip to the same place either way.
+/// Four flat bands (red, green, two greys) pinning all three colour decisions the video processor makes.
+/// Red separates BT.709 from BT.601, which greys cannot; the bright grey separates full from studio range, which saturated colours cannot, since both clip to the same place.
 const BANDS: &str = r#"
 @vertex
 fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {

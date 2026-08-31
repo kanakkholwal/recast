@@ -108,12 +108,8 @@ impl PixelFormat {
             .any(|p| p.subsampling.0 > 1 || p.subsampling.1 > 1)
     }
 
-    /// The tightest stride that can hold a row of this format.
-    ///
-    /// One number for every plane: NV12 and P010 stack their planes in a single
-    /// allocation at a shared stride, and plane 0 sets it because no plane is
-    /// ever wider than luma. A format with a per-plane stride would need a
-    /// different shape here, and none of the backends deliver one.
+    /// The tightest stride that can hold a row of this format, one number for every plane.
+    /// NV12 and P010 stack planes in a single allocation at a shared stride set by luma, since no plane is ever wider; no backend delivers a per-plane stride.
     #[must_use]
     pub fn min_stride(self, width: u32) -> u32 {
         self.planes().first().map_or(0, |p| p.row_bytes(width))

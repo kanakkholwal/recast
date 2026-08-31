@@ -680,13 +680,8 @@ pub enum AnnotationKind {
         #[serde(default)]
         radius: f64,
     },
-    /// Text overlay. Only needs to ROUND-TRIP through save/load — the export
-    /// receives text pre-rasterized as an `Image` (rasterize-text.ts), so the
-    /// draw loop skips this variant. Without it, a saved text annotation
-    /// deserializes to `Unsupported` on reload and loses every field (data loss).
-    /// Fields mirror the TS `text` kind. `rename_all` HERE (on the variant) is
-    /// required — the enum-level `rename_all` only covers variant names, so
-    /// without this `fontFamily`/`fontSize`/etc. wouldn't map.
+    /// Text overlay, needed only to round-trip through save and load: the export receives text pre-rasterized, so the draw loop skips this variant.
+    /// Without it a saved text annotation deserializes to `Unsupported` and loses every field. `rename_all` HERE is required, since the enum-level one covers only variant names.
     #[serde(rename_all = "camelCase")]
     Text {
         x: f64,

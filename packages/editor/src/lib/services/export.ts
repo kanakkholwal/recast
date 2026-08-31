@@ -6,6 +6,14 @@
  */
 
 import { getEditorServices } from "../editor/services";
+import { type CaptionExportPayload, exportPayload, type RunExportOptions } from "./export-payload";
+
+export {
+	exportTimeMap,
+	type CaptionExportPayload,
+	type ExportTimeSpan,
+	type RunExportOptions,
+} from "./export-payload";
 
 // The native render queue; absent where the browser compositor is the only engine, which surfaces the failure.
 function enqueueViaSink(job: unknown): Promise<string[]> {
@@ -23,7 +31,7 @@ import {
 import { toOutputTimeTranscript } from "../captions/output-time";
 import { rasterizeCursorSprites } from "../export/rasterize-cursor";
 import { expandTextAnnotations } from "../export/rasterize-text";
-import type { ExportGifSettings, ExportSpeed, Transcript } from "../wire-types";
+import type { Transcript } from "../wire-types";
 
 /** Optional progress hooks for the hybrid-raster "Preparing…" phase. Each fires
  *  as its lane starts/finishes so the UI can show sub-stage progress. Omit for
@@ -177,13 +185,6 @@ export function hasBlurUnderZoom(store: EditorStore): boolean {
 
 /** What to emit for generated captions on export. Built from the store via
  *  {@link buildCaptionExport}; `null`/empty when there's no transcript. */
-export interface CaptionExportPayload {
-	/** Burn captions into the video pixels. */
-	burnCaptions: boolean;
-	/** Subtitle sidecar to write next to the export (output-time), or null. */
-	sidecar: { format: "vtt" | "srt"; transcript: Transcript } | null;
-}
-
 /** Re-exported so existing callers (export dialog, Cloud track, Captions
  *  panel) keep one import site; the math lives with the other caption logic. */
 export { toOutputTimeTranscript };
@@ -220,52 +221,6 @@ export function buildCloudCaptionTranscript(store: EditorStore): Transcript | nu
 	return toOutputTimeTranscript(store.timeMap, t);
 }
 
-export interface RunExportOptions {
-	/** Source media path (the recording file or project path). */
-	inputPath: string;
-	format: string;
-	quality: string;
-	/** Built via {@link buildExportRenderState}. */
-	renderState: EditorRenderState;
-	exportId: string;
-	gifSettings?: ExportGifSettings;
-	speed?: ExportSpeed;
-	/** Output frame rate for MP4/WebM; `null`/omitted keeps source rate. */
-	fps?: number | null;
-	/** Caption emission (burn-in + sidecar). Built via {@link buildCaptionExport}. */
-	captions?: CaptionExportPayload;
-	/** Browser-rendered composited video temp path (Phase 4). When set, the job
-	 *  mux-copies it instead of running the Rust filter_complex compositor. */
-	browserVideoPath?: string;
-	/** The editor's resolved kept-timeline, from {@link exportTimeMap}. Sending
-	 *  it makes the backend REPLAY the editor's axis instead of re-deriving it
-	 *  from cuts + splits + speed anchors, which is what used to let the two
-	 *  disagree. Omit only from headless callers with no editor session. */
-	timeMap?: ExportTimeSpan[] | null;
-	/** Render through the engine instead of the FFmpeg filtergraph. From the
-	 *  `engineExport` experimental flag; `RECAST_ENGINE_EXPORT` overrides it. */
-	engineExport?: boolean;
-}
-
-/** One kept span of the timeline in original-recording seconds. Mirrors
- *  `cuts_speed::TimeSpanWire` on the Rust side. */
-export interface ExportTimeSpan {
-	origStart: number;
-	origEnd: number;
-	speed: number;
-}
-
-/** The store's time map as the export wire format. */
-export function exportTimeMap(map: {
-	spans: ReadonlyArray<{ origStart: number; origEnd: number; speed: number }>;
-}): ExportTimeSpan[] {
-	return map.spans.map((s) => ({
-		origStart: s.origStart,
-		origEnd: s.origEnd,
-		speed: s.speed,
-	}));
-}
-
 /**
  * Queue an export on the backend. The Rust export queue owns the run: it persists
  * the payload, executes it on the single serial worker (so two exports never
@@ -280,19 +235,5 @@ export function exportTimeMap(map: {
 // biome-ignore lint/suspicious/useAwait: `async` turns enqueueViaSink's synchronous throw into a rejection callers already .catch().
 export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
 	// Returns any auto-repairs the backend applied, so a caller can surface a verify-this notice; empty means none.
-	return enqueueViaSink({
-		inputPath: opts.inputPath,
-		format: opts.format,
-		quality: opts.quality,
-		renderState: opts.renderState,
-		exportId: opts.exportId,
-		gifSettings: opts.gifSettings,
-		speed: opts.speed,
-		fps: opts.fps,
-		burnCaptions: opts.captions?.burnCaptions ?? false,
-		captionSidecar: opts.captions?.sidecar ?? null,
-		browserVideoPath: opts.browserVideoPath ?? null,
-		timeMap: opts.timeMap ?? null,
-		engineExport: opts.engineExport ?? false,
-	});
+	return enqueueViaSink(exportPayload(opts));
 }

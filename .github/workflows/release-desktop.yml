@@ -1,10 +1,7 @@
 name: Release Desktop App
 
-# Per-step shell logic lives under `scripts/release/`. The workflow file is
-# kept structural: matrix, gates, secrets, artifact wiring. The procedural
-# detail (release-body markdown, MSIX packaging, FFmpeg sidecar download,
-# version sync, etc.) is each its own file you can read top-to-bottom
-# instead of squinting at YAML heredocs.
+# Per-step shell logic lives under `scripts/release/`; this file stays structural (matrix, gates, secrets, artifact wiring).
+# The procedural detail is each its own script you can read top to bottom instead of squinting at YAML heredocs.
 
 on:
   push:
@@ -26,9 +23,7 @@ env:
   RUST_BACKTRACE: "1"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  # FFmpeg version pinned for reproducible release builds. Bump deliberately;
-  # do NOT track "latest". Per-OS download details live in
-  # `scripts/release/download-ffmpeg-{windows,macos,linux}.{ps1,sh}`.
+  # Pinned for reproducible release builds. Bump deliberately; do NOT track latest. Per-OS download details live in `scripts/release/download-ffmpeg-*`.
   FFMPEG_VERSION: "7.1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -104,13 +99,8 @@ jobs:
             os: macos-latest
             rust_target: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin
-          # macos-x64 (Intel) now builds WITH on-device captions: the ggml engine
-          # (transcribe.cpp) compiles from source, so unlike the old `ort` it has
-          # an x86_64-apple-darwin build. CROSS-COMPILED on the arm64 runner
-          # (`os: macos-latest`, `--target x86_64-apple-darwin`) because GitHub is
-          # retiring the native Intel image (macos-13), whose runners queue for
-          # hours. If cross-compiling ggml for x86_64 ever fails, fall back to
-          # `-- --no-default-features` (Intel ships remote-only, non-breaking).
+          # Intel Mac builds WITH on-device captions, cross-compiled on the arm64 runner because GitHub is retiring the native macos-13 image and its runners queue for hours.
+          # If cross-compiling ggml for x86_64 ever fails, fall back to `--no-default-features`: Intel then ships remote-only, which is non-breaking.
           - name: macos-x64
             os: macos-latest
             rust_target: x86_64-apple-darwin
@@ -127,23 +117,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # See ci-desktop.yml: the default Xcode (16.4) on macos-latest has a
-      # clang resource dir that doesn't match stable rustc's LLVM, breaking
-      # the final link with `library 'clang_rt.osx' not found`. Pin the newest
-      # fully-installed stable Xcode so the compiler-rt path exists.
+      # The default Xcode on macos-latest has a clang resource dir that does not match stable rustc's LLVM, breaking the link with `library 'clang_rt.osx' not found`.
+      # Pin the newest fully-installed stable Xcode so the compiler-rt path exists.
       - name: Select Xcode (macOS)
         if: runner.os == 'macOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      # `latest-stable` currently resolves to an Xcode RC whose toolchain is
-      # missing the compiler-rt static archives rustc links (`-lclang_rt.osx`
-      # → `library 'clang_rt.osx' not found`, clang/21/lib/darwin absent).
-      # Rather than gamble on which Xcode the runner ships, find
-      # libclang_rt.osx.a wherever it actually lives — active toolchain first,
-      # then Command Line Tools, then any installed Xcode — and add its dir to
-      # the linker search path so the final link resolves.
+      # `latest-stable` can resolve to an Xcode RC whose toolchain lacks the compiler-rt archives rustc links, failing with `library 'clang_rt.osx' not found`.
+      # Rather than gamble on the runner's Xcode, find libclang_rt.osx.a wherever it lives and add its directory to the linker search path.
       - name: Ensure compiler-rt on link path (macOS)
         if: runner.os == 'macOS'
         shell: bash
@@ -161,13 +144,9 @@ jobs:
           echo "Using compiler-rt at: $rt"
           echo "RUSTFLAGS=${RUSTFLAGS:-} -L $(dirname "$rt")" >> "$GITHUB_ENV"
 
-      # pnpm version comes from the root package.json `packageManager` field.
-      # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
-      # while the repo had moved to 11.
+      # The version comes from the root package.json `packageManager` field; pinning it here silently drifted CI onto pnpm 10 while the repo had moved to 11.
       - name: Install pnpm
-        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
-        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
-        # installs the pinned version directly and never takes that path.
+        # Pinned to v4: v6 bootstraps an older pnpm then runs `pnpm self-update`, which crashes on our pinned version (pnpm/pnpm#12959).
         uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -179,9 +158,7 @@ jobs:
           cache: "pnpm"
 
       # One source of truth for the compiler version: `rust-toolchain.toml`.
-      # dtolnay/rust-toolchain does not read that file, and installing `@stable`
-      # while cargo resolves the pinned channel would add targets and components
-      # to the wrong toolchain.
+      # dtolnay/rust-toolchain does not read it, and installing `@stable` while cargo resolves the pinned channel adds targets to the wrong toolchain.
       - name: Read pinned toolchain
         id: rust
         shell: bash
@@ -226,10 +203,7 @@ jobs:
 
       - name: Cache FFmpeg sidecars
         id: ffmpeg-cache
-        # A flaky cache restore must never sink the whole release leg: the
-        # sidecars are re-downloadable from the step below. On a cache error
-        # `cache-hit` stays falsy, so the download step runs and the build
-        # still gets its FFmpeg binaries.
+        # A flaky cache restore must never sink the release leg: on a cache error `cache-hit` stays falsy, so the download step runs and the build still gets its sidecars.
         continue-on-error: true
         uses: actions/cache@v4
         with:
@@ -241,10 +215,7 @@ jobs:
       - name: Download FFmpeg sidecars
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: bash
-        # Explicit `bash <file>` instead of `./<file>` — the dispatch shell
-        # script isn't necessarily +x on a Windows-checkout working tree,
-        # and the per-OS dispatchees (`download-ffmpeg-{windows,macos,linux}.*`)
-        # are always invoked via `bash`/`pwsh` explicitly for the same reason.
+        # `bash <file>`, not `./<file>`: the script is not necessarily +x on a Windows checkout, and the per-OS dispatchees are invoked the same way for the same reason.
         run: bash ./scripts/release/ensure-ffmpeg.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
 
       - name: Verify FFmpeg sidecars (encoders required for export)
@@ -256,21 +227,8 @@ jobs:
           TAG: ${{ needs.create-release.outputs.tag_name }}
         run: node scripts/release/sync-version.mjs
 
-      # Frontend (Vite) build-time config. `tauri build` runs the frontend
-      # build (`beforeBuildCommand: pnpm run ui:build`) with Vite rooted at
-      # apps/desktop, so Vite reads apps/desktop/.env and inlines the
-      # `PUBLIC_*` vars into the bundle (envPrefix in vite.config.ts). This is
-      # the ONLY path that gets PostHog into the Svelte side — release builds
-      # don't read .env at runtime. The Rust side gets the same values via the
-      # build-step env below (option_env!), so one secret drives both.
-      #
-      # NOTE on the Google creds: in a RELEASE build the .env is NOT read by
-      # Rust (dotenvy in lib.rs is `#[cfg(debug_assertions)]`-gated). They reach
-      # cargo solely through `option_env!` resolving the build-step env on the
-      # "Build Tauri app" step. We still write them here only for parity with
-      # the local-dev file layout; the line is inert for the release binary.
-      # Forks without secrets get empty values, which the code treats as
-      # "unconfigured" (no-op) rather than failing the build.
+      # Vite build-time config: `tauri build` runs the frontend build rooted at apps/desktop, so this .env is the ONLY path that inlines `PUBLIC_*` into the bundle.
+      # The Google creds are inert here, reaching cargo solely through `option_env!` on the build step; the line exists for parity with the local-dev layout.
       - name: Write build-time config to apps/desktop/.env
         shell: bash
         run: |
@@ -284,40 +242,24 @@ jobs:
       - name: Build Tauri app
         shell: bash
         env:
-          # Signs the updater artifacts (.sig files) so the running app can
-          # verify a download against the pubkey baked into tauri.conf.json.
-          # Add these as repo secrets — without them `tauri build` still
-          # succeeds but produces unsigned bundles the updater will reject.
+          # Signs the updater artifacts so the running app can verify a download against the pubkey baked into tauri.conf.json.
+          # Without these secrets `tauri build` still succeeds, but produces unsigned bundles the updater rejects.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Rust reads these at COMPILE time via `option_env!` (release builds
-          # ignore the runtime env / .env entirely). They must be in the build
-          # step's env so cargo/rustc inherit them. The Google creds feed
-          # commands/gdrive.rs; the PUBLIC_POSTHOG_* pair feeds telemetry.rs and
-          # is the SAME pair the frontend bundle gets from apps/desktop/.env
-          # above — one secret, both sides. Empty (forks) → treated as
-          # unconfigured / analytics no-op.
+          # Rust reads these at COMPILE time via `option_env!`, so they must sit in the build step's env for cargo to inherit them; release builds ignore the runtime env entirely.
+          # The PostHog pair is the SAME one the frontend bundle gets above: one secret, both sides. Empty on forks means unconfigured, not broken.
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           PUBLIC_POSTHOG_KEY: ${{ secrets.PUBLIC_POSTHOG_KEY }}
           PUBLIC_POSTHOG_HOST: ${{ secrets.PUBLIC_POSTHOG_HOST }}
-          # Force portable x64 ggml. CI runners are Intel Xeon with AVX-512;
-          # without this flag the staticlib compiles in an AVX-512 jump-table
-          # which raises STATUS_ILLEGAL_INSTRUCTION (0xC000001D) on Zen 3 /
-          # pre-Skylake / VM CPUs (real users). Scalar fallback is ~14x slower
-          # but works on every x86-64 CPU. The `CMAKE_ARGS` mirror is
-          # belt-and-braces because the sys build.rs reads both. CI uses
-          # the same flag at ci-desktop.yml. Hotfix v0.4.1.
+          # Force portable x64 ggml: CI runners are AVX-512 Xeons, and without this the staticlib emits an AVX-512 jump table that raises STATUS_ILLEGAL_INSTRUCTION on real users' Zen 3 and pre-Skylake CPUs.
+          # The scalar fallback is ~14x slower but universal. The `CMAKE_ARGS` mirror is belt-and-braces, since the sys build.rs reads both.
           TRANSCRIBE_CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
           CMAKE_ARGS:           "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
         run: pnpm --filter recast-desktop tauri build ${{ matrix.platform.tauri_args }}
 
-      # Smoke test — runs after the build, before MSIX packaging / updater
-      # tagging, so a release that crashes on infer falls through to the
-      # verifier as a release-leg failure rather than silently shipping a
-      # broken artifact. Caches the GGUF + dispatches ffmpeg via the same
-      # scripts as ci-desktop, so a passing CI run is a passing release
-      # build with no per-OS-if-spaghetti.
+      # Runs after the build and before packaging, so a release that crashes on inference fails the leg instead of shipping a broken artifact.
+      # Caches the GGUF and dispatches ffmpeg through the same scripts as ci-desktop, so a passing CI run means a passing release build.
       - name: Cache smoke-test GGUF (Whisper-base, ~60 MB)
         if: matrix.platform.os == 'windows-latest'
         uses: actions/cache@v4
@@ -365,11 +307,8 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Upload updater signatures for manifest
-        # The generate-manifest job assembles latest.json from these `.sig`
-        # files. Only the signatures are needed — the manifest references
-        # the bundles by their release-asset URL. If signing secrets are
-        # unset no `.sig` files exist; the manifest job then fails loudly
-        # with a clear message rather than publishing a broken updater.
+        # Only the signatures are needed: the manifest references bundles by their release-asset URL.
+        # With signing secrets unset no `.sig` exists, and the manifest job then fails loudly rather than publishing a broken updater.
         uses: actions/upload-artifact@v4
         with:
           name: updater-sigs-${{ matrix.platform.name }}
@@ -391,12 +330,8 @@ jobs:
   generate-manifest:
     name: Generate updater manifest
     needs: [create-release, build-desktop]
-    # Run even when one build leg fails — `generate-latest-json.mjs` warns
-    # and skips platforms whose `.sig` artifact is missing, so the manifest
-    # still publishes for the legs that succeeded. Only `!cancelled()` is
-    # needed (not `always()`) because a cancelled run shouldn't produce a
-    # half-finished manifest. If every leg fails, the script's final
-    # zero-platform guard surfaces a clear error.
+    # Runs even when a build leg fails: the manifest script warns and skips platforms whose `.sig` is missing, so the legs that succeeded still publish.
+    # `!cancelled()` rather than `always()`, since a cancelled run should not produce a half-finished manifest; a zero-platform result errors loudly.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     permissions:
@@ -454,11 +389,8 @@ jobs:
   # and NOT on each other, so once the release is public they run in PARALLEL.
   publish-homebrew-cask:
     name: Publish Homebrew Cask
-    # Runs after the release is public so the DMGs are downloadable
-    # from the release URL the cask formula will reference. The script
-    # itself no-ops when HOMEBREW_TAP_TOKEN is unset, so this job is
-    # safe to keep enabled before the tap is bootstrapped — it just
-    # surfaces a `::notice::` and exits 0.
+    # Runs after the release is public, so the DMGs are downloadable from the URL the cask references.
+    # The script no-ops when HOMEBREW_TAP_TOKEN is unset, so this is safe to keep enabled before the tap exists: it just notices and exits 0.
     needs: [create-release, publish-release]
     runs-on: ubuntu-24.04
     permissions:
@@ -475,12 +407,8 @@ jobs:
 
   publish-winget:
     name: Publish to winget
-    # Submits a manifest update to microsoft/winget-pkgs for the NSIS installer.
-    # Skips when WINGET_TOKEN is unset, so the workflow stays green before the
-    # winget package + fork are bootstrapped. The FIRST version must be
-    # submitted manually; the action automates subsequent versions. See
-    # scripts/release/WINGET_SETUP.md. Runs in parallel with the Homebrew job
-    # (same `needs`, no cross-dependency).
+    # Submits a manifest update to microsoft/winget-pkgs for the NSIS installer, skipping when WINGET_TOKEN is unset so the workflow stays green before bootstrap.
+    # The FIRST version must be submitted by hand; see scripts/release/WINGET_SETUP.md. Runs in parallel with the Homebrew job.
     needs: [create-release, publish-release]
     runs-on: ubuntu-24.04
     env:

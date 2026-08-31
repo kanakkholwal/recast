@@ -130,11 +130,8 @@ where
     Value::Object(merged)
 }
 
-/// Canonicalize a value for diff-stable output: object keys are already sorted
-/// (serde_json `Map` is a `BTreeMap` — no `preserve_order` feature here), and
-/// this additionally sorts arrays whose every element is an object with a
-/// string `id` by that id, so reordering an array never produces a spurious
-/// diff. Recurses into nested structures.
+/// Canonicalizes a value for diff-stable output, recursing into nested structures; object keys are already sorted, since serde_json's `Map` is a `BTreeMap` here.
+/// It additionally sorts arrays whose every element is an object with a string `id`, so reordering one never produces a spurious diff.
 pub fn canonicalize(value: Value) -> Value {
     match value {
         Value::Array(items) => {

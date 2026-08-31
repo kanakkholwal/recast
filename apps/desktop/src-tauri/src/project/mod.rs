@@ -95,13 +95,8 @@ pub struct ProjectMediaMetadata {
     pub has_system_audio: bool,
     pub has_microphone: bool,
     pub has_camera: bool,
-    /// Whether the camera was ASKED for, regardless of whether a track arrived.
-    ///
-    /// `has_camera` alone can't tell a camera that was switched off from one
-    /// that was requested and failed (device busy, permission denied) — and the
-    /// editor otherwise tells someone to "turn the camera on" when they did.
-    /// Defaulted so bundles written before this field read as "not requested",
-    /// which for them is indistinguishable from off anyway.
+    /// Whether the camera was ASKED for, regardless of whether a track arrived: `has_camera` alone cannot separate switched-off from requested-and-failed.
+    /// Defaulted, so bundles written before this field read as not requested, which for them is indistinguishable from off.
     #[serde(default)]
     pub camera_requested: bool,
     /// Signed millisecond offsets of the audio / mic / camera tracks relative

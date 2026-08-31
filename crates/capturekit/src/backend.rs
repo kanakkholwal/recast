@@ -22,20 +22,13 @@ pub(crate) struct RawFrame<'a> {
 }
 
 /// A source of video frames, whatever produced them.
-///
-/// One trait rather than one per surface is what makes a screenshot, a screen
-/// recording and a camera the same acquisition: [`crate::shot`], the streaming
-/// capturer and the camera backends all drive this, so a fix to stale frames,
-/// cropping, permissions or colour lands on every one of them at once.
+/// One trait rather than one per surface is what makes a screenshot, a recording and a camera the same acquisition, so a fix to staleness or colour lands on all of them.
 pub(crate) trait FrameSource: Send {
     /// What the backend actually negotiated, which is not always what was asked for.
     fn describe(&self) -> &SourceDesc;
 
     /// The region the backend cropped to during acquisition, if it did.
-    ///
-    /// Reported rather than inferred from the frame size: a region the same size
-    /// as the display but offset would otherwise look like an uncropped frame and
-    /// silently skip the host-side fallback.
+    /// Reported rather than inferred from the frame size: a region the size of the display but offset would look uncropped and silently skip the host-side fallback.
     fn region(&self) -> Option<Rect> {
         None
     }
@@ -65,12 +58,8 @@ pub(crate) struct RawAudio<'a> {
     pub discontinuous: bool,
 }
 
-/// A source of audio samples.
-///
-/// Separate from [`FrameSource`] because the two differ in every way that
-/// matters: audio is continuous and counted in sample frames, video is discrete
-/// and counted in pictures. What they share is the clock, which is what lets a
-/// session line them up.
+/// A source of audio samples, separate from [`FrameSource`] because audio is continuous and counted in sample frames while video is discrete and counted in pictures.
+/// What they share is the clock, which is what lets a session line them up.
 pub(crate) trait AudioSource: Send {
     /// What the backend negotiated, which shared-mode capture never converts.
     fn describe(&self) -> &AudioDesc;

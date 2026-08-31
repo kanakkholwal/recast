@@ -223,15 +223,8 @@ impl Branch {
         self.entries.len() >= COMPACT_AFTER_ENTRIES
     }
 
-    /// Record `ops` as one entry.
-    ///
-    /// Re-sending an `idem_key` that is already present is a no-op that reports
-    /// the original sequence number, so a client that retries after a dropped
-    /// socket never double-applies.
-    ///
-    /// # Errors
-    /// [`JournalError::SeqMismatch`] when `expect_seq` does not match
-    /// [`Branch::next_seq`], meaning another writer got in first.
+    /// Records `ops` as one entry; re-sending a present `idem_key` is a no-op reporting the original seq, so a retry after a dropped socket never double-applies.
+    /// Errors with [`JournalError::SeqMismatch`] when `expect_seq` does not match [`Branch::next_seq`], meaning another writer got in first.
     pub fn append(
         &mut self,
         idem_key: impl Into<String>,
@@ -295,14 +288,8 @@ impl Branch {
         Ok(state)
     }
 
-    /// Collapse every recorded op into a single [`Op::Replace`].
-    ///
-    /// The fork point is left alone: it is what [`Branch::materialize`] checks
-    /// the project against, so moving it would reject the very state the branch
-    /// is meant to apply to.
-    ///
-    /// # Errors
-    /// Whatever [`Branch::materialize`] would return for `base_state`.
+    /// Collapses every recorded op into a single [`Op::Replace`], leaving the fork point alone.
+    /// Moving it would reject the very state the branch applies to, since that is what [`Branch::materialize`] checks against.
     pub fn compact(&mut self, base_state: &RenderState, now_ms: i64) -> Result<(), JournalError> {
         let folded = self.materialize(base_state)?;
         let seq = self.next_seq();
@@ -320,10 +307,7 @@ impl Branch {
 }
 
 /// On-disk journals for one project.
-///
-/// Branches live under the app's data directory rather than beside the
-/// `.recast`: they are pending work, so neither the temp-dir sweeper nor the
-/// user's own folder is the right home for them.
+/// Branches live under the app data directory rather than beside the `.recast`: they are pending work, so neither the temp sweeper nor the user's folder is the right home.
 #[derive(Debug, Clone)]
 pub struct BranchStore {
     dir: PathBuf,
@@ -406,13 +390,8 @@ impl BranchStore {
         crate::commands::system::write_atomic(&tmp, &path, &bytes).map_err(write)
     }
 
-    /// Discard branches that are provably worthless: created, never appended to,
-    /// and older than [`EMPTY_BRANCH_MAX_AGE_MS`].
-    ///
-    /// A branch carrying ops is never touched, however old. It is pending human
-    /// review, and quietly deleting someone's proposed edits is worse than the
-    /// few KB a stale journal costs. Unreadable journals are left alone too: we
-    /// cannot tell whether they hold work.
+    /// Discards branches created, never appended to, and older than [`EMPTY_BRANCH_MAX_AGE_MS`].
+    /// A branch carrying ops is never touched however old, since it is pending review; unreadable journals are left alone because we cannot tell whether they hold work.
     pub fn sweep(&self, now_ms: i64) -> Vec<BranchId> {
         self.list()
             .into_iter()
@@ -1287,12 +1266,8 @@ mod tests {
     }
 }
 
-/// The branch cycle against a real `.recast` on disk.
-///
-/// The unit tests above prove the journal folds correctly in memory. These prove
-/// the part that only shows up on disk: that a branch saved, reloaded and
-/// materialized against a freshly-opened project still lands the right edits in
-/// the bundle, and that its fork point stops matching once it has.
+/// The branch cycle against a real `.recast` on disk, which the in-memory unit tests above cannot reach.
+/// A branch saved, reloaded and materialized against a freshly-opened project must still land the right edits, and its fork point must stop matching once it has.
 #[cfg(test)]
 mod disk_roundtrip_tests {
     use std::fs;
