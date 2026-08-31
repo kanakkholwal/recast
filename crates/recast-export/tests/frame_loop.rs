@@ -122,7 +122,7 @@ fn every_frame_is_canvas_sized_rgba() {
             ctx.device(),
             ctx.queue(),
             |_, pixels| {
-                lengths.push(pixels.len());
+                lengths.push(pixels.bytes().len());
                 Ok::<_, Infallible>(())
             },
         )
@@ -149,7 +149,7 @@ fn the_uploaded_picture_reaches_the_frame() {
             ctx.device(),
             ctx.queue(),
             |_, pixels| {
-                without = pixels.to_vec();
+                without = pixels.bytes().to_vec();
                 Ok::<_, Infallible>(())
             },
         )
@@ -164,7 +164,7 @@ fn the_uploaded_picture_reaches_the_frame() {
             ctx.device(),
             ctx.queue(),
             |_, pixels| {
-                with = pixels.to_vec();
+                with = pixels.bytes().to_vec();
                 Ok::<_, Infallible>(())
             },
         )

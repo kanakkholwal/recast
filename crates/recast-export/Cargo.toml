@@ -18,6 +18,7 @@ recast-color = { path = "../recast-color" }
 recast-audio = { path = "../recast-audio", features = ["scene"] }
 thiserror = "2.0"
 wgpu = { version = "=30.0.1", default-features = false, features = ["wgsl"] }
+bytemuck = { version = "1", features = ["derive"] }
 
 [target.'cfg(windows)'.dependencies]
 recast-codec-mf = { path = "../recast-codec-mf" }

@@ -116,7 +116,7 @@ fn export(ctx: &GpuContext, walk: FrameWalk, seconds: f64, with_audio: bool) -> 
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| sink.push(index, rgba),
+            |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
 
@@ -147,7 +147,7 @@ fn export_with(ctx: &GpuContext, walk: FrameWalk, mut mix: Mixer) -> Vec<u8> {
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| sink.push(index, rgba),
+            |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
     sink.push_audio(&mut mix, 128_000).expect("audio encodes");
@@ -255,7 +255,7 @@ fn writing_the_audio_track_twice_is_refused() {
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| sink.push(index, rgba),
+            |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
 

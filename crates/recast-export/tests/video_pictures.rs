@@ -124,7 +124,7 @@ fn record(ctx: &GpuContext, walk: FrameWalk, path: &std::path::Path) {
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| sink.push(index, rgba),
+            |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
     std::fs::write(path, sink.finish().expect("finished")).expect("write");

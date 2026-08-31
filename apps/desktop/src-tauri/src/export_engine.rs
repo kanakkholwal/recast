@@ -61,7 +61,9 @@ fn shared_context() -> Result<&'static GpuContext, EngineExportError> {
 
 use recast_captions::CaptionTrack;
 use recast_compositor::{canvas_geometry, RenderSource, Session, SourceColor, SourceGeometry};
-use recast_export::{FfmpegPictures, FfmpegSink, FrameLoop, FrameWalk, SourceInfo};
+use recast_export::{
+    FfmpegPictures, FfmpegSink, Frame, FrameLoop, FrameWalk, PixelLayout, SourceInfo,
+};
 #[cfg(windows)]
 use recast_export::{Mp4Error, Mp4Sink, VideoPictures};
 use recast_gpu::{GpuContext, GpuOptions};
@@ -166,11 +168,11 @@ enum Sink {
 }
 
 impl Sink {
-    fn push(&mut self, index: u64, rgba: &[u8]) -> Result<(), SinkStop> {
+    fn push(&mut self, index: u64, frame: Frame<'_>) -> Result<(), SinkStop> {
         match self {
             #[cfg(windows)]
-            Self::Native(sink) => Ok(sink.push(index, rgba)?),
-            Self::Ffmpeg(sink) => Ok(sink.push(rgba)?),
+            Self::Native(sink) => Ok(sink.push(index, frame)?),
+            Self::Ffmpeg(sink) => Ok(sink.push(frame)?),
         }
     }
 
@@ -305,6 +307,15 @@ pub fn scaled_source(source: SourceGeometry, k: f64) -> SourceGeometry {
     }
 }
 
+/// What the loop will hand the sink. NV12 wherever the GPU pass can pack the
+/// shape, which is nine times faster than converting the readback on the CPU.
+fn pixel_layout(width: u32, height: u32) -> PixelLayout {
+    match recast_export::GpuNv12::handles(width, height) {
+        true => PixelLayout::Nv12,
+        false => PixelLayout::Rgba,
+    }
+}
+
 /// The recording, opened through the backend this export chose.
 fn open_pictures(spec: &ExportSpec<'_>) -> Result<Pictures, EngineExportError> {
     let refuse = |message: String| EngineExportError::OpenInput {
@@ -345,9 +356,17 @@ fn open_sink(
             "no FFmpeg was given, and this platform has no in-process encoder".into(),
         )
     })?;
-    FfmpegSink::new(program, spec.output, width, height, spec.fps, bitrate)
-        .map(|sink| Sink::Ffmpeg(Box::new(sink)))
-        .map_err(|e| EngineExportError::Encode(e.to_string()))
+    FfmpegSink::new(
+        program,
+        spec.output,
+        width,
+        height,
+        spec.fps,
+        bitrate,
+        pixel_layout(width, height),
+    )
+    .map(|sink| Sink::Ffmpeg(Box::new(sink)))
+    .map_err(|e| EngineExportError::Encode(e.to_string()))
 }
 
 /// The source geometry an export will render from: `native`, shrunk until the
@@ -416,15 +435,20 @@ pub fn export_video(
     let mut sink = open_sink(spec, size.width, size.height, walk, bitrate)?;
 
     let total = walk.len();
-    FrameLoop::new()
+    // The colour the sink encodes in, so both halves agree on the matrix.
+    let mut loop_ = match pixel_layout(size.width, size.height) {
+        PixelLayout::Nv12 => FrameLoop::with_nv12(SourceColor::default()),
+        PixelLayout::Rgba => FrameLoop::new(),
+    };
+    loop_
         .run(
             &mut session,
             &mut pictures,
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| {
-                sink.push(index, rgba)?;
+            |index, frame| {
+                sink.push(index, frame)?;
                 match progress(index + 1, total) {
                     Flow::Continue => Ok(()),
                     Flow::Cancel => Err(SinkStop::Cancelled),

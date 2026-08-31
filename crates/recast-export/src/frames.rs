@@ -1,9 +1,47 @@
 use recast_compositor::{
-    FrameInputs, LayerInput, RenderSource, Renderable, SourcePlanes, YuvError,
+    FrameInputs, LayerInput, RenderSource, Renderable, SourceColor, SourcePlanes, YuvError,
 };
 use recast_gpu::Readback;
 
+use crate::nv12_gpu::GpuNv12;
 use crate::walk::FrameWalk;
+
+/// What a sink expects, and what a frame is. Not `PlaneLayout`, which only
+/// names YUV plane arrangements and has no RGBA member.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PixelLayout {
+    #[default]
+    Rgba,
+    Nv12,
+}
+
+/// One finished frame, in whichever layout the loop produced.
+///
+/// A typed hand-off rather than bare bytes plus a flag: a sink told the wrong
+/// layout writes a corrupt file that every test still calls green.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Frame<'a> {
+    Rgba(&'a [u8]),
+    /// Packed, converted on the GPU where the frame already was.
+    Nv12(&'a [u8]),
+}
+
+impl Frame<'_> {
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Rgba(bytes) | Self::Nv12(bytes) => bytes,
+        }
+    }
+
+    #[must_use]
+    pub fn layout(&self) -> PixelLayout {
+        match self {
+            Self::Rgba(_) => PixelLayout::Rgba,
+            Self::Nv12(_) => PixelLayout::Nv12,
+        }
+    }
+}
 
 /// Why a render loop stopped. Generic over the picture and sink errors rather
 /// than stringifying them: a caller has to tell end-of-file from a dead driver.
@@ -54,12 +92,28 @@ pub struct FrameLoop {
     source: Option<(u32, u32, wgpu::Texture)>,
     rgba: Vec<u8>,
     source_allocations: u64,
+    /// Set when the caller wants NV12; the pass is built on first use, which is
+    /// the first point a device is in hand.
+    nv12: Option<(SourceColor, Option<GpuNv12>)>,
 }
 
 impl FrameLoop {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A loop that converts to NV12 on the GPU, handing the sink [`Frame::Nv12`].
+    ///
+    /// Nine times faster than converting the readback on the CPU at 1080p, and
+    /// it reads back 1.5 bytes a pixel instead of 4. Shapes the shader cannot
+    /// pack fall back to [`Frame::Rgba`], so a sink still has to handle both.
+    #[must_use]
+    pub fn with_nv12(color: SourceColor) -> Self {
+        Self {
+            nv12: Some((color, None)),
+            ..Self::default()
+        }
     }
 
     /// Renders every frame in `walk` into `sink`. The pixels are borrowed and
@@ -76,7 +130,7 @@ impl FrameLoop {
     where
         R: Renderable,
         P: PictureSource,
-        S: FnMut(u64, &[u8]) -> Result<(), E>,
+        S: FnMut(u64, Frame<'_>) -> Result<(), E>,
         E: std::error::Error,
     {
         let layer = RenderSource::screen_layer(source);
@@ -108,10 +162,30 @@ impl FrameLoop {
             inputs.set_caption(source.caption_frame(output_time));
 
             let (target, _) = source.render_to_texture(output_time, &inputs);
-            self.readback.read(device, queue, &target, &mut self.rgba);
-            sink(index, &self.rgba).map_err(|error| RenderError::Sink { index, error })?;
+            let frame = match self.convert(device, queue, &target) {
+                true => Frame::Nv12(&self.rgba),
+                false => Frame::Rgba(&self.rgba),
+            };
+            sink(index, frame).map_err(|error| RenderError::Sink { index, error })?;
         }
         Ok(walk.len())
+    }
+
+    /// Fills `self.rgba`, returning whether it holds NV12 rather than RGBA.
+    fn convert(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: &wgpu::Texture,
+    ) -> bool {
+        if let Some((color, pass)) = &mut self.nv12 {
+            let pass = pass.get_or_insert_with(|| GpuNv12::new(device));
+            if pass.convert(device, queue, target, color, &mut self.rgba) {
+                return true;
+            }
+        }
+        self.readback.read(device, queue, target, &mut self.rgba);
+        false
     }
 
     /// The source texture, resized only when the picture's size changes.

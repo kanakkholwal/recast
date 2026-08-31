@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use recast_compositor::{PlaneData, PlaneLayout, SourceColor, SourcePlanes};
 
-use crate::frames::PictureSource;
+use crate::frames::{Frame, PictureSource, PixelLayout};
 
 /// Stderr kept for diagnostics. The fatal line is always last; the banner is noise.
 const STDERR_TAIL: usize = 8192;
@@ -33,6 +33,8 @@ pub enum FfmpegError {
     FrameSize { got: usize, want: usize },
     #[error("the source has no frame rate to index frames by")]
     NoFrameRate,
+    #[error("the frame is in a layout the encoder was not opened for")]
+    WrongLayout,
 }
 
 /// A child's stderr, drained on a side thread into a bounded tail.
@@ -284,10 +286,14 @@ pub struct FfmpegSink {
     stdin: Option<ChildStdin>,
     stderr: Option<StderrTail>,
     frame_bytes: usize,
+    /// What the encoder was told to expect. A frame in the other layout is
+    /// refused rather than written as garbage the encoder cannot detect.
+    layout: PixelLayout,
 }
 
 impl FfmpegSink {
-    /// Opens an encoder writing `output` at `width` by `height` and `fps`.
+    /// Opens an encoder writing `output` at `width` by `height` and `fps`,
+    /// expecting frames in `layout`.
     pub fn new(
         program: &Path,
         output: &Path,
@@ -295,7 +301,13 @@ impl FfmpegSink {
         height: u32,
         fps: (u32, u32),
         bitrate: u32,
+        layout: PixelLayout,
     ) -> Result<Self, FfmpegError> {
+        // NV12 is what the GPU pass produces, and it is 1.5 bytes a pixel through the pipe instead of 4.
+        let pixel = match layout {
+            PixelLayout::Nv12 => "nv12",
+            PixelLayout::Rgba => "rgba",
+        };
         let args = vec![
             "-hide_banner".into(),
             "-loglevel".into(),
@@ -304,7 +316,7 @@ impl FfmpegSink {
             "-f".into(),
             "rawvideo".into(),
             "-pix_fmt".into(),
-            "rgba".into(),
+            pixel.into(),
             "-s".into(),
             format!("{width}x{height}"),
             "-r".into(),
@@ -335,16 +347,24 @@ impl FfmpegSink {
             child: Some(child),
             stdin: Some(stdin),
             stderr: Some(stderr),
-            frame_bytes: width as usize * height as usize * 4,
+            frame_bytes: match layout {
+                PixelLayout::Nv12 => PlaneLayout::Nv12.packed_len(width, height),
+                PixelLayout::Rgba => width as usize * height as usize * 4,
+            },
+            layout,
         })
     }
 
     /// Writes one rendered frame. This backend has no random access and takes
     /// frames in the order the loop produces them.
-    pub fn push(&mut self, rgba: &[u8]) -> Result<(), FfmpegError> {
-        if rgba.len() < self.frame_bytes {
+    pub fn push(&mut self, frame: Frame<'_>) -> Result<(), FfmpegError> {
+        if frame.layout() != self.layout {
+            return Err(FfmpegError::WrongLayout);
+        }
+        let bytes = frame.bytes();
+        if bytes.len() < self.frame_bytes {
             return Err(FfmpegError::FrameSize {
-                got: rgba.len(),
+                got: bytes.len(),
                 want: self.frame_bytes,
             });
         }
@@ -353,7 +373,7 @@ impl FfmpegSink {
             .as_mut()
             .ok_or(FfmpegError::NoPipe { stream: "stdin" })?;
         stdin
-            .write_all(&rgba[..self.frame_bytes])
+            .write_all(&bytes[..self.frame_bytes])
             .map_err(FfmpegError::Write)
     }
 

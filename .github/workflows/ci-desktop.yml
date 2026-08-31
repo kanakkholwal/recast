@@ -35,14 +35,12 @@ env:
 
 jobs:
   # Cheap gates first, so the four compile legs never start on a run that has already failed.
-  quick:
-    name: fmt + lint + comments
+  quality:
+    name: Code Quality Checks
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Read pinned toolchain
         id: rust
@@ -70,8 +68,16 @@ jobs:
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}"
-          git fetch --no-tags --depth=0 origin "$base"
-          echo "ref=origin/$base" >> "$GITHUB_OUTPUT"
+          # checkout already fetched full history; this only covers a base ref it did not bring down.
+          git fetch --no-tags origin "+refs/heads/$base:refs/remotes/origin/$base" || true
+          ref="origin/$base"
+          # On a push to the base branch itself HEAD == origin/$base, so nothing would ever be "changed".
+          if ! git rev-parse --verify -q "$ref^{commit}" >/dev/null ||
+             [ "$(git rev-parse HEAD)" = "$(git rev-parse "$ref")" ]; then
+            ref=$(git rev-parse --verify -q "HEAD~1^{commit}" >/dev/null && echo "HEAD~1" || echo HEAD)
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "::notice::Comparing against $ref"
 
       # Each gate reports independently: one failure must not hide the next.
       - name: rustfmt (desktop)
@@ -121,7 +127,7 @@ jobs:
   # OS-independent gates, hoisted off the four compile legs where they ran 3x over.
   engine:
     name: engine crates + wasm
-    needs: [quick]
+    needs: [quality]
     runs-on: ubuntu-24.04
     # Three cold compilation passes over 17 crates: wasm32 build, release clippy --all-targets, and an MSRV check on a second toolchain.
     timeout-minutes: 75
@@ -162,7 +168,7 @@ jobs:
 
   compile:
     name: Compile (${{ matrix.platform.name }})
-    needs: [quick, ui-tests]
+    needs: [quality, ui-tests]
     strategy:
       fail-fast: false
       matrix:

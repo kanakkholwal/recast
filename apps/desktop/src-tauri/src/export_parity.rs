@@ -549,7 +549,8 @@ mod live {
                 ctx.device(),
                 ctx.queue(),
                 |_, rgba| {
-                    frames.push(rgba.to_vec());
+                    // RGBA on purpose: the graph is compared against these, and it produces RGBA.
+                    frames.push(rgba.bytes().to_vec());
                     Ok::<_, std::convert::Infallible>(())
                 },
             )

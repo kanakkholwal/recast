@@ -7,6 +7,7 @@
 pub mod ffmpeg;
 pub mod frames;
 pub mod nv12;
+pub mod nv12_gpu;
 
 #[cfg(windows)]
 pub mod mp4;
@@ -15,10 +16,11 @@ pub mod reader;
 pub mod walk;
 
 pub use ffmpeg::{FfmpegError, FfmpegPictures, FfmpegSink, SourceInfo};
-pub use frames::{FrameLoop, NoPictures, PictureSource, RenderError};
+pub use frames::{Frame, FrameLoop, NoPictures, PictureSource, PixelLayout, RenderError};
 #[cfg(windows)]
 pub use mp4::{Mp4Error, Mp4Sink};
 pub use nv12::{rgba_to_nv12, Nv12Encoder, Nv12Error};
+pub use nv12_gpu::GpuNv12;
 #[cfg(windows)]
 pub use reader::VideoPictures;
 pub use walk::FrameWalk;

@@ -7,6 +7,7 @@ use recast_compositor::SourceColor;
 use recast_mux::avc::annex_b_to_avcc;
 use recast_mux::writer::{AudioFormat, Mp4Writer, VideoFormat};
 
+use crate::frames::Frame;
 use crate::nv12::{Nv12Encoder, Nv12Error};
 use crate::walk::FrameWalk;
 
@@ -121,16 +122,23 @@ impl Mp4Sink {
 
     /// Converts, encodes and buffers one frame. An encoder holds frames back to
     /// look ahead, so a call that writes no sample is normal.
-    pub fn push(&mut self, index: u64, rgba: &[u8]) -> Result<(), Mp4Error> {
-        self.nv12.clear();
-        self.encoder_matrix
-            .convert(&mut self.nv12, rgba, self.width, self.height)
-            .map_err(|error| Mp4Error::Convert { index, error })?;
+    pub fn push(&mut self, index: u64, frame: Frame<'_>) -> Result<(), Mp4Error> {
+        // Already NV12 means the loop converted on the GPU, and converting again would be both wrong and slow.
+        let planes = match frame {
+            Frame::Nv12(bytes) => bytes,
+            Frame::Rgba(rgba) => {
+                self.nv12.clear();
+                self.encoder_matrix
+                    .convert(&mut self.nv12, rgba, self.width, self.height)
+                    .map_err(|error| Mp4Error::Convert { index, error })?;
+                &self.nv12
+            }
+        };
 
         let samples = self
             .encoder
             .encode(
-                &self.nv12,
+                planes,
                 self.walk.timestamp_100ns(index),
                 self.walk.duration_100ns(),
             )

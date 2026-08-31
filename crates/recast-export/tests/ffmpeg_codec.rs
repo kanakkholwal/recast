@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use recast_compositor::{PlaneData, SourceColor};
-use recast_export::{FfmpegPictures, FfmpegSink, PictureSource, SourceInfo};
+use recast_export::{FfmpegPictures, FfmpegSink, Frame, PictureSource, PixelLayout, SourceInfo};
 use recast_testkit::Scratch;
 
 const W: u32 = 320;
@@ -160,14 +160,15 @@ fn rendered_frames_encode_into_a_playable_file() {
     let scratch = Scratch::new("ffmpeg-encode");
     let output = scratch.file("out.mp4");
 
-    let mut sink =
-        FfmpegSink::new(&ffmpeg, &output, W, H, (10, 1), 800_000).expect("the encoder opens");
+    let mut sink = FfmpegSink::new(&ffmpeg, &output, W, H, (10, 1), 800_000, PixelLayout::Rgba)
+        .expect("the encoder opens");
     let frames = 20u32;
     for index in 0..frames {
         // A ramp across the clip, so a decoder can tell the frames apart.
         let value = (index * 10) as u8;
         let frame = vec![value; (W * H * 4) as usize];
-        sink.push(&frame).expect("the frame is written");
+        sink.push(Frame::Rgba(&frame))
+            .expect("the frame is written");
     }
     sink.finish().expect("the encode finishes");
 
@@ -196,10 +197,10 @@ fn a_short_frame_is_refused_rather_than_written() {
     let scratch = Scratch::new("ffmpeg-short");
     let output = scratch.file("out.mp4");
 
-    let mut sink =
-        FfmpegSink::new(&ffmpeg, &output, W, H, (10, 1), 800_000).expect("the encoder opens");
+    let mut sink = FfmpegSink::new(&ffmpeg, &output, W, H, (10, 1), 800_000, PixelLayout::Rgba)
+        .expect("the encoder opens");
     let error = sink
-        .push(&[0u8; 16])
+        .push(Frame::Rgba(&[0u8; 16]))
         .expect_err("a short frame cannot be written");
     assert!(matches!(
         error,

@@ -135,7 +135,7 @@ fn export_with(ctx: &GpuContext, walk: FrameWalk, path: &std::path::Path, luma: 
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| sink.push(index, rgba),
+            |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
 
@@ -275,7 +275,7 @@ fn finishing_drains_every_frame_the_encoder_was_holding() {
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| sink.push(index, rgba),
+            |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
 
@@ -288,4 +288,94 @@ fn finishing_drains_every_frame_the_encoder_was_holding() {
         decoded += 1;
     }
     assert_eq!(decoded, walk.len());
+}
+
+/// Converting on the GPU must produce the SAME file as converting the readback
+/// on the CPU: the two feed one encoder, and the GPU pass exists only to be
+/// faster. A sink that converted an already-NV12 frame again would land here.
+#[test]
+fn the_gpu_and_cpu_conversions_encode_the_same_file() {
+    let Some(ctx) = context() else { return };
+
+    let encode = |on_gpu: bool| -> Vec<u8> {
+        let mut session = session(ctx);
+        let mut pictures = Flat::new(200);
+        let walk = FrameWalk::new(0.4, (30, 1));
+        let size = RenderSource::output_size(&session);
+        let mut sink = Mp4Sink::new(
+            size.width,
+            size.height,
+            walk,
+            4_000_000,
+            SourceColor::default(),
+        )
+        .expect("an encoder");
+        let mut frames = match on_gpu {
+            true => FrameLoop::with_nv12(SourceColor::default()),
+            false => FrameLoop::new(),
+        };
+        frames
+            .run(
+                &mut session,
+                &mut pictures,
+                walk,
+                ctx.device(),
+                ctx.queue(),
+                |index, frame| sink.push(index, frame),
+            )
+            .expect("rendered");
+        sink.finish().expect("finished")
+    };
+
+    let on_cpu = encode(false);
+    let on_gpu = encode(true);
+    assert_eq!(
+        on_gpu.len(),
+        on_cpu.len(),
+        "the two conversions produced different file lengths"
+    );
+    let differing = on_gpu.iter().zip(&on_cpu).filter(|(a, b)| a != b).count();
+    assert_eq!(
+        differing, 0,
+        "{differing} bytes differ between the two paths"
+    );
+}
+
+/// The loop has to actually take the GPU path for a shape the shader packs. A
+/// sink opened for NV12 refuses an RGBA frame, so a silent fallback fails here
+/// rather than quietly costing nine times the conversion.
+#[test]
+fn a_packable_shape_really_is_converted_on_the_gpu() {
+    let Some(ctx) = context() else { return };
+    let mut session = session(ctx);
+    let size = RenderSource::output_size(&session);
+    assert!(
+        recast_export::GpuNv12::handles(size.width, size.height),
+        "the fixture size is not one the shader packs"
+    );
+
+    let mut pictures = Flat::new(200);
+    let walk = FrameWalk::new(0.2, (30, 1));
+    let mut layouts = Vec::new();
+    FrameLoop::with_nv12(SourceColor::default())
+        .run(
+            &mut session,
+            &mut pictures,
+            walk,
+            ctx.device(),
+            ctx.queue(),
+            |_, frame| {
+                layouts.push(frame.layout());
+                Ok::<_, std::convert::Infallible>(())
+            },
+        )
+        .expect("rendered");
+
+    assert!(!layouts.is_empty(), "nothing rendered");
+    assert!(
+        layouts
+            .iter()
+            .all(|l| *l == recast_export::PixelLayout::Nv12),
+        "the loop fell back to the CPU readback: {layouts:?}"
+    );
 }

@@ -36,6 +36,151 @@ fn rgba_to_nv12_cost_per_frame() {
     }
 }
 
+/// The whole export loop, both ways: this is the number an export feels.
+#[test]
+#[ignore = "measurement: run with --release --ignored --nocapture"]
+fn export_loop_cost_per_frame() {
+    let Some(ctx) = GpuContext::new_blocking(GpuOptions {
+        require_hardware: false,
+        ..Default::default()
+    })
+    .ok() else {
+        eprintln!("skipping: no adapter");
+        return;
+    };
+    for (w, h, label) in [(1280, 720, "720p"), (1920, 1080, "1080p")] {
+        let mut timings = Vec::new();
+        for gpu in [false, true] {
+            let state = serde_json::from_str(BASE).expect("fixture");
+            let mut session = Session::new(
+                &ctx,
+                to_scene(&state),
+                SourceGeometry {
+                    width: w,
+                    height: h,
+                },
+            )
+            .expect("session");
+            let mut pictures = Flat {
+                bytes: vec![128; PlaneLayout::Nv12.packed_len(w, h)],
+                width: w,
+                height: h,
+            };
+            let walk = FrameWalk::new(1.0, (30, 1));
+            let size = RenderSource::output_size(&session);
+            let color = SourceColor::default();
+            let mut nv12 = Vec::new();
+            let mut frames = match gpu {
+                true => FrameLoop::with_nv12(color),
+                false => FrameLoop::new(),
+            };
+
+            let start = std::time::Instant::now();
+            frames
+                .run(
+                    &mut session,
+                    &mut pictures,
+                    walk,
+                    ctx.device(),
+                    ctx.queue(),
+                    |_, frame| {
+                        // The CPU path still owes the conversion the sink would do.
+                        if let recast_export::Frame::Rgba(rgba) = frame {
+                            nv12.clear();
+                            rgba_to_nv12(&mut nv12, rgba, size.width, size.height, &color)?;
+                        }
+                        Ok::<_, Nv12Error>(())
+                    },
+                )
+                .expect("rendered");
+            timings.push(start.elapsed().as_secs_f64() * 1000.0 / walk.len() as f64);
+        }
+        let (cpu, on_gpu) = (timings[0], timings[1]);
+        println!(
+            "{label:>6}: cpu loop {cpu:6.2} ms/frame ({:5.1} fps)   gpu loop {on_gpu:6.2} ms/frame ({:5.1} fps)   {:4.1}x",
+            1000.0 / cpu,
+            1000.0 / on_gpu,
+            cpu / on_gpu.max(0.0001)
+        );
+    }
+}
+
+/// The GPU converter against the CPU one, on the same frames. The number here
+/// decides whether the export loop should use it.
+#[test]
+#[ignore = "measurement: run with --release --ignored --nocapture"]
+fn gpu_nv12_cost_per_frame() {
+    use recast_export::GpuNv12;
+    use recast_gpu::OUTPUT_FORMAT;
+
+    let Some(ctx) = GpuContext::new_blocking(GpuOptions {
+        require_hardware: false,
+        ..Default::default()
+    })
+    .ok() else {
+        eprintln!("skipping: no adapter");
+        return;
+    };
+    let color = SourceColor::default();
+    let mut gpu = GpuNv12::new(ctx.device());
+
+    for (w, h, label) in [
+        (1280, 720, "720p"),
+        (1920, 1080, "1080p"),
+        (3840, 2160, "4K"),
+    ] {
+        let rgba = vec![128u8; (w * h * 4) as usize];
+        let texture = ctx.device().create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: OUTPUT_FORMAT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        ctx.queue().write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        let mut out = Vec::new();
+        // One warm run so shader compilation is not counted as frame cost.
+        gpu.convert(ctx.device(), ctx.queue(), &texture, &color, &mut out);
+        let frames = 10;
+        let start = std::time::Instant::now();
+        for _ in 0..frames {
+            gpu.convert(ctx.device(), ctx.queue(), &texture, &color, &mut out);
+        }
+        let on_gpu = start.elapsed().as_secs_f64() * 1000.0 / f64::from(frames);
+        let on_cpu = time_conversion(w, h, 10);
+        println!(
+            "{label:>6}: cpu {on_cpu:7.2} ms   gpu {on_gpu:7.2} ms   {:5.1}x faster",
+            on_cpu / on_gpu.max(0.0001)
+        );
+    }
+}
+
 const BASE: &str = r##"{
     "trimStart": 0.0, "trimEnd": 4.0,
     "backgroundType": "color", "backgroundValue": "#2200ff", "backgroundBlur": 0.0,
@@ -101,17 +246,18 @@ fn render_and_readback_cost_per_frame() {
         let color = SourceColor::default();
 
         let start = std::time::Instant::now();
-        FrameLoop::new()
+        let mut cpu_loop = FrameLoop::new();
+        cpu_loop
             .run(
                 &mut session,
                 &mut pictures,
                 walk,
                 ctx.device(),
                 ctx.queue(),
-                |_, rgba| {
+                |_, frame| {
                     let t = std::time::Instant::now();
                     nv12.clear();
-                    rgba_to_nv12(&mut nv12, rgba, size.width, size.height, &color)?;
+                    rgba_to_nv12(&mut nv12, frame.bytes(), size.width, size.height, &color)?;
                     convert += t.elapsed();
                     Ok::<_, Nv12Error>(())
                 },
