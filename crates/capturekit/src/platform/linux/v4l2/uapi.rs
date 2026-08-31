@@ -1,10 +1,5 @@
-//! The slice of `linux/videodev2.h` this backend uses: structs, ioctl codes and
-//! FourCCs.
-//!
-//! Transcribed rather than generated, so building the crate needs no kernel
-//! headers and no bindgen. Every struct size and ioctl code is pinned by the
-//! tests below against what a real `videodev2.h` produces, because a wrong size
-//! silently changes the ioctl number and the driver answers ENOTTY.
+//! The slice of `linux/videodev2.h` this backend uses, transcribed so the build needs no kernel headers or bindgen.
+//! Tests pin every struct size and ioctl code: a wrong size silently changes the ioctl number and the driver answers ENOTTY.
 
 use core::mem::size_of;
 use std::io;
@@ -279,9 +274,7 @@ pub(super) fn cstr(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
-    /// The ioctl NUMBER is the thing under test: it encodes the struct size, so
-    /// a struct one field wrong stops matching the driver's ioctl entirely and
-    /// every call answers ENOTTY.
+    /// The ioctl NUMBER is the thing under test: it encodes the struct size, so a struct one field wrong stops matching the driver's ioctl entirely and every call answers ENOTTY.
     #[cfg(target_pointer_width = "64")]
     #[test]
     fn the_ioctl_codes_match_the_kernel_headers() {

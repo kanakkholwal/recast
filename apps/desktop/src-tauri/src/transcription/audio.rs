@@ -1,8 +1,5 @@
-//! Audio extraction for transcription.
-//!
-//! ASR engines (Parakeet, Whisper) want mono 16 kHz f32 PCM — the same rate the
-//! Silero VAD path in `silence.rs` already decodes to. FFmpeg does the
-//! downmix/resample to `s16le`; we convert to normalised f32 in [-1, 1].
+//! Audio extraction for transcription: mono 16 kHz, the same rate the Silero VAD path already decodes to.
+//! FFmpeg does the downmix and resample to `s16le`; this converts to normalised f32 in [-1, 1].
 
 use std::path::Path;
 use std::process::{Command, Stdio};

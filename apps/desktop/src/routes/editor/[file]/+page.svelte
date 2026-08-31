@@ -1091,6 +1091,8 @@ async function handleExport() {
 			captions: buildCaptionExport(store),
 			// `keptTimeMap`, not `timeMap`: the latter un-collapses mid trim-drag and would export the trimmed head and tail.
 			timeMap: exportTimeMap(store.keptTimeMap),
+			// Ignored on the browser path, which is already the engine; this is the Rust one.
+			engineExport: experimentalStore.isEnabled("engineExport"),
 		};
 
 		// Source metrics the export time is correlated against; the store emits them on `export_completed`.

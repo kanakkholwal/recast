@@ -90,9 +90,7 @@ pub(crate) fn write_atomic(tmp: &Path, dest: &Path, bytes: &[u8]) -> std::io::Re
     fs::rename(tmp, dest)
 }
 
-/// Temp + rename for derived state written from async code (lockfiles, toggle
-/// state). No fsync: these are rebuildable, so the truncate window is the only
-/// thing worth closing.
+/// Temp + rename for derived state written from async code (lockfiles, toggle state). No fsync: these are rebuildable, so the truncate window is the only thing worth closing.
 pub(crate) async fn write_replace_async(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = dest.with_extension("json.tmp");
     if let Err(e) = tokio::fs::write(&tmp, bytes).await {
@@ -188,9 +186,7 @@ fn is_wayland() -> bool {
 }
 
 /// A picker thumbnail, or `None` where taking one would be intrusive or fail.
-///
-/// Skipped under Wayland, where every capture is a portal dialog and a picker
-/// full of thumbnails would be a picker full of prompts.
+/// Skipped under Wayland, where every capture is a portal dialog and a picker full of thumbnails would be a picker full of prompts.
 fn capture_thumbnail(target: capturekit::Target) -> Option<String> {
     if is_wayland() {
         return None;
@@ -541,9 +537,7 @@ pub async fn get_audio_devices() -> AppResult<Vec<AudioDeviceInfo>> {
 }
 
 /// Every microphone capturekit can name, plus the default row.
-///
-/// Loopback endpoints are dropped: they are outputs read backwards, and a mic
-/// picker offering one records the desktop instead of the speaker.
+/// Loopback endpoints are dropped: they are outputs read backwards, and a mic picker offering one records the desktop instead of the speaker.
 fn get_audio_devices_blocking() -> Result<Vec<AudioDeviceInfo>, String> {
     if !capturekit::capabilities().audio_device_enumeration {
         return Ok(vec![default_microphone()]);
@@ -578,42 +572,8 @@ fn microphones(devices: &[capturekit::AudioDevice]) -> Vec<AudioDeviceInfo> {
         .collect()
 }
 
-/// Mark a Tauri window as excluded from screen capture.
-///
-/// On Windows this calls `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`,
-/// which tells the OS compositor to render the window to the user but
-/// substitute a black box (or skip it entirely on supported APIs) when any
-/// process captures the desktop — including DXGI Desktop Duplication, which
-/// is what Recast itself uses for screen recording.
-///
-/// This is the fix for the "I can see my own camera bubble inside the
-/// recorded video" bug: the floating webcam preview window we open during
-/// recording IS part of the desktop, so without this exclusion DXGI
-/// captures its pixels into the screen frame just like any other window.
-///
-/// Requires Windows 10 v2004+ (build 19041) for `WDA_EXCLUDEFROMCAPTURE`.
-/// Older Windows versions silently fall back to `WDA_MONITOR` (renders as
-/// a black box rather than excluded entirely) — still better than the
-/// preview leaking into the recording.
-///
-/// Delegates to Tauri/tao's `set_content_protected`, whose per-platform
-/// behavior is:
-///   - **Windows** — `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`,
-///     which removes the window entirely from every capture surface (DXGI
-///     Desktop Duplication included — the API Recast records with).
-///   - **macOS** — `NSWindow.sharingType = .none`. Recast captures the screen
-///     through FFmpeg AVFoundation, a compositor-level source that honors
-///     `sharingType`, so the window is genuinely absent from the recording.
-///     (The macOS-15 ScreenCaptureKit exception that ignores this flag does
-///     not apply to an AVFoundation capture.)
-///   - **Linux** — compile-time no-op: tao gates the implementation to
-///     macOS+Windows (`window.rs`), because neither X11 root `GetImage` nor
-///     the PipeWire portal exposes a per-window exclusion primitive. The call
-///     is harmless and would start working if tao ever adds a Wayland path.
-///
-/// Async on purpose: sync Tauri commands run on the macOS main thread, and
-/// `set_content_protected` round-trips to the event loop — doing that from the
-/// main thread would deadlock. An async command runs off it.
+/// Hide a window from screen capture, so the floating camera preview stops appearing inside the recording.
+/// Windows and macOS only (tao gates it); async because `set_content_protected` round-trips to the event loop and would deadlock the macOS main thread.
 #[tauri::command]
 pub async fn exclude_window_from_capture(app: AppHandle, label: String) -> AppResult<()> {
     let window = app
@@ -626,24 +586,8 @@ pub async fn exclude_window_from_capture(app: AppHandle, label: String) -> AppRe
     Ok(())
 }
 
-/// Lock a window's resize to a fixed aspect ratio and cap its width at a
-/// fraction of its current monitor.
-///
-/// On Windows this installs a `WM_SIZING` subclass so the box stays
-/// proportional *while dragging* (you can't pull width or height
-/// independently) and never exceeds `max_screen_fraction` of the monitor's
-/// work-area width. Re-invoke with a new ratio when the aspect changes (e.g.
-/// the camera bubble cycling 1:1 → 16:9) — the constraint updates in place.
-///
-/// No-op on other platforms; callers there keep the JS snap-to-aspect
-/// fallback. `min_width_px` and `chrome_px` are in physical pixels (the OS
-/// drag rect is too), so callers pass `logical * devicePixelRatio`.
-///
-/// `chrome_px` is fixed, non-scaling vertical space reserved at the bottom of
-/// the window for a control bar that sits *outside* the rounded video — the
-/// aspect ratio applies to `height - chrome_px`, so the visible bubble keeps
-/// its shape while the window is that much taller. Pass 0 for a video-only
-/// window.
+/// Locks a window's resize to an aspect ratio and caps its width at a fraction of the monitor; re-invoke to change the ratio in place.
+/// Windows only. Sizes are physical pixels, and `chrome_px` is non-scaling space excluded from the ratio for a control bar below the video.
 #[tauri::command]
 pub fn set_window_aspect_ratio(
     app: AppHandle,
@@ -1006,11 +950,8 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Move a file to the OS recycle bin / trash.
-/// Validates the path exists and is a file before deleting.
-///
-/// `trash::delete` is a COM shell round-trip on Windows and a Finder/DBus one
-/// elsewhere, so it must not run on the main thread (macOS WKWebView freeze).
+/// Move a file to the OS recycle bin / trash. Validates the path exists and is a file before deleting.
+/// `trash::delete` is a COM shell round-trip on Windows and a Finder/DBus one elsewhere, so it must not run on the main thread (macOS WKWebView freeze).
 #[tauri::command]
 pub async fn delete_file(path: String) -> AppResult<()> {
     tokio::task::spawn_blocking(move || {
@@ -1216,12 +1157,8 @@ fn cap_planned(key: &str, label: &str, backend: &str, note: Option<&str>) -> Cap
     }
 }
 
-/// Build the capture-support matrix for whichever platform this binary was
-/// compiled for. Each `#[cfg]` block is the function's tail expression on its
-/// target.
-///
-/// Every row but the cursor describes a capturekit backend; the cursor sampler
-/// is the app's own and has not moved yet.
+/// Build the capture-support matrix for whichever platform this binary was compiled for. Each `#[cfg]` block is the function's tail expression on its target.
+/// Every row but the cursor describes a capturekit backend; the cursor sampler is the app's own and has not moved yet.
 fn build_capture_capabilities() -> CaptureCapabilities {
     #[cfg(windows)]
     {

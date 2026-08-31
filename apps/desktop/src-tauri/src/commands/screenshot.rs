@@ -1,10 +1,5 @@
-//! Full-resolution screenshots for the automation CLI, so an agent driving
-//! Recast can see on-screen state and decide when a step is done or what to do
-//! next. Captures through capturekit (the same backends the recorder streams
-//! from), writes a PNG, and returns its path plus dimensions. Display/window
-//! shots are headless (no running app needed, like the enumeration verbs); the
-//! `app` shot goes through the running instance so it can target its own
-//! focused window.
+//! Full-resolution screenshots through capturekit so an agent can see on-screen state and decide what to do next.
+//! Display and window shots are headless; the `app` shot goes through the running instance to target its own focused window.
 
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -216,9 +211,7 @@ fn open_overlay(app: &tauri::AppHandle, label: &str, url: &str, title: &str) -> 
 /// than mixed in with them.
 const SCREENSHOT_DIR: &str = "Screenshots";
 
-/// A filename a person can read in a file manager, and that sorts by when it
-/// was taken. Colons are illegal on Windows and awkward everywhere, so the
-/// time is dashed.
+/// A filename a person can read in a file manager, and that sorts by when it was taken. Colons are illegal on Windows and awkward everywhere, so the time is dashed.
 fn screenshot_name() -> String {
     let now = chrono::Local::now();
     format!("Recast {}.png", now.format("%Y-%m-%d %H-%M-%S"))

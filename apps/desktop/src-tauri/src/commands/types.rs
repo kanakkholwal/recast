@@ -376,6 +376,10 @@ pub struct ExportRequest {
     /// filter_complex compositor. Absent = the classic full Rust export.
     #[serde(default)]
     pub browser_video_path: Option<String>,
+    /// Render through the engine rather than the FFmpeg filtergraph. Set from
+    /// the experimental flag; `RECAST_ENGINE_EXPORT` overrides it either way.
+    #[serde(default)]
+    pub engine_export: bool,
 }
 
 #[derive(Clone, Copy)]

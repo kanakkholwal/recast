@@ -32,9 +32,7 @@ fn every_descriptor_is_named_and_identified() {
     }
 }
 
-/// Enumeration has to be repeatable: the old FFmpeg probe cached its answer
-/// precisely because it was slow, and that cache is what pinned exports to
-/// software for a whole session.
+/// Enumeration has to be repeatable: the old FFmpeg probe cached its answer precisely because it was slow, and that cache is what pinned exports to software for a whole session.
 #[test]
 #[cfg(windows)]
 fn enumeration_is_stable_across_calls() {

@@ -1,8 +1,5 @@
-//! The caption model and the placement maths, shared by the ASS burn-in and the
-//! compositor so neither becomes a second authority on where a caption sits.
-//!
-//! Everything here is pure and renderer-agnostic: colours come back as hex, not
-//! as ASS literals, and no function measures text for itself.
+//! The caption model and placement maths, shared by the ASS burn-in and the compositor so neither becomes a second authority.
+//! Pure and renderer-agnostic: colours come back as hex, not ASS literals, and nothing measures text for itself.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]

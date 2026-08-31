@@ -100,9 +100,7 @@ pub struct ColorSpace {
 }
 
 impl Default for ColorSpace {
-    /// Full-range sRGB, because desktop capture is the common case and the
-    /// field-by-field defaults would otherwise compose into limited-range RGB,
-    /// which nothing produces.
+    /// Full-range sRGB, because desktop capture is the common case and the field-by-field defaults would otherwise compose into limited-range RGB, which nothing produces.
     fn default() -> Self {
         Self::SRGB
     }

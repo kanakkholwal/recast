@@ -8,9 +8,7 @@ use anyhow::{Context, Result};
 use crate::audio::wav::{measured_sample_rate, WavFormat, WavWriter};
 use crate::recording::clock::TrackStart;
 
-/// Below this the drift ratio is dominated by buffer granularity rather than by
-/// the device crystal, and re-declaring the rate would shift a short clip on the
-/// strength of noise.
+/// Below this the drift ratio is dominated by buffer granularity rather than by the device crystal, and re-declaring the rate would shift a short clip on the strength of noise.
 const MIN_DRIFT_SPAN: Duration = Duration::from_secs(5);
 
 /// Accumulates one capture's samples into a WAV, gated by the pause flag.
@@ -25,9 +23,7 @@ pub(super) struct TrackWriter {
     format: WavFormat,
     pause: Arc<AtomicBool>,
     start: TrackStart,
-    /// When the first written buffer *began*, not when it arrived: a buffer
-    /// covers time before its own delivery, and dropping that would inflate the
-    /// measured rate.
+    /// When the first written buffer *began*, not when it arrived: a buffer covers time before its own delivery, and dropping that would inflate the measured rate.
     span_start: Option<Instant>,
     span_end: Option<Instant>,
     /// Paused time between two written buffers. A pause still open at stop lies
@@ -70,10 +66,7 @@ impl TrackWriter {
     }
 
     /// Advance the pause accounting without a delivery.
-    ///
-    /// Called when the device said nothing arrived, so a pause is measured from
-    /// the clock rather than from whatever the device happened to deliver
-    /// across it.
+    /// Called when the device said nothing arrived, so a pause is measured from the clock rather than from whatever the device happened to deliver across it.
     pub(super) fn tick(&mut self, now: Instant) -> bool {
         if self.pause.load(Ordering::Acquire) {
             self.paused_since.get_or_insert(now);
@@ -148,9 +141,7 @@ impl TrackWriter {
     }
 
     /// The rate the device actually delivered, when it is worth re-declaring.
-    ///
-    /// The picture is held to wall clock by the frame pacer, so an uncorrected
-    /// audio crystal drifts against it for the whole take instead of cancelling.
+    /// The picture is held to wall clock by the frame pacer, so an uncorrected audio crystal drifts against it for the whole take instead of cancelling.
     fn drifted_rate(&self) -> Option<u32> {
         let (start, end) = (self.span_start?, self.span_end?);
         let span = end
@@ -275,9 +266,7 @@ mod tests {
         );
     }
 
-    /// The offset every track is aligned by. Marking on the first *sound*
-    /// rather than the first buffer would claim the track starts later than the
-    /// silence already written in front of it.
+    /// The offset every track is aligned by. Marking on the first *sound* rather than the first buffer would claim the track starts later than the silence already written in front of it.
     #[test]
     fn inserted_silence_still_marks_the_track_start() {
         let fixture = Fixture::new("mark-silence");
@@ -340,9 +329,7 @@ mod tests {
         assert_eq!(declared_rate(&path), SLOW_RATE);
     }
 
-    /// A backend and a format disagreeing about the channel count. Writing the
-    /// odd bytes swaps every channel after them, which sounds like a broken
-    /// device rather than like a bug.
+    /// A backend and a format disagreeing about the channel count. Writing the odd bytes swaps every channel after them, which sounds like a broken device rather than like a bug.
     #[test]
     fn a_buffer_that_is_not_whole_frames_is_truncated_rather_than_written() {
         let fixture = Fixture::new("ragged");

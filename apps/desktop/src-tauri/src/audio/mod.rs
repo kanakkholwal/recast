@@ -72,9 +72,7 @@ pub struct MicrophoneCaptureConfig {
 }
 
 /// Handle to a running microphone capture session.
-///
-/// Unlike the loopback there is no silence fallback: a user who asked for the
-/// microphone and has no working one is told, rather than handed a mute track.
+/// Unlike the loopback there is no silence fallback: a user who asked for the microphone and has no working one is told, rather than handed a mute track.
 pub struct MicrophoneCaptureSession(TrackSession);
 
 impl MicrophoneCaptureSession {

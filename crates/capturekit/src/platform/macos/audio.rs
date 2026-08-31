@@ -34,9 +34,7 @@ const FLAG_IS_SIGNED_INTEGER: u32 = 1 << 2;
 /// buffer list live on the stack instead of being allocated per delivery.
 const MAX_CHANNELS: usize = 8;
 
-/// How many samples may queue before a stalled consumer starts losing them.
-/// Four seconds of 48 kHz stereo float, far past any read interval a recorder
-/// uses and still bounded.
+/// How many samples may queue before a stalled consumer starts losing them. Four seconds of 48 kHz stereo float, far past any read interval a recorder uses and still bounded.
 const QUEUE_BYTES: usize = 4 * 48_000 * 2 * 4;
 
 /// What ScreenCaptureKit is asked for. It converts to this whatever the output
@@ -82,9 +80,7 @@ impl ChannelBuffers {
 }
 
 /// Read a CoreAudio stream description into capturekit's vocabulary.
-///
-/// Kept separate from the delivery path so the flag decoding is unit-testable:
-/// misreading float as integer is silence or noise, never an error.
+/// Kept separate from the delivery path so the flag decoding is unit-testable: misreading float as integer is silence or noise, never an error.
 fn format_of(asbd: &AudioStreamBasicDescription) -> Result<AudioFormat> {
     let flags = asbd.mFormatFlags;
     if flags & FLAG_IS_BIG_ENDIAN != 0 {
@@ -111,10 +107,7 @@ fn format_of(asbd: &AudioStreamBasicDescription) -> Result<AudioFormat> {
 }
 
 /// Copy one sample buffer's samples into `out`, interleaved.
-///
-/// ScreenCaptureKit delivers one plane per channel; capturekit's contract is
-/// interleaved. A single buffer is already interleaved (or mono) and is copied
-/// straight through.
+/// ScreenCaptureKit delivers one plane per channel; capturekit's contract is interleaved. A single buffer is already interleaved (or mono) and is copied straight through.
 fn samples_of(buffers: &[AudioBuffer], format: AudioFormat, out: &mut Vec<u8>) -> Result<()> {
     let planes: Vec<&[u8]> = buffers
         .iter()
@@ -177,9 +170,7 @@ impl AudioOutput {
 }
 
 /// Pull the samples out of a delivered buffer and publish them.
-///
-/// Shared with the AVCapture microphone source: both receive `CMSampleBuffer`s,
-/// so the format decoding and interleaving have one implementation.
+/// Shared with the AVCapture microphone source: both receive `CMSampleBuffer`s, so the format decoding and interleaving have one implementation.
 pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
     let Some(description) = (unsafe { sample.format_description() }) else {
         queue.note_dropped("a sample buffer arrived with no format description");
@@ -468,9 +459,7 @@ mod tests {
         assert_eq!(out, vec![1, 1, 9, 9, 2, 2, 8, 8]);
     }
 
-    /// An interleaved stream arrives as ONE buffer carrying every channel.
-    /// Running it through the interleaver would treat it as a single plane and
-    /// report half the channels.
+    /// An interleaved stream arrives as ONE buffer carrying every channel. Running it through the interleaver would treat it as a single plane and report half the channels.
     #[test]
     fn a_single_interleaved_buffer_is_copied_straight_through() {
         let packed = [1u8, 1, 9, 9, 2, 2, 8, 8];

@@ -1,13 +1,5 @@
-//! Camera enumeration and capture through capturekit.
-//!
-//! Media Foundation on Windows, AVFoundation on macOS, V4L2 on Linux. This
-//! replaces three per-OS listings (a DirectShow parse, an FFmpeg AVFoundation
-//! parse and a sysfs scan) that each cost a spawn and could disagree with what
-//! the capture backend would actually open.
-//!
-//! MF does not see DirectShow-only virtual cameras (NVIDIA Broadcast, OBS
-//! before 28). That is a deliberate trade: modern virtual cameras register an
-//! MF source, and the DirectShow path is legacy COM we do not want to own.
+//! Camera enumeration and capture through capturekit, replacing three per-OS listings that each cost a spawn and could disagree.
+//! Media Foundation misses DirectShow-only virtual cameras: a deliberate trade against owning legacy COM.
 
 pub mod scale;
 pub mod session;
@@ -15,18 +7,13 @@ pub mod session;
 use capturekit::Camera;
 
 /// Whether this platform has a camera backend at all.
-///
-/// Every platform this ships on has one; the check stays so a port reports "no
-/// cameras" rather than offering a picker that cannot open anything.
+/// Every platform this ships on has one; the check stays so a port reports "no cameras" rather than offering a picker that cannot open anything.
 pub fn supported() -> bool {
     capturekit::capabilities().camera_capture
 }
 
 /// Cameras the capture backend can actually open, in the platform's own order.
-///
-/// A platform with no backend reports an empty list, not an error: "no cameras
-/// here" is the honest answer for a picker, and [`supported`] is what explains
-/// why.
+/// A platform with no backend reports an empty list, not an error: "no cameras here" is the honest answer for a picker, and [`supported`] is what explains why.
 pub fn devices() -> Result<Vec<Camera>, String> {
     if !supported() {
         return Ok(Vec::new());

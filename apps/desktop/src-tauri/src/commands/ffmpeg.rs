@@ -252,9 +252,7 @@ pub struct CameraOverlayParams {
     /// Top-left of the bubble in canvas pixels.
     pub bubble_x: u32,
     pub bubble_y: u32,
-    /// Bubble dimensions in canvas pixels. Phase 1 enforces 1:1 in CSS, so
-    /// width == height — but the function takes both for forward
-    /// compatibility with non-square shapes.
+    /// Bubble dimensions in canvas pixels. Phase 1 enforces 1:1 in CSS, so width == height — but the function takes both for forward compatibility with non-square shapes.
     pub bubble_w: u32,
     pub bubble_h: u32,
     /// Horizontally flip the camera so the rendered bubble matches what the
@@ -266,17 +264,8 @@ pub struct CameraOverlayParams {
     pub shadow: Option<CameraShadowOverlay>,
 }
 
-/// Append a camera-overlay stage to an existing filter_complex string.
-///
-/// Filter chain emitted (with mask):
-/// ```text
-///   [N:v] hflip?, scale=W:H, format=yuva420p     → [cam_pre]
-///   [M:v] format=gray                            → [cam_mask]
-///   [cam_pre][cam_mask] alphamerge               → [cam_shaped]
-///   [main][cam_shaped] overlay=X:Y               → [vcamera]
-/// ```
-/// Without a mask (square shape) the `format`/`alphamerge` stage is skipped
-/// — the camera is overlaid as a flat rectangle.
+/// Appends a camera-overlay stage to an existing `filter_complex`: scale, `format=yuva420p`, `alphamerge` with a gray mask, then `overlay`.
+/// Without a mask the shape is square, so the format and alphamerge stages are skipped and the camera overlays as a flat rectangle.
 pub fn append_camera_overlay_to_complex(
     filter_complex: Option<&str>,
     current_video_map: &str,
@@ -395,18 +384,7 @@ pub fn append_camera_overlay_to_complex(
     (new_complex, out_label.to_string())
 }
 
-/// Wrap the current video chain in a palettegen/paletteuse pipeline so GIF
-/// exports have a stable, dithered palette instead of FFmpeg's naive
-/// per-frame 256-colour quantization (which produces heavy banding and noise).
-/// Always routes through `filter_complex`: the `split`/labelled-graph needed
-/// by palettegen is not expressible in the linear `-vf` form.
-///
-/// Returns the extended `filter_complex` string and the new output label to
-/// pass to `-map`. Any inline scale filter is baked into the `paletteuse` leg
-/// so we don't double-sample.
-/// Per-export GIF tuning passed in from the editor UI. Mirrors `GifSettings`
-/// on the JS side but expressed as primitive Rust types so the filter builder
-/// stays free of `serde_json::Value` parsing.
+/// Per-export GIF tuning from the editor UI, in primitive Rust types so the filter builder never parses `serde_json::Value`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GifFilterOptions<'a> {
     /// Output frame rate. Caller resolves overrides vs. quality profile defaults.
@@ -427,16 +405,8 @@ impl<'a> Default for GifFilterOptions<'a> {
     }
 }
 
-/// Pass-2 chain for the 2-pass GIF export. Pass 1 ran palettegen separately
-/// and wrote `palette.png`; the caller wires that file in as a regular FFmpeg
-/// input at `palette_input_index`, and this builder emits a paletteuse-only
-/// stage referencing it.
-///
-/// Single-pass `palettegen→paletteuse` was stalling the UI: palettegen has to
-/// consume every input frame before emitting its one palette frame, so the
-/// encoder's `out_time_us` stays at 0 for the entire palette phase and the
-/// progress bar never moved off 0%. With the palette pre-baked, paletteuse is
-/// a per-frame lookup — frames stream out in real time and progress advances.
+/// Pass-2 chain for the 2-pass GIF export: pass 1 wrote `palette.png`, wired in at `palette_input_index`, so this emits a paletteuse-only stage.
+/// Single-pass palettegen consumes every frame before emitting one, pinning `out_time_us` at 0 so the progress bar never moved.
 pub fn build_gif_paletteuse_external_complex(
     filter_complex: Option<&str>,
     input_label: &str,
@@ -1583,9 +1553,7 @@ pub struct BlurRegion<'a> {
     pub tint_rgb: u32,
     /// 0..=1 master opacity baked into the colour overlay.
     pub opacity: f64,
-    /// 0..=1 — the original blur strength. The tint pass scales its alpha
-    /// by this so high strength → near-opaque box (true redaction). The
-    /// preview applies the same scaling.
+    /// 0..=1 — the original blur strength. The tint pass scales its alpha by this so high strength → near-opaque box (true redaction). The preview applies the same scaling.
     pub strength: f64,
     /// Corner radius in pixels (0 = square). Rounds the blurred region via a
     /// per-pixel alpha mask so the corners show the sharp video, matching the

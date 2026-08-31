@@ -1,15 +1,5 @@
-//! Local control channel between the `recast` CLI and a running app.
-//!
-//! The GUI hosts a small server on an OS local socket (named pipe on Windows,
-//! Unix socket on macOS/Linux via `interprocess`). The CLI connects, sends one
-//! JSON request line, and reads one JSON response line. This is how live
-//! commands (`status`, `rec ...`) reach an already-running instance, since the
-//! single-instance argv path is one-way and cannot answer a query.
-//!
-//! Auth: the server writes a random token to a 0600 file in the temp dir; the
-//! CLI reads it and includes it in every request. Same-user gating comes from
-//! the socket/pipe ACL; the token is defense in depth. Phase 2 is synchronous
-//! request/response only; the event stream (`watch`) lands later.
+//! Local control channel: the GUI serves one JSON request per connection on a named pipe or Unix socket.
+//! Needed because the single-instance argv path is one-way and cannot answer a query; a 0600 token file backs the socket ACL.
 
 mod events;
 
@@ -103,9 +93,7 @@ fn event_log(app: &tauri::AppHandle) -> std::sync::Arc<events::EventLog> {
 }
 
 /// Mirror every watchable Tauri event into the log, once for the process.
-///
-/// Listening here rather than per connection is what makes replay possible: a
-/// watcher that was not connected still finds the events waiting.
+/// Listening here rather than per connection is what makes replay possible: a watcher that was not connected still finds the events waiting.
 fn feed_event_log(app: &tauri::AppHandle) {
     use tauri::Listener;
     let log = event_log(app);
@@ -1386,6 +1374,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 burn_captions,
                 caption_sidecar,
                 browser_video_path: None,
+                // The CLI has no experimental flags; RECAST_ENGINE_EXPORT still forces it.
+                engine_export: false,
             };
             tauri::async_runtime::block_on(crate::commands::enqueue_export(
                 app.clone(),

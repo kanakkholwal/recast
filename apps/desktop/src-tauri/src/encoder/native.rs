@@ -1,13 +1,5 @@
-//! The FFmpeg-free recording writer: capture texture in, MP4 out.
-//!
-//! Joins Phase 4 to Phase 5. A capturekit frame arrives as a shared GPU handle,
-//! is converted to NV12 by the video processor, encoded by Media Foundation and
-//! muxed by `recast-mux`, and never touches host memory on the way.
-//!
-//! Timing is VARIABLE RATE. Each sample carries the duration until the next
-//! frame actually arrived, rather than a fixed `1/fps`, so a still desktop
-//! costs one long sample instead of hundreds of identical ones, and a stutter
-//! is recorded as what happened rather than papered over with duplicates.
+//! FFmpeg-free recording writer: a capturekit GPU handle becomes NV12, is encoded by Media Foundation and muxed, never touching host memory.
+//! Timing is variable-rate, so a still desktop costs one long sample and a stutter is recorded rather than papered over.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -29,18 +21,14 @@ use crate::capture::CapturedFrame;
 use crate::recording::pipeline::{FrameSink, PipelineStats};
 
 /// Sample durations are in these ticks per second.
-///
-/// 90 kHz is the MPEG convention and divides every common frame rate closely
-/// enough that per-sample rounding never accumulates into drift.
+/// 90 kHz is the MPEG convention and divides every common frame rate closely enough that per-sample rounding never accumulates into drift.
 const TIMESCALE: u32 = 90_000;
 
 /// Media Foundation timestamps are 100 ns units.
 const MF_TICKS_PER_SEC: i64 = 10_000_000;
 
 /// The longest a still desktop may go without a sample.
-///
-/// A player seeking into a gap has nothing to show, and a sample that never
-/// ends cannot be seeked past, so a keepalive repeat bounds both.
+/// A player seeking into a gap has nothing to show, and a sample that never ends cannot be seeked past, so a keepalive repeat bounds both.
 pub const KEEPALIVE: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// The longest a recording may go without a keyframe.
@@ -61,13 +49,9 @@ pub struct NativeRecorder {
     /// previous frame when the next conversion starts.
     frames: Vec<Nv12Frame>,
     next_frame: usize,
-    /// The producer's surface and both fences, opened once. `OpenSharedResource1`
-    /// is a kernel handle open; repeating it 60 times a second is a syscall the
-    /// zero-copy path exists to avoid.
+    /// The producer's surface and both fences, opened once. `OpenSharedResource1` is a kernel handle open; repeating it 60 times a second is a syscall the zero-copy path exists to avoid.
     imported: Option<Imported>,
-    /// The last frame released back to the producer, which is also what tells a
-    /// new picture from a keepalive: the capture hands the same handle back when
-    /// the display has not changed.
+    /// The last frame released back to the producer, which is also what tells a new picture from a keepalive: the capture hands the same handle back when the display has not changed.
     released: u64,
     /// The slot holding the picture last converted, which a repeat copies from.
     last_converted: Option<usize>,
@@ -77,9 +61,7 @@ pub struct NativeRecorder {
     /// until the NEXT frame arrives, so the writer is always one behind.
     pending: Option<PendingSample>,
     wrote_init: bool,
-    /// Whether the encoder has handed over its parameter sets. They arrive with
-    /// the first encoded sample, NOT when the encoder opens, and the MP4 header
-    /// cannot be built without them.
+    /// Whether the encoder has handed over its parameter sets. They arrive with the first encoded sample, NOT when the encoder opens, and the MP4 header cannot be built without them.
     have_config: bool,
     samples: u64,
 }
@@ -191,12 +173,8 @@ impl NativeRecorder {
         self.encode_slot(index, pts_us)
     }
 
-    /// Emit the last picture again, to bound how long a still desktop's sample
-    /// can run without a new one.
-    ///
-    /// Copies within our own frames rather than reading the producer's surface
-    /// again: the picture has not changed, and the capture has already been told
-    /// it may overwrite that surface.
+    /// Emit the last picture again, to bound how long a still desktop's sample can run without a new one.
+    /// Copies within our own frames rather than reading the producer's surface again: the picture has not changed, and the capture has already been told it may overwrite that surface.
     fn repeat(&mut self, pts_us: u64) -> Result<()> {
         let source = self
             .last_converted
@@ -242,9 +220,7 @@ impl NativeRecorder {
         self.drain()
     }
 
-    /// Open the producer's shared objects, reusing them while it hands over the
-    /// same texture. capturekit reuses one surface for a capture's whole life,
-    /// so in practice this opens once.
+    /// Open the producer's shared objects, reusing them while it hands over the same texture. capturekit reuses one surface for a capture's whole life, so in practice this opens once.
     fn import(&mut self, handle: &GpuHandle) -> Result<()> {
         if self
             .imported
@@ -348,9 +324,7 @@ impl NativeRecorder {
 }
 
 /// Target bitrate for screen content at this size and rate.
-///
-/// 0.08 bits per pixel per frame keeps 4K60 text legible at ~40 Mbit/s. Clamped
-/// so a tiny window still gets a usable floor and a huge one cannot fill a disk.
+/// 0.08 bits per pixel per frame keeps 4K60 text legible at ~40 Mbit/s. Clamped so a tiny window still gets a usable floor and a huge one cannot fill a disk.
 pub const fn target_bitrate(width: u32, height: u32, fps: u32) -> u32 {
     let fps = if fps == 0 { 1 } else { fps };
     let pixels = width as u64 * height as u64 * fps as u64;
@@ -365,9 +339,7 @@ pub const fn target_bitrate(width: u32, height: u32, fps: u32) -> u32 {
 }
 
 /// Whether this machine can encode textures without a readback.
-///
-/// Probed before a recording commits to the native path, because the fallback
-/// is a whole different writer and switching mid-recording is not a thing.
+/// Probed before a recording commits to the native path, because the fallback is a whole different writer and switching mid-recording is not a thing.
 pub fn available() -> bool {
     select_preferred(&enumerate_encoders(), VideoCodec::H264).is_some()
 }
@@ -472,9 +444,7 @@ const fn mf_to_us(ticks: i64) -> u64 {
 }
 
 /// Sample duration in `TIMESCALE` ticks, from the gap between two frames.
-///
-/// Rounds to nearest so a 60fps stream alternates 1500/1500 rather than
-/// truncating every sample and losing a frame's worth of time per minute.
+/// Rounds to nearest so a 60fps stream alternates 1500/1500 rather than truncating every sample and losing a frame's worth of time per minute.
 pub const fn duration_ticks(from_us: u64, to_us: u64) -> u32 {
     let delta = to_us.saturating_sub(from_us);
     let ticks = (delta * TIMESCALE as u64 + 500_000) / 1_000_000;

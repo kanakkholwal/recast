@@ -236,26 +236,15 @@ pub fn configure_silent_command(cmd: &mut Command) {
 /// the end (codec error, disk full, etc.); FFmpeg's startup chatter is noise.
 const STDERR_TAIL_LIMIT: usize = 8192;
 
-/// A side-thread that continuously drains a long-lived FFmpeg child's stderr to
-/// a bounded tail.
-///
-/// This is **load-bearing, not just diagnostic**: FFmpeg writes its banner and
-/// periodic `frame=… fps=…` progress to stderr. If nobody reads it, the ~64 KB
-/// OS pipe buffer fills on a long capture, FFmpeg blocks on the stderr
-/// `write()`, stops producing frames, and any graceful `q`→wait stalls until it
-/// has to be force-killed (corrupt MP4). Any FFmpeg child that lives longer than
-/// a single short invocation and pipes stderr MUST be wrapped in one of these at
-/// spawn time. Mirrors the encoder's private pump; shared so capture backends
-/// don't each re-derive it.
+/// Drains a long-lived FFmpeg child's stderr to a bounded tail on its own thread. Every such child that pipes stderr MUST be wrapped at spawn.
+/// Load-bearing, not diagnostic: an undrained ~64KB pipe blocks FFmpeg's write, it stops producing frames, and a graceful quit stalls into a corrupt MP4.
 pub struct StderrTail {
     handle: Option<std::thread::JoinHandle<()>>,
     sink: std::sync::Arc<parking_lot::Mutex<String>>,
 }
 
 impl StderrTail {
-    /// Spawn the drain thread for `stderr`. Returns immediately; the thread runs
-    /// for the whole life of the process and exits at EOF (i.e. when FFmpeg
-    /// closes stderr on exit).
+    /// Spawn the drain thread for `stderr`. Returns immediately; the thread runs for the whole life of the process and exits at EOF (i.e. when FFmpeg closes stderr on exit).
     pub fn spawn(stderr: std::process::ChildStderr) -> Self {
         let sink = std::sync::Arc::new(parking_lot::Mutex::new(String::new()));
         let sink_clone = sink.clone();
@@ -333,19 +322,8 @@ pub fn ffprobe_path() -> &'static PathBuf {
     &resolve().ffprobe
 }
 
-/// Detect the best available H.264 encoder on the system, by *actually*
-/// running a 1-frame encode for each hardware candidate against a `lavfi`
-/// null source. `ffmpeg -encoders` only tells us a codec was *compiled in*
-/// (the bundled binaries always have NVENC/AMF/QSV) — it doesn't tell us
-/// codec-init will succeed: no GPU, missing driver, hitting NVENC's
-/// 3-session consumer-card concurrency limit, or an iGPU below the codec's
-/// minimum VRAM all surface only at runtime as a ~100ms-after-start
-/// FFmpeg exit, which the encoder thread sees as the cryptic "the pipe
-/// is being closed (os error 232)" on first frame write.
-///
-/// Priority: `h264_nvenc` (NVIDIA) → `h264_amf` (AMD) → `h264_qsv` (Intel)
-/// → `libx264` (CPU). Cached for the process lifetime; each probe costs
-/// ~300–500ms cold, so we stop at the first one that works.
+/// Best available H.264 encoder, found by actually running a 1-frame encode per hardware candidate; `-encoders` only proves a codec was compiled in.
+/// Priority nvenc, amf, qsv, then libx264. Cached for the process: a failed init surfaces ~100ms in as "the pipe is being closed (os error 232)".
 pub fn preferred_h264_encoder() -> &'static str {
     // Cache only a WORKING HARDWARE encoder: a software fallback is usually a transient NVENC-session miss, and caching it pinned libx264 for the whole run.
     static CACHED_HW: OnceLock<&'static str> = OnceLock::new();
@@ -401,16 +379,8 @@ pub struct EncoderAvailability {
     pub active: bool,
 }
 
-/// Probe every recordable encoder candidate for real init success on this
-/// device. The H.264 family is listed in the same NVIDIA → AMD → Intel →
-/// CPU priority order the recorder selects from, followed by the HEVC
-/// family in the same order. The first *available H.264* candidate is
-/// flagged `active` — that's what the recorder/export actually picks
-/// (libx264 is the always-present software fallback, so there's always
-/// exactly one active entry, and it's always H.264 since the pipeline is
-/// H.264-only today). HEVC rows are informational. Each hardware probe
-/// spawns FFmpeg (~300–500 ms cold); callers should run this off the UI
-/// thread.
+/// Probes every encoder candidate for real init success, H.264 then HEVC, each in NVIDIA, AMD, Intel, CPU order.
+/// Exactly one entry is `active` (the picked H.264, libx264 always present); HEVC rows are informational. Each hardware probe spawns FFmpeg, so run it off the UI thread.
 pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
     // (name, label, vendor, family, hardware, extra_args). H.264 first so the `active` lookup lands on the recorder's codec.
     #[allow(clippy::type_complexity)] // one-off literal table; a type alias wouldn't help
@@ -566,20 +536,8 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
     }
 }
 
-/// Whether the resolved FFmpeg was compiled with `name` as a filter.
-///
-/// A binary can ship every encoder the export needs and still be missing a
-/// *filter*: libass, freetype and fontconfig are separate `--enable-` flags, and
-/// some prebuilt FFmpegs (notably the `ffmpeg-static` npm package) drop them. So
-/// `-encoders` says nothing about whether caption burn-in can run, and a missing
-/// `ass` filter only surfaces at export time as FFmpeg's cryptic
-/// `No such filter: 'ass'`. Callers probe this up front to fail with something
-/// actionable instead.
-///
-/// A missing filter is NOT grounds for rejecting the binary in `is_usable_pair`:
-/// an FFmpeg without libass still records, probes and exports everything else, and
-/// disqualifying it would drop the app to the PATH fallback (or to no FFmpeg at
-/// all) over a feature the user may not even be using.
+/// Whether the resolved FFmpeg has `name` as a filter; `-encoders` says nothing about libass, which is a separate `--enable-` flag.
+/// Not grounds for rejecting the binary: without libass it still records and exports, and disqualifying it would drop the app to the PATH fallback.
 pub fn has_filter(name: &str) -> bool {
     static CACHED: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
     let filters = CACHED.get_or_init(|| {

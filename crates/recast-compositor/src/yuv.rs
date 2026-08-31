@@ -61,9 +61,7 @@ impl PlaneLayout {
     }
 
     /// Samples across, rows down, and bytes per sample for one plane.
-    ///
-    /// Chroma rounds UP on an odd dimension: a 3-pixel-wide frame carries two
-    /// chroma columns, and truncating would drop the right edge's colour.
+    /// Chroma rounds UP on an odd dimension: a 3-pixel-wide frame carries two chroma columns, and truncating would drop the right edge's colour.
     pub fn plane_size(self, index: usize, width: u32, height: u32) -> (u32, u32, u32) {
         let (cw, ch) = (width.div_ceil(2), height.div_ceil(2));
         match (self, index) {
@@ -103,9 +101,7 @@ impl PlaneLayout {
 }
 
 /// The 3x3 and bias taking normalised Y'CbCr code values to R'G'B'.
-///
-/// Range scaling is folded into the matrix rather than applied first, so the
-/// shader does one multiply-add per channel instead of a scale then a matrix.
+/// Range scaling is folded into the matrix rather than applied first, so the shader does one multiply-add per channel instead of a scale then a matrix.
 pub fn decode_matrix(color: &SourceColor) -> (Mat3, [f32; 3]) {
     let depth = color.bit_depth.clamp(8, 16);
     let (luma_scale, luma_offset) = color.range.luma_scale_offset(depth);
@@ -403,9 +399,7 @@ mod tests {
         assert!((grey[1] - grey[2]).abs() < 1e-4, "{grey:?}");
     }
 
-    /// Round-tripping through `recast-color`'s forward matrix is what proves
-    /// the folded scale and bias undo the encoder rather than merely looking
-    /// plausible.
+    /// Round-tripping through `recast-color`'s forward matrix is what proves the folded scale and bias undo the encoder rather than merely looking plausible.
     #[test]
     fn a_limited_range_encode_decodes_back_to_the_same_rgb() {
         for matrix in [

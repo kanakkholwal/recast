@@ -103,10 +103,7 @@ pub enum CaptureError {
     },
 
     /// An exclusion request cannot be honoured by this platform.
-    ///
-    /// Never downgraded to a warning: the caller asked for something to be kept
-    /// out of the recording, and capturing it anyway is the failure they were
-    /// trying to prevent.
+    /// Never downgraded to a warning: the caller asked for something to be kept out of the recording, and capturing it anyway is the failure they were trying to prevent.
     #[error("{backend} cannot exclude {requested} window(s) from a capture ({detail})")]
     ExclusionUnsupported {
         /// The backend that refused.
@@ -130,9 +127,7 @@ pub enum CaptureError {
     },
 
     /// A backend handed over per-channel planes that do not agree.
-    ///
-    /// One plane shorter than another means the buffer list was misread, which
-    /// interleaving would turn into swapped channels rather than an error.
+    /// One plane shorter than another means the buffer list was misread, which interleaving would turn into swapped channels rather than an error.
     #[error("channel {channel} carries {len} bytes where the first carries {expected}")]
     RaggedAudioPlanes {
         /// The channel that disagreed.
@@ -166,9 +161,7 @@ pub enum CaptureError {
     },
 
     /// The OS failed in a way capturekit does not model.
-    ///
-    /// Carries the platform error as a source so `{:#}` and `Error::source` still
-    /// reach the original HRESULT or errno.
+    /// Carries the platform error as a source so `{:#}` and `Error::source` still reach the original HRESULT or errno.
     #[error("{backend} capture failed")]
     Backend {
         /// The backend that failed.
@@ -192,9 +185,7 @@ impl CaptureError {
     }
 
     /// Whether reacquiring the source could plausibly succeed.
-    ///
-    /// The recovery policy keys off this, so a denied permission does not spin in
-    /// a reacquire loop the user cannot break out of.
+    /// The recovery policy keys off this, so a denied permission does not spin in a reacquire loop the user cannot break out of.
     #[must_use]
     pub fn is_recoverable(&self) -> bool {
         match self {

@@ -16,7 +16,6 @@ pub enum Pacing {
         fps: u32,
     },
     /// Forward only what the source produced, with the timestamps it gave.
-    ///
     /// Nothing is invented, so the stream shows exactly when the screen changed.
     Passthrough,
 }

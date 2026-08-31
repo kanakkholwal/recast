@@ -1,8 +1,5 @@
-//! The zero-copy path, proven by reading the shared texture back.
-//!
-//! A shared texture that is never waited on reads as zeroes with no error
-//! raised anywhere, so asserting the handle is non-null proves nothing. These
-//! open it on a SECOND D3D11 device, wait on the fence, and read the pixels.
+//! The zero-copy path, proven by opening the shared texture on a SECOND D3D11 device and reading pixels back.
+//! An unwaited shared texture reads as zeroes with no error, so asserting the handle is non-null proves nothing.
 
 #![cfg(windows)]
 

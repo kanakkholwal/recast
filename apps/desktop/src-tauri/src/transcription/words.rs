@@ -1,18 +1,5 @@
-//! Word-timestamp post-processing for captions.
-//!
-//! An engine reply (ggml on-device, or a remote endpoint) may carry segments,
-//! per-word timing, both, or (for a text-only model) neither. Animated captions
-//! need clean, per-word timing in every case, so this module:
-//!   - normalizes word times (monotonic, non-overlapping, a minimum on-screen
-//!     duration so single-frame flicker doesn't read as a glitch),
-//!   - groups a flat word stream into display-line segments,
-//!   - synthesizes approximate word times for segments that arrived without any,
-//!     and
-//!   - maps a reply (`build_segments`) through those fallbacks so on-device and
-//!     remote captions come out identical.
-//!
-//! Pure functions over the transcript types — compiled and unit-tested in every
-//! build (the remote path uses them unconditionally).
+//! Word-timestamp post-processing: normalise, group into display lines, and synthesize timing a reply omitted.
+//! Runs unconditionally for both on-device and remote engines, so captions come out identical either way.
 
 use super::{TranscriptSegment, TranscriptWord};
 
@@ -219,16 +206,8 @@ fn ms_to_secs(v: i64) -> f64 {
     v as f64 / 1000.0
 }
 
-/// Turn a transcribe.cpp result into caption segments. Captions want consistent,
-/// word-timed display lines regardless of how the model chunks its output, so:
-///   1. real per-word timing (the primary path) -> group the flat word stream
-///      into display lines. Whisper emits many short segments and Parakeet emits
-///      one long segment holding every word; grouping the words gives both the
-///      same word-by-word lines (this is the behavior the old ONNX Parakeet path
-///      produced),
-///   2. segment timing only, no words -> map each segment, synthesizing per-word
-///      timing so animation still has something to drive,
-///   3. text only -> one block spanning the clip with synthesized word timing.
+/// Turns a transcribe.cpp result into word-timed display lines however the model chunked its output.
+/// Per-word timing groups the flat stream (Whisper's many short segments and Parakeet's single long one come out alike); segment-only and text-only synthesize timing.
 pub(crate) fn build_segments(
     full_text: &str,
     total_secs: f64,

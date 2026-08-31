@@ -1,21 +1,5 @@
-//! Native crash + error reporting to PostHog.
-//!
-//! Covers the parts of the app that never touch JS — Rust panics and command
-//! errors — so a crash that kills the process (or happens before a webview is
-//! live) still produces a report. Mirrors the JS analytics abstraction's rules:
-//!
-//!   * Gated on the `telemetry_errors` consent flag (default opt-in / ON),
-//!     read from `AppConfig` (mirrored there by `set_telemetry_consent`).
-//!   * Suppressed entirely in debug builds (`tauri dev`) unless
-//!     `PUBLIC_POSTHOG_ALLOW_DEV=1`, mirroring the JS clients' `!import.meta.env.DEV`
-//!     gate so local development never pollutes the PostHog project.
-//!   * PII-scrubbed before anything leaves the machine.
-//!   * Uses the same anonymous `install_id` as JS events, so a Rust-side crash
-//!     and a later JS event attribute to the same person.
-//!
-//! Sends go directly over HTTP (PostHog capture API) rather than forwarding to
-//! JS, because a panic may occur with no live webview. The `reqwest` / EU-host
-//! / release-key-baking conventions mirror `commands/auth.rs`.
+//! Native crash and command-error reporting, gated on the `telemetry_errors` consent flag and off in debug builds.
+//! Posts straight to PostHog rather than through JS, since a panic can happen with no live webview.
 
 use std::panic::PanicHookInfo;
 use std::time::Duration;

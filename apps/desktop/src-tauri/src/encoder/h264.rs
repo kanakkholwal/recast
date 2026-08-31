@@ -1,13 +1,5 @@
-//! FFmpeg H.264 codec-argument construction.
-//!
-//! Single source of truth for *how* to invoke each H.264 encoder family.
-//! Detecting which family is available lives in
-//! [`crate::ffmpeg::preferred_h264_encoder`]; this module only turns a chosen
-//! family plus an [`EncodePurpose`] into the `-c:v …` CLI args.
-//!
-//! Every path stays 8-bit 4:2:0 (`yuv420p`, or `nv12` for QSV): the editor
-//! previews the raw H.264 in a WebView `<video>` element whose decoder only
-//! supports up to High profile 4:2:0, so a 4:4:4 master would not play back.
+//! Turns a chosen H.264 encoder family plus an [`EncodePurpose`] into `-c:v` args; detection lives in [`crate::ffmpeg::preferred_h264_encoder`].
+//! Every path stays 8-bit 4:2:0, because the editor previews raw H.264 in a WebView decoder capped at High profile.
 
 use super::RecordingQuality;
 
@@ -91,9 +83,7 @@ pub enum EncodePurpose<'a> {
     Export(ExportEncodeParams<'a>),
 }
 
-/// Build the codec + rate-control args (from `-c:v` onward) for `encoder` at the
-/// given [`EncodePurpose`].
-///
+/// Build the codec + rate-control args (from `-c:v` onward) for `encoder` at the given [`EncodePurpose`].
 /// Guarantees 8-bit 4:2:0 output for every family (see the module docs for why).
 pub fn codec_args(encoder: H264Encoder, purpose: EncodePurpose<'_>) -> Vec<String> {
     match purpose {

@@ -1,22 +1,5 @@
-//! Native OS permission preflights.
-//!
-//! macOS gates screen capture and global cursor sampling behind two *separate*
-//! TCC buckets, which the app previously conflated:
-//!
-//! - **Screen Recording** — required by ScreenCaptureKit, which serves both the
-//!   picture and the system-audio tap. Without it the stream starts but
-//!   delivers nothing, so the recording captures nothing while the UI timer
-//!   keeps ticking. We HARD-FAIL the start (and trigger the system prompt) so
-//!   the user gets an actionable error rather than an empty recording found at
-//!   stop(). The microphone is separate: it goes through AVFoundation and takes
-//!   the Microphone grant.
-//! - **Accessibility** — required by capturekit's pointer reader (CoreGraphics mouse-button
-//!   state) for the cursor track. This is non-essential — the screen capture
-//!   still works without it — so we only WARN; the cursor track just has gaps
-//!   until it's granted.
-//!
-//! Both checks are no-ops on Windows/Linux (the functions return the
-//! permissive default), so callers stay platform-agnostic.
+//! Native OS permission preflights; no-ops off macOS.
+//! Screen Recording hard-fails (its absence yields an empty recording); Accessibility only warns, costing cursor samples.
 
 use anyhow::Result;
 
@@ -44,7 +27,6 @@ pub fn ensure_screen_recording() -> Result<()> {
 }
 
 /// Whether global cursor sampling (the cursor track) is permitted.
-///
 /// macOS: reflects the Accessibility trust state. Always `true` elsewhere.
 pub fn cursor_tracking_authorized() -> bool {
     #[cfg(target_os = "macos")]

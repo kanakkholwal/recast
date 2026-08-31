@@ -1,15 +1,5 @@
-//! Frame extraction and change-driven sampling.
-//!
-//! A screen recording changes a few times a second at most, so OCR-ing every
-//! frame is wasted work. `sample_frames` does ONE coarse decode pass (a few fps)
-//! and keeps only the frames where the screen actually changed, using a
-//! near-duplicate gate (self-computed dHash) plus a color-aware change score with
-//! an adaptive rolling-ratio threshold, bounded by min/max cadence. This is the
-//! "coverage + pre-filtering" that adaptive-keyframe-sampling work argues for,
-//! done cheaply and without knowing the query (we sample at ingest).
-//!
-//! All frames come out as raw RGBA (lossless), because re-encoding to JPEG before
-//! OCR only adds artifacts that hurt small text.
+//! One coarse decode pass keeping only frames where the screen changed, via a dHash gate plus an adaptive change score.
+//! Frames stay raw RGBA: re-encoding to JPEG before OCR only adds artifacts that hurt small text.
 
 use std::collections::VecDeque;
 use std::io::Read;
@@ -130,9 +120,7 @@ pub fn probe_dims(media: &Path) -> Result<(u32, u32, f64), String> {
     Ok((width, height, duration))
 }
 
-/// Scale `(w, h)` so the long edge is at most `max_dim`, preserving aspect and
-/// rounding to even dimensions. `max_dim == 0` (or an already-small frame) keeps
-/// the source size.
+/// Scale `(w, h)` so the long edge is at most `max_dim`, preserving aspect and rounding to even dimensions. `max_dim == 0` (or an already-small frame) keeps the source size.
 fn target_dims(w: u32, h: u32, max_dim: u32) -> (u32, u32) {
     if max_dim == 0 || w.max(h) <= max_dim {
         return (even(w), even(h));
@@ -435,9 +423,7 @@ fn should_keep(
     gap >= opts.max_gap_secs // coverage: catch slow drift the ratio missed
 }
 
-/// Read exactly `buf.len()` bytes. Returns `Ok(true)` on a full read, `Ok(false)`
-/// on a clean EOF at a frame boundary (zero bytes read), and an error on a
-/// partial trailing frame.
+/// Read exactly `buf.len()` bytes. Returns `Ok(true)` on a full read, `Ok(false)` on a clean EOF at a frame boundary (zero bytes read), and an error on a partial trailing frame.
 fn read_full<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<bool> {
     let mut filled = 0;
     while filled < buf.len() {

@@ -1,13 +1,5 @@
-//! Runtime checks against the machine's real audio devices.
-//!
-//! Everything else in `audio/` runs on synthetic buffers, which cannot answer
-//! the question that decides A/V sync: does a track cover exactly the wall
-//! clock between its own start and the stop? These open the actual loopback and
-//! microphone, so they are `#[ignore]`d and run by hand:
-//!
-//! ```text
-//! cargo test --lib audio::live -- --ignored --nocapture
-//! ```
+//! Runtime checks against real devices, answering the one question synthetic buffers cannot: does a track cover its own wall clock?
+//! `#[ignore]`d; run `cargo test --lib audio::live -- --ignored --nocapture`.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -24,9 +16,7 @@ use crate::recording::clock::TrackStart;
 const TAKE: Duration = Duration::from_secs(12);
 
 /// How far a track may sit from the clock before it is a sync problem.
-///
-/// A stop is noticed within one `POLL_TIMEOUT` and the open costs a few
-/// milliseconds either side. Still well under the ~45 ms a viewer notices.
+/// A stop is noticed within one `POLL_TIMEOUT` and the open costs a few milliseconds either side. Still well under the ~45 ms a viewer notices.
 const TOLERANCE: Duration = Duration::from_millis(300);
 
 /// What one finished track claims about itself.
@@ -99,9 +89,7 @@ struct Take {
 }
 
 /// Record both tracks, running `during` while they capture.
-///
-/// Returns whatever opened: a machine with no microphone still exercises the
-/// loopback, and a skipped half says so rather than failing.
+/// Returns whatever opened: a machine with no microphone still exercises the loopback, and a skipped half says so rather than failing.
 fn record(tag: &str, during: impl FnOnce(&Arc<AtomicBool>)) -> Take {
     let dir = std::env::temp_dir().join(format!("recast-audio-live-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
@@ -151,10 +139,7 @@ impl Take {
 }
 
 /// The whole point of the migration, measured rather than reasoned about.
-///
-/// Nothing needs to be playing: an idle loopback delivers no buffers at all, so
-/// a track that still covers the take is capturekit's inserted silence landing
-/// in the right place.
+/// Nothing needs to be playing: an idle loopback delivers no buffers at all, so a track that still covers the take is capturekit's inserted silence landing in the right place.
 #[test]
 #[ignore = "opens the real audio devices; run with --ignored"]
 fn a_take_covers_the_wall_clock_it_was_recorded_over() {

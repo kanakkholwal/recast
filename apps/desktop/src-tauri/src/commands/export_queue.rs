@@ -1,19 +1,5 @@
-//! Backend-owned export queue. The single source of truth for every export's
-//! lifecycle. The frontend builds a self-contained `ExportRequest` (render state
-//! rasterized in the browser) and hands it here via `enqueue_export`; a single
-//! serial worker task drains the queue one job at a time (the real
-//! concurrency-of-1 lock, replacing the old JS guard), so an export survives
-//! closing its editor and an app restart.
-//!
-//! Durability split (see `crate::db`): the heavy `ExportRequest` payload is
-//! written to a file under `export_queue/<id>.json`; the `export_jobs` table holds
-//! only lightweight metadata plus that payload's path. Files stay authoritative
-//! for the heavy data.
-//!
-//! Progress is surfaced two ways: `run_export_job` keeps emitting the per-job
-//! `export-state` events exactly as before (live ring), and this module emits a
-//! lightweight `export-jobs-changed` event whenever queue membership or a job's
-//! status changes (the frontend re-fetches `list_export_jobs`).
+//! Backend-owned export queue: one serial worker drains it, so an export survives closing its editor and an app restart.
+//! The heavy `ExportRequest` payload stays a file under `export_queue/<id>.json`; the table holds only its path.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -34,9 +20,7 @@ const JOBS_CHANGED_EVENT: &str = "export-jobs-changed";
 /// stale; the exported FILE on disk is never touched, only the queue record.
 const TERMINAL_JOB_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
-/// A queue row as the frontend read-model consumes it. Field names mirror the TS
-/// `ExportItem`: `file_path` = the source project (camelCase `filePath`), `path` =
-/// the output on success.
+/// A queue row as the frontend read-model consumes it. Field names mirror the TS `ExportItem`: `file_path` = the source project (camelCase `filePath`), `path` = the output on success.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportJobDto {

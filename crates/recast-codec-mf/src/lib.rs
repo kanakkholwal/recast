@@ -1,9 +1,5 @@
-//! What Media Foundation can encode on this machine.
-//!
-//! Replaces the one-frame FFmpeg init probe, which spawned a process per
-//! candidate (~300-500 ms cold each) and answered "software" whenever a
-//! hardware encoder was momentarily busy. `MFTEnumEx` asks the system directly
-//! and returns in microseconds.
+//! What Media Foundation can encode on this machine, asked directly via `MFTEnumEx`.
+//! Replaces the one-frame FFmpeg probe, which cost a process per candidate and reported "software" whenever a hardware encoder was busy.
 
 #![cfg_attr(not(windows), allow(unused_imports))]
 // Documented 1:1 today and must stay so: this is the whole encode path.
@@ -35,11 +31,8 @@ pub use decoder::{DecodeError, DecodedFrame, VideoInfo, VideoReader};
 #[cfg(windows)]
 pub use encoder::{EncodeConfig, EncodeError, EncodedSample, H264Encoder};
 
-/// Every hardware and software video encoder Media Foundation exposes, in the
-/// order the system ranks them.
-///
-/// Empty off Windows, and empty rather than failing when Media Foundation
-/// cannot start: the caller falls back to its other backend.
+/// Every hardware and software video encoder Media Foundation exposes, in the order the system ranks them.
+/// Empty off Windows, and empty rather than failing when Media Foundation cannot start: the caller falls back to its other backend.
 #[cfg(windows)]
 pub fn enumerate_encoders() -> Vec<EncoderDescriptor> {
     windows_mf::enumerate_encoders()

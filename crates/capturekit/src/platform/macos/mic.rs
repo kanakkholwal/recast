@@ -22,9 +22,7 @@ use crate::deliver::AudioQueue;
 pub(super) const BACKEND: &str = "avfoundation-audio";
 
 /// How long to wait for the first buffer before deciding the device is wedged.
-///
-/// A microphone that has been granted and is not muted delivers within a few
-/// buffer periods; five seconds is a stall, not slow hardware.
+/// A microphone that has been granted and is not muted delivers within a few buffer periods; five seconds is a stall, not slow hardware.
 const FIRST_BUFFER: Duration = Duration::from_secs(5);
 
 fn failed(message: String) -> CaptureError {

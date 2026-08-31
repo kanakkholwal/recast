@@ -102,11 +102,8 @@ pub fn active_word_index(words: &[TranscriptWord], t: f64, hold_gaps: bool) -> O
     }
 }
 
-/// Greedy line break by character count, never splitting inside a word and
-/// capped at `max_lines`. Returns groups of indices into `words`.
-///
-/// Measurement-free on purpose: the DOM and libass shape text differently, so a
-/// break derived from either would drift. Both honour the break decided here.
+/// Greedy line break by character count, never splitting inside a word and capped at `max_lines`. Returns groups of indices into `words`.
+/// Measurement-free on purpose: the DOM and libass shape text differently, so a break derived from either would drift. Both honour the break decided here.
 pub fn break_into_lines(
     words: &[TranscriptWord],
     max_chars: u32,

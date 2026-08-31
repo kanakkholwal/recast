@@ -1,10 +1,5 @@
-//! Reading the pointer directly, rather than off a delivered frame.
-//!
-//! A frame-attached cursor samples at the frame rate, which at 60fps is half of
-//! what a pointer poller sees, and no backend attaches button state to a frame
-//! at all. This reads the OS pointer on its own schedule so a consumer can
-//! sample faster than it captures, and gets clicks on every platform that has
-//! them.
+//! Reads the OS pointer on its own schedule so a consumer can sample faster than it captures.
+//! A frame-attached cursor samples at the frame rate and no backend attaches button state to a frame at all.
 
 use capturekit_core::{
     point_in_surface, point_offset_in_surface, CursorButtons, CursorSample, Rect, Result, Timestamp,
@@ -53,9 +48,7 @@ pub struct PointerCapturer {
 }
 
 impl PointerCapturer {
-    /// Open the platform pointer reader for a surface at `surface`, whose
-    /// pixels are `scale` times the units the OS reports the pointer in (1.0
-    /// everywhere but a scaled macOS display).
+    /// Open the platform pointer reader for a surface at `surface`, whose pixels are `scale` times the units the OS reports the pointer in (1.0 everywhere but a scaled macOS display).
     pub fn open(surface: Rect, scale: f64) -> Result<Self> {
         Ok(Self {
             source: crate::platform::pointer_source()?,
@@ -93,10 +86,7 @@ impl PointerCapturer {
     }
 
     /// The buttons from the most recent successful read.
-    ///
-    /// A caller filling a gap where [`sample`](Self::sample) returned `None`
-    /// uses this rather than `NONE`, so a click held across the gap is not
-    /// reported as released and pressed again.
+    /// A caller filling a gap where [`sample`](Self::sample) returned `None` uses this rather than `NONE`, so a click held across the gap is not reported as released and pressed again.
     #[must_use]
     pub const fn last_buttons(&self) -> CursorButtons {
         self.last_buttons

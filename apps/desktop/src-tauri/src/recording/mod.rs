@@ -302,16 +302,11 @@ struct CameraOverlayTracker {
     last_at_secs: Option<f64>,
 }
 
-/// Forces the FFmpeg-free writer on or off regardless of the setting: `1` on,
-/// `0` off. Unset defers to `AppConfig::native_encoder`.
-///
-/// The native path is complete but has only run on this machine; until it has
-/// recorded on other people's hardware, the setting defaults off.
+/// Forces the FFmpeg-free writer on or off regardless of the setting: `1` on, `0` off. Unset defers to `AppConfig::native_encoder`.
+/// The native path is complete but has only run on this machine; until it has recorded on other people's hardware, the setting defaults off.
 const NATIVE_ENCODER_ENV: &str = "RECAST_NATIVE_ENCODER";
 
-/// Whether this recording should try the native writer: the env override if one
-/// is set, otherwise the user's setting.
-///
+/// Whether this recording should try the native writer: the env override if one is set, otherwise the user's setting.
 /// Pure, so the precedence is testable without an app handle or a registry.
 fn native_opt_in(setting: bool, env: Option<&str>) -> bool {
     match env {
@@ -328,9 +323,7 @@ struct NativeChoice {
 }
 
 /// The reason the native writer cannot take this recording, or `None`.
-///
-/// Pure so the policy is testable without a display or an encoder: every input
-/// here is something the caller has already looked up.
+/// Pure so the policy is testable without a display or an encoder: every input here is something the caller has already looked up.
 const fn native_refusal(
     opted_in: bool,
     platform_supported: bool,
@@ -420,9 +413,7 @@ struct RecordingSession {
     /// `None` on the native path, where the capture thread encodes as it goes.
     encoder_handle: Option<JoinHandle<Result<()>>>,
     cursor_handle: JoinHandle<CursorTrack>,
-    /// Wall-clock μs from recording start to the first encoded video frame
-    /// (capture-source warmup). Subtracted from the cursor track at `stop()`
-    /// so cursor t=0 aligns with video frame 0.
+    /// Wall-clock μs from recording start to the first encoded video frame (capture-source warmup). Subtracted from the cursor track at `stop()` so cursor t=0 aligns with video frame 0.
     video_start: TrackStart,
     audio_session: Option<AudioCaptureSession>,
     audio_path: PathBuf,
@@ -1445,9 +1436,7 @@ mod native_choice_tests {
         assert!(!native_opt_in(false, None));
     }
 
-    /// The override forces BOTH ways. An override that could only turn the
-    /// writer on would leave no way to reproduce an FFmpeg-path bug on a
-    /// machine whose settings have it enabled.
+    /// The override forces BOTH ways. An override that could only turn the writer on would leave no way to reproduce an FFmpeg-path bug on a machine whose settings have it enabled.
     #[test]
     fn the_env_override_wins_in_both_directions() {
         assert!(native_opt_in(false, Some("1")), "1 did not force it on");

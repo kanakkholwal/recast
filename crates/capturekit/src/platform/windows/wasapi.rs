@@ -85,9 +85,7 @@ fn device_name(device: &IMMDevice) -> String {
 }
 
 /// Read the mixer's format, which shared mode never converts away from.
-///
-/// Asking for a different one is refused in shared mode, so the honest thing is
-/// to report what the device runs at and let the caller resample.
+/// Asking for a different one is refused in shared mode, so the honest thing is to report what the device runs at and let the caller resample.
 fn mix_format(client: &IAudioClient) -> Result<(AudioFormat, *mut WAVEFORMATEX)> {
     let raw = unsafe { client.GetMixFormat() }.map_err(err)?;
     // SAFETY: `GetMixFormat` returns a valid CoTaskMem header, and `format_of` reads past it only when the tag says so.
@@ -445,9 +443,7 @@ mod position_tests {
         assert_eq!(local_position(&mut anchor, hours_in + 4_800, 0), 4_800);
     }
 
-    /// Silence emitted before the first packet already moved the timeline, so
-    /// the anchor lines the device up with where the timeline actually is
-    /// rather than restarting it at zero.
+    /// Silence emitted before the first packet already moved the timeline, so the anchor lines the device up with where the timeline actually is rather than restarting it at zero.
     #[test]
     fn the_anchor_lands_on_the_timeline_the_clock_already_advanced() {
         let mut anchor = None;

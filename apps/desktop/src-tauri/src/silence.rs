@@ -1,17 +1,5 @@
-//! Silence detection for the editor timeline.
-//!
-//! Candidates come from a Silero voice-activity model — per-frame speech
-//! probability — not an energy threshold. Room tone, breathing and keyboard
-//! noise all sit well above the noise floor an RMS gate keys on, so the old
-//! envelope approach both leaked false silences and swallowed quiet speech.
-//! A range is a candidate when the model reports non-speech (with hysteresis,
-//! so a single dipping frame doesn't split a run) for at least
-//! `min_audio_silence` seconds.
-//!
-//! The cursor track is a *confidence* signal, not a gate. An idle cursor over
-//! the range raises the score; a moving cursor no longer vetoes it, so
-//! webcam / talking-head recordings with no meaningful cursor still get
-//! suggestions. Nothing is cut automatically — these are suggestions only.
+//! Silence candidates from a Silero VAD, not an energy gate: room tone and keystrokes sit above any RMS floor.
+//! The cursor track only weights confidence, so talking-head recordings still get suggestions; nothing is cut automatically.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

@@ -8,9 +8,7 @@ use recast_codec::{EncoderDescriptor, VideoCodec};
 use crate::d3d::D3dContext;
 use crate::windows_mf::{activate_for, ensure_started};
 
-/// What the caller asks the encoder for. Deliberately small: everything else an
-/// H.264 encoder can be told is either a default we are happy with or a knob no
-/// user of ours has needed.
+/// What the caller asks the encoder for. Deliberately small: everything else an H.264 encoder can be told is either a default we are happy with or a knob no user of ours has needed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EncodeConfig {
     pub width: u32,
@@ -74,9 +72,7 @@ enum Mode {
     Sync,
     Async {
         events: IMFMediaEventGenerator,
-        /// Outstanding `METransformNeedInput` events. The transform asks for
-        /// frames ahead of time, so a credit here means `ProcessInput` can be
-        /// called without waiting for another event.
+        /// Outstanding `METransformNeedInput` events. The transform asks for frames ahead of time, so a credit here means `ProcessInput` can be called without waiting for another event.
         credits: u32,
     },
 }
@@ -99,12 +95,8 @@ impl H264Encoder {
         Self::open_inner(descriptor, config, None)
     }
 
-    /// Opens `descriptor` bound to a D3D11 device, so frames can be handed over
-    /// as textures instead of as bytes.
-    ///
-    /// Falls back to the memory path rather than failing when the transform is
-    /// not D3D-aware: the software encoder never is, and a machine with no
-    /// hardware encoder should still export.
+    /// Opens `descriptor` bound to a D3D11 device, so frames can be handed over as textures instead of as bytes.
+    /// Falls back to the memory path rather than failing when the transform is not D3D-aware: the software encoder never is, and a machine with no hardware encoder should still export.
     pub fn open_with_gpu(
         descriptor: &EncoderDescriptor,
         config: EncodeConfig,
@@ -199,9 +191,7 @@ impl H264Encoder {
     }
 
     /// Set one UINT32 codec property, best effort.
-    ///
-    /// The value must be VT_UI4: a VT_I4 is accepted with S_OK and then ignored,
-    /// which is indistinguishable from success.
+    /// The value must be VT_UI4: a VT_I4 is accepted with S_OK and then ignored, which is indistinguishable from success.
     fn set_codec_u32(&self, property: &windows::core::GUID, value: u32) {
         let Ok(codec) = self.transform.cast::<ICodecAPI>() else {
             return;
@@ -292,9 +282,7 @@ impl H264Encoder {
         self.submit(sample)
     }
 
-    /// Feeds one NV12 texture. The frame never reaches system memory: this is
-    /// the whole point of [`Self::open_with_gpu`].
-    ///
+    /// Feeds one NV12 texture. The frame never reaches system memory: this is the whole point of [`Self::open_with_gpu`].
     /// The texture must belong to the device the encoder was opened against.
     pub fn encode_texture(
         &mut self,
@@ -409,9 +397,7 @@ impl H264Encoder {
 }
 
 /// Takes one output sample from `transform`, or `None` when it wants more input.
-///
-/// Shared with the AAC encoder: the buffer dance differs only in what the
-/// transform advertises, never in the shape of the call.
+/// Shared with the AAC encoder: the buffer dance differs only in what the transform advertises, never in the shape of the call.
 pub(crate) fn pull_output(transform: &IMFTransform) -> Result<Option<EncodedSample>, EncodeError> {
     // SAFETY: reading the stream info the transform advertises.
     let info = unsafe { transform.GetOutputStreamInfo(0) }?;
@@ -592,9 +578,7 @@ fn media_type(attributes: &[(GUID, Value)]) -> Result<IMFMediaType, windows::cor
     }
 }
 
-/// Media Foundation packs paired values into one 64-bit attribute, high half
-/// first: frame size is width and height, frame rate is numerator and
-/// denominator.
+/// Media Foundation packs paired values into one 64-bit attribute, high half first: frame size is width and height, frame rate is numerator and denominator.
 fn pack(high: u32, low: u32) -> u64 {
     ((high as u64) << 32) | low as u64
 }

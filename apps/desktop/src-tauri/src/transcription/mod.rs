@@ -1,15 +1,5 @@
-//! Offline captions / transcription (M1 foundation).
-//!
-//! Transcribes a *recorded clip's* audio on-device — Recast doesn't capture a
-//! live mic for this (that's dictation; out of scope). The flow is:
-//!   model download (verified) → FFmpeg decode to 16 kHz mono f32 → engine.
-//!
-//! Everything here is async + `spawn_blocking` for CPU/FFmpeg work — sync Tauri
-//! commands freeze the macOS WebView (see the recording-IPC hardening). On-device
-//! inference runs through the ggml engine (see `engine.rs` / `ggml.rs`); remote
-//! endpoints post audio over HTTP (see `remote.rs`).
-//!
-//! Full design: `apps/desktop/docs/captions-transcription-plan.md`.
+//! Offline transcription of a recorded clip: verified model download, FFmpeg decode to 16 kHz mono f32, then the engine.
+//! Everything is async plus `spawn_blocking`, since sync Tauri commands freeze the macOS WebView.
 
 mod audio;
 mod cancel;
@@ -394,16 +384,8 @@ pub fn cancel_transcription() {
     cancel::request();
 }
 
-/// Path-aware counterpart to [`transcribe_project`]. Identical pipeline
-/// (`audio::extract_pcm_f32` → `engine::transcribe_at_path` →
-/// `words::build_segments`) but no `AppHandle`, no `Channel<TranscribeProgress>`,
-/// no model-registry lookup — the caller supplies the audio path, the GGUF
-/// path, and the model id directly. Used by the CLI `transcribe` verb
-/// (`apps/desktop/src-tauri/src/cli.rs`) and the CI / release smoke test
-/// (`scripts/release/smoke-test-transcription.ps1`).
-///
-/// Streams the three phases to stderr (one line each) so a CLI observer sees
-/// progress. The frontend's IPC `Channel` is a no-op equivalent for scripts.
+/// Path-aware counterpart to [`transcribe_project`]: same pipeline, but the caller supplies the audio, GGUF and model id directly, with no `AppHandle`.
+/// Used by the CLI `transcribe` verb and the release smoke test; streams the three phases to stderr instead of an IPC `Channel`.
 pub async fn transcribe_for_paths(
     audio_path: &Path,
     model_path: &Path,

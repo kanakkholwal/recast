@@ -1,25 +1,5 @@
-//! Recast Cloud upload + share — the desktop side of "Record → Polish →
-//! Share". Strictly **additive** and opt-in: recording, editing, and export
-//! never touch any of this and never require an account or network. The
-//! `.recast` on disk stays the source of truth; the cloud holds a derived
-//! MP4 only.
-//!
-//! Flow (frontend orchestrates the export, Rust does the network):
-//!   1. Frontend exports a web-ready MP4 (720p for Free / source for Pro)
-//!      via the existing `export_video` command, then calls
-//!      `recast_cloud_upload(mp4Path, title, workspaceId)`.
-//!   2. POST /api/uploads/init  → reserves a draft recast, returns a signed
-//!      PUT URL (files-sdk envelope).
-//!   3. PUT the file to that URL.
-//!   4. POST /api/uploads/complete → HEAD-verifies + publishes.
-//!   5. POST /api/recasts/{id}/share { visibility: "public" } → share link.
-//!
-//! Auth reuses the device-flow bearer token from `auth.rs` (OS keyring) —
-//! the frontend never sees the raw token. Live progress (coarse phase + PUT
-//! byte counts) streams on the command's request-scoped `on_event` channel;
-//! success is the resolved `CloudShareResult`, and failure additionally fires
-//! a detached `recast-cloud:error` event for corner notifications. The
-//! long-running granular progress is the export step (its own `export-state`).
+//! Recast Cloud upload and share: strictly additive and opt-in, with the on-disk `.recast` still the source of truth.
+//! The frontend runs the export and calls in with an MP4; Rust owns only the network legs and the keyring token.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -34,9 +14,7 @@ use super::error::{AppError, AppResult};
 
 // --- HTTP helper: shared base and authed client, reused from the auth module ---
 
-/// Upload-tuned client: a generous connect timeout but NO overall timeout —
-/// a 150 MB+ PUT over a slow link can legitimately run for minutes, and
-/// auth.rs's 15s client would kill it.
+/// Upload-tuned client: a generous connect timeout but NO overall timeout — a 150 MB+ PUT over a slow link can legitimately run for minutes, and auth.rs's 15s client would kill it.
 fn cloud_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(user_agent())

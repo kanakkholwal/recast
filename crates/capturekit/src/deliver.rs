@@ -11,9 +11,7 @@ use capturekit_core::{CaptureError, LostReason, Result, Timestamp};
 pub(crate) struct Delivered {
     pub pts: Timestamp,
     pub stride: u32,
-    /// Reported per frame: a stream can renegotiate its size mid-capture, and a
-    /// description that does not follow makes every consumer read the wrong
-    /// geometry out of a correct buffer.
+    /// Reported per frame: a stream can renegotiate its size mid-capture, and a description that does not follow makes every consumer read the wrong geometry out of a correct buffer.
     pub width: u32,
     pub height: u32,
 }
@@ -27,17 +25,8 @@ struct Held<M> {
     sequence: u64,
 }
 
-/// The handoff from a push backend's delivery thread to its consumer.
-///
-/// Shared by every backend the OS calls rather than polls: ScreenCaptureKit,
-/// PipeWire and Media Foundation all deliver on a thread of their own, all must
-/// not block it, and all want the current buffer rather than a backlog.
-///
-/// Newest wins. A source that outruns the consumer overwrites the slot instead
-/// of queueing, because an undelivered older buffer is only latency.
-///
-/// Generic over the metadata so audio does not carry a stride and a picture
-/// size it has no use for.
+/// The handoff from a push backend's delivery thread to its consumer, shared by ScreenCaptureKit, PipeWire and Media Foundation.
+/// Newest wins: a source that outruns the consumer overwrites the slot, since an undelivered older buffer is only latency. Generic over metadata.
 #[derive(Default)]
 pub(crate) struct Slot<M> {
     held: Mutex<Held<M>>,
@@ -171,9 +160,7 @@ struct Queued {
 ))]
 impl AudioQueue {
     /// Queue samples captured at `pts` and wake the consumer.
-    ///
-    /// Never blocks the delivery thread: a consumer stalled past `capacity`
-    /// costs the samples that do not fit, and the next run says so.
+    /// Never blocks the delivery thread: a consumer stalled past `capacity` costs the samples that do not fit, and the next run says so.
     pub(crate) fn publish(&self, pts: Timestamp, bytes: &[u8], capacity: usize) {
         let Ok(mut queued) = self.queued.lock() else {
             return;
@@ -237,9 +224,7 @@ impl AudioQueue {
     }
 
     /// Log anything dropped since the last call, once, with its reason.
-    ///
-    /// The samples are already gone; a track that is quietly short is the thing
-    /// worth preventing.
+    /// The samples are already gone; a track that is quietly short is the thing worth preventing.
     pub(crate) fn report_drops(&self, backend: &str) {
         if let Some((count, reason)) = self.take_drops() {
             log::warn!(
@@ -249,9 +234,7 @@ impl AudioQueue {
     }
 
     /// Take what has been dropped since the last ask, as a count and a reason.
-    ///
-    /// `None` when nothing was dropped, so a caller can report only when there
-    /// is something to report.
+    /// `None` when nothing was dropped, so a caller can report only when there is something to report.
     pub(crate) fn take_drops(&self) -> Option<(u64, String)> {
         let mut queued = self.queued.lock().ok()?;
         let reason = queued.reason.take()?;
@@ -300,9 +283,7 @@ impl AudioQueue {
 }
 
 /// A slot that can be told its source stopped, whatever it carries.
-///
-/// One end-of-stream delegate then serves the video and audio slots alike,
-/// rather than one per metadata type.
+/// One end-of-stream delegate then serves the video and audio slots alike, rather than one per metadata type.
 #[cfg(target_os = "macos")]
 pub(crate) trait Endable: Send + Sync {
     fn end(&self);

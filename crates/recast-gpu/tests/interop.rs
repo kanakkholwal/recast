@@ -39,9 +39,7 @@ struct Producer {
     context: ID3D11DeviceContext,
 }
 
-/// A D3D11 device on the SAME physical adapter as `ctx`. `OpenSharedHandle`
-/// fails across adapters, which is what makes hybrid-GPU laptops fail if the
-/// match is skipped.
+/// A D3D11 device on the SAME physical adapter as `ctx`. `OpenSharedHandle` fails across adapters, which is what makes hybrid-GPU laptops fail if the match is skipped.
 fn producer_on(ctx: &GpuContext) -> Option<Producer> {
     let info = ctx.info();
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.ok()?;

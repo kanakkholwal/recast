@@ -21,9 +21,7 @@ pub struct ProjectWriteRequest {
     pub edits_json: String,
 }
 
-/// Write a .recast project file atomically.
-/// Writes to a temporary file first, then renames to the final path.
-/// This prevents corrupted project files if the process crashes mid-write.
+/// Write a .recast project file atomically. Writes to a temporary file first, then renames to the final path. This prevents corrupted project files if the process crashes mid-write.
 pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
     let temp_path = request.output_path.with_extension("recast.tmp");
 

@@ -1,6 +1,5 @@
-//! Baseline numbers for the engine rewrite. Reports rather than gates: CI runners
-//! vary too much to assert a tight bound, but a catastrophic regression still fails.
-//! Run with `--nocapture` to read the table.
+//! Baseline numbers for the engine rewrite. Reports rather than gates, since CI runners vary too much for a tight bound.
+//! A catastrophic regression still fails. Run with `--nocapture` to read the table.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

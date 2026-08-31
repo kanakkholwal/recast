@@ -9,9 +9,7 @@ const EPS: f32 = 1e-6;
 /// well.
 const CORR_STRIDE: usize = 2;
 
-/// Resamples by `rate` with linear interpolation, so `rate` 2 halves the
-/// length. Shifts pitch, which is why it is only the fallback for fragments too
-/// short to stretch.
+/// Resamples by `rate` with linear interpolation, so `rate` 2 halves the length. Shifts pitch, which is why it is only the fallback for fragments too short to stretch.
 pub fn resample_linear(input: &[f32], rate: f64) -> Vec<f32> {
     // `is_finite` first, so a NaN rate is rejected rather than compared.
     if !rate.is_finite() || rate <= 0.0 || (rate - 1.0).abs() < EPS as f64 {
@@ -40,11 +38,8 @@ fn hann(length: usize) -> Vec<f32> {
         .collect()
 }
 
-/// Offset within `radius` of `ideal` whose overlap region best continues the
-/// window at `reference`.
-///
-/// This is the WSOLA search, and it is what keeps successive frames phase
-/// aligned; a naive overlap-add doubles transients and sounds metallic.
+/// Offset within `radius` of `ideal` whose overlap region best continues the window at `reference`.
+/// This is the WSOLA search, and it is what keeps successive frames phase aligned; a naive overlap-add doubles transients and sounds metallic.
 fn best_offset(
     input: &[f32],
     ideal: isize,
@@ -81,11 +76,8 @@ fn best_offset(
     best_position
 }
 
-/// Changes playback speed without changing pitch, by WSOLA overlap-add. `rate`
-/// 2 halves the duration.
-///
-/// Mirrors `time-stretch.ts` step for step, because the preview and the export
-/// have to warp audio identically or a speed ramp drifts against the picture.
+/// Changes playback speed without changing pitch, by WSOLA overlap-add. `rate` 2 halves the duration.
+/// Mirrors `time-stretch.ts` step for step, because the preview and the export have to warp audio identically or a speed ramp drifts against the picture.
 pub fn time_stretch(input: &[f32], rate: f64, sample_rate: u32) -> Vec<f32> {
     if !rate.is_finite() || rate <= 0.0 || (rate - 1.0).abs() < EPS as f64 {
         return input.to_vec();

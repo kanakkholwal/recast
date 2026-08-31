@@ -86,11 +86,8 @@ struct Muxed {
     samples: usize,
 }
 
-/// Builds the MP4 once for the assertions below. `None` when the sidecars are
-/// not present, which skips rather than fails, like the GPU tests.
-///
-/// Memoised, and it has to be: tests run in parallel, and four of them each
-/// rewriting the same two files means one reads what another is still writing.
+/// Builds the MP4 once for the assertions below. `None` when the sidecars are not present, which skips rather than fails, like the GPU tests.
+/// Memoised, and it has to be: tests run in parallel, and four of them each rewriting the same two files means one reads what another is still writing.
 fn muxed() -> Option<&'static Muxed> {
     static FILE: OnceLock<Option<Muxed>> = OnceLock::new();
     FILE.get_or_init(build).as_ref()

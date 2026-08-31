@@ -1,7 +1,5 @@
-//! Schema migrations for the local store, applied in order and tracked by
-//! SQLite's `user_version`. APPEND-ONLY: add a new step, never edit a shipped one
-//! (a shipped step has already run on user machines). Kept as a plain slice; the
-//! schema is small, so no migration crate.
+//! Schema migrations applied in order and tracked by SQLite's `user_version`.
+//! APPEND-ONLY: a shipped step has already run on user machines, so add a new one rather than editing it.
 
 use rusqlite::Connection;
 

@@ -16,11 +16,8 @@ pub enum CursorShapeKind {
     /// 32-bit BGRA whose alpha byte is a flag, not coverage: `0` copies the
     /// pixel, `0xFF` inverts what is underneath.
     MaskedColor,
-    /// 32-bit BGRA whose colour channels are already multiplied by alpha, which
-    /// is what X11's XFixes hands over.
-    ///
-    /// Drawing these as if they were straight alpha darkens every soft edge,
-    /// which on a cursor is a visible black fringe.
+    /// 32-bit BGRA whose colour channels are already multiplied by alpha, which is what X11's XFixes hands over.
+    /// Drawing these as if they were straight alpha darkens every soft edge, which on a cursor is a visible black fringe.
     PremultipliedColor,
 }
 
@@ -45,9 +42,7 @@ pub struct CursorShape {
 }
 
 /// Divide colour back out of alpha, in place.
-///
-/// A fully transparent pixel has no colour left to recover, and its colour
-/// cannot affect anything drawn, so it stays zero.
+/// A fully transparent pixel has no colour left to recover, and its colour cannot affect anything drawn, so it stays zero.
 fn unpremultiply(rgba: &mut [u8]) {
     for pixel in rgba.chunks_exact_mut(4) {
         let alpha = u32::from(pixel[3]);
@@ -139,9 +134,7 @@ impl CursorShape {
     }
 
     /// Decode the stacked AND/XOR masks.
-    ///
-    /// Per pixel, reading the AND mask then the XOR mask:
-    /// `0,0` opaque black, `0,1` opaque white, `1,0` transparent, `1,1` inverts.
+    /// Per pixel, reading the AND mask then the XOR mask: `0,0` opaque black, `0,1` opaque white, `1,0` transparent, `1,1` inverts.
     fn decode_monochrome(&self) -> Result<Vec<u8>, CaptureError> {
         let stride = self.stride as usize;
         let width = self.width as usize;
@@ -238,10 +231,7 @@ impl CursorButtons {
 }
 
 /// Where the cursor was, which buttons were held, and whether it was showing.
-///
-/// Sampled on the capture's own clock rather than by a separate poller: a cursor
-/// track on its own clock drifts against the video and has to be smoothed to
-/// hide it.
+/// Sampled on the capture's own clock rather than by a separate poller: a cursor track on its own clock drifts against the video and has to be smoothed to hide it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CursorSample {
     /// When the position was true, on the source's clock.

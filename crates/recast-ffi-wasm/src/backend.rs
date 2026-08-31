@@ -1,6 +1,5 @@
-/// Resolves the caller's backend request against what this build actually
-/// compiled in. `has_*` are passed rather than read from `cfg!` so the rejection
-/// paths are testable on the host, where neither feature is meaningful.
+/// Resolves the caller's backend request against what this build compiled in.
+/// `has_*` are passed rather than read from `cfg!`, so the rejection paths test on the host where neither feature is meaningful.
 pub fn backends_for(
     requested: Option<&str>,
     has_webgpu: bool,

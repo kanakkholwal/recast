@@ -101,11 +101,8 @@ impl FragmentedWriter {
         self.audio_format = Some(format);
     }
 
-    /// `ftyp` and a `moov` whose sample tables are empty, which is what says the
-    /// samples arrive in fragments. Errors until the parameter sets are known.
-    ///
-    /// Written once, before any fragment, and never rewritten: that is the whole
-    /// difference from the progressive writer.
+    /// `ftyp` and a `moov` whose sample tables are empty, which is what says the samples arrive in fragments. Errors until the parameter sets are known.
+    /// Written once, before any fragment, and never rewritten: that is the whole difference from the progressive writer.
     pub fn initialization_segment(&self) -> Result<Vec<u8>, FragmentError> {
         let mut header = Mp4Writer::new(self.video_format);
         header.set_avc_config(self.avc.clone());
@@ -338,9 +335,7 @@ mod tests {
         assert_eq!(&data[mdat + 4..], &[1, 1, 1, 2, 2]);
     }
 
-    /// The offset is what points a player at the bytes. With
-    /// `default-base-is-moof` it counts from the first byte of the fragment, so
-    /// following it has to land exactly on the first sample.
+    /// The offset is what points a player at the bytes. With `default-base-is-moof` it counts from the first byte of the fragment, so following it has to land exactly on the first sample.
     #[test]
     fn the_data_offset_points_at_the_first_sample() {
         let mut w = writer();

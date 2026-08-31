@@ -1,8 +1,5 @@
-//! Box downscaling for the preview feed.
-//!
-//! The preview bubble is a few hundred pixels, but the camera delivers 720p or
-//! more. Sending capture resolution over IPC is 110 MB/s at 720p30, so frames
-//! are reduced here first, where the pixels already live.
+//! Box downscaling for the preview feed, done here where the pixels already live.
+//! Sending capture resolution over IPC is 110 MB/s at 720p30, for a bubble a few hundred pixels wide.
 
 /// A BGRA frame reduced so neither side exceeds `max_dim`, appended to `out`.
 ///

@@ -67,9 +67,7 @@ impl Default for ShotOptions {
 }
 
 /// Take one frame from an open backend.
-///
-/// Shared by the one-shot API and by a snapshot taken mid-recording, so both get
-/// the same warmup, the same crop and the same validation.
+/// Shared by the one-shot API and by a snapshot taken mid-recording, so both get the same warmup, the same crop and the same validation.
 pub(crate) fn grab_one(
     backend: &mut dyn FrameSource,
     opts: &ShotOptions,

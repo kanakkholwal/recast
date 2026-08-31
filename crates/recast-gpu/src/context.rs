@@ -129,9 +129,7 @@ impl GpuContext {
         crate::pool::TexturePool::new(crate::pool::WgpuAllocator::new(self.device.clone(), label))
     }
 
-    /// True when this adapter can import an OS shared texture handle without a
-    /// host copy. Only DX12 is proven so far (S-1); the others gate their own
-    /// paths as they land.
+    /// True when this adapter can import an OS shared texture handle without a host copy. Only DX12 is proven so far (S-1); the others gate their own paths as they land.
     pub fn supports_zero_copy_import(&self) -> bool {
         matches!(self.adapter.get_info().backend, wgpu::Backend::Dx12)
     }

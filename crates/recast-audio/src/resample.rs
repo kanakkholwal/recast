@@ -18,9 +18,7 @@ fn blackman(t: f64) -> f64 {
 }
 
 /// A windowed-sinc kernel for one rate ratio.
-///
-/// Downsampling lowers the cutoff and widens the kernel by the same factor, so
-/// the band that would alias is filtered before it is sampled rather than after.
+/// Downsampling lowers the cutoff and widens the kernel by the same factor, so the band that would alias is filtered before it is sampled rather than after.
 #[derive(Debug, Clone, Copy)]
 pub struct Kernel {
     cutoff: f64,

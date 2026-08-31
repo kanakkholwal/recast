@@ -1,12 +1,5 @@
-//! What 4K60 costs the CPU when the pixels never leave the GPU.
-//!
-//! The budget the zero-copy path exists to meet: converting and encoding
-//! 3840x2160 at 60fps must stay under a small fraction of one core, because the
-//! machine is also running whatever the user is recording. Measured in real
-//! time, paced to 60fps, so the number is "cost of keeping up" rather than
-//! "cost of going as fast as possible".
-//!
-//! Build it with `--release`: a debug build measures rustc's inlining decisions.
+//! What 4K60 costs the CPU on the zero-copy path, paced to 60fps so the number is cost-of-keeping-up.
+//! Build with `--release`: a debug build measures rustc's inlining decisions instead.
 
 #![cfg(windows)]
 

@@ -142,9 +142,7 @@ fn offset_for(kind: AudioKind, offsets: TrackOffsets) -> Option<i64> {
     }
 }
 
-/// Effective linear gain for one input: master × its per-source gain, 0 when
-/// muted. Mirrors the preview's `effectiveTrackVolume` so preview and export
-/// apply the same mix.
+/// Effective linear gain for one input: master × its per-source gain, 0 when muted. Mirrors the preview's `effectiveTrackVolume` so preview and export apply the same mix.
 fn effective_audio_gain(settings: &AudioSettings, kind: AudioKind) -> f64 {
     let master = (settings.volume / 100.0).clamp(0.0, 4.0);
     let (vol, muted) = match kind {
@@ -416,16 +414,8 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
     })
 }
 
-/// Read-only summary of a project's timeline. Mirrors the data shape the
-/// frontend's `deriveSegments` + `timeMapFromSegments` produce in
-/// `apps/desktop/src/lib/timeline/{segments,time-map}.ts`. The shared parity
-/// fixtures already enforce that the Rust side (these helpers) and the JS side
-/// agree to the same precision, so an agent that reads this view and then
-/// issues a follow-up `editor.*` patch can trust the structure it sees.
-///
-/// Costs of deriving this are negligible (a single pass over the cuts +
-/// split_points on the in-memory render state); safe to call from a control-
-/// socket dispatch arm without a `spawn_blocking`.
+/// Read-only timeline summary, mirroring the shape `deriveSegments` and `timeMapFromSegments` produce; shared parity fixtures hold the two to the same precision.
+/// One pass over cuts and split points on in-memory state, so a control-socket arm can build it without `spawn_blocking`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectTimeline {
@@ -577,21 +567,6 @@ pub struct ValidationIssue {
 /// the export agree on what "the same boundary" means.
 const VALIDATION_EPS: f64 = 1e-4;
 
-/// Validate a `RenderState` against the project's source-recording metadata.
-///
-/// **Runs at every entry point** that crosses a trust boundary: `enqueue_export`,
-/// `save_project_edits`, every CLI `editor.*` patch verb, every MCP tool
-/// handler. The function returns *all* violations, not the first; an agent
-/// iterating on a JSON document needs the complete list to fix in one pass.
-///
-/// Pure (no I/O, no AppHandle, no State). Costs ~O(n) over the render state's
-/// collections; safe to call on a control-socket connection's thread without
-/// Clamp a render state's trim window and cuts to the real source duration,
-/// repairing the common `trim_end_exceeds_source` case: recordings saved before
-/// the wall-clock→CFR fix baked a slightly-too-long `trim_end` into their edits
-/// (see project/mod.rs), so exporting an old project fails validation. Pure;
-/// mutates `s` in place and returns human-readable descriptions of every change
-/// (empty = nothing needed repair). Run BEFORE `validate_render_state`.
 /// The band the export validates a zoom against, and the UI slider offers.
 const ZOOM_SCALE_MIN: f64 = 1.0;
 const ZOOM_SCALE_MAX: f64 = 3.0;
@@ -611,6 +586,8 @@ fn repair_into(value: &mut f64, min: f64, max: f64, fallback: f64) -> bool {
     false
 }
 
+/// Clamps the trim window and cuts to the real source duration, repairing `trim_end_exceeds_source` in projects saved before the CFR fix.
+/// Mutates in place and returns a description per change. Run BEFORE `validate_render_state`.
 pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<String> {
     let mut repairs = Vec::new();
 
@@ -756,7 +733,8 @@ pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<Str
     repairs
 }
 
-/// `spawn_blocking`.
+/// Validate a `RenderState` against the source recording, at every entry point that crosses a trust boundary.
+/// Returns ALL violations, not the first, so an agent fixes a document in one pass; pure, so it needs no `spawn_blocking`.
 pub fn validate_render_state(
     s: &RenderState,
     source_duration: f64,
@@ -1951,9 +1929,7 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
     Ok(thumbnails)
 }
 
-/// Pull a single thumbnail at `timestamp` (seconds). Used for poster
-/// frames where the timeline-strip's multi-frame batching would be
-/// overkill.
+/// Pull a single thumbnail at `timestamp` (seconds). Used for poster frames where the timeline-strip's multi-frame batching would be overkill.
 fn extract_single_thumbnail(
     media_path: &Path,
     timestamp: f64,
@@ -2054,17 +2030,6 @@ pub(crate) fn poster_webp_for_export(path: &str) -> Option<Vec<u8>> {
     extract_poster_webp(&input, meta.duration * 0.25, 960)
 }
 
-/// Run one export end to end: build the FFmpeg filter graph from the render
-/// state, spawn the encode on a blocking worker, and emit `export-state` events
-/// keyed by `request.export_id`. Returns the output path, or an `Err` whose
-/// message contains "cancel" when the user aborted.
-///
-/// This is the single execution path for an export. It is NOT a Tauri command:
-/// exports are started by enqueuing them (`commands::export_queue::enqueue_export`),
-/// and the serial export worker is this function's only caller (a future CLI
-/// export verb would call it too). It still owns its own cancel token in
-/// `state.export_cancel` (so `cancel_export` finds it by id) and takes a power
-/// lease for the run.
 /// Drops an export's cancellation token when the run ends, however it ends.
 struct CancelTokenGuard {
     app: AppHandle,
@@ -2487,6 +2452,8 @@ async fn mux_browser_gif(
     }
 }
 
+/// Runs one export end to end and emits `export-state` keyed by `request.export_id`; an `Err` containing "cancel" means the user aborted.
+/// Not a Tauri command: exports are enqueued, and the serial worker is the only caller. Owns its cancel token so `cancel_export` finds it by id.
 pub(crate) async fn run_export_job(
     app: AppHandle,
     mut request: ExportRequest,
@@ -2617,10 +2584,9 @@ pub(crate) async fn run_export_job(
     }
 
     // The engine path, opt in. Everything above still runs (it validates the request and names the output the same way), so the two paths differ only in who renders. MP4 only, no progress/cancel yet, which is why it is not a setting.
-    #[cfg(windows)]
-    if crate::export_engine::enabled() {
-        // GIF needs a palette pass and WebM a VP9 encoder, neither of which the engine has. Both already exist behind the mux-only path the browser renderer uses, so the engine renders an intermediate and hands it over exactly as the browser does.
-        let direct = extension == "mp4";
+    if crate::export_engine::enabled(request.engine_export) {
+        // Direct only for an mp4 the engine can finish itself: GIF needs a palette pass, WebM a VP9 encoder, and a platform without an in-process codec needs an audio track, all of which live behind the mux-only path the browser renderer already uses.
+        let direct = extension == "mp4" && crate::export_engine::writes_finished_files();
         let render_target = match direct {
             true => output_path.clone(),
             false => std::env::temp_dir().join(format!("recast-engine-{export_id}.mp4")),
@@ -2653,6 +2619,15 @@ pub(crate) async fn run_export_job(
                 captions: captions.as_ref(),
                 // The mux pass owns the music clips and the voice detach, so an intermediate must not carry a second track.
                 audio: direct,
+                // Where FFmpeg is the codec backend it decodes from a raw pipe, which carries no geometry of its own.
+                source: recast_export::SourceInfo {
+                    width: metadata.width,
+                    height: metadata.height,
+                    fps: source_fps,
+                },
+                ffmpeg: Some(crate::ffmpeg::ffmpeg_path()),
+                // The platform decides; the flag exists so the piped path is testable where a native one exists.
+                force_ffmpeg: false,
             },
             &mut on_frame,
         );

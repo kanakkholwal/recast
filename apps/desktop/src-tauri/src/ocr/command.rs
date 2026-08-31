@@ -1,13 +1,5 @@
-//! Entry point: read a video file into a structured text timeline.
-//!
-//! `run` is the shared core, used by the `screen.read` control method (CLI) and by
-//! the `read_video_text` Tauri command (the editor's dev OCR tab). It ensures the
-//! models are present, then does the CPU-heavy sampling + OCR on a blocking thread
-//! so it never stalls the app.
-//!
-//! This module compiles with or without the `ocr` feature. Without it, `run`
-//! reports that the engine is not in this build, exactly as the transcription seam
-//! does for `ggml`, so the command surface stays present and degrades gracefully.
+//! Reads a video into a structured text timeline; shared by the `screen.read` control method and the `read_video_text` command.
+//! Compiles without the `ocr` feature, reporting the engine as absent so the command surface degrades gracefully.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -37,9 +29,7 @@ pub struct OcrProgress {
     pub done: u64,
     /// Units this phase expects, or 0 when not yet known.
     pub total: u64,
-    /// The result so far: frames kept while sampling, screen states found while
-    /// reading. Carried so a long read shows what it is producing, not just how
-    /// far along it is.
+    /// The result so far: frames kept while sampling, screen states found while reading. Carried so a long read shows what it is producing, not just how far along it is.
     pub found: u64,
 }
 

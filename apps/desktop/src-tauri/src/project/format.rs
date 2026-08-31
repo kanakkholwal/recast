@@ -1,12 +1,5 @@
-//! `.recast` format v2 layout, edits split/merge, and canonical serialization.
-//!
-//! v2 explodes the old single `edits.json` into a `project.json` manifest plus
-//! per-concern `edits/<section>.json` files, alongside `assets/` media.
-//!
-//! The split is a key→section grouping table, not a type mirror: `RenderState`
-//! has a `#[serde(flatten)] passthrough`, so regrouping the flat camelCase key
-//! space round-trips losslessly. The reader merges sections back into one
-//! `edits.json` in the cache, leaving the export/thumbnail pipeline untouched.
+//! `.recast` v2: a `project.json` manifest plus per-concern `edits/<section>.json`, beside `assets/` media.
+//! The split is a key-to-section table, not a type mirror, so `RenderState`'s flattened passthrough round-trips losslessly.
 
 use std::collections::BTreeMap;
 

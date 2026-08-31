@@ -86,9 +86,7 @@ impl Session {
         self.scene.caption_track = track;
     }
 
-    /// The face to draw captions with. Required on wasm32, where there is no
-    /// filesystem to resolve a family against; native falls back to resolving
-    /// the style's own family.
+    /// The face to draw captions with. Required on wasm32, where there is no filesystem to resolve a family against; native falls back to resolving the style's own family.
     pub fn set_caption_font(&mut self, data: Vec<u8>, index: u32) -> bool {
         let Some(face) = FontFace::from_bytes(std::sync::Arc::new(data), index) else {
             // Unreadable bytes leave the working face alone: on wasm32 there is no fallback, so dropping it would kill captions for the session.
@@ -412,9 +410,7 @@ mod tests {
         assert!((session.output_duration() - 4.0).abs() < 1e-6);
     }
 
-    /// The track is uploaded on its own channel and the editor pushes a fresh
-    /// scene on any store write, so a scene replace that drops it makes the
-    /// pointer vanish mid-session.
+    /// The track is uploaded on its own channel and the editor pushes a fresh scene on any store write, so a scene replace that drops it makes the pointer vanish mid-session.
     #[test]
     fn replacing_the_scene_keeps_the_cursor_track() {
         let Some(ctx) = context() else { return };

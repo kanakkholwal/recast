@@ -29,9 +29,7 @@ const REQUESTED: AudioFormat = AudioFormat::STEREO_48K;
 /// How long to wait for the daemon to answer a registry roundtrip.
 const ENUMERATE_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// How many samples may queue before a stalled consumer starts losing them.
-/// Four seconds of 48 kHz stereo float, which is far past any read interval a
-/// recorder uses and still bounded.
+/// How many samples may queue before a stalled consumer starts losing them. Four seconds of 48 kHz stereo float, which is far past any read interval a recorder uses and still bounded.
 const QUEUE_BYTES: usize = 4 * 48_000 * 2 * 4;
 
 /// How long to wait for the stream to connect before calling the open failed.

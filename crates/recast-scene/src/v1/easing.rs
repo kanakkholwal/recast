@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Unit-interval cubic-bezier control points. P0 and P3 are implicit at
-/// (0, 0) and (1, 1). x1 / x2 should stay in `[0, 1]`; y1 / y2 can go
-/// outside for overshoot curves.
+/// Unit-interval cubic-bezier control points. P0 and P3 are implicit at (0, 0) and (1, 1). x1 / x2 should stay in `[0, 1]`; y1 / y2 can go outside for overshoot curves.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Easing {

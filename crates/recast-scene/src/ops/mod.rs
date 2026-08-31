@@ -1,13 +1,5 @@
-//! Typed edits against a [`Scene`].
-//!
-//! Every op is pure and deterministic: the same op on the same scene produces
-//! the same scene and the same wire result, on any machine. That is what lets a
-//! journal be replayed, an agent work on a branch, and undo be a fold rather
-//! than a snapshot.
-//!
-//! Variant names, field names and path strings are all a WIRE CONTRACT. They are
-//! stored in journals on disk, so renaming one invalidates every journal already
-//! written.
+//! Typed edits against a [`Scene`], each pure and deterministic so a journal replays, a branch works, and undo is a fold.
+//! Variant, field and path names are a WIRE CONTRACT stored in on-disk journals: renaming one invalidates every journal written.
 
 pub mod path;
 
@@ -101,10 +93,7 @@ pub enum Op {
 }
 
 /// Applies one op in place, returning the verb's wire result.
-///
-/// On error the scene is left EXACTLY as it was. Every variant either validates
-/// before mutating or works on a copy, because a journal that half-applies an op
-/// cannot be replayed.
+/// On error the scene is left EXACTLY as it was. Every variant either validates before mutating or works on a copy, because a journal that half-applies an op cannot be replayed.
 pub fn apply(scene: &mut Scene, op: &Op) -> Result<Value, OpError> {
     match op {
         Op::Set { path, value } => {
@@ -179,9 +168,7 @@ pub fn apply(scene: &mut Scene, op: &Op) -> Result<Value, OpError> {
 }
 
 /// Folds ops in order, returning each one's wire result.
-///
-/// Stops at the first error with the scene PARTIALLY applied, so callers fold
-/// onto a clone they can discard. That is the same contract the v1 journal has.
+/// Stops at the first error with the scene PARTIALLY applied, so callers fold onto a clone they can discard. That is the same contract the v1 journal has.
 pub fn apply_all(scene: &mut Scene, ops: &[Op]) -> Result<Vec<Value>, OpError> {
     ops.iter().map(|op| apply(scene, op)).collect()
 }
@@ -207,24 +194,13 @@ fn from_value(doc: Value, path: &str) -> Result<Scene, OpError> {
 }
 
 /// Whether every part of `scene` survives a trip through the v1 model.
-///
-/// Checked by ROUND-TRIPPING rather than by a hand-kept list of what v1 can
-/// hold, so it cannot drift out of date as either model grows.
+/// Checked by ROUND-TRIPPING rather than by a hand-kept list of what v1 can hold, so it cannot drift out of date as either model grows.
 pub fn is_v1_representable(scene: &Scene) -> bool {
     &crate::migrate::to_scene(&crate::migrate::to_render_state(scene)) == scene
 }
 
-/// Applies a v1 edit to a scene by projecting down to `RenderState`, editing
-/// there, and projecting back.
-///
-/// **This is the journal migration.** Every op already written to disk addresses
-/// a flat `RenderState` field, and rewriting those journals is neither safe nor
-/// necessary while the projection is lossless.
-///
-/// It REFUSES on a scene v1 cannot represent, because the projection would
-/// silently drop whatever v1 has no room for. A scene reaches that state the
-/// moment a scene-native op adds a layer or reorders one, so a journal cannot
-/// mix the two freely and this is where that shows up.
+/// Applies a v1 edit by projecting to `RenderState`, editing, and projecting back. This is the journal migration: existing ops address flat fields.
+/// REFUSES on a scene v1 cannot represent, which happens the moment a scene-native op adds or reorders a layer, so a journal cannot mix the two freely.
 pub fn with_render_state<T>(
     scene: &mut Scene,
     edit: impl FnOnce(&mut crate::v1::RenderState) -> T,

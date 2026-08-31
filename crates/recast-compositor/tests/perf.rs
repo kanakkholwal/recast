@@ -1,12 +1,5 @@
-//! Frame-time budgets for the compositor.
-//!
-//! The export target is roughly 8x realtime at 1080p60, which is 2 ms of
-//! compositing per frame with everything else free. Nothing is free, so the
-//! budget asserted here is deliberately loose: this is a REGRESSION gate, not a
-//! performance target. It fires when a change makes the compositor several times
-//! slower, which is the failure mode that ships unnoticed.
-//!
-//! `--ignored --nocapture` prints the measured numbers.
+//! Frame-time budgets: a deliberately loose REGRESSION gate, not a performance target.
+//! It fires when a change makes compositing several times slower, the failure mode that ships unnoticed. `--ignored --nocapture` prints the numbers.
 
 use std::time::Instant;
 
@@ -110,9 +103,7 @@ fn source_texture(ctx: &GpuContext, width: u32, height: u32) -> wgpu::Texture {
 }
 
 /// Median milliseconds per frame, including the wait for the GPU to finish.
-///
-/// Timing without the wait measures how fast we can QUEUE work, which stays flat
-/// while the shader behind it gets arbitrarily slower.
+/// Timing without the wait measures how fast we can QUEUE work, which stays flat while the shader behind it gets arbitrarily slower.
 fn frame_time_ms(ctx: &GpuContext, scene: &Scene, width: u32, height: u32) -> f64 {
     let ev = Evaluator::new(scene, SourceGeometry { width, height });
     let mut compositor = Compositor::new(ctx).expect("compositor");

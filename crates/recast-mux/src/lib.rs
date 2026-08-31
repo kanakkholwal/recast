@@ -1,8 +1,5 @@
-//! MP4 writing and reading. Writing is progressive by construction.
-//!
-//! `moov` goes before `mdat` because the writer buffers samples and sizes the
-//! header first, so `+faststart` stops being a post-process the export has to
-//! remember to ask for.
+//! MP4 writing and reading, progressive by construction.
+//! The writer buffers samples and sizes `moov` before `mdat`, so `+faststart` stops being a post-process to remember.
 
 #![forbid(unsafe_code)]
 

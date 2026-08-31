@@ -8,9 +8,7 @@ use crate::pointer::{Pointer, PointerSource};
 const BACKEND: &str = "x11-pointer";
 
 /// Read the buttons out of a `QueryPointer` modifier mask.
-///
-/// Shared with the frame-attached cursor so the two paths cannot disagree, and
-/// so `Capabilities::cursor_buttons` is true of both.
+/// Shared with the frame-attached cursor so the two paths cannot disagree, and so `Capabilities::cursor_buttons` is true of both.
 pub(crate) fn buttons_of(mask: KeyButMask) -> CursorButtons {
     CursorButtons {
         left: mask.contains(KeyButMask::BUTTON1),
@@ -20,9 +18,7 @@ pub(crate) fn buttons_of(mask: KeyButMask) -> CursorButtons {
 }
 
 /// Reads the pointer through `XQueryPointer`.
-///
-/// One connection is held open for the life of the reader: reconnecting per
-/// sample would dominate the cost at any useful rate.
+/// One connection is held open for the life of the reader: reconnecting per sample would dominate the cost at any useful rate.
 pub(crate) struct X11Pointer {
     conn: RustConnection,
     root: Screen,

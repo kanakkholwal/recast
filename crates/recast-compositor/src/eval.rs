@@ -193,9 +193,7 @@ pub struct LayerParams {
     pub motion_blur: f32,
     /// Zoom focus in source UV, which is the centre the radial blur streaks from.
     pub zoom_center: [f32; 2],
-    /// Signed rate of change of the zoom scale, in scale units per output
-    /// second. Drives motion blur, which must fire during a ramp and not during
-    /// the hold.
+    /// Signed rate of change of the zoom scale, in scale units per output second. Drives motion blur, which must fire during a ramp and not during the hold.
     pub zoom_velocity: f32,
     /// Crop the source to the card's aspect instead of stretching to it. The
     /// screen layer never needs it (its card matches the source); a camera
@@ -366,9 +364,7 @@ impl Evaluator {
         }
     }
 
-    /// The pointer for this frame. Every curve lives in `recast-cursor`, which
-    /// the TypeScript preview asserts against the same fixture, so preview and
-    /// export cannot drift.
+    /// The pointer for this frame. Every curve lives in `recast-cursor`, which the TypeScript preview asserts against the same fixture, so preview and export cannot drift.
     fn cursor_placement(&self, scene: &Scene, source_time: f64) -> Option<CursorPlacement> {
         let track = scene.cursor_track.as_ref()?;
         let layer = scene
@@ -728,18 +724,8 @@ fn shadow_params(
     })
 }
 
-/// The latest-STARTING region containing `t` wins, ties to the later entry.
-/// Matches `activeZoomIndex` in the editor: a short region nested inside a long
-/// one is the more specific intent, and the rule must not depend on array order.
-/// The tightest zoom in force. Exactly one region applies at any instant, so
-/// overlapping regions never stack.
-///
-/// Picking by SCALE rather than by latest start is what stops an overlap
-/// flickering: the winner can only change where the two scales are equal, so the
-/// zoom is continuous across the handover. Latest-start-wins snapped 2.00x to
-/// 1.03x in a single frame, because the incoming region's ramp restarts at 1.
-/// Ties keep the later start, which is the old rule and the only case where the
-/// two disagree.
+/// The tightest zoom in force: exactly one region applies at any instant, so overlaps never stack. Ties keep the later start.
+/// Picking by SCALE, not latest start, is what stops an overlap flickering; latest-start-wins snapped 2.00x to 1.03x in a frame as the incoming ramp restarts at 1.
 fn active_zoom<'a>(regions: &[&'a ZoomRegion], t: f64) -> Option<&'a ZoomRegion> {
     let mut best: Option<(&ZoomRegion, f64)> = None;
     for region in regions {
@@ -958,9 +944,7 @@ mod tests {
         assert!((outer - 1.5).abs() < 1e-4, "outer region lost: {outer}");
     }
 
-    /// FFmpeg SUMMED overlapping regions: 1.5 + 3.0 previewed as one and
-    /// exported as the other. Nothing can sum here, since exactly one region
-    /// is selected per instant.
+    /// FFmpeg SUMMED overlapping regions: 1.5 + 3.0 previewed as one and exported as the other. Nothing can sum here, since exactly one region is selected per instant.
     #[test]
     fn overlapping_regions_never_sum() {
         let scene = scene_with(

@@ -1,10 +1,5 @@
-//! Cooperative cancel for the in-flight transcription.
-//!
-//! One run at a time (the Captions panel disables Generate while one is
-//! active), so a module-level flag is the whole registry. Two levels: a coarse
-//! `REQUESTED` checked at phase boundaries, and — for the ggml engine — the
-//! native abort callback, which is the only thing that can interrupt inference
-//! part-way through a 30-minute recording.
+//! Cooperative cancel; one run at a time, so a module-level flag is the whole registry.
+//! The coarse flag is checked at phase boundaries, but only ggml's native abort callback can interrupt inference mid-recording.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

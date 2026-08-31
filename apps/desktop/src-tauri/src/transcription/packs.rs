@@ -1,21 +1,5 @@
-//! Caption models contributed by installed extensions (Tier 1, declarative).
-//!
-//! A caption-model pack is a normal `asset-pack` extension whose manifest
-//! carries a `contributes.captionModels[]` array. This module turns those
-//! entries into `CaptionModel`s and merges them into the catalog
-//! (`models::all_models`). No new install/trust surface: the extension
-//! installer already enforces HTTPS + per-asset sha256 + traversal checks, and
-//! this layer adds the caption-specific rules.
-//!
-//! Trust boundary: `runtime` + `engine` are closed enums (serde rejects unknown
-//! values), and `engine` must belong to the declared `runtime`. So a pack can
-//! only select an existing backend + architecture, never introduce one — that
-//! would be a new arm in `engine.rs` (code = Tier 2).
-//!
-//! Model weight files download into the canonical `models/<id>/` dir (same as
-//! built-ins), so `model_dir` / `is_installed` / `engine::transcribe` need no
-//! changes. Third-party weights MUST pin a sha256 (stricter than our own
-//! built-ins, whose hashes are still being locked).
+//! Caption models contributed by installed extensions, merged into the built-in catalog.
+//! `runtime` and `engine` are closed enums, so a pack selects an existing backend and can never introduce one.
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -142,9 +126,7 @@ pub(crate) fn models_from_contributes(pack_id: &str, contributes: &Value) -> Vec
     out
 }
 
-/// Every valid caption model contributed by installed+enabled extensions.
-/// Deduplicated by id (first pack wins); collisions with built-ins are resolved
-/// later in `models::all_models`.
+/// Every valid caption model contributed by installed+enabled extensions. Deduplicated by id (first pack wins); collisions with built-ins are resolved later in `models::all_models`.
 pub fn pack_models(app: &AppHandle) -> Vec<CaptionModel> {
     let mut out: Vec<CaptionModel> = Vec::new();
     let mut seen = std::collections::HashSet::new();

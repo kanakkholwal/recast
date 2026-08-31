@@ -1,7 +1,5 @@
 /// A growable buffer of MP4 boxes with size back-patching.
-///
-/// Boxes nest, and a box's size is only known once its children are written, so
-/// `open` records where the size field went and `close` fills it in.
+/// A box's size is known only once its children are written, so `open` records where the field went and `close` fills it in.
 #[derive(Default)]
 pub struct BoxBuf {
     bytes: Vec<u8>,

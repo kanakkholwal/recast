@@ -1,8 +1,5 @@
-//! Live pointer reads against the real OS.
-//!
-//! `#[ignore]`d: a CI runner has no pointer, and the assertions here are about
-//! what the OS actually reports rather than about arithmetic, which
-//! `PointerCapturer`'s unit tests cover with a scripted source.
+//! Live pointer reads against the real OS, `#[ignore]`d because a CI runner has no pointer.
+//! These assert what the OS reports; the arithmetic is covered by `PointerCapturer`'s scripted unit tests.
 
 use capturekit::{Capabilities, PointerCapturer, Rect, Timestamp};
 
@@ -32,9 +29,7 @@ fn the_pointer_reads_somewhere_on_the_virtual_desktop() {
     );
 }
 
-/// The reason this path exists rather than reading the cursor off a frame: a
-/// read must cost far less than a frame interval, or sampling above the frame
-/// rate is not actually possible.
+/// The reason this path exists rather than reading the cursor off a frame: a read must cost far less than a frame interval, or sampling above the frame rate is not actually possible.
 #[test]
 #[ignore = "live: needs a real pointer"]
 fn a_read_costs_far_less_than_a_frame_interval() {

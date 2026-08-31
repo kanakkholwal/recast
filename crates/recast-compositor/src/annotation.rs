@@ -40,9 +40,7 @@ pub enum AnnotationShape {
         /// blur below the redaction threshold.
         tint: Srgba,
     },
-    /// A decoded asset stretched over the rect. `path` addresses the upload,
-    /// matching the host's own per-path image cache, so two annotations sharing
-    /// a file share one texture.
+    /// A decoded asset stretched over the rect. `path` addresses the upload, matching the host's own per-path image cache, so two annotations sharing a file share one texture.
     Image {
         x: f32,
         y: f32,
@@ -449,9 +447,7 @@ mod tests {
         ))
     }
 
-    /// Sigma is a fraction of the SHORTER canvas edge, the same reference
-    /// `paintBlur` uses, so a given strength reads the same in all three
-    /// renderers instead of drifting with the aspect.
+    /// Sigma is a fraction of the SHORTER canvas edge, the same reference `paintBlur` uses, so a given strength reads the same in all three renderers instead of drifting with the aspect.
     #[test]
     fn blur_strength_becomes_a_sigma_on_the_shorter_edge() {
         match params(&blur(r#","strength":0.5"#), 5.0)

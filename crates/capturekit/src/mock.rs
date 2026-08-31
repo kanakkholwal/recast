@@ -85,18 +85,14 @@ impl MockAudioSource {
     }
 
     /// A live count of the answers handed out.
-    ///
-    /// Shared, because the source is moved into whatever drives it: a loop that
-    /// stopped reading and one that never started look identical from outside.
+    /// Shared, because the source is moved into whatever drives it: a loop that stopped reading and one that never started look identical from outside.
     #[must_use]
     pub fn reads(&self) -> std::sync::Arc<std::sync::atomic::AtomicUsize> {
         std::sync::Arc::clone(&self.served)
     }
 
     /// A live flag set when the capture is released.
-    ///
-    /// Shared for the same reason as [`Self::reads`]: the source is moved into
-    /// whatever drives it, so it cannot be asked afterwards.
+    /// Shared for the same reason as [`Self::reads`]: the source is moved into whatever drives it, so it cannot be asked afterwards.
     #[must_use]
     pub fn released(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
         std::sync::Arc::clone(&self.stopped)
@@ -167,9 +163,7 @@ impl MockFrame {
 }
 
 /// A synthetic source, for downstream tests and for CI with no display.
-///
-/// Scripted rather than generated: a test says exactly which frames arrive, so
-/// stale-frame handling, loss and recovery are all reachable without an OS.
+/// Scripted rather than generated: a test says exactly which frames arrive, so stale-frame handling, loss and recovery are all reachable without an OS.
 #[derive(Debug, Clone)]
 pub struct MockSource {
     desc: SourceDesc,

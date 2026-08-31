@@ -1,12 +1,5 @@
-//! The one owner of the camera device.
-//!
-//! Cameras are exclusive: a second reader gets nothing (verified on Windows,
-//! where a concurrent open times out). So the WebView cannot hold the device
-//! with `getUserMedia` while a recording reads it. One thread owns the camera
-//! and fans frames out to the live preview and, while recording, to a file.
-//!
-//! That also puts the camera on the same [`RecordingClock`] as the screen, so
-//! the A/V offset is measured rather than reported over IPC in wall-clock time.
+//! The one owner of the camera device: cameras are exclusive, so the WebView cannot hold it while a recording reads it.
+//! One thread fans frames to the preview and the file, putting the camera on the same [`RecordingClock`] as the screen.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -98,9 +91,7 @@ fn slot() -> &'static Mutex<Option<Running>> {
 }
 
 /// Open `device` and start delivering preview frames to `sink`.
-///
-/// Each preview frame is `width: u32le, height: u32le` followed by BGRA rows, so
-/// the receiver needs no side channel to size itself.
+/// Each preview frame is `width: u32le, height: u32le` followed by BGRA rows, so the receiver needs no side channel to size itself.
 pub fn start(device: &str, sink: FrameSink) -> Result<CameraGeometry> {
     let mut held = slot().lock().map_err(|_| anyhow!("camera lock poisoned"))?;
     if let Some(running) = held.as_mut() {
@@ -428,11 +419,8 @@ mod tests {
         assert!(!keep_pumping(&error));
     }
 
-    /// The whole preview path, against a real device: does the sink actually
-    /// receive MOVING pictures, or one frame forever?
-    ///
-    /// capturekit's own live test proves the device delivers distinct frames, so
-    /// a failure here is in this file.
+    /// The whole preview path, against a real device: does the sink actually receive MOVING pictures, or one frame forever?
+    /// capturekit's own live test proves the device delivers distinct frames, so a failure here is in this file.
     #[test]
     #[ignore = "live: opens the real camera"]
     fn the_preview_sink_receives_moving_pictures() {

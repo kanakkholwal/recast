@@ -236,9 +236,7 @@ impl PreviewEngine {
         });
     }
 
-    /// The canvas backing-store size. Pass the same values written to
-    /// `canvas.width` / `canvas.height`; the aspect must match the composition
-    /// or the present pass stretches.
+    /// The canvas backing-store size. Pass the same values written to `canvas.width` / `canvas.height`; the aspect must match the composition or the present pass stretches.
     #[wasm_bindgen(js_name = setCanvasSize)]
     pub fn set_canvas_size(&mut self, width: u32, height: u32) {
         self.canvas_size = Some((width.max(1), height.max(1)));
@@ -331,9 +329,7 @@ impl PreviewEngine {
         picked.is_some()
     }
 
-    /// Whether a previously bound frame is still there to hold on to. True right
-    /// after a cut, while the post-cut GOP decodes: freezing the last frame beats
-    /// flashing the background.
+    /// Whether a previously bound frame is still there to hold on to. True right after a cut, while the post-cut GOP decodes: freezing the last frame beats flashing the background.
     #[wasm_bindgen(js_name = hasBoundFrame)]
     pub fn has_bound_frame(&self, layer_id: u32) -> bool {
         self.frames
@@ -346,9 +342,7 @@ impl PreviewEngine {
         self.frames.retain(|(id, _)| id.0 != layer_id);
     }
 
-    /// Uploads the decoded wallpaper or image background. Cover-fitted against
-    /// the canvas in the shader, so the natural size is what must be passed and
-    /// the caller must not pre-scale.
+    /// Uploads the decoded wallpaper or image background. Cover-fitted against the canvas in the shader, so the natural size is what must be passed and the caller must not pre-scale.
     #[wasm_bindgen(js_name = setBackgroundImage)]
     pub fn set_background_image(&mut self, image: &web_sys::ImageBitmap) -> Result<(), JsValue> {
         let width = image.width();

@@ -1,8 +1,5 @@
-//! `capabilities()` is a question, not a capture, and must stay answerable.
-//!
-//! It reports WinRT-backed facts, and a WinRT call needs an apartment. Audio
-//! capture threads create and destroy apartments as takes come and go, so a
-//! caller asking between takes must not be reading a torn-down one.
+//! `capabilities()` is a question, not a capture, and must stay answerable between takes.
+//! It reports WinRT facts, and audio threads create and destroy apartments as takes come and go.
 
 use std::time::Duration;
 

@@ -21,9 +21,7 @@ pub mod native;
 use h264::{EncodePurpose, H264Encoder};
 
 /// Copy rows into a tightly packed buffer.
-///
-/// Capture backends deliver rows at the driver's own stride, and FFmpeg's
-/// `rawvideo` demuxer expects `width * 4` per row with no gaps.
+/// Capture backends deliver rows at the driver's own stride, and FFmpeg's `rawvideo` demuxer expects `width * 4` per row with no gaps.
 pub fn pack_rows(bytes: &[u8], stride: u32, width: u32, height: u32) -> Vec<u8> {
     let mut packed = Vec::with_capacity(width as usize * 4 * height as usize);
     pack_rows_into(&mut packed, bytes, stride, width, height);
@@ -53,18 +51,8 @@ pub fn pack_rows_into(dst: &mut Vec<u8>, bytes: &[u8], stride: u32, width: u32, 
 /// the end (codec error, disk full, etc.); FFmpeg's startup chatter is noise.
 const STDERR_TAIL_LIMIT: usize = 8192;
 
-/// Continuously read FFmpeg's stderr to EOF, keeping only the last
-/// `STDERR_TAIL_LIMIT` bytes in `sink`. Runs on its own thread for the whole
-/// life of the process so the stderr pipe is *always* drained.
-///
-/// This is load-bearing, not just for diagnostics: FFmpeg writes its banner
-/// and periodic `frame=… fps=…` progress to stderr. If nobody reads it, the
-/// ~64KB OS pipe buffer fills on a long recording, FFmpeg blocks on the stderr
-/// `write()`, stops reading stdin, and the encoder thread's `stdin.write_all`
-/// below deadlocks — the capture freezes mid-recording. macOS/Linux default to
-/// smaller pipe buffers than Windows, so they hit it sooner. Draining on a side
-/// thread also means the `child.wait()` calls on the error paths can never hang
-/// waiting for a stderr-blocked process to exit.
+/// Drains FFmpeg's stderr to EOF on its own thread, keeping the last `STDERR_TAIL_LIMIT` bytes.
+/// Load-bearing, not diagnostic: an undrained ~64KB pipe blocks FFmpeg's write, it stops reading stdin, and the encoder deadlocks mid-recording.
 fn pump_stderr_tail(stderr: ChildStderr, sink: Arc<Mutex<String>>) {
     let mut reader = std::io::BufReader::new(stderr);
     let mut chunk = [0u8; 4096];
@@ -105,24 +93,8 @@ fn collect_stderr_tail(
     sink.lock().trim().to_string()
 }
 
-/// Capture-time quality tier for the live recorder.
-///
-/// `Balanced` is the historical default and emits byte-identical encoder args
-/// (fast preset + low-latency tune, no explicit rate control), so existing
-/// recordings are unchanged. `High`/`Pristine` trade real-time encode headroom
-/// for fidelity: the quality tune plus an explicit near-visually-lossless
-/// constant-quality target.
-///
-/// Every tier stays 8-bit 4:2:0 (`yuv420p` / `nv12`). The editor previews the
-/// raw `recording.mp4` in a WebView `<video>` element whose H.264 decoder only
-/// supports up to High profile (4:2:0) — a 4:4:4 master would capture sharper
-/// text but would not play back in the editor, so it's intentionally not an
-/// option here. (A future "export-only master" could revisit 4:4:4 with a
-/// transcode-for-preview step.)
-///
-/// Falling behind real time at a heavy tier degrades gracefully: the pacer
-/// drops frames and the encoder loop re-emits duplicates (see the drop
-/// compensation above), so the worst case is motion judder, never A/V desync.
+/// Capture-time quality tier. `Balanced` emits byte-identical args to the historical default, so old recordings are unchanged.
+/// Every tier stays 8-bit 4:2:0: the editor previews the raw file in a WebView decoder capped at High profile.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum RecordingQuality {
     #[default]
@@ -132,9 +104,7 @@ pub enum RecordingQuality {
 }
 
 impl RecordingQuality {
-    /// Parse the frontend's string tier; anything unrecognized (incl. `None`)
-    /// falls back to `Balanced` so an old/garbled payload can never break a
-    /// recording.
+    /// Parse the frontend's string tier; anything unrecognized (incl. `None`) falls back to `Balanced` so an old/garbled payload can never break a recording.
     pub fn from_label(label: Option<&str>) -> Self {
         match label {
             Some("high") => Self::High,
@@ -143,17 +113,8 @@ impl RecordingQuality {
         }
     }
 
-    /// Resolve the frontend's tier *including* the `"auto"` sentinel (the new
-    /// default). Explicit tiers (`balanced`/`high`/`pristine`) are honored as
-    /// chosen via [`Self::from_label`]. `"auto"` (or a missing value) picks the
-    /// best tier the detected `encoder` can sustain in real time: hardware
-    /// encoders (NVENC/AMF/QSV/VideoToolbox) have ample headroom at 60fps, so
-    /// they default to `High` (near-visually-lossless ~cq 21). The capture
-    /// master is what every export re-encodes from, so a sharp master raises
-    /// the quality ceiling for the whole pipeline — there's no reason a GPU
-    /// machine records at the low-latency `Balanced` tier. Pure software
-    /// (`libx264`) stays `Balanced` so a weak CPU with no GPU doesn't drop
-    /// frames during capture.
+    /// Resolves the frontend's tier including the `"auto"` default: a hardware encoder gets `High`, pure `libx264` stays `Balanced`.
+    /// The capture master is what every export re-encodes from, so a GPU machine has no reason to record at the low-latency tier.
     pub fn resolve(label: Option<&str>, encoder: &str) -> Self {
         match label {
             Some("auto") | None => {

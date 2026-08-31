@@ -200,9 +200,7 @@ pub(crate) fn run_gif_palette_prepass(
     }
 }
 
-/// Inputs for the 2-pass GIF pipeline. The current filter-complex accumulator is
-/// moved in and the updated one returned, so the caller stays the single owner
-/// of that state.
+/// Inputs for the 2-pass GIF pipeline. The current filter-complex accumulator is moved in and the updated one returned, so the caller stays the single owner of that state.
 pub(crate) struct GifPassParams<'a> {
     pub app: &'a AppHandle,
     pub export_id: &'a str,

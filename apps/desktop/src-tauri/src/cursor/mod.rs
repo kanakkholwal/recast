@@ -171,9 +171,7 @@ pub struct CursorCaptureFrame {
 
 impl CursorCaptureFrame {
     /// Open the platform pointer reader for this frame.
-    ///
-    /// The OS access, the button state and the virtual-desktop mapping all live
-    /// in capturekit now, so all three agree with what the recorder captured.
+    /// The OS access, the button state and the virtual-desktop mapping all live in capturekit now, so all three agree with what the recorder captured.
     fn open_pointer(&self) -> Result<capturekit::PointerCapturer> {
         Ok(capturekit::PointerCapturer::open(
             capturekit::Rect {
@@ -187,30 +185,8 @@ impl CursorCaptureFrame {
     }
 }
 
-/// Spawn a thread that samples cursor state at 125 Hz until the stop flag
-/// is set. Post-capture, computes idle periods and zoom triggers.
-///
-/// This thread owns the POLICY; capturekit's `PointerCapturer` owns the OS
-/// access, the button state and the virtual-desktop mapping, so the cursor and
-/// the recorded frames agree about where the surface is.
-///
-/// Samples are stamped in VIDEO time, not recording time. The thread blocks
-/// until `video_start` marks the first encoded frame, then measures from there,
-/// so no post-hoc re-basing is needed and no sample predates the video it is
-/// drawn on. Sampling before that point produced a pile of samples all clamped
-/// to t=0, which is a cursor that teleports on the first frame.
-///
-/// The capture loop:
-/// - Uses deadline-based scheduling (not `thread::sleep(8ms)` which drifts
-///   under load) so sample cadence stays uniform across long recordings.
-///   Falls back to a fresh baseline if we fall more than one period behind,
-///   which prevents burst catch-up after a long pause.
-/// - Records the UNCLAMPED surface-relative position and lets `visible` gate
-///   drawing. A cursor off the captured area still has to keep moving in the
-///   track, or `detect_idle_periods` reads it as parked and invents an idle
-///   period, which then feeds a zoom trigger.
-/// - Logs at most one warning when the OS starts refusing reads (rare, mostly
-///   UAC / secure-desktop transitions) so gaps in the track are observable.
+/// Samples cursor state at 125 Hz on a deadline schedule until stopped, then derives idle periods and zoom triggers.
+/// Stamped in VIDEO time and blocked until the first encoded frame: sampling earlier piled every sample at t=0, teleporting the cursor.
 pub fn spawn_cursor_capture(
     stop_flag: Arc<AtomicBool>,
     clock: RecordingClock,

@@ -1,11 +1,5 @@
-//! On-demand Google Fonts: fetch a family's woff2 once and cache it on device,
-//! so captions (and later annotations) can render any Google font offline after
-//! the first use. Returns a local path the frontend loads via the FontFace API.
-//!
-//! Rendering a caption needs a different format: neither libass/FreeType nor
-//! the engine's rustybuzz can read woff2, so [`ensure_caption_font_file`] fetches
-//! the TTF (Google serves it to an older UA). The burn-in points the `ass`
-//! filter's `fontsdir` at its parent; the engine reads its bytes.
+//! Fetches a Google family's woff2 once and caches it, so captions render any font offline after first use.
+//! Burn-in needs TTF instead: neither libass nor rustybuzz reads woff2, which is what [`ensure_caption_font_file`] is for.
 
 use std::path::{Path, PathBuf};
 
@@ -13,9 +7,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::commands::error::{AppError, AppResult};
 
-/// Ensure the woff2 for `family` at `weight` is cached under
-/// `app_data/fonts/`, downloading it from Google Fonts on first use. Returns the
-/// local file path.
+/// Ensure the woff2 for `family` at `weight` is cached under `app_data/fonts/`, downloading it from Google Fonts on first use. Returns the local file path.
 #[tauri::command]
 pub async fn ensure_google_font(app: AppHandle, family: String, weight: u32) -> AppResult<String> {
     let dir = app
@@ -113,9 +105,7 @@ pub(crate) async fn ensure_caption_font_file(
 }
 
 /// The directory holding only this family's TTF, for libass `fontsdir`.
-///
-/// A per-family dir keeps the scan tiny: libass matches against everything in
-/// there, so one shared dir with many fonts slows every burn-in down.
+/// A per-family dir keeps the scan tiny: libass matches against everything in there, so one shared dir with many fonts slows every burn-in down.
 pub(crate) async fn ensure_caption_font_dir(
     app: &AppHandle,
     family: &str,

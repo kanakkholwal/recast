@@ -1,6 +1,4 @@
-/// The rate the R128 filter coefficients below are designed for. The spec gives
-/// them at 48 kHz only, and the master node is pinned there, so redesigning them
-/// per rate would be dead code.
+/// The rate the R128 coefficients below are designed for; the spec gives them at 48 kHz only and the master node is pinned there.
 pub const R128_RATE: u32 = 48_000;
 
 /// Social-platform target. YouTube, Spotify and friends all normalise to about
@@ -56,9 +54,7 @@ const HIGHPASS: Biquad = Biquad {
 };
 
 /// Integrated loudness of interleaved stereo at [`R128_RATE`], in LUFS.
-///
-/// `None` when nothing survives gating, which means silence: there is no
-/// loudness to correct and the caller must not invent a gain for it.
+/// `None` when nothing survives gating, which means silence: there is no loudness to correct and the caller must not invent a gain for it.
 pub fn integrated_lufs(stereo: &[f32]) -> Option<f64> {
     let frames = stereo.len() / 2;
     let block = (BLOCK_SEC * R128_RATE as f64) as usize;
@@ -204,9 +200,7 @@ mod tests {
         );
     }
 
-    /// The relative gate, which the absolute gate cannot stand in for: room tone
-    /// at -50 dBFS is far above -70 LUFS, so only the -10 LU window keeps it out
-    /// of the average.
+    /// The relative gate, which the absolute gate cannot stand in for: room tone at -50 dBFS is far above -70 LUFS, so only the -10 LU window keeps it out of the average.
     #[test]
     fn quiet_room_tone_is_gated_out_of_a_loud_programme() {
         let mut programme = tone(3.0, 1_000.0, 0.5);
@@ -246,11 +240,8 @@ mod tests {
         );
     }
 
-    /// A sparse mix measures quiet and peaks high, so the loudness target asks
-    /// for a lift the samples have no room for. The ceiling has to win.
-    ///
-    /// A steady loud tone does NOT test this: it is already near the target, so
-    /// the gain it asks for is well under the ceiling either way.
+    /// A sparse mix measures quiet and peaks high, so the loudness target asks for a lift the samples have no room for. The ceiling has to win.
+    /// A steady loud tone does NOT test this: it is already near the target, so the gain it asks for is well under the ceiling either way.
     #[test]
     fn the_ceiling_outranks_the_target() {
         let mut bursts = tone(4.0, 1_000.0, 0.9);

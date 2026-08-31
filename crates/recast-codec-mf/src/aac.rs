@@ -5,9 +5,7 @@ use crate::audio::AudioFormat;
 use crate::encoder::{EncodeError, EncodedSample};
 use crate::windows_mf::{encoder_activates, ensure_started};
 
-/// Bytes of `HEAACWAVEINFO` that sit in front of the `AudioSpecificConfig` in
-/// the encoder's user data: payload type, profile level, struct type and two
-/// reserved fields.
+/// Bytes of `HEAACWAVEINFO` that sit in front of the `AudioSpecificConfig` in the encoder's user data: payload type, profile level, struct type and two reserved fields.
 const HEAAC_HEADER: usize = 12;
 
 /// Encodes interleaved PCM into raw AAC frames.
@@ -102,9 +100,7 @@ impl AacEncoder {
         })
     }
 
-    /// The `AudioSpecificConfig` for `esds`. Empty means the encoder did not
-    /// report one, and the muxer should refuse rather than write a track no
-    /// decoder can start.
+    /// The `AudioSpecificConfig` for `esds`. Empty means the encoder did not report one, and the muxer should refuse rather than write a track no decoder can start.
     pub fn config(&self) -> &[u8] {
         &self.config
     }

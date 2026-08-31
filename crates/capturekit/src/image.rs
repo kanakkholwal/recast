@@ -1,9 +1,7 @@
 use capturekit_core::{CaptureError, ColorSpace, PixelFormat, Rect, Result, Timestamp};
 
 /// An owned CPU image, what a one-shot capture returns.
-///
-/// Owned rather than borrowed so the one-shot path has no lifetime tied to a
-/// backend that has already been torn down.
+/// Owned rather than borrowed so the one-shot path has no lifetime tied to a backend that has already been torn down.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Image {
     bytes: Vec<u8>,
@@ -110,10 +108,7 @@ impl Image {
     }
 
     /// A cropped copy, with the region shrunk to fit and to an even size.
-    ///
-    /// The fallback for backends that cannot crop during acquisition. Prefer
-    /// passing the region to the capture itself, which crops on the GPU and never
-    /// touches the pixels outside it.
+    /// The fallback for backends that cannot crop during acquisition. Prefer passing the region to the capture itself, which crops on the GPU and never touches the pixels outside it.
     pub fn cropped(&self, region: Rect) -> Result<Self> {
         let fitted = region
             .fit_inside(&self.rect())

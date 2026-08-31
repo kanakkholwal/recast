@@ -26,11 +26,8 @@ const RGB_FULL: u32 = (0 << 1) | (2 << 4);
 /// so writing full-range luma here would come back washed out everywhere.
 const YCBCR_709_LIMITED: u32 = (1 << 2) | (1 << 4);
 
-/// A D3D11 device the encoder shares, plus the video processor that turns the
-/// compositor's BGRA into the NV12 an H.264 transform wants.
-///
-/// One device for both, because a texture cannot cross devices without a shared
-/// handle and the whole point here is to not copy.
+/// A D3D11 device the encoder shares, plus the video processor that turns the compositor's BGRA into the NV12 an H.264 transform wants.
+/// One device for both, because a texture cannot cross devices without a shared handle and the whole point here is to not copy.
 pub struct D3dContext {
     device: ID3D11Device,
     context: ID3D11DeviceContext,
@@ -49,9 +46,7 @@ pub struct SharedSurface {
 }
 
 impl SharedSurface {
-    /// An NT handle for the other API to take ownership of. Duplicated, because
-    /// this surface closes its own; an importer given the original would close
-    /// it a second time.
+    /// An NT handle for the other API to take ownership of. Duplicated, because this surface closes its own; an importer given the original would close it a second time.
     pub fn duplicate_handle(&self) -> Result<isize, EncodeError> {
         duplicate(self.handle)
     }
@@ -75,9 +70,7 @@ impl Drop for SharedSurface {
 }
 
 /// A fence the producing API signals and this device waits on.
-///
-/// D3D12, which is the backend wgpu uses here, has no keyed-mutex support, so a
-/// shared fence is the only ordering primitive available between the two.
+/// D3D12, which is the backend wgpu uses here, has no keyed-mutex support, so a shared fence is the only ordering primitive available between the two.
 pub struct SyncFence {
     fence: ID3D11Fence,
     handle: HANDLE,
@@ -309,9 +302,7 @@ impl D3dContext {
     }
 
     /// The converter the encoder's frames come from.
-    ///
-    /// The dimensions are the encoder's, and both are even: NV12 carries chroma
-    /// at half resolution in each direction and has nowhere to put an odd row.
+    /// The dimensions are the encoder's, and both are even: NV12 carries chroma at half resolution in each direction and has nowhere to put an odd row.
     pub fn nv12_converter(
         &self,
         width: u32,
@@ -378,11 +369,8 @@ impl D3dContext {
         Ok(SyncFence { fence, handle })
     }
 
-    /// Holds this device's work until the producer signals `value`. GPU-side:
-    /// the CPU does not block.
-    ///
-    /// Without it the conversion below reads whatever was in the surface before
-    /// the producer drew, and every pixel comes back wrong with no error.
+    /// Holds this device's work until the producer signals `value`. GPU-side: the CPU does not block.
+    /// Without it the conversion below reads whatever was in the surface before the producer drew, and every pixel comes back wrong with no error.
     pub fn wait_for(&self, fence: &SyncFence, value: u64) -> Result<(), EncodeError> {
         let context: ID3D11DeviceContext4 = self.context.cast()?;
         // SAFETY: enqueueing a wait on our own context.

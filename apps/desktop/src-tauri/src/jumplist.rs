@@ -1,10 +1,5 @@
-//! Windows taskbar Jump List: a "New Recording" task plus a Recent Projects
-//! category, reached by right-clicking the taskbar or Start icon. Tauri has no
-//! API for this, so it is built directly on the Shell COM interfaces.
-//!
-//! "New Recording" relaunches the exe with `--new-recording` (single-instance
-//! forwards it to the running app). Recent items relaunch the exe with a
-//! `.recast` path, which the existing file-association argv path opens.
+//! Windows taskbar Jump List built directly on the Shell COM interfaces, since Tauri exposes no API for it.
+//! Entries relaunch the exe with `--new-recording` or a `.recast` path, which the existing argv paths already handle.
 
 use std::path::PathBuf;
 

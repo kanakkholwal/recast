@@ -1,10 +1,5 @@
-//! One-shot captures, over capturekit.
-//!
-//! The same backends the recorder streams from, so a picker thumbnail, an agent
-//! screenshot and a recording cannot disagree about what a display or window
-//! looks like. capturekit discards stale frames before returning one, which is
-//! the bug a plain "grab the front buffer" screenshot ships with: the first
-//! frame after opening a duplication can predate the open.
+//! One-shot captures over the same backends the recorder streams from, so a thumbnail and a recording cannot disagree.
+//! capturekit discards stale frames first: the frame after opening a duplication can predate the open.
 
 use std::time::Duration;
 
@@ -38,9 +33,7 @@ pub fn thumbnail(target: Target) -> Result<RgbaImage> {
 }
 
 /// One frame of `region` within `target`, cropped during acquisition.
-///
-/// The crop happens in the backend (on the GPU where there is one), so the
-/// pixels outside it are never read back.
+/// The crop happens in the backend (on the GPU where there is one), so the pixels outside it are never read back.
 pub fn grab_region(target: Target, region: Option<Rect>) -> Result<RgbaImage> {
     shoot(
         target,

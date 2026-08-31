@@ -1,9 +1,5 @@
-/// One captured click — wall-clock μs of the rising edge (`down_us`) and the
-/// falling edge (`up_us`), plus the cursor (x, y) at the rising edge in
-/// SOURCE pixels. Built from the raw cursor track samples in
-/// `cursor_export.rs`. Smoothing must NEVER reshape these — the rendered
-/// click impact has to land on the same frame the audio click sound plays
-/// AND on the captured click target, regardless of smoothing settings.
+/// One captured click: rising and falling edge in wall-clock μs, plus the cursor position at the rising edge in SOURCE pixels.
+/// Smoothing must NEVER reshape these, or the rendered impact drifts off the click sound and the captured target.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PressEvent {
     pub down_us: u64,
@@ -17,21 +13,8 @@ pub struct PressEvent {
     pub dragged: bool,
 }
 
-/// Per-frame press state — visibility boost, sprite key, scale impact.
-///
-/// `visible_alpha` is *additive on top of* the regular `idle_alpha`: even if
-/// idle-hide would zero the cursor, an upcoming click pulls it back into
-/// view so the viewer sees "intent → click → release" rather than a cursor
-/// teleporting in on the impact frame.
-///
-/// `pressed_sprite` flips on at `down_us - PRESS_PREROLL_US` so the link-pointer
-/// (or per-style alt sprite) telegraphs the click before it lands.
-///
-/// `scale` is a multiplier applied to the rendered sprite size — three
-/// phases keyed on `dt = ts - down_us`:
-///   dt ∈ [-ANTICIP, 0):  1 → 1+LIFT  (smooth lift, anticipation)
-///   dt = 0:              snap to 1-PUNCH  (click frame — the sync point)
-///   dt ∈ [0, RECOVERY]:  1-PUNCH → 1+BOUNCE → 1
+/// Per-frame press state. `visible_alpha` is additive on top of `idle_alpha`, so an upcoming click pulls a hidden cursor back rather than teleporting it in on impact.
+/// `pressed_sprite` leads by `PRESS_PREROLL_US`, and `scale` runs anticipation lift, a snap to `1-PUNCH` on the click frame, then bounce and settle.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PressFrameState {
     pub pressed_sprite: bool,
@@ -272,21 +255,8 @@ pub fn click_highlight_at(ts_us: i64, events: &[PressEvent]) -> Option<(f64, f64
     Some((ev.down_x, ev.down_y, alpha))
 }
 
-/// Map a click-bounce sample to a sprite scale multiplier.
-///
-/// `t_ms` is the signed offset (in ms) from the *nearest* click event:
-/// negative means the click hasn't happened yet, positive means it just
-/// fired. `duration_ms` is the full bounce window (the user-tunable
-/// "Bounce speed" knob — typically 120..400 ms).
-///
-/// `amplitude` is the raw 0..5 slider value; we treat 1.0 as "Apple-style
-/// subtle squash" (~12% size delta) and let larger values exaggerate.
-///
-/// The curve:
-/// - Pre-anticipation: a tiny inward dip (~3% of amplitude) just before the
-///   click, so the bounce doesn't feel like it appears from nowhere.
-/// - Impact: a hard outward pop at t=0.
-/// - Settle: damped sinusoidal decay for the rest of the window.
+/// Sprite scale for a click bounce; `t_ms` is signed from the nearest click and `amplitude` treats 1.0 as a subtle ~12% squash.
+/// A small inward dip precedes the click so the pop does not appear from nowhere, then a damped sinusoid settles it.
 pub fn click_bounce_scale(t_ms: f64, duration_ms: f64, amplitude: f64) -> f64 {
     if amplitude.abs() < 1e-6 || duration_ms <= 0.0 {
         return 1.0;

@@ -1,9 +1,5 @@
 //! The decode path from a decoder's Y'CbCr planes to the linear working space.
-//!
-//! The shader duplicates `recast-color`'s transfer curves in WGSL, which is a
-//! drift risk. `every_transfer_function_matches_recast_color` is what makes that
-//! duplication safe: it renders a ramp through each curve and holds the result
-//! to the Rust one.
+//! The shader duplicates `recast-color`'s curves in WGSL; `every_transfer_function_matches_recast_color` is what makes that drift-safe.
 
 use recast_color::{apply, ColorRange, MatrixCoefficients, Primaries, TransferFunction};
 use recast_compositor::{
@@ -439,9 +435,7 @@ fn full_range_and_limited_range_read_the_same_codes_differently() {
     assert!(a[1] > b[1] + 0.05, "limited should stretch: {a:?} vs {b:?}");
 }
 
-/// The plane textures are cached on the frame's shape. A cache keyed on size
-/// alone survives every other test here, because each one builds its own
-/// compositor.
+/// The plane textures are cached on the frame's shape. A cache keyed on size alone survives every other test here, because each one builds its own compositor.
 #[test]
 fn one_compositor_decodes_frames_of_changing_shape() {
     let Some(ctx) = context() else { return };

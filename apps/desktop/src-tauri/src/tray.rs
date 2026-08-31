@@ -1,26 +1,5 @@
 //! System tray icon, menu, and event wiring.
-//!
-//! The tray is the canonical entry-point for quick actions while the main
-//! window is hidden (close-to-tray) or while the user is in another app.
-//! Items are grouped by frequency and reversibility:
-//!
-//!   1. **Status** (disabled) — `○ Ready` / `● Recording` / `⏸ Paused`. Gives a
-//!      glanceable state without opening the menu contents.
-//!   2. **Recording control** — toggle + (Pause/Resume if live). Mutually
-//!      exclusive based on `IS_RECORDING`.
-//!   3. **Output access** — "Open Output Folder" + Recent Exports +
-//!      Recent Projects. The two recents are separate because users want
-//!      them as different actions (re-share an export vs. resume editing a
-//!      project) and the OS shows them differently.
-//!   4. **Window toggle** — Show/Hide Recast.
-//!   5. **App maintenance** — Check for Updates, About, Quit (destructive last).
-//!
-//! The menu is rebuilt, not mutated, on every state change. Tauri v2's
-//! `Menu` is immutable post-creation; `TrayIcon::set_menu` swaps the whole
-//! tree. The cost is negligible: rebuild happens only on real transitions
-//! (recording start/stop/pause, export complete). The frontend pushes state
-//! via [`refresh_tray`] (Tauri command) so the Rust side never reads UI
-//! state directly.
+//! Tauri v2 menus are immutable, so every state change rebuilds the tree rather than mutating it.
 
 use std::fs;
 use std::path::PathBuf;

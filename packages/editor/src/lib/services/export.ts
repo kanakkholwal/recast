@@ -242,6 +242,9 @@ export interface RunExportOptions {
 	 *  from cuts + splits + speed anchors, which is what used to let the two
 	 *  disagree. Omit only from headless callers with no editor session. */
 	timeMap?: ExportTimeSpan[] | null;
+	/** Render through the engine instead of the FFmpeg filtergraph. From the
+	 *  `engineExport` experimental flag; `RECAST_ENGINE_EXPORT` overrides it. */
+	engineExport?: boolean;
 }
 
 /** One kept span of the timeline in original-recording seconds. Mirrors
@@ -290,5 +293,6 @@ export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
 		captionSidecar: opts.captions?.sidecar ?? null,
 		browserVideoPath: opts.browserVideoPath ?? null,
 		timeMap: opts.timeMap ?? null,
+		engineExport: opts.engineExport ?? false,
 	});
 }

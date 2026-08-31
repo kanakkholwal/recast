@@ -191,9 +191,7 @@ fn a_file_with_b_frames_carries_composition_offsets() {
     assert_eq!(times.len(), video.samples.len(), "two frames share a time");
 }
 
-/// Non-square pixels make the track header's display width twice the coded
-/// width. A decoder fed the display size reads the wrong number of bytes per
-/// row, so the coded one has to win.
+/// Non-square pixels make the track header's display width twice the coded width. A decoder fed the display size reads the wrong number of bytes per row, so the coded one has to win.
 #[test]
 fn the_coded_size_wins_over_a_stretched_display_size() {
     static FILE: OnceLock<Option<PathBuf>> = OnceLock::new();

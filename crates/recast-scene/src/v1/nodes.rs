@@ -498,27 +498,14 @@ pub struct ZoomRegion {
     /// UV-space focus centre Y.
     #[serde(default = "default_zoom_center")]
     pub center_y: f64,
-    /// Non-destructive mute: when true the region is excluded from the export
-    /// (and the preview), but kept in the project file. Absent in older
-    /// projects → visible.
+    /// Non-destructive mute: when true the region is excluded from the export (and the preview), but kept in the project file. Absent in older projects → visible.
     #[serde(default)]
     pub hidden: bool,
-    /// Preview motion-blur strength 0..1.
-    ///
-    /// **Preview-only by design** — the WebGL preview applies a radial 7-tap
-    /// blur whose direction tracks the per-frame zoom velocity. FFmpeg has
-    /// no faithful equivalent: `tmix` is direction-agnostic temporal
-    /// averaging that ghosts every frame (not just transitions); `boxblur`/
-    /// `gblur` only accept a static sigma set at filter init time. Shipping
-    /// `tmix` would over-blur every frame and look worse than the
-    /// no-motion-blur baseline, so the export silently ignores this field.
-    /// The slider remains useful for preview iteration; users who want
-    /// smoother export motion should tune `easeIn`/`easeOut` instead.
+    /// Preview motion-blur strength 0..1, PREVIEW-ONLY: the export silently ignores it.
+    /// FFmpeg has no faithful equivalent (`tmix` ghosts every frame, `gblur` takes a static sigma), so shipping one would look worse than no blur.
     #[serde(default)]
     pub motion_blur: f64,
-    /// JS-side fields (`id`, `source`) the export doesn't read but must
-    /// round-trip — without this they'd be dropped when the load path
-    /// re-serializes the render state back to the editor.
+    /// JS-side fields (`id`, `source`) the export doesn't read but must round-trip — without this they'd be dropped when the load path re-serializes the render state back to the editor.
     #[serde(flatten, default)]
     pub extra: serde_json::Map<String, serde_json::Value>,
 }
@@ -616,9 +603,7 @@ impl Default for AnnotationStroke {
     }
 }
 
-/// Optional glow / soft shadow. Rendered in export for rect, ellipse, image,
-/// and (rasterized) text via `draw_shape_shadow`/`draw_image_shadow`; arrow
-/// glow is still preview-only.
+/// Optional glow / soft shadow. Rendered in export for rect, ellipse, image, and (rasterized) text via `draw_shape_shadow`/`draw_image_shadow`; arrow glow is still preview-only.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnotationGlow {
@@ -661,9 +646,7 @@ pub enum AnnotationKind {
         #[serde(default = "default_arrow_head_size")]
         head_size: f64,
     },
-    /// PNG/JPG overlay composited at the UV rect. Used both for the user's
-    /// Image tool and as the export substitute for text annotations after
-    /// the WebView rasterizes them at export prep.
+    /// PNG/JPG overlay composited at the UV rect. Used both for the user's Image tool and as the export substitute for text annotations after the WebView rasterizes them at export prep.
     Image {
         x: f64,
         y: f64,
@@ -792,9 +775,7 @@ pub struct Annotation {
     /// Master opacity (0..1) multiplied with the split-ramp evaluator output.
     #[serde(default = "default_opacity_unit")]
     pub opacity: f64,
-    /// Optional glow / soft shadow. Rendered in export for rect/ellipse
-    /// (`draw_shape_shadow`) and image/text-as-image (`draw_image_shadow`);
-    /// arrow glow is preview-only.
+    /// Optional glow / soft shadow. Rendered in export for rect/ellipse (`draw_shape_shadow`) and image/text-as-image (`draw_image_shadow`); arrow glow is preview-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glow: Option<AnnotationGlow>,
     /// What the annotation is pinned to. `Video` (default) tracks the zoomed

@@ -55,9 +55,7 @@ fn gain_scales_and_mute_silences() {
     assert_eq!(peak_between(&muted.render_all(), 0.0, 1.0), 0.0);
 }
 
-/// Two sources sum. Averaging them, which is what `amix` does unless it is told
-/// not to, would quietly halve a single-source export the moment a second track
-/// appeared.
+/// Two sources sum. Averaging them, which is what `amix` does unless it is told not to, would quietly halve a single-source export the moment a second track appeared.
 #[test]
 fn tracks_sum_rather_than_average() {
     let mut mixer = Mixer::new(Master::new(1.0));

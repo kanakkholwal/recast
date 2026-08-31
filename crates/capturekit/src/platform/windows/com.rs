@@ -5,17 +5,8 @@ use windows::Win32::System::Com::{
     CoIncrementMTAUsage, CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED,
 };
 
-/// Holds this thread's COM apartment open for as long as the objects made in it
-/// are used, and closes it again on the way out.
-///
-/// A thread that initialises COM and exits without uninitialising leaves the
-/// apartment's reference count wrong. The next thread to create an object in it
-/// can then fault: on a recorder that opens the devices once per take, the
-/// second take is where that lands.
-///
-/// A host that already chose an apartment gets `RPC_E_CHANGED_MODE` here, and a
-/// thread already initialised gets `S_FALSE`. Uninitialising on either would
-/// close an apartment this library does not own.
+/// Holds this thread's COM apartment open for the life of the objects made in it.
+/// Exiting without uninitialising leaves the refcount wrong and the next thread faults, which on a recorder lands on take two.
 pub(crate) struct ComScope {
     owned: bool,
 }
@@ -68,9 +59,7 @@ impl<T, S> Scoped<T, S> {
     }
 
     /// Hand the apartment on, releasing `value` first.
-    ///
-    /// For a caller that outlives this scope: the apartment has to stay open
-    /// for as long as anything made in it is still alive.
+    /// For a caller that outlives this scope: the apartment has to stay open for as long as anything made in it is still alive.
     pub(crate) fn into_scope(self) -> S {
         self.scope
     }
@@ -101,9 +90,7 @@ mod scoped_tests {
         }
     }
 
-    /// The invariant the COM code depends on: the thing made in the apartment
-    /// is released BEFORE the apartment closes. Reordering `Scoped`'s fields
-    /// inverts this and fails here.
+    /// The invariant the COM code depends on: the thing made in the apartment is released BEFORE the apartment closes. Reordering `Scoped`'s fields inverts this and fails here.
     #[test]
     fn the_value_is_dropped_before_the_scope_that_made_it() {
         let order = Arc::new(Mutex::new(Vec::new()));

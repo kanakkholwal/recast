@@ -1,6 +1,5 @@
-//! Pins what the CURRENT export compositor renders, so the wgpu compositor has an
-//! exact target rather than 98 "MUST match the preview" comments. Set
-//! `UPDATE_GOLDENS=1` to rewrite the fixtures after a deliberate change.
+//! Pins what the current export compositor renders, giving the wgpu compositor an exact target instead of 98 "must match the preview" comments.
+//! `UPDATE_GOLDENS=1` rewrites the fixtures after a deliberate change.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

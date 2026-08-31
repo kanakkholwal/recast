@@ -1,9 +1,5 @@
-//! The screen source, over capturekit.
-//!
-//! One adapter for all three platforms: capturekit owns DXGI, WGC,
-//! ScreenCaptureKit, X11 and the Wayland portal, and this file only translates
-//! between the app's resolved [`CaptureTarget`] and capturekit's [`Target`],
-//! then repacks frames for the encoder.
+//! The screen source: capturekit owns DXGI, WGC, ScreenCaptureKit, X11 and the Wayland portal.
+//! This file only maps the app's [`CaptureTarget`] onto capturekit's [`Target`] and repacks frames for the encoder.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,11 +11,8 @@ use super::{CaptureKind, CaptureTarget};
 use super::{CaptureNotice, CaptureSource, CapturedFrame};
 use crate::encoder::pack_rows;
 
-/// Whether a window can be captured as its own surface rather than as a crop of
-/// the monitor it sits on.
-///
-/// Target resolution asks this before sizing a window target, so the resolved
-/// `source` always matches what the backend will actually deliver.
+/// Whether a window can be captured as its own surface rather than as a crop of the monitor it sits on.
+/// Target resolution asks this before sizing a window target, so the resolved `source` always matches what the backend will actually deliver.
 pub fn window_capture_supported() -> bool {
     capturekit::capabilities().window_capture
 }
@@ -104,9 +97,7 @@ impl CapturekitSource {
     }
 
     /// Reopen after a loss, at most once per [`REACQUIRE_INTERVAL`].
-    ///
-    /// A display that was unplugged, or a mode change, closes the backend; the
-    /// recording repeats its last frame meanwhile rather than ending.
+    /// A display that was unplugged, or a mode change, closes the backend; the recording repeats its last frame meanwhile rather than ending.
     fn reacquire(&mut self) {
         match self.retry_at {
             Some(at) if Instant::now() < at => return,

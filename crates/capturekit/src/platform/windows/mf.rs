@@ -89,9 +89,7 @@ fn pack_pair(high: u32, low: u32) -> u64 {
 }
 
 /// Every video capture device the system offers.
-///
-/// The array and each activation object in it are owned by the caller of
-/// `MFEnumDeviceSources`, so both are released here whatever happens next.
+/// The array and each activation object in it are owned by the caller of `MFEnumDeviceSources`, so both are released here whatever happens next.
 fn activations() -> Result<Vec<IMFActivate>> {
     ensure_started()?;
     let mut attributes: Option<IMFAttributes> = None;
@@ -442,13 +440,8 @@ fn read_one(
     Ok(true)
 }
 
-/// Copy `height` scanlines into `out`, top row first whichever way MF laid them
-/// out in memory.
-///
-/// `Lock2D` hands back the FIRST scanline, not the lowest address. A negative
-/// pitch means the rows after it run backwards through memory, which is the
-/// default for RGB32 and the reason an unhandled camera preview is upside down.
-/// Stepping by the signed pitch is top-down either way.
+/// Copies `height` scanlines top row first, whichever way MF laid them out.
+/// `Lock2D` returns the FIRST scanline, not the lowest address; a negative pitch is the RGB32 default and the reason an unhandled preview is upside down.
 ///
 /// # Safety
 ///

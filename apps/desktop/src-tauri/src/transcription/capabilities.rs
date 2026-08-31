@@ -1,10 +1,5 @@
-//! Device capability probe for caption-model gating.
-//!
-//! Cheap, best-effort detection of OS / arch / RAM / GPU so the UI can disable
-//! models a device can't run and warn about ones that'll be slow. Deliberately
-//! conservative on GPU: we only *confirm* an accelerator we can prove (Metal on
-//! macOS, CUDA via `nvidia-smi`); everything else reports CPU mode rather than
-//! overpromising.
+//! Cheap OS/arch/RAM/GPU probe so the UI can disable models a device cannot run.
+//! Deliberately conservative: only a provable accelerator (Metal, CUDA via `nvidia-smi`) counts, everything else reports CPU.
 
 use serde::Serialize;
 

@@ -11,9 +11,7 @@ pub const MASTER_CHANNELS: usize = 2;
 /// as its first eight channels.
 const MAX_SOURCE_CHANNELS: usize = 8;
 
-/// Longest mix rendered in one call. A duration arriving as infinity, or from a
-/// corrupt project, would otherwise ask for an allocation that aborts the
-/// process rather than failing.
+/// Longest mix rendered in one call. A duration arriving as infinity, or from a corrupt project, would otherwise ask for an allocation that aborts the process rather than failing.
 const MAX_OUTPUT_SECONDS: f64 = 24.0 * 3600.0;
 
 /// A ducked track falls to this while the key is speaking.
@@ -158,11 +156,8 @@ impl Mixer {
         self.duck_level = 0.0;
     }
 
-    /// Renders the next block, continuing where the last call stopped. `out` is
-    /// interleaved stereo and is overwritten, not accumulated into.
-    ///
-    /// Blocks must be rendered in order: the ducking envelope has attack and
-    /// release, so seeking needs [`Mixer::reset`] and a re-run.
+    /// Renders the next block, continuing where the last call stopped. `out` is interleaved stereo and is overwritten, not accumulated into.
+    /// Blocks must be rendered in order: the ducking envelope has attack and release, so seeking needs [`Mixer::reset`] and a re-run.
     pub fn render_into(&mut self, out: &mut [f32]) {
         let frames = out.len() / MASTER_CHANNELS;
         let start = self.position;

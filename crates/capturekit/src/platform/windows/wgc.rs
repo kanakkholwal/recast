@@ -164,9 +164,7 @@ impl WgcSource {
     }
 
     /// The newest frame the pool holds, with the ones it supersedes closed.
-    ///
-    /// Closing returns a buffer to the pool, which capture needs to keep flowing,
-    /// but does not map GPU memory, so draining is cheap where reading is not.
+    /// Closing returns a buffer to the pool, which capture needs to keep flowing, but does not map GPU memory, so draining is cheap where reading is not.
     fn newest_frame(&self) -> Option<Direct3D11CaptureFrame> {
         let mut newest: Option<Direct3D11CaptureFrame> = None;
         while let Ok(frame) = self.frame_pool.TryGetNextFrame() {

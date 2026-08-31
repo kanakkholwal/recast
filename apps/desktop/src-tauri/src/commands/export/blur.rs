@@ -1,8 +1,5 @@
-//! Annotation blur regions for the export filter graph.
-//!
-//! Split out of `run_export_job`. Pure: UV rects from the render state mapped
-//! to canvas pixels. Touches no FFmpeg inputs, so it cannot disturb the
-//! input-index arithmetic elsewhere in the graph.
+//! Annotation blur regions for the export filter graph: UV rects mapped to canvas pixels.
+//! Pushes no FFmpeg input, so it cannot disturb the input-index arithmetic elsewhere in the graph.
 
 use crate::commands::ffmpeg::BlurRegion;
 use crate::render::graph::CanvasGeometry;

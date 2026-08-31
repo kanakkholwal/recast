@@ -1,17 +1,5 @@
-//! Pre-renders the editor's cursor overlay (cursor dot + click highlight,
-//! annotations, drop shadow) as an alpha QTRLE-in-MOV video so it can be muxed
-//! onto the main export via a single FFmpeg `overlay` filter. Mirrors the
-//! WebGL2 preview in `src/components/editor/VideoPreview.svelte`.
-//!
-//! QTRLE (QuickTime Animation, fourcc `rle `) is a lossless RLE codec with
-//! true RGBA alpha support that ships with every FFmpeg build. We previously
-//! used `libvpx-vp9 -pix_fmt yuva420p`, but the gyan.dev Windows builds (and
-//! several Linux distros) silently drop the alpha plane during VP9 encode
-//! — the overlay file ends up `pix_fmt=yuv420p` and decodes opaque, painting
-//! the entire source area black during the final composite. QTRLE round-trips
-//! alpha cleanly and compresses the (mostly transparent) cursor frames very
-//! efficiently. The intermediate file lives in a scratch directory that the
-//! TempDirGuard wipes after export.
+//! Pre-renders the cursor overlay as an alpha QTRLE-in-MOV so one FFmpeg `overlay` filter muxes it onto the export.
+//! Not VP9: gyan.dev and several Linux builds silently drop the alpha plane, painting the source area black.
 
 use std::collections::HashMap;
 use std::fs;
@@ -160,9 +148,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         request.render_state.cursor_snap_window_ms,
     );
 
-    /// Find the click event nearest `t_secs`. Returns the offset in ms
-    /// (`t - click_t`, signed, negative = click is in the future) or None
-    /// when the track has no clicks.
+    /// Find the click event nearest `t_secs`. Returns the offset in ms (`t - click_t`, signed, negative = click is in the future) or None when the track has no clicks.
     fn nearest_click_offset_ms(events: &[f64], t_secs: f64) -> Option<f64> {
         let mut best: Option<f64> = None;
         for &e in events {
@@ -729,21 +715,8 @@ fn interpolate_cursor(samples: &[SmoothedSample], timestamp_us: u64) -> Option<I
 
 //  Zoom lookup (mirror of nested_region_expr in graph.rs)
 
-/// Returns `(scale, center_x, center_y)` for the zoom active at timeline time
-/// `t_secs`, or `None` when no zoom applies.
-///
-/// CRITICAL: the scale is sampled from the SAME 20 Hz piecewise-linear LUT the
-/// FFmpeg video filter uses (`build_zoom_filter` / `sample_region`), NOT the
-/// exact bezier (`scale_at`). The exported video can only approximate the
-/// easing curve as a linear LUT — so if the cursor used the exact curve while
-/// the video used the LUT, the two would disagree on the zoom factor *during
-/// the ramps*, and that disagreement is multiplied by the focus distance and
-/// the zoom scale, making the cursor visibly drift off the content as the zoom
-/// animates in/out. Reproducing the LUT here keeps the cursor locked to the
-/// video frame-for-frame. (The focus centre is constant, so it factors out of
-/// the LUT interpolation and the affine transform at the call sites stays
-/// exact — see the alignment proof in `graph::sample_region`.) `time_offset`
-/// is the export trim-start, matching `sample_region`'s clamp.
+/// `(scale, center_x, center_y)` for the zoom active at `t_secs`, or `None` when none applies. `time_offset` is the export trim-start.
+/// CRITICAL: sampled from the same 20 Hz LUT the video filter uses, not the exact bezier, or the cursor visibly drifts off content during ramps.
 pub(crate) fn active_zoom_at(
     regions: &[crate::render::node_types::ZoomRegion],
     t_secs: f64,

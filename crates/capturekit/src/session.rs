@@ -38,9 +38,7 @@ pub struct SessionFrame<'a> {
 pub struct SessionAudio<'a> {
     /// Which stream produced it.
     pub track: &'a TrackId,
-    /// How far into the session the samples belong, on the same timeline as
-    /// [`SessionFrame::elapsed`]. Lining audio up against video is subtracting
-    /// one origin, nothing more.
+    /// How far into the session the samples belong, on the same timeline as [`SessionFrame::elapsed`]. Lining audio up against video is subtracting one origin, nothing more.
     pub elapsed: Duration,
     /// The samples themselves.
     pub buffer: AudioBuffer<'a>,
@@ -131,9 +129,7 @@ impl TrackHandle {
 
 impl SessionBuilder {
     /// Add a video stream, with the handler that will run on its capture thread.
-    ///
-    /// Handlers run off the caller's thread, one thread per track, so a slow
-    /// consumer on one stream cannot stall another.
+    /// Handlers run off the caller's thread, one thread per track, so a slow consumer on one stream cannot stall another.
     #[must_use]
     pub fn video<H>(mut self, id: impl Into<TrackId>, builder: CapturerBuilder, handler: H) -> Self
     where
@@ -236,10 +232,7 @@ impl Session {
     }
 
     /// Stop every stream and wait for all of them.
-    ///
-    /// Every track is stopped even if an earlier one failed, so one bad source
-    /// cannot leave the others holding the desktop open. The first failure is
-    /// what gets returned.
+    /// Every track is stopped even if an earlier one failed, so one bad source cannot leave the others holding the desktop open. The first failure is what gets returned.
     pub fn stop(self) -> Result<()> {
         let mut first_error = None;
         for handle in self.handles {

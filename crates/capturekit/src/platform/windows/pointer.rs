@@ -28,9 +28,7 @@ fn is_down(key: i32) -> bool {
 }
 
 /// Buttons held right now.
-///
-/// Shared with the frame-attached cursor so the two paths cannot disagree about
-/// a click, and so `Capabilities::cursor_buttons` is true of both.
+/// Shared with the frame-attached cursor so the two paths cannot disagree about a click, and so `Capabilities::cursor_buttons` is true of both.
 pub(crate) fn buttons() -> CursorButtons {
     CursorButtons {
         // The mapped buttons, so a left-handed swap reads as the user set it.

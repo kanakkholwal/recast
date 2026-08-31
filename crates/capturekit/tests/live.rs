@@ -1,9 +1,5 @@
-//! Capture against the real desktop this test runs on.
-//!
-//! Skipped rather than failed where there is no session to capture: a headless
-//! CI runner has no desktop, and a suite that goes red there teaches nobody
-//! anything. Everything that can be checked without a display lives in the unit
-//! tests instead.
+//! Capture against the real desktop this test runs on, skipped rather than failed where there is no session.
+//! A suite that goes red on a headless runner teaches nobody anything; display-free checks live in the unit tests.
 
 use std::time::Duration;
 
@@ -36,9 +32,7 @@ fn primary() -> Option<Display> {
 }
 
 /// Report a skip, or fail when the environment promised a desktop.
-///
-/// `CAPTUREKIT_REQUIRE_DESKTOP=1` is set on the CI leg that is known to have a
-/// session, so a silent skip there cannot pass for a green run.
+/// `CAPTUREKIT_REQUIRE_DESKTOP=1` is set on the CI leg that is known to have a session, so a silent skip there cannot pass for a green run.
 fn skip(reason: &str) -> Option<Display> {
     assert!(
         std::env::var_os("CAPTUREKIT_REQUIRE_DESKTOP").is_none(),
@@ -70,9 +64,7 @@ macro_rules! require_desktop {
 }
 
 /// Whether the frame carries real content rather than a cleared buffer.
-///
-/// A capture that silently hands back zeroes is the failure worth catching: the
-/// dimensions are right, the call succeeded, and the image is blank.
+/// A capture that silently hands back zeroes is the failure worth catching: the dimensions are right, the call succeeded, and the image is blank.
 fn has_content(bytes: &[u8]) -> bool {
     bytes.iter().any(|byte| *byte != 0)
 }

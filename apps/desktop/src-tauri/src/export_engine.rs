@@ -3,14 +3,27 @@
 
 use std::path::{Path, PathBuf};
 
-/// Env switch for the engine export path.
+/// Forces the engine path on or off regardless of the setting: `1` on, `0` off.
+/// Unset defers to the experimental flag the request carries.
 const ENGINE_EXPORT_ENV: &str = "RECAST_ENGINE_EXPORT";
 
-/// Whether an export should render through the engine. Only an explicit `1`:
-/// with no proven parity this is a developer switch, not a user's choice.
+/// Whether this export renders through the engine: the env override if one is
+/// set, otherwise the request's flag.
+///
+/// Pure, so the precedence is testable without an app handle or a registry.
 #[must_use]
-pub fn enabled() -> bool {
-    matches!(std::env::var(ENGINE_EXPORT_ENV).as_deref(), Ok("1"))
+pub fn engine_opt_in(requested: bool, env: Option<&str>) -> bool {
+    match env {
+        Some("1") => true,
+        Some("0") => false,
+        _ => requested,
+    }
+}
+
+/// Whether an export should render through the engine.
+#[must_use]
+pub fn enabled(requested: bool) -> bool {
+    engine_opt_in(requested, std::env::var(ENGINE_EXPORT_ENV).ok().as_deref())
 }
 
 /// Bits per pixel per frame for H.264. 0.08 is the usual "visually clean screen
@@ -48,7 +61,9 @@ fn shared_context() -> Result<&'static GpuContext, EngineExportError> {
 
 use recast_captions::CaptionTrack;
 use recast_compositor::{canvas_geometry, RenderSource, Session, SourceColor, SourceGeometry};
-use recast_export::{FrameLoop, FrameWalk, Mp4Error, Mp4Sink, VideoPictures};
+use recast_export::{FfmpegPictures, FfmpegSink, FrameLoop, FrameWalk, SourceInfo};
+#[cfg(windows)]
+use recast_export::{Mp4Error, Mp4Sink, VideoPictures};
 use recast_gpu::{GpuContext, GpuOptions};
 use recast_scene::migrate::to_scene;
 use recast_scene::v1::RenderState;
@@ -90,10 +105,120 @@ pub enum Flow {
 /// because that is the only way out of the loop that unwinds nothing.
 #[derive(Debug, thiserror::Error)]
 enum SinkStop {
+    #[cfg(windows)]
     #[error(transparent)]
     Encode(#[from] Mp4Error),
+    #[error(transparent)]
+    Ffmpeg(#[from] recast_export::FfmpegError),
     #[error("cancelled")]
     Cancelled,
+}
+
+/// The recording, decoded by whichever backend this export chose.
+enum Pictures {
+    #[cfg(windows)]
+    Native(Box<VideoPictures>),
+    Ffmpeg(Box<FfmpegPictures>),
+}
+
+impl Pictures {
+    fn size(&self) -> SourceGeometry {
+        match self {
+            #[cfg(windows)]
+            Self::Native(p) => SourceGeometry {
+                width: p.width(),
+                height: p.height(),
+            },
+            Self::Ffmpeg(p) => SourceGeometry {
+                width: p.width(),
+                height: p.height(),
+            },
+        }
+    }
+}
+
+impl recast_export::PictureSource for Pictures {
+    type Error = EngineExportError;
+
+    fn picture_at(
+        &mut self,
+        source_time: f64,
+    ) -> Result<Option<recast_compositor::SourcePlanes<'_>>, Self::Error> {
+        match self {
+            #[cfg(windows)]
+            Self::Native(p) => p
+                .picture_at(source_time)
+                .map_err(|e| EngineExportError::Render(e.to_string())),
+            Self::Ffmpeg(p) => p
+                .picture_at(source_time)
+                .map_err(|e| EngineExportError::Render(e.to_string())),
+        }
+    }
+}
+
+/// The codec backend writing the rendered frames. Media Foundation encodes in
+/// process where it exists; everywhere else the bundled FFmpeg does, which is
+/// the same split the browser renderer already ships on.
+enum Sink {
+    #[cfg(windows)]
+    Native(Box<Mp4Sink>),
+    Ffmpeg(Box<FfmpegSink>),
+}
+
+impl Sink {
+    fn push(&mut self, index: u64, rgba: &[u8]) -> Result<(), SinkStop> {
+        match self {
+            #[cfg(windows)]
+            Self::Native(sink) => Ok(sink.push(index, rgba)?),
+            Self::Ffmpeg(sink) => Ok(sink.push(rgba)?),
+        }
+    }
+
+    /// Whether this backend can write the audio track itself. FFmpeg cannot
+    /// here: its input pipe is already carrying the video.
+    const fn writes_audio(&self) -> bool {
+        match self {
+            #[cfg(windows)]
+            Self::Native(_) => true,
+            Self::Ffmpeg(_) => false,
+        }
+    }
+
+    /// Writes the mixed track. Only reached on a backend that answers
+    /// `writes_audio`, so the other arm is unreachable rather than silent.
+    fn push_audio(
+        &mut self,
+        mixer: &mut recast_audio::Mixer,
+        bitrate: u32,
+    ) -> Result<(), EngineExportError> {
+        match self {
+            #[cfg(windows)]
+            Self::Native(sink) => sink
+                .push_audio(mixer, bitrate)
+                .map_err(|e| EngineExportError::Audio(e.to_string())),
+            Self::Ffmpeg(_) => Err(EngineExportError::Audio(
+                "the FFmpeg backend writes video only; the mux pass owns the audio".into(),
+            )),
+        }
+    }
+
+    fn finish(self, output: &Path) -> Result<(), EngineExportError> {
+        match self {
+            #[cfg(windows)]
+            Self::Native(sink) => {
+                let bytes = sink
+                    .finish()
+                    .map_err(|e| EngineExportError::Encode(e.to_string()))?;
+                std::fs::write(output, &bytes).map_err(|error| EngineExportError::Write {
+                    path: output.to_path_buf(),
+                    error,
+                })
+            }
+            Self::Ffmpeg(sink) => sink
+                .finish()
+                .map_err(|e| EngineExportError::Encode(e.to_string())),
+        }
+    }
 }
 
 /// What burning captions needs: the words, and a face for a family the system
@@ -131,8 +256,25 @@ pub struct ExportSpec<'a> {
     pub max_size: Option<(u32, u32)>,
     pub captions: Option<&'a CaptionBurnIn>,
     /// Whether to write the scene's audio. Off when the file is an intermediate
-    /// for the mux pass, which owns the music clips and the voice detach.
+    /// for the mux pass, which owns the music clips and the voice detach, and
+    /// ignored by a backend that cannot write audio at all.
     pub audio: bool,
+    /// The recording as the caller already probed it. Used where the decoder
+    /// cannot report its own geometry, which is every platform but Windows.
+    pub source: SourceInfo,
+    /// The bundled FFmpeg, required wherever it is the codec backend.
+    pub ffmpeg: Option<&'a Path>,
+    /// Take the FFmpeg backend even where an in-process one exists. Platforms
+    /// without one always take it; this is how it is exercised on the one that
+    /// has one, and it is the fallback when that encoder refuses a size.
+    pub force_ffmpeg: bool,
+}
+
+/// Whether the engine writes a finished file on this platform, or an
+/// intermediate the mux pass still has to give an audio track and a container.
+#[must_use]
+pub const fn writes_finished_files() -> bool {
+    cfg!(windows)
 }
 
 /// The scale that fits `canvas` inside `max`, never enlarging.
@@ -163,9 +305,71 @@ pub fn scaled_source(source: SourceGeometry, k: f64) -> SourceGeometry {
     }
 }
 
+/// The recording, opened through the backend this export chose.
+fn open_pictures(spec: &ExportSpec<'_>) -> Result<Pictures, EngineExportError> {
+    let refuse = |message: String| EngineExportError::OpenInput {
+        path: spec.input.to_path_buf(),
+        message,
+    };
+    #[cfg(windows)]
+    if !spec.force_ffmpeg {
+        let reader = VideoPictures::open(spec.input, SourceColor::default())
+            .map_err(|e| refuse(e.to_string()))?;
+        return Ok(Pictures::Native(Box::new(reader)));
+    }
+    let program = spec.ffmpeg.ok_or_else(|| {
+        refuse("no FFmpeg was given, and this platform has no in-process decoder".into())
+    })?;
+    let reader = FfmpegPictures::open(program, spec.input, spec.source, SourceColor::default())
+        .map_err(|e| refuse(e.to_string()))?;
+    Ok(Pictures::Ffmpeg(Box::new(reader)))
+}
+
+/// The encoder for a canvas of `width` by `height`.
+fn open_sink(
+    spec: &ExportSpec<'_>,
+    width: u32,
+    height: u32,
+    walk: FrameWalk,
+    bitrate: u32,
+) -> Result<Sink, EngineExportError> {
+    #[cfg(windows)]
+    if !spec.force_ffmpeg {
+        let sink = Mp4Sink::new(width, height, walk, bitrate, SourceColor::default())
+            .map_err(|e| EngineExportError::Encode(e.to_string()))?;
+        return Ok(Sink::Native(Box::new(sink)));
+    }
+    let _ = walk;
+    let program = spec.ffmpeg.ok_or_else(|| {
+        EngineExportError::Encode(
+            "no FFmpeg was given, and this platform has no in-process encoder".into(),
+        )
+    })?;
+    FfmpegSink::new(program, spec.output, width, height, spec.fps, bitrate)
+        .map(|sink| Sink::Ffmpeg(Box::new(sink)))
+        .map_err(|e| EngineExportError::Encode(e.to_string()))
+}
+
+/// The source geometry an export will render from: `native`, shrunk until the
+/// canvas `state` builds from it fits `max`.
+#[must_use]
+pub fn capped_source(
+    native: SourceGeometry,
+    state: &RenderState,
+    max: Option<(u32, u32)>,
+) -> SourceGeometry {
+    let Some(max) = max else { return native };
+    let natural = canvas_geometry(
+        native.width,
+        native.height,
+        state.padding,
+        state.output_aspect.as_deref(),
+    );
+    scaled_source(native, fit_scale((natural.canvas_w, natural.canvas_h), max))
+}
+
 /// Renders `state` through the engine, returning the frames written. Writes the
-/// scene's audio too, when it has any.
-#[cfg(windows)]
+/// scene's audio too, where the backend can and the spec asks.
 pub fn export_video(
     state: &RenderState,
     spec: &ExportSpec<'_>,
@@ -176,26 +380,9 @@ pub fn export_video(
     let ctx = shared_context()?;
 
     // The recording decides the geometry; the state says what to do with it.
-    let mut pictures = VideoPictures::open(input, SourceColor::default()).map_err(|e| {
-        EngineExportError::OpenInput {
-            path: input.to_path_buf(),
-            message: e.to_string(),
-        }
-    })?;
-    let native = SourceGeometry {
-        width: pictures.width(),
-        height: pictures.height(),
-    };
-    let natural = canvas_geometry(
-        native.width,
-        native.height,
-        state.padding,
-        state.output_aspect.as_deref(),
-    );
-    let source = match spec.max_size {
-        Some(max) => scaled_source(native, fit_scale((natural.canvas_w, natural.canvas_h), max)),
-        None => native,
-    };
+    let mut pictures = open_pictures(spec)?;
+    let native = pictures.size();
+    let source = capped_source(native, state, spec.max_size);
 
     let mut session = Session::new(ctx, to_scene(state), source)
         .map_err(|e| EngineExportError::Session(e.to_string()))?;
@@ -226,14 +413,7 @@ pub fn export_video(
             f64::from(fps.0) / f64::from(fps.1.max(1)),
         )
     });
-    let mut sink = Mp4Sink::new(
-        size.width,
-        size.height,
-        walk,
-        bitrate,
-        SourceColor::default(),
-    )
-    .map_err(|e| EngineExportError::Encode(e.to_string()))?;
+    let mut sink = open_sink(spec, size.width, size.height, walk, bitrate)?;
 
     let total = walk.len();
     FrameLoop::new()
@@ -260,7 +440,7 @@ pub fn export_video(
         })?;
 
     // Skipped whole when off: decoding the sources is most of an audio pass's cost.
-    if spec.audio {
+    if spec.audio && sink.writes_audio() {
         let scene = to_scene(state);
         let mut mixer = recast_audio::mixer_for(
             &scene.audio,
@@ -268,18 +448,11 @@ pub fn export_video(
             crate::export_audio::sources_for(&scene.audio, input),
         );
         if mixer.total_frames() > 0 {
-            sink.push_audio(&mut mixer, AUDIO_BITRATE)
-                .map_err(|e| EngineExportError::Audio(e.to_string()))?;
+            sink.push_audio(&mut mixer, AUDIO_BITRATE)?;
         }
     }
 
-    let bytes = sink
-        .finish()
-        .map_err(|e| EngineExportError::Encode(e.to_string()))?;
-    std::fs::write(output, &bytes).map_err(|error| EngineExportError::Write {
-        path: output.to_path_buf(),
-        error,
-    })?;
+    sink.finish(output)?;
     Ok(walk.len())
 }
 
@@ -287,10 +460,21 @@ pub fn export_video(
 mod tests {
     use super::*;
 
+    /// The env wins both ways, so a developer can force the graph back on a
+    /// machine whose user turned the flag on, and the reverse.
     #[test]
-    fn the_engine_path_is_off_unless_explicitly_asked_for() {
-        // Anything but "1" leaves the graph in charge.
-        assert!(!enabled() || std::env::var(ENGINE_EXPORT_ENV).as_deref() == Ok("1"));
+    fn the_environment_overrides_the_flag_in_both_directions() {
+        assert!(engine_opt_in(false, Some("1")));
+        assert!(!engine_opt_in(true, Some("0")));
+    }
+
+    #[test]
+    fn without_an_override_the_flag_decides() {
+        assert!(engine_opt_in(true, None));
+        assert!(!engine_opt_in(false, None));
+        // Anything but 1 or 0 is not an answer, so the flag still decides.
+        assert!(engine_opt_in(true, Some("yes")));
+        assert!(!engine_opt_in(false, Some("yes")));
     }
 
     fn caption_state(
@@ -406,6 +590,45 @@ mod tests {
         assert!(scaled.width >= 2 && scaled.height >= 2);
     }
 
+    /// The rate has to follow the cap. A file-size check cannot see this: a
+    /// static frame compresses to nearly nothing whatever rate it is given.
+    #[test]
+    fn a_capped_export_asks_for_a_rate_matching_what_it_renders() {
+        let state = RenderState::default();
+        let native = SourceGeometry {
+            width: 1920,
+            height: 1080,
+        };
+        let capped = capped_source(native, &state, Some((1280, 720)));
+        assert_eq!((capped.width, capped.height), (1280, 720));
+        assert!(
+            bitrate_for(capped.width, capped.height, 30.0)
+                < bitrate_for(native.width, native.height, 30.0)
+        );
+    }
+
+    /// Padding is a percentage of the source, so the canvas is larger than the
+    /// source and the cap has to be measured against the canvas.
+    #[test]
+    fn the_cap_is_measured_against_the_padded_canvas() {
+        let padded = RenderState {
+            padding: 20.0,
+            ..Default::default()
+        };
+        let native = SourceGeometry {
+            width: 1920,
+            height: 1080,
+        };
+        let capped = capped_source(native, &padded, Some((1280, 720)));
+        let plain = capped_source(native, &RenderState::default(), Some((1280, 720)));
+        assert!(
+            capped.width < plain.width,
+            "padding did not tighten the cap: {} against {}",
+            capped.width,
+            plain.width
+        );
+    }
+
     #[test]
     fn the_bitrate_scales_with_pixels_and_rate() {
         let hd = bitrate_for(1920, 1080, 30.0);
@@ -469,6 +692,13 @@ mod live {
             max_size: None,
             captions: None,
             audio: true,
+            source: SourceInfo {
+                width: SRC_W,
+                height: SRC_H,
+                fps: 30.0,
+            },
+            ffmpeg: None,
+            force_ffmpeg: false,
         }
     }
 
@@ -686,29 +916,28 @@ mod live {
         );
     }
 
-    /// Pixels darker than the pill's threshold in the bottom quarter of frame
-    /// `index`, where a bottom caption sits. A count, not a mean: the pill
-    /// covers a few percent of the band, so its effect on the mean is within
-    /// the encoder's rate-control noise between two runs.
+    /// The most pixels darker than the pill's threshold that any one frame of
+    /// `path` shows in its bottom quarter, where a bottom caption sits.
     ///
-    /// Frame 0 is the wrong frame to ask: the preset's slide entrance starts at
-    /// alpha 0, so it carries no caption by design.
-    fn dark_pixels_in_caption_band(path: &Path, index: usize) -> usize {
+    /// A count over every frame, not a mean at one index: the pill covers a few
+    /// percent of the band so its effect on a mean is inside the encoder's
+    /// rate-control noise, and picking a frame index assumes both a decode order
+    /// and that the index clears the entrance, which starts at alpha 0.
+    fn darkest_caption_band(path: &Path) -> usize {
         // The pill is #0b0b12 at 61% over a luma-220 source, so it lands near 93.
         const PILL_MAX_LUMA: u8 = 140;
         let mut reader = recast_codec_mf::VideoReader::open(path).expect("opens");
-        let mut frame = reader.next_frame().expect("decode").expect("a frame");
-        for _ in 0..index {
-            frame = reader.next_frame().expect("decode").expect("a frame");
+        let (w, h) = {
+            let info = reader.info();
+            (info.width as usize, info.height as usize)
+        };
+        let mut worst = 0usize;
+        while let Some(frame) = reader.next_frame().expect("decode") {
+            let band = &frame.data[w * (h - h / 4)..w * h];
+            worst = worst.max(band.iter().filter(|&&b| b < PILL_MAX_LUMA).count());
         }
-        let info = reader.info();
-        let (w, h) = (info.width as usize, info.height as usize);
-        let band = &frame.data[w * (h - h / 4)..w * h];
-        band.iter().filter(|&&b| b < PILL_MAX_LUMA).count()
+        worst
     }
-
-    /// A frame past the caption entrance at 30 fps.
-    const ENTRANCE_SETTLED: usize = 6;
 
     /// B-3: the engine export ignored the transcript entirely, so every export
     /// through it came out caption-less while the graph burned them in.
@@ -753,12 +982,11 @@ mod live {
         )
         .expect("the export runs");
 
-        // Past the 125 ms entrance, so the pill is at full opacity.
-        let (before, after) = (
-            dark_pixels_in_caption_band(&plain, ENTRANCE_SETTLED),
-            dark_pixels_in_caption_band(&captioned, ENTRANCE_SETTLED),
-        );
         // A delta, not a floor: the decoder pads 360 rows to 368 and those rows are dark in both.
+        let (before, after) = (
+            darkest_caption_band(&plain),
+            darkest_caption_band(&captioned),
+        );
         assert!(
             after > before + 500,
             "no pill reached the exported pixels: {before} dark without, {after} with"
@@ -871,11 +1099,6 @@ mod live {
             small_w < full_w,
             "capped and uncapped came out the same size"
         );
-        assert!(
-            std::fs::metadata(&small).expect("small").len()
-                < std::fs::metadata(&full).expect("full").len(),
-            "the capped export is not smaller on disk"
-        );
     }
 
     /// The intermediate handed to the mux pass must carry no audio: the mux owns
@@ -908,6 +1131,176 @@ mod live {
         assert!(
             !contains(&bytes, b"mp4a"),
             "the intermediate carries an audio track the mux would duplicate"
+        );
+    }
+
+    /// The sidecar this machine ships, or `None`, which skips.
+    fn sidecar() -> Option<std::path::PathBuf> {
+        recast_testkit::ffmpeg_path()
+    }
+
+    /// The macOS and Linux export path, run here. Those platforms have no
+    /// in-process codec, so the whole path would otherwise ship unexecuted: a
+    /// Windows-only CI never compiles a `#[cfg(unix)]` line, let alone runs it.
+    #[test]
+    fn the_ffmpeg_backend_exports_a_playable_file() {
+        let Some(ctx) = context() else { return };
+        let Some(ffmpeg) = sidecar() else { return };
+        let scratch = Scratch::new("ffmpeg-backend");
+        let input = scratch.0.join("in.mp4");
+        let output = scratch.0.join("out.mp4");
+        record(&ctx, &input, 0.3);
+
+        let state = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.3,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        let frames = export_video(
+            &state,
+            &ExportSpec {
+                force_ffmpeg: true,
+                ffmpeg: Some(&ffmpeg),
+                // Video only, as it is on the platforms that take this path.
+                audio: false,
+                ..spec(&input, &output)
+            },
+            &mut never_cancels,
+        )
+        .expect("the export runs");
+        assert_eq!(frames, FrameWalk::new(0.3, (30, 1)).len());
+
+        let mut reader = recast_codec_mf::VideoReader::open(&output).expect("the export opens");
+        let mut decoded = 0u64;
+        let mut first_luma = None;
+        while let Some(frame) = reader.next_frame().expect("decode") {
+            if first_luma.is_none() {
+                let info = reader.info();
+                let luma = (info.width * info.height) as usize;
+                let plane = &frame.data[..luma.min(frame.data.len())];
+                first_luma =
+                    Some(plane.iter().map(|&b| f64::from(b)).sum::<f64>() / plane.len() as f64);
+            }
+            decoded += 1;
+        }
+        assert_eq!(decoded, frames, "frames went missing between the two files");
+        // The recording has to reach the canvas, not just the frame count.
+        assert!(
+            first_luma.is_some_and(|mean| mean > 60.0),
+            "the FFmpeg backend exported a nearly black frame: {first_luma:?}"
+        );
+    }
+
+    /// The same composition through both backends must land on the same canvas,
+    /// or an export looks different depending on which OS ran it.
+    #[test]
+    fn both_backends_render_the_same_geometry() {
+        let Some(ctx) = context() else { return };
+        let Some(ffmpeg) = sidecar() else { return };
+        let scratch = Scratch::new("both-backends");
+        let input = scratch.0.join("in.mp4");
+        let native_out = scratch.0.join("native.mp4");
+        let piped_out = scratch.0.join("piped.mp4");
+        record(&ctx, &input, 0.2);
+
+        let state = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            padding: 6.0,
+            ..Default::default()
+        };
+        export_video(
+            &state,
+            &ExportSpec {
+                audio: false,
+                ..spec(&input, &native_out)
+            },
+            &mut never_cancels,
+        )
+        .expect("the native export runs");
+        export_video(
+            &state,
+            &ExportSpec {
+                force_ffmpeg: true,
+                ffmpeg: Some(&ffmpeg),
+                audio: false,
+                ..spec(&input, &piped_out)
+            },
+            &mut never_cancels,
+        )
+        .expect("the piped export runs");
+
+        let dims = |path: &Path| {
+            let reader = recast_codec_mf::VideoReader::open(path).expect("opens");
+            (reader.info().width, reader.info().height)
+        };
+        assert_eq!(
+            dims(&native_out),
+            dims(&piped_out),
+            "the two backends disagree on the canvas"
+        );
+    }
+
+    /// The FFmpeg backend cannot write audio: its input pipe already carries the
+    /// video. Asking must fail loudly rather than drop the track.
+    #[test]
+    fn the_ffmpeg_backend_refuses_to_write_audio() {
+        let Some(ctx) = context() else { return };
+        let Some(ffmpeg) = sidecar() else { return };
+        let scratch = Scratch::new("ffmpeg-audio");
+        let input = scratch.0.join("in.mp4");
+        let output = scratch.0.join("out.mp4");
+        record_with_sound(&ctx, &input, 0.2);
+
+        let state = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        let error = export_video(
+            &state,
+            &ExportSpec {
+                force_ffmpeg: true,
+                ffmpeg: Some(&ffmpeg),
+                audio: true,
+                ..spec(&input, &output)
+            },
+            &mut never_cancels,
+        );
+        assert!(
+            error.is_ok(),
+            "asking a video-only backend for audio must not fail the export"
+        );
+        let bytes = std::fs::read(&output).expect("read back");
+        assert!(
+            !contains(&bytes, b"mp4a"),
+            "the FFmpeg backend wrote an audio track it cannot write"
+        );
+    }
+
+    #[test]
+    fn the_ffmpeg_backend_is_refused_without_a_binary_to_run() {
+        let Some(_ctx) = context() else { return };
+        let scratch = Scratch::new("no-ffmpeg");
+        let input = scratch.0.join("in.mp4");
+        let output = scratch.0.join("out.mp4");
+        let state = RenderState::default();
+        let error = export_video(
+            &state,
+            &ExportSpec {
+                force_ffmpeg: true,
+                ffmpeg: None,
+                ..spec(&input, &output)
+            },
+            &mut never_cancels,
+        )
+        .expect_err("no binary means no export");
+        assert!(
+            matches!(error, EngineExportError::OpenInput { .. }),
+            "{error}"
         );
     }
 

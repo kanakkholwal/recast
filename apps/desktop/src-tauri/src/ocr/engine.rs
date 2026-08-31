@@ -1,6 +1,4 @@
-//! OCR engine abstraction. `OcrsEngine` (pure-Rust ocrs on the rten runtime)
-//! ships now; native OS engines (Apple Vision, Windows.Media.Ocr) can slot in
-//! behind the same trait later without touching the timeline code.
+//! OCR engine abstraction. `OcrsEngine` ships now; native OS engines slot in behind the same trait without touching the timeline code.
 
 #[cfg(feature = "ocr")]
 use std::path::Path;

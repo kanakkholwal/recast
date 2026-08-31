@@ -1,7 +1,5 @@
 //! Camera capture against whatever device this machine has.
-//!
-//! Skipped where there is none, and only there: a build machine without a
-//! webcam must not turn a broken backend green.
+//! Skipped where there is none, and only there: a build machine without a webcam must not turn a broken backend green.
 
 use std::time::Duration;
 

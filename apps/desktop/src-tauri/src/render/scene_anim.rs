@@ -1,17 +1,5 @@
-//! Per-segment scene animations for export — the video-layer entrance/exit
-//! transform (slide / scale), mirrored from the frontend
-//! (apps/desktop/src/lib/scenes/{segment-anim,eval}.ts).
-//!
-//! Like zoom, the animation is evaluated on the continuous post-trim timeline and
-//! the tail cut+speed stage re-times it, so nothing here is cut- or speed-aware.
-//! For each kept segment we sample the eased transform, merge it into a few linear
-//! pieces, and emit FFmpeg `if(gte(t,a)*lt(t,b),ramp,default)` flat-sum expressions
-//! — the SAME machinery as the zoom LUT (`fmt_term` / `wrap_flat_sum`), driving the
-//! per-frame `overlay=x:y` position and an `eval=frame` `scale` on the video layer.
-//!
-//! Phase 1 covers the geometric channels (slide, scale, shrink, pop). Opacity
-//! (fade) is preview-only for now — FFmpeg has no per-frame alpha expression on
-//! `overlay`, so `fade` produces no geometric change here and is skipped.
+//! Per-segment entrance/exit transforms for export, mirroring the frontend and evaluated pre-cut like zoom.
+//! Phase 1 is geometric only: FFmpeg has no per-frame alpha on `overlay`, so `fade` is skipped here.
 
 use super::graph::{fmt_term, wrap_flat_sum, CanvasGeometry};
 

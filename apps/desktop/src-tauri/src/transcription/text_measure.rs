@@ -1,15 +1,5 @@
-//! Caption font resolution for the export burn-in.
-//!
-//! libass does NOT treat the ASS `Fontsize` as the em size: it scales glyphs by
-//! `Fontsize / (usWinAscent + usWinDescent)`, while the DOM preview scales by
-//! `css_px / unitsPerEm`. Passing `css_px` straight through therefore renders
-//! the export SMALLER by a per-font factor (Arial ~0.90, Anton ~0.58). We read
-//! the font's own metrics here and hand `to_ass` the correction plus the family
-//! name libass will actually match on (its LEGACY name, ID 1 — which for a
-//! non-RIBBI weight like Inter-600 is "Inter SemiBold", not "Inter", so passing
-//! the CSS family silently falls back to a system face).
-//!
-//! Pure Rust (fontdb + ttf-parser), so this builds on every target.
+//! Caption font resolution for the export burn-in, in pure Rust so it builds everywhere.
+//! libass scales by `Fontsize / (ascent + descent)` and matches the LEGACY family name, so raw CSS px and family both render wrong.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

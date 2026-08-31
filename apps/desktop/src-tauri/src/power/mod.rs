@@ -1,8 +1,5 @@
-//! Keep the display and system awake while recording or exporting.
-//!
-//! A dedicated thread owns the platform inhibitor (its guard isn't Send on the
-//! Linux D-Bus backend) and ref-counts holders, so recording and export can
-//! hold it independently. The inhibitor lifts only when the last holder frees.
+//! Keeps the display and system awake while recording or exporting.
+//! A dedicated thread owns the inhibitor (its guard is not Send on Linux D-Bus) and ref-counts holders, lifting only on the last free.
 
 use std::sync::mpsc::{channel, Sender};
 use std::thread;

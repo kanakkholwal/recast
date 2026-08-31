@@ -53,9 +53,7 @@ pub struct RenderState {
     pub background_blur: f64,
     /// Frame padding as percent of the shorter source edge (0..20).
     pub padding: f64,
-    /// Final-canvas aspect: "source" (default) or one of the preset
-    /// labels ("16:9", "9:16", "1:1", "1.91:1"). Anything we don't
-    /// recognise falls back to source-matched.
+    /// Final-canvas aspect: "source" (default) or one of the preset labels ("16:9", "9:16", "1:1", "1.91:1"). Anything we don't recognise falls back to source-matched.
     #[serde(default)]
     pub output_aspect: Option<String>,
     /// Corner rounding as a percentage (0..50) of the shorter video edge.
@@ -108,9 +106,7 @@ pub struct RenderState {
     /// User-accepted silence/manual cuts removed from the timeline.
     #[serde(default)]
     pub cuts: Vec<CutRange>,
-    /// Split markers (original-recording seconds) dividing the kept clip into
-    /// addressable segments. Editor-only on their own; here they bound the
-    /// segments that `segment_speeds` retimes.
+    /// Split markers (original-recording seconds) dividing the kept clip into addressable segments. Editor-only on their own; here they bound the segments that `segment_speeds` retimes.
     #[serde(default)]
     pub split_points: Vec<f64>,
     /// Per-segment speed overrides (empty = every segment plays at 1×).
@@ -169,16 +165,8 @@ pub struct RenderState {
     /// passthrough key, so the export ignored it while the preview applied it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor_motion_easing: Option<crate::v1::easing::Easing>,
-    /// Catch-all for any JS-only settings (e.g. `cursorStyle`, `layoutMode`,
-    /// `lastAppliedPresetId`, `autoZoomEnabled`, `autoZoomApplied`) that JS
-    /// owns but Rust never reads. The Rust
-    /// load path deserialises `edits.json` through this struct and then
-    /// re-serialises it back to JS — without this catch-all every field
-    /// not declared above would be silently dropped on a project reopen,
-    /// resetting the user's tweaks to defaults. `#[serde(flatten)]` slurps
-    /// all unrecognised keys at this level into the map and emits them
-    /// on serialisation, so JS-only settings round-trip cleanly without
-    /// every new editor toggle needing a mirror Rust field.
+    /// Catch-all for JS-only settings Rust never reads, slurped by `#[serde(flatten)]` and re-emitted on serialisation.
+    /// Without it every undeclared field would be dropped on reopen, resetting the user's tweaks to defaults.
     #[serde(flatten, default)]
     pub passthrough: serde_json::Map<String, serde_json::Value>,
 }

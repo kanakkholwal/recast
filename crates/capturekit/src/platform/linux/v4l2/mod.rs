@@ -1,13 +1,5 @@
-//! Camera capture through Video4Linux2.
-//!
-//! Memory-mapped streaming rather than `read()`: every UVC driver supports it,
-//! it is the only path that reports a per-frame timestamp, and it copies once
-//! (out of the mapping, during conversion) instead of twice.
-//!
-//! Frames are converted to BGRA here so a camera looks the same on Linux as it
-//! does on Windows and macOS. Compressed modes (MJPEG, H.264) are refused with a
-//! message naming what the device offered, because decoding them belongs in a
-//! codec rather than in a capture backend.
+//! V4L2 camera capture over memory-mapped streaming: the only path with per-frame timestamps, and it copies once instead of twice.
+//! Frames convert to BGRA to match the other platforms; compressed modes are refused, since decoding belongs in a codec.
 
 mod convert;
 mod uapi;
@@ -34,15 +26,11 @@ pub(super) const BACKEND: &str = "v4l2";
 const DEFAULT_SIZE: (u32, u32) = (1280, 720);
 
 /// Buffers the driver fills while the consumer holds one.
-///
-/// Four is the usual choice: enough that a slow consumer does not starve the
-/// driver, few enough that a stalled consumer cannot build a second of latency.
+/// Four is the usual choice: enough that a slow consumer does not starve the driver, few enough that a stalled consumer cannot build a second of latency.
 const BUFFER_COUNT: u32 = 4;
 
 /// The rate a mode has to reach before its extra pixels are worth taking.
-///
-/// Webcams commonly offer 1280x720 at 10fps and 640x480 at 30fps in the same
-/// uncompressed format. Ranking purely by size picks the judder.
+/// Webcams commonly offer 1280x720 at 10fps and 640x480 at 30fps in the same uncompressed format. Ranking purely by size picks the judder.
 const MIN_USEFUL_FPS: f32 = 15.0;
 
 /// Cap on every `VIDIOC_ENUM_*` walk, so a driver that never returns EINVAL
@@ -272,9 +260,7 @@ pub(crate) fn cameras() -> Result<Vec<Camera>> {
 }
 
 /// Whether the calling user can open a camera at all.
-///
-/// Linux gates cameras on file permissions rather than a prompt, so there is
-/// nothing to request: a node the user cannot read is a `video` group problem.
+/// Linux gates cameras on file permissions rather than a prompt, so there is nothing to request: a node the user cannot read is a `video` group problem.
 pub(crate) fn permission() -> capturekit_core::Permission {
     use capturekit_core::Permission;
     let nodes = video_nodes();
@@ -577,9 +563,7 @@ impl V4l2CameraSource {
     }
 
     /// The newest filled buffer, returning the older ones to the driver.
-    ///
-    /// A consumer slower than the device would otherwise walk a queue of stale
-    /// frames, each one a frame further behind than the last.
+    /// A consumer slower than the device would otherwise walk a queue of stale frames, each one a frame further behind than the last.
     fn dequeue_newest(&self, first: uapi::Buffer) -> Result<uapi::Buffer> {
         let mut newest = first;
         loop {
@@ -628,9 +612,7 @@ impl V4l2CameraSource {
 }
 
 /// When the driver says the frame was captured, on `CLOCK_MONOTONIC`.
-///
-/// Older drivers stamp buffers with wall-clock time, which cannot be compared
-/// with anything else in a session; those fall back to the moment of dequeue.
+/// Older drivers stamp buffers with wall-clock time, which cannot be compared with anything else in a session; those fall back to the moment of dequeue.
 // `time_t` is 32-bit on some Linux targets, where this widening is not useless.
 #[allow(clippy::useless_conversion)]
 fn stamp(buffer: &uapi::Buffer) -> Timestamp {

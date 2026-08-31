@@ -62,10 +62,7 @@ impl Frame<'_> {
     }
 
     /// Where the cursor was when this frame was produced.
-    ///
-    /// On the frame's own clock, not a separate poller's, so it needs no
-    /// smoothing to line up with the video. `None` where the platform's
-    /// [`crate::Capabilities::cursor_samples`] is false.
+    /// On the frame's own clock, not a separate poller's, so it needs no smoothing to line up with the video. `None` where the platform's [`crate::Capabilities::cursor_samples`] is false.
     #[must_use]
     pub const fn cursor(&self) -> Option<&CursorSample> {
         self.cursor.as_ref()
@@ -114,9 +111,7 @@ impl Frame<'_> {
 }
 
 /// Configures a capture before it opens.
-///
-/// Options that only one platform honours are still typed here and documented as
-/// ignored elsewhere, rather than hidden behind a lowest common denominator.
+/// Options that only one platform honours are still typed here and documented as ignored elsewhere, rather than hidden behind a lowest common denominator.
 #[derive(Debug, Clone)]
 pub struct CapturerBuilder {
     target: Target,
@@ -159,12 +154,8 @@ impl CapturerBuilder {
         self
     }
 
-    /// How often frames are worth reading back to host memory, for a caller that
-    /// paces itself and so leaves [`Pacing::Passthrough`] in place.
-    ///
-    /// Windows Graphics Capture delivers on every window repaint, far above any
-    /// encode rate, and each readback maps GPU memory. Ignored where frames
-    /// arrive in host memory already.
+    /// How often frames are worth reading back to host memory, for a caller that paces itself and so leaves [`Pacing::Passthrough`] in place.
+    /// Windows Graphics Capture delivers on every window repaint, far above any encode rate, and each readback maps GPU memory. Ignored where frames arrive in host memory already.
     #[must_use]
     pub fn readback_rate(mut self, fps: u32) -> Self {
         self.opts.readback_rate = Some(fps);
@@ -405,9 +396,7 @@ impl Capturer {
     }
 
     /// The cursor image most recently reported, if the backend reports one.
-    ///
-    /// Kept off the frame because it changes rarely: a consumer decodes it once
-    /// when [`CursorSample::shape_id`] changes rather than on every frame.
+    /// Kept off the frame because it changes rarely: a consumer decodes it once when [`CursorSample::shape_id`] changes rather than on every frame.
     #[must_use]
     pub fn cursor_shape(&self) -> Option<&CursorShape> {
         self.backend.cursor_shape()
@@ -442,9 +431,7 @@ impl Capturer {
     }
 
     /// Run `handler` on a capture thread until it returns [`Flow::Stop`].
-    ///
-    /// The pull API above is the same stream; this only moves the loop off the
-    /// caller's thread for backends that deliver faster than it can consume.
+    /// The pull API above is the same stream; this only moves the loop off the caller's thread for backends that deliver faster than it can consume.
     pub fn start<H>(mut self, timeout: Duration, mut handler: H) -> CaptureHandle
     where
         H: FnMut(Frame<'_>) -> Flow + Send + 'static,
@@ -494,11 +481,7 @@ impl Capturer {
 #[cfg(feature = "mock")]
 impl Capturer {
     /// A capturer over a scripted source, for tests and for CI with no display.
-    ///
-    /// The whole pipeline runs: pacing, the monotonic clock, stale-frame
-    /// discard, loss and recovery. Only the OS is replaced, so a downstream
-    /// test exercises the same code a real capture does.
-    ///
+    /// The whole pipeline still runs (pacing, clock, stale-frame discard, loss and recovery); only the OS is replaced.
     /// ```
     /// use capturekit::{mock::{MockFrame, MockSource}, Capturer, Pacing};
     ///

@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod ffmpeg;
 pub mod frames;
 pub mod nv12;
 
@@ -13,6 +14,7 @@ pub mod mp4;
 pub mod reader;
 pub mod walk;
 
+pub use ffmpeg::{FfmpegError, FfmpegPictures, FfmpegSink, SourceInfo};
 pub use frames::{FrameLoop, NoPictures, PictureSource, RenderError};
 #[cfg(windows)]
 pub use mp4::{Mp4Error, Mp4Sink};

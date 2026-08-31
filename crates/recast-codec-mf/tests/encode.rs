@@ -225,11 +225,8 @@ fn the_encoded_stream_muxes_into_a_file_ffprobe_can_decode() {
     assert_eq!(decoded, samples, "not every encoded frame decoded back");
 }
 
-/// Keyframes in the stream `descriptor` produced at `interval`, over `count`
-/// frames.
-///
-/// Counted as IDR access units in the bitstream. The transform's per-sample
-/// `is_sync` flag cannot answer this: NVIDIA's MFT reports exactly one.
+/// Keyframes in the stream `descriptor` produced at `interval`, over `count` frames.
+/// Counted as IDR access units in the bitstream. The transform's per-sample `is_sync` flag cannot answer this: NVIDIA's MFT reports exactly one.
 fn keyframes_at(
     descriptor: &recast_codec::EncoderDescriptor,
     interval: u32,
@@ -261,12 +258,8 @@ fn keyframes_at(
     )
 }
 
-/// Footage that will be scrubbed needs keyframes close together: a seek decodes
-/// from the one before it, and NVIDIA's default is an infinite GOP — one
-/// keyframe for a whole recording.
-///
-/// Every encoder this machine offers, not just the preferred one: the property
-/// has to hold across vendors or the recorder cannot rely on it.
+/// Footage that will be scrubbed needs keyframes close together: a seek decodes from the one before it, and NVIDIA's default is an infinite GOP — one keyframe for a whole recording.
+/// Every encoder this machine offers, not just the preferred one: the property has to hold across vendors or the recorder cannot rely on it.
 #[test]
 fn a_short_keyframe_interval_produces_more_keyframes_than_the_default() {
     const CLIP: u32 = 90;
@@ -302,9 +295,7 @@ fn a_short_keyframe_interval_produces_more_keyframes_than_the_default() {
 }
 
 /// Keyframes when they are ASKED FOR per frame rather than configured as a GOP.
-///
-/// This is what a variable-rate writer needs: it knows the timestamps, so it
-/// decides when a keyframe is due. A frame-count GOP cannot express that.
+/// This is what a variable-rate writer needs: it knows the timestamps, so it decides when a keyframe is due. A frame-count GOP cannot express that.
 #[test]
 fn a_keyframe_can_be_demanded_for_a_chosen_frame() {
     const CLIP: u32 = 60;

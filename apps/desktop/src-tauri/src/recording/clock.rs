@@ -86,11 +86,8 @@ impl TrackStart {
         }
     }
 
-    /// Record *now* as this track's first sample. Only the first call takes
-    /// effect, so capture loops can call it unconditionally on every write.
-    ///
-    /// For a track whose unit is an instant: a video frame, a cursor sample. A
-    /// track delivered in buffers must use [`Self::mark_at`] instead.
+    /// Record *now* as this track's first sample. Only the first call takes effect, so capture loops can call it unconditionally on every write.
+    /// For a track whose unit is an instant: a video frame, a cursor sample. A track delivered in buffers must use [`Self::mark_at`] instead.
     pub fn mark(&self) {
         self.mark_at(Instant::now());
     }

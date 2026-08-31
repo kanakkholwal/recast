@@ -1,17 +1,5 @@
-//! Aspect-ratio-locked window resizing.
-//!
-//! Tao (Tauri's windowing layer) only exposes min/max size constraints — it
-//! has no aspect-ratio lock. The JS side can *snap back* to an aspect after a
-//! resize finishes (`onResized` → `setSize`), but that reads as a janky
-//! rubber-band: the OS lets you drag width and height independently, then the
-//! box jumps once you release. To make the camera-preview bubble resize
-//! *proportionally while you drag* — and to cap its width at a fraction of the
-//! monitor — we intercept `WM_SIZING` natively on Windows and rewrite the drag
-//! rectangle in real time.
-//!
-//! Non-Windows builds get a no-op `apply` so callers don't need their own
-//! `cfg`; the JS snap-to-aspect fallback keeps those platforms usable until a
-//! native equivalent (macOS: `NSWindow.aspectRatio`) lands.
+//! Aspect-ratio-locked resizing: Tao exposes only min/max, and a JS snap-back after `onResized` reads as a rubber-band.
+//! Windows intercepts `WM_SIZING` to rewrite the drag rect live; other platforms get a no-op `apply`.
 
 mod imp {
     use std::collections::HashMap;

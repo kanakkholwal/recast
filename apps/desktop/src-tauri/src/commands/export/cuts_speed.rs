@@ -1,25 +1,10 @@
-//! Cut + per-segment-speed math for the video export pipeline: resolve cuts
-//! to post-trim ranges, derive kept segments, and build the FFmpeg
-//! select/setpts/atempo expressions. Split out of commands/editor.rs; the
-//! parity tests (against the shared speed-parity fixture) moved with it.
-//!
-//! The derivation here is now the FALLBACK. Normal exports carry the editor's
-//! resolved time map (`TimeSpanWire`) and this module formats it, so the two
-//! cannot drift; deriving is kept for payloads that arrive without one.
+//! Cut and per-segment-speed math: kept ranges plus the FFmpeg select/setpts/atempo expressions.
+//! This derivation is the FALLBACK; a normal export carries the editor's resolved time map, so the two cannot drift.
 
 use serde::{Deserialize, Serialize};
 
-/// Resolve the render state's silence/manual cuts into post-trim stream
-/// seconds (the input is seeked by `-ss trim_start`, so the filtergraph's `t`
-/// starts at 0 = `trim_start`). Cuts are clamped to the kept `[trim_start,
-/// trim_end]` window, sorted, and overlaps merged.
-///
-/// Note: split/cut editing and silence detection are EXPERIMENTAL, opt-in
-/// features on the client. The frontend only includes a cut in `render_state`
-/// when its feature is enabled (see `effectiveCuts` in the editor store and
-/// `buildExportRenderState`), so when a feature is opted off `render_state.cuts`
-/// is empty here and the export matches an un-edited clip. This pipeline applies
-/// whatever cuts it is handed; it does not (and cannot) re-check the flags.
+/// Resolves cuts into post-trim stream seconds, clamped to the kept window, sorted, and overlaps merged.
+/// Applies whatever it is handed: the frontend omits cuts whose feature is opted off, and this cannot re-check the flags.
 /// Two cut edges within this many seconds are treated as the same boundary and
 /// merged. Kept in lockstep with `EPS` in the frontend's cut/segment model
 /// (apps/desktop/src/lib/timeline/{cuts,segments}.ts) so the previewed edit and

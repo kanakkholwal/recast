@@ -1,6 +1,4 @@
-//! Format-specific codec + output args for the video export. Appends the encoder
-//! flags, audio codec, and output path for GIF / WebM(VP9) / MP4(H.264). Split
-//! out of commands/editor.rs's `export_video`.
+//! Format-specific codec and output args for GIF, WebM(VP9) and MP4(H.264).
 
 use std::path::Path;
 

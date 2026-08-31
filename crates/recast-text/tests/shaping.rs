@@ -1,8 +1,6 @@
 use recast_text::{rasterize, resolve_face, shape_line, FontFace};
 
-/// Every assertion needs a real face. CI runs Windows, which always has Arial;
-/// a machine without it skips rather than failing, the same shape the GPU tests
-/// use for a missing adapter.
+/// Every assertion needs a real face. CI runs Windows, which always has Arial; a machine without it skips rather than failing, the same shape the GPU tests use for a missing adapter.
 fn face() -> Option<FontFace> {
     for family in [
         "Arial",

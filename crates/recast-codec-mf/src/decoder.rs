@@ -120,10 +120,7 @@ impl VideoReader {
     }
 
     /// The next frame, or `None` at end of stream.
-    ///
-    /// A read can legitimately return neither a frame nor the end: a format
-    /// change or a gap produces an empty sample, so the caller loops rather
-    /// than treating that as the end.
+    /// A read can legitimately return neither a frame nor the end: a format change or a gap produces an empty sample, so the caller loops rather than treating that as the end.
     pub fn next_frame(&mut self) -> Result<Option<DecodedFrame>, DecodeError> {
         loop {
             let mut flags = 0u32;

@@ -337,22 +337,8 @@ fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEnt
 mod tests {
     use super::*;
 
-    /// Regression guard for the macOS "app freezes after recording completes"
-    /// bug. `stop_recording` MUST stay `async` so its blocking body — joining
-    /// the capture/encoder threads, the camera-trim FFmpeg re-encode (30s+ on a
-    /// slow CPU), and zipping the `.recast` to disk — runs on a `spawn_blocking`
-    /// worker rather than Tauri's main thread. macOS renders the WebView on that
-    /// same main thread, so a *synchronous* `stop_recording` froze the entire
-    /// window until the work finished (Windows' out-of-process WebView2 kept
-    /// painting, which is why the hang was macOS-only).
-    ///
-    /// The closures below are type-checked but never executed (no real `State`
-    /// exists in a unit test). If either command is reverted to a plain `fn`,
-    /// its call yields a `Result<..>` instead of a `Future`, `drive` rejects
-    /// it, and the crate stops compiling here.
-    ///
-    /// `start_recording` is guarded too: it enumerates monitors/windows and
-    /// spawns the capture pipeline, so it must also stay off the UI thread.
+    /// Regression guard: `start_recording` and `stop_recording` MUST stay `async` so their blocking bodies run off Tauri's main thread.
+    /// macOS renders the WebView there, so a sync version froze the window; the closures below only type-check, and a plain `fn` stops compiling here.
     #[test]
     fn recording_commands_stay_async_off_the_ui_thread() {
         fn drive<F: std::future::Future>(_: F) {}

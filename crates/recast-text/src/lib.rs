@@ -1,9 +1,5 @@
 //! Font resolution, shaping and glyph rasterisation for the caption pass.
-//!
-//! Split from the export's `text_measure`, which shapes a line to size the ASS
-//! pill but never rasterises: the compositor has to draw the glyphs itself, and
-//! sharing one shaper is what keeps the burn-in and the preview on the same
-//! metrics.
+//! Split from the export's `text_measure`, which sizes the ASS pill but never rasterises; one shaper keeps burn-in and preview on the same metrics.
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod atlas;

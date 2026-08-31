@@ -274,17 +274,8 @@ pub fn kept_spans(trim_start: f64, trim_end: f64, cuts: &[(f64, f64)]) -> Vec<(f
 /// Matches the frontend's cut EPS so both sides agree on a boundary.
 const SPAN_EPS: f64 = 1e-4;
 
-/// Split every caption segment across the kept spans, dropping the parts inside
-/// a cut. Mirrors `splitSegmentAcrossSpans` in
-/// `apps/desktop/src/lib/captions/clip-with-cuts.ts` — keep the two in sync.
-///
-/// The burn is composited on the trimmed-but-uncut axis, so the cut stage
-/// downstream removes the burned pixels along with their frames. That is enough
-/// to keep a caption from *outlasting* a cut, but NOT enough to keep its
-/// content right: chunking over a segment's full word list groups words from
-/// both sides of the cut into one chunk, so the burn shows text for audio the
-/// export removed and breaks chunks at different points than the preview.
-/// Splitting first makes every emitted chunk lie wholly inside one kept span.
+/// Splits caption segments across kept spans, dropping the parts inside a cut. Mirrors `splitSegmentAcrossSpans`; keep the two in sync.
+/// The cut stage alone stops a caption outlasting a cut but not chunking across it, which showed text for removed audio and broke chunks unlike the preview.
 pub fn split_transcript_by_spans(t: &Transcript, spans: &[(f64, f64)]) -> Transcript {
     let mut segments = Vec::with_capacity(t.segments.len());
     for seg in &t.segments {

@@ -1,9 +1,5 @@
-//! Sequenced log of the app events the control socket streams.
-//!
-//! One set of listeners feeds this log for the life of the process, so a
-//! watcher that reconnects can replay from where it dropped instead of
-//! re-snapshotting. Without the log a `watch` client had no way to tell "nothing
-//! happened" from "I missed it".
+//! Sequenced event log fed by one set of listeners for the life of the process, so a reconnecting watcher replays instead of re-snapshotting.
+//! Without it a `watch` client could not tell "nothing happened" from "I missed it".
 
 use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex};
@@ -118,7 +114,6 @@ impl EventLog {
     }
 
     /// Block until an event newer than `cursor` is logged, or `timeout` passes.
-    ///
     /// Returns `false` on timeout, which the caller turns into a keepalive.
     pub fn wait_past(&self, cursor: u64, timeout: Duration) -> bool {
         let ring = self.lock();

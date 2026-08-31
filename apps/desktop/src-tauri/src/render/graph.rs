@@ -393,16 +393,8 @@ fn build_color_background_filter(
     Some(segments.join(";"))
 }
 
-/// When a drop-shadow PNG is supplied, append the two extra filter segments
-/// that overlay it on top of the freshly-emitted `[bg0]` stage and produce
-/// the `[bg]` label the video composite consumes. Returns the label that the
-/// next stage should use as its background — `[bg]` when shadow is present,
-/// `[bg0]` otherwise (the latter is a label rename, no extra filter pass).
-///
-/// The shadow PNG is sized to comp dims (= source + padding × 2), not the
-/// final canvas. We overlay it at the comp's (x, y) offset inside the
-/// canvas so an aspect-changing preset still drops the shadow under the
-/// source video and not into the letterbox bars.
+/// Appends the drop-shadow overlay onto `[bg0]`, returning `[bg]` when a shadow is present and `[bg0]` otherwise (a rename, not a pass).
+/// The PNG is sized to comp dims and overlaid at the comp offset, so an aspect-changing preset drops the shadow under the video, not into the letterbox.
 fn compose_shadow_stage(
     segments: &mut Vec<String>,
     shadow_input_index: Option<usize>,
@@ -596,25 +588,8 @@ const MAX_TERMS_PER_EXPR: usize = 48;
 /// `(ta, va)` to `(tb, vb)`.
 type Segment = (f64, f64, f64, f64);
 
-/// Build the three time-varying FFmpeg expressions for the zoom — `(z, x, y)`:
-///   z — multiplicative zoom factor, default 1.0 outside every region.
-///   x — crop top-left X in post-scale pixels, default 0.
-///   y — crop top-left Y in post-scale pixels, default 0.
-///
-/// All three are emitted from the SAME merged scale breakpoints. The crop
-/// origin is the exact inverse of the preview's focus-pinned affine —
-/// `crop_x = cx*iw*(Z-1)`, `crop_y = cy*ih*(Z-1)` — evaluated at the very same
-/// segment endpoints as `Z`. Because `crop_x` is an affine function of `Z` and
-/// `Z` is linear within each segment, `crop_x` is exactly linear over that same
-/// segment, so the crop LUT and scale LUT can never disagree on `Z` at any `t`.
-/// (Merging them independently was the old bug: their breakpoints diverged and
-/// the implied focus `x/(iw*(Z-1))` blew up near the ramp ends where `Z≈1`,
-/// producing the export-only focus slide.)
-///
-/// Emitted as a FLAT SUM (`default + if(window,Δ,0) + …`) rather than nested
-/// `if`s, because FFmpeg's evaluator has a recursion-depth limit; at most one
-/// window fires per `t` (regions don't overlap; segments abut as half-open
-/// windows) so the sum equals the active segment's value or the default.
+/// The zoom's `(z, x, y)` expressions, all emitted from the SAME merged breakpoints so the crop and scale LUTs cannot disagree on `Z`.
+/// A flat sum rather than nested `if`s, because FFmpeg's evaluator has a recursion-depth limit and at most one window fires per `t`.
 fn build_zoom_exprs(
     samples_per_region: &[Vec<ZoomSample>],
     iw: f64,
@@ -1238,9 +1213,7 @@ mod tests {
         assert_eq!(plan.video_map, "[vout]");
     }
 
-    /// Auto-zoom typically produces 3-6 regions. Each must contribute
-    /// segments to the LUT, and a sample at each region's start should be
-    /// represented.
+    /// Auto-zoom typically produces 3-6 regions. Each must contribute segments to the LUT, and a sample at each region's start should be represented.
     #[test]
     fn multiple_zoom_regions_all_appear_in_lut() {
         let state = render_state_with_zoom(
@@ -1656,9 +1629,7 @@ mod tests {
         );
     }
 
-    /// Region whose entire timeline range is before trim_start should not
-    /// contribute ANY segments to the LUT (and previously emitted dead
-    /// `between(t, negative, negative)` calls).
+    /// Region whose entire timeline range is before trim_start should not contribute ANY segments to the LUT (and previously emitted dead `between(t, negative, negative)` calls).
     #[test]
     fn fully_pre_trim_zoom_region_is_dropped() {
         let state = render_state_with_zoom(

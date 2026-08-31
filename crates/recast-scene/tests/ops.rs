@@ -321,9 +321,7 @@ fn every_op_round_trips_through_json() {
     }
 }
 
-/// An op is only replayable if it never reads anything outside the scene it is
-/// given. Applying to a default scene and to a populated one must differ ONLY
-/// where the op touched.
+/// An op is only replayable if it never reads anything outside the scene it is given. Applying to a default scene and to a populated one must differ ONLY where the op touched.
 #[test]
 fn an_op_reads_nothing_outside_the_scene_it_is_given() {
     let mut populated = scene();

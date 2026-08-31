@@ -1,6 +1,4 @@
-//! Caption burn-in for the video export: styles the render-state transcript into
-//! an ASS script and splices a libass `subtitles` stage into the filter graph.
-//! Split out of commands/editor.rs's `export_video`.
+//! Caption burn-in: styles the render-state transcript into an ASS script and splices a libass `subtitles` stage into the graph.
 
 use tauri::AppHandle;
 
@@ -9,21 +7,8 @@ use crate::commands::ffmpeg::append_subtitles_to_complex;
 use crate::commands::types::ExportRequest;
 use crate::render::graph::CanvasGeometry;
 
-/// Burn captions into the export (overlay) via libass. The transcript + style
-/// ride along in the render-state passthrough; they're styled into an ASS script
-/// and composited on the trimmed-but-uncut axis, so the cut/speed stage re-times
-/// the burned pixels with the rest.
-///
-/// Returns the updated `(filter_complex, video_map)` when a caption stage was
-/// added, or `Ok(None)` when there's nothing to burn (no `burn_captions`, GIF
-/// export, whose paletteuse tail can't take another stage, an empty/absent
-/// transcript, or an ASS write failure, which degrades to no captions rather
-/// than failing).
-///
-/// Errors only when the user asked for captions and the resolved FFmpeg cannot
-/// render them. Silently exporting a caption-less video in that case would be
-/// worse: the user sees a "successful" export and only finds the missing
-/// captions after uploading it.
+/// Burns captions via libass on the trimmed-but-uncut axis, so the cut/speed stage re-times the pixels with everything else.
+/// `Ok(None)` when there is nothing to burn; errors only when captions were asked for and cannot render, since a silently caption-less export is worse.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn append_caption_burn_in(
     app: &AppHandle,

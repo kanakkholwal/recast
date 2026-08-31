@@ -1,8 +1,5 @@
 //! What can encode on this machine, and which of them to use.
-//!
-//! Platform-free on purpose: the enumeration backends (`recast-codec-mf` on
-//! Windows) produce these descriptors, and the selection policy is pure so it
-//! can be tested without a GPU or a driver.
+//! Platform-free on purpose: backends produce the descriptors and the selection policy stays testable without a GPU or driver.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
@@ -121,9 +118,7 @@ fn preference_rank(descriptor: &EncoderDescriptor) -> u8 {
 }
 
 /// The encoder to use for `codec`, or `None` when nothing can encode it.
-///
-/// Ties break on enumeration order, so a backend that lists the system's
-/// preferred transform first keeps that preference.
+/// Ties break on enumeration order, so a backend that lists the system's preferred transform first keeps that preference.
 pub fn select_preferred(
     candidates: &[EncoderDescriptor],
     codec: VideoCodec,
@@ -134,9 +129,7 @@ pub fn select_preferred(
         .min_by_key(|d| preference_rank(d))
 }
 
-/// Every candidate for `codec`, best first. The export uses this to fall down
-/// the list when one encoder fails to open rather than dropping straight to
-/// software.
+/// Every candidate for `codec`, best first. The export uses this to fall down the list when one encoder fails to open rather than dropping straight to software.
 pub fn ranked(candidates: &[EncoderDescriptor], codec: VideoCodec) -> Vec<&EncoderDescriptor> {
     let mut matching: Vec<&EncoderDescriptor> =
         candidates.iter().filter(|d| d.codec == codec).collect();

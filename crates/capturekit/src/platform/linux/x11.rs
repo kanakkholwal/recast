@@ -48,9 +48,7 @@ impl Session {
     }
 
     /// Turn on XFixes, so the cursor can be sampled with the frames.
-    ///
-    /// The extension has to be negotiated before any of its requests are sent.
-    /// Absent on nothing modern, but a server without it just means no cursor.
+    /// The extension has to be negotiated before any of its requests are sent. Absent on nothing modern, but a server without it just means no cursor.
     fn enable_xfixes(&self) -> bool {
         self.conn
             .xfixes_query_version(XFIXES_MAJOR, XFIXES_MINOR)
@@ -297,9 +295,7 @@ pub(crate) struct X11Source {
 }
 
 /// The cursor as XFixes last reported it.
-///
-/// The image comes back with every call, so the serial is what says whether it
-/// actually changed and a consumer can keep its decoded copy.
+/// The image comes back with every call, so the serial is what says whether it actually changed and a consumer can keep its decoded copy.
 #[derive(Default)]
 struct Cursor {
     shape: Option<CursorShape>,
@@ -322,10 +318,7 @@ const fn image_origin(hotspot: (i32, i32), hot: (u32, u32), surface: &Rect) -> (
 
 impl X11Source {
     /// Read the cursor, keeping its image only when the serial says it changed.
-    ///
-    /// `None` when the server has no XFixes, and `visible: false` when the
-    /// pointer is on another screen or hidden, which XFixes reports as a
-    /// zero-sized image rather than as an error.
+    /// `None` when the server has no XFixes, and `visible: false` when the pointer is on another screen or hidden, which XFixes reports as a zero-sized image rather than as an error.
     fn sample_cursor(&mut self, pts: Timestamp) -> Option<CursorSample> {
         let buttons = self.buttons();
         let cursor = self.cursor.as_mut()?;

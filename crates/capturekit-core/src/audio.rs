@@ -59,9 +59,7 @@ impl AudioFormat {
     }
 
     /// Bytes one sample frame occupies, across every channel.
-    ///
-    /// A *sample frame* is one sample per channel, the unit both the OS APIs and
-    /// the timestamps count in. It is unrelated to a video frame.
+    /// A *sample frame* is one sample per channel, the unit both the OS APIs and the timestamps count in. It is unrelated to a video frame.
     #[must_use]
     pub const fn bytes_per_frame(self) -> usize {
         self.channels as usize * self.sample_format.bytes()
@@ -170,16 +168,8 @@ pub struct AudioDesc {
     pub backend: &'static str,
 }
 
-/// Tracks where a capture is on its own sample timeline, and how far a device
-/// has run ahead of it.
-///
-/// Every OS capture API here reports a device position that keeps advancing in
-/// real time, while buffers arrive only when there is something to deliver. A
-/// loopback device with nothing playing delivers NOTHING at all, sometimes for
-/// minutes. A consumer that just concatenates what arrives produces a track
-/// shorter than the recording, and every sound in it drifts earlier than the
-/// picture. The gap has to be filled with real silence, at the right place, and
-/// only the device position says where that is.
+/// Tracks where a capture is on its own sample timeline and how far the device has run ahead.
+/// A loopback with nothing playing delivers nothing for minutes, so concatenating arrivals yields a short track that drifts early; only the device position says where to insert silence.
 #[derive(Debug, Clone)]
 pub struct AudioTimeline {
     format: AudioFormat,

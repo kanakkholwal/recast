@@ -1,10 +1,5 @@
-//! What a V4L2 device hands over, turned into the BGRA every capturekit backend
-//! delivers.
-//!
-//! Four kernels cover every uncompressed format a UVC webcam offers, so the
-//! FourCC table below is data and the conversion is not repeated per format.
-//! Compressed formats (MJPEG, H.264) are not here: decoding them is a codec, not
-//! a capture backend.
+//! V4L2 pixel formats to the BGRA every capturekit backend delivers; four kernels cover every uncompressed UVC format, so the FourCC table is data.
+//! Compressed formats are absent on purpose: decoding them is a codec, not a capture backend.
 
 use capturekit_core::{CaptureError, PixelFormat, Result};
 
@@ -96,9 +91,7 @@ fn clamp(value: i32) -> u8 {
 }
 
 /// One YCbCr sample as BGR, in BT.601 which is what every webcam produces.
-///
-/// `full_range` follows the driver's quantization field: taking a full-range
-/// stream as limited crushes the blacks and clips the whites.
+/// `full_range` follows the driver's quantization field: taking a full-range stream as limited crushes the blacks and clips the whites.
 fn ycbcr(y: u8, u: u8, v: u8, full_range: bool) -> (u8, u8, u8) {
     let d = i32::from(u) - 128;
     let e = i32::from(v) - 128;
@@ -131,9 +124,7 @@ fn write_bgr(out: &mut [u8], at: usize, bgr: (u8, u8, u8)) {
 }
 
 /// Convert one frame into tightly packed BGRA, reusing `out`'s allocation.
-///
-/// `stride` is the source's `bytesperline`, which a driver pads freely; the
-/// output is always `width * 4`.
+/// `stride` is the source's `bytesperline`, which a driver pads freely; the output is always `width * 4`.
 pub(super) fn to_bgra(
     layout: Layout,
     src: &[u8],
@@ -246,9 +237,7 @@ mod tests {
         assert_eq!(out[3], 255, "alpha");
     }
 
-    /// The three 4:2:2 orders differ only in where the samples sit, so the same
-    /// colour spelled three ways must convert identically. Swapping any offset
-    /// in the table breaks exactly this.
+    /// The three 4:2:2 orders differ only in where the samples sit, so the same colour spelled three ways must convert identically. Swapping any offset in the table breaks exactly this.
     #[test]
     fn the_packed_orders_all_decode_to_the_same_colour() {
         let yuyv = convert(YUYV, &[RED_Y, RED_U, RED_Y, RED_V], 2, 1, 4);

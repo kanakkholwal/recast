@@ -25,10 +25,7 @@ pub struct WindowId(pub u64);
 pub struct CameraId(pub String);
 
 /// What to capture.
-///
-/// A region is a display plus a rectangle rather than a bare rectangle, so the
-/// backend can crop on the GPU instead of grabbing the monitor and cropping the
-/// result on the CPU.
+/// A region is a display plus a rectangle rather than a bare rectangle, so the backend can crop on the GPU instead of grabbing the monitor and cropping the result on the CPU.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase", tag = "kind"))]
@@ -162,12 +159,8 @@ pub struct Camera {
 }
 
 impl Camera {
-    /// The mode closest to `width` by `height` without exceeding either, or the
-    /// smallest the device has when everything it offers is larger.
-    ///
-    /// Cameras advertise a ragged list rather than a range, so asking for 1280x720
-    /// on a device that only does 1920x1080 and 640x480 has to resolve to one of
-    /// those two rather than failing.
+    /// The mode closest to `width` by `height` without exceeding either, or the smallest the device has when everything it offers is larger.
+    /// Cameras advertise a ragged list rather than a range, so asking for 1280x720 on a device that only does 1920x1080 and 640x480 has to resolve to one of those two rather than failing.
     #[must_use]
     pub fn best_format(&self, width: u32, height: u32) -> Option<CameraFormat> {
         let fits = self

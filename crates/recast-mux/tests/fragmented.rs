@@ -184,9 +184,7 @@ fn decoded_frames(ffprobe: &Path, file: &Path) -> Option<u32> {
     String::from_utf8_lossy(&out.stdout).trim().parse().ok()
 }
 
-/// The whole reason for fragments. A progressive file cut short is unplayable,
-/// because its header is written last. This one has to play up to the last
-/// complete fragment.
+/// The whole reason for fragments. A progressive file cut short is unplayable, because its header is written last. This one has to play up to the last complete fragment.
 #[test]
 fn a_file_cut_short_still_plays_what_it_has() {
     let Some(built) = built() else { return };
@@ -232,9 +230,7 @@ fn the_initialisation_segment_opens_on_its_own() {
     );
 }
 
-/// Our own reader parses `moov`, which in a fragmented file describes the
-/// tracks and holds no samples. Saying so here stops the empty list looking
-/// like a parsing bug later.
+/// Our own reader parses `moov`, which in a fragmented file describes the tracks and holds no samples. Saying so here stops the empty list looking like a parsing bug later.
 #[test]
 fn our_reader_sees_the_tracks_but_none_of_the_samples() {
     let Some(built) = built() else { return };

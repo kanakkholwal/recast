@@ -109,11 +109,8 @@ impl Rect {
             && other.bottom() <= self.bottom()
     }
 
-    /// Whether `point` lies inside, treating the right and bottom edges as
-    /// belonging to the next rectangle along.
-    ///
-    /// Half-open on purpose: adjacent displays share an edge, and a closed test
-    /// puts a point on it in both of them.
+    /// Whether `point` lies inside, treating the right and bottom edges as belonging to the next rectangle along.
+    /// Half-open on purpose: adjacent displays share an edge, and a closed test puts a point on it in both of them.
     #[must_use]
     pub fn contains_point(&self, point: (i32, i32)) -> bool {
         i64::from(point.0) >= i64::from(self.x)
@@ -143,9 +140,7 @@ impl Rect {
     }
 
     /// This rectangle moved by `origin`, the inverse of [`Rect::relative_to`].
-    ///
-    /// Takes a rectangle expressed inside some surface and puts it back into the
-    /// space that surface lives in.
+    /// Takes a rectangle expressed inside some surface and puts it back into the space that surface lives in.
     #[must_use]
     pub fn offset_by(&self, origin: &Self) -> Self {
         Self {

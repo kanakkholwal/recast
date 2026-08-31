@@ -1,9 +1,5 @@
 /// How much of an exclusion request a platform can actually honour.
-///
-/// Exclusion is a privacy control: a caller asks for a password manager, or its
-/// own recording panel, to be kept out of the capture. Quietly ignoring that
-/// request records the thing the user was promised would be hidden, so a backend
-/// that cannot do it must say so rather than degrade.
+/// Exclusion is a privacy control, so a backend that cannot do it must say so rather than silently record what was promised hidden.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
@@ -47,10 +43,7 @@ pub enum RegionCrop {
 }
 
 /// What a platform's capture backend can and cannot do.
-///
-/// Reported as data so a caller branches on the answer rather than on `cfg`.
-/// That is what keeps one API across three very different systems: the shape
-/// never changes, only the values.
+/// Reported as data so a caller branches on the answer rather than on `cfg`. That is what keeps one API across three very different systems: the shape never changes, only the values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
@@ -74,10 +67,7 @@ pub struct Capabilities {
     /// Whether the OS can composite the cursor into captured frames.
     pub cursor_in_frame: bool,
     /// Whether the OS reports cursor position and shape alongside frames.
-    ///
-    /// False on macOS, where ScreenCaptureKit attaches no pointer metadata to a
-    /// sample. That is not the same as having no cursor at all: see
-    /// [`cursor_pointer`](Self::cursor_pointer).
+    /// False on macOS, where ScreenCaptureKit attaches no pointer metadata to a sample. That is not the same as having no cursor at all: see [`cursor_pointer`](Self::cursor_pointer).
     pub cursor_samples: bool,
     /// Whether the pointer can be read on demand, independently of frames.
     ///
@@ -86,18 +76,14 @@ pub struct Capabilities {
     /// pointer to no client outside its own surfaces.
     pub cursor_pointer: bool,
     /// Whether mouse buttons can be read at all.
-    ///
-    /// False under Wayland, which gives no client the global pointer-button
-    /// state; a consumer there gets movement but can never see a click.
+    /// False under Wayland, which gives no client the global pointer-button state; a consumer there gets movement but can never see a click.
     pub cursor_buttons: bool,
     /// Whether the backend reports which regions changed.
     pub dirty_rects: bool,
     /// Whether system output can be captured back as audio.
     pub audio_loopback: bool,
     /// Whether audio devices can be listed by name.
-    ///
-    /// False on macOS: ScreenCaptureKit serves the system default and names no
-    /// others, so a caller picks a direction rather than a device.
+    /// False on macOS: ScreenCaptureKit serves the system default and names no others, so a caller picks a direction rather than a device.
     pub audio_device_enumeration: bool,
 }
 

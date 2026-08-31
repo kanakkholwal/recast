@@ -81,6 +81,14 @@ pub fn sources_for(graph: &AudioGraph, recording: &Path) -> SceneSources {
     sources
 }
 
+/// No in-process decoder here, and none needed: the platforms without one take
+/// the mux pass, which builds the audio track from the render state itself.
+#[cfg(not(windows))]
+#[must_use]
+pub fn sources_for(_graph: &AudioGraph, _recording: &Path) -> SceneSources {
+    SceneSources::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

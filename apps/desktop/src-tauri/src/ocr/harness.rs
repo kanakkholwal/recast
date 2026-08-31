@@ -1,14 +1,5 @@
-//! End-to-end harness for the OCR pipeline. These tests drive the REAL decode
-//! path, so they need FFmpeg on the machine (and, for the OCR leg, a network
-//! round trip to fetch the models). They are `#[ignore]`d so CI stays hermetic:
-//! the pure logic is covered by the unit tests in the sibling modules, and the
-//! Rust CI job deliberately never executes FFmpeg.
-//!
-//! Run them by hand (`ocr` is a default feature, so no extra flag is needed):
-//!
-//! ```text
-//! cargo test --lib ocr::harness -- --ignored --nocapture
-//! ```
+//! End-to-end OCR harness driving the real decode path, so it needs FFmpeg and a model download.
+//! `#[ignore]`d to keep CI hermetic: run `cargo test --lib ocr::harness -- --ignored --nocapture`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

@@ -80,9 +80,7 @@ fn display_mode(device: &[u16]) -> Option<DEVMODEW> {
 }
 
 /// The display's own resolution and position, in physical pixels.
-///
-/// `dmPelsWidth` is the mode the hardware is actually running, so it does not
-/// move with the caller's DPI awareness the way a monitor rect does.
+/// `dmPelsWidth` is the mode the hardware is actually running, so it does not move with the caller's DPI awareness the way a monitor rect does.
 fn physical_bounds(mode: DEVMODEW) -> Rect {
     // SAFETY: `dmPosition` is the active member for a display device, which is what `EnumDisplaySettingsW` was asked about.
     let position = unsafe { mode.Anonymous1.Anonymous2.dmPosition };
@@ -194,9 +192,7 @@ fn window_title(window: HWND) -> String {
 }
 
 /// Whether a window is one a user would recognise and could sensibly capture.
-///
-/// Tool windows and title-less windows are the shell's own scaffolding: every
-/// desktop has dozens, and listing them makes a picker useless.
+/// Tool windows and title-less windows are the shell's own scaffolding: every desktop has dozens, and listing them makes a picker useless.
 fn is_listable(window: HWND, title: &str) -> bool {
     if title.is_empty() || !unsafe { IsWindowVisible(window) }.as_bool() {
         return false;

@@ -11,19 +11,8 @@ pub enum Step {
     LayerId(u32),
 }
 
-/// A location in a scene, written as `/`-separated steps.
-///
-/// `output/width`, `layers/2/opacity`, `layers/id:7/effects/0/amount`.
-///
-/// **A layer may be addressed by id, and in a journal it should be.** A position
-/// is only stable while the layer list is: an op recorded as `layers/2` and
-/// replayed onto a scene where an earlier layer was inserted addresses somebody
-/// else's layer, silently and with a perfectly valid-looking result. Ids do not
-/// move. Positions are kept because reordering is itself an edit and has to be
-/// expressible.
-///
-/// Path strings are a WIRE CONTRACT: they are stored in journals, so a rename
-/// here invalidates every journal on disk, exactly as an op name does.
+/// A location in a scene as `/`-separated steps, e.g. `layers/id:7/effects/0/amount`. Path strings are a WIRE CONTRACT stored in journals.
+/// Address a layer by id in a journal: a position is stable only while the list is, so `layers/2` replayed after an insert silently edits someone else's layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenePath {
     steps: Vec<Step>,
@@ -49,9 +38,7 @@ impl std::fmt::Display for PathError {
 impl std::error::Error for PathError {}
 
 impl ScenePath {
-    /// Parses `a/b/2/c`. A leading slash is accepted so a JSON pointer pasted
-    /// from elsewhere works, and dots are accepted as separators because the v1
-    /// journal wrote them that way.
+    /// Parses `a/b/2/c`. A leading slash is accepted so a JSON pointer pasted from elsewhere works, and dots are accepted as separators because the v1 journal wrote them that way.
     pub fn parse(text: &str) -> Result<Self, PathError> {
         let normalised = text.trim().trim_start_matches('/').replace('.', "/");
         let mut steps = Vec::new();

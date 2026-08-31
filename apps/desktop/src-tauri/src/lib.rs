@@ -41,20 +41,8 @@ use parking_lot::Mutex;
 use recording::RecordingManager;
 use tauri::{Emitter, Manager};
 
-/// Pull a `.recast` file path out of process argv if the OS launched us
-/// with one via the file association (Windows registry shell-open, macOS
-/// LaunchServices, Linux xdg-open). Returns `None` for normal launches.
-///
-/// Defensive rules:
-/// * Skip `argv[0]` (executable path).
-/// * Skip any arg starting with `-` — covers dev-mode flags (`--port`,
-///   etc.) and the macOS `-psn_NNNN_NNNN` process serial number that
-///   LaunchServices sometimes prepends.
-/// * Match the extension case-insensitively — Windows is case-insensitive
-///   and APFS *can* be case-sensitive, so users may have `.Recast` files.
-/// * Verify the path exists. If a user double-clicks then deletes the file
-///   before we boot, we want to report "no longer exists" instead of
-///   navigating to an editor window that immediately errors.
+/// A `.recast` path from argv when the OS launched us via the file association, else `None`.
+/// Skips `argv[0]` and any `-` flag (dev flags, macOS `-psn_`), matches the extension case-insensitively, and verifies the file still exists.
 fn parse_open_arg(argv: &[String]) -> Option<PathBuf> {
     argv.iter()
         .skip(1)
@@ -68,21 +56,8 @@ fn parse_open_arg(argv: &[String]) -> Option<PathBuf> {
         })
 }
 
-/// Linux (WebKitGTK) only: enable `getUserMedia`/`enumerateDevices` for a
-/// webview and grant the media `permission-request` it raises.
-///
-/// macOS (WKWebView) and Windows (WebView2) expose `navigator.mediaDevices`
-/// as soon as the OS-level privacy gates are satisfied (see `Info.plist` for
-/// the macOS usage strings). WebKitGTK is the odd one out: it ships with
-/// `enable-media-stream` OFF, so `navigator.mediaDevices` is `undefined`
-/// until we flip it — and even then every `getUserMedia` call raises a
-/// `permission-request` that WebKit DENIES by default unless answered.
-///
-/// Applied per-webview and deduped by label (a `OnceLock` set) so it also
-/// covers the `camera-preview` / `device-picker` windows, which the frontend
-/// spawns at runtime via the JS `WebviewWindow` API — they never pass through
-/// `setup()`. Wired from `on_page_load`, which fires for every webview
-/// regardless of how it was created.
+/// Linux only: WebKitGTK ships `enable-media-stream` off, so `navigator.mediaDevices` is undefined until flipped and every `getUserMedia` raises a `permission-request` it denies by default.
+/// Wired from `on_page_load` and deduped by label, so runtime-spawned windows that never pass through `setup()` are covered too.
 #[cfg(target_os = "linux")]
 fn enable_webview_media(webview: &tauri::Webview) {
     use parking_lot::Mutex;
@@ -121,19 +96,8 @@ fn enable_webview_media(webview: &tauri::Webview) {
     }
 }
 
-/// Registers `tauri-plugin-single-instance` on the builder — in release
-/// builds only. In dev (`cargo tauri dev`) the plugin is skipped entirely
-/// so a developer's running iteration of the app doesn't immediately forward
-/// its argv to the installed production binary and exit. The plugin's OS
-/// mutex is keyed on `app.identifier()` from `tauri.conf.json`, which is the
-/// same string in dev and release — without this split the two binaries
-/// are guaranteed to collide.
-///
-/// `release-desktop.yml` and `ci-desktop.yml` build with the release
-/// profile, so this branch fires there. Hot-reload + multi-window dev work
-/// work as expected; the trade-off is that dev *does not* enforce single-
-/// instance, which is acceptable (it's never the right time to die with
-/// "another instance is already running" during local iteration).
+/// Registers `tauri-plugin-single-instance` in release builds only.
+/// Its OS mutex is keyed on `app.identifier()`, identical in dev and release, so without the split a dev run forwards its argv to the installed binary and exits.
 #[cfg(not(debug_assertions))]
 fn install_singleton_plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     // MUST be first: the handler runs inside the second-launched process, where any earlier plugin would already have initialized.

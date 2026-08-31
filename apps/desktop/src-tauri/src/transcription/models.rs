@@ -1,15 +1,5 @@
-//! Caption model registry + verified, resumable-friendly download.
-//!
-//! Models are fetched **directly from HuggingFace** (decided 2026-06-29) into
-//! `app_data_dir/models/<id>/`, sha256-verified when a hash is known. The
-//! download/verify path mirrors `commands/assets.rs` (streamed `.tmp` + atomic
-//! rename) but emits per-byte progress so the UI can show a real bar.
-//!
-//! NOTE ON DATA: every model is a single GGUF file hosted under the
-//! `handy-computer` HuggingFace org (the canonical transcribe.cpp catalog).
-//! Every built-in entry is sha256-pinned and `every_builtin_model_is_hash_pinned`
-//! keeps it that way: an unpinned GGUF is arbitrary bytes handed to a native
-//! parser. `download`/`transcribe` guard against an empty file list.
+//! Caption model registry and verified download from HuggingFace into `app_data_dir/models/<id>/`.
+//! Every built-in is sha256-pinned and a test keeps it so: an unpinned GGUF is arbitrary bytes handed to a native parser.
 
 use std::path::{Path, PathBuf};
 
@@ -72,9 +62,7 @@ pub enum ModelSource {
     Remote,
 }
 
-/// Whether a runtime can actually run in this build, plus a user-facing reason
-/// when it can't. Composed with the device-capability check (`evaluate`) to
-/// decide if a model is offerable.
+/// Whether a runtime can actually run in this build, plus a user-facing reason when it can't. Composed with the device-capability check (`evaluate`) to decide if a model is offerable.
 pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
     match runtime {
         // The on-device engine needs the `ggml` feature, so a no-default-features build reports it unavailable.
@@ -140,9 +128,7 @@ pub struct CaptionModel {
     /// What the model can do beyond plain transcription.
     #[serde(default)]
     pub capabilities: ModelCapabilities,
-    /// How many languages the model covers. `languages` carries `["multi"]` for
-    /// multilingual models rather than 99 entries, so the count is stored
-    /// separately instead of derived from it.
+    /// How many languages the model covers. `languages` carries `["multi"]` for multilingual models rather than 99 entries, so the count is stored separately instead of derived from it.
     #[serde(default)]
     pub language_count: Option<u32>,
     /// Relative speed / accuracy, 0-100, for the picker's comparison bars.
@@ -157,9 +143,7 @@ pub struct CaptionModel {
     pub recommended: bool,
 }
 
-/// Model abilities beyond plain same-language transcription. `streaming` /
-/// `translate` / `lang_detect` are presentation only. `timestamps` is NOT:
-/// see `TimestampGranularity`.
+/// Model abilities beyond plain same-language transcription. `streaming` / `translate` / `lang_detect` are presentation only. `timestamps` is NOT: see `TimestampGranularity`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCapabilities {
@@ -613,9 +597,7 @@ mod tests {
         }
     }
 
-    /// The URL is built from the repo + filename, so a typo in either yields a
-    /// 404 only at download time — on the user's machine, after they clicked.
-    /// Assert the shape here instead.
+    /// The URL is built from the repo + filename, so a typo in either yields a 404 only at download time — on the user's machine, after they clicked. Assert the shape here instead.
     #[test]
     fn every_builtin_url_points_at_its_own_gguf_in_the_handy_org() {
         for m in registry() {

@@ -19,9 +19,7 @@ pub struct BubbleParams {
     pub transform: Affine2,
 }
 
-/// Square in screen PIXELS, sized off `video_w` to match the preview's
-/// `aspect-ratio: 1`, and clamped into the canvas so a hand-edited placement
-/// still yields a valid overlay.
+/// Square in screen PIXELS, sized off `video_w` to match the preview's `aspect-ratio: 1`, and clamped into the canvas so a hand-edited placement still yields a valid overlay.
 pub fn bubble_rect(placement: &CameraPlacement, geometry: CanvasGeometry) -> DestRect {
     let size = (placement.width.clamp(0.02, 1.0) * geometry.video_w as f64)
         .round()

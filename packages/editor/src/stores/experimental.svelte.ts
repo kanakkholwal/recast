@@ -10,7 +10,8 @@ export type ExperimentalFlag =
 	| "silenceDetection"
 	| "selfHosting"
 	| "remoteTranscription"
-	| "browserExportBeta";
+	| "browserExportBeta"
+	| "engineExport";
 
 interface FlagMeta {
 	key: ExperimentalFlag;
@@ -43,6 +44,12 @@ export const FLAG_META: FlagMeta[] = [
 		description:
 			"Render exports through the new browser engine so they match the preview exactly, instead of the FFmpeg compositor. Falls back automatically if your device can't. Early — compare an export before relying on it.",
 	},
+	{
+		key: "engineExport",
+		label: "Native engine export (alpha)",
+		description:
+			"Render desktop exports with the same engine the preview draws, instead of the FFmpeg compositor. Captions, cursor and annotations are pinned to match; colour and blur can still differ slightly. Compare an export before relying on it.",
+	},
 ];
 
 const DEFAULTS: Record<ExperimentalFlag, boolean> = {
@@ -50,6 +57,7 @@ const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	selfHosting: false,
 	remoteTranscription: false,
 	browserExportBeta: false,
+	engineExport: false,
 };
 
 const STORAGE_KEY = "recast-experimental-flags";

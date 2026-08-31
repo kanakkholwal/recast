@@ -1,10 +1,5 @@
-//! Headless CLI branch. Parsed in `main` before the Tauri app boots so agents
-//! and scripts can drive Recast without a running window.
-//!
-//! Enumeration verbs reuse the same functions the UI invokes; control verbs
-//! (status, rec) talk to a running app over the local socket (see control.rs).
-//! Output is YAML at a terminal and JSON when piped or captured, overridable
-//! with `--format`. See docs/cli-automation-plan.md.
+//! Headless CLI branch, parsed before Tauri boots so agents can drive Recast without a window.
+//! Enumeration reuses the UI's own functions; control verbs reach a running app over the local socket.
 
 use std::io::IsTerminal;
 use std::path::PathBuf;
@@ -330,9 +325,7 @@ enum ProjectAction {
         #[arg(long, value_name = "ID")]
         writer_id: String,
     },
-    /// Release the write-lock. By default only the holder can release; pass
-    /// `--force` to evict a stale or wrong-owner lock (use with care — it
-    /// erases the GUI's silent write window).
+    /// Release the write-lock. By default only the holder can release; pass `--force` to evict a stale or wrong-owner lock (use with care — it erases the GUI's silent write window).
     Unlock {
         /// Release even if the lock is held by another id.
         #[arg(long)]
@@ -376,9 +369,7 @@ enum EditorAction {
     /// speed/animations/annotations) instead.
     Set {
         path: String,
-        /// Dotted JSON pointer inside `RenderState`, e.g.
-        /// `borderRadius`, `cursorSize`, `audioSettings.volume`,
-        /// `cursorSettings.size`, `annotations.0.fill`.
+        /// Dotted JSON pointer inside `RenderState`, e.g. `borderRadius`, `cursorSize`, `audioSettings.volume`, `cursorSettings.size`, `annotations.0.fill`.
         #[arg(long, value_name = "DOTTED.PATH")]
         field: String,
         /// JSON value to set. Strings need quoting inside `--value`;
@@ -641,9 +632,7 @@ enum ExportAction {
         /// effect when no transcript exists in the render state.
         #[arg(long)]
         burn_captions: bool,
-        /// Emit a sidecar subtitles file next to the export:
-        /// `vtt` or `srt`. Implies a transcript must exist; empty
-        /// transcripts yield an empty sidecar.
+        /// Emit a sidecar subtitles file next to the export: `vtt` or `srt`. Implies a transcript must exist; empty transcripts yield an empty sidecar.
         #[arg(long, value_name = "vtt|srt")]
         caption_sidecar: Option<String>,
         /// Override the GIF frame rate (default = quality-profile gif_fps).
@@ -812,9 +801,7 @@ struct ShotArgs {
     base64: bool,
 }
 
-/// CLI args for the `transcribe` verb. Mirrors the flag shape the smoke test
-/// script (`scripts/release/smoke-test-transcription.ps1`) expects — keep
-/// both in lockstep.
+/// CLI args for the `transcribe` verb. Mirrors the flag shape the smoke test script (`scripts/release/smoke-test-transcription.ps1`) expects — keep both in lockstep.
 #[derive(clap::Args)]
 struct TranscribeArgs {
     /// Audio file to transcribe (any format FFmpeg can read).
@@ -1780,9 +1767,7 @@ fn control(cli: &Cli, method: &str, params: Value) -> Result<(), String> {
     emit(&value, cli.format)
 }
 
-/// Fetch the profile list and print the single entry matching `id` (by id, or
-/// case-insensitive name). Filtering client-side keeps the control surface to
-/// one `profile.list` method.
+/// Fetch the profile list and print the single entry matching `id` (by id, or case-insensitive name). Filtering client-side keeps the control surface to one `profile.list` method.
 fn show_profile(cli: &Cli, id: &str) -> Result<(), String> {
     let snapshot =
         crate::control::send("profile.list", Value::Null, !cli.no_launch, cli.timeout_ms)?;

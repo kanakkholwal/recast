@@ -48,9 +48,7 @@ fn video_media_type() -> Option<&'static NSString> {
 }
 
 /// Every video capture device AVFoundation offers.
-///
-/// A discovery session rather than the deprecated `devicesWithMediaType`, which
-/// stops reporting external cameras on recent systems.
+/// A discovery session rather than the deprecated `devicesWithMediaType`, which stops reporting external cameras on recent systems.
 fn discover() -> Retained<NSArray<AVCaptureDevice>> {
     let mut kinds = Vec::with_capacity(2);
     // Read as raw pointers: `AVCaptureDeviceTypeExternal` is macOS 14 and weak-linked, so on macOS 13 the symbol is null.
@@ -76,9 +74,7 @@ fn discover() -> Retained<NSArray<AVCaptureDevice>> {
 }
 
 /// The modes one device advertises, largest first.
-///
-/// Reported as what capturekit delivers rather than as the device's own
-/// subtype: the session converts every format to BGRA on the way out.
+/// Reported as what capturekit delivers rather than as the device's own subtype: the session converts every format to BGRA on the way out.
 fn modes(device: &AVCaptureDevice) -> Vec<CameraFormat> {
     let mut modes: Vec<CameraFormat> = Vec::new();
     for format in unsafe { device.formats() }.iter() {
@@ -151,9 +147,7 @@ fn device_by_id(id: &CameraId) -> Result<Retained<AVCaptureDevice>> {
 }
 
 /// Pin the device to the mode closest to `size` without exceeding it.
-///
-/// Left alone when nothing fits, so the session keeps whatever the device came
-/// up in rather than being forced into a mode the caller never asked for.
+/// Left alone when nothing fits, so the session keeps whatever the device came up in rather than being forced into a mode the caller never asked for.
 fn pin_format(device: &AVCaptureDevice, size: (u32, u32)) {
     let formats = unsafe { device.formats() };
     let chosen = formats
@@ -171,11 +165,8 @@ fn pin_format(device: &AVCaptureDevice, size: (u32, u32)) {
     unsafe { device.unlockForConfiguration() };
 }
 
-/// Ask the output for BGRA rather than the device's native `420v`, so every
-/// source in this crate delivers one pixel format.
-///
-/// The key is `kCVPixelBufferPixelFormatTypeKey`, a `CFString` that is toll-free
-/// bridged to the `NSString` this dictionary wants.
+/// Ask the output for BGRA rather than the device's native `420v`, so every source in this crate delivers one pixel format.
+/// The key is `kCVPixelBufferPixelFormatTypeKey`, a `CFString` that is toll-free bridged to the `NSString` this dictionary wants.
 fn bgra_settings() -> Retained<NSDictionary<NSString, AnyObject>> {
     let key: &NSString = unsafe { &*core::ptr::from_ref(kCVPixelBufferPixelFormatTypeKey).cast() };
     let value = NSNumber::new_u32(BGRA);
@@ -200,9 +191,7 @@ define_class!(
             accept_video(self.ivars(), sample);
         }
 
-        /// A dropped frame is the device outrunning the consumer, which the slot
-        /// already handles by keeping only the newest. Worth counting, not worth
-        /// failing.
+        /// A dropped frame is the device outrunning the consumer, which the slot already handles by keeping only the newest. Worth counting, not worth failing.
         #[unsafe(method(captureOutput:didDropSampleBuffer:fromConnection:))]
         fn did_drop(
             &self,

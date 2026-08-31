@@ -69,20 +69,8 @@ pub struct ProjectMetadata {
 }
 
 impl ProjectMetadata {
-    /// Duration of the recorded *media*, in seconds — not of the capture
-    /// session.
-    ///
-    /// `stats.duration_ms` (and, for projects written before this split,
-    /// `video.duration_ms`) is wall-clock elapsed time. The encoder writes CFR
-    /// at `nominal_fps`, so whenever the capture dropped frames the file is
-    /// SHORTER than the wall clock: a 27.102 s session that encoded 3195 frames
-    /// at 120 fps produces exactly 26.625 s of video. Seeding `trim_end` from
-    /// the wall clock therefore wrote a render state the export validator
-    /// (which probes the real file) rejects as `trim_end_exceeds_source`.
-    ///
-    /// `encoded_frames / nominal_fps` is that CFR identity, so this matches
-    /// ffprobe to the microsecond without paying for a probe spawn. Falls back
-    /// to the stored duration when the frame count is unavailable.
+    /// Duration of the recorded media, not of the capture session: CFR encoding makes a dropped-frame recording SHORTER than the wall clock.
+    /// `encoded_frames / nominal_fps` matches ffprobe without a probe spawn; seeding `trim_end` from wall clock produced `trim_end_exceeds_source`.
     pub fn media_duration_secs(&self) -> f64 {
         if self.stats.encoded_frames > 0 && self.stats.nominal_fps > 0 {
             self.stats.encoded_frames as f64 / self.stats.nominal_fps as f64

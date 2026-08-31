@@ -1,11 +1,5 @@
-//! Pre-renders a static rounded-rectangle alpha mask as a PNG so FFmpeg's
-//! `alphamerge` filter can clip the source video's corners during export. The
-//! preview path uses a WebGL shader for this; for export we generate the same
-//! shape once and reuse it as a `-loop 1` image input.
-//!
-//! The PNG encodes coverage in the RGB channels (white = opaque, black =
-//! transparent) because `alphamerge` consumes the **luminance** of the second
-//! input as the alpha plane of the first. Alpha channel itself is set to 255.
+//! Pre-renders the rounded-corner mask as a PNG so FFmpeg's `alphamerge` can clip the source during export.
+//! Coverage is encoded in RGB, not alpha, because `alphamerge` consumes the second input's luminance.
 
 use std::fs;
 use std::path::PathBuf;
@@ -102,9 +96,7 @@ pub struct DropShadowRequest {
     pub video_height: u32,
     /// Padding around the video rect inside the comp.
     pub padding: u32,
-    /// Border radius in pixels applied to the video rect (preview also adds
-    /// `spread * 0.5` so the shadow has slightly softer corners than the
-    /// rect itself; we replicate that).
+    /// Border radius in pixels applied to the video rect (preview also adds `spread * 0.5` so the shadow has slightly softer corners than the rect itself; we replicate that).
     pub video_border_radius: f64,
     /// Soft-edge falloff distance. Clamped to ≥ 0.5 to match the shader.
     pub blur: f64,

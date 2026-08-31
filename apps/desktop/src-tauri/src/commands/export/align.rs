@@ -1,11 +1,7 @@
-//! Filter fragments that shift a companion capture track onto the screen
-//! video's timeline. Each capture device (loopback, microphone, webcam) starts
-//! at its own instant, so `recording::TrackOffsets` records how far each one
-//! lags video frame 0 and this turns that into FFmpeg.
+//! Turns `recording::TrackOffsets` into the FFmpeg fragments that shift a companion track onto the screen video's timeline.
+//! Each device (loopback, microphone, webcam) starts at its own instant, so each lags video frame 0 differently.
 
-/// Below this the correction is inaudible and invisible, and emitting a filter
-/// would only cost a resample. ITU-R BT.1359 puts A/V detectability near 45 ms;
-/// 5 ms leaves a wide margin.
+/// Below this the correction is inaudible and invisible, and emitting a filter would only cost a resample. ITU-R BT.1359 puts A/V detectability near 45 ms; 5 ms leaves a wide margin.
 const MIN_CORRECTION_MS: i64 = 5;
 
 /// Above this the measurement is not believable (a stalled capture thread, a

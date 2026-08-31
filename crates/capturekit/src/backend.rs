@@ -15,7 +15,6 @@ pub(crate) struct RawFrame<'a> {
     /// Regions that changed, empty when the backend cannot say.
     pub dirty: DirtyRects,
     /// Where the cursor was when this frame was produced, on the same clock.
-    ///
     /// `None` from a backend whose `Capabilities::cursor_samples` is false.
     pub cursor: Option<CursorSample>,
     /// The same frame left on the GPU, when the caller asked for handles.
@@ -47,9 +46,7 @@ pub(crate) trait FrameSource: Send {
     }
 
     /// Wait for the next frame.
-    ///
-    /// Push backends serve this from their delivery callback; pull backends poll.
-    /// Returns [`capturekit_core::CaptureError::Timeout`] if none arrives.
+    /// Push backends serve this from their delivery callback; pull backends poll. Returns [`capturekit_core::CaptureError::Timeout`] if none arrives.
     fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>>;
 
     /// Release the source. Called on drop, and safe to call twice.

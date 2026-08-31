@@ -1,8 +1,5 @@
-//! Repeated takes holding both directions, in the shape a recorder uses them.
-//!
-//! Each direction gets its own thread that opens the device, reads until told to
-//! stop, and releases. A recorder does this once per take, so take two must be
-//! as safe as take one.
+//! Repeated takes holding both directions, each on its own thread that opens, reads and releases.
+//! A recorder does this once per take, so take two must be as safe as take one.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};

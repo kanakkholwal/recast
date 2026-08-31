@@ -1,9 +1,7 @@
 use core::time::Duration;
 
 /// A capture instant in nanoseconds on the source's own monotonic clock.
-///
-/// Nanoseconds and `i64` because that is what every backend here reports:
-/// QPC ticks, `CMTime`, and PipeWire's `pw_time` all convert without loss.
+/// Nanoseconds and `i64` because that is what every backend here reports: QPC ticks, `CMTime`, and PipeWire's `pw_time` all convert without loss.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
@@ -26,9 +24,7 @@ impl Timestamp {
     }
 
     /// Build a timestamp from a tick count and its frequency, as QPC reports.
-    ///
-    /// Multiplies before dividing, so a 10 MHz clock does not lose the sub-tick
-    /// remainder the way `ticks / freq * 1e9` would.
+    /// Multiplies before dividing, so a 10 MHz clock does not lose the sub-tick remainder the way `ticks / freq * 1e9` would.
     #[must_use]
     pub fn from_ticks(ticks: i64, ticks_per_second: i64) -> Self {
         if ticks_per_second <= 0 {

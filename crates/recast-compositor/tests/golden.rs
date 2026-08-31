@@ -1,18 +1,5 @@
-//! Committed frames for the compositor.
-//!
-//! The property tests next door assert that a seam moved or a corner darkened.
-//! They cannot see a half-pixel shift across the whole frame, a transfer
-//! function applied twice, or a feature that quietly stopped drawing while its
-//! own assertion still passed. That is what a golden is for.
-//!
-//! These are also the reference the WASM arm is held to: `packages/engine/test/golden`
-//! renders the same fixtures through the browser build and compares them to the
-//! same PNGs. Both arms read `goldens/fixtures.json` and the committed
-//! `source.png` / `background.png`, so neither can drift into testing a
-//! different scene than the other.
-//!
-//! `UPDATE_GOLDENS=1 cargo test -p recast-compositor --test golden` rewrites
-//! them. Read the diff before committing it.
+//! Committed frames: the property tests next door cannot see a half-pixel shift or a feature that quietly stopped drawing.
+//! The WASM arm is held to these same PNGs. `UPDATE_GOLDENS=1` rewrites them; read the diff before committing it.
 
 use std::path::{Path, PathBuf};
 

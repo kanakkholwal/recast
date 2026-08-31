@@ -1,6 +1,5 @@
-/// A positioned reader over decoded audio, in the source's own rate and channel
-/// count. Random access rather than streaming, because the mixer places clips on
-/// an output timeline and reads them out of order.
+/// A positioned reader over decoded audio, in the source's own rate and channel count.
+/// Random access rather than streaming, because the mixer places clips on an output timeline and reads them out of order.
 pub trait SampleSource: Send {
     fn sample_rate(&self) -> u32;
     fn channels(&self) -> u16;
@@ -67,9 +66,7 @@ impl SampleSource for Samples {
 }
 
 /// Folds any channel count into stereo.
-///
-/// Mono goes to both sides at unity, not at -3 dB: a mono microphone is the
-/// common case and halving it would quietly change every existing export.
+/// Mono goes to both sides at unity, not at -3 dB: a mono microphone is the common case and halving it would quietly change every existing export.
 pub fn to_stereo(frame: &[f32], out: &mut [f32; 2]) {
     match frame.len() {
         0 => *out = [0.0, 0.0],

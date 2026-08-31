@@ -196,19 +196,8 @@ const MIN_DRIFT_RATIO: f64 = 0.0002;
 /// thread, a device reset). Correcting by it would wreck an otherwise fine take.
 const MAX_DRIFT_RATIO: f64 = 0.05;
 
-/// The sample rate the device ACTUALLY delivered, when it differs enough from
-/// the declared rate to matter.
-///
-/// A capture device runs on its own crystal. Writing `declared` into the header
-/// while the device delivers at a slightly different rate makes the track drift
-/// against the video for the whole recording — the picture stays locked to the
-/// frame pacer, so the error accumulates instead of cancelling. Re-declaring the
-/// measured rate makes the file play back over exactly the wall-clock span it
-/// was captured in; the pitch shift is the drift ratio, which at these
-/// magnitudes is far below audible.
-///
-/// `None` means keep the declared rate: too small to matter, or too large to
-/// believe.
+/// The rate the device actually delivered, when it differs from the declared one enough to matter; `None` keeps the declared rate.
+/// A capture crystal drifts against the frame pacer for the whole recording, so re-declaring the measured rate trades an inaudible pitch shift for sync.
 pub fn measured_sample_rate(frames: u64, span: Duration, declared: u32) -> Option<u32> {
     let secs = span.as_secs_f64();
     if frames == 0 || secs <= 0.0 || declared == 0 {
@@ -222,11 +211,8 @@ pub fn measured_sample_rate(frames: u64, span: Duration, declared: u32) -> Optio
     Some(actual.round() as u32)
 }
 
-/// Sample bytes a WAV's header claims, or `None` when the file is unreadable
-/// or is not a RIFF/WAVE at all.
-///
-/// Reads only the 44-byte header, so this is a stat-cost check rather than an
-/// ffprobe spawn.
+/// Sample bytes a WAV's header claims, or `None` when the file is unreadable or is not a RIFF/WAVE at all.
+/// Reads only the 44-byte header, so this is a stat-cost check rather than an ffprobe spawn.
 pub fn wav_data_bytes(path: &Path) -> Option<u64> {
     use std::io::Read;
     let mut file = File::open(path).ok()?;

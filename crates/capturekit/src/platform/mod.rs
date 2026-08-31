@@ -50,9 +50,7 @@ impl OpenOptions {
         self.pacing.fps()
     }
 
-    /// Frames per second worth reading back, which a self-pacing caller states
-    /// even though it asked for no pacing.
-    ///
+    /// Frames per second worth reading back, which a self-pacing caller states even though it asked for no pacing.
     /// Only WGC reads it: every other backend delivers into host memory already.
     #[cfg(windows)]
     pub(crate) fn readback_rate(&self) -> Option<u32> {

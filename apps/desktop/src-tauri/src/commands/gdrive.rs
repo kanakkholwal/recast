@@ -1,24 +1,5 @@
-//! Google Drive integration: connect/disconnect, status, resumable upload.
-//!
-//! Auth: OAuth 2.0 Authorization Code + PKCE via loopback redirect — the
-//! standard "desktop app" flow Google blesses for installed clients. The
-//! refresh token is persisted in the OS keyring (DPAPI on Windows, Keychain
-//! on macOS, SecretService on Linux); access tokens live only in memory and
-//! are refreshed on demand.
-//!
-//! Upload: files are uploaded into a `/Recast/` folder under the user's My
-//! Drive. The folder is created on first upload. Uploads use the resumable
-//! protocol so we can stream chunks and emit per-chunk progress without
-//! holding the whole file in memory. Files stay **private** — we do not
-//! issue `permissions.create`. The returned `webViewLink` is the Drive UI
-//! URL the owner can use to view the file or share it manually.
-//!
-//! Scopes:
-//!   * `drive.file` — read/write only the files this app creates. Least
-//!     privileged option; avoids the "restricted scope" Google verification
-//!     bar that full `drive` access would require.
-//!   * `userinfo.email` — populate the connected-account display in
-//!     Settings.
+//! Google Drive connect, status and resumable upload into a `/Recast/` folder.
+//! Scoped to `drive.file` so uploads stay private and Google's restricted-scope verification never applies.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -341,16 +322,8 @@ fn html_escape(value: &str) -> String {
     out
 }
 
-/// Renders the loopback callback page shown in the user's browser after
-/// the OAuth redirect lands. Styling is fully self-contained (no external
-/// CSS) and mirrors Recast's in-app design language: dark canvas, glass
-/// card with subtle border + shadow, primary-green accent, system font
-/// stack with deliberate letter-spacing. The page picks light or dark
-/// mode from the OS via `prefers-color-scheme` so it doesn't jar a user
-/// whose browser is in light mode.
-///
-/// Two states: success (consent approved, code captured) and error (user
-/// denied, or Google returned an `error=…` query param).
+/// The loopback callback page shown after the OAuth redirect, self-contained CSS following `prefers-color-scheme`.
+/// Two states: consent approved with a captured code, or an error when the user denied or Google returned one.
 fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
     // CSS custom properties plus a `prefers-color-scheme` swap, so one page serves both palettes.
     let success_icon = "M4.5 12.75l6 6 9-13.5";

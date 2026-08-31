@@ -199,6 +199,13 @@ mod live {
             max_size: None,
             captions: None,
             audio: true,
+            source: recast_export::SourceInfo {
+                width: W,
+                height: H,
+                fps: f64::from(FPS),
+            },
+            ffmpeg: None,
+            force_ffmpeg: false,
         }
     }
 

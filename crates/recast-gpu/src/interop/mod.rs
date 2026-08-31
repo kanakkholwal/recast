@@ -131,12 +131,8 @@ impl SharedFence {
         backend::queue_wait(ctx, &self.inner, value)
     }
 
-    /// Makes this device's queue signal `value` once everything already
-    /// submitted has finished. Does not block the CPU.
-    ///
-    /// The mirror of [`SharedFence::queue_wait`], for when we are the producer:
-    /// without it the consuming API reads whatever was in the surface before,
-    /// with no error anywhere.
+    /// Makes this device's queue signal `value` once everything already submitted has finished. Does not block the CPU.
+    /// The mirror of [`SharedFence::queue_wait`], for when we are the producer: without it the consuming API reads whatever was in the surface before, with no error anywhere.
     pub fn queue_signal(&self, ctx: &GpuContext, value: u64) -> Result<(), GpuError> {
         backend::queue_signal(ctx, &self.inner, value)
     }

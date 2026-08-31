@@ -1,18 +1,5 @@
-//! Typed error for the Tauri IPC boundary.
-//!
-//! Commands historically returned `Result<T, String>`, building the message ad
-//! hoc with `format!("{e:#}")` / `.to_string()` / string literals. That gave the
-//! frontend nothing to branch on — only a string to match. [`AppError`] replaces
-//! those with a typed error that carries a stable machine [`AppError::code`],
-//! while its `Serialize` impl stays a plain string so the existing frontend
-//! `String(err)` sites keep working unchanged.
-//!
-//! Migration is mechanical: a command returns [`AppResult<T>`] and uses `?`
-//! (an `anyhow::Error`/`io::Error` converts automatically) or
-//! [`AppError::msg`] for a contextual message. When the whole command layer is
-//! migrated, flipping the `Serialize` impl to a structured `{code, message}`
-//! object (plus a frontend invoke wrapper) unlocks per-kind error handling in
-//! one coordinated change — every error already flows through this one type.
+//! Typed error for the Tauri IPC boundary, carrying a stable machine [`AppError::code`].
+//! `Serialize` stays a plain string so existing frontend `String(err)` sites keep working until the layer is fully migrated.
 
 use serde::{Serialize, Serializer};
 
@@ -23,9 +10,7 @@ pub enum AppError {
     /// don't (yet) have a more specific kind.
     #[error("{0}")]
     Message(String),
-    /// Wraps an [`anyhow`] chain. Display uses the alternate `{:#}` form so the
-    /// full `.context()` chain is preserved (matching the old
-    /// `format!("{e:#}")` sites).
+    /// Wraps an [`anyhow`] chain. Display uses the alternate `{:#}` form so the full `.context()` chain is preserved (matching the old `format!("{e:#}")` sites).
     #[error("{0:#}")]
     Anyhow(#[from] anyhow::Error),
     /// A filesystem/IO error.

@@ -1,16 +1,5 @@
 //! Cross-platform screen, window and camera capture.
-//!
-//! A screenshot and a recording are the same acquisition with different
-//! lifetimes, so [`shot`] and [`capturer`] drive one backend per platform. A fix
-//! to stale frames, cropping, colour or permissions lands on both.
-//!
-//! ```no_run
-//! let display = capturekit::displays()?.remove(0);
-//! let image = capturekit::shot(capturekit::Target::Display(display.id))?;
-//! # Ok::<(), capturekit::CaptureError>(())
-//! ```
-//!
-//! Vocabulary types live in [`capturekit_core`] and are re-exported here.
+//! A screenshot and a recording are one acquisition with different lifetimes, so [`shot`] and [`capturer`] share a backend per platform.
 
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -68,17 +57,13 @@ pub fn displays() -> Result<Vec<Display>> {
 }
 
 /// Every window a user would recognise and could sensibly capture.
-///
-/// Excludes tool windows and title-less shell scaffolding, of which any desktop
-/// has dozens.
+/// Excludes tool windows and title-less shell scaffolding, of which any desktop has dozens.
 pub fn windows() -> Result<Vec<Window>> {
     os::windows()
 }
 
 /// Every camera available to capture.
-///
-/// Each device is opened briefly to read the modes it advertises, then shut down
-/// again, so listing cameras does not leave one powered.
+/// Each device is opened briefly to read the modes it advertises, then shut down again, so listing cameras does not leave one powered.
 pub fn cameras() -> Result<Vec<Camera>> {
     os::cameras()
 }
@@ -90,15 +75,12 @@ pub fn permission(kind: PermissionKind) -> Permission {
 }
 
 /// Prompt for a capability, where the platform has a prompt to show.
-///
-/// Blocks while the user decides. A `Denied` answer is final until they change it
-/// in system settings, which is why [`Permission::is_requestable`] exists.
+/// Blocks while the user decides. A `Denied` answer is final until they change it in system settings, which is why [`Permission::is_requestable`] exists.
 pub fn request_permission(kind: PermissionKind) -> Permission {
     os::request_permission(kind)
 }
 
 /// Capture one frame: acquire, grab, release.
-///
 /// Discards stale frames first. See [`Warmup`] for why that is not optional.
 pub fn shot(target: Target) -> Result<Image> {
     shot_with(target, &ShotOptions::default())
@@ -123,7 +105,6 @@ pub fn audio_devices() -> Result<Vec<AudioDevice>> {
 }
 
 /// Open a microphone or line input.
-///
 /// Captures the system default unless [`AudioCapturerBuilder::device`] names one.
 #[must_use]
 pub fn audio_input() -> AudioCapturerBuilder {

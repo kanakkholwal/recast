@@ -39,9 +39,7 @@ struct Shelf {
 }
 
 /// A growing single-channel coverage atlas for shaped glyphs.
-///
-/// Width is fixed at construction so growth is a plain buffer extend and every
-/// packed coordinate stays valid; only the height doubles.
+/// Width is fixed at construction so growth is a plain buffer extend and every packed coordinate stays valid; only the height doubles.
 pub struct GlyphAtlas {
     width: u32,
     height: u32,
@@ -85,9 +83,7 @@ impl GlyphAtlas {
         self.generation
     }
 
-    /// True once a glyph has been refused for want of room. The caller decides
-    /// when to `reset`, because doing it mid-frame would invalidate coordinates
-    /// already handed out.
+    /// True once a glyph has been refused for want of room. The caller decides when to `reset`, because doing it mid-frame would invalidate coordinates already handed out.
     pub fn overflowed(&self) -> bool {
         self.overflowed
     }

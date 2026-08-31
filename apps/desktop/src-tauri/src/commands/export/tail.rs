@@ -1,8 +1,5 @@
-//! Output-side arguments appended after the filter graph and before the codec:
-//! the duration cap, `-shortest`, and license metadata.
-//!
-//! Split out of `run_export_job`. Nothing here pushes an `-i`, so it is free of
-//! the input-index arithmetic the rest of that function is threaded through.
+//! Output-side args after the filter graph and before the codec: duration cap, `-shortest`, license metadata.
+//! Nothing here pushes an `-i`, so it is free of the input-index arithmetic threaded through the rest of the export.
 
 use crate::commands::export::cuts_speed::{output_duration_cap, SpeedSegment};
 use crate::commands::types::ExportRequest;

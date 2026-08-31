@@ -1,12 +1,5 @@
-//! Turn sampled frames into a screen-state timeline.
-//!
-//! Each kept frame is OCR'd into a list of elements (one per text line), then
-//! temporally-adjacent frames whose text is near-identical collapse into a single
-//! span. The element shape mirrors OmniParser's `parsed_content_list`: an id, a
-//! kind, a NORMALIZED (0..1) box, the text, and which engine read it. Normalized
-//! coordinates are resolution-independent, so a text-only tool-calling model can
-//! reason about "the element at these fractions" regardless of the recording's
-//! size (the UI-TARS / OS-Atlas convention).
+//! Sampled frames become OCR'd elements, then temporally adjacent near-identical frames collapse into spans.
+//! Boxes are normalized 0..1 (the OmniParser/UI-TARS convention) so a text-only model reasons independently of resolution.
 
 use serde::Serialize;
 
@@ -58,9 +51,7 @@ pub struct VideoTextTimeline {
 }
 
 /// Counters and per-stage timings for one read.
-///
-/// `build_timeline` fills in what it knows (the frames it read, the elements it
-/// found); the caller that owns the whole pass fills in the rest.
+/// `build_timeline` fills in what it knows (the frames it read, the elements it found); the caller that owns the whole pass fills in the rest.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrStats {

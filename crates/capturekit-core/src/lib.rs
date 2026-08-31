@@ -1,9 +1,5 @@
-//! Vocabulary types shared by every capturekit backend.
-//!
-//! Pure: no OS calls, no `unsafe`, no allocation beyond the enumeration results.
-//! Everything a backend would otherwise reimplement per platform (stride and
-//! buffer arithmetic, crop fitting, timestamp monotonicity) lives here once and
-//! is tested on any host, with or without a display.
+//! Vocabulary types shared by every capturekit backend. Pure: no OS calls, no `unsafe`.
+//! Stride arithmetic, crop fitting and timestamp monotonicity live here once and test on any host, with or without a display.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]

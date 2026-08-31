@@ -273,9 +273,7 @@ struct ShapedWord {
     px: f64,
 }
 
-/// An absent animation predates progressive highlight, so it resolves to
-/// `active` rather than to the current default. Mirrors
-/// `resolveCaptionAnimation`.
+/// An absent animation predates progressive highlight, so it resolves to `active` rather than to the current default. Mirrors `resolveCaptionAnimation`.
 fn resolved_animation(style: &CaptionStyle) -> CaptionAnimation {
     match &style.animation {
         Some(anim) => {
@@ -399,9 +397,7 @@ fn push_word(
     }
 }
 
-/// A placed glyph awaiting its uv. Packing another glyph can grow the atlas,
-/// which changes the height every uv is divided by, so they are all resolved
-/// once the last insert is done.
+/// A placed glyph awaiting its uv. Packing another glyph can grow the atlas, which changes the height every uv is divided by, so they are all resolved once the last insert is done.
 struct PendingQuad {
     x: f32,
     y: f32,

@@ -1,31 +1,5 @@
-//! Register (or remove) the `recast` binary on the user's PATH so the CLI is
-//! invocable as a bare `recast` command.
-//!
-//! OS-agnostic surface, per-OS mechanics:
-//! - **Windows**: copy the binary to `%LOCALAPPDATA%\com.kanakkholwal.recast\bin\recast.exe`
-//!   (stable per-user install — survives dev rebuilds), then add that
-//!   folder to the user PATH env var (`HKCU\Environment\Path`) and broadcast
-//!   `WM_SETTINGCHANGE`. `uninstall` deletes the copy AND removes the
-//!   registry entry, so the CLI is fully gone.
-//! - **macOS / Linux**: copy the binary to
-//!   `~/.local/share/com.kanakkholwal.recast/bin/recast` (per-user, no
-//!   sudo) and symlink `~/.local/bin/recast` to it. Shell PATH is updated
-//!   via a guarded block on `~/.zprofile`/`~/.zshrc` (macOS) or
-//!   `~/.bashrc`/`~/.zshrc`/`~/.profile`/`~/.bash_profile` (Linux).
-//!   `uninstall` deletes both the copy and the symlink, and reverts the
-//!   rc blocks.
-//!
-//! **Why not symlink the dev binary directly?** In dev mode the binary
-//! lives at `<repo>/apps/desktop/src-tauri/target/debug/recast` and
-//! gets replaced on every `cargo tauri dev` rebuild. Symlinking to that
-//! path leaves `recast` resolvable even after `uninstall`, because the
-//! dev binary (and any unrelated PATH entry to its parent dir) persists
-//! independently of our installer. Copying to a stable, recast-owned
-//! directory makes uninstall fully effective.
-//!
-//! Shared by the `recast install`/`uninstall` CLI verbs, the in-app
-//! settings panel, and the first-launch auto-install hook in
-//! `lib.rs::run`.
+//! Puts the `recast` binary on the user's PATH, per-user and without sudo.
+//! Copies rather than symlinks the dev binary, which `cargo tauri dev` replaces and which would survive `uninstall`.
 
 use serde::Serialize;
 #[cfg(unix)]
@@ -296,9 +270,7 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Apply the install/uninstall block edits to whichever rc files exist on
-/// this platform. Returns the list of changes so the caller can surface a
-/// per-file status in the UI.
+/// Apply the install/uninstall block edits to whichever rc files exist on this platform. Returns the list of changes so the caller can surface a per-file status in the UI.
 #[cfg(unix)]
 fn apply_rc_files(action: RcAction) -> Vec<RcFileChange> {
     let candidates: Vec<PathBuf> = shell_rc_candidates()

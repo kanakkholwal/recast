@@ -107,9 +107,7 @@ pub struct CursorSprite<'a> {
     pub hotspot: [f32; 2],
 }
 
-/// The decoded wallpaper or image background. Separate from `LayerInput`
-/// because it is a static asset that is cover-fitted, so its own size matters
-/// and a decoded frame's never does.
+/// The decoded wallpaper or image background. Separate from `LayerInput` because it is a static asset that is cover-fitted, so its own size matters and a decoded frame's never does.
 pub struct BackgroundImage<'a> {
     pub view: &'a wgpu::TextureView,
     pub width: u32,
@@ -371,9 +369,7 @@ impl Compositor {
     }
 
     /// A destination for [`Compositor::decode_source`], sized to one frame.
-    ///
-    /// The caller owns it and should keep it across frames: reallocating a
-    /// full-resolution float target every frame is the expensive part.
+    /// The caller owns it and should keep it across frames: reallocating a full-resolution float target every frame is the expensive part.
     pub fn source_texture(&self, width: u32, height: u32) -> wgpu::Texture {
         self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("recast-source"),
@@ -872,9 +868,7 @@ impl Compositor {
         stats
     }
 
-    /// Draw order is `(z_index, insertion)`, so a blur has to interrupt the
-    /// batch rather than be hoisted: it must see everything painted before it
-    /// and nothing painted after.
+    /// Draw order is `(z_index, insertion)`, so a blur has to interrupt the batch rather than be hoisted: it must see everything painted before it and nothing painted after.
     fn draw_annotations(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -903,9 +897,7 @@ impl Compositor {
         self.draw_shape_run(encoder, working, &run);
     }
 
-    /// Skipped, not drawn as a placeholder, while the host is still decoding the
-    /// asset: an editor-only dashed box baked into an export would be worse than
-    /// a late image.
+    /// Skipped, not drawn as a placeholder, while the host is still decoding the asset: an editor-only dashed box baked into an export would be worse than a late image.
     fn draw_annotation_image(
         &self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1569,9 +1561,7 @@ fn card_uniform(
     }
 }
 
-/// Streak length in source UV. Velocity-driven, so the blur fires during a ramp
-/// and vanishes on the hold; `MAX_STREAK` keeps a fast ramp from smearing the
-/// whole frame.
+/// Streak length in source UV. Velocity-driven, so the blur fires during a ramp and vanishes on the hold; `MAX_STREAK` keeps a fast ramp from smearing the whole frame.
 fn streak_length(layer: &LayerParams) -> f32 {
     const MAX_STREAK: f32 = 0.35;
     const VELOCITY_SCALE: f32 = 0.08;

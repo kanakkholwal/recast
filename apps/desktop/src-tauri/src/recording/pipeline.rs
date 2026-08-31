@@ -143,33 +143,8 @@ fn stale_warning_due(stale_for: Duration, warnings_emitted: u32) -> bool {
     stale_for >= STALE_FIRST_WARN + STALE_REPEAT_WARN * warnings_emitted
 }
 
-/// Spawn the capture + frame-pacer loop.
-///
-/// Why this is a frame pacer, not a "capture as fast as DXGI delivers" loop:
-/// the encoder declares the input rate to FFmpeg as `-framerate {fps}`, so
-/// every frame we push contributes 1/fps seconds of *video PTS*, regardless
-/// of when it was captured in wall-clock time. DXGI Desktop Duplication
-/// only delivers a new frame when the desktop actually changes — for a
-/// static screen that's < 1 fps. If we'd push frames at DXGI's natural
-/// rate, a 10-second recording with little motion would encode as a 1-2
-/// second video, while the cursor track (timestamped from a wall-clock
-/// `Instant`) still spans 10 s. The editor would then race through the
-/// entire cursor performance in the compressed playback duration —
-/// exactly the "everything happens in 5 seconds" symptom.
-///
-/// To lock playback time to wall-clock time, this loop:
-/// 1. Holds a single `last_frame` cache (the most recent captured texture).
-/// 2. Polls DXGI non-blocking (`AcquireNextFrame(0)`) every iteration and
-///    drains any new frames into the cache, so we always emit the freshest
-///    pixels available at the tick instant.
-/// 3. Emits exactly `target_fps` frames per real-time second to the
-///    pipeline using a deadline scheduler. When DXGI has no new frame, we
-///    duplicate the cached one — the video shows a still during static
-///    desktop, which is correct.
-///
-/// Result: wall-clock seconds == video PTS seconds == cursor track
-/// seconds. Preview and rendered MP4 stay in lockstep with the cursor
-/// track regardless of how often the desktop redraws.
+/// Capture and frame-pacer loop, emitting exactly `target_fps` frames per real-time second from a cached last frame.
+/// Pushing at DXGI's natural rate instead would compress a static 10s recording to 1-2s of video while the cursor track still spans 10s.
 pub struct CaptureLoop {
     pub stop_flag: Arc<std::sync::atomic::AtomicBool>,
     pub pause_flag: Arc<std::sync::atomic::AtomicBool>,
@@ -191,9 +166,7 @@ pub struct CaptureLoop {
 }
 
 /// Hand one frame to the writer and count it.
-///
-/// The count lives here rather than in a sink because every writer owes the
-/// same number: what the loop decided to record.
+/// The count lives here rather than in a sink because every writer owes the same number: what the loop decided to record.
 fn emit(
     sink: &mut Box<dyn FrameSink>,
     frame: &CapturedFrame,
@@ -207,10 +180,7 @@ fn emit(
 }
 
 /// How long an `OnChange` poll blocks for.
-///
-/// Short enough that stop, pause and a capture notice are still handled
-/// promptly; long enough that an idle desktop parks in the backend instead of
-/// spinning a core.
+/// Short enough that stop, pause and a capture notice are still handled promptly; long enough that an idle desktop parks in the backend instead of spinning a core.
 const ON_CHANGE_POLL: Duration = Duration::from_millis(4);
 
 pub fn spawn_capture_loop(
@@ -540,9 +510,7 @@ mod pacer_tests {
         )
     }
 
-    /// The unplugged-display contract: the loop must STOP, not keep pushing the
-    /// last frame. Repeating it to the end is what made a dead capture look
-    /// like a working recording.
+    /// The unplugged-display contract: the loop must STOP, not keep pushing the last frame. Repeating it to the end is what made a dead capture look like a working recording.
     #[test]
     fn a_terminal_notice_ends_the_capture_instead_of_repeating_a_frame() {
         let (frames, notices, exited) =

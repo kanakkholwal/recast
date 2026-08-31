@@ -77,11 +77,8 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
     }
 }
 
-/// What this session can do, reported as data so callers branch on the answer
-/// rather than on `cfg`.
-///
-/// The two Linux sessions differ more from each other than macOS differs from
-/// Windows, so this is per-session rather than per-OS.
+/// What this session can do, reported as data so callers branch on the answer rather than on `cfg`.
+/// The two Linux sessions differ more from each other than macOS differs from Windows, so this is per-session rather than per-OS.
 pub(crate) fn capabilities() -> Capabilities {
     match session() {
         Session::Wayland => Capabilities {

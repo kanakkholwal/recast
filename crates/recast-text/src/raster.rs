@@ -3,9 +3,7 @@ use zeno::{Fill, Mask};
 
 use crate::face::FontFace;
 
-/// An 8-bit coverage bitmap for one glyph, plus where it sits relative to the
-/// pen. `left`/`top` are in pixels, y DOWN, so the canvas position is
-/// `(pen.x + left, baseline.y + top)`.
+/// An 8-bit coverage bitmap for one glyph, plus where it sits relative to the pen. `left`/`top` are in pixels, y DOWN, so the canvas position is `(pen.x + left, baseline.y + top)`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlyphMask {
     pub width: u32,

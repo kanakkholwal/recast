@@ -56,19 +56,14 @@ impl AudioBuffer<'_> {
     }
 
     /// Whether the device reported a break in the stream before these samples.
-    ///
-    /// Distinct from inserted silence: this is the driver saying it lost data,
-    /// not capturekit covering a gap it measured.
+    /// Distinct from inserted silence: this is the driver saying it lost data, not capturekit covering a gap it measured.
     #[must_use]
     pub const fn is_discontinuous(&self) -> bool {
         self.discontinuous
     }
 
-    /// Whether this buffer is silence the backend inserted to cover a gap the
-    /// device ran through without delivering anything.
-    ///
-    /// A loopback device with nothing playing delivers no buffers at all, so
-    /// without this the track would come out short and everything in it early.
+    /// Whether this buffer is silence the backend inserted to cover a gap the device ran through without delivering anything.
+    /// A loopback device with nothing playing delivers no buffers at all, so without this the track would come out short and everything in it early.
     #[must_use]
     pub const fn is_inserted_silence(&self) -> bool {
         self.silence
@@ -112,9 +107,7 @@ pub struct AudioCapturer {
 }
 
 impl AudioCapturer {
-    /// Wrap a scripted source, so a recorder's own loop can be driven with no
-    /// device: its timeout and error arms are the ones a real device will not
-    /// exercise on demand.
+    /// Wrap a scripted source, so a recorder's own loop can be driven with no device: its timeout and error arms are the ones a real device will not exercise on demand.
     #[cfg(any(test, feature = "mock"))]
     #[must_use]
     pub fn scripted(source: crate::mock::MockAudioSource) -> Self {

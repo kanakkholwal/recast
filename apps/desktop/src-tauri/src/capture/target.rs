@@ -1,13 +1,5 @@
-//! What to record, resolved from what the platform reports.
-//!
-//! capturekit is the only enumerator, so every rectangle here is already in
-//! physical device pixels and no logical-to-physical conversion survives. That
-//! conversion used to run in both directions (xcap reports logical on macOS
-//! while the region picker sends physical) and was behind half-size Retina
-//! captures and regions that landed on the wrong monitor.
-//!
-//! The resolvers take the enumerated lists rather than calling capturekit, so
-//! they can be tested against a fixed desktop layout.
+//! What to record, resolved from capturekit's enumeration, so every rectangle is already physical pixels.
+//! The old two-way logical conversion was behind half-size Retina captures and regions landing on the wrong monitor.
 
 use anyhow::{anyhow, Context, Result};
 use capturekit::{Display, DisplayId, Rect, Window, WindowId};
@@ -122,9 +114,7 @@ impl CaptureTarget {
 }
 
 /// The largest even-sized rectangle of `area` that fits inside `bounds`.
-///
-/// Even because libx264 and NVENC reject odd dimensions, and clipped because a
-/// window can hang off the edge of the display it is on.
+/// Even because libx264 and NVENC reject odd dimensions, and clipped because a window can hang off the edge of the display it is on.
 fn fitted(area: CaptureArea, bounds: CaptureArea) -> Result<CaptureArea> {
     area.fit_inside(&bounds)
         .context("the capture rectangle does not overlap its display")
@@ -154,11 +144,8 @@ pub fn display_target(displays: &[Display], id: DisplayId) -> Result<CaptureTarg
     })
 }
 
-/// One window, as its own surface where the backend can, else as a crop of the
-/// display it sits on.
-///
-/// `own_surface` is [`super::window_capture_supported`], asked here so
-/// the resolved `source` always matches what the backend will deliver.
+/// One window, as its own surface where the backend can, else as a crop of the display it sits on.
+/// `own_surface` is [`super::window_capture_supported`], asked here so the resolved `source` always matches what the backend will deliver.
 pub fn window_target(
     windows: &[Window],
     displays: &[Display],

@@ -12,15 +12,11 @@ use crate::audio::track::TrackWriter;
 use crate::audio::wav::WavFormat;
 use crate::recording::clock::TrackStart;
 
-/// How long one read waits before the loop re-checks the stop flag. Bounds how
-/// long `stop()` blocks; a quiet device is not an error, so nothing else
-/// depends on it.
+/// How long one read waits before the loop re-checks the stop flag. Bounds how long `stop()` blocks; a quiet device is not an error, so nothing else depends on it.
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
 
 /// Which endpoint a track is captured from.
-///
-/// Loopback and microphone differ only in the direction asked for and the
-/// device that may be named, so they share one capture loop.
+/// Loopback and microphone differ only in the direction asked for and the device that may be named, so they share one capture loop.
 pub(super) enum Source {
     /// What the system is playing.
     Loopback,
@@ -34,21 +30,15 @@ pub(super) enum Source {
 }
 
 /// What a track opened with, and anything the user has to be told about it.
-///
-/// A fallback the user is not told about is the failure mode worth designing
-/// against: the recording looks fine and the wrong device is on it.
+/// A fallback the user is not told about is the failure mode worth designing against: the recording looks fine and the wrong device is on it.
 pub(super) struct Opened {
     pub(super) capturer: AudioCapturer,
     pub(super) notices: Vec<String>,
 }
 
 impl Source {
-    /// The source for a picker's microphone id, resolved on the CALLER's
-    /// thread: which device to open is policy, and the capture thread's job is
-    /// to capture.
-    ///
-    /// A request this platform cannot honour becomes a notice rather than a log
-    /// line, so the user hears about it.
+    /// The source for a picker's microphone id, resolved on the CALLER's thread: which device to open is policy, and the capture thread's job is to capture.
+    /// A request this platform cannot honour becomes a notice rather than a log line, so the user hears about it.
     pub(super) fn input(requested: Option<String>) -> Self {
         let can_name = capturekit::capabilities().audio_device_enumeration;
         let (device, ignored) = named_device(requested.as_deref(), can_name);
@@ -114,10 +104,7 @@ const MIC_GONE: &str = "The microphone you picked is no longer available, so the
 const MIC_UNNAMEABLE: &str = "This system only lets Recast record the default microphone, so the one you picked was not used.";
 
 /// Whether an open failed because the named device is not there.
-///
-/// Distinguished from every other failure because it is the one worth falling
-/// back from: a device that is merely busy or refused is not helped by opening a
-/// different one.
+/// Distinguished from every other failure because it is the one worth falling back from: a device that is merely busy or refused is not helped by opening a different one.
 fn is_missing_device(err: &CaptureError) -> bool {
     matches!(
         err,
@@ -408,15 +395,8 @@ mod run_tests {
             }
         }
 
-        /// Run the real loop against `script`, stopping it once the device has
-        /// been read `answers` times, or sooner if the loop ends on its own.
-        ///
-        /// Counted rather than timed: the mock sleeps out every timeout, so a
-        /// fixed sleep here would race those and go flaky under load. The loop
-        /// runs on its own thread so an arm that ENDS the take returns straight
-        /// away instead of waiting for a count it will never reach.
-        ///
-        /// Returns the track and how many times the device was actually read.
+        /// Runs the real loop against `script`, stopping once the device has been read `answers` times or the loop ends on its own.
+        /// Counted rather than timed, since the mock sleeps out every timeout; on its own thread so an arm that ends the take returns immediately.
         fn drive(&self, script: Vec<MockAudio>, answers: usize) -> (std::path::PathBuf, usize) {
             let source = MockAudioSource::new(FORMAT, script);
             let reads = source.reads();

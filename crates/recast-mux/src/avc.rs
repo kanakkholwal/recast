@@ -11,9 +11,7 @@ impl AvcConfig {
         self.sps.is_empty() || self.pps.is_empty()
     }
 
-    /// The `AVCDecoderConfigurationRecord` payload, without the box header.
-    /// `None` until at least one SPS and one PPS have been seen, because a
-    /// decoder cannot start without both.
+    /// The `AVCDecoderConfigurationRecord` payload, without the box header. `None` until at least one SPS and one PPS have been seen, because a decoder cannot start without both.
     pub fn record(&self) -> Option<Vec<u8>> {
         let sps = self.sps.first()?;
         if self.pps.is_empty() || sps.len() < 4 {
@@ -46,10 +44,7 @@ const NAL_PPS: u8 = 8;
 const NAL_IDR: u8 = 5;
 
 /// Splits an Annex B stream into NAL units, dropping the start codes.
-///
-/// Accepts both the three- and four-byte start codes, which encoders mix within
-/// one stream: the four-byte form leads an access unit and the three-byte form
-/// separates NALs inside it.
+/// Accepts both the three- and four-byte start codes, which encoders mix within one stream: the four-byte form leads an access unit and the three-byte form separates NALs inside it.
 pub fn split_annex_b(data: &[u8]) -> Vec<&[u8]> {
     let mut units = Vec::new();
     let mut starts = Vec::new();
@@ -118,9 +113,7 @@ pub struct Converted {
 }
 
 /// Converts an Annex B access unit into the length-prefixed form MP4 stores.
-///
-/// Parameter sets are pulled OUT of the sample: they belong in `avcC`, and
-/// leaving them inline makes some decoders re-initialise on every keyframe.
+/// Parameter sets are pulled OUT of the sample: they belong in `avcC`, and leaving them inline makes some decoders re-initialise on every keyframe.
 pub fn annex_b_to_avcc(data: &[u8]) -> Converted {
     let mut out = Converted::default();
     for unit in split_annex_b(data) {

@@ -1,8 +1,5 @@
-//! Branch operations, shared by the control socket, Tauri IPC and MCP.
-//!
-//! Every surface goes through [`BranchService`] so the three cannot drift: the
-//! CLI, the editor's review panel and an agent all see the same journal, the
-//! same guarantees and the same payload shapes.
+//! Branch operations shared by the control socket, Tauri IPC and MCP.
+//! All three go through [`BranchService`], so the CLI, the review panel and an agent cannot drift on payloads or guarantees.
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -109,12 +106,8 @@ impl<'a> BranchService<'a> {
         Ok(branch)
     }
 
-    /// Journals that will not parse are skipped, so one corrupt file cannot
-    /// hide the rest.
-    ///
-    /// Sweeps abandoned empty branches first: listing is the one call every
-    /// surface makes, and housekeeping on a background timer would be a thread
-    /// for a job that costs a directory read.
+    /// Journals that will not parse are skipped, so one corrupt file cannot hide the rest.
+    /// Sweeps abandoned empty branches first: listing is the one call every surface makes, and housekeeping on a background timer would be a thread for a job that costs a directory read.
     pub fn list(&self, project: &str) -> AppResult<Vec<BranchSummary>> {
         let store = self.store(project)?;
         let now = now_ms();
@@ -293,9 +286,7 @@ fn rejected(id: &BranchId, issues: &[ValidationIssue]) -> AppError {
 }
 
 /// Run `job` off the UI thread, handing it the service.
-///
-/// Tauri commands that block the main thread freeze the macOS WKWebView, and
-/// every branch call reads or writes the project.
+/// Tauri commands that block the main thread freeze the macOS WKWebView, and every branch call reads or writes the project.
 async fn off_thread<T, F>(app: AppHandle, job: F) -> AppResult<T>
 where
     T: Send + 'static,

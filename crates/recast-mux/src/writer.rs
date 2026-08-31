@@ -21,9 +21,7 @@ pub struct VideoFormat {
     pub timescale: u32,
 }
 
-/// An AAC track. `config` is the `AudioSpecificConfig` the encoder reported;
-/// without it no decoder can start, so the writer drops the track rather than
-/// emit one that plays as silence.
+/// An AAC track. `config` is the `AudioSpecificConfig` the encoder reported; without it no decoder can start, so the writer drops the track rather than emit one that plays as silence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioFormat {
     pub sample_rate: u32,
@@ -230,9 +228,7 @@ impl Mp4Writer {
         Some(out)
     }
 
-    /// Per-track defaults for the fragments. Every value is written explicitly
-    /// in each `trun`, so these are all zero and exist only because a reader
-    /// requires the box.
+    /// Per-track defaults for the fragments. Every value is written explicitly in each `trun`, so these are all zero and exist only because a reader requires the box.
     fn track_extends(&self, buf: &mut BoxBuf, track: u32) {
         buf.open_full(b"trex", 0, 0);
         buf.u32(track).u32(1).u32(0).u32(0).u32(0);
@@ -761,9 +757,7 @@ mod tests {
         );
     }
 
-    /// A recording with the microphone off still sets the format. Writing the
-    /// track anyway leaves a stream with no samples, which players list and then
-    /// play as nothing.
+    /// A recording with the microphone off still sets the format. Writing the track anyway leaves a stream with no samples, which players list and then play as nothing.
     #[test]
     fn an_audio_track_with_no_samples_is_dropped() {
         let mut w = writer();

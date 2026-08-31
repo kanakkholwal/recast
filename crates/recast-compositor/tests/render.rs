@@ -1849,9 +1849,7 @@ fn a_render_loop_allocates_one_output_texture_not_one_per_frame() {
     assert_eq!(session.output_allocations(), 1);
 }
 
-/// A handle kept from an earlier frame must stay readable: the loop reuses the
-/// texture, so callers that hold one are looking at the newest frame, not at
-/// freed memory.
+/// A handle kept from an earlier frame must stay readable: the loop reuses the texture, so callers that hold one are looking at the newest frame, not at freed memory.
 #[test]
 fn a_reused_output_texture_still_reads_back_at_full_size() {
     let Some(ctx) = context() else { return };

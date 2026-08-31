@@ -140,9 +140,7 @@ impl SampleTable {
         buf.close();
     }
 
-    /// Chunk offsets, shifted by where mdat's payload lands in the file.
-    /// `co64` when any offset needs more than 32 bits, which a long 4K capture
-    /// reaches.
+    /// Chunk offsets, shifted by where mdat's payload lands in the file. `co64` when any offset needs more than 32 bits, which a long 4K capture reaches.
     pub fn write_stco(&self, buf: &mut BoxBuf, mdat_payload_start: u64) {
         let offsets: Vec<u64> = self
             .chunks()

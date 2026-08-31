@@ -20,9 +20,7 @@ pub enum Nv12Error {
 }
 
 /// R'G'B' to NV12 with the matrix folded into integers once.
-///
-/// The float form costs 14 ms a 1080p frame, 81% of export time, because it
-/// redoes 3x3 f32 algebra for every one of two million pixels.
+/// The float form costs 14 ms a 1080p frame, 81% of export time, because it redoes 3x3 f32 algebra for every one of two million pixels.
 #[derive(Debug, Clone, Copy)]
 pub struct Nv12Encoder {
     /// Rows of `encode_matrix`, scaled by 2^FRACTION_BITS. Applied to raw byte

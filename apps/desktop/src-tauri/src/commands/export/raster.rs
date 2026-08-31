@@ -1,8 +1,5 @@
-//! Static layers rasterised once per export: the rounded-corner mask, the
-//! drop-shadow PNG, the gradient background, and the pre-baked wallpaper.
-//!
-//! Split out of `run_export_job`. Everything here is frame-independent, so it
-//! runs once before the filter graph is assembled rather than per frame.
+//! Static layers rasterised once per export: corner mask, drop shadow, gradient background, pre-baked wallpaper.
+//! All frame-independent, so this runs before the filter graph is assembled rather than per frame.
 
 use std::path::{Path, PathBuf};
 
@@ -13,9 +10,7 @@ use crate::render::graph::CanvasGeometry;
 use crate::render::mask_export::MaskResult;
 
 /// The rasterised layers plus the geometry they were sized against.
-///
-/// Holds the `MaskResult`/`TempDirGuard` values, not just their paths: each one
-/// deletes its PNG on drop, so this must outlive the encode that reads them.
+/// Holds the `MaskResult`/`TempDirGuard` values, not just their paths: each one deletes its PNG on drop, so this must outlive the encode that reads them.
 pub(crate) struct StaticLayers {
     pub geom: CanvasGeometry,
     pub border_radius_mask: Option<MaskResult>,

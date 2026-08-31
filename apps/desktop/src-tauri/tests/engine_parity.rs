@@ -1,19 +1,5 @@
-//! The parity number phase 0 could not produce: the SAME fixture rendered by the
-//! FFmpeg export graph and by the wgpu compositor, diffed. Reports rather than
-//! gates, because linear-light compositing is a deliberate correction and the
-//! two engines are expected to differ; the point is that the difference is
-//! measured and explained instead of assumed.
-//!
-//! Run with `--ignored --nocapture` to read the table.
-//!
-//! READ THE NUMBER CAREFULLY. Every comparable fixture here composites OPAQUE
-//! layers, so none of them exercises alpha blending, and linear-light and
-//! sRGB-space compositing produce the same answer when nothing is blended. A
-//! small delta is therefore evidence that geometry, sampling and the transfer
-//! functions agree; it is NOT evidence that the linear-space change is
-//! invisible. The fixtures that would show it (a semi-transparent annotation, a
-//! drop shadow, a blur) all rasterise outside `build_export_plan_with`, so they
-//! cannot be driven from here at all.
+//! One fixture through both the FFmpeg graph and the wgpu compositor, diffed; reports rather than gates. Run with `--ignored --nocapture`.
+//! Every comparable fixture composites OPAQUE layers, so a small delta proves geometry and transfer agree, NOT that linear-light blending is invisible.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

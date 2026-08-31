@@ -1,9 +1,5 @@
-/// Index of the newest slot in `[floor_us, ts_us]`.
-///
-/// The floor is load-bearing: a frame before the current segment's start belongs
-/// to a removed cut, and showing one steps the picture back into deleted content
-/// at every cut boundary. Mirrors `pickSlot` in
-/// `packages/editor/src/lib/playback/frame-textures.ts`.
+/// Index of the newest slot in `[floor_us, ts_us]`; mirrors `pickSlot` in `frame-textures.ts`.
+/// The floor is load-bearing: a frame before the segment start belongs to a removed cut and would step the picture into deleted content.
 pub fn pick_slot(timestamps: &[i64], ts_us: i64, floor_us: i64) -> Option<usize> {
     let mut best: Option<(usize, i64)> = None;
     for (index, &ts) in timestamps.iter().enumerate() {
