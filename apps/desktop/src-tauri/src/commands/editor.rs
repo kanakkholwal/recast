@@ -2617,8 +2617,8 @@ pub(crate) async fn run_export_job(
             },
             &mut on_frame,
         );
-        let frames = match result {
-            Ok(frames) => frames,
+        let report = match result {
+            Ok(report) => report,
             Err(crate::export_engine::EngineExportError::Cancelled) => {
                 let _ = std::fs::remove_file(&render_target);
                 emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
@@ -2629,7 +2629,7 @@ pub(crate) async fn run_export_job(
                 return Err(AppError::msg(format!("engine export failed: {e}")));
             }
         };
-        log::info!("export[{export_id}] engine path wrote {frames} frames");
+        log::info!("export[{export_id}] engine: {report}");
         if !direct {
             // Released before the mux job takes its own for the same export id.
             drop(_cancel_token);

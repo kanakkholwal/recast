@@ -95,6 +95,43 @@ pub enum EngineExportError {
     Cancelled,
 }
 
+/// What an export actually did, so a slow or wrong result on a machine nobody
+/// here owns can be diagnosed from its log line rather than guessed at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportReport {
+    pub frames: u64,
+    /// The codec backend that encoded: in-process, or the bundled FFmpeg.
+    pub codec: &'static str,
+    /// Where RGBA became NV12. The CPU path is nine times slower at 1080p.
+    pub pixels: &'static str,
+    pub width: u32,
+    pub height: u32,
+    /// The recording's own size, which differs when a quality cap shrank it.
+    pub source_width: u32,
+    pub source_height: u32,
+    /// Whether this file carries its audio, or an intermediate the mux completes.
+    pub audio: bool,
+    pub captions: bool,
+}
+
+impl std::fmt::Display for ExportReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} frames {}x{} (source {}x{}) codec={} pixels={} audio={} captions={}",
+            self.frames,
+            self.width,
+            self.height,
+            self.source_width,
+            self.source_height,
+            self.codec,
+            self.pixels,
+            self.audio,
+            self.captions,
+        )
+    }
+}
+
 /// What the caller wants after a progress tick. The engine export has no
 /// process to kill, so cancelling is an answer rather than a signal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,6 +212,15 @@ impl Sink {
             #[cfg(windows)]
             Self::Native(sink) => Ok(sink.push(index, frame)?),
             Self::Ffmpeg(sink) => Ok(sink.push(frame)?),
+        }
+    }
+
+    /// Which backend this is, for the export's own log line.
+    const fn name(&self) -> &'static str {
+        match self {
+            #[cfg(windows)]
+            Self::Native(_) => "media-foundation",
+            Self::Ffmpeg(_) => "ffmpeg",
         }
     }
 
@@ -395,7 +441,7 @@ pub fn export_video(
     state: &RenderState,
     spec: &ExportSpec<'_>,
     progress: &mut dyn FnMut(u64, u64) -> Flow,
-) -> Result<u64, EngineExportError> {
+) -> Result<ExportReport, EngineExportError> {
     let (output, fps) = (spec.output, spec.fps);
     let captions = spec.captions;
     let ctx = shared_context()?;
@@ -435,6 +481,20 @@ pub fn export_video(
         )
     });
     let mut sink = open_sink(spec, size.width, size.height, walk, bitrate)?;
+    let mut report = ExportReport {
+        frames: walk.len(),
+        codec: sink.name(),
+        pixels: match pixel_layout(size.width, size.height) {
+            PixelLayout::Nv12 => "nv12-gpu",
+            PixelLayout::Rgba => "rgba-cpu",
+        },
+        width: size.width,
+        height: size.height,
+        source_width: native.width,
+        source_height: native.height,
+        audio: false,
+        captions: captions.is_some(),
+    };
 
     let total = walk.len();
     // The colour the sink encodes in, so both halves agree on the matrix.
@@ -475,11 +535,12 @@ pub fn export_video(
         );
         if mixer.total_frames() > 0 {
             sink.push_audio(&mut mixer, AUDIO_BITRATE)?;
+            report.audio = true;
         }
     }
 
     sink.finish(output)?;
-    Ok(walk.len())
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -517,6 +578,35 @@ mod tests {
         let request: crate::commands::types::ExportRequest =
             serde_json::from_value(sent).expect("an older payload");
         assert!(!request.engine_export);
+    }
+
+    /// The line is what a report from a machine nobody here owns will contain,
+    /// so it has to name every choice an export made, not just its size.
+    #[test]
+    fn the_report_names_every_choice_the_export_made() {
+        let report = ExportReport {
+            frames: 90,
+            codec: "media-foundation",
+            pixels: "nv12-gpu",
+            width: 1280,
+            height: 720,
+            source_width: 1920,
+            source_height: 1080,
+            audio: true,
+            captions: false,
+        };
+        let line = report.to_string();
+        for part in [
+            "90 frames",
+            "1280x720",
+            "source 1920x1080",
+            "codec=media-foundation",
+            "pixels=nv12-gpu",
+            "audio=true",
+            "captions=false",
+        ] {
+            assert!(line.contains(part), "the report omits {part}: {line}");
+        }
     }
 
     /// The env wins both ways, so a developer can force the graph back on a
@@ -927,8 +1017,9 @@ mod live {
             cursor_enabled: false,
             ..Default::default()
         };
-        let frames = export_video(&state, &spec(&input, &output), &mut never_cancels)
+        let report = export_video(&state, &spec(&input, &output), &mut never_cancels)
             .expect("the export runs");
+        let frames = report.frames;
         assert_eq!(frames, FrameWalk::new(0.5, (30, 1)).len());
 
         let mut reader = recast_codec_mf::VideoReader::open(&output).expect("the export opens");
@@ -983,13 +1074,15 @@ mod live {
             cursor_enabled: false,
             ..Default::default()
         };
-        export_video(&state, &spec(&input, &output), &mut never_cancels).expect("the export runs");
+        let report = export_video(&state, &spec(&input, &output), &mut never_cancels)
+            .expect("the export runs");
 
         let bytes = std::fs::read(&output).expect("read back");
         assert!(
             contains(&bytes, b"mp4a") && contains(&bytes, b"esds"),
             "the export has no audio track"
         );
+        assert!(report.audio, "the report denies the audio track it wrote");
     }
 
     /// The most pixels darker than the pill's threshold that any one frame shows in its bottom quarter, where a bottom caption sits.
@@ -1088,7 +1181,8 @@ mod live {
             Flow::Continue
         };
         let frames = export_video(&state, &spec(&input, &output), &mut record_tick)
-            .expect("the export runs");
+            .expect("the export runs")
+            .frames;
 
         assert_eq!(ticks.len() as u64, frames, "a frame went unreported");
         assert_eq!(ticks.first(), Some(&(1, frames)), "the first tick is not 1");
@@ -1234,7 +1328,7 @@ mod live {
             cursor_enabled: false,
             ..Default::default()
         };
-        let frames = export_video(
+        let report = export_video(
             &state,
             &ExportSpec {
                 force_ffmpeg: true,
@@ -1246,7 +1340,15 @@ mod live {
             &mut never_cancels,
         )
         .expect("the export runs");
+        let frames = report.frames;
         assert_eq!(frames, FrameWalk::new(0.3, (30, 1)).len());
+        // The report is what a machine nobody here owns will be diagnosed from.
+        assert_eq!(report.codec, "ffmpeg");
+        assert_eq!(report.pixels, "nv12-gpu");
+        assert!(
+            !report.audio,
+            "a video-only backend reported an audio track"
+        );
 
         let mut reader = recast_codec_mf::VideoReader::open(&output).expect("the export opens");
         let mut decoded = 0u64;
@@ -1473,6 +1575,45 @@ mod live {
             loudness(&without),
             loudness(&with)
         );
+    }
+
+    /// A canvas the shader cannot pack still has to export, and the report has
+    /// to say the pixels went the slow way rather than claim the GPU path.
+    #[test]
+    fn an_unpackable_canvas_falls_back_and_says_so() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("unpackable");
+        let input = scratch.0.join("in.mp4");
+        let output = scratch.0.join("out.mp4");
+        record(&ctx, &input, 0.2);
+
+        let state = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        // 640 scaled by 302/640 lands on 302, which is even but not a multiple of four.
+        let report = export_video(
+            &state,
+            &ExportSpec {
+                max_size: Some((302, 400)),
+                bitrate: None,
+                ..spec(&input, &output)
+            },
+            &mut never_cancels,
+        )
+        .expect("the export runs");
+
+        assert!(
+            !recast_export::GpuNv12::handles(report.width, report.height),
+            "the fixture canvas {}x{} is packable after all",
+            report.width,
+            report.height
+        );
+        assert_eq!(report.pixels, "rgba-cpu");
+        assert!(output.exists(), "an unpackable canvas produced no file");
     }
 
     /// A voice-over replaces the recording, so its captured tracks must not be
