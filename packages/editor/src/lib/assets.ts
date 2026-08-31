@@ -2,9 +2,9 @@
  * External-asset download/cache helper.
  *
  * Startup flow:
- *   1. `assetService()!.hydrate()`: offline read of the on-disk lock file, so the
+ *   1. `assets.hydrate()`: offline read of the on-disk lock file, so the
  *      UI upgrades past the placeholder immediately.
- *   2. `assetService()!.ensureInstalled(manifestUrl)`: fetch manifest, SHA-256-verified
+ *   2. `assets.ensureInstalled(manifestUrl)`: fetch manifest, SHA-256-verified
  *      download of missing/mismatched assets (thumbs first so the grid is usable).
  *   3. On `window.online`, retry failed downloads.
  *
@@ -34,12 +34,13 @@ let hydrated = false;
 /** Populate the store from the persisted lock file without touching the network. */
 async function hydrateFromDisk(): Promise<void> {
 	if (hydrated) return;
-	if (!(assetService() !== null)) {
+	const svc = assetService();
+	if (!svc) {
 		hydrated = true;
 		return;
 	}
 	try {
-		const entries = await assetService()!.hydrate();
+		const entries = await svc.hydrate();
 		for (const entry of entries) {
 			if (entry.path) assetsStore.setPath(entry.id, entry.path);
 			if (entry.thumbPath) assetsStore.setThumbPath(entry.id, entry.thumbPath);
@@ -51,12 +52,13 @@ async function hydrateFromDisk(): Promise<void> {
 }
 
 async function runInstall(): Promise<void> {
-	if (!(assetService() !== null)) return;
+	const svc = assetService();
+	if (!svc) return;
 	await hydrateFromDisk();
 	assetsStore.setInstalling(true);
 	assetsStore.setError(null);
 	try {
-		const result = await assetService()!.ensureInstalled(manifestUrl());
+		const result = await svc.ensureInstalled(manifestUrl());
 		for (const entry of result.hydrated) {
 			if (entry.path) assetsStore.setPath(entry.id, entry.path);
 			if (entry.thumbPath) assetsStore.setThumbPath(entry.id, entry.thumbPath);
@@ -112,8 +114,9 @@ export function ensureAssets(): Promise<void> {
 export async function resolveAsset(id: string): Promise<string | null> {
 	const cached = assetsStore.paths[id];
 	if (cached) return cached;
-	if (!(assetService() !== null)) return null;
-	const path = await assetService()!.getCachedPath(id);
+	const svc = assetService();
+	if (!svc) return null;
+	const path = await svc.getCachedPath(id);
 	if (path) assetsStore.setPath(id, path);
 	return path;
 }

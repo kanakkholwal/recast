@@ -30,7 +30,7 @@ const sectionMap = $derived(
 const crumb = $derived.by(() => {
 	const parts = page.url.pathname.split("/").filter(Boolean); // ["dashboard", ...]
 	if (parts.length <= 1) return { section: rootLabel, sub: null };
-	const second = parts[1]!;
+	const second = parts[1];
 	const section = sectionMap[second] ?? titleCase(second);
 	// Only settings has deeper routes (Profile / Integrations / Preferences).
 	const sub = second === "settings" && parts[2] ? titleCase(parts[2]) : null;

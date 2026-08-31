@@ -69,11 +69,12 @@ async function approve() {
 async function deny() {
 	if (busy || !data.userCode) return;
 	denying = true;
+	const userCode = data.userCode;
 	try {
 		await toast.promise(
 			(async () => {
 				const { error } = await authClient.device.deny({
-					userCode: data.userCode!,
+					userCode,
 				});
 				if (error) throw new Error(error.error_description ?? "Couldn't deny the request.");
 			})(),

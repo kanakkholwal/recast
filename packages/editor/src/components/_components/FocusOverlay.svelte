@@ -211,7 +211,8 @@ function handlePointerMove(e: PointerEvent) {
 		return;
 	}
 
-	const r = store.zoomRegions.find((z) => z.id === drag!.id);
+	const dragId = drag.id;
+	const r = store.zoomRegions.find((z) => z.id === dragId);
 	if (!r) return;
 	const pt = pointerToCanvasPx(e);
 

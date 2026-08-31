@@ -107,8 +107,12 @@ export function groupPresets<T extends PresetLike>(
 	for (const p of filtered) {
 		// The pinned copy is the only one: listing it twice made the cursor pass the same preset at two indices.
 		if (p === current) continue;
-		if (!map.has(p.category)) map.set(p.category, []);
-		map.get(p.category)!.push(p);
+		let bucket = map.get(p.category);
+		if (!bucket) {
+			bucket = [];
+			map.set(p.category, bucket);
+		}
+		bucket.push(p);
 	}
 	const entries = [...map.entries()].filter(([, items]) => items.length > 0);
 	if (current) entries.unshift(["Current", [current]]);

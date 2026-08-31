@@ -623,7 +623,9 @@ function handlePointerMove(e: PointerEvent) {
 	const pt = pointerToCanvasPx(e);
 	const t = playbackTime();
 	const f = frameDims();
-	const dragAnno = store.annotations.find((x) => x.id === drag!.id) ?? {};
+	// Hoisted: TS drops the `if (!drag) return` narrowing inside the callbacks below.
+	const dragId = drag.id;
+	const dragAnno = store.annotations.find((x) => x.id === dragId) ?? {};
 	const rawUv = unprojectA(dragAnno, pt.x, pt.y, t);
 	// Alt bypasses snap, matching Figma; snap is per-axis, so one axis can lock while the other tracks the cursor.
 	const uv = applySnap(rawUv.x, rawUv.y, drag.id, e.altKey);
@@ -635,7 +637,7 @@ function handlePointerMove(e: PointerEvent) {
 	}
 
 	if (drag.kind === "place") {
-		const anno = store.annotations.find((a) => a.id === drag!.id);
+		const anno = store.annotations.find((a) => a.id === dragId);
 		if (!anno) return;
 		if (anno.kind.kind === "arrow") {
 			const end = e.shiftKey
@@ -659,7 +661,7 @@ function handlePointerMove(e: PointerEvent) {
 			});
 		}
 	} else if (drag.kind === "move") {
-		const anno = store.annotations.find((a) => a.id === drag!.id);
+		const anno = store.annotations.find((a) => a.id === dragId);
 		if (!anno) return;
 		if (anno.kind.kind === "arrow") {
 			const dx = uv.x - drag.pointerStartUV.x;
@@ -710,7 +712,7 @@ function handlePointerMove(e: PointerEvent) {
 			});
 		}
 	} else if (drag.kind === "resize") {
-		const anno = store.annotations.find((a) => a.id === drag!.id);
+		const anno = store.annotations.find((a) => a.id === dragId);
 		if (!anno) return;
 		if (anno.kind.kind === "arrow") {
 			if (drag.handle === "p1") {
@@ -775,8 +777,9 @@ function handlePointerUp(e: PointerEvent) {
 	(e.currentTarget as Element).releasePointerCapture(e.pointerId);
 	// Drop guides on release, so a click doesn't leave them lingering between drags.
 	snapGuides = [];
+	const dragId = drag.id;
 	if (drag.kind === "place") {
-		const anno = store.annotations.find((a) => a.id === drag!.id);
+		const anno = store.annotations.find((a) => a.id === dragId);
 		const f = frameDims();
 		if (anno) {
 			if (
@@ -815,7 +818,7 @@ function handlePointerUp(e: PointerEvent) {
 		// Drop the tool after placement so the next click doesn't stack shapes. Matches Figma and Keynote.
 		store.annotationTool = null;
 	} else if (drag.kind === "resize" || drag.kind === "move") {
-		const anno = store.annotations.find((a) => a.id === drag!.id);
+		const anno = store.annotations.find((a) => a.id === dragId);
 		if (
 			anno &&
 			(anno.kind.kind === "rect" ||

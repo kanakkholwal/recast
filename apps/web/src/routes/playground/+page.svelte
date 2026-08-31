@@ -72,8 +72,9 @@ async function mountEditor() {
 		const { workerHost } = await import("$lib/workers");
 		m.setEditorHostHooks({ workers: workerHost });
 		const next = m.createEditorStore();
-		const meta = playgroundSession.metadata!;
-		next.metadata = { ...meta, codec: "", sizeBytes: playgroundSession.source!.file.size };
+		const meta = playgroundSession.metadata;
+		const src = playgroundSession.source;
+		if (meta && src) next.metadata = { ...meta, codec: "", sizeBytes: src.file.size };
 		next.loadRenderState({});
 		store = next;
 		panels = m.WEB_PANEL_TABS;

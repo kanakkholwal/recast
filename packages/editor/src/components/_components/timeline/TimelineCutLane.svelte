@@ -136,7 +136,8 @@ function onMove(e: PointerEvent) {
 	if (e.shiftKey !== drag.precision) {
 		drag.precision = e.shiftKey;
 		drag.anchorTime = timeAt(e.clientX);
-		const live = drag.id ? store.cuts.find((c) => c.id === drag!.id) : null;
+		const dragId = drag.id;
+		const live = dragId ? store.cuts.find((c) => c.id === dragId) : null;
 		if (live) {
 			drag.originStart = live.start;
 			drag.originEnd = live.end;

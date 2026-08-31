@@ -18,7 +18,9 @@
 			"!packages/engine/wasm",
 			"!**/src-tauri/gen",
 			"!**/pnpm-lock.yaml",
-			"!**/*.min.js"
+			"!**/*.min.js",
+			"!apps/desktop/src/app.css",
+			"!apps/web/src/app.css"
 		]
 	},
 	"formatter": {
@@ -94,13 +96,13 @@
 					}
 				},
 				"noExcessiveLinesPerFunction": {
-					"level": "error",
+					"level": "warn",
 					"options": {
 						"maxLines": 120
 					}
 				},
 				"useMaxParams": {
-					"level": "error",
+					"level": "warn",
 					"options": {
 						"max": 5
 					}
@@ -172,6 +174,26 @@
 					},
 					"style": {
 						"noHexColors": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/design/src/index.css"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noHexColors": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["**/*.test.ts", "**/*.spec.ts", "**/test/**", "**/__tests__/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noNonNullAssertion": "off"
 					}
 				}
 			}

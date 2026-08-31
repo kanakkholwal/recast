@@ -48,6 +48,12 @@ function activeProvider(): StorageProvider {
 	}
 }
 
+// Credentials are only known-present when isStorageConfigured() passed; name the missing var rather than failing downstream in the adapter.
+function required(name: string, value: string | undefined | null): string {
+	if (!value) throw new Error(`STORAGE_PROVIDER=${activeProvider()} requires ${name} to be set`);
+	return value;
+}
+
 export function isStorageConfigured(): boolean {
 	const env = serverEnv();
 	const provider = (env.STORAGE_PROVIDER ?? "r2").toLowerCase();
@@ -92,10 +98,10 @@ async function buildFiles(): Promise<{
 			return {
 				files: new Files({
 					adapter: r2({
-						bucket: env.R2_BUCKET!,
-						accountId: env.R2_ACCOUNT_ID!,
-						accessKeyId: env.R2_ACCESS_KEY_ID!,
-						secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
+						bucket: required("R2_BUCKET", env.R2_BUCKET),
+						accountId: required("R2_ACCOUNT_ID", env.R2_ACCOUNT_ID),
+						accessKeyId: required("R2_ACCESS_KEY_ID", env.R2_ACCESS_KEY_ID),
+						secretAccessKey: required("R2_SECRET_ACCESS_KEY", env.R2_SECRET_ACCESS_KEY),
 						publicBaseUrl: env.R2_PUBLIC_URL ?? undefined,
 					}),
 				}),
@@ -107,11 +113,11 @@ async function buildFiles(): Promise<{
 			return {
 				files: new Files({
 					adapter: s3({
-						bucket: env.S3_BUCKET!,
-						region: env.S3_REGION!,
+						bucket: required("S3_BUCKET", env.S3_BUCKET),
+						region: required("S3_REGION", env.S3_REGION),
 						credentials: {
-							accessKeyId: env.S3_ACCESS_KEY_ID!,
-							secretAccessKey: env.S3_SECRET_ACCESS_KEY!,
+							accessKeyId: required("S3_ACCESS_KEY_ID", env.S3_ACCESS_KEY_ID),
+							secretAccessKey: required("S3_SECRET_ACCESS_KEY", env.S3_SECRET_ACCESS_KEY),
 						},
 						endpoint: env.S3_ENDPOINT ?? undefined,
 					}),
@@ -126,9 +132,9 @@ async function buildFiles(): Promise<{
 			return {
 				files: new Files({
 					adapter: cloudinary({
-						cloudName: env.CLOUDINARY_CLOUD_NAME!,
-						apiKey: env.CLOUDINARY_API_KEY!,
-						apiSecret: env.CLOUDINARY_API_SECRET!,
+						cloudName: required("CLOUDINARY_CLOUD_NAME", env.CLOUDINARY_CLOUD_NAME),
+						apiKey: required("CLOUDINARY_API_KEY", env.CLOUDINARY_API_KEY),
+						apiSecret: required("CLOUDINARY_API_SECRET", env.CLOUDINARY_API_SECRET),
 						// Cloudinary auto-detects video from the filename, but pin it so files that bypass transforms still PUT and GET.
 						resourceType: "video",
 					}),
@@ -141,7 +147,7 @@ async function buildFiles(): Promise<{
 			const { azure } = await import("files-sdk/azure");
 			// The portal hands you a connection string, so accept one in AZURE_STORAGE_ACCOUNT and parse the name and key out of it.
 			const { accountName, accountKey } = resolveAzureCredentials(
-				env.AZURE_STORAGE_ACCOUNT!,
+				required("AZURE_STORAGE_ACCOUNT", env.AZURE_STORAGE_ACCOUNT),
 				env.AZURE_STORAGE_KEY,
 			);
 			return {
@@ -149,7 +155,7 @@ async function buildFiles(): Promise<{
 					adapter: azure({
 						accountName,
 						accountKey,
-						container: env.AZURE_BLOB_CONTAINER!,
+						container: required("AZURE_BLOB_CONTAINER", env.AZURE_BLOB_CONTAINER),
 					}),
 				}),
 				publicBaseUrl: env.AZURE_PUBLIC_URL ?? null,
@@ -161,9 +167,11 @@ async function buildFiles(): Promise<{
 			return {
 				files: new Files({
 					adapter: gcs({
-						bucket: env.GCS_BUCKET!,
+						bucket: required("GCS_BUCKET", env.GCS_BUCKET),
 						// Service-account JSON pasted into the env var as one line; parsed here so callers don't need the shape.
-						credentials: JSON.parse(env.GCS_SERVICE_ACCOUNT_JSON!),
+						credentials: JSON.parse(
+							required("GCS_SERVICE_ACCOUNT_JSON", env.GCS_SERVICE_ACCOUNT_JSON),
+						),
 					}),
 				}),
 				publicBaseUrl: env.GCS_PUBLIC_URL ?? null,

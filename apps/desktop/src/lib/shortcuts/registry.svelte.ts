@@ -355,8 +355,12 @@ export const shortcutDefs: ShortcutDef[] = [
 export function shortcutsByCategory(): [string, ShortcutDef[]][] {
 	const map = new Map<string, ShortcutDef[]>();
 	for (const def of shortcutDefs) {
-		if (!map.has(def.category)) map.set(def.category, []);
-		map.get(def.category)!.push(def);
+		let bucket = map.get(def.category);
+		if (!bucket) {
+			bucket = [];
+			map.set(def.category, bucket);
+		}
+		bucket.push(def);
 	}
 	return Array.from(map.entries());
 }

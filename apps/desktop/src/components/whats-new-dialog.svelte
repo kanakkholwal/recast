@@ -6,20 +6,10 @@ import * as Dialog from "@recast/ui/dialog";
 import { Markdown } from "@recast/ui/markdown";
 import { cn } from "@recast/ui/utils";
 import { config } from "$constants/app";
-import { type ChangeKind, KIND_META, LATEST_RELEASE } from "$constants/changelog";
+import { groupChanges, KIND_META, LATEST_RELEASE } from "$constants/changelog";
 import { whatsNew } from "$lib/stores/whats-new.svelte";
 
-// Order changes so additions surface first, then changes, then fixes.
-const ORDER: ChangeKind[] = ["added", "changed", "fixed", "deprecated"];
-
-const grouped = $derived.by(() => {
-	const map = new Map<ChangeKind, string[]>();
-	for (const c of LATEST_RELEASE.changes) {
-		if (!map.has(c.kind)) map.set(c.kind, []);
-		map.get(c.kind)!.push(c.summary);
-	}
-	return ORDER.filter((k) => map.has(k)).map((k) => [k, map.get(k)!] as const);
-});
+const grouped = $derived(groupChanges(LATEST_RELEASE));
 
 function handleOpenChange(v: boolean) {
 	if (!v) whatsNew.dismiss();

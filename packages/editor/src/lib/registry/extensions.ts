@@ -69,10 +69,10 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 			continue;
 		}
 		// Resolve an optional manifest-local asset id to its SVG text, or null.
-		const loadOptional = (assetId: string | undefined) =>
-			assetId && assets.get(assetId)?.path
-				? loadSvg(assets.get(assetId)!.path!)
-				: Promise.resolve(null);
+		const loadOptional = (assetId: string | undefined) => {
+			const path = assetId ? assets.get(assetId)?.path : undefined;
+			return path ? loadSvg(path) : Promise.resolve(null);
+		};
 
 		const [svg, pressedSvg, rightPressedSvg, dragSvg] = await Promise.all([
 			loadSvg(restPath),

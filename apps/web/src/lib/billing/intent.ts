@@ -55,7 +55,7 @@ export async function resolveCheckoutWorkspace(userId: string): Promise<Workspac
 	}
 
 	const owned = await ownedWorkspaceIds(userId);
-	if (owned.length === 1) return { ok: true, organizationId: owned[0]!, seats: 3 };
+	if (owned.length === 1) return { ok: true, organizationId: owned[0], seats: 3 };
 	return {
 		ok: false,
 		reason: owned.length === 0 ? "no_owned_workspace" : "no_intent_ambiguous",

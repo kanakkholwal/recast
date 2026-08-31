@@ -239,11 +239,6 @@
 	}
 }
 
-input[type="number"]:has(class) {
-	-webkit-appearance: textfield;
-	appearance: textfield;
-	-moz-appearance: textfield;
-}
 [type="button"] {
 	cursor: pointer;
 }

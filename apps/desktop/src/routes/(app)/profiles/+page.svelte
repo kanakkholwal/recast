@@ -200,7 +200,8 @@ function requestClose() {
 function toggleDraft(field: "systemAudio" | "microphone" | "camera" | "isDefault") {
 	if (!draft) return;
 	if (field === "isDefault" && draft.isDefault) {
-		const others = profilesStore.profiles.filter((p) => p.id !== draft!.id);
+		const draftId = draft.id;
+		const others = profilesStore.profiles.filter((p) => p.id !== draftId);
 		if (others.length === 0) {
 			toast.info("At least one profile must be default");
 			return;

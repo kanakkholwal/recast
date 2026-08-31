@@ -33,8 +33,8 @@ export function parseTimeParam(raw: string | null): number {
 export function parseTimeToken(s: string): number {
 	const parts = s.split(":").map((p) => Number(p));
 	if (parts.some(Number.isNaN)) return 0;
-	if (parts.length === 2) return parts[0]! * 60 + parts[1]!;
-	if (parts.length === 3) return parts[0]! * 3600 + parts[1]! * 60 + parts[2]!;
+	if (parts.length === 2) return parts[0] * 60 + parts[1];
+	if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
 	return 0;
 }
 
@@ -88,7 +88,7 @@ export function initials(
 	const src = (name ?? email ?? "?").trim();
 	if (!src) return "?";
 	const parts = src.split(/\s+/).filter(Boolean);
-	if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+	if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
 	return src.slice(0, 2).toUpperCase();
 }
 

@@ -351,7 +351,7 @@ export async function ensureDefaultTeamForUser(u: {
 			.where(eq(memberTable.userId, u.id));
 		if ((existing?.c ?? 0) > 0) return;
 
-		const first = (u.name || u.email.split("@")[0] || "Personal").split(/\s+/)[0]!;
+		const first = (u.name || u.email.split("@")[0] || "Personal").split(/\s+/)[0];
 		const orgId = crypto.randomUUID();
 		// Suffix a short id so two identically named teams don't collide on the org.slug unique index.
 		const slugBase =

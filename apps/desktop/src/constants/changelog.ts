@@ -1555,8 +1555,15 @@ const CHANGE_ORDER: ChangeKind[] = ["added", "changed", "fixed", "deprecated"];
 export function groupChanges(release: ChangelogRelease): (readonly [ChangeKind, string[]])[] {
 	const map = new Map<ChangeKind, string[]>();
 	for (const c of release.changes) {
-		if (!map.has(c.kind)) map.set(c.kind, []);
-		map.get(c.kind)!.push(c.summary);
+		let bucket = map.get(c.kind);
+		if (!bucket) {
+			bucket = [];
+			map.set(c.kind, bucket);
+		}
+		bucket.push(c.summary);
 	}
-	return CHANGE_ORDER.filter((k) => map.has(k)).map((k) => [k, map.get(k)!] as const);
+	return CHANGE_ORDER.flatMap((k) => {
+		const summaries = map.get(k);
+		return summaries ? [[k, summaries] as const] : [];
+	});
 }

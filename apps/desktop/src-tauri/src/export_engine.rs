@@ -1308,14 +1308,26 @@ mod live {
         )
         .expect("the piped export runs");
 
-        let dims = |path: &Path| {
-            let reader = recast_codec_mf::VideoReader::open(path).expect("opens");
-            (reader.info().width, reader.info().height)
+        let decoded = |path: &Path| {
+            let mut reader = recast_codec_mf::VideoReader::open(path).expect("opens");
+            let frame = reader.next_frame().expect("decode").expect("a frame");
+            let info = reader.info();
+            let (w, h) = (info.width, info.height);
+            let luma = (w * h) as usize;
+            let plane = &frame.data[..luma.min(frame.data.len())];
+            let mean = plane.iter().map(|&b| f64::from(b)).sum::<f64>() / plane.len() as f64;
+            ((w, h), mean)
         };
+        let (native_size, native_luma) = decoded(&native_out);
+        let (piped_size, piped_luma) = decoded(&piped_out);
         assert_eq!(
-            dims(&native_out),
-            dims(&piped_out),
+            native_size, piped_size,
             "the two backends disagree on the canvas"
+        );
+        // The piped backend is fed GPU NV12 on a packable shape; a pixel format the encoder read differently would land here, not in the geometry.
+        assert!(
+            (native_luma - piped_luma).abs() < 6.0,
+            "the two backends drew different pictures: {native_luma:.2} native, {piped_luma:.2} piped"
         );
     }
 

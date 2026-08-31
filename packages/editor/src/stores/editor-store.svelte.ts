@@ -1111,7 +1111,10 @@ export function createEditorStore() {
 	function setAnnotationZOrder(orderedIds: string[]) {
 		pushUndoState();
 		const zMap = new Map(orderedIds.map((id, i) => [id, i + 1]));
-		annotations = annotations.map((a) => (zMap.has(a.id) ? { ...a, zIndex: zMap.get(a.id)! } : a));
+		annotations = annotations.map((a) => {
+			const z = zMap.get(a.id);
+			return z === undefined ? a : { ...a, zIndex: z };
+		});
 		annotationZSeq = orderedIds.length + 1;
 	}
 

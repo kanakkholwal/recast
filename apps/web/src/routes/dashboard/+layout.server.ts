@@ -92,60 +92,56 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 	}
 
 	let activeOrganizationId = session.session?.activeOrganizationId ?? null;
-	if (
-		!activeOrganizationId ||
-		!memberships.find((m) => m.organizationId === activeOrganizationId)
-	) {
+	let activeMembership = memberships.find((m) => m.organizationId === activeOrganizationId);
+	if (!activeMembership) {
 		// The session lost its activeOrganizationId, so restore the default workspace or the most recent membership.
-		const fallback =
-			memberships.find((m) => m.organizationId === userPrefs?.defaultWorkspaceId) ??
-			memberships[0]!;
-		activeOrganizationId = fallback.organizationId;
+		activeMembership =
+			memberships.find((m) => m.organizationId === userPrefs?.defaultWorkspaceId) ?? memberships[0];
+		activeOrganizationId = activeMembership.organizationId;
 		try {
 			await getAuth().api.setActiveOrganization({
 				headers: request.headers,
-				body: { organizationId: fallback.organizationId },
+				body: { organizationId: activeOrganizationId },
 			});
 		} catch (err) {
 			console.error("[dashboard] setActiveOrganization failed", err);
 		}
 	}
 
-	const activeMembership = memberships.find((m) => m.organizationId === activeOrganizationId)!;
-
 	// Coerce Infinity to null so the quota snapshot survives `JSON.stringify`, which drops it.
 	const snap = await getQuotaSnapshot(activeMembership.organizationId);
 	const finite = (n: number): number | null => (Number.isFinite(n) ? n : null);
 	const delivery = snap ? deliveryState(snap) : null;
-	const quota = snap
-		? {
-				plan: snap.plan,
-				usage: {
-					storageBytes: snap.usage.storageBytes,
-					activeRecastsCount: snap.usage.activeRecastsCount,
-					archivedRecastsCount: snap.usage.archivedRecastsCount,
-					membersCount: snap.usage.membersCount,
-					// From deliveryState, so a rolled-over month reads as 0 here too.
-					deliveryBytesThisMonth: delivery!.usedBytes,
-				},
-				limits: {
-					storageBytes: finite(snap.limits.storageBytes),
-					activeRecasts: finite(snap.limits.activeRecasts),
-					members: finite(snap.limits.members),
-					maxDurationSec: finite(snap.limits.maxDurationSec),
-					playbackMaxHeight: snap.limits.playbackMaxHeight,
-					deliveryBytesPerMonth: finite(snap.limits.deliveryBytesPerMonth),
-				},
-				storagePctUsed: storagePctUsed(snap),
-				delivery: {
-					usedBytes: delivery!.usedBytes,
-					capBytes: finite(delivery!.capBytes),
-					ratio: delivery!.ratio,
-					exceeded: delivery!.exceeded,
-					warn: delivery!.warn,
-				},
-			}
-		: null;
+	const quota =
+		snap && delivery
+			? {
+					plan: snap.plan,
+					usage: {
+						storageBytes: snap.usage.storageBytes,
+						activeRecastsCount: snap.usage.activeRecastsCount,
+						archivedRecastsCount: snap.usage.archivedRecastsCount,
+						membersCount: snap.usage.membersCount,
+						// From deliveryState, so a rolled-over month reads as 0 here too.
+						deliveryBytesThisMonth: delivery.usedBytes,
+					},
+					limits: {
+						storageBytes: finite(snap.limits.storageBytes),
+						activeRecasts: finite(snap.limits.activeRecasts),
+						members: finite(snap.limits.members),
+						maxDurationSec: finite(snap.limits.maxDurationSec),
+						playbackMaxHeight: snap.limits.playbackMaxHeight,
+						deliveryBytesPerMonth: finite(snap.limits.deliveryBytesPerMonth),
+					},
+					storagePctUsed: storagePctUsed(snap),
+					delivery: {
+						usedBytes: delivery.usedBytes,
+						capBytes: finite(delivery.capBytes),
+						ratio: delivery.ratio,
+						exceeded: delivery.exceeded,
+						warn: delivery.warn,
+					},
+				}
+			: null;
 
 	return {
 		user: {

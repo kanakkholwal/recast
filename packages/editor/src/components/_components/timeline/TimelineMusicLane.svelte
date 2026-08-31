@@ -140,7 +140,8 @@ function onMove(e: PointerEvent) {
 		if (!dragEngaged(e.clientX, drag.startClientX)) return;
 		drag.engaged = true;
 	}
-	const clip = store.musicClips.find((c) => c.id === drag!.id);
+	const dragId = drag.id;
+	const clip = store.musicClips.find((c) => c.id === dragId);
 	if (!clip) return;
 	if (!dragUndoPushed) {
 		store.pushUndoState();

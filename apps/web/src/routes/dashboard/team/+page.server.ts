@@ -80,7 +80,7 @@ export const load: PageServerLoad = async ({ request }) => {
 		.where(and(eq(invitationTable.organizationId, orgId), eq(invitationTable.status, "pending")))
 		.orderBy(desc(invitationTable.createdAt));
 
-	const memberCap = TEAM_PLAN_MEMBER_CAPS[org.plan] ?? TEAM_PLAN_MEMBER_CAPS.free!;
+	const memberCap = TEAM_PLAN_MEMBER_CAPS[org.plan] ?? TEAM_PLAN_MEMBER_CAPS.free;
 
 	return {
 		org,
@@ -175,7 +175,7 @@ export const actions: Actions = {
 			await db.insert(userTable).values({
 				id: crypto.randomUUID(),
 				email,
-				name: email.split("@")[0]!,
+				name: email.split("@")[0],
 				status: "active",
 				// Owner-vouched: the invite IS the verification, or accept-invitation rejects the first magic-link session.
 				emailVerified: true,

@@ -90,12 +90,12 @@ export function viewsByDay(
 			views: 0,
 		});
 	}
-	const start = buckets[0]!.date;
+	const start = buckets[0].date;
 	for (const ev of activity) {
 		if (ev.kind !== "viewed" && ev.kind !== "completed") continue;
 		if (ev.timestamp < start) continue;
 		const idx = Math.floor((ev.timestamp - start) / DAY);
-		if (idx >= 0 && idx < buckets.length) buckets[idx]!.views++;
+		if (idx >= 0 && idx < buckets.length) buckets[idx].views++;
 	}
 	return buckets;
 }
@@ -284,7 +284,7 @@ export function engagementHeatmap(
 	for (const m of moments) {
 		const at = Math.max(0, Math.min(span - 0.001, m.atSeconds));
 		const idx = Math.min(n - 1, Math.floor(at / slice));
-		const bin = bins[idx]!;
+		const bin = bins[idx];
 		if (m.kind === "comment") bin.comments++;
 		else bin.reactions++;
 		bin.total++;

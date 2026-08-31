@@ -39,8 +39,12 @@ export function groupCommands(
 	if (query.trim()) return [["Results", filtered]];
 	const map = new Map<string, PaletteCommand[]>();
 	for (const cmd of filtered) {
-		if (!map.has(cmd.category)) map.set(cmd.category, []);
-		map.get(cmd.category)!.push(cmd);
+		let bucket = map.get(cmd.category);
+		if (!bucket) {
+			bucket = [];
+			map.set(cmd.category, bucket);
+		}
+		bucket.push(cmd);
 	}
 	return Array.from(map.entries());
 }

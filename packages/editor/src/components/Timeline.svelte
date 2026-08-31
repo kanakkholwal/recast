@@ -185,13 +185,14 @@ $effect(() => {
 $effect(() => {
 	if (!store.isPlaying || isDraggingPlayhead || !timelineEl) return;
 	const px = xOf(store.currentTime);
+	const el = timelineEl;
 	// Cached and untracked: reading clientWidth then writing scrollLeft forces a full ruler layout, and the write re-enters this effect.
 	untrack(() => {
 		const view = timelineWidth;
 		const left = scrollLeft;
 		const margin = Math.min(view * 0.12, 120);
 		if (px < left + margin || px > left + view - margin) {
-			timelineEl!.scrollLeft = Math.max(0, px - margin);
+			el.scrollLeft = Math.max(0, px - margin);
 		}
 	});
 });

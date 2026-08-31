@@ -18,6 +18,13 @@ import type { ExtensionManifest, InstalledExtension } from "./wire-types";
 // Null where packs cannot be installed locally; the panel then lists only.
 const extService = () => tryGetEditorServices()?.extensions ?? null;
 
+// Install/uninstall/toggle have no read-only fallback, so name the unsupported host instead of throwing a TypeError on null.
+function requireExtService() {
+	const svc = extService();
+	if (!svc) throw new Error("This host cannot install extension packs.");
+	return svc;
+}
+
 import { extensionsStore } from "../stores/extensions-store.svelte";
 
 /** One entry of the curated registry index served from the extensions release. */
@@ -62,9 +69,10 @@ let initialised = false;
 
 /** Enumerate installed packs and register the enabled ones. No network. */
 async function hydrate(): Promise<void> {
-	if (extService() === null) return;
+	const svc = extService();
+	if (!svc) return;
 	try {
-		const list = await extService()!.listInstalled();
+		const list = await svc.listInstalled();
 		extensionsStore.setAll(list);
 		await Promise.all(list.map((ext) => registerExtension(ext)));
 	} catch (err) {
@@ -84,7 +92,7 @@ export async function installFromUrl(manifestUrl: string): Promise<InstalledExte
 	extensionsStore.setBusy(true);
 	extensionsStore.setError(null);
 	try {
-		const ext = await extService()!.install(manifestUrl.trim());
+		const ext = await requireExtService().install(manifestUrl.trim());
 		extensionsStore.upsert(ext);
 		await registerExtension(ext);
 		return ext;
@@ -101,7 +109,7 @@ export async function installFromUrl(manifestUrl: string): Promise<InstalledExte
 export async function removeExtension(extId: string): Promise<void> {
 	extensionsStore.setBusy(true);
 	try {
-		await extService()!.uninstall(extId);
+		await requireExtService().uninstall(extId);
 		unregisterExtension(extId);
 		extensionsStore.remove(extId);
 	} catch (err) {
@@ -117,7 +125,7 @@ export async function removeExtension(extId: string): Promise<void> {
 export async function toggleExtension(extId: string, enabled: boolean): Promise<void> {
 	extensionsStore.setBusy(true);
 	try {
-		await extService()!.setEnabled(extId, enabled);
+		await requireExtService().setEnabled(extId, enabled);
 		const current = extensionsStore.installed.find((e) => e.manifest.id === extId);
 		if (current) {
 			const next = { ...current, enabled };
@@ -135,9 +143,10 @@ export async function toggleExtension(extId: string, enabled: boolean): Promise<
 
 /** Fetch the curated registry index for the browse gallery. */
 export async function loadRegistryIndex<T = unknown>(): Promise<T | null> {
-	if (extService() === null) return null;
+	const svc = extService();
+	if (!svc) return null;
 	try {
-		return await extService()!.fetchRegistry<T>(registryIndexUrl());
+		return await svc.fetchRegistry<T>(registryIndexUrl());
 	} catch (err) {
 		log.warn("extensions", "registry_index_failed", { err: String(err) });
 		return null;
@@ -147,9 +156,10 @@ export async function loadRegistryIndex<T = unknown>(): Promise<T | null> {
 /** Fetch a pack's full manifest for the pre-install details preview. Reuses the
  *  URL-allowlisted registry fetch, so the same https/localhost gate applies. */
 export async function fetchManifestPreview(manifestUrl: string): Promise<ExtensionManifest | null> {
-	if (extService() === null) return null;
+	const svc = extService();
+	if (!svc) return null;
 	try {
-		return await extService()!.fetchRegistry<ExtensionManifest>(manifestUrl.trim());
+		return await svc.fetchRegistry<ExtensionManifest>(manifestUrl.trim());
 	} catch (err) {
 		log.warn("extensions", "manifest_preview_failed", { err: String(err) });
 		return null;

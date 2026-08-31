@@ -115,7 +115,7 @@ function dragScroll(node: HTMLElement) {
 		const now = performance.now();
 		samples.push({ x: e.clientX, t: now });
 		// Drop samples outside the window.
-		while (samples.length > 1 && now - samples[0]!.t > SAMPLE_WINDOW_MS) {
+		while (samples.length > 1 && now - samples[0].t > SAMPLE_WINDOW_MS) {
 			samples.shift();
 		}
 	}
