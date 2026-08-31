@@ -831,6 +831,10 @@ async function loadDocument() {
 		// Absent from an older backend: unknowable, so `legacy` — never "off".
 		cameraCapture = document.cameraCapture ?? "legacy";
 		cameraSrc = cameraPath ? convertFileSrc(cameraPath) : "";
+		// A recorded camera is composited only when enabled; a fresh recording never sets that flag, so turn it on when one exists and the project hasn't already decided.
+		if (cameraPath && document.renderState?.cameraOverlay?.enabled === undefined) {
+			store.updateCameraOverlay({ enabled: true });
+		}
 		// Mount the editor body (VideoPreview renders only when !isLoading) so the <video> exists before load().
 		isLoading = false;
 		await tick();

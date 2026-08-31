@@ -79,7 +79,7 @@ async function deleteCloudCopy() {
 		<Button
 			type="button"
 			variant="destructive_soft"
-			size="xs"
+			size="sm"
 			class="mr-auto gap-1.5"
 			disabled={deleting || saving}
 			onclick={() => (confirmDelete = true)}
@@ -87,8 +87,8 @@ async function deleteCloudCopy() {
 			<Trash2 class="size-3.5" />
 			{deleting ? "Deleting…" : "Delete cloud copy"}
 		</Button>
-		<Button type="button" variant="ghost" size="xs" onclick={close}>Cancel</Button>
-		<Button type="button" size="xs" disabled={saving || loading} onclick={onSave}>
+		<Button type="button" variant="ghost" size="sm" onclick={close}>Cancel</Button>
+		<Button type="button" size="sm" disabled={saving || loading} onclick={onSave}>
 			{saving ? "Saving…" : "Save"}
 		</Button>
 	{/snippet}

@@ -182,7 +182,7 @@ export function buildTimelineRows(input: TimelineViewModelInput): TimelineRow[] 
 		rows.push(makeRow("music", "audio", "Music", clips));
 	}
 	for (const t of input.tracks ?? []) {
-		if (t.times.length === 0) continue;
+		// Keep a track with no keyframes: the caller only emits ones that should show (an enabled camera renders a bare baseline).
 		const keyframes: TimelineKeyframe[] = t.times.map((sec) => ({
 			frame: originalToOutput(input.map, sec) * input.fps,
 			selected: t.selectedTime != null && Math.abs(sec - t.selectedTime) < 1e-3,

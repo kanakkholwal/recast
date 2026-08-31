@@ -1,7 +1,7 @@
 use recast_captions::{
-    active_chunk_index, active_word_index, break_into_lines, caption_top_frac, chunk_words,
-    pill_box, spoken_word_count, word_color, word_scaled, CaptionAnimation, CaptionStyle,
-    TranscriptWord,
+    active_chunk_index, active_cue, active_word_index, break_into_lines, caption_top_frac,
+    chunk_words, pill_box, spoken_word_count, word_color, word_scaled, CaptionAnimation,
+    CaptionStyle, CaptionTrack,
 };
 use recast_color::{parse_css_color, Srgba};
 use recast_text::{shape_line, FontFace, GlyphAtlas};
@@ -123,7 +123,7 @@ impl CaptionFrame {
 )]
 pub fn layout_caption(
     style: &CaptionStyle,
-    words: &[TranscriptWord],
+    track: &CaptionTrack,
     clock: CaptionClock<'_>,
     video: VideoRect,
     canvas: (u32, u32),
@@ -133,12 +133,16 @@ pub fn layout_caption(
 ) -> CaptionFrame {
     let canvas_h = canvas.1.max(1) as f64;
     let font_px = style.font_size_pct / 100.0 * canvas_h;
-    if !style.enabled || words.is_empty() || font_px <= 0.0 {
+    if !style.enabled || track.is_empty() || font_px <= 0.0 {
         return CaptionFrame::default();
     }
 
+    // Cue-scoped: chunking the whole track runs a chunk across a sentence boundary and never ends.
+    let Some(cue) = active_cue(&track.segments, clock.source) else {
+        return CaptionFrame::default();
+    };
     let anim = resolved_animation(style);
-    let runs = chunk_words(words, &anim);
+    let runs = chunk_words(&cue.words, &anim);
     let Some(index) = active_chunk_index(&runs, clock.source) else {
         return CaptionFrame::default();
     };

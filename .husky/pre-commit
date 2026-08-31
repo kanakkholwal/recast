@@ -1,54 +1,46 @@
+#!/bin/sh
+set -e
 
 say() { echo "[pre-commit] $*" >&2; }
+fail() { say "$1"; exit 1; }
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -n "$staged" ] || exit 0
-
-
 dirty=$(git diff --name-only)
 
+# Re-staging a file that also has unstaged edits would sweep those edits into the commit.
 restage() {
-  while IFS= read -r file; do
-    [ -n "$file" ] && [ -f "$file" ] || continue
-    if printf '%s\n' "$dirty" | grep -Fxq "$file"; then
-      say "$file has unstaged edits — formatted, not re-staged"
-      continue
-    fi
-    git add -- "$file"
-  done
+	while IFS= read -r file; do
+		[ -n "$file" ] && [ -f "$file" ] || continue
+		if printf '%s\n' "$dirty" | grep -Fxq "$file"; then
+			say "$file has unstaged edits, formatted but not re-staged"
+		else
+			git add -- "$file"
+		fi
+	done
 }
 
-rust_files=$(printf '%s\n' "$staged" | grep -E '^apps/desktop/src-tauri/.*\.rs$' || true)
+rust_files=$(printf '%s\n' "$staged" | grep -E '\.rs$' || true)
 if [ -n "$rust_files" ]; then
-  say "rustfmt…"
-  edition=$(grep -m1 '^edition' apps/desktop/src-tauri/Cargo.toml | cut -d'"' -f2)
-  if ! printf '%s\n' "$rust_files" | xargs rustfmt --edition "${edition:-2021}"; then
-    say "rustfmt failed. Run: pnpm fmt:rust"
-    exit 1
-  fi
-  printf '%s\n' "$rust_files" | restage
+	say "rustfmt"
+	# Both workspaces pin the same edition, so one lookup covers crates/ and src-tauri/.
+	edition=$(grep -m1 '^edition' apps/desktop/src-tauri/Cargo.toml | cut -d'"' -f2)
+	printf '%s\n' "$rust_files" | xargs rustfmt --edition "${edition:-2021}" ||
+		fail "rustfmt failed. Run: pnpm fmt:rust"
+	printf '%s\n' "$rust_files" | restage
 fi
 
-web_files=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|jsx|svelte|jsonc)$' || true)
+web_files=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|svelte|css|json|jsonc)$' || true)
 if [ -n "$web_files" ]; then
-  say "biome format…"
- 
-  if ! pnpm exec biome format --write --staged --no-errors-on-unmatched . >&2; then
-    say "biome could not format some files. Run: pnpm fmt:js"
-    exit 1
-  fi
-  printf '%s\n' "$web_files" | restage
+	say "biome format"
+	pnpm exec biome format --write --staged --no-errors-on-unmatched . >&2 ||
+		fail "biome could not format some files. Run: pnpm fmt:js"
+	printf '%s\n' "$web_files" | restage
+
+	say "biome lint"
+	pnpm exec biome lint --staged --no-errors-on-unmatched . >&2 ||
+		fail "biome lint failed. Fix, or run: pnpm lint:js:fix"
 fi
 
-# # Lint gates, staged-scoped. 
-if [ -n "$web_files" ]; then
-  say "biome lint…"
-  if ! pnpm exec biome lint --staged --no-errors-on-unmatched . >&2; then
-    say "biome lint failed. Fix, or run: pnpm lint:js:fix"
-    exit 1
-  fi
-fi
-
-if ! node scripts/check-comments.mjs --staged >&2; then
-  exit 1
-fi
+say "comments"
+node scripts/check-comments.mjs --staged >&2

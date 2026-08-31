@@ -9,6 +9,66 @@ pub struct TranscriptWord {
     pub text: String,
 }
 
+/// One transcript segment: the unit a caption is chunked and shown within.
+/// Chunking across a boundary puts the next sentence's words on screen with
+/// this one's, so the boundary has to survive into the renderer.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptionCue {
+    pub start: f64,
+    pub end: f64,
+    #[serde(default)]
+    pub words: Vec<TranscriptWord>,
+}
+
+/// The transcript captions are drawn from.
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+pub struct CaptionTrack {
+    pub segments: Vec<CaptionCue>,
+}
+
+impl CaptionTrack {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.segments.iter().all(|c| c.words.is_empty())
+    }
+}
+
+/// Accepts the transcript as sent (`{ segments: [...] }`, other keys ignored)
+/// and a bare word array, which is what the track was before it carried
+/// segments and what the wasm preview API still documents.
+impl<'de> Deserialize<'de> for CaptionTrack {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Segmented { segments: Vec<CaptionCue> },
+            Flat(Vec<TranscriptWord>),
+        }
+        Ok(match Wire::deserialize(d)? {
+            Wire::Segmented { segments } => Self { segments },
+            Wire::Flat(words) => Self::from(words),
+        })
+    }
+}
+
+impl From<Vec<TranscriptWord>> for CaptionTrack {
+    /// One cue spanning every word, which is the old unsegmented behaviour.
+    fn from(words: Vec<TranscriptWord>) -> Self {
+        if words.is_empty() {
+            return Self::default();
+        }
+        let start = words.iter().map(|w| w.start).fold(f64::INFINITY, f64::min);
+        let end = words
+            .iter()
+            .map(|w| w.end)
+            .fold(f64::NEG_INFINITY, f64::max);
+        Self {
+            segments: vec![CaptionCue { start, end, words }],
+        }
+    }
+}
+
 /// Word-by-word animation. The string fields mirror the TypeScript unions
 /// rather than being enums, so an unknown value from a newer project falls
 /// through to the default arm instead of failing the whole deserialize.

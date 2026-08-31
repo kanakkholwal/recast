@@ -1,4 +1,4 @@
-use recast_captions::{CaptionAnimation, CaptionStyle, TranscriptWord};
+use recast_captions::{CaptionAnimation, CaptionStyle, CaptionTrack, TranscriptWord};
 use recast_compositor::{layout_caption, CaptionClock, CaptionFrame, VideoRect};
 use recast_text::{resolve_face, FontFace, GlyphAtlas};
 use recast_time::{MappedSpan, TimeMap};
@@ -72,7 +72,7 @@ fn lay(style: &CaptionStyle, words: &[TranscriptWord], t: f64) -> CaptionFrame {
     let mut atlas = GlyphAtlas::new(512, 2048);
     layout_caption(
         style,
-        words,
+        &CaptionTrack::from(words.to_vec()),
         clock(t),
         video(),
         CANVAS,
@@ -355,7 +355,7 @@ fn every_uv_matches_the_atlas_the_frame_ended_with() {
     let (_, before) = atlas.size();
     let frame = layout_caption(
         &style,
-        &long,
+        &CaptionTrack::from(long.clone()),
         clock(1.5),
         video(),
         CANVAS,
@@ -406,7 +406,7 @@ fn a_short_wrapped_line_is_centred_rather_than_left_flush() {
             ..style()
         },
         &long,
-        1.5,
+        1.0,
     );
     // Grouped by baseline, since glyph TOPS differ within a row: 'b' has an ascender and 'a' does not.
     let mut rows: Vec<(i32, f32, f32)> = Vec::new();
@@ -455,7 +455,16 @@ fn lay_at(style: &CaptionStyle, words: &[TranscriptWord], clock: CaptionClock<'_
         return CaptionFrame::default();
     };
     let mut atlas = GlyphAtlas::new(512, 2048);
-    layout_caption(style, words, clock, video(), CANVAS, &face, 0, &mut atlas)
+    layout_caption(
+        style,
+        &CaptionTrack::from(words.to_vec()),
+        clock,
+        video(),
+        CANVAS,
+        &face,
+        0,
+        &mut atlas,
+    )
 }
 
 #[test]

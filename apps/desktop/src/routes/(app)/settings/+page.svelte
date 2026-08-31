@@ -516,8 +516,8 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
             description={isLinux
               ? "Not available on Linux."
               : windowTransparency
-                ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
-                : "The window uses a solid background."}
+                ? "Translucent system backdrop (Mica on Win 11, vibrancy on macOS)."
+                : "Solid window background."}
           >
             <Switch
               checked={!isLinux && windowTransparency}
@@ -611,14 +611,14 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
         <SectionCard
           id="settings-privacy"
           label="Privacy & Telemetry"
-          description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
+          description="Anonymous diagnostics only. Recordings never leave this machine."
         >
           {#snippet icon()}
             <Shield class="size-4 text-muted-foreground" />
           {/snippet}
           <SettingsRow
             label="Share anonymous usage analytics"
-            description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
+            description="Which features you use, to guide what we improve. Off by default."
           >
             <Switch
               checked={desktopConsent.product}
@@ -628,7 +628,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           </SettingsRow>
           <SettingsRow
             label="Send anonymous crash reports"
-            description="Scrubbed error details when something breaks, with no file names or paths. On by default."
+            description="Error details when something breaks, with no file names or paths."
           >
             <Switch
               checked={desktopConsent.errors}
@@ -675,7 +675,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
         <SectionCard
           id="settings-capture-quality"
           label="Capture quality"
-          description="How crisp the recorded master is. The editor re-encodes on export, but detail lost here can't be recovered later."
+          description="Quality of the recorded master. Detail lost here can't be recovered on export."
         >
           {#snippet icon()}
             <Sparkles class="size-4 text-muted-foreground" />
@@ -711,8 +711,8 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           <SettingsRow
             label="Recording frame rate"
             description={recordingFps > effectiveFps
-              ? `Set to ${recordingFps} fps, but this display runs at ${maxRefreshHz} Hz, so capture uses ${effectiveFps} fps here.`
-              : `${recordingFps} fps. Bigger files and more encode load at higher rates.`}
+              ? `Set to ${recordingFps} fps; this display caps capture at ${effectiveFps} fps.`
+              : `${recordingFps} fps. Higher rates mean bigger files.`}
           >
             <Segmented
               options={fpsSegments}
@@ -797,7 +797,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
         <SectionCard
           id="settings-cloud"
           label="Recast Cloud"
-          description="Share recordings as Loom-style links, layered on top of your local recordings."
+          description="Share recordings as private, Loom-style links."
         >
           {#snippet icon()}
             <RecastMark class="size-4 text-muted-foreground" />
@@ -852,7 +852,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
         <SectionCard
           id="settings-experimental"
           label="Experimental"
-          description="Unfinished features, off by default. Turn one on to try it; it may change or break."
+          description="Unfinished features, off by default. May change or break."
         >
           {#snippet icon()}
             <FlaskConical class="size-4 text-muted-foreground" />
@@ -880,10 +880,10 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           <SettingsRow
             label="Use the GPU writer instead of FFmpeg"
             description={!nativeEncoderSupported
-              ? "Not available on this machine. The GPU writer needs Windows and a Media Foundation H.264 encoder."
+              ? "Needs Windows and a Media Foundation H.264 encoder."
               : nativeEncoder
-                ? "Recordings are encoded on the GPU and written directly, with no FFmpeg process and no frame copies through system memory. A cropped recording still falls back to FFmpeg."
-                : "Recordings are piped to FFmpeg. The GPU writer is faster and copies nothing through system memory, but has run on fewer machines."}
+                ? "Encoded on the GPU, no FFmpeg. Region-select recordings still use FFmpeg."
+                : "Piped to FFmpeg. The GPU writer is faster, but newer."}
           >
             <Switch
               checked={nativeEncoderSupported && nativeEncoder}
@@ -960,7 +960,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
 
           <SettingsRow
             label="Auto-install on first launch"
-            description="When enabled, Recast puts itself on your PATH the first time the app starts. Disables future auto-attempts."
+            description="Adds Recast to your PATH the first time the app starts."
           >
             <Switch
               checked={cliAutoInstall}

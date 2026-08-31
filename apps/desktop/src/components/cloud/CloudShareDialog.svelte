@@ -121,17 +121,17 @@ async function done() {
 
 	{#snippet footer()}
 		{#if status === "uploading"}
-			<Button variant="default_soft" size="xs" onclick={onMinimize}>
+			<Button variant="secondary" size="sm" onclick={onMinimize}>
 				<Minus />
 				Minimize
 			</Button>
 		{:else if status === "complete"}
-			<Button size="xs" disabled={saving || loading} onclick={done}>
+			<Button size="sm" disabled={saving || loading} onclick={done}>
 				{saving ? "Saving…" : "Done"}
 			</Button>
 		{:else}
-			<Button variant="ghost" size="xs" onclick={onClose}>Close</Button>
-			<Button size="xs" onclick={onRetry}>Try again</Button>
+			<Button variant="ghost" size="sm" onclick={onClose}>Close</Button>
+			<Button size="sm" onclick={onRetry}>Try again</Button>
 		{/if}
 	{/snippet}
 </DialogShell>

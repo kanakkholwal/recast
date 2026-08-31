@@ -1,4 +1,4 @@
-use recast_captions::TranscriptWord;
+use recast_captions::CaptionTrack;
 use recast_cursor::CursorTrack;
 use recast_gpu::{GpuContext, GpuError};
 use recast_scene::{LayerId, LayerSource, Scene};
@@ -82,8 +82,8 @@ impl Session {
 
     /// The transcribed words captions are drawn from. Its own channel for the
     /// same reason as the pointer path: bulky, and it arrives separately.
-    pub fn set_caption_track(&mut self, words: Option<Vec<TranscriptWord>>) {
-        self.scene.caption_track = words;
+    pub fn set_caption_track(&mut self, track: Option<CaptionTrack>) {
+        self.scene.caption_track = track;
     }
 
     /// The face to draw captions with. Required on wasm32, where there is no
@@ -172,7 +172,7 @@ impl Session {
         let Some(style) = self.scene.captions.clone() else {
             return CaptionFrame::default();
         };
-        let Some(words) = self.scene.caption_track.clone() else {
+        let Some(track) = self.scene.caption_track.clone() else {
             return CaptionFrame::default();
         };
         let Some(face) = self.caption_face_for(&style) else {
@@ -191,7 +191,7 @@ impl Session {
         };
         let frame = layout_caption(
             &style,
-            &words,
+            &track,
             clock,
             video,
             canvas,
@@ -587,11 +587,11 @@ mod tests {
             session.caption_frame(1.2).is_empty(),
             "a style with no words drew something"
         );
-        session.set_caption_track(Some(transcript()));
+        session.set_caption_track(Some(transcript().into()));
         assert!(!session.caption_frame(1.2).is_empty());
 
         let mut styleless = Session::new(&ctx, scene(""), source()).expect("session");
-        styleless.set_caption_track(Some(transcript()));
+        styleless.set_caption_track(Some(transcript().into()));
         assert!(styleless.caption_frame(1.2).is_empty());
     }
 
@@ -604,7 +604,7 @@ mod tests {
             return;
         }
         let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
-        session.set_caption_track(Some(transcript()));
+        session.set_caption_track(Some(transcript().into()));
         assert!(!session.caption_frame(1.2).is_empty());
 
         session.set_scene(scene(&format!(r#"{CAPTION_STYLE} "padding": 5.0,"#)));
@@ -618,7 +618,7 @@ mod tests {
             return;
         }
         let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
-        session.set_caption_track(Some(transcript()));
+        session.set_caption_track(Some(transcript().into()));
         session.set_caption_track(None);
         assert!(session.caption_frame(1.2).is_empty());
 
@@ -637,7 +637,7 @@ mod tests {
         }
         let cut = format!(r#"{CAPTION_STYLE} "cuts": [{{"start": 2.0, "end": 4.0}}],"#);
         let mut session = Session::new(&ctx, scene(&cut), source()).expect("session");
-        session.set_caption_track(Some(transcript()));
+        session.set_caption_track(Some(transcript().into()));
 
         // Output 1.2 is original 1.2: the one-glyph word.
         let early = session.caption_frame(1.2);
@@ -658,7 +658,7 @@ mod tests {
             return;
         }
         let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
-        session.set_caption_track(Some(transcript()));
+        session.set_caption_track(Some(transcript().into()));
         let before = session.caption_frame(1.2);
         assert!(!before.is_empty());
 
@@ -680,7 +680,7 @@ mod tests {
             return;
         }
         let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
-        session.set_caption_track(Some(transcript()));
+        session.set_caption_track(Some(transcript().into()));
         let bytes = recast_text::resolve_face("Arial", 400, None)
             .expect("arial")
             .face
@@ -708,7 +708,7 @@ mod tests {
             return;
         }
         let mut session = Session::new(&ctx, scene(CAPTION_STYLE), source()).expect("session");
-        session.set_caption_track(Some(transcript()));
+        session.set_caption_track(Some(transcript().into()));
         assert!(!session.caption_frame(1.2).is_empty());
 
         let missing = CAPTION_STYLE.replace(

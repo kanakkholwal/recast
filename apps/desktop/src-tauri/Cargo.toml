@@ -32,6 +32,8 @@ path = "src/main.rs"
 
 [dev-dependencies]
 recast-testkit = { path = "../../../crates/recast-testkit" }
+# Caption parity samples both paths, and only the compositor's takes a shaped face.
+recast-text = { path = "../../../crates/recast-text" }
 # Scripts an audio device, so the recorder's own loop is testable without one.
 capturekit = { path = "../../../crates/capturekit", features = ["serde", "mock"] }
 # Goldens are PNGs, not raw RGBA: 5.7 MB of committed binary per fixture set is

@@ -2,9 +2,9 @@
 import { cn } from "@recast/ui/utils";
 import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
 import {
+	type DropdownMenuSize,
 	dropdownMenuItemSizeVariants,
 	getDropdownMenuSize,
-	type DropdownMenuSize,
 } from "./context";
 
 let {
@@ -30,7 +30,7 @@ const resolvedSize = $derived(size ?? getDropdownMenuSize());
 	data-inset={inset}
 	data-variant={variant}
 	class={cn(
-		"focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:text-destructive not-data-[variant=destructive]:focus:**:text-accent-foreground rounded-md data-inset:pl-7 group/dropdown-menu-item relative flex cursor-default items-center outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+		"focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:text-destructive not-data-[variant=destructive]:focus:**:text-accent-foreground rounded-lg data-inset:pl-7 group/dropdown-menu-item relative flex cursor-default items-center outline-hidden select-none transition-colors duration-100 data-disabled:pointer-events-none data-disabled:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0",
 		dropdownMenuItemSizeVariants({ size: resolvedSize }),
 		className
 	)}

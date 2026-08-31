@@ -1,4 +1,4 @@
-use crate::model::{CaptionAnimation, CaptionStyle, TranscriptWord};
+use crate::model::{CaptionAnimation, CaptionCue, CaptionStyle, TranscriptWord};
 
 /// Largest caption block height ever reserved, as a fraction of the frame, so
 /// the clamp cannot push a caption past the frame centre.
@@ -40,6 +40,14 @@ pub fn caption_top_frac(
         let base = (v_top - cap).max(0.0);
         Some((base + offset).clamp(0.0, max_top))
     }
+}
+
+/// The cue on screen at source-time `t`, mirroring the preview's `segmentAt`:
+/// the segment containing `t`, earliest first where two overlap, and `None`
+/// outside every segment so a caption cannot outlive its own sentence.
+#[must_use]
+pub fn active_cue(cues: &[CaptionCue], t: f64) -> Option<&CaptionCue> {
+    cues.iter().find(|cue| t >= cue.start && t < cue.end)
 }
 
 /// Groups `words` into the runs shown on screen at once.

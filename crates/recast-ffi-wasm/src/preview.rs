@@ -170,18 +170,18 @@ impl PreviewEngine {
         Ok(())
     }
 
-    /// The transcript captions are drawn from, as the words array is stored.
-    /// Survives a later `setScene`, like the pointer path. An empty string
-    /// clears it.
+    /// The transcript captions are drawn from, as the transcript is stored
+    /// (`{ segments }`) or as a bare word array. Survives a later `setScene`,
+    /// like the pointer path. An empty string clears it.
     #[wasm_bindgen(js_name = setCaptionTrack)]
     pub fn set_caption_track(&mut self, json: &str) -> Result<(), JsValue> {
-        let words = match json.is_empty() {
+        let track = match json.is_empty() {
             true => None,
             false => {
                 Some(serde_json::from_str(json).map_err(|e| JsValue::from_str(&e.to_string()))?)
             }
         };
-        self.session.set_caption_track(words);
+        self.session.set_caption_track(track);
         Ok(())
     }
 

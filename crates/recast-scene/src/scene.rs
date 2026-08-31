@@ -1,4 +1,4 @@
-use recast_captions::{CaptionStyle, TranscriptWord};
+use recast_captions::{CaptionStyle, CaptionTrack};
 use recast_color::{Gradient, Srgba};
 use recast_cursor::CursorTrack;
 use recast_time::{
@@ -38,7 +38,7 @@ pub struct Scene {
     /// The transcribed words captions are drawn from. Split from the style for
     /// the same reason as the pointer path: captured signal, not authored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub caption_track: Option<Vec<TranscriptWord>>,
+    pub caption_track: Option<CaptionTrack>,
     #[serde(default)]
     pub flags: SceneFlags,
     /// Editor-owned keys the engine never reads. Carried so a round trip

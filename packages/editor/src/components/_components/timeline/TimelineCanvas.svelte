@@ -214,7 +214,8 @@ let selectedKeyframeSec = $state<number | null>(null);
 // Keyframe tracks, generic over the source model; camera is the only animated model today (a new one adds a source here plus a TRACK_HANDLERS entry).
 const trackInputs = $derived.by<TrackItem[]>(() => {
 	const cam = store.cameraOverlay;
-	if (!cam || cam.keyframes.length === 0) return [];
+	// Show the lane whenever the camera is composited, not just when it has keyframes; an empty track still says "camera is here".
+	if (!cam?.enabled) return [];
 	return [
 		{
 			id: "camera",

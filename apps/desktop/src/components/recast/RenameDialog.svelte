@@ -94,7 +94,7 @@ function handleKeydown(e: KeyboardEvent) {
 	<div class="flex flex-col gap-1.5">
 		<label
 			for="rename-input"
-			class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+			class="text-[11px] font-medium text-muted-foreground"
 		>
 			{label}
 		</label>
@@ -106,18 +106,18 @@ function handleKeydown(e: KeyboardEvent) {
 			disabled={busy}
 			aria-invalid={error ? "true" : undefined}
 			aria-describedby={error ? "rename-error" : undefined}
-			class="h-8 w-full rounded-md border border-border/50 bg-input px-2.5 text-[12px] text-foreground outline-none transition-colors focus:border-primary/60 aria-[invalid]:border-destructive/60 disabled:opacity-50"
+			class="h-9 w-full rounded-lg bg-muted/60 px-3 text-[13px] text-foreground outline-none ring-1 ring-inset ring-border/40 transition-[box-shadow] focus:ring-2 focus:ring-ring/60 aria-[invalid]:ring-2 aria-[invalid]:ring-destructive/50 disabled:opacity-50"
 		/>
 		{#if error}
 			<!-- role="alert" so the failure is spoken; without it a screen-reader
 			     user pressed Enter and got silence. -->
-			<p id="rename-error" role="alert" class="text-[11px] text-destructive">{error}</p>
+			<p id="rename-error" role="alert" class="text-[12px] text-destructive">{error}</p>
 		{/if}
 	</div>
 
 	{#snippet footer()}
-		<Button variant="ghost" size="xs" onclick={close} disabled={busy}>Cancel</Button>
-		<Button variant="default" size="xs" onclick={commit} disabled={busy}>
+		<Button variant="ghost" size="sm" onclick={close} disabled={busy}>Cancel</Button>
+		<Button variant="default" size="sm" onclick={commit} disabled={busy}>
 			{busy ? "Saving…" : "Save"}
 		</Button>
 	{/snippet}

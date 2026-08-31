@@ -4,8 +4,8 @@ export const tabsListVariants = tv({
 	base: "rounded-lg p-[3px] group-data-horizontal/tabs:h-9 data-[variant=line]:rounded-none group/tabs-list text-muted-foreground inline-flex w-fit items-center justify-center group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col",
 	variants: {
 		variant: {
-			default: "gap-2-list-variant-default bg-muted",
-			line: "rounded-lg p-[3px] group-data-horizontal/tabs:h-9 data-[variant=line]:rounded-none-variant-line gap-1 bg-transparent",
+			default: "gap-2 bg-muted",
+			line: "rounded-lg p-[3px] group-data-horizontal/tabs:h-9 data-[variant=line]:rounded-none gap-1 bg-transparent",
 			soft: 'bg-muted/60 [&_[data-slot="tabs-trigger"][data-state=active]_svg]:text-primary [&_[data-slot="tabs-trigger"][data-state=active]]:text-foreground [&_[data-slot="tabs-trigger"]]:text-muted-foreground [&_[data-slot="tabs-trigger"]:hover]:text-foreground [&_[data-slot="tabs-trigger"]]:shadow-transparent',
 			// Bare nav rail: no list chrome, and the active trigger rides a dark pill like the app's notched top nav.
 			pill: 'bg-transparent p-0 [&_[data-slot="tabs-trigger"]]:text-muted-foreground [&_[data-slot="tabs-trigger"]:hover:not([data-state=active])]:text-foreground [&_[data-slot="tabs-trigger"][data-state=active]]:text-background [&_[data-slot="tabs-trigger"][data-state=active]]:bg-foreground [&_[data-slot="tabs-trigger"]]:shadow-transparent',
@@ -118,8 +118,8 @@ export type TabsListVariant = VariantProps<typeof tabsListVariants>["variant"];
 		// While the indicator is live, suppress each trigger's own active background so the indicator owns the visual.
 		indicatorVisible &&
 			variant !== "line" && [
-				"[&_[data-slot=tabs-trigger][data-state=active]]:!bg-transparent",
-				"[&_[data-slot=tabs-trigger][data-state=active]]:!shadow-none",
+				"[&_[data-slot=tabs-trigger][data-state=active]]:bg-transparent!",
+				"[&_[data-slot=tabs-trigger][data-state=active]]:shadow-none!",
 				"[&_[data-slot=tabs-trigger]]:z-10",
 			],
 		indicatorVisible &&

@@ -2584,18 +2584,106 @@ pub(crate) async fn run_export_job(
             .unwrap_or_default(),
     );
 
+    /// Where the engine render stops when a mux pass still has to run, leaving the
+    /// tail of the bar to the encode that follows.
+    #[cfg(windows)]
+    const ENGINE_RENDER_CEILING: f64 = 70.0;
+
+    /// The caption track and face for an engine export, or `None` when nothing is
+    /// to be burned. A font that will not download degrades to the system match
+    /// rather than failing an otherwise good export.
+    #[cfg(windows)]
+    async fn engine_caption_burn_in(
+        app: &AppHandle,
+        request: &ExportRequest,
+    ) -> Option<crate::export_engine::CaptionBurnIn> {
+        let track =
+            crate::export_engine::burn_in_for(&request.render_state, request.burn_captions)?;
+        let style = request.render_state.caption_style.as_ref()?;
+        let family = crate::transcription::subtitles::first_family(&style.font_family);
+        let font = match crate::transcription::subtitles::is_system_family(&family) {
+            true => None,
+            false => match crate::fonts::ensure_caption_font_file(app, &family, style.font_weight)
+                .await
+            {
+                Ok(path) => Some(path),
+                Err(e) => {
+                    log::warn!("engine export: caption font ({family}): {e}");
+                    None
+                }
+            },
+        };
+        Some(crate::export_engine::CaptionBurnIn { track, font })
+    }
+
     // The engine path, opt in. Everything above still runs (it validates the request and names the output the same way), so the two paths differ only in who renders. MP4 only, no progress/cancel yet, which is why it is not a setting.
     #[cfg(windows)]
-    if crate::export_engine::enabled() && extension == "mp4" {
-        let frames = crate::export_engine::export_video(
+    if crate::export_engine::enabled() {
+        // GIF needs a palette pass and WebM a VP9 encoder, neither of which the engine has. Both already exist behind the mux-only path the browser renderer uses, so the engine renders an intermediate and hands it over exactly as the browser does.
+        let direct = extension == "mp4";
+        let render_target = match direct {
+            true => output_path.clone(),
+            false => std::env::temp_dir().join(format!("recast-engine-{export_id}.mp4")),
+        };
+        // A stalled bar beats one that rewinds: the mux pass restarts at 0 and the UI keeps the maximum.
+        let ceiling = if direct { 100.0 } else { ENGINE_RENDER_CEILING };
+        let captions = engine_caption_burn_in(&app, &request).await;
+        // Whole percents only: the frontend redraws per event, and 30 a second is not a smoother bar.
+        let mut last_pct = -1i64;
+        let mut on_frame = |done: u64, total: u64| {
+            if cancel_flag.load(Ordering::Acquire) {
+                return crate::export_engine::Flow::Cancel;
+            }
+            let pct = (done as f64 / total.max(1) as f64 * ceiling) as i64;
+            if pct != last_pct {
+                last_pct = pct;
+                emit_export_state(&app, ExportStateEvent::progress(&export_id, pct as f64));
+            }
+            crate::export_engine::Flow::Continue
+        };
+        let result = crate::export_engine::export_video(
             &request.render_state,
-            &source_video,
-            &output_path,
-            (target_fps.round().max(1.0) as u32, 1),
-            crate::export_engine::bitrate_for(metadata.width, metadata.height, target_fps),
-        )
-        .map_err(|e| AppError::msg(format!("engine export failed: {e}")))?;
+            &crate::export_engine::ExportSpec {
+                input: &source_video,
+                output: &render_target,
+                fps: (target_fps.round().max(1.0) as u32, 1),
+                // Derived from what is actually rendered, which is the only place the quality cap has been applied.
+                bitrate: None,
+                max_size: profile.max_width.zip(profile.max_height),
+                captions: captions.as_ref(),
+                // The mux pass owns the music clips and the voice detach, so an intermediate must not carry a second track.
+                audio: direct,
+            },
+            &mut on_frame,
+        );
+        let frames = match result {
+            Ok(frames) => frames,
+            Err(crate::export_engine::EngineExportError::Cancelled) => {
+                let _ = std::fs::remove_file(&render_target);
+                emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
+                return Err(AppError::msg("export cancelled"));
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&render_target);
+                return Err(AppError::msg(format!("engine export failed: {e}")));
+            }
+        };
         log::info!("export[{export_id}] engine path wrote {frames} frames");
+        if !direct {
+            // Released before the mux job takes its own for the same export id.
+            drop(_cancel_token);
+            return run_mux_job(
+                app.clone(),
+                request,
+                render_target.to_string_lossy().into_owned(),
+            )
+            .await;
+        }
+        emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0));
+        emit_export_state(
+            &app,
+            ExportStateEvent::success(&export_id, &output_path.to_string_lossy()),
+        );
         return Ok(output_path.to_string_lossy().into_owned());
     }
 

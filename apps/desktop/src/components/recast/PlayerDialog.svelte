@@ -101,13 +101,13 @@ $effect(() => {
   {#snippet footer()}
     <Button
       variant="ghost"
-      size="xs"
+      size="sm"
       class="mr-auto gap-1.5"
       onclick={() => openFileLocation(entry.path)}
     >
       <FolderOpen class="size-3.5" />
       Show in folder
     </Button>
-    <Button variant="ghost" size="xs" onclick={onclose}>Close</Button>
+    <Button variant="ghost" size="sm" onclick={onclose}>Close</Button>
   {/snippet}
 </DialogShell>

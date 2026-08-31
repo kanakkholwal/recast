@@ -38,6 +38,7 @@ dependencies = [
  "recast-mux",
  "recast-scene",
  "recast-testkit",
+ "recast-text",
  "recast-time",
  "reqwest 0.12.28",
  "rten",

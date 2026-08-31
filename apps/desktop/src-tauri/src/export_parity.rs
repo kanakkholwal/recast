@@ -184,6 +184,28 @@ mod live {
     use recast_scene::v1::RenderState;
 
     use super::*;
+
+    /// The engine side of a parity run: same rate and bitrate as the graph, no
+    /// quality cap, so only the renderer differs.
+    fn engine_spec<'a>(
+        input: &'a std::path::Path,
+        output: &'a std::path::Path,
+    ) -> crate::export_engine::ExportSpec<'a> {
+        crate::export_engine::ExportSpec {
+            input,
+            output,
+            fps: (FPS, 1),
+            bitrate: Some(8_000_000),
+            max_size: None,
+            captions: None,
+            audio: true,
+        }
+    }
+
+    /// The parity harness measures pixels, not progress; it never cancels.
+    fn never_cancels(_done: u64, _total: u64) -> crate::export_engine::Flow {
+        crate::export_engine::Flow::Continue
+    }
     use crate::render::graph::{compute_canvas_geometry, RenderGraph, SourceVideoMetadata};
 
     const W: u32 = 640;
@@ -414,8 +436,12 @@ mod live {
         };
         let state = fixture();
         render_graph(&ffmpeg, &input, &graph_out, &state).expect("the graph path renders");
-        crate::export_engine::export_video(&state, &input, &engine_out, (FPS, 1), 8_000_000)
-            .expect("the engine export runs");
+        crate::export_engine::export_video(
+            &state,
+            &engine_spec(&input, &engine_out),
+            &mut never_cancels,
+        )
+        .expect("the engine export runs");
 
         let delta = compare_files(&graph_out, &engine_out).expect("both files decode");
         println!(
@@ -667,11 +693,7 @@ mod live {
     /// The third renderer: `cursor_export` rebuilds FFmpeg's SAMPLED table
     /// rather than evaluating the ease, so it only approximates the picture.
     fn cursor_zoom_at(state: &RenderState, t: f64) -> f64 {
-        let regions: Vec<_> = state
-            .zoom_regions
-            .iter()
-            .map(|r| crate::render::node_types::ZoomRegion::from(r.clone()))
-            .collect();
+        let regions = state.zoom_regions.clone();
         crate::render::cursor_export::active_zoom_at(&regions, t, 0.0).map_or(1.0, |(s, _, _)| s)
     }
 
@@ -834,10 +856,8 @@ mod live {
             }
             match crate::export_engine::export_video(
                 &state,
-                &input,
-                &engine_out,
-                (FPS, 1),
-                8_000_000,
+                &engine_spec(&input, &engine_out),
+                &mut never_cancels,
             ) {
                 Ok(_) => {}
                 Err(e) => {

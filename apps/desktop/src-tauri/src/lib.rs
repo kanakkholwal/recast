@@ -4,6 +4,7 @@ use std::path::PathBuf;
 mod audio;
 mod cache;
 mod camera;
+pub mod caption_parity;
 mod capture;
 pub mod cli;
 mod commands;
