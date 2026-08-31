@@ -7,7 +7,7 @@ use windows::Win32::System::Variant::{VT_I8, VT_UI8};
 use crate::windows_mf::ensure_started;
 
 /// What the file says its video stream is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoInfo {
     pub width: u32,
     pub height: u32,
@@ -15,6 +15,34 @@ pub struct VideoInfo {
     pub frame_rate: (u32, u32),
     /// 100 ns units, or zero when the file does not say.
     pub duration: i64,
+    /// The file's own video codec, lowercase and named the way ffprobe names
+    /// it, or `unknown` for a subtype this does not recognise.
+    pub codec: String,
+}
+
+/// The file's codec, read BEFORE the reader is asked for NV12: after that the
+/// current type describes the converter's output, not what the file holds.
+fn native_codec(reader: &IMFSourceReader) -> String {
+    // SAFETY: reading the first native type of a stream on the reader we own.
+    let subtype = unsafe {
+        reader
+            .GetNativeMediaType(VIDEO_STREAM, 0)
+            .and_then(|media| media.GetGUID(&MF_MT_SUBTYPE))
+    };
+    let Ok(subtype) = subtype else {
+        return "unknown".into();
+    };
+    let name = match subtype {
+        s if s == MFVideoFormat_H264 => "h264",
+        s if s == MFVideoFormat_HEVC || s == MFVideoFormat_HEVC_ES => "hevc",
+        s if s == MFVideoFormat_AV1 => "av1",
+        s if s == MFVideoFormat_VP90 => "vp9",
+        s if s == MFVideoFormat_VP80 => "vp8",
+        s if s == MFVideoFormat_MJPG => "mjpeg",
+        s if s == MFVideoFormat_NV12 => "rawvideo",
+        _ => "unknown",
+    };
+    name.into()
 }
 
 /// One decoded frame, NV12, tightly packed.
@@ -83,7 +111,11 @@ impl VideoReader {
             reader.SetCurrentMediaType(VIDEO_STREAM, None, &output)?;
         }
 
-        let info = Self::read_info(&reader)?;
+        let codec = native_codec(&reader);
+        let info = VideoInfo {
+            codec,
+            ..Self::read_info(&reader)?
+        };
         Ok(Self { reader, info })
     }
 
@@ -111,12 +143,13 @@ impl VideoReader {
                 height,
                 frame_rate,
                 duration,
+                codec: "unknown".into(),
             })
         }
     }
 
-    pub fn info(&self) -> VideoInfo {
-        self.info
+    pub fn info(&self) -> &VideoInfo {
+        &self.info
     }
 
     /// The next frame, or `None` at end of stream.

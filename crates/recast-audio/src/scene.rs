@@ -47,6 +47,19 @@ impl SceneSources {
         self.clips.push((id.into(), source));
         self
     }
+
+    /// Which captured tracks were collected, so a caller can assert on what it
+    /// gathered without mixing first.
+    #[must_use]
+    pub fn recording_kinds(&self) -> Vec<RecordingKind> {
+        self.recordings.iter().map(|(kind, _)| *kind).collect()
+    }
+
+    /// The ids of the clips collected.
+    #[must_use]
+    pub fn clip_ids(&self) -> Vec<&str> {
+        self.clips.iter().map(|(id, _)| id.as_str()).collect()
+    }
 }
 
 /// Builds the mixer a scene describes. Clips with no decoded source are left

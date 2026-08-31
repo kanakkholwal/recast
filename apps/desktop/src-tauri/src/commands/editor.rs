@@ -2611,6 +2611,11 @@ pub(crate) async fn run_export_job(
                 ffmpeg: Some(crate::ffmpeg::ffmpeg_path()),
                 // The platform decides; the flag exists so the piped path is testable where a native one exists.
                 force_ffmpeg: false,
+                audio_sources: crate::export_audio::RecordingAudio {
+                    video: Some(&source_video),
+                    system: project.as_ref().and_then(|p| p.audio_path.as_deref()),
+                    microphone: project.as_ref().and_then(|p| p.microphone_path.as_deref()),
+                },
             },
             &mut on_frame,
         );

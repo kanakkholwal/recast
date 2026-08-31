@@ -206,6 +206,7 @@ mod live {
             },
             ffmpeg: None,
             force_ffmpeg: false,
+            audio_sources: crate::export_audio::RecordingAudio::default(),
         }
     }
 

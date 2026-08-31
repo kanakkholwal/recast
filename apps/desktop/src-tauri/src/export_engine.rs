@@ -264,6 +264,9 @@ pub struct ExportSpec<'a> {
     pub source: SourceInfo,
     /// The bundled FFmpeg, required wherever it is the codec backend.
     pub ffmpeg: Option<&'a Path>,
+    /// The recording's captured tracks. A project keeps the microphone and
+    /// system audio in their own files, which the video alone does not carry.
+    pub audio_sources: crate::export_audio::RecordingAudio<'a>,
     /// Take the FFmpeg backend even where an in-process one exists. Platforms
     /// without one always take it; this is how it is exercised on the one that
     /// has one, and it is the fallback when that encoder refuses a size.
@@ -372,7 +375,7 @@ pub fn export_video(
     spec: &ExportSpec<'_>,
     progress: &mut dyn FnMut(u64, u64) -> Flow,
 ) -> Result<u64, EngineExportError> {
-    let (input, output, fps) = (spec.input, spec.output, spec.fps);
+    let (output, fps) = (spec.output, spec.fps);
     let captions = spec.captions;
     let ctx = shared_context()?;
 
@@ -442,7 +445,7 @@ pub fn export_video(
         let mut mixer = recast_audio::mixer_for(
             &scene.audio,
             RenderSource::output_duration(&session),
-            crate::export_audio::sources_for(&scene.audio, input),
+            crate::export_audio::sources_for(&scene.audio, &spec.audio_sources),
         );
         if mixer.total_frames() > 0 {
             sink.push_audio(&mut mixer, AUDIO_BITRATE)?;
@@ -711,6 +714,16 @@ mod live {
         }
     }
 
+    /// Serialises the exports below. They share one GPU context and one Media
+    /// Foundation encoder, and running them at once made three of them flake.
+    static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The lock, taken even when a previous test panicked holding it: poisoning
+    /// would turn one failure into a cascade of unrelated ones.
+    fn exclusive() -> std::sync::MutexGuard<'static, ()> {
+        ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// The plain 30 fps export every live test runs, at a fixed bitrate so the
     /// encoder is not a variable.
     fn spec<'a>(input: &'a Path, output: &'a Path) -> ExportSpec<'a> {
@@ -729,6 +742,10 @@ mod live {
             },
             ffmpeg: None,
             force_ffmpeg: false,
+            audio_sources: crate::export_audio::RecordingAudio {
+                video: Some(input),
+                ..Default::default()
+            },
         }
     }
 
@@ -872,6 +889,7 @@ mod live {
     #[test]
     fn an_engine_export_reads_a_recording_and_writes_a_playable_file() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let scratch = Scratch::new("roundtrip");
         let input = scratch.0.join("in.mp4");
         let output = scratch.0.join("out.mp4");
@@ -899,6 +917,7 @@ mod live {
     #[test]
     fn the_recording_reaches_the_exported_picture() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let scratch = Scratch::new("pixels");
         let input = scratch.0.join("in.mp4");
         let output = scratch.0.join("out.mp4");
@@ -926,6 +945,7 @@ mod live {
     #[test]
     fn the_recordings_audio_survives_into_the_exported_file() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let scratch = Scratch::new("audio");
         let input = scratch.0.join("in.mp4");
         let output = scratch.0.join("out.mp4");
@@ -969,6 +989,7 @@ mod live {
     #[test]
     fn a_burned_caption_reaches_the_exported_pixels() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let scratch = Scratch::new("captions");
         let input = scratch.0.join("in.mp4");
         record(&ctx, &input, 0.3);
@@ -1023,6 +1044,7 @@ mod live {
     #[test]
     fn every_frame_is_reported_and_the_last_tick_is_the_whole_export() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let scratch = Scratch::new("progress");
         let input = scratch.0.join("in.mp4");
         let output = scratch.0.join("out.mp4");
@@ -1054,6 +1076,7 @@ mod live {
     #[test]
     fn cancelling_stops_the_render_and_writes_no_file() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let scratch = Scratch::new("cancel");
         let input = scratch.0.join("in.mp4");
         let output = scratch.0.join("out.mp4");
@@ -1087,6 +1110,7 @@ mod live {
     #[test]
     fn the_quality_cap_reaches_the_exported_file() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let scratch = Scratch::new("quality");
         let input = scratch.0.join("in.mp4");
         let full = scratch.0.join("full.mp4");
@@ -1131,6 +1155,7 @@ mod live {
     #[test]
     fn an_intermediate_for_the_mux_pass_carries_no_audio_track() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let scratch = Scratch::new("silent");
         let input = scratch.0.join("in.mp4");
         let output = scratch.0.join("out.mp4");
@@ -1170,6 +1195,7 @@ mod live {
     #[test]
     fn the_ffmpeg_backend_exports_a_playable_file() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let Some(ffmpeg) = sidecar() else { return };
         let scratch = Scratch::new("ffmpeg-backend");
         let input = scratch.0.join("in.mp4");
@@ -1222,6 +1248,7 @@ mod live {
     #[test]
     fn both_backends_render_the_same_geometry() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let Some(ffmpeg) = sidecar() else { return };
         let scratch = Scratch::new("both-backends");
         let input = scratch.0.join("in.mp4");
@@ -1273,6 +1300,7 @@ mod live {
     #[test]
     fn the_ffmpeg_backend_refuses_to_write_audio() {
         let Some(ctx) = context() else { return };
+        let _serial = exclusive();
         let Some(ffmpeg) = sidecar() else { return };
         let scratch = Scratch::new("ffmpeg-audio");
         let input = scratch.0.join("in.mp4");
@@ -1327,6 +1355,162 @@ mod live {
             matches!(error, EngineExportError::OpenInput { .. }),
             "{error}"
         );
+    }
+
+    /// A WAV of audible tone, standing in for the microphone track a project
+    /// captures to its own file.
+    fn tone_wav(path: &Path, seconds: f64) {
+        use crate::audio::wav::{WavFormat, WavWriter};
+
+        let format = WavFormat::pcm16(48_000, 1);
+        let mut writer = WavWriter::new(path, format).expect("a wav writer");
+        let frames = (seconds * 48_000.0) as usize;
+        let mut bytes = Vec::with_capacity(frames * 2);
+        for frame in 0..frames {
+            let t = frame as f64 / 48_000.0;
+            let value = (t * 440.0 * std::f64::consts::TAU).sin() * 0.6;
+            bytes.extend_from_slice(&((value * 32767.0) as i16).to_le_bytes());
+        }
+        writer.write_samples(&bytes).expect("samples");
+        writer.finish().expect("finish");
+    }
+
+    /// Phase 8: a project keeps the microphone in its own file, and the engine
+    /// export read only the video, so the exported audio lost it entirely.
+    #[test]
+    fn a_separate_microphone_track_reaches_the_exported_audio() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("mic-track");
+        let input = scratch.0.join("in.mp4");
+        let mic = scratch.0.join("mic.wav");
+        let without = scratch.0.join("without.mp4");
+        let with = scratch.0.join("with.mp4");
+        record(&ctx, &input, 0.4);
+        tone_wav(&mic, 0.4);
+
+        let state = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.4,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        export_video(&state, &spec(&input, &without), &mut never_cancels).expect("runs");
+        export_video(
+            &state,
+            &ExportSpec {
+                audio_sources: crate::export_audio::RecordingAudio {
+                    video: Some(&input),
+                    microphone: Some(&mic),
+                    ..Default::default()
+                },
+                ..spec(&input, &with)
+            },
+            &mut never_cancels,
+        )
+        .expect("runs");
+
+        // Decoded loudness, not file size: a static tone compresses to whatever the rate controller feels like.
+        let loudness = |path: &Path| {
+            let samples =
+                crate::audio_decode::decode_mono(&[path], 16_000).expect("the export decodes");
+            match samples.is_empty() {
+                true => 0.0,
+                false => (samples
+                    .iter()
+                    .map(|s| f64::from(*s) * f64::from(*s))
+                    .sum::<f64>()
+                    / samples.len() as f64)
+                    .sqrt(),
+            }
+        };
+        let bytes = std::fs::read(&with).expect("read back");
+        assert!(
+            contains(&bytes, b"mp4a"),
+            "the export carries no audio track at all"
+        );
+        assert!(
+            loudness(&with) > loudness(&without) + 0.01,
+            "the microphone track added nothing audible: {:.4} without, {:.4} with",
+            loudness(&without),
+            loudness(&with)
+        );
+    }
+
+    /// A voice-over replaces the recording, so its captured tracks must not be
+    /// gathered at all: layering both plays the original under the voice.
+    #[test]
+    fn a_voice_over_keeps_the_recordings_own_tracks_out_of_the_mix() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("voice-over");
+        let input = scratch.0.join("in.mp4");
+        let mic = scratch.0.join("mic.wav");
+        record_with_sound(&ctx, &input, 0.2);
+        tone_wav(&mic, 0.2);
+
+        let sources = crate::export_audio::RecordingAudio {
+            video: Some(&input),
+            microphone: Some(&mic),
+            ..Default::default()
+        };
+        let quiet = recast_scene::AudioGraph {
+            settings: Default::default(),
+            clips: vec![voice_clip(&mic)],
+        };
+        assert!(
+            crate::export_audio::sources_for(&quiet, &sources)
+                .recording_kinds()
+                .is_empty(),
+            "the recording was mixed under the voice-over"
+        );
+
+        let no_voice = recast_scene::AudioGraph::default();
+        assert_eq!(
+            crate::export_audio::sources_for(&no_voice, &sources)
+                .recording_kinds()
+                .len(),
+            2,
+            "without a voice-over both captured tracks belong in the mix"
+        );
+    }
+
+    /// A capture that never opened leaves a header with no samples, and
+    /// gathering it would put an empty source into the mix.
+    #[test]
+    fn an_empty_capture_never_reaches_the_sources() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("empty-capture");
+        let input = scratch.0.join("in.mp4");
+        let mic = scratch.0.join("mic.wav");
+        record_with_sound(&ctx, &input, 0.2);
+        crate::audio::wav::write_silence_wav(&mic, 48_000, 1, 0.0).expect("an empty wav");
+
+        let gathered = crate::export_audio::sources_for(
+            &recast_scene::AudioGraph::default(),
+            &crate::export_audio::RecordingAudio {
+                video: Some(&input),
+                microphone: Some(&mic),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            gathered.recording_kinds().len(),
+            1,
+            "the empty capture was gathered alongside the recording"
+        );
+    }
+
+    /// An audible voice-over clip pointing at a real file.
+    fn voice_clip(path: &Path) -> recast_scene::v1::nodes::AudioClip {
+        serde_json::from_value(serde_json::json!({
+            "id": "voice",
+            "source": { "kind": "local", "path": path.to_string_lossy() },
+            "role": "voice",
+            "gain": 100.0,
+        }))
+        .expect("voice clip")
     }
 
     fn contains(haystack: &[u8], needle: &[u8]) -> bool {

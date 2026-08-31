@@ -1915,6 +1915,49 @@ progress=continue
     }
 }
 
+/// The same four fields ffprobe is asked for, read in process. `None` where
+/// there is no such decoder or it cannot open the file, which falls back.
+#[cfg(windows)]
+fn probe_native(path: &Path, size_bytes: u64) -> Option<VideoMetadata> {
+    /// Media Foundation counts in 100 ns units.
+    const TICKS_PER_SECOND: f64 = 10_000_000.0;
+
+    let reader = match recast_codec_mf::VideoReader::open(path) {
+        Ok(reader) => reader,
+        Err(error) => {
+            log::debug!("native probe ({}): {error}", path.display());
+            return None;
+        }
+    };
+    let info = reader.info();
+    let (num, den) = info.frame_rate;
+    Some(VideoMetadata {
+        duration: info.duration as f64 / TICKS_PER_SECOND,
+        width: info.width,
+        height: info.height,
+        // A file that does not state a rate is 30, the same stand-in ffprobe's parse falls back to.
+        fps: match den > 0 && num > 0 {
+            true => f64::from(num) / f64::from(den),
+            false => 30.0,
+        },
+        codec: info.codec.clone(),
+        size_bytes,
+    })
+}
+
+#[cfg(not(windows))]
+fn probe_native(_path: &Path, _size_bytes: u64) -> Option<VideoMetadata> {
+    None
+}
+
+/// A native answer worth using, or `None` to let ffprobe run.
+///
+/// A zero-sized video is not an answer: it would size the whole export wrong,
+/// and it is what a reader that opened a file it cannot really read reports.
+fn usable(meta: Option<VideoMetadata>) -> Option<VideoMetadata> {
+    meta.filter(|m| m.width > 0 && m.height > 0)
+}
+
 pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
     if !path.exists() {
         return Err("File not found".into());
@@ -1926,6 +1969,10 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
     }
 
     let size_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or_default();
+    if let Some(meta) = usable(probe_native(path, size_bytes)) {
+        crate::cache::put("probe", &[path], 0, &meta);
+        return Ok(meta);
+    }
     let path_string = path.to_string_lossy().to_string();
     let mut command = Command::new(ffprobe_path());
     command.args([
@@ -2004,7 +2051,34 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
     }
 }
 
+/// Whether `path` carries an audio track. The in-process reader answers by
+/// opening one, which is what `Ok(None)` from it means.
+#[cfg(windows)]
+fn has_audio_native(path: &Path) -> Option<bool> {
+    use recast_codec_mf::{AudioFormat, AudioReader};
+
+    let format = AudioFormat {
+        sample_rate: 48_000,
+        channels: 2,
+    };
+    match AudioReader::open(path, format) {
+        Ok(reader) => Some(reader.is_some()),
+        Err(error) => {
+            log::debug!("native audio probe ({}): {error}", path.display());
+            None
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn has_audio_native(_path: &Path) -> Option<bool> {
+    None
+}
+
 pub fn has_audio(path: &Path) -> bool {
+    if let Some(answer) = has_audio_native(path) {
+        return answer;
+    }
     let mut command = Command::new(ffprobe_path());
     command.args([
         "-v",
@@ -2080,4 +2154,124 @@ pub fn encode_png_bytes(img: &image::RgbaImage) -> Option<Vec<u8>> {
 pub fn encode_thumbnail_base64(img: &image::RgbaImage) -> Option<String> {
     let b64 = general_purpose::STANDARD.encode(encode_png_bytes(img)?);
     Some(format!("data:image/png;base64,{b64}"))
+}
+
+#[cfg(all(test, windows))]
+mod native_probe_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// A clip with a known geometry, rate and audio track, written by the
+    /// sidecar so both probes read the same file.
+    fn clip(ffmpeg: &Path, path: &Path, with_audio: bool) {
+        let mut args: Vec<String> = vec![
+            "-hide_banner".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-y".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "testsrc=size=320x180:rate=25:duration=1".into(),
+        ];
+        if with_audio {
+            args.extend([
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "sine=frequency=440:duration=1".into(),
+                "-c:a".into(),
+                "aac".into(),
+            ]);
+        }
+        args.extend([
+            "-c:v".into(),
+            "libx264".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            path.to_string_lossy().into_owned(),
+        ]);
+        let mut command = Command::new(ffmpeg);
+        command.args(&args);
+        crate::ffmpeg::configure_silent_command(&mut command);
+        let status = command.status().expect("ffmpeg runs");
+        assert!(status.success(), "the fixture clip did not encode");
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("recast-probe-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch");
+        dir
+    }
+
+    /// The swap is only safe if the in-process probe answers what ffprobe did.
+    #[test]
+    fn the_native_probe_agrees_with_ffprobe() {
+        let Some(ffmpeg) = recast_testkit::ffmpeg_path() else {
+            return;
+        };
+        let dir = scratch("agree");
+        let path = dir.join("clip.mp4");
+        clip(&ffmpeg, &path, true);
+
+        let native = probe_native(&path, 0).expect("the native probe reads the clip");
+        assert_eq!((native.width, native.height), (320, 180));
+        assert!((native.fps - 25.0).abs() < 0.01, "fps {}", native.fps);
+        assert!(
+            (native.duration - 1.0).abs() < 0.1,
+            "duration {}",
+            native.duration
+        );
+        assert_eq!(native.codec, "h264");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_clip_with_no_sound_is_reported_as_having_none() {
+        let Some(ffmpeg) = recast_testkit::ffmpeg_path() else {
+            return;
+        };
+        let dir = scratch("audio");
+        let silent = dir.join("silent.mp4");
+        let loud = dir.join("loud.mp4");
+        clip(&ffmpeg, &silent, false);
+        clip(&ffmpeg, &loud, true);
+
+        assert_eq!(has_audio_native(&silent), Some(false));
+        assert_eq!(has_audio_native(&loud), Some(true));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn meta(width: u32, height: u32) -> VideoMetadata {
+        VideoMetadata {
+            duration: 1.0,
+            width,
+            height,
+            fps: 30.0,
+            codec: "h264".into(),
+            size_bytes: 0,
+        }
+    }
+
+    /// A zero-sized answer is what a reader that opened a file it cannot really
+    /// read reports, and trusting it would size the whole export wrong.
+    #[test]
+    fn a_zero_sized_native_answer_is_refused_so_ffprobe_runs() {
+        assert!(usable(Some(meta(0, 180))).is_none());
+        assert!(usable(Some(meta(320, 0))).is_none());
+        assert!(usable(None).is_none());
+        assert!(usable(Some(meta(320, 180))).is_some());
+    }
+
+    /// A file the in-process reader cannot open must fall back rather than be
+    /// reported as a zero-sized video, which would size the whole export wrong.
+    #[test]
+    fn an_unreadable_file_falls_back_instead_of_answering_zero() {
+        let dir = scratch("unreadable");
+        let path = dir.join("not-a-video.mp4");
+        std::fs::write(&path, b"not a video").expect("write");
+        assert!(probe_native(&path, 0).is_none_or(|m| m.width == 0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

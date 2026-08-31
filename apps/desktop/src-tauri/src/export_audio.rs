@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use recast_audio::{Samples, SceneSources, MASTER_CHANNELS, MASTER_RATE};
-use recast_scene::v1::nodes::AudioClipSource;
+use recast_scene::v1::nodes::{AudioClipRole, AudioClipSource};
 use recast_scene::AudioGraph;
 
 /// Where a clip's media lives, or `None` when unreadable. A provider clip is
@@ -48,20 +48,49 @@ pub fn decode(path: &Path) -> Result<Option<Samples>, String> {
     )))
 }
 
+/// The recording's own tracks. A project captures the microphone and system
+/// audio to their own files, and an export that reads only the video loses both.
+#[derive(Debug, Clone, Default)]
+pub struct RecordingAudio<'a> {
+    pub video: Option<&'a Path>,
+    pub system: Option<&'a Path>,
+    pub microphone: Option<&'a Path>,
+}
+
+/// A voice-over replaces the recording's own audio rather than layering over
+/// it, which is what the FFmpeg mux calls detaching.
+#[must_use]
+pub fn voice_detached(graph: &AudioGraph) -> bool {
+    graph
+        .clips
+        .iter()
+        .any(|clip| clip.role == AudioClipRole::Voice && !clip.muted && clip.gain > 0.0)
+}
+
 /// Everything `graph` refers to. A clip that will not decode is left out, not
 /// silenced, and never fatal: one bad music file must not fail a good export.
 #[cfg(windows)]
 #[must_use]
-pub fn sources_for(graph: &AudioGraph, recording: &Path) -> SceneSources {
+pub fn sources_for(graph: &AudioGraph, recording: &RecordingAudio<'_>) -> SceneSources {
     use recast_audio::RecordingKind;
 
     let mut sources = SceneSources::new();
-    match decode(recording) {
-        Ok(Some(samples)) => {
-            sources = sources.recording(RecordingKind::Source, Box::new(samples));
+    // A voice-over takes the recording's place, so its captured tracks are dropped.
+    let captured: &[(Option<&Path>, RecordingKind)] = &match voice_detached(graph) {
+        true => [(None, RecordingKind::Source); 3],
+        false => [
+            (recording.video, RecordingKind::Source),
+            (recording.system, RecordingKind::System),
+            (recording.microphone, RecordingKind::Mic),
+        ],
+    };
+    // A capture that never opened leaves a header with no samples, which decodes to `Ok(None)` and needs no guard of its own.
+    for (path, kind) in captured.iter().filter_map(|(p, k)| p.map(|p| (p, *k))) {
+        match decode(path) {
+            Ok(Some(samples)) => sources = sources.recording(kind, Box::new(samples)),
+            Ok(None) => log::info!("export: {} has no audio to mix", path.display()),
+            Err(error) => log::warn!("export: {} did not decode: {error}", path.display()),
         }
-        Ok(None) => log::debug!("export: {} has no audio track", recording.display()),
-        Err(error) => log::warn!("export: the recording's audio did not decode: {error}"),
     }
 
     for clip in &graph.clips {
@@ -85,13 +114,71 @@ pub fn sources_for(graph: &AudioGraph, recording: &Path) -> SceneSources {
 /// the mux pass, which builds the audio track from the render state itself.
 #[cfg(not(windows))]
 #[must_use]
-pub fn sources_for(_graph: &AudioGraph, _recording: &Path) -> SceneSources {
+pub fn sources_for(_graph: &AudioGraph, _recording: &RecordingAudio<'_>) -> SceneSources {
     SceneSources::new()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn clip(role: AudioClipRole, muted: bool, gain: f64) -> recast_scene::v1::nodes::AudioClip {
+        recast_scene::v1::nodes::AudioClip {
+            id: "c1".into(),
+            source: AudioClipSource::Local {
+                path: "music.mp3".into(),
+            },
+            role,
+            gain,
+            muted,
+            ..serde_json::from_value(serde_json::json!({
+                "id": "c1",
+                "source": { "kind": "local", "path": "music.mp3" }
+            }))
+            .expect("clip defaults")
+        }
+    }
+
+    fn graph_with(clips: Vec<recast_scene::v1::nodes::AudioClip>) -> AudioGraph {
+        AudioGraph {
+            settings: Default::default(),
+            clips,
+        }
+    }
+
+    /// A voice-over replaces the recording rather than layering over it, which
+    /// is what the FFmpeg mux does by dropping the captured inputs.
+    #[test]
+    fn an_audible_voice_over_detaches_the_recording() {
+        assert!(voice_detached(&graph_with(vec![clip(
+            AudioClipRole::Voice,
+            false,
+            100.0
+        )])));
+    }
+
+    /// Every reason a voice clip does not take over. Each used to be the same
+    /// silent nothing, so they are asserted together.
+    #[test]
+    fn a_voice_over_that_cannot_be_heard_leaves_the_recording_alone() {
+        for (name, clips) in [
+            ("no clips at all", vec![]),
+            (
+                "music, not voice",
+                vec![clip(AudioClipRole::Music, false, 100.0)],
+            ),
+            (
+                "a muted voice clip",
+                vec![clip(AudioClipRole::Voice, true, 100.0)],
+            ),
+            (
+                "a silent voice clip",
+                vec![clip(AudioClipRole::Voice, false, 0.0)],
+            ),
+        ] {
+            assert!(!voice_detached(&graph_with(clips)), "detached on {name}");
+        }
+    }
 
     #[test]
     fn a_local_clip_names_its_own_file() {
