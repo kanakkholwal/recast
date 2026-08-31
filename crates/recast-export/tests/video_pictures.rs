@@ -141,7 +141,12 @@ fn mean_luma(planes: &SourcePlanes<'_>) -> f64 {
 
 #[test]
 fn the_reader_reports_the_size_the_file_was_written_at() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("size");
     let path = scratch.file("in.mp4");
     record(ctx, FrameWalk::new(0.4, (30, 1)), &path);
@@ -156,7 +161,12 @@ fn the_reader_reports_the_size_the_file_was_written_at() {
 
 #[test]
 fn asking_before_the_first_frame_still_yields_a_picture() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("first");
     let path = scratch.file("in.mp4");
     record(ctx, FrameWalk::new(0.4, (30, 1)), &path);
@@ -170,7 +180,12 @@ fn asking_before_the_first_frame_still_yields_a_picture() {
 /// the frame that covers the instant, not run off the end of the file.
 #[test]
 fn a_faster_output_rate_repeats_the_frame_that_covers_the_instant() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("repeat");
     let path = scratch.file("in.mp4");
     record(ctx, FrameWalk::new(0.4, (30, 1)), &path);
@@ -185,7 +200,12 @@ fn a_faster_output_rate_repeats_the_frame_that_covers_the_instant() {
 /// Time does not only run forwards: a cut or a speed ramp sends the loop back.
 #[test]
 fn going_backwards_seeks_rather_than_running_off_the_end() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("rewind");
     let path = scratch.file("in.mp4");
     record(ctx, FrameWalk::new(1.0, (30, 1)), &path);
@@ -207,7 +227,12 @@ fn going_backwards_seeks_rather_than_running_off_the_end() {
 
 #[test]
 fn advancing_through_the_file_changes_the_picture() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("advance");
     let path = scratch.file("in.mp4");
     record(ctx, FrameWalk::new(0.5, (30, 1)), &path);
@@ -234,7 +259,12 @@ fn advancing_through_the_file_changes_the_picture() {
 /// is the frozen tail, one layer down from where `FrameWalk` prevents it.
 #[test]
 fn reading_past_the_end_stops_rather_than_repeating_forever() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("end");
     let path = scratch.file("in.mp4");
     record(ctx, FrameWalk::new(0.2, (30, 1)), &path);

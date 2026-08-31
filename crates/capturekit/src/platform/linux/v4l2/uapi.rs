@@ -5,8 +5,10 @@ use core::mem::size_of;
 use std::io;
 use std::os::unix::io::RawFd;
 
-/// Structs that are plain data, so an all-zero one is valid; V4L2 wants unused fields zeroed, so every ioctl starts from a zeroed struct.
-/// # Safety: the implementor must be inhabited by all-zero bytes, with no reference, `NonNull` or enum field.
+/// Plain-data structs where all-zero is valid; V4L2 wants unused fields zeroed, so every ioctl starts from a zeroed struct.
+///
+/// # Safety
+/// The implementor must be inhabited by all-zero bytes, with no reference, `NonNull` or enum field.
 pub(super) unsafe trait Zeroable: Sized {
     fn zeroed() -> Self {
         // SAFETY: the implementor promises all-zero is a valid value.

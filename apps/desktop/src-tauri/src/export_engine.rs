@@ -167,6 +167,8 @@ enum Sink {
     Ffmpeg(Box<FfmpegSink>),
 }
 
+// The FFmpeg arms ignore what the native encoder needs: a frame index, a mixer and a destination path.
+#[cfg_attr(not(windows), allow(unused_variables))]
 impl Sink {
     fn push(&mut self, index: u64, frame: Frame<'_>) -> Result<(), SinkStop> {
         match self {

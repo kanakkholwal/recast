@@ -83,7 +83,12 @@ impl PictureSource for Flat {
 
 #[test]
 fn the_loop_writes_one_frame_per_walk_step() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let mut session = session(ctx);
     let walk = FrameWalk::new(0.2, (30, 1));
     let mut seen = Vec::new();
@@ -108,7 +113,12 @@ fn the_loop_writes_one_frame_per_walk_step() {
 
 #[test]
 fn every_frame_is_canvas_sized_rgba() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let mut session = session(ctx);
     let size = RenderSource::output_size(&session);
     let want = (size.width * size.height * 4) as usize;
@@ -139,7 +149,12 @@ fn every_frame_is_canvas_sized_rgba() {
 /// background and dropped every upload would pass a frame-count test.
 #[test]
 fn the_uploaded_picture_reaches_the_frame() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let mut without = Vec::new();
     FrameLoop::new()
         .run(
@@ -183,7 +198,12 @@ fn the_uploaded_picture_reaches_the_frame() {
 /// The whole point of holding the buffers: an export is thousands of frames.
 #[test]
 fn a_steady_loop_allocates_one_source_texture() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let mut frames = FrameLoop::new();
     frames
         .run(
@@ -200,7 +220,12 @@ fn a_steady_loop_allocates_one_source_texture() {
 
 #[test]
 fn a_sink_failure_stops_the_loop_rather_than_finishing_the_export() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let mut rendered = 0u64;
     let error = FrameLoop::new()
         .run(
@@ -231,7 +256,12 @@ fn a_sink_failure_stops_the_loop_rather_than_finishing_the_export() {
 
 #[test]
 fn a_document_with_nothing_to_render_writes_no_frames() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let mut called = false;
     let count = FrameLoop::new()
         .run(
@@ -254,7 +284,12 @@ fn a_document_with_nothing_to_render_writes_no_frames() {
 /// source on the source axis, once per output frame.
 #[test]
 fn the_picture_source_is_asked_once_per_output_frame() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let walk = FrameWalk::new(0.5, (30, 1));
     let mut pictures = Flat::new(200);
     FrameLoop::new()

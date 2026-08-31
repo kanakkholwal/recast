@@ -207,3 +207,50 @@ fn a_short_frame_is_refused_rather_than_written() {
         recast_export::FfmpegError::FrameSize { .. }
     ));
 }
+
+/// The sink is public API: a caller that opens it for NV12 and pushes RGBA gets
+/// an error, not a file full of garbage no decoder can tell is wrong.
+#[test]
+fn a_frame_in_the_other_layout_is_refused() {
+    let ffmpeg = ffmpeg_or_skip!();
+    let scratch = Scratch::new("ffmpeg-layout");
+    let output = scratch.file("out.mp4");
+
+    let mut sink = FfmpegSink::new(&ffmpeg, &output, W, H, (10, 1), 800_000, PixelLayout::Nv12)
+        .expect("the encoder opens");
+    let rgba = vec![0u8; (W * H * 4) as usize];
+    assert!(
+        matches!(
+            sink.push(Frame::Rgba(&rgba)),
+            Err(recast_export::FfmpegError::WrongLayout)
+        ),
+        "an RGBA frame was accepted by an NV12 encoder"
+    );
+}
+
+/// The layout the loop produces has to survive the pipe: NV12 in must decode
+/// back to the same picture, not a reinterpretation of the bytes.
+#[test]
+fn nv12_frames_survive_the_pipe() {
+    let ffmpeg = ffmpeg_or_skip!();
+    let scratch = Scratch::new("ffmpeg-nv12");
+    let output = scratch.file("out.mp4");
+
+    let mut sink = FfmpegSink::new(&ffmpeg, &output, W, H, (10, 1), 800_000, PixelLayout::Nv12)
+        .expect("the encoder opens");
+    // Mid-grey luma with neutral chroma, which decodes back to mid-grey.
+    let mut frame = vec![128u8; (W * H) as usize];
+    frame.resize(recast_compositor::PlaneLayout::Nv12.packed_len(W, H), 128);
+    for _ in 0..10 {
+        sink.push(Frame::Nv12(&frame)).expect("written");
+    }
+    sink.finish().expect("the encode finishes");
+
+    let mut pictures =
+        FfmpegPictures::open(&ffmpeg, &output, info(), SourceColor::default()).expect("opens");
+    let mean = luma_at(&mut pictures, 0.2);
+    assert!(
+        (mean - 128.0).abs() < 12.0,
+        "the pipe reinterpreted the bytes: mean luma {mean:.1}"
+    );
+}

@@ -1,6 +1,8 @@
 //! Diffing the FFmpeg graph against the engine, file against file: the gate on
 //! deleting `render/graph.rs`.
 
+// Only `compare_files` takes paths, and it needs the Media Foundation reader.
+#[cfg(windows)]
 use std::path::Path;
 
 /// One fixture's disagreement, in decoded luma.

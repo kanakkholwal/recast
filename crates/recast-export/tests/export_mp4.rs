@@ -152,7 +152,12 @@ fn export_with(ctx: &GpuContext, walk: FrameWalk, path: &std::path::Path, luma: 
 /// that never saw our code can read them back.
 #[test]
 fn an_export_round_trips_through_a_real_mp4() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("roundtrip");
     let path = scratch.file("out.mp4");
     let walk = FrameWalk::new(0.5, (30, 1));
@@ -174,7 +179,12 @@ fn an_export_round_trips_through_a_real_mp4() {
 
 #[test]
 fn the_file_reports_the_frame_rate_it_was_exported_at() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("fps");
     let path = scratch.file("out.mp4");
     export(ctx, FrameWalk::new(0.4, (60, 1)), &path);
@@ -191,7 +201,12 @@ fn the_file_reports_the_frame_rate_it_was_exported_at() {
 /// The judder bug in reverse: a 24 fps export must not come back as 25 or 30.
 #[test]
 fn a_non_default_frame_rate_survives_to_the_file() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("24fps");
     let path = scratch.file("out.mp4");
     let walk = FrameWalk::new(0.5, (24, 1));
@@ -230,7 +245,12 @@ fn an_oversized_frame_is_refused_before_the_encoder_opens() {
 /// test that fails if the picture never reaches the encoder.
 #[test]
 fn the_rendered_picture_survives_into_the_encoded_file() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("pixels");
     let walk = FrameWalk::new(0.2, (30, 1));
 
@@ -254,7 +274,12 @@ fn the_rendered_picture_survives_into_the_encoded_file() {
 /// Every frame pushed becomes a sample once the encoder has been drained.
 #[test]
 fn finishing_drains_every_frame_the_encoder_was_holding() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let scratch = Scratch::new("drain");
     let walk = FrameWalk::new(0.5, (30, 1));
     let mut session = session(ctx);
@@ -295,7 +320,12 @@ fn finishing_drains_every_frame_the_encoder_was_holding() {
 /// faster. A sink that converted an already-NV12 frame again would land here.
 #[test]
 fn the_gpu_and_cpu_conversions_encode_the_same_file() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
 
     let encode = |on_gpu: bool| -> Vec<u8> {
         let mut session = session(ctx);
@@ -346,7 +376,12 @@ fn the_gpu_and_cpu_conversions_encode_the_same_file() {
 /// rather than quietly costing nine times the conversion.
 #[test]
 fn a_packable_shape_really_is_converted_on_the_gpu() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let mut session = session(ctx);
     let size = RenderSource::output_size(&session);
     assert!(

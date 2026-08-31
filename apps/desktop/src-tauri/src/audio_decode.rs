@@ -60,6 +60,8 @@ fn decode_native(_inputs: &[&Path], _rate: u32) -> Option<Vec<f32>> {
 }
 
 /// Adds `samples` onto `mixed`, growing it for a longer source.
+// Only the native mixer calls this; off Windows its sole callers are the tests.
+#[cfg(any(windows, test))]
 fn sum_into(mixed: &mut Vec<f32>, samples: &[f32]) {
     if mixed.len() < samples.len() {
         mixed.resize(samples.len(), 0.0);
@@ -116,6 +118,7 @@ mod tests {
     use super::*;
 
     /// A tone written by the sidecar, so both decoders read the same file.
+    #[cfg(windows)]
     fn tone(ffmpeg: &Path, path: &Path, hz: u32, seconds: f64) {
         let status = Command::new(ffmpeg)
             .args([
@@ -136,6 +139,7 @@ mod tests {
         assert!(status.success(), "the fixture tone did not encode");
     }
 
+    #[cfg(windows)]
     fn rms(samples: &[f32]) -> f64 {
         if samples.is_empty() {
             return 0.0;

@@ -2536,13 +2536,11 @@ pub(crate) async fn run_export_job(
 
     /// Where the engine render stops when a mux pass still has to run, leaving the
     /// tail of the bar to the encode that follows.
-    #[cfg(windows)]
     const ENGINE_RENDER_CEILING: f64 = 70.0;
 
     /// The caption track and face for an engine export, or `None` when nothing is
     /// to be burned. A font that will not download degrades to the system match
     /// rather than failing an otherwise good export.
-    #[cfg(windows)]
     async fn engine_caption_burn_in(
         app: &AppHandle,
         request: &ExportRequest,

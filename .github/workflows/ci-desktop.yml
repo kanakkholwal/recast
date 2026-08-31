@@ -275,11 +275,46 @@ jobs:
       - name: Rust unit tests
         if: ${{ !matrix.platform.cross && !cancelled() }}
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release ${{ matrix.platform.tauri_args }}
+      # Without a driver the Linux runner has no adapter at all, so every wgpu
+      # test skips and the compute shader ships never having run on Vulkan.
+      # lavapipe is a software rasteriser: correct, and far too slow to compare.
+      - name: Software Vulkan adapter (Linux)
+        if: ${{ matrix.platform.name == 'linux-x64' && !cancelled() }}
+        run: sudo apt-get install -y mesa-vulkan-drivers
+
       - name: Engine crates
         if: ${{ !matrix.platform.cross && !cancelled() }}
         env:
           RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
+          # A missing adapter skips every GPU test silently, which reads as green on
+          # a runner that never dispatched the shader. D3D12/WARP, Metal, lavapipe.
+          RECAST_REQUIRE_GPU: "1"
         run: cargo test --manifest-path crates/Cargo.toml --workspace --release
+
+      # Reported, never gated: a hosted runner's GPU is not the machine anyone
+      # exports on, so only the shape of the numbers per OS is meaningful.
+      - name: Engine benchmarks (${{ matrix.platform.name }})
+        if: ${{ !matrix.platform.cross && !cancelled() }}
+        shell: bash
+        env:
+          RECAST_TESTKIT_REQUIRE_FFMPEG: "1"
+          RECAST_REQUIRE_GPU: "1"
+        run: |
+          set -o pipefail
+          cargo test --manifest-path crates/Cargo.toml -p recast-export --release             --test perf_probe -- --ignored --nocapture | tee bench.txt
+          {
+            echo "### Engine benchmarks: ${{ matrix.platform.name }}"
+            echo
+            echo "| measurement | case | ms/frame |"
+            echo "| --- | --- | --- |"
+            grep '^bench|' bench.txt | awk -F'|' '{ print "| " $2 " | " $3 " | " $4 " |" }'
+            echo
+            echo "Reported, not gated. Hosted-runner GPUs vary too much between runs to compare across machines."
+          } >> "$GITHUB_STEP_SUMMARY"
+          if ! grep -q '^bench|' bench.txt; then
+            echo "the benchmark produced no rows: the probes skipped" >&2
+            exit 1
+          fi
       - name: capturekit backends
         if: ${{ !matrix.platform.cross && !cancelled() }}
         run: |

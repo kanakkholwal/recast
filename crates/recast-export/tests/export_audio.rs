@@ -156,7 +156,12 @@ fn export_with(ctx: &GpuContext, walk: FrameWalk, mut mix: Mixer) -> Vec<u8> {
 
 #[test]
 fn an_export_with_sound_carries_an_audio_track() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let (bytes, audio) = export(ctx, FrameWalk::new(0.5, (30, 1)), 0.5, true);
     assert!(audio > 0, "no AAC frames were written");
     assert!(!bytes.is_empty());
@@ -166,7 +171,12 @@ fn an_export_with_sound_carries_an_audio_track() {
 /// picture, which a frame-count tolerance hides.
 #[test]
 fn the_audio_track_covers_the_whole_mix_including_the_encoder_tail() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let seconds = 0.5;
     let (_, audio) = export(ctx, FrameWalk::new(seconds, (30, 1)), seconds, true);
 
@@ -186,7 +196,12 @@ fn the_audio_track_covers_the_whole_mix_including_the_encoder_tail() {
 /// no config rather than emit one that plays as silence.
 #[test]
 fn an_export_without_sound_stays_video_only() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let (bytes, audio) = export(ctx, FrameWalk::new(0.2, (30, 1)), 0.0, false);
     assert_eq!(audio, 0);
     assert!(!bytes.is_empty(), "the video track still has to be written");
@@ -196,7 +211,12 @@ fn an_export_without_sound_stays_video_only() {
 /// the config no decoder can start it.
 #[test]
 fn the_finished_file_declares_its_audio_track() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let (with_sound, _) = export(ctx, FrameWalk::new(0.5, (30, 1)), 0.5, true);
     let (silent, _) = export(ctx, FrameWalk::new(0.5, (30, 1)), 0.0, false);
 
@@ -216,7 +236,12 @@ fn the_finished_file_declares_its_audio_track() {
 /// already been read (a loudness pass, a preview) would encode from the middle.
 #[test]
 fn a_mixer_that_was_already_rendered_still_encodes_from_the_start() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let seconds = 0.4;
     let walk = FrameWalk::new(seconds, (30, 1));
 
@@ -236,7 +261,12 @@ fn a_mixer_that_was_already_rendered_still_encodes_from_the_start() {
 /// so the file would carry the mix twice at the wrong offsets.
 #[test]
 fn writing_the_audio_track_twice_is_refused() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let walk = FrameWalk::new(0.2, (30, 1));
     let mut session = session(ctx);
     let size = RenderSource::output_size(&session);
@@ -269,7 +299,12 @@ fn writing_the_audio_track_twice_is_refused() {
 /// length of its picture passes every other test here.
 #[test]
 fn the_audio_and_the_video_cover_the_same_span() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let seconds = 0.5;
     let walk = FrameWalk::new(seconds, (30, 1));
     let (_, audio) = export(ctx, walk, seconds, true);

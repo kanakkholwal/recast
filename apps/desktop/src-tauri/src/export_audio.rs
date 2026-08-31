@@ -3,7 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
-use recast_audio::{Samples, SceneSources, MASTER_CHANNELS, MASTER_RATE};
+use recast_audio::SceneSources;
+// Only the native decode path builds Samples; off Windows the stub returns an empty SceneSources.
+#[cfg(windows)]
+use recast_audio::{Samples, MASTER_CHANNELS, MASTER_RATE};
 use recast_scene::v1::nodes::{AudioClipRole, AudioClipSource};
 use recast_scene::AudioGraph;
 

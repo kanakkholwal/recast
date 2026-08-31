@@ -1,4 +1,13 @@
 //! Measurement, not a gate. Run with `--release --ignored --nocapture`.
+//!
+//! Every number is also printed as a `bench|` row so CI can lift the table out
+//! per OS without parsing prose. The numbers are only comparable within one
+//! runner: a hosted CI GPU is not the machine anyone exports on.
+
+/// One measurement, in the shape the CI step turns into a table row.
+fn bench(name: &str, case: &str, ms: f64) {
+    println!("bench|{name}|{case}|{ms:.3}");
+}
 
 use recast_compositor::{
     PlaneData, PlaneLayout, RenderSource, Session, SourceColor, SourceGeometry, SourcePlanes,
@@ -33,6 +42,7 @@ fn rgba_to_nv12_cost_per_frame() {
             "{label:>6}: {ms:7.2} ms/frame   {:5.1}x the whole 60fps frame budget",
             ms / budget_60
         );
+        bench("nv12-cpu", label, ms);
     }
 }
 
@@ -45,8 +55,10 @@ fn export_loop_cost_per_frame() {
         ..Default::default()
     })
     .ok() else {
-        eprintln!("skipping: no adapter");
-        return;
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
     };
     for (w, h, label) in [(1280, 720, "720p"), (1920, 1080, "1080p")] {
         let mut timings = Vec::new();
@@ -96,6 +108,8 @@ fn export_loop_cost_per_frame() {
             timings.push(start.elapsed().as_secs_f64() * 1000.0 / walk.len() as f64);
         }
         let (cpu, on_gpu) = (timings[0], timings[1]);
+        bench("loop-cpu", label, cpu);
+        bench("loop-gpu", label, on_gpu);
         println!(
             "{label:>6}: cpu loop {cpu:6.2} ms/frame ({:5.1} fps)   gpu loop {on_gpu:6.2} ms/frame ({:5.1} fps)   {:4.1}x",
             1000.0 / cpu,
@@ -118,8 +132,10 @@ fn gpu_nv12_cost_per_frame() {
         ..Default::default()
     })
     .ok() else {
-        eprintln!("skipping: no adapter");
-        return;
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
     };
     let color = SourceColor::default();
     let mut gpu = GpuNv12::new(ctx.device());
@@ -178,6 +194,7 @@ fn gpu_nv12_cost_per_frame() {
             "{label:>6}: cpu {on_cpu:7.2} ms   gpu {on_gpu:7.2} ms   {:5.1}x faster",
             on_cpu / on_gpu.max(0.0001)
         );
+        bench("nv12-gpu", label, on_gpu);
     }
 }
 
@@ -220,8 +237,10 @@ fn render_and_readback_cost_per_frame() {
         ..Default::default()
     })
     .ok() else {
-        eprintln!("skipping: no adapter");
-        return;
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
     };
     for (w, h, label) in [(1280, 720, "720p"), (1920, 1080, "1080p")] {
         let state = serde_json::from_str(BASE).expect("fixture");
@@ -265,6 +284,7 @@ fn render_and_readback_cost_per_frame() {
             .expect("rendered");
         let total = start.elapsed().as_secs_f64() * 1000.0 / walk.len() as f64;
         let conv = convert.as_secs_f64() * 1000.0 / walk.len() as f64;
+        bench("render+readback", label, total - conv);
         println!(
             "{label:>6} {}x{}: total {total:6.2} ms/frame  (render+readback {:6.2}, nv12 {conv:6.2})  -> {:5.1} fps",
             size.width,

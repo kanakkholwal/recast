@@ -71,7 +71,12 @@ fn texture(ctx: &GpuContext, rgba: &[u8], width: u32, height: u32) -> wgpu::Text
 
 #[test]
 fn the_gpu_conversion_is_byte_identical_to_the_cpu_one() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let color = SourceColor::default();
     let mut gpu = GpuNv12::new(ctx.device());
 
@@ -105,7 +110,12 @@ fn a_shape_the_shader_cannot_pack_is_refused() {
 
 #[test]
 fn an_odd_shape_falls_back_instead_of_converting() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let (width, height) = (6u32, 4u32);
     let rgba = frame(width, height);
     let texture = texture(&ctx, &rgba, width, height);
@@ -126,7 +136,12 @@ fn an_odd_shape_falls_back_instead_of_converting() {
 /// churn cost. Size alone cannot prove reuse, so the counter does.
 #[test]
 fn a_steady_size_allocates_its_buffers_once() {
-    let Some(ctx) = context() else { return };
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
     let (width, height) = (64u32, 32u32);
     let rgba = frame(width, height);
     let texture = texture(&ctx, &rgba, width, height);
