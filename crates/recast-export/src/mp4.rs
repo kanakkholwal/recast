@@ -155,8 +155,7 @@ impl Mp4Sink {
         };
         let mut encoder = AacEncoder::open(format, bitrate).map_err(Mp4Error::Audio)?;
 
-        // From the top: `render_into` continues where it left off, and the
-        // ducking envelope makes a mid-stream start silently wrong, not short.
+        // From the top: `render_into` continues where it left off, and the ducking envelope makes a mid-stream start silently wrong, not short.
         mixer.reset();
         let chunk_frames = format.sample_rate as usize / 10;
         let mut chunk = vec![0.0f32; chunk_frames * recast_audio::MASTER_CHANNELS];

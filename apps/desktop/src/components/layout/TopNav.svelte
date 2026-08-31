@@ -1,6 +1,6 @@
 <script lang="ts">
 import {
-	Broadcast,
+	CircleFilled,
 	Moon,
 	Search,
 	Settings,
@@ -11,10 +11,10 @@ import {
 	Wand2,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import { mode, toggleMode } from "@recast/ui/theme";
+import { NotchedShelf } from "@recast/ui/notched-shelf";
+import { mode, toggleModeCircleBlur } from "@recast/ui/theme";
 import { cn } from "@recast/ui/utils";
 import { page } from "$app/state";
-import { NotchedShelf } from "@recast/ui/notched-shelf";
 import SidebarAccount from "$components/layout/SidebarAccount.svelte";
 import Logo from "$components/logo.svelte";
 import { launchRecordingPanel } from "$lib/ipc";
@@ -59,7 +59,7 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
       onclick={() => launchRecordingPanel()}
       title={`Launch recording panel · ${recordShortcut}`}
     >
-      <Broadcast class="size-4" /> Launch Panel
+      <CircleFilled class="size-3" /> Launch Panel
     </Button>
 
     <a
@@ -86,7 +86,7 @@ const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWit
     </a>
     <button
       type="button"
-      onclick={toggleMode}
+      onclick={(e) => toggleModeCircleBlur({ x: e.clientX, y: e.clientY })}
       aria-label="Toggle theme"
       title="Toggle light / dark"
       class="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-foreground/5 hover:text-foreground motion-safe:active:scale-95"

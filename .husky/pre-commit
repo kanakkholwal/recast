@@ -1,14 +1,10 @@
-# Formats staged sources in place. rustfmt (~1s, no compile) and Biome (~250ms)
-# are cheap enough to block a commit. Clippy stays in CI — it needs a full build.
-# husky runs this with `sh -e`, so every grep needs `|| true` and notes go to
-# stderr — IDE git clients only surface stderr when a hook fails.
+
 say() { echo "[pre-commit] $*" >&2; }
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 [ -n "$staged" ] || exit 0
 
-# Files staged *and* dirty in the worktree: safe to format, but re-adding them
-# would sweep the unstaged half into the commit.
+
 dirty=$(git diff --name-only)
 
 restage() {
@@ -25,8 +21,6 @@ restage() {
 rust_files=$(printf '%s\n' "$staged" | grep -E '^apps/desktop/src-tauri/.*\.rs$' || true)
 if [ -n "$rust_files" ]; then
   say "rustfmt…"
-  # Per-file rather than `cargo fmt --all`, to leave unstaged work alone. rustfmt
-  # still follows `mod` into child files — stable has no --skip-children.
   edition=$(grep -m1 '^edition' apps/desktop/src-tauri/Cargo.toml | cut -d'"' -f2)
   if ! printf '%s\n' "$rust_files" | xargs rustfmt --edition "${edition:-2021}"; then
     say "rustfmt failed. Run: pnpm fmt:rust"
@@ -35,10 +29,10 @@ if [ -n "$rust_files" ]; then
   printf '%s\n' "$rust_files" | restage
 fi
 
-web_files=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|svelte|json|jsonc)$' || true)
+web_files=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|jsx|svelte|jsonc)$' || true)
 if [ -n "$web_files" ]; then
   say "biome format…"
-  # --staged scopes Biome to the index; a failure here is a parse error, not drift.
+ 
   if ! pnpm exec biome format --write --staged --no-errors-on-unmatched . >&2; then
     say "biome could not format some files. Run: pnpm fmt:js"
     exit 1
@@ -46,15 +40,14 @@ if [ -n "$web_files" ]; then
   printf '%s\n' "$web_files" | restage
 fi
 
-# # Lint gates, staged-scoped. Both are ratchets: they judge what this commit
-# # writes, not the backlog it inherits.
-# if [ -n "$web_files" ]; then
-#   say "biome lint…"
-#   if ! pnpm exec biome lint --staged --no-errors-on-unmatched . >&2; then
-#     say "biome lint failed. Fix, or run: pnpm lint:js:fix"
-#     exit 1
-#   fi
-# fi
+# # Lint gates, staged-scoped. 
+if [ -n "$web_files" ]; then
+  say "biome lint…"
+  if ! pnpm exec biome lint --staged --no-errors-on-unmatched . >&2; then
+    say "biome lint failed. Fix, or run: pnpm lint:js:fix"
+    exit 1
+  fi
+fi
 
 if ! node scripts/check-comments.mjs --staged >&2; then
   exit 1

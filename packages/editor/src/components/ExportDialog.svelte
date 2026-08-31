@@ -27,6 +27,7 @@ let advancedWasOpen = $state(false);
   import { cubicOut } from "svelte/easing";
   import { fade, slide } from "svelte/transition";
   import { motionDuration } from "../lib/motion.svelte";
+  import PanelSection from "./properity-panel/PanelSection.svelte";
   import {
     estimateExportBytes,
     formatByteRange,
@@ -357,13 +358,14 @@ let advancedWasOpen = $state(false);
 {/snippet}
 
 {#snippet field(label: string, desc: string | undefined, control: import("svelte").Snippet)}
-  <div class="flex flex-col gap-1.5">
-    <span class="text-[11px] font-semibold text-foreground">{label}</span>
-    {@render control()}
-    {#if desc}
-      <p class="text-[11px] leading-snug text-muted-foreground">{desc}</p>
-    {/if}
-  </div>
+  <PanelSection title={label} flush>
+    <div class="flex flex-col gap-1.5">
+      {@render control()}
+      {#if desc}
+        <p class="text-[11px] leading-snug text-muted-foreground">{desc}</p>
+      {/if}
+    </div>
+  </PanelSection>
 {/snippet}
 
 {#snippet captionsSection()}
@@ -473,69 +475,45 @@ let advancedWasOpen = $state(false);
       {/snippet}
       {@render field("Quality", activeQuality?.desc, qualityControl)}
 
-      <!-- Advanced tuning. The collapsed row carries its current values so you
-           can tell whether opening it is worth it. -->
-      <div
-        class={cn(
-          "flex flex-col rounded-xl border transition-colors",
-          advancedOpen ? "border-border/60 bg-card/40" : "border-border/50",
-        )}
-      >
-        <button
-          type="button"
-          onclick={() => (advancedOpen = !advancedOpen)}
-          aria-expanded={advancedOpen}
-          aria-controls="export-advanced"
-          class="group flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          <Settings2 class="size-3.5 shrink-0 text-muted-foreground" />
-          <span class="shrink-0 text-[11px] font-semibold text-foreground">Advanced</span>
-          <span class="ml-auto min-w-0 truncate text-right text-[11px] text-muted-foreground">
-            {advancedOpen ? "" : advancedSummary}
-          </span>
-          <ChevronDown
-            class={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
-              advancedOpen && "rotate-180",
-            )}
-          />
-        </button>
-        {#if advancedOpen}
-          <div
-            id="export-advanced"
-            class="flex flex-col gap-4 border-t border-border/50 px-3 py-3"
-            transition:slide={{ duration: motionDuration(200), easing: cubicOut }}
-          >
-            {#if isGif}
-              {@render gifSettingsBody()}
-            {:else}
-              {#if showFps}
-                {#snippet fpsControl()}
-                  <Segmented
-                    options={fpsOptions.map((f) => ({
-                      value: String(f.value ?? "original"),
-                      label: f.label,
-                    }))}
-                    value={String(store.exportFps ?? "original")}
-                    onValueChange={(v) => setFps(v === "original" ? null : Number(v))}
-                    aria-label="Frame rate"
-                  />
-                {/snippet}
-                {@render field("Frame rate", activeFps?.desc, fpsControl)}
-              {/if}
-              {#snippet speedControl()}
+      <!-- Advanced tuning, collapsed by default; the summary rides the header row. -->
+      <PanelSection title="Advanced" collapsible bind:open={advancedOpen} flush>
+        {#snippet action()}
+          {#if !advancedOpen}
+            <span class="block max-w-44 truncate text-[11px] text-muted-foreground">
+              {advancedSummary}
+            </span>
+          {/if}
+        {/snippet}
+        <div class="flex flex-col gap-4 pt-1">
+          {#if isGif}
+            {@render gifSettingsBody()}
+          {:else}
+            {#if showFps}
+              {#snippet fpsControl()}
                 <Segmented
-                  options={speeds.map((sp) => ({ value: sp.value, label: sp.label }))}
-                  value={store.exportSpeed}
-                  onValueChange={setSpeed}
-                  aria-label="Speed"
+                  options={fpsOptions.map((f) => ({
+                    value: String(f.value ?? "original"),
+                    label: f.label,
+                  }))}
+                  value={String(store.exportFps ?? "original")}
+                  onValueChange={(v) => setFps(v === "original" ? null : Number(v))}
+                  aria-label="Frame rate"
                 />
               {/snippet}
-              {@render field("Speed", activeSpeed?.desc, speedControl)}
+              {@render field("Frame rate", activeFps?.desc, fpsControl)}
             {/if}
-          </div>
-        {/if}
-      </div>
+            {#snippet speedControl()}
+              <Segmented
+                options={speeds.map((sp) => ({ value: sp.value, label: sp.label }))}
+                value={store.exportSpeed}
+                onValueChange={setSpeed}
+                aria-label="Speed"
+              />
+            {/snippet}
+            {@render field("Speed", activeSpeed?.desc, speedControl)}
+          {/if}
+        </div>
+      </PanelSection>
       {#if hasCaptions}{@render captionsSection()}{/if}
     </div>
   </div>

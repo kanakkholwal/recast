@@ -84,8 +84,7 @@ const RULER_HEIGHT = 36;
 const RULER_LABEL_Y = 18;
 const RULER_TICK_MAJOR = 9;
 const RULER_TICK_MINOR = 3;
-// Uniform lane height for every kind (Diffusion's DEFAULT_CLIP_HEIGHT); rows sit
-// nearly contiguous the way its layer list does.
+// Uniform lane height for every kind (Diffusion's DEFAULT_CLIP_HEIGHT); rows sit near-contiguous like its layer list.
 const ROW_H = 40;
 const WAVE_BAND = 22;
 const SUBROW_H = 30;
@@ -106,8 +105,7 @@ const TRACK_HEADER_W = 250;
 const SAMPLE_WIDTH = 2;
 const FILMSTRIP_TILE_HEIGHT = 48;
 const FILMSTRIP_TILE_WIDTH = 72;
-// The header is a flex sibling, so the canvas owns only the content region. A
-// small left pad keeps frame 0 off the edge (Diffusion's TIMELINE_PADDING_LEFT).
+// Header is a flex sibling, so the canvas owns only the content region; a small left pad keeps frame 0 off the edge (Diffusion's TIMELINE_PADDING_LEFT).
 const GUTTER = 8;
 
 // Canvas y of a clip within its row band, honouring its stack lane.
@@ -133,10 +131,7 @@ const LANE_ICONS: Record<ClipKind, typeof Film> = {
 	camera: Camera,
 };
 
-// The one keyframe-able property each kind exposes today. Absent = the row does
-// not expand. Keyframes are a follow-up; these edit the clip's current value.
-// The one property each kind exposes in its expand tray. Values are in FIELD
-// units (markup opacity as 0..100%), converted at propValue/setProp.
+// The one property each kind exposes in its expand tray (absent = no expand); values in FIELD units (markup opacity 0..100%), converted at propValue/setProp.
 interface PropSpec {
 	label: string;
 	icon: typeof Film;
@@ -216,8 +211,7 @@ let expandedRows = $state(new Set<string>());
 // Selected keyframe (original-axis seconds), for the keyframe-track rows.
 let selectedKeyframeSec = $state<number | null>(null);
 
-// Keyframe tracks, generic over the source model. Camera is the only animated
-// model today; a new one adds a source here plus a TRACK_HANDLERS entry.
+// Keyframe tracks, generic over the source model; camera is the only animated model today (a new one adds a source here plus a TRACK_HANDLERS entry).
 const trackInputs = $derived.by<TrackItem[]>(() => {
 	const cam = store.cameraOverlay;
 	if (!cam || cam.keyframes.length === 0) return [];
@@ -322,15 +316,13 @@ const contentHeight = $derived(
 );
 const allClips = $derived(rows.flatMap((r) => r.clips));
 
-// Cut seams (silence removed): each collapses to one OUTPUT frame where its
-// original range folds shut. Drawn as a full-height notch, not a clip.
+// Cut seams (silence removed): each collapses to one OUTPUT frame where its original range folds shut; drawn as a full-height notch, not a clip.
 const cutFrames = $derived.by<number[]>(() => {
 	if (!store.cutsEnabled) return [];
 	return store.cuts.map((c) => originalToOutput(store.renderMap, c.start) * fps);
 });
 
-// Guarded like the rest of the editor (Editor.svelte); never touch a bare
-// localStorage, which throws under SSR and in privacy modes.
+// Guarded like the rest of the editor (Editor.svelte); a bare localStorage throws under SSR and in privacy modes.
 const EXPAND_KEY = "recast:tl-expanded";
 const tlStorage = typeof localStorage === "undefined" ? null : localStorage;
 function persistExpanded(ids: Set<string>) {
@@ -365,8 +357,7 @@ function propClipId(row: TimelineRow): string | undefined {
 function rowSelected(row: TimelineRow): boolean {
 	return row.clips.some((c) => c.selected);
 }
-// The lane-level toggles that map cleanly to the store: markup hides, audio
-// mutes (gain 0). Other kinds have none, so their row shows no toggle.
+// Lane-level toggles that map cleanly to the store: markup hides, audio mutes (gain 0); other kinds have none, so their row shows no toggle.
 function rowToggleKind(row: TimelineRow): "hide" | "mute" | null {
 	if (row.kind === "markup") return "hide";
 	if (row.kind === "audio") return "mute";
@@ -434,8 +425,7 @@ function addZoomAtPlayhead() {
 	if (end > s) store.addZoomRegion(s, end);
 }
 
-// Delete whatever is selected: zoom / markup / audio clip, or ripple-delete the
-// selected video segment. The store methods push their own undo entry.
+// Delete whatever is selected: zoom/markup/audio clip, or ripple-delete the selected video segment; store methods push their own undo entry.
 function deleteSelected() {
 	if (selectedKeyframeSec !== null) {
 		const sec = selectedKeyframeSec;
@@ -489,8 +479,7 @@ function resetTrim() {
 
 const SPEED_PRESETS = [0.5, 1, 1.5, 2] as const;
 
-// One storyboard sprite (cols×rows frame cells) is enough for a filmstrip —
-// far cheaper than per-tile decode. Loaded once; a new url reloads it.
+// One storyboard sprite (cols×rows frame cells) is enough for a filmstrip, far cheaper than per-tile decode; loaded once, a new url reloads it.
 let sbUrl: string | null = null;
 let sbImg: HTMLImageElement | null = null;
 let sbMeta: Storyboard | null = null;
@@ -512,8 +501,7 @@ function ensureStoryboard(): boolean {
 
 type ClipRect = { x: number; w: number; y: number; h: number };
 
-// --- colours: the canvas can't read CSS vars, so resolve --tl-* once (and on
-// theme flips) to concrete strings via a probe span. ---
+// --- colours: canvas can't read CSS vars, so resolve --tl-* once (and on theme flips) to concrete strings via a probe span ---
 type ClipPaint = { bg: string; primary: string; on: string };
 let tl = $state({
 	surface: "#1c1c1c",
@@ -545,8 +533,7 @@ function readColors() {
 		const c = getComputedStyle(probe).color;
 		return c && c !== "" ? c : fallback;
 	};
-	// Chrome/surfaces use the app tokens so the timeline matches the panels and
-	// tracks the theme; only the clip bodies keep the categorical --tl-* palette.
+	// Chrome/surfaces use app tokens so the timeline matches the panels and tracks the theme; only clip bodies keep the categorical --tl-* palette.
 	tl = {
 		surface: read("--background", "#1c1c1c"),
 		surfaceMuted: read("--muted", "#292929"),
@@ -585,8 +572,7 @@ function sizeCanvas() {
 	canvasEl.height = Math.round(cssH * dpr);
 	canvasEl.style.width = `${cssW}px`;
 	canvasEl.style.height = `${cssH}px`;
-	// Refit on every resize until the user zooms/pans: a one-shot fit locked the
-	// stale first-mount width, so the clip under-filled and the pointer mismapped.
+	// Refit on every resize until the user zooms/pans: a one-shot fit locked the stale first-mount width, so the clip under-filled and the pointer mismapped.
 	if (totalFrames > 0 && contentW > 40 && !userAdjusted) {
 		view = clampScroll(
 			{
@@ -733,8 +719,7 @@ function snapDev(v: number): number {
 	return Math.round(v * dpr) / dpr;
 }
 
-// Silence-cut seams: a small neutral notch at the top of the lanes, never a
-// full-height coloured line (that reads as the playhead).
+// Silence-cut seams: a small neutral notch at the top of the lanes, never a full-height coloured line (that reads as the playhead).
 function drawCutSeams() {
 	if (!ctx || cutFrames.length === 0) return;
 	for (const f of cutFrames) {
@@ -887,9 +872,7 @@ function ensureTileImage(url: string): HTMLImageElement | null {
 	return null;
 }
 
-// Virtualized filmstrip: plan on-screen tiles, request their decode, draw each
-// decoded frame; a tile still decoding falls back to the coarse storyboard cell,
-// then to a muted fill — never solid black.
+// Virtualized filmstrip: plan on-screen tiles, request decode, draw each decoded frame; a tile still decoding falls back to the coarse storyboard cell, then a muted fill, never solid black.
 function drawFilmstrip(clip: TimelineClip, x0: number, cw: number, y: number, h: number): void {
 	if (!ctx || h <= 0) return;
 	const seg = store.segments.find((s) => String(s.start) === clip.id);
@@ -1032,8 +1015,7 @@ function drawSnapGuide() {
 	ctx.globalAlpha = 1;
 }
 
-// The trimmed-out head and tail, dimmed with a bracket in the ruler, so the
-// exported window (mark in/out) is visible on the timeline.
+// The trimmed-out head and tail, dimmed with a bracket in the ruler, so the exported window (mark in/out) is visible on the timeline.
 function drawWorkarea() {
 	if (!ctx || fps <= 0) return;
 	const dur = store.metadata?.duration ?? 0;
@@ -1064,8 +1046,7 @@ function drawBracket(x: number, dir: 1 | -1) {
 	ctx.fillRect(dir === 1 ? x : x - 6, RULER_HEIGHT - 12, 6, 2);
 }
 
-// The playhead: a shield knob in the ruler, a blue line with a dark halo, and a
-// velocity-driven motion trail so a scrub eases rather than snaps.
+// The playhead: a shield knob in the ruler, a blue line with a dark halo, and a velocity-driven motion trail so a scrub eases rather than snaps.
 const GRADIENT_PX_PER_VELOCITY = 25;
 const GRADIENT_RESPONSE_TIME = 0.15;
 const GRADIENT_MAX_WIDTH = 150;
@@ -1076,16 +1057,14 @@ let lastPlayTs = 0;
 
 function drawPlayhead() {
 	if (!ctx) return;
-	// Snap to a whole device pixel like the ticks/clips: an unsnapped 1px line
-	// anti-aliases across two columns and washes out over the dark lanes.
+	// Snap to a whole device pixel like the ticks/clips: an unsnapped 1px line anti-aliases across two columns and washes out over the dark lanes.
 	const x = snapDev(frameToX(playheadFrame, view));
 
 	ctx.save();
 	ctx.translate(x, 0);
 	drawMotionTrail();
 
-	// The knob, sitting in the ruler — Diffusion's exact KNOB_PATH (a 10px pin,
-	// centred with translate(-5) and dropped 2px), dark outline over blue fill.
+	// The knob in the ruler: Diffusion's exact KNOB_PATH (10px pin, centred with translate(-5) and dropped 2px), dark outline over blue fill.
 	ctx.save();
 	ctx.translate(-5, 2);
 	ctx.strokeStyle = tl.border;
@@ -1095,8 +1074,7 @@ function drawPlayhead() {
 	ctx.fill(KNOB_PATH);
 	ctx.restore();
 
-	// The line below the ruler: a dark halo (4px) under the blue scrubber (2px),
-	// both crisp because x is device-snapped.
+	// The line below the ruler: a dark halo (4px) under the blue scrubber (2px), both crisp because x is device-snapped.
 	ctx.beginPath();
 	ctx.moveTo(0, RULER_HEIGHT);
 	ctx.lineTo(0, cssH);
@@ -1134,8 +1112,7 @@ function drawMotionTrail() {
 	if (width <= 0.5) return;
 	const reverse = gradientWidth < 0;
 	const grad = ctx.createLinearGradient(reverse ? width : -width, 0, 0, 0);
-	// `transparent`, not `${tl.ring}00`: the hex-alpha suffix is invalid on the
-	// oklch()/rgb() strings getComputedStyle returns and throws in addColorStop.
+	// `transparent`, not `${tl.ring}00`: the hex-alpha suffix is invalid on the oklch()/rgb() strings getComputedStyle returns and throws in addColorStop.
 	grad.addColorStop(0, "transparent");
 	grad.addColorStop(1, tl.ring);
 	ctx.fillStyle = grad;
@@ -1377,8 +1354,7 @@ function hoverCursor(x: number, y: number): string {
 	return canMove(clip) ? "grab" : "pointer";
 }
 
-// True when x is over the playhead line, so a press on the lanes grabs the
-// scrubber rather than the clip beneath it.
+// True when x is over the playhead line, so a press on the lanes grabs the scrubber rather than the clip beneath it.
 function nearPlayhead(x: number): boolean {
 	return Math.abs(frameToX(playheadFrame, view) - x) <= PLAYHEAD_GRAB_PX;
 }
@@ -1556,8 +1532,7 @@ const menuSpeed = $derived(
 const menuCanEdit = $derived(menuClip?.kind === "zoom" || menuClip?.kind === "markup");
 const menuCanDelete = $derived(menuClip != null && menuClip.kind !== "caption");
 
-// Normalize line/page wheel deltas so a physical mouse wheel pans/zooms the same
-// as a trackpad (Diffusion's normalizeWheel: LINE≈16px, PAGE≈600px).
+// Normalize line/page wheel deltas so a physical mouse wheel pans/zooms like a trackpad (Diffusion's normalizeWheel: LINE≈16px, PAGE≈600px).
 function normDelta(d: number, mode: number): number {
 	if (mode === 1) return d * 16;
 	if (mode === 2) return d * 600;
@@ -1705,8 +1680,7 @@ $effect(() => {
 	tileProvider?.setDecodePaused(store.isPlaying);
 });
 
-// Keep the playhead in view while playing (auto-scroll like an NLE). Reads the
-// view untracked so writing scrollFrames doesn't re-trigger the effect.
+// Keep the playhead in view while playing (auto-scroll like an NLE); reads the view untracked so writing scrollFrames doesn't re-trigger the effect.
 $effect(() => {
 	if (!store.isPlaying) return;
 	const pf = playheadFrame;

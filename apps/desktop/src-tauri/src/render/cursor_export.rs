@@ -744,7 +744,7 @@ fn interpolate_cursor(samples: &[SmoothedSample], timestamp_us: u64) -> Option<I
 /// the LUT interpolation and the affine transform at the call sites stays
 /// exact — see the alignment proof in `graph::sample_region`.) `time_offset`
 /// is the export trim-start, matching `sample_region`'s clamp.
-fn active_zoom_at(
+pub(crate) fn active_zoom_at(
     regions: &[crate::render::node_types::ZoomRegion],
     t_secs: f64,
     time_offset: f64,
@@ -1708,7 +1708,7 @@ fn annotation_box(annotation: &Annotation) -> Option<(f64, f64, f64, f64, f64)> 
     }
 }
 
-fn annotation_opacity(annotation: &Annotation, t_secs: f64) -> f64 {
+pub(crate) fn annotation_opacity(annotation: &Annotation, t_secs: f64) -> f64 {
     if t_secs < annotation.start || t_secs > annotation.end {
         return 0.0;
     }

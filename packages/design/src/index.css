@@ -167,7 +167,7 @@
   /* Diffusion's stage is #121212; recessed under our panels. */
   --editor-canvas: oklch(0.145 0 0);
 
-  --card: oklch(0.27 0 0);
+  --card: #1c1c1c;
   --card-foreground: oklch(95.514% 0.00011 271.152);
 
   --popover: oklch(20.463% 0.00002 271.152);

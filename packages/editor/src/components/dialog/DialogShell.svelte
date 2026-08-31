@@ -47,9 +47,9 @@ let {
 }: Props = $props();
 
 const TONE_CHIP: Record<Tone, string> = {
-	default: "border-primary/20 bg-primary/10 text-primary",
-	destructive: "border-destructive/20 bg-destructive/10 text-destructive",
-	muted: "border-border/50 bg-muted text-muted-foreground",
+	default: "bg-primary/12 text-primary ring-1 ring-inset ring-primary/20",
+	destructive: "bg-destructive/12 text-destructive ring-1 ring-inset ring-destructive/25",
+	muted: "bg-muted text-muted-foreground ring-1 ring-inset ring-border/50",
 };
 </script>
 
@@ -64,26 +64,26 @@ const TONE_CHIP: Record<Tone, string> = {
 		showCloseButton={false}
 		class={cn("block! gap-0!", DIALOG_SURFACE, widthClass)}
 	>
-		<Dialog.Header class={cn("flex-row items-start gap-3", DIALOG_HEADER)}>
+		<Dialog.Header class={cn("flex-row items-center gap-3", DIALOG_HEADER)}>
 			{#if Icon}
 				<span
 					class={cn(
-						"grid size-8 shrink-0 place-items-center rounded-lg border",
+						"grid size-9 shrink-0 place-items-center rounded-full",
 						TONE_CHIP[tone],
 					)}
 					aria-hidden="true"
 				>
-					<Icon class="size-3.5" />
+					<Icon class="size-4" />
 				</span>
 			{/if}
 			<span class="flex min-w-0 flex-1 flex-col gap-0.5">
-				<Dialog.Title class="text-[13px] font-semibold tracking-tight text-foreground">
+				<Dialog.Title class="text-[15px] leading-tight font-semibold tracking-[-0.011em] text-balance text-foreground">
 					{title}
 				</Dialog.Title>
 				<!-- Always rendered: bits-ui warns when a dialog has no description,
 				     and an empty one keeps the header height stable between states. -->
 				<Dialog.Description
-					class={cn("truncate text-[11px] leading-relaxed text-muted-foreground", !subtitle && "sr-only")}
+					class={cn("truncate text-[11.5px] leading-relaxed text-muted-foreground", !subtitle && "sr-only")}
 				>
 					{subtitle ?? title}
 				</Dialog.Description>

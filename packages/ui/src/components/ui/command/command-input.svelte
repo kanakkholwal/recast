@@ -1,6 +1,6 @@
 <script lang="ts">
-import { cn } from "@recast/ui/utils";
 import { Search } from "@recast/icons";
+import { cn } from "@recast/ui/utils";
 import { Command as CommandPrimitive } from "bits-ui";
 import * as InputGroup from "../input-group";
 
@@ -25,7 +25,7 @@ let {
 		<CommandPrimitive.Input
 			data-slot="command-input"
 			class={cn(
-				"w-full text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+				"w-full text-[13px] outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
 				className,
 			)}
 			bind:ref

@@ -1,41 +1,90 @@
 <script lang="ts">
-import { Switch as SwitchPrimitive } from "bits-ui";
-import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import { cn } from "@recast/ui/utils";
+import { prefersReducedMotion, Spring } from "svelte/motion";
+
+interface Props {
+	ref?: HTMLButtonElement | null;
+	checked?: boolean;
+	onCheckedChange?: (checked: boolean) => void;
+	disabled?: boolean;
+	class?: string;
+}
 
 let {
 	ref = $bindable(null),
 	checked = $bindable(false),
+	onCheckedChange,
+	disabled = false,
 	class: className,
 	...restProps
-}: WithoutChildrenOrChild<SwitchPrimitive.RootProps> = $props();
+}: Props & Record<string, unknown> = $props();
+
+// Off→on as 0→1. Heavy, deliberate travel: low stiffness + near-critical damping so it settles weighty without wobble.
+const pos = new Spring(checked ? 1 : 0, { stiffness: 0.055, damping: 0.9 });
+let pressed = $state(false);
+let thumbEl = $state<HTMLSpanElement | null>(null);
+
+$effect(() => {
+	pos.set(checked ? 1 : 0, { instant: prefersReducedMotion.current });
+});
+
+const squish = $derived(!disabled && pressed && !prefersReducedMotion.current);
+const TRAVEL = 20; // 48px track − 8px padding − 20px thumb.
+
+function toggle() {
+	if (disabled) return;
+	const next = !checked;
+	checked = next;
+	onCheckedChange?.(next);
+}
+
+// Disabled + pressed: a short shake says "not here" without changing state. Identity transform while disabled, so it can own the thumb transform for its run.
+$effect(() => {
+	if (!thumbEl || !disabled || !pressed || prefersReducedMotion.current) return;
+	const anim = thumbEl.animate(
+		[
+			{ transform: "translateX(0)" },
+			{ transform: "translateX(-2px)" },
+			{ transform: "translateX(2px)" },
+			{ transform: "translateX(-1px)" },
+			{ transform: "translateX(0)" },
+		],
+		{ delay: 200, duration: 600, easing: "cubic-bezier(0.36,0.07,0.19,0.97)" },
+	);
+	return () => anim.cancel();
+});
 </script>
 
-<!-- Apple-proportioned toggle: 42×26 track, thumb at ~85% of track height with
-     a 2px inset, so the knob reads as filling the pill rather than floating. -->
-<SwitchPrimitive.Root
-	bind:ref
-	bind:checked
+<button
+	bind:this={ref}
+	type="button"
+	role="switch"
+	aria-checked={checked}
+	{disabled}
 	data-slot="switch"
+	data-state={checked ? "checked" : "unchecked"}
+	onclick={toggle}
+	onpointerdown={() => (pressed = true)}
+	onpointerup={() => (pressed = false)}
+	onpointerleave={() => (pressed = false)}
 	class={cn(
-		"peer group inline-flex h-6.5 w-10.5 shrink-0 cursor-pointer items-center rounded-full border border-transparent outline-none transition-colors duration-200",
-		"focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-		"data-[state=checked]:bg-primary",
-		// Filled grey off-track (Apple style); the inset ring carries the 3:1 boundary the low-contrast fill can't.
-		"data-[state=unchecked]:bg-muted-foreground/25 data-[state=unchecked]:ring-1 data-[state=unchecked]:ring-inset data-[state=unchecked]:ring-border-control/60",
-		"disabled:cursor-not-allowed disabled:opacity-50",
+		"group relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full px-1 outline-none",
+		"transition-colors duration-200 ease-out",
+		"focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+		"disabled:cursor-not-allowed disabled:opacity-60",
+		checked ? "bg-primary" : "bg-muted-foreground/55",
 		className,
 	)}
 	{...restProps}
 >
-	<!-- iOS press feedback: the thumb stretches while held with its leading edge
-	     pinned, then springs back on release. -->
-	<SwitchPrimitive.Thumb
-		data-slot="switch-thumb"
-		class={cn(
-			"pointer-events-none block size-5.5 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25),0_2px_6px_rgb(0_0_0/0.15)]",
-			"transition-[transform,width] duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
-			"data-[state=unchecked]:translate-x-0.5 data-[state=checked]:translate-x-4",
-			"motion-safe:group-active:w-6.5 motion-safe:group-active:data-[state=checked]:translate-x-3",
-		)}
-	/>
-</SwitchPrimitive.Root>
+	<span class="pointer-events-none block" style="transform: translateX({pos.current * TRAVEL}px);">
+		<!-- Squish scales toward the destination edge, so the thumb leans into its travel like weight shifting. -->
+		<span
+			bind:this={thumbEl}
+			class="block size-5 rounded-full bg-background shadow-craft-md transition-transform duration-150 ease-out"
+			style="transform: scaleX({squish ? 1.14 : 1}) scaleY({squish ? 0.9 : 1}); transform-origin: {checked
+				? 'right'
+				: 'left'} center;"
+		></span>
+	</span>
+</button>

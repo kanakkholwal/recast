@@ -12,6 +12,7 @@ import { Kbd } from "@recast/ui/kbd";
 import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
 import { toast } from "@recast/ui/sonner";
 import { Textarea } from "@recast/ui/textarea";
+import { untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 import { pickImageFile } from "../../lib/annotations/image-import";
@@ -55,6 +56,15 @@ function rememberColor(color: string) {
 const selected = $derived<Annotation | null>(
 	store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
 );
+
+// Selecting a layer jumps to Edit so its controls sit on top, not scrolled past the Insert tiles.
+let tab = $state<"insert" | "edit">("insert");
+$effect(() => {
+	const id = store.selectedAnnotationId;
+	untrack(() => {
+		if (id) tab = "edit";
+	});
+});
 
 // A positioned text annotation plus a legibility glow; the user edits the placeholder in place.
 function insertTitle(preset: TitlePreset) {
@@ -160,15 +170,26 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
     {/if}
   </PanelSection>
 
-  <PanelSection
-    title="Titles"
-    hint="Drop in a styled title, subtitle, lower-third, or callout, then edit the text on the preview."
-    flush
-  >
-    <TitlePresetTiles oninsert={insertTitle} />
-  </PanelSection>
+  <Segmented
+    size="xs"
+    aria-label="Insert or edit"
+    value={tab}
+    options={[
+      { value: "edit", label: "Edit" },
+      { value: "insert", label: "Insert" },
+    ]}
+    onValueChange={(v) => (tab = v as "insert" | "edit")}
+  />
 
-  {#if store.annotations.length === 0}
+  {#if tab === "insert"}
+    <PanelSection
+      title="Titles"
+      hint="Drop in a styled title, subtitle, lower-third, or callout, then edit the text on the preview."
+      flush
+    >
+      <TitlePresetTiles oninsert={insertTitle} />
+    </PanelSection>
+  {:else if store.annotations.length === 0}
     <div
       class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/60 bg-card/40 px-3 py-6 text-center"
     >
@@ -187,8 +208,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
   {/if}
 
   <!-- Selected annotation editor: appearance/content lead; timing, fade
-       curves, geometry collapse below. -->
-  {#if selected}
+       curves, geometry collapse below. Edit tab only. -->
+  {#if tab === "edit" && selected}
     {@const a = selected}
     {@const Icon = kindIcon(a)}
     <div
@@ -632,7 +653,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
 
       <AnnotationGeometry {store} annotation={a} />
     </div>
-  {:else if store.annotations.length > 0}
+  {:else if tab === "edit" && store.annotations.length > 0}
     <p
       class="rounded-xl border border-dashed border-border/70 bg-card/40 px-3 py-3 text-center text-[10px] text-muted-foreground"
     >

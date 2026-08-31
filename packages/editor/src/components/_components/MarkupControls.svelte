@@ -68,7 +68,7 @@ function handleHotkey(event: KeyboardEvent) {
      floating over it: markup is placed by eye and a pill over the frame covers
      the top-centre of the very content being annotated. -->
 {#if onTab}
-  <NotchedShelf fill="text-card" class="shrink-0" {vertical}>
+  <NotchedShelf fill="text-background" class="shrink-0" {vertical}>
     <div class={cn("flex gap-0.5", vertical ? "flex-col px-1.5 py-2" : "items-center px-2")}>
     {#each ANNOTATION_TOOLS as t, i (t.id)}
       {@const Icon = t.icon}
@@ -100,7 +100,7 @@ function handleHotkey(event: KeyboardEvent) {
             </button>
           {/snippet}
         </Tooltip.Trigger>
-        <Tooltip.Content>{t.label} · {t.hotkey}</Tooltip.Content>
+        <Tooltip.Content side={vertical ? "right" : "top"}>{t.label} · {t.hotkey}</Tooltip.Content>
       </Tooltip.Root>
     {/each}
 
@@ -124,7 +124,7 @@ function handleHotkey(event: KeyboardEvent) {
           </button>
         {/snippet}
       </Tooltip.Trigger>
-      <Tooltip.Content>{IMAGE_TOOL.label} · {IMAGE_TOOL.hotkey}</Tooltip.Content>
+      <Tooltip.Content side={vertical ? "right" : "top"}>{IMAGE_TOOL.label} · {IMAGE_TOOL.hotkey}</Tooltip.Content>
     </Tooltip.Root>
 
     {#if count > 0}
@@ -147,7 +147,7 @@ function handleHotkey(event: KeyboardEvent) {
             </button>
           {/snippet}
         </Tooltip.Trigger>
-        <Tooltip.Content>{hidden ? "Show markup" : "Hide markup"}</Tooltip.Content>
+        <Tooltip.Content side={vertical ? "right" : "top"}>{hidden ? "Show markup" : "Hide markup"}</Tooltip.Content>
       </Tooltip.Root>
     {/if}
     </div>

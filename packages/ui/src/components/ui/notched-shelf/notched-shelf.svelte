@@ -28,7 +28,7 @@ const WING =
        is horizontal-edge geometry, so the side dock reads as a clean raised card. -->
   <div
     class={cn(
-      "relative z-10 my-auto w-fit rounded-xl shadow-craft-md ring-1 ring-inset ring-border/40",
+      "relative z-10 my-auto w-fit rounded-xl shadow-craft-md ring-1 ring-inset ring-border/60",
       fill,
       className,
     )}

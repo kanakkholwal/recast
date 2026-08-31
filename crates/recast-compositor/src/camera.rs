@@ -137,12 +137,7 @@ pub fn follow_placement(
     let bcx = base.x + base.width / 2.0;
     let bcy = base.y + base_h / 2.0;
 
-    // The away-from-focus direction is a SCREEN-SPACE one, but `bcx-cx` / `bcy-cy`
-    // are UV, and one UV-x unit is `video_w` px while one UV-y unit is `video_h`
-    // px (aspect = video_w/video_h). Normalising the UV pair treats them as the
-    // same unit, so the drift angle is wrong on a non-square frame (D-2).
-    // Normalise in pixels (video_h as the unit), then take the drift back to UV
-    // per axis. Drift magnitude stays a fraction of the frame height.
+    // Away-from-focus is SCREEN-SPACE but `bcx-cx`/`bcy-cy` are UV (one UV-x unit=`video_w` px, one UV-y unit=`video_h` px, aspect=video_w/video_h); normalising the pair as one unit gets the drift angle wrong on a non-square frame (D-2). Normalise in pixels (video_h unit) then back to UV per axis; magnitude stays a fraction of frame height.
     let drift = amount * DRIFT_MAX;
     let (px, py) = ((bcx - cx) * aspect, bcy - cy);
     let len = (px * px + py * py).sqrt();

@@ -214,6 +214,24 @@ $effect(() => {
 });
 
 
+// Fullscreen shows only the picture + video controls, so the stage drawers hide.
+let isFullscreen = $state(false);
+$effect(() => {
+	const onChange = () => (isFullscreen = Boolean(document.fullscreenElement));
+	document.addEventListener("fullscreenchange", onChange);
+	return () => document.removeEventListener("fullscreenchange", onChange);
+});
+
+// Opening export drops annotation selection/tool so the preview shows the clean composite.
+$effect(() => {
+	if (exportPanel) {
+		untrack(() => {
+			store.selectedAnnotationId = null;
+			store.annotationTool = null;
+		});
+	}
+});
+
 // --- Panel sizing, measured so the timeline's ceiling is a share of the available space, not a fixed number.
 let editorColumnH = $state(0);
 let sidebarWidth = $state(
@@ -225,8 +243,7 @@ let timelineHeight = $state(
 let resizingSidebar = $state(false);
 let resizingTimeline = $state(false);
 
-// Dev flag for the Stage-A canvas timeline, so it can be compared live against
-// the DOM one without a rebuild. Toggle via the chip, persisted to localStorage.
+// Dev flag for the Stage-A canvas timeline (chip toggle, persisted) to compare live against the DOM one.
 const TL_CANVAS_KEY = "recast:tl-canvas";
 // Default ON for testing the canvas timeline; the chip flips back to the DOM one.
 let timelineCanvasFlag = $state(storage?.getItem(TL_CANVAS_KEY) !== "0");
@@ -393,16 +410,21 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 						audioPositionSec={audioPositionSec ??
 							(() => audioEngine?.positionOutputSec ?? null)}
 					/>
-					<!-- Markup tools dock to the left edge in a vertical shelf (Markup tab only). -->
-					<div class="pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center">
-						<div class="pointer-events-auto">
-							<MarkupControls {store} vertical />
+					<!-- Markup tools dock to the left edge (Markup tab only); hidden in
+					     fullscreen and export, which show only picture + video controls. -->
+					{#if !isFullscreen && !exportPanel}
+						<div class="pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center">
+							<div class="pointer-events-auto">
+								<MarkupControls {store} vertical />
+							</div>
 						</div>
-					</div>
+					{/if}
 				</div>
 				<!-- Bottom control row: aspect (left), scrubber/transport (centre), view (right). -->
 				<div class="flex w-full max-w-280 items-center gap-2 px-2">
-					<AspectPicker {store} />
+					{#if !isFullscreen && !exportPanel}
+						<AspectPicker {store} />
+					{/if}
 					<div class="min-w-0 flex-1">
 						<VideoPlayerControls {store} {videoEl} showScrubber={!timelineOpen} />
 					</div>

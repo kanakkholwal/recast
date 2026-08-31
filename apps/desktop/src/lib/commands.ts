@@ -14,7 +14,7 @@ import {
 } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { toast } from "@recast/ui/sonner";
-import { setMode } from "@recast/ui/theme";
+import { setModeCircleBlur } from "@recast/ui/theme";
 import { goto } from "$app/navigation";
 import { config } from "$constants/app";
 import { getOutputDir, launchRecordingPanel, openFileLocation } from "$lib/ipc";
@@ -138,7 +138,7 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			category: "Theme",
 			icon: Sun,
 			keywords: ["light", "theme", "appearance"],
-			action: () => setMode("light"),
+			action: () => setModeCircleBlur("light"),
 		},
 		{
 			id: "theme.dark",
@@ -146,7 +146,7 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			category: "Theme",
 			icon: Moon,
 			keywords: ["dark", "theme", "appearance"],
-			action: () => setMode("dark"),
+			action: () => setModeCircleBlur("dark"),
 		},
 		{
 			id: "theme.system",
@@ -154,7 +154,7 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			category: "Theme",
 			icon: Monitor,
 			keywords: ["system", "auto", "theme"],
-			action: () => setMode("system"),
+			action: () => setModeCircleBlur("system"),
 		},
 
 		// External

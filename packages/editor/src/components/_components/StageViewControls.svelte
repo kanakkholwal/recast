@@ -56,7 +56,7 @@ async function toggleFullscreen() {
 </script>
 
 <div
-  class="flex items-center gap-0.5 rounded-md bg-card p-0.5 shadow-craft-md ring-1 ring-inset ring-border/40"
+  class="flex items-center gap-0.5 rounded-md bg-background p-0.5 shadow-craft-md ring-1 ring-inset ring-border/60"
 >
   <Tooltip.Root>
     <Tooltip.Trigger>

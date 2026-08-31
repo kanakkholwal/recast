@@ -46,7 +46,7 @@ import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
 import { toast } from "@recast/ui/sonner";
 import { Switch } from "@recast/ui/switch";
 import * as Tabs from "@recast/ui/tabs";
-import { setMode } from "@recast/ui/theme";
+import { setModeCircleBlur } from "@recast/ui/theme";
 import { emit, listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { platform } from "@tauri-apps/plugin-os";
@@ -116,6 +116,8 @@ let nativeEncoder = $state(false);
 let nativeEncoderSupported = $state(false);
 // Content protection is a compile-time no-op on Linux, so the toggle is shown disabled rather than pretending.
 const isLinux = platform() === "linux";
+// Window-chrome toggle only differs on macOS; Windows/Linux render one control set, so it's dead there.
+const isMac = ["macos", "ios"].includes(platform());
 // Global recording prefs, read by the recording panel via shared localStorage.
 let recordingQuality = $state<RecordingQuality>("auto");
 let recordingFps = $state<number>(60);
@@ -372,7 +374,7 @@ async function toggleCliAutoInstall() {
 }
 
 function updateTheme(theme: Theme) {
-	setMode(theme);
+	setModeCircleBlur(theme);
 	currentTheme = theme;
 }
 
@@ -493,20 +495,22 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               aria-label="Theme"
             />
           </SettingsRow>
-          <SettingsRow
-            label="Window chrome"
-            description={LAYOUT_MODES.find(
-              (m) => m.value === layoutMode.current,
-            )?.hint}
-          >
-            <Segmented
-              options={layoutSegments}
-              value={layoutMode.current}
-              onValueChange={(v) => (layoutMode.current = v)}
-              fill={false}
-              aria-label="Window chrome layout"
-            />
-          </SettingsRow>
+          {#if isMac}
+            <SettingsRow
+              label="Window chrome"
+              description={LAYOUT_MODES.find(
+                (m) => m.value === layoutMode.current,
+              )?.hint}
+            >
+              <Segmented
+                options={layoutSegments}
+                value={layoutMode.current}
+                onValueChange={(v) => (layoutMode.current = v)}
+                fill={false}
+                aria-label="Window chrome layout"
+              />
+            </SettingsRow>
+          {/if}
           <SettingsRow
             label="Window transparency"
             description={isLinux

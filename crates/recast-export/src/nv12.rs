@@ -88,8 +88,7 @@ impl Nv12Encoder {
         out.resize(base + PlaneLayout::Nv12.packed_len(width, height), 0);
         let (luma, chroma) = out[base..].split_at_mut(w * h);
 
-        // Luma row-major over whole pixels: no indexing, so no bounds checks
-        // in the pass that touches every pixel.
+        // Luma row-major over whole pixels: no indexing, so no bounds checks in the pass that touches every pixel.
         let m = self.coefficients[0];
         let offset = self.offsets[0];
         let (pixels, _) = rgba.as_chunks::<4>();

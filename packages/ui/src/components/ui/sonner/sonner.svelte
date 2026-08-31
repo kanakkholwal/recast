@@ -1,6 +1,6 @@
 <script lang="ts">
+import { AlertCircle, AlertTriangle, Check, Info, LoaderCircle, X } from "@recast/icons";
 import { mode } from "mode-watcher";
-import { AlertOctagon, AlertTriangle, CheckCircle2, Info, Loader2, X } from "@recast/icons";
 import { Toaster as Sonner, type ToasterProps as SonnerProps } from "svelte-sonner";
 
 let { ...restProps }: SonnerProps = $props();
@@ -61,43 +61,44 @@ let { ...restProps }: SonnerProps = $props();
 	toastOptions={{
 		classes: {
 			toast:
-				"!w-[320px] !rounded-xl !border !border-border !bg-card !shadow-lg !ring-1 !ring-black/5 !p-3 !gap-3",
-			content: "!gap-0.5",
+				"w-[320px]! rounded-xl! border! border-border/70! bg-card/95! backdrop-blur-xl! shadow-lg! ring-1! ring-foreground/5! p-3! gap-3!",
+			content: "gap-0.5!",
 			title:
-				"!text-[12.5px] !font-semibold !leading-tight !text-foreground !tracking-tight",
-			description: "!text-[11.5px] !text-muted-foreground !leading-snug",
+				"text-[13px]! font-semibold! leading-tight! text-foreground! tracking-[-0.006em]!",
+			description: "text-[11.5px]! text-muted-foreground! leading-relaxed!",
 			icon:
-				"!size-8 !shrink-0 !flex !items-center !justify-center !rounded-lg !bg-primary/10 !text-primary !ring-1 !ring-inset !ring-primary/20 !m-0",
+				"size-7! shrink-0! flex! items-center! justify-center! rounded-full! bg-foreground/5! text-muted-foreground! m-0!",
 			closeButton:
-				"!size-5 !rounded-md !border-0 !bg-transparent !text-muted-foreground/70 hover:!bg-foreground/5 hover:!text-foreground",
-			actionButton: "!text-[11px] !font-semibold",
-			cancelButton: "!text-[11px] !text-muted-foreground",
+				"size-5! rounded-md! border-0! bg-transparent! text-muted-foreground/70! hover:bg-foreground/5! hover:text-foreground!",
+			actionButton: "text-[11px]! font-semibold!",
+			cancelButton: "text-[11px]! text-muted-foreground!",
+			loading: "[&_[data-icon]]:bg-primary/10! [&_[data-icon]]:text-primary!",
 			success:
-				"[&_[data-icon]]:!bg-success/10 [&_[data-icon]]:!text-success [&_[data-icon]]:!ring-success/25",
+				"[&_[data-icon]]:bg-success/10! [&_[data-icon]]:text-success!",
 			error:
-				"[&_[data-icon]]:!bg-destructive/10 [&_[data-icon]]:!text-destructive [&_[data-icon]]:!ring-destructive/25",
+				"[&_[data-icon]]:bg-destructive/10! [&_[data-icon]]:text-destructive!",
 			warning:
-				"[&_[data-icon]]:!bg-warning/10 [&_[data-icon]]:!text-warning [&_[data-icon]]:!ring-warning/25",
+				"[&_[data-icon]]:bg-warning/10! [&_[data-icon]]:text-warning!",
 			info:
-				"[&_[data-icon]]:!bg-info/10 [&_[data-icon]]:!text-info [&_[data-icon]]:!ring-info/25",
+				"[&_[data-icon]]:bg-info/10! [&_[data-icon]]:text-info!",
 		},
 	}}
 	{...restProps}
 >
 	{#snippet loadingIcon()}
-		<Loader2 class="size-4 animate-spin" />
+		<LoaderCircle class="size-3.5 animate-spin" />
 	{/snippet}
 	{#snippet successIcon()}
-		<CheckCircle2 class="size-4" />
+		<Check class="size-3.5" />
 	{/snippet}
 	{#snippet errorIcon()}
-		<AlertOctagon class="size-4" />
+		<AlertCircle class="size-3.5" />
 	{/snippet}
 	{#snippet infoIcon()}
-		<Info class="size-4" />
+		<Info class="size-3.5" />
 	{/snippet}
 	{#snippet warningIcon()}
-		<AlertTriangle class="size-4" />
+		<AlertTriangle class="size-3.5" />
 	{/snippet}
 	{#snippet closeIcon()}
 		<X class="size-3" />

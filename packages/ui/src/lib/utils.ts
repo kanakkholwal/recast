@@ -1,4 +1,4 @@
-import { clsx, type ClassValue } from "clsx";
+import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
@@ -6,14 +6,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export {
+	BLOCK_BASE,
+	BLOCK_HOVER,
 	CRAFT_EASE,
 	CRAFT_OVERLAY_ANIMATION,
 	CRAFT_OVERLAY_BACKDROP_ANIMATION,
 	CRAFT_TRANSITION,
-	INVISIBLE_UI,
+	EASE_OUT,
 	GLASS_PANEL,
-	BLOCK_BASE,
-	BLOCK_HOVER,
+	INVISIBLE_UI,
 } from "./craft-utils";
 
 // biome-ignore lint/suspicious/noExplicitAny: `any` is the probe that makes this conditional type match any child/children shape.

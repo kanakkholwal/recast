@@ -30,7 +30,7 @@ import {
 import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
 import * as Command from "@recast/ui/command";
-import * as Popover from "@recast/ui/popover";
+import { Combobox } from "@recast/ui/combobox";
 import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
 import SliderRow from "./SliderRow.svelte";
 import { toast } from "@recast/ui/sonner";
@@ -421,87 +421,79 @@ const noSpeechFound = $derived(
           endpoints can transcribe here.</span>
       </div>
     {/if}
-    <!-- Combobox selector: only the chosen model shows here; the full list
-         lives in the popover so the tab stays compact. -->
-    <Popover.Root open={pickerOpen} onOpenChange={(v) => (pickerOpen = v)}>
-      <Popover.Trigger>
-        {#snippet child({ props })}
-          <button
-            {...props as Record<string, unknown>}
-            class="flex w-full items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-2 text-left ring-1 ring-inset ring-border/40 transition-colors hover:bg-muted"
+    <!-- Combobox: chosen model on the button, searchable grouped list in the popover. -->
+    <Combobox
+      bind:open={pickerOpen}
+      placeholder="Search models…"
+      emptyText="No models found"
+      contentClass="w-72"
+    >
+      {#snippet trigger({ props })}
+        <button
+          {...props}
+          class="flex w-full items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-2 text-left ring-1 ring-inset ring-border/40 transition-colors hover:bg-muted"
+        >
+          <span
+            class={cn(
+              "grid size-7 shrink-0 place-items-center rounded-md",
+              selected?.installed && selected?.runnable
+                ? "bg-ink/5 text-ink"
+                : "bg-muted/60 text-muted-foreground",
+            )}
           >
-            <span
-              class={cn(
-                "grid size-7 shrink-0 place-items-center rounded-md",
-                selected?.installed && selected?.runnable
-                  ? "bg-ink/5 text-ink"
-                  : "bg-muted/60 text-muted-foreground",
-              )}
-            >
-              {#if selected && !selected.runnable}
-                <Lock size={13} />
-              {:else}
-                <Package size={13} />
-              {/if}
+            {#if selected && !selected.runnable}
+              <Lock size={13} />
+            {:else}
+              <Package size={13} />
+            {/if}
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-[12px] font-semibold text-foreground">
+              {selected?.displayName ?? "Select a model"}
             </span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-[12px] font-semibold text-foreground">
-                {selected?.displayName ?? "Select a model"}
+            {#if selected}
+              <span class="block truncate text-[10px] text-muted-foreground">
+                {selected.family}{#if selected.installed} · Installed{/if}
               </span>
-              {#if selected}
-                <span class="block truncate text-[10px] text-muted-foreground">
-                  {selected.family}{#if selected.installed} · Installed{/if}
+            {/if}
+          </span>
+          <ChevronsUpDown size={13} class="shrink-0 text-muted-foreground" />
+        </button>
+      {/snippet}
+      {#each families as fam (fam.name)}
+        <Command.Group heading={fam.name}>
+          {#each fam.models as m (m.id)}
+            <Command.Item
+              value={`${m.displayName} ${m.family} ${m.engine}`}
+              onSelect={() => pick(m.id)}
+              class="gap-2"
+            >
+              <span class="flex size-4 shrink-0 items-center justify-center">
+                {#if m.id === selectedModelId}<Check size={13} class="text-foreground" />{/if}
+              </span>
+              <span class="min-w-0 flex-1 truncate text-[12px]">{m.displayName}</span>
+              {#if m.recommended}
+                <span
+                  class="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                >
+                  Rec
                 </span>
               {/if}
-            </span>
-            <ChevronsUpDown size={13} class="shrink-0 text-muted-foreground" />
-          </button>
-        {/snippet}
-      </Popover.Trigger>
-      <Popover.Content align="start" sideOffset={6} class="w-72 p-0">
-        <Command.Root>
-          <Command.Input placeholder="Search models…" class="h-9 text-[12px]" />
-          <Command.List class="max-h-72 scrollbar-transparent">
-            <Command.Empty class="py-6 text-center text-[11px] text-muted-foreground">
-              No models found
-            </Command.Empty>
-            {#each families as fam (fam.name)}
-              <Command.Group heading={fam.name}>
-                {#each fam.models as m (m.id)}
-                  <Command.Item
-                    value={`${m.displayName} ${m.family} ${m.engine}`}
-                    onSelect={() => pick(m.id)}
-                    class="gap-2"
-                  >
-                    <span class="flex size-4 shrink-0 items-center justify-center">
-                      {#if m.id === selectedModelId}<Check size={13} class="text-foreground" />{/if}
-                    </span>
-                    <span class="min-w-0 flex-1 truncate text-[12px]">{m.displayName}</span>
-                    {#if m.recommended}
-                      <span
-                        class="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-                      >
-                        Rec
-                      </span>
-                    {/if}
-                    {#if !m.runnable}
-                      <Lock size={11} class="shrink-0 text-muted-foreground/70" />
-                    {:else if m.installed}
-                      <Check size={11} class="shrink-0 text-success" />
-                    {/if}
-                    {#if m.approxSizeBytes}
-                      <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                        {formatSize(m.approxSizeBytes)}
-                      </span>
-                    {/if}
-                  </Command.Item>
-                {/each}
-              </Command.Group>
-            {/each}
-          </Command.List>
-        </Command.Root>
-      </Popover.Content>
-    </Popover.Root>
+              {#if !m.runnable}
+                <Lock size={11} class="shrink-0 text-muted-foreground/70" />
+              {:else if m.installed}
+                <Check size={11} class="shrink-0 text-success" />
+              {/if}
+              {#if m.approxSizeBytes}
+                <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  {formatSize(m.approxSizeBytes)}
+                </span>
+              {/if}
+            </Command.Item>
+          {/each}
+        </Command.Group>
+      {/each}
+    </Combobox>
 
     <!-- Selected-model detail -->
     {#if selected}

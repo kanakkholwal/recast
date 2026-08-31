@@ -13,6 +13,9 @@ export const CRAFT_TRANSITION = "transition-all duration-200 ease-in-out";
  */
 export const CRAFT_EASE = "cubic-bezier(0.625, 0.05, 0, 1)";
 
+/** Strong decelerating "ease out" for entrances/reveals; punchier than the CSS keyword. */
+export const EASE_OUT = "cubic-bezier(0.16, 1, 0.3, 1)";
+
 /**
  * Subtle overlay enter/exit animation for floating popovers, dropdowns,
  * tooltips, hover-cards, and dialogs. Uses small scale (97%) and slide

@@ -406,7 +406,7 @@ const capabilities: Cap[] = [
         {#each filtered as profile (profile.id)}
           <div
             class={cn(
-              "group/card relative flex flex-col overflow-hidden rounded-2xl border shadow-(--shadow-craft-inset) outline-none transition-[transform,background-color,border-color,box-shadow] duration-200 ease-out motion-safe:hover:-translate-y-0.5",
+              "group/card relative flex flex-col overflow-hidden rounded-2xl border shadow-(--shadow-craft-inset) outline-none transition-[transform,background-color,border-color,box-shadow] duration-200 ease-out motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[0.99]",
               resolvedId === profile.id
                 ? "border-foreground/40 bg-card ring-1 ring-inset ring-foreground/20"
                 : "border-border/50 bg-card hover:border-border/80 hover:shadow-craft-md",
@@ -414,17 +414,17 @@ const capabilities: Cap[] = [
           >
             <!-- Compact tile: identity + name up top, capability readout as a
                  footer strip. No fake-thumbnail stage; profiles aren't media. -->
-            <div class="flex min-w-0 items-start gap-3 p-4">
+            <div class="flex min-w-0 items-center gap-3 p-4 pb-3">
               <span
                 class={cn(
-                  "grid size-9 shrink-0 place-items-center rounded-lg text-[14px] font-semibold ring-1 ring-inset transition-colors",
+                  "grid size-10 shrink-0 place-items-center rounded-xl text-[15px] font-semibold ring-1 ring-inset transition-colors",
                   profile.isDefault
                     ? "bg-primary/10 text-primary ring-primary/25"
-                    : "bg-muted/60 text-muted-foreground ring-border/40 group-hover/card:text-foreground",
+                    : "bg-muted text-foreground/70 ring-border/50 group-hover/card:text-foreground",
                 )}
               >
                 {#if profile.isDefault}
-                  <Star class="size-4" />
+                  <Star class="size-[18px]" />
                 {:else}
                   {profile.name.trim().charAt(0).toUpperCase() || "?"}
                 {/if}
@@ -432,26 +432,26 @@ const capabilities: Cap[] = [
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5 pr-7">
                   <span
-                    class="truncate text-[13px] font-semibold tracking-tight text-foreground"
+                    class="truncate text-[13.5px] font-semibold tracking-[-0.006em] text-foreground"
                   >
                     {profile.name}
                   </span>
                   {#if profile.isDefault}
                     <span
-                      class="inline-flex shrink-0 items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary"
+                      class="inline-flex shrink-0 items-center rounded-full bg-foreground px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-background"
                     >
                       Default
                     </span>
                   {/if}
                 </div>
-                <div class="mt-0.5 truncate text-[11px] text-muted-foreground">
+                <div class="mt-0.5 truncate text-[11.5px] leading-relaxed text-muted-foreground">
                   {summarize(profile)}
                 </div>
               </div>
             </div>
 
             <div
-              class="mt-auto flex items-center gap-1 border-t border-border/40 bg-muted/20 px-4 py-2"
+              class="mt-auto flex items-center gap-1.5 border-t border-border/40 bg-muted/15 px-4 py-2.5"
             >
               {#each capabilities as cap (cap.field)}
                 {@const on = profile[cap.field]}
@@ -460,19 +460,19 @@ const capabilities: Cap[] = [
                   class={cn(
                     "grid size-6 place-items-center rounded-md transition-colors",
                     on
-                      ? "bg-muted/60 text-foreground ring-1 ring-inset ring-border/40"
-                      : "text-muted-foreground/40",
+                      ? "bg-foreground/8 text-foreground ring-1 ring-inset ring-border/50"
+                      : "text-muted-foreground/35",
                   )}
                 >
                   <Icon
                     role="img"
-                    class="size-3"
+                    class="size-3.5"
                     aria-label={`${cap.label}: ${on ? "on" : "off"}`}
                   />
                 </span>
               {/each}
               <span
-                class="ml-auto inline-flex items-center gap-1 text-[10px] tabular-nums text-muted-foreground"
+                class="ml-auto inline-flex items-center gap-1 text-[10.5px] font-medium tabular-nums text-muted-foreground"
               >
                 <Timer class="size-3" />
                 {profile.countdown == null
@@ -629,7 +629,7 @@ const capabilities: Cap[] = [
             <Button
               size="sm"
               class="gap-1.5"
-              variant="default_soft"
+              variant="dark"
               onclick={() => startEditing(p)}
             >
               <Pencil size={13} /> Edit profile
@@ -847,7 +847,7 @@ const capabilities: Cap[] = [
         </div>
         {#if draft.isDefault}
           <span
-            class="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary"
+            class="inline-flex shrink-0 items-center gap-1 rounded-md bg-foreground px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-background"
           >
             <Star size={11} />
             Default

@@ -1,7 +1,4 @@
-// Immediate-mode pointer for the canvas timeline (Stage A). The draw pass and
-// the hit test are the same pass: a renderer records the rect it draws this
-// frame, and tests the pointer against what was drawn LAST frame. One frame of
-// latency, and it removes all ordering problems (plan §3).
+// Immediate-mode pointer (Stage A): draw and hit-test are one pass — records the rect drawn this frame, tests the pointer against last frame's (one-frame latency, removes ordering problems; plan §3).
 
 export interface PointerRegion {
 	id: string;

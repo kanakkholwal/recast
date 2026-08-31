@@ -1,6 +1,4 @@
-// Pure adaptive tick density for the canvas timeline ruler (Stage A). Ticks are
-// worked out in FRAMES — a frame is what the timeline is made of — so they never
-// jitter by a rounding error at fractional zoom.
+// Pure adaptive tick density for the ruler (Stage A); ticks computed in FRAMES so they never jitter by a rounding error at fractional zoom.
 
 import { frameToX, type TimelineView, xToFrame } from "./canvas-view";
 

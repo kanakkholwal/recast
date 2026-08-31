@@ -77,20 +77,20 @@ function onWindowKeydown(e: KeyboardEvent) {
 	tone={variant === "destructive" ? "destructive" : "default"}
 	{onOpenChange}
 >
-	<p class="text-[11px] leading-relaxed text-muted-foreground">
+	<p class="max-w-[46ch] text-[12px] leading-[1.55] text-muted-foreground text-pretty">
 		{description ?? "This can't be undone."}
 	</p>
 	{#if error}
-		<p class="mt-2 text-[11px] text-destructive" role="alert">{error}</p>
+		<p class="mt-2 text-[12px] text-destructive" role="alert">{error}</p>
 	{/if}
 
 	{#snippet footer()}
-		<Button bind:ref={cancelEl} variant="ghost" size="xs" onclick={close} disabled={busy}>
+		<Button bind:ref={cancelEl} variant="ghost" size="sm" onclick={close} disabled={busy}>
 			{cancelLabel}
 		</Button>
 		<Button
 			variant={variant === "destructive" ? "destructive" : "default"}
-			size="xs"
+			size="sm"
 			onclick={confirm}
 			disabled={busy}
 		>

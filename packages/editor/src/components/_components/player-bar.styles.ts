@@ -19,4 +19,4 @@ export const BAR_BTN_DISABLED =
 /** Raised control floating on the stage canvas (aspect picker, view controls),
  *  flanking the markup shelf. Reads as a card lifted off the canvas. */
 export const STAGE_PILL =
-	"flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-card px-2 text-[11px] font-medium text-foreground shadow-craft-md ring-1 ring-inset ring-border/40 transition-colors duration-150 hover:bg-muted active:scale-[0.98]";
+	"flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-background px-2 text-[11px] font-medium text-foreground shadow-craft-md ring-1 ring-inset ring-border/60 transition-colors duration-150 hover:bg-muted active:scale-[0.98]";

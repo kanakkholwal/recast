@@ -1,6 +1,4 @@
-// Pure view geometry for the canvas timeline (Stage A). The timeline is drawn
-// against OUTPUT frames; the view is (scrollFrames, resolution=px/frame). View
-// state is per-scene and never enters the undo journal or the project file.
+// Pure view geometry (Stage A): timeline drawn against OUTPUT frames; view = (scrollFrames, px/frame); per-scene, never in the undo journal or project file.
 
 export interface TimelineView {
 	/** Left edge of the viewport in OUTPUT frames. */

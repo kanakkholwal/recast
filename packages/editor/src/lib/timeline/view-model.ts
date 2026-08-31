@@ -1,8 +1,4 @@
-// Throwaway adapter: turns today's heterogeneous model (segments,
-// zoom, annotations, captions, audio) into the ONE row tree the canvas timeline
-// renders — one row per clip, grouped by type, empty groups omitted, voice and
-// music folded into a single "Audio" type. Pure and snapshot-driven so it
-// unit-tests without a store. Deleted when the Rust node tree feeds rows itself.
+// Throwaway adapter: today's model (segments/zoom/annotations/captions/audio) into the one canvas row tree (grouped by type, voice+music folded to Audio); pure/snapshot-driven, retired when the Rust node tree feeds rows.
 
 import { originalToOutput, type TimeMap } from "./time-map";
 

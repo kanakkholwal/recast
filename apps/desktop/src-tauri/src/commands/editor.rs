@@ -592,8 +592,116 @@ const VALIDATION_EPS: f64 = 1e-4;
 /// (see project/mod.rs), so exporting an old project fails validation. Pure;
 /// mutates `s` in place and returns human-readable descriptions of every change
 /// (empty = nothing needed repair). Run BEFORE `validate_render_state`.
+/// The band the export validates a zoom against, and the UI slider offers.
+const ZOOM_SCALE_MIN: f64 = 1.0;
+const ZOOM_SCALE_MAX: f64 = 3.0;
+
+/// Brings a validated value back into its band. Non-finite takes `fallback`:
+/// `f64::clamp` returns NaN for NaN, so clamping alone fixes nothing.
+fn repair_into(value: &mut f64, min: f64, max: f64, fallback: f64) -> bool {
+    let fixed = if value.is_finite() {
+        value.clamp(min, max)
+    } else {
+        fallback
+    };
+    if (fixed - *value).abs() > VALIDATION_EPS || !value.is_finite() {
+        *value = fixed;
+        return true;
+    }
+    false
+}
+
 pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<String> {
     let mut repairs = Vec::new();
+
+    // Validated but never repaired, so one recoverable value killed the export.
+    let mut fixed_zoom = false;
+    for z in s.zoom_regions.iter_mut() {
+        // Non-finite becomes 1.0, which is no zoom: the safe reading of nonsense.
+        fixed_zoom |= repair_into(&mut z.scale, ZOOM_SCALE_MIN, ZOOM_SCALE_MAX, ZOOM_SCALE_MIN);
+        fixed_zoom |= repair_into(&mut z.center_x, 0.0, 1.0, 0.5);
+        fixed_zoom |= repair_into(&mut z.center_y, 0.0, 1.0, 0.5);
+        fixed_zoom |= repair_into(&mut z.ramp_in, 0.0, f64::MAX, 0.0);
+        fixed_zoom |= repair_into(&mut z.ramp_out, 0.0, f64::MAX, 0.0);
+    }
+    if fixed_zoom {
+        repairs.push("Zoom regions clamped back into range".to_string());
+    }
+
+    // Frame-level controls; fallbacks are the shipped defaults, so a corrupt value lands on what a fresh project would have used.
+    let mut fixed_frame = false;
+    fixed_frame |= repair_into(&mut s.border_radius, 0.0, 50.0, 0.0);
+    fixed_frame |= repair_into(&mut s.padding, 0.0, 20.0, 0.0);
+    fixed_frame |= repair_into(&mut s.cursor_size, 0.0, f64::MAX, 3.0);
+    fixed_frame |= repair_into(&mut s.cursor_smoothing, 0.0, 100.0, 50.0);
+    fixed_frame |= repair_into(&mut s.cursor_highlight_opacity, 0.0, 100.0, 40.0);
+    if fixed_frame {
+        repairs.push("Frame and cursor settings clamped back into range".to_string());
+    }
+
+    // A speed of zero or less is not slow, it is a division by zero downstream.
+    let mut fixed_speed = false;
+    for sp in s.segment_speeds.iter_mut() {
+        if !sp.speed.is_finite() || sp.speed <= 0.0 {
+            sp.speed = 1.0;
+            fixed_speed = true;
+        }
+    }
+    if fixed_speed {
+        repairs.push("Segment speeds reset to normal".to_string());
+    }
+
+    // Annotation geometry; `w`/`h` are unvalidated (negative is legal mid-drag), so only what the export refuses is touched.
+    let mut fixed_anno = false;
+    for a in s.annotations.iter_mut() {
+        fixed_anno |= repair_into(&mut a.opacity, 0.0, 1.0, 1.0);
+        match &mut a.kind {
+            AnnotationKind::Rect { x, y, radius, .. } => {
+                fixed_anno |= repair_into(x, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(y, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(radius, 0.0, 0.5, 0.0);
+            }
+            AnnotationKind::Ellipse { x, y, .. } | AnnotationKind::Text { x, y, .. } => {
+                fixed_anno |= repair_into(x, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(y, 0.0, 1.0, 0.0);
+            }
+            AnnotationKind::Blur {
+                x,
+                y,
+                strength,
+                radius,
+                ..
+            } => {
+                fixed_anno |= repair_into(x, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(y, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(strength, 0.0, 1.0, 1.0);
+                fixed_anno |= repair_into(radius, 0.0, 0.5, 0.0);
+            }
+            AnnotationKind::Image {
+                x,
+                y,
+                opacity,
+                radius,
+                ..
+            } => {
+                fixed_anno |= repair_into(x, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(y, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(opacity, 0.0, 1.0, 1.0);
+                fixed_anno |= repair_into(radius, 0.0, 0.5, 0.0);
+            }
+            AnnotationKind::Arrow { x1, y1, x2, y2, .. } => {
+                fixed_anno |= repair_into(x1, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(y1, 0.0, 1.0, 0.0);
+                fixed_anno |= repair_into(x2, 0.0, 1.0, 1.0);
+                fixed_anno |= repair_into(y2, 0.0, 1.0, 1.0);
+            }
+            AnnotationKind::Unsupported => {}
+        }
+    }
+    if fixed_anno {
+        repairs.push("Annotation geometry clamped back into range".to_string());
+    }
+
     if !source_duration.is_finite() || source_duration <= 0.0 {
         return repairs;
     }
@@ -743,7 +851,7 @@ pub fn validate_render_state(
                 reason: "zoom_end_before_start".into(),
             });
         }
-        if !(1.0..=3.0).contains(&z.scale) {
+        if !(ZOOM_SCALE_MIN..=ZOOM_SCALE_MAX).contains(&z.scale) {
             issues.push(ValidationIssue {
                 field: format!("zoomRegions/{i}/scale"),
                 reason: "scale_out_of_range".into(),
@@ -1510,6 +1618,186 @@ mod validate_tests {
             reason(&err, "zoomRegions/0/scale"),
             Some("scale_out_of_range")
         );
+    }
+
+    fn zoom(scale: f64, center_x: f64, center_y: f64, ramp_in: f64) -> ZoomRegion {
+        ZoomRegion {
+            start: 0.0,
+            end: 5.0,
+            scale,
+            ease_in: Default::default(),
+            ease_out: Default::default(),
+            ramp_in,
+            ramp_out: 0.0,
+            center_x,
+            center_y,
+            hidden: false,
+            motion_blur: 0.0,
+            extra: serde_json::Map::new(),
+        }
+    }
+
+    fn state_with_zoom(region: ZoomRegion) -> RenderState {
+        RenderState {
+            trim_end: 10.0,
+            zoom_regions: vec![region],
+            ..RenderState::default()
+        }
+    }
+
+    /// The reported failure: `enqueue_export: render state invalid (1 issue):
+    /// zoomRegions/0/scale scale_out_of_range`, with no repair to recover it.
+    #[test]
+    fn an_out_of_range_zoom_scale_is_repaired_rather_than_failing_the_export() {
+        let mut st = state_with_zoom(zoom(5.0, 0.5, 0.5, 0.0));
+        let repairs = repair_render_state(&mut st, 30.0);
+
+        assert_eq!(st.zoom_regions[0].scale, 3.0);
+        assert!(!repairs.is_empty(), "the repair went unreported");
+        assert!(
+            validate_render_state(&st, 30.0).is_ok(),
+            "still invalid after repair"
+        );
+    }
+
+    /// Every NaN comparison is false, so `!(1.0..=3.0).contains(&NaN)` is true
+    /// and a NaN scale reports as out of range. Clamping cannot fix it.
+    #[test]
+    fn a_non_finite_zoom_scale_becomes_no_zoom() {
+        let mut st = state_with_zoom(zoom(f64::NAN, 0.5, 0.5, 0.0));
+        repair_render_state(&mut st, 30.0);
+        assert_eq!(st.zoom_regions[0].scale, 1.0);
+        assert!(validate_render_state(&st, 30.0).is_ok());
+    }
+
+    #[test]
+    fn a_zoom_scale_below_one_is_lifted_rather_than_left_to_crash_the_crop() {
+        let mut st = state_with_zoom(zoom(0.4, 0.5, 0.5, 0.0));
+        repair_render_state(&mut st, 30.0);
+        assert_eq!(st.zoom_regions[0].scale, 1.0);
+    }
+
+    #[test]
+    fn an_out_of_range_zoom_centre_is_clamped_and_a_non_finite_one_recentred() {
+        let mut st = state_with_zoom(zoom(2.0, 4.0, f64::INFINITY, 0.0));
+        repair_render_state(&mut st, 30.0);
+        assert_eq!(st.zoom_regions[0].center_x, 1.0);
+        assert_eq!(st.zoom_regions[0].center_y, 0.5);
+        assert!(validate_render_state(&st, 30.0).is_ok());
+    }
+
+    #[test]
+    fn a_negative_zoom_ramp_is_zeroed() {
+        let mut st = state_with_zoom(zoom(2.0, 0.5, 0.5, -1.0));
+        repair_render_state(&mut st, 30.0);
+        assert_eq!(st.zoom_regions[0].ramp_in, 0.0);
+        assert!(validate_render_state(&st, 30.0).is_ok());
+    }
+
+    /// A state already in range must come back untouched and unreported, or
+    /// every export would claim it repaired something.
+    #[test]
+    fn a_zoom_already_in_range_is_left_alone() {
+        let mut st = state_with_zoom(zoom(2.0, 0.3, 0.7, 0.25));
+        let repairs = repair_render_state(&mut st, 30.0);
+        assert_eq!(st.zoom_regions[0].scale, 2.0);
+        assert_eq!(st.zoom_regions[0].center_x, 0.3);
+        assert_eq!(st.zoom_regions[0].ramp_in, 0.25);
+        assert!(
+            !repairs.iter().any(|r| r.contains("Zoom")),
+            "reported a repair it did not make: {repairs:?}"
+        );
+    }
+
+    /// The clamp does not depend on the source duration, so it must still run
+    /// when the probe gave us nothing.
+    #[test]
+    fn zoom_is_repaired_even_when_the_source_duration_is_unknown() {
+        let mut st = state_with_zoom(zoom(9.0, 0.5, 0.5, 0.0));
+        repair_render_state(&mut st, 0.0);
+        assert_eq!(st.zoom_regions[0].scale, 3.0);
+    }
+
+    /// EVERY value rule violated at once must come back exportable. One state,
+    /// not a test per field, so a new rule with no repair fails here.
+    #[test]
+    fn a_state_violating_every_value_rule_is_repaired_into_something_exportable() {
+        let mut st = RenderState {
+            trim_end: 10.0,
+            border_radius: 900.0,
+            padding: -5.0,
+            cursor_size: f64::NAN,
+            cursor_smoothing: 4000.0,
+            cursor_highlight_opacity: -20.0,
+            zoom_regions: vec![zoom(f64::INFINITY, -3.0, 9.0, -1.0)],
+            annotations: vec![serde_json::from_value(serde_json::json!({
+                "id": "a1",
+                "kind": { "kind": "blur", "x": -2.0, "y": 5.0, "w": 0.3, "h": 0.2,
+                          "strength": 40.0, "radius": 9.0 },
+                "start": 0.0, "end": 4.0,
+                "opacity": 12.0
+            }))
+            .expect("annotation fixture")],
+            ..RenderState::default()
+        };
+
+        let repairs = repair_render_state(&mut st, 30.0);
+        assert!(!repairs.is_empty(), "nothing was reported as repaired");
+        match validate_render_state(&st, 30.0) {
+            Ok(()) => {}
+            Err(issues) => panic!("still invalid after repair: {issues:?}"),
+        }
+    }
+
+    /// The counterpart, and the one that stops the sweep being a blunt reset: a
+    /// state already inside every band comes back byte-identical and silent.
+    #[test]
+    fn a_valid_state_is_neither_changed_nor_reported() {
+        let mut st = RenderState {
+            trim_end: 10.0,
+            border_radius: 12.0,
+            padding: 6.0,
+            cursor_size: 3.0,
+            cursor_smoothing: 50.0,
+            cursor_highlight_opacity: 40.0,
+            zoom_regions: vec![zoom(2.0, 0.3, 0.7, 0.25)],
+            ..RenderState::default()
+        };
+        let before = st.clone();
+
+        let repairs = repair_render_state(&mut st, 30.0);
+
+        assert!(
+            repairs.is_empty(),
+            "claimed repairs it did not make: {repairs:?}"
+        );
+        assert_eq!(st.border_radius, before.border_radius);
+        assert_eq!(st.padding, before.padding);
+        assert_eq!(st.cursor_smoothing, before.cursor_smoothing);
+        assert_eq!(st.zoom_regions[0].scale, before.zoom_regions[0].scale);
+        assert_eq!(st.zoom_regions[0].ramp_in, before.zoom_regions[0].ramp_in);
+    }
+
+    /// A speed of zero is a division by zero in the time map, not a slow clip.
+    #[test]
+    fn a_non_positive_segment_speed_is_reset_to_normal() {
+        let mut st = RenderState {
+            trim_end: 10.0,
+            segment_speeds: vec![
+                serde_json::from_value(serde_json::json!({
+                    "start": 0.0, "end": 2.0, "speed": 0.0
+                }))
+                .expect("segment fixture"),
+                serde_json::from_value(serde_json::json!({
+                    "start": 2.0, "end": 4.0, "speed": -3.0
+                }))
+                .expect("segment fixture"),
+            ],
+            ..RenderState::default()
+        };
+        repair_render_state(&mut st, 30.0);
+        assert!(st.segment_speeds.iter().all(|s| s.speed == 1.0));
+        assert!(validate_render_state(&st, 30.0).is_ok());
     }
 
     #[test]
@@ -2296,10 +2584,7 @@ pub(crate) async fn run_export_job(
             .unwrap_or_default(),
     );
 
-    // The engine path, opt in. Everything above still runs: it validates the
-    // request and names the output the same way, so the two paths differ only
-    // in who renders. MP4 only, and no progress or cancel yet, which is why it
-    // is not a setting.
+    // The engine path, opt in. Everything above still runs (it validates the request and names the output the same way), so the two paths differ only in who renders. MP4 only, no progress/cancel yet, which is why it is not a setting.
     #[cfg(windows)]
     if crate::export_engine::enabled() && extension == "mp4" {
         let frames = crate::export_engine::export_video(

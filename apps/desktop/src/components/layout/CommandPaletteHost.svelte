@@ -166,15 +166,12 @@ function clearQuery() {
             >
               {#each grouped as [category, cmds] (category)}
                 <div
-                  class="sticky top-0 z-10 flex items-center gap-2 bg-popover px-2 pb-1.5 pt-2"
+                  class="sticky top-0 z-10 flex items-center bg-popover px-3 pb-1 pt-3"
                 >
                   <span
-                    class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+                    class="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70"
                   >
                     {category}
-                  </span>
-                  <span class="text-[10px] font-medium tabular-nums text-muted-foreground/50">
-                    {cmds.length}
                   </span>
                 </div>
                 {#each cmds as cmd (cmd.id)}
@@ -189,10 +186,10 @@ function clearQuery() {
                     data-index={i}
                     class={cn(
                       // scroll-mt clears the sticky category header on ↑/↓ nav.
-                      "group relative flex w-full scroll-mt-8 items-center gap-2.5 rounded-lg py-1.5 pl-2.5 pr-2 text-left transition-colors",
+                      "group relative flex w-full scroll-mt-8 items-center gap-2.5 rounded-lg py-2 pl-2.5 pr-2 text-left transition-colors duration-100",
                       active
-                        ? "bg-muted text-foreground"
-                        : "text-foreground/90 hover:bg-muted/50",
+                        ? "bg-foreground/8 text-foreground"
+                        : "text-foreground/90 hover:bg-foreground/5",
                     )}
                     onclick={() => runCommand(cmd)}
                     onmouseenter={() => (selectedIndex = i)}
@@ -207,7 +204,7 @@ function clearQuery() {
                     ></span>
                     <span
                       class={cn(
-                        "flex size-7 shrink-0 items-center justify-center rounded-md border transition-colors",
+                        "flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
                         active
                           ? "border-border/60 bg-background text-foreground"
                           : "border-border/40 bg-muted/40 text-muted-foreground",
@@ -220,7 +217,7 @@ function clearQuery() {
                       {/if}
                     </span>
                     <span class="flex min-w-0 flex-1 items-baseline gap-2">
-                      <span class="truncate text-xs font-medium">
+                      <span class="truncate text-[13px] font-medium">
                         {#each highlight(cmd.title, query) as part, k (k)}
                           {#if part.hl}
                             <span class="font-semibold text-foreground">{part.text}</span>
