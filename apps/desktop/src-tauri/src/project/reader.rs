@@ -383,11 +383,9 @@ mod extract_tests {
 
     static N: AtomicU32 = AtomicU32::new(0);
 
-    fn scratch() -> PathBuf {
+    fn scratch() -> recast_testkit::Scratch {
         let n = N.fetch_add(1, Ordering::Relaxed);
-        let dir = env::temp_dir().join(format!("recast-extract-{}-{}", std::process::id(), n));
-        fs::create_dir_all(&dir).expect("create scratch");
-        dir
+        recast_testkit::Scratch::new(&format!("extract-{n}"))
     }
 
     fn archive_with(dir: &Path, body: &[u8]) -> ZipArchive<File> {
@@ -418,8 +416,10 @@ mod extract_tests {
 
     #[test]
     fn cache_dir_differs_for_same_name_in_different_folders() {
-        let one = scratch().join("Recast.recast");
-        let two = scratch().join("Recast.recast");
+        // Both guards held: a temporary would delete its directory before the write.
+        let (dir_one, dir_two) = (scratch(), scratch());
+        let one = dir_one.join("Recast.recast");
+        let two = dir_two.join("Recast.recast");
         fs::write(&one, b"a").expect("write one");
         fs::write(&two, b"b").expect("write two");
 
@@ -519,12 +519,9 @@ mod roundtrip_tests {
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-    fn workspace() -> PathBuf {
+    fn workspace() -> recast_testkit::Scratch {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("recast-fmt-{}-{}", std::process::id(), n));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        recast_testkit::Scratch::new(&format!("fmt-{n}"))
     }
 
     fn fixture_metadata() -> ProjectMetadata {

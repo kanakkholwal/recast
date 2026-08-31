@@ -140,7 +140,7 @@ function onKeydown(e: KeyboardEvent) {
 
 <div
 	class={cn(
-		"flex h-8 min-w-0 items-center gap-1.5 rounded-lg bg-muted/60 pl-2.5 pr-2 ring-1 ring-inset ring-border/40 transition-[background-color,box-shadow] hover:bg-muted focus-within:bg-card focus-within:ring-ring/60",
+		"flex h-7 min-w-0 max-w-32 items-center gap-1.5 rounded-md bg-muted/60 pl-2.5 pr-2 ring-1 ring-inset ring-border/40 transition-[background-color,box-shadow] hover:bg-muted focus-within:bg-card focus-within:ring-ring/60",
 		disabled && "pointer-events-none opacity-50",
 		className,
 	)}

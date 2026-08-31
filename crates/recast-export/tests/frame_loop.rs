@@ -1,10 +1,11 @@
 use recast_compositor::{
     PlaneData, PlaneLayout, RenderSource, Session, SourceColor, SourceGeometry, SourcePlanes,
 };
-use recast_export::{FrameLoop, FrameWalk, NoPictures, PictureSource};
+use recast_export::{FrameLoop, FrameWalk, NoPictures, PictureSource, RenderError};
 use recast_gpu::{GpuContext, GpuOptions};
 use recast_scene::migrate::to_scene;
 use recast_scene::Scene;
+use std::convert::Infallible;
 
 const SRC_W: u32 = 64;
 const SRC_H: u32 = 32;
@@ -66,7 +67,9 @@ impl Flat {
 }
 
 impl PictureSource for Flat {
-    fn picture_at(&mut self, _source_time: f64) -> Result<Option<SourcePlanes<'_>>, String> {
+    type Error = std::convert::Infallible;
+
+    fn picture_at(&mut self, _source_time: f64) -> Result<Option<SourcePlanes<'_>>, Self::Error> {
         self.calls += 1;
         Ok(Some(SourcePlanes {
             width: SRC_W,
@@ -94,7 +97,7 @@ fn the_loop_writes_one_frame_per_walk_step() {
             ctx.queue(),
             |index, _| {
                 seen.push(index);
-                Ok(())
+                Ok::<_, Infallible>(())
             },
         )
         .expect("rendered");
@@ -120,7 +123,7 @@ fn every_frame_is_canvas_sized_rgba() {
             ctx.queue(),
             |_, pixels| {
                 lengths.push(pixels.len());
-                Ok(())
+                Ok::<_, Infallible>(())
             },
         )
         .expect("rendered");
@@ -147,7 +150,7 @@ fn the_uploaded_picture_reaches_the_frame() {
             ctx.queue(),
             |_, pixels| {
                 without = pixels.to_vec();
-                Ok(())
+                Ok::<_, Infallible>(())
             },
         )
         .expect("rendered");
@@ -162,7 +165,7 @@ fn the_uploaded_picture_reaches_the_frame() {
             ctx.queue(),
             |_, pixels| {
                 with = pixels.to_vec();
-                Ok(())
+                Ok::<_, Infallible>(())
             },
         )
         .expect("rendered");
@@ -189,7 +192,7 @@ fn a_steady_loop_allocates_one_source_texture() {
             FrameWalk::new(1.0, (30, 1)),
             ctx.device(),
             ctx.queue(),
-            |_, _| Ok(()),
+            |_, _| Ok::<_, Infallible>(()),
         )
         .expect("rendered");
     assert_eq!(frames.source_allocations(), 1);
@@ -209,14 +212,20 @@ fn a_sink_failure_stops_the_loop_rather_than_finishing_the_export() {
             |index, _| {
                 rendered += 1;
                 if index == 3 {
-                    return Err("disk full".into());
+                    return Err(std::io::Error::other("disk full"));
                 }
                 Ok(())
             },
         )
         .expect_err("the sink failed");
 
-    assert!(format!("{error}").contains("disk full"), "{error}");
+    // Structure, not a string: the error names the frame and keeps the cause.
+    assert!(
+        matches!(error, RenderError::Sink { index: 3, .. }),
+        "{error:?}"
+    );
+    let cause = std::error::Error::source(&error).expect("the sink error is the cause");
+    assert!(cause.to_string().contains("disk full"), "{cause}");
     assert_eq!(rendered, 4, "the loop kept going after the sink failed");
 }
 
@@ -233,7 +242,7 @@ fn a_document_with_nothing_to_render_writes_no_frames() {
             ctx.queue(),
             |_, _| {
                 called = true;
-                Ok(())
+                Ok::<_, Infallible>(())
             },
         )
         .expect("rendered");
@@ -255,7 +264,7 @@ fn the_picture_source_is_asked_once_per_output_frame() {
             walk,
             ctx.device(),
             ctx.queue(),
-            |_, _| Ok(()),
+            |_, _| Ok::<_, Infallible>(()),
         )
         .expect("rendered");
     assert_eq!(u64::from(pictures.calls), walk.len());

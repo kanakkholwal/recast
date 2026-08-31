@@ -27,11 +27,13 @@ dependencies = [
  "parking_lot",
  "rand 0.8.8",
  "rayon",
+ "recast-audio",
  "recast-captions",
  "recast-codec",
  "recast-codec-mf",
  "recast-color",
  "recast-compositor",
+ "recast-export",
  "recast-gpu",
  "recast-mux",
  "recast-scene",
@@ -5289,6 +5291,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03251193000f4bd3b042892be858ee50e8b3719f2b08e5833ac4353724632430"
 
 [[package]]
+name = "recast-audio"
+version = "0.0.0"
+dependencies = [
+ "recast-scene",
+]
+
+[[package]]
 name = "recast-captions"
 version = "0.0.0"
 dependencies = [
@@ -5337,6 +5346,23 @@ name = "recast-cursor"
 version = "0.0.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "recast-export"
+version = "0.0.0"
+dependencies = [
+ "recast-audio",
+ "recast-codec",
+ "recast-codec-mf",
+ "recast-color",
+ "recast-compositor",
+ "recast-gpu",
+ "recast-mux",
+ "recast-scene",
+ "recast-time",
+ "thiserror 2.0.20",
+ "wgpu",
 ]
 
 [[package]]

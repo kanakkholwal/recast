@@ -576,18 +576,29 @@ mod tests {
         Op::CutAdd { start, end }
     }
 
-    /// Scratch store in a per-run temp dir, matching `project::reader`'s test
-    /// idiom rather than pulling in a dev-dependency.
-    fn temp_store() -> BranchStore {
+    /// A store whose directory is removed when the test ends. Holds the guard
+    /// beside it, since dropping that guard is what does the cleaning.
+    struct TempStore {
+        _dir: recast_testkit::Scratch,
+        store: BranchStore,
+    }
+
+    impl std::ops::Deref for TempStore {
+        type Target = BranchStore;
+
+        fn deref(&self) -> &BranchStore {
+            &self.store
+        }
+    }
+
+    fn temp_store() -> TempStore {
         use std::sync::atomic::{AtomicU32, Ordering};
         static N: AtomicU32 = AtomicU32::new(0);
 
         let n = N.fetch_add(1, Ordering::Relaxed);
-        BranchStore::new(
-            std::env::temp_dir()
-                .join(format!("recast-journal-{}-{n}", std::process::id()))
-                .join("branches"),
-        )
+        let dir = recast_testkit::Scratch::new(&format!("journal-{n}"));
+        let store = BranchStore::new(dir.join("branches"));
+        TempStore { _dir: dir, store }
     }
 
     mod branch_id {
@@ -897,7 +908,7 @@ mod tests {
 
         const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
-        fn store_with(branches: &[Branch]) -> BranchStore {
+        fn store_with(branches: &[Branch]) -> TempStore {
             let store = temp_store();
             for branch in branches {
                 store.save(branch).unwrap();
@@ -1324,12 +1335,9 @@ mod disk_roundtrip_tests {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     const NOW: i64 = 1_700_000_000_000;
 
-    fn workspace() -> PathBuf {
+    fn workspace() -> recast_testkit::Scratch {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("recast-branch-{}-{n}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("workspace");
-        dir
+        recast_testkit::Scratch::new(&format!("branch-{n}"))
     }
 
     fn fixture_metadata() -> ProjectMetadata {

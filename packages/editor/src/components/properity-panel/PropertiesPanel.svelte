@@ -195,35 +195,31 @@ $effect(() => {
 
 const activeTab = $derived(visibleTabs.find((t) => t.id === store.activePanel) ?? visibleTabs[0]);
 
-const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent";
+const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 no-scrollbar";
 </script>
 
 
 {#snippet railTab(tab: TabType)}
   {@const Icon = tab.icon}
-  <Tabs.Trigger
-    value={tab.id}
-    class="flex w-full flex-none flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-[9px] font-medium leading-none transition-colors group-data-[orientation=vertical]/tabs:justify-center"
-  >
+  <Tabs.Trigger value={tab.id} title={tab.label} aria-label={tab.label} class="size-8 flex-none px-0">
     <Icon class="size-4" />
-    <span class="w-full truncate text-center">{tab.label}</span>
   </Tabs.Trigger>
 {/snippet}
 
 <aside
-  class="@container/panel flex h-full min-h-0 flex-row bg-background text-[12px]"
+  class="@container/panel flex h-full min-h-0 flex-col bg-background text-[12px]"
 >
   <Tabs.Root
     value={store.activePanel}
     onValueChange={(v: string) => {
       store.activePanel = v as PanelTab;
     }}
-    orientation="vertical"
-    class="h-full shrink-0"
+    orientation="horizontal"
+    class="w-full shrink-0"
   >
     <Tabs.List
       variant="soft"
-      class="h-full w-16 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/60 bg-transparent px-2 py-2 scrollbar-transparent no-scrollbar [&_[data-slot=tabs-trigger][data-state=active]_svg]:text-foreground"
+      class="w-full mx-2 gap-0.5 overflow-x-auto border-b border-border/60 bg-transparent px-2 no-scrollbar"
     >
       {#each groupedTabs as group, gi (gi)}
         {#each group as tab (tab.id)}
@@ -232,14 +228,14 @@ const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-tran
         {#if gi < groupedTabs.length - 1}
           <div
             role="separator"
-            class="mx-auto my-0.5 h-px w-5 shrink-0 bg-border/60"
+            class="mx-1 h-4 w-px shrink-0 self-center bg-border/60"
           ></div>
         {/if}
       {/each}
     </Tabs.List>
   </Tabs.Root>
 
-  <div class="flex min-w-0 flex-1 flex-col">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
     <header
       class="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3"
     >

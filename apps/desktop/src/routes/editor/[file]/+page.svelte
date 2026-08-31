@@ -80,6 +80,7 @@ import { afterNavigate, goto, replaceState } from "$app/navigation";
 import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
 import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
+import Logo from "$components/logo.svelte";
 import PlayerDialog from "$components/recast/PlayerDialog.svelte";
 import RecastMark from "$components/recast-mark.svelte";
 import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
@@ -1651,7 +1652,9 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
         {showTimeline}
         onToggleSidebar={() => (showSidebar = !showSidebar)}
         onToggleTimeline={() => (showTimeline = !showTimeline)}
-      />
+      >
+        {#snippet brand()}<Logo size={16} />{/snippet}
+      </EditorToolbar>
     </div>
     <AgentSessionBadge />
     {#if documentPath}

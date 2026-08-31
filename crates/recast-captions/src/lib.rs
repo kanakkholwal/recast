@@ -5,6 +5,7 @@
 //! as ASS literals, and no function measures text for itself.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod highlight;
 pub mod layout;

@@ -1104,7 +1104,7 @@ const isAnnotationActive = $derived(
 
 <div
 	bind:this={containerEl}
-	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden transition-all duration-200 ease-out motion-reduce:transition-none"
+	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden bg-[var(--editor-canvas)] transition-all duration-200 ease-out motion-reduce:transition-none"
 >
 	<div
 		bind:this={previewRectEl}

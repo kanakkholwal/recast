@@ -11,6 +11,9 @@ mod control;
 mod cursor;
 mod db;
 mod encoder;
+pub mod export_audio;
+pub mod export_engine;
+pub mod export_parity;
 pub mod ffmpeg;
 mod fonts;
 #[cfg(windows)]

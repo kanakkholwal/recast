@@ -34,10 +34,6 @@ path = "src/main.rs"
 recast-testkit = { path = "../../../crates/recast-testkit" }
 # Scripts an audio device, so the recorder's own loop is testable without one.
 capturekit = { path = "../../../crates/capturekit", features = ["serde", "mock"] }
-# Both engines have to be reachable from one test binary to diff them.
-recast-compositor = { path = "../../../crates/recast-compositor" }
-recast-gpu = { path = "../../../crates/recast-gpu" }
-wgpu = { version = "=30.0.1", default-features = false, features = ["dx12", "wgsl"] }
 # Goldens are PNGs, not raw RGBA: 5.7 MB of committed binary per fixture set is
 # not worth the decode cost saved.
 image = "0.25.10"
@@ -56,6 +52,13 @@ recast-captions = { path = "../../../crates/recast-captions" }
 recast-scene = { path = "../../../crates/recast-scene" }
 recast-time = { path = "../../../crates/recast-time" }
 recast-color = { path = "../../../crates/recast-color" }
+# The engine, in the shipping binary rather than only in tests. `recast-export`
+# is the one render path; the FFmpeg graph is still the default until parity.
+recast-compositor = { path = "../../../crates/recast-compositor" }
+recast-gpu = { path = "../../../crates/recast-gpu" }
+recast-export = { path = "../../../crates/recast-export" }
+recast-audio = { path = "../../../crates/recast-audio", features = ["scene"] }
+wgpu = { version = "=30.0.1", default-features = false, features = ["dx12", "wgsl"] }
 anyhow = "1.0"
 thiserror = "2.0"
 crossbeam-queue = "0.3"

@@ -429,7 +429,7 @@ function snapToDecile(v: number, min: number, max: number): number {
 	class={cn(
 		"relative w-full select-none overflow-hidden outline-none transition-colors duration-150",
 		dense
-			? "h-8 rounded-lg bg-muted/60 ring-1 ring-inset ring-border/40 focus-within:ring-ring/60"
+			? "h-7 rounded-md bg-muted/60 ring-1 ring-inset ring-border/40 focus-within:ring-ring/60"
 			: "h-10 rounded-md border border-border/40 bg-card/60 focus-within:ring-2 focus-within:ring-primary/30 focus-within:ring-offset-1 focus-within:ring-offset-background",
 		disabled
 			? "cursor-not-allowed opacity-50"

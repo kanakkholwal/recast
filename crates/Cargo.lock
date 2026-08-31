@@ -1892,6 +1892,7 @@ dependencies = [
 name = "recast-export"
 version = "0.0.0"
 dependencies = [
+ "recast-audio",
  "recast-codec",
  "recast-codec-mf",
  "recast-color",

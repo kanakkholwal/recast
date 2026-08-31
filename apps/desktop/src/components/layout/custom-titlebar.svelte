@@ -25,7 +25,7 @@ const macLights = $derived(layoutMode.current === "os-native" && isMac);
 <div
   data-recast-titlebar
   class={cn(
-    "group h-10 flex items-center gap-1 border-b border-border/60 bg-background/70 backdrop-blur-xl shrink-0 select-none px-1 py-1 transition-all duration-300",
+    "group h-10 flex items-center gap-1 backdrop-blur-xl shrink-0 select-none px-1 py-1 transition-all duration-300",
     wrapperClass,
   )}
 >
@@ -53,7 +53,7 @@ const macLights = $derived(layoutMode.current === "os-native" && isMac);
     onmousedown={(e) => e.stopPropagation()}
     aria-label="Keyboard shortcuts"
     title="Keyboard shortcuts (Ctrl + /)"
-    class="group inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
+    class="group inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground active:scale-95"
   >
     <Keyboard size={15} />
   </button>

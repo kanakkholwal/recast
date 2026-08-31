@@ -1,7 +1,7 @@
 <script module lang="ts">
-// Windows/Linux control button, same look as the editor titlebar.
+// Flat, native-style Windows control: a wide hit target, no pill container.
 const winBtn =
-	"group cursor-pointer inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground";
+	"group cursor-pointer inline-flex h-7 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground active:scale-95";
 </script>
 
 <script lang="ts">
@@ -55,8 +55,7 @@ const winBtn =
 
 {#if isTauri}
   {#if kind === "mac"}
-    <!-- Faux traffic lights (no native titlebar). Literal OS colours instead
-         of theme tokens here are by design: window-chrome mimicry. -->
+
     <div
       class={cn("group/lights flex items-center gap-2", className)}
       onmousedown={(e) => e.stopPropagation()}
@@ -104,10 +103,7 @@ const winBtn =
     </div>
   {:else}
     <div
-      class={cn(
-        "cursor-pointer inline-flex items-center gap-0.5 rounded-lg bg-muted/40 p-0.5 ring-1 ring-inset ring-border/40",
-        className
-      )}
+      class={cn("inline-flex items-center gap-0.5", className)}
       onmousedown={(e) => e.stopPropagation()}
       role="presentation"
     >
@@ -148,7 +144,7 @@ const winBtn =
         onclick={close}
         aria-label="Close"
         title="Close"
-        class={cn(winBtn, "hover:bg-destructive/15 hover:text-destructive")}
+        class={cn(winBtn, "hover:bg-destructive hover:text-destructive-foreground")}
       >
         <X size={16} />
       </button>

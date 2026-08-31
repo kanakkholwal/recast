@@ -15,6 +15,7 @@ recast-codec = { path = "../recast-codec" }
 recast-mux = { path = "../recast-mux" }
 recast-time = { path = "../recast-time" }
 recast-color = { path = "../recast-color" }
+recast-audio = { path = "../recast-audio", features = ["scene"] }
 thiserror = "2.0"
 wgpu = { version = "=30.0.1", default-features = false, features = ["wgsl"] }
 

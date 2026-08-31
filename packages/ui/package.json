@@ -32,6 +32,10 @@
 			"svelte": "./src/components/ui/card/index.ts",
 			"default": "./src/components/ui/card/index.ts"
 		},
+		"./notched-shelf": {
+			"svelte": "./src/components/ui/notched-shelf/index.ts",
+			"default": "./src/components/ui/notched-shelf/index.ts"
+		},
 		"./checkbox": {
 			"svelte": "./src/components/ui/checkbox/index.ts",
 			"default": "./src/components/ui/checkbox/index.ts"

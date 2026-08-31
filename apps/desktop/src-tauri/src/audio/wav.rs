@@ -335,8 +335,7 @@ mod tests {
 
     #[test]
     fn silence_wav_has_the_length_it_was_asked_for() {
-        let dir = std::env::temp_dir().join(format!("recast-wav-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = recast_testkit::Scratch::new("wav");
         let path = dir.join("silence.wav");
         write_silence_wav(&path, 48_000, 2, 0.5).unwrap();
         let bytes = std::fs::read(&path).unwrap();
@@ -346,10 +345,8 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
-    fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("recast-wav-{tag}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn temp_dir(tag: &str) -> recast_testkit::Scratch {
+        recast_testkit::Scratch::new(&format!("wav-{tag}"))
     }
 
     #[test]
@@ -434,7 +431,8 @@ mod tests {
 
     #[test]
     fn a_re_declared_rate_reaches_the_header() {
-        let path = temp_dir("rate").join("rate.wav");
+        let dir = temp_dir("rate");
+        let path = dir.join("rate.wav");
         let mut w = WavWriter::new(&path, WavFormat::pcm16(48_000, 2)).unwrap();
         w.write_samples(&[0u8; 400]).unwrap();
         w.set_sample_rate(47_904);
@@ -449,7 +447,8 @@ mod tests {
     #[test]
     fn a_header_only_wav_reports_no_samples() {
         // Exactly what a capture that never received a packet leaves behind.
-        let path = temp_dir("empty").join("empty.wav");
+        let dir = temp_dir("empty");
+        let path = dir.join("empty.wav");
         let writer = WavWriter::new(&path, WavFormat::pcm16(48_000, 2)).unwrap();
         writer.finish().unwrap();
         assert_eq!(std::fs::metadata(&path).unwrap().len(), HEADER_BYTES as u64);
@@ -460,7 +459,8 @@ mod tests {
 
     #[test]
     fn a_wav_with_audio_reports_its_samples() {
-        let path = temp_dir("full").join("full.wav");
+        let dir = temp_dir("full");
+        let path = dir.join("full.wav");
         write_silence_wav(&path, 48_000, 2, 0.25).unwrap();
         assert_eq!(wav_data_bytes(&path), Some(48_000 / 4 * 4));
         assert!(wav_has_samples(&path));
@@ -480,7 +480,8 @@ mod tests {
 
     #[test]
     fn a_file_shorter_than_a_header_is_rejected_rather_than_panicking() {
-        let path = temp_dir("short").join("short.wav");
+        let dir = temp_dir("short");
+        let path = dir.join("short.wav");
         std::fs::write(&path, b"RIFF").unwrap();
         assert_eq!(wav_data_bytes(&path), None);
         assert!(!wav_has_samples(&path));
@@ -489,8 +490,7 @@ mod tests {
 
     #[test]
     fn writer_reports_frames_not_bytes() {
-        let dir = std::env::temp_dir().join(format!("recast-wav-f-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = recast_testkit::Scratch::new("wav-f");
         let path = dir.join("frames.wav");
         let mut w =
             WavWriter::new(&path, WavFormat::new(48_000, 2, 32, SampleFormat::Float)).unwrap();

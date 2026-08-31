@@ -1,7 +1,7 @@
 <script lang="ts">
 import {
 	ArrowLeft,
-	Layout2,
+	ChevronDown,
 	LoaderCircle,
 	Maximize2,
 	Minimize2,
@@ -10,27 +10,26 @@ import {
 	Redo2,
 	RotateCcw,
 	Save,
-	Sparkles,
 	Undo2,
 	Upload,
 	X,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { Kbd } from "@recast/ui/kbd";
 import { Separator } from "@recast/ui/separator";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
-import { onMount } from "svelte";
-import { chordLabel, registerShortcutHandlers } from "../lib/host-hooks";
+import type { Snippet } from "svelte";
+import { chordLabel } from "../lib/host-hooks";
 import type { EditorStore } from "../stores/editor-store.svelte";
 import ConfirmDialog from "./dialog/ConfirmDialog.svelte";
-import PresetPicker from "./PresetPicker.svelte";
-import { commitLook, type PresetLook, previewLook } from "./preset-look";
-import { PRESETS, type Preset } from "./presets.data";
 
 interface Props {
 	store: EditorStore;
 	filename?: string;
+	/** Host-supplied brand mark for the project menu trigger (the app owns its logo). */
+	brand?: Snippet;
 	onexport?: () => void;
 	onsave?: () => void | Promise<void>;
 	isSaving?: boolean;
@@ -48,6 +47,7 @@ interface Props {
 let {
 	store,
 	filename = "Recording",
+	brand,
 	onexport,
 	onsave,
 	isSaving = false,
@@ -64,89 +64,13 @@ const exportOpen = $derived(exportMode === "close" || exportMode === "minimize")
 
 const toggleClass = (active: boolean) =>
 	cn(
-		"cursor-pointer flex size-6 items-center justify-center rounded-md transition-colors duration-150",
+		"cursor-pointer flex size-6 items-center justify-center rounded transition-colors duration-150 active:scale-95",
 		"disabled:pointer-events-none disabled:opacity-40",
 		active
-			? "text-foreground shadow-(--shadow-craft-inset)"
+			? "bg-card text-foreground shadow-(--shadow-craft-inset)"
 			: "text-muted-foreground hover:bg-card/60 hover:text-foreground",
 	);
-let showPresetsPicker = $state(false);
 let showRevertConfirm = $state(false);
-
-// Mod+P via the central shortcut registry, which avoids a per-component window listener leaking under HMR.
-onMount(() =>
-	registerShortcutHandlers({
-		"editor.presets": () => {
-			// The export surface owns Esc routing, and opening the picker over it strands Esc between two handlers.
-			if (exportOpen) return;
-			showPresetsPicker = !showPresetsPicker;
-		},
-	}),
-);
-
-function readLook(): PresetLook {
-	return {
-		bg: store.backgroundType,
-		value: store.backgroundValue,
-		padding: store.padding,
-		blur: store.backgroundBlur,
-		layout: store.layoutMode,
-		aspect: store.outputAspect,
-		presetId: store.lastAppliedPresetId,
-	};
-}
-
-function writeLook(look: PresetLook) {
-	store.setBackground({ type: look.bg, value: look.value });
-	store.padding = look.padding;
-	store.backgroundBlur = look.blur;
-	store.layoutMode = look.layout;
-	store.outputAspect = look.aspect;
-	store.lastAppliedPresetId = look.presetId;
-}
-
-// The look to restore if the picker is dismissed, captured on the first preview so undo history stays clean.
-let lookBeforePreview: PresetLook | null = null;
-
-// Preview writes are transient and several setters push undo of their own, so browsing buried the real edit.
-function previewPreset(preset: Preset) {
-	lookBeforePreview ??= readLook();
-	const before = lookBeforePreview;
-	store.withoutUndo(() => writeLook(previewLook(preset, before)));
-}
-
-function restoreBeforePreview() {
-	const before = lookBeforePreview;
-	lookBeforePreview = null;
-	if (before) store.withoutUndo(() => writeLook(before));
-}
-
-function applyPreset(preset: Preset) {
-	// Rewind the preview first, so undo lands on the look the user started with, not the last hover.
-	const before = lookBeforePreview ?? readLook();
-	lookBeforePreview = null;
-	store.withoutUndo(() => writeLook(before));
-	store.pushUndoState();
-	// pushUndoState already flagged dirty, and withoutUndo preserves that.
-	store.withoutUndo(() => writeLook(commitLook(preset, before)));
-}
-
-// Reset to source aspect (removes letterbox bars) without touching background/padding/blur.
-function clearPreset() {
-	if (store.outputAspect === "source" && store.lastAppliedPresetId === null) {
-		return;
-	}
-	store.pushUndoState();
-	store.outputAspect = "source";
-	store.lastAppliedPresetId = null;
-}
-
-// null if the persisted id no longer exists in PRESETS (removed across versions).
-const activePreset = $derived.by(() => {
-	const id = store.lastAppliedPresetId;
-	if (!id) return null;
-	return PRESETS.find((p) => p.id === id) ?? null;
-});
 
 // The parent decides the action from exportMode; this just forwards the click.
 function onExportClick() {
@@ -159,126 +83,43 @@ function onExportClick() {
        element. Without it the trigger renders a button AROUND the control:
        nested interactive elements, two tab stops each, and a disabled control
        whose tooltip still opens (the pointer falls through to the wrapper). -->
-  <div class="flex items-center gap-0.5">
-    <Tooltip.Root>
-      <Tooltip.Trigger>
+  <!-- Project menu: brand mark + name + chevron opens dashboard/preset actions,
+       replacing the standalone back button and the centred Presets control. -->
+  <DropdownMenu.Root>
+    <DropdownMenu.Trigger>
+      {#snippet child({ props })}
+        <button
+          {...props}
+          type="button"
+          class="flex h-7 min-w-0 max-w-64 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted active:scale-[0.98]"
+          aria-label="Project menu"
+        >
+          {#if brand}
+            <span class="flex size-4 shrink-0 items-center justify-center">{@render brand()}</span>
+          {/if}
+          <span class="truncate tracking-tight" title={filename}>{filename}</span>
+          {#if store.isDirty}
+            <span class="size-1.5 shrink-0 rounded-full bg-primary" title="Unsaved changes"></span>
+          {/if}
+          <ChevronDown size={12} class="shrink-0 text-muted-foreground" />
+        </button>
+      {/snippet}
+    </DropdownMenu.Trigger>
+    <DropdownMenu.Content size="sm" align="start" class="w-56 text-[11px]">
+      <DropdownMenu.Item>
         {#snippet child({ props })}
-          <Button
-            {...props}
-            variant="ghost"
-            size="icon-sm"
-            href="/recasts"
-            aria-label="Back"
-          >
-            <ArrowLeft size={12} />
-          </Button>
+          <a {...props} href="/recasts">
+            <ArrowLeft size={13} />
+            Go to dashboard
+          </a>
         {/snippet}
-      </Tooltip.Trigger>
-      <Tooltip.Content>Back to recordings</Tooltip.Content>
-    </Tooltip.Root>
-  </div>
-
-  <Separator orientation="vertical" class="mx-1 h-3.5" />
-
-  <span
-    class="truncate text-[11px] font-semibold tracking-tight text-foreground max-w-52"
-    title={filename}
-    data-tauri-drag-region
-  >
-    {filename}
-  </span>
-  {#if store.isDirty}
-    <span
-      class="size-1.5 rounded-full bg-primary"
-      aria-hidden="true"
-      title="Unsaved changes"
-    ></span>
-  {/if}
-
-  <div class="mx-auto flex items-center gap-1.5">
-    <Tooltip.Root>
-      <Tooltip.Trigger>
-        {#snippet child({ props })}
-          <Button
-            {...props}
-            variant="ghost"
-            size="xs"
-            class="gap-1.5 text-[11px] text-muted-foreground"
-            onclick={() => (showPresetsPicker = true)}
-          >
-            <Layout2 size={12} />
-            Presets
-          </Button>
-        {/snippet}
-      </Tooltip.Trigger>
-      <Tooltip.Content>
-        <span class="inline-flex items-center gap-1.5">
-          Browse social &amp; studio presets
-          <Kbd>{chordLabel("editor.presets")}</Kbd>
-        </span>
-      </Tooltip.Content>
-    </Tooltip.Root>
-
-    {#if activePreset || store.outputAspect !== "source"}
-      <div
-        class="flex h-6 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 pl-1.5 pr-0.5 text-[11px] font-semibold text-primary"
-      >
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <button
-                {...props}
-                type="button"
-                onclick={() => (showPresetsPicker = true)}
-                class="flex h-full items-center gap-1.5 cursor-pointer"
-                aria-label="Change preset"
-              >
-                {#if activePreset}
-                  <span
-                    class="text-[10px] uppercase tracking-wider text-primary/70"
-                  >
-                    {activePreset.category}
-                  </span>
-                  <span class="text-foreground">{activePreset.label}</span>
-                {/if}
-                <span
-                  class="inline-flex h-4 items-center rounded border border-primary/40 bg-background/60 px-1 font-mono text-[9px] font-semibold text-primary"
-                >
-                  {store.outputAspect === "source"
-                    ? "Source"
-                    : store.outputAspect}
-                </span>
-              </button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>Change preset</Tooltip.Content>
-        </Tooltip.Root>
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <button
-                {...props}
-                type="button"
-                onclick={clearPreset}
-                aria-label="Reset to source aspect"
-                class="ml-0.5 flex size-5 cursor-pointer items-center justify-center rounded text-primary/60 transition-colors hover:bg-primary/10 hover:text-primary"
-              >
-                <X size={10} stroke={2.5} />
-              </button>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content>
-            Reset to source aspect (drops letterbox bars; keeps your other
-            tweaks)
-          </Tooltip.Content>
-        </Tooltip.Root>
-      </div>
-    {/if}
-  </div>
+      </DropdownMenu.Item>
+    </DropdownMenu.Content>
+  </DropdownMenu.Root>
 
   <div class="ml-auto flex items-center gap-1.5">
     <div
-      class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+      class="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5 ring-1 ring-inset ring-border/40"
     >
       <Tooltip.Root>
         <Tooltip.Trigger>
@@ -431,7 +272,7 @@ function onExportClick() {
     <Separator orientation="vertical" class="mx-0.5 h-3.5" />
 
     <div
-      class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+      class="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5 ring-1 ring-inset ring-border/40"
     >
       <Tooltip.Root>
         <Tooltip.Trigger>
@@ -497,15 +338,6 @@ function onExportClick() {
 
   </div>
 </div>
-
-<PresetPicker
-  open={showPresetsPicker}
-  onOpenChange={(v) => (showPresetsPicker = v)}
-  onapply={applyPreset}
-  onpreview={previewPreset}
-  onrestore={restoreBeforePreview}
-  currentId={store.lastAppliedPresetId}
-/>
 
 <ConfirmDialog
   bind:open={showRevertConfirm}

@@ -95,6 +95,64 @@ describe("buildTimelineRows", () => {
 		expect(audio?.clips[0].start).toBe(2 * 30);
 	});
 
+	it("stacks time-overlapping clips onto distinct lanes", () => {
+		const rows = buildTimelineRows(
+			input({
+				annotations: [
+					{ id: "a", start: 0, end: 4, label: "a" },
+					{ id: "b", start: 2, end: 6, label: "b" }, // overlaps a -> lane 1
+					{ id: "c", start: 6, end: 8, label: "c" }, // clear of a -> back to lane 0
+				],
+			}),
+		);
+		const markup = rows.find((r) => r.kind === "markup");
+		expect(markup?.laneCount).toBe(2);
+		const lane = (id: string) => markup?.clips.find((c) => c.id === id)?.lane;
+		expect(lane("a")).toBe(0);
+		expect(lane("b")).toBe(1);
+		expect(lane("c")).toBe(0);
+	});
+
+	it("leaves non-overlapping clips on a single lane", () => {
+		const rows = buildTimelineRows(
+			input({
+				segments: [
+					{ id: "a", start: 0, end: 2, label: "Clip" },
+					{ id: "b", start: 2, end: 5, label: "Clip" },
+				],
+			}),
+		);
+		expect(rows[0].laneCount).toBe(1);
+		expect(rows[0].clips.every((c) => c.lane === 0)).toBe(true);
+	});
+
+	it("emits a keyframe track row, projecting times through cuts", () => {
+		const map = buildTimeMap([
+			{ origStart: 0, origEnd: 2, speed: 1 },
+			{ origStart: 5, origEnd: 8, speed: 1 },
+		]);
+		const rows = buildTimelineRows(
+			input({
+				map,
+				tracks: [
+					{
+						id: "camera",
+						source: "camera",
+						label: "Camera",
+						kind: "camera",
+						times: [1, 6], // orig 1 -> out 1; orig 6 -> out 3
+						selectedTime: 6,
+					},
+				],
+			}),
+		);
+		const cam = rows.find((r) => r.id === "camera");
+		expect(cam?.track?.source).toBe("camera");
+		expect(cam?.clips).toHaveLength(0);
+		expect(cam?.track?.keyframes.map((k) => k.frame)).toEqual([1 * 30, 3 * 30]);
+		expect(cam?.track?.keyframes[1].selected).toBe(true);
+	});
+
 	it("carries selection, hidden and locked flags", () => {
 		const rows = buildTimelineRows(
 			input({

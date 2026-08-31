@@ -22,6 +22,9 @@
   --background: oklch(0.985 0 0);
   --foreground: oklch(21.779% 0.00002 271.152);
 
+  /* Recessed editor stage behind the video frame (Diffusion's canvas). */
+  --editor-canvas: oklch(0.92 0 0);
+
   --card: oklch(100% 0.00011 271.152);
   --card-foreground: oklch(21.342% 0.00002 271.152);
 
@@ -100,6 +103,9 @@
   --tl-music-bg: #4827b0;
   --tl-music-primary: #9a7ff0;
   --tl-music-on: #e7dffb;
+  --tl-camera-bg: #a55912;
+  --tl-camera-primary: #f0a35a;
+  --tl-camera-on: #f9f2ec;
 
   --border: oklch(0.91 0 0);
   --border-subtle: oklch(0% 0 0 / 0.05);
@@ -157,6 +163,9 @@
 
   --background: oklch(20.352% 0.00157 197.844);
   --foreground: oklch(95.514% 0.00011 271.152);
+
+  /* Diffusion's stage is #121212; recessed under our panels. */
+  --editor-canvas: oklch(0.145 0 0);
 
   --card: oklch(0.27 0 0);
   --card-foreground: oklch(95.514% 0.00011 271.152);

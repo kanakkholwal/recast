@@ -762,6 +762,23 @@ export function createEditorStore() {
 		cameraOverlay = { ...cameraOverlay, keyframes: next };
 	}
 
+	/** Retime the keyframe nearest `fromSec` to `toSec`, for the timeline's
+	 *  drag-a-keyframe gesture. Keeps its placement; collapses onto a neighbour it lands on. */
+	function moveCameraKeyframe(fromSec: number, toSec: number) {
+		const kfs = cameraOverlay.keyframes;
+		const i = kfs.reduce(
+			(best, k, j) =>
+				Math.abs(k.atSec - fromSec) < Math.abs(kfs[best].atSec - fromSec) ? j : best,
+			0,
+		);
+		if (kfs.length === 0 || Math.abs(kfs[i].atSec - fromSec) > 0.15) return;
+		const at = Math.max(0, toSec);
+		const next = kfs.filter((_, j) => j !== i).filter((k) => Math.abs(k.atSec - at) > 0.05);
+		next.push({ ...kfs[i], atSec: at });
+		next.sort((a, b) => a.atSec - b.atSec);
+		cameraOverlay = { ...cameraOverlay, keyframes: next };
+	}
+
 	// --- Selection: exactly one thing at a time. Selecting clears the others, and Delete is a document-level command over `selection`.
 
 	function selectClip(start: number | null) {
@@ -2396,6 +2413,7 @@ export function createEditorStore() {
 		setCameraPlacement,
 		setCameraPerCut,
 		removeCameraKeyframeNear,
+		moveCameraKeyframe,
 		addZoomRegion,
 		addAutoZoomRegion,
 		clearAutoZooms,

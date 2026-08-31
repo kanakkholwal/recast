@@ -5,30 +5,43 @@ use recast_gpu::Readback;
 
 use crate::walk::FrameWalk;
 
-/// Why a render loop stopped.
+/// Why a render loop stopped. Generic over the picture and sink errors rather
+/// than stringifying them: a caller has to tell end-of-file from a dead driver.
 #[derive(Debug, thiserror::Error)]
-pub enum RenderError {
+pub enum RenderError<P, S> {
     #[error("decoding the source picture at {source_time}s: {error:?}")]
     Decode { source_time: f64, error: YuvError },
-    #[error("reading the picture at {source_time}s: {message}")]
-    Picture { source_time: f64, message: String },
-    #[error("writing frame {index}: {message}")]
-    Sink { index: u64, message: String },
+    #[error("reading the picture at {source_time}s")]
+    Picture {
+        source_time: f64,
+        #[source]
+        error: P,
+    },
+    #[error("writing frame {index}")]
+    Sink {
+        index: u64,
+        #[source]
+        error: S,
+    },
 }
 
 /// Decoded pictures on the SOURCE axis, which cuts and speed ramps pull away
 /// from the output axis.
 pub trait PictureSource {
+    type Error: std::error::Error;
+
     /// The picture covering `source_time`, or `None` past the end. Repeats are
     /// correct when the output frame rate is higher than the source's.
-    fn picture_at(&mut self, source_time: f64) -> Result<Option<SourcePlanes<'_>>, String>;
+    fn picture_at(&mut self, source_time: f64) -> Result<Option<SourcePlanes<'_>>, Self::Error>;
 }
 
 /// A [`PictureSource`] for documents that draw no source video at all.
 pub struct NoPictures;
 
 impl PictureSource for NoPictures {
-    fn picture_at(&mut self, _source_time: f64) -> Result<Option<SourcePlanes<'_>>, String> {
+    type Error = std::convert::Infallible;
+
+    fn picture_at(&mut self, _source_time: f64) -> Result<Option<SourcePlanes<'_>>, Self::Error> {
         Ok(None)
     }
 }
@@ -51,7 +64,7 @@ impl FrameLoop {
 
     /// Renders every frame in `walk` into `sink`. The pixels are borrowed and
     /// reused, so a sink that keeps a frame must copy it.
-    pub fn run<R, P, S>(
+    pub fn run<R, P, S, E>(
         &mut self,
         source: &mut R,
         pictures: &mut P,
@@ -59,23 +72,20 @@ impl FrameLoop {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         mut sink: S,
-    ) -> Result<u64, RenderError>
+    ) -> Result<u64, RenderError<P::Error, E>>
     where
         R: Renderable,
         P: PictureSource,
-        S: FnMut(u64, &[u8]) -> Result<(), String>,
+        S: FnMut(u64, &[u8]) -> Result<(), E>,
+        E: std::error::Error,
     {
         let layer = RenderSource::screen_layer(source);
         for (index, output_time) in walk.iter() {
             let params = source.frame_at(output_time);
             let source_time = params.source_time;
-            let picture =
-                pictures
-                    .picture_at(source_time)
-                    .map_err(|message| RenderError::Picture {
-                        source_time,
-                        message,
-                    })?;
+            let picture = pictures
+                .picture_at(source_time)
+                .map_err(|error| RenderError::Picture { source_time, error })?;
 
             let mut inputs = FrameInputs::new();
             let uploaded = match (picture, layer) {
@@ -99,18 +109,18 @@ impl FrameLoop {
 
             let (target, _) = source.render_to_texture(output_time, &inputs);
             self.readback.read(device, queue, &target, &mut self.rgba);
-            sink(index, &self.rgba).map_err(|message| RenderError::Sink { index, message })?;
+            sink(index, &self.rgba).map_err(|error| RenderError::Sink { index, error })?;
         }
         Ok(walk.len())
     }
 
     /// The source texture, resized only when the picture's size changes.
-    fn upload<R: Renderable>(
+    fn upload<R: Renderable, P, S>(
         &mut self,
         source: &mut R,
         planes: &SourcePlanes<'_>,
         source_time: f64,
-    ) -> Result<wgpu::Texture, RenderError> {
+    ) -> Result<wgpu::Texture, RenderError<P, S>> {
         let (width, height) = (planes.width.max(1), planes.height.max(1));
         let reuse = matches!(&self.source, Some((w, h, _)) if *w == width && *h == height);
         if !reuse {

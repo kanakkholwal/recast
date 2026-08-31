@@ -4,7 +4,7 @@
  */
 
 export const BAR_GROUP =
-	"flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40";
+	"flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5 ring-1 ring-inset ring-border/40";
 
 export const BAR_BTN =
 	"flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground";
@@ -15,3 +15,8 @@ export const BAR_BTN_ON =
 
 export const BAR_BTN_DISABLED =
 	"disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground";
+
+/** Raised control floating on the stage canvas (aspect picker, view controls),
+ *  flanking the markup shelf. Reads as a card lifted off the canvas. */
+export const STAGE_PILL =
+	"flex h-7 cursor-pointer items-center gap-1.5 rounded-md bg-card px-2 text-[11px] font-medium text-foreground shadow-craft-md ring-1 ring-inset ring-border/40 transition-colors duration-150 hover:bg-muted active:scale-[0.98]";

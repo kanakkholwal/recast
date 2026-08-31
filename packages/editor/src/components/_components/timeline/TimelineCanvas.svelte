@@ -1,5 +1,6 @@
 <script lang="ts">
 import {
+	Camera,
 	Captions,
 	ChevronDown,
 	ChevronRight,
@@ -16,6 +17,7 @@ import {
 	Mic,
 	Pause,
 	Play,
+	Plus,
 	Repeat,
 	Scissors,
 	SquareSplitHorizontal,
@@ -52,8 +54,11 @@ import {
 	type ClipKind,
 	type TimelineClip,
 	type TimelineRow,
+	type TrackItem,
 } from "../../../lib/timeline/view-model";
 import type { EditorStore } from "../../../stores/editor-store.svelte";
+import NumberField from "../../properity-panel/NumberField.svelte";
+import PropRow from "../../properity-panel/PropRow.svelte";
 import { effectiveFps } from "./timeline-helpers";
 
 interface Props {
@@ -85,6 +90,8 @@ const ROW_H = 40;
 const WAVE_BAND = 22;
 const SUBROW_H = 30;
 const ROW_GAP = 2;
+// Vertical gap between stacked (time-overlapping) clips within one lane.
+const STACK_GAP = 2;
 // The video lane splits picture/waveform only when tall enough for both.
 const VIDEO_WAVE_MIN_H = 62;
 const CLIP_RADIUS = 4;
@@ -95,7 +102,7 @@ const SNAP_PX = 10;
 const MIN_CLIP_FRAMES = 2;
 // How near the playhead line a press counts as grabbing it (over the lanes).
 const PLAYHEAD_GRAB_PX = 5;
-const TRACK_HEADER_W = 240;
+const TRACK_HEADER_W = 250;
 const SAMPLE_WIDTH = 2;
 const FILMSTRIP_TILE_HEIGHT = 48;
 const FILMSTRIP_TILE_WIDTH = 72;
@@ -103,8 +110,9 @@ const FILMSTRIP_TILE_WIDTH = 72;
 // small left pad keeps frame 0 off the edge (Diffusion's TIMELINE_PADDING_LEFT).
 const GUTTER = 8;
 
-function rowHeight(_kind: ClipKind): number {
-	return ROW_H;
+// Canvas y of a clip within its row band, honouring its stack lane.
+function laneY(top: number, lane: number): number {
+	return top + lane * (ROW_H + STACK_GAP);
 }
 
 const ZOOM_SENSITIVITY = 0.01;
@@ -122,17 +130,21 @@ const LANE_ICONS: Record<ClipKind, typeof Film> = {
 	markup: Highlighter,
 	caption: Captions,
 	audio: Mic,
+	camera: Camera,
 };
 
 // The one keyframe-able property each kind exposes today. Absent = the row does
 // not expand. Keyframes are a follow-up; these edit the clip's current value.
+// The one property each kind exposes in its expand tray. Values are in FIELD
+// units (markup opacity as 0..100%), converted at propValue/setProp.
 interface PropSpec {
 	label: string;
 	icon: typeof Film;
 	min: number;
 	max: number;
 	step: number;
-	format: (v: number) => string;
+	decimals: number;
+	suffix: string;
 }
 const PROP: Partial<Record<ClipKind, PropSpec>> = {
 	video: {
@@ -141,7 +153,8 @@ const PROP: Partial<Record<ClipKind, PropSpec>> = {
 		min: 0.25,
 		max: 4,
 		step: 0.05,
-		format: (v) => `${v.toFixed(2)}×`,
+		decimals: 2,
+		suffix: "×",
 	},
 	audio: {
 		label: "Volume",
@@ -149,7 +162,8 @@ const PROP: Partial<Record<ClipKind, PropSpec>> = {
 		min: 0,
 		max: 200,
 		step: 1,
-		format: (v) => `${Math.round(v)}%`,
+		decimals: 0,
+		suffix: "%",
 	},
 	zoom: {
 		label: "Scale",
@@ -157,15 +171,17 @@ const PROP: Partial<Record<ClipKind, PropSpec>> = {
 		min: 1,
 		max: 4,
 		step: 0.1,
-		format: (v) => `${v.toFixed(1)}×`,
+		decimals: 1,
+		suffix: "×",
 	},
 	markup: {
 		label: "Opacity",
 		icon: Sun,
 		min: 0,
-		max: 1,
-		step: 0.05,
-		format: (v) => `${Math.round(v * 100)}%`,
+		max: 100,
+		step: 1,
+		decimals: 0,
+		suffix: "%",
 	},
 	caption: {
 		label: "Size",
@@ -173,7 +189,8 @@ const PROP: Partial<Record<ClipKind, PropSpec>> = {
 		min: 2,
 		max: 8,
 		step: 0.1,
-		format: (v) => `${v.toFixed(1)}%`,
+		decimals: 1,
+		suffix: "%",
 	},
 };
 
@@ -196,6 +213,25 @@ let view = $state<TimelineView>({
 });
 let scrollY = $state(0);
 let expandedRows = $state(new Set<string>());
+// Selected keyframe (original-axis seconds), for the keyframe-track rows.
+let selectedKeyframeSec = $state<number | null>(null);
+
+// Keyframe tracks, generic over the source model. Camera is the only animated
+// model today; a new one adds a source here plus a TRACK_HANDLERS entry.
+const trackInputs = $derived.by<TrackItem[]>(() => {
+	const cam = store.cameraOverlay;
+	if (!cam || cam.keyframes.length === 0) return [];
+	return [
+		{
+			id: "camera",
+			source: "camera",
+			label: "Camera",
+			kind: "camera",
+			times: cam.keyframes.map((k) => k.atSec),
+			selectedTime: selectedKeyframeSec,
+		},
+	];
+});
 
 const fps = $derived(effectiveFps(store.metadata?.fps));
 const outputDurationSec = $derived(store.renderMap.outputDuration);
@@ -257,6 +293,7 @@ const rows = $derived.by<TimelineRow[]>(() => {
 			label: "Music",
 			selected: store.selectedMusicClipId === c.id,
 		})),
+		tracks: trackInputs,
 	});
 });
 
@@ -274,7 +311,7 @@ const rowLayout = $derived.by<LaidRow[]>(() => {
 	for (const row of rows) {
 		const expandable = PROP[row.kind] !== undefined && row.clips.length >= 1;
 		const expanded = expandable && expandedRows.has(row.id);
-		const height = rowHeight(row.kind);
+		const height = row.laneCount * ROW_H + (row.laneCount - 1) * STACK_GAP;
 		out.push({ row, top, height, expandable, expanded });
 		top += height + (expanded ? SUBROW_H : 0) + ROW_GAP;
 	}
@@ -354,7 +391,8 @@ function propValue(row: TimelineRow): number {
 	if (row.kind === "caption") return store.captionStyle.fontSizePct;
 	if (row.kind === "audio") return store.musicClips.find((c) => c.id === id)?.gain ?? 100;
 	if (row.kind === "zoom") return store.zoomRegions.find((z) => z.id === id)?.scale ?? 1;
-	if (row.kind === "markup") return store.annotations.find((a) => a.id === id)?.opacity ?? 1;
+	if (row.kind === "markup")
+		return (store.annotations.find((a) => a.id === id)?.opacity ?? 1) * 100;
 	return 0;
 }
 function setProp(row: TimelineRow, v: number) {
@@ -365,7 +403,7 @@ function setProp(row: TimelineRow, v: number) {
 	if (row.kind === "video") store.setSegmentSpeed(Number(id), v);
 	else if (row.kind === "audio") store.updateMusicClip(id, { gain: v });
 	else if (row.kind === "zoom") store.updateZoomRegion(id, { scale: v });
-	else if (row.kind === "markup") store.updateAnnotation(id, { opacity: v });
+	else if (row.kind === "markup") store.updateAnnotation(id, { opacity: v / 100 });
 }
 
 function togglePlay() {
@@ -386,6 +424,7 @@ function clearSelection() {
 	store.selectedZoomRegionId = null;
 	store.selectedAnnotationId = null;
 	store.selectedMusicClipId = null;
+	selectedKeyframeSec = null;
 }
 
 // Add a 2s zoom region at the playhead (original axis, where currentTime lives).
@@ -398,6 +437,13 @@ function addZoomAtPlayhead() {
 // Delete whatever is selected: zoom / markup / audio clip, or ripple-delete the
 // selected video segment. The store methods push their own undo entry.
 function deleteSelected() {
+	if (selectedKeyframeSec !== null) {
+		const sec = selectedKeyframeSec;
+		const trackRow = rows.find((r) => r.track && TRACK_HANDLERS[r.track.source]);
+		if (trackRow?.track) TRACK_HANDLERS[trackRow.track.source]?.removeAt(sec);
+		selectedKeyframeSec = null;
+		return;
+	}
 	if (store.selectedZoomRegionId) store.removeZoomRegion(store.selectedZoomRegionId);
 	else if (store.selectedAnnotationId) store.removeAnnotation(store.selectedAnnotationId);
 	else if (store.selectedMusicClipId) store.removeMusicClip(store.selectedMusicClipId);
@@ -486,6 +532,7 @@ let clipPaint = $state<Record<ClipKind, ClipPaint>>({
 	markup: { bg: "#933325", primary: "#d98a7a", on: "#faedeb" },
 	caption: { bg: "#7b1e5a", primary: "#aa317b", on: "#f9dced" },
 	audio: { bg: "#004732", primary: "#0dbf8a", on: "#cbfaed" },
+	camera: { bg: "#a55912", primary: "#f0a35a", on: "#f9f2ec" },
 });
 
 function readColors() {
@@ -522,6 +569,7 @@ function readColors() {
 		markup: paint("markup"),
 		caption: paint("caption"),
 		audio: paint("audio"),
+		camera: paint("camera"),
 	};
 	probe.remove();
 	scheduleDraw();
@@ -592,8 +640,24 @@ function draw() {
 	ctx.restore();
 
 	drawRuler();
+	drawWorkarea();
 	drawSnapGuide();
 	drawPlayhead();
+	drawRazorGuide();
+}
+
+// The blade line under the razor cursor, so the split point is visible before it lands.
+function drawRazorGuide() {
+	if (!ctx || !razorMode || razorX === null) return;
+	const x = snapDev(razorX);
+	ctx.strokeStyle = tl.scrubber;
+	ctx.lineWidth = 1;
+	ctx.setLineDash([2, 2]);
+	ctx.beginPath();
+	ctx.moveTo(x, RULER_HEIGHT);
+	ctx.lineTo(x, cssH);
+	ctx.stroke();
+	ctx.setLineDash([]);
 }
 
 function drawRows() {
@@ -605,25 +669,63 @@ function drawRows() {
 		ctx.fillText("No clips yet", 12, RULER_HEIGHT + ROW_H);
 		return;
 	}
-	for (let i = 0; i < rowLayout.length; i++) {
-		const laid = rowLayout[i];
-		const top = rowClipTop(laid);
-		const groupH = laid.height + (laid.expanded ? SUBROW_H : 0);
-		if (top + groupH < RULER_HEIGHT || top > cssH) continue;
-		// Row band.
-		ctx.fillStyle = tl.surfaceMuted;
-		ctx.globalAlpha = i % 2 === 0 ? 0.5 : 0.32;
-		roundRectPath(0, top, contentW, laid.height, CLIP_RADIUS);
+	for (let i = 0; i < rowLayout.length; i++) drawRow(rowLayout[i], i);
+}
+
+function drawRow(laid: LaidRow, i: number) {
+	if (!ctx) return;
+	const top = rowClipTop(laid);
+	const groupH = laid.height + (laid.expanded ? SUBROW_H : 0);
+	if (top + groupH < RULER_HEIGHT || top > cssH) return;
+	ctx.fillStyle = tl.surfaceMuted;
+	ctx.globalAlpha = i % 2 === 0 ? 0.5 : 0.32;
+	roundRectPath(0, top, contentW, laid.height, CLIP_RADIUS);
+	ctx.fill();
+	if (laid.expanded) {
+		// Property track band, a touch dimmer than the clip band.
+		ctx.globalAlpha = 0.22;
+		roundRectPath(0, top + laid.height, contentW, SUBROW_H, CLIP_RADIUS);
 		ctx.fill();
-		if (laid.expanded) {
-			// Property track band, a touch dimmer than the clip band.
-			ctx.globalAlpha = 0.22;
-			roundRectPath(0, top + laid.height, contentW, SUBROW_H, CLIP_RADIUS);
-			ctx.fill();
-		}
-		ctx.globalAlpha = 1;
-		for (const clip of laid.row.clips) drawClip(clip, top, laid.height);
 	}
+	ctx.globalAlpha = 1;
+	if (laid.row.track) drawKeyframeTrack(laid.row, top);
+	else for (const clip of laid.row.clips) drawClip(clip, laneY(top, clip.lane), ROW_H);
+}
+
+// A keyframe track: a baseline with a diamond at each keyframe (camera today).
+function drawKeyframeTrack(row: TimelineRow, top: number) {
+	if (!ctx || !row.track) return;
+	const paint = clipPaint[row.kind];
+	const cy = snapDev(top + ROW_H / 2);
+	ctx.strokeStyle = paint.bg;
+	ctx.globalAlpha = 0.7;
+	ctx.lineWidth = 2;
+	ctx.beginPath();
+	ctx.moveTo(0, cy);
+	ctx.lineTo(contentW, cy);
+	ctx.stroke();
+	ctx.globalAlpha = 1;
+	for (const kf of row.track.keyframes) {
+		const x = frameToX(kf.frame, view);
+		if (x < -8 || x > contentW + 8) continue;
+		drawDiamond(snapDev(x), cy, kf.selected, paint);
+	}
+}
+
+function drawDiamond(x: number, y: number, selected: boolean, paint: ClipPaint) {
+	if (!ctx) return;
+	const r = 5;
+	ctx.beginPath();
+	ctx.moveTo(x, y - r);
+	ctx.lineTo(x + r, y);
+	ctx.lineTo(x, y + r);
+	ctx.lineTo(x - r, y);
+	ctx.closePath();
+	ctx.fillStyle = selected ? paint.on : paint.primary;
+	ctx.fill();
+	ctx.strokeStyle = selected ? tl.ring : paint.bg;
+	ctx.lineWidth = 1.5;
+	ctx.stroke();
 }
 
 /** Align a CSS-px value to a whole device pixel so edges stay crisp under DPR. */
@@ -930,6 +1032,38 @@ function drawSnapGuide() {
 	ctx.globalAlpha = 1;
 }
 
+// The trimmed-out head and tail, dimmed with a bracket in the ruler, so the
+// exported window (mark in/out) is visible on the timeline.
+function drawWorkarea() {
+	if (!ctx || fps <= 0) return;
+	const dur = store.metadata?.duration ?? 0;
+	if (dur <= 0) return;
+	const trimmed = store.inPoint > 0.001 || store.outPoint < dur - 0.001;
+	if (!trimmed) return;
+	const inX = snapDev(frameToX(originalToOutput(store.renderMap, store.inPoint) * fps, view));
+	const outX = snapDev(frameToX(originalToOutput(store.renderMap, store.outPoint) * fps, view));
+	ctx.fillStyle = tl.surface;
+	ctx.globalAlpha = 0.6;
+	if (inX > 0) ctx.fillRect(0, RULER_HEIGHT, Math.min(inX, contentW), cssH - RULER_HEIGHT);
+	if (outX < contentW)
+		ctx.fillRect(
+			Math.max(0, outX),
+			RULER_HEIGHT,
+			contentW - Math.max(0, outX),
+			cssH - RULER_HEIGHT,
+		);
+	ctx.globalAlpha = 1;
+	drawBracket(inX, 1);
+	drawBracket(outX, -1);
+}
+
+function drawBracket(x: number, dir: 1 | -1) {
+	if (!ctx || x < -6 || x > contentW + 6) return;
+	ctx.fillStyle = tl.ring;
+	ctx.fillRect(dir === 1 ? x : x - 2, RULER_HEIGHT - 12, 2, 12);
+	ctx.fillRect(dir === 1 ? x : x - 6, RULER_HEIGHT - 12, 6, 2);
+}
+
 // The playhead: a shield knob in the ruler, a blue line with a dark halo, and a
 // velocity-driven motion trail so a scrub eases rather than snaps.
 const GRADIENT_PX_PER_VELOCITY = 25;
@@ -1043,9 +1177,76 @@ type Gesture =
 			clip: TimelineClip;
 			startFrame: number;
 			endFrame: number;
-	  };
+	  }
+	| { kind: "keyframe"; source: string; fromSec: number };
 let gesture: Gesture | null = null;
 let snapGuideFrame: number | null = null;
+
+interface TrackHandler {
+	seek(sec: number): void;
+	addAtPlayhead(): void;
+	removeAt(sec: number): void;
+	move(fromSec: number, toSec: number): void;
+}
+function frameToOriginalSec(frame: number): number {
+	return outputToOriginal(store.renderMap, frame / Math.max(fps, 1));
+}
+// Add a keyframe at the playhead holding the placement already active there.
+function addCameraKeyframeAtPlayhead() {
+	const cam = store.cameraOverlay;
+	if (!cam || cam.keyframes.length === 0) return;
+	let placement = cam.keyframes[0].placement;
+	for (const k of cam.keyframes) {
+		if (k.atSec <= store.currentTime) placement = k.placement;
+		else break;
+	}
+	store.setCameraPlacement(placement);
+}
+// Per-source keyframe edits; a new animated model registers its own entry.
+const TRACK_HANDLERS: Record<string, TrackHandler> = {
+	camera: {
+		seek: (s) => store.seek(s),
+		addAtPlayhead: addCameraKeyframeAtPlayhead,
+		removeAt: (s) => store.removeCameraKeyframeNear(s),
+		move: (from, to) => store.moveCameraKeyframe(from, to),
+	},
+};
+
+// Razor: click a clip to split it at the pointer; the blade tracks the cursor.
+let razorMode = $state(false);
+let razorX: number | null = null;
+// Hover-scrub: a floating frame + time while the pointer is over the ruler.
+let hoverPreview = $state<{
+	x: number;
+	label: string;
+	url?: string;
+} | null>(null);
+
+function toggleRazor() {
+	razorMode = !razorMode;
+	razorX = null;
+	hoverPreview = null;
+	if (canvasEl) canvasEl.style.cursor = razorMode ? "crosshair" : "default";
+	scheduleDraw();
+}
+function razorSplit(x: number) {
+	if (fps <= 0) return;
+	const frame = Math.max(0, Math.min(xToFrame(x, view), totalFrames));
+	store.splitAt(outputToOriginal(store.renderMap, frame / fps));
+}
+function updateHoverPreview(x: number, y: number) {
+	if (razorMode || y >= RULER_HEIGHT || fps <= 0) {
+		if (hoverPreview) hoverPreview = null;
+		return;
+	}
+	const frame = Math.max(0, Math.min(xToFrame(x, view), totalFrames));
+	const origSec = outputToOriginal(store.renderMap, frame / fps);
+	hoverPreview = {
+		x,
+		label: formatTimeByMode(frame / fps, store.timeMode, fps),
+		url: tileProvider?.previewAt(origSec),
+	};
+}
 
 function canMove(clip: TimelineClip): boolean {
 	return clip.kind === "zoom" || clip.kind === "markup" || clip.kind === "audio";
@@ -1054,12 +1255,28 @@ function canTrim(clip: TimelineClip): boolean {
 	return canMove(clip) || (clip.kind === "video" && videoTrimmable);
 }
 
+function keyframeAt(x: number, y: number): { row: TimelineRow; frame: number } | null {
+	for (const laid of rowLayout) {
+		if (!laid.row.track) continue;
+		const cy = rowClipTop(laid) + ROW_H / 2;
+		if (Math.abs(y - cy) > 9) continue;
+		for (const kf of laid.row.track.keyframes) {
+			if (Math.abs(x - frameToX(kf.frame, view)) <= 7) {
+				return { row: laid.row, frame: kf.frame };
+			}
+		}
+	}
+	return null;
+}
+
 function clipAt(x: number, y: number): TimelineClip | null {
 	for (const laid of rowLayout) {
 		const top = rowClipTop(laid);
 		if (y < top || y >= top + laid.height) continue;
 		for (let i = laid.row.clips.length - 1; i >= 0; i--) {
 			const clip = laid.row.clips[i];
+			const ly = laneY(top, clip.lane);
+			if (y < ly || y >= ly + ROW_H) continue;
 			const cx = frameToX(clip.start, view);
 			const cw = Math.max(2, clip.duration * view.resolution);
 			if (x >= cx && x < cx + cw) return clip;
@@ -1175,53 +1392,92 @@ function startScrub(x: number, e: PointerEvent) {
 	seekToX(x);
 }
 
+function startKeyframeDrag(x: number, y: number, e: PointerEvent): boolean {
+	const kf = keyframeAt(x, y);
+	if (!kf?.row.track) return false;
+	const sec = frameToOriginalSec(kf.frame);
+	clearSelection();
+	selectedKeyframeSec = sec;
+	TRACK_HANDLERS[kf.row.track.source]?.seek(sec);
+	store.pushUndoState();
+	gesture = {
+		kind: "keyframe",
+		source: kf.row.track.source,
+		fromSec: sec,
+	};
+	canvasEl?.setPointerCapture(e.pointerId);
+	return true;
+}
+
 function onPointerDown(e: PointerEvent) {
 	if (e.button !== 0) return;
 	const x = localX(e);
 	const y = localY(e);
+	// Razor: a press on the lanes splits at the pointer, leaving the blade armed.
+	if (razorMode && y >= RULER_HEIGHT) {
+		razorSplit(x);
+		return;
+	}
+	// A keyframe diamond: select it, seek to it, and arm a drag to retime it.
+	if (y >= RULER_HEIGHT && startKeyframeDrag(x, y, e)) return;
 	// The ruler scrubs to the point; the line itself is grabbable over the lanes.
 	if (y < RULER_HEIGHT || nearPlayhead(x)) {
 		startScrub(x, e);
 		return;
 	}
 	const clip = clipAt(x, y);
-	if (clip) {
-		selectClip(clip);
-		const zone = edgeZone(clip, x);
-		const startTrim = zone !== "body" && canTrim(clip);
-		const startMove = zone === "body" && canMove(clip);
-		if (startTrim || startMove) {
-			store.pushUndoState();
-			gesture = startMove
-				? {
-						kind: "move",
-						clip,
-						grabFrame: xToFrame(x, view),
-						startFrame: clip.start,
-						durFrames: clip.duration,
-					}
-				: {
-						kind: "trim",
-						edge: zone as "l" | "r",
-						clip,
-						startFrame: clip.start,
-						endFrame: clip.start + clip.duration,
-					};
-			canvasEl?.setPointerCapture(e.pointerId);
-		}
-		return;
-	}
-	clearSelection();
+	if (clip) startClipGesture(clip, x, e);
+	else clearSelection();
+}
+
+function startClipGesture(clip: TimelineClip, x: number, e: PointerEvent) {
+	selectClip(clip);
+	const zone = edgeZone(clip, x);
+	const startTrim = zone !== "body" && canTrim(clip);
+	const startMove = zone === "body" && canMove(clip);
+	if (!startTrim && !startMove) return;
+	store.pushUndoState();
+	gesture = startMove
+		? {
+				kind: "move",
+				clip,
+				grabFrame: xToFrame(x, view),
+				startFrame: clip.start,
+				durFrames: clip.duration,
+			}
+		: {
+				kind: "trim",
+				edge: zone as "l" | "r",
+				clip,
+				startFrame: clip.start,
+				endFrame: clip.start + clip.duration,
+			};
+	canvasEl?.setPointerCapture(e.pointerId);
 }
 
 function onPointerMove(e: PointerEvent) {
 	const x = localX(e);
+	if (razorMode && !gesture) {
+		razorX = x;
+		if (canvasEl) canvasEl.style.cursor = "crosshair";
+		scheduleDraw();
+		return;
+	}
 	if (!gesture) {
 		if (canvasEl) canvasEl.style.cursor = hoverCursor(x, localY(e));
+		updateHoverPreview(x, localY(e));
 		return;
 	}
 	if (gesture.kind === "scrub") {
 		seekToX(x);
+		return;
+	}
+	if (gesture.kind === "keyframe") {
+		const toSec = frameToOriginalSec(Math.max(0, Math.min(xToFrame(x, view), totalFrames)));
+		TRACK_HANDLERS[gesture.source]?.move(gesture.fromSec, toSec);
+		gesture.fromSec = toSec;
+		selectedKeyframeSec = toSec;
+		scheduleDraw();
 		return;
 	}
 	const frame = xToFrame(x, view);
@@ -1252,6 +1508,8 @@ function onPointerUp(e: PointerEvent) {
 }
 function onPointerLeave() {
 	if (!gesture && canvasEl) canvasEl.style.cursor = "default";
+	razorX = null;
+	hoverPreview = null;
 	scheduleDraw();
 }
 
@@ -1392,6 +1650,17 @@ function onKeyDown(e: KeyboardEvent) {
 			e.preventDefault();
 			togglePlay();
 			break;
+		case "c":
+		case "C":
+			e.preventDefault();
+			toggleRazor();
+			break;
+		case "Escape":
+			if (razorMode) {
+				e.preventDefault();
+				toggleRazor();
+			}
+			break;
 		default:
 			break;
 	}
@@ -1474,6 +1743,8 @@ $effect(() => {
 		fps,
 		filmstripVersion,
 		store.waveform,
+		store.trimStart,
+		store.trimEnd,
 	);
 });
 
@@ -1503,7 +1774,7 @@ const playheadLabel = $derived(
 					onclick={togglePlay}
 					disabled={!videoEl}
 					aria-label={store.isPlaying ? "Pause" : "Play"}
-					class="tl-btn"
+					class="text-muted-foreground hover:text-foreground"
 					size="icon-sm"
 					variant="ghost"
 				>
@@ -1513,22 +1784,48 @@ const playheadLabel = $derived(
 				</Button>
 				<Button
 					type="button"
+					onclick={() => (loopEnabled = !loopEnabled)}
+					aria-pressed={loopEnabled}
+					aria-label="Loop within the trim"
+					title="Loop within the trim"				
+					size="icon-sm"
+					variant={loopEnabled ? "default_soft" : "ghost"}
+				>
+					<Repeat />
+				</Button>
+				<Button
+					type="button"
 					onclick={splitAtPlayhead}
 					disabled={totalFrames <= 0}
 					aria-label="Split at playhead"
 					title="Split at playhead (S)"
-					class="tl-btn"
+					class="text-muted-foreground hover:text-foreground"
 					size="icon-sm"
 					variant="ghost"
 				>
 					<SquareSplitHorizontal />
+				</Button>
+				<Button
+					type="button"
+					onclick={toggleRazor}
+					disabled={totalFrames <= 0}
+					aria-label="Razor tool"
+					aria-pressed={razorMode}
+					title="Razor: click a clip to split it (C)"
+					class="text-muted-foreground hover:text-foreground {razorMode
+						? 'text-primary'
+						: ''}"
+					size="icon-sm"
+					variant={razorMode ? "secondary" : "ghost"}
+				>
+					<Scissors />
 				</Button>
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
 						<Button
 							type="button"
 							aria-label="More timeline options"
-							class="tl-btn"
+							class="text-muted-foreground hover:text-foreground"
 							size="icon-sm"
 							variant="ghost"
 						>
@@ -1640,7 +1937,7 @@ const playheadLabel = $derived(
 				</DropdownMenu.Root>
 			</div>
 			<span
-				class="min-w-0 truncate font-mono text-xs font-thin tabular-nums text-foreground"
+				class="min-w-0 whitespace-nowrap font-display text-xs font-medium tabular-nums text-foreground"
 			>
 				{timecode(playheadFrame)}
 			</span>
@@ -1674,18 +1971,18 @@ const playheadLabel = $derived(
 											: "Expand"}
 										onclick={() => toggleExpand(row.id)}
 									>
-										{#if laid.expanded}<ChevronDown
-												class="size-3.5"
-											/>{:else}<ChevronRight
-												class="size-3.5"
-											/>{/if}
+										{#if laid.expanded}
+											<ChevronDown class="size-3" />
+										{:else}
+											<ChevronRight class="size-3" />
+										{/if}
 									</button>
 								{:else}
-									<span class="w-4 shrink-0"></span>
+									<span class="w-3 shrink-0"></span>
 								{/if}
-								<Icon class="size-4 shrink-0" />
+								<Icon class="size-3 shrink-0" />
 								<span
-									class="truncate px-0.5 text-xs text-foreground"
+									class="truncate px-0.5 text-[10px] text-foreground font-medium font-display"
 									>{row.label}</span
 								>
 							</div>
@@ -1718,40 +2015,43 @@ const playheadLabel = $derived(
 										/>{:else}<Eye class="size-3.5" />{/if}
 								</button>
 							{/if}
+							{#if row.track && TRACK_HANDLERS[row.track.source]}
+								<button
+									type="button"
+									class="flex size-6 shrink-0 items-center justify-center rounded-sm opacity-0 transition-opacity group-hover/row:opacity-100 hover:text-foreground"
+									aria-label="Add keyframe at playhead"
+									title="Add keyframe at playhead"
+									onclick={() =>
+										row.track &&
+										TRACK_HANDLERS[
+											row.track.source
+										]?.addAtPlayhead()}
+								>
+									<Plus class="size-3.5" />
+								</button>
+							{/if}
 						</div>
 						{#if laid.expanded && spec}
-							{@const PropIcon = spec.icon}
 							<div
 								class="flex items-center pl-6 pr-1.5"
 								style="height:{SUBROW_H}px"
 							>
-								<div
-									class="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-muted/60 pl-2 pr-2.5 ring-1 ring-inset ring-border/40 transition-colors hover:bg-muted"
-								>
-									<PropIcon
-										class="size-3.5 shrink-0 text-muted-foreground"
-									/>
-									<input
-										type="range"
-										class="tl-range"
+								<PropRow label={spec.label} class="flex-1">
+									<NumberField
+										label={spec.label}
+										icon={spec.icon}
+										value={propValue(row)}
 										min={spec.min}
 										max={spec.max}
 										step={spec.step}
-										value={propValue(row)}
-										oninput={(e) =>
-											setProp(
-												row,
-												e.currentTarget.valueAsNumber,
-											)}
-										aria-label={`${row.label} ${spec.label}`}
+										decimals={spec.decimals}
+										suffix={spec.suffix}
+										onDragStart={() =>
+											store.pushUndoState()}
+										onCommit={(v) => setProp(row, v)}
+										class=""
 									/>
-									<span
-										class="shrink-0 font-mono text-[11px] tabular-nums text-foreground/85"
-										style="min-width:2.5rem;text-align:right"
-									>
-										{spec.format(propValue(row))}
-									</span>
-								</div>
+								</PropRow>
 							</div>
 						{/if}
 					</div>
@@ -1787,6 +2087,28 @@ const playheadLabel = $derived(
 					<span class="sr-only" aria-live="polite"
 						>{playheadLabel}</span
 					>
+					{#if hoverPreview}
+						<div
+							class="pointer-events-none absolute z-30 flex -translate-x-1/2 flex-col items-center gap-1"
+							style="left:{Math.max(
+								48,
+								Math.min(cssW - 48, hoverPreview.x + GUTTER),
+							)}px;top:{RULER_HEIGHT + 4}px"
+						>
+							{#if hoverPreview.url}
+								<img
+									src={hoverPreview.url}
+									alt=""
+									class="h-[54px] w-24 rounded-md border border-border/60 object-cover shadow-md"
+								/>
+							{/if}
+							<span
+								class="rounded bg-popover px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-popover-foreground shadow-sm ring-1 ring-border/60"
+							>
+								{hoverPreview.label}
+							</span>
+						</div>
+					{/if}
 				</div>
 			{/snippet}
 		</ContextMenu.Trigger>
@@ -1839,59 +2161,13 @@ const playheadLabel = $derived(
 					</ContextMenu.Item>
 				{/if}
 			{:else}
-				<ContextMenu.Item disabled size="sm" class="text-muted-foreground font-light"
+				<ContextMenu.Item
+					disabled
+					size="sm"
+					class="text-muted-foreground font-light"
 					>Right-click a clip to edit it</ContextMenu.Item
 				>
 			{/if}
 		</ContextMenu.Content>
 	</ContextMenu.Root>
 </div>
-
-<style>
-	/* Transport icon button, matching the panels' ghost icon-button. */
-	.tl-btn {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 1.75rem;
-		height: 1.75rem;
-		border-radius: calc(var(--radius) - 4px);
-		color: var(--muted-foreground);
-		transition:
-			background-color 0.15s,
-			color 0.15s;
-	}
-	.tl-btn:hover:not(:disabled) {
-		color: var(--foreground);
-		background: color-mix(in oklab, var(--muted) 50%, transparent);
-	}
-	.tl-btn:disabled {
-		opacity: 0.4;
-	}
-	/* Dense slider on the shared field surface: --primary pill on a muted track. */
-	.tl-range {
-		flex: 1;
-		min-width: 0;
-		height: 4px;
-		appearance: none;
-		border-radius: 999px;
-		background: color-mix(in oklab, var(--foreground) 10%, transparent);
-		cursor: ew-resize;
-	}
-	.tl-range::-webkit-slider-thumb {
-		appearance: none;
-		width: 12px;
-		height: 12px;
-		border-radius: 50%;
-		background: var(--primary);
-		box-shadow: 0 0 0 1px
-			color-mix(in oklab, var(--background) 60%, transparent);
-	}
-	.tl-range::-moz-range-thumb {
-		width: 12px;
-		height: 12px;
-		border: 0;
-		border-radius: 50%;
-		background: var(--primary);
-	}
-</style>

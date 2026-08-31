@@ -61,7 +61,9 @@ impl Flat {
 }
 
 impl PictureSource for Flat {
-    fn picture_at(&mut self, _source_time: f64) -> Result<Option<SourcePlanes<'_>>, String> {
+    type Error = std::convert::Infallible;
+
+    fn picture_at(&mut self, _source_time: f64) -> Result<Option<SourcePlanes<'_>>, Self::Error> {
         Ok(Some(SourcePlanes {
             width: SRC_W,
             height: SRC_H,
@@ -133,7 +135,7 @@ fn export_with(ctx: &GpuContext, walk: FrameWalk, path: &std::path::Path, luma: 
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| sink.push(index, rgba).map_err(|e| e.to_string()),
+            |index, rgba| sink.push(index, rgba),
         )
         .expect("rendered");
 
@@ -273,7 +275,7 @@ fn finishing_drains_every_frame_the_encoder_was_holding() {
             walk,
             ctx.device(),
             ctx.queue(),
-            |index, rgba| sink.push(index, rgba).map_err(|e| e.to_string()),
+            |index, rgba| sink.push(index, rgba),
         )
         .expect("rendered");
 

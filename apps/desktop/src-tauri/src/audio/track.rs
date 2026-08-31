@@ -191,6 +191,8 @@ mod tests {
     const SLOW_RATE: u32 = 47_525;
 
     struct Fixture {
+        /// Held so the directory outlives the file the fixture writes into it.
+        _dir: recast_testkit::Scratch,
         path: PathBuf,
         pause: Arc<AtomicBool>,
         start: TrackStart,
@@ -201,11 +203,11 @@ mod tests {
 
     impl Fixture {
         fn new(tag: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("recast-track-{}", std::process::id()));
-            std::fs::create_dir_all(&dir).expect("temp dir");
+            let dir = recast_testkit::Scratch::new("track");
             let session_origin = Instant::now();
             Self {
                 path: dir.join(format!("{tag}.wav")),
+                _dir: dir,
                 pause: Arc::new(AtomicBool::new(false)),
                 start: TrackStart::new(session_origin),
                 session_origin,

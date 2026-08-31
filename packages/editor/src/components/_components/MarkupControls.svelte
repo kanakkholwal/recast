@@ -1,5 +1,6 @@
 <script lang="ts">
 import { Eye, EyeOff } from "@recast/icons";
+import { NotchedShelf } from "@recast/ui/notched-shelf";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
 import { insertImageAnnotation } from "../../lib/annotations/image-import";
@@ -11,13 +12,15 @@ import {
 } from "../../lib/annotations/tools";
 import { isEditableTarget } from "../../lib/dom/editable";
 import type { EditorStore } from "../../stores/editor-store.svelte";
-import { BAR_BTN, BAR_GROUP } from "./player-bar.styles";
+import { BAR_BTN } from "./player-bar.styles";
 
 interface Props {
 	store: EditorStore;
+	/** Stack the tools in a vertical shelf (docked to a side edge). */
+	vertical?: boolean;
 }
 
-let { store }: Props = $props();
+let { store, vertical = false }: Props = $props();
 
 const ImageToolIcon = IMAGE_TOOL.icon;
 const count = $derived(store.annotations.length);
@@ -65,14 +68,18 @@ function handleHotkey(event: KeyboardEvent) {
      floating over it: markup is placed by eye and a pill over the frame covers
      the top-centre of the very content being annotated. -->
 {#if onTab}
-  <div class={cn(BAR_GROUP, "shrink-0")}>
+  <NotchedShelf fill="text-card" class="shrink-0" {vertical}>
+    <div class={cn("flex gap-0.5", vertical ? "flex-col px-1.5 py-2" : "items-center px-2")}>
     {#each ANNOTATION_TOOLS as t, i (t.id)}
       {@const Icon = t.icon}
       {@const active = isActive(t.id)}
       <!-- Select is the way out of every drawing mode, so it reads as its own
            group, as it does in Figma's toolbar. -->
       {#if i === 1}
-        <span class="mx-0.5 h-4 w-px bg-border/60" aria-hidden="true"></span>
+        <span
+          class={cn("shrink-0 bg-border/60", vertical ? "my-0.5 h-px w-4" : "mx-0.5 h-4 w-px")}
+          aria-hidden="true"
+        ></span>
       {/if}
       <Tooltip.Root>
         <Tooltip.Trigger>
@@ -97,7 +104,10 @@ function handleHotkey(event: KeyboardEvent) {
       </Tooltip.Root>
     {/each}
 
-    <span class="mx-0.5 h-4 w-px bg-border/60" aria-hidden="true"></span>
+    <span
+      class={cn("shrink-0 bg-border/60", vertical ? "my-0.5 h-px w-4" : "mx-0.5 h-4 w-px")}
+      aria-hidden="true"
+    ></span>
 
     <!-- One-shot insert, never a mode, so it never takes the pressed state. -->
     <Tooltip.Root>
@@ -140,7 +150,8 @@ function handleHotkey(event: KeyboardEvent) {
         <Tooltip.Content>{hidden ? "Show markup" : "Hide markup"}</Tooltip.Content>
       </Tooltip.Root>
     {/if}
-  </div>
+    </div>
+  </NotchedShelf>
 {/if}
 
 <!-- Hidden markup silently changes the exported file, so it is reported on every

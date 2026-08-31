@@ -497,10 +497,6 @@ fn pill_path(w: f64, h: f64, r: f64) -> String {
 }
 
 /// Emit the pill Dialogue (layer 0) for a chunk window.
-#[expect(
-    clippy::too_many_arguments,
-    reason = "pill geometry and colour are independent knobs"
-)]
 fn emit_pill(
     out: &mut String,
     style: &CaptionStyle,

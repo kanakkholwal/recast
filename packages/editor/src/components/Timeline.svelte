@@ -30,10 +30,10 @@ import {
 import { buildSnapTargets, snapTime } from "./_components/timeline/timeline-snap";
 import {
 	AUDIO_LANE_HEIGHT_PX,
+	cardLayout,
 	CLIP_LANE_HEIGHT_PX,
 	CLIP_ROW_HEIGHT_PX,
 	CUT_LANE_HEIGHT_PX,
-	cardLayout,
 	ZOOM_ROW_HEIGHT_PX,
 } from "./_components/timeline/timeline-stack";
 import { wheelIntent } from "./_components/timeline/timeline-wheel.logic";
@@ -45,8 +45,7 @@ interface Props {
 	videoEl?: HTMLVideoElement | null;
 	tileProvider?: TileProvider | null;
 	filmstripVersion?: number;
-	/** Block structural edits (an agent owns the write lock) while leaving the
-	 *  transport live, so the user can still scrub to watch what it changes. */
+	/** Block structural edits (an agent owns the write lock) while leaving the transport live, so the user can still scrub to watch what it changes. */
 	readOnly?: boolean;
 }
 
@@ -998,14 +997,7 @@ onMount(() => {
   />
   </div>
 
-  <!-- Frozen row and column, the way a spreadsheet does it: the rail is a
-       sibling of the horizontal scroller so lane names never move sideways (and
-       never overlap a card at t≈0), and the ruler is `sticky top-0` inside the
-       scroller so it holds while the lanes scroll under it. The scroller owns
-       BOTH axes for that to work — sticky resolves against the nearest scrolling
-       ancestor, so a separate outer y-scroller would leave the ruler pinned to
-       content that never moves. The rail has no scrollbar of its own; it follows
-       the track's scrollTop, which keeps every label on its lane's row. -->
+  
   <div
     class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
   >

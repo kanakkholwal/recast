@@ -98,6 +98,9 @@ import { motionDuration } from "./lib/motion.svelte";
 import EditorToolbar from "./components/EditorToolbar.svelte";
 import PropertiesPanel from "./components/properity-panel/PropertiesPanel.svelte";
 import Timeline from "./components/Timeline.svelte";
+import AspectPicker from "./components/_components/AspectPicker.svelte";
+import MarkupControls from "./components/_components/MarkupControls.svelte";
+import StageViewControls from "./components/_components/StageViewControls.svelte";
 import TimelineCanvas from "./components/_components/timeline/TimelineCanvas.svelte";
 import VideoPlayerControls from "./components/VideoPlayerControls.svelte";
 import VideoPreview from "./components/VideoPreview.svelte";
@@ -330,7 +333,7 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 
 <div
 	class={cn(
-		"bg-background text-foreground flex h-full min-h-0 w-full flex-col overflow-hidden",
+		"bg-[var(--editor-canvas)] text-foreground flex h-full min-h-0 w-full flex-col overflow-hidden",
 		className,
 	)}
 >
@@ -368,7 +371,7 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 			<div
 				bind:this={previewContainerEl}
-				class="bg-background flex min-h-0 flex-1 flex-col items-center justify-center px-2 pt-1.5 pb-1"
+				class="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pt-1.5 pb-1"
 			>
 				<div class="relative flex min-h-0 w-full flex-1 items-center justify-center">
 					<VideoPreview
@@ -390,15 +393,21 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 						audioPositionSec={audioPositionSec ??
 							(() => audioEngine?.positionOutputSec ?? null)}
 					/>
+					<!-- Markup tools dock to the left edge in a vertical shelf (Markup tab only). -->
+					<div class="pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center">
+						<div class="pointer-events-auto">
+							<MarkupControls {store} vertical />
+						</div>
+					</div>
 				</div>
-				<VideoPlayerControls
-					{store}
-					{videoEl}
-					{captureFrame}
-					bind:loopEnabled
-					fullscreenTargetEl={previewContainerEl}
-					showScrubber={!timelineOpen}
-				/>
+				<!-- Bottom control row: aspect (left), scrubber/transport (centre), view (right). -->
+				<div class="flex w-full max-w-280 items-center gap-2 px-2">
+					<AspectPicker {store} />
+					<div class="min-w-0 flex-1">
+						<VideoPlayerControls {store} {videoEl} showScrubber={!timelineOpen} />
+					</div>
+					<StageViewControls {store} {captureFrame} fullscreenTargetEl={previewContainerEl} />
+				</div>
 			</div>
 
 		</div>

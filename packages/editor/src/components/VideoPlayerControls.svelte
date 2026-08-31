@@ -1,35 +1,17 @@
 <script lang="ts">
-import {
-	Camera,
-	LoaderCircle,
-	Maximize2,
-	Minimize2,
-	Pause,
-	Play,
-	Repeat,
-	SkipBack,
-	SkipForward,
-} from "@recast/icons";
+import { Pause, Play, SkipBack, SkipForward } from "@recast/icons";
 import { Kbd } from "@recast/ui/kbd";
-import { toast } from "@recast/ui/sonner";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
 import { onDestroy } from "svelte";
 import { formatTimeByMode, frameStepOutput } from "../lib/editor/time";
 import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
 import type { EditorStore } from "../stores/editor-store.svelte";
-import MarkupControls from "./_components/MarkupControls.svelte";
-import { BAR_BTN, BAR_BTN_DISABLED, BAR_BTN_ON, BAR_GROUP } from "./_components/player-bar.styles";
+import { BAR_BTN, BAR_BTN_ON, BAR_GROUP } from "./_components/player-bar.styles";
 
 interface Props {
 	store: EditorStore;
 	videoEl?: HTMLVideoElement | null;
-	/** Element to request fullscreen on (usually the preview container). */
-	fullscreenTargetEl?: HTMLElement | null;
-	/** PNG blob of the current preview composite; undefined disables Copy-frame (WebGL2 not ready). */
-	captureFrame?: (() => Promise<Blob | null>) | undefined;
-	/** Loop toggle. Just flips the flag here; the editor page does the seek-and-replay (needs audio + `ended`). */
-	loopEnabled?: boolean;
 	/** Whether the timeline is hiding, so this bar owns the scrubbing. Off when
 	 *  the timeline is visible (it is the better scrubber): two scrubbers for one
 	 *  position is redundant, and only the timeline shows cuts/zoom/markup.
@@ -37,44 +19,11 @@ interface Props {
 	showScrubber?: boolean;
 }
 
-let {
-	store,
-	videoEl = null,
-	fullscreenTargetEl = null,
-	captureFrame = undefined,
-	loopEnabled = $bindable(false),
-	showScrubber = true,
-}: Props = $props();
-
-let capturing = $state(false);
-
-// `navigator.clipboard.write` works on Tauri (a secure context); pause first so the captured pixels match.
-async function copyFrameToClipboard() {
-	if (capturing || !captureFrame) return;
-	capturing = true;
-	const wasPlaying = store.isPlaying;
-	if (wasPlaying && videoEl) {
-		videoEl.pause();
-		store.isPlaying = false;
-	}
-	try {
-		const blob = await captureFrame();
-		if (!blob) {
-			toast.error("Couldn't capture frame. Preview isn't ready yet.");
-			return;
-		}
-		await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-		toast.success("Frame copied to clipboard.");
-	} catch (err) {
-		toast.error(`Couldn't copy frame: ${(err as Error)?.message ?? String(err)}`);
-	} finally {
-		capturing = false;
-	}
-}
+let { store, videoEl = null, showScrubber = true }: Props = $props();
 
 let isFullscreen = $state(false);
 
-// Mirror the browser's fullscreen state so the toggle icon reflects reality.
+// Mirror the browser's fullscreen state; the scrubber follows it (fullscreen has no timeline).
 $effect(() => {
 	const handler = () => {
 		isFullscreen = Boolean(document.fullscreenElement);
@@ -82,14 +31,6 @@ $effect(() => {
 	document.addEventListener("fullscreenchange", handler);
 	return () => document.removeEventListener("fullscreenchange", handler);
 });
-
-async function toggleFullscreen() {
-	if (document.fullscreenElement) {
-		await document.exitFullscreen();
-		return;
-	}
-	if (fullscreenTargetEl) await fullscreenTargetEl.requestFullscreen();
-}
 
 // Fullscreen shows only the preview, so without this, leaving it with the timeline open left no transport at all.
 const scrubberVisible = $derived(showScrubber || isFullscreen);
@@ -224,6 +165,9 @@ onDestroy(() => {
 	     children of unequal width, space-between only centres the middle one by
 	     coincidence. flex-1 on both flanks keeps markup truly centred. -->
 	<div class="flex h-8 w-full items-center justify-between gap-2">
+		<!-- Transport + timecode live in the timeline header now; shown here only
+		     when the timeline is hidden or in fullscreen, where nothing else has them. -->
+		{#if scrubberVisible}
 		<div class="flex min-w-0 flex-1 shrink-0 items-center gap-2">
 			<div class={BAR_GROUP}>
 				<Tooltip.Root>
@@ -305,99 +249,8 @@ onDestroy(() => {
 				<span class="text-muted-foreground">{durationFormatted}</span>
 			</div>
 		</div>
-
-		<!-- Centre: drawing tools, directly under the picture they draw on. Empty on
-		     every tab but Markup, so the flanks keep their positions regardless. -->
-		<div class="flex shrink-0 items-center gap-2">
-			<MarkupControls {store} />
-		</div>
-
-		<div class="flex min-w-0 flex-1 shrink-0 items-center justify-end">
-			<div class={BAR_GROUP}>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<!-- A native `disabled` button swallows pointer events, so the two
-						     tooltips that explain WHY it's disabled never fired. The span
-						     carries the trigger; the button inside stays properly disabled. -->
-						{#snippet child({ props })}
-							<span {...props as Record<string, unknown>} class="inline-flex">
-								<button
-									type="button"
-									onclick={copyFrameToClipboard}
-									disabled={!captureFrame || capturing}
-									aria-label="Copy current frame to clipboard"
-									class={cn(BAR_BTN, BAR_BTN_DISABLED)}
-								>
-									{#if capturing}
-										<LoaderCircle size={13} class="animate-spin" />
-									{:else}
-										<Camera size={13} />
-									{/if}
-								</button>
-							</span>
-						{/snippet}
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						{#if capturing}
-							Copying frame…
-						{:else if !captureFrame}
-							Preview isn't ready yet
-						{:else}
-							Copy frame to clipboard
-						{/if}
-					</Tooltip.Content>
-				</Tooltip.Root>
-
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						{#snippet child({ props })}
-							<button
-								{...props}
-								type="button"
-								onclick={() => (loopEnabled = !loopEnabled)}
-								aria-pressed={loopEnabled}
-								aria-label="Loop within the trim"
-								class={cn(BAR_BTN, loopEnabled && [BAR_BTN_ON, "text-primary"])}
-							>
-								<Repeat size={13} />
-							</button>
-						{/snippet}
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						{loopEnabled ? "Looping within the trim" : "Loop within the trim"}
-					</Tooltip.Content>
-				</Tooltip.Root>
-
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<!-- Same disabled-swallows-pointer-events wrapper as Copy frame.
-						     The label flips with state, so no aria-pressed on top of it:
-						     "Exit fullscreen, pressed" is one signal too many. -->
-						{#snippet child({ props })}
-							<span {...props as Record<string, unknown>} class="inline-flex">
-								<button
-									type="button"
-									onclick={toggleFullscreen}
-									disabled={!fullscreenTargetEl}
-									aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-									class={cn(BAR_BTN, BAR_BTN_DISABLED)}
-								>
-									{#if isFullscreen}
-										<Minimize2 size={13} />
-									{:else}
-										<Maximize2 size={13} />
-									{/if}
-								</button>
-							</span>
-						{/snippet}
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						<span class="inline-flex items-center gap-1.5">
-							{isFullscreen ? "Exit fullscreen" : "Fullscreen"} <Kbd>F</Kbd>
-						</span>
-					</Tooltip.Content>
-				</Tooltip.Root>
-			</div>
-		</div>
+		{:else}
+			<div class="flex-1"></div>
+		{/if}
 	</div>
 </div>

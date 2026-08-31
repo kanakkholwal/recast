@@ -4,6 +4,7 @@
 //! pill but never rasterises: the compositor has to draw the glyphs itself, and
 //! sharing one shaper is what keeps the burn-in and the preview on the same
 //! metrics.
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod atlas;
 mod face;

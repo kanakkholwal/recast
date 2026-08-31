@@ -6,7 +6,7 @@
 
 import { originalToOutput, type TimeMap } from "./time-map";
 
-export type ClipKind = "video" | "audio" | "zoom" | "markup" | "caption";
+export type ClipKind = "video" | "audio" | "zoom" | "markup" | "caption" | "camera";
 
 export interface TimelineClip {
 	id: string;
@@ -19,15 +19,54 @@ export interface TimelineClip {
 	selected: boolean;
 	hidden: boolean;
 	locked: boolean;
+	/** Stack level within the row: overlapping clips get distinct lanes. */
+	lane: number;
+}
+
+/** A single keyframe on a property track, positioned in OUTPUT frames. */
+export interface TimelineKeyframe {
+	/** OUTPUT frames. */
+	frame: number;
+	selected: boolean;
+}
+
+/** A property animated over time, drawn as diamonds rather than clip bars.
+ *  `source` names the model/property so the host maps it back to store edits,
+ *  keeping the timeline generic across whatever gains keyframes next. */
+export interface TimelineTrack {
+	source: string;
+	keyframes: TimelineKeyframe[];
 }
 
 /** One header row and the clip(s) drawn on its canvas track. Most rows hold a
- *  single clip; the captions row holds every caption segment. */
+ *  single clip; the captions row holds every caption segment; a track row holds
+ *  keyframes instead of clips. */
 export interface TimelineRow {
 	id: string;
 	kind: ClipKind;
 	label: string;
 	clips: TimelineClip[];
+	/** How many stack levels the clips occupy (1 when none overlap). */
+	laneCount: number;
+	/** Present when the row is a keyframe track (mutually exclusive with clips). */
+	track?: TimelineTrack;
+}
+
+/** First-fit interval packing: each clip drops to the lowest lane whose previous
+ *  clip has already ended, so time-overlapping clips never share a lane. Mutates
+ *  `lane` in place and returns the lane count. */
+export function assignLanes(clips: TimelineClip[]): number {
+	const laneEnds: number[] = [];
+	for (const clip of [...clips].sort((a, b) => a.start - b.start)) {
+		let lane = laneEnds.findIndex((end) => clip.start >= end);
+		if (lane === -1) {
+			lane = laneEnds.length;
+			laneEnds.push(0);
+		}
+		clip.lane = lane;
+		laneEnds[lane] = clip.start + clip.duration;
+	}
+	return Math.max(1, laneEnds.length);
 }
 
 /** Item timed on the ORIGINAL recording axis (segments, zoom, annotations). */
@@ -50,6 +89,18 @@ interface OutputItem {
 	selected?: boolean;
 }
 
+/** A keyframe track fed in by the host: keyframe times on the ORIGINAL axis,
+ *  plus which one (if any) is selected, so the row can highlight it. */
+export interface TrackItem {
+	id: string;
+	source: string;
+	label: string;
+	kind: ClipKind;
+	/** ORIGINAL-axis seconds. */
+	times: number[];
+	selectedTime?: number | null;
+}
+
 export interface TimelineViewModelInput {
 	fps: number;
 	/** Maps original-axis seconds to output-axis seconds. */
@@ -62,6 +113,8 @@ export interface TimelineViewModelInput {
 	captions: OutputItem[];
 	voiceClips: OutputItem[];
 	musicClips: OutputItem[];
+	/** Keyframe tracks (camera today; generic for future animated models). */
+	tracks?: TrackItem[];
 }
 
 function originalClip(
@@ -80,6 +133,7 @@ function originalClip(
 		selected: it.selected ?? false,
 		hidden: it.hidden ?? false,
 		locked: it.locked ?? false,
+		lane: 0,
 	};
 }
 
@@ -93,7 +147,12 @@ function outputClip(kind: ClipKind, it: OutputItem, fps: number): TimelineClip {
 		selected: it.selected ?? false,
 		hidden: false,
 		locked: false,
+		lane: 0,
 	};
+}
+
+function makeRow(id: string, kind: ClipKind, label: string, clips: TimelineClip[]): TimelineRow {
+	return { id, kind, label, clips, laneCount: assignLanes(clips) };
 }
 
 /** Build the row tree: ONE row per type (all its clips laid side by side), in
@@ -103,51 +162,42 @@ export function buildTimelineRows(input: TimelineViewModelInput): TimelineRow[] 
 	const rows: TimelineRow[] = [];
 
 	if (input.segments.length > 0) {
-		rows.push({
-			id: "video",
-			kind: "video",
-			label: input.videoName || "Video",
-			clips: input.segments.map((s) => originalClip("video", s, input)),
-		});
+		const clips = input.segments.map((s) => originalClip("video", s, input));
+		rows.push(makeRow("video", "video", input.videoName || "Video", clips));
 	}
 	if (input.zoomRegions.length > 0) {
-		rows.push({
-			id: "zoom",
-			kind: "zoom",
-			label: "Zoom",
-			clips: input.zoomRegions.map((z) => originalClip("zoom", z, input)),
-		});
+		const clips = input.zoomRegions.map((z) => originalClip("zoom", z, input));
+		rows.push(makeRow("zoom", "zoom", "Zoom", clips));
 	}
 	if (input.annotations.length > 0) {
-		rows.push({
-			id: "markup",
-			kind: "markup",
-			label: "Markup",
-			clips: input.annotations.map((a) => originalClip("markup", a, input)),
-		});
+		const clips = input.annotations.map((a) => originalClip("markup", a, input));
+		rows.push(makeRow("markup", "markup", "Markup", clips));
 	}
 	if (input.captions.length > 0) {
-		rows.push({
-			id: "caption",
-			kind: "caption",
-			label: "Captions",
-			clips: input.captions.map((c) => outputClip("caption", c, input.fps)),
-		});
+		const clips = input.captions.map((c) => outputClip("caption", c, input.fps));
+		rows.push(makeRow("caption", "caption", "Captions", clips));
 	}
 	if (input.voiceClips.length > 0) {
-		rows.push({
-			id: "voice",
-			kind: "audio",
-			label: "Voice",
-			clips: input.voiceClips.map((c) => outputClip("audio", c, input.fps)),
-		});
+		const clips = input.voiceClips.map((c) => outputClip("audio", c, input.fps));
+		rows.push(makeRow("voice", "audio", "Voice", clips));
 	}
 	if (input.musicClips.length > 0) {
+		const clips = input.musicClips.map((c) => outputClip("audio", c, input.fps));
+		rows.push(makeRow("music", "audio", "Music", clips));
+	}
+	for (const t of input.tracks ?? []) {
+		if (t.times.length === 0) continue;
+		const keyframes: TimelineKeyframe[] = t.times.map((sec) => ({
+			frame: originalToOutput(input.map, sec) * input.fps,
+			selected: t.selectedTime != null && Math.abs(sec - t.selectedTime) < 1e-3,
+		}));
 		rows.push({
-			id: "music",
-			kind: "audio",
-			label: "Music",
-			clips: input.musicClips.map((c) => outputClip("audio", c, input.fps)),
+			id: t.id,
+			kind: t.kind,
+			label: t.label,
+			clips: [],
+			laneCount: 1,
+			track: { source: t.source, keyframes },
 		});
 	}
 

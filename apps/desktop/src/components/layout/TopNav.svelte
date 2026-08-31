@@ -14,7 +14,7 @@ import { Button } from "@recast/ui/button";
 import { mode, toggleMode } from "@recast/ui/theme";
 import { cn } from "@recast/ui/utils";
 import { page } from "$app/state";
-import NotchedShelf from "$components/layout/NotchedShelf.svelte";
+import { NotchedShelf } from "@recast/ui/notched-shelf";
 import SidebarAccount from "$components/layout/SidebarAccount.svelte";
 import Logo from "$components/logo.svelte";
 import { launchRecordingPanel } from "$lib/ipc";

@@ -2296,6 +2296,24 @@ pub(crate) async fn run_export_job(
             .unwrap_or_default(),
     );
 
+    // The engine path, opt in. Everything above still runs: it validates the
+    // request and names the output the same way, so the two paths differ only
+    // in who renders. MP4 only, and no progress or cancel yet, which is why it
+    // is not a setting.
+    #[cfg(windows)]
+    if crate::export_engine::enabled() && extension == "mp4" {
+        let frames = crate::export_engine::export_video(
+            &request.render_state,
+            &source_video,
+            &output_path,
+            (target_fps.round().max(1.0) as u32, 1),
+            crate::export_engine::bitrate_for(metadata.width, metadata.height, target_fps),
+        )
+        .map_err(|e| AppError::msg(format!("engine export failed: {e}")))?;
+        log::info!("export[{export_id}] engine path wrote {frames} frames");
+        return Ok(output_path.to_string_lossy().into_owned());
+    }
+
     let asset_cache_dir = app
         .path()
         .app_data_dir()
