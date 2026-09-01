@@ -67,6 +67,8 @@ async function init(src: MediaRef, hPx: number, durationSec?: number): Promise<v
 		Math.round((tileHeightPx * (videoWidth || 1)) / (videoHeight || 1)),
 	);
 	sink = new CanvasSink(track, { width: tileWidth, fit: "contain" });
+	// TEMP diagnostic: confirms the worker parsed the source and its dimensions/duration.
+	console.info("[filmstrip] ready", { videoWidth, videoHeight, videoDurationSec, tileWidth });
 	post({ type: "ready" });
 }
 
@@ -100,7 +102,12 @@ async function decodeOne(req: DecodeRequest): Promise<void> {
 		if (!wrapped && !disposed && req.originalSec > 0.05) {
 			wrapped = await sink.getCanvas(req.originalSec - 0.05);
 		}
-		if (!wrapped || disposed) return;
+		if (disposed) return;
+		if (!wrapped) {
+			// TEMP diagnostic: getCanvas found no frame here (was silent); reveals if decode is the failure.
+			console.warn("[filmstrip] no frame at", req.originalSec.toFixed(2));
+			return;
+		}
 		const src = wrapped.canvas as OffscreenCanvas;
 		const blob = await canvasToJpeg(src);
 		if (disposed) return;

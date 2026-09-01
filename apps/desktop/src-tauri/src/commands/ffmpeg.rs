@@ -280,8 +280,9 @@ pub fn append_camera_overlay_to_complex(
     } = params;
     let (cam, bx, by, bw, bh, mirror) = (*cam, *bx, *by, *bw, *bh, *mirror);
     let hflip = if mirror { "hflip," } else { "" };
-    // Matches the preview's `object-fit: cover`: scale to cover then crop, never stretch a non-square webcam into the square.
-    let cam_cover = format!("scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}");
+    // Cover-crops like the preview's `object-fit`; `exact=1` or an odd bubble snaps to the 4:2:0 grid and alphamerge rejects it.
+    let cam_cover =
+        format!("scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}:exact=1");
 
     let mut stages: Vec<String> = Vec::new();
 
@@ -476,9 +477,27 @@ mod camera_overlay_tests {
         // Parity with `object-fit: cover`: the camera covers and crops; the mask keeps a plain scale, already bw by bh.
         let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &base_params());
         assert!(complex.contains(
-            "[2:v]hflip,scale=200:200:force_original_aspect_ratio=increase,crop=200:200,format=yuva420p[vcam_pre]"
+            "[2:v]hflip,scale=200:200:force_original_aspect_ratio=increase,crop=200:200:exact=1,format=yuva420p[vcam_pre]"
         ));
         assert!(complex.contains("[3:v]format=gray,scale=200:200[vcam_mask]"));
+    }
+
+    /// An odd bubble is the export-killer: without `exact=1` crop snaps the 4:2:0
+    /// camera to 374 while the gray mask stays 375 and alphamerge fails EINVAL.
+    #[test]
+    fn an_odd_bubble_crops_exactly_so_the_mask_still_matches() {
+        for anim in [None, Some(anim())] {
+            let mut p = base_params();
+            p.bubble_w = 375;
+            p.bubble_h = 375;
+            p.anim = anim;
+            let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &p);
+            assert!(
+                complex.contains("crop=375:375:exact=1"),
+                "an odd bubble was cropped onto the chroma grid: {complex}"
+            );
+            assert!(complex.contains("[3:v]format=gray,scale=375:375[vcam_mask]"));
+        }
     }
 
     #[test]
@@ -1935,15 +1954,19 @@ fn probe_native(path: &Path, size_bytes: u64) -> Option<VideoMetadata> {
         duration: info.duration as f64 / TICKS_PER_SECOND,
         width: info.width,
         height: info.height,
-        // A file that does not state a rate is 30, the same stand-in ffprobe's parse falls back to.
+        // Left at 0 when unstated so `usable` refuses the answer; a stand-in rate would silently pin the export's generators to a rate the file never claimed.
         fps: match den > 0 && num > 0 {
             true => f64::from(num) / f64::from(den),
-            false => 30.0,
+            false => 0.0,
         },
         codec: info.codec.clone(),
         size_bytes,
     })
 }
+
+/// Bumped when a probe answer that used to be cached is no longer trusted, so
+/// stale entries cannot outlive the guard that would now refuse them.
+const PROBE_GENERATION: u64 = 1;
 
 #[cfg(not(windows))]
 fn probe_native(_path: &Path, _size_bytes: u64) -> Option<VideoMetadata> {
@@ -1952,10 +1975,11 @@ fn probe_native(_path: &Path, _size_bytes: u64) -> Option<VideoMetadata> {
 
 /// A native answer worth using, or `None` to let ffprobe run.
 ///
-/// A zero-sized video is not an answer: it would size the whole export wrong,
-/// and it is what a reader that opened a file it cannot really read reports.
+/// Every field is load-bearing at export, so a partial answer is refused whole:
+/// Media Foundation describes some containers with no duration and a frame rate
+/// off by an order of magnitude, which pins the composite's generators there.
 fn usable(meta: Option<VideoMetadata>) -> Option<VideoMetadata> {
-    meta.filter(|m| m.width > 0 && m.height > 0)
+    meta.filter(|m| m.width > 0 && m.height > 0 && m.duration > 0.0 && m.fps >= 1.0)
 }
 
 pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
@@ -1964,13 +1988,13 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
     }
 
     // ffprobe costs 100-500 ms cold and its result is immutable per file, so serve it from the file-identity cache.
-    if let Some(cached) = crate::cache::get::<VideoMetadata>("probe", &[path], 0) {
+    if let Some(cached) = crate::cache::get::<VideoMetadata>("probe", &[path], PROBE_GENERATION) {
         return Ok(cached);
     }
 
     let size_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or_default();
     if let Some(meta) = usable(probe_native(path, size_bytes)) {
-        crate::cache::put("probe", &[path], 0, &meta);
+        crate::cache::put("probe", &[path], PROBE_GENERATION, &meta);
         return Ok(meta);
     }
     let path_string = path.to_string_lossy().to_string();
@@ -2037,7 +2061,7 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
                 size_bytes,
             };
             // Only a successful probe is cached; the zeroed fallback below must not be pinned.
-            crate::cache::put("probe", &[path], 0, &meta);
+            crate::cache::put("probe", &[path], PROBE_GENERATION, &meta);
             Ok(meta)
         }
         _ => Ok(VideoMetadata {
@@ -2262,6 +2286,22 @@ mod native_probe_tests {
         assert!(usable(Some(meta(320, 0))).is_none());
         assert!(usable(None).is_none());
         assert!(usable(Some(meta(320, 180))).is_some());
+    }
+
+    /// Media Foundation described a real 1920x1080 recording as 7.7 fps with no
+    /// duration at all, and the export pinned its background generator there.
+    #[test]
+    fn a_native_answer_missing_duration_or_rate_is_refused_so_ffprobe_runs() {
+        let no_duration = VideoMetadata {
+            duration: 0.0,
+            ..meta(1920, 1080)
+        };
+        assert!(usable(Some(no_duration)).is_none());
+        let no_rate = VideoMetadata {
+            fps: 0.0,
+            ..meta(1920, 1080)
+        };
+        assert!(usable(Some(no_rate)).is_none());
     }
 
     /// A file the in-process reader cannot open must fall back rather than be
