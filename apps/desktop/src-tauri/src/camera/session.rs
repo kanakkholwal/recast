@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
 use capturekit::Target;
@@ -309,6 +309,24 @@ const fn keep_pumping(error: &capturekit::CaptureError) -> bool {
     matches!(error, capturekit::CaptureError::Timeout(_))
 }
 
+/// Bound a catch-up burst after a long poll or scheduler stall, so a hitch
+/// duplicates a few frames rather than hundreds in one iteration.
+const MAX_CATCHUP: u64 = 8;
+
+/// When the `k`th paced frame is due. Integer nanoseconds, matching the screen
+/// pacer: truncating to micros ran the schedule measurably fast.
+fn tick_time(base: Instant, k: u64, fps: u64) -> Instant {
+    base + Duration::from_nanos(k.saturating_mul(1_000_000_000) / fps)
+}
+
+/// Paced frames due by `elapsed` beyond the `emitted` already sent, capped at
+/// `max`. The file records this many frames per real second, so one wall-clock
+/// second is always `fps` frames however slowly the webcam delivered.
+fn due_ticks(elapsed: Duration, emitted: u64, fps: u64, max: u64) -> u64 {
+    let due_total = (elapsed.as_nanos() as u64).saturating_mul(fps) / 1_000_000_000;
+    due_total.saturating_sub(emitted).min(max)
+}
+
 fn pump(
     mut capturer: capturekit::Capturer,
     geometry: CameraGeometry,
@@ -317,50 +335,100 @@ fn pump(
     recorder: &Mutex<Option<Recorder>>,
     stop: &AtomicBool,
 ) {
+    let fps = geometry.fps.max(1) as u64;
     let mut packed = opening;
+    send_preview(&packed, geometry, sink);
+
+    let mut pacer_base = Instant::now();
+    let mut emitted: u64 = 0;
+    let mut recording = false;
+
     loop {
-        deliver(&packed, geometry, sink, recorder);
         if stop.load(Ordering::Acquire) {
             break;
         }
-        let frame = match capturer.next_frame(POLL) {
-            Ok(frame) => frame,
+        // The webcam delivers at its own timestamp-less rate; pace the file at the encode rate or an under-delivering camera compresses the clip to a few seconds.
+        let active = recorder_recording(recorder);
+        if active && !recording {
+            pacer_base = Instant::now();
+            emitted = 0;
+        }
+        recording = active;
+
+        // While recording, poll no longer than the next tick so a slow camera still gets duplicates paced out; otherwise block at POLL.
+        let wait = if recording {
+            tick_time(pacer_base, emitted + 1, fps)
+                .saturating_duration_since(Instant::now())
+                .min(POLL)
+        } else {
+            POLL
+        };
+        match capturer.next_frame(wait) {
+            Ok(frame) => {
+                // Size is negotiated once; a short buffer must never reach the encoder.
+                if frame.desc().width == geometry.width && frame.desc().height == geometry.height {
+                    pack_rows_into(
+                        &mut packed,
+                        frame.bytes(),
+                        frame.stride(),
+                        geometry.width,
+                        geometry.height,
+                    );
+                    send_preview(&packed, geometry, sink);
+                }
+            }
             // A USB hiccup holds the last frame rather than tearing the preview down.
-            Err(error) if keep_pumping(&error) => continue,
+            Err(error) if keep_pumping(&error) => {}
             Err(error) => {
                 log::error!("camera preview stopped: {error}");
                 break;
             }
-        };
-        // Size is negotiated once; a short buffer must never reach the encoder.
-        if frame.desc().width != geometry.width || frame.desc().height != geometry.height {
-            continue;
         }
-        pack_rows_into(
-            &mut packed,
-            frame.bytes(),
-            frame.stride(),
-            geometry.width,
-            geometry.height,
-        );
+
+        // One cached frame per elapsed tick, catching up without sleeping so the file's duration tracks wall-clock.
+        if recording {
+            let due = due_ticks(pacer_base.elapsed(), emitted, fps, MAX_CATCHUP);
+            if due > 0 {
+                // Copy the bytes once; a catch-up burst duplicates the identical frame by cloning the Arc, not the buffer.
+                let frame: Arc<[u8]> = packed.as_slice().into();
+                for _ in 0..due {
+                    if !push_recorder(&frame, recorder) {
+                        break;
+                    }
+                    emitted += 1;
+                }
+            }
+        }
     }
     let _ = capturer.stop();
 }
 
-fn deliver(
-    packed: &[u8],
-    geometry: CameraGeometry,
-    sink: &Mutex<FrameSink>,
-    recorder: &Mutex<Option<Recorder>>,
-) {
+/// Whether a recorder is attached and not paused. Read each iteration so pacing
+/// starts when recording begins and stops on pause, without the pump owning the flags.
+fn recorder_recording(recorder: &Mutex<Option<Recorder>>) -> bool {
+    recorder
+        .lock()
+        .ok()
+        .and_then(|held| held.as_ref().map(|rec| !rec.pause.load(Ordering::Acquire)))
+        .unwrap_or(false)
+}
+
+/// Push one paced frame to the file. False when no recorder is attached or it is
+/// paused, so the pacer stops advancing its schedule instead of building a backlog.
+fn push_recorder(frame: &Arc<[u8]>, recorder: &Mutex<Option<Recorder>>) -> bool {
     if let Ok(held) = recorder.lock() {
         if let Some(rec) = held.as_ref() {
             if !rec.pause.load(Ordering::Acquire) {
                 rec.track.mark();
-                rec.pipeline.push(packed.to_vec().into());
+                rec.pipeline.push(frame.clone());
+                return true;
             }
         }
     }
+    false
+}
+
+fn send_preview(packed: &[u8], geometry: CameraGeometry, sink: &Mutex<FrameSink>) {
     // Header patched after: the scaled size is only known once `fit` has run.
     let mut message = vec![0u8; 8];
     let (w, h) = downscale_bgra_into(
@@ -492,7 +560,7 @@ mod tests {
             let seen = seen.clone();
             Box::new(move |message| seen.lock().expect("sink lock").push(message))
         };
-        deliver(&packed, geometry, &Mutex::new(sink), &Mutex::new(None));
+        send_preview(&packed, geometry, &Mutex::new(sink));
 
         let held = seen.lock().expect("sink lock");
         let message = held.first().expect("a frame was delivered");
@@ -500,5 +568,29 @@ mod tests {
         let height = u32::from_le_bytes(message[4..8].try_into().expect("height header"));
         assert_eq!((width, height), (2, 2));
         assert_eq!(message.len(), 8 + (width as usize * height as usize * 4));
+    }
+
+    /// The fix's invariant: a real second is `fps` frames regardless of how few
+    /// the webcam delivered, so the file's duration tracks wall-clock.
+    #[test]
+    fn one_second_is_fps_frames() {
+        assert_eq!(due_ticks(Duration::from_secs(1), 0, 30, 1000), 30);
+        assert_eq!(due_ticks(Duration::from_secs(2), 30, 30, 1000), 30);
+    }
+
+    #[test]
+    fn due_ticks_only_counts_the_unemitted() {
+        // Half a second in, 15 are due; with 15 already sent nothing is owed yet.
+        assert_eq!(due_ticks(Duration::from_millis(500), 0, 30, 1000), 15);
+        assert_eq!(due_ticks(Duration::from_millis(500), 15, 30, 1000), 0);
+    }
+
+    #[test]
+    fn a_stall_cannot_burst_past_the_cap() {
+        // 10s owed at once (a scheduler stall) clamps to the catch-up bound.
+        assert_eq!(
+            due_ticks(Duration::from_secs(10), 0, 30, MAX_CATCHUP),
+            MAX_CATCHUP
+        );
     }
 }

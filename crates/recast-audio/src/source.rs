@@ -35,6 +35,12 @@ impl Samples {
     pub fn data(&self) -> &[f32] {
         &self.data
     }
+
+    /// The samples themselves, for a caller that rewrites them in place rather
+    /// than building a second buffer beside a track that is already gigabytes.
+    pub fn into_data(self) -> Vec<f32> {
+        self.data
+    }
 }
 
 impl SampleSource for Samples {

@@ -29,10 +29,50 @@ pub struct AudioFormat {
     pub config: Vec<u8>,
 }
 
+/// Which track a sample in the interleave order belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lane {
+    Video,
+    Audio,
+}
+
+/// Where one track's sample bytes wait for layout. Spilled, they are appended
+/// in push order and read back in the same order, so no index is needed beyond
+/// the sizes the sample table already carries.
+#[derive(Debug)]
+enum Payloads {
+    Memory(Vec<Vec<u8>>),
+    /// The path is kept so `Drop` can remove it: Windows refuses to unlink a
+    /// file that is still open, so it cannot be dropped at creation the way it
+    /// would be on Unix.
+    Spilled {
+        file: std::fs::File,
+        path: std::path::PathBuf,
+    },
+}
+
+impl Default for Payloads {
+    fn default() -> Self {
+        Self::Memory(Vec::new())
+    }
+}
+
 #[derive(Debug, Default)]
 struct TrackBuffer {
     table: SampleTable,
-    payloads: Vec<Vec<u8>>,
+    payloads: Payloads,
+    /// Set once a spilled file has been rewound for reading.
+    reading: bool,
+    /// The first write that failed, reported at `finish` rather than swallowed.
+    spill_error: Option<std::io::Error>,
+}
+
+impl Drop for TrackBuffer {
+    fn drop(&mut self) {
+        if let Payloads::Spilled { path, .. } = &self.payloads {
+            let _ = std::fs::remove_file(path);
+        }
+    }
 }
 
 impl TrackBuffer {
@@ -45,11 +85,41 @@ impl TrackBuffer {
             is_sync,
             composition_offset,
         });
-        self.payloads.push(data.to_vec());
+        match &mut self.payloads {
+            Payloads::Memory(held) => held.push(data.to_vec()),
+            // A write that fails leaves the table describing bytes that are not there, which `finish` reports rather than writing a torn file.
+            Payloads::Spilled { file, .. } => {
+                if let Err(e) = std::io::Write::write_all(file, data) {
+                    self.spill_error = Some(e);
+                }
+            }
+        }
     }
 
     fn is_empty(&self) -> bool {
         self.table.is_empty()
+    }
+
+    /// Copies sample `index` into `out`, reading forwards for a spilled track.
+    fn write_sample<W: std::io::Write>(
+        &mut self,
+        index: usize,
+        out: &mut W,
+        scratch: &mut Vec<u8>,
+    ) -> std::io::Result<()> {
+        let size = self.table.samples[index].size as usize;
+        match &mut self.payloads {
+            Payloads::Memory(held) => out.write_all(&held[index]),
+            Payloads::Spilled { file, .. } => {
+                if !self.reading {
+                    std::io::Seek::seek(file, std::io::SeekFrom::Start(0))?;
+                    self.reading = true;
+                }
+                scratch.resize(size, 0);
+                std::io::Read::read_exact(file, scratch)?;
+                out.write_all(scratch)
+            }
+        }
     }
 }
 
@@ -117,9 +187,33 @@ impl Mp4Writer {
         self.audio.table.samples.len()
     }
 
-    /// The finished file. `None` when there is nothing to play: no video
-    /// samples, or no parameter sets to decode them with.
-    pub fn finish(mut self) -> Option<Vec<u8>> {
+    /// Hold sample bytes in `dir` instead of in memory, for a mux whose payload
+    /// is too big to keep: a 30-minute export is gigabytes of it.
+    ///
+    /// Call before the first sample. The files are unlinked when the writer
+    /// drops, so a cancelled export leaves nothing behind.
+    pub fn spill_to(&mut self, dir: &std::path::Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dir)?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        for (buffer, name) in [(&mut self.video, "v"), (&mut self.audio, "a")] {
+            let path = dir.join(format!("recast-mux-{stamp}-{name}.bin"));
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .read(true)
+                .write(true)
+                .truncate(true)
+                .open(&path)?;
+            buffer.payloads = Payloads::Spilled { file, path };
+        }
+        Ok(())
+    }
+
+    /// The header and the order its offsets describe. `None` when there is
+    /// nothing to play: no video samples, or no parameter sets to decode them.
+    fn lay_out(&mut self) -> Option<(Vec<u8>, Vec<Lane>)> {
         if self.video.is_empty() {
             return None;
         }
@@ -134,13 +228,14 @@ impl Mp4Writer {
             self.audio = TrackBuffer::default();
         }
 
-        let payload = self.interleave();
+        let order = self.interleave();
+        let payload_len = self.payload_len();
         let ftyp = self.ftyp();
         // moov's size depends on offsets that depend on where mdat lands, so a placeholder pass settles the size first.
-        let mdat_header = mdat_header_len(payload.len());
+        let mdat_header = mdat_header_len(payload_len);
         // Settled before the offsets are known: a payload near 4 GiB would otherwise pick stco in the probe and co64 in the real pass, growing moov and leaving every offset short by that growth.
         let widest = (ftyp.len() + self.moov(&record, 0, true).len() + mdat_header) as u64;
-        let force_64 = widest.saturating_add(payload.len() as u64) > u64::from(u32::MAX);
+        let force_64 = widest.saturating_add(payload_len as u64) > u64::from(u32::MAX);
         let probe = self.moov(&record, 0, force_64);
         let payload_start = (ftyp.len() + probe.len() + mdat_header) as u64;
         let moov = self.moov(&record, payload_start, force_64);
@@ -150,18 +245,69 @@ impl Mp4Writer {
             "the offset pass changed moov's size"
         );
 
-        let mut out = Vec::with_capacity(ftyp.len() + moov.len() + mdat_header + payload.len());
-        out.extend_from_slice(&ftyp);
-        out.extend_from_slice(&moov);
-        write_mdat_header(&mut out, payload.len());
-        out.extend_from_slice(&payload);
+        let mut header = Vec::with_capacity(ftyp.len() + moov.len() + mdat_header);
+        header.extend_from_slice(&ftyp);
+        header.extend_from_slice(&moov);
+        write_mdat_header(&mut header, payload_len);
+        Some((header, order))
+    }
+
+    /// The finished file. `None` when there is nothing to play: no video
+    /// samples, or no parameter sets to decode them with.
+    pub fn finish(mut self) -> Option<Vec<u8>> {
+        let (header, order) = self.lay_out()?;
+        let mut out = Vec::with_capacity(header.len() + self.payload_len());
+        out.extend_from_slice(&header);
+        self.write_payload(&mut out, &order).ok()?;
         Some(out)
     }
 
-    /// Lays both tracks into one payload in rough time order, filling in each
-    /// sample's offset as it goes.
-    fn interleave(&mut self) -> Vec<u8> {
-        let mut payload = Vec::new();
+    /// The finished file, streamed into `out` rather than assembled in memory.
+    ///
+    /// A whole export otherwise sits in RAM twice over at the moment it is
+    /// written: once as the samples and once as the file built from them.
+    pub fn finish_into<W: std::io::Write>(mut self, out: &mut W) -> std::io::Result<bool> {
+        let Some((header, order)) = self.lay_out() else {
+            return Ok(false);
+        };
+        out.write_all(&header)?;
+        self.write_payload(out, &order)?;
+        Ok(true)
+    }
+
+    /// Copies every sample into `out` in interleave order. Each track is read
+    /// strictly forwards, which is what lets the payloads live anywhere.
+    fn write_payload<W: std::io::Write>(
+        &mut self,
+        out: &mut W,
+        order: &[Lane],
+    ) -> std::io::Result<()> {
+        for buffer in [&mut self.video, &mut self.audio] {
+            if let Some(e) = buffer.spill_error.take() {
+                return Err(e);
+            }
+        }
+        let mut scratch = Vec::new();
+        let (mut video_at, mut audio_at) = (0usize, 0usize);
+        for lane in order {
+            let (buffer, at) = match lane {
+                Lane::Video => (&mut self.video, &mut video_at),
+                Lane::Audio => (&mut self.audio, &mut audio_at),
+            };
+            buffer.write_sample(*at, out, &mut scratch)?;
+            *at += 1;
+        }
+        Ok(())
+    }
+
+    /// Which track each sample of `mdat` comes from, in file order, filling in
+    /// every sample's offset as it goes.
+    ///
+    /// An order rather than a payload: the bytes are copied once, straight into
+    /// the output, instead of into an interleave buffer and out of it again.
+    fn interleave(&mut self) -> Vec<Lane> {
+        let mut order = Vec::with_capacity(self.video.table.len() + self.audio.table.len());
+        let mut at = 0u64;
         let (mut video_at, mut audio_at) = (0usize, 0usize);
         let (mut video_time, mut audio_time) = (0.0f64, 0.0f64);
         let video_rate = self.video_format.timescale.max(1) as f64;
@@ -171,29 +317,40 @@ impl Mp4Writer {
             .map(|f| f.sample_rate.max(1) as f64)
             .unwrap_or(1.0);
 
-        while video_at < self.video.payloads.len() || audio_at < self.audio.payloads.len() {
+        while video_at < self.video.table.len() || audio_at < self.audio.table.len() {
             // Whichever track is further behind goes next, so a player reading forward always has both streams to hand.
-            let take_video = audio_at >= self.audio.payloads.len()
-                || (video_at < self.video.payloads.len() && video_time <= audio_time);
+            let take_video = audio_at >= self.audio.table.len()
+                || (video_at < self.video.table.len() && video_time <= audio_time);
             if take_video {
                 let boundary = video_time + INTERLEAVE_SECONDS;
-                while video_at < self.video.payloads.len() && video_time < boundary {
-                    self.video.table.samples[video_at].offset = payload.len() as u64;
-                    payload.extend_from_slice(&self.video.payloads[video_at]);
-                    video_time += self.video.table.samples[video_at].duration as f64 / video_rate;
+                while video_at < self.video.table.len() && video_time < boundary {
+                    let sample = &mut self.video.table.samples[video_at];
+                    sample.offset = at;
+                    at += u64::from(sample.size);
+                    video_time += f64::from(sample.duration) / video_rate;
+                    order.push(Lane::Video);
                     video_at += 1;
                 }
             } else {
                 let boundary = audio_time + INTERLEAVE_SECONDS;
-                while audio_at < self.audio.payloads.len() && audio_time < boundary {
-                    self.audio.table.samples[audio_at].offset = payload.len() as u64;
-                    payload.extend_from_slice(&self.audio.payloads[audio_at]);
-                    audio_time += self.audio.table.samples[audio_at].duration as f64 / audio_rate;
+                while audio_at < self.audio.table.len() && audio_time < boundary {
+                    let sample = &mut self.audio.table.samples[audio_at];
+                    sample.offset = at;
+                    at += u64::from(sample.size);
+                    audio_time += f64::from(sample.duration) / audio_rate;
+                    order.push(Lane::Audio);
                     audio_at += 1;
                 }
             }
         }
-        payload
+        order
+    }
+
+    /// The `mdat` payload's total length, which the header needs before a byte
+    /// of it is written.
+    fn payload_len(&self) -> usize {
+        let sum = |t: &SampleTable| t.samples.iter().map(|s| s.size as usize).sum::<usize>();
+        sum(&self.video.table) + sum(&self.audio.table)
     }
 
     fn ftyp(&self) -> Vec<u8> {

@@ -34,6 +34,8 @@ pub enum Mp4Error {
     Audio(EncodeError),
     #[error("the audio track was already written")]
     AudioTwice,
+    #[error("writing the file: {0}")]
+    Write(std::io::Error),
 }
 
 /// Samples an AAC-LC frame covers. The muxer wants audio durations in samples.
@@ -218,12 +220,36 @@ impl Mp4Sink {
 
     /// Flushes the encoder and returns the finished file.
     pub fn finish(mut self) -> Result<Vec<u8>, Mp4Error> {
+        self.drain_tail()?;
+        self.writer.finish().ok_or(Mp4Error::Empty)
+    }
+
+    /// Flushes the encoder and streams the finished file into `out`.
+    ///
+    /// A whole export otherwise sits in memory twice at the moment it is
+    /// written: once as the samples and once as the file built from them.
+    pub fn finish_into<W: std::io::Write>(mut self, out: &mut W) -> Result<(), Mp4Error> {
+        self.drain_tail()?;
+        match self.writer.finish_into(out) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(Mp4Error::Empty),
+            Err(error) => Err(Mp4Error::Write(error)),
+        }
+    }
+
+    /// Hold sample bytes in `dir` rather than in memory. Call before the first
+    /// frame; a long export is gigabytes of them.
+    pub fn spill_to(&mut self, dir: &std::path::Path) -> Result<(), Mp4Error> {
+        self.writer.spill_to(dir).map_err(Mp4Error::Write)
+    }
+
+    fn drain_tail(&mut self) -> Result<(), Mp4Error> {
         let tail = self.encoder.finish().map_err(|error| Mp4Error::Encode {
             index: self.written,
             error,
         })?;
         self.drain(tail);
-        self.writer.finish().ok_or(Mp4Error::Empty)
+        Ok(())
     }
 
     /// Samples written so far. Lags the frames pushed while the encoder is

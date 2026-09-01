@@ -80,18 +80,22 @@ pub fn spans_are_conformable(spans: &[MappedSpan]) -> bool {
 /// so a project trimmed to start at 10s exported audio from 0s under video
 /// from 10s: the entire file out of sync, not merely drifting.
 #[cfg(windows)]
-fn conform(data: &[f32], rate: u32, channels: u16, spans: &[MappedSpan]) -> Vec<f32> {
+fn conform(data: &mut Vec<f32>, rate: u32, channels: u16, spans: &[MappedSpan]) {
     let frame = channels.max(1) as usize;
     let frames = data.len() / frame;
     let at = |sec: f64| ((sec.max(0.0) * f64::from(rate)).round() as usize).min(frames);
-    let mut out = Vec::with_capacity(data.len());
+    // In place: spans only move samples earlier, so a forward copy cannot overwrite what it has yet to read, and a 30-minute track need not exist twice.
+    let mut kept = 0usize;
     for span in spans {
         let (from, to) = (at(span.orig_start), at(span.orig_end));
-        if to > from {
-            out.extend_from_slice(&data[from * frame..to * frame]);
+        if to <= from {
+            continue;
         }
+        debug_assert!(kept <= from, "the spans ran backwards over one another");
+        data.copy_within(from * frame..to * frame, kept * frame);
+        kept += to - from;
     }
-    out
+    data.truncate(kept * frame);
 }
 
 /// The recording's own tracks. A project captures the microphone and system
@@ -171,7 +175,8 @@ fn conformed(samples: Samples, spans: &[MappedSpan]) -> Samples {
         return samples;
     }
     let (rate, channels) = (samples.sample_rate(), samples.channels());
-    let data = conform(samples.data(), rate, channels, spans);
+    let mut data = samples.into_data();
+    conform(&mut data, rate, channels, spans);
     Samples::new(data, rate, channels)
 }
 
@@ -266,9 +271,9 @@ mod tests {
     #[test]
     fn a_trim_drops_the_audio_before_it() {
         // One second of mono at 4 Hz, each sample naming its own second.
-        let data: Vec<f32> = (0..8).map(|i| i as f32).collect();
-        let out = conform(&data, 4, 1, &[span(1.0, 2.0, 1.0)]);
-        assert_eq!(out, vec![4.0, 5.0, 6.0, 7.0]);
+        let mut data: Vec<f32> = (0..8).map(|i| i as f32).collect();
+        conform(&mut data, 4, 1, &[span(1.0, 2.0, 1.0)]);
+        assert_eq!(data, vec![4.0, 5.0, 6.0, 7.0]);
     }
 
     /// Two surviving stretches are concatenated in play order, which is what a
@@ -276,19 +281,19 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_cut_joins_what_is_left_either_side_of_it() {
-        let data: Vec<f32> = (0..8).map(|i| i as f32).collect();
-        let out = conform(&data, 4, 1, &[span(0.0, 0.5, 1.0), span(1.5, 2.0, 1.0)]);
-        assert_eq!(out, vec![0.0, 1.0, 6.0, 7.0]);
+        let mut data: Vec<f32> = (0..8).map(|i| i as f32).collect();
+        conform(&mut data, 4, 1, &[span(0.0, 0.5, 1.0), span(1.5, 2.0, 1.0)]);
+        assert_eq!(data, vec![0.0, 1.0, 6.0, 7.0]);
     }
 
     /// Interleaved samples must be cut on FRAME boundaries, or the channels swap.
     #[cfg(windows)]
     #[test]
     fn a_stereo_source_is_cut_on_frame_boundaries() {
-        let data: Vec<f32> = vec![0.0, 10.0, 1.0, 11.0, 2.0, 12.0, 3.0, 13.0];
+        let mut data: Vec<f32> = vec![0.0, 10.0, 1.0, 11.0, 2.0, 12.0, 3.0, 13.0];
         // 2 Hz, so 1.0s..2.0s is frames 2 and 3, each a (left, right) pair.
-        let out = conform(&data, 2, 2, &[span(1.0, 2.0, 1.0)]);
-        assert_eq!(out, vec![2.0, 12.0, 3.0, 13.0]);
+        conform(&mut data, 2, 2, &[span(1.0, 2.0, 1.0)]);
+        assert_eq!(data, vec![2.0, 12.0, 3.0, 13.0]);
     }
 
     /// The wrapper is the wiring: `conform` being right is no use if the

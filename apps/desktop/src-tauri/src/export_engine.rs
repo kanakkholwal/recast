@@ -260,17 +260,20 @@ impl Sink {
         match self {
             #[cfg(windows)]
             Self::Native(sink) => {
-                let bytes = sink
-                    .finish()
-                    .map_err(|e| EngineExportError::Encode(e.to_string()))?;
-                // Atomic: a plain write leaves a truncated mp4 under the user's chosen name if the disk fills or the app dies mid-write.
+                // Written through a `.part` and renamed: a plain write leaves a truncated mp4 under the user's chosen name if the disk fills or the app dies mid-write.
                 let tmp = output.with_extension("mp4.part");
-                crate::commands::system::write_atomic(&tmp, output, &bytes).map_err(|error| {
-                    EngineExportError::Write {
-                        path: output.to_path_buf(),
-                        error,
-                    }
-                })
+                let failed = |error: std::io::Error| EngineExportError::Write {
+                    path: output.to_path_buf(),
+                    error,
+                };
+                let file = std::fs::File::create(&tmp).map_err(failed)?;
+                let mut out = std::io::BufWriter::new(file);
+                // Streamed rather than returned: a 30-minute export is gigabytes, and holding the finished file alongside its own samples doubled that.
+                sink.finish_into(&mut out)
+                    .map_err(|e| EngineExportError::Encode(e.to_string()))?;
+                std::io::Write::flush(&mut out).map_err(failed)?;
+                drop(out);
+                std::fs::rename(&tmp, output).map_err(failed)
             }
             Self::Ffmpeg(sink) => sink
                 .finish()
@@ -503,8 +506,12 @@ fn open_sink(
 ) -> Result<Sink, EngineExportError> {
     #[cfg(windows)]
     if !spec.force_ffmpeg {
-        let sink = Mp4Sink::new(width, height, walk, bitrate, SourceColor::default())
+        let mut sink = Mp4Sink::new(width, height, walk, bitrate, SourceColor::default())
             .map_err(|e| EngineExportError::Encode(e.to_string()))?;
+        // Samples wait on disk, not in RAM: 30 minutes of 1080p is gigabytes of them, and they are only read back once, in order.
+        if let Err(e) = sink.spill_to(&std::env::temp_dir()) {
+            log::warn!("engine export: samples stay in memory ({e})");
+        }
         return Ok(Sink::Native(Box::new(sink)));
     }
     let _ = walk;

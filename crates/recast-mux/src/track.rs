@@ -29,6 +29,10 @@ impl SampleTable {
         self.samples.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.samples.len()
+    }
+
     pub fn duration(&self) -> u64 {
         self.samples.iter().map(|s| s.duration as u64).sum()
     }

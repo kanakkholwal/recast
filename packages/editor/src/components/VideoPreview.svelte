@@ -741,10 +741,13 @@ let engineCursorSignature = "";
 function putCameraFrame(timestampUs: number) {
 	if (!engineDriver || !cameraEl) return;
 	if (cameraEl.readyState < 2 || cameraEl.videoWidth === 0) return;
+	// Only re-upload when the element presented a new frame (rVFC). The last frame stays bound and drawn, so a paused or between-frames draw does no GPU copy. Gate off when rVFC is unavailable so the camera never goes blank.
+	if (cameraFrameGated && !cameraFrameReady) return;
 	let frame: VideoFrame | null = null;
 	try {
 		frame = new VideoFrame(cameraEl, { timestamp: timestampUs });
 		engineDriver.putCameraFrame(frame, timestampUs);
+		cameraFrameReady = false;
 	} catch (err) {
 		if (!loggedCameraFrameError) {
 			loggedCameraFrameError = true;
@@ -755,6 +758,27 @@ function putCameraFrame(timestampUs: number) {
 	}
 }
 let loggedCameraFrameError = false;
+let cameraFrameReady = false;
+let cameraFrameGated = false;
+
+// Upload one camera frame per presented frame: rVFC fires on decode and on a completed seek, which a `currentTime` compare would miss (the shown frame lags the property).
+$effect(() => {
+	const el = cameraEl;
+	if (!el || typeof el.requestVideoFrameCallback !== "function") {
+		cameraFrameGated = false;
+		return;
+	}
+	cameraFrameGated = true;
+	let handle = el.requestVideoFrameCallback(function onFrame() {
+		cameraFrameReady = true;
+		requestRedraw();
+		handle = el.requestVideoFrameCallback(onFrame);
+	});
+	return () => {
+		cameraFrameGated = false;
+		el.cancelVideoFrameCallback(handle);
+	};
+});
 
 function syncEngineFrameInputs() {
 	if (!engineDriver) return;
@@ -824,19 +848,20 @@ $effect(() => {
 	});
 });
 
-// `cameraOffsetMs` maps between the tracks; the tolerance avoids re-seeking on micro-jitter between two clocks.
+// Read the store playhead, not the hidden <video>: on the WebCodecs path it is not kept aligned, so the camera would stick at the start. Tolerance avoids re-seeking on micro-jitter.
 $effect(() => {
-	void store.currentTime;
-	if (!cameraEl || !videoEl) return;
-	if (Number.isNaN(videoEl.currentTime)) return;
-	const want = trackTimeAt(videoEl.currentTime, cameraOffsetMs);
+	if (!cameraEl) return;
+	const t = store.currentTime;
+	if (Number.isNaN(t)) return;
+	const want = trackTimeAt(t, cameraOffsetMs);
 	if (Math.abs(cameraEl.currentTime - want) > 0.15) cameraEl.currentTime = want;
 });
 
 $effect(() => {
 	if (!cameraEl) return;
 	if (store.isPlaying) {
-		if (videoEl) cameraEl.currentTime = trackTimeAt(videoEl.currentTime, cameraOffsetMs);
+		// Seed once on play, untracked: subscribing to currentTime would re-seek the playing element ~25Hz and stall its decoder. The tolerance effect above corrects drift.
+		cameraEl.currentTime = trackTimeAt(untrack(() => store.currentTime), cameraOffsetMs);
 		void cameraEl.play().catch(() => {
 			/* rejects without a gesture; the transport will retry */
 		});
