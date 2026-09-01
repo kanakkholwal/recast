@@ -590,7 +590,7 @@ fn merge_overlapping_cuts(cuts: &mut Vec<crate::render::graph::CutRange>) -> boo
     for cut in cuts.drain(..) {
         match merged.last_mut() {
             Some(last) if cut.start < last.end - VALIDATION_EPS => {
-                last.end = last.end;
+                last.end = last.end.max(cut.end);
             }
             _ => merged.push(cut),
         }
@@ -721,9 +721,7 @@ pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<Str
         repairs.push("Cuts past the video end were trimmed".to_string());
     }
 
-    // Timing repairs, where the choice loses or moves footage and so is a
-    // product decision rather than a clamp. Each is the least surprising of the
-    // options: keep what the user can still see, and drop only what is corrupt.
+    // Timing repairs lose or move footage, so each choice is a product decision: keep what is still visible, drop only what is corrupt.
     if s.trim_end > s.trim_start + VALIDATION_EPS {
         let (ts, te) = (s.trim_start, s.trim_end);
 
