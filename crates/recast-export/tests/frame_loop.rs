@@ -304,3 +304,73 @@ fn the_picture_source_is_asked_once_per_output_frame() {
         .expect("rendered");
     assert_eq!(u64::from(pictures.calls), walk.len());
 }
+
+/// A wallpaper scene with nothing bound for it. The compositor would paint the
+/// flat fallback and the export would ship a file missing the background, so
+/// the loop refuses instead. This is the shape that let E-2 ship silently.
+#[test]
+fn a_background_the_host_forgot_to_bind_stops_the_loop() {
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
+    let state = serde_json::from_str(&BASE.replace(
+        r##""backgroundType": "color", "backgroundValue": "#2200ff""##,
+        r##""backgroundType": "wallpaper", "backgroundValue": "wall.png""##,
+    ))
+    .expect("fixture parses");
+    let mut session = Session::new(
+        ctx,
+        to_scene(&state),
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    )
+    .expect("session");
+
+    let failed = FrameLoop::new()
+        .run(
+            &mut session,
+            &mut Flat::new(200),
+            FrameWalk::new(0.04, (30, 1)),
+            ctx,
+            recast_export::Extras::default(),
+            |_, _| Ok::<_, Infallible>(()),
+        )
+        .expect_err("an unbound background is refused");
+
+    let RenderError::MissingInputs { missing, .. } = failed else {
+        panic!("wrong error: {failed}");
+    };
+    assert_eq!(missing.len(), 1, "{missing:?}");
+    assert!(
+        matches!(missing[0], recast_compositor::MissingInput::Background),
+        "{missing:?}"
+    );
+}
+
+/// A decoder past its last frame is not a host that forgot to bind one: the
+/// tail of a walk must still render rather than failing the whole export.
+#[test]
+fn a_source_with_no_picture_left_is_not_a_missing_input() {
+    let Some(ctx) = context() else {
+        if recast_testkit::skip_or_fail("no GPU adapter") {
+            return;
+        }
+        unreachable!("skip_or_fail either panics or says to skip")
+    };
+    let count = FrameLoop::new()
+        .run(
+            &mut session(ctx),
+            &mut NoPictures,
+            FrameWalk::new(0.1, (30, 1)),
+            ctx,
+            recast_export::Extras::default(),
+            |_, _| Ok::<_, Infallible>(()),
+        )
+        .expect("a spent decoder still renders the background");
+    assert!(count > 0);
+}

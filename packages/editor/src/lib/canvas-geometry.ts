@@ -1,6 +1,6 @@
 // Canvas geometry mirrored in the Rust export: comp is source plus uniform padding, and a non-source aspect extends the short axis around a centred comp. Never cropped, so source-pixel coordinates survive aspect changes.
 
-import { aspectRatio, type OutputAspect } from "../stores/editor-store.svelte";
+import { aspectRatio, type OutputAspect } from "./editor/render-state";
 
 export interface CanvasGeometry {
 	/** Final canvas width in source pixels. */
@@ -63,8 +63,9 @@ export function computeCanvasGeometry(
 	canvasW = (canvasW + 1) & ~1;
 	canvasH = (canvasH + 1) & ~1;
 
-	const compX = Math.round((canvasW - compW) / 2);
-	const compY = Math.round((canvasH - compH) / 2);
+	// Floor, not round: an odd source makes the leftover odd, and rounding put the preview one pixel off the exported file. The Rust compositor is the authority.
+	const compX = Math.floor(Math.max(0, canvasW - compW) / 2);
+	const compY = Math.floor(Math.max(0, canvasH - compH) / 2);
 	const videoX = compX + paddingPx;
 	const videoY = compY + paddingPx;
 

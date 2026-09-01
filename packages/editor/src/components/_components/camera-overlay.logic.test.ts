@@ -17,6 +17,7 @@ import {
 	resizeCameraSquare,
 	upsertCameraKeyframe,
 } from "./camera-overlay.logic";
+import placementCases from "../../../../../fixtures/camera-placement.json";
 
 const base = { x: 0.72, y: 0.08, width: 0.22, height: 0.22 };
 
@@ -425,4 +426,36 @@ describe("repairing an over-long recorded move", () => {
 		const frames = keyframesFromMotionSegments([glide(1, 3)], startPlacement);
 		expect(frames.map((f) => f.atSec)).toEqual([1, 3]);
 	});
+});
+
+// Shared with `crates/recast-compositor/src/camera.rs`: the previewed bubble and the burned-in one were three implementations, and D-2 was fixed in only one.
+describe("zoom-follow parity with the Rust compositor", () => {
+	interface Case {
+		base: { x: number; y: number; width: number; height: number };
+		scale: number;
+		cx: number;
+		cy: number;
+		strength: number;
+		aspect: number;
+		expect: { x: number; y: number; width: number; height: number };
+	}
+
+	it("has enough cases to catch a drift", () => {
+		expect((placementCases as Case[]).length).toBeGreaterThanOrEqual(8);
+	});
+
+	for (const [i, c] of (placementCases as Case[]).entries()) {
+		it(`case ${i}: scale ${c.scale} focus (${c.cx},${c.cy}) strength ${c.strength}`, () => {
+			const got = applyZoomFollow(
+				c.base,
+				{ scale: c.scale, cx: c.cx, cy: c.cy },
+				{ enabled: true, strength: c.strength },
+				c.aspect,
+			);
+			expect(got.x).toBeCloseTo(c.expect.x, 12);
+			expect(got.y).toBeCloseTo(c.expect.y, 12);
+			expect(got.width).toBeCloseTo(c.expect.width, 12);
+			expect(got.height).toBeCloseTo(c.expect.height, 12);
+		});
+	}
 });

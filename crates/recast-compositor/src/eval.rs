@@ -197,6 +197,10 @@ pub struct LayerParams {
     /// Painted immediately before this layer. A shadow belongs to its layer:
     /// drawing them all up front put the bubble's under the opaque screen card.
     pub shadow: Option<ShadowParams>,
+    /// Whether this layer samples a decoded picture. Cursor and annotation
+    /// layers are evaluated as cards but drawn by their own passes, so only
+    /// the screen and the camera oblige the host to bind a texture.
+    pub needs_texture: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -510,6 +514,7 @@ impl Evaluator {
             zoom_velocity: self.zoom_velocity(&zooms, output_time),
             cover_fit: false,
             shadow: None,
+            needs_texture: matches!(layer.source, LayerSource::Screen | LayerSource::Camera(_)),
         }
     }
 
@@ -812,6 +817,32 @@ mod tests {
 
     fn screen_layer(params: &FrameParams) -> &LayerParams {
         params.layers.first().expect("a screen layer")
+    }
+
+    /// A cursor layer is evaluated as a card so its zoom and animation resolve
+    /// with everything else, but its pixels come from the sprite pass. Marking
+    /// it as needing a texture makes an export refuse a scene it renders fine.
+    #[test]
+    fn only_the_screen_and_camera_layers_need_a_bound_texture() {
+        let scene = scene_with(r#""cursorEnabled": true,"#);
+        let params = Evaluator::new(&scene, source()).evaluate(&scene, 1.0);
+        let sources: Vec<(bool, bool)> = scene
+            .layers
+            .iter()
+            .filter_map(|l| {
+                let params = params.layers.iter().find(|p| p.id == l.id)?;
+                let picture = matches!(
+                    l.source,
+                    recast_scene::LayerSource::Screen | recast_scene::LayerSource::Camera(_)
+                );
+                Some((picture, params.needs_texture))
+            })
+            .collect();
+        assert!(!sources.is_empty(), "the fixture has no evaluated layers");
+        assert!(
+            sources.iter().all(|(picture, needs)| picture == needs),
+            "{sources:?}"
+        );
     }
 
     #[test]

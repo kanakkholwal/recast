@@ -1,6 +1,6 @@
 use recast_compositor::{
-    BackgroundImage, FrameInputs, LayerInput, RenderSource, Renderable, SourceColor, SourcePlanes,
-    YuvError,
+    BackgroundImage, FrameInputs, LayerInput, MissingInput, RenderSource, Renderable, SourceColor,
+    SourcePlanes, YuvError,
 };
 use recast_gpu::Readback;
 
@@ -62,6 +62,22 @@ pub enum RenderError<P, S> {
         #[source]
         error: S,
     },
+    /// The compositor draws what it is given and skips the rest, so an input
+    /// the host forgot to bind would leave the layer out of the file silently.
+    #[error("nothing was bound for {} at {output_time}s", crate::frames::name_all(.missing))]
+    MissingInputs {
+        output_time: f64,
+        missing: Vec<MissingInput>,
+    },
+}
+
+/// Joins the missing inputs for the error text.
+pub(crate) fn name_all(missing: &[MissingInput]) -> String {
+    missing
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Decoded pictures on the SOURCE axis, which cuts and speed ramps pull away
@@ -186,6 +202,11 @@ impl FrameLoop {
                 .map_err(|error| RenderError::Picture { source_time, error })?;
 
             let mut inputs = FrameInputs::new();
+            // A decoder past the last frame is not a host that forgot to bind one, so those layers are excused from the check below.
+            let mut exhausted: Vec<recast_scene::LayerId> = Vec::new();
+            if picture.is_none() {
+                exhausted.extend(layer);
+            }
             let uploaded = match (picture, layer) {
                 (Some(planes), Some(_)) => Some(self.upload(source, &planes, source_time)?),
                 _ => None,
@@ -226,7 +247,10 @@ impl FrameLoop {
                         })?;
                     match planes {
                         Some(planes) => Some(self.upload_camera(source, &planes, at)?),
-                        None => None,
+                        None => {
+                            exhausted.extend(camera_layer);
+                            None
+                        }
                     }
                 }
                 _ => None,
@@ -245,6 +269,17 @@ impl FrameLoop {
             }
             inputs.set_caption(source.caption_frame(output_time));
 
+            let missing: Vec<_> = inputs
+                .missing_for(&params)
+                .into_iter()
+                .filter(|m| !matches!(m, MissingInput::Layer(id) if exhausted.contains(id)))
+                .collect();
+            if !missing.is_empty() {
+                return Err(RenderError::MissingInputs {
+                    output_time,
+                    missing,
+                });
+            }
             let (target, _) = source.render_to_texture(output_time, &inputs);
             let frame = match self.convert(gpu.device(), gpu.queue(), &target) {
                 true => Frame::Nv12(&self.rgba),

@@ -9,7 +9,7 @@ import { computeCanvasGeometry } from "../lib/canvas-geometry";
 import { CursorSmoother } from "../lib/cursor/smoother";
 import { smoothingStrengthToSigmaMs } from "../lib/cursor/smoothing";
 import { getEditorServices } from "../lib/editor/services";
-import { trackTimeAt } from "../lib/editor/track-offsets";
+import { cameraPlaybackRate, trackTimeAt } from "../lib/editor/track-offsets";
 import { analytics, exportActivity } from "../lib/host-hooks";
 import { AudioStallMonitor, resolveAvSync } from "../lib/playback/av-sync";
 import { PlaybackClock } from "../lib/playback/clock";
@@ -769,6 +769,8 @@ $effect(() => {
 		return;
 	}
 	cameraFrameGated = true;
+	// A remounted element starts un-ready: without this a stale ready from the last element uploads its first draw before rVFC fires.
+	cameraFrameReady = false;
 	let handle = el.requestVideoFrameCallback(function onFrame() {
 		cameraFrameReady = true;
 		requestRedraw();
@@ -853,6 +855,7 @@ $effect(() => {
 	if (!cameraEl) return;
 	const t = store.currentTime;
 	if (Number.isNaN(t)) return;
+	cameraEl.playbackRate = cameraPlaybackRate(store.timeMap, t);
 	const want = trackTimeAt(t, cameraOffsetMs);
 	if (Math.abs(cameraEl.currentTime - want) > 0.15) cameraEl.currentTime = want;
 });
@@ -861,7 +864,9 @@ $effect(() => {
 	if (!cameraEl) return;
 	if (store.isPlaying) {
 		// Seed once on play, untracked: subscribing to currentTime would re-seek the playing element ~25Hz and stall its decoder. The tolerance effect above corrects drift.
-		cameraEl.currentTime = trackTimeAt(untrack(() => store.currentTime), cameraOffsetMs);
+		const t = untrack(() => store.currentTime);
+		cameraEl.playbackRate = cameraPlaybackRate(store.timeMap, t);
+		cameraEl.currentTime = trackTimeAt(t, cameraOffsetMs);
 		void cameraEl.play().catch(() => {
 			/* rejects without a gesture; the transport will retry */
 		});

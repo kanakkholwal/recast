@@ -12,7 +12,9 @@ import {
 	interpolateCursor,
 	resolutionTier,
 	shouldRecoverMbSource,
+	zoomScaleAt,
 } from "./video-preview.logic";
+import zoomCases from "../../../../fixtures/zoom-scale.json";
 
 // A linear-eased region makes the scale a plain lerp, locking the ramp shape without depending on a bezier's curvature.
 function region(overrides: Partial<ZoomRegion> = {}): ZoomRegion {
@@ -236,5 +238,43 @@ describe("overlapping zoom regions", () => {
 			overlapping({ start: 4, end: 6, scale: 3, rampIn: 0, rampOut: 0 }),
 		];
 		expect(evaluateZoomAt(regions, 5).scale).toBeCloseTo(3, 6);
+	});
+});
+
+// Shared with `crates/recast-scene/src/v1/nodes.rs`: the eased ramp is written twice, and a drift means the preview zooms at a rate the file does not.
+describe("zoom ramp parity with the Rust scene", () => {
+	interface Case {
+		ease: Easing;
+		start: number;
+		end: number;
+		scale: number;
+		rampIn: number;
+		rampOut: number;
+		t: number;
+		expect: number;
+	}
+
+	it("has enough cases to catch a drift", () => {
+		expect((zoomCases as Case[]).length).toBeGreaterThanOrEqual(100);
+	});
+
+	// Rust evaluates the bezier in f32 and TypeScript in f64, so the curves agree to single precision, not to the bit.
+	it("eases every case to within single precision", () => {
+		for (const c of zoomCases as Case[]) {
+			const got = zoomScaleAt(
+				region({
+					start: c.start,
+					end: c.end,
+					scale: c.scale,
+					rampIn: c.rampIn,
+					rampOut: c.rampOut,
+					easeIn: c.ease,
+					easeOut: c.ease,
+				}),
+				c.t,
+			);
+			const inForce = c.t > c.start && c.t < c.end;
+			expect(inForce ? got : 1).toBeCloseTo(c.expect, 5);
+		}
 	});
 });

@@ -23,7 +23,9 @@ pub use eval::{
 };
 pub use geometry::{canvas_geometry, parse_aspect_ratio, CanvasGeometry, MAX_PADDING_PCT};
 pub use recast_cursor::{CursorPlacement, CursorSettings, CursorTrack, Highlight};
-pub use render::{BackgroundImage, Compositor, CursorSprite, FrameInputs, LayerInput, RenderStats};
+pub use render::{
+    BackgroundImage, Compositor, CursorSprite, FrameInputs, LayerInput, MissingInput, RenderStats,
+};
 pub use session::{screen_only, OutputSize, Session};
 pub use source::{RenderSource, Renderable};
 pub use text::GlyphQuad;

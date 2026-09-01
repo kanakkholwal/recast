@@ -174,6 +174,57 @@ impl<'a> FrameInputs<'a> {
     pub fn cursor_sprite(&self, slot: CursorSlot) -> Option<CursorSprite<'a>> {
         self.cursor_sprites[slot.index()]
     }
+
+    /// Inputs `params` will draw with that this set does not carry.
+    ///
+    /// The compositor skips what it was not given, so a host that forgets one
+    /// gets a frame missing a layer and no error. A caller that cannot ship
+    /// that (an export) checks this first. The cursor is deliberately absent:
+    /// no sprite draws the dot, which is a look the user can choose.
+    #[must_use]
+    pub fn missing_for(&self, params: &FrameParams) -> Vec<MissingInput> {
+        let mut missing = Vec::new();
+        for layer in &params.layers {
+            if layer.needs_texture
+                && layer.visible
+                && layer.opacity > 0.0
+                && !self.views.contains_key(&layer.id)
+            {
+                missing.push(MissingInput::Layer(layer.id));
+            }
+        }
+        if matches!(params.background, BackgroundParams::Asset { .. }) && self.background.is_none()
+        {
+            missing.push(MissingInput::Background);
+        }
+        for annotation in &params.annotations {
+            let AnnotationShape::Image { w, h, path, .. } = &annotation.shape else {
+                continue;
+            };
+            if *w > 0.0 && *h > 0.0 && self.annotation_image(path).is_none() {
+                missing.push(MissingInput::AnnotationImage(path.to_string()));
+            }
+        }
+        missing
+    }
+}
+
+/// A texture the frame's params call for and [`FrameInputs`] does not hold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MissingInput {
+    Layer(LayerId),
+    Background,
+    AnnotationImage(String),
+}
+
+impl std::fmt::Display for MissingInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Layer(id) => write!(f, "layer {}", id.0),
+            Self::Background => f.write_str("the image background"),
+            Self::AnnotationImage(path) => write!(f, "the annotation image {path}"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -2223,6 +2274,7 @@ mod tests {
     fn layer(motion_blur: f32, zoom_velocity: f32) -> LayerParams {
         LayerParams {
             id: recast_scene::LayerId(0),
+            needs_texture: true,
             visible: true,
             opacity: 1.0,
             transform: crate::Affine2::IDENTITY,
@@ -2267,6 +2319,123 @@ mod tests {
     #[test]
     fn a_violent_ramp_is_capped_rather_than_smearing_the_whole_frame() {
         assert!(streak_length(&layer(1.0, 10_000.0)) <= 0.35);
+    }
+
+    fn frame(layers: Vec<LayerParams>, background: BackgroundParams) -> FrameParams {
+        FrameParams {
+            geometry: crate::geometry::canvas_geometry(1920, 1080, 0.0, None),
+            background,
+            background_blur: 0.0,
+            cursor: None,
+            cursor_draw: None,
+            layers,
+            annotations: Vec::new(),
+            source_time: 0.0,
+        }
+    }
+
+    fn image_annotation(path: &str, w: f32) -> AnnotationParams {
+        AnnotationParams {
+            shape: AnnotationShape::Image {
+                x: 0.0,
+                y: 0.0,
+                w,
+                h: 10.0,
+                radius: 0.0,
+                opacity: 1.0,
+                path: path.into(),
+            },
+            fill: Srgba::opaque(0, 0, 0),
+            stroke: Srgba::opaque(0, 0, 0),
+            stroke_width: 0.0,
+            alpha: 1.0,
+        }
+    }
+
+    #[test]
+    fn a_layer_with_no_bound_texture_is_reported_missing() {
+        let params = frame(
+            vec![layer(0.0, 0.0)],
+            BackgroundParams::Solid(Srgba::opaque(0, 0, 0)),
+        );
+        let missing = FrameInputs::new().missing_for(&params);
+        assert_eq!(missing, vec![MissingInput::Layer(recast_scene::LayerId(0))]);
+    }
+
+    /// The compositor never draws these, so demanding a texture for one would
+    /// refuse an export the graph renders correctly.
+    #[test]
+    fn a_hidden_or_transparent_layer_needs_nothing() {
+        let hidden = LayerParams {
+            visible: false,
+            ..layer(0.0, 0.0)
+        };
+        let clear = LayerParams {
+            opacity: 0.0,
+            ..layer(0.0, 0.0)
+        };
+        let params = frame(
+            vec![hidden, clear],
+            BackgroundParams::Solid(Srgba::opaque(0, 0, 0)),
+        );
+        assert!(FrameInputs::new().missing_for(&params).is_empty());
+    }
+
+    #[test]
+    fn an_asset_background_with_nothing_bound_is_reported_missing() {
+        let asset = BackgroundParams::Asset {
+            kind: "image".into(),
+            value: "wall.png".into(),
+        };
+        let params = frame(Vec::new(), asset);
+        assert_eq!(
+            FrameInputs::new().missing_for(&params),
+            vec![MissingInput::Background]
+        );
+    }
+
+    /// A solid or gradient background reads no texture, so it must not be
+    /// confused with the asset case that does.
+    #[test]
+    fn a_solid_background_needs_no_image() {
+        let params = frame(Vec::new(), BackgroundParams::Solid(Srgba::opaque(0, 0, 0)));
+        assert!(FrameInputs::new().missing_for(&params).is_empty());
+    }
+
+    #[test]
+    fn an_image_annotation_with_no_upload_is_reported_by_its_path() {
+        let mut params = frame(Vec::new(), BackgroundParams::Solid(Srgba::opaque(0, 0, 0)));
+        params.annotations = vec![image_annotation("logo.png", 10.0)];
+        assert_eq!(
+            FrameInputs::new().missing_for(&params),
+            vec![MissingInput::AnnotationImage("logo.png".into())]
+        );
+    }
+
+    /// `draw_annotation_image` returns before touching the inputs for an empty
+    /// rect, so requiring an upload for one would refuse a drawable frame.
+    #[test]
+    fn a_zero_width_image_annotation_needs_no_upload() {
+        let mut params = frame(Vec::new(), BackgroundParams::Solid(Srgba::opaque(0, 0, 0)));
+        params.annotations = vec![image_annotation("logo.png", 0.0)];
+        assert!(FrameInputs::new().missing_for(&params).is_empty());
+    }
+
+    /// No sprite draws the dot, which is a look the user picks, so a cursor
+    /// must never make a frame unrenderable.
+    #[test]
+    fn a_cursor_without_a_sprite_is_not_a_missing_input() {
+        let mut params = frame(Vec::new(), BackgroundParams::Solid(Srgba::opaque(0, 0, 0)));
+        params.cursor_draw = Some(CursorDraw {
+            x: 10.0,
+            y: 10.0,
+            alpha: 1.0,
+            slot: CursorSlot::Rest,
+            sprite_px: 32.0,
+            dot_radius_px: 8.0,
+            highlight: None,
+        });
+        assert!(FrameInputs::new().missing_for(&params).is_empty());
     }
 
     #[test]

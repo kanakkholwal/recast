@@ -1,3 +1,5 @@
+import { spanAtOriginal, type TimeMap } from "../timeline/time-map";
+
 /**
  * How far each companion capture track starts after video frame 0, measured at
  * record time by the Rust session. Every device comes up at its own instant, so
@@ -52,4 +54,19 @@ export function resolveTrackOffsets(wire: TrackOffsetsWire | null | undefined): 
  */
 export function trackTimeAt(timelineSec: number, offsetMs: number): number {
 	return Math.max(0, timelineSec - offsetMs / 1000);
+}
+
+/** HTMLMediaElement.playbackRate accepts this range; a segment speed outside it throws. */
+const MIN_RATE = 0.0625;
+const MAX_RATE = 16;
+
+/**
+ * The rate to run the camera `<video>` at so its 1x free-run matches the output
+ * speed at `originalSec`: a 2x segment plays the bubble 2x, keeping it synced
+ * through speed ramps. Clamped to what the element accepts; removed or unmapped
+ * time falls back to 1x.
+ */
+export function cameraPlaybackRate(map: TimeMap, originalSec: number): number {
+	const speed = spanAtOriginal(map, originalSec)?.speed ?? 1;
+	return Math.max(MIN_RATE, Math.min(MAX_RATE, speed));
 }

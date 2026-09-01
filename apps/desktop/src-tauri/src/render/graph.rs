@@ -6,87 +6,10 @@ use super::node_types::{BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNo
 
 pub use recast_scene::v1::{CutRange, RenderState, SegmentSpeed};
 
-/// Final-canvas geometry, mirroring `lib/canvas-geometry.ts` exactly. The
-/// preview and the export must agree on the same numbers — if they
-/// diverge the rendered file won't match what the user previews.
-#[derive(Debug, Clone, Copy)]
-pub struct CanvasGeometry {
-    pub canvas_w: u32,
-    pub canvas_h: u32,
-    pub video_x: u32,
-    pub video_y: u32,
-    pub video_w: u32,
-    pub video_h: u32,
-    pub padding_px: u32,
-    pub comp_x: u32,
-    pub comp_y: u32,
-    pub comp_w: u32,
-    pub comp_h: u32,
-}
-
-/// Parse the OutputAspect tag into a width/height ratio. `None` keeps
-/// the canvas aligned to source dims (the v1 default).
-fn parse_aspect_ratio(label: Option<&str>) -> Option<f64> {
-    match label.unwrap_or("source") {
-        "16:9" => Some(16.0 / 9.0),
-        "9:16" => Some(9.0 / 16.0),
-        "1:1" => Some(1.0),
-        "1.91:1" => Some(1.91),
-        _ => None,
-    }
-}
-
-pub fn compute_canvas_geometry(
-    src_w: u32,
-    src_h: u32,
-    padding_pct: f64,
-    output_aspect: Option<&str>,
-) -> CanvasGeometry {
-    let pct = padding_pct.clamp(0.0, 20.0);
-    let shorter = src_w.min(src_h) as f64;
-    let padding_px = ((shorter * pct) / 100.0).round() as u32;
-
-    let comp_w = src_w + padding_px * 2;
-    let comp_h = src_h + padding_px * 2;
-
-    let mut canvas_w = comp_w;
-    let mut canvas_h = comp_h;
-    if let Some(target) = parse_aspect_ratio(output_aspect) {
-        if comp_w > 0 && comp_h > 0 {
-            let comp_aspect = comp_w as f64 / comp_h as f64;
-            if comp_aspect > target {
-                // Comp is wider than target → extend HEIGHT.
-                canvas_h = ((comp_w as f64) / target).round() as u32;
-            } else if comp_aspect < target {
-                // Comp is narrower → extend WIDTH.
-                canvas_w = ((comp_h as f64) * target).round() as u32;
-            }
-        }
-    }
-
-    // Even alignment so H.264 / pad filter behave.
-    canvas_w = (canvas_w + 1) & !1;
-    canvas_h = (canvas_h + 1) & !1;
-
-    let comp_x = canvas_w.saturating_sub(comp_w) / 2;
-    let comp_y = canvas_h.saturating_sub(comp_h) / 2;
-    let video_x = comp_x + padding_px;
-    let video_y = comp_y + padding_px;
-
-    CanvasGeometry {
-        canvas_w,
-        canvas_h,
-        video_x,
-        video_y,
-        video_w: src_w,
-        video_h: src_h,
-        padding_px,
-        comp_x,
-        comp_y,
-        comp_w,
-        comp_h,
-    }
-}
+// One authority for the composite's rects. The graph and the compositor each held a copy, which is how the camera bubble's crop went odd in one and not the other and alphamerge refused the frame.
+pub use recast_compositor::{
+    canvas_geometry as compute_canvas_geometry, parse_aspect_ratio, CanvasGeometry,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct SourceVideoMetadata {

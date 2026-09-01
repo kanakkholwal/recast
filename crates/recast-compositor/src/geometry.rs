@@ -77,6 +77,35 @@ pub fn canvas_geometry(
 mod tests {
     use super::*;
 
+    /// Shared with `packages/editor/src/lib/canvas-geometry.test.ts`. Both
+    /// copies assert the same numbers, so neither can drift on its own.
+    const PARITY: &str = include_str!("../../../fixtures/canvas-geometry.json");
+
+    #[test]
+    fn the_typescript_preview_computes_the_same_canvas() {
+        let cases: serde_json::Value = serde_json::from_str(PARITY).expect("the fixture parses");
+        let cases = cases.as_array().expect("an array of cases");
+        assert!(cases.len() >= 8, "too few cases to catch a drift");
+        for case in cases {
+            let got = canvas_geometry(
+                case["srcW"].as_u64().expect("srcW") as u32,
+                case["srcH"].as_u64().expect("srcH") as u32,
+                case["paddingPct"].as_f64().expect("paddingPct"),
+                case["outputAspect"].as_str(),
+            );
+            let want = &case["expect"];
+            let mine = serde_json::json!({
+                "canvasW": got.canvas_w, "canvasH": got.canvas_h,
+                "videoX": got.video_x, "videoY": got.video_y,
+                "videoW": got.video_w, "videoH": got.video_h,
+                "paddingPx": got.padding_px,
+                "compX": got.comp_x, "compY": got.comp_y,
+                "compW": got.comp_w, "compH": got.comp_h,
+            });
+            assert_eq!(&mine, want, "case {case}");
+        }
+    }
+
     #[test]
     fn no_padding_and_no_aspect_is_the_source_size() {
         let g = canvas_geometry(1920, 1080, 0.0, None);

@@ -695,6 +695,10 @@ pub fn export_video(
                 error: SinkStop::Cancelled,
                 ..
             } => EngineExportError::Cancelled,
+            // Declined, not failed: the graph draws every layer, so a file with one missing is worse than a slower export.
+            missing @ recast_export::RenderError::MissingInputs { .. } => {
+                EngineExportError::Unsupported(missing.to_string())
+            }
             other => EngineExportError::Render(other.to_string()),
         })?;
 

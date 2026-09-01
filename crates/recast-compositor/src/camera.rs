@@ -7,9 +7,9 @@ use crate::geometry::CanvasGeometry;
 const DRIFT_MAX: f64 = 0.18;
 /// Fractions of the base bubble width. Locked to `CAMERA_SHADOW_*` in
 /// `camera-overlay.logic.ts`, which sizes in `cqmin`.
-const SHADOW_BLUR_FRACTION: f64 = 0.14;
-const SHADOW_OFFSET_FRACTION: f64 = 0.05;
-const SHADOW_MAX_OPACITY: f64 = 0.6;
+pub const SHADOW_BLUR_FRACTION: f64 = 0.14;
+pub const SHADOW_OFFSET_FRACTION: f64 = 0.05;
+pub const SHADOW_MAX_OPACITY: f64 = 0.6;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BubbleParams {
@@ -83,7 +83,7 @@ pub fn placement_at(
 
 /// Ramps over the CAMERA's own duration and easing, not the zoom's, so the
 /// bubble can grow slower than the zoom it is reacting to.
-fn activation(region: &ZoomRegion, t: f64, duration: f64, easing: Easing) -> f64 {
+pub fn activation(region: &ZoomRegion, t: f64, duration: f64, easing: Easing) -> f64 {
     if region.hidden || t <= region.start || t >= region.end {
         return 0.0;
     }
@@ -93,7 +93,9 @@ fn activation(region: &ZoomRegion, t: f64, duration: f64, easing: Easing) -> f64
     rising.min(falling)
 }
 
-fn follow_scale_at(
+/// The first active region's effective `(scale, cx, cy)` for the bubble's own
+/// ramp, which is not the zoom's.
+pub fn follow_scale_at(
     regions: &[&ZoomRegion],
     t: f64,
     duration: f64,
@@ -248,6 +250,43 @@ pub fn bubble_shadow(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Shared with `camera-overlay.logic.test.ts`. The preview's bubble and the
+    /// exported one are two implementations of one rule.
+    const PARITY: &str = include_str!("../../../fixtures/camera-placement.json");
+
+    #[test]
+    fn the_typescript_preview_places_the_bubble_the_same_way() {
+        let cases: serde_json::Value = serde_json::from_str(PARITY).expect("the fixture parses");
+        let cases = cases.as_array().expect("an array of cases");
+        assert!(cases.len() >= 8, "too few cases to catch a drift");
+        for case in cases {
+            let num = |v: &serde_json::Value| v.as_f64().expect("a number");
+            let read = |v: &serde_json::Value| CameraPlacement {
+                x: num(&v["x"]),
+                y: num(&v["y"]),
+                width: num(&v["width"]),
+                height: num(&v["height"]),
+            };
+            let got = follow_placement(
+                &read(&case["base"]),
+                num(&case["scale"]),
+                num(&case["cx"]),
+                num(&case["cy"]),
+                num(&case["strength"]),
+                num(&case["aspect"]),
+            );
+            let want = read(&case["expect"]);
+            let close = |a: f64, b: f64| (a - b).abs() < 1e-12;
+            assert!(
+                close(got.x, want.x)
+                    && close(got.y, want.y)
+                    && close(got.width, want.width)
+                    && close(got.height, want.height),
+                "case {case}: got {got:?}"
+            );
+        }
+    }
 
     fn geometry() -> CanvasGeometry {
         crate::geometry::canvas_geometry(1000, 500, 0.0, None)

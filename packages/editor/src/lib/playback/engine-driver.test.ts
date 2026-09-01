@@ -112,6 +112,19 @@ describe("frame ring", () => {
 		expect(engine.setLayerRingCapacity).toHaveBeenLastCalledWith(9, 6);
 	});
 
+	/** A camera toggle (or any edit) changes the scene but keeps the screen layer
+	 *  id. Rebuilding the ring then would drop the bound frame and flash the
+	 *  screen black, so the populated ring must survive an unchanged id. */
+	it("keeps the ring across a scene change that does not move the screen layer id", async () => {
+		const d = await driver();
+		d.syncScene(state(4));
+		d.setScreenRingCapacity(6);
+		expect(engine.setLayerRingCapacity).toHaveBeenCalledTimes(1);
+		d.syncScene(state(8));
+		d.setScreenRingCapacity(6);
+		expect(engine.setLayerRingCapacity).toHaveBeenCalledTimes(1);
+	});
+
 	/** Right after a cut the post-cut GOP has not decoded yet. Holding the last
 	 *  frame is what stops the picture flashing the background at every cut. */
 	it("holds the last bound frame when nothing new qualifies", async () => {
@@ -190,6 +203,18 @@ describe("camera frames", () => {
 		d.syncScene(state(8));
 		d.putCameraFrame({} as VideoFrame, 2000);
 		expect(engine.setLayerRingCapacity).toHaveBeenLastCalledWith(9, 1);
+	});
+
+	/** Toggling the overlay changes the scene but keeps the camera layer id, so
+	 *  the one-slot ring must not be rebuilt — that would drop the bound frame. */
+	it("keeps the camera ring across a scene change that does not move the camera layer id", async () => {
+		const d = await driver();
+		d.syncScene(state(4));
+		d.putCameraFrame({} as VideoFrame, 1000);
+		expect(engine.setLayerRingCapacity).toHaveBeenCalledTimes(1);
+		d.syncScene(state(8));
+		d.putCameraFrame({} as VideoFrame, 2000);
+		expect(engine.setLayerRingCapacity).toHaveBeenCalledTimes(1);
 	});
 
 	it("refuses a frame while the scene has no camera layer", async () => {

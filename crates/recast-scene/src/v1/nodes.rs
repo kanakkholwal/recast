@@ -331,7 +331,34 @@ impl Default for CameraOverlaySettings {
 
 #[cfg(test)]
 mod tests {
-    use super::{Annotation, AnnotationAnchor, AnnotationKind};
+    use super::{Annotation, AnnotationAnchor, AnnotationKind, ZoomRegion};
+
+    /// Shared with `packages/editor/src/components/video-preview.logic.test.ts`.
+    /// The eased zoom curve is written twice, and a drift means the preview
+    /// ramps at a rate the exported file does not.
+    const ZOOM_PARITY: &str = include_str!("../../../../fixtures/zoom-scale.json");
+
+    #[test]
+    fn the_typescript_preview_eases_the_zoom_the_same_way() {
+        let cases: serde_json::Value =
+            serde_json::from_str(ZOOM_PARITY).expect("the fixture parses");
+        let cases = cases.as_array().expect("an array of cases");
+        assert!(cases.len() >= 100, "too few cases to catch a drift");
+        for case in cases {
+            let region: ZoomRegion = serde_json::from_value(serde_json::json!({
+                "start": case["start"], "end": case["end"], "scale": case["scale"],
+                "rampIn": case["rampIn"], "rampOut": case["rampOut"],
+                "easeIn": case["ease"], "easeOut": case["ease"],
+            }))
+            .expect("region");
+            let want = case["expect"].as_f64().expect("expect");
+            let got = region.scale_at(case["t"].as_f64().expect("t"));
+            assert!(
+                (got - want).abs() < 1e-12,
+                "case {case}: got {got}, want {want}"
+            );
+        }
+    }
 
     // Guards the IPC contract: a key mismatch silently drops the feature at export, as `segmentAnims` once did.
     #[test]
