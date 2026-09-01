@@ -108,6 +108,7 @@ pub struct CursorSprite<'a> {
 }
 
 /// The decoded wallpaper or image background. Separate from `LayerInput` because it is a static asset that is cover-fitted, so its own size matters and a decoded frame's never does.
+#[derive(Clone, Copy)]
 pub struct BackgroundImage<'a> {
     pub view: &'a wgpu::TextureView,
     pub width: u32,

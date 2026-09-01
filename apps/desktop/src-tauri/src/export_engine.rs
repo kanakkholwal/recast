@@ -302,30 +302,90 @@ pub fn burn_in_for(state: &RenderState, burn: bool) -> Option<CaptionTrack> {
     (!track.is_empty()).then_some(track)
 }
 
-/// What this scene asks for that [`recast_export::FrameLoop`] cannot supply.
+/// Every image annotation this scene names, decoded and uploaded once.
 ///
-/// It fills `FrameInputs` with the screen view and the caption frame only, so
-/// anything else in the scene renders as absent, not as an error: an export
-/// would quietly lose the user's cursor, camera or wallpaper.
-fn unfeedable_layers(state: &RenderState) -> Option<&'static str> {
-    if state.cursor_enabled {
-        return Some("the cursor overlay");
+/// One that will not decode is skipped rather than fatal, which is what the
+/// FFmpeg graph does: a single unreadable overlay must not lose a good export.
+fn upload_annotation_images(
+    ctx: &recast_gpu::GpuContext,
+    state: &RenderState,
+) -> Vec<(String, wgpu::TextureView)> {
+    let mut uploaded: Vec<(String, wgpu::TextureView)> = Vec::new();
+    for annotation in &state.annotations {
+        let recast_scene::v1::nodes::AnnotationKind::Image { path, .. } = &annotation.kind else {
+            continue;
+        };
+        if path.is_empty() || uploaded.iter().any(|(seen, _)| seen == path) {
+            continue;
+        }
+        match upload_background(ctx, Path::new(path)) {
+            Ok((texture, _, _)) => uploaded.push((
+                path.clone(),
+                texture.create_view(&wgpu::TextureViewDescriptor::default()),
+            )),
+            Err(e) => log::warn!("engine export: image annotation {path}: {e}"),
+        }
     }
-    if state.camera_overlay.enabled {
-        return Some("the camera overlay");
-    }
-    if matches!(state.background_type.as_str(), "image" | "wallpaper") {
-        return Some("an image background");
-    }
-    if state.annotations.iter().any(|a| {
-        matches!(
-            a.kind,
-            recast_scene::v1::nodes::AnnotationKind::Image { .. }
-        )
-    }) {
-        return Some("an image annotation");
-    }
-    None
+    uploaded
+}
+
+/// The wallpaper or image file this scene's background names, if it names one.
+fn background_image(state: &RenderState) -> Option<PathBuf> {
+    matches!(state.background_type.as_str(), "image" | "wallpaper")
+        .then(|| PathBuf::from(&state.background_value))
+        .filter(|path| path.exists())
+}
+
+/// Decodes the background once and uploads it. Static, so it is bound to every
+/// frame rather than re-uploaded per frame.
+fn upload_background(
+    ctx: &recast_gpu::GpuContext,
+    path: &Path,
+) -> Result<(wgpu::Texture, u32, u32), EngineExportError> {
+    let decoded = image::open(path)
+        .map_err(|e| EngineExportError::Unsupported(format!("{}: {e}", path.display())))?
+        .to_rgba8();
+    let (width, height) = (decoded.width().max(1), decoded.height().max(1));
+    let texture = ctx.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some("engine-background"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    ctx.queue().write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &decoded,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(width * 4),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    Ok((texture, width, height))
+}
+
+/// The recording's cursor samples, as `write_cursor_track` wrote them.
+fn load_cursor_track(path: &Path) -> Result<recast_cursor::CursorTrack, String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// One engine export, beyond the scene itself.
@@ -359,6 +419,12 @@ pub struct ExportSpec<'a> {
     /// preview does too; passing the editor's keeps video and audio on the one
     /// timeline instead of two independently derived ones.
     pub time_map: Option<recast_time::TimeMap>,
+    /// The recording's cursor samples. The compositor draws the pointer from
+    /// these alone, so without them a cursor-enabled export renders none.
+    pub cursor_track: Option<&'a Path>,
+    /// The camera recording and how far it lags the screen, in seconds. The
+    /// bubble is a separate file composited at export, not part of the capture.
+    pub camera: Option<(&'a Path, f64)>,
 }
 
 /// Whether the engine writes a finished file on this platform, or an
@@ -404,20 +470,25 @@ fn pixel_layout(width: u32, height: u32) -> PixelLayout {
 
 /// The recording, opened through the backend this export chose.
 fn open_pictures(spec: &ExportSpec<'_>) -> Result<Pictures, EngineExportError> {
+    open_video(spec, spec.input)
+}
+
+/// `path` through the same backend, so the camera decodes the way the screen does.
+fn open_video(spec: &ExportSpec<'_>, path: &Path) -> Result<Pictures, EngineExportError> {
     let refuse = |message: String| EngineExportError::OpenInput {
-        path: spec.input.to_path_buf(),
+        path: path.to_path_buf(),
         message,
     };
     #[cfg(windows)]
     if !spec.force_ffmpeg {
-        let reader = VideoPictures::open(spec.input, SourceColor::default())
-            .map_err(|e| refuse(e.to_string()))?;
+        let reader =
+            VideoPictures::open(path, SourceColor::default()).map_err(|e| refuse(e.to_string()))?;
         return Ok(Pictures::Native(Box::new(reader)));
     }
     let program = spec.ffmpeg.ok_or_else(|| {
         refuse("no FFmpeg was given, and this platform has no in-process decoder".into())
     })?;
-    let reader = FfmpegPictures::open(program, spec.input, spec.source, SourceColor::default())
+    let reader = FfmpegPictures::open(program, path, spec.source, SourceColor::default())
         .map_err(|e| refuse(e.to_string()))?;
     Ok(Pictures::Ffmpeg(Box::new(reader)))
 }
@@ -505,12 +576,46 @@ pub fn export_video(
         }
         session.set_caption_track(Some(captions.track.clone()));
     }
-    // Declined rather than rendered without them: the frame loop feeds only the screen layer and the caption frame, so these would be silently missing from a file that otherwise looked finished.
-    if let Some(missing) = unfeedable_layers(state) {
-        return Err(EngineExportError::Unsupported(format!(
-            "{missing} still needs the FFmpeg graph"
-        )));
+    if state.cursor_enabled {
+        match spec.cursor_track.map(load_cursor_track) {
+            Some(Ok(track)) => session.set_cursor_track(Some(track)),
+            // Refused rather than rendered bare: a cursor the user asked for and cannot see is a wrong file, not a degraded one.
+            Some(Err(e)) => {
+                return Err(EngineExportError::Unsupported(format!(
+                    "the cursor track did not load: {e}"
+                )))
+            }
+            None => {
+                return Err(EngineExportError::Unsupported(
+                    "the cursor is enabled but no track was given".into(),
+                ))
+            }
+        }
     }
+    // Opened through the same backend as the screen, so the two decode alike.
+    let mut camera = match (state.camera_overlay.enabled, spec.camera) {
+        (true, Some((path, offset))) => Some((open_video(spec, path)?, offset)),
+        // A camera the user enabled and cannot see is a wrong file, not a degraded one.
+        (true, None) => {
+            return Err(EngineExportError::Unsupported(
+                "the camera overlay is enabled but no recording was given".into(),
+            ))
+        }
+        (false, _) => None,
+    };
+    let background = match background_image(state) {
+        Some(path) => Some(upload_background(ctx, &path)?),
+        None => None,
+    };
+    let annotation_images = upload_annotation_images(ctx, state);
+    // The view outlives the borrow `Extras` takes, so it is built before the loop.
+    let background_view = background.as_ref().map(|(texture, w, h)| {
+        (
+            texture.create_view(&wgpu::TextureViewDescriptor::default()),
+            *w,
+            *h,
+        )
+    });
     // The editor's map wins over the scene-derived one: they can differ, and the muxed audio follows the editor's.
     if let Some(map) = spec.time_map.clone() {
         session.set_time_map(Some(map));
@@ -555,8 +660,21 @@ pub fn export_video(
             &mut session,
             &mut pictures,
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras {
+                background: background_view.as_ref().map(|(view, w, h)| {
+                    recast_compositor::BackgroundImage {
+                        view,
+                        width: *w,
+                        height: *h,
+                        needs_srgb_decode: true,
+                    }
+                }),
+                camera: camera
+                    .as_mut()
+                    .map(|(pictures, offset)| (pictures, *offset)),
+                annotations: &annotation_images,
+            },
             |index, frame| {
                 sink.push(index, frame)?;
                 match progress(index + 1, total) {
@@ -606,41 +724,37 @@ pub fn export_video(
 mod tests {
     use super::*;
 
-    fn plain() -> RenderState {
-        RenderState {
-            trim_start: 0.0,
-            trim_end: 10.0,
-            padding: 0.0,
-            cursor_enabled: false,
-            background_type: "color".into(),
-            background_value: "#111111".into(),
+    /// The compositor draws the pointer from the track alone, so the only way
+    /// it reaches an engine export is this file. Written and read back rather
+    /// than hand-built: the desktop and the crate have separate `CursorTrack`
+    /// types, and a field rename on either side would silently export no cursor.
+    #[test]
+    fn a_written_cursor_track_loads_into_the_shape_the_engine_draws_from() {
+        let dir = std::env::temp_dir().join(format!("recast-cursor-track-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch");
+        let path = dir.join("cursor.json");
+        let track = crate::cursor::CursorTrack {
+            samples: vec![crate::cursor::CursorSample {
+                timestamp_us: 500_000,
+                x: 640,
+                y: 360,
+                velocity_x: 0.0,
+                velocity_y: 0.0,
+                visible: true,
+                left_down: true,
+                right_down: false,
+            }],
             ..Default::default()
-        }
-    }
+        };
+        crate::cursor::write_cursor_track(&path, &track).expect("the track writes");
 
-    /// The frame loop feeds the screen layer and the caption frame and nothing
-    /// else, so these have to be refused rather than silently left out of a
-    /// file that otherwise looks finished.
-    #[test]
-    fn a_scene_the_frame_loop_cannot_feed_is_declined() {
-        let mut cursor = plain();
-        cursor.cursor_enabled = true;
-        assert_eq!(unfeedable_layers(&cursor), Some("the cursor overlay"));
-
-        let mut camera = plain();
-        camera.camera_overlay.enabled = true;
-        assert_eq!(unfeedable_layers(&camera), Some("the camera overlay"));
-
-        let mut wallpaper = plain();
-        wallpaper.background_type = "wallpaper".into();
-        assert_eq!(unfeedable_layers(&wallpaper), Some("an image background"));
-    }
-
-    /// A plain colour background with no overlays is exactly what the loop does
-    /// feed, so it must not be refused or the flag would render nothing at all.
-    #[test]
-    fn a_scene_of_only_screen_and_captions_is_accepted() {
-        assert_eq!(unfeedable_layers(&plain()), None);
+        let loaded = load_cursor_track(&path).expect("the engine reads it back");
+        assert_eq!(loaded.samples.len(), 1, "the samples did not survive");
+        let sample = loaded.samples[0];
+        assert_eq!(sample.timestamp_us, 500_000);
+        assert!((sample.x - 640.0).abs() < 1e-9 && (sample.y - 360.0).abs() < 1e-9);
+        assert!(sample.visible && sample.left_down);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The flag crosses the bridge as `engineExport`, and a rename on either
@@ -955,6 +1069,8 @@ mod live {
             ffmpeg: None,
             force_ffmpeg: false,
             time_map: None,
+            cursor_track: None,
+            camera: None,
             audio_sources: crate::export_audio::RecordingAudio {
                 video: Some(input),
                 ..Default::default()
@@ -1019,8 +1135,8 @@ mod live {
                 &mut session,
                 &mut Bright(bytes),
                 walk,
-                ctx.device(),
-                ctx.queue(),
+                ctx,
+                recast_export::Extras::default(),
                 |index, rgba| sink.push(index, rgba),
             )
             .expect("rendered");
@@ -1064,8 +1180,8 @@ mod live {
                 &mut session,
                 &mut Bright(bytes),
                 walk,
-                ctx.device(),
-                ctx.queue(),
+                ctx,
+                recast_export::Extras::default(),
                 |index, rgba| sink.push(index, rgba),
             )
             .expect("rendered");
@@ -1125,6 +1241,234 @@ mod live {
             decoded += 1;
         }
         assert_eq!(decoded, frames, "frames went missing between the two files");
+    }
+
+    /// The pointer is drawn from the track and nothing else, so a track that
+    /// never reaches the session exports a file with no cursor in it. Compared
+    /// against the same export with the cursor off: only the pointer differs.
+    #[test]
+    fn the_cursor_track_reaches_the_exported_picture() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("cursor");
+        let input = scratch.0.join("in.mp4");
+        record(&ctx, &input, 0.3);
+
+        let track_path = scratch.0.join("cursor.json");
+        let mut track = crate::cursor::CursorTrack::default();
+        // Still, centred and visible for the whole clip, so every frame carries it.
+        for step in 0..10 {
+            track.samples.push(crate::cursor::CursorSample {
+                timestamp_us: step * 30_000,
+                x: (SRC_W / 2) as i32,
+                y: (SRC_H / 2) as i32,
+                velocity_x: 0.0,
+                velocity_y: 0.0,
+                visible: true,
+                left_down: false,
+                right_down: false,
+            });
+        }
+        crate::cursor::write_cursor_track(&track_path, &track).expect("the track writes");
+
+        let base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.3,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        let plain_out = scratch.0.join("plain.mp4");
+        export_video(&base, &spec(&input, &plain_out), &mut never_cancels).expect("plain export");
+
+        let with_cursor = RenderState {
+            cursor_enabled: true,
+            ..base.clone()
+        };
+        let cursor_out = scratch.0.join("cursor.mp4");
+        let mut cursor_spec = spec(&input, &cursor_out);
+        cursor_spec.cursor_track = Some(&track_path);
+        export_video(&with_cursor, &cursor_spec, &mut never_cancels).expect("cursor export");
+
+        let plain = std::fs::read(&plain_out).expect("plain file");
+        let drawn = std::fs::read(&cursor_out).expect("cursor file");
+        assert_ne!(
+            plain, drawn,
+            "the cursor track changed nothing, so it never reached the session"
+        );
+    }
+
+    /// The wallpaper is a static asset the frame loop has to be handed; without
+    /// it the background fell back to flat grey and the export looked finished.
+    #[test]
+    fn an_image_background_reaches_the_exported_picture() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("wallpaper");
+        let input = scratch.0.join("in.mp4");
+        record(&ctx, &input, 0.2);
+
+        // Padding, so the background is visible around the card rather than covered.
+        let base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            padding: 15.0,
+            cursor_enabled: false,
+            background_type: "color".into(),
+            background_value: "#111111".into(),
+            ..Default::default()
+        };
+        let plain_out = scratch.0.join("plain.mp4");
+        export_video(&base, &spec(&input, &plain_out), &mut never_cancels).expect("plain export");
+
+        // A saturated wallpaper, so it cannot be mistaken for the flat fallback.
+        let wallpaper = scratch.0.join("wall.png");
+        let mut pixels = image::RgbaImage::new(64, 64);
+        for pixel in pixels.pixels_mut() {
+            *pixel = image::Rgba([255, 0, 255, 255]);
+        }
+        pixels.save(&wallpaper).expect("the wallpaper writes");
+
+        let with_image = RenderState {
+            background_type: "wallpaper".into(),
+            background_value: wallpaper.to_string_lossy().into_owned(),
+            ..base.clone()
+        };
+        let image_out = scratch.0.join("image.mp4");
+        export_video(&with_image, &spec(&input, &image_out), &mut never_cancels)
+            .expect("wallpaper export");
+
+        let plain = std::fs::read(&plain_out).expect("plain file");
+        let drawn = std::fs::read(&image_out).expect("wallpaper file");
+        assert_ne!(
+            plain, drawn,
+            "the wallpaper changed nothing, so it never reached the frame loop"
+        );
+    }
+
+    /// Image annotations are also how a text annotation reaches an export: the
+    /// WebView rasterises it to a PNG first. Missing them lost the user's text.
+    #[test]
+    fn an_image_annotation_reaches_the_exported_picture() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("annotation");
+        let input = scratch.0.join("in.mp4");
+        record(&ctx, &input, 0.2);
+
+        let overlay = scratch.0.join("mark.png");
+        let mut pixels = image::RgbaImage::new(32, 32);
+        for pixel in pixels.pixels_mut() {
+            *pixel = image::Rgba([0, 255, 0, 255]);
+        }
+        pixels.save(&overlay).expect("the overlay writes");
+
+        let base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        let plain_out = scratch.0.join("plain.mp4");
+        export_video(&base, &spec(&input, &plain_out), &mut never_cancels).expect("plain export");
+
+        let mut marked = base.clone();
+        marked.annotations = vec![serde_json::from_value(serde_json::json!({
+            "id": "i1", "start": 0.0, "end": 10.0,
+            "kind": {"kind": "image", "x": 0.1, "y": 0.1, "w": 0.5, "h": 0.5,
+                     "path": overlay.to_string_lossy()}
+        }))
+        .expect("annotation")];
+        let marked_out = scratch.0.join("marked.mp4");
+        export_video(&marked, &spec(&input, &marked_out), &mut never_cancels)
+            .expect("annotated export");
+
+        let plain = std::fs::read(&plain_out).expect("plain file");
+        let drawn = std::fs::read(&marked_out).expect("annotated file");
+        assert_ne!(
+            plain, drawn,
+            "the image annotation changed nothing, so it never reached the frame loop"
+        );
+    }
+
+    /// The bubble is a separate recording composited at export, so without the
+    /// second picture source the camera layer rendered as nothing at all.
+    #[test]
+    fn the_camera_recording_reaches_the_exported_picture() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("camera");
+        let input = scratch.0.join("in.mp4");
+        let camera = scratch.0.join("cam.mp4");
+        record(&ctx, &input, 0.2);
+        record(&ctx, &camera, 0.2);
+
+        let base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        let plain_out = scratch.0.join("plain.mp4");
+        export_video(&base, &spec(&input, &plain_out), &mut never_cancels).expect("plain export");
+
+        let mut with_camera = base.clone();
+        with_camera.camera_overlay.enabled = true;
+        let camera_out = scratch.0.join("camera.mp4");
+        let mut camera_spec = spec(&input, &camera_out);
+        camera_spec.camera = Some((&camera, 0.0));
+        export_video(&with_camera, &camera_spec, &mut never_cancels).expect("camera export");
+
+        let plain = std::fs::read(&plain_out).expect("plain file");
+        let bubble = std::fs::read(&camera_out).expect("camera file");
+        assert_ne!(
+            plain, bubble,
+            "the camera recording changed nothing, so it never reached the frame loop"
+        );
+    }
+
+    /// A camera the user enabled and cannot see is a wrong file, not a
+    /// degraded one, so a missing recording declines to the FFmpeg graph.
+    #[test]
+    fn a_camera_with_no_recording_declines_instead_of_rendering_none() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("camera-missing");
+        let input = scratch.0.join("in.mp4");
+        let output = scratch.0.join("out.mp4");
+        record(&ctx, &input, 0.2);
+
+        let mut state = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        state.camera_overlay.enabled = true;
+        let failed = export_video(&state, &spec(&input, &output), &mut never_cancels)
+            .expect_err("an enabled camera with no recording cannot be rendered");
+        assert!(matches!(failed, EngineExportError::Unsupported(_)));
+    }
+
+    /// A cursor the user asked for and cannot see is a wrong file, not a
+    /// degraded one, so a missing track declines to the FFmpeg graph.
+    #[test]
+    fn a_cursor_with_no_track_declines_instead_of_rendering_none() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("cursor-missing");
+        let input = scratch.0.join("in.mp4");
+        let output = scratch.0.join("out.mp4");
+        record(&ctx, &input, 0.2);
+
+        let state = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: true,
+            ..Default::default()
+        };
+        let failed = export_video(&state, &spec(&input, &output), &mut never_cancels)
+            .expect_err("an enabled cursor with no track cannot be rendered");
+        assert!(matches!(failed, EngineExportError::Unsupported(_)));
     }
 
     /// The recording has to reach the canvas, not just the frame count.
@@ -1430,6 +1774,8 @@ mod live {
             &ExportSpec {
                 force_ffmpeg: true,
                 time_map: None,
+                cursor_track: None,
+                camera: None,
                 ffmpeg: Some(&ffmpeg),
                 // Video only, as it is on the platforms that take this path.
                 audio: false,
@@ -1503,6 +1849,8 @@ mod live {
             &ExportSpec {
                 force_ffmpeg: true,
                 time_map: None,
+                cursor_track: None,
+                camera: None,
                 ffmpeg: Some(&ffmpeg),
                 audio: false,
                 ..spec(&input, &piped_out)
@@ -1557,6 +1905,8 @@ mod live {
             &ExportSpec {
                 force_ffmpeg: true,
                 time_map: None,
+                cursor_track: None,
+                camera: None,
                 ffmpeg: Some(&ffmpeg),
                 audio: true,
                 ..spec(&input, &output)
@@ -1586,6 +1936,8 @@ mod live {
             &ExportSpec {
                 force_ffmpeg: true,
                 time_map: None,
+                cursor_track: None,
+                camera: None,
                 ffmpeg: None,
                 ..spec(&input, &output)
             },

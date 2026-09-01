@@ -122,8 +122,8 @@ fn record(ctx: &GpuContext, walk: FrameWalk, path: &std::path::Path) {
             &mut session,
             &mut Ramp::new(),
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |index, frame| sink.push(index, frame),
         )
         .expect("rendered");

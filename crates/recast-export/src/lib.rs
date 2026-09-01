@@ -16,7 +16,7 @@ pub mod reader;
 pub mod walk;
 
 pub use ffmpeg::{FfmpegError, FfmpegPictures, FfmpegSink, SourceInfo};
-pub use frames::{Frame, FrameLoop, NoPictures, PictureSource, PixelLayout, RenderError};
+pub use frames::{Extras, Frame, FrameLoop, NoPictures, PictureSource, PixelLayout, RenderError};
 #[cfg(windows)]
 pub use mp4::{Mp4Error, Mp4Sink};
 pub use nv12::{rgba_to_nv12, Nv12Encoder, Nv12Error};

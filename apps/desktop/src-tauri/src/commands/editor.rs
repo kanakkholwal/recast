@@ -1456,6 +1456,32 @@ mod audio_mix_tests {
 }
 
 #[cfg(test)]
+mod mux_codec_tests {
+    use super::*;
+
+    /// A WebM request used to be written as `.mp4` with `-c:v copy`, so the
+    /// user picked WebM and was handed H.264 in an mp4 under that name.
+    #[test]
+    fn a_webm_request_is_written_as_webm_and_re_encoded() {
+        let (extension, video, audio) = mux_codecs("webm");
+        assert_eq!(extension, "webm");
+        assert!(video.contains(&"libvpx-vp9"), "webm cannot carry H.264");
+        assert!(!video.contains(&"copy"), "the intermediate is H.264");
+        assert_eq!(audio, "libopus", "webm cannot carry AAC");
+    }
+
+    /// mp4 is the one container the intermediate can be copied into, and a
+    /// re-encode there would cost a whole pass for nothing.
+    #[test]
+    fn an_mp4_request_still_stream_copies() {
+        let (extension, video, audio) = mux_codecs("mp4");
+        assert_eq!(extension, "mp4");
+        assert!(video.contains(&"copy"));
+        assert_eq!(audio, "aac");
+    }
+}
+
+#[cfg(test)]
 mod validate_tests {
     use super::*;
     use crate::render::graph::{CutRange, SegmentSpeed};
@@ -2217,6 +2243,30 @@ impl Drop for CancelTokenGuard {
 
 /// Muxes a browser-rendered video, already composited and warped, with the export's audio; the video is copied and only the audio graph is rebuilt here.
 /// Reuses `run_export_job`'s queue, cancel and progress lifecycle and the index-parametric audio helpers, so the browser video can sit at input 0.
+/// Container and codecs for a muxed export.
+///
+/// The video intermediate is always H.264 in mp4, so mp4 stream-copies and
+/// anything else has to re-encode; WebM additionally cannot carry AAC.
+fn mux_codecs(format: &str) -> (&'static str, &'static [&'static str], &'static str) {
+    match format {
+        "webm" => (
+            "webm",
+            &[
+                "-c:v",
+                "libvpx-vp9",
+                "-crf",
+                "32",
+                "-b:v",
+                "0",
+                "-row-mt",
+                "1",
+            ],
+            "libopus",
+        ),
+        _ => ("mp4", &["-c:v", "copy"], "aac"),
+    }
+}
+
 pub(crate) async fn run_mux_job(
     app: AppHandle,
     request: ExportRequest,
@@ -2385,7 +2435,9 @@ pub(crate) async fn run_mux_job(
         .map(|s| s.to_string_lossy().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Recast_export".to_string());
-    let output_path = super::unique_path(&output_dir, &source_stem, "mp4");
+    // The rendered intermediate is H.264 in mp4, so only an mp4 request can stream-copy; writing `.mp4` whatever was asked for handed a WebM request the wrong container under the name it picked.
+    let (mux_extension, mux_video, mux_audio) = mux_codecs(&request.format);
+    let output_path = super::unique_path(&output_dir, &source_stem, mux_extension);
 
     // Windows caps the command line at ~32 KB, and many music or voice clips build a long adelay/amix graph.
     let mut mux_script_path: Option<PathBuf> = None;
@@ -2407,18 +2459,14 @@ pub(crate) async fn run_mux_job(
             args.extend(["-filter_complex".to_string(), fc.clone()]);
         }
     }
-    args.extend([
-        "-map".to_string(),
-        "0:v:0".to_string(),
-        "-c:v".to_string(),
-        "copy".to_string(),
-    ]);
+    args.extend(["-map".to_string(), "0:v:0".to_string()]);
+    args.extend(mux_video.iter().map(|a| (*a).to_string()));
     if let Some(ref amap) = audio_map {
         args.extend([
             "-map".to_string(),
             amap.clone(),
             "-c:a".to_string(),
-            "aac".to_string(),
+            mux_audio.to_string(),
             "-b:a".to_string(),
             "192k".to_string(),
             // Pin the delivered format; see the note in export::codec.
@@ -2749,9 +2797,43 @@ pub(crate) async fn run_export_job(
         Some(crate::export_engine::CaptionBurnIn { track, font })
     }
 
-    // Opt in, and mp4 only: everything above still validates and names the output, but the mux pass writes `.mp4` with `-c:v copy`, so a WebM request here got an mp4 under the name it asked for.
-    if crate::export_engine::enabled(request.engine_export) && extension == "mp4" {
-        let direct = crate::export_engine::writes_finished_files();
+    // The camera is its own file composited at export; the shift is the capture lag the graph passes as `-itsoffset`.
+    let camera_engine_input: Option<(PathBuf, f64)> = request
+        .render_state
+        .camera_overlay
+        .enabled
+        .then(|| {
+            project
+                .as_ref()
+                .and_then(|p| p.camera_path.clone())
+                .filter(|path| path.exists())
+                .map(|path| {
+                    let shift = camera_input_offset_secs(track_offsets.camera_ms).unwrap_or(0.0);
+                    (path, shift)
+                })
+        })
+        .flatten();
+    // Opt in. Everything above still runs (it validates the request and names the output the same way), so the two paths differ only in who renders.
+    if crate::export_engine::enabled(request.engine_export) {
+        let engine_map = request.time_map.as_ref().map(|spans| {
+            recast_time::build_time_map(
+                &spans
+                    .iter()
+                    .map(|s| recast_time::TimeSpan {
+                        orig_start: s.orig_start,
+                        orig_end: s.orig_end,
+                        speed: s.speed,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        });
+        // A speed change is a pitch-preserving stretch, which only `atempo` in the mux pass does; the engine renders the video and hands the audio over.
+        let audio_here = engine_map
+            .as_ref()
+            .is_none_or(|map| crate::export_audio::spans_are_conformable(&map.spans));
+        // Direct only for an mp4 the engine can finish itself: GIF needs a palette pass and WebM a VP9 encode, both of which the mux pass owns.
+        let direct =
+            extension == "mp4" && crate::export_engine::writes_finished_files() && audio_here;
         let render_target = match direct {
             true => output_path.clone(),
             false => std::env::temp_dir().join(format!("recast-engine-{export_id}.mp4")),
@@ -2793,19 +2875,11 @@ pub(crate) async fn run_export_job(
                 ffmpeg: Some(crate::ffmpeg::ffmpeg_path()),
                 // The platform decides; the flag exists so the piped path is testable where a native one exists.
                 force_ffmpeg: false,
+                cursor_track: project.as_ref().map(|p| p.cursor_path.as_path()),
+                // Offset the same way the graph's `-itsoffset` does, so the bubble lines up with the take.
+                camera: camera_engine_input.as_ref().map(|(p, o)| (p.as_path(), *o)),
                 // The editor's own map, so the engine warps video on the timeline the muxed audio already follows.
-                time_map: request.time_map.as_ref().map(|spans| {
-                    recast_time::build_time_map(
-                        &spans
-                            .iter()
-                            .map(|s| recast_time::TimeSpan {
-                                orig_start: s.orig_start,
-                                orig_end: s.orig_end,
-                                speed: s.speed,
-                            })
-                            .collect::<Vec<_>>(),
-                    )
-                }),
+                time_map: engine_map.clone(),
                 audio_sources: crate::export_audio::RecordingAudio {
                     video: Some(&source_video),
                     system: project.as_ref().and_then(|p| p.audio_path.as_deref()),

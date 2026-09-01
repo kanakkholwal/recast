@@ -93,8 +93,8 @@ fn export_loop_cost_per_frame() {
                     &mut session,
                     &mut pictures,
                     walk,
-                    ctx.device(),
-                    ctx.queue(),
+                    &ctx,
+                    recast_export::Extras::default(),
                     |_, frame| {
                         // The CPU path still owes the conversion the sink would do.
                         if let recast_export::Frame::Rgba(rgba) = frame {
@@ -271,8 +271,8 @@ fn render_and_readback_cost_per_frame() {
                 &mut session,
                 &mut pictures,
                 walk,
-                ctx.device(),
-                ctx.queue(),
+                &ctx,
+                recast_export::Extras::default(),
                 |_, frame| {
                     let t = std::time::Instant::now();
                     nv12.clear();

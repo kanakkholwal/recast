@@ -133,8 +133,8 @@ fn export_with(ctx: &GpuContext, walk: FrameWalk, path: &std::path::Path, luma: 
             &mut session,
             &mut Flat::new(luma),
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
@@ -298,8 +298,8 @@ fn finishing_drains_every_frame_the_encoder_was_holding() {
             &mut session,
             &mut Flat::new(200),
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
@@ -349,8 +349,8 @@ fn the_gpu_and_cpu_conversions_encode_the_same_file() {
                 &mut session,
                 &mut pictures,
                 walk,
-                ctx.device(),
-                ctx.queue(),
+                ctx,
+                recast_export::Extras::default(),
                 |index, frame| sink.push(index, frame),
             )
             .expect("rendered");
@@ -397,8 +397,8 @@ fn a_packable_shape_really_is_converted_on_the_gpu() {
             &mut session,
             &mut pictures,
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |_, frame| {
                 layouts.push(frame.layout());
                 Ok::<_, std::convert::Infallible>(())

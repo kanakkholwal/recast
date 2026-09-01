@@ -33,6 +33,7 @@ dependencies = [
  "recast-codec-mf",
  "recast-color",
  "recast-compositor",
+ "recast-cursor",
  "recast-export",
  "recast-gpu",
  "recast-mux",

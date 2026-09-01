@@ -20,6 +20,11 @@ pub trait RenderSource {
     /// document has no screen track, which an authored composition may not.
     fn screen_layer(&self) -> Option<LayerId>;
 
+    /// Which layer the camera recording belongs to, where the scene has one.
+    fn camera_layer(&self) -> Option<LayerId> {
+        None
+    }
+
     fn audio(&self) -> &AudioGraph;
 }
 
@@ -59,6 +64,10 @@ impl RenderSource for Session {
 
     fn frame_at(&self, output_time: f64) -> FrameParams {
         self.evaluate(output_time)
+    }
+
+    fn camera_layer(&self) -> Option<LayerId> {
+        Self::camera_layer(self)
     }
 
     fn screen_layer(&self) -> Option<LayerId> {

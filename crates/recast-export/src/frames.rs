@@ -1,5 +1,6 @@
 use recast_compositor::{
-    FrameInputs, LayerInput, RenderSource, Renderable, SourceColor, SourcePlanes, YuvError,
+    BackgroundImage, FrameInputs, LayerInput, RenderSource, Renderable, SourceColor, SourcePlanes,
+    YuvError,
 };
 use recast_gpu::Readback;
 
@@ -84,12 +85,36 @@ impl PictureSource for NoPictures {
     }
 }
 
+/// Everything the loop composites besides the screen recording. Grouped because
+/// they are all optional and all uploaded by the caller.
+pub struct Extras<'a, P> {
+    /// A wallpaper or image background, uploaded once and bound every frame.
+    pub background: Option<BackgroundImage<'a>>,
+    /// The camera recording and how far it lags the screen, in seconds.
+    pub camera: Option<(&'a mut P, f64)>,
+    /// Decoded image annotations, keyed by the path the scene names them by.
+    pub annotations: &'a [(String, wgpu::TextureView)],
+}
+
+impl<P> Default for Extras<'_, P> {
+    fn default() -> Self {
+        Self {
+            background: None,
+            camera: None,
+            annotations: &[],
+        }
+    }
+}
+
 /// Drives a [`Renderable`] over a frame walk, handing each finished frame to a
 /// sink as packed RGBA. Holds its buffers so a whole export allocates once.
 #[derive(Default)]
 pub struct FrameLoop {
     readback: Readback,
     source: Option<(u32, u32, wgpu::Texture)>,
+    /// The camera's own slot: a bubble is a different size from the screen, so
+    /// sharing one texture would reallocate on every frame.
+    camera: Option<(u32, u32, wgpu::Texture)>,
     rgba: Vec<u8>,
     source_allocations: u64,
     /// Set when the caller wants NV12; the pass is built on first use, which is
@@ -118,13 +143,21 @@ impl FrameLoop {
 
     /// Renders every frame in `walk` into `sink`. The pixels are borrowed and
     /// reused, so a sink that keeps a frame must copy it.
+    /// `background` is uploaded by the caller and bound every frame: it is a
+    /// still, so re-uploading it per frame would cost the whole image each time.
+    ///
+    /// `camera` is the camera recording and how far it lags the screen, sampled
+    /// on the same source clock so the bubble stays with the take.
+    ///
+    /// `annotations` are the decoded image annotations, keyed by the path the
+    /// scene names them by, uploaded once for the same reason as `background`.
     pub fn run<R, P, S, E>(
         &mut self,
         source: &mut R,
         pictures: &mut P,
         walk: FrameWalk,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        gpu: &recast_gpu::GpuContext,
+        extras: Extras<'_, P>,
         mut sink: S,
     ) -> Result<u64, RenderError<P::Error, E>>
     where
@@ -133,7 +166,18 @@ impl FrameLoop {
         S: FnMut(u64, Frame<'_>) -> Result<(), E>,
         E: std::error::Error,
     {
+        let Extras {
+            background,
+            camera,
+            annotations,
+        } = extras;
         let layer = RenderSource::screen_layer(source);
+        let camera_layer = RenderSource::camera_layer(source);
+        // Taken apart so the loop can borrow the source without the offset.
+        let (mut camera_pictures, camera_offset) = match camera {
+            Some((pictures, offset)) => (Some(pictures), offset),
+            None => (None, 0.0),
+        };
         for (index, output_time) in walk.iter() {
             let params = source.frame_at(output_time);
             let source_time = params.source_time;
@@ -159,10 +203,50 @@ impl FrameLoop {
                     },
                 );
             }
+            if let Some(image) = &background {
+                inputs.set_background(*image);
+            }
+            for (path, view) in annotations {
+                inputs.set_annotation_image(
+                    path,
+                    LayerInput {
+                        view,
+                        needs_srgb_decode: true,
+                    },
+                );
+            }
+            let camera_uploaded = match (camera_pictures.as_deref_mut(), camera_layer) {
+                (Some(pictures), Some(_)) => {
+                    let at = (source_time + camera_offset).max(0.0);
+                    let planes = pictures
+                        .picture_at(at)
+                        .map_err(|error| RenderError::Picture {
+                            source_time: at,
+                            error,
+                        })?;
+                    match planes {
+                        Some(planes) => Some(self.upload_camera(source, &planes, at)?),
+                        None => None,
+                    }
+                }
+                _ => None,
+            };
+            let camera_view = camera_uploaded
+                .as_ref()
+                .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
+            if let (Some(view), Some(layer)) = (&camera_view, camera_layer) {
+                inputs.set(
+                    layer,
+                    LayerInput {
+                        view,
+                        needs_srgb_decode: false,
+                    },
+                );
+            }
             inputs.set_caption(source.caption_frame(output_time));
 
             let (target, _) = source.render_to_texture(output_time, &inputs);
-            let frame = match self.convert(device, queue, &target) {
+            let frame = match self.convert(gpu.device(), gpu.queue(), &target) {
                 true => Frame::Nv12(&self.rgba),
                 false => Frame::Rgba(&self.rgba),
             };
@@ -188,27 +272,57 @@ impl FrameLoop {
         false
     }
 
-    /// The source texture, resized only when the picture's size changes.
+    /// The screen's texture, resized only when the picture's size changes.
     fn upload<R: Renderable, P, S>(
         &mut self,
         source: &mut R,
         planes: &SourcePlanes<'_>,
         source_time: f64,
     ) -> Result<wgpu::Texture, RenderError<P, S>> {
-        let (width, height) = (planes.width.max(1), planes.height.max(1));
-        let reuse = matches!(&self.source, Some((w, h, _)) if *w == width && *h == height);
-        if !reuse {
+        let mut slot = self.source.take();
+        let (texture, allocated) = Self::upload_into(&mut slot, source, planes, source_time)?;
+        self.source = slot;
+        if allocated {
             self.source_allocations += 1;
-            self.source = Some((width, height, source.source_texture(width, height)));
         }
-        let Some((_, _, texture)) = &self.source else {
-            unreachable!("the source texture was just created")
+        Ok(texture)
+    }
+
+    /// The camera's texture, kept apart from the screen's so neither resizes
+    /// the other every frame.
+    fn upload_camera<R: Renderable, P, S>(
+        &mut self,
+        source: &mut R,
+        planes: &SourcePlanes<'_>,
+        source_time: f64,
+    ) -> Result<wgpu::Texture, RenderError<P, S>> {
+        let mut slot = self.camera.take();
+        let (texture, _) = Self::upload_into(&mut slot, source, planes, source_time)?;
+        self.camera = slot;
+        Ok(texture)
+    }
+
+    /// Fills `slot`'s texture with `planes`, reallocating only on a size change.
+    /// The bool says whether it did, which is what the allocation count means.
+    fn upload_into<R: Renderable, P, S>(
+        slot: &mut Option<(u32, u32, wgpu::Texture)>,
+        source: &mut R,
+        planes: &SourcePlanes<'_>,
+        source_time: f64,
+    ) -> Result<(wgpu::Texture, bool), RenderError<P, S>> {
+        let (width, height) = (planes.width.max(1), planes.height.max(1));
+        let reuse = matches!(&slot, Some((w, h, _)) if *w == width && *h == height);
+        if !reuse {
+            *slot = Some((width, height, source.source_texture(width, height)));
+        }
+        let Some((_, _, texture)) = slot else {
+            unreachable!("the texture was just created")
         };
         let texture = texture.clone();
         source
             .decode_source(planes, &texture)
             .map_err(|error| RenderError::Decode { source_time, error })?;
-        Ok(texture)
+        Ok((texture, !reuse))
     }
 
     /// Source textures allocated. A steady loop over one recording must not

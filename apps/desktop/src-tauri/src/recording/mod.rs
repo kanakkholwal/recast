@@ -242,6 +242,26 @@ mod queue_budget_tests {
 /// default when unset or out of range. The lower bound matches the lowest
 /// cinematic rate; the upper bound covers high-refresh panels (240 Hz) while
 /// rejecting absurd values that would blow the queue budget.
+/// Whether the project really has a captured system-audio track, and what the
+/// user has to be told when it does not.
+///
+/// Silence is written in every failing case so the mux always has a track, and
+/// that file HAS samples: the samples guard cannot tell it apart from a real
+/// capture, so the outcome has to be decided here rather than inferred later.
+fn system_audio_outcome(
+    requested: bool,
+    stopped_ok: bool,
+    has_samples: bool,
+) -> (bool, Option<&'static str>) {
+    if !requested {
+        return (false, None);
+    }
+    if !stopped_ok {
+        return (false, Some("System audio could not be recorded."));
+    }
+    (has_samples, None)
+}
+
 fn resolve_recording_fps(requested: Option<u32>) -> u32 {
     match requested {
         Some(fps) if (24..=240).contains(&fps) => fps,
@@ -856,19 +876,13 @@ impl RecordingManager {
         let mut warnings: Vec<String> = Vec::new();
 
         // The captured file, else a silence fallback so downstream always has a track to mux.
-        let mut has_system_audio = has_system_audio;
+        let stopped_ok = matches!(audio_stop, Some(Ok(_)));
         let audio_path = match audio_stop {
             Some(Ok(path)) => path,
-            Some(Err(e)) => {
-                log::warn!("audio capture stop failed, writing silence: {e}");
-                // Silence is not a captured track, and the samples guard below cannot tell: the file it writes does have samples.
-                has_system_audio = false;
-                warnings.push("System audio could not be recorded.".into());
-                let duration = session.clock.effective_elapsed().as_secs_f64();
-                crate::audio::wav::write_track_silence(&session.audio_path, duration)?;
-                session.audio_path.clone()
-            }
-            None => {
+            other => {
+                if let Some(Err(e)) = other {
+                    log::warn!("audio capture stop failed, writing silence: {e}");
+                }
                 let duration = session.clock.effective_elapsed().as_secs_f64();
                 crate::audio::wav::write_track_silence(&session.audio_path, duration)?;
                 session.audio_path.clone()
@@ -876,14 +890,20 @@ impl RecordingManager {
         };
 
         // WASAPI loopback delivers nothing while no app renders audio, and that header-only WAV breaks the export's filter graph.
-        if !crate::audio::wav::wav_has_samples(&audio_path) {
+        let mut has_samples = crate::audio::wav::wav_has_samples(&audio_path);
+        if !has_samples {
             let duration = session.clock.effective_elapsed().as_secs_f64();
             log::info!(
                 "system audio captured no samples ({}s of silence written instead)",
                 duration.round()
             );
             crate::audio::wav::write_track_silence(&audio_path, duration)?;
-            has_system_audio = false;
+            has_samples = false;
+        }
+        let (has_system_audio, system_warning) =
+            system_audio_outcome(has_system_audio, stopped_ok, has_samples);
+        if let Some(warning) = system_warning {
+            warnings.push(warning.into());
         }
 
         // Microphone path if its capture succeeded.
@@ -1022,6 +1042,42 @@ fn build_stats(pipeline: &RecordingPipeline, duration_ms: u64, nominal_fps: u32)
         dropped_frames,
         duration_ms,
         nominal_fps,
+    }
+}
+
+#[cfg(test)]
+mod system_audio_tests {
+    use super::*;
+
+    /// The failing arms all write silence, and that file has samples, so the
+    /// metadata used to claim a captured system-audio track that was silent and
+    /// warn about nothing.
+    #[test]
+    fn a_capture_that_failed_is_not_reported_as_a_track() {
+        assert_eq!(
+            system_audio_outcome(true, false, true),
+            (false, Some("System audio could not be recorded."))
+        );
+    }
+
+    /// Loopback delivers nothing while no app renders sound. That is not a
+    /// failure worth warning about, but it is not a track either.
+    #[test]
+    fn a_capture_with_no_sound_in_it_is_not_a_track_and_is_not_a_warning() {
+        assert_eq!(system_audio_outcome(true, true, false), (false, None));
+    }
+
+    #[test]
+    fn a_capture_that_worked_is_a_track() {
+        assert_eq!(system_audio_outcome(true, true, true), (true, None));
+    }
+
+    /// The toggle was off or no loopback was reachable; the user was already
+    /// told at start, so the stop must not tell them again.
+    #[test]
+    fn a_track_that_was_never_requested_warns_about_nothing() {
+        assert_eq!(system_audio_outcome(false, false, false), (false, None));
+        assert_eq!(system_audio_outcome(false, true, true), (false, None));
     }
 }
 

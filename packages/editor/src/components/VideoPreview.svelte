@@ -1217,6 +1217,7 @@ const isAnnotationActive = $derived(
 		<video
 			bind:this={cameraEl}
 			src={cameraSrc}
+			crossorigin="anonymous"
 			class="pointer-events-none absolute h-px w-px opacity-0"
 			style="visibility: hidden;"
 			playsinline

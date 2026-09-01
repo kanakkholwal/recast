@@ -98,8 +98,8 @@ fn the_loop_writes_one_frame_per_walk_step() {
             &mut session,
             &mut Flat::new(200),
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |index, _| {
                 seen.push(index);
                 Ok::<_, Infallible>(())
@@ -129,8 +129,8 @@ fn every_frame_is_canvas_sized_rgba() {
             &mut session,
             &mut Flat::new(200),
             FrameWalk::new(0.1, (30, 1)),
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |_, pixels| {
                 lengths.push(pixels.bytes().len());
                 Ok::<_, Infallible>(())
@@ -161,8 +161,8 @@ fn the_uploaded_picture_reaches_the_frame() {
             &mut session(ctx),
             &mut NoPictures,
             FrameWalk::new(0.04, (30, 1)),
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |_, pixels| {
                 without = pixels.bytes().to_vec();
                 Ok::<_, Infallible>(())
@@ -176,8 +176,8 @@ fn the_uploaded_picture_reaches_the_frame() {
             &mut session(ctx),
             &mut Flat::new(235),
             FrameWalk::new(0.04, (30, 1)),
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |_, pixels| {
                 with = pixels.bytes().to_vec();
                 Ok::<_, Infallible>(())
@@ -210,8 +210,8 @@ fn a_steady_loop_allocates_one_source_texture() {
             &mut session(ctx),
             &mut Flat::new(200),
             FrameWalk::new(1.0, (30, 1)),
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |_, _| Ok::<_, Infallible>(()),
         )
         .expect("rendered");
@@ -232,8 +232,8 @@ fn a_sink_failure_stops_the_loop_rather_than_finishing_the_export() {
             &mut session(ctx),
             &mut Flat::new(200),
             FrameWalk::new(1.0, (30, 1)),
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |index, _| {
                 rendered += 1;
                 if index == 3 {
@@ -268,8 +268,8 @@ fn a_document_with_nothing_to_render_writes_no_frames() {
             &mut session(ctx),
             &mut NoPictures,
             FrameWalk::new(0.0, (30, 1)),
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |_, _| {
                 called = true;
                 Ok::<_, Infallible>(())
@@ -297,8 +297,8 @@ fn the_picture_source_is_asked_once_per_output_frame() {
             &mut session(ctx),
             &mut pictures,
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |_, _| Ok::<_, Infallible>(()),
         )
         .expect("rendered");

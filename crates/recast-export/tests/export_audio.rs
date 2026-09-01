@@ -114,8 +114,8 @@ fn export(ctx: &GpuContext, walk: FrameWalk, seconds: f64, with_audio: bool) -> 
             &mut session,
             &mut Flat::new(),
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
@@ -145,8 +145,8 @@ fn export_with(ctx: &GpuContext, walk: FrameWalk, mut mix: Mixer) -> Vec<u8> {
             &mut session,
             &mut Flat::new(),
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |index, frame| sink.push(index, frame),
         )
         .expect("rendered");
@@ -283,8 +283,8 @@ fn writing_the_audio_track_twice_is_refused() {
             &mut session,
             &mut Flat::new(),
             walk,
-            ctx.device(),
-            ctx.queue(),
+            ctx,
+            recast_export::Extras::default(),
             |index, frame| sink.push(index, frame),
         )
         .expect("rendered");

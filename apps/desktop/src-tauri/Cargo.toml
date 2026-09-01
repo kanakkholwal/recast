@@ -57,6 +57,7 @@ recast-color = { path = "../../../crates/recast-color" }
 # The engine, in the shipping binary rather than only in tests. `recast-export`
 # is the one render path; the FFmpeg graph is still the default until parity.
 recast-compositor = { path = "../../../crates/recast-compositor" }
+recast-cursor = { path = "../../../crates/recast-cursor" }
 recast-gpu = { path = "../../../crates/recast-gpu" }
 recast-export = { path = "../../../crates/recast-export" }
 recast-audio = { path = "../../../crates/recast-audio", features = ["scene"] }

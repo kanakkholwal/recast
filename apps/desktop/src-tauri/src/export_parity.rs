@@ -209,6 +209,8 @@ mod live {
             ffmpeg: None,
             force_ffmpeg: false,
             time_map: None,
+            cursor_track: None,
+            camera: None,
             audio_sources: crate::export_audio::RecordingAudio::default(),
         }
     }
@@ -357,8 +359,8 @@ mod live {
                 &mut session,
                 &mut Grey(bytes),
                 walk,
-                ctx.device(),
-                ctx.queue(),
+                ctx,
+                recast_export::Extras::default(),
                 |index, rgba| sink.push(index, rgba),
             )
             .expect("rendered");
@@ -549,8 +551,8 @@ mod live {
                 &mut session,
                 &mut pictures,
                 walk,
-                ctx.device(),
-                ctx.queue(),
+                ctx,
+                recast_export::Extras::default(),
                 |_, rgba| {
                     // RGBA on purpose: the graph is compared against these, and it produces RGBA.
                     frames.push(rgba.bytes().to_vec());
