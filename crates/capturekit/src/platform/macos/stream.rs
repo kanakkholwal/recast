@@ -69,6 +69,7 @@ define_class!(
 impl StreamStopped {
     pub(super) fn new(slot: Arc<dyn Endable>) -> Retained<Self> {
         let this = Self::alloc().set_ivars(slot);
+        // SAFETY: the ivars are set before `init`, which is the order `define_class!` requires.
         unsafe { msg_send![super(this), init] }
     }
 }
@@ -76,6 +77,7 @@ impl StreamStopped {
 impl StreamOutput {
     fn new(slot: Arc<FrameSlot>) -> Retained<Self> {
         let this = Self::alloc().set_ivars(slot);
+        // SAFETY: the ivars are set before `init`, which is the order `define_class!` requires.
         unsafe { msg_send![super(this), init] }
     }
 }
@@ -106,7 +108,9 @@ fn configuration(
     source_rect: Option<Rect>,
     opts: &OpenOptions,
 ) -> Retained<SCStreamConfiguration> {
+    // SAFETY: a plain allocation, taking no arguments to get wrong.
     let config = unsafe { SCStreamConfiguration::new() };
+    // SAFETY: setters on the configuration just allocated, each taking a plain value.
     unsafe {
         config.setWidth(size.width as usize);
         config.setHeight(size.height as usize);
@@ -154,6 +158,7 @@ impl SckSource {
         let output = StreamOutput::new(Arc::clone(&slot));
         let stopped = StreamStopped::new(Arc::clone(&slot) as Arc<dyn Endable>);
 
+        // SAFETY: filter, configuration and delegate are all live for the call, and the stream retains what it keeps.
         let stream = unsafe {
             SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),
@@ -165,6 +170,7 @@ impl SckSource {
         // Serial: frames must reach the slot in daemon order, and a concurrent queue would let two deliveries race the swap.
         let queue = DispatchQueue::new("com.capturekit.frames", DispatchQueueAttr::SERIAL);
         let protocol = ProtocolObject::from_ref(&*output);
+        // SAFETY: the output object and the queue outlive the stream, which retains both.
         unsafe {
             stream.addStreamOutput_type_sampleHandlerQueue_error(
                 protocol,
@@ -207,6 +213,7 @@ impl SckSource {
         let (sc, described) = content::sc_display(display)?;
         let surface = Rect::from_size(described.bounds.width, described.bounds.height);
         let region = fit_region(opts.region, &surface)?;
+        // SAFETY: `sc` is a live display from the shareable-content query and the exclusion list is a fresh empty array.
         let filter = unsafe {
             SCContentFilter::initWithDisplay_excludingWindows(
                 SCContentFilter::alloc(),
@@ -228,6 +235,7 @@ impl SckSource {
         let (sc, described) = content::sc_window(window)?;
         let surface = Rect::from_size(described.bounds.width, described.bounds.height);
         let region = fit_region(opts.region, &surface)?;
+        // SAFETY: `sc` is a live window from the shareable-content query.
         let filter = unsafe {
             SCContentFilter::initWithDesktopIndependentWindow(SCContentFilter::alloc(), &sc)
         };
@@ -257,6 +265,7 @@ pub(super) fn start_capture(stream: &SCStream) -> Result<()> {
         });
         let _ = sender.send(message);
     });
+    // SAFETY: the handler is retained by the block and the channel it sends on outlives the wait below.
     unsafe { stream.startCaptureWithCompletionHandler(Some(&handler)) };
 
     match receiver.recv_timeout(Duration::from_secs(5)) {
@@ -306,6 +315,7 @@ impl FrameSource for SckSource {
         }
         self.stopped = true;
         let handler = block2::RcBlock::new(|_error: *mut objc2_foundation::NSError| {});
+        // SAFETY: the handler ignores its argument and borrows nothing, so it is safe to outlive this call.
         unsafe { self.stream.stopCaptureWithCompletionHandler(Some(&handler)) };
         Ok(())
     }

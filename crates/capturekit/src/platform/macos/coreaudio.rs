@@ -49,6 +49,7 @@ unsafe fn property<T>(
     let mut size =
         u32::try_from(core::mem::size_of::<T>()).map_err(|_| failed("size a property", -1))?;
     let mut addr = address(selector, scope);
+    // SAFETY: `size` is this `T`'s own size, so CoreAudio cannot write past the uninitialised slot.
     let status = unsafe {
         AudioObjectGetPropertyData(
             object,
@@ -75,6 +76,7 @@ fn property_bytes(
 ) -> Result<Vec<u8>> {
     let mut addr = address(selector, scope);
     let mut size = 0u32;
+    // SAFETY: asks only for the size, writing one `u32` into a live local.
     let status = unsafe {
         AudioObjectGetPropertyDataSize(
             object,
@@ -91,6 +93,7 @@ fn property_bytes(
     if size == 0 {
         return Ok(bytes);
     }
+    // SAFETY: `bytes` was sized by the query above and `size` caps the write to it.
     let status = unsafe {
         AudioObjectGetPropertyData(
             object,
@@ -110,6 +113,7 @@ fn property_bytes(
 
 /// A `CFStringRef` property, as a Rust string.
 fn property_string(object: AudioObjectID, selector: u32, what: &'static str) -> Result<String> {
+    // SAFETY: a UID or name selector is documented to answer with a `CFStringRef`.
     let raw: *const CFString =
         unsafe { property(object, selector, kAudioObjectPropertyScopeGlobal, what)? };
     let Some(raw) = NonNull::new(raw.cast_mut()) else {
@@ -158,6 +162,7 @@ fn channels_on(object: AudioObjectID, scope: u32) -> u16 {
 }
 
 fn nominal_rate(object: AudioObjectID) -> u32 {
+    // SAFETY: the nominal sample rate is documented as a `Float64`.
     let rate: f64 = unsafe {
         property(
             object,
@@ -175,6 +180,7 @@ fn nominal_rate(object: AudioObjectID) -> u32 {
 }
 
 fn default_device(selector: u32) -> Option<AudioObjectID> {
+    // SAFETY: both default-device selectors answer with an `AudioObjectID`.
     let id: AudioObjectID = unsafe {
         property(
             kAudioObjectSystemObject as AudioObjectID,

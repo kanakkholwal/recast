@@ -1,7 +1,3 @@
-//! The crate root denies `undocumented_unsafe_blocks`; the 127 blocks here
-//! predate it and are owed real comments, so the opt-out is scoped to them.
-#![allow(clippy::undocumented_unsafe_blocks)]
-
 mod com;
 mod d3d;
 mod dpi;
@@ -67,6 +63,7 @@ pub(crate) fn now() -> capturekit_core::Timestamp {
     use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
     let mut ticks = 0i64;
     let mut frequency = 0i64;
+    // SAFETY: both counters write one `i64` each into live locals.
     unsafe {
         let _ = QueryPerformanceCounter(&mut ticks);
         let _ = QueryPerformanceFrequency(&mut frequency);

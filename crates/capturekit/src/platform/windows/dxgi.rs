@@ -56,18 +56,23 @@ fn rotation_of(rotation: DXGI_MODE_ROTATION) -> Rotation {
 fn qpc_frequency() -> i64 {
     use windows::Win32::System::Performance::QueryPerformanceFrequency;
     let mut freq = 0i64;
+    // SAFETY: writes one `i64` into a live local.
     let _ = unsafe { QueryPerformanceFrequency(&mut freq) };
     freq
 }
 
 /// The output whose monitor handle is `display`, and the adapter driving it.
 fn find_output(display: DisplayId) -> Result<(IDXGIAdapter, IDXGIOutput1, IDXGIOutput)> {
+    // SAFETY: creates a factory from nothing; the interface id comes from the bound type.
     let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }.map_err(d3d::err)?;
     let mut adapter_index = 0;
+    // SAFETY: the factory is live, and an index past the end is reported as an error rather than undefined.
     while let Ok(adapter) = unsafe { factory.EnumAdapters1(adapter_index) } {
         let adapter: IDXGIAdapter1 = adapter;
         let mut output_index = 0;
+        // SAFETY: the adapter is live, and an index past the end is reported as an error.
         while let Ok(output) = unsafe { adapter.EnumOutputs(output_index) } {
+            // SAFETY: a description read on the live output just enumerated.
             let desc = unsafe { output.GetDesc() }.map_err(d3d::err)?;
             if desc.Monitor.0 as u64 == display.0 {
                 let output1: IDXGIOutput1 = output.cast().map_err(d3d::err)?;
@@ -131,7 +136,9 @@ impl DxgiSource {
         }
         let (adapter, output1, output) = find_output(display)?;
         let (device, context) = d3d::create_device(Some(&adapter))?;
+        // SAFETY: a description read on the output this source holds.
         let output_desc = unsafe { output.GetDesc() }.map_err(d3d::err)?;
+        // SAFETY: both the output and the device are live, and a second duplication is refused with an error.
         let duplication = unsafe { output1.DuplicateOutput(&device) }.map_err(|error| {
             // Duplication is one per output per process, and a second open reports only 'the parameter is incorrect'.
             match error.code() {
@@ -143,6 +150,7 @@ impl DxgiSource {
             }
         })?;
 
+        // SAFETY: a description read on the duplication just opened.
         let dupl_desc: DXGI_OUTDUPL_DESC = unsafe { duplication.GetDesc() };
         let surface = Rect::from_size(dupl_desc.ModeDesc.Width, dupl_desc.ModeDesc.Height);
         let region =
@@ -216,6 +224,7 @@ impl DxgiSource {
     fn release_frame(&mut self) {
         if self.holding_frame {
             self.holding_frame = false;
+            // SAFETY: only when a frame is held, which the flag above tracks.
             let _ = unsafe { self.duplication.ReleaseFrame() };
         }
     }
@@ -269,6 +278,7 @@ impl DxgiSource {
         );
         let mut required = 0u32;
         let bytes = (self.dirty_scratch.len() * slot) as u32;
+        // SAFETY: `bytes` is the scratch buffer's own byte length, so DXGI cannot write past it.
         let read = unsafe {
             self.duplication.GetFrameDirtyRects(
                 bytes,
@@ -338,6 +348,7 @@ impl Cursor {
         self.scratch.resize(info.PointerShapeBufferSize as usize, 0);
         let mut required = 0u32;
         let mut shape_info = DXGI_OUTDUPL_POINTER_SHAPE_INFO::default();
+        // SAFETY: the scratch was resized to the reported shape size, and its length caps the write.
         let read = unsafe {
             duplication.GetFramePointerShape(
                 self.scratch.len() as u32,
@@ -404,6 +415,7 @@ impl FrameSource for DxgiSource {
 
         let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
         let mut resource = None;
+        // SAFETY: both out-parameters are live locals, and a timeout is reported as an error.
         let acquired = unsafe {
             self.duplication
                 .AcquireNextFrame(timeout.as_millis() as u32, &mut info, &mut resource)

@@ -572,6 +572,36 @@ fn repair_into(value: &mut f64, min: f64, max: f64, fallback: f64) -> bool {
     false
 }
 
+/// Merges cuts that overlap into one span, in place. `true` when anything moved.
+///
+/// The union, because two overlapping cuts each asked for their own range to go
+/// and neither asked for any of it back. Sorting first makes one pass enough.
+fn merge_overlapping_cuts(cuts: &mut Vec<crate::render::graph::CutRange>) -> bool {
+    if cuts.len() < 2 {
+        return false;
+    }
+    let before = cuts.clone();
+    cuts.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut merged: Vec<crate::render::graph::CutRange> = Vec::with_capacity(cuts.len());
+    for cut in cuts.drain(..) {
+        match merged.last_mut() {
+            Some(last) if cut.start < last.end - VALIDATION_EPS => {
+                last.end = last.end;
+            }
+            _ => merged.push(cut),
+        }
+    }
+    *cuts = merged;
+    cuts.len() != before.len()
+        || cuts.iter().zip(&before).any(|(a, b)| {
+            (a.start - b.start).abs() > VALIDATION_EPS || (a.end - b.end).abs() > VALIDATION_EPS
+        })
+}
+
 /// Clamps the trim window and cuts to the real source duration, repairing `trim_end_exceeds_source` in projects saved before the CFR fix.
 /// Mutates in place and returns a description per change. Run BEFORE `validate_render_state`.
 pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<String> {
@@ -689,6 +719,53 @@ pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<Str
     }
     if before != s.cuts.len() || clamped_cut {
         repairs.push("Cuts past the video end were trimmed".to_string());
+    }
+
+    // Timing repairs, where the choice loses or moves footage and so is a
+    // product decision rather than a clamp. Each is the least surprising of the
+    // options: keep what the user can still see, and drop only what is corrupt.
+    if s.trim_end > s.trim_start + VALIDATION_EPS {
+        let (ts, te) = (s.trim_start, s.trim_end);
+
+        // A reversed range is corruption, not an intent to invert: swapping would invent one.
+        let before = s.zoom_regions.len();
+        s.zoom_regions
+            .retain(|z| z.end > z.start + VALIDATION_EPS && z.start.is_finite());
+        if before != s.zoom_regions.len() {
+            repairs.push("Zoom regions that ended before they started were removed".to_string());
+        }
+
+        // Clipped to the visible part, not moved: a zoom's timing is what it is for.
+        let mut clipped = false;
+        s.zoom_regions.retain_mut(|z| {
+            let start = z.start.max(ts);
+            let end = z.end.min(te);
+            if end <= start + VALIDATION_EPS {
+                clipped = true;
+                return false;
+            }
+            if (start - z.start).abs() > VALIDATION_EPS || (end - z.end).abs() > VALIDATION_EPS {
+                z.start = start;
+                z.end = end;
+                clipped = true;
+            }
+            true
+        });
+        if clipped {
+            repairs.push("Zoom regions were clipped to the trimmed clip".to_string());
+        }
+
+        let before = s.cuts.len();
+        s.cuts
+            .retain(|c| c.end > c.start + VALIDATION_EPS && c.start.is_finite());
+        if before != s.cuts.len() {
+            repairs.push("Cuts that ended before they started were removed".to_string());
+        }
+
+        // Merged, not dropped: two overlapping cuts both asked for the union to go.
+        if merge_overlapping_cuts(&mut s.cuts) {
+            repairs.push("Overlapping cuts were merged".to_string());
+        }
     }
 
     // Clamp each annotation into [trim_start, trim_end] with a forward window; repairs out-of-trim adds.
@@ -1461,6 +1538,116 @@ mod validate_tests {
             "kind": { "kind": "rect", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2, "radius": 0.0 },
         }))
         .unwrap()
+    }
+
+    fn timing_state(cuts: Vec<(f64, f64)>, zooms: Vec<(f64, f64)>) -> RenderState {
+        let mut state = RenderState {
+            trim_start: 1.0,
+            trim_end: 9.0,
+            ..Default::default()
+        };
+        state.cuts = cuts
+            .into_iter()
+            .map(|(start, end)| {
+                serde_json::from_value(serde_json::json!({ "start": start, "end": end }))
+                    .expect("cut")
+            })
+            .collect();
+        state.zoom_regions = zooms
+            .into_iter()
+            .map(|(start, end)| {
+                serde_json::from_value(serde_json::json!({
+                    "start": start, "end": end, "scale": 2.0,
+                    "rampIn": 0.0, "rampOut": 0.0, "centerX": 0.5, "centerY": 0.5
+                }))
+                .expect("zoom")
+            })
+            .collect();
+        state
+    }
+
+    /// Clipped, not moved and not dropped: a zoom's timing is what it is for, so
+    /// the part the user can still see survives where it always was.
+    #[test]
+    fn a_zoom_starting_before_the_trim_keeps_only_the_part_inside_it() {
+        let mut state = timing_state(Vec::new(), vec![(0.0, 4.0)]);
+        let repairs = repair_render_state(&mut state, 10.0);
+
+        assert_eq!(
+            state.zoom_regions.len(),
+            1,
+            "the zoom was dropped, not clipped"
+        );
+        assert!((state.zoom_regions[0].start - 1.0).abs() < 1e-9);
+        assert!((state.zoom_regions[0].end - 4.0).abs() < 1e-9);
+        assert!(
+            !repairs.is_empty(),
+            "a silent repair tells the user nothing"
+        );
+        assert!(validate_render_state(&state, 10.0).is_ok());
+    }
+
+    /// A zoom wholly outside the trim has no visible part left, so clipping it
+    /// would leave a zero-length region the export cannot evaluate.
+    #[test]
+    fn a_zoom_entirely_outside_the_trim_is_dropped() {
+        let mut state = timing_state(Vec::new(), vec![(0.0, 0.5)]);
+        repair_render_state(&mut state, 10.0);
+        assert!(state.zoom_regions.is_empty());
+    }
+
+    /// Merged, not deduplicated: both cuts asked for their own range to go, and
+    /// neither asked for any of it back.
+    #[test]
+    fn two_overlapping_cuts_become_one_span_covering_both() {
+        let mut state = timing_state(vec![(2.0, 5.0), (4.0, 7.0)], Vec::new());
+        let repairs = repair_render_state(&mut state, 10.0);
+
+        assert_eq!(state.cuts.len(), 1, "the overlap was not merged");
+        assert!((state.cuts[0].start - 2.0).abs() < 1e-9);
+        assert!(
+            (state.cuts[0].end - 7.0).abs() < 1e-9,
+            "the union was not kept"
+        );
+        assert!(!repairs.is_empty());
+        assert!(validate_render_state(&state, 10.0).is_ok());
+    }
+
+    /// Cuts that merely touch are not overlapping, and merging them would join
+    /// two deliberate spans into one the user never drew.
+    #[test]
+    fn cuts_that_only_touch_are_left_as_two() {
+        let mut state = timing_state(vec![(2.0, 4.0), (4.0, 6.0)], Vec::new());
+        repair_render_state(&mut state, 10.0);
+        assert_eq!(state.cuts.len(), 2);
+    }
+
+    /// Dropped, not swapped: a reversed range is corruption, and swapping would
+    /// invent an intent the user never expressed.
+    #[test]
+    fn a_range_that_ends_before_it_starts_is_dropped_rather_than_swapped() {
+        let mut state = timing_state(vec![(6.0, 3.0)], vec![(7.0, 2.0)]);
+        let repairs = repair_render_state(&mut state, 10.0);
+
+        assert!(state.cuts.is_empty(), "a reversed cut survived");
+        assert!(state.zoom_regions.is_empty(), "a reversed zoom survived");
+        assert!(!repairs.is_empty());
+        assert!(validate_render_state(&state, 10.0).is_ok());
+    }
+
+    /// The repairs must not touch what was already right, or every open project
+    /// would report changes it did not need.
+    #[test]
+    fn timing_that_is_already_valid_is_left_exactly_alone() {
+        let mut state = timing_state(vec![(2.0, 3.0), (5.0, 6.0)], vec![(2.0, 4.0)]);
+        let before = state.clone();
+        let repairs = repair_render_state(&mut state, 10.0);
+
+        assert!(repairs.is_empty(), "reported {repairs:?} for a valid state");
+        assert_eq!(state.cuts.len(), before.cuts.len());
+        assert_eq!(state.zoom_regions.len(), before.zoom_regions.len());
+        assert!((state.cuts[0].start - 2.0).abs() < 1e-9);
+        assert!((state.zoom_regions[0].end - 4.0).abs() < 1e-9);
     }
 
     #[test]

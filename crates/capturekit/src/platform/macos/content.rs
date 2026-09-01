@@ -46,6 +46,7 @@ fn shareable_content() -> Result<Retained<SCShareableContent>> {
         },
     );
 
+    // SAFETY: the handler is retained by the block and its channel outlives the wait below.
     unsafe { SCShareableContent::getShareableContentWithCompletionHandler(&handler) };
 
     match receiver.recv_timeout(CONTENT_TIMEOUT) {
@@ -84,7 +85,9 @@ fn rotation_of(id: u32) -> Rotation {
 }
 
 fn display_of(sc: &SCDisplay) -> Display {
+    // SAFETY: property reads on a live display the caller borrows for the whole call.
     let id = unsafe { sc.displayID() };
+    // SAFETY: as above.
     let frame = unsafe { sc.frame() };
     let points = (frame.size.width as u32, frame.size.height as u32);
     let (width, height, refresh) = physical_mode(id).unwrap_or((points.0, points.1, 0.0));
@@ -127,6 +130,7 @@ fn display_for(bounds: &Rect, displays: &[Display]) -> DisplayId {
 }
 
 fn window_of(sc: &SCWindow, displays: &[Display], scale: f32) -> Window {
+    // SAFETY: every read below is a property on a live window the caller borrows for the whole call.
     let frame = unsafe { sc.frame() };
     let bounds = Rect::new(
         (frame.origin.x * f64::from(scale)).round() as i32,
@@ -134,19 +138,25 @@ fn window_of(sc: &SCWindow, displays: &[Display], scale: f32) -> Window {
         (frame.size.width * f64::from(scale)).round() as u32,
         (frame.size.height * f64::from(scale)).round() as u32,
     );
+    // SAFETY: as above.
     let on_screen = unsafe { sc.isOnScreen() };
+    // SAFETY: as above.
     let owner = unsafe { sc.owningApplication() };
     Window {
+        // SAFETY: as above.
         id: WindowId(u64::from(unsafe { sc.windowID() })),
+        // SAFETY: as above.
         title: unsafe { sc.title() }
             .map(|title| title.to_string())
             .unwrap_or_default(),
         app_name: owner
             .as_ref()
+            // SAFETY: `app` is the owning application read above, live for this borrow.
             .map(|app| unsafe { app.applicationName() }.to_string())
             .unwrap_or_default(),
         pid: owner
             .as_ref()
+            // SAFETY: as above.
             .map_or(0, |app| unsafe { app.processID() }.max(0) as u32),
         display: display_for(&bounds, displays),
         bounds,
@@ -158,6 +168,7 @@ fn window_of(sc: &SCWindow, displays: &[Display], scale: f32) -> Window {
 
 pub(crate) fn displays() -> Result<Vec<Display>> {
     let content = shareable_content()?;
+    // SAFETY: a property read on the content this thread owns.
     Ok(unsafe { content.displays() }
         .iter()
         .map(|display| display_of(&display))
@@ -166,6 +177,7 @@ pub(crate) fn displays() -> Result<Vec<Display>> {
 
 pub(crate) fn windows() -> Result<Vec<Window>> {
     let content = shareable_content()?;
+    // SAFETY: a property read on the content this thread owns.
     let displays: Vec<Display> = unsafe { content.displays() }
         .iter()
         .map(|display| display_of(&display))
@@ -176,6 +188,7 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
         .find(|display| display.is_primary)
         .map_or(1.0, |display| display.scale_factor);
 
+    // SAFETY: a property read on the content this thread owns.
     Ok(unsafe { content.windows() }
         .iter()
         .map(|window| window_of(&window, &displays, scale))
@@ -192,8 +205,10 @@ pub(crate) fn main_display() -> DisplayId {
 
 pub(crate) fn sc_display(id: DisplayId) -> Result<(Retained<SCDisplay>, Display)> {
     let content = shareable_content()?;
+    // SAFETY: a property read on the content this thread owns.
     let found = unsafe { content.displays() }
         .iter()
+        // SAFETY: a property read on a display borrowed from that content.
         .find(|display| u64::from(unsafe { display.displayID() }) == id.0)
         .ok_or(CaptureError::NotFound {
             kind: "display",
@@ -206,6 +221,7 @@ pub(crate) fn sc_display(id: DisplayId) -> Result<(Retained<SCDisplay>, Display)
 /// The `SCWindow` matching `id`.
 pub(crate) fn sc_window(id: WindowId) -> Result<(Retained<SCWindow>, Window)> {
     let content = shareable_content()?;
+    // SAFETY: a property read on the content this thread owns.
     let displays: Vec<Display> = unsafe { content.displays() }
         .iter()
         .map(|display| display_of(&display))
@@ -214,8 +230,10 @@ pub(crate) fn sc_window(id: WindowId) -> Result<(Retained<SCWindow>, Window)> {
         .iter()
         .find(|display| display.is_primary)
         .map_or(1.0, |display| display.scale_factor);
+    // SAFETY: a property read on the content this thread owns.
     let found = unsafe { content.windows() }
         .iter()
+        // SAFETY: a property read on a window borrowed from that content.
         .find(|window| u64::from(unsafe { window.windowID() }) == id.0)
         .ok_or(CaptureError::NotFound {
             kind: "window",

@@ -77,6 +77,7 @@ pub(crate) fn request_permission(kind: PermissionKind) -> Permission {
 /// The current instant on the host time clock, which is what ScreenCaptureKit
 /// stamps sample buffers with.
 pub(crate) fn now() -> Timestamp {
+    // SAFETY: the host clock is a process-wide singleton and reading its time takes no arguments.
     let time = unsafe { objc2_core_media::CMClock::host_time_clock().time() };
     match time.timescale {
         0 => Timestamp::ZERO,

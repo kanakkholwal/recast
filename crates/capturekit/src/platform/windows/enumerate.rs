@@ -69,6 +69,7 @@ fn display_mode(device: &[u16]) -> Option<DEVMODEW> {
         dmSize: core::mem::size_of::<DEVMODEW>() as u16,
         ..Default::default()
     };
+    // SAFETY: `mode` carries its own `dmSize`, which is how Windows knows the buffer's extent.
     let ok = unsafe {
         EnumDisplaySettingsW(
             windows::core::PCWSTR(device.as_ptr()),
@@ -90,6 +91,7 @@ fn physical_bounds(mode: DEVMODEW) -> Rect {
 fn scale_factor(monitor: HMONITOR) -> f32 {
     let mut dpi_x = 0u32;
     let mut dpi_y = 0u32;
+    // SAFETY: both out-parameters are live locals, and an invalid monitor is reported as an error.
     match unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) } {
         Ok(()) if dpi_x > 0 => dpi_x as f32 / BASELINE_DPI,
         _ => 1.0,
@@ -99,6 +101,7 @@ fn scale_factor(monitor: HMONITOR) -> f32 {
 pub(crate) fn displays() -> Result<Vec<Display>> {
     let _physical = PhysicalPixels::scope();
     let mut handles: Vec<HMONITOR> = Vec::new();
+    // SAFETY: the callback receives `handles` by pointer and only runs for the length of this call.
     unsafe {
         let _ = EnumDisplayMonitors(
             None,
@@ -117,6 +120,7 @@ pub(crate) fn displays() -> Result<Vec<Display>> {
             },
             ..Default::default()
         };
+        // SAFETY: `info` carries its own `cbSize`, which caps what Windows writes into it.
         let ok = unsafe { GetMonitorInfoW(monitor, core::ptr::addr_of_mut!(info).cast()) };
         if !ok.as_bool() {
             continue;
@@ -134,6 +138,7 @@ pub(crate) fn displays() -> Result<Vec<Display>> {
                 .map(|mode| mode.dmDisplayFrequency as f32),
             is_primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
             rotation: mode
+                // SAFETY: the display-orientation member is the active one for a device mode.
                 .map(|mode| rotation_of(unsafe { mode.Anonymous1.Anonymous2.dmDisplayOrientation }))
                 .unwrap_or_default(),
         });
@@ -151,15 +156,18 @@ fn owner(window: HWND) -> (u32, String) {
     };
 
     let mut pid = 0u32;
+    // SAFETY: writes one `u32` into a live local.
     unsafe { GetWindowThreadProcessId(window, Some(&mut pid)) };
     if pid == 0 {
         return (0, String::new());
     }
+    // SAFETY: the handle is closed below on every path that gets one.
     let Ok(handle) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }) else {
         return (pid, String::new());
     };
     let mut buffer = [0u16; 260];
     let mut len = buffer.len() as u32;
+    // SAFETY: `len` is the buffer's own length, so Windows cannot write past it.
     let queried = unsafe {
         QueryFullProcessImageNameW(
             handle,
@@ -168,6 +176,7 @@ fn owner(window: HWND) -> (u32, String) {
             &mut len,
         )
     };
+    // SAFETY: closes the handle opened above, exactly once.
     let _ = unsafe { windows::Win32::Foundation::CloseHandle(handle) };
     if queried.is_err() {
         return (pid, String::new());
@@ -182,11 +191,13 @@ fn owner(window: HWND) -> (u32, String) {
 }
 
 fn window_title(window: HWND) -> String {
+    // SAFETY: a length query on a window handle; an invalid one answers zero.
     let len = unsafe { GetWindowTextLengthW(window) };
     if len <= 0 {
         return String::new();
     }
     let mut buffer = vec![0u16; len as usize + 1];
+    // SAFETY: the buffer was sized from the length above plus the terminator.
     let written = unsafe { GetWindowTextW(window, &mut buffer) };
     wide_to_string(&buffer[..written.max(0) as usize])
 }
@@ -194,9 +205,11 @@ fn window_title(window: HWND) -> String {
 /// Whether a window is one a user would recognise and could sensibly capture.
 /// Tool windows and title-less windows are the shell's own scaffolding: every desktop has dozens, and listing them makes a picker useless.
 fn is_listable(window: HWND, title: &str) -> bool {
+    // SAFETY: a property read on a window handle; an invalid one answers false.
     if title.is_empty() || !unsafe { IsWindowVisible(window) }.as_bool() {
         return false;
     }
+    // SAFETY: a property read on a window handle; an invalid one answers zero.
     let ex_style = unsafe { GetWindowLongW(window, GWL_EXSTYLE) } as u32;
     ex_style & WS_EX_TOOLWINDOW.0 == 0
 }
@@ -205,6 +218,7 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
     // Window rects have no mode to read, so the awareness scope is the only way to get physical pixels from `GetWindowRect`.
     let _physical = PhysicalPixels::scope();
     let mut handles: Vec<HWND> = Vec::new();
+    // SAFETY: the callback receives `handles` by pointer and only runs for the length of this call.
     unsafe {
         EnumWindows(
             Some(collect_window),
@@ -220,9 +234,11 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
             continue;
         }
         let mut rect = RECT::default();
+        // SAFETY: fills a live local; an invalid window is reported as an error.
         if unsafe { GetWindowRect(window, &mut rect) }.is_err() {
             continue;
         }
+        // SAFETY: a lookup on a window handle, which falls back to the nearest monitor.
         let monitor = unsafe { MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) };
         let (pid, app_name) = owner(window);
         listed.push(Window {
@@ -232,6 +248,7 @@ pub(crate) fn windows() -> Result<Vec<Window>> {
             pid,
             bounds: rect_of(rect),
             display: DisplayId(monitor.0 as u64),
+            // SAFETY: a property read on a window handle; an invalid one answers false.
             is_minimized: unsafe { IsIconic(window) }.as_bool(),
             is_on_screen: true,
         });

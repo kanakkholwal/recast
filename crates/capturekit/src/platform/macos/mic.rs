@@ -38,6 +38,7 @@ fn unsupported(operation: &'static str) -> CaptureError {
 
 /// `AVMediaTypeAudio`, which the framework declares as a nullable global.
 fn audio_media_type() -> Result<&'static AVMediaType> {
+    // SAFETY: reading a framework constant, which is null only where AVFoundation is absent.
     unsafe { AVMediaTypeAudio }.ok_or_else(|| unsupported("name the audio media type"))
 }
 
@@ -47,6 +48,7 @@ fn device_for(id: Option<&AudioDeviceId>) -> Result<Retained<AVCaptureDevice>> {
         Some(id) => {
             // An AVFoundation audio device's uniqueID IS its CoreAudio UID, so a picker's id opens here untranslated.
             let uid = NSString::from_str(&id.0);
+            // SAFETY: `uid` is a live NSString for the call, and a missing device answers null.
             unsafe { AVCaptureDevice::deviceWithUniqueID(&uid) }.ok_or_else(|| {
                 CaptureError::NotFoundNamed {
                     kind: "audio input",
@@ -54,6 +56,7 @@ fn device_for(id: Option<&AudioDeviceId>) -> Result<Retained<AVCaptureDevice>> {
                 }
             })
         }
+        // SAFETY: the media type is a framework constant checked non-null above.
         None => unsafe { AVCaptureDevice::defaultDeviceWithMediaType(audio_media_type()?) }
             .ok_or_else(|| unsupported("find a default audio input, and the system named none")),
     }
@@ -82,6 +85,7 @@ define_class!(
 impl MicOutput {
     fn new(queue: Arc<AudioQueue>) -> Retained<Self> {
         let this = Self::alloc().set_ivars(queue);
+        // SAFETY: the ivars are set before `init`, which is the order `define_class!` requires.
         unsafe { msg_send![super(this), init] }
     }
 }
@@ -104,24 +108,32 @@ unsafe impl Send for AvfMicSource {}
 impl AvfMicSource {
     pub(crate) fn open(id: Option<&AudioDeviceId>) -> Result<Self> {
         let device = device_for(id)?;
+        // SAFETY: a property read on the device resolved just above.
         let uid = unsafe { device.uniqueID() }.to_string();
+        // SAFETY: `device` is live for the call, and the input retains it.
         let input = unsafe {
             AVCaptureDeviceInput::initWithDevice_error(AVCaptureDeviceInput::alloc(), &device)
         }
         .map_err(|error| failed(error.localizedDescription().to_string()))?;
 
+        // SAFETY: a plain allocation, taking no arguments to get wrong.
         let session = unsafe { AVCaptureSession::new() };
+        // SAFETY: both the session and the input are live locals.
         if !unsafe { session.canAddInput(&input) } {
             return Err(unsupported("open an input another session already holds"));
         }
+        // SAFETY: `canAddInput` said yes just above, and the session retains the input.
         unsafe { session.addInput(&input) };
 
         let queue = Arc::new(AudioQueue::default());
         let delegate = MicOutput::new(Arc::clone(&queue));
+        // SAFETY: a plain allocation, taking no arguments to get wrong.
         let output = unsafe { AVCaptureAudioDataOutput::new() };
+        // SAFETY: both the session and the output are live locals.
         if !unsafe { session.canAddOutput(&output) } {
             return Err(unsupported("read samples from this input"));
         }
+        // SAFETY: `canAddOutput` said yes just above, and the session retains the output.
         unsafe { session.addOutput(&output) };
 
         // Serial: two deliveries racing would reorder the samples.
@@ -129,6 +141,7 @@ impl AvfMicSource {
             "com.capturekit.microphone",
             dispatch2::DispatchQueueAttr::SERIAL,
         );
+        // SAFETY: the delegate and the queue are retained by the source, so both outlive the session.
         unsafe {
             output.setSampleBufferDelegate_queue(
                 Some(ProtocolObject::from_ref(&*delegate)),
@@ -192,6 +205,7 @@ impl AudioSource for AvfMicSource {
         }
         self.stopped = true;
         self.queue.report_drops(BACKEND);
+        // SAFETY: the session is owned by this source and has not been released.
         unsafe { self.session.stopRunning() };
         self.queue.end();
         Ok(())

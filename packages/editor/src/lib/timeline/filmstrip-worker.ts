@@ -95,7 +95,11 @@ function enqueueDecode(requests: readonly DecodeRequest[]): void {
 async function decodeOne(req: DecodeRequest): Promise<void> {
 	if (!sink) return;
 	try {
-		const wrapped = await sink.getCanvas(req.originalSec);
+		let wrapped = await sink.getCanvas(req.originalSec);
+		// Recorded files often report a duration a hair past the last frame, so a tile sampled near the end decodes to nothing; step just inside and retry so short clips (where that tile is a big fraction of the strip) don't go blank.
+		if (!wrapped && !disposed && req.originalSec > 0.05) {
+			wrapped = await sink.getCanvas(req.originalSec - 0.05);
+		}
 		if (!wrapped || disposed) return;
 		const src = wrapped.canvas as OffscreenCanvas;
 		const blob = await canvasToJpeg(src);

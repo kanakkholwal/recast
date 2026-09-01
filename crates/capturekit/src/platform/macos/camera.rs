@@ -44,6 +44,7 @@ fn failed(message: String) -> CaptureError {
 
 /// `AVMediaTypeVideo`, which the framework declares as a nullable global.
 fn video_media_type() -> Option<&'static NSString> {
+    // SAFETY: reading a framework constant, which is null only where AVFoundation is absent.
     unsafe { AVMediaTypeVideo }
 }
 
@@ -59,10 +60,12 @@ fn discover() -> Retained<NSArray<AVCaptureDevice>> {
         // SAFETY: reading the pointer the symbol holds, without forming a reference until it is known non-null.
         let raw = unsafe { slot.cast::<*const AVCaptureDeviceType>().read() };
         if !raw.is_null() {
+            // SAFETY: non-null was checked just above and the symbol's storage is static.
             kinds.push(unsafe { &*raw });
         }
     }
     let types = NSArray::from_slice(&kinds);
+    // SAFETY: `types` is a live array for the call, and the session copies what it needs.
     let session = unsafe {
         AVCaptureDeviceDiscoverySession::discoverySessionWithDeviceTypes_mediaType_position(
             &types,
@@ -70,6 +73,7 @@ fn discover() -> Retained<NSArray<AVCaptureDevice>> {
             AVCaptureDevicePosition::Unspecified,
         )
     };
+    // SAFETY: a property read on the discovery session just built.
     unsafe { session.devices() }
 }
 
@@ -77,6 +81,7 @@ fn discover() -> Retained<NSArray<AVCaptureDevice>> {
 /// Reported as what capturekit delivers rather than as the device's own subtype: the session converts every format to BGRA on the way out.
 fn modes(device: &AVCaptureDevice) -> Vec<CameraFormat> {
     let mut modes: Vec<CameraFormat> = Vec::new();
+    // SAFETY: a property read on a device the caller borrows for the whole call.
     for format in unsafe { device.formats() }.iter() {
         let Some(mode) = mode_of(&format) else {
             continue;
@@ -96,15 +101,19 @@ fn modes(device: &AVCaptureDevice) -> Vec<CameraFormat> {
 }
 
 fn mode_of(format: &AVCaptureDeviceFormat) -> Option<CameraFormat> {
+    // SAFETY: a property read on a format the caller borrows for the whole call.
     let description = unsafe { format.formatDescription() };
+    // SAFETY: `description` is live for this call.
     let size = unsafe { CMVideoFormatDescriptionGetDimensions(&description) };
     let width = u32::try_from(size.width).ok()?;
     let height = u32::try_from(size.height).ok()?;
     if width == 0 || height == 0 {
         return None;
     }
+    // SAFETY: a property read on the same live format.
     let frame_rate = unsafe { format.videoSupportedFrameRateRanges() }
         .iter()
+        // SAFETY: a property read on a range borrowed from that list.
         .map(|range| unsafe { range.maxFrameRate() })
         .fold(None::<f64>, |best, rate| {
             Some(best.map_or(rate, |best: f64| best.max(rate)))
@@ -120,14 +129,18 @@ fn mode_of(format: &AVCaptureDeviceFormat) -> Option<CameraFormat> {
 pub(crate) fn cameras() -> Result<Vec<Camera>> {
     let devices = discover();
     let default = video_media_type()
+        // SAFETY: the media type is a framework constant checked non-null above.
         .and_then(|media| unsafe { AVCaptureDevice::defaultDeviceWithMediaType(media) })
+        // SAFETY: a property read on the device just resolved.
         .map(|device| unsafe { device.uniqueID() }.to_string());
     Ok(devices
         .iter()
         .map(|device| {
+            // SAFETY: a property read on a device borrowed from the discovery list.
             let id = unsafe { device.uniqueID() }.to_string();
             Camera {
                 is_default: default.as_ref() == Some(&id),
+                // SAFETY: as above.
                 name: unsafe { device.localizedName() }.to_string(),
                 formats: modes(&device),
                 id: CameraId(id),
@@ -139,6 +152,7 @@ pub(crate) fn cameras() -> Result<Vec<Camera>> {
 fn device_by_id(id: &CameraId) -> Result<Retained<AVCaptureDevice>> {
     discover()
         .iter()
+        // SAFETY: a property read on a device borrowed from the discovery list.
         .find(|device| unsafe { device.uniqueID() }.to_string() == id.0)
         .ok_or_else(|| CaptureError::NotFoundNamed {
             kind: "camera",
@@ -149,6 +163,7 @@ fn device_by_id(id: &CameraId) -> Result<Retained<AVCaptureDevice>> {
 /// Pin the device to the mode closest to `size` without exceeding it.
 /// Left alone when nothing fits, so the session keeps whatever the device came up in rather than being forced into a mode the caller never asked for.
 fn pin_format(device: &AVCaptureDevice, size: (u32, u32)) {
+    // SAFETY: a property read on a device the caller borrows for the whole call.
     let formats = unsafe { device.formats() };
     let chosen = formats
         .iter()
@@ -158,16 +173,20 @@ fn pin_format(device: &AVCaptureDevice, size: (u32, u32)) {
     let Some((format, _)) = chosen else {
         return;
     };
+    // SAFETY: the lock is released below on every path that takes it.
     if unsafe { device.lockForConfiguration() }.is_err() {
         return;
     }
+    // SAFETY: the configuration lock is held, and `format` came from this device's own list.
     unsafe { device.setActiveFormat(&format) };
+    // SAFETY: pairs with the lock taken above.
     unsafe { device.unlockForConfiguration() };
 }
 
 /// Ask the output for BGRA rather than the device's native `420v`, so every source in this crate delivers one pixel format.
 /// The key is `kCVPixelBufferPixelFormatTypeKey`, a `CFString` that is toll-free bridged to the `NSString` this dictionary wants.
 fn bgra_settings() -> Retained<NSDictionary<NSString, AnyObject>> {
+    // SAFETY: the CoreVideo key is a static CFString, which is toll-free bridged to NSString.
     let key: &NSString = unsafe { &*core::ptr::from_ref(kCVPixelBufferPixelFormatTypeKey).cast() };
     let value = NSNumber::new_u32(BGRA);
     NSDictionary::from_slices(&[key], &[&*value as &AnyObject])
@@ -207,6 +226,7 @@ define_class!(
 impl CameraOutput {
     fn new(slot: Arc<FrameSlot>) -> Retained<Self> {
         let this = Self::alloc().set_ivars(slot);
+        // SAFETY: the ivars are set before `init`, which is the order `define_class!` requires.
         unsafe { msg_send![super(this), init] }
     }
 }
@@ -234,29 +254,37 @@ impl AvfCameraSource {
             .map_or(DEFAULT_SIZE, |region| (region.width, region.height));
         pin_format(&device, size);
 
+        // SAFETY: `device` is live for the call, and the input retains it.
         let input = unsafe {
             AVCaptureDeviceInput::initWithDevice_error(AVCaptureDeviceInput::alloc(), &device)
         }
         .map_err(|error| failed(error.localizedDescription().to_string()))?;
 
+        // SAFETY: a plain allocation, taking no arguments to get wrong.
         let session = unsafe { AVCaptureSession::new() };
+        // SAFETY: both the session and the input are live locals.
         if !unsafe { session.canAddInput(&input) } {
             return Err(unsupported("open a camera another session already holds"));
         }
+        // SAFETY: `canAddInput` said yes just above, and the session retains the input.
         unsafe { session.addInput(&input) };
 
         let slot = Arc::new(FrameSlot::default());
         let delegate = CameraOutput::new(Arc::clone(&slot));
+        // SAFETY: a plain allocation, taking no arguments to get wrong.
         let output = unsafe { AVCaptureVideoDataOutput::new() };
+        // SAFETY: setters on the output just allocated.
         unsafe {
             // BGRA rather than the device's native 420v, so every source in this crate delivers one pixel format.
             output.setVideoSettings(Some(&bgra_settings()));
             // The slot keeps only the newest buffer, so holding late ones back would add latency and nothing else.
             output.setAlwaysDiscardsLateVideoFrames(true);
         }
+        // SAFETY: both the session and the output are live locals.
         if !unsafe { session.canAddOutput(&output) } {
             return Err(unsupported("read frames from this camera"));
         }
+        // SAFETY: `canAddOutput` said yes just above, and the session retains the output.
         unsafe { session.addOutput(&output) };
 
         // Serial: buffers must reach the slot in device order, and a concurrent queue would let two deliveries race the swap.
@@ -264,6 +292,7 @@ impl AvfCameraSource {
             "com.capturekit.camera",
             dispatch2::DispatchQueueAttr::SERIAL,
         );
+        // SAFETY: the delegate and the queue are retained by the source, so both outlive the session.
         unsafe {
             output.setSampleBufferDelegate_queue(
                 Some(ProtocolObject::from_ref(&*delegate)),
@@ -335,6 +364,7 @@ impl FrameSource for AvfCameraSource {
             return Ok(());
         }
         self.stopped = true;
+        // SAFETY: the session is owned by this source and has not been released.
         unsafe { self.session.stopRunning() };
         Ok(())
     }

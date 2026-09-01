@@ -161,6 +161,7 @@ define_class!(
 impl AudioOutput {
     fn new(queue: Arc<AudioQueue>) -> Retained<Self> {
         let this = Self::alloc().set_ivars(queue);
+        // SAFETY: the ivars are set before `init`, which is the order `define_class!` requires.
         unsafe { msg_send![super(this), init] }
     }
 }
@@ -168,6 +169,7 @@ impl AudioOutput {
 /// Pull the samples out of a delivered buffer and publish them.
 /// Shared with the AVCapture microphone source: both receive `CMSampleBuffer`s, so the format decoding and interleaving have one implementation.
 pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
+    // SAFETY: the caller holds `sample` for the whole call, so its description outlives this borrow.
     let Some(description) = (unsafe { sample.format_description() }) else {
         queue.note_dropped("a sample buffer arrived with no format description");
         return;
@@ -178,6 +180,7 @@ pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
         queue.note_dropped("a sample buffer carried no audio stream description");
         return;
     }
+    // SAFETY: non-null was checked just above, and CoreMedia owns it for as long as `description` lives.
     let format = match format_of(unsafe { &*asbd }) {
         Ok(format) => format,
         Err(err) => {
@@ -188,6 +191,7 @@ pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
 
     let mut list = ChannelBuffers::empty();
     let mut block = core::ptr::null_mut();
+    // SAFETY: `list` is a live `ChannelBuffers` and its own size is passed, so CoreMedia cannot write past it.
     let status = unsafe {
         sample.audio_buffer_list_with_retained_block_buffer(
             core::ptr::null_mut(),
@@ -203,7 +207,7 @@ pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
         queue.note_dropped("CoreMedia refused to hand over the sample buffer list");
         return;
     }
-    // Retained by the call above, and it owns the sample memory read below.
+    // SAFETY: a +1 block buffer from the call above, owning the sample memory read below.
     let _block = (!block.is_null()).then(|| unsafe { Retained::from_raw(block) });
 
     let mut samples = Vec::new();
@@ -215,6 +219,7 @@ pub(super) fn accept(queue: &AudioQueue, sample: &CMSampleBuffer) {
         return;
     }
     queue.note_format(format);
+    // SAFETY: reading a stamp off the same live sample the buffer list came from.
     let time = unsafe { sample.presentation_time_stamp() };
     let pts = match time.timescale {
         0 => Timestamp::ZERO,
@@ -253,6 +258,7 @@ impl SckAudioSource {
 
         let config = configuration(direction)?;
         let (sc, _) = content::sc_display(content::main_display())?;
+        // SAFETY: `sc` is a live display from the shareable-content query and the exclusion list is a fresh empty array.
         let filter = unsafe {
             SCContentFilter::initWithDisplay_excludingWindows(
                 SCContentFilter::alloc(),
@@ -264,6 +270,7 @@ impl SckAudioSource {
         let queue = Arc::new(AudioQueue::default());
         let output = AudioOutput::new(Arc::clone(&queue));
         let stopped = StreamStopped::new(Arc::clone(&queue) as Arc<dyn Endable>);
+        // SAFETY: filter, configuration and delegate are all live for the call, and the stream retains what it keeps.
         let stream = unsafe {
             SCStream::initWithFilter_configuration_delegate(
                 SCStream::alloc(),
@@ -282,6 +289,7 @@ impl SckAudioSource {
             "com.capturekit.audio",
             dispatch2::DispatchQueueAttr::SERIAL,
         );
+        // SAFETY: the output object and the queue outlive the stream, which retains both.
         unsafe {
             stream.addStreamOutput_type_sampleHandlerQueue_error(
                 ProtocolObject::from_ref(&*output),
@@ -318,7 +326,9 @@ impl SckAudioSource {
 
 /// A stream configured to carry audio and as little video as SCK allows.
 fn configuration(direction: AudioDirection) -> Result<Retained<SCStreamConfiguration>> {
+    // SAFETY: a plain allocation, taking no arguments to get wrong.
     let config = unsafe { SCStreamConfiguration::new() };
+    // SAFETY: setters on the configuration just allocated, each taking a plain value.
     unsafe {
         // No screen output is ever added, so these only bound what the daemon sets aside for a video path nothing reads.
         config.setWidth(2);
@@ -327,12 +337,14 @@ fn configuration(direction: AudioDirection) -> Result<Retained<SCStreamConfigura
         config.setChannelCount(REQUESTED.channels as isize);
     }
     match direction {
+        // SAFETY: a setter on the live configuration above.
         AudioDirection::Loopback => unsafe { config.setCapturesAudio(true) },
         AudioDirection::Input => {
             // `captureMicrophone` is macOS 15 and raises on older systems, so the selector is checked first.
             if !config.respondsToSelector(sel!(setCaptureMicrophone:)) {
                 return Err(unsupported("capture a microphone before macOS 15"));
             }
+            // SAFETY: a setter on the live configuration above.
             unsafe { config.setCaptureMicrophone(true) };
         }
     }
@@ -369,6 +381,7 @@ impl AudioSource for SckAudioSource {
         }
         self.stopped = true;
         let handler = block2::RcBlock::new(|_error: *mut objc2_foundation::NSError| {});
+        // SAFETY: the handler ignores its argument and borrows nothing, so it is safe to outlive this call.
         unsafe { self.stream.stopCaptureWithCompletionHandler(Some(&handler)) };
         Ok(())
     }

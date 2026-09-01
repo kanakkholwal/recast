@@ -55,28 +55,37 @@ type Enumerator = Scoped<IMMDeviceEnumerator>;
 /// WASAPI is COM, so a bare capture thread has to join an apartment first.
 fn enumerator() -> Result<Enumerator> {
     let scope = ComScope::mta();
+    // SAFETY: COM is initialised by the scope above, and the interface id comes from the bound type.
     let device = unsafe { CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL) }.map_err(err)?;
     Ok(Scoped::new(device, scope))
 }
 
 fn device_id(device: &IMMDevice) -> Result<AudioDeviceId> {
+    // SAFETY: a property read on a live device; the returned string is freed below.
     let raw = unsafe { device.GetId() }.map_err(err)?;
+    // SAFETY: `raw` is a live NUL-terminated wide string until the free below.
     let id = unsafe { raw.to_string() }.unwrap_or_default();
+    // SAFETY: frees the CoTaskMem string returned above, exactly once.
     unsafe { CoTaskMemFree(Some(raw.0.cast())) };
     Ok(AudioDeviceId(id))
 }
 
 fn device_name(device: &IMMDevice) -> String {
+    // SAFETY: a property-store open on a live device.
     let Ok(store) = (unsafe { device.OpenPropertyStore(STGM_READ) }) else {
         return String::new();
     };
+    // SAFETY: reads a documented key from the live store above.
     let Ok(value) = (unsafe { store.GetValue(&DEVICE_FRIENDLY_NAME) }) else {
         return String::new();
     };
+    // SAFETY: `value` is a live PROPVARIANT; the allocated string is freed below.
     let Ok(raw) = (unsafe { PropVariantToStringAlloc(&value) }) else {
         return String::new();
     };
+    // SAFETY: `raw` is a live NUL-terminated wide string until the free below.
     let name = unsafe { raw.to_string() }.unwrap_or_default();
+    // SAFETY: frees the CoTaskMem string allocated above, exactly once.
     unsafe { CoTaskMemFree(Some(raw.0.cast())) };
     name
 }
@@ -84,6 +93,7 @@ fn device_name(device: &IMMDevice) -> String {
 /// Read the mixer's format, which shared mode never converts away from.
 /// Asking for a different one is refused in shared mode, so the honest thing is to report what the device runs at and let the caller resample.
 fn mix_format(client: &IAudioClient) -> Result<(AudioFormat, *mut WAVEFORMATEX)> {
+    // SAFETY: a property read on a live client; the caller frees the returned header.
     let raw = unsafe { client.GetMixFormat() }.map_err(err)?;
     // SAFETY: `GetMixFormat` returns a valid CoTaskMem header, and `format_of` reads past it only when the tag says so.
     let format = unsafe { format_of(raw) }?;
@@ -93,6 +103,7 @@ fn mix_format(client: &IAudioClient) -> Result<(AudioFormat, *mut WAVEFORMATEX)>
 /// Read a wave header into the crate's own vocabulary.
 /// # Safety: `raw` must point at a valid `WAVEFORMATEX`, and at a full `WAVEFORMATEXTENSIBLE` when its tag says so.
 unsafe fn format_of(raw: *const WAVEFORMATEX) -> Result<AudioFormat> {
+    // SAFETY: the caller guarantees `raw` points at a whole WAVEFORMATEX.
     let header = unsafe { *raw };
     let sample_format = if header.wFormatTag == WAVE_FORMAT_EXTENSIBLE {
         // SAFETY: the tag says this really is a WAVEFORMATEXTENSIBLE. Read unaligned, since the struct is `packed(1)`.
@@ -136,27 +147,33 @@ pub(crate) fn devices() -> Result<Vec<AudioDevice>> {
         (eCapture, AudioDirection::Input),
         (eRender, AudioDirection::Loopback),
     ] {
+        // SAFETY: a query on the live enumerator; no default device is reported as an error.
         let default_id = unsafe { enumerator.value.GetDefaultAudioEndpoint(flow, eConsole) }
             .ok()
             .and_then(|device| device_id(&device).ok());
+        // SAFETY: a query on the live enumerator.
         let collection = unsafe {
             enumerator
                 .value
                 .EnumAudioEndpoints(flow, DEVICE_STATE_ACTIVE)
         }
         .map_err(err)?;
+        // SAFETY: a count read on the live collection above.
         let count = unsafe { collection.GetCount() }.map_err(err)?;
         for index in 0..count {
+            // SAFETY: `index` is below the count read above.
             let Ok(device) = (unsafe { collection.Item(index) }) else {
                 continue;
             };
             let Ok(id) = device_id(&device) else { continue };
+            // SAFETY: activates a documented interface on a live device.
             let Ok(client) = (unsafe { device.Activate::<IAudioClient>(CLSCTX_ALL, None) }) else {
                 continue;
             };
             let Ok((format, raw)) = mix_format(&client) else {
                 continue;
             };
+            // SAFETY: frees the mix-format header returned above, exactly once.
             unsafe { CoTaskMemFree(Some(raw.cast())) };
             devices.push(AudioDevice {
                 is_default: default_id.as_ref() == Some(&id),
@@ -206,6 +223,7 @@ impl WasapiSource {
         let endpoint = match device {
             Some(id) => {
                 let wide: Vec<u16> = id.0.encode_utf16().chain(core::iter::once(0)).collect();
+                // SAFETY: `wide` is NUL-terminated and outlives the call.
                 unsafe { enumerator.value.GetDevice(PCWSTR(wide.as_ptr())) }.map_err(|error| {
                     if error.code() == E_NOTFOUND {
                         CaptureError::NotFound {
@@ -218,10 +236,12 @@ impl WasapiSource {
                 })?
             }
             None => {
+                // SAFETY: a query on the live enumerator.
                 unsafe { enumerator.value.GetDefaultAudioEndpoint(flow, eConsole) }.map_err(err)?
             }
         };
 
+        // SAFETY: activates a documented interface on the live endpoint above.
         let client: IAudioClient = unsafe { endpoint.Activate(CLSCTX_ALL, None) }.map_err(err)?;
         let (format, raw) = mix_format(&client)?;
 
@@ -230,6 +250,7 @@ impl WasapiSource {
             AudioDirection::Loopback => AUDCLNT_STREAMFLAGS_LOOPBACK,
             AudioDirection::Input => 0,
         };
+        // SAFETY: `raw` is the mix format from this same client, live until the free below.
         let initialised = unsafe {
             client.Initialize(
                 AUDCLNT_SHAREMODE_SHARED,
@@ -241,10 +262,13 @@ impl WasapiSource {
                 None,
             )
         };
+        // SAFETY: frees the mix-format header, after `Initialize` has copied what it needs.
         unsafe { CoTaskMemFree(Some(raw.cast())) };
         initialised.map_err(err)?;
 
+        // SAFETY: a documented service on the initialised client above.
         let capture: IAudioCaptureClient = unsafe { client.GetService() }.map_err(err)?;
+        // SAFETY: the client was initialised successfully just above.
         unsafe { client.Start() }.map_err(err)?;
 
         Ok(Self {
@@ -319,6 +343,7 @@ impl AudioSource for WasapiSource {
     fn next_buffer(&mut self, timeout: Duration) -> Result<RawAudio<'_>> {
         let deadline = std::time::Instant::now() + timeout;
         loop {
+            // SAFETY: a size query on the capture client this source owns.
             let available = unsafe { self.capture.GetNextPacketSize() }.map_err(err)?;
             if available == 0 {
                 // Nothing is playing: cover the time the device ran through with real silence rather than a short track.
@@ -342,6 +367,7 @@ impl AudioSource for WasapiSource {
             let mut frames = 0u32;
             let mut flags = 0u32;
             let mut device_position = 0u64;
+            // SAFETY: every out-parameter is a live local, and the buffer is released on each path below.
             let acquired = unsafe {
                 self.capture.GetBuffer(
                     &mut data,
@@ -364,7 +390,7 @@ impl AudioSource for WasapiSource {
             let gap = self.timeline.gap_before(local);
             let discontinuous = flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32 != 0;
             if gap > 0 {
-                // Release without consuming: this buffer is delivered next call, after the silence that belongs in front of it.
+                // SAFETY: releases the buffer acquired above without consuming a frame, so it is delivered next call.
                 let _ = unsafe { self.capture.ReleaseBuffer(0) };
                 let chunk = self.desc.format.frames_in_duration(MAX_SILENCE).min(gap);
                 return Ok(self.emit_silence(chunk, discontinuous));
@@ -376,10 +402,11 @@ impl AudioSource for WasapiSource {
                 // WASAPI may hand back a null pointer for silence and expects the caller to write zeroes instead of reading it.
                 self.staging.resize(bytes, 0);
             } else {
-                // SAFETY: `GetBuffer` succeeded, so `data` points at `frames` frames of this format, valid until `ReleaseBuffer`.
+                // SAFETY: `GetBuffer` succeeded, so `data` covers `frames` frames of this format until `ReleaseBuffer`.
                 let source = unsafe { core::slice::from_raw_parts(data, bytes) };
                 self.staging.extend_from_slice(source);
             }
+            // SAFETY: releases exactly the frames acquired above, after the copy out.
             let _ = unsafe { self.capture.ReleaseBuffer(frames) };
 
             let pts = self.pts_now();
@@ -398,6 +425,7 @@ impl AudioSource for WasapiSource {
             return Ok(());
         }
         self.stopped = true;
+        // SAFETY: stops the client this source owns and started.
         unsafe { self.client.Stop() }.map_err(err)
     }
 }
@@ -488,6 +516,7 @@ mod tests {
     #[test]
     fn an_extensible_pcm_header_is_not_read_as_float() {
         let pcm = extensible(16, GUID::from_u128(0x00000001_0000_0010_8000_00aa00389b71));
+        // SAFETY: `pcm` is a live WAVEFORMATEXTENSIBLE whose tag says so.
         let format =
             unsafe { format_of(core::ptr::addr_of!(pcm).cast()) }.expect("16-bit PCM is readable");
         assert_eq!(format.sample_format, SampleFormat::I16);
@@ -498,6 +527,7 @@ mod tests {
     #[test]
     fn an_extensible_float_header_is_read_as_float() {
         let float = extensible(32, SUBTYPE_IEEE_FLOAT);
+        // SAFETY: `float` is a live WAVEFORMATEXTENSIBLE whose tag says so.
         let format = unsafe { format_of(core::ptr::addr_of!(float).cast()) }.expect("float");
         assert_eq!(format.sample_format, SampleFormat::F32);
     }
@@ -505,6 +535,7 @@ mod tests {
     #[test]
     fn a_plain_float_header_is_read_as_float() {
         let plain = header(WAVE_FORMAT_IEEE_FLOAT, 32);
+        // SAFETY: `plain` is a live WAVEFORMATEX with no extension.
         let format = unsafe { format_of(&plain) }.expect("float");
         assert_eq!(format.sample_format, SampleFormat::F32);
     }
@@ -512,12 +543,14 @@ mod tests {
     #[test]
     fn a_plain_pcm_header_follows_its_bit_depth() {
         assert_eq!(
+            // SAFETY: a live WAVEFORMATEX built by the fixture, with no extension.
             unsafe { format_of(&header(1, 16)) }
                 .expect("pcm16")
                 .sample_format,
             SampleFormat::I16
         );
         assert_eq!(
+            // SAFETY: a live WAVEFORMATEX built by the fixture, with no extension.
             unsafe { format_of(&header(1, 32)) }
                 .expect("pcm32")
                 .sample_format,
@@ -529,7 +562,9 @@ mod tests {
     /// Reading it as one shifts every sample by a byte, which is loud noise.
     #[test]
     fn a_packed_24_bit_header_is_refused_rather_than_misread() {
+        // SAFETY: a live WAVEFORMATEX built by the fixture, with no extension.
         assert!(unsafe { format_of(&header(1, 24)) }.is_err());
+        // SAFETY: as above.
         assert!(unsafe { format_of(&header(1, 8)) }.is_err());
     }
 }

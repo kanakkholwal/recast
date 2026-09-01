@@ -30,7 +30,7 @@ const LABELS: Record<LibrarySort, string> = {
   }}
 >
   <Select.Trigger
-    class={cn(buttonVariants({ variant: "ghost"}), "px-2")}
+    class={cn(buttonVariants({ variant: "raw"}), "border-none border-0 bg-transparent! px-2")}
     aria-label={`Sort ${noun}`}
   >
     <span data-slot="select-value" class="flex items-center gap-1.5">

@@ -27,6 +27,7 @@ impl ComScope {
     /// Join the multi-threaded apartment, which every backend here wants.
     pub(crate) fn mta() -> Self {
         pin_mta();
+        // SAFETY: initialises COM for this thread; the matching uninitialise is in `Drop`.
         let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
         Self {
             owned: hr.is_ok() && hr != S_FALSE,
@@ -56,6 +57,7 @@ impl<T, S> Scoped<T, S> {
 impl Drop for ComScope {
     fn drop(&mut self) {
         if self.owned {
+            // SAFETY: only when this guard owns the initialisation it is undoing.
             unsafe { CoUninitialize() };
         }
     }

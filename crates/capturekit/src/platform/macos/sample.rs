@@ -15,6 +15,7 @@ pub(super) const BGRA: u32 = u32::from_be_bytes(*b"BGRA");
 /// Copies one delivered pixel buffer into the slot, shared by ScreenCaptureKit and the AVFoundation camera.
 /// Neither may hold the buffer locked across the consumer's work, which would starve a shallow pool; the copy targets a reused buffer, so it costs no allocation.
 pub(super) fn accept_video(slot: &FrameSlot, sample: &CMSampleBuffer) {
+    // SAFETY: the caller holds `sample` for the whole call, so its image buffer outlives this borrow.
     let Some(image) = (unsafe { sample.image_buffer() }) else {
         return;
     };
@@ -23,6 +24,7 @@ pub(super) fn accept_video(slot: &FrameSlot, sample: &CMSampleBuffer) {
         return;
     }
 
+    // SAFETY: `pixels` came from the live image buffer above, and the matching unlock runs on every path below.
     let locked = unsafe { CVPixelBufferLockBaseAddress(pixels, CVPixelBufferLockFlags::ReadOnly) };
     if locked != 0 {
         return;
@@ -33,6 +35,7 @@ pub(super) fn accept_video(slot: &FrameSlot, sample: &CMSampleBuffer) {
     let height = CVPixelBufferGetHeight(pixels);
 
     if !base.is_null() && stride > 0 && height > 0 {
+        // SAFETY: reading a stamp off the same live sample the image buffer came from.
         let time = unsafe { sample.presentation_time_stamp() };
         let pts = match time.timescale {
             0 => Timestamp::ZERO,
@@ -52,5 +55,6 @@ pub(super) fn accept_video(slot: &FrameSlot, sample: &CMSampleBuffer) {
             source,
         );
     }
+    // SAFETY: pairs with the lock above, which returned zero, and the borrowed slice is done being read.
     unsafe { CVPixelBufferUnlockBaseAddress(pixels, CVPixelBufferLockFlags::ReadOnly) };
 }

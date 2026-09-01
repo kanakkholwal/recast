@@ -52,6 +52,7 @@ pub(crate) fn create_device(
     } else {
         D3D_DRIVER_TYPE_HARDWARE
     };
+    // SAFETY: every out-parameter is a live local, and an unsupported driver type is reported as an error.
     unsafe {
         D3D11CreateDevice(
             adapter,
@@ -94,6 +95,7 @@ fn staging_texture(
         MiscFlags: 0,
     };
     let mut texture = None;
+    // SAFETY: `desc` and the out-slot are live locals, and the device is a live interface.
     unsafe {
         device
             .CreateTexture2D(&desc, None, Some(&mut texture))
@@ -139,6 +141,7 @@ impl Readback {
         self.unmap();
         let source_resource: ID3D11Resource = source.cast::<ID3D11Resource>().map_err(err)?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
+        // SAFETY: fills a live local from a live texture.
         unsafe { source.GetDesc(&mut desc) };
 
         let surface = Rect::from_size(desc.Width, desc.Height);
@@ -158,6 +161,7 @@ impl Readback {
             bottom: clipped.bottom().max(0) as u32,
             back: 1,
         };
+        // SAFETY: the box was clipped to the source above, so the copy stays inside both textures.
         unsafe {
             self.context.CopySubresourceRegion(
                 &self.resource,
@@ -177,6 +181,7 @@ impl Readback {
     pub(crate) fn map(&mut self) -> Result<(&[u8], u32)> {
         if self.mapped.is_none() {
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            // SAFETY: the staging resource is live and the matching unmap runs in `unmap`/`Drop`.
             unsafe {
                 self.context
                     .Map(&self.resource, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
@@ -200,6 +205,7 @@ impl Readback {
 
     pub(crate) fn unmap(&mut self) {
         if self.mapped.take().is_some() {
+            // SAFETY: pairs with the map recorded in `self.mapped`, taken just above.
             unsafe { self.context.Unmap(&self.resource, 0) };
         }
     }
@@ -258,19 +264,23 @@ impl SharedSurface {
                 as u32,
         };
         let mut texture = None;
+        // SAFETY: `desc` and the out-slot are live locals, and the device is a live interface.
         unsafe { device.CreateTexture2D(&desc, None, Some(&mut texture)) }.map_err(err)?;
         let texture = texture.ok_or_else(|| missing("create a shared texture"))?;
 
         let device5: ID3D11Device5 = device.cast().map_err(err)?;
         let context4: ID3D11DeviceContext4 = context.cast().map_err(err)?;
         let mut fence_slot: Option<ID3D11Fence> = None;
+        // SAFETY: writes the new fence into a live out-slot.
         unsafe { device5.CreateFence(0, D3D11_FENCE_FLAG_SHARED, &mut fence_slot) }.map_err(err)?;
         let fence = fence_slot.ok_or_else(|| missing("create a shared fence"))?;
         let mut release_slot: Option<ID3D11Fence> = None;
+        // SAFETY: writes the new fence into a live out-slot.
         unsafe { device5.CreateFence(0, D3D11_FENCE_FLAG_SHARED, &mut release_slot) }
             .map_err(err)?;
         let release = release_slot.ok_or_else(|| missing("create a release fence"))?;
 
+        // SAFETY: the texture was created with the shared flag, which is what `CreateSharedHandle` requires.
         let texture_handle = unsafe {
             texture
                 .cast::<IDXGIResource1>()
@@ -279,8 +289,10 @@ impl SharedSurface {
         }
         .map_err(err)?;
         let fence_handle =
+            // SAFETY: the fence was created shared, and the handle is closed in `Drop`.
             unsafe { fence.CreateSharedHandle(None, GENERIC_ALL, None) }.map_err(err)?;
         let release_handle =
+            // SAFETY: the fence was created shared, and the handle is closed in `Drop`.
             unsafe { release.CreateSharedHandle(None, GENERIC_ALL, None) }.map_err(err)?;
 
         Ok(Self {
@@ -305,6 +317,7 @@ impl SharedSurface {
         let source_box = clip_box(source, region)?;
         let destination: ID3D11Resource = self.texture.cast().map_err(err)?;
         let source_resource: ID3D11Resource = source.cast().map_err(err)?;
+        // SAFETY: source and destination are live resources and the box was clipped to the source.
         unsafe {
             // Zero on the first copy, which a fence starting at zero passes.
             self.context
@@ -322,6 +335,7 @@ impl SharedSurface {
             );
         }
         self.signalled += 1;
+        // SAFETY: signals the fence this struct owns, on its own context.
         unsafe { self.context.Signal(&self.fence, self.signalled) }.map_err(err)?;
         Ok(self.signalled)
     }
@@ -337,6 +351,7 @@ impl Drop for SharedSurface {
         // Duplicated into the consumer, so closing ours does not invalidate theirs.
         for handle in [self.texture_handle, self.fence_handle, self.release_handle] {
             if handle != 0 {
+                // SAFETY: each handle was created by this struct and is closed exactly once.
                 unsafe {
                     let _ = CloseHandle(HANDLE(handle as *mut core::ffi::c_void));
                 }
@@ -348,6 +363,7 @@ impl Drop for SharedSurface {
 /// The source rectangle to copy, clipped to the surface it is taken from.
 fn clip_box(source: &ID3D11Texture2D, region: Option<Rect>) -> Result<D3D11_BOX> {
     let mut desc = D3D11_TEXTURE2D_DESC::default();
+    // SAFETY: fills a live local from a live texture.
     unsafe { source.GetDesc(&mut desc) };
     let surface = Rect::from_size(desc.Width, desc.Height);
     let clipped =

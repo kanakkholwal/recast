@@ -8,7 +8,7 @@ pub(crate) struct PhysicalPixels(DPI_AWARENESS_CONTEXT);
 
 impl PhysicalPixels {
     pub(crate) fn scope() -> Self {
-        // Null means the context was rejected, as Windows before 10 1607 does; those builds predate per-monitor scaling anyway.
+        // SAFETY: a thread-local switch; null means rejected, as Windows before 10 1607 does.
         Self(unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) })
     }
 }
@@ -16,6 +16,7 @@ impl PhysicalPixels {
 impl Drop for PhysicalPixels {
     fn drop(&mut self) {
         if !self.0.is_invalid() {
+            // SAFETY: restores the context this scope replaced, checked valid just above.
             unsafe { SetThreadDpiAwarenessContext(self.0) };
         }
     }

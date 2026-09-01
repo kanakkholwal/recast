@@ -49,6 +49,7 @@ fn unsupported(operation: &'static str) -> CaptureError {
 /// `MFShutdown` is refcounted against `MFStartup`, but a library cannot know when the host is done, and balancing them would tear MF down under a camera still held open.
 fn ensure_started() -> Result<()> {
     static STARTED: OnceLock<HRESULT> = OnceLock::new();
+    // SAFETY: starts Media Foundation once per process, which the `OnceLock` guarantees.
     let hr = *STARTED.get_or_init(|| unsafe {
         MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET).map_or_else(|error| error.code(), |()| S_OK)
     });
@@ -64,7 +65,9 @@ fn take_string(value: PWSTR) -> String {
     if value.is_null() {
         return String::new();
     }
+    // SAFETY: `value` is a live NUL-terminated wide string until the free below.
     let text = unsafe { value.to_string() }.unwrap_or_default();
+    // SAFETY: frees the CoTaskMem string the caller allocated, exactly once.
     unsafe { CoTaskMemFree(Some(value.as_ptr().cast())) };
     text
 }
@@ -72,6 +75,7 @@ fn take_string(value: PWSTR) -> String {
 fn attribute_string(activate: &IMFActivate, key: &GUID) -> Option<String> {
     let mut value = PWSTR::null();
     let mut len = 0u32;
+    // SAFETY: both out-parameters are live locals; the string is freed by the caller.
     unsafe { activate.GetAllocatedString(key, &mut value, &mut len) }.ok()?;
     Some(take_string(value))
 }
@@ -90,8 +94,10 @@ fn pack_pair(high: u32, low: u32) -> u64 {
 fn activations() -> Result<Vec<IMFActivate>> {
     ensure_started()?;
     let mut attributes: Option<IMFAttributes> = None;
+    // SAFETY: writes the new attribute store into a live out-slot.
     unsafe { MFCreateAttributes(&mut attributes, 1) }.map_err(err)?;
     let attributes = attributes.ok_or_else(|| unsupported("describe a device query"))?;
+    // SAFETY: a setter on the attribute store just created.
     unsafe {
         attributes.SetGUID(
             &MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
@@ -102,17 +108,19 @@ fn activations() -> Result<Vec<IMFActivate>> {
 
     let mut raw: *mut Option<IMFActivate> = core::ptr::null_mut();
     let mut count = 0u32;
+    // SAFETY: the array pointer and count are live locals; the array is freed below.
     unsafe { MFEnumDeviceSources(&attributes, &mut raw, &mut count) }.map_err(err)?;
     if raw.is_null() {
         return Ok(Vec::new());
     }
     let mut found = Vec::with_capacity(count as usize);
     for index in 0..count as usize {
-        // Reading takes ownership of the reference the array held, which is what keeps this from leaking one per device.
+        // SAFETY: `index` is below the reported count, and the read takes the array's own reference.
         if let Some(activate) = unsafe { raw.add(index).read() } {
             found.push(activate);
         }
     }
+    // SAFETY: frees the array allocated above, after every element was taken out of it.
     unsafe { CoTaskMemFree(Some(raw.cast())) };
     Ok(found)
 }
@@ -149,12 +157,15 @@ pub(crate) fn cameras() -> Result<Vec<Camera>> {
 /// The modes one device advertises, deduplicated and largest first.
 /// Reported as what capturekit will deliver rather than the device's own subtype, since the reader converts and a webcam lists the same geometry over MJPG, YUY2 and NV12.
 fn modes(activate: &IMFActivate) -> Result<Vec<CameraFormat>> {
+    // SAFETY: activates the device this activation object describes; shut down below.
     let source: IMFMediaSource = unsafe { activate.ActivateObject() }.map_err(err)?;
     let reader = reader_for(&source)?;
     let mut modes: Vec<CameraFormat> = Vec::new();
     let mut index = 0u32;
+    // SAFETY: the reader is live, and an index past the end is reported as an error.
     while let Ok(media_type) = unsafe { reader.GetNativeMediaType(VIDEO_STREAM, index) } {
         index += 1;
+        // SAFETY: a documented UINT64 attribute on the live media type above.
         let Ok(size) = (unsafe { media_type.GetUINT64(&MF_MT_FRAME_SIZE) }) else {
             continue;
         };
@@ -162,6 +173,7 @@ fn modes(activate: &IMFActivate) -> Result<Vec<CameraFormat>> {
         if width == 0 || height == 0 {
             continue;
         }
+        // SAFETY: a documented UINT64 attribute on the same live media type.
         let frame_rate = unsafe { media_type.GetUINT64(&MF_MT_FRAME_RATE) }
             .ok()
             .and_then(|packed| {
@@ -178,7 +190,7 @@ fn modes(activate: &IMFActivate) -> Result<Vec<CameraFormat>> {
             modes.push(mode);
         }
     }
-    // Shut the device down again: enumeration must not leave a camera powered.
+    // SAFETY: shuts down the source activated above, exactly once; enumeration must not leave a camera powered.
     let _ = unsafe { source.Shutdown() };
     modes.sort_by(|a, b| {
         b.area().cmp(&a.area()).then(
@@ -192,9 +204,10 @@ fn modes(activate: &IMFActivate) -> Result<Vec<CameraFormat>> {
 
 fn reader_for(source: &IMFMediaSource) -> Result<IMFSourceReader> {
     let mut attributes: Option<IMFAttributes> = None;
+    // SAFETY: writes the new attribute store into a live out-slot.
     unsafe { MFCreateAttributes(&mut attributes, 1) }.map_err(err)?;
     let attributes = attributes.ok_or_else(|| unsupported("describe a reader"))?;
-    // Without this the reader refuses any output format the device doesn't produce natively, and no webcam produces BGRA.
+    // SAFETY: a setter on the store just created; without it the reader refuses BGRA, which no webcam produces natively.
     unsafe {
         attributes.SetUINT32(
             &MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,
@@ -202,6 +215,7 @@ fn reader_for(source: &IMFMediaSource) -> Result<IMFSourceReader> {
         )
     }
     .map_err(err)?;
+    // SAFETY: both the source and the attributes are live for the call.
     unsafe { MFCreateSourceReaderFromMediaSource(source, &attributes) }.map_err(err)
 }
 
@@ -215,12 +229,15 @@ fn activate_by_id(id: &CameraId) -> Result<IMFMediaSource> {
             kind: "camera",
             id: id.0.clone(),
         })?;
+    // SAFETY: activates the device this activation object describes.
     unsafe { activate.ActivateObject() }.map_err(err)
 }
 
 /// Ask the reader for BGRA at `size`, and report what it settled on.
 fn negotiate(reader: &IMFSourceReader, size: (u32, u32)) -> Result<(u32, u32)> {
+    // SAFETY: a plain allocation, taking no arguments to get wrong.
     let wanted: IMFMediaType = unsafe { MFCreateMediaType() }.map_err(err)?;
+    // SAFETY: setters on the media type just created.
     unsafe {
         wanted
             .SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)
@@ -230,9 +247,12 @@ fn negotiate(reader: &IMFSourceReader, size: (u32, u32)) -> Result<(u32, u32)> {
             .and_then(|()| wanted.SetUINT32(&MF_MT_DEFAULT_STRIDE, size.0.saturating_mul(4)))
     }
     .map_err(err)?;
+    // SAFETY: both the reader and the requested type are live for the call.
     unsafe { reader.SetCurrentMediaType(VIDEO_STREAM, None, &wanted) }.map_err(err)?;
 
+    // SAFETY: reads back the type the reader settled on above.
     let settled = unsafe { reader.GetCurrentMediaType(VIDEO_STREAM) }.map_err(err)?;
+    // SAFETY: a documented UINT64 attribute on that live type.
     let packed = unsafe { settled.GetUINT64(&MF_MT_FRAME_SIZE) }.map_err(err)?;
     let (width, height) = unpack_pair(packed);
     if width == 0 || height == 0 {
@@ -358,6 +378,7 @@ fn run(
         }
     }
     slot.end();
+    // SAFETY: shuts down the source this loop owns, exactly once.
     let _ = unsafe { source.Shutdown() };
 }
 
@@ -371,6 +392,7 @@ fn read_one(
 ) -> Result<bool, windows::core::Error> {
     let mut flags = 0u32;
     let mut sample = None;
+    // SAFETY: every out-parameter is a live local.
     unsafe {
         reader.ReadSample(
             VIDEO_STREAM,
@@ -390,6 +412,7 @@ fn read_one(
     let Some(sample) = sample else {
         return Ok(true);
     };
+    // SAFETY: flattens the live sample above into one buffer.
     let buffer = unsafe { sample.ConvertToContiguousBuffer() }?;
 
     // A 2D buffer knows its own pitch; a plain one is packed at the width.
@@ -397,12 +420,14 @@ fn read_one(
         Ok(flat) => {
             let mut scanline = core::ptr::null_mut();
             let mut pitch = 0i32;
+            // SAFETY: both out-parameters are live locals, and the matching unlock runs below.
             unsafe { flat.Lock2D(&mut scanline, &mut pitch) }?;
             (scanline, pitch)
         }
         Err(_) => {
             let mut data = core::ptr::null_mut();
             let mut length = 0u32;
+            // SAFETY: both out-parameters are live locals, and the matching unlock runs below.
             unsafe { buffer.Lock(&mut data, None, Some(&mut length)) }?;
             (data, width.saturating_mul(4) as i32)
         }
@@ -425,7 +450,9 @@ fn read_one(
     }
 
     match buffer.cast::<IMF2DBuffer>() {
+        // SAFETY: pairs with the 2D lock taken above.
         Ok(flat) => unsafe { flat.Unlock2D() }?,
+        // SAFETY: pairs with the plain lock taken above.
         Err(_) => unsafe { buffer.Unlock() }?,
     }
     Ok(true)
@@ -443,7 +470,9 @@ unsafe fn gather_rows(
     out.clear();
     out.reserve(row_bytes.saturating_mul(height as usize));
     for row in 0..height as isize {
+        // SAFETY: the caller guarantees `height` rows of `pitch` bytes are addressable.
         let line = unsafe { scanline0.offset(row * pitch as isize) };
+        // SAFETY: each row holds at least `row_bytes`, which the caller derived from the width.
         out.extend_from_slice(unsafe { core::slice::from_raw_parts(line, row_bytes) });
     }
 }
@@ -493,6 +522,7 @@ impl FrameSource for MfCameraSource {
 /// host shutting down should ever do.
 #[allow(dead_code)]
 pub(crate) fn shutdown() {
+    // SAFETY: pairs with the one-time startup above, at process exit.
     let _ = unsafe { MFShutdown() };
 }
 
@@ -530,6 +560,7 @@ mod tests {
     fn a_positive_pitch_reads_the_rows_in_the_order_memory_holds_them() {
         let source = ladder();
         let mut out = Vec::new();
+        // SAFETY: the fixture holds exactly ROWS rows of ROW_BYTES, which is what is passed.
         unsafe {
             gather_rows(
                 &mut out,
@@ -547,9 +578,10 @@ mod tests {
     #[test]
     fn a_negative_pitch_reads_the_rows_back_into_top_down_order() {
         let source = ladder();
-        // `Lock2D` reports the first scanline, which for a negative pitch is the last row in memory.
+        // SAFETY: the fixture holds ROWS rows, so the last one, which Lock2D reports first for a negative pitch, starts inside it.
         let first = unsafe { source.as_ptr().add((ROWS - 1) * ROW_BYTES) };
         let mut out = Vec::new();
+        // SAFETY: a negative pitch walks back from the last row, which is where `first` points.
         unsafe {
             gather_rows(&mut out, first, -(ROW_BYTES as i32), ROW_BYTES, ROWS as u32);
         };
@@ -567,6 +599,7 @@ mod tests {
             .flat_map(|row| [row, row, row, 0xFF, 0xFF])
             .collect();
         let mut out = Vec::new();
+        // SAFETY: the fixture holds ROWS rows of five bytes, which is the stride passed.
         unsafe { gather_rows(&mut out, padded.as_ptr(), 5, ROW_BYTES, ROWS as u32) };
         assert_eq!(out, ladder());
     }

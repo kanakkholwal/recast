@@ -68,7 +68,7 @@ impl WgcSource {
                 operation: "capture a window on this build of Windows",
             });
         }
-        // WinRT activation needs COM here. Idempotent: S_FALSE and RPC_E_CHANGED_MODE both mean it was already initialised.
+        // SAFETY: WinRT activation needs COM, and re-initialising a thread is idempotent, so the result is ignored.
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         }
@@ -77,6 +77,7 @@ impl WgcSource {
         let (device, context) = d3d::create_device(None)?;
         let dxgi_device: IDXGIDevice = device.cast::<IDXGIDevice>().map_err(d3d::err)?;
         let inspectable =
+            // SAFETY: `dxgi_device` is a live interface this scope holds a reference to.
             unsafe { CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device) }.map_err(d3d::err)?;
         let d3d_device: IDirect3DDevice =
             inspectable.cast::<IDirect3DDevice>().map_err(d3d::err)?;
@@ -84,6 +85,7 @@ impl WgcSource {
         let interop: IGraphicsCaptureItemInterop =
             factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().map_err(d3d::err)?;
         let item: GraphicsCaptureItem =
+            // SAFETY: the interop factory is live, and an invalid window is reported as an error rather than undefined.
             unsafe { interop.CreateForWindow(hwnd) }.map_err(|error: windows::core::Error| {
                 match error.code().0 {
                     // The window went away between enumeration and capture.
@@ -211,6 +213,7 @@ impl FrameSource for WgcSource {
                         .cast::<IDirect3DDxgiInterfaceAccess>()
                         .map_err(d3d::err)?;
                     let texture: ID3D11Texture2D =
+                        // SAFETY: `access` is the live interop accessor for the frame's surface.
                         unsafe { access.GetInterface() }.map_err(d3d::err)?;
                     self.readback.copy_from(&texture, self.region)?;
                     pts = frame
