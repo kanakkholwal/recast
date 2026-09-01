@@ -94,11 +94,13 @@ export class PreviewEngineDriver {
 			return false;
 		}
 		// Layer ids are assigned during migration, so they can move when the scene changes shape.
+		const prevScreen = this.#screenLayer;
+		const prevCamera = this.#cameraLayer;
 		this.#screenLayer = this.#engine.screenLayerId ?? null;
 		this.#cameraLayer = this.#engine.cameraLayerId ?? null;
-		// The ring belongs to a layer id, so a new id means a new ring.
-		this.#ringCapacity = 0;
-		this.#cameraRing = 0;
+		// A camera on/off only flips the layer's hidden flag; the id is stable, so wiping the ring on an unchanged id flashes the screen black.
+		if (this.#screenLayer !== prevScreen) this.#ringCapacity = 0;
+		if (this.#cameraLayer !== prevCamera) this.#cameraRing = 0;
 		return true;
 	}
 

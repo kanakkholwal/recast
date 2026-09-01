@@ -389,11 +389,17 @@ impl AudioSource for WasapiSource {
             let local = local_position(&mut self.anchor, device_position, self.timeline.position());
             let gap = self.timeline.gap_before(local);
             let discontinuous = flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY.0 as u32 != 0;
-            if gap > 0 {
-                // SAFETY: releases the buffer acquired above without consuming a frame, so it is delivered next call.
-                let _ = unsafe { self.capture.ReleaseBuffer(0) };
+            // SAFETY: releases the buffer acquired above without consuming a frame, so it is delivered next call.
+            let deferred = gap > 0 && unsafe { self.capture.ReleaseBuffer(0) }.is_ok();
+            if deferred {
                 let chunk = self.desc.format.frames_in_duration(MAX_SILENCE).min(gap);
                 return Ok(self.emit_silence(chunk, discontinuous));
+            }
+            // A refused zero-release leaves the packet checked out, and the next GetBuffer then fails OUT_OF_ORDER and reads as a dead device; consuming it normally costs the silence, not the stream.
+            if gap > 0 {
+                log::debug!(
+                    "wasapi: {gap} frames of silence owed but the packet could not be deferred"
+                );
             }
 
             let bytes = self.desc.format.bytes_for(frames as usize);

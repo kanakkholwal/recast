@@ -35,7 +35,9 @@ pub struct AudioReader {
 
 impl AudioReader {
     /// `None` from `open` means the file has no audio, which is normal for a
-    /// screen recording with the microphone off.
+    /// screen recording with the microphone off. A stream this cannot decode
+    /// is [`DecodeError::UndecodableAudio`], never `None`: callers fall back to
+    /// FFmpeg on the error and would otherwise export an Opus source silent.
     pub fn open(path: &Path, format: AudioFormat) -> Result<Option<Self>, DecodeError> {
         if !ensure_started() {
             return Err(DecodeError::Unsupported);
@@ -58,7 +60,7 @@ impl AudioReader {
             reader.SetCurrentMediaType(AUDIO_STREAM, None, &output)
         };
         if negotiated.is_err() {
-            return Ok(None);
+            return Err(DecodeError::UndecodableAudio);
         }
         Ok(Some(Self { reader, format }))
     }

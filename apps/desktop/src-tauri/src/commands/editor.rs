@@ -2749,10 +2749,9 @@ pub(crate) async fn run_export_job(
         Some(crate::export_engine::CaptionBurnIn { track, font })
     }
 
-    // The engine path, opt in. Everything above still runs (it validates the request and names the output the same way), so the two paths differ only in who renders. MP4 only, no progress/cancel yet, which is why it is not a setting.
-    if crate::export_engine::enabled(request.engine_export) {
-        // Direct only for an mp4 the engine can finish itself: GIF needs a palette pass, WebM a VP9 encoder, and a platform without an in-process codec needs an audio track, all of which live behind the mux-only path the browser renderer already uses.
-        let direct = extension == "mp4" && crate::export_engine::writes_finished_files();
+    // Opt in, and mp4 only: everything above still validates and names the output, but the mux pass writes `.mp4` with `-c:v copy`, so a WebM request here got an mp4 under the name it asked for.
+    if crate::export_engine::enabled(request.engine_export) && extension == "mp4" {
+        let direct = crate::export_engine::writes_finished_files();
         let render_target = match direct {
             true => output_path.clone(),
             false => std::env::temp_dir().join(format!("recast-engine-{export_id}.mp4")),
@@ -2794,6 +2793,19 @@ pub(crate) async fn run_export_job(
                 ffmpeg: Some(crate::ffmpeg::ffmpeg_path()),
                 // The platform decides; the flag exists so the piped path is testable where a native one exists.
                 force_ffmpeg: false,
+                // The editor's own map, so the engine warps video on the timeline the muxed audio already follows.
+                time_map: request.time_map.as_ref().map(|spans| {
+                    recast_time::build_time_map(
+                        &spans
+                            .iter()
+                            .map(|s| recast_time::TimeSpan {
+                                orig_start: s.orig_start,
+                                orig_end: s.orig_end,
+                                speed: s.speed,
+                            })
+                            .collect::<Vec<_>>(),
+                    )
+                }),
                 audio_sources: crate::export_audio::RecordingAudio {
                     video: Some(&source_video),
                     system: project.as_ref().and_then(|p| p.audio_path.as_deref()),
@@ -2803,34 +2815,45 @@ pub(crate) async fn run_export_job(
             &mut on_frame,
         );
         let report = match result {
-            Ok(report) => report,
+            Ok(report) => Some(report),
             Err(crate::export_engine::EngineExportError::Cancelled) => {
                 let _ = std::fs::remove_file(&render_target);
                 emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
                 return Err(AppError::msg("export cancelled"));
+            }
+            // Declined, not failed: the FFmpeg graph below renders every scene, so a scene this path cannot do is a fallback rather than a lost export.
+            Err(
+                e @ (crate::export_engine::EngineExportError::Unsupported(_)
+                | crate::export_engine::EngineExportError::Encode(_)),
+            ) => {
+                log::info!("export[{export_id}] engine declined ({e}); using the FFmpeg graph");
+                let _ = std::fs::remove_file(&render_target);
+                None
             }
             Err(e) => {
                 let _ = std::fs::remove_file(&render_target);
                 return Err(AppError::msg(format!("engine export failed: {e}")));
             }
         };
-        log::info!("export[{export_id}] engine: {report}");
-        if !direct {
-            // Released before the mux job takes its own for the same export id.
-            drop(_cancel_token);
-            return run_mux_job(
-                app.clone(),
-                request,
-                render_target.to_string_lossy().into_owned(),
-            )
-            .await;
+        if let Some(report) = report {
+            log::info!("export[{export_id}] engine: {report}");
+            if !direct {
+                // Released before the mux job takes its own for the same export id.
+                drop(_cancel_token);
+                return run_mux_job(
+                    app.clone(),
+                    request,
+                    render_target.to_string_lossy().into_owned(),
+                )
+                .await;
+            }
+            emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0));
+            emit_export_state(
+                &app,
+                ExportStateEvent::success(&export_id, &output_path.to_string_lossy()),
+            );
+            return Ok(output_path.to_string_lossy().into_owned());
         }
-        emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0));
-        emit_export_state(
-            &app,
-            ExportStateEvent::success(&export_id, &output_path.to_string_lossy()),
-        );
-        return Ok(output_path.to_string_lossy().into_owned());
     }
 
     let asset_cache_dir = app

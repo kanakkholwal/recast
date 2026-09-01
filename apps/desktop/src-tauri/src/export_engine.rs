@@ -93,6 +93,10 @@ pub enum EngineExportError {
     Audio(String),
     #[error("the export was cancelled")]
     Cancelled,
+    /// The scene needs something this path cannot do. The caller falls back to
+    /// FFmpeg rather than shipping output that disagrees with the preview.
+    #[error("the engine cannot export this scene: {0}")]
+    Unsupported(String),
 }
 
 /// What an export actually did, so a slow or wrong result on a machine nobody
@@ -259,9 +263,13 @@ impl Sink {
                 let bytes = sink
                     .finish()
                     .map_err(|e| EngineExportError::Encode(e.to_string()))?;
-                std::fs::write(output, &bytes).map_err(|error| EngineExportError::Write {
-                    path: output.to_path_buf(),
-                    error,
+                // Atomic: a plain write leaves a truncated mp4 under the user's chosen name if the disk fills or the app dies mid-write.
+                let tmp = output.with_extension("mp4.part");
+                crate::commands::system::write_atomic(&tmp, output, &bytes).map_err(|error| {
+                    EngineExportError::Write {
+                        path: output.to_path_buf(),
+                        error,
+                    }
                 })
             }
             Self::Ffmpeg(sink) => sink
@@ -294,6 +302,32 @@ pub fn burn_in_for(state: &RenderState, burn: bool) -> Option<CaptionTrack> {
     (!track.is_empty()).then_some(track)
 }
 
+/// What this scene asks for that [`recast_export::FrameLoop`] cannot supply.
+///
+/// It fills `FrameInputs` with the screen view and the caption frame only, so
+/// anything else in the scene renders as absent, not as an error: an export
+/// would quietly lose the user's cursor, camera or wallpaper.
+fn unfeedable_layers(state: &RenderState) -> Option<&'static str> {
+    if state.cursor_enabled {
+        return Some("the cursor overlay");
+    }
+    if state.camera_overlay.enabled {
+        return Some("the camera overlay");
+    }
+    if matches!(state.background_type.as_str(), "image" | "wallpaper") {
+        return Some("an image background");
+    }
+    if state.annotations.iter().any(|a| {
+        matches!(
+            a.kind,
+            recast_scene::v1::nodes::AnnotationKind::Image { .. }
+        )
+    }) {
+        return Some("an image annotation");
+    }
+    None
+}
+
 /// One engine export, beyond the scene itself.
 pub struct ExportSpec<'a> {
     pub input: &'a Path,
@@ -321,6 +355,10 @@ pub struct ExportSpec<'a> {
     /// without one always take it; this is how it is exercised on the one that
     /// has one, and it is the fallback when that encoder refuses a size.
     pub force_ffmpeg: bool,
+    /// The editor's own time map. `None` derives it from the scene, which the
+    /// preview does too; passing the editor's keeps video and audio on the one
+    /// timeline instead of two independently derived ones.
+    pub time_map: Option<recast_time::TimeMap>,
 }
 
 /// Whether the engine writes a finished file on this platform, or an
@@ -467,6 +505,16 @@ pub fn export_video(
         }
         session.set_caption_track(Some(captions.track.clone()));
     }
+    // Declined rather than rendered without them: the frame loop feeds only the screen layer and the caption frame, so these would be silently missing from a file that otherwise looked finished.
+    if let Some(missing) = unfeedable_layers(state) {
+        return Err(EngineExportError::Unsupported(format!(
+            "{missing} still needs the FFmpeg graph"
+        )));
+    }
+    // The editor's map wins over the scene-derived one: they can differ, and the muxed audio follows the editor's.
+    if let Some(map) = spec.time_map.clone() {
+        session.set_time_map(Some(map));
+    }
     let walk = FrameWalk::new(RenderSource::output_duration(&session), fps);
     if walk.is_empty() {
         return Err(EngineExportError::Empty);
@@ -528,10 +576,21 @@ pub fn export_video(
     // Skipped whole when off: decoding the sources is most of an audio pass's cost.
     if spec.audio && sink.writes_audio() {
         let scene = to_scene(state);
+        // The same timeline the video walked: audio placed at output zero while the video started at the trim was the whole file out of sync.
+        let map = spec
+            .time_map
+            .clone()
+            .unwrap_or_else(|| scene.timeline.time_map());
+        if !crate::export_audio::spans_are_conformable(&map.spans) {
+            // A resample here would shift pitch where FFmpeg's `atempo` does not, so a sped-up project keeps the path whose audio matches the preview.
+            return Err(EngineExportError::Unsupported(
+                "a speed change needs the FFmpeg audio path".into(),
+            ));
+        }
         let mut mixer = recast_audio::mixer_for(
             &scene.audio,
             RenderSource::output_duration(&session),
-            crate::export_audio::sources_for(&scene.audio, &spec.audio_sources),
+            crate::export_audio::sources_for(&scene.audio, &spec.audio_sources, &map.spans),
         );
         if mixer.total_frames() > 0 {
             sink.push_audio(&mut mixer, AUDIO_BITRATE)?;
@@ -546,6 +605,43 @@ pub fn export_video(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn plain() -> RenderState {
+        RenderState {
+            trim_start: 0.0,
+            trim_end: 10.0,
+            padding: 0.0,
+            cursor_enabled: false,
+            background_type: "color".into(),
+            background_value: "#111111".into(),
+            ..Default::default()
+        }
+    }
+
+    /// The frame loop feeds the screen layer and the caption frame and nothing
+    /// else, so these have to be refused rather than silently left out of a
+    /// file that otherwise looks finished.
+    #[test]
+    fn a_scene_the_frame_loop_cannot_feed_is_declined() {
+        let mut cursor = plain();
+        cursor.cursor_enabled = true;
+        assert_eq!(unfeedable_layers(&cursor), Some("the cursor overlay"));
+
+        let mut camera = plain();
+        camera.camera_overlay.enabled = true;
+        assert_eq!(unfeedable_layers(&camera), Some("the camera overlay"));
+
+        let mut wallpaper = plain();
+        wallpaper.background_type = "wallpaper".into();
+        assert_eq!(unfeedable_layers(&wallpaper), Some("an image background"));
+    }
+
+    /// A plain colour background with no overlays is exactly what the loop does
+    /// feed, so it must not be refused or the flag would render nothing at all.
+    #[test]
+    fn a_scene_of_only_screen_and_captions_is_accepted() {
+        assert_eq!(unfeedable_layers(&plain()), None);
+    }
 
     /// The flag crosses the bridge as `engineExport`, and a rename on either
     /// side would silently leave every export on the graph.
@@ -858,6 +954,7 @@ mod live {
             },
             ffmpeg: None,
             force_ffmpeg: false,
+            time_map: None,
             audio_sources: crate::export_audio::RecordingAudio {
                 video: Some(input),
                 ..Default::default()
@@ -1332,6 +1429,7 @@ mod live {
             &state,
             &ExportSpec {
                 force_ffmpeg: true,
+                time_map: None,
                 ffmpeg: Some(&ffmpeg),
                 // Video only, as it is on the platforms that take this path.
                 audio: false,
@@ -1404,6 +1502,7 @@ mod live {
             &state,
             &ExportSpec {
                 force_ffmpeg: true,
+                time_map: None,
                 ffmpeg: Some(&ffmpeg),
                 audio: false,
                 ..spec(&input, &piped_out)
@@ -1457,6 +1556,7 @@ mod live {
             &state,
             &ExportSpec {
                 force_ffmpeg: true,
+                time_map: None,
                 ffmpeg: Some(&ffmpeg),
                 audio: true,
                 ..spec(&input, &output)
@@ -1485,6 +1585,7 @@ mod live {
             &state,
             &ExportSpec {
                 force_ffmpeg: true,
+                time_map: None,
                 ffmpeg: None,
                 ..spec(&input, &output)
             },
@@ -1638,7 +1739,7 @@ mod live {
             clips: vec![voice_clip(&mic)],
         };
         assert!(
-            crate::export_audio::sources_for(&quiet, &sources)
+            crate::export_audio::sources_for(&quiet, &sources, &[])
                 .recording_kinds()
                 .is_empty(),
             "the recording was mixed under the voice-over"
@@ -1646,7 +1747,7 @@ mod live {
 
         let no_voice = recast_scene::AudioGraph::default();
         assert_eq!(
-            crate::export_audio::sources_for(&no_voice, &sources)
+            crate::export_audio::sources_for(&no_voice, &sources, &[])
                 .recording_kinds()
                 .len(),
             2,
@@ -1673,6 +1774,7 @@ mod live {
                 microphone: Some(&mic),
                 ..Default::default()
             },
+            &[],
         );
         assert_eq!(
             gathered.recording_kinds().len(),

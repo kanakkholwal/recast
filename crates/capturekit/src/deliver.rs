@@ -229,6 +229,27 @@ impl AudioQueue {
 
     /// Waits for samples, swapping the oldest contiguous run into `buffer`; the bool says whether samples are missing between the previous run and this one.
     /// Runs already queued are delivered even after [`AudioQueue::end`], since a stream that ends still owes what it captured.
+    /// Waits until at least one run is queued, WITHOUT taking it. A caller that
+    /// only needs the hardware's format must not consume audio to learn it: the
+    /// run it took was dropped and the track started late by that much.
+    pub(crate) fn wait_until_ready(&self, timeout: Duration) -> Result<()> {
+        let mut queued = self.queued.lock().map_err(|_| lost())?;
+        while queued.runs.is_empty() {
+            if self.ended.load(Ordering::Acquire) {
+                return Err(lost());
+            }
+            let (next, waited) = self
+                .arrived
+                .wait_timeout(queued, timeout)
+                .map_err(|_| lost())?;
+            queued = next;
+            if waited.timed_out() && queued.runs.is_empty() {
+                return Err(CaptureError::Timeout(timeout));
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn take(
         &self,
         timeout: Duration,
@@ -281,8 +302,10 @@ impl Endable for AudioQueue {
 
 /// A stream that ended, or a slot poisoned by a delivery thread that panicked
 /// mid-publish. Neither is a timeout, and neither is fixed by waiting longer.
+/// No further samples will arrive: the source ended, or the thread that feeds
+/// this one panicked and poisoned the lock. Neither is worth retrying.
 fn lost() -> CaptureError {
-    CaptureError::Lost(LostReason::AccessLost)
+    CaptureError::Lost(LostReason::Ended)
 }
 
 #[cfg(test)]

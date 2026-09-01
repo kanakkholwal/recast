@@ -54,6 +54,9 @@ struct CapturekitSource {
     /// Whether the user was told frames stopped, so recovery is only announced
     /// to someone who saw the interruption.
     interrupted: bool,
+    /// Logged once: a backend that stops handing over GPU handles does it for
+    /// every frame after, and one line per frame would bury the recording.
+    warned_host_fallback: bool,
 }
 
 /// Opens a capture that produces only what the source produced; pacing stays with the recording loop, which owns the wall-clock contract.
@@ -86,6 +89,7 @@ impl CapturekitSource {
             retry_at: None,
             notice: None,
             interrupted: false,
+            warned_host_fallback: false,
         })
     }
 
@@ -156,11 +160,20 @@ impl CaptureSource for CapturekitSource {
             Ok(frame) => {
                 let taken = match (self.mode, frame.gpu_handle()) {
                     (FrameMode::Gpu, Some(handle)) => CapturedFrame::Gpu(*handle),
-                    // A silent host fallback is how a readback reached this path once.
+                    // A silent host fallback is how a readback reached this path once; the take is worth more than the zero-copy, so it degrades rather than aborting a good recording.
                     (FrameMode::Gpu, None) => {
-                        return Err(anyhow::anyhow!(
-                            "the capture answered without a GPU handle although one was asked for"
-                        ))
+                        if !self.warned_host_fallback {
+                            self.warned_host_fallback = true;
+                            log::warn!(
+                                "capture answered without a GPU handle; falling back to host copies"
+                            );
+                        }
+                        CapturedFrame::Host(Arc::from(pack_rows(
+                            frame.bytes(),
+                            frame.stride(),
+                            frame.desc().width,
+                            frame.desc().height,
+                        )))
                     }
                     (FrameMode::Host, _) => CapturedFrame::Host(Arc::from(pack_rows(
                         frame.bytes(),

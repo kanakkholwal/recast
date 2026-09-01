@@ -166,8 +166,11 @@ impl AvfMicSource {
             stopped: false,
         };
 
-        // `startRunning` returns before the device produces, and only a real buffer names the format.
-        source.next_buffer(FIRST_BUFFER)?;
+        // `startRunning` returns before the device produces, and only a real buffer names the format. Waited for rather than taken: taking it dropped the recording's first samples on the floor.
+        source.queue.wait_until_ready(FIRST_BUFFER)?;
+        if let Some(format) = source.queue.format() {
+            source.desc.format = format;
+        }
         Ok(source)
     }
 }

@@ -252,8 +252,15 @@ impl PreviewEngine {
     #[wasm_bindgen(js_name = setLayerRingCapacity)]
     pub fn set_layer_ring_capacity(&mut self, layer_id: u32, capacity: u32) {
         let id = LayerId(layer_id);
+        let want = (capacity as usize).max(1);
+        // Same-capacity rebuild would drop the bound frame and flash the layer black; keep the populated ring.
+        if let Some((_, ring)) = self.frames.iter().find(|(slot_id, _)| *slot_id == id) {
+            if ring.capacity == want {
+                return;
+            }
+        }
         self.frames.retain(|(slot_id, _)| *slot_id != id);
-        self.frames.push((id, LayerRing::new(capacity as usize)));
+        self.frames.push((id, LayerRing::new(want)));
     }
 
     /// Uploads a decoded frame and hands ownership straight back: the pixels are

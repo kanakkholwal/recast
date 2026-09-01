@@ -154,12 +154,24 @@ pub(crate) fn cameras() -> Result<Vec<Camera>> {
     Ok(cameras)
 }
 
+/// Shuts a media source down when it drops. An early `?` past a manual
+/// `Shutdown` left the camera powered on and held until the process exited,
+/// and enumeration activates every device it lists.
+struct ActiveSource(IMFMediaSource);
+
+impl Drop for ActiveSource {
+    fn drop(&mut self) {
+        // SAFETY: shuts down the source this owns, exactly once.
+        let _ = unsafe { self.0.Shutdown() };
+    }
+}
+
 /// The modes one device advertises, deduplicated and largest first.
 /// Reported as what capturekit will deliver rather than the device's own subtype, since the reader converts and a webcam lists the same geometry over MJPG, YUY2 and NV12.
 fn modes(activate: &IMFActivate) -> Result<Vec<CameraFormat>> {
     // SAFETY: activates the device this activation object describes; shut down below.
-    let source: IMFMediaSource = unsafe { activate.ActivateObject() }.map_err(err)?;
-    let reader = reader_for(&source)?;
+    let source = ActiveSource(unsafe { activate.ActivateObject() }.map_err(err)?);
+    let reader = reader_for(&source.0)?;
     let mut modes: Vec<CameraFormat> = Vec::new();
     let mut index = 0u32;
     // SAFETY: the reader is live, and an index past the end is reported as an error.
@@ -190,8 +202,6 @@ fn modes(activate: &IMFActivate) -> Result<Vec<CameraFormat>> {
             modes.push(mode);
         }
     }
-    // SAFETY: shuts down the source activated above, exactly once; enumeration must not leave a camera powered.
-    let _ = unsafe { source.Shutdown() };
     modes.sort_by(|a, b| {
         b.area().cmp(&a.area()).then(
             b.frame_rate
@@ -335,7 +345,9 @@ fn run(
     // Declared first so COM outlives every object created under it.
     let _com = ComScope::mta();
     let opened = activate_by_id(id).and_then(|source| {
-        let reader = reader_for(&source)?;
+        // Guarded from here on: a reader or negotiation failure below must not leave the device streaming.
+        let source = ActiveSource(source);
+        let reader = reader_for(&source.0)?;
         let (width, height) = negotiate(&reader, size)?;
         Ok((source, reader, width, height))
     });
@@ -378,8 +390,7 @@ fn run(
         }
     }
     slot.end();
-    // SAFETY: shuts down the source this loop owns, exactly once.
-    let _ = unsafe { source.Shutdown() };
+    drop(source);
 }
 
 /// Read one sample, publishing it. `false` means the stream ended.

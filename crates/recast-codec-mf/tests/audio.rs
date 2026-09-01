@@ -129,3 +129,33 @@ fn a_file_with_no_audio_reports_none_rather_than_failing() {
     let reader = AudioReader::open(&path, AudioFormat::default()).expect("the file opens");
     assert!(reader.is_none(), "a video-only file reported audio");
 }
+
+/// `Ok(None)` is read by every caller as "this file has no audio", so a stream
+/// that exists must never produce it: refusing to decode one is an error.
+/// Which codecs Media Foundation covers is a property of the machine, so the
+/// invariant is asserted over whatever it does cover rather than one codec.
+#[test]
+fn a_stream_that_exists_never_reads_as_no_audio() {
+    let cases: &[(&str, &[&str])] = &[
+        ("inv-opus.mp4", &["-c:a", "libopus", "-f", "mp4"]),
+        ("inv-flac.flac", &["-c:a", "flac", "-f", "flac"]),
+        ("inv-alac.m4a", &["-c:a", "alac", "-f", "ipod"]),
+        ("inv-vorbis.ogg", &["-c:a", "libvorbis", "-f", "ogg"]),
+        ("inv-aac.m4a", &["-c:a", "aac", "-f", "ipod"]),
+    ];
+    let mut checked = 0;
+    for (name, args) in cases {
+        let Some(path) = tone_file(name, args) else {
+            continue;
+        };
+        checked += 1;
+        assert!(
+            !matches!(AudioReader::open(&path, AudioFormat::default()), Ok(None)),
+            "{name} has an audio stream but read as having none"
+        );
+    }
+    assert!(
+        checked > 0,
+        "no fixture was written, so nothing was asserted"
+    );
+}

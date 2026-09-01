@@ -211,6 +211,10 @@ pub enum LostReason {
     /// The user revoked a portal or TCC grant while recording.
     #[error("the capture permission was revoked")]
     PermissionRevoked,
+    /// The source finished, or the thread feeding it died. Terminal on purpose:
+    /// reported as recoverable, a caller's retry loop spins without ever waiting.
+    #[error("the capture source finished")]
+    Ended,
 }
 
 impl LostReason {
@@ -223,6 +227,15 @@ impl LostReason {
 
 #[cfg(test)]
 mod tests {
+
+    /// A finished source must be terminal: `run` retries anything recoverable
+    /// with no wait, so reporting the end as recoverable pegs a core forever.
+    #[test]
+    fn a_finished_source_is_not_worth_retrying() {
+        assert!(!LostReason::Ended.is_recoverable());
+        assert!(!CaptureError::Lost(LostReason::Ended).is_recoverable());
+        assert!(CaptureError::Lost(LostReason::AccessLost).is_recoverable());
+    }
     use super::*;
 
     #[test]

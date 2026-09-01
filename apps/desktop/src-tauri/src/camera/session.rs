@@ -20,6 +20,11 @@ use crate::recording::TrackStart;
 /// How long to wait for a frame before re-checking the stop flag.
 const POLL: Duration = Duration::from_millis(250);
 
+/// The rate the camera is opened and encoded at. One constant on purpose: the
+/// captured frames carry no timestamps, so requesting one rate and declaring
+/// another to the encoder rescales the whole track.
+const CAMERA_FPS: u32 = 30;
+
 /// How long one attempt waits for the first frame. A cold USB webcam negotiates
 /// format and runs auto-exposure first, so this is seconds rather than millis.
 const FIRST_FRAME: Duration = Duration::from_secs(4);
@@ -48,6 +53,9 @@ pub type FrameSink = Box<dyn Fn(Vec<u8>) + Send + 'static>;
 pub struct CameraGeometry {
     pub width: u32,
     pub height: u32,
+    /// The rate the capture is paced at, which the recorder MUST encode at:
+    /// its frames carry no timestamps, so any other rate rescales the track.
+    pub fps: u32,
     pub session: u64,
 }
 
@@ -174,7 +182,7 @@ fn try_open(
     id: &capturekit::CameraId,
 ) -> Result<(capturekit::Capturer, CameraGeometry, Vec<u8>)> {
     let mut capturer = capturekit::capturer(Target::Camera(id.clone()))
-        .frame_rate(30)
+        .frame_rate(CAMERA_FPS)
         .build()
         .with_context(|| format!("failed to open camera \"{device}\""))?;
     let first = capturer
@@ -183,6 +191,7 @@ fn try_open(
     let geometry = CameraGeometry {
         width: first.desc().width,
         height: first.desc().height,
+        fps: CAMERA_FPS,
         session: next_session(),
     };
     let opening = pack_rows(
@@ -217,13 +226,22 @@ pub fn release() {
     }
 }
 
+/// How the camera's frames are encoded. The rate comes from the geometry and
+/// nowhere else: the frames carry no timestamps, so declaring the screen's rate
+/// here would rescale the whole camera track.
+fn encoder_config(geometry: CameraGeometry, dest: PathBuf) -> EncoderConfig {
+    EncoderConfig {
+        width: geometry.width,
+        height: geometry.height,
+        fps: geometry.fps,
+        crop: None,
+        output_path: dest,
+        quality: RecordingQuality::default(),
+    }
+}
+
 /// Begin writing the live camera to `dest`. The session must already be running.
-pub fn attach_recorder(
-    dest: PathBuf,
-    fps: u32,
-    track: TrackStart,
-    pause: Arc<AtomicBool>,
-) -> Result<()> {
+pub fn attach_recorder(dest: PathBuf, track: TrackStart, pause: Arc<AtomicBool>) -> Result<()> {
     let held = slot().lock().map_err(|_| anyhow!("camera lock poisoned"))?;
     let running = held
         .as_ref()
@@ -232,14 +250,7 @@ pub fn attach_recorder(
     let pipeline = RecordingPipeline::new(QUEUE_DEPTH);
     let stop = Arc::new(AtomicBool::new(false));
     let encoder = spawn_encoder_loop(
-        EncoderConfig {
-            width: running.geometry.width,
-            height: running.geometry.height,
-            fps,
-            crop: None,
-            output_path: dest,
-            quality: RecordingQuality::default(),
-        },
+        encoder_config(running.geometry, dest),
         stop.clone(),
         pipeline.clone(),
     )?;
@@ -446,11 +457,33 @@ mod tests {
         );
     }
 
+    /// The camera is paced at its own rate and its frames carry no timestamps,
+    /// so encoding at the screen's rate played a 30 fps take back at double
+    /// speed and drifted further from the audio every second.
+    #[test]
+    fn the_encoder_runs_at_the_rate_the_camera_was_opened_at() {
+        let geometry = CameraGeometry {
+            width: 1280,
+            height: 720,
+            fps: CAMERA_FPS,
+            session: 1,
+        };
+        let config = encoder_config(geometry, PathBuf::from("camera.mp4"));
+        assert_eq!(config.fps, CAMERA_FPS);
+        assert_eq!(config.fps, geometry.fps);
+        assert_ne!(
+            config.fps,
+            crate::recording::RECORDING_FPS,
+            "the screen's rate must not be what the camera is encoded at"
+        );
+    }
+
     #[test]
     fn a_preview_frame_carries_its_own_dimensions() {
         let geometry = CameraGeometry {
             width: 2,
             height: 2,
+            fps: CAMERA_FPS,
             session: 1,
         };
         let packed = vec![9u8; 2 * 2 * 4];

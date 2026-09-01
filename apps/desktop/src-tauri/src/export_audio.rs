@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use recast_audio::SceneSources;
 // Only the native decode path builds Samples; off Windows the stub returns an empty SceneSources.
 #[cfg(windows)]
-use recast_audio::{Samples, MASTER_CHANNELS, MASTER_RATE};
+use recast_audio::{SampleSource, Samples, MASTER_CHANNELS, MASTER_RATE};
 use recast_scene::v1::nodes::{AudioClipRole, AudioClipSource};
 use recast_scene::AudioGraph;
+use recast_time::MappedSpan;
 
 /// Where a clip's media lives, or `None` when unreadable. A provider clip is
 /// cached under `asset_path`; a local one names its file.
@@ -33,14 +34,24 @@ pub fn decode(path: &Path) -> Result<Option<Samples>, String> {
         sample_rate: MASTER_RATE,
         channels: MASTER_CHANNELS as u16,
     };
-    let Some(mut reader) =
-        AudioReader::open(path, format).map_err(|e| format!("{}: {e}", path.display()))?
-    else {
-        return Ok(None);
+    let opened = match AudioReader::open(path, format) {
+        Ok(Some(reader)) => Some(reader),
+        Ok(None) => return Ok(None),
+        // A codec the in-process reader refuses is FFmpeg's job, not silence.
+        Err(error) => {
+            log::info!(
+                "export: {} needs ffmpeg to decode ({error})",
+                path.display()
+            );
+            None
+        }
     };
-    let data = reader
-        .read_all()
-        .map_err(|e| format!("{}: {e}", path.display()))?;
+    let data = match opened {
+        Some(mut reader) => reader
+            .read_all()
+            .map_err(|e| format!("{}: {e}", path.display()))?,
+        None => crate::audio_decode::decode_interleaved(path, MASTER_RATE, MASTER_CHANNELS as u16)?,
+    };
     if data.is_empty() {
         return Ok(None);
     }
@@ -49,6 +60,38 @@ pub fn decode(path: &Path) -> Result<Option<Samples>, String> {
         MASTER_RATE,
         MASTER_CHANNELS as u16,
     )))
+}
+
+/// Whether `spans` describe a timeline this can conform audio to.
+///
+/// Trim and cuts are a rearrangement of samples, which [`conform`] does exactly.
+/// A speed change is a resample, and FFmpeg's `atempo` preserves pitch where a
+/// plain resample does not, so a sped-up project must keep the FFmpeg path
+/// rather than export audio that disagrees with the preview.
+#[must_use]
+pub fn spans_are_conformable(spans: &[MappedSpan]) -> bool {
+    spans.iter().all(|s| (s.speed - 1.0).abs() < 1e-6)
+}
+
+/// Rewrites `data` onto the OUTPUT axis: the surviving stretches of the
+/// recording, concatenated in the order the video plays them.
+///
+/// Without this the mixer places the whole undisturbed source at output zero,
+/// so a project trimmed to start at 10s exported audio from 0s under video
+/// from 10s: the entire file out of sync, not merely drifting.
+#[cfg(windows)]
+fn conform(data: &[f32], rate: u32, channels: u16, spans: &[MappedSpan]) -> Vec<f32> {
+    let frame = channels.max(1) as usize;
+    let frames = data.len() / frame;
+    let at = |sec: f64| ((sec.max(0.0) * f64::from(rate)).round() as usize).min(frames);
+    let mut out = Vec::with_capacity(data.len());
+    for span in spans {
+        let (from, to) = (at(span.orig_start), at(span.orig_end));
+        if to > from {
+            out.extend_from_slice(&data[from * frame..to * frame]);
+        }
+    }
+    out
 }
 
 /// The recording's own tracks. A project captures the microphone and system
@@ -74,7 +117,11 @@ pub fn voice_detached(graph: &AudioGraph) -> bool {
 /// silenced, and never fatal: one bad music file must not fail a good export.
 #[cfg(windows)]
 #[must_use]
-pub fn sources_for(graph: &AudioGraph, recording: &RecordingAudio<'_>) -> SceneSources {
+pub fn sources_for(
+    graph: &AudioGraph,
+    recording: &RecordingAudio<'_>,
+    spans: &[MappedSpan],
+) -> SceneSources {
     use recast_audio::RecordingKind;
 
     let mut sources = SceneSources::new();
@@ -90,7 +137,10 @@ pub fn sources_for(graph: &AudioGraph, recording: &RecordingAudio<'_>) -> SceneS
     // A capture that never opened leaves a header with no samples, which decodes to `Ok(None)` and needs no guard of its own.
     for (path, kind) in captured.iter().filter_map(|(p, k)| p.map(|p| (p, *k))) {
         match decode(path) {
-            Ok(Some(samples)) => sources = sources.recording(kind, Box::new(samples)),
+            // Conformed here, not placed by the mixer: `Placement` describes ONE contiguous stretch and a cut list is many.
+            Ok(Some(samples)) => {
+                sources = sources.recording(kind, Box::new(conformed(samples, spans)))
+            }
             Ok(None) => log::info!("export: {} has no audio to mix", path.display()),
             Err(error) => log::warn!("export: {} did not decode: {error}", path.display()),
         }
@@ -113,11 +163,27 @@ pub fn sources_for(graph: &AudioGraph, recording: &RecordingAudio<'_>) -> SceneS
     sources
 }
 
+/// [`conform`] applied to decoded samples, or the samples unchanged when the
+/// timeline is one uncut stretch starting at zero.
+#[cfg(windows)]
+fn conformed(samples: Samples, spans: &[MappedSpan]) -> Samples {
+    if spans.is_empty() {
+        return samples;
+    }
+    let (rate, channels) = (samples.sample_rate(), samples.channels());
+    let data = conform(samples.data(), rate, channels, spans);
+    Samples::new(data, rate, channels)
+}
+
 /// No in-process decoder here, and none needed: the platforms without one take
 /// the mux pass, which builds the audio track from the render state itself.
 #[cfg(not(windows))]
 #[must_use]
-pub fn sources_for(_graph: &AudioGraph, _recording: &RecordingAudio<'_>) -> SceneSources {
+pub fn sources_for(
+    _graph: &AudioGraph,
+    _recording: &RecordingAudio<'_>,
+    _spans: &[MappedSpan],
+) -> SceneSources {
     SceneSources::new()
 }
 
@@ -181,6 +247,81 @@ mod tests {
         ] {
             assert!(!voice_detached(&graph_with(clips)), "detached on {name}");
         }
+    }
+
+    fn span(orig_start: f64, orig_end: f64, speed: f64) -> MappedSpan {
+        MappedSpan {
+            orig_start,
+            orig_end,
+            speed,
+            out_start: 0.0,
+            out_end: 0.0,
+        }
+    }
+
+    /// The mixer places a recording at output zero with no offset, so a trimmed
+    /// project exported audio from 0s under video from the trim: the whole file
+    /// out of sync, not drifting.
+    #[cfg(windows)]
+    #[test]
+    fn a_trim_drops_the_audio_before_it() {
+        // One second of mono at 4 Hz, each sample naming its own second.
+        let data: Vec<f32> = (0..8).map(|i| i as f32).collect();
+        let out = conform(&data, 4, 1, &[span(1.0, 2.0, 1.0)]);
+        assert_eq!(out, vec![4.0, 5.0, 6.0, 7.0]);
+    }
+
+    /// Two surviving stretches are concatenated in play order, which is what a
+    /// cut in the middle of a recording leaves behind.
+    #[cfg(windows)]
+    #[test]
+    fn a_cut_joins_what_is_left_either_side_of_it() {
+        let data: Vec<f32> = (0..8).map(|i| i as f32).collect();
+        let out = conform(&data, 4, 1, &[span(0.0, 0.5, 1.0), span(1.5, 2.0, 1.0)]);
+        assert_eq!(out, vec![0.0, 1.0, 6.0, 7.0]);
+    }
+
+    /// Interleaved samples must be cut on FRAME boundaries, or the channels swap.
+    #[cfg(windows)]
+    #[test]
+    fn a_stereo_source_is_cut_on_frame_boundaries() {
+        let data: Vec<f32> = vec![0.0, 10.0, 1.0, 11.0, 2.0, 12.0, 3.0, 13.0];
+        // 2 Hz, so 1.0s..2.0s is frames 2 and 3, each a (left, right) pair.
+        let out = conform(&data, 2, 2, &[span(1.0, 2.0, 1.0)]);
+        assert_eq!(out, vec![2.0, 12.0, 3.0, 13.0]);
+    }
+
+    /// The wrapper is the wiring: `conform` being right is no use if the
+    /// recording reaches the mixer unconformed.
+    #[cfg(windows)]
+    #[test]
+    fn the_spans_reach_the_samples_the_mixer_will_place() {
+        let samples = Samples::new((0..8).map(|i| i as f32).collect(), 4, 1);
+        let out = conformed(samples, &[span(1.0, 2.0, 1.0)]);
+        assert_eq!(out.data(), &[4.0, 5.0, 6.0, 7.0]);
+        assert_eq!(out.sample_rate(), 4);
+        assert_eq!(out.channels(), 1);
+    }
+
+    /// No spans is a project with no trim, cuts or splits, which must not be
+    /// mistaken for "keep nothing".
+    #[cfg(windows)]
+    #[test]
+    fn no_spans_leaves_the_recording_whole() {
+        let samples = Samples::new(vec![1.0, 2.0], 4, 1);
+        assert_eq!(conformed(samples, &[]).data(), &[1.0, 2.0]);
+    }
+
+    /// A resample would shift pitch where FFmpeg's `atempo` does not, so a
+    /// sped-up project has to keep the path whose audio matches the preview.
+    #[test]
+    fn a_speed_change_is_not_something_this_can_conform() {
+        assert!(spans_are_conformable(&[span(0.0, 1.0, 1.0)]));
+        assert!(spans_are_conformable(&[]));
+        assert!(!spans_are_conformable(&[
+            span(0.0, 1.0, 1.0),
+            span(1.0, 2.0, 2.0)
+        ]));
     }
 
     #[test]

@@ -1030,7 +1030,8 @@ fn a_camera_shadow_is_emitted_alongside_the_card_shadow() {
         },
     )
     .evaluate(&scene, 5.0);
-    assert_eq!(params.shadows.len(), 2);
+    let shadows: Vec<_> = params.layers.iter().filter_map(|l| l.shadow).collect();
+    assert_eq!(shadows.len(), 2);
 }
 
 fn banded_image(
@@ -1866,4 +1867,112 @@ fn a_reused_output_texture_still_reads_back_at_full_size() {
 
     assert_eq!(first.width(), second.width());
     assert_eq!(pixels.len(), (size.width * size.height * 4) as usize);
+}
+
+/// `write_buffer` is staged until submit, so one uniform buffer shared by every
+/// blur in a frame gives them all the LAST one's radius. Two annotations at
+/// different strengths is the cheapest case that shows it.
+#[test]
+fn each_blur_annotation_keeps_its_own_radius() {
+    let Some(ctx) = context() else { return };
+    // Over the seam in the top band, where neither side carries any green.
+    const WEAK: &str = r##""annotations": [{"id":"b1","start":0.0,"end":10.0,
+         "kind":{"kind":"blur","x":0.25,"y":0.0,"w":0.5,"h":0.5,"strength":0.15}}],"##;
+    const WEAK_THEN_STRONG: &str = r##""annotations": [
+         {"id":"b1","start":0.0,"end":10.0,
+          "kind":{"kind":"blur","x":0.25,"y":0.0,"w":0.5,"h":0.5,"strength":0.15}},
+         {"id":"b2","start":0.0,"end":10.0,
+          "kind":{"kind":"blur","x":0.0,"y":0.6,"w":1.0,"h":0.4,"strength":1.0}}],"##;
+
+    let alone = render(ctx, &scene_with(WEAK), 5.0, true);
+    let beside = render(ctx, &scene_with(WEAK_THEN_STRONG), 5.0, true);
+
+    let (x, y) = (SRC_W / 2 - 1, SRC_H / 4);
+    let (a, b) = (alone.at(x, y), beside.at(x, y));
+    assert!(
+        (i32::from(a[1]) - i32::from(b[1])).abs() <= 6,
+        "the weak blur took the strong one's radius: {a:?} alone, {b:?} beside it"
+    );
+}
+
+/// Every other camera test pins `shadow: 0.0`, which hid this: the bubble's
+/// shadow used to be painted with the frame's shadows, before the opaque screen
+/// card, so a bubble inside the video rect showed no shadow at all.
+#[test]
+fn the_camera_bubble_casts_a_shadow_over_the_card() {
+    let Some(ctx) = context() else { return };
+    let bubble = |shadow: f32| {
+        scene_with(&format!(
+            r#""cameraOverlay": {{"enabled": true, "shadow": {shadow}, "zoomFollow": false,
+                 "defaultPlacement": {{"x":0.4,"y":0.4,"width":0.25,"height":0.25}}}},"#
+        ))
+    };
+    let render_all = |scene: &Scene| {
+        let ev = Evaluator::new(
+            scene,
+            SourceGeometry {
+                width: SRC_W,
+                height: SRC_H,
+            },
+        );
+        let params = ev.evaluate(scene, 5.0);
+        let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
+        let mut compositor = Compositor::new(ctx).expect("compositor");
+        let target = compositor.output_texture(width, height);
+        let source = source_texture(ctx);
+        let view = source.create_view(&Default::default());
+        let mut inputs = FrameInputs::new();
+        for layer in &scene.layers {
+            inputs.set(
+                layer.id,
+                LayerInput {
+                    view: &view,
+                    needs_srgb_decode: true,
+                },
+            );
+        }
+        compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+        Rendered {
+            pixels: read_back(ctx, &target, width, height),
+            width,
+            height,
+        }
+    };
+
+    let without = render_all(&bubble(0.0));
+    let with = render_all(&bubble(1.0));
+    let darker = (0..without.height)
+        .flat_map(|y| (0..without.width).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let (a, b) = (without.at(x, y), with.at(x, y));
+            let sum = |p: [u8; 4]| u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2]);
+            sum(b) + 12 < sum(a)
+        })
+        .count();
+    assert!(
+        darker > 0,
+        "turning the bubble's shadow on darkened no pixel: it is painted under the card"
+    );
+}
+
+/// A zero-length arrow is the state on mousedown, before the drag moves, and
+/// the preview renders it. `normalize(vec2(0,0))` is NaN, which makes the
+/// shape's coverage backend-defined rather than the intended dot.
+#[test]
+fn a_zero_length_arrow_renders_the_same_way_twice() {
+    let Some(ctx) = context() else { return };
+    const DEGENERATE: &str = r##""annotations": [{"id":"a1","start":0.0,"end":10.0,
+         "kind":{"kind":"arrow","x1":0.5,"y1":0.5,"x2":0.5,"y2":0.5,"headSize":0.3}}],"##;
+    let scene = scene_with(DEGENERATE);
+    let once = render(ctx, &scene, 5.0, true);
+    let twice = render(ctx, &scene, 5.0, true);
+    assert_eq!(
+        once.pixels, twice.pixels,
+        "a degenerate arrow rendered differently on two identical passes"
+    );
+    let sharp = render(ctx, &scene_with(""), 5.0, true);
+    assert_ne!(
+        once.pixels, sharp.pixels,
+        "the degenerate arrow drew nothing at all, so this asserts nothing"
+    );
 }

@@ -55,7 +55,9 @@ fn segment_sdf(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
 
 /// Isoceles triangle head at `b`, pointing along `b - a`.
 fn arrow_head_sdf(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>, head_len: f32) -> f32 {
-    let dir = normalize(b - a);
+    // A zero-length arrow is what a mousedown before the drag renders; normalize would give NaN and the coverage would be backend-defined.
+    let axis = b - a;
+    let dir = axis / max(length(axis), 0.0001);
     let normal = vec2<f32>(-dir.y, dir.x);
     let local = p - b;
     let along = dot(local, dir);

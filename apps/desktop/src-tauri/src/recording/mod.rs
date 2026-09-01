@@ -764,7 +764,6 @@ impl RecordingManager {
         if camera_requested {
             if let Err(e) = crate::camera::session::attach_recorder(
                 camera_path.clone(),
-                recording_fps,
                 camera_start.clone(),
                 pause_flag.clone(),
             ) {
@@ -853,12 +852,18 @@ impl RecordingManager {
             track_offsets
         );
 
+        // A requested track that failed otherwise vanished silently: the recording succeeds minus that track.
+        let mut warnings: Vec<String> = Vec::new();
+
         // The captured file, else a silence fallback so downstream always has a track to mux.
         let mut has_system_audio = has_system_audio;
         let audio_path = match audio_stop {
             Some(Ok(path)) => path,
             Some(Err(e)) => {
                 log::warn!("audio capture stop failed, writing silence: {e}");
+                // Silence is not a captured track, and the samples guard below cannot tell: the file it writes does have samples.
+                has_system_audio = false;
+                warnings.push("System audio could not be recorded.".into());
                 let duration = session.clock.effective_elapsed().as_secs_f64();
                 crate::audio::wav::write_track_silence(&session.audio_path, duration)?;
                 session.audio_path.clone()
@@ -880,9 +885,6 @@ impl RecordingManager {
             crate::audio::wav::write_track_silence(&audio_path, duration)?;
             has_system_audio = false;
         }
-
-        // A requested mic or camera track that failed otherwise vanished silently: the recording succeeds minus that track.
-        let mut warnings: Vec<String> = Vec::new();
 
         // Microphone path if its capture succeeded.
         let microphone_path = match microphone_stop {

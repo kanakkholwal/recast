@@ -168,6 +168,25 @@ fn emit(
     Ok(())
 }
 
+/// [`emit`], closing the sink on failure. `NativeSink::finish` is what pushes
+/// the held sample and drains the last fragment, so an early return without it
+/// loses the tail of an otherwise complete recording.
+fn emit_or_finish(
+    sink: &mut Box<dyn FrameSink>,
+    frame: &CapturedFrame,
+    pts_us: u64,
+    source: &dyn CaptureSource,
+    stats: &PipelineStats,
+) -> Result<()> {
+    match emit(sink, frame, pts_us, source, stats) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = sink.finish();
+            Err(e)
+        }
+    }
+}
+
 /// How long an `OnChange` poll blocks for.
 /// Short enough that stop, pause and a capture notice are still handled promptly; long enough that an idle desktop parks in the backend instead of spinning a core.
 const ON_CHANGE_POLL: Duration = Duration::from_millis(4);
@@ -222,7 +241,7 @@ pub fn spawn_capture_loop(
             let at = Instant::now();
             let first_us = at.saturating_duration_since(timeline.origin()).as_micros() as u64;
             video_start.mark_at(at);
-            emit(&mut sink, &last_frame, first_us, source.as_ref(), &stats)?;
+            emit_or_finish(&mut sink, &last_frame, first_us, source.as_ref(), &stats)?;
             // Anchored at the warmup frame, with both reset on resume so a paused span is excluded rather than caught up as lag.
             let mut pacer_base = Instant::now();
             let mut emitted: u64 = 0;
@@ -306,7 +325,7 @@ pub fn spawn_capture_loop(
                         let next_tick = tick_at(pacer_base, emitted + 1);
                         if now >= next_tick {
                             let pts = timeline.effective_elapsed().as_micros() as u64;
-                            emit(&mut sink, &last_frame, pts, source.as_ref(), &stats)?;
+                            emit_or_finish(&mut sink, &last_frame, pts, source.as_ref(), &stats)?;
                             emitted += 1;
                             last_emit_at = now;
                             // Emit without sleeping to catch up, or the hitch is permanent.
@@ -320,7 +339,7 @@ pub fn spawn_capture_loop(
                         // A sample that never ends cannot be seeked past.
                         if fresh || now.duration_since(last_emit_at) >= keepalive {
                             let pts = timeline.effective_elapsed().as_micros() as u64;
-                            emit(&mut sink, &last_frame, pts, source.as_ref(), &stats)?;
+                            emit_or_finish(&mut sink, &last_frame, pts, source.as_ref(), &stats)?;
                             emitted += 1;
                             last_emit_at = now;
                         }

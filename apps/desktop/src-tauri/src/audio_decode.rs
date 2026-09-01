@@ -17,8 +17,16 @@ pub fn decode_mono(paths: &[&Path], rate: u32) -> Result<Vec<f32>, String> {
     }
     match decode_native(&inputs, rate) {
         Some(samples) => Ok(samples),
-        None => decode_via_ffmpeg(&inputs, rate),
+        None => decode_via_ffmpeg(&inputs, rate, 1),
     }
+}
+
+/// One file as interleaved samples at `rate` and `channels`, decoded by FFmpeg.
+///
+/// The fallback for a codec the in-process reader refuses: without it an Opus
+/// or FLAC source exports silent rather than merely slower.
+pub fn decode_interleaved(path: &Path, rate: u32, channels: u16) -> Result<Vec<f32>, String> {
+    decode_via_ffmpeg(&[path], rate, channels)
 }
 
 /// The in-process decoder, or `None` where there is none or a source it cannot
@@ -71,7 +79,7 @@ fn sum_into(mixed: &mut Vec<f32>, samples: &[f32]) {
     }
 }
 
-fn decode_via_ffmpeg(inputs: &[&Path], rate: u32) -> Result<Vec<f32>, String> {
+fn decode_via_ffmpeg(inputs: &[&Path], rate: u32, channels: u16) -> Result<Vec<f32>, String> {
     let mut args: Vec<String> = vec!["-hide_banner".into(), "-nostats".into()];
     for path in inputs {
         args.push("-i".into());
@@ -83,7 +91,7 @@ fn decode_via_ffmpeg(inputs: &[&Path], rate: u32) -> Result<Vec<f32>, String> {
     }
     args.extend([
         "-ac".into(),
-        "1".into(),
+        channels.to_string(),
         "-ar".into(),
         rate.to_string(),
         "-f".into(),
@@ -164,7 +172,7 @@ mod tests {
         let Some(native) = decode_native(&[&input], 16_000) else {
             panic!("the native decoder refused a file FFmpeg wrote");
         };
-        let piped = decode_via_ffmpeg(&[&input], 16_000).expect("the ffmpeg decode runs");
+        let piped = decode_via_ffmpeg(&[&input], 16_000, 1).expect("the ffmpeg decode runs");
 
         assert!(
             !native.is_empty() && !piped.is_empty(),

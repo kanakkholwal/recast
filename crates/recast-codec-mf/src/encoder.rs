@@ -460,10 +460,11 @@ fn read_sample(sample: &IMFSample) -> Result<EncodedSample, EncodeError> {
     unsafe {
         let timestamp = sample.GetSampleTime().unwrap_or(0);
         let duration = sample.GetSampleDuration().unwrap_or(0);
+        // Absent means FALSE per MF; defaulting to true marked every delta frame a random-access point, and the muxer then omitted `stss` entirely.
         let is_sync = sample
             .GetUINT32(&MFSampleExtension_CleanPoint)
             .map(|v| v != 0)
-            .unwrap_or(true);
+            .unwrap_or(false);
         let buffer = sample.ConvertToContiguousBuffer()?;
         let mut start = std::ptr::null_mut();
         let mut length = 0u32;

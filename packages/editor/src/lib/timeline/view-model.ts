@@ -76,7 +76,7 @@ interface OriginalItem {
 	locked?: boolean;
 }
 
-/** Item already timed on the OUTPUT axis (captions, audio clips). */
+/** Item already timed on the OUTPUT axis (voice and music clips). */
 interface OutputItem {
 	id: string;
 	start: number;
@@ -170,7 +170,8 @@ export function buildTimelineRows(input: TimelineViewModelInput): TimelineRow[] 
 		rows.push(makeRow("markup", "markup", "Markup", clips));
 	}
 	if (input.captions.length > 0) {
-		const clips = input.captions.map((c) => outputClip("caption", c, input.fps));
+		// ORIGINAL axis: `captionTranscript` is timed against the recording, which is what CaptionOverlay resolves it on. Voice and music clips really are output-timed, so they keep `outputClip`.
+		const clips = input.captions.map((c) => originalClip("caption", c, input));
 		rows.push(makeRow("caption", "caption", "Captions", clips));
 	}
 	if (input.voiceClips.length > 0) {

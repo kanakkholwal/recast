@@ -165,6 +165,8 @@ impl Mp4Sink {
 
         // From the top: `render_into` continues where it left off, and the ducking envelope makes a mid-stream start silently wrong, not short.
         mixer.reset();
+        // Integrated loudness is measured over the whole timeline, so normalisation cannot be chunked; rendered whole ONLY when it is asked for, since that is a timeline-sized buffer.
+        let normalized = mixer.master().normalize.then(|| mixer.render_all());
         let chunk_frames = format.sample_rate as usize / 10;
         let mut chunk = vec![0.0f32; chunk_frames * recast_audio::MASTER_CHANNELS];
         let mut rendered: u64 = 0;
@@ -172,7 +174,13 @@ impl Mp4Sink {
         while rendered < total {
             let frames = chunk_frames.min((total - rendered) as usize);
             let slice = &mut chunk[..frames * recast_audio::MASTER_CHANNELS];
-            mixer.render_into(slice);
+            match normalized.as_ref() {
+                Some(whole) => {
+                    let at = rendered as usize * recast_audio::MASTER_CHANNELS;
+                    slice.copy_from_slice(&whole[at..at + slice.len()]);
+                }
+                None => mixer.render_into(slice),
+            }
             let timestamp = rendered as i64 * 10_000_000 / i64::from(format.sample_rate);
             let samples = encoder.encode(slice, timestamp).map_err(Mp4Error::Audio)?;
             self.drain_audio(samples);

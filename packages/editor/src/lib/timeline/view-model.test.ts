@@ -167,3 +167,31 @@ describe("buildTimelineRows", () => {
 		expect(markup?.locked).toBe(true);
 	});
 });
+describe("axis of each row", () => {
+	// `captionTranscript` is recording-timed: read as output seconds, a caption after a cut drew where the words were spoken, not where they are heard.
+	it("places captions on the original axis, so a cut shifts them", () => {
+		// 5s cut out of the head: original 10s is heard at output 5s.
+		const cut = buildTimeMap([{ origStart: 5, origEnd: 20, speed: 1 }]);
+		const rows = buildTimelineRows(
+			input({
+				map: cut,
+				captions: [{ id: "c", start: 10, end: 12, label: "hello" }],
+			}),
+		);
+		const caption = rows[0].clips[0];
+		expect(caption.start).toBe(5 * 30);
+		expect(caption.duration).toBe(2 * 30);
+	});
+
+	// Voice and music really are output-timed, so the same input must NOT move.
+	it("leaves voice clips on the output axis", () => {
+		const cut = buildTimeMap([{ origStart: 5, origEnd: 20, speed: 1 }]);
+		const rows = buildTimelineRows(
+			input({
+				map: cut,
+				voiceClips: [{ id: "v", start: 10, end: 12, label: "Voice" }],
+			}),
+		);
+		expect(rows[0].clips[0].start).toBe(10 * 30);
+	});
+});

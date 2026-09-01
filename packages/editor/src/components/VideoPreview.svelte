@@ -991,9 +991,9 @@ $effect(() => {
 			mbSource = source;
 			mbReady = true;
 			webcodecsActive = true;
-			// Seed to the current transport so flipping onto the MediaBunny path mid-playback doesn't jump.
+			// Seed from the store transport, not the hidden <video>: on the WebCodecs path it is not kept aligned while paused, so its currentTime is stale and a recovery rebuild would jump to 0.
 			picClock.setDuration(originalToOutput(store.timeMap, store.outPoint));
-			picClock.seek(originalToOutput(store.timeMap, videoEl?.currentTime ?? 0));
+			picClock.seek(originalToOutput(store.timeMap, store.currentTime));
 			if (store.isPlaying) picClock.play();
 			requestRedraw();
 		})

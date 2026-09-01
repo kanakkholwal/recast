@@ -194,6 +194,9 @@ pub struct LayerParams {
     /// screen layer never needs it (its card matches the source); a camera
     /// bubble always does, since a 16:9 sensor lands in a square.
     pub cover_fit: bool,
+    /// Painted immediately before this layer. A shadow belongs to its layer:
+    /// drawing them all up front put the bubble's under the opaque screen card.
+    pub shadow: Option<ShadowParams>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -207,8 +210,6 @@ pub struct FrameParams {
     /// The same pointer, resolved onto the canvas. Computed once here so the
     /// sprite pass and the host overlay cannot disagree about where it is.
     pub cursor_draw: Option<CursorDraw>,
-    /// In draw order. The card's shadow, then the camera bubble's.
-    pub shadows: Vec<ShadowParams>,
     pub layers: Vec<LayerParams>,
     /// In draw order: z-index, then insertion order.
     pub annotations: Vec<AnnotationParams>,
@@ -280,7 +281,6 @@ impl Evaluator {
         let focus = scene.flags.focus;
         let mut background = BackgroundParams::Solid(Srgba::opaque(0x11, 0x11, 0x11));
         let mut background_blur = 0.0f32;
-        let mut shadows = Vec::new();
         let mut layers = Vec::with_capacity(scene.layers.len());
         let mut card = (
             DestRect {
@@ -323,7 +323,7 @@ impl Evaluator {
                         params.corner_radius = bubble.corner_radius;
                         params.transform = bubble.transform;
                         if params.visible {
-                            shadows.extend(bubble_shadow(settings, &bubble));
+                            params.shadow = bubble_shadow(settings, &bubble);
                         }
                     } else {
                         params.visible = false;
@@ -331,11 +331,11 @@ impl Evaluator {
                     layers.push(params);
                 }
                 _ => {
-                    let params = self.layer_params(layer, source_time, output_time, focus);
+                    let mut params = self.layer_params(layer, source_time, output_time, focus);
                     if matches!(layer.source, LayerSource::Screen) {
                         card = (params.dest, params.transform);
                         if params.visible {
-                            shadows.extend(shadow_params(layer, &params, self.geometry));
+                            params.shadow = shadow_params(layer, &params, self.geometry);
                         }
                     }
                     layers.push(params);
@@ -349,7 +349,6 @@ impl Evaluator {
             background_blur,
             cursor_draw: cursor.and_then(|c| self.cursor_draw(scene, c, card.0, card.1)),
             cursor,
-            shadows,
             annotations: match scene.flags.annotations {
                 true => self.annotations(scene, source_time, card.0, card.1),
                 false => Vec::new(),
@@ -510,6 +509,7 @@ impl Evaluator {
             zoom_center,
             zoom_velocity: self.zoom_velocity(&zooms, output_time),
             cover_fit: false,
+            shadow: None,
         }
     }
 
@@ -1115,6 +1115,11 @@ mod tests {
         );
     }
 
+    /// Every shadow in the frame, in draw order, for tests that assert on them.
+    fn shadows_of(params: &FrameParams) -> Vec<ShadowParams> {
+        params.layers.iter().filter_map(|l| l.shadow).collect()
+    }
+
     const SHADOW: &str = r##""shadow": {"enabled": true, "blur": 40.0, "spread": 4.0,
         "offsetY": 24.0, "opacity": 50.0, "color": "#000000"},"##;
 
@@ -1122,7 +1127,7 @@ mod tests {
     fn a_disabled_shadow_produces_no_pass() {
         let scene = scene_with("");
         let params = Evaluator::new(&scene, source()).evaluate(&scene, 0.0);
-        assert!(params.shadows.is_empty());
+        assert!(shadows_of(&params).is_empty());
     }
 
     #[test]
@@ -1131,7 +1136,7 @@ mod tests {
             r##""shadow": {"enabled": true, "blur": 40.0, "opacity": 0.0, "color": "#000000"},"##,
         );
         let params = Evaluator::new(&scene, source()).evaluate(&scene, 0.0);
-        assert!(params.shadows.is_empty());
+        assert!(shadows_of(&params).is_empty());
     }
 
     #[test]
@@ -1139,7 +1144,7 @@ mod tests {
         let scene = scene_with(&format!(r#"{SHADOW} "padding": 10.0,"#));
         let ev = Evaluator::new(&scene, source());
         let params = ev.evaluate(&scene, 0.0);
-        let shadow = params.shadows[0];
+        let shadow = shadows_of(&params)[0];
         let g = ev.geometry();
 
         assert!((shadow.center_x - (g.video_x as f32 + g.video_w as f32 / 2.0)).abs() < 1e-3);
@@ -1155,18 +1160,16 @@ mod tests {
         let scene = scene_with(
             r##""shadow": {"enabled": true, "blur": 0.0, "opacity": 50.0, "color": "#000000"},"##,
         );
-        let shadow = Evaluator::new(&scene, source())
-            .evaluate(&scene, 0.0)
-            .shadows[0];
+        let params = Evaluator::new(&scene, source()).evaluate(&scene, 0.0);
+        let shadow = shadows_of(&params)[0];
         assert!(shadow.blur_px >= 0.5);
     }
 
     #[test]
     fn the_shadow_radius_degrades_to_a_full_ellipse_rather_than_inverting() {
         let scene = scene_with(&format!(r#"{SHADOW} "borderRadius": 50.0,"#));
-        let shadow = Evaluator::new(&scene, source())
-            .evaluate(&scene, 0.0)
-            .shadows[0];
+        let params = Evaluator::new(&scene, source()).evaluate(&scene, 0.0);
+        let shadow = shadows_of(&params)[0];
         assert!(shadow.radius_px <= shadow.half_h + shadow.spread_px + 1e-3);
         assert!(shadow.radius_px >= 0.0);
     }

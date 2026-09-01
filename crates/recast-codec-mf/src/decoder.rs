@@ -57,6 +57,9 @@ pub struct DecodedFrame {
 pub enum DecodeError {
     /// Media Foundation would not start, or the file has no video.
     Unsupported,
+    /// An audio stream is present but Media Foundation cannot decode it, which
+    /// is a different answer from "no audio" and must not be reported as one.
+    UndecodableAudio,
     Media(windows::core::Error),
 }
 
@@ -70,6 +73,7 @@ impl std::fmt::Display for DecodeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unsupported => write!(f, "no decodable video stream"),
+            Self::UndecodableAudio => write!(f, "audio stream in a codec this cannot decode"),
             Self::Media(e) => write!(f, "media foundation: {e}"),
         }
     }

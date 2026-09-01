@@ -211,8 +211,6 @@ struct BackgroundPass {
 struct BlurPass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
-    horizontal: wgpu::Buffer,
-    vertical: wgpu::Buffer,
     /// Zero taps: a plain copy through the blur pipeline, so a blur annotation
     /// with no radius still gets its tint without a second pipeline.
     identity: wgpu::Buffer,
@@ -320,7 +318,6 @@ impl Compositor {
 
         self.draw_background(&mut encoder, &working_view, params, inputs, width, height);
         self.blur_background(&mut encoder, &working_view, params, width, height);
-        self.draw_shadow(&mut encoder, &working_view, params);
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_annotations(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_cursor(&mut encoder, &working_view, params, inputs, width, height);
@@ -618,24 +615,12 @@ impl Compositor {
             return;
         };
 
-        self.queue.write_buffer(
-            &self.blur.horizontal,
-            0,
-            bytemuck::bytes_of(&BlurUniform {
-                params: [plan.step_u, 0.0, plan.taps, plan.sigma_in_steps],
-            }),
-        );
-        self.queue.write_buffer(
-            &self.blur.vertical,
-            0,
-            bytemuck::bytes_of(&BlurUniform {
-                params: [0.0, plan.step_v, plan.taps, plan.sigma_in_steps],
-            }),
-        );
+        let horizontal = self.blur_uniform([plan.step_u, 0.0, plan.taps, plan.sigma_in_steps]);
+        let vertical = self.blur_uniform([0.0, plan.step_v, plan.taps, plan.sigma_in_steps]);
 
         let scratch = self.blur_scratch(width, height);
-        self.run_blur_axis(encoder, &self.blur.horizontal, working, &scratch);
-        self.run_blur_axis(encoder, &self.blur.vertical, &scratch, working);
+        self.run_blur_axis(encoder, &horizontal, working, &scratch);
+        self.run_blur_axis(encoder, &vertical, &scratch, working);
     }
 
     fn scratch_texture(&self, label: &str, width: u32, height: u32) -> wgpu::Texture {
@@ -679,6 +664,21 @@ impl Compositor {
             Some((_, _, texture)) => texture.create_view(&Default::default()),
             None => unreachable!("the scratch texture was just created"),
         }
+    }
+
+    /// A blur's own uniform buffer. One per blur on purpose: `write_buffer` is
+    /// staged until submit, so a shared buffer gives every blur in the frame
+    /// the last one's radius.
+    fn blur_uniform(&self, params: [f32; 4]) -> wgpu::Buffer {
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("blur-uniform"),
+            size: std::mem::size_of::<BlurUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue
+            .write_buffer(&buffer, 0, bytemuck::bytes_of(&BlurUniform { params }));
+        buffer
     }
 
     fn run_blur_axis(
@@ -727,36 +727,31 @@ impl Compositor {
         pass.draw(0..3, 0..1);
     }
 
+    /// Paints one layer's shadow. Called from the layer walk rather than up
+    /// front: the camera bubble's shadow drawn before the opaque screen card
+    /// was covered by it, so a bubble inside the video showed no shadow at all.
     fn draw_shadow(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         working: &wgpu::TextureView,
-        params: &FrameParams,
+        shadow: &ShadowParams,
     ) {
-        if params.shadows.is_empty() {
-            return;
-        }
-        let mut buffers = Vec::with_capacity(params.shadows.len());
-        let mut bind_groups = Vec::with_capacity(params.shadows.len());
-        for shadow in &params.shadows {
-            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("shadow-uniform"),
-                size: std::mem::size_of::<ShadowUniform>() as u64,
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            self.queue
-                .write_buffer(&buffer, 0, bytemuck::bytes_of(&shadow_uniform(shadow)));
-            bind_groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("shadow"),
-                layout: &self.shadow.layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-            }));
-            buffers.push(buffer);
-        }
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shadow-uniform"),
+            size: std::mem::size_of::<ShadowUniform>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue
+            .write_buffer(&buffer, 0, bytemuck::bytes_of(&shadow_uniform(shadow)));
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("shadow"),
+            layout: &self.shadow.layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("shadow"),
@@ -775,10 +770,8 @@ impl Compositor {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.shadow.pipeline);
-        for bind_group in &bind_groups {
-            pass.set_bind_group(0, bind_group, &[]);
-            pass.draw(0..3, 0..1);
-        }
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.draw(0..3, 0..1);
     }
 
     fn draw_layers(
@@ -802,6 +795,12 @@ impl Compositor {
             if !layer.visible || layer.opacity <= 0.0 {
                 stats.layers_skipped += 1;
                 continue;
+            }
+            // Interrupts the batch so the shadow lands under THIS layer and over everything already painted, the way a blur annotation interrupts its run.
+            if let Some(shadow) = layer.shadow.as_ref() {
+                self.flush_cards(encoder, working, &bind_groups);
+                bind_groups.clear();
+                self.draw_shadow(encoder, working, shadow);
             }
 
             let uniform = card_uniform(layer, width, height, input.needs_srgb_decode);
@@ -836,10 +835,21 @@ impl Compositor {
             stats.layers_drawn += 1;
         }
 
-        if bind_groups.is_empty() {
-            return stats;
-        }
+        self.flush_cards(encoder, working, &bind_groups);
+        stats
+    }
 
+    /// Draws a run of card bind groups in one pass. A no-op when the run is
+    /// empty, which is what an interrupted batch leaves behind.
+    fn flush_cards(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        bind_groups: &[wgpu::BindGroup],
+    ) {
+        if bind_groups.is_empty() {
+            return;
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("layers"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -857,11 +867,10 @@ impl Compositor {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.card.pipeline);
-        for bind_group in &bind_groups {
+        for bind_group in bind_groups {
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..6, 0..1);
         }
-        stats
     }
 
     /// Draw order is `(z_index, insertion)`, so a blur has to interrupt the batch rather than be hoisted: it must see everything painted before it and nothing painted after.
@@ -1005,23 +1014,13 @@ impl Compositor {
         let blurred = self.blurred_target(width, height);
         match plan_from_sigma(sigma_px, width, height) {
             Some(plan) => {
-                self.queue.write_buffer(
-                    &self.blur.horizontal,
-                    0,
-                    bytemuck::bytes_of(&BlurUniform {
-                        params: [plan.step_u, 0.0, plan.taps, plan.sigma_in_steps],
-                    }),
-                );
-                self.queue.write_buffer(
-                    &self.blur.vertical,
-                    0,
-                    bytemuck::bytes_of(&BlurUniform {
-                        params: [0.0, plan.step_v, plan.taps, plan.sigma_in_steps],
-                    }),
-                );
+                let horizontal =
+                    self.blur_uniform([plan.step_u, 0.0, plan.taps, plan.sigma_in_steps]);
+                let vertical =
+                    self.blur_uniform([0.0, plan.step_v, plan.taps, plan.sigma_in_steps]);
                 let scratch = self.blur_scratch(width, height);
-                self.run_blur_axis(encoder, &self.blur.horizontal, working, &scratch);
-                self.run_blur_axis(encoder, &self.blur.vertical, &scratch, &blurred);
+                self.run_blur_axis(encoder, &horizontal, working, &scratch);
+                self.run_blur_axis(encoder, &vertical, &scratch, &blurred);
             }
             // Strength 0 still draws, because the tint alone is a valid redaction.
             None => self.run_blur_axis(encoder, &self.blur.identity, working, &blurred),
@@ -1700,8 +1699,6 @@ impl BlurPass {
         Self {
             pipeline,
             layout,
-            horizontal: uniform("blur-horizontal"),
-            vertical: uniform("blur-vertical"),
             identity: uniform("blur-identity"),
             sampler: clamped_linear_sampler(device, "blur"),
             scratch: None,
@@ -2241,6 +2238,7 @@ mod tests {
             zoom_center: [0.5, 0.5],
             zoom_velocity,
             cover_fit: false,
+            shadow: None,
         }
     }
 

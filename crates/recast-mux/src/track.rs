@@ -140,14 +140,17 @@ impl SampleTable {
         buf.close();
     }
 
-    /// Chunk offsets, shifted by where mdat's payload lands in the file. `co64` when any offset needs more than 32 bits, which a long 4K capture reaches.
-    pub fn write_stco(&self, buf: &mut BoxBuf, mdat_payload_start: u64) {
+    /// Chunk offsets, shifted by where mdat's payload lands in the file. `co64`
+    /// when any offset needs more than 32 bits, which a long 4K capture reaches.
+    /// `force_64` lets the caller settle the choice BEFORE it knows the final
+    /// offsets, so the box cannot change size between moov's two passes.
+    pub fn write_stco(&self, buf: &mut BoxBuf, mdat_payload_start: u64, force_64: bool) {
         let offsets: Vec<u64> = self
             .chunks()
             .iter()
             .map(|c| c.offset + mdat_payload_start)
             .collect();
-        let needs_64 = offsets.iter().any(|&o| o > u32::MAX as u64);
+        let needs_64 = force_64 || offsets.iter().any(|&o| o > u32::MAX as u64);
         if needs_64 {
             buf.open_full(b"co64", 0, 0);
             buf.u32(offsets.len() as u32);
@@ -202,6 +205,23 @@ mod tests {
         let mut buf = BoxBuf::new();
         write(&mut buf);
         buf.into_bytes()
+    }
+
+    /// The writer settles the box width before it knows the final offsets, so
+    /// `force_64` has to hold even for offsets that fit in 32 bits: otherwise
+    /// moov grows between the probe and the real pass and every chunk offset in
+    /// the file is short by that growth.
+    #[test]
+    fn forcing_sixty_four_bit_offsets_is_honoured_for_small_ones() {
+        let t = table(&[sample(0, 1, 1, true)]);
+        let narrow = body(|b| t.write_stco(b, 2048, false));
+        let wide = body(|b| t.write_stco(b, 2048, true));
+        assert_eq!(&narrow[4..8], b"stco");
+        assert_eq!(&wide[4..8], b"co64");
+        assert!(
+            wide.len() > narrow.len(),
+            "co64 must be the larger box, or the probe could not go wrong"
+        );
     }
 
     fn entry_count(bytes: &[u8]) -> u32 {
@@ -315,7 +335,7 @@ mod tests {
     #[test]
     fn chunk_offsets_are_shifted_into_the_file() {
         let t = table(&[sample(0, 10, 100, true), sample(500, 10, 100, false)]);
-        let bytes = body(|b| t.write_stco(b, 2048));
+        let bytes = body(|b| t.write_stco(b, 2048, false));
         assert_eq!(&bytes[4..8], b"stco");
         assert_eq!(&bytes[16..20], &2048u32.to_be_bytes());
         assert_eq!(&bytes[20..24], &2548u32.to_be_bytes());
@@ -326,7 +346,7 @@ mod tests {
     #[test]
     fn an_offset_past_four_gigabytes_switches_to_co64() {
         let t = table(&[sample(0, 10, 100, true)]);
-        let bytes = body(|b| t.write_stco(b, 5_000_000_000));
+        let bytes = body(|b| t.write_stco(b, 5_000_000_000, false));
         assert_eq!(&bytes[4..8], b"co64");
         assert_eq!(
             u64::from_be_bytes(bytes[16..24].try_into().expect("offset")),

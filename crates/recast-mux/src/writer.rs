@@ -137,10 +137,13 @@ impl Mp4Writer {
         let payload = self.interleave();
         let ftyp = self.ftyp();
         // moov's size depends on offsets that depend on where mdat lands, so a placeholder pass settles the size first.
-        let probe = self.moov(&record, 0);
         let mdat_header = mdat_header_len(payload.len());
+        // Settled before the offsets are known: a payload near 4 GiB would otherwise pick stco in the probe and co64 in the real pass, growing moov and leaving every offset short by that growth.
+        let widest = (ftyp.len() + self.moov(&record, 0, true).len() + mdat_header) as u64;
+        let force_64 = widest.saturating_add(payload.len() as u64) > u64::from(u32::MAX);
+        let probe = self.moov(&record, 0, force_64);
         let payload_start = (ftyp.len() + probe.len() + mdat_header) as u64;
-        let moov = self.moov(&record, payload_start);
+        let moov = self.moov(&record, payload_start, force_64);
         debug_assert_eq!(
             moov.len(),
             probe.len(),
@@ -202,7 +205,7 @@ impl Mp4Writer {
     pub fn initialization_segment(&self) -> Option<Vec<u8>> {
         let record = self.avc.record()?;
         let mut out = ftyp(true);
-        let mut moov = self.moov(&record, 0);
+        let mut moov = self.moov(&record, 0, false);
         // `mvex` goes at the END of `moov`, after the tracks it describes.
         let mut extends = BoxBuf::new();
         extends.open(b"mvex");
@@ -240,7 +243,7 @@ impl Mp4Writer {
         video.max(audio)
     }
 
-    fn moov(&self, record: &[u8], payload_start: u64) -> Vec<u8> {
+    fn moov(&self, record: &[u8], payload_start: u64, force_64: bool) -> Vec<u8> {
         let mut buf = BoxBuf::new();
         buf.open(b"moov");
 
@@ -252,9 +255,9 @@ impl Mp4Writer {
         buf.u32(self.next_track_id());
         buf.close();
 
-        self.video_trak(&mut buf, record, payload_start);
+        self.video_trak(&mut buf, record, payload_start, force_64);
         if self.audio_format.is_some() {
-            self.audio_trak(&mut buf, payload_start);
+            self.audio_trak(&mut buf, payload_start, force_64);
         }
         buf.close();
         buf.into_bytes()
@@ -321,7 +324,7 @@ impl Mp4Writer {
         buf.close();
     }
 
-    fn video_trak(&self, buf: &mut BoxBuf, record: &[u8], payload_start: u64) {
+    fn video_trak(&self, buf: &mut BoxBuf, record: &[u8], payload_start: u64, force_64: bool) {
         buf.open(b"trak");
         self.track_header(buf, 1, true);
 
@@ -346,7 +349,7 @@ impl Mp4Writer {
         self.video.table.write_ctts(buf);
         self.video.table.write_stsc(buf);
         self.video.table.write_stsz(buf);
-        self.video.table.write_stco(buf, payload_start);
+        self.video.table.write_stco(buf, payload_start, force_64);
         buf.close();
 
         buf.close();
@@ -354,7 +357,7 @@ impl Mp4Writer {
         buf.close();
     }
 
-    fn audio_trak(&self, buf: &mut BoxBuf, payload_start: u64) {
+    fn audio_trak(&self, buf: &mut BoxBuf, payload_start: u64, force_64: bool) {
         let Some(format) = &self.audio_format else {
             return;
         };
@@ -381,7 +384,7 @@ impl Mp4Writer {
         // Every AAC frame is a sync point, so `stss` is omitted by design.
         self.audio.table.write_stsc(buf);
         self.audio.table.write_stsz(buf);
-        self.audio.table.write_stco(buf, payload_start);
+        self.audio.table.write_stco(buf, payload_start, force_64);
         buf.close();
 
         buf.close();

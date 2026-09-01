@@ -100,6 +100,8 @@ impl CaptureTarget {
             self.source.width,
             self.source.height
         );
+        // Rounded down to even, the way `fitted` does: an odd size reaches the encoder as `-video_size 1921x1081`, which libx264 refuses outright and the take is lost.
+        let (width, height) = (width & !1, height & !1);
         // The origin survives: the surface did not move, and the cursor uses it.
         self.source = CaptureArea::new(self.source.x, self.source.y, width, height);
         self.crop = self.source;
@@ -354,6 +356,18 @@ mod tests {
         let odd = [display(1, (0, 0, 1921, 1081), 1.0)];
         let target = display_target(&odd, DisplayId(1)).expect("resolves");
         assert_eq!((target.source.width, target.source.height), (1920, 1080));
+    }
+
+    /// DXGI reports the raw mode size, untrimmed, so an odd display wrote an odd
+    /// size back over the even one `fitted` had resolved, and libx264 then
+    /// refused `-video_size 1921x1081` and the take was lost.
+    #[test]
+    fn an_odd_source_size_is_rounded_down_to_even() {
+        let portal = [display(0, (0, 0, 0, 0), 1.0)];
+        let mut target = display_target(&portal, DisplayId(0)).expect("the portal resolves");
+        target.adopt_source_size(1921, 1081);
+        assert_eq!((target.source.width, target.source.height), (1920, 1080));
+        assert_eq!((target.crop.width, target.crop.height), (1920, 1080));
     }
 
     /// The Wayland portal reports a 0x0 placeholder and names the real surface

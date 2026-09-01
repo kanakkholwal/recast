@@ -91,7 +91,12 @@ fn find_output(display: DisplayId) -> Result<(IDXGIAdapter, IDXGIOutput1, IDXGIO
 
 /// Whole-display and region capture through Desktop Duplication.
 pub(crate) struct DxgiSource {
-    duplication: IDXGIOutputDuplication,
+    /// `None` only between a loss and its reacquire: the dead one must be
+    /// dropped before `DuplicateOutput` will hand over another.
+    duplication: Option<IDXGIOutputDuplication>,
+    /// What this was opened with, so a reacquire restores every option rather
+    /// than silently falling back to the defaults.
+    opts: OpenOptions,
     /// Held only to outlive the duplication, which the device owns.
     _device: ID3D11Device,
     /// `None` when the caller asked for GPU handles: the staging texture is the
@@ -204,7 +209,8 @@ impl DxgiSource {
         };
 
         Ok(Self {
-            duplication,
+            duplication: Some(duplication),
+            opts: opts.clone(),
             _device: device,
             readback,
             desc,
@@ -224,9 +230,18 @@ impl DxgiSource {
     fn release_frame(&mut self) {
         if self.holding_frame {
             self.holding_frame = false;
-            // SAFETY: only when a frame is held, which the flag above tracks.
-            let _ = unsafe { self.duplication.ReleaseFrame() };
+            if let Some(duplication) = self.duplication.as_ref() {
+                // SAFETY: only when a frame is held, which the flag above tracks.
+                let _ = unsafe { duplication.ReleaseFrame() };
+            }
         }
+    }
+
+    /// The live duplication, or the loss that says there is none right now.
+    fn live_duplication(&self) -> Result<&IDXGIOutputDuplication> {
+        self.duplication
+            .as_ref()
+            .ok_or(CaptureError::Lost(LostReason::AccessLost))
     }
 
     /// Rebuild the duplication after a recoverable loss, at most once per backoff.
@@ -241,18 +256,13 @@ impl DxgiSource {
         }
         self.next_retry_at = Some(now + REACQUIRE_BACKOFF);
 
-        let opts = OpenOptions {
-            region: self.region,
-            pacing: match self.desc.frame_rate {
-                Some(fps) => capturekit_core::Pacing::Constant { fps },
-                None => capturekit_core::Pacing::Passthrough,
-            },
-            ..OpenOptions::default()
-        };
+        // The dead duplication has to go FIRST: DuplicateOutput refuses a second one for the same output from one process, so reacquiring while still holding it always failed with E_ACCESSDENIED.
+        self.release_frame();
+        self.duplication = None;
+        let opts = self.opts.clone();
         match Self::open(self.display, &opts) {
             Ok(fresh) => {
                 let held = self.lost_since.map(|at| at.elapsed()).unwrap_or_default();
-                self.release_frame();
                 // Replaced wholesale rather than field by field: the old value owns COM handles that its `Drop` releases.
                 *self = fresh;
                 log::info!("dxgi duplication reacquired after {}ms", held.as_millis());
@@ -267,6 +277,9 @@ impl DxgiSource {
 
     /// Damage as the driver reports it, or unknown when it reports none.
     fn read_dirty(&mut self, info: &DXGI_OUTDUPL_FRAME_INFO) -> DirtyRects {
+        let Ok(duplication) = self.live_duplication().cloned() else {
+            return DirtyRects::unknown();
+        };
         if info.TotalMetadataBufferSize == 0 {
             return DirtyRects::unknown();
         }
@@ -280,11 +293,7 @@ impl DxgiSource {
         let bytes = (self.dirty_scratch.len() * slot) as u32;
         // SAFETY: `bytes` is the scratch buffer's own byte length, so DXGI cannot write past it.
         let read = unsafe {
-            self.duplication.GetFrameDirtyRects(
-                bytes,
-                self.dirty_scratch.as_mut_ptr(),
-                &mut required,
-            )
+            duplication.GetFrameDirtyRects(bytes, self.dirty_scratch.as_mut_ptr(), &mut required)
         };
         if read.is_err() {
             return DirtyRects::unknown();
@@ -417,8 +426,11 @@ impl FrameSource for DxgiSource {
         let mut resource = None;
         // SAFETY: both out-parameters are live locals, and a timeout is reported as an error.
         let acquired = unsafe {
-            self.duplication
-                .AcquireNextFrame(timeout.as_millis() as u32, &mut info, &mut resource)
+            self.live_duplication()?.AcquireNextFrame(
+                timeout.as_millis() as u32,
+                &mut info,
+                &mut resource,
+            )
         };
 
         if let Err(error) = acquired {
@@ -466,7 +478,8 @@ impl FrameSource for DxgiSource {
 
         // A zero `LastPresentTime` is a cursor-only update, and reporting the origin keeps warmup honest for a screenshot.
         let pts = Timestamp::from_ticks(info.LastPresentTime, self.qpc_frequency);
-        self.cursor.update(&self.duplication, &info);
+        let duplication = self.live_duplication()?.clone();
+        self.cursor.update(&duplication, &info);
         let dirty = self.dirty.clone();
         let cursor = Some(self.cursor.sample(pts, self.region));
         let (bytes, stride) = match self.readback.as_mut() {

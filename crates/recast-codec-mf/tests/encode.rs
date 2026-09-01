@@ -345,3 +345,34 @@ fn a_keyframe_can_be_demanded_for_a_chosen_frame() {
         "no H.264 encoder opened, so nothing was checked"
     );
 }
+
+/// The muxer omits `stss` when every sample is a sync point, telling a player
+/// the whole track is seekable. So the transform's flag must distinguish
+/// keyframes from delta frames: an absent `CleanPoint` defaulting to true made
+/// every frame a random-access point and seeks landed on P-frames.
+#[test]
+fn the_per_sample_sync_flag_is_not_true_for_every_frame() {
+    let Some(mut encoder) = open_any() else {
+        return;
+    };
+    let duration = 10_000_000i64 / FPS as i64;
+    let mut flags = Vec::new();
+    for index in 0..FRAMES {
+        let frame = nv12_frame(index);
+        for sample in encoder
+            .encode(&frame, index as i64 * duration, duration)
+            .expect("the frame encodes")
+        {
+            flags.push(sample.is_sync);
+        }
+    }
+    for sample in encoder.finish().expect("the tail drains") {
+        flags.push(sample.is_sync);
+    }
+    assert!(flags.len() > 1, "one sample cannot show a GOP structure");
+    assert!(
+        flags.iter().any(|sync| !sync),
+        "every one of {} samples claimed to be a keyframe",
+        flags.len()
+    );
+}

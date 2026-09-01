@@ -237,6 +237,8 @@ impl GpuNv12 {
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         out.clear();
         let Ok(mapped) = slice.get_mapped_range() else {
+            // The buffer is reused, so a mapped one left behind makes the NEXT frame's map_async a validation error rather than a fallback.
+            download.unmap();
             return false;
         };
         out.extend_from_slice(&mapped);

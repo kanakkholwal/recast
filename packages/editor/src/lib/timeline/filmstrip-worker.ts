@@ -104,8 +104,12 @@ async function decodeOne(req: DecodeRequest): Promise<void> {
 		}
 		if (disposed) return;
 		if (!wrapped) {
-			// TEMP diagnostic: getCanvas found no frame here (was silent); reveals if decode is the failure.
-			console.warn("[filmstrip] no frame at", req.originalSec.toFixed(2));
+			// Answered, not dropped: a silent return leaves the id in the provider's in-flight set, and that cache key is never requested again for the session.
+			post({
+				type: "error",
+				id: req.id,
+				message: `no frame at ${req.originalSec.toFixed(2)}s`,
+			});
 			return;
 		}
 		const src = wrapped.canvas as OffscreenCanvas;
@@ -210,7 +214,7 @@ async function buildStoryboard(): Promise<void> {
 		});
 	} catch (err) {
 		post({
-			type: "error",
+			type: "storyboard-error",
 			message: err instanceof Error ? err.message : String(err),
 		});
 	}

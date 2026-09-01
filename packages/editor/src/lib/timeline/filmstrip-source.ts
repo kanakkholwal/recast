@@ -101,6 +101,8 @@ class MediabunnyTileProvider implements TileProvider {
 		this.#cache = new LruCache<string>(MAX_TILES, (url) => URL.revokeObjectURL(url));
 		this.#hoverCache = new LruCache<string>(MAX_HOVER_FRAMES, (url) => URL.revokeObjectURL(url));
 		this.#worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) => this.#onMessage(e.data);
+		// Replaces the init promise's `reject`, which is settled: left in place it swallowed every later worker crash and suppressed the default console report too.
+		this.#worker.onerror = (e) => console.error("filmstrip worker crashed:", e.message);
 	}
 
 	static async create(
@@ -231,6 +233,13 @@ class MediabunnyTileProvider implements TileProvider {
 	}
 
 	#onMessage(msg: FromFilmstripWorker): void {
+		if (msg.type === "storyboard-error") {
+			console.error("filmstrip storyboard:", msg.message);
+			// Latch cleared so the next request rebuilds: one failure used to drop hover scrub to per-position decodes for the rest of the session.
+			this.#storyboardRequested = false;
+			this.#storyboardQueued = false;
+			return;
+		}
 		if (msg.type === "error") {
 			console.error("filmstrip worker:", msg.message);
 			// Release the id so the tile can be re-requested and the id and inflight maps don't grow without bound.

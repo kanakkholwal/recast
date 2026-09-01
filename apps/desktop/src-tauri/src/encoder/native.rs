@@ -142,7 +142,8 @@ impl NativeRecorder {
     /// Encodes one captured frame stamped at `pts_us` on the recording clock.
     /// The previous sample's duration is only known now, which is what makes this variable rate and keeps the writer one frame behind; an already-taken handle is a keepalive.
     pub fn push(&mut self, handle: &GpuHandle, pts_us: u64) -> Result<()> {
-        if handle.ready_at <= self.released {
+        let open = self.imported.as_ref().map(|open| open.texture_handle);
+        if Self::is_keepalive(open, self.released, handle) {
             return self.repeat(pts_us);
         }
         self.import(handle)?;
@@ -165,6 +166,14 @@ impl NativeRecorder {
         self.released = handle.ready_at;
         self.last_converted = Some(index);
         self.encode_slot(index, pts_us)
+    }
+
+    /// Whether `handle` is a frame already encoded, which is what a keepalive
+    /// tick re-offers. Fence values only compare within ONE shared surface:
+    /// a reopened source restarts the counter at 1, and comparing that against
+    /// a minute of accumulated progress froze the rest of the recording.
+    fn is_keepalive(open: Option<isize>, released: u64, handle: &GpuHandle) -> bool {
+        open == Some(handle.texture) && handle.ready_at <= released
     }
 
     /// Emit the last picture again, to bound how long a still desktop's sample can run without a new one.
@@ -448,6 +457,34 @@ pub const fn duration_ticks(from_us: u64, to_us: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn handle(texture: isize, ready_at: u64) -> GpuHandle {
+        GpuHandle {
+            texture,
+            fence: 1,
+            release: 2,
+            ready_at,
+            width: 1920,
+            height: 1080,
+        }
+    }
+
+    #[test]
+    fn a_fence_value_already_encoded_is_a_keepalive() {
+        let open = Some(7);
+        assert!(NativeRecorder::is_keepalive(open, 3600, &handle(7, 3600)));
+        assert!(NativeRecorder::is_keepalive(open, 3600, &handle(7, 10)));
+        assert!(!NativeRecorder::is_keepalive(open, 3600, &handle(7, 3601)));
+    }
+
+    /// capturekit rebuilds the shared surface on a recoverable loss and its
+    /// fence restarts at 1, so a minute of recording made every frame from the
+    /// new surface look already-encoded and the take froze on one picture.
+    #[test]
+    fn a_reopened_source_is_not_mistaken_for_a_keepalive() {
+        assert!(!NativeRecorder::is_keepalive(Some(7), 3600, &handle(9, 1)));
+        assert!(!NativeRecorder::is_keepalive(None, 3600, &handle(9, 1)));
+    }
 
     #[test]
     fn a_sixty_hertz_gap_is_one_sixtieth_of_the_timescale() {

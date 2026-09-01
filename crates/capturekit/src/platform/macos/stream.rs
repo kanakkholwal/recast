@@ -106,6 +106,7 @@ unsafe impl Send for SckSource {}
 fn configuration(
     size: Rect,
     source_rect: Option<Rect>,
+    scale_factor: f32,
     opts: &OpenOptions,
 ) -> Retained<SCStreamConfiguration> {
     // SAFETY: a plain allocation, taking no arguments to get wrong.
@@ -119,15 +120,17 @@ fn configuration(
         // Two is the smallest depth that lets the stream keep producing while one frame is copied out.
         config.setQueueDepth(3);
         if let Some(rect) = source_rect {
+            // Divided by the backing scale: our rects are pixels, matching `Display::bounds`, but ScreenCaptureKit reads `sourceRect` in POINTS, so on a 2x panel an unscaled crop selects twice the area asked for.
+            let scale = f64::from(scale_factor.max(f32::MIN_POSITIVE));
             // The crop ScreenCaptureKit applies while compositing, so pixels outside it are never rendered, let alone copied.
             config.setSourceRect(objc2_core_foundation::CGRect {
                 origin: objc2_core_foundation::CGPoint {
-                    x: f64::from(rect.x),
-                    y: f64::from(rect.y),
+                    x: f64::from(rect.x) / scale,
+                    y: f64::from(rect.y) / scale,
                 },
                 size: objc2_core_foundation::CGSize {
-                    width: f64::from(rect.width),
-                    height: f64::from(rect.height),
+                    width: f64::from(rect.width) / scale,
+                    height: f64::from(rect.height) / scale,
                 },
             });
         }
@@ -153,7 +156,7 @@ impl SckSource {
         opts: &OpenOptions,
     ) -> Result<Self> {
         let staged = region.unwrap_or(size);
-        let config = configuration(staged, region, opts);
+        let config = configuration(staged, region, scale_factor, opts);
         let slot = Arc::new(FrameSlot::default());
         let output = StreamOutput::new(Arc::clone(&slot));
         let stopped = StreamStopped::new(Arc::clone(&slot) as Arc<dyn Endable>);
