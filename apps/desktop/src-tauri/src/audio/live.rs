@@ -105,12 +105,15 @@ fn record(tag: &str, during: impl FnOnce(&Arc<AtomicBool>)) -> Take {
     if loopback.is_none() {
         println!("no loopback device on this machine; skipping that half");
     }
-    let microphone = MicrophoneCaptureSession::start(MicrophoneCaptureConfig {
-        output_path: dir.join(format!("{tag}-mic.wav")),
-        device_id: None,
-        pause_flag: pause.clone(),
-        start: mic_start.clone(),
-    })
+    let microphone = MicrophoneCaptureSession::start(
+        MicrophoneCaptureConfig {
+            output_path: dir.join(format!("{tag}-mic.wav")),
+            device_id: None,
+            pause_flag: pause.clone(),
+            start: mic_start.clone(),
+        },
+        None,
+    )
     .map_err(|err| println!("no microphone on this machine ({err:#}); skipping that half"))
     .ok();
 
@@ -230,12 +233,15 @@ fn the_loopback_alone_survives_repeated_takes() {
 fn the_microphone_alone_survives_repeated_takes() {
     for attempt in 0..3 {
         eprintln!("mic take {attempt}: opening");
-        let session = MicrophoneCaptureSession::start(MicrophoneCaptureConfig {
-            output_path: scratch(&format!("mic-only-{attempt}")),
-            device_id: None,
-            pause_flag: Arc::new(AtomicBool::new(false)),
-            start: TrackStart::new(Instant::now()),
-        });
+        let session = MicrophoneCaptureSession::start(
+            MicrophoneCaptureConfig {
+                output_path: scratch(&format!("mic-only-{attempt}")),
+                device_id: None,
+                pause_flag: Arc::new(AtomicBool::new(false)),
+                start: TrackStart::new(Instant::now()),
+            },
+            None,
+        );
         let Ok(session) = session else {
             eprintln!("skipped: no microphone endpoint");
             return;

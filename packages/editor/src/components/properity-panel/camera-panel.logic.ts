@@ -3,6 +3,8 @@
  * that places a preset chip's dot where the bubble will land in the frame.
  */
 
+import type { CameraLayout } from "../../lib/editor/render-state";
+import { DEFAULT_SPLIT_FRACTION, LAYOUT_LABELS } from "../../lib/timeline/camera-clip-layout";
 import type { CameraCapture } from "../../lib/wire-types";
 import type { CameraPositionPreset } from "../../stores/editor-store.svelte";
 
@@ -104,4 +106,39 @@ export function dotStyleFor(preset: CameraPositionPreset): string {
 				? `transform:${translateX || translateY};`
 				: "";
 	return xPart + yPart + transform;
+}
+
+/** Picker rows for the layout select, named the same as the timeline's clips. */
+export const CAMERA_LAYOUT_OPTIONS = LAYOUT_LABELS.map((l) => ({
+	value: l.kind,
+	label: l.label,
+}));
+
+/** What the two halves are called, which differs by split axis. */
+export function splitSideOptions(kind: "splitH" | "splitV") {
+	return kind === "splitH"
+		? [
+				{ value: "start", label: "Left" },
+				{ value: "end", label: "Right" },
+			]
+		: [
+				{ value: "start", label: "Top" },
+				{ value: "end", label: "Bottom" },
+			];
+}
+
+/**
+ * The layout to store when the picker changes kind. The picker carries only a
+ * kind, so a split needs its share and side filled in: carried over from the
+ * layout being replaced where it had them, so flipping between the two split
+ * axes keeps the framing the user just set.
+ */
+export function layoutForKind(current: CameraLayout, kind: CameraLayout["kind"]): CameraLayout {
+	if (kind !== "splitH" && kind !== "splitV") return { kind } as CameraLayout;
+	const wasSplit = current.kind === "splitH" || current.kind === "splitV";
+	return {
+		kind,
+		fraction: wasSplit ? current.fraction : DEFAULT_SPLIT_FRACTION,
+		side: wasSplit ? current.side : "start",
+	};
 }

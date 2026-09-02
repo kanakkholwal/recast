@@ -6,6 +6,7 @@ pub mod camera;
 pub mod caption;
 pub mod eval;
 pub mod geometry;
+pub mod layout;
 pub mod render;
 pub mod session;
 pub mod source;
@@ -22,6 +23,7 @@ pub use eval::{
     LayerParams, SourceGeometry,
 };
 pub use geometry::{canvas_geometry, parse_aspect_ratio, CanvasGeometry, MAX_PADDING_PCT};
+pub use layout::{layout_at, resolve as resolve_layout, LayoutRects};
 pub use recast_cursor::{CursorPlacement, CursorSettings, CursorTrack, Highlight};
 pub use render::{
     BackgroundImage, Compositor, CursorSprite, FrameInputs, LayerInput, MissingInput, RenderStats,

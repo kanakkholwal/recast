@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
+import type { CameraLayout } from "../../lib/editor/render-state";
+import { DEFAULT_SPLIT_FRACTION } from "../../lib/timeline/camera-clip-layout";
+import {
+	CAMERA_LAYOUT_OPTIONS,
+	cameraAvailability,
+	dotStyleFor,
+	labelFor,
+	layoutForKind,
+	splitSideOptions,
+} from "./camera-panel.logic";
 
 describe("cameraAvailability", () => {
 	it("enables the overlay only when a separate track resolved to a file", () => {
@@ -92,5 +101,49 @@ describe("labelFor", () => {
 	it("title-cases the preset id", () => {
 		expect(labelFor("left-center")).toBe("Left Center");
 		expect(labelFor("bottom-right")).toBe("Bottom Right");
+	});
+});
+
+describe("layoutForKind", () => {
+	const splitH: CameraLayout = { kind: "splitH", fraction: 0.42, side: "end" };
+
+	it("fills in a share and a side when a split is first chosen", () => {
+		const next = layoutForKind({ kind: "pip" }, "splitV");
+		expect(next).toEqual({ kind: "splitV", fraction: DEFAULT_SPLIT_FRACTION, side: "start" });
+	});
+
+	// Flipping the axis of an already-framed split keeps that framing rather than resetting to the default.
+	it("carries the framing across a change of split axis", () => {
+		expect(layoutForKind(splitH, "splitV")).toEqual({ ...splitH, kind: "splitV" });
+	});
+
+	it("drops the split fields for a layout that has none", () => {
+		expect(layoutForKind(splitH, "pip")).toEqual({ kind: "pip" });
+		expect(layoutForKind(splitH, "screenOnly")).toEqual({ kind: "screenOnly" });
+	});
+});
+
+describe("splitSideOptions", () => {
+	// A vertical split has no left and right; those labels would describe the opposite of what the control does.
+	it("names the halves by the axis they divide", () => {
+		expect(splitSideOptions("splitH").map((o) => o.label)).toEqual(["Left", "Right"]);
+		expect(splitSideOptions("splitV").map((o) => o.label)).toEqual(["Top", "Bottom"]);
+	});
+
+	it("keeps the same side values on both axes", () => {
+		expect(splitSideOptions("splitH").map((o) => o.value)).toEqual(
+			splitSideOptions("splitV").map((o) => o.value),
+		);
+	});
+});
+
+describe("CAMERA_LAYOUT_OPTIONS", () => {
+	it("offers every layout the renderer knows how to draw", () => {
+		expect(CAMERA_LAYOUT_OPTIONS.map((o) => o.value)).toEqual([
+			"pip",
+			"splitH",
+			"splitV",
+			"screenOnly",
+		]);
 	});
 });

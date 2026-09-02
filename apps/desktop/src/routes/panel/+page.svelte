@@ -38,12 +38,15 @@ import {
 	resolveMic,
 } from "@recast/editor/lib/profiles";
 import {
+	AlertTriangle,
 	AppWindow,
 	Camera,
 	CameraOff,
+	Check,
 	ChevronDown,
 	Crop,
 	GripVertical,
+	LoaderCircle,
 	Mic,
 	MicOff,
 	Monitor,
@@ -76,6 +79,7 @@ import {
 	formatRecordingTimer,
 	intentToTargetType,
 	lastSourceToTarget,
+	smoothMicLevel,
 	sourceFromIntent,
 	type TargetSource,
 	targetToLastSource,
@@ -96,6 +100,10 @@ let isRecording = $state(false);
 let isStarting = $state(false);
 // Guards a second stop click while stop_recording is in flight (slow on macOS) from erroring spuriously.
 let isStopping = $state(false);
+// Post-stop feedback ON the panel: without it the bar snaps to idle with no "did it save?" confirmation, and failures went to a main-window toast hidden behind the capture.
+let saveState = $state<"idle" | "saving" | "saved" | "failed">("idle");
+let saveError = $state<string | null>(null);
+let saveResetTimer: ReturnType<typeof setTimeout> | undefined;
 let recordingStartTime: number | null = $state(null);
 let now = $state(Date.now());
 
@@ -111,7 +119,7 @@ const BAR_W_IDLE = 488;
 
 let barContentEl = $state<HTMLElement | null>(null);
 let measuredBarW = $state(BAR_W_IDLE);
-const barWidth = new Tween(BAR_W_IDLE, { duration: 340, easing: cubicOut });
+const barWidth = new Tween(BAR_W_IDLE, { duration: 260, easing: cubicOut });
 // Snap the very first measurement instead of animating from the seed value.
 let barFirstMeasure = true;
 const prefersReducedMotion =
@@ -149,9 +157,12 @@ $effect(() => {
 });
 
 // `idle` = full controls; `countdown` = number + cancel; `recording` = transport.
-const phase = $derived<"idle" | "countdown" | "recording">(
-	isRecording || isStarting ? "recording" : countdownValue !== null ? "countdown" : "idle",
-);
+const phase = $derived.by<"idle" | "countdown" | "recording" | "finalizing">(() => {
+	if (saveState !== "idle") return "finalizing";
+	if (isRecording || isStarting) return "recording";
+	if (countdownValue !== null) return "countdown";
+	return "idle";
+});
 
 // Mirrors the recording flag to the tray label; a no-op if tray init failed.
 $effect(() => {
@@ -171,6 +182,10 @@ let lastPausePromptAt: number | null = $state(null);
 // Device toggles
 let systemAudioOn = $state(true);
 let micOn = $state(false);
+// Real 0..1 input level fed by Rust's `mic-level` event during recording (perceptual-curved + smoothed), so the meter reflects captured audio rather than a decorative loop.
+let micLevel = $state(0);
+// Per-bar scale so the meter reads like an equalizer, not a flat block.
+const METER_BARS = [0.62, 1, 0.82, 0.9];
 let cameraOn = $state(false);
 
 // Selected devices
@@ -183,6 +198,16 @@ let cameraValidation = $state<CameraValidationResult | null>(null);
 // The panel can't host a toast, so resolution outcomes live in tooltips until the next apply or toggle.
 let micWarning = $state<string | null>(null);
 let cameraWarning = $state<string | null>(null);
+
+// The most severe active device problem, surfaced as an inline chip in the idle bar rather than a hover-only title.
+const deviceIssue = $derived.by<{ level: "error" | "warning"; text: string } | null>(() => {
+	if (cameraValidation?.status === "error") {
+		return { level: "error", text: cameraValidation.statusMessage ?? "Camera unavailable" };
+	}
+	if (cameraWarning) return { level: "warning", text: cameraWarning };
+	if (micWarning) return { level: "warning", text: micWarning };
+	return null;
+});
 
 // Refreshed on every profile resolve, so the resolver sees current hardware (USB devices come and go).
 let mics = $state<AudioDeviceInfo[]>([]);
@@ -453,6 +478,8 @@ onMount(() => {
 	// Reflect a recording the panel did NOT start (CLI, or a --timeout auto-stop); panel takes set the flags first.
 	const unlistenRecStarted = listen<{ startedAtUnixMs: number }>("recording:started", (event) => {
 		if (isRecording || isStarting) return;
+		// An external (CLI/timeout) start inside the "Saved" window must clear it, or the transport hides behind the finalizing UI.
+		dismissSave();
 		clearCountdown();
 		now = Date.now();
 		recordingStartTime = event.payload.startedAtUnixMs ?? now;
@@ -467,6 +494,7 @@ onMount(() => {
 		isPaused = false;
 		pausedAccumMs = 0;
 		pausedSince = null;
+		micLevel = 0;
 		isRecording = false;
 		isStopping = false;
 		closeCameraPreview();
@@ -478,6 +506,10 @@ onMount(() => {
 		if (messages.length > 0) {
 			notify("warning", messages.join("\n"), 8000);
 		}
+	});
+	// Rust emits the mic RMS ~15Hz while recording; smoothMicLevel curves + smooths it into a meter value.
+	const unlistenMicLevel = listen<number>("mic-level", (event) => {
+		micLevel = smoothMicLevel(micLevel, event.payload ?? 0);
 	});
 
 	window.addEventListener("keydown", handleGlobalShortcut);
@@ -521,6 +553,7 @@ onMount(() => {
 		unlistenRecStarted.then((fn) => fn());
 		unlistenRecStopped.then((fn) => fn());
 		unlistenRecWarnings.then((fn) => fn());
+		unlistenMicLevel.then((fn) => fn());
 		window.removeEventListener("keydown", handleGlobalShortcut);
 	};
 });
@@ -856,6 +889,8 @@ function startNow() {
  */
 function beginRecording() {
 	if (!selectedSource || isRecording || isStarting || countdownValue !== null) return;
+	// A tray/shortcut start can land inside the post-stop "Saved" window; clear it so the finalizing UI doesn't paint over the new countdown.
+	dismissSave();
 	const secs = countdownSeconds;
 	if (secs <= 0) {
 		void startActualRecording();
@@ -895,13 +930,20 @@ async function toggleRecording() {
 	}
 	// A stop is already in flight; a second `stopRecording()` would race the first and error out.
 	if (isStopping) return;
+	clearTimeout(saveResetTimer);
 	try {
 		isStopping = true;
+		saveState = "saving";
+		saveError = null;
 		// Rust stop_recording drives the camera flush on every stop path, so the panel only requests the stop.
 		await stopRecording();
+		saveState = "saved";
+		// Brief confirmation, then back to idle ready for the next take.
+		saveResetTimer = setTimeout(() => (saveState = "idle"), 1400);
 	} catch (e) {
-		// Start already succeeded, so FFmpeg was present: an 'ffmpeg not installed' suffix sent users chasing red herrings.
-		notify("error", `Stop failed: ${e}`, 10000);
+		// Show it ON the panel: the old main-window toast landed behind whatever was being recorded.
+		saveError = String(e);
+		saveState = "failed";
 	} finally {
 		// Always reset: Rust `stop()` takes the session first, so a later failure still leaves it gone and Stop would error forever.
 		recordingStartTime = null;
@@ -910,10 +952,18 @@ async function toggleRecording() {
 		pausedSince = null;
 		emit("camera-recording-stopped");
 		emit("refresh-recordings");
+		micLevel = 0;
 		// Back to idle, so the ResizeObserver and Tween effect expand the bar to the full control set.
 		isRecording = false;
 		isStopping = false;
 	}
+}
+
+// Clear the post-stop confirmation/error back to the idle bar. The Rust save already ran; this only dismisses the panel state.
+function dismissSave() {
+	clearTimeout(saveResetTimer);
+	saveState = "idle";
+	saveError = null;
 }
 
 async function startActualRecording() {
@@ -1028,7 +1078,8 @@ let isClosing = false;
 async function finalizeAndClose() {
 	isClosing = true;
 	try {
-		if (isRecording) await stopRecording();
+		// Skip when a stop is already in flight (Stop button): a second stopRecording() races the first. Rust owns the session, so it still saves.
+		if (isRecording && !isStopping) await stopRecording();
 	} catch (e) {
 		// Closing anyway would discard the take, so stay open and let the user retry the stop.
 		console.error("finalize-on-close failed:", e);
@@ -1075,7 +1126,7 @@ function phaseOut(node: HTMLElement) {
 
 <div class="flex h-dvh w-dvw items-center justify-center px-4 py-3">
 	<div
-		class="group/panel relative flex h-11 shrink-0 items-center justify-center overflow-hidden no-scrollbar rounded-xl border border-border/60 bg-card/95 shadow-craft-floating ring-1 ring-inset ring-foreground/10 backdrop-blur-xl"
+		class="group/panel relative flex h-11 shrink-0 items-center justify-center overflow-hidden no-scrollbar rounded-xl border border-border/60 bg-card/85 shadow-craft-floating ring-1 ring-inset ring-foreground/10 backdrop-blur-xl"
 		style="width: {barWidth.current}px"
 	>
 		{#snippet CountDownPhase()}
@@ -1122,7 +1173,7 @@ function phaseOut(node: HTMLElement) {
 							duration: prefersReducedMotion ? 0 : 220,
 							easing: cubicOut,
 						}}
-						class="font-mono text-[12px] font-bold leading-none tabular-nums text-primary transition-opacity group-hover/cd:opacity-0"
+						class="font-mono text-[13px] font-bold leading-none tabular-nums text-primary transition-opacity group-hover/cd:opacity-0"
 					>
 						{countdownValue}
 					</span>
@@ -1148,7 +1199,25 @@ function phaseOut(node: HTMLElement) {
 		{/snippet}
 
 		{#snippet RecordingPhase()}
-			<LogoWave size="20" active={micOn && !isPaused} class="shrink-0" />
+			{#if micOn}
+				<div
+					class="flex h-4 shrink-0 items-end gap-0.5"
+					title="Microphone input level"
+					aria-hidden="true"
+				>
+					{#each METER_BARS as scale}
+						<div
+							class="h-full w-0.5 rounded-full bg-success motion-safe:transition-transform motion-safe:duration-75"
+							style="transform: scaleY({Math.max(
+								0.12,
+								(isPaused ? 0 : micLevel) * scale,
+							)}); transform-origin: bottom;"
+						></div>
+					{/each}
+				</div>
+			{:else}
+				<LogoWave size="20" active={false} class="shrink-0" />
+			{/if}
 
 			<span
 				class="relative ml-0.5 flex size-2 shrink-0"
@@ -1175,7 +1244,7 @@ function phaseOut(node: HTMLElement) {
 					{isPaused ? "Paused" : "Recording"}
 				</span>
 				<span
-					class="font-mono text-[13px] font-semibold leading-none tabular-nums tracking-tight text-foreground"
+					class="font-mono text-[15px] font-semibold leading-none tabular-nums tracking-tight text-foreground"
 				>
 					{timer}
 				</span>
@@ -1191,32 +1260,82 @@ function phaseOut(node: HTMLElement) {
 				</span>
 			{/if}
 
-			<ButtonGroup>
-				<Button
-					onclick={togglePause}
-					onmousedown={(e: MouseEvent) => e.stopPropagation()}
-					size="icon-sm"
-					variant={isPaused ? "success_soft" : "secondary"}
-					title={isPaused ? "Resume Recording" : "Pause Recording"}
-				>
-					{#if isPaused}
-						<PlayFilled size={13} />
-					{:else}
-						<PauseFilled size={13} />
-					{/if}
-				</Button>
-				<Button
-					onclick={toggleRecording}
-					onmousedown={(e: MouseEvent) => e.stopPropagation()}
-					disabled={isStopping}
-					size="icon-sm"
-					variant="destructive_soft"
-					title="Stop recording"
-					aria-label="Stop recording"
-				>
-					<SquareFilled size={10} class="text-destructive" />
-				</Button>
-			</ButtonGroup>
+			<Button
+				onclick={togglePause}
+				onmousedown={(e: MouseEvent) => e.stopPropagation()}
+				size="icon-sm"
+				variant={isPaused ? "success_soft" : "secondary"}
+				title={isPaused ? "Resume Recording" : "Pause Recording"}
+			>
+				{#if isPaused}
+					<PlayFilled size={13} />
+				{:else}
+					<PauseFilled size={13} />
+				{/if}
+			</Button>
+			<!-- Separated from Pause: an accidental Stop is a costly, irreversible mis-click mid-recording. -->
+			<Button
+				onclick={toggleRecording}
+				onmousedown={(e: MouseEvent) => e.stopPropagation()}
+				disabled={isStopping}
+				size="icon-sm"
+				variant="destructive_soft"
+				title="Stop recording"
+				aria-label="Stop recording"
+			>
+				<SquareFilled size={10} class="text-destructive" />
+			</Button>
+		{/snippet}
+		{#snippet FinalizingPhase()}
+			<div class="flex w-fit items-center gap-2 pl-0.5 pr-1" role="status" aria-live="polite">
+				{#if saveState === "failed"}
+					<span
+						class="flex size-5 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive"
+						aria-hidden="true"
+					>
+						<AlertTriangle size={12} stroke={2} />
+					</span>
+					<div class="flex shrink-0 flex-col leading-tight">
+						<span class="whitespace-nowrap text-[11px] font-semibold tracking-tight text-foreground">
+							Couldn't save
+						</span>
+						<span
+							class="max-w-45 truncate text-[10px] font-medium text-muted-foreground"
+							title={saveError ?? ""}
+						>
+							{saveError ?? "The recording may be incomplete."}
+						</span>
+					</div>
+					<Button
+						onclick={dismissSave}
+						onmousedown={(e: MouseEvent) => e.stopPropagation()}
+						size="xs"
+						variant="outline"
+						class="ml-1 shrink-0"
+					>
+						Dismiss
+					</Button>
+				{:else if saveState === "saved"}
+					<span
+						class="flex size-5 shrink-0 items-center justify-center rounded-full bg-success/10 text-success"
+						aria-hidden="true"
+					>
+						<Check size={12} stroke={2.5} />
+					</span>
+					<span class="whitespace-nowrap text-[12px] font-semibold tracking-tight text-foreground">
+						Saved
+					</span>
+				{:else}
+					<LoaderCircle
+						size={15}
+						stroke={2}
+						class="shrink-0 text-muted-foreground motion-safe:animate-spin"
+					/>
+					<span class="whitespace-nowrap text-[12px] font-medium tracking-tight text-muted-foreground">
+						Saving recording…
+					</span>
+				{/if}
+			</div>
 		{/snippet}
 		{#snippet IdlePhase()}
 			<Button
@@ -1304,13 +1423,29 @@ function phaseOut(node: HTMLElement) {
 							</Button>
 						{/if}
 
+						{#if deviceIssue}
+							<div
+								class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 {deviceIssue.level ===
+								'error'
+									? 'bg-destructive/10 text-destructive'
+									: 'bg-warning/10 text-warning'}"
+								role="status"
+								title={deviceIssue.text}
+							>
+								<AlertTriangle size={11} stroke={2} class="shrink-0" />
+								<span class="max-w-28 truncate text-[10px] font-medium">
+									{deviceIssue.text}
+								</span>
+							</div>
+						{/if}
+
 						<!-- Device toggles -->
 						<ButtonGroup>
 							<!-- System audio -->
 							<Button
 								size="icon-sm"
 								variant={systemAudioOn
-									? "default_soft"
+									? "active"
 									: "outline"}
 								disabled={isRecording}
 								onclick={toggleSystemAudio}
@@ -1332,7 +1467,7 @@ function phaseOut(node: HTMLElement) {
 								variant={micOn
 									? micWarning
 										? "destructive_soft"
-										: "default_soft"
+										: "active"
 									: micWarning
 										? "destructive_soft"
 										: "outline"}
@@ -1364,7 +1499,7 @@ function phaseOut(node: HTMLElement) {
 									? cameraValidation?.status === "error" ||
 										cameraWarning
 										? "destructive_soft"
-										: "default_soft"
+										: "active"
 									: cameraWarning
 										? "destructive_soft"
 										: "outline"}
@@ -1388,16 +1523,18 @@ function phaseOut(node: HTMLElement) {
 		{/snippet}
 		<div
 			bind:this={barContentEl}
+			data-tauri-drag-region
 			class="relative flex w-fit shrink-0 items-center justify-center gap-1 p-2"
 		>
 			<div
+				data-tauri-drag-region
 				class="flex w-fit items-center gap-2 pl-0.5 pr-1"
 				in:fade={{ duration: 200, delay: 80, easing: cubicOut }}
 				out:phaseOut
 			>
 				<div
 					data-tauri-drag-region
-					class="flex h-7 w-3.5 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-muted-foreground active:cursor-grabbing"
+					class="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-muted-foreground active:cursor-grabbing"
 					title="Drag to move"
 					aria-label="Drag panel"
 				>
@@ -1411,18 +1548,32 @@ function phaseOut(node: HTMLElement) {
 					{@render CountDownPhase()}
 				{:else if phase === "recording"}
 					{@render RecordingPhase()}
+				{:else if phase === "finalizing"}
+					{@render FinalizingPhase()}
 				{:else}
 					{@render IdlePhase()}
 				{/if}
-				<Button
-					onclick={() => phase === "countdown" ? cancelCountdown() : closePanel()}
-					onmousedown={(e: MouseEvent) => e.stopPropagation()}
-					title="Close"
-					size="icon-sm"
-					variant="ghost"
-				>
-					<X size={10} stroke={2} class="shrink-0 text-destructive" />
-				</Button>
+				{#if saveState !== "saving"}
+					<!-- Close during recording is safe: onCloseRequested finalizes then closes. Only the in-flight save hides it, to keep the Saved confirmation on screen. -->
+					<Button
+						onclick={() =>
+							phase === "countdown"
+								? cancelCountdown()
+								: phase === "finalizing"
+									? dismissSave()
+									: closePanel()}
+						onmousedown={(e: MouseEvent) => e.stopPropagation()}
+						title={phase === "recording"
+							? "Stop and close"
+							: phase === "finalizing"
+								? "Dismiss"
+								: "Close"}
+						size="icon-sm"
+						variant="ghost"
+					>
+						<X size={10} stroke={2} class="shrink-0 text-destructive" />
+					</Button>
+				{/if}
 			</div>
 		</div>
 	</div>

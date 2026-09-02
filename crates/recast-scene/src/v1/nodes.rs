@@ -229,6 +229,72 @@ pub struct CameraMotionSegment {
     pub source: String,
 }
 
+/// Which half a split gives the camera: left in a horizontal split, top in a
+/// vertical one. One enum rather than two so an impossible pairing cannot be
+/// written down.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LayoutSide {
+    Start,
+    End,
+}
+
+/// How the screen and the camera share the frame for one clip.
+///
+/// `Pip` carries no placement on purpose. Where the bubble sits is already
+/// answered by `default_placement` and `keyframes`, and a second copy here
+/// would be a second authority to keep in step.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CameraLayout {
+    /// The bubble over a full-frame screen. Every project before layouts.
+    #[default]
+    Pip,
+    /// Side by side. `fraction` is the camera's share of the frame width.
+    SplitH { fraction: f64, side: LayoutSide },
+    /// Stacked. `fraction` is the camera's share of the frame height.
+    SplitV { fraction: f64, side: LayoutSide },
+    /// Screen alone; the camera is not drawn.
+    ScreenOnly,
+}
+
+/// Neither half may collapse: a split where one side rounds to nothing is a
+/// worse way to express `ScreenOnly` than `ScreenOnly` is.
+pub const MIN_SPLIT_FRACTION: f64 = 0.15;
+pub const MAX_SPLIT_FRACTION: f64 = 0.85;
+
+impl CameraLayout {
+    /// The camera's clamped share of the frame, or `None` when this layout does
+    /// not split.
+    #[must_use]
+    pub fn split_fraction(&self) -> Option<f64> {
+        match self {
+            Self::SplitH { fraction, .. } | Self::SplitV { fraction, .. } => {
+                Some(fraction.clamp(MIN_SPLIT_FRACTION, MAX_SPLIT_FRACTION))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether the FFmpeg graph can render this. Its camera placement is a
+    /// sampled expression LUT with no room for a second moving rect, so only
+    /// the bubble it already draws survives that path.
+    #[must_use]
+    pub fn is_pip(&self) -> bool {
+        matches!(self, Self::Pip)
+    }
+}
+
+/// The layout for the clip starting at `start` on the ORIGINAL axis, the same
+/// key `SegmentSpeed` and `SegmentAnim` use. Re-deriving segments re-associates
+/// by start, and a key no cut leaves behind drops instead of misplacing itself.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraClipLayout {
+    pub start: f64,
+    pub layout: CameraLayout,
+}
+
 /// A camera position pinned at an original-recording time. The effective base
 /// placement glides (eased) between consecutive keyframes — the per-cut motion.
 /// Mirrors the TS `CameraKeyframe`.
@@ -271,6 +337,10 @@ pub struct CameraOverlaySettings {
     /// Per-cut position keyframes (original-time). Empty → static default_placement.
     #[serde(default)]
     pub keyframes: Vec<CameraKeyframe>,
+    /// Per-clip arrangement. Empty means the whole recording uses the bubble,
+    /// which is every project made before layouts existed.
+    #[serde(default)]
+    pub clip_layouts: Vec<CameraClipLayout>,
     /// Easing for the glide between keyframes.
     #[serde(default = "default_camera_keyframe_easing")]
     pub keyframe_easing: Easing,
@@ -323,6 +393,7 @@ impl Default for CameraOverlaySettings {
             default_placement: CameraPlacement::default(),
             motion_segments: Vec::new(),
             keyframes: Vec::new(),
+            clip_layouts: Vec::new(),
             keyframe_easing: default_camera_keyframe_easing(),
             shadow: default_camera_shadow(),
         }
@@ -331,7 +402,10 @@ impl Default for CameraOverlaySettings {
 
 #[cfg(test)]
 mod tests {
-    use super::{Annotation, AnnotationAnchor, AnnotationKind, ZoomRegion};
+    use super::{
+        Annotation, AnnotationAnchor, AnnotationKind, CameraLayout, CameraOverlaySettings,
+        LayoutSide, ZoomRegion,
+    };
 
     /// Shared with `packages/editor/src/components/video-preview.logic.test.ts`.
     /// The eased zoom curve is written twice, and a drift means the preview
@@ -358,6 +432,60 @@ mod tests {
                 "case {case}: got {got}, want {want}"
             );
         }
+    }
+
+    // Same contract as the annotation guard below: a key mismatch here would draw every clip as the bubble and never say so.
+    #[test]
+    fn camera_clip_layouts_survive_frontend_json() {
+        let raw = r##"{
+            "enabled": true,
+            "clipLayouts": [
+                { "start": 0.0, "layout": { "kind": "pip" } },
+                { "start": 4.0, "layout": { "kind": "splitH", "fraction": 0.3, "side": "start" } },
+                { "start": 9.0, "layout": { "kind": "splitV", "fraction": 0.4, "side": "end" } },
+                { "start": 12.0, "layout": { "kind": "screenOnly" } }
+            ]
+        }"##;
+        let overlay: CameraOverlaySettings = serde_json::from_str(raw).unwrap();
+        let kinds: Vec<CameraLayout> = overlay.clip_layouts.iter().map(|c| c.layout).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                CameraLayout::Pip,
+                CameraLayout::SplitH {
+                    fraction: 0.3,
+                    side: LayoutSide::Start
+                },
+                CameraLayout::SplitV {
+                    fraction: 0.4,
+                    side: LayoutSide::End
+                },
+                CameraLayout::ScreenOnly,
+            ]
+        );
+        assert_eq!(overlay.clip_layouts[1].start, 4.0);
+    }
+
+    /// Every project made before layouts existed. Absent must mean the bubble,
+    /// not a deserialize failure that takes the whole render state with it.
+    #[test]
+    fn an_overlay_without_clip_layouts_still_loads() {
+        let overlay: CameraOverlaySettings = serde_json::from_str(r#"{"enabled": true}"#).unwrap();
+        assert!(overlay.clip_layouts.is_empty());
+    }
+
+    /// The wire form is what the editor writes, so it has to round-trip back
+    /// out in the same shape the editor will read next time.
+    #[test]
+    fn a_layout_round_trips_through_its_wire_form() {
+        let layout = CameraLayout::SplitV {
+            fraction: 0.42,
+            side: LayoutSide::End,
+        };
+        let json = serde_json::to_string(&layout).unwrap();
+        assert!(json.contains(r#""kind":"splitV""#), "{json}");
+        assert!(json.contains(r#""side":"end""#), "{json}");
+        assert_eq!(serde_json::from_str::<CameraLayout>(&json).unwrap(), layout);
     }
 
     // Guards the IPC contract: a key mismatch silently drops the feature at export, as `segmentAnims` once did.

@@ -6,6 +6,7 @@ import {
 	CAMERA_SHADOW_OFFSET_FRACTION,
 	type CameraKeyframe,
 	cameraBubbleDelta,
+	cameraOverlayFromState,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
 	cameraShadowStyle,
@@ -458,4 +459,67 @@ describe("zoom-follow parity with the Rust compositor", () => {
 			expect(got.height).toBeCloseTo(c.expect.height, 12);
 		});
 	}
+});
+
+describe("cameraOverlayFromState", () => {
+	const EASE_LIN = { x1: 0, y1: 0, x2: 1, y2: 1 };
+	const fallback = { x: 0.8, y: 0.8, width: 0.16, height: 0.16 };
+	const move = {
+		start: 2,
+		end: 3,
+		fromX: 0.1,
+		fromY: 0,
+		fromWidth: 0.2,
+		fromHeight: 0.2,
+		toX: 0.6,
+		toY: 0,
+		toWidth: 0.2,
+		toHeight: 0.2,
+		easeIn: EASE_LIN,
+		easeOut: EASE_LIN,
+		source: "live-recorded" as const,
+	};
+
+	// The whole point of Phase 0: dragging the preview window to see your own face must not author an animation on the timeline.
+	it("never turns recorded moves into keyframes", () => {
+		const overlay = cameraOverlayFromState({ motionSegments: [move] }, fallback);
+		expect(overlay.keyframes).toEqual([]);
+	});
+
+	it("carries the recorded moves so the panel can offer them", () => {
+		const overlay = cameraOverlayFromState({ motionSegments: [move] }, fallback);
+		expect(overlay.motionSegments).toHaveLength(1);
+		expect(overlay.motionSegments[0].toX).toBeCloseTo(0.6, 6);
+	});
+
+	it("keeps authored keyframes exactly as they were saved", () => {
+		const authored = [{ atSec: 1, placement: { x: 0.2, y: 0.3, width: 0.2, height: 0.2 } }];
+		const overlay = cameraOverlayFromState(
+			{ keyframes: authored, motionSegments: [move] },
+			fallback,
+		);
+		expect(overlay.keyframes).toEqual(authored);
+	});
+
+	// A live capture can report a placement off the frame; the drag clamp is the same one the overlay uses.
+	it("clamps a saved placement back into the frame", () => {
+		const overlay = cameraOverlayFromState(
+			{ defaultPlacement: { x: 1.4, y: -0.3, width: 0.2, height: 0.2 } },
+			fallback,
+		);
+		expect(overlay.defaultPlacement.x).toBeLessThanOrEqual(1);
+		expect(overlay.defaultPlacement.y).toBeGreaterThanOrEqual(0);
+	});
+
+	it("falls back to the preset placement when the project has none", () => {
+		expect(cameraOverlayFromState(undefined, fallback).defaultPlacement).toEqual(fallback);
+	});
+
+	it("defaults an older project's missing fields rather than dropping them", () => {
+		const overlay = cameraOverlayFromState({ enabled: true }, fallback);
+		expect(overlay.enabled).toBe(true);
+		expect(overlay.zoomFollow).toBe(true);
+		expect(overlay.shadow).toBeCloseTo(0.35, 6);
+		expect(overlay.shape).toBe("rounded");
+	});
 });

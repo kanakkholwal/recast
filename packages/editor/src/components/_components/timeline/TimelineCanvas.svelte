@@ -49,10 +49,12 @@ import {
 } from "../../../lib/timeline/canvas-view";
 import { type FilmstripBlock, planFilmstrip } from "../../../lib/timeline/filmstrip";
 import type { Storyboard, TileProvider } from "../../../lib/timeline/filmstrip-source";
+import { layoutAtStart, layoutLabel } from "../../../lib/timeline/camera-clip-layout";
 import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
 import {
 	buildTimelineRows,
 	type ClipKind,
+	type OriginalItem,
 	type TimelineClip,
 	type TimelineRow,
 	type TrackItem,
@@ -219,12 +221,27 @@ const trackInputs = $derived.by<TrackItem[]>(() => {
 		{
 			id: "camera",
 			source: "camera",
-			label: "Camera",
+			// "Camera" names the layout row above; this one is only the positions.
+			label: "Camera position",
 			kind: "camera",
 			times: cam.keyframes.map((k) => k.atSec),
 			selectedTime: selectedKeyframeSec,
 		},
 	];
+});
+
+// One clip per video segment, so the camera visibly splits where the video does. Only while the camera is composited; otherwise the row would say nothing.
+const cameraClips = $derived.by<OriginalItem[]>(() => {
+	if (!store.cameraOverlay?.enabled) return [];
+	const layouts = store.cameraOverlay.clipLayouts;
+	const selected = store.selectedClipStart;
+	return store.segments.map((s) => ({
+		id: String(s.start),
+		start: s.start,
+		end: s.end,
+		label: layoutLabel(layoutAtStart(layouts, s.start)),
+		selected: selected !== null && Math.abs(s.start - selected) < 1e-4,
+	}));
 });
 
 const fps = $derived(effectiveFps(store.metadata?.fps));
@@ -250,6 +267,7 @@ const rows = $derived.by<TimelineRow[]>(() => {
 			label: "Video",
 			selected: selClip !== null && Math.abs(s.start - selClip) < 1e-4,
 		})),
+		cameraClips,
 		zoomRegions: store.zoomRegions.map((z) => ({
 			id: z.id,
 			start: z.start,
@@ -1291,7 +1309,9 @@ const TRACK_PANEL: Record<string, PanelTab> = {
 
 function selectClip(clip: TimelineClip) {
 	switch (clip.kind) {
+		// The camera row mirrors the video segments, so a camera clip selects the same clip the video one does and the panels agree about which it is.
 		case "video":
+		case "camera":
 			store.selectedClipStart = Number(clip.id);
 			break;
 		case "zoom":

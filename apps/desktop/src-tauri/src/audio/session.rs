@@ -145,6 +145,7 @@ impl TrackSession {
         output_path: PathBuf,
         pause: Arc<AtomicBool>,
         start: TrackStart,
+        level: Option<super::MicLevelSink>,
     ) -> Result<Self> {
         let label = source.label();
         let stop = Arc::new(AtomicBool::new(false));
@@ -155,7 +156,7 @@ impl TrackSession {
             .spawn(move || match open(&source, output_path, pause, start) {
                 Ok((capturer, writer, notices)) => {
                     let _ = ready.send(Ok((capturer.describe().format, notices)));
-                    run(capturer, writer, &flag, label)
+                    run(capturer, writer, &flag, label, level)
                 }
                 Err(err) => {
                     let _ = ready.send(Err(err));
@@ -242,12 +243,23 @@ fn run(
     mut writer: TrackWriter,
     stop: &AtomicBool,
     label: &'static str,
+    level: Option<super::MicLevelSink>,
 ) -> Result<PathBuf> {
+    let sample_format = capturer.describe().format.sample_format;
+    // Throttle to ~15Hz: a per-buffer emit would flood the panel's event loop for a value the eye can't resolve faster.
+    const LEVEL_INTERVAL: Duration = Duration::from_millis(66);
+    let mut last_level = Instant::now();
     while !stop.load(Ordering::Acquire) {
         match capturer.next_buffer(POLL_TIMEOUT) {
             Ok(buffer) => {
                 if buffer.is_discontinuous() {
                     log::warn!("{label} reported a break in the stream");
+                }
+                if let Some(sink) = &level {
+                    if last_level.elapsed() >= LEVEL_INTERVAL {
+                        last_level = Instant::now();
+                        sink(buffer_level(buffer.bytes(), sample_format));
+                    }
                 }
                 let accepted =
                     writer.accept(buffer.bytes(), buffer.is_inserted_silence(), Instant::now());
@@ -269,6 +281,42 @@ fn run(
     }
     let _ = capturer.stop();
     writer.finish()
+}
+
+/// RMS of one interleaved PCM buffer, 0..1, for the live input meter. The panel
+/// applies the perceptual curve and smoothing.
+fn buffer_level(bytes: &[u8], format: capturekit::SampleFormat) -> f32 {
+    let mut sum_sq = 0.0f64;
+    let mut n = 0u64;
+    match format {
+        capturekit::SampleFormat::I16 => {
+            for c in bytes.chunks_exact(2) {
+                let v = f64::from(i16::from_le_bytes([c[0], c[1]])) / 32768.0;
+                sum_sq += v * v;
+                n += 1;
+            }
+        }
+        capturekit::SampleFormat::I32 => {
+            for c in bytes.chunks_exact(4) {
+                let v = f64::from(i32::from_le_bytes([c[0], c[1], c[2], c[3]])) / 2_147_483_648.0;
+                sum_sq += v * v;
+                n += 1;
+            }
+        }
+        capturekit::SampleFormat::F32 => {
+            for c in bytes.chunks_exact(4) {
+                let v = f64::from(f32::from_le_bytes([c[0], c[1], c[2], c[3]]));
+                sum_sq += v * v;
+                n += 1;
+            }
+        }
+        // capturekit marks the enum non_exhaustive; an unknown width just yields no meter.
+        _ => return 0.0,
+    }
+    if n == 0 {
+        return 0.0;
+    }
+    ((sum_sq / n as f64).sqrt() as f32).clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -345,6 +393,20 @@ mod tests {
             "falling back to the default must not be silent"
         );
     }
+
+    #[test]
+    fn buffer_level_is_zero_for_silence_and_tracks_amplitude() {
+        use capturekit::SampleFormat::I16;
+        assert_eq!(super::buffer_level(&[0u8; 16], I16), 0.0, "silence is 0");
+        assert_eq!(super::buffer_level(&[], I16), 0.0, "empty is 0");
+        // A constant half-scale i16 has RMS = amplitude = ~0.5.
+        let half: Vec<u8> = (i16::MAX / 2).to_le_bytes().repeat(32);
+        let level = super::buffer_level(&half, I16);
+        assert!(
+            (level - 0.5).abs() < 0.02,
+            "half-scale RMS ~0.5, got {level}"
+        );
+    }
 }
 
 /// The `run` loop itself, driven by a scripted device.
@@ -399,7 +461,8 @@ mod run_tests {
             .expect("the writer opens");
 
             let stop = Arc::clone(&self.stop);
-            let loop_thread = std::thread::spawn(move || run(capturer, writer, &stop, "test"));
+            let loop_thread =
+                std::thread::spawn(move || run(capturer, writer, &stop, "test", None));
 
             let deadline = Instant::now() + POLL_TIMEOUT * 40;
             while reads.load(Ordering::Relaxed) < answers

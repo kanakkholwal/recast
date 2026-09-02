@@ -227,6 +227,19 @@ pub struct SourceGeometry {
     pub height: u32,
 }
 
+/// The scene's camera layer decides the layout for every layer, since a split
+/// places the screen too. No camera layer means the bubble, which is `Pip`.
+fn camera_clip_layouts(scene: &Scene) -> &[recast_scene::v1::nodes::CameraClipLayout] {
+    scene
+        .layers
+        .iter()
+        .find_map(|l| match &l.source {
+            LayerSource::Camera(settings) => Some(settings.clip_layouts.as_slice()),
+            _ => None,
+        })
+        .unwrap_or(&[])
+}
+
 /// Central difference step for the zoom-velocity estimate. Half a frame at
 /// 60 fps: small enough to track a ramp, large enough to survive f64 noise.
 const VELOCITY_DT: f64 = 1.0 / 120.0;
@@ -283,6 +296,8 @@ impl Evaluator {
 
         let cursor = self.cursor_placement(scene, source_time);
         let focus = scene.flags.focus;
+        // Resolved before the walk: a split moves the SCREEN too, so the layout has to be known before either layer is placed.
+        let layout = crate::layout::layout_at(camera_clip_layouts(scene), source_time);
         let mut background = BackgroundParams::Solid(Srgba::opaque(0x11, 0x11, 0x11));
         let mut background_blur = 0.0f32;
         let mut layers = Vec::with_capacity(scene.layers.len());
@@ -320,23 +335,34 @@ impl Evaluator {
                         true => scene.zoom_regions(),
                         false => Vec::new(),
                     };
-                    if let Some(bubble) =
-                        bubble_params(settings, &follow, source_time, self.geometry)
-                    {
+                    let bubble = bubble_params(settings, &follow, source_time, self.geometry);
+                    if let Some(bubble) = &bubble {
                         params.dest = bubble.dest;
                         params.corner_radius = bubble.corner_radius;
                         params.transform = bubble.transform;
                         if params.visible {
-                            params.shadow = bubble_shadow(settings, &bubble);
+                            params.shadow = bubble_shadow(settings, bubble);
                         }
                     } else {
                         params.visible = false;
+                    }
+                    if !layout.is_pip() {
+                        let rects = self.layout_rects(layout, bubble.map(|b| b.dest));
+                        params.dest = rects.camera;
+                        // A half of the frame is not a floating bubble: it neither rounds nor casts.
+                        params.corner_radius = 0.0;
+                        params.shadow = None;
+                        params.visible = params.visible && rects.camera_opacity > 0.0;
                     }
                     layers.push(params);
                 }
                 _ => {
                     let mut params = self.layer_params(layer, source_time, output_time, focus);
                     if matches!(layer.source, LayerSource::Screen) {
+                        if !layout.is_pip() {
+                            // The card anchors annotations and the cursor, so they follow the screen into its half rather than staying on the full frame.
+                            params.dest = self.layout_rects(layout, None).screen;
+                        }
                         card = (params.dest, params.transform);
                         if params.visible {
                             params.shadow = shadow_params(layer, &params, self.geometry);
@@ -360,6 +386,19 @@ impl Evaluator {
             layers,
             source_time,
         }
+    }
+
+    /// This frame's layout resolved against the canvas and the source aspect.
+    fn layout_rects(
+        &self,
+        layout: recast_scene::v1::nodes::CameraLayout,
+        bubble: Option<DestRect>,
+    ) -> crate::layout::LayoutRects {
+        let aspect = match self.source.height {
+            0 => 1.0,
+            h => self.source.width as f32 / h as f32,
+        };
+        crate::layout::resolve(layout, self.geometry, bubble, aspect)
     }
 
     /// The pointer for this frame. Every curve lives in `recast-cursor`, which the TypeScript preview asserts against the same fixture, so preview and export cannot drift.
@@ -843,6 +882,98 @@ mod tests {
             sources.iter().all(|(picture, needs)| picture == needs),
             "{sources:?}"
         );
+    }
+
+    fn camera_scene(clip_layouts: &str) -> recast_scene::Scene {
+        scene_with(&format!(
+            r#""cameraOverlay": {{"enabled": true, "clipLayouts": {clip_layouts}}},"#
+        ))
+    }
+
+    /// Matched on the source kind: a background layer is neither, and it never
+    /// reaches `params.layers` at all.
+    fn layer_of(params: &FrameParams, scene: &recast_scene::Scene, camera: bool) -> LayerParams {
+        let id = scene
+            .layers
+            .iter()
+            .find(|l| match &l.source {
+                LayerSource::Camera(_) => camera,
+                LayerSource::Screen => !camera,
+                _ => false,
+            })
+            .expect("the layer exists")
+            .id;
+        params
+            .layers
+            .iter()
+            .find(|p| p.id == id)
+            .expect("it was evaluated")
+            .clone()
+    }
+
+    /// A split moves the SCREEN as well as the camera. Evaluating only the
+    /// camera would leave the screen full-frame underneath it.
+    #[test]
+    fn a_split_layout_repositions_both_the_screen_and_the_camera() {
+        let scene = camera_scene(
+            r#"[{"start": 0.0, "layout": {"kind": "splitH", "fraction": 0.3, "side": "start"}}]"#,
+        );
+        let params = Evaluator::new(&scene, source()).evaluate(&scene, 1.0);
+        let camera = layer_of(&params, &scene, true);
+        let screen = layer_of(&params, &scene, false);
+        assert!(
+            (camera.dest.w - 1920.0 * 0.3).abs() < 0.01,
+            "{:?}",
+            camera.dest
+        );
+        assert_eq!(camera.dest.x, 0.0);
+        assert!(
+            screen.dest.x >= camera.dest.w - 0.01,
+            "the screen ignored the split"
+        );
+    }
+
+    /// Empty `clipLayouts` is every project made before layouts existed, and it
+    /// must render byte-for-byte as it did.
+    #[test]
+    fn no_authored_layout_leaves_the_frame_exactly_as_it_was() {
+        let before = scene_with(r#""cameraOverlay": {"enabled": true},"#);
+        let after = camera_scene("[]");
+        let a = Evaluator::new(&before, source()).evaluate(&before, 1.0);
+        let b = Evaluator::new(&after, source()).evaluate(&after, 1.0);
+        assert_eq!(a.layers, b.layers);
+    }
+
+    /// The bubble floats; a half of the frame does not.
+    #[test]
+    fn a_split_drops_the_bubbles_rounding_and_shadow() {
+        let scene = camera_scene(
+            r#"[{"start": 0.0, "layout": {"kind": "splitV", "fraction": 0.4, "side": "end"}}]"#,
+        );
+        let params = Evaluator::new(&scene, source()).evaluate(&scene, 1.0);
+        let camera = layer_of(&params, &scene, true);
+        assert_eq!(camera.corner_radius, 0.0);
+        assert!(camera.shadow.is_none());
+    }
+
+    #[test]
+    fn screen_only_stops_the_camera_being_drawn() {
+        let scene = camera_scene(r#"[{"start": 0.0, "layout": {"kind": "screenOnly"}}]"#);
+        let params = Evaluator::new(&scene, source()).evaluate(&scene, 1.0);
+        assert!(!layer_of(&params, &scene, true).visible);
+        assert!(layer_of(&params, &scene, false).visible);
+    }
+
+    /// Layouts are keyed on the ORIGINAL axis, so the frame at a given output
+    /// time picks the layout of the clip it actually came from.
+    #[test]
+    fn the_layout_switches_at_the_clip_it_was_keyed_to() {
+        let scene = camera_scene(
+            r#"[{"start": 0.0, "layout": {"kind": "pip"}}, {"start": 5.0, "layout": {"kind": "screenOnly"}}]"#,
+        );
+        let ev = Evaluator::new(&scene, source());
+        assert!(layer_of(&ev.evaluate(&scene, 4.0), &scene, true).visible);
+        assert!(!layer_of(&ev.evaluate(&scene, 6.0), &scene, true).visible);
     }
 
     #[test]

@@ -195,3 +195,56 @@ describe("axis of each row", () => {
 		expect(rows[0].clips[0].start).toBe(10 * 30);
 	});
 });
+
+describe("the camera row", () => {
+	const camera = (start: number, end: number, label: string) => ({
+		id: `camera-${start}`,
+		start,
+		end,
+		label,
+	});
+
+	// The camera is a picture source like the video, so it reads next to it.
+	it("sits directly after video, before every effect row", () => {
+		const rows = buildTimelineRows(
+			input({
+				segments: [{ id: "v", start: 0, end: 4, label: "Clip" }],
+				cameraClips: [camera(0, 4, "Bubble")],
+				zoomRegions: [{ id: "z", start: 1, end: 3, label: "1.6x" }],
+			}),
+		);
+		expect(kinds(rows)).toEqual(["video", "camera", "zoom"]);
+	});
+
+	// The whole point: the camera splits where the video does, so a per-clip layout has something to sit on.
+	it("lays one clip per video segment on a single lane", () => {
+		const rows = buildTimelineRows(
+			input({
+				segments: [
+					{ id: "a", start: 0, end: 2, label: "Clip" },
+					{ id: "b", start: 2, end: 5, label: "Clip" },
+				],
+				cameraClips: [camera(0, 2, "Bubble"), camera(2, 5, "Stacked")],
+			}),
+		);
+		const row = rows.find((r) => r.id === "camera-layout");
+		expect(row?.clips.map((c) => c.label)).toEqual(["Bubble", "Stacked"]);
+		expect(row?.laneCount).toBe(1);
+	});
+
+	it("is omitted when the camera is not composited", () => {
+		const rows = buildTimelineRows(
+			input({ segments: [{ id: "v", start: 0, end: 4, label: "Clip" }] }),
+		);
+		expect(rows.find((r) => r.id === "camera-layout")).toBeUndefined();
+	});
+
+	// Original-axis like the segments they mirror, so a head cut moves them exactly as it moves the video.
+	it("projects its clips through cuts", () => {
+		const map = buildTimeMap([{ origStart: 5, origEnd: 20, speed: 1 }]);
+		const rows = buildTimelineRows(input({ map, cameraClips: [camera(10, 12, "Side by side")] }));
+		const clip = rows.find((r) => r.id === "camera-layout")?.clips[0];
+		expect(clip?.start).toBe(5 * 30);
+		expect(clip?.duration).toBe(2 * 30);
+	});
+});

@@ -1,16 +1,63 @@
 // Pure geometry for the camera bubble: placement, corner radius and the drag clamp. The component owns the wiring.
 
 import type { CanvasGeometry } from "../../lib/canvas-geometry";
-import { bezierY, type Easing } from "../../lib/easing/cubic-bezier";
+import { bezierY, EASE, EASE_IN_OUT, type Easing } from "../../lib/easing/cubic-bezier";
 import type {
 	CameraKeyframe,
 	CameraMotionSegment,
+	CameraOverlaySettings,
 	CameraOverlayShape,
 	CameraPlacement,
 	ZoomRegion,
 } from "../../stores/editor-store.svelte";
 
 export type { CameraKeyframe };
+
+/**
+ * The camera overlay a loaded project should start with.
+ *
+ * Recorded `motionSegments` are CARRIED, never applied: dragging the preview
+ * window mid-take to see your own face is a record of the session, not an edit.
+ * The panel offers them as an explicit import instead.
+ */
+export function cameraOverlayFromState(
+	loaded: Partial<CameraOverlaySettings> | undefined,
+	fallbackPlacement: CameraPlacement,
+): CameraOverlaySettings {
+	const defaultPlacement = clampPlacement({
+		x: loaded?.defaultPlacement?.x ?? fallbackPlacement.x,
+		y: loaded?.defaultPlacement?.y ?? fallbackPlacement.y,
+		width: loaded?.defaultPlacement?.width ?? fallbackPlacement.width,
+		height: loaded?.defaultPlacement?.height ?? fallbackPlacement.height,
+	});
+	return {
+		enabled: loaded?.enabled ?? false,
+		mirror: loaded?.mirror ?? true,
+		shape: loaded?.shape ?? "rounded",
+		cornerRadius: loaded?.cornerRadius ?? 0.16,
+		animationPreset: loaded?.animationPreset ?? "soft",
+		zoomFollow: loaded?.zoomFollow ?? true,
+		zoomFollowStrength: loaded?.zoomFollowStrength ?? 0.6,
+		zoomFollowDuration: loaded?.zoomFollowDuration ?? 0.4,
+		zoomFollowEasing: { ...(loaded?.zoomFollowEasing ?? EASE_IN_OUT) },
+		keyframes: (loaded?.keyframes ?? []).map((k) => ({
+			atSec: k.atSec,
+			placement: { ...k.placement },
+		})),
+		keyframeEasing: { ...(loaded?.keyframeEasing ?? EASE_IN_OUT) },
+		clipLayouts: (loaded?.clipLayouts ?? []).map((c) => ({
+			start: c.start,
+			layout: { ...c.layout },
+		})),
+		shadow: loaded?.shadow ?? 0.35,
+		defaultPlacement,
+		motionSegments: (loaded?.motionSegments ?? []).map((segment) => ({
+			...segment,
+			easeIn: segment.easeIn ?? { ...EASE },
+			easeOut: segment.easeOut ?? { ...EASE },
+		})),
+	};
+}
 
 /**
  * Inline style placing the bubble as canvas percentages. Bubble UV is in VIDEO

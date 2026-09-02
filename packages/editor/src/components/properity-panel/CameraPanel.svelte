@@ -2,7 +2,11 @@
 import { Ruler, VideoOff } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
+import { toast } from "@recast/ui/sonner";
 import { cn } from "@recast/ui/utils";
+import type { CameraLayout, LayoutSide } from "../../lib/editor/render-state";
+import { MAX_SPLIT_FRACTION, MIN_SPLIT_FRACTION } from "../../lib/editor/render-state";
+import { withFraction, withSide } from "../../lib/timeline/camera-clip-layout";
 import type { CameraCapture } from "../../lib/wire-types";
 import {
 	type CameraPositionPreset,
@@ -11,7 +15,14 @@ import {
 	type EditorStore,
 } from "../../stores/editor-store.svelte";
 import { cameraPlacementAt } from "../_components/camera-overlay.logic";
-import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
+import {
+	CAMERA_LAYOUT_OPTIONS,
+	cameraAvailability,
+	dotStyleFor,
+	labelFor,
+	layoutForKind,
+	splitSideOptions,
+} from "./camera-panel.logic";
 import EasingControl from "./EasingControl.svelte";
 import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
@@ -37,6 +48,16 @@ let { store, cameraPath, cameraCapture = "legacy" }: Props = $props();
 
 const hasCamera = $derived(Boolean(cameraPath));
 const availability = $derived(cameraAvailability(cameraCapture, hasCamera));
+
+// Where the preview window was dragged mid-take. Offered, never applied on load: moving it to see your own face is not authoring an animation.
+const recordedMoveCount = $derived(store.cameraOverlay.motionSegments.length);
+
+function importRecordedMoves() {
+	if (!store.importRecordedCameraMoves()) return;
+	toast.success("Recorded camera moves applied", {
+		description: "Each move became a position keyframe. Undo to go back.",
+	});
+}
 
 // The bubble is square in pixels, so its UV height is width times aspect; the presets need it to anchor on a wide frame.
 const videoAspect = $derived(
@@ -90,6 +111,9 @@ const presetGrid: Array<CameraPositionPreset | null> = [
 	"bottom-center",
 	"bottom-right",
 ];
+
+// The clip these controls edit: the selected one, else the one under the playhead.
+const layout = $derived(store.currentCameraLayout());
 
 const shapeOptions = [
 	{ id: "circle" as const, label: "Circle" },
@@ -183,6 +207,44 @@ const shapeOptions = [
     </PanelSection>
 
     <PanelSection
+      title="Layout"
+      hint="How this clip shares the frame. Split layouts letterbox the screen so nothing on it is cropped away, and they need the experimental export engine."
+      flush
+    >
+      <PropRow label="Arrangement">
+        <PropSelect
+          class="flex-1"
+          label="Camera layout"
+          value={layout.kind}
+          options={CAMERA_LAYOUT_OPTIONS}
+          onChange={(v) =>
+            store.setCameraLayoutAtPlayhead(layoutForKind(layout, v as CameraLayout["kind"]))}
+        />
+      </PropRow>
+      {#if layout.kind === "splitH" || layout.kind === "splitV"}
+        <PropRow label={layout.kind === "splitH" ? "Camera side" : "Camera edge"}>
+          <PropSelect
+            class="flex-1"
+            label="Which half the camera takes"
+            value={layout.side}
+            options={splitSideOptions(layout.kind)}
+            onChange={(v) =>
+              store.setCameraLayoutAtPlayhead(withSide(layout, v as LayoutSide))}
+          />
+        </PropRow>
+        <SliderRow
+          label="Camera share"
+          value={Math.round(layout.fraction * 100)}
+          min={Math.ceil(MIN_SPLIT_FRACTION * 100)}
+          max={Math.floor(MAX_SPLIT_FRACTION * 100)}
+          step={1}
+          unit="%"
+          onchange={(next) => store.setCameraLayoutAtPlayhead(withFraction(layout, next / 100))}
+        />
+      {/if}
+    </PanelSection>
+
+    <PanelSection
       title="Per-cut position"
       hint="Give each cut its own camera position; the bubble glides between them. Scrub to a cut, then pick a preset or drag the bubble."
       flush
@@ -208,6 +270,22 @@ const shapeOptions = [
             onclick={() => store.removeCameraKeyframeNear(store.currentTime)}
           >
             Clear this cut
+          </Button>
+        </div>
+      {/if}
+      {#if recordedMoveCount > 0}
+        <div class="flex items-center justify-between gap-2 pt-2">
+          <span class="text-[10px] text-muted-foreground">
+            {recordedMoveCount}
+            {recordedMoveCount === 1 ? "move" : "moves"} recorded while you were capturing
+          </span>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="text-[10.5px]"
+            onclick={importRecordedMoves}
+          >
+            {perCut ? "Replace with recorded" : "Use recorded"}
           </Button>
         </div>
       {/if}

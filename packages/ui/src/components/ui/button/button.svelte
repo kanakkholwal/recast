@@ -16,11 +16,12 @@ import { tv, type VariantProps } from "tailwind-variants";
 export const buttonVariants = tv({
 	base: [
 		"group/button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap cursor-pointer user-select-none",
-		"rounded-sm border border-border/40 bg-clip-padding font-medium outline-none transition-all duration-200 select-none",
+		"rounded-sm border border-border/40 bg-clip-padding font-medium outline-none select-none",
+		"transition-[color,background-color,border-color,box-shadow,transform] duration-200",
 		"focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3",
 		"aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-invalid:ring-3",
 		"dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
-		"active:scale-[0.99]",
+		"active:scale-[0.97]",
 		"disabled:pointer-events-none disabled:opacity-50",
 		"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 	].join(" "),
@@ -30,6 +31,8 @@ export const buttonVariants = tv({
 				"bg-primary text-primary-foreground border-transparent shadow-craft-sm hover:bg-primary/95",
 			default_soft:
 				"bg-primary/8 text-primary border-primary/10 hover:bg-primary/12 dark:bg-primary/10 dark:hover:bg-primary/20",
+			active:
+				"bg-foreground/8 text-foreground border-foreground/10 hover:bg-foreground/12 dark:bg-foreground/10 dark:hover:bg-foreground/15",
 			secondary:
 				"border-secondary bg-secondary text-secondary-foreground border-border/30 shadow-craft-sm hover:bg-muted/50",
 			outline: "border-border bg-card text-foreground hover:border-border-strong",

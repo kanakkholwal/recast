@@ -9,10 +9,18 @@
 import { type CaptionStyle, DEFAULT_CAPTION_STYLE } from "@recast/captions";
 import { backgroundNeedsShadow, migrateBackgroundValue } from "@recast/design/backgrounds";
 import {
+	cameraOverlayFromState,
 	clampPlacement,
 	keyframesFromMotionSegments,
 } from "../components/_components/camera-overlay.logic";
 import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
+import {
+	editAnchor,
+	layoutAtStart,
+	layoutAtTime,
+	pruneClipLayouts,
+	setClipLayout,
+} from "../lib/timeline/camera-clip-layout";
 import {
 	type AudioClip,
 	type AudioClipSource,
@@ -30,6 +38,7 @@ import {
 	type AudioSettings,
 	type BackgroundSelection,
 	type BackgroundType,
+	type CameraLayout,
 	type CameraOverlaySettings,
 	type CameraPlacement,
 	type CaptionExportOptions,
@@ -281,6 +290,7 @@ export function createEditorStore() {
 		defaultPlacement: cameraPlacementFromPreset("bottom-right"),
 		motionSegments: [],
 		keyframes: [],
+		clipLayouts: [],
 		keyframeEasing: { ...EASE_IN_OUT },
 		shadow: 0.35,
 	});
@@ -494,6 +504,10 @@ export function createEditorStore() {
 				keyframes: (s.cameraOverlay.keyframes ?? []).map((k) => ({
 					atSec: k.atSec,
 					placement: { ...k.placement },
+				})),
+				clipLayouts: (s.cameraOverlay.clipLayouts ?? []).map((c) => ({
+					start: c.start,
+					layout: { ...c.layout },
 				})),
 				keyframeEasing: { ...(s.cameraOverlay.keyframeEasing ?? EASE_IN_OUT) },
 			};
@@ -760,6 +774,24 @@ export function createEditorStore() {
 		if (next.length === cameraOverlay.keyframes.length) return;
 		pushUndoState();
 		cameraOverlay = { ...cameraOverlay, keyframes: next };
+	}
+
+	/**
+	 * Turn the camera moves recorded during the take into position keyframes.
+	 * Explicit, because dragging the preview window to see your face is not the
+	 * same as authoring an animation. Replaces existing keyframes, and keeps the
+	 * recorded segments so it can be run again after an undo.
+	 */
+	function importRecordedCameraMoves(): boolean {
+		const imported = keyframesFromMotionSegments(
+			cameraOverlay.motionSegments,
+			cameraOverlay.defaultPlacement,
+		);
+		if (imported.length === 0) return false;
+		pushUndoState();
+		cameraOverlay = { ...cameraOverlay, keyframes: imported };
+		isDirty = true;
+		return true;
 	}
 
 	/** Retime the keyframe nearest `fromSec` to `toSec`, for the timeline's
@@ -1199,6 +1231,7 @@ export function createEditorStore() {
 			defaultPlacement: cameraPlacementFromPreset("bottom-right"),
 			motionSegments: [],
 			keyframes: [],
+			clipLayouts: [],
 			keyframeEasing: { ...EASE_IN_OUT },
 			shadow: 0.35,
 			zoomFollow: true,
@@ -1372,6 +1405,39 @@ export function createEditorStore() {
 		pushUndoStateCoalesced(`segment-speed-${start.toFixed(3)}`, 400);
 		const next = upsertSegmentSpeed(segmentSpeeds, start, speed);
 		segmentSpeeds = pruneSegmentSpeeds(next, currentSegments());
+		isDirty = true;
+	}
+
+	/** The camera layout of the clip containing original time `t`. */
+	function cameraLayoutAtTime(t: number): CameraLayout {
+		return layoutAtTime(currentSegments(), cameraOverlay.clipLayouts, t);
+	}
+
+	/** The clip the layout controls edit: the selected one, else the playhead's. */
+	function cameraLayoutAnchor(): number | null {
+		return editAnchor(currentSegments(), selectedClipStart, currentTime);
+	}
+
+	/** The layout of that clip, so the panel shows what it is about to change. */
+	function currentCameraLayout(): CameraLayout {
+		const start = cameraLayoutAnchor();
+		return start === null ? { kind: "pip" } : layoutAtStart(cameraOverlay.clipLayouts, start);
+	}
+
+	/**
+	 * Set the camera layout of the clip containing the playhead. Anchored to the
+	 * clip's original start like a segment speed, and orphaned anchors are pruned
+	 * so a later trim cannot leave a layout pinned to a clip that no longer exists.
+	 */
+	function setCameraLayoutAtPlayhead(layout: CameraLayout) {
+		const start = cameraLayoutAnchor();
+		if (start === null) return;
+		pushUndoStateCoalesced(`camera-layout-${start.toFixed(3)}`, 400);
+		const next = setClipLayout(cameraOverlay.clipLayouts, start, layout);
+		cameraOverlay = {
+			...cameraOverlay,
+			clipLayouts: pruneClipLayouts(next, currentSegments()),
+		};
 		isDirty = true;
 	}
 
@@ -1643,6 +1709,10 @@ export function createEditorStore() {
 					atSec: k.atSec,
 					placement: { ...k.placement },
 				})),
+				clipLayouts: cameraOverlay.clipLayouts.map((c) => ({
+					start: c.start,
+					layout: { ...c.layout },
+				})),
 				keyframeEasing: { ...cameraOverlay.keyframeEasing },
 			},
 			layoutMode,
@@ -1733,51 +1803,11 @@ export function createEditorStore() {
 		captionStyle = state.captionStyle
 			? { ...DEFAULT_CAPTION_STYLE, ...state.captionStyle }
 			: { ...DEFAULT_CAPTION_STYLE };
-		// Phase 1 defaults (bottom-right, 16%); the fallbacks below keep an older project's top-right 22% placement.
-		const fallbackPlacement = cameraPlacementFromPreset("bottom-right");
-		// Clamped: a live capture can record a placement outside the frame.
-		const loadedPlacement = clampPlacement({
-			x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
-			y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
-			width: state.cameraOverlay?.defaultPlacement?.width ?? fallbackPlacement.width,
-			height: state.cameraOverlay?.defaultPlacement?.height ?? fallbackPlacement.height,
-		});
-		const loadedKeyframes = (state.cameraOverlay?.keyframes ?? []).map((k) => ({
-			atSec: k.atSec,
-			placement: { ...k.placement },
-		}));
-		// Recorded `motionSegments` are folded into keyframes and dropped; authored keyframes win.
-		const recordedKeyframes =
-			loadedKeyframes.length > 0
-				? loadedKeyframes
-				: keyframesFromMotionSegments(
-						(state.cameraOverlay?.motionSegments ?? []).map((segment) => ({
-							...segment,
-							easeIn: segment.easeIn ?? { ...EASE },
-							easeOut: segment.easeOut ?? { ...EASE },
-						})),
-						loadedPlacement,
-					);
-		cameraOverlay = {
-			enabled: state.cameraOverlay?.enabled ?? false,
-			mirror: state.cameraOverlay?.mirror ?? true,
-			shape: state.cameraOverlay?.shape ?? "rounded",
-			cornerRadius: state.cameraOverlay?.cornerRadius ?? 0.16,
-			animationPreset: state.cameraOverlay?.animationPreset ?? "soft",
-			zoomFollow: state.cameraOverlay?.zoomFollow ?? true,
-			zoomFollowStrength: state.cameraOverlay?.zoomFollowStrength ?? 0.6,
-			zoomFollowDuration: state.cameraOverlay?.zoomFollowDuration ?? 0.4,
-			zoomFollowEasing: state.cameraOverlay?.zoomFollowEasing
-				? { ...state.cameraOverlay.zoomFollowEasing }
-				: { ...EASE_IN_OUT },
-			keyframes: recordedKeyframes,
-			keyframeEasing: state.cameraOverlay?.keyframeEasing
-				? { ...state.cameraOverlay.keyframeEasing }
-				: { ...EASE_IN_OUT },
-			shadow: state.cameraOverlay?.shadow ?? 0.35,
-			defaultPlacement: loadedPlacement,
-			motionSegments: [],
-		};
+		// Phase 1 defaults (bottom-right, 16%); an older project's top-right 22% placement survives as its own value.
+		cameraOverlay = cameraOverlayFromState(
+			state.cameraOverlay,
+			cameraPlacementFromPreset("bottom-right"),
+		);
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		layoutMode = state.layoutMode ?? layoutMode;
 		annotations = (state.annotations ?? []).map((a, idx) => ({
@@ -2415,6 +2445,11 @@ export function createEditorStore() {
 		updateCameraOverlayLive,
 		setCameraPlacement,
 		setCameraPerCut,
+		cameraLayoutAtTime,
+		cameraLayoutAnchor,
+		currentCameraLayout,
+		setCameraLayoutAtPlayhead,
+		importRecordedCameraMoves,
 		removeCameraKeyframeNear,
 		moveCameraKeyframe,
 		addZoomRegion,

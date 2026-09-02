@@ -47,13 +47,14 @@
   --accent: oklch(96.907% 0.00655 4.663);
   --accent-foreground: oklch(21.009% 0.03179 264.678);
 
-  --destructive: oklch(63.681% 0.20784 25.315);
-  --destructive-foreground: oklch(94.007% 0.00011 271.152);
+  /* Darkened so red/amber/green read as small text/icon on light surfaces: text-on-white was 3.76/2.55/3.03, now 5.89/5.85/5.16 (AA). Old success and warning were out of sRGB gamut too. Dark mode already passed, left as-is. */
+  --destructive: oklch(53% 0.208 25.315);
+  --destructive-foreground: oklch(100% 0.00011 271.152);
 
-  --success: oklch(0.646 0.222 142.495);
+  --success: oklch(0.52 0.16 142.495);
   --success-foreground: oklch(0.985 0 0);
 
-  --warning: oklch(0.73 0.18 43.19);
+  --warning: oklch(0.52 0.14 43.19);
   --warning-foreground: oklch(0.145 0 0);
 
   --info: oklch(0.6 0.118 184.704);

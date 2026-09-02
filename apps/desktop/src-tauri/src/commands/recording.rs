@@ -61,6 +61,11 @@ pub async fn start_recording(
             log::warn!("could not deliver a capture notice to the UI: {e}");
         }
     };
+    // Feeds the panel's live input meter; a closed panel just means no target to emit to.
+    let level_app = app.clone();
+    let mic_level: crate::audio::MicLevelSink = std::sync::Arc::new(move |level: f32| {
+        let _ = level_app.emit_to("recording-panel", "mic-level", level);
+    });
 
     let outcome =
         tauri::async_runtime::spawn_blocking(move || -> AppResult<RecordingStartResult> {
@@ -72,7 +77,7 @@ pub async fn start_recording(
                 CaptureTarget::resolve(&target_type, target_id)?
             };
             let warnings = manager
-                .start(target, output_dir, options, notify)
+                .start(target, output_dir, options, notify, mic_level)
                 .inspect_err(|e| log::error!("start_recording failed: {e:#}"))?;
             Ok(RecordingStartResult { warnings })
         })

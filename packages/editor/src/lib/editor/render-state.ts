@@ -334,6 +334,30 @@ export interface CameraMotionSegment {
 	source?: CameraMotionSource;
 }
 
+/** Which half a split gives the camera: left in a horizontal split, top in a
+ *  vertical one. One union so an impossible pairing cannot be written down. */
+export type LayoutSide = "start" | "end";
+
+/** Mirrors Rust `CameraLayout`. `pip` carries no placement: where the bubble
+ *  sits is already answered by `defaultPlacement` and `keyframes`. */
+export type CameraLayout =
+	| { kind: "pip" }
+	| { kind: "splitH"; fraction: number; side: LayoutSide }
+	| { kind: "splitV"; fraction: number; side: LayoutSide }
+	| { kind: "screenOnly" };
+
+/** Neither half may collapse; a split that rounds one side away is a worse
+ *  `screenOnly` than `screenOnly` is. Mirrors Rust `MIN/MAX_SPLIT_FRACTION`. */
+export const MIN_SPLIT_FRACTION = 0.15;
+export const MAX_SPLIT_FRACTION = 0.85;
+
+/** The layout for the clip starting at `start` on the ORIGINAL axis, keyed the
+ *  same way segment speeds and scene animations are. */
+export interface CameraClipLayout {
+	start: number;
+	layout: CameraLayout;
+}
+
 export interface CameraOverlaySettings {
 	enabled: boolean;
 	mirror: boolean;
@@ -352,6 +376,8 @@ export interface CameraOverlaySettings {
 	motionSegments: CameraMotionSegment[];
 	/** Per-cut position keyframes (original-time). Empty → static defaultPlacement. */
 	keyframes: CameraKeyframe[];
+	/** Per-clip arrangement. Empty means the whole recording uses the bubble. */
+	clipLayouts: CameraClipLayout[];
 	/** Easing for the glide BETWEEN keyframes (the "animation smoothness"). */
 	keyframeEasing: Easing;
 	/** Drop-shadow strength 0..1 (0 = none). Scales blur + offset + opacity together. */

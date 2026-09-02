@@ -66,7 +66,7 @@ export function assignLanes(clips: TimelineClip[]): number {
 }
 
 /** Item timed on the ORIGINAL recording axis (segments, zoom, annotations). */
-interface OriginalItem {
+export interface OriginalItem {
 	id: string;
 	start: number;
 	end: number;
@@ -104,6 +104,9 @@ export interface TimelineViewModelInput {
 	/** Name shown on every video row (the recording file). */
 	videoName: string;
 	segments: OriginalItem[];
+	/** One per video segment, labelled by the camera layout in force there, so
+	 *  the camera splits at the same boundaries the video does. */
+	cameraClips?: OriginalItem[];
 	zoomRegions: OriginalItem[];
 	annotations: OriginalItem[];
 	captions: OutputItem[];
@@ -160,6 +163,11 @@ export function buildTimelineRows(input: TimelineViewModelInput): TimelineRow[] 
 	if (input.segments.length > 0) {
 		const clips = input.segments.map((s) => originalClip("video", s, input));
 		rows.push(makeRow("video", "video", input.videoName || "Video", clips));
+	}
+	// Right after video: the other picture source, cut at the same boundaries.
+	if ((input.cameraClips ?? []).length > 0) {
+		const clips = (input.cameraClips ?? []).map((c) => originalClip("camera", c, input));
+		rows.push(makeRow("camera-layout", "camera", "Camera", clips));
 	}
 	if (input.zoomRegions.length > 0) {
 		const clips = input.zoomRegions.map((z) => originalClip("zoom", z, input));

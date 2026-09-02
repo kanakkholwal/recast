@@ -1812,6 +1812,54 @@ mod validate_tests {
         }
     }
 
+    fn state_with_layout(layout: recast_scene::v1::nodes::CameraLayout) -> RenderState {
+        use recast_scene::v1::nodes::CameraClipLayout;
+        let mut state = RenderState::default();
+        state.camera_overlay.enabled = true;
+        state.camera_overlay.clip_layouts = vec![CameraClipLayout { start: 0.0, layout }];
+        state
+    }
+
+    /// The graph would draw a split as the plain bubble, which is a file that
+    /// is not what was previewed. Every non-bubble layout has to be named.
+    #[test]
+    fn every_layout_the_graph_cannot_draw_is_refused_by_name() {
+        use recast_scene::v1::nodes::{CameraLayout, LayoutSide};
+        for layout in [
+            CameraLayout::SplitH {
+                fraction: 0.3,
+                side: LayoutSide::Start,
+            },
+            CameraLayout::SplitV {
+                fraction: 0.3,
+                side: LayoutSide::End,
+            },
+            CameraLayout::ScreenOnly,
+        ] {
+            assert!(
+                unsupported_graph_layout(&state_with_layout(layout)).is_some(),
+                "{layout:?} was allowed through"
+            );
+        }
+    }
+
+    #[test]
+    fn the_bubble_the_graph_already_draws_is_not_refused() {
+        use recast_scene::v1::nodes::CameraLayout;
+        assert!(unsupported_graph_layout(&state_with_layout(CameraLayout::Pip)).is_none());
+        assert!(unsupported_graph_layout(&RenderState::default()).is_none());
+    }
+
+    /// A layout authored and then the camera switched off is not a reason to
+    /// refuse: nothing of it is drawn.
+    #[test]
+    fn a_layout_on_a_disabled_camera_is_not_refused() {
+        use recast_scene::v1::nodes::CameraLayout;
+        let mut state = state_with_layout(CameraLayout::ScreenOnly);
+        state.camera_overlay.enabled = false;
+        assert!(unsupported_graph_layout(&state).is_none());
+    }
+
     fn state_with_zoom(region: ZoomRegion) -> RenderState {
         RenderState {
             trim_end: 10.0,
@@ -2247,6 +2295,25 @@ impl Drop for CancelTokenGuard {
 ///
 /// The video intermediate is always H.264 in mp4, so mp4 stream-copies and
 /// anything else has to re-encode; WebM additionally cannot carry AAC.
+/// The name of a camera layout the FFmpeg graph cannot draw, or `None` when
+/// every clip is the bubble it already knows how to place.
+fn unsupported_graph_layout(state: &RenderState) -> Option<&'static str> {
+    use recast_scene::v1::nodes::CameraLayout;
+    if !state.camera_overlay.enabled {
+        return None;
+    }
+    state
+        .camera_overlay
+        .clip_layouts
+        .iter()
+        .find_map(|clip| match clip.layout {
+            CameraLayout::Pip => None,
+            CameraLayout::SplitH { .. } => Some("side-by-side split"),
+            CameraLayout::SplitV { .. } => Some("stacked split"),
+            CameraLayout::ScreenOnly => Some("screen-only"),
+        })
+}
+
 fn mux_codecs(format: &str) -> (&'static str, &'static [&'static str], &'static str) {
     match format {
         "webm" => (
@@ -2813,6 +2880,14 @@ pub(crate) async fn run_export_job(
                 })
         })
         .flatten();
+    // The graph places the camera with a sampled expression LUT already at its parser's term budget, so it has no room for a second moving rect and would draw a split as the plain bubble. Refusing beats shipping a file that is not what was previewed.
+    if let Some(layout) = unsupported_graph_layout(&request.render_state) {
+        if !crate::export_engine::enabled(request.engine_export) {
+            return Err(AppError::msg(format!(
+                "This project uses the {layout} camera layout, which needs the new export engine. Turn on Experimental engine export in Settings, or set the camera back to picture-in-picture."
+            )));
+        }
+    }
     // Opt in. Everything above still runs (it validates the request and names the output the same way), so the two paths differ only in who renders.
     if crate::export_engine::enabled(request.engine_export) {
         let engine_map = request.time_map.as_ref().map(|spans| {

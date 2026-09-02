@@ -581,6 +581,7 @@ impl RecordingManager {
         output_dir: PathBuf,
         options: RecordingOptions,
         notify: impl Fn(CaptureNotice) + Send + Clone + 'static,
+        mic_level: crate::audio::MicLevelSink,
     ) -> Result<Vec<String>> {
         let mut guard = self.session.lock();
         if guard.is_some() {
@@ -760,12 +761,15 @@ impl RecordingManager {
 
         // Start microphone capture as a separate track.
         let microphone_session = if options.microphone {
-            match MicrophoneCaptureSession::start(MicrophoneCaptureConfig {
-                output_path: microphone_path.clone(),
-                device_id: options.microphone_device_id.clone(),
-                pause_flag: pause_flag.clone(),
-                start: microphone_start.clone(),
-            }) {
+            match MicrophoneCaptureSession::start(
+                MicrophoneCaptureConfig {
+                    output_path: microphone_path.clone(),
+                    device_id: options.microphone_device_id.clone(),
+                    pause_flag: pause_flag.clone(),
+                    start: microphone_start.clone(),
+                },
+                Some(mic_level),
+            ) {
                 Ok(session) => {
                     warnings.extend(session.warnings());
                     Some(session)
@@ -1281,7 +1285,13 @@ mod sync_live_tests {
 
         std::env::set_var(NATIVE_ENCODER_ENV, "1");
         let manager = RecordingManager::default();
-        let started = manager.start(target, out, RecordingOptions::default(), |_| {});
+        let started = manager.start(
+            target,
+            out,
+            RecordingOptions::default(),
+            |_| {},
+            std::sync::Arc::new(|_: f32| {}),
+        );
         let artifacts = started.and_then(|_| {
             std::thread::sleep(std::time::Duration::from_secs(4));
             manager.stop()
@@ -1385,7 +1395,13 @@ mod sync_live_tests {
         };
         let manager = RecordingManager::default();
         let warnings = manager
-            .start(target, out, options, |_| {})
+            .start(
+                target,
+                out,
+                options,
+                |_| {},
+                std::sync::Arc::new(|_: f32| {}),
+            )
             .expect("the recording starts");
         std::thread::sleep(std::time::Duration::from_secs(4));
         let artifacts = manager.stop().expect("the recording stops");

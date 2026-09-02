@@ -13,6 +13,10 @@ use anyhow::Result;
 use crate::audio::session::{Source, TrackSession};
 use crate::recording::clock::TrackStart;
 
+/// Receives a 0..1 input level (RMS) from the mic capture thread, throttled, so
+/// the panel can draw a real meter instead of a decorative wave.
+pub type MicLevelSink = Arc<dyn Fn(f32) + Send + Sync>;
+
 /// Configuration for system/loopback audio capture.
 #[derive(Debug, Clone)]
 pub struct AudioCaptureConfig {
@@ -38,6 +42,7 @@ impl AudioCaptureSession {
             config.output_path,
             config.pause_flag,
             config.start,
+            None,
         ) {
             Ok(session) => Some(Self(session)),
             Err(err) => {
@@ -71,12 +76,13 @@ pub struct MicrophoneCaptureConfig {
 pub struct MicrophoneCaptureSession(TrackSession);
 
 impl MicrophoneCaptureSession {
-    pub fn start(config: MicrophoneCaptureConfig) -> Result<Self> {
+    pub fn start(config: MicrophoneCaptureConfig, level: Option<MicLevelSink>) -> Result<Self> {
         TrackSession::start(
             Source::input(config.device_id),
             config.output_path,
             config.pause_flag,
             config.start,
+            level,
         )
         .map(Self)
     }
