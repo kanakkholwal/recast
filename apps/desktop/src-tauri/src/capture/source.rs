@@ -9,6 +9,7 @@ use capturekit::{CaptureError, Capturer, DisplayId, Target, WindowId};
 
 use super::{CaptureKind, CaptureTarget};
 use super::{CaptureNotice, CaptureSource, CapturedFrame};
+use crate::encoder::letterbox::fit_into;
 use crate::encoder::pack_rows;
 
 /// Whether a window can be captured as its own surface rather than as a crop of the monitor it sits on.
@@ -38,6 +39,31 @@ pub fn create_capture_source(
 /// The recording repeats its last frame meanwhile, so retrying at the pacer's rate only burns CPU and fills the log; a display returns from a mode change on a human timescale.
 const REACQUIRE_INTERVAL: Duration = Duration::from_millis(500);
 
+/// What to do about a source that came back at a different size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resize {
+    /// Same size, or close enough to hand straight to the encoder.
+    Keep,
+    /// Fit it into the size the encoder was opened with, bars and all.
+    Letterbox,
+    /// Nothing this path can do with it; the recording stops here.
+    Ended,
+}
+
+/// A GPU handle is the source's own texture at the source's own size and this
+/// path has no pass to rescale it, so only host frames can be fitted. Losing
+/// the rest of a take is worse than bars around it.
+#[must_use]
+pub fn resize_response(mode: FrameMode, delivered: (u32, u32), expected: (u32, u32)) -> Resize {
+    if delivered == expected {
+        return Resize::Keep;
+    }
+    match mode {
+        FrameMode::Host => Resize::Letterbox,
+        FrameMode::Gpu => Resize::Ended,
+    }
+}
+
 /// A live capturekit capture, reopened in place when the source is lost.
 struct CapturekitSource {
     target: Target,
@@ -47,6 +73,9 @@ struct CapturekitSource {
     capturer: Option<Capturer>,
     width: u32,
     height: u32,
+    /// What the backend is actually handing over. Equal to the encoder's size
+    /// until a display comes back from a mode change at another one.
+    delivered: (u32, u32),
     /// When another reopen is worth trying, or `None` once it is hopeless.
     retry_at: Option<Instant>,
     /// Pending notice for the recorder to forward to the user.
@@ -85,6 +114,7 @@ impl CapturekitSource {
             mode,
             width: desc.width,
             height: desc.height,
+            delivered: (desc.width, desc.height),
             capturer: Some(capturer),
             retry_at: None,
             notice: None,
@@ -111,10 +141,14 @@ impl CapturekitSource {
             }
         };
         let desc = capturer.describe();
-        // Fixed at open: a source back at another size cannot reach the encoder.
-        if desc.width != self.width || desc.height != self.height {
+        let response = resize_response(
+            self.mode,
+            (desc.width, desc.height),
+            (self.width, self.height),
+        );
+        if response == Resize::Ended {
             log::error!(
-                "screen source reopened at {}x{}, but the recording is {}x{};                  the rest of it will repeat the last frame",
+                "screen source reopened at {}x{}, but the recording is {}x{}; the rest of it will repeat the last frame",
                 desc.width,
                 desc.height,
                 self.width,
@@ -127,6 +161,20 @@ impl CapturekitSource {
             )));
             return;
         }
+        if response == Resize::Letterbox {
+            log::warn!(
+                "screen source reopened at {}x{}; fitting it into the recording's {}x{}",
+                desc.width,
+                desc.height,
+                self.width,
+                self.height
+            );
+            self.note(CaptureNotice::Interrupted(format!(
+                "The display came back at {}x{}. The rest of the recording is fitted into {}x{}, so it has bars around it.",
+                desc.width, desc.height, self.width, self.height
+            )));
+        }
+        self.delivered = (desc.width, desc.height);
         self.capturer = Some(capturer);
         self.retry_at = None;
         if self.interrupted {
@@ -175,12 +223,22 @@ impl CaptureSource for CapturekitSource {
                             frame.desc().height,
                         )))
                     }
-                    (FrameMode::Host, _) => CapturedFrame::Host(Arc::from(pack_rows(
-                        frame.bytes(),
-                        frame.stride(),
-                        self.width,
-                        self.height,
-                    ))),
+                    (FrameMode::Host, _) if self.delivered == (self.width, self.height) => {
+                        CapturedFrame::Host(Arc::from(pack_rows(
+                            frame.bytes(),
+                            frame.stride(),
+                            self.width,
+                            self.height,
+                        )))
+                    }
+                    // A display that came back at another size: fit it into the frame the encoder was opened with.
+                    (FrameMode::Host, _) => {
+                        let (dw, dh) = self.delivered;
+                        let packed = pack_rows(frame.bytes(), frame.stride(), dw, dh);
+                        let mut fitted = Vec::new();
+                        fit_into(&mut fitted, &packed, (dw, dh), (self.width, self.height));
+                        CapturedFrame::Host(Arc::from(fitted))
+                    }
                 };
                 return Ok(Some(taken));
             }
@@ -247,6 +305,36 @@ mod tests {
             crop: CaptureArea::from_size(1920, 1080),
             scale_factor: 1.0,
         }
+    }
+
+    #[test]
+    fn an_unchanged_size_is_handed_straight_to_the_encoder() {
+        assert_eq!(
+            resize_response(FrameMode::Host, (1920, 1080), (1920, 1080)),
+            Resize::Keep
+        );
+        assert_eq!(
+            resize_response(FrameMode::Gpu, (1920, 1080), (1920, 1080)),
+            Resize::Keep
+        );
+    }
+
+    /// The take survives with bars rather than ending at the mode change.
+    #[test]
+    fn a_host_source_that_came_back_smaller_is_fitted_rather_than_ending_the_take() {
+        assert_eq!(
+            resize_response(FrameMode::Host, (1920, 1080), (2560, 1440)),
+            Resize::Letterbox
+        );
+    }
+
+    /// Zero-copy has no rescale pass, so there is nothing to fit it with.
+    #[test]
+    fn a_gpu_source_that_changed_size_still_ends_the_recording() {
+        assert_eq!(
+            resize_response(FrameMode::Gpu, (1920, 1080), (2560, 1440)),
+            Resize::Ended
+        );
     }
 
     #[test]

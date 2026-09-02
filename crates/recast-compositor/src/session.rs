@@ -282,6 +282,16 @@ fn screen_rect(params: &FrameParams) -> Option<VideoRect> {
     })
 }
 
+/// Whether a face for this style can be found without the host supplying one.
+///
+/// `caption_face_for` caches a failed lookup, so a style that does not resolve
+/// draws no glyphs for the whole session and says nothing. A caller that cannot
+/// ship a caption-less file asks this first.
+#[must_use]
+pub fn caption_face_available(style: &recast_captions::CaptionStyle) -> bool {
+    resolve_caption_face(style).is_some()
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn resolve_caption_face(style: &recast_captions::CaptionStyle) -> Option<FontFace> {
     recast_text::resolve_face(

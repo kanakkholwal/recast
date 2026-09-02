@@ -256,6 +256,8 @@ pub enum CameraLayout {
     SplitV { fraction: f64, side: LayoutSide },
     /// Screen alone; the camera is not drawn.
     ScreenOnly,
+    /// Camera alone, filling the frame; the screen is not drawn.
+    CameraOnly,
 }
 
 /// Neither half may collapse: a split where one side rounds to nothing is a
@@ -341,12 +343,30 @@ pub struct CameraOverlaySettings {
     /// which is every project made before layouts existed.
     #[serde(default)]
     pub clip_layouts: Vec<CameraClipLayout>,
+    /// Seconds a layout change takes at a clip boundary, in OUTPUT time. Zero
+    /// is a hard cut, which is what a project without the field gets.
+    #[serde(default)]
+    pub layout_transition: f64,
+    /// Easing for that move.
+    #[serde(default = "default_camera_keyframe_easing")]
+    pub layout_transition_easing: Easing,
+    /// Nudge the bubble aside when the pointer comes near it. Off by default:
+    /// it moves the camera in projects that never asked for it.
+    #[serde(default)]
+    pub cursor_dodge: bool,
+    /// 0..1 how far it gets nudged.
+    #[serde(default = "default_camera_cursor_dodge_strength")]
+    pub cursor_dodge_strength: f64,
     /// Easing for the glide between keyframes.
     #[serde(default = "default_camera_keyframe_easing")]
     pub keyframe_easing: Easing,
     /// Drop-shadow strength 0..1 (0 = none). Scales blur + offset + opacity.
     #[serde(default = "default_camera_shadow")]
     pub shadow: f64,
+}
+
+fn default_camera_cursor_dodge_strength() -> f64 {
+    0.6
 }
 
 fn default_camera_keyframe_easing() -> Easing {
@@ -394,6 +414,10 @@ impl Default for CameraOverlaySettings {
             motion_segments: Vec::new(),
             keyframes: Vec::new(),
             clip_layouts: Vec::new(),
+            layout_transition: 0.0,
+            layout_transition_easing: default_camera_keyframe_easing(),
+            cursor_dodge: false,
+            cursor_dodge_strength: default_camera_cursor_dodge_strength(),
             keyframe_easing: default_camera_keyframe_easing(),
             shadow: default_camera_shadow(),
         }
@@ -443,7 +467,8 @@ mod tests {
                 { "start": 0.0, "layout": { "kind": "pip" } },
                 { "start": 4.0, "layout": { "kind": "splitH", "fraction": 0.3, "side": "start" } },
                 { "start": 9.0, "layout": { "kind": "splitV", "fraction": 0.4, "side": "end" } },
-                { "start": 12.0, "layout": { "kind": "screenOnly" } }
+                { "start": 12.0, "layout": { "kind": "screenOnly" } },
+                { "start": 15.0, "layout": { "kind": "cameraOnly" } }
             ]
         }"##;
         let overlay: CameraOverlaySettings = serde_json::from_str(raw).unwrap();
@@ -461,6 +486,7 @@ mod tests {
                     side: LayoutSide::End
                 },
                 CameraLayout::ScreenOnly,
+                CameraLayout::CameraOnly,
             ]
         );
         assert_eq!(overlay.clip_layouts[1].start, 4.0);

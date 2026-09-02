@@ -1820,6 +1820,36 @@ mod validate_tests {
         state
     }
 
+    /// Each decline says something the user could act on, and none of them
+    /// leaks the internal error text into the progress line.
+    #[test]
+    fn every_decline_gives_the_user_a_distinct_reason() {
+        use crate::export_engine::EngineExportError;
+        let unsupported = engine_decline_reason(&EngineExportError::Unsupported("layer 3".into()));
+        let encode = engine_decline_reason(&EngineExportError::Encode("nvenc".into()));
+        assert_ne!(unsupported, encode);
+        for reason in [unsupported, encode] {
+            assert!(
+                reason.starts_with("Using the compatible renderer"),
+                "{reason}"
+            );
+            assert!(
+                !reason.contains("layer 3") && !reason.contains("nvenc"),
+                "{reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_decline_with_no_category_still_says_which_renderer_ran() {
+        use crate::export_engine::EngineExportError;
+        let reason = engine_decline_reason(&EngineExportError::Empty);
+        assert!(
+            reason.starts_with("Using the compatible renderer"),
+            "{reason}"
+        );
+    }
+
     /// The graph would draw a split as the plain bubble, which is a file that
     /// is not what was previewed. Every non-bubble layout has to be named.
     #[test]
@@ -1835,6 +1865,7 @@ mod validate_tests {
                 side: LayoutSide::End,
             },
             CameraLayout::ScreenOnly,
+            CameraLayout::CameraOnly,
         ] {
             assert!(
                 unsupported_graph_layout(&state_with_layout(layout)).is_some(),
@@ -2291,6 +2322,24 @@ impl Drop for CancelTokenGuard {
 
 /// Muxes a browser-rendered video, already composited and warped, with the export's audio; the video is copied and only the audio graph is rebuilt here.
 /// Reuses `run_export_job`'s queue, cancel and progress lifecycle and the index-parametric audio helpers, so the browser video can sit at input 0.
+/// A short sentence for the progress line when the fast renderer steps aside.
+///
+/// Silently taking the slow path is how a fast export that stopped being fast
+/// goes unnoticed for a release: the user sees a longer export and has nothing
+/// to report.
+fn engine_decline_reason(error: &crate::export_engine::EngineExportError) -> &'static str {
+    use crate::export_engine::EngineExportError;
+    match error {
+        EngineExportError::Unsupported(_) => {
+            "Using the compatible renderer: this project has something the fast one cannot draw"
+        }
+        EngineExportError::Encode(_) => {
+            "Using the compatible renderer: the hardware encoder refused this export"
+        }
+        _ => "Using the compatible renderer",
+    }
+}
+
 /// Container and codecs for a muxed export.
 ///
 /// The video intermediate is always H.264 in mp4, so mp4 stream-copies and
@@ -2311,6 +2360,7 @@ fn unsupported_graph_layout(state: &RenderState) -> Option<&'static str> {
             CameraLayout::SplitH { .. } => Some("side-by-side split"),
             CameraLayout::SplitV { .. } => Some("stacked split"),
             CameraLayout::ScreenOnly => Some("screen-only"),
+            CameraLayout::CameraOnly => Some("camera-only"),
         })
 }
 
@@ -2976,6 +3026,10 @@ pub(crate) async fn run_export_job(
                 | crate::export_engine::EngineExportError::Encode(_)),
             ) => {
                 log::info!("export[{export_id}] engine declined ({e}); using the FFmpeg graph");
+                emit_export_state(
+                    &app,
+                    ExportStateEvent::preparing(&export_id, engine_decline_reason(&e)),
+                );
                 let _ = std::fs::remove_file(&render_target);
                 None
             }

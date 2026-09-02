@@ -291,6 +291,10 @@ export function createEditorStore() {
 		motionSegments: [],
 		keyframes: [],
 		clipLayouts: [],
+		layoutTransition: 0,
+		layoutTransitionEasing: { ...EASE_IN_OUT },
+		cursorDodge: false,
+		cursorDodgeStrength: 0.6,
 		keyframeEasing: { ...EASE_IN_OUT },
 		shadow: 0.35,
 	});
@@ -509,6 +513,9 @@ export function createEditorStore() {
 					start: c.start,
 					layout: { ...c.layout },
 				})),
+				layoutTransitionEasing: {
+					...(s.cameraOverlay.layoutTransitionEasing ?? EASE_IN_OUT),
+				},
 				keyframeEasing: { ...(s.cameraOverlay.keyframeEasing ?? EASE_IN_OUT) },
 			};
 		}
@@ -1232,6 +1239,10 @@ export function createEditorStore() {
 			motionSegments: [],
 			keyframes: [],
 			clipLayouts: [],
+			layoutTransition: 0,
+			layoutTransitionEasing: { ...EASE_IN_OUT },
+			cursorDodge: false,
+			cursorDodgeStrength: 0.6,
 			keyframeEasing: { ...EASE_IN_OUT },
 			shadow: 0.35,
 			zoomFollow: true,
@@ -1713,6 +1724,7 @@ export function createEditorStore() {
 					start: c.start,
 					layout: { ...c.layout },
 				})),
+				layoutTransitionEasing: { ...cameraOverlay.layoutTransitionEasing },
 				keyframeEasing: { ...cameraOverlay.keyframeEasing },
 			},
 			layoutMode,

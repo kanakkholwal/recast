@@ -144,6 +144,7 @@ describe("CAMERA_LAYOUT_OPTIONS", () => {
 			"splitH",
 			"splitV",
 			"screenOnly",
+			"cameraOnly",
 		]);
 	});
 });

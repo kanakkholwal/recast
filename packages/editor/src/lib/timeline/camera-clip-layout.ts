@@ -127,6 +127,7 @@ export const LAYOUT_LABELS: Array<{ kind: CameraLayout["kind"]; label: string }>
 	{ kind: "splitH", label: "Side by side" },
 	{ kind: "splitV", label: "Stacked" },
 	{ kind: "screenOnly", label: "Screen only" },
+	{ kind: "cameraOnly", label: "Camera only" },
 ];
 
 /** What to call this layout on a timeline clip or in the panel. */

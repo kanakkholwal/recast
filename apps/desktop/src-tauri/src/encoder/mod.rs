@@ -15,6 +15,7 @@ use crate::capture::CaptureArea;
 use crate::recording::pipeline::RecordingPipeline;
 
 pub mod h264;
+pub mod letterbox;
 #[cfg(windows)]
 pub mod native;
 

@@ -242,6 +242,58 @@ const shapeOptions = [
           onchange={(next) => store.setCameraLayoutAtPlayhead(withFraction(layout, next / 100))}
         />
       {/if}
+      <SliderRow
+        label="Transition"
+        value={Math.round(store.cameraOverlay.layoutTransition * 1000)}
+        min={0}
+        max={1500}
+        step={50}
+        unit="ms"
+        onstart={() => store.pushUndoState()}
+        onchange={(next) => store.updateCameraOverlay({ layoutTransition: next / 1000 })}
+      />
+      {#if store.cameraOverlay.layoutTransition > 0}
+        <EasingControl
+          value={store.cameraOverlay.layoutTransitionEasing}
+          size={220}
+          onpick={(v) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ layoutTransitionEasing: v });
+          }}
+          ondrag={(v) =>
+            store.updateCameraOverlayLive({ layoutTransitionEasing: v }, "camera-layout-easing")}
+        />
+      {/if}
+    </PanelSection>
+
+    <PanelSection
+      title="Dodge the pointer"
+      hint="Nudge the bubble aside when the pointer comes near it, so it never sits on top of what you are pointing at. The nudge fades out with distance rather than snapping."
+      flush
+    >
+      {#snippet action()}
+        <SegmentedToggle
+          checked={store.cameraOverlay.cursorDodge}
+          size="xs"
+          aria-label="Dodge the pointer"
+          onCheckedChange={(next) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ cursorDodge: next });
+          }}
+        />
+      {/snippet}
+      {#if store.cameraOverlay.cursorDodge}
+        <SliderRow
+          label="Strength"
+          value={Math.round(store.cameraOverlay.cursorDodgeStrength * 100)}
+          min={0}
+          max={100}
+          step={5}
+          unit="%"
+          onstart={() => store.pushUndoState()}
+          onchange={(next) => store.updateCameraOverlay({ cursorDodgeStrength: next / 100 })}
+        />
+      {/if}
     </PanelSection>
 
     <PanelSection

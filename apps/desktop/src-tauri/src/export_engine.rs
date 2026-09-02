@@ -570,15 +570,28 @@ pub fn export_video(
     let mut session = Session::new(ctx, to_scene(state), source)
         .map_err(|e| EngineExportError::Session(e.to_string()))?;
     if let Some(captions) = captions {
-        // A caption-less export is worth more than none: a missing face degrades to the system match.
+        let mut supplied = false;
         if let Some(path) = &captions.font {
             match std::fs::read(path) {
                 Ok(bytes) => {
-                    if !session.set_caption_font(bytes, 0) {
+                    supplied = session.set_caption_font(bytes, 0);
+                    if !supplied {
                         log::warn!("engine export: {} is not a readable face", path.display());
                     }
                 }
                 Err(e) => log::warn!("engine export: reading {}: {e}", path.display()),
+            }
+        }
+        // Captions the user asked for and cannot see are a wrong file, not a degraded one, so an unresolvable face declines to the graph, which draws them through libass instead. The session caches a failed lookup, so it would otherwise draw no glyphs for the whole export and say nothing.
+        if !supplied {
+            let resolves = state
+                .caption_style
+                .as_ref()
+                .is_some_and(recast_compositor::caption_face_available);
+            if !resolves {
+                return Err(EngineExportError::Unsupported(
+                    "no font could be found for the captions".into(),
+                ));
             }
         }
         session.set_caption_track(Some(captions.track.clone()));
@@ -1113,6 +1126,16 @@ mod live {
     /// Writes a recording for the export to consume, so the test drives the
     /// real decoder rather than a synthetic source.
     fn record(ctx: &GpuContext, path: &Path, seconds: f64) {
+        record_luma(ctx, path, seconds, 220);
+    }
+
+    /// The same, at a chosen brightness.
+    ///
+    /// A camera fixture recorded at the SCREEN's brightness is the screen's own
+    /// picture, so "did the camera draw?" becomes unanswerable: composited over
+    /// the screen it changes almost nothing. Every camera test here needs the
+    /// two to be told apart.
+    fn record_luma(ctx: &GpuContext, path: &Path, seconds: f64, luma: u8) {
         let state = RenderState {
             trim_start: 0.0,
             trim_end: seconds,
@@ -1139,7 +1162,7 @@ mod live {
         )
         .expect("an H.264 encoder");
 
-        let mut bytes = vec![220u8; (SRC_W * SRC_H) as usize];
+        let mut bytes = vec![luma; (SRC_W * SRC_H) as usize];
         bytes.resize(PlaneLayout::Nv12.packed_len(SRC_W, SRC_H), 128);
         FrameLoop::new()
             .run(
@@ -1263,7 +1286,8 @@ mod live {
         let _serial = exclusive();
         let scratch = Scratch::new("cursor");
         let input = scratch.0.join("in.mp4");
-        record(&ctx, &input, 0.3);
+        // Dark: the pointer dot is opaque white, so on the default bright fixture it differs by too little to tell from the encoder's own noise.
+        record_luma(&ctx, &input, 0.3, 40);
 
         let track_path = scratch.0.join("cursor.json");
         let mut track = crate::cursor::CursorTrack::default();
@@ -1293,6 +1317,8 @@ mod live {
 
         let with_cursor = RenderState {
             cursor_enabled: true,
+            // Big as well as dark: at the default size the dot is ~0.05% of the frame, well under the encoder's own noise, and the test could not tell a drawn pointer from a missing one.
+            cursor_size: 40.0,
             ..base.clone()
         };
         let cursor_out = scratch.0.join("cursor.mp4");
@@ -1300,11 +1326,11 @@ mod live {
         cursor_spec.cursor_track = Some(&track_path);
         export_video(&with_cursor, &cursor_spec, &mut never_cancels).expect("cursor export");
 
-        let plain = std::fs::read(&plain_out).expect("plain file");
-        let drawn = std::fs::read(&cursor_out).expect("cursor file");
-        assert_ne!(
-            plain, drawn,
-            "the cursor track changed nothing, so it never reached the session"
+        let delta = crate::export_parity::compare_files(&plain_out, &cursor_out)
+            .expect("both files decode");
+        assert!(
+            delta.drew_something(DRAWN),
+            "the cursor track never reached the session ({delta:?})"
         );
     }
 
@@ -1348,11 +1374,11 @@ mod live {
         export_video(&with_image, &spec(&input, &image_out), &mut never_cancels)
             .expect("wallpaper export");
 
-        let plain = std::fs::read(&plain_out).expect("plain file");
-        let drawn = std::fs::read(&image_out).expect("wallpaper file");
-        assert_ne!(
-            plain, drawn,
-            "the wallpaper changed nothing, so it never reached the frame loop"
+        let delta =
+            crate::export_parity::compare_files(&plain_out, &image_out).expect("both files decode");
+        assert!(
+            delta.drew_something(DRAWN),
+            "the wallpaper never reached the frame loop ({delta:?})"
         );
     }
 
@@ -1393,11 +1419,11 @@ mod live {
         export_video(&marked, &spec(&input, &marked_out), &mut never_cancels)
             .expect("annotated export");
 
-        let plain = std::fs::read(&plain_out).expect("plain file");
-        let drawn = std::fs::read(&marked_out).expect("annotated file");
-        assert_ne!(
-            plain, drawn,
-            "the image annotation changed nothing, so it never reached the frame loop"
+        let delta = crate::export_parity::compare_files(&plain_out, &marked_out)
+            .expect("both files decode");
+        assert!(
+            delta.drew_something(DRAWN),
+            "the image annotation never reached the frame loop ({delta:?})"
         );
     }
 
@@ -1411,7 +1437,7 @@ mod live {
         let input = scratch.0.join("in.mp4");
         let camera = scratch.0.join("cam.mp4");
         record(&ctx, &input, 0.2);
-        record(&ctx, &camera, 0.2);
+        record_luma(&ctx, &camera, 0.2, 40);
 
         let base = RenderState {
             trim_start: 0.0,
@@ -1429,11 +1455,196 @@ mod live {
         camera_spec.camera = Some((&camera, 0.0));
         export_video(&with_camera, &camera_spec, &mut never_cancels).expect("camera export");
 
-        let plain = std::fs::read(&plain_out).expect("plain file");
-        let bubble = std::fs::read(&camera_out).expect("camera file");
-        assert_ne!(
-            plain, bubble,
-            "the camera recording changed nothing, so it never reached the frame loop"
+        // WEAK like the cursor: the bubble changes 2.4% of the frame against a 1.7% noise floor; the layout tests carry the strong version.
+        let delta = crate::export_parity::compare_files(&plain_out, &camera_out)
+            .expect("both files decode");
+        assert!(
+            delta.drew_something(DRAWN),
+            "the camera recording never reached the frame loop ({delta:?})"
+        );
+    }
+
+    /// Fraction of a frame that has to change VISIBLY before a layer counts as
+    /// drawn. Measured here: two exports of one arrangement differ over 1.7% of
+    /// the frame, a wallpaper over 34%, an image annotation over 25%. 5% clears
+    /// the noise by 3x and sits 5x under the smallest real signal.
+    ///
+    /// Every layer here clears it by 1.7x or more, but only because the camera
+    /// fixture is recorded DARK against a bright screen and the pointer is sized
+    /// up: at matching brightness the two pictures are the same and nothing can
+    /// be told apart.
+    const DRAWN: f64 = 0.05;
+
+    /// Two exports of the SAME arrangement differ by up to ~0.43 mean absolute
+    /// luma here: the encoder is not bit-deterministic under load. 2.0 clears
+    /// that. It also means only layouts that move MOST of the frame can be
+    /// proven this way, which is why the tests below use splits and
+    /// `CameraOnly` rather than hiding a bubble.
+    const LAYOUT_SAME: f64 = 2.0;
+
+    fn clip_layout(
+        start: f64,
+        layout: recast_scene::v1::nodes::CameraLayout,
+    ) -> Vec<recast_scene::v1::nodes::CameraClipLayout> {
+        vec![recast_scene::v1::nodes::CameraClipLayout { start, layout }]
+    }
+
+    /// Evaluator tests prove the rects; only an export proves they survive the
+    /// frame loop into a file. E-2 is exactly this gap: layers that resolved
+    /// correctly and were never bound.
+    #[test]
+    fn a_split_layout_reaches_the_exported_picture() {
+        use recast_scene::v1::nodes::{CameraLayout, LayoutSide};
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("layout-split");
+        let input = scratch.0.join("in.mp4");
+        let camera = scratch.0.join("cam.mp4");
+        record(&ctx, &input, 0.2);
+        record_luma(&ctx, &camera, 0.2, 40);
+
+        let mut base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        base.camera_overlay.enabled = true;
+
+        let bubble_out = scratch.0.join("bubble.mp4");
+        let mut bubble_spec = spec(&input, &bubble_out);
+        bubble_spec.camera = Some((&camera, 0.0));
+        export_video(&base, &bubble_spec, &mut never_cancels).expect("bubble export");
+
+        let mut split = base.clone();
+        split.camera_overlay.clip_layouts = clip_layout(
+            0.0,
+            CameraLayout::SplitH {
+                fraction: 0.4,
+                side: LayoutSide::Start,
+            },
+        );
+        let split_out = scratch.0.join("split.mp4");
+        let mut split_spec = spec(&input, &split_out);
+        split_spec.camera = Some((&camera, 0.0));
+        export_video(&split, &split_spec, &mut never_cancels).expect("split export");
+
+        let delta = crate::export_parity::compare_files(&bubble_out, &split_out)
+            .expect("both files decode");
+        assert!(
+            !delta.agrees_within(LAYOUT_SAME),
+            "the split rendered as the bubble ({delta:?}), so the layout never reached the frame loop"
+        );
+    }
+
+    /// The layout has to move the SCREEN too. A file that only moved the camera
+    /// would still differ from the bubble, so the bubble alone cannot prove it.
+    #[test]
+    fn the_two_split_axes_produce_different_pictures() {
+        use recast_scene::v1::nodes::{CameraLayout, LayoutSide};
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("layout-axes");
+        let input = scratch.0.join("in.mp4");
+        let camera = scratch.0.join("cam.mp4");
+        record(&ctx, &input, 0.2);
+        record_luma(&ctx, &camera, 0.2, 40);
+
+        let mut base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        base.camera_overlay.enabled = true;
+
+        let render = |layout: CameraLayout, name: &str| {
+            let mut state = base.clone();
+            state.camera_overlay.clip_layouts = clip_layout(0.0, layout);
+            let out = scratch.0.join(name);
+            let mut s = spec(&input, &out);
+            s.camera = Some((&camera, 0.0));
+            export_video(&state, &s, &mut never_cancels).expect("export");
+            out
+        };
+
+        let horizontal = render(
+            CameraLayout::SplitH {
+                fraction: 0.4,
+                side: LayoutSide::Start,
+            },
+            "h.mp4",
+        );
+        // The same layout twice, to keep the comparison below honest: the encoder is not byte-deterministic under load, so this has to be a PIXEL delta and its floor has to be measured, not assumed.
+        let again = render(
+            CameraLayout::SplitH {
+                fraction: 0.4,
+                side: LayoutSide::Start,
+            },
+            "h2.mp4",
+        );
+        let noise =
+            crate::export_parity::compare_files(&horizontal, &again).expect("both files decode");
+        assert!(
+            noise.agrees_within(LAYOUT_SAME),
+            "two runs of one layout already differ by {noise:?}, so nothing below can be trusted"
+        );
+        let vertical = render(
+            CameraLayout::SplitV {
+                fraction: 0.4,
+                side: LayoutSide::Start,
+            },
+            "v.mp4",
+        );
+        let delta =
+            crate::export_parity::compare_files(&horizontal, &vertical).expect("both files decode");
+        assert!(
+            !delta.agrees_within(LAYOUT_SAME),
+            "both splits exported the same picture ({delta:?}), so the axis is not reaching the loop"
+        );
+    }
+
+    /// `CameraOnly` replaces the whole frame, so it is the layout whose signal
+    /// clears the encoder's own run-to-run noise. `ScreenOnly` cannot be proven
+    /// here: hiding a bubble moves the whole-frame mean by ~0.33, and two runs
+    /// of ONE layout already differ by up to ~0.43. Its hide semantics are
+    /// pinned in `eval::tests::screen_only_stops_the_camera_being_drawn`.
+    #[test]
+    fn camera_only_exports_the_camera_instead_of_the_screen() {
+        use recast_scene::v1::nodes::CameraLayout;
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("layout-cameraonly");
+        let input = scratch.0.join("in.mp4");
+        let camera = scratch.0.join("cam.mp4");
+        record(&ctx, &input, 0.2);
+        record_luma(&ctx, &camera, 0.2, 40);
+
+        let mut base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        base.camera_overlay.enabled = true;
+
+        // The two full-frame extremes rather than one against the bubble: every pixel differs, which is the widest margin available.
+        let render = |layout: CameraLayout, name: &str| {
+            let mut state = base.clone();
+            state.camera_overlay.clip_layouts = clip_layout(0.0, layout);
+            let out = scratch.0.join(name);
+            let mut s = spec(&input, &out);
+            s.camera = Some((&camera, 0.0));
+            export_video(&state, &s, &mut never_cancels).expect("export");
+            out
+        };
+        let screen = render(CameraLayout::ScreenOnly, "screen.mp4");
+        let full = render(CameraLayout::CameraOnly, "full.mp4");
+
+        let delta = crate::export_parity::compare_files(&screen, &full).expect("both files decode");
+        assert!(
+            delta.drew_something(DRAWN),
+            "camera-only and screen-only exported the same picture ({delta:?})"
         );
     }
 

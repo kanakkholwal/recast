@@ -14,6 +14,33 @@ pub struct Delta {
     pub mean_abs: f64,
     /// The worst single frame's mean absolute difference.
     pub worst_frame: f64,
+    /// The worst single frame's fraction of pixels that differ VISIBLY.
+    ///
+    /// The mean cannot tell a drawn layer from encoder noise: hiding a camera
+    /// bubble moves the whole-frame mean by ~0.33, and two runs of one export
+    /// already differ by up to ~0.43. A drawn layer differs a lot over a few
+    /// pixels; noise differs a little over all of them, so counting the loud
+    /// ones separates them where averaging cannot.
+    pub changed: f64,
+}
+
+/// Luma steps between two pixels before the difference is something you could
+/// see rather than the encoder choosing another quantiser.
+const VISIBLE_STEP: u8 = 24;
+
+/// Fraction of `a` that differs from `b` by more than [`VISIBLE_STEP`].
+#[must_use]
+pub fn changed_fraction(a: &[u8], b: &[u8]) -> f64 {
+    let len = a.len().min(b.len());
+    if len == 0 {
+        return f64::INFINITY;
+    }
+    let loud = a[..len]
+        .iter()
+        .zip(&b[..len])
+        .filter(|(x, y)| x.abs_diff(**y) > VISIBLE_STEP)
+        .count();
+    loud as f64 / len as f64
 }
 
 impl Delta {
@@ -22,6 +49,14 @@ impl Delta {
     #[must_use]
     pub fn agrees_within(&self, mean: f64) -> bool {
         self.compared > 0 && self.mean_abs <= mean
+    }
+
+    /// Whether something visible was drawn in one and not the other. Reads the
+    /// loud-pixel count, which is the only statistic here that survives the
+    /// encoder's own run-to-run noise.
+    #[must_use]
+    pub fn drew_something(&self, fraction: f64) -> bool {
+        self.compared > 0 && self.changed > fraction
     }
 }
 
@@ -80,14 +115,17 @@ pub fn compare_files(left: &Path, right: &Path) -> Result<Delta, String> {
     let mut compared = 0u64;
     let mut total = 0.0;
     let mut worst = 0.0f64;
+    let mut loudest = 0.0f64;
     while let (Some(fa), Some(fb)) = (
         a.next_frame().map_err(|e| e.to_string())?,
         b.next_frame().map_err(|e| e.to_string())?,
     ) {
-        let delta = luma_delta(
+        let (left, right) = (
             &fa.data[..luma.min(fa.data.len())],
             &fb.data[..luma.min(fb.data.len())],
         );
+        let delta = luma_delta(left, right);
+        loudest = loudest.max(changed_fraction(left, right));
         worst = worst.max(delta);
         total += delta;
         compared += 1;
@@ -101,6 +139,7 @@ pub fn compare_files(left: &Path, right: &Path) -> Result<Delta, String> {
             total / compared as f64
         },
         worst_frame: worst,
+        changed: loudest,
     })
 }
 
@@ -128,8 +167,13 @@ mod tests {
             compared: 0,
             mean_abs: 0.0,
             worst_frame: 0.0,
+            changed: 0.0,
         };
         assert!(!empty.agrees_within(1.0), "an empty comparison passed");
+        assert!(
+            !empty.drew_something(0.0),
+            "an empty comparison drew something"
+        );
     }
 
     #[test]
@@ -166,9 +210,34 @@ mod tests {
             compared: 30,
             mean_abs: 2.0,
             worst_frame: 5.0,
+            changed: 0.01,
         };
         assert!(close.agrees_within(3.0));
         assert!(!close.agrees_within(1.0));
+        assert!(close.drew_something(0.005));
+        assert!(!close.drew_something(0.02));
+    }
+
+    /// The statistic that separates a drawn layer from encoder noise: a few
+    /// loud pixels count, a small difference everywhere does not.
+    #[test]
+    fn the_loud_pixel_count_ignores_a_difference_too_small_to_see() {
+        let flat = [100u8; 64];
+        let nudged: Vec<u8> = flat.iter().map(|v| v + 8).collect();
+        assert_eq!(changed_fraction(&flat, &nudged), 0.0);
+    }
+
+    #[test]
+    fn one_loud_pixel_in_a_frame_is_counted() {
+        let flat = [100u8; 100];
+        let mut drawn = flat;
+        drawn[7] = 255;
+        assert!((changed_fraction(&flat, &drawn) - 0.01).abs() < 1e-9);
+    }
+
+    #[test]
+    fn comparing_no_pixels_is_not_a_change() {
+        assert_eq!(changed_fraction(&[], &[]), f64::INFINITY);
     }
 }
 

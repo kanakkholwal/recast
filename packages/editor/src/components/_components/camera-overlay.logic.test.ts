@@ -523,3 +523,52 @@ describe("cameraOverlayFromState", () => {
 		expect(overlay.shape).toBe("rounded");
 	});
 });
+
+const fallbackPlacement = { x: 0.8, y: 0.8, width: 0.16, height: 0.16 };
+
+describe("cameraOverlayFromState layout fields", () => {
+	// A project saved before layouts opens as a hard-cut bubble, never inheriting a transition it did not ask for.
+	it("defaults a project with no layout fields to a hard cut", () => {
+		const overlay = cameraOverlayFromState({ enabled: true }, fallbackPlacement);
+		expect(overlay.clipLayouts).toEqual([]);
+		expect(overlay.layoutTransition).toBe(0);
+	});
+
+	it("carries the authored layouts and transition", () => {
+		const overlay = cameraOverlayFromState(
+			{
+				clipLayouts: [{ start: 4, layout: { kind: "splitH", fraction: 0.3, side: "start" } }],
+				layoutTransition: 0.6,
+			},
+			fallbackPlacement,
+		);
+		expect(overlay.clipLayouts).toHaveLength(1);
+		expect(overlay.layoutTransition).toBeCloseTo(0.6, 6);
+	});
+
+	it("does not alias the layouts it was handed", () => {
+		const clipLayouts = [
+			{ start: 4, layout: { kind: "splitH" as const, fraction: 0.3, side: "start" as const } },
+		];
+		const overlay = cameraOverlayFromState({ clipLayouts }, fallbackPlacement);
+		expect(overlay.clipLayouts[0]).not.toBe(clipLayouts[0]);
+		expect(overlay.clipLayouts[0].layout).not.toBe(clipLayouts[0].layout);
+	});
+});
+
+describe("cursor dodge defaults", () => {
+	// Dodging moves the camera, so a project that never asked for it must open rendering exactly as it did.
+	it("is off for a project that predates it", () => {
+		const overlay = cameraOverlayFromState({ enabled: true }, fallbackPlacement);
+		expect(overlay.cursorDodge).toBe(false);
+	});
+
+	it("carries the setting and its strength", () => {
+		const overlay = cameraOverlayFromState(
+			{ cursorDodge: true, cursorDodgeStrength: 0.25 },
+			fallbackPlacement,
+		);
+		expect(overlay.cursorDodge).toBe(true);
+		expect(overlay.cursorDodgeStrength).toBeCloseTo(0.25, 6);
+	});
+});

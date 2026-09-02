@@ -28,7 +28,7 @@ pub use recast_cursor::{CursorPlacement, CursorSettings, CursorTrack, Highlight}
 pub use render::{
     BackgroundImage, Compositor, CursorSprite, FrameInputs, LayerInput, MissingInput, RenderStats,
 };
-pub use session::{screen_only, OutputSize, Session};
+pub use session::{caption_face_available, screen_only, OutputSize, Session};
 pub use source::{RenderSource, Renderable};
 pub use text::GlyphQuad;
 pub use yuv::{

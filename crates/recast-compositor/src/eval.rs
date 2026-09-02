@@ -1,9 +1,9 @@
 use recast_color::{Gradient, Srgba};
 use recast_cursor::{CursorPlacement, CursorSettings};
 use recast_scene::v1::nodes::{ShadowSettings, ZoomRegion};
-use recast_scene::v1::SegmentAnim;
+use recast_scene::v1::{Easing, SegmentAnim};
 use recast_scene::{Effect, LayerId, LayerSource, Scene};
-use recast_time::{output_to_original, Segment, TimeMap};
+use recast_time::{original_to_output, output_to_original, Segment, TimeMap};
 
 use crate::annotation::{annotation_params, sorted_visible, AnnotationParams};
 use crate::camera::{bubble_params, bubble_shadow};
@@ -227,17 +227,28 @@ pub struct SourceGeometry {
     pub height: u32,
 }
 
+/// This frame's arrangement: where it is going, and where it is coming from
+/// with how far through the eased move it is.
+#[derive(Debug, Clone, Copy)]
+struct LayoutBlend {
+    to: recast_scene::v1::nodes::CameraLayout,
+    from: Option<(recast_scene::v1::nodes::CameraLayout, f32)>,
+}
+
+impl LayoutBlend {
+    /// Whether this frame is the plain bubble with no move under way.
+    fn is_pip(&self) -> bool {
+        self.to.is_pip() && self.from.is_none()
+    }
+}
+
 /// The scene's camera layer decides the layout for every layer, since a split
-/// places the screen too. No camera layer means the bubble, which is `Pip`.
-fn camera_clip_layouts(scene: &Scene) -> &[recast_scene::v1::nodes::CameraClipLayout] {
-    scene
-        .layers
-        .iter()
-        .find_map(|l| match &l.source {
-            LayerSource::Camera(settings) => Some(settings.clip_layouts.as_slice()),
-            _ => None,
-        })
-        .unwrap_or(&[])
+/// places the screen too.
+fn camera_settings(scene: &Scene) -> Option<&recast_scene::v1::nodes::CameraOverlaySettings> {
+    scene.layers.iter().find_map(|l| match &l.source {
+        LayerSource::Camera(settings) => Some(&**settings),
+        _ => None,
+    })
 }
 
 /// Central difference step for the zoom-velocity estimate. Half a frame at
@@ -297,7 +308,7 @@ impl Evaluator {
         let cursor = self.cursor_placement(scene, source_time);
         let focus = scene.flags.focus;
         // Resolved before the walk: a split moves the SCREEN too, so the layout has to be known before either layer is placed.
-        let layout = crate::layout::layout_at(camera_clip_layouts(scene), source_time);
+        let layout = self.layout_blend(scene, source_time, output_time);
         let mut background = BackgroundParams::Solid(Srgba::opaque(0x11, 0x11, 0x11));
         let mut background_blur = 0.0f32;
         let mut layers = Vec::with_capacity(scene.layers.len());
@@ -335,7 +346,13 @@ impl Evaluator {
                         true => scene.zoom_regions(),
                         false => Vec::new(),
                     };
-                    let bubble = bubble_params(settings, &follow, source_time, self.geometry);
+                    let bubble = bubble_params(
+                        settings,
+                        &follow,
+                        source_time,
+                        self.geometry,
+                        cursor.map(|c| (c.x, c.y)),
+                    );
                     if let Some(bubble) = &bubble {
                         params.dest = bubble.dest;
                         params.corner_radius = bubble.corner_radius;
@@ -346,9 +363,9 @@ impl Evaluator {
                     } else {
                         params.visible = false;
                     }
-                    if !layout.is_pip() {
-                        let rects = self.layout_rects(layout, bubble.map(|b| b.dest));
+                    if let Some(rects) = self.layout_rects(&layout, bubble.map(|b| b.dest)) {
                         params.dest = rects.camera;
+                        params.opacity *= rects.camera_opacity;
                         // A half of the frame is not a floating bubble: it neither rounds nor casts.
                         params.corner_radius = 0.0;
                         params.shadow = None;
@@ -359,9 +376,11 @@ impl Evaluator {
                 _ => {
                     let mut params = self.layer_params(layer, source_time, output_time, focus);
                     if matches!(layer.source, LayerSource::Screen) {
-                        if !layout.is_pip() {
+                        if let Some(rects) = self.layout_rects(&layout, None) {
                             // The card anchors annotations and the cursor, so they follow the screen into its half rather than staying on the full frame.
-                            params.dest = self.layout_rects(layout, None).screen;
+                            params.dest = rects.screen;
+                            params.opacity *= rects.screen_opacity;
+                            params.visible = params.visible && rects.screen_opacity > 0.0;
                         }
                         card = (params.dest, params.transform);
                         if params.visible {
@@ -388,17 +407,51 @@ impl Evaluator {
         }
     }
 
-    /// This frame's layout resolved against the canvas and the source aspect.
+    /// This frame's arrangement: the clip's layout, and the one it is easing out
+    /// of while a transition is still running.
+    fn layout_blend(&self, scene: &Scene, source_time: f64, output_time: f64) -> LayoutBlend {
+        let settings = camera_settings(scene);
+        let clips = settings.map_or(&[][..], |s| s.clip_layouts.as_slice());
+        let (to, from, start) = crate::layout::neighbours(clips, source_time);
+        let duration = settings.map_or(0.0, |s| s.layout_transition);
+        let (Some(from), Some(start)) = (from, start) else {
+            return LayoutBlend { to, from: None };
+        };
+        let boundary = original_to_output(&self.time_map, start);
+        let progress = crate::layout::transition_progress(output_time, boundary, duration);
+        if progress >= 1.0 {
+            return LayoutBlend { to, from: None };
+        }
+        let easing = settings.map_or_else(Easing::default, |s| s.layout_transition_easing);
+        LayoutBlend {
+            to,
+            from: Some((from, easing.y(progress as f32))),
+        }
+    }
+
+    /// The blend resolved to rects, or `None` when nothing but the plain bubble
+    /// is in play and the layers should be placed exactly as they always were.
     fn layout_rects(
         &self,
-        layout: recast_scene::v1::nodes::CameraLayout,
+        blend: &LayoutBlend,
         bubble: Option<DestRect>,
-    ) -> crate::layout::LayoutRects {
+    ) -> Option<crate::layout::LayoutRects> {
+        if blend.is_pip() {
+            return None;
+        }
         let aspect = match self.source.height {
             0 => 1.0,
             h => self.source.width as f32 / h as f32,
         };
-        crate::layout::resolve(layout, self.geometry, bubble, aspect)
+        let to = crate::layout::resolve(blend.to, self.geometry, bubble, aspect);
+        Some(match blend.from {
+            Some((from, eased)) => crate::layout::lerp(
+                crate::layout::resolve(from, self.geometry, bubble, aspect),
+                to,
+                eased,
+            ),
+            None => to,
+        })
     }
 
     /// The pointer for this frame. Every curve lives in `recast-cursor`, which the TypeScript preview asserts against the same fixture, so preview and export cannot drift.
@@ -909,6 +962,137 @@ mod tests {
             .find(|p| p.id == id)
             .expect("it was evaluated")
             .clone()
+    }
+
+    fn camera_scene_with(clip_layouts: &str, extra: &str) -> recast_scene::Scene {
+        scene_with(&format!(
+            r#""cameraOverlay": {{"enabled": true, "clipLayouts": {clip_layouts}{extra}}},"#
+        ))
+    }
+
+    const TWO_CLIPS: &str = r#"[
+        {"start": 0.0, "layout": {"kind": "pip"}},
+        {"start": 4.0, "layout": {"kind": "splitH", "fraction": 0.3, "side": "start"}}
+    ]"#;
+
+    /// Without a duration the layout changes on the frame the clip starts,
+    /// which is what every project gets until the control is turned up.
+    #[test]
+    fn a_zero_length_transition_changes_the_layout_on_the_boundary_frame() {
+        let scene = camera_scene_with(TWO_CLIPS, "");
+        let ev = Evaluator::new(&scene, source());
+        let before = layer_of(&ev.evaluate(&scene, 3.99), &scene, true);
+        let after = layer_of(&ev.evaluate(&scene, 4.0), &scene, true);
+        assert!(
+            (after.dest.w - 1920.0 * 0.3).abs() < 0.01,
+            "{:?}",
+            after.dest
+        );
+        assert!(before.dest.w < after.dest.w, "the bubble was already split");
+    }
+
+    /// The move is what the viewer sees: partway through, the camera is between
+    /// the bubble it left and the half it is heading for.
+    #[test]
+    fn a_transition_moves_the_camera_between_the_two_arrangements() {
+        let scene = camera_scene_with(TWO_CLIPS, r#", "layoutTransition": 1.0"#);
+        let ev = Evaluator::new(&scene, source());
+        let start = layer_of(&ev.evaluate(&scene, 4.0), &scene, true).dest;
+        let mid = layer_of(&ev.evaluate(&scene, 4.5), &scene, true).dest;
+        let end = layer_of(&ev.evaluate(&scene, 5.5), &scene, true).dest;
+        assert!(
+            mid.w > start.w && mid.w < end.w,
+            "{start:?} {mid:?} {end:?}"
+        );
+        assert!((end.w - 1920.0 * 0.3).abs() < 0.01, "{end:?}");
+    }
+
+    /// The screen moves with it: a transition that eased only the camera would
+    /// leave the screen full-frame under a growing half.
+    #[test]
+    fn a_transition_moves_the_screen_as_well() {
+        let scene = camera_scene_with(TWO_CLIPS, r#", "layoutTransition": 1.0"#);
+        let ev = Evaluator::new(&scene, source());
+        let start = layer_of(&ev.evaluate(&scene, 4.0), &scene, false).dest;
+        let mid = layer_of(&ev.evaluate(&scene, 4.5), &scene, false).dest;
+        assert!(
+            mid.w < start.w,
+            "the screen stayed full width: {start:?} {mid:?}"
+        );
+    }
+
+    /// A layer that is arriving fades in as it moves, rather than popping on.
+    #[test]
+    fn a_camera_arriving_from_screen_only_fades_as_it_moves() {
+        let clips = r#"[
+            {"start": 0.0, "layout": {"kind": "screenOnly"}},
+            {"start": 4.0, "layout": {"kind": "splitH", "fraction": 0.3, "side": "start"}}
+        ]"#;
+        let scene = camera_scene_with(clips, r#", "layoutTransition": 1.0"#);
+        let ev = Evaluator::new(&scene, source());
+        let mid = layer_of(&ev.evaluate(&scene, 4.5), &scene, true);
+        assert!(
+            mid.opacity > 0.0 && mid.opacity < 1.0,
+            "opacity {}",
+            mid.opacity
+        );
+        assert!(layer_of(&ev.evaluate(&scene, 5.5), &scene, true).opacity >= 1.0);
+    }
+
+    /// Once the transition has run, the frame must be the destination exactly,
+    /// not a lerp that never quite arrives.
+    #[test]
+    fn the_frame_after_a_transition_is_the_destination_itself() {
+        let eased = camera_scene_with(TWO_CLIPS, r#", "layoutTransition": 1.0"#);
+        let hard = camera_scene_with(TWO_CLIPS, "");
+        let a = Evaluator::new(&eased, source()).evaluate(&eased, 8.0);
+        let b = Evaluator::new(&hard, source()).evaluate(&hard, 8.0);
+        assert_eq!(a.layers, b.layers);
+    }
+
+    /// A transition is timed on the OUTPUT axis, because it is what the viewer
+    /// sees. Reading the boundary on the original axis instead would start the
+    /// move late by exactly the length of every cut before it.
+    #[test]
+    fn a_cut_before_the_boundary_does_not_delay_the_transition() {
+        let clips = r#"[
+            {"start": 0.0, "layout": {"kind": "pip"}},
+            {"start": 6.0, "layout": {"kind": "splitH", "fraction": 0.3, "side": "start"}}
+        ]"#;
+        let scene = scene_with(&format!(
+            r#""cuts": [{{"start": 1.0, "end": 3.0}}],
+               "cameraOverlay": {{"enabled": true, "clipLayouts": {clips}, "layoutTransition": 1.0}},"#
+        ));
+        let ev = Evaluator::new(&scene, source());
+        // Two seconds cut out before it, so original 6 is seen at output 4.
+        let start = layer_of(&ev.evaluate(&scene, 4.0), &scene, true).dest;
+        let mid = layer_of(&ev.evaluate(&scene, 4.5), &scene, true).dest;
+        let done = layer_of(&ev.evaluate(&scene, 5.0), &scene, true).dest;
+        assert!(mid.w > start.w, "the move had not begun: {start:?} {mid:?}");
+        assert!(
+            mid.w < done.w,
+            "the move had already finished: {mid:?} {done:?}"
+        );
+        assert!((done.w - 1920.0 * 0.3).abs() < 1.0, "{done:?}");
+    }
+
+    /// The screen fades as the camera takes the whole frame, rather than being
+    /// hidden the instant the clip changes.
+    #[test]
+    fn a_screen_leaving_for_camera_only_fades_as_it_goes() {
+        let clips = r#"[
+            {"start": 0.0, "layout": {"kind": "pip"}},
+            {"start": 4.0, "layout": {"kind": "cameraOnly"}}
+        ]"#;
+        let scene = camera_scene_with(clips, r#", "layoutTransition": 1.0"#);
+        let ev = Evaluator::new(&scene, source());
+        let mid = layer_of(&ev.evaluate(&scene, 4.5), &scene, false);
+        assert!(
+            mid.opacity > 0.0 && mid.opacity < 1.0,
+            "opacity {}",
+            mid.opacity
+        );
+        assert!(!layer_of(&ev.evaluate(&scene, 5.5), &scene, false).visible);
     }
 
     /// A split moves the SCREEN as well as the camera. Evaluating only the

@@ -49,6 +49,10 @@ export function cameraOverlayFromState(
 			start: c.start,
 			layout: { ...c.layout },
 		})),
+		layoutTransition: loaded?.layoutTransition ?? 0,
+		layoutTransitionEasing: { ...(loaded?.layoutTransitionEasing ?? EASE_IN_OUT) },
+		cursorDodge: loaded?.cursorDodge ?? false,
+		cursorDodgeStrength: loaded?.cursorDodgeStrength ?? 0.6,
 		shadow: loaded?.shadow ?? 0.35,
 		defaultPlacement,
 		motionSegments: (loaded?.motionSegments ?? []).map((segment) => ({

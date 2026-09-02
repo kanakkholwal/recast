@@ -156,6 +156,67 @@ pub fn follow_placement(
     }
 }
 
+/// How close the pointer gets before the bubble starts moving, as a fraction of
+/// frame HEIGHT beyond the bubble's own half-size.
+const DODGE_MARGIN: f64 = 0.12;
+
+/// Nudge `base` away from the pointer once it comes within reach.
+///
+/// The displacement falls continuously to zero at the edge of that reach, so a
+/// pointer hovering on the boundary cannot make the bubble flicker. Deliberately
+/// NOT stateful hysteresis: a frame has to depend only on its own time, or
+/// seeking and exporting would disagree with playback.
+///
+/// `cursor` is in SOURCE uv. Distances are measured in screen pixels (frame
+/// height as the unit) and converted back per axis, the same normalisation
+/// `follow_placement` uses, or the push would be wrong on a wide frame.
+#[must_use]
+pub fn dodge_placement(
+    base: &CameraPlacement,
+    cursor: (f64, f64),
+    strength: f64,
+    aspect: f64,
+) -> CameraPlacement {
+    let k = strength.clamp(0.0, 1.0);
+    if k <= 0.0 {
+        return base.clone();
+    }
+    // Square in pixels, so one half-size serves both axes in screen units.
+    let half = (base.width * aspect * 0.5).max(1e-6);
+    let reach = half + DODGE_MARGIN;
+
+    let base_h = (base.width * aspect).min(1.0);
+    let (bcx, bcy) = (base.x + base.width / 2.0, base.y + base_h / 2.0);
+    let (px, py) = ((bcx - cursor.0) * aspect, bcy - cursor.1);
+    let distance = (px * px + py * py).sqrt();
+    if distance >= reach {
+        return base.clone();
+    }
+
+    // Pointer on the bubble's own centre has no away-direction of its own, so it is pushed further out from the middle of the frame instead.
+    let (ux, uy) = if distance > 1e-4 {
+        (px / distance, py / distance)
+    } else {
+        let (ox, oy) = ((bcx - 0.5) * aspect, bcy - 0.5);
+        let out = (ox * ox + oy * oy).sqrt();
+        if out > 1e-4 {
+            (ox / out, oy / out)
+        } else {
+            (0.0, 1.0)
+        }
+    };
+
+    let push = (reach - distance) * k;
+    let width = base.width;
+    let height = base.height;
+    CameraPlacement {
+        x: (base.x + ux * push / aspect).clamp(0.0, 1.0 - width.min(1.0)),
+        y: (base.y + uy * push).clamp(0.0, 1.0 - height.min(1.0)),
+        width,
+        height,
+    }
+}
+
 fn corner_radius_for(settings: &CameraOverlaySettings) -> f32 {
     match settings.shape.as_str() {
         "circle" => 0.5,
@@ -189,6 +250,7 @@ pub fn bubble_params(
     regions: &[&ZoomRegion],
     source_time: f64,
     geometry: CanvasGeometry,
+    cursor: Option<(f64, f64)>,
 ) -> Option<BubbleParams> {
     if !settings.enabled {
         return None;
@@ -215,6 +277,11 @@ pub fn bubble_params(
         follow_placement(&base, scale, cx, cy, settings.zoom_follow_strength, aspect)
     } else {
         base
+    };
+    // After the zoom: the zoom decides the size and where the bubble is heading, the pointer only nudges it off whatever it is covering.
+    let placement = match (settings.cursor_dodge, cursor) {
+        (true, Some(at)) => dodge_placement(&placement, at, settings.cursor_dodge_strength, aspect),
+        _ => placement,
     };
 
     Some(BubbleParams {
@@ -309,13 +376,13 @@ mod tests {
     #[test]
     fn a_disabled_camera_produces_nothing() {
         let s = settings(r#"{"enabled": false}"#);
-        assert!(bubble_params(&s, &[], 0.0, geometry()).is_none());
+        assert!(bubble_params(&s, &[], 0.0, geometry(), None).is_none());
     }
 
     #[test]
     fn the_bubble_is_square_in_pixels_even_on_a_wide_frame() {
         let s = enabled(r#""defaultPlacement": {"x":0.1,"y":0.1,"width":0.2,"height":0.2},"#);
-        let b = bubble_params(&s, &[], 0.0, geometry()).expect("bubble");
+        let b = bubble_params(&s, &[], 0.0, geometry(), None).expect("bubble");
         assert_eq!(b.dest.w, b.dest.h);
         assert_eq!(b.dest.w, 200.0);
     }
@@ -323,9 +390,161 @@ mod tests {
     #[test]
     fn a_placement_past_the_canvas_edge_is_clamped_back_on_screen() {
         let s = enabled(r#""defaultPlacement": {"x":0.95,"y":0.95,"width":0.2,"height":0.2},"#);
-        let b = bubble_params(&s, &[], 0.0, geometry()).expect("bubble");
+        let b = bubble_params(&s, &[], 0.0, geometry(), None).expect("bubble");
         assert!(b.dest.x + b.dest.w <= geometry().canvas_w as f32);
         assert!(b.dest.y + b.dest.h <= geometry().canvas_h as f32);
+    }
+
+    fn dodge_base() -> CameraPlacement {
+        CameraPlacement {
+            x: 0.4,
+            y: 0.4,
+            width: 0.15,
+            height: 0.15,
+        }
+    }
+
+    /// Distances are measured in frame heights, and the bubble is square in
+    /// PIXELS, so its reach has to be computed the same way on any aspect.
+    fn dodge_reach(base: &CameraPlacement, aspect: f64) -> f64 {
+        base.width * aspect * 0.5 + 0.12
+    }
+
+    fn dodge_centre(p: &CameraPlacement, aspect: f64) -> (f64, f64) {
+        (p.x + p.width / 2.0, p.y + (p.width * aspect).min(1.0) / 2.0)
+    }
+
+    #[test]
+    fn a_pointer_far_from_the_bubble_leaves_it_alone() {
+        let base = dodge_base();
+        assert_eq!(dodge_placement(&base, (0.95, 0.05), 1.0, 1.0), base);
+    }
+
+    #[test]
+    fn no_strength_means_no_dodge_however_close_the_pointer() {
+        let base = dodge_base();
+        assert_eq!(dodge_placement(&base, (0.475, 0.475), 0.0, 1.0), base);
+    }
+
+    #[test]
+    fn the_bubble_moves_away_from_a_pointer_that_comes_close() {
+        let base = dodge_base();
+        let aspect = 16.0 / 9.0;
+        let (bcx, bcy) = dodge_centre(&base, aspect);
+        // Just inside reach, coming from the left.
+        let cursor = (bcx - (dodge_reach(&base, aspect) * 0.5) / aspect, bcy);
+        let out = dodge_placement(&base, cursor, 1.0, aspect);
+        assert!(out.x > base.x, "pushed toward the pointer: {out:?}");
+        assert!(
+            (out.y - base.y).abs() < 1e-6,
+            "moved off its own axis: {out:?}"
+        );
+    }
+
+    /// The displacement falls to zero at the edge of reach, so a pointer
+    /// hovering on the boundary cannot make the bubble flicker between two
+    /// positions frame to frame.
+    #[test]
+    fn the_push_fades_out_continuously_at_the_edge_of_reach() {
+        let base = dodge_base();
+        let aspect = 1.0;
+        let (bcx, bcy) = dodge_centre(&base, aspect);
+        let reach = dodge_reach(&base, aspect);
+        let at = |d: f64| dodge_placement(&base, (bcx - d, bcy), 1.0, aspect).x - base.x;
+        let just_inside = at(reach - 1e-4);
+        assert!(
+            (0.0..1e-3).contains(&just_inside),
+            "step at the edge: {just_inside}"
+        );
+        assert!(
+            at(reach * 0.5) > just_inside,
+            "the push did not grow with closeness"
+        );
+    }
+
+    /// D-2 again: reach is a distance in frame HEIGHTS, so a pointer the same
+    /// screen distance away triggers the same push whichever axis it comes
+    /// from. Measuring the uv pair directly makes the horizontal reach
+    /// `aspect` times too short on a wide frame.
+    #[test]
+    fn the_reach_is_the_same_distance_on_both_axes() {
+        let base = dodge_base();
+        let aspect = 16.0 / 9.0;
+        let (bcx, bcy) = dodge_centre(&base, aspect);
+        let d = dodge_reach(&base, aspect) * 0.5;
+
+        let left = dodge_placement(&base, (bcx - d / aspect, bcy), 1.0, aspect);
+        let above = dodge_placement(&base, (bcx, bcy - d), 1.0, aspect);
+        // Both back in screen units (frame height as the unit).
+        let horizontal = (left.x - base.x) * aspect;
+        let vertical = above.y - base.y;
+        assert!(
+            horizontal > 1e-6 && vertical > 1e-6,
+            "{horizontal} {vertical}"
+        );
+        assert!(
+            (horizontal - vertical).abs() < 1e-9,
+            "the push differed by axis: {horizontal} vs {vertical}"
+        );
+    }
+
+    /// A pointer sitting exactly on the bubble centre has no direction of its
+    /// own; the bubble is pushed outward from the middle of the frame instead
+    /// of jumping to an arbitrary corner.
+    #[test]
+    fn a_pointer_on_the_centre_pushes_the_bubble_further_out() {
+        let base = CameraPlacement {
+            x: 0.7,
+            y: 0.7,
+            width: 0.15,
+            height: 0.15,
+        };
+        let (bcx, bcy) = dodge_centre(&base, 1.0);
+        let out = dodge_placement(&base, (bcx, bcy), 1.0, 1.0);
+        assert!(out.x > base.x && out.y > base.y, "{out:?}");
+    }
+
+    #[test]
+    fn a_dodge_never_pushes_the_bubble_off_the_frame() {
+        let base = CameraPlacement {
+            x: 0.84,
+            y: 0.84,
+            width: 0.15,
+            height: 0.15,
+        };
+        let (bcx, bcy) = dodge_centre(&base, 1.0);
+        let out = dodge_placement(&base, (bcx - 0.02, bcy - 0.02), 1.0, 1.0);
+        assert!(out.x >= 0.0 && out.x <= 1.0 - out.width, "{out:?}");
+        assert!(out.y >= 0.0 && out.y <= 1.0 - out.height, "{out:?}");
+    }
+
+    #[test]
+    fn the_dodge_is_off_until_the_setting_turns_it_on() {
+        let off = settings(r#"{"enabled": true}"#);
+        let on = settings(r#"{"enabled": true, "cursorDodge": true}"#);
+        // The default bubble sits at uv centre (0.83, 0.30) on this 2:1 frame; the pointer has to be inside its reach for the setting to do anything.
+        let at = |s: &CameraOverlaySettings| {
+            bubble_params(s, &[], 0.0, geometry(), Some((0.75, 0.30)))
+                .expect("bubble")
+                .dest
+        };
+        assert_ne!(at(&off), at(&on), "the setting changed nothing");
+    }
+
+    /// The pointer only nudges what the zoom already decided, so a scene with
+    /// no pointer this frame must render exactly as it did before dodging.
+    #[test]
+    fn a_frame_with_no_pointer_is_unchanged_by_the_setting() {
+        let on = settings(r#"{"enabled": true, "cursorDodge": true}"#);
+        let off = settings(r#"{"enabled": true}"#);
+        assert_eq!(
+            bubble_params(&on, &[], 0.0, geometry(), None)
+                .expect("bubble")
+                .dest,
+            bubble_params(&off, &[], 0.0, geometry(), None)
+                .expect("bubble")
+                .dest
+        );
     }
 
     #[test]
@@ -335,7 +554,8 @@ mod tests {
                 &settings(r#"{"enabled": true, "shape": "circle"}"#),
                 &[],
                 0.0,
-                geometry()
+                geometry(),
+                None
             )
             .expect("bubble")
             .corner_radius,
@@ -346,7 +566,8 @@ mod tests {
                 &settings(r#"{"enabled": true, "shape": "square"}"#),
                 &[],
                 0.0,
-                geometry()
+                geometry(),
+                None
             )
             .expect("bubble")
             .corner_radius,
@@ -361,6 +582,7 @@ mod tests {
             &[],
             0.0,
             geometry(),
+            None,
         )
         .expect("bubble");
         let plain = bubble_params(
@@ -368,6 +590,7 @@ mod tests {
             &[],
             0.0,
             geometry(),
+            None,
         )
         .expect("bubble");
         assert_eq!(mirrored.dest, plain.dest);
@@ -384,7 +607,7 @@ mod tests {
                 {"atSec": 10.0, "placement": {"x":0.8,"y":0.0,"width":0.2,"height":0.2}}],"#,
         );
         let at = |t: f64| {
-            bubble_params(&s, &[], t, geometry())
+            bubble_params(&s, &[], t, geometry(), None)
                 .expect("bubble")
                 .dest
                 .x
@@ -401,7 +624,7 @@ mod tests {
                 {"atSec": 4.0, "placement": {"x":0.5,"y":0.0,"width":0.2,"height":0.2}}],"#,
         );
         let at = |t: f64| {
-            bubble_params(&s, &[], t, geometry())
+            bubble_params(&s, &[], t, geometry(), None)
                 .expect("bubble")
                 .dest
                 .x
@@ -418,8 +641,8 @@ mod tests {
         );
         let region = zoom(r#"{"start":2.0,"end":8.0,"scale":2.0,"centerX":0.2,"centerY":0.5}"#);
         let regions = [&region];
-        let resting = bubble_params(&s, &regions, 0.0, geometry()).expect("bubble");
-        let grown = bubble_params(&s, &regions, 5.0, geometry()).expect("bubble");
+        let resting = bubble_params(&s, &regions, 0.0, geometry(), None).expect("bubble");
+        let grown = bubble_params(&s, &regions, 5.0, geometry(), None).expect("bubble");
         assert!(
             grown.dest.w > resting.dest.w,
             "{} did not grow past {}",
@@ -436,8 +659,8 @@ mod tests {
         );
         let region = zoom(r#"{"start":2.0,"end":8.0,"scale":2.0,"centerX":0.1,"centerY":0.5}"#);
         let regions = [&region];
-        let resting = bubble_params(&s, &regions, 0.0, geometry()).expect("bubble");
-        let drifted = bubble_params(&s, &regions, 5.0, geometry()).expect("bubble");
+        let resting = bubble_params(&s, &regions, 0.0, geometry(), None).expect("bubble");
+        let drifted = bubble_params(&s, &regions, 5.0, geometry(), None).expect("bubble");
         let resting_centre = resting.dest.x + resting.dest.w / 2.0;
         let drifted_centre = drifted.dest.x + drifted.dest.w / 2.0;
         assert!(
@@ -495,10 +718,10 @@ mod tests {
         let region = zoom(r#"{"start":2.0,"end":8.0,"scale":2.0,"centerX":0.2,"centerY":0.5}"#);
         let regions = [&region];
         assert_eq!(
-            bubble_params(&s, &regions, 0.0, geometry())
+            bubble_params(&s, &regions, 0.0, geometry(), None)
                 .expect("bubble")
                 .dest,
-            bubble_params(&s, &regions, 5.0, geometry())
+            bubble_params(&s, &regions, 5.0, geometry(), None)
                 .expect("bubble")
                 .dest
         );
@@ -512,10 +735,10 @@ mod tests {
         );
         let regions = [&region];
         assert_eq!(
-            bubble_params(&s, &regions, 0.0, geometry())
+            bubble_params(&s, &regions, 0.0, geometry(), None)
                 .expect("bubble")
                 .dest,
-            bubble_params(&s, &regions, 5.0, geometry())
+            bubble_params(&s, &regions, 5.0, geometry(), None)
                 .expect("bubble")
                 .dest
         );
@@ -524,14 +747,14 @@ mod tests {
     #[test]
     fn a_zero_strength_shadow_is_omitted() {
         let s = enabled(r#""shadow": 0.0,"#);
-        let b = bubble_params(&s, &[], 0.0, geometry()).expect("bubble");
+        let b = bubble_params(&s, &[], 0.0, geometry(), None).expect("bubble");
         assert!(bubble_shadow(&s, &b).is_none());
     }
 
     #[test]
     fn shadow_blur_offset_and_opacity_all_scale_with_strength() {
         let s = enabled(r#""shadow": 0.5,"#);
-        let b = bubble_params(&s, &[], 0.0, geometry()).expect("bubble");
+        let b = bubble_params(&s, &[], 0.0, geometry(), None).expect("bubble");
         let shadow = bubble_shadow(&s, &b).expect("shadow");
         let full = enabled(r#""shadow": 1.0,"#);
         let full_shadow = bubble_shadow(&full, &b).expect("shadow");

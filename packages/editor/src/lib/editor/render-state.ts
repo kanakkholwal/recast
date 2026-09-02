@@ -344,7 +344,8 @@ export type CameraLayout =
 	| { kind: "pip" }
 	| { kind: "splitH"; fraction: number; side: LayoutSide }
 	| { kind: "splitV"; fraction: number; side: LayoutSide }
-	| { kind: "screenOnly" };
+	| { kind: "screenOnly" }
+	| { kind: "cameraOnly" };
 
 /** Neither half may collapse; a split that rounds one side away is a worse
  *  `screenOnly` than `screenOnly` is. Mirrors Rust `MIN/MAX_SPLIT_FRACTION`. */
@@ -378,6 +379,14 @@ export interface CameraOverlaySettings {
 	keyframes: CameraKeyframe[];
 	/** Per-clip arrangement. Empty means the whole recording uses the bubble. */
 	clipLayouts: CameraClipLayout[];
+	/** Seconds a layout change takes at a clip boundary, in OUTPUT time. 0 is a hard cut. */
+	layoutTransition: number;
+	/** Easing for that move. */
+	layoutTransitionEasing: Easing;
+	/** Nudge the bubble aside when the pointer comes near it. */
+	cursorDodge: boolean;
+	/** 0..1 how far it gets nudged. */
+	cursorDodgeStrength: number;
 	/** Easing for the glide BETWEEN keyframes (the "animation smoothness"). */
 	keyframeEasing: Easing;
 	/** Drop-shadow strength 0..1 (0 = none). Scales blur + offset + opacity together. */

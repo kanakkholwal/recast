@@ -182,12 +182,19 @@ describe("layoutLabel", () => {
 			layoutLabel(splitH),
 			layoutLabel(splitV),
 			layoutLabel({ kind: "screenOnly" }),
+			layoutLabel({ kind: "cameraOnly" }),
 		];
-		expect(names).toEqual(["Bubble", "Side by side", "Stacked", "Screen only"]);
+		expect(names).toEqual(["Bubble", "Side by side", "Stacked", "Screen only", "Camera only"]);
 		expect(new Set(names).size).toBe(names.length);
 	});
 
 	it("covers every layout the union allows", () => {
-		expect(LAYOUT_LABELS.map((l) => l.kind)).toEqual(["pip", "splitH", "splitV", "screenOnly"]);
+		expect(LAYOUT_LABELS.map((l) => l.kind)).toEqual([
+			"pip",
+			"splitH",
+			"splitV",
+			"screenOnly",
+			"cameraOnly",
+		]);
 	});
 });
