@@ -15,18 +15,6 @@ pub struct LayoutRects {
     pub camera_opacity: f32,
 }
 
-/// The layout in force at `source_time`, or `Pip` when nothing is authored.
-/// Latest start at or before the time wins, matching how a clip's other
-/// per-segment data resolves.
-#[must_use]
-pub fn layout_at(clip_layouts: &[CameraClipLayout], source_time: f64) -> CameraLayout {
-    clip_layouts
-        .iter()
-        .filter(|c| c.start <= source_time)
-        .max_by(|a, b| a.start.total_cmp(&b.start))
-        .map_or(CameraLayout::Pip, |c| c.layout)
-}
-
 /// Shrinks `into` to `aspect` and centres it. Used for the SCREEN in a split:
 /// cropping to fill would hide the edges of what is being demonstrated, and a
 /// tutorial cannot afford to lose the side of a terminal.
@@ -400,39 +388,6 @@ mod tests {
         let b = resolve(split(0.5, LayoutSide::Start, false), geometry(), None, 1.0);
         assert_eq!(lerp(a, b, -3.0), a);
         assert_eq!(lerp(a, b, 7.0), b);
-    }
-
-    #[test]
-    fn no_authored_layout_is_the_bubble_every_project_already_had() {
-        assert_eq!(layout_at(&[], 5.0), CameraLayout::Pip);
-    }
-
-    #[test]
-    fn the_latest_clip_at_or_before_the_time_wins() {
-        let clips = [
-            CameraClipLayout {
-                start: 0.0,
-                layout: CameraLayout::Pip,
-            },
-            CameraClipLayout {
-                start: 4.0,
-                layout: CameraLayout::ScreenOnly,
-            },
-        ];
-        assert_eq!(layout_at(&clips, 3.9), CameraLayout::Pip);
-        assert_eq!(layout_at(&clips, 4.0), CameraLayout::ScreenOnly);
-        assert_eq!(layout_at(&clips, 99.0), CameraLayout::ScreenOnly);
-    }
-
-    /// A clip authored after a trim can start later than the playhead ever goes
-    /// backwards to; before the first key the recording is still the bubble.
-    #[test]
-    fn a_time_before_every_clip_falls_back_to_the_bubble() {
-        let clips = [CameraClipLayout {
-            start: 4.0,
-            layout: CameraLayout::ScreenOnly,
-        }];
-        assert_eq!(layout_at(&clips, 1.0), CameraLayout::Pip);
     }
 
     #[test]

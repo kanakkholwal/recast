@@ -28,6 +28,7 @@ import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
 import { resolveBackgroundSrc } from "./background-source";
 import { buildPressEvents, type PressEvent } from "./cursor-animation.logic";
 import {
+	cameraStall,
 	type CursorSampleJS,
 	classifyMbError,
 	type IdlePeriodJS,
@@ -590,6 +591,7 @@ function draw() {
 			return;
 		}
 		hasRenderedFrame = true;
+		reportCameraStall();
 		if (!isReady) isReady = true;
 		const finishedAt = performance.now();
 		engineFrameMs.push(finishedAt - engineStartedAt);
@@ -735,6 +737,25 @@ $effect(() => {
 /** Version of the cursor track last handed to the engine. Stringifying a
  *  225-second track every frame would cost more than the composite. */
 let engineCursorSignature = "";
+
+// The camera silently missing is the shape of bug this codebase keeps finding, so the preview says which link broke rather than drawing nothing.
+let loggedCameraStall = false;
+function reportCameraStall() {
+	if (loggedCameraStall || !engineDriver) return;
+	const reason = cameraStall({
+		enabled: store.cameraOverlay.enabled,
+		hasSrc: Boolean(cameraSrc),
+		elementMounted: Boolean(cameraEl),
+		readyState: cameraEl?.readyState ?? 0,
+		videoWidth: cameraEl?.videoWidth ?? 0,
+		gated: cameraFrameGated,
+		frameReady: cameraFrameReady,
+		boundInEngine: engineDriver.hasCameraFrame(),
+	});
+	if (!reason) return;
+	loggedCameraStall = true;
+	console.warn(`preview: the camera is enabled but not visible - ${reason}`);
+}
 
 /** One slot, uploaded and bound in the same tick: the element is a seek-only
  *  transport, so there is no decode stream to buffer. */

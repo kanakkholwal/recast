@@ -22,6 +22,30 @@ export type CursorSampleJS = {
 
 export type IdlePeriodJS = { startUs: number; endUs: number };
 
+/** Why the camera is not on screen, or null when it is. Ordered by how early
+ *  the chain breaks, so the first true answer is the one to act on. */
+export function cameraStall(state: {
+	enabled: boolean;
+	hasSrc: boolean;
+	elementMounted: boolean;
+	readyState: number;
+	videoWidth: number;
+	gated: boolean;
+	frameReady: boolean;
+	boundInEngine: boolean;
+}): string | null {
+	if (!state.enabled) return null;
+	if (!state.hasSrc) return "no camera file is attached to this project";
+	if (!state.elementMounted) return "the camera element never mounted";
+	if (state.readyState < 2)
+		return `the camera file has not decoded (readyState ${state.readyState})`;
+	if (state.videoWidth === 0) return "the camera file reports a zero width";
+	// A bound frame keeps drawing between presentations, so the gate is only a stall while nothing has ever been bound.
+	if (state.boundInEngine) return null;
+	if (state.gated && !state.frameReady) return "no new camera frame has been presented yet";
+	return "frames were uploaded but the engine bound none of them";
+}
+
 export interface ZoomState {
 	scale: number;
 	cx: number;

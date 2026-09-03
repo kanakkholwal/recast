@@ -7,7 +7,7 @@
  * radius/ring combinations had drifted in before this existed.
  */
 export const DIALOG_SURFACE =
-	"overflow-hidden rounded-xl p-0! ring-1 ring-border/60 shadow-(--shadow-craft-xl)";
+	"overflow-hidden rounded-xl p-0! ring-1 ring-border/50 shadow-(--shadow-craft-floating)";
 
 /** Header: flush on the surface, no divider. Copy carries the separation. */
 export const DIALOG_HEADER = "space-y-0 px-5 pt-5 text-left";

@@ -135,10 +135,10 @@ function confirm() {
 	</div>
 
 	{#snippet footer()}
-		<Button type="button" variant="ghost" size="xs" onclick={() => onOpenChange?.(false)}>
+		<Button type="button" variant="ghost" size="sm" onclick={() => onOpenChange?.(false)}>
 			Cancel
 		</Button>
-		<Button type="button" size="xs" class="gap-2" disabled={!chosen} onclick={confirm}>
+		<Button type="button" size="sm" class="gap-2" disabled={!chosen} onclick={confirm}>
 			Share here
 			<Send class="size-3.5" />
 		</Button>

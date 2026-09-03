@@ -228,6 +228,123 @@ fn close(got: [u8; 4], want: [u8; 4], tolerance: u8) -> bool {
         .all(|(g, w)| g.abs_diff(w) <= tolerance)
 }
 
+/// Reported: the camera is never visible in the preview, not even in a
+/// camera-only layout. Preview and export share this compositor, so if the
+/// bubble lands here the fault is in whoever binds the texture.
+#[test]
+fn the_camera_draws_over_the_screen_rather_than_under_it() {
+    let Some(ctx) = context() else { return };
+    let scene = scene_with(r#""cameraOverlay": {"enabled": true},"#);
+    let ev = Evaluator::new(
+        &scene,
+        SourceGeometry {
+            width: SRC_W,
+            height: SRC_H,
+        },
+    );
+    let params = ev.evaluate(&scene, 0.0);
+    let (width, height) = (params.geometry.canvas_w, params.geometry.canvas_h);
+
+    let mut compositor = Compositor::new(ctx).expect("compositor");
+    let target = compositor.output_texture(width, height);
+    let screen = source_texture(ctx);
+    let screen_view = screen.create_view(&Default::default());
+    let camera = solid_texture(ctx, [0, 0, 255, 255]);
+    let camera_view = camera.create_view(&Default::default());
+
+    let ids: Vec<(recast_scene::LayerId, bool)> = scene
+        .layers
+        .iter()
+        .filter_map(|l| match &l.source {
+            LayerSource::Screen => Some((l.id, false)),
+            LayerSource::Camera(_) => Some((l.id, true)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ids.len(), 2, "the fixture has no camera layer");
+
+    let mut inputs = FrameInputs::new();
+    for (id, is_camera) in &ids {
+        inputs.set(
+            *id,
+            LayerInput {
+                view: if *is_camera {
+                    &camera_view
+                } else {
+                    &screen_view
+                },
+                needs_srgb_decode: true,
+            },
+        );
+    }
+    compositor.render(&params, &inputs, &target.create_view(&Default::default()));
+    let out = Rendered {
+        pixels: read_back(ctx, &target, width, height),
+        width,
+        height,
+    };
+
+    let bubble = params
+        .layers
+        .iter()
+        .find(|p| p.id == ids.iter().find(|(_, c)| *c).expect("camera").0)
+        .expect("the camera was evaluated");
+    assert!(bubble.visible, "the camera layer was evaluated as hidden");
+    assert!(
+        bubble.dest.w > 1.0,
+        "the bubble has no area: {:?}",
+        bubble.dest
+    );
+
+    let centre = out.at(
+        (bubble.dest.x + bubble.dest.w / 2.0) as u32,
+        (bubble.dest.y + bubble.dest.h / 2.0) as u32,
+    );
+    assert!(
+        close(centre, [0, 0, 255, 255], 8),
+        "the bubble centre was {centre:?}, so the camera is not on top of the screen"
+    );
+}
+
+/// A solid texture the size of the source, for telling one layer from another.
+fn solid_texture(ctx: &GpuContext, colour: [u8; 4]) -> wgpu::Texture {
+    let pixels = colour.repeat((SRC_W * SRC_H) as usize);
+    let texture = ctx.device().create_texture(&wgpu::TextureDescriptor {
+        label: Some("solid"),
+        size: wgpu::Extent3d {
+            width: SRC_W,
+            height: SRC_H,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    ctx.queue().write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &pixels,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(SRC_W * 4),
+            rows_per_image: Some(SRC_H),
+        },
+        wgpu::Extent3d {
+            width: SRC_W,
+            height: SRC_H,
+            depth_or_array_layers: 1,
+        },
+    );
+    texture
+}
+
 #[test]
 fn a_solid_background_renders_the_authored_colour() {
     let Some(ctx) = context() else { return };

@@ -22,20 +22,20 @@ function done() {
 </script>
 
 <div
-	class="fixed inset-0 z-[100] flex items-center justify-center bg-background/70 backdrop-blur-sm"
+	class="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm"
 	role="dialog"
 	aria-modal="true"
 	aria-label="Privacy preferences"
 >
 	<div
-		class="mx-4 w-full max-w-md rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl backdrop-blur"
+		class="mx-4 w-full max-w-md rounded-xl border border-border/50 bg-card p-6 shadow-(--shadow-craft-floating) backdrop-blur"
 	>
 		<div
 			class="flex size-10 items-center justify-center rounded-xl bg-muted/60 text-foreground ring-1 ring-inset ring-border/40"
 		>
 			<ShieldCheck class="size-5" />
 		</div>
-		<h2 class="mt-4 text-[17px] font-semibold tracking-tight text-foreground">
+		<h2 class="mt-4 text-[15px] font-semibold tracking-tight text-foreground">
 			Help improve Recast
 		</h2>
 		<p class="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">

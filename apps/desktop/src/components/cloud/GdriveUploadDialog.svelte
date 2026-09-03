@@ -99,7 +99,13 @@ async function openLink() {
 			: status === "cancelled"
 				? Ban
 				: BrandGoogleDrive}
-	tone={status === "error" ? "destructive" : status === "cancelled" ? "muted" : "default"}
+	tone={status === "error"
+		? "destructive"
+		: status === "complete"
+			? "success"
+			: status === "cancelled"
+				? "muted"
+				: "default"}
 	widthClass="sm:max-w-lg"
 	onOpenChange={(v) => {
 		if (v) return;

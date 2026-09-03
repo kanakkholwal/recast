@@ -832,11 +832,11 @@ const capabilities: Cap[] = [
       )}
     >
       <header
-        class="flex items-center justify-between gap-3 border-b border-border/40 px-5 py-4"
+        class="flex items-center justify-between gap-3 px-5 pt-5 pb-2"
       >
         <div class="min-w-0">
           <Dialog.Title
-            class="text-[14px] font-semibold tracking-tight text-foreground"
+            class="text-[15px] font-semibold tracking-tight text-foreground"
           >
             {mode === "edit" ? "Edit profile" : "New profile"}
           </Dialog.Title>
@@ -1000,12 +1000,12 @@ const capabilities: Cap[] = [
       {/if}
 
       <footer
-        class="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
+        class="flex items-center justify-between gap-2 px-5 pb-5 pt-2"
       >
         {#if mode === "edit"}
           <Button
             variant="destructive_soft"
-            size="xs"
+            size="sm"
             class="gap-1.5"
             onclick={() => {
               if (draft) deleteTarget = draft;
@@ -1018,12 +1018,12 @@ const capabilities: Cap[] = [
           <span></span>
         {/if}
         <div class="flex items-center gap-2">
-          <Button variant="ghost" size="xs" onclick={requestClose}
+          <Button variant="ghost" size="sm" onclick={requestClose}
             >Cancel</Button
           >
           <Button
             variant="default"
-            size="xs"
+            size="sm"
             class="gap-2"
             onclick={finishEditing}
           >

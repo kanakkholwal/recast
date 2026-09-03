@@ -4,6 +4,7 @@ import type { Easing } from "../lib/easing/cubic-bezier";
 import { LINEAR } from "../lib/easing/cubic-bezier";
 import type { ZoomRegion } from "../stores/editor-store.svelte";
 import {
+	cameraStall,
 	type CursorSampleJS,
 	classifyMbError,
 	evaluateZoomAt,
@@ -276,5 +277,48 @@ describe("zoom ramp parity with the Rust scene", () => {
 			const inForce = c.t > c.start && c.t < c.end;
 			expect(inForce ? got : 1).toBeCloseTo(c.expect, 5);
 		}
+	});
+});
+
+describe("cameraStall", () => {
+	const ok = {
+		enabled: true,
+		hasSrc: true,
+		elementMounted: true,
+		readyState: 4,
+		videoWidth: 1280,
+		gated: true,
+		frameReady: false,
+		boundInEngine: true,
+	};
+
+	it("says nothing when the camera is drawing", () => {
+		expect(cameraStall(ok)).toBeNull();
+	});
+
+	// A camera nobody asked for is not a fault, so it must stay silent.
+	it("says nothing when the camera is switched off", () => {
+		expect(cameraStall({ ...ok, enabled: false, hasSrc: false })).toBeNull();
+	});
+
+	it("names each broken link, earliest first", () => {
+		expect(cameraStall({ ...ok, hasSrc: false })).toMatch(/no camera file/);
+		expect(cameraStall({ ...ok, elementMounted: false })).toMatch(/never mounted/);
+		expect(cameraStall({ ...ok, readyState: 1 })).toMatch(/readyState 1/);
+		expect(cameraStall({ ...ok, videoWidth: 0 })).toMatch(/zero width/);
+		expect(cameraStall({ ...ok, boundInEngine: false, frameReady: true })).toMatch(/bound none/);
+	});
+
+	// The gate is normal between presented frames; it only counts as a stall while nothing has ever been bound.
+	it("reports the gate only when it is the earliest break", () => {
+		expect(cameraStall({ ...ok, frameReady: false, boundInEngine: true })).toBeNull();
+		expect(cameraStall({ ...ok, gated: true, frameReady: false, boundInEngine: false })).toMatch(
+			/no new camera frame/,
+		);
+	});
+
+	// Reported symptom: the file is attached and decoding, but nothing shows.
+	it("blames the engine when every host-side link is healthy", () => {
+		expect(cameraStall({ ...ok, boundInEngine: false, frameReady: true })).toMatch(/bound none/);
 	});
 });

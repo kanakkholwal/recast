@@ -183,20 +183,20 @@ async function onToggle(next: boolean) {
     showCloseButton={false}
     class={cn("top-[10%] w-[min(92vw,32rem)] max-w-none translate-y-0 gap-0 sm:max-w-none", DIALOG_SURFACE)}
   >
-    <Dialog.Header class="space-y-0 border-b border-border px-4 py-2.5 text-left">
-      <div class="flex items-center gap-2.5">
+    <Dialog.Header class="space-y-0 px-5 pt-5 pb-1 text-left">
+      <div class="flex items-center gap-3">
         {#if entry?.iconUrl}
-          <img src={entry.iconUrl} alt="" loading="lazy" class="size-8 shrink-0 rounded-md object-cover" />
+          <img src={entry.iconUrl} alt="" loading="lazy" class="size-9 shrink-0 rounded-xl object-cover" />
         {:else}
           <div
-            class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/50 bg-muted/50"
+            class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground ring-1 ring-inset ring-border/50"
           >
-            <Blocks class="size-4 text-muted-foreground" />
+            <Blocks class="size-4" />
           </div>
         {/if}
         <div class="min-w-0 flex-1">
           <Dialog.Title
-            class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
+            class="flex items-center gap-1.5 text-[15px] font-semibold tracking-tight text-foreground"
           >
             <span class="truncate">{name}</span>
             {#if installedVersion}
@@ -458,7 +458,7 @@ async function onToggle(next: boolean) {
     </div>
 
     <footer
-      class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+      class="flex items-center justify-between gap-2 px-5 pb-4 pt-2 text-[11px] text-muted-foreground"
     >
       <div class="flex items-center gap-3">
         {#if isInstalled}

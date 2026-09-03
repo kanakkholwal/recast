@@ -1489,6 +1489,115 @@ mod live {
         vec![recast_scene::v1::nodes::CameraClipLayout { start, layout }]
     }
 
+    /// Every feature at once, which no single-feature test covers.
+    ///
+    /// The interactions are where this breaks: a cut moves the clip a layout is
+    /// keyed to, a speed change warps the axis a transition is timed on, and a
+    /// zoom moves the card the cursor and annotations are anchored to. The
+    /// oracle is the OUTPUT DURATION, which only comes out right if the time
+    /// map, the walk and the encoder all agree.
+    #[test]
+    fn cuts_speed_zoom_and_a_layout_compose_into_one_export() {
+        use recast_scene::v1::nodes::{CameraLayout, LayoutSide};
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("compose");
+        let input = scratch.0.join("in.mp4");
+        let camera = scratch.0.join("cam.mp4");
+        record(&ctx, &input, 1.0);
+        record_luma(&ctx, &camera, 1.0, 40);
+
+        let track_path = scratch.0.join("cursor.json");
+        let mut track = crate::cursor::CursorTrack::default();
+        for step in 0..40 {
+            track.samples.push(crate::cursor::CursorSample {
+                timestamp_us: step * 25_000,
+                x: (SRC_W / 2) as i32,
+                y: (SRC_H / 2) as i32,
+                velocity_x: 0.0,
+                velocity_y: 0.0,
+                visible: true,
+                left_down: false,
+                right_down: false,
+            });
+        }
+        crate::cursor::write_cursor_track(&track_path, &track).expect("the track writes");
+
+        let zoom = serde_json::json!({
+            "start": 0.1, "end": 0.4, "scale": 1.8,
+            "rampIn": 0.1, "rampOut": 0.1, "centerX": 0.3, "centerY": 0.7
+        });
+        let mut state = RenderState {
+            trim_start: 0.0,
+            trim_end: 1.0,
+            cursor_enabled: true,
+            cursor_size: 40.0,
+            // 0.2s removed, so the clip after it starts at original 0.5 and is SEEN at output 0.3.
+            cuts: vec![
+                serde_json::from_value(serde_json::json!({"start": 0.3, "end": 0.5})).expect("cut"),
+            ],
+            split_points: vec![0.5],
+            zoom_regions: vec![serde_json::from_value(zoom).expect("zoom")],
+            ..Default::default()
+        };
+        state.camera_overlay.enabled = true;
+        state.camera_overlay.layout_transition = 0.2;
+        state.camera_overlay.clip_layouts = vec![
+            recast_scene::v1::nodes::CameraClipLayout {
+                start: 0.0,
+                layout: CameraLayout::Pip,
+            },
+            recast_scene::v1::nodes::CameraClipLayout {
+                start: 0.5,
+                layout: CameraLayout::SplitH {
+                    fraction: 0.4,
+                    side: LayoutSide::Start,
+                },
+            },
+        ];
+
+        let output = scratch.0.join("out.mp4");
+        let mut composed = spec(&input, &output);
+        composed.cursor_track = Some(&track_path);
+        composed.camera = Some((&camera, 0.0));
+        let report = export_video(&state, &composed, &mut never_cancels).expect("the export runs");
+
+        // 1.0s of recording with 0.2s cut out, at 30fps.
+        let expected = FrameWalk::new(0.8, (30, 1)).len();
+        assert_eq!(
+            report.frames, expected,
+            "the cut did not reach the walk: {} frames for 0.8s of output",
+            report.frames
+        );
+
+        let mut reader = recast_codec_mf::VideoReader::open(&output).expect("the export opens");
+        let mut decoded = 0u64;
+        while reader.next_frame().expect("decode").is_some() {
+            decoded += 1;
+        }
+        assert_eq!(
+            decoded, report.frames,
+            "frames went missing on the way to the file"
+        );
+
+        // And the layout still reached it, with everything else in play.
+        let mut plain = state.clone();
+        plain.camera_overlay.clip_layouts.clear();
+        let plain_out = scratch.0.join("plain.mp4");
+        let mut plain_spec = spec(&input, &plain_out);
+        plain_spec.cursor_track = Some(&track_path);
+        plain_spec.camera = Some((&camera, 0.0));
+        export_video(&plain, &plain_spec, &mut never_cancels).expect("the plain export runs");
+
+        // Signal here is 0.73 of the frame against a 0.004 noise floor, the widest margin of any of these.
+        let delta =
+            crate::export_parity::compare_files(&plain_out, &output).expect("both files decode");
+        assert!(
+            delta.drew_something(DRAWN),
+            "the split never reached a composed export ({delta:?})"
+        );
+    }
+
     /// Evaluator tests prove the rects; only an export proves they survive the
     /// frame loop into a file. E-2 is exactly this gap: layers that resolved
     /// correctly and were never bound.

@@ -1,10 +1,8 @@
 <script lang="ts">
-import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { AiWand, ArrowRight } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import * as Dialog from "@recast/ui/dialog";
 import { Markdown } from "@recast/ui/markdown";
-import { cn } from "@recast/ui/utils";
 import { config } from "$constants/app";
 import { groupChanges, KIND_META, LATEST_RELEASE } from "$constants/changelog";
 import { whatsNew } from "$lib/stores/whats-new.svelte";
@@ -17,108 +15,62 @@ function handleOpenChange(v: boolean) {
 }
 </script>
 
-<Dialog.Root open={whatsNew.open} onOpenChange={handleOpenChange}>
-  <Dialog.Content
-    class={cn("max-w-xl", DIALOG_SURFACE)}
-  >
-    <Dialog.Header class="sr-only">
-      <Dialog.Title>What's new in Recast {LATEST_RELEASE.version}</Dialog.Title>
-      <Dialog.Description>
-        {LATEST_RELEASE.title ?? "Latest release notes"}
-      </Dialog.Description>
-    </Dialog.Header>
+<DialogShell
+	open={whatsNew.open}
+	onOpenChange={handleOpenChange}
+	title={LATEST_RELEASE.title ?? `Recast ${LATEST_RELEASE.version}`}
+	subtitle={`What's new · v${LATEST_RELEASE.version} · ${LATEST_RELEASE.date}`}
+	icon={AiWand}
+	widthClass="sm:max-w-xl"
+	bodyClass="max-h-[55vh] scrollbar-transparent"
+>
+	{#if LATEST_RELEASE.highlights?.length}
+		<ul class="mb-4 flex flex-col gap-2">
+			{#each LATEST_RELEASE.highlights as h (h)}
+				<li
+					class="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-[12px] leading-relaxed text-foreground"
+				>
+					<AiWand class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+					<span><Markdown inline source={h} /></span>
+				</li>
+			{/each}
+		</ul>
+	{/if}
 
-    <header
-      class="flex items-start gap-3 border-b border-border/50 bg-card/50 px-5 py-4"
-    >
-      <div
-        class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
-      >
-        <AiWand class="size-4" />
-      </div>
-      <div class="min-w-0 flex-1">
-        <div
-          class="flex flex-wrap items-center gap-2 text-[10.5px] font-medium text-muted-foreground"
-        >
-          <span>What's new</span>
-          <span class="text-muted-foreground/40">·</span>
-          <span class="font-mono normal-case tracking-normal">
-            v{LATEST_RELEASE.version}
-          </span>
-          <span class="text-muted-foreground/40">·</span>
-          <span class="font-medium normal-case tracking-normal">
-            {LATEST_RELEASE.date}
-          </span>
-        </div>
-        <h2
-          class="mt-1 text-balance text-[16px] font-semibold leading-tight tracking-tight text-foreground"
-        >
-          {LATEST_RELEASE.title ?? `Recast ${LATEST_RELEASE.version}`}
-        </h2>
-      </div>
-    </header>
+	<div class="flex flex-col gap-4">
+		{#each grouped as [kind, items] (kind)}
+			{@const meta = KIND_META[kind]}
+			{@const Icon = meta.icon}
+			<section class="flex flex-col gap-1.5">
+				<div class="flex items-center gap-1.5 px-1">
+					<Icon class={`size-3.5 ${meta.tone}`} />
+					<span class="text-[10.5px] font-medium text-muted-foreground">
+						{meta.label}
+					</span>
+				</div>
+				<ul class="flex flex-col gap-1">
+					{#each items as it (it)}
+						<li
+							class="flex items-start gap-2 rounded-md px-1 py-1 text-[12px] leading-relaxed text-foreground/90"
+						>
+							<span
+								class="mt-1.5 size-1 shrink-0 rounded-full bg-foreground/30"
+								aria-hidden="true"
+							></span>
+							<span><Markdown inline source={it} /></span>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/each}
+	</div>
 
-    <div class="max-h-[55vh] overflow-y-auto scrollbar-transparent px-5 py-4">
-      {#if LATEST_RELEASE.highlights?.length}
-        <ul class="mb-4 flex flex-col gap-2">
-          {#each LATEST_RELEASE.highlights as h (h)}
-            <li
-              class="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-[12px] leading-relaxed text-foreground"
-            >
-              <AiWand class="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-              <span><Markdown inline source={h} /></span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-
-      <div class="flex flex-col gap-4">
-        {#each grouped as [kind, items] (kind)}
-          {@const meta = KIND_META[kind]}
-          {@const Icon = meta.icon}
-          <section class="flex flex-col gap-1.5">
-            <div class="flex items-center gap-1.5 px-1">
-              <Icon class={`size-3.5 ${meta.tone}`} />
-              <span
-                class="text-[10.5px] font-medium text-muted-foreground"
-              >
-                {meta.label}
-              </span>
-            </div>
-            <ul class="flex flex-col gap-1">
-              {#each items as it (it)}
-                <li
-                  class="flex items-start gap-2 rounded-md px-1 py-1 text-[12px] leading-relaxed text-foreground/90"
-                >
-                  <span
-                    class="mt-1.5 size-1 shrink-0 rounded-full bg-foreground/30"
-                    aria-hidden="true"
-                  ></span>
-                  <span><Markdown inline source={it} /></span>
-                </li>
-              {/each}
-            </ul>
-          </section>
-        {/each}
-      </div>
-    </div>
-
-    <footer
-      class="flex items-center justify-between gap-2 border-t border-border/50 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground"
-    >
-      <span class="px-1">{config.appName} · v{config.appVersion}</span>
-      <div class="flex items-center gap-1.5">
-        <Button
-          variant="ghost"
-          size="xs"
-          href="/whats-new"
-          onclick={() => whatsNew.dismiss()}
-        >
-          Full changelog
-          <ArrowRight class="ml-1 size-3" />
-        </Button>
-        <Button size="xs" onclick={() => whatsNew.dismiss()}>Got it</Button>
-      </div>
-    </footer>
-  </Dialog.Content>
-</Dialog.Root>
+	{#snippet footer()}
+		<span class="mr-auto text-[11px] text-muted-foreground">{config.appName} · v{config.appVersion}</span>
+		<Button variant="ghost" size="sm" href="/whats-new" onclick={() => whatsNew.dismiss()}>
+			Full changelog
+			<ArrowRight class="ml-1 size-3" />
+		</Button>
+		<Button size="sm" onclick={() => whatsNew.dismiss()}>Got it</Button>
+	{/snippet}
+</DialogShell>

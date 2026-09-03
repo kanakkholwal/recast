@@ -86,7 +86,7 @@ async function done() {
 	title={status === "complete" ? "Shared to Recast Cloud" : "Share to Recast Cloud"}
 	subtitle={fileName}
 	icon={status === "complete" ? Check : status === "error" ? AlertTriangle : Logo}
-	tone={status === "error" ? "destructive" : "default"}
+	tone={status === "error" ? "destructive" : status === "complete" ? "success" : "default"}
 	widthClass="sm:max-w-lg"
 	onOpenChange={(v) => {
 		if (v) return;
