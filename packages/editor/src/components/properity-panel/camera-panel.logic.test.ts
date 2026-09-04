@@ -4,6 +4,7 @@ import { DEFAULT_SPLIT_FRACTION } from "../../lib/timeline/camera-clip-layout";
 import {
 	CAMERA_LAYOUT_OPTIONS,
 	cameraAvailability,
+	cameraControls,
 	dotStyleFor,
 	labelFor,
 	layoutForKind,
@@ -146,5 +147,45 @@ describe("CAMERA_LAYOUT_OPTIONS", () => {
 			"screenOnly",
 			"cameraOnly",
 		]);
+	});
+});
+
+describe("cameraControls", () => {
+	const pip = { kind: "pip" } as CameraLayout;
+	const splitH = { kind: "splitH", fraction: 0.4, side: "start" } as CameraLayout;
+
+	it("offers every bubble control on a bubble clip", () => {
+		const c = cameraControls(pip, true);
+		expect([c.bubble, c.motion, c.dodge]).toEqual([true, true, true]);
+		expect(c.reason).toBeNull();
+	});
+
+	// The split writes state nothing reads: the layout owns the rect, not the placement.
+	it("turns the bubble controls off for a split and says which clip did it", () => {
+		const c = cameraControls(splitH, true);
+		expect([c.bubble, c.motion, c.dodge]).toEqual([false, false, false]);
+		expect(c.reason).toMatch(/split/i);
+	});
+
+	it.each([
+		["screenOnly", /hides the camera/i],
+		["cameraOnly", /whole frame/i],
+	])("explains why %s ignores the bubble", (kind, expected) => {
+		const c = cameraControls({ kind } as CameraLayout, true);
+		expect(c.bubble).toBe(false);
+		expect(c.reason).toMatch(expected);
+	});
+
+	// The dodge reads the pointer the frame draws, so no pointer means no dodge.
+	it("turns dodging off when the pointer is hidden, with its own reason", () => {
+		const c = cameraControls(pip, false);
+		expect(c.dodge).toBe(false);
+		expect(c.bubble).toBe(true);
+		expect(c.dodgeReason).toMatch(/pointer/i);
+		expect(c.reason).toBeNull();
+	});
+
+	it("keeps the layout reason for dodging when the layout is the cause", () => {
+		expect(cameraControls(splitH, false).dodgeReason).toBe(cameraControls(splitH, true).reason);
 	});
 });

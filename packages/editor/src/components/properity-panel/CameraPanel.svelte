@@ -18,6 +18,7 @@ import { cameraPlacementAt } from "../_components/camera-overlay.logic";
 import {
 	CAMERA_LAYOUT_OPTIONS,
 	cameraAvailability,
+	cameraControls,
 	dotStyleFor,
 	labelFor,
 	layoutForKind,
@@ -115,6 +116,9 @@ const presetGrid: Array<CameraPositionPreset | null> = [
 // The clip these controls edit: the selected one, else the one under the playhead.
 const layout = $derived(store.currentCameraLayout());
 
+// A split or a full-frame camera ignores the bubble's own geometry, so the controls for it say so instead of writing state nothing reads.
+const controls = $derived(cameraControls(layout, store.cursorSettings.enabled));
+
 const shapeOptions = [
 	{ id: "circle" as const, label: "Circle" },
 	{ id: "rounded" as const, label: "Rounded" },
@@ -163,6 +167,8 @@ const shapeOptions = [
       title="Position"
       hint="Pick a corner or edge anchor. Drag the bubble in the preview for a custom position."
       flush
+      disabled={!controls.bubble}
+      disabledReason={controls.reason ?? undefined}
     >
       {#snippet action()}
         <span class="font-mono text-[10px] tracking-tight text-foreground/80">
@@ -268,8 +274,10 @@ const shapeOptions = [
 
     <PanelSection
       title="Dodge the pointer"
-      hint="Nudge the bubble aside when the pointer comes near it, so it never sits on top of what you are pointing at. The nudge fades out with distance rather than snapping."
+      hint="Nudge the bubble aside when the pointer comes near it, so it never sits on top of what you are pointing at. The nudge fades out with distance rather than snapping, and the drag handle stays on the position you set rather than following the nudge."
       flush
+      disabled={!controls.dodge}
+      disabledReason={controls.dodgeReason ?? undefined}
     >
       {#snippet action()}
         <SegmentedToggle
@@ -282,7 +290,7 @@ const shapeOptions = [
           }}
         />
       {/snippet}
-      {#if store.cameraOverlay.cursorDodge}
+      {#if store.cameraOverlay.cursorDodge && controls.dodge}
         <SliderRow
           label="Strength"
           value={Math.round(store.cameraOverlay.cursorDodgeStrength * 100)}
@@ -300,6 +308,8 @@ const shapeOptions = [
       title="Per-cut position"
       hint="Give each cut its own camera position; the bubble glides between them. Scrub to a cut, then pick a preset or drag the bubble."
       flush
+      disabled={!controls.motion}
+      disabledReason={controls.reason ?? undefined}
     >
       {#snippet action()}
         <SegmentedToggle
@@ -347,6 +357,8 @@ const shapeOptions = [
       title="Size & shape"
       hint="Bubble width as a percentage of the frame (drag its corners in the preview; height matches width), plus its outline shape."
       flush
+      disabled={!controls.bubble}
+      disabledReason={controls.reason ?? undefined}
     >
       {@const sizePct = Math.round(currentBase.width * 100)}
       <PropRow label="Width">
@@ -403,6 +415,8 @@ const shapeOptions = [
       title="Grow on zoom"
       hint="When a zoom/focus region ramps in, the camera grows and drifts away from the focus so it never covers the zoomed area."
       flush
+      disabled={!controls.motion}
+      disabledReason={controls.reason ?? undefined}
     >
       {#snippet action()}
         <SegmentedToggle
@@ -415,7 +429,7 @@ const shapeOptions = [
           }}
         />
       {/snippet}
-      {#if store.cameraOverlay.zoomFollow}
+      {#if store.cameraOverlay.zoomFollow && controls.motion}
         <SliderRow
           label="Strength"
           value={Math.round(store.cameraOverlay.zoomFollowStrength * 100)}
@@ -452,7 +466,13 @@ const shapeOptions = [
       {/if}
     </PanelSection>
 
-    <PanelSection title="Shadow" hint="Drop shadow cast by the bubble. 0% turns it off." flush>
+    <PanelSection
+      title="Shadow"
+      hint="Drop shadow cast by the bubble. 0% turns it off."
+      flush
+      disabled={!controls.bubble}
+      disabledReason={controls.reason ?? undefined}
+    >
       <SliderRow
         label="Shadow"
         value={Math.round(store.cameraOverlay.shadow * 100)}
@@ -465,7 +485,7 @@ const shapeOptions = [
       />
     </PanelSection>
 
-    {#if perCut}
+    {#if perCut && controls.motion}
       <PanelSection
         title="Animation smoothness"
         hint="How the camera eases as it glides between per-cut positions."

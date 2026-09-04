@@ -6,8 +6,9 @@ use recast_scene::{Effect, LayerId, LayerSource, Scene};
 use recast_time::{original_to_output, output_to_original, Segment, TimeMap};
 
 use crate::annotation::{annotation_params, sorted_visible, AnnotationParams};
-use crate::camera::{bubble_params, bubble_shadow};
+use crate::camera::{bubble_params, bubble_shadow, BubbleParams};
 use crate::geometry::{canvas_geometry, CanvasGeometry};
+use crate::layout::ANCHOR_EPS;
 
 /// A 2x3 row-major affine, applied to normalised source UVs.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -131,6 +132,20 @@ pub struct CursorDraw {
     pub highlight: Option<HighlightDraw>,
 }
 
+impl CursorDraw {
+    /// Scales the pointer and its click ring by the screen's own opacity, so a
+    /// layout easing the screen away carries them with it.
+    #[must_use]
+    pub fn faded_by(mut self, alpha: f32) -> Self {
+        self.alpha *= alpha;
+        self.highlight = self.highlight.map(|mut h| {
+            h.alpha *= alpha;
+            h
+        });
+        self
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HighlightDraw {
     pub x: f32,
@@ -244,9 +259,13 @@ impl LayoutBlend {
 
 /// The scene's camera layer decides the layout for every layer, since a split
 /// places the screen too.
+///
+/// A hidden layer decides nothing. Turning the camera off has to give the
+/// screen the whole frame back, or a `CameraOnly` clip renders as background
+/// and a split leaves half of it permanently empty.
 fn camera_settings(scene: &Scene) -> Option<&recast_scene::v1::nodes::CameraOverlaySettings> {
     scene.layers.iter().find_map(|l| match &l.source {
-        LayerSource::Camera(settings) => Some(&**settings),
+        LayerSource::Camera(settings) if !l.hidden => Some(&**settings),
         _ => None,
     })
 }
@@ -306,6 +325,8 @@ impl Evaluator {
         let source_time = output_to_original(&self.time_map, output_time);
 
         let cursor = self.cursor_placement(scene, source_time);
+        // A faded-out pointer is reported at (0, 0) so its click ring can still draw; the dodge must not read that corner as somewhere the pointer is.
+        let dodge_at = cursor.filter(|c| c.alpha > 0.0).map(|c| (c.x, c.y));
         let focus = scene.flags.focus;
         // Resolved before the walk: a split moves the SCREEN too, so the layout has to be known before either layer is placed.
         let layout = self.layout_blend(scene, source_time, output_time);
@@ -321,6 +342,8 @@ impl Evaluator {
             },
             Affine2::IDENTITY,
         );
+        // The pointer and annotations are anchored to the screen card, so a layout that hides the screen has to take them with it rather than leaving them over the camera.
+        let mut card_alpha = 1.0f32;
 
         for layer in &scene.layers {
             match &layer.source {
@@ -346,30 +369,36 @@ impl Evaluator {
                         true => scene.zoom_regions(),
                         false => Vec::new(),
                     };
-                    let bubble = bubble_params(
-                        settings,
-                        &follow,
-                        source_time,
-                        self.geometry,
-                        cursor.map(|c| (c.x, c.y)),
-                    );
+                    let bubble =
+                        bubble_params(settings, &follow, source_time, self.geometry, dodge_at);
                     if let Some(bubble) = &bubble {
                         params.dest = bubble.dest;
                         params.corner_radius = bubble.corner_radius;
                         params.transform = bubble.transform;
-                        if params.visible {
-                            params.shadow = bubble_shadow(settings, bubble);
-                        }
                     } else {
                         params.visible = false;
                     }
-                    if let Some(rects) = self.layout_rects(&layout, bubble.map(|b| b.dest)) {
-                        params.dest = rects.camera;
-                        params.opacity *= rects.camera_opacity;
-                        // A half of the frame is not a floating bubble: it neither rounds nor casts.
-                        params.corner_radius = 0.0;
-                        params.shadow = None;
-                        params.visible = params.visible && rects.camera_opacity > 0.0;
+                    // A half of the frame is not a floating bubble, so it neither rounds nor casts; the factor eases so the corners do not pop on the first frame of a move.
+                    let rounding = match self.layout_rects(&layout, bubble.map(|b| b.dest)) {
+                        Some(rects) => {
+                            params.dest = rects.camera;
+                            params.opacity *= rects.camera_opacity;
+                            params.corner_radius *= rects.camera_rounding;
+                            params.visible = params.visible && rects.camera_opacity > 0.0;
+                            rects.camera_rounding
+                        }
+                        None => 1.0,
+                    };
+                    if params.visible && rounding > 0.0 {
+                        let moved = BubbleParams {
+                            dest: params.dest,
+                            corner_radius: params.corner_radius,
+                            transform: params.transform,
+                        };
+                        params.shadow = bubble_shadow(settings, &moved).map(|mut shadow| {
+                            shadow.opacity *= rounding;
+                            shadow
+                        });
                     }
                     layers.push(params);
                 }
@@ -383,6 +412,10 @@ impl Evaluator {
                             params.visible = params.visible && rects.screen_opacity > 0.0;
                         }
                         card = (params.dest, params.transform);
+                        card_alpha = match params.visible {
+                            true => params.opacity.clamp(0.0, 1.0),
+                            false => 0.0,
+                        };
                         if params.visible {
                             params.shadow = shadow_params(layer, &params, self.geometry);
                         }
@@ -396,10 +429,22 @@ impl Evaluator {
             geometry: self.geometry,
             background,
             background_blur,
-            cursor_draw: cursor.and_then(|c| self.cursor_draw(scene, c, card.0, card.1)),
+            cursor_draw: match card_alpha > 0.0 {
+                true => cursor
+                    .and_then(|c| self.cursor_draw(scene, c, card.0, card.1))
+                    .map(|draw| draw.faded_by(card_alpha)),
+                false => None,
+            },
             cursor,
-            annotations: match scene.flags.annotations {
-                true => self.annotations(scene, source_time, card.0, card.1),
+            annotations: match scene.flags.annotations && card_alpha > 0.0 {
+                true => self
+                    .annotations(scene, source_time, card.0, card.1)
+                    .into_iter()
+                    .map(|mut a| {
+                        a.alpha *= card_alpha;
+                        a
+                    })
+                    .collect(),
                 false => Vec::new(),
             },
             layers,
@@ -412,7 +457,7 @@ impl Evaluator {
     fn layout_blend(&self, scene: &Scene, source_time: f64, output_time: f64) -> LayoutBlend {
         let settings = camera_settings(scene);
         let clips = settings.map_or(&[][..], |s| s.clip_layouts.as_slice());
-        let (to, from, start) = crate::layout::neighbours(clips, source_time);
+        let (to, from, start) = crate::layout::neighbours(clips, &self.segments, source_time);
         let duration = settings.map_or(0.0, |s| s.layout_transition);
         let (Some(from), Some(start)) = (from, start) else {
             return LayoutBlend { to, from: None };
@@ -675,7 +720,6 @@ impl Evaluator {
     }
 }
 
-const ANCHOR_EPS: f64 = 1e-4;
 const MIN_ANIM_MS: f64 = 100.0;
 const MAX_ANIM_MS: f64 = 2000.0;
 const DEFAULT_ANIM_MS: f64 = 500.0;
@@ -938,9 +982,7 @@ mod tests {
     }
 
     fn camera_scene(clip_layouts: &str) -> recast_scene::Scene {
-        scene_with(&format!(
-            r#""cameraOverlay": {{"enabled": true, "clipLayouts": {clip_layouts}}},"#
-        ))
+        camera_scene_with(clip_layouts, "")
     }
 
     /// Matched on the source kind: a background layer is neither, and it never
@@ -965,8 +1007,23 @@ mod tests {
     }
 
     fn camera_scene_with(clip_layouts: &str, extra: &str) -> recast_scene::Scene {
+        camera_scene_cut(clip_layouts, extra, "")
+    }
+
+    /// A layout can only be authored on a clip, so the fixture splits the
+    /// recording wherever one is anchored. `timeline` adds cuts on top; an
+    /// anchor that lands on no clip is its own case, tested separately.
+    fn camera_scene_cut(clip_layouts: &str, extra: &str, timeline: &str) -> recast_scene::Scene {
+        let anchors: Vec<f64> = serde_json::from_str::<Vec<serde_json::Value>>(clip_layouts)
+            .expect("clip layouts parse")
+            .iter()
+            .filter_map(|c| c["start"].as_f64())
+            .filter(|start| *start > 0.0)
+            .collect();
+        let splits = serde_json::to_string(&anchors).expect("split points");
         scene_with(&format!(
-            r#""cameraOverlay": {{"enabled": true, "clipLayouts": {clip_layouts}{extra}}},"#
+            r#""splitPoints": {splits},{timeline}
+               "cameraOverlay": {{"enabled": true, "clipLayouts": {clip_layouts}{extra}}},"#
         ))
     }
 
@@ -1059,10 +1116,11 @@ mod tests {
             {"start": 0.0, "layout": {"kind": "pip"}},
             {"start": 6.0, "layout": {"kind": "splitH", "fraction": 0.3, "side": "start"}}
         ]"#;
-        let scene = scene_with(&format!(
-            r#""cuts": [{{"start": 1.0, "end": 3.0}}],
-               "cameraOverlay": {{"enabled": true, "clipLayouts": {clips}, "layoutTransition": 1.0}},"#
-        ));
+        let scene = camera_scene_cut(
+            clips,
+            r#", "layoutTransition": 1.0"#,
+            r#" "cuts": [{"start": 1.0, "end": 3.0}],"#,
+        );
         let ev = Evaluator::new(&scene, source());
         // Two seconds cut out before it, so original 6 is seen at output 4.
         let start = layer_of(&ev.evaluate(&scene, 4.0), &scene, true).dest;

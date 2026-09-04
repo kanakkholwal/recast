@@ -64,6 +64,8 @@
 				display: flex;
 				align-items: center;
 				justify-content: center;
+				overflow: hidden;
+				box-sizing: border-box;
 				background: oklch(0.985 0 0);
 				color: oklch(21.779% 0.00002 271.152);
 				font-family: "Geist Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -222,6 +224,27 @@
 			@keyframes boot-plate-in {
 				from { transform: translateY(4px); opacity: 0; }
 				to   { transform: translateY(0);   opacity: 1; }
+			}
+
+			/* Small utility windows (device picker ~320x340, camera preview 240,
+			   recording panel 520x72) share this screen; drop the launch branding
+			   and shrink the mark so the 360px plate fits without clipping. */
+			@media (max-width: 480px), (max-height: 420px) {
+				#boot .boot-plate { width: auto; max-width: 92vw; padding: 14px; gap: 10px; }
+				#boot .boot-wordmark,
+				#boot .boot-tag,
+				#boot .boot-status { display: none; }
+				#boot .boot-logo { width: 40px; height: 40px; border-radius: 12px; box-shadow: none; }
+				#boot .boot-logo svg { width: 22px; height: 22px; }
+			}
+
+			/* The recording panel bar is only ~72px tall: a compact mark + loader
+			   still fit centered, so the logo stays visible rather than clipped. */
+			@media (max-height: 150px) {
+				#boot .boot-plate { padding: 6px; gap: 6px; }
+				#boot .boot-logo { width: 28px; height: 28px; border-radius: 8px; }
+				#boot .boot-logo svg { width: 16px; height: 16px; }
+				#boot .boot-loader { width: 96px; }
 			}
 
 			@media (prefers-reduced-motion: reduce) {

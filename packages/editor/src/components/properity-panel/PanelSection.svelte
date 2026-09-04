@@ -26,6 +26,11 @@ interface Props {
 	/** Controlled open state. */
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
+	/** Grey the controls out and take them out of the tab order. The header
+	 *  stays readable so the section is still findable. */
+	disabled?: boolean;
+	/** One line saying why, shown under the body while `disabled`. */
+	disabledReason?: string;
 	class?: string;
 }
 
@@ -39,8 +44,13 @@ let {
 	defaultOpen = true,
 	open = $bindable<boolean | undefined>(undefined),
 	onOpenChange,
+	disabled = false,
+	disabledReason,
 	class: className,
 }: Props = $props();
+
+// `inert` rather than pointer-events: a control you can tab to but not operate is worse than one that is gone.
+const off = $derived(disabled || undefined);
 
 const isControlled = $derived(open !== undefined);
 // svelte-ignore state_referenced_locally
@@ -92,7 +102,11 @@ const labelClass =
           {/if}
           {#if hint}<InspectorHint content={hint} />{/if}
         </button>
-        {#if action}<div class="shrink-0">{@render action()}</div>{/if}
+        {#if action}
+          <div class="shrink-0 transition-opacity" class:opacity-40={disabled} inert={off}>
+            {@render action()}
+          </div>
+        {/if}
       </div>
     {:else}
       <header class="flex min-h-6 items-center justify-between gap-2">
@@ -100,7 +114,11 @@ const labelClass =
           {#if title}<h3 class={labelClass}>{title}</h3>{/if}
           {#if hint}<InspectorHint content={hint} />{/if}
         </div>
-        {#if action}<div class="shrink-0">{@render action()}</div>{/if}
+        {#if action}
+          <div class="shrink-0 transition-opacity" class:opacity-40={disabled} inert={off}>
+            {@render action()}
+          </div>
+        {/if}
       </header>
     {/if}
   {/if}
@@ -112,13 +130,21 @@ const labelClass =
           transition:slide={{ duration: prefersReducedMotion.current ? 0 : 220, easing: cubicOut }}
           style="clip-path: inset(0 -20px);"
         >
-          {#if flush}{@render children()}{:else}<div class="space-y-2">{@render children()}</div>{/if}
+          <div class="transition-opacity" class:opacity-40={disabled} inert={off}>
+            {#if flush}{@render children()}{:else}<div class="space-y-2">
+                {@render children()}
+              </div>{/if}
+          </div>
         </div>
       {/if}
-    {:else if flush}
-      {@render children()}
     {:else}
-      <div class="space-y-2">{@render children()}</div>
+      <div class="transition-opacity" class:opacity-40={disabled} inert={off}>
+        {#if flush}{@render children()}{:else}<div class="space-y-2">{@render children()}</div>{/if}
+      </div>
     {/if}
+  {/if}
+
+  {#if disabled && disabledReason}
+    <p class="text-[10px] leading-snug text-muted-foreground">{disabledReason}</p>
   {/if}
 </section>

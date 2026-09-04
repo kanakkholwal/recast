@@ -1,7 +1,11 @@
 use recast_scene::v1::nodes::{CameraClipLayout, CameraLayout, LayoutSide};
+use recast_time::Segment;
 
 use crate::eval::DestRect;
 use crate::geometry::CanvasGeometry;
+
+/// Tolerance for matching an anchor to a segment start. Mirrors `segments.ts`.
+pub const ANCHOR_EPS: f64 = 1e-4;
 
 /// Where the screen and the camera land for one frame, and how visible each is.
 ///
@@ -13,6 +17,10 @@ pub struct LayoutRects {
     pub camera: DestRect,
     pub screen_opacity: f32,
     pub camera_opacity: f32,
+    /// How much of the bubble's rounding and shadow this arrangement keeps: 1
+    /// for the bubble, 0 for anything that owns a whole region of the frame.
+    /// Blended like the rects so a move eases the corners instead of popping.
+    pub camera_rounding: f32,
 }
 
 /// Shrinks `into` to `aspect` and centres it. Used for the SCREEN in a split:
@@ -128,12 +136,15 @@ pub fn resolve(
             camera: bubble.unwrap_or(hidden),
             screen_opacity: 1.0,
             camera_opacity: f32::from(u8::from(bubble.is_some())),
+            camera_rounding: 1.0,
         },
+        // Still a bubble, just an invisible one, so easing back out of it rounds rather than snaps.
         CameraLayout::ScreenOnly => LayoutRects {
             screen,
-            camera: hidden,
+            camera: bubble.unwrap_or(hidden),
             screen_opacity: 1.0,
             camera_opacity: 0.0,
+            camera_rounding: 1.0,
         },
         // Fills the canvas and covers, like a bubble: a talking head letterboxed inside its own frame would be odd.
         CameraLayout::CameraOnly => LayoutRects {
@@ -141,6 +152,7 @@ pub fn resolve(
             camera: canvas,
             screen_opacity: 0.0,
             camera_opacity: 1.0,
+            camera_rounding: 0.0,
         },
         CameraLayout::SplitH { .. } | CameraLayout::SplitV { .. } => {
             let vertical = matches!(layout, CameraLayout::SplitV { .. });
@@ -155,6 +167,7 @@ pub fn resolve(
                 camera: camera_half,
                 screen_opacity: 1.0,
                 camera_opacity: 1.0,
+                camera_rounding: 0.0,
             }
         }
     }
@@ -178,40 +191,52 @@ pub fn lerp(from: LayoutRects, to: LayoutRects, t: f32) -> LayoutRects {
         camera: rect(from.camera, to.camera),
         screen_opacity: mix(from.screen_opacity, to.screen_opacity),
         camera_opacity: mix(from.camera_opacity, to.camera_opacity),
+        camera_rounding: mix(from.camera_rounding, to.camera_rounding),
     }
 }
 
-/// The layout in force at `source_time`, the one before it, and that clip's
-/// ORIGINAL start. `None` for the previous means nothing precedes it, so there
-/// is no boundary to ease across.
+/// The layout anchored exactly at `start`, or the bubble when that clip was
+/// never given one. Exact match, so the order the document holds clips in
+/// cannot change the answer.
+#[must_use]
+pub fn layout_at_start(clips: &[CameraClipLayout], start: f64) -> CameraLayout {
+    clips
+        .iter()
+        .find(|c| (c.start - start).abs() <= ANCHOR_EPS)
+        .map_or(CameraLayout::Pip, |c| c.layout)
+}
+
+/// The layout in force at `source_time`, the one the clip before it had, and
+/// this clip's ORIGINAL start.
 ///
-/// A clip authored after time 0 is preceded by the bubble, which is what the
-/// recording was showing before the first key.
+/// Anchors resolve against `segments` exactly the way `SegmentAnim` does, so a
+/// key that a cut leaves on no clip stops applying rather than taking effect
+/// from its raw time onward. The editor labels its timeline by the same rule,
+/// which is what keeps the label and the rendered frame agreeing.
+///
+/// `from` is `None` when the previous clip was arranged the same way: there is
+/// nothing to ease, and reporting a move would strip the bubble's rounding for
+/// a transition that does not exist.
 #[must_use]
 pub fn neighbours(
     clips: &[CameraClipLayout],
+    segments: &[Segment],
     source_time: f64,
 ) -> (CameraLayout, Option<CameraLayout>, Option<f64>) {
-    let mut current: Option<&CameraClipLayout> = None;
-    let mut previous: Option<CameraLayout> = None;
-    for clip in clips {
-        if clip.start > source_time {
-            continue;
-        }
-        if current.is_none_or(|c| clip.start > c.start) {
-            previous = current.map(|c| c.layout);
-            current = Some(clip);
-        }
-    }
-    match current {
-        // The bubble precedes a clip authored past the start; nothing precedes one anchored at the very beginning.
-        Some(clip) => (
-            clip.layout,
-            previous.or((clip.start > 0.0).then_some(CameraLayout::Pip)),
-            Some(clip.start),
-        ),
-        None => (CameraLayout::Pip, None, None),
-    }
+    // Held at the last clip once the playhead runs past it, as `layoutAtTime` does.
+    let Some(index) = segments
+        .iter()
+        .position(|s| source_time >= s.start - ANCHOR_EPS && source_time < s.end)
+        .or_else(|| segments.len().checked_sub(1))
+    else {
+        return (CameraLayout::Pip, None, None);
+    };
+    let to = layout_at_start(clips, segments[index].start);
+    let from = index
+        .checked_sub(1)
+        .map(|i| layout_at_start(clips, segments[i].start))
+        .filter(|from| *from != to);
+    (to, from, from.map(|_| segments[index].start))
 }
 
 /// How far through the transition into the current clip `output_time` is, on a
@@ -273,27 +298,39 @@ mod tests {
         assert_eq!(transition_progress(99.0, 4.0, 0.5), 1.0);
     }
 
+    /// Layouts are keyed to a clip, so the clips have to exist for one to apply.
+    fn segments(bounds: &[(f64, f64)]) -> Vec<Segment> {
+        bounds
+            .iter()
+            .enumerate()
+            .map(|(index, (start, end))| Segment {
+                start: *start,
+                end: *end,
+                index,
+            })
+            .collect()
+    }
+
+    fn clip(start: f64, layout: CameraLayout) -> CameraClipLayout {
+        CameraClipLayout { start, layout }
+    }
+
     #[test]
     fn the_first_clip_of_a_project_has_nothing_to_ease_from() {
-        let clips = [CameraClipLayout {
-            start: 0.0,
-            layout: CameraLayout::ScreenOnly,
-        }];
-        let (to, from, start) = neighbours(&clips, 1.0);
+        let clips = [clip(0.0, CameraLayout::ScreenOnly)];
+        let (to, from, start) = neighbours(&clips, &segments(&[(0.0, 4.0)]), 1.0);
         assert_eq!(to, CameraLayout::ScreenOnly);
         assert_eq!(from, None);
-        assert_eq!(start, Some(0.0));
+        assert_eq!(start, None);
     }
 
     /// Before the first key the recording was showing the bubble, so that is
     /// what a clip authored later eases out of.
     #[test]
     fn a_clip_authored_after_the_start_eases_out_of_the_bubble() {
-        let clips = [CameraClipLayout {
-            start: 4.0,
-            layout: CameraLayout::ScreenOnly,
-        }];
-        let (to, from, start) = neighbours(&clips, 5.0);
+        let clips = [clip(4.0, CameraLayout::ScreenOnly)];
+        let segs = segments(&[(0.0, 4.0), (4.0, 9.0)]);
+        let (to, from, start) = neighbours(&clips, &segs, 5.0);
         assert_eq!(to, CameraLayout::ScreenOnly);
         assert_eq!(from, Some(CameraLayout::Pip));
         assert_eq!(start, Some(4.0));
@@ -302,57 +339,80 @@ mod tests {
     #[test]
     fn a_later_clip_eases_out_of_the_one_before_it() {
         let clips = [
-            CameraClipLayout {
-                start: 0.0,
-                layout: CameraLayout::Pip,
-            },
-            CameraClipLayout {
-                start: 4.0,
-                layout: CameraLayout::ScreenOnly,
-            },
-            CameraClipLayout {
-                start: 9.0,
-                layout: CameraLayout::SplitH {
+            clip(0.0, CameraLayout::Pip),
+            clip(4.0, CameraLayout::ScreenOnly),
+            clip(
+                9.0,
+                CameraLayout::SplitH {
                     fraction: 0.3,
                     side: LayoutSide::Start,
                 },
-            },
+            ),
         ];
-        let (to, from, start) = neighbours(&clips, 10.0);
+        let segs = segments(&[(0.0, 4.0), (4.0, 9.0), (9.0, 14.0)]);
+        let (to, from, start) = neighbours(&clips, &segs, 10.0);
         assert!(matches!(to, CameraLayout::SplitH { .. }));
         assert_eq!(from, Some(CameraLayout::ScreenOnly));
         assert_eq!(start, Some(9.0));
     }
 
-    /// Anchors arrive in whatever order the document holds them, so the walk
-    /// cannot assume the list is sorted.
+    /// Anchors arrive in whatever order the document holds them, and both
+    /// neighbours can sit behind the playhead, which a scan-order walk got wrong.
     #[test]
     fn the_neighbours_are_found_however_the_clips_are_ordered() {
-        let clips = [
-            CameraClipLayout {
-                start: 9.0,
-                layout: CameraLayout::ScreenOnly,
-            },
-            CameraClipLayout {
-                start: 0.0,
-                layout: CameraLayout::Pip,
-            },
-            CameraClipLayout {
-                start: 4.0,
-                layout: CameraLayout::SplitV {
-                    fraction: 0.4,
-                    side: LayoutSide::End,
-                },
-            },
+        let ordered = [
+            clip(0.0, CameraLayout::CameraOnly),
+            clip(4.0, CameraLayout::ScreenOnly),
         ];
-        let (to, from, _) = neighbours(&clips, 5.0);
-        assert!(matches!(to, CameraLayout::SplitV { .. }));
-        assert_eq!(from, Some(CameraLayout::Pip));
+        let reversed = [ordered[1], ordered[0]];
+        let segs = segments(&[(0.0, 4.0), (4.0, 9.0)]);
+        assert_eq!(
+            neighbours(&ordered, &segs, 5.0),
+            neighbours(&reversed, &segs, 5.0)
+        );
+        assert_eq!(
+            neighbours(&reversed, &segs, 5.0).1,
+            Some(CameraLayout::CameraOnly)
+        );
+    }
+
+    /// A cut that removes the clip a layout was keyed to leaves the anchor on
+    /// nothing. The editor's timeline already reads it as the bubble; keying on
+    /// raw time here rendered the layout anyway, from the wrong moment.
+    #[test]
+    fn an_anchor_no_clip_starts_at_stops_applying() {
+        let clips = [clip(5.0, CameraLayout::CameraOnly)];
+        let segs = segments(&[(0.0, 3.0), (4.0, 9.0)]);
+        assert_eq!(neighbours(&clips, &segs, 7.0).0, CameraLayout::Pip);
+    }
+
+    /// Two clips arranged the same way are not a transition. Reporting one
+    /// would ease between identical rects while stripping the bubble's rounding.
+    #[test]
+    fn neighbouring_clips_with_the_same_layout_are_not_a_move() {
+        let clips = [
+            clip(0.0, CameraLayout::CameraOnly),
+            clip(4.0, CameraLayout::CameraOnly),
+        ];
+        let segs = segments(&[(0.0, 4.0), (4.0, 9.0)]);
+        let (to, from, start) = neighbours(&clips, &segs, 5.0);
+        assert_eq!(to, CameraLayout::CameraOnly);
+        assert_eq!(from, None);
+        assert_eq!(start, None);
+    }
+
+    /// Held at the last clip, the rule `layoutAtTime` uses, so the final frame
+    /// of an export does not fall back to the bubble.
+    #[test]
+    fn a_playhead_past_the_last_clip_keeps_that_clips_layout() {
+        let clips = [clip(4.0, CameraLayout::CameraOnly)];
+        let segs = segments(&[(0.0, 4.0), (4.0, 9.0)]);
+        assert_eq!(neighbours(&clips, &segs, 99.0).0, CameraLayout::CameraOnly);
     }
 
     #[test]
     fn a_project_with_no_clips_is_the_bubble_and_eases_from_nothing() {
-        let (to, from, start) = neighbours(&[], 5.0);
+        let (to, from, start) = neighbours(&[], &segments(&[(0.0, 9.0)]), 5.0);
         assert_eq!(to, CameraLayout::Pip);
         assert_eq!(from, None);
         assert_eq!(start, None);

@@ -1424,19 +1424,18 @@ function phaseOut(node: HTMLElement) {
 						{/if}
 
 						{#if deviceIssue}
-							<div
-								class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 {deviceIssue.level ===
+							<!-- Icon-only, not inline text: a long message would widen the bar past the window. The message rides the native title, which the OS draws outside the 72px window a hover card would be clipped by. -->
+							<span
+								class="flex size-6 shrink-0 items-center justify-center rounded-md {deviceIssue.level ===
 								'error'
 									? 'bg-destructive/10 text-destructive'
 									: 'bg-warning/10 text-warning'}"
-								role="status"
+								role="img"
+								aria-label={deviceIssue.text}
 								title={deviceIssue.text}
 							>
-								<AlertTriangle size={11} stroke={2} class="shrink-0" />
-								<span class="max-w-28 truncate text-[10px] font-medium">
-									{deviceIssue.text}
-								</span>
-							</div>
+								<AlertTriangle size={12} stroke={2} />
+							</span>
 						{/if}
 
 						<!-- Device toggles -->

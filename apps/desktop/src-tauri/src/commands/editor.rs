@@ -1868,7 +1868,7 @@ mod validate_tests {
             CameraLayout::CameraOnly,
         ] {
             assert!(
-                unsupported_graph_layout(&state_with_layout(layout)).is_some(),
+                unsupported_by_graph(&state_with_layout(layout)).is_some(),
                 "{layout:?} was allowed through"
             );
         }
@@ -1877,8 +1877,8 @@ mod validate_tests {
     #[test]
     fn the_bubble_the_graph_already_draws_is_not_refused() {
         use recast_scene::v1::nodes::CameraLayout;
-        assert!(unsupported_graph_layout(&state_with_layout(CameraLayout::Pip)).is_none());
-        assert!(unsupported_graph_layout(&RenderState::default()).is_none());
+        assert!(unsupported_by_graph(&state_with_layout(CameraLayout::Pip)).is_none());
+        assert!(unsupported_by_graph(&RenderState::default()).is_none());
     }
 
     /// A layout authored and then the camera switched off is not a reason to
@@ -1888,7 +1888,19 @@ mod validate_tests {
         use recast_scene::v1::nodes::CameraLayout;
         let mut state = state_with_layout(CameraLayout::ScreenOnly);
         state.camera_overlay.enabled = false;
-        assert!(unsupported_graph_layout(&state).is_none());
+        assert!(unsupported_by_graph(&state).is_none());
+    }
+
+    /// The graph has no dodge at all, so leaving it unrefused exported a bubble
+    /// sitting still while the preview moved it out of the pointer's way.
+    #[test]
+    fn a_dodging_bubble_the_graph_cannot_draw_is_refused() {
+        let mut state = RenderState::default();
+        state.camera_overlay.enabled = true;
+        state.camera_overlay.cursor_dodge = true;
+        assert!(unsupported_by_graph(&state).is_some());
+        state.camera_overlay.cursor_dodge = false;
+        assert!(unsupported_by_graph(&state).is_none());
     }
 
     fn state_with_zoom(region: ZoomRegion) -> RenderState {
@@ -2344,12 +2356,20 @@ fn engine_decline_reason(error: &crate::export_engine::EngineExportError) -> &'s
 ///
 /// The video intermediate is always H.264 in mp4, so mp4 stream-copies and
 /// anything else has to re-encode; WebM additionally cannot carry AAC.
-/// The name of a camera layout the FFmpeg graph cannot draw, or `None` when
-/// every clip is the bubble it already knows how to place.
-fn unsupported_graph_layout(state: &RenderState) -> Option<&'static str> {
+/// The name of a camera feature the FFmpeg graph cannot draw, or `None` when
+/// the scene is one it already knows how to place.
+///
+/// Its placement is a sampled expression LUT already at `av_expr_parse`'s term
+/// budget, so anything that moves the camera on a second axis has to be
+/// refused rather than silently dropped: an export that is not what was
+/// previewed is worse than one that will not start.
+fn unsupported_by_graph(state: &RenderState) -> Option<&'static str> {
     use recast_scene::v1::nodes::CameraLayout;
     if !state.camera_overlay.enabled {
         return None;
+    }
+    if state.camera_overlay.cursor_dodge {
+        return Some("pointer dodging");
     }
     state
         .camera_overlay
@@ -2357,10 +2377,10 @@ fn unsupported_graph_layout(state: &RenderState) -> Option<&'static str> {
         .iter()
         .find_map(|clip| match clip.layout {
             CameraLayout::Pip => None,
-            CameraLayout::SplitH { .. } => Some("side-by-side split"),
-            CameraLayout::SplitV { .. } => Some("stacked split"),
-            CameraLayout::ScreenOnly => Some("screen-only"),
-            CameraLayout::CameraOnly => Some("camera-only"),
+            CameraLayout::SplitH { .. } => Some("the side-by-side split layout"),
+            CameraLayout::SplitV { .. } => Some("the stacked split layout"),
+            CameraLayout::ScreenOnly => Some("the screen-only layout"),
+            CameraLayout::CameraOnly => Some("the camera-only layout"),
         })
 }
 
@@ -2930,11 +2950,10 @@ pub(crate) async fn run_export_job(
                 })
         })
         .flatten();
-    // The graph places the camera with a sampled expression LUT already at its parser's term budget, so it has no room for a second moving rect and would draw a split as the plain bubble. Refusing beats shipping a file that is not what was previewed.
-    if let Some(layout) = unsupported_graph_layout(&request.render_state) {
+    if let Some(feature) = unsupported_by_graph(&request.render_state) {
         if !crate::export_engine::enabled(request.engine_export) {
             return Err(AppError::msg(format!(
-                "This project uses the {layout} camera layout, which needs the new export engine. Turn on Experimental engine export in Settings, or set the camera back to picture-in-picture."
+                "This project uses {feature}, which needs the new export engine. Turn on Experimental engine export in Settings, or switch that off in the Camera panel."
             )));
         }
     }

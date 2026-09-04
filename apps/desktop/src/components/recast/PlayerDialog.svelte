@@ -53,50 +53,51 @@ $effect(() => {
   subtitle={`${formatSize(entry.sizeBytes)} · ${formatDateTime(entry.created)}`}
   icon={isImage ? ImageIcon : Video}
   widthClass="sm:max-w-3xl"
-  bodyClass="p-0! max-h-none"
+  bodyClass="px-5 pt-1.5 pb-3 max-h-none"
   onOpenChange={(v) => {
     if (!v) onclose();
   }}
 >
 
-    {#if isImage}
-      <div
-        class="flex max-h-[65vh] items-center justify-center overflow-hidden bg-muted/30"
-      >
-        <img
+    <!-- Framed in the same px-5 gutter as the header/footer so the media, title and actions all align to one edge. -->
+    <div class="overflow-hidden rounded-lg bg-black ring-1 ring-inset ring-border/50">
+      {#if isImage}
+        <div class="flex max-h-[62vh] items-center justify-center bg-muted/30">
+          <img
+            {src}
+            alt={entry.filename}
+            draggable="false"
+            class="max-h-[62vh] max-w-full object-contain"
+          />
+        </div>
+      {:else}
+        <!-- autohide={2.5}: the control bar fades out after ~2.5s of pointer
+             inactivity and fades back on movement (see the .recast-control-bar
+             transition in the player), matching a normal video player. -->
+        <!-- preload="auto" (not "metadata"): exports are moov-at-end, and a
+             metadata-only preload range-fetches the tail over the asset protocol and
+             stalls in NETWORK_LOADING (black frame) in release. "auto" streams from
+             byte 0. -->
+        <RecastPlayer
           {src}
-          alt={entry.filename}
-          draggable="false"
-          class="max-h-[65vh] max-w-full object-contain"
+          title={entry.filename}
+          preload="auto"
+          autoplay
+          autohide={2.5}
+          tracks={captionSrc
+            ? [
+                {
+                  src: captionSrc,
+                  kind: "captions",
+                  label: "Captions",
+                  srclang: "en",
+                  default: true,
+                },
+              ]
+            : []}
         />
-      </div>
-    {:else}
-      <!-- autohide={2.5}: the control bar fades out after ~2.5s of pointer
-           inactivity and fades back on movement (see the .recast-control-bar
-           transition in the player), matching a normal video player. -->
-      <!-- preload="auto" (not "metadata"): exports are moov-at-end, and a
-           metadata-only preload range-fetches the tail over the asset protocol and
-           stalls in NETWORK_LOADING (black frame) in release. "auto" streams from
-           byte 0. -->
-      <RecastPlayer
-        {src}
-        title={entry.filename}
-        preload="auto"
-        autoplay
-        autohide={2.5}
-        tracks={captionSrc
-          ? [
-              {
-                src: captionSrc,
-                kind: "captions",
-                label: "Captions",
-                srclang: "en",
-                default: true,
-              },
-            ]
-          : []}
-      />
-    {/if}
+      {/if}
+    </div>
 
   {#snippet footer()}
     <Button

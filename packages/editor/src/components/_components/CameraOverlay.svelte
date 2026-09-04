@@ -52,6 +52,9 @@ function baseAt(t: number) {
 
 // The LAYOUT box deliberately ignores the playhead: the 25 Hz store clock and the per-rAF transform landing in different frames made the bubble judder.
 const layoutPlacement = $derived(store.cameraOverlay.defaultPlacement);
+
+// Only the bubble is draggable. A split or a full-frame camera is placed by the layout, so this rect would be a grab handle over pixels it does not own, and in screen-only it would swallow clicks meant for the annotation and focus layers.
+const isBubble = $derived(store.cameraLayoutAtTime(store.currentTime).kind === "pip");
 const bubbleStyle = $derived(bubblePlacementStyle(geom, layoutPlacement));
 const borderRadius = $derived(
 	shapeBorderRadius(store.cameraOverlay.shape, store.cameraOverlay.cornerRadius),
@@ -198,7 +201,7 @@ function onHandleUp(e: PointerEvent) {
 }
 </script>
 
-{#if hasCamera && store.cameraOverlay.enabled && geom}
+{#if hasCamera && store.cameraOverlay.enabled && isBubble && geom}
   <!-- Outer bounds: owns position + drag + resize handles (NOT clipped, so handles
        show past the shape). The inner div clips the video to the bubble shape. -->
   <div

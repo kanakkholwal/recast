@@ -108,6 +108,45 @@ export function dotStyleFor(preset: CameraPositionPreset): string {
 	return xPart + yPart + transform;
 }
 
+/** Which of the panel's control groups the current arrangement actually uses. */
+export interface CameraControls {
+	/** The bubble's own geometry: position, size, shape and shadow. */
+	bubble: boolean;
+	/** What moves the bubble: per-cut positions and grow-on-zoom. */
+	motion: boolean;
+	/** Pointer dodging, which also needs a pointer to dodge. */
+	dodge: boolean;
+	/** Why the bubble controls do not apply, or null when they do. */
+	reason: string | null;
+	/** Why dodging does not apply. It has a second cause the others do not. */
+	dodgeReason: string | null;
+}
+
+/** Why each layout ignores the bubble controls, in the panel's own words. */
+const IGNORES_THE_BUBBLE: Partial<Record<CameraLayout["kind"], string>> = {
+	splitH: "This clip splits the frame, so the camera fills its half.",
+	splitV: "This clip splits the frame, so the camera fills its half.",
+	screenOnly: "This clip hides the camera.",
+	cameraOnly: "This clip gives the camera the whole frame.",
+};
+
+/**
+ * A layout decides which controls mean anything. Offering all of them for every
+ * arrangement let a split's Position grid and Width field write state that
+ * nothing read, which reads as a broken control rather than an unused one.
+ */
+export function cameraControls(layout: CameraLayout, cursorEnabled: boolean): CameraControls {
+	const reason = IGNORES_THE_BUBBLE[layout.kind] ?? null;
+	const bubble = reason === null;
+	return {
+		bubble,
+		motion: bubble,
+		dodge: bubble && cursorEnabled,
+		reason,
+		dodgeReason: bubble && !cursorEnabled ? "Turn the pointer on to dodge it." : reason,
+	};
+}
+
 /** Picker rows for the layout select, named the same as the timeline's clips. */
 export const CAMERA_LAYOUT_OPTIONS = LAYOUT_LABELS.map((l) => ({
 	value: l.kind,
