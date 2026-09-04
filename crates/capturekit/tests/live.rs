@@ -200,14 +200,23 @@ fn a_constant_rate_capture_fills_the_slots_an_idle_desktop_leaves_empty() {
     let elapsed = started.elapsed();
 
     let interval = 1_000_000_000 / i64::from(FPS);
+    let mut holes = 0i64;
     for (slot, pair) in stamps.windows(2).enumerate() {
+        let gap = pair[1] - pair[0];
         assert_eq!(
-            pair[1] - pair[0],
-            interval,
+            gap % interval,
+            0,
             "slot {} left the grid: {stamps:?}",
             slot + 1
         );
+        holes += gap / interval - 1;
     }
+    // The grid may LOSE slots when a stall outruns the catch-up window, but never silently: every hole has to be one the pacer counted.
+    let skipped = capture.skipped_frames();
+    assert!(
+        holes as u64 <= skipped,
+        "{holes} slot(s) missing from the grid but the pacer counted {skipped} skipped: {stamps:?}"
+    );
     // The slots are real time, not a counter: 15 at 30fps take half a second whatever the desktop was doing.
     let owed = Duration::from_millis(1000 * (SLOTS as u64 - 1) / u64::from(FPS));
     assert!(
@@ -268,7 +277,17 @@ fn a_second_capture_of_one_display_says_what_it_is_contending_for() {
     let _held = capturer(Target::Display(display.id))
         .build()
         .expect("the first capture opens");
-    let Err(err) = capturer(Target::Display(display.id)).build() else {
+    let second = capturer(Target::Display(display.id)).build();
+    // Only Desktop Duplication is exclusive. ScreenCaptureKit and PipeWire hand out a second stream, and inventing a refusal there would be a lie about the platform.
+    if !capturekit::capabilities().exclusive_display_capture {
+        assert!(
+            second.is_ok(),
+            "a backend that shares displays refused the second open: {:?}",
+            second.err()
+        );
+        return;
+    }
+    let Err(err) = second else {
         panic!("a display was duplicated twice in one process");
     };
     assert!(
@@ -410,6 +429,14 @@ fn a_session_puts_audio_and_video_on_the_same_timeline() {
 
     let screen = furthest.get("screen").copied();
     let system = furthest.get("system").copied();
+    // A loopback that fills no gaps delivers nothing at all on a machine with nothing playing, so there is no second track to put on the timeline.
+    if system.is_none() && !capturekit::capabilities().audio_loopback_gap_filling {
+        assert!(screen.is_some(), "not even the screen track delivered");
+        eprintln!(
+            "skipped the drift check: this backend fills no loopback gaps and nothing was playing"
+        );
+        return;
+    }
     let (Some(screen), Some(system)) = (screen, system) else {
         panic!("only {furthest:?} delivered, so one track produced nothing at all");
     };

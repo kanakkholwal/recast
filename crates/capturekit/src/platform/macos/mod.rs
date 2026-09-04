@@ -37,6 +37,7 @@ pub(crate) fn capabilities() -> Capabilities {
         cursor_pointer: true,
         cursor_buttons: true,
         dirty_rects: false,
+        exclusive_display_capture: false,
         audio_loopback: true,
         audio_loopback_gap_filling: false,
         // CoreAudio lists them and AVFoundation opens any of them by UID.

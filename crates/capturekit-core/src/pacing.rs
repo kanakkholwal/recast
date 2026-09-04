@@ -194,6 +194,24 @@ mod tests {
         assert!(pacer.skipped() > 250, "skipped {}", pacer.skipped());
     }
 
+    /// What the live grid check leans on: a stall may cost slots, but the ones
+    /// it costs are exactly the ones `skipped` reports, so a hole in the
+    /// delivered timeline is never unannounced.
+    #[test]
+    fn every_slot_a_stall_abandons_is_counted() {
+        let mut pacer = Pacer::new(60);
+        pacer.set_max_catch_up(4);
+        let interval = pacer.interval().as_nanos() as i64;
+        let before = pacer.next_due(at(0)).expect("the first slot");
+        let after = pacer.next_due(at(5_000)).expect("a slot after the stall");
+        let lost = (after.as_nanos() - before.as_nanos()) / interval - 1;
+        assert_eq!(
+            lost as u64,
+            pacer.skipped(),
+            "the grid lost {lost} slot(s) the pacer never counted"
+        );
+    }
+
     #[test]
     fn catching_up_keeps_the_timeline_aligned_to_the_origin() {
         let mut pacer = Pacer::new(100);

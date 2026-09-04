@@ -76,6 +76,9 @@ pub struct Capabilities {
     pub dirty_rects: bool,
     /// Whether system output can be captured back as audio.
     pub audio_loopback: bool,
+    /// Whether one display can be captured by only one stream at a time.
+    /// True on Windows, whose Desktop Duplication is exclusive and reports [`CaptureError::AlreadyCaptured`](crate::CaptureError::AlreadyCaptured); ScreenCaptureKit and PipeWire both allow concurrent streams, so a caller there cannot learn that something else is recording.
+    pub exclusive_display_capture: bool,
     /// Whether a loopback covers idle time with generated silence, so its
     /// timeline stays continuous while nothing is playing.
     /// False on macOS: ScreenCaptureKit is trusted to tap the mix continuously, and a machine with no output device then yields no buffers at all rather than silence.
@@ -118,6 +121,7 @@ mod tests {
         cursor_pointer: false,
         cursor_buttons: false,
         dirty_rects: false,
+        exclusive_display_capture: false,
         audio_loopback: true,
         audio_loopback_gap_filling: true,
         audio_device_enumeration: false,
@@ -136,6 +140,7 @@ mod tests {
         cursor_pointer: true,
         cursor_buttons: true,
         dirty_rects: true,
+        exclusive_display_capture: false,
         audio_loopback: true,
         audio_loopback_gap_filling: true,
         audio_device_enumeration: true,
@@ -154,6 +159,7 @@ mod tests {
         cursor_pointer: true,
         cursor_buttons: true,
         dirty_rects: false,
+        exclusive_display_capture: false,
         audio_loopback: true,
         audio_loopback_gap_filling: true,
         audio_device_enumeration: false,

@@ -37,6 +37,7 @@ pub(crate) fn capabilities() -> Capabilities {
         cursor_pointer: true,
         cursor_buttons: true,
         dirty_rects: true,
+        exclusive_display_capture: true,
         audio_loopback: true,
         audio_loopback_gap_filling: true,
         audio_device_enumeration: true,
