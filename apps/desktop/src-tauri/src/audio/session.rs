@@ -290,22 +290,22 @@ fn buffer_level(bytes: &[u8], format: capturekit::SampleFormat) -> f32 {
     let mut n = 0u64;
     match format {
         capturekit::SampleFormat::I16 => {
-            for c in bytes.chunks_exact(2) {
-                let v = f64::from(i16::from_le_bytes([c[0], c[1]])) / 32768.0;
+            for c in bytes.as_chunks::<2>().0 {
+                let v = f64::from(i16::from_le_bytes(*c)) / 32768.0;
                 sum_sq += v * v;
                 n += 1;
             }
         }
         capturekit::SampleFormat::I32 => {
-            for c in bytes.chunks_exact(4) {
-                let v = f64::from(i32::from_le_bytes([c[0], c[1], c[2], c[3]])) / 2_147_483_648.0;
+            for c in bytes.as_chunks::<4>().0 {
+                let v = f64::from(i32::from_le_bytes(*c)) / 2_147_483_648.0;
                 sum_sq += v * v;
                 n += 1;
             }
         }
         capturekit::SampleFormat::F32 => {
-            for c in bytes.chunks_exact(4) {
-                let v = f64::from(f32::from_le_bytes([c[0], c[1], c[2], c[3]]));
+            for c in bytes.as_chunks::<4>().0 {
+                let v = f64::from(f32::from_le_bytes(*c));
                 sum_sq += v * v;
                 n += 1;
             }

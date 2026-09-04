@@ -1606,14 +1606,26 @@ fn presenting_into_a_smaller_target_scales_rather_than_cropping() {
 
 // --- Text ---
 
-fn text_face() -> Option<recast_text::FontFace> {
-    for family in ["Arial", "Segoe UI", "Helvetica", "DejaVu Sans"] {
-        if let Some(resolved) = recast_text::resolve_face(family, 400, None) {
-            return Some(resolved.face);
-        }
+/// A family that resolves here. A caption style names ONE family (fontdb matches
+/// a name, not a CSS stack), so hardcoding "Arial" lays out nothing on Linux.
+fn text_family() -> Option<&'static str> {
+    let found = [
+        "Arial",
+        "Segoe UI",
+        "Helvetica",
+        "DejaVu Sans",
+        "Liberation Sans",
+    ]
+    .into_iter()
+    .find(|family| recast_text::resolve_face(family, 400, None).is_some());
+    if found.is_none() {
+        eprintln!("skipping: no system font resolved");
     }
-    eprintln!("skipping: no system font resolved");
-    None
+    found
+}
+
+fn text_face() -> Option<recast_text::FontFace> {
+    recast_text::resolve_face(text_family()?, 400, None).map(|resolved| resolved.face)
 }
 
 fn glyph_quad(
@@ -1871,28 +1883,31 @@ fn a_glyph_packed_after_the_atlas_grew_still_reaches_the_gpu() {
 #[test]
 fn a_caption_on_the_scene_reaches_the_frame() {
     let Some(ctx) = context() else { return };
-    let Some(_) = text_face() else { return };
+    let Some(family) = text_family() else { return };
     let words = r#"[{"start": 0.0, "end": 4.0, "text": "hello"}]"#;
-    let style = r##""captionStyle": {
-        "enabled": true, "fontFamily": "Arial", "fontWeight": 400,
+    let style = format!(
+        r##""captionStyle": {{
+        "enabled": true, "fontFamily": "{family}", "fontWeight": 400,
         "fontSizePct": 14.0, "position": "bottom", "align": "center",
         "offsetPct": 0.0, "color": "#ffffff", "uppercase": false,
         "letterSpacing": 0.0, "background": "box", "backgroundColor": "#ff0000",
         "backgroundOpacity": 100.0, "outlineWidth": 0.0, "outlineColor": "#000000",
         "maxLines": 1,
-        "animation": {
+        "animation": {{
             "chunk": "line", "chunkSize": 1, "emphasis": "none",
             "emphasisColor": "#ffffff", "highlight": "none",
             "entrance": "none", "entranceMs": 0.0, "holdGaps": true
-        }
-    },"##;
+        }}
+    }},"##
+    );
 
+    // Bigger than the file's 64x32: a 14% caption is ~4px there, every glyph pixel is a partial blend, and "white text" then holds only for some fonts.
     let mut session = recast_compositor::Session::new(
         ctx,
-        scene_with(style),
+        scene_with(&style),
         SourceGeometry {
-            width: SRC_W,
-            height: SRC_H,
+            width: 512,
+            height: 288,
         },
     )
     .expect("session");

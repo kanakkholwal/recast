@@ -232,6 +232,8 @@ impl AudioQueue {
     /// Waits until at least one run is queued, WITHOUT taking it. A caller that
     /// only needs the hardware's format must not consume audio to learn it: the
     /// run it took was dropped and the track started late by that much.
+    // Only the macOS mic backend has to ask the hardware for its format before the first run; every other backend is told it on open.
+    #[cfg_attr(not(target_os = "macos"), expect(dead_code))]
     pub(crate) fn wait_until_ready(&self, timeout: Duration) -> Result<()> {
         let mut queued = self.queued.lock().map_err(|_| lost())?;
         while queued.runs.is_empty() {
