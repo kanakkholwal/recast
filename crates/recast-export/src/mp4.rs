@@ -30,6 +30,8 @@ pub enum Mp4Error {
     Encode { index: u64, error: EncodeError },
     #[error("the encoder produced no samples")]
     Empty,
+    #[error("the encoder reordered samples, which this writer cannot time correctly")]
+    Reordered,
     #[error("encoding audio: {0}")]
     Audio(EncodeError),
     #[error("the audio track was already written")]
@@ -221,6 +223,7 @@ impl Mp4Sink {
     /// Flushes the encoder and returns the finished file.
     pub fn finish(mut self) -> Result<Vec<u8>, Mp4Error> {
         self.drain_tail()?;
+        self.refuse_reordered()?;
         self.writer.finish().ok_or(Mp4Error::Empty)
     }
 
@@ -230,6 +233,7 @@ impl Mp4Sink {
     /// written: once as the samples and once as the file built from them.
     pub fn finish_into<W: std::io::Write>(mut self, out: &mut W) -> Result<(), Mp4Error> {
         self.drain_tail()?;
+        self.refuse_reordered()?;
         match self.writer.finish_into(out) {
             Ok(true) => Ok(()),
             Ok(false) => Err(Mp4Error::Empty),
@@ -241,6 +245,16 @@ impl Mp4Sink {
     /// frame; a long export is gigabytes of them.
     pub fn spill_to(&mut self, dir: &std::path::Path) -> Result<(), Mp4Error> {
         self.writer.spill_to(dir).map_err(Mp4Error::Write)
+    }
+
+    /// The encoder is asked for no B-pictures, but that request is best effort.
+    /// One that reorders anyway would get a file whose frames play out of order,
+    /// which is worse than an export that stops and says so.
+    fn refuse_reordered(&self) -> Result<(), Mp4Error> {
+        match self.reordered {
+            true => Err(Mp4Error::Reordered),
+            false => Ok(()),
+        }
     }
 
     fn drain_tail(&mut self) -> Result<(), Mp4Error> {
@@ -280,6 +294,30 @@ impl Mp4Sink {
             self.writer
                 .push_sample(&converted.sample, self.walk.fps().1, converted.is_sync);
             self.written += 1;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The encoder is only ASKED for no B-pictures, so the refusal has to stand
+    /// on its own: an MFT that reorders anyway must stop the export.
+    #[test]
+    fn a_reordered_stream_is_refused_rather_than_written_with_wrong_times() {
+        let walk = FrameWalk::new(0.1, (30, 1));
+        let Ok(mut sink) = Mp4Sink::new(64, 64, walk, 100_000, SourceColor::default()) else {
+            eprintln!("skipping: no H.264 encoder on this machine");
+            return;
+        };
+        assert!(sink.refuse_reordered().is_ok(), "a fresh sink is in order");
+        sink.reordered = true;
+        match sink.finish() {
+            Err(Mp4Error::Reordered) => {}
+            // Several suites holding MFTs at once can refuse the drain, which is not what this asserts.
+            Err(Mp4Error::Encode { .. }) => eprintln!("skipping: the encoder would not drain"),
+            other => panic!("a reordered stream was not refused: {other:?}"),
         }
     }
 }

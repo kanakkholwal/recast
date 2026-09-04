@@ -55,11 +55,19 @@ fn device_ids_are_unique_and_each_direction_has_at_most_one_default() {
     let Some(devices) = devices_or_skip() else {
         return;
     };
-    let mut ids: Vec<&str> = devices.iter().map(|d| d.id.0.as_str()).collect();
+    // Per DIRECTION, the space `open` addresses: a duplex device is one endpoint in each under one id, so global uniqueness fails on any machine with a headset.
+    let mut ids: Vec<(&str, bool)> = devices
+        .iter()
+        .map(|d| (d.id.0.as_str(), d.direction == AudioDirection::Input))
+        .collect();
     let before = ids.len();
     ids.sort_unstable();
     ids.dedup();
-    assert_eq!(ids.len(), before, "two endpoints share an id");
+    assert_eq!(
+        ids.len(),
+        before,
+        "two endpoints share an id and a direction"
+    );
 
     for direction in [AudioDirection::Input, AudioDirection::Loopback] {
         let defaults = devices

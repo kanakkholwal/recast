@@ -173,6 +173,12 @@ impl H264Encoder {
         self.set_codec_u32(&CODECAPI_AVEncMPVGOPSize, self.config.keyframe_interval);
     }
 
+    /// No B-pictures, so samples come back in presentation order.
+    /// `Mp4Sink` emits no composition offsets, and some MFTs default to two.
+    fn set_no_b_pictures(&self) {
+        self.set_codec_u32(&CODECAPI_AVEncMPVDefaultBPictureCount, 0);
+    }
+
     /// Encode the next frame handed in as a keyframe.
     /// A frame-count GOP cannot express a time interval under VARIABLE RATE: an idle desktop produces fewer frames per second than the GOP spans, leaving one keyframe per recording.
     pub fn request_keyframe(&self) {
@@ -216,8 +222,9 @@ impl H264Encoder {
             (MF_MT_PIXEL_ASPECT_RATIO, Value::U64(pack(1, 1))),
         ];
         let output = media_type(&attributes)?;
-        // BEFORE the output type: set after, it returns S_OK and changes nothing.
+        // BEFORE the output type: set after, they return S_OK and change nothing.
         self.set_gop_size();
+        self.set_no_b_pictures();
         // SAFETY: stream 0 is the only stream an H.264 encoder MFT exposes.
         unsafe { self.transform.SetOutputType(0, &output, 0) }?;
 
