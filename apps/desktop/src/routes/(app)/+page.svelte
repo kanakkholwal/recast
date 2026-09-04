@@ -44,10 +44,7 @@ const modes = [
         class="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-4 py-2.5"
       >
         <span class="flex items-center gap-2 text-[12px] font-semibold tracking-tight text-foreground">
-          <span class="relative flex size-1.5" aria-hidden="true">
-            <span class="absolute inline-flex size-full rounded-full bg-destructive/50 motion-safe:animate-ping [animation-duration:2.5s]"></span>
-            <span class="relative inline-flex size-1.5 rounded-full bg-destructive"></span>
-          </span>
+          <span class="size-1.5 rounded-full bg-destructive" aria-hidden="true"></span>
           Start a recording
         </span>
         <span class="flex items-center gap-1.5 text-[11px] text-muted-foreground/80">
@@ -69,7 +66,7 @@ const modes = [
             class="group/mode relative flex flex-col items-center gap-3 bg-card px-3 py-7 text-center transition-colors duration-200 ease-out hover:bg-muted/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 motion-safe:active:scale-[0.98]"
           >
             <span
-              class="flex size-11 items-center justify-center rounded-xl bg-muted/60 text-foreground ring-1 ring-inset ring-border/50 transition-transform duration-200 ease-out motion-safe:group-hover/mode:scale-110 motion-safe:group-hover/mode:-translate-y-0.5"
+              class="flex size-11 items-center justify-center rounded-xl bg-muted/60 text-foreground ring-1 ring-inset ring-border/50 transition-transform duration-200 ease-out motion-safe:group-hover/mode:scale-105"
             >
               <Icon class="size-5" />
             </span>
@@ -80,7 +77,7 @@ const modes = [
               <span class="text-[10.5px] leading-snug text-muted-foreground">{mode.hint}</span>
             </span>
             <ArrowUpRight
-              class="absolute right-2.5 top-2.5 size-3.5 text-muted-foreground/40 opacity-0 transition-all duration-200 ease-out group-hover/mode:text-foreground group-hover/mode:opacity-100 motion-safe:group-hover/mode:-translate-y-0.5 motion-safe:group-hover/mode:translate-x-0.5"
+              class="absolute right-2.5 top-2.5 size-3.5 text-muted-foreground/40 opacity-0 transition-[opacity,transform,color] duration-200 ease-out group-hover/mode:text-foreground group-hover/mode:opacity-100 motion-safe:group-hover/mode:-translate-y-0.5 motion-safe:group-hover/mode:translate-x-0.5"
             />
           </button>
         {/each}

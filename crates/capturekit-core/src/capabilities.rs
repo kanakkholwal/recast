@@ -76,6 +76,10 @@ pub struct Capabilities {
     pub dirty_rects: bool,
     /// Whether system output can be captured back as audio.
     pub audio_loopback: bool,
+    /// Whether a loopback covers idle time with generated silence, so its
+    /// timeline stays continuous while nothing is playing.
+    /// False on macOS: ScreenCaptureKit is trusted to tap the mix continuously, and a machine with no output device then yields no buffers at all rather than silence.
+    pub audio_loopback_gap_filling: bool,
     /// Whether audio devices can be listed by name.
     /// False on macOS: ScreenCaptureKit serves the system default and names no others, so a caller picks a direction rather than a device.
     pub audio_device_enumeration: bool,
@@ -115,6 +119,7 @@ mod tests {
         cursor_buttons: false,
         dirty_rects: false,
         audio_loopback: true,
+        audio_loopback_gap_filling: true,
         audio_device_enumeration: false,
     };
 
@@ -132,6 +137,7 @@ mod tests {
         cursor_buttons: true,
         dirty_rects: true,
         audio_loopback: true,
+        audio_loopback_gap_filling: true,
         audio_device_enumeration: true,
     };
 
@@ -149,6 +155,7 @@ mod tests {
         cursor_buttons: true,
         dirty_rects: false,
         audio_loopback: true,
+        audio_loopback_gap_filling: true,
         audio_device_enumeration: false,
     };
 

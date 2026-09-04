@@ -368,7 +368,7 @@ impl AudioSource for SckAudioSource {
         Ok(RawAudio {
             pts,
             bytes: &self.current,
-            // ScreenCaptureKit taps the mix continuously, so an idle system delivers real silence rather than nothing.
+            // Left to ScreenCaptureKit, which taps the mix continuously on a machine that has an output device and delivers nothing at all on one that does not: `audio_loopback_gap_filling` is false here for that reason.
             silence: false,
             // Set only when the queue had to refuse samples.
             discontinuous: lost,

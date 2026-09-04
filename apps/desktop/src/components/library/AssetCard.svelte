@@ -1,8 +1,6 @@
 <script lang="ts">
 import { formatSize } from "@recast/editor/lib/format/files";
 import { Check, Film, type IconComponent, Play } from "@recast/icons";
-import { Cutout } from "@recast/ui/cutout";
-import { cn } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
 import type { RecordingEntry } from "$lib/ipc";
 import {
@@ -51,12 +49,7 @@ const dateLabel = $derived(libraryDate(entry.created));
 
 <div class={thumbFrameClass(view)}>
   {#if thumbnail}
-    <img
-      src={thumbnail}
-      alt=""
-      draggable="false"
-      class="size-full object-cover transition-transform duration-300 motion-safe:group-hover/card:scale-[1.03]"
-    />
+    <img src={thumbnail} alt="" draggable="false" class="size-full object-cover" />
   {:else}
     <div class="grid size-full place-items-center text-muted-foreground/50">
       <Placeholder class={view === "grid" ? "size-6" : "size-4"} />
@@ -71,28 +64,29 @@ const dateLabel = $derived(libraryDate(entry.created));
     </div>
   {:else if view === "grid"}
     <div
-      class="pointer-events-none absolute inset-0 grid place-items-center bg-linear-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
+      class="pointer-events-none absolute inset-0 grid place-items-center bg-background/40 opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
     >
       <span
-        class="flex size-9 items-center justify-center rounded-full bg-foreground/90 text-background shadow-craft-md backdrop-blur transition-transform duration-200 motion-safe:group-hover/card:scale-105"
+        class="flex size-10 items-center justify-center rounded-full bg-foreground text-background transition-transform duration-200 group-active/card:scale-95"
       >
-        <Play class="size-4 translate-x-px" />
+        <Play class="size-4 translate-x-px fill-current" />
       </span>
     </div>
   {/if}
 
   {#if view === "grid" && (badge || typeLabel)}
-    <Cutout corner="bl" surface="card" radius={8} class="flex items-center px-2.5 pt-2.5 pb-1">
+    <div class="absolute bottom-2 left-2 z-10">
       {#if badge}
         {@render badge()}
       {:else}
+        <!-- Casing verbatim so `.recast` stays lowercase; 8.5px bold-uppercase read as a smudge. -->
         <span
-          class="text-[8.5px] font-bold uppercase leading-none tracking-wider text-muted-foreground"
+          class="inline-flex items-center rounded-md border border-border/50 bg-background/85 px-1.5 py-0.5 text-[10px] font-medium leading-none tracking-tight text-muted-foreground backdrop-blur-sm"
         >
           {typeLabel}
         </span>
       {/if}
-    </Cutout>
+    </div>
   {/if}
 </div>
 
@@ -119,7 +113,7 @@ const dateLabel = $derived(libraryDate(entry.created));
         </span>
         {#if typeLabel}
           <span
-            class="shrink-0 rounded bg-muted/60 px-1 py-0.5 text-[8.5px] font-bold uppercase leading-none tracking-wider text-muted-foreground ring-1 ring-inset ring-border/40"
+            class="shrink-0 rounded bg-muted/50 px-1.5 py-0.5 text-[9.5px] font-medium leading-none tracking-tight text-muted-foreground ring-1 ring-inset ring-border/40"
           >
             {typeLabel}
           </span>

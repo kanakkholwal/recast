@@ -93,6 +93,7 @@ pub(crate) fn capabilities() -> Capabilities {
             cursor_buttons: false,
             dirty_rects: false,
             audio_loopback: true,
+            audio_loopback_gap_filling: true,
             audio_device_enumeration: cfg!(feature = "pipewire-audio"),
         },
         _ => Capabilities {
@@ -112,6 +113,7 @@ pub(crate) fn capabilities() -> Capabilities {
             cursor_buttons: true,
             dirty_rects: false,
             audio_loopback: true,
+            audio_loopback_gap_filling: true,
             audio_device_enumeration: cfg!(feature = "pipewire-audio"),
         },
     }

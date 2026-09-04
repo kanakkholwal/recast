@@ -19,14 +19,15 @@ export function listClass(view: LibraryView): string {
 
 /** The card container itself. `selected` uses the neutral dark ring language. */
 export function cardShellClass(view: LibraryView, selected: boolean): string {
+	// Border-first and shadow-free at rest (like the web `.surface`) so a dense grid reads calm; hover shifts only the border.
 	return [
-		"group/card relative flex overflow-hidden border outline-none transition-[transform,background-color,border-color,box-shadow] duration-200 ease-out",
+		"group/card relative flex overflow-hidden border outline-none transition-[transform,background-color,border-color] duration-200 ease-out",
 		view === "grid"
-			? "flex-col rounded-2xl motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[0.99]"
+			? "flex-col rounded-2xl motion-safe:active:scale-[0.99]"
 			: "flex-row items-center gap-3 rounded-xl p-2 motion-safe:active:scale-[0.995]",
 		selected
 			? "border-foreground/40 bg-card ring-1 ring-inset ring-foreground/20"
-			: "border-border/50 bg-card shadow-(--shadow-craft-inset) hover:border-border/80 hover:shadow-craft-md",
+			: "border-border/60 bg-card hover:border-border/90",
 	].join(" ");
 }
 
