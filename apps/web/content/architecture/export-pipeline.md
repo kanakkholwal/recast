@@ -1,11 +1,11 @@
 ---
 kind: architecture
 title: "Export pipeline"
-description: "Browser compositing, the Rust mux tail, the durable export queue, and the automatic FFmpeg fallback."
+description: "Three render paths behind one queue: the browser engine, the same engine natively, and the FFmpeg compositor they fall back to."
 position: 6
 status: production
 domain: pipeline
-summary: "The browser composites every frame. Rust only muxes the audio back in."
+summary: "One engine composites, in the browser or natively. FFmpeg muxes, and composites only what the engine has not taken over."
 inputs:
   - "An EditorRenderState snapshot"
   - "Source media from the .recast bundle"
@@ -18,7 +18,8 @@ entrypoints:
   - "apps/desktop/src/lib/stores/exportActivity.svelte.ts"
   - "apps/desktop/src-tauri/src/commands/export/"
 invariants:
-  - "The Rust FFmpeg compositor is an automatic fallback, never a user-facing choice."
+  - "The FFmpeg compositor is the fallback, chosen for the user rather than by them; the two engine paths are opt-in flags."
+  - "A scene the FFmpeg graph cannot draw is REFUSED by name, never exported as something else."
   - "A video stream copy means the browser must render at source-composition resolution."
   - "Two serial queues cooperate: an app-scoped render queue, and a durable Rust queue that survives restart."
   - "A browser-path failure falls back to Rust without the user losing the job."
@@ -32,9 +33,20 @@ same wasm engine the live preview draws with and WebCodecs-encodes them to a
 with `-c:v copy`. Because a single renderer produces both preview and export,
 the two can't visually diverge.
 
-The legacy Rust/FFmpeg `filter_complex` compositor still exists and runs as an
-**automatic fallback**: never a user-facing choice. It is selected when the
-browser path is disabled, blocked, incapable, or fails mid-render.
+The same engine also runs **natively**, behind the `engineExport` flag
+(`export_engine.rs`): no browser window, no resolution ceiling, and the encode
+goes through `recast-codec-mf` and `recast-mux` rather than FFmpeg.
+
+The legacy Rust/FFmpeg `filter_complex` compositor still exists and runs as the
+**fallback**: chosen for the user rather than by them. It is selected when both
+engine flags are off, or when a path is blocked, incapable, or fails mid-render.
+
+That fallback can no longer draw everything the engine can, so features it
+lacks are **refused by name** instead of silently exported as something else.
+`unsupported_by_graph` (`commands/editor.rs`) names the camera layout or
+pointer dodging and tells the user which flag renders it: its camera placement
+is a sampled expression LUT already at `av_expr_parse`'s term budget, with no
+room for a second moving rect.
 
 Two independent serial queues cooperate:
 
@@ -47,8 +59,8 @@ Two independent serial queues cooperate:
   path) and the full Rust composite (fallback path).
 
 Engine selection (`chooseExportEngine`) is a pure resolver behind the
-`browserExportBeta` experimental flag; while that flag is off, everything is
-Rust.
+`browserExportBeta` experimental flag. Both it and `engineExport` are off by
+default, so an untouched install still composites in FFmpeg.
 
 ## Diagram
 
@@ -119,6 +131,8 @@ sequenceDiagram
 | `run_mux_job` / `mux_browser_gif` | `apps/desktop/src-tauri/src/commands/editor.rs` /  | `-c:v copy` + audio mux; 2-pass GIF palette on the browser video |
 | `export_queue` commands + worker | `apps/desktop/src-tauri/src/commands/export_queue.rs` | Durable SQLite queue, serial worker, `save_browser_export_video`, reconcile/sweep |
 | Rust composite fallback | `apps/desktop/src-tauri/src/commands/export/*.rs` | `run_export_job` full FFmpeg compositor (cuts/speed, captions, camera, blur, codec) |
+| Native engine export | `apps/desktop/src-tauri/src/export_engine.rs` | The wgpu compositor plus `recast-codec-mf`/`recast-mux`, behind `engineExport` |
+| Graph refusal | `unsupported_by_graph` in `apps/desktop/src-tauri/src/commands/editor.rs` | Names a camera layout or pointer dodge the FFmpeg graph cannot draw |
 
 ## Control / data flow
 

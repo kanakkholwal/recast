@@ -11,11 +11,13 @@ import {
 	experimentalStore,
 	FLAG_META,
 } from "@recast/editor/stores/experimental.svelte";
+import { exportPreferences } from "$lib/stores/export-preferences.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	ArrowUpRight,
 	BrandGoogleDrive,
 	Cloud,
+	Clapperboard,
 	Cpu,
 	EyeOff,
 	FlaskConical,
@@ -804,20 +806,13 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           {/snippet}
           <CloudSignIn />
         </SectionCard>
-        {#if experimentalStore.isEnabled("selfHosting")}
-          <section id="settings-cloud-endpoint" class="flex flex-col gap-3">
+        <section id="settings-cloud-endpoint" class="flex flex-col gap-3">
             <div class="px-1">
               <h2
                 class="flex items-center gap-1.5 text-base font-semibold tracking-tight text-foreground"
               >
                 <Server class="size-4 text-muted-foreground" />
                 Self-hosting
-                <span
-                  class="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-warning"
-                >
-                  <FlaskConical class="size-2.5" />
-                  Experimental
-                </span>
               </h2>
               <p
                 class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground"
@@ -829,10 +824,9 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
             <div
               class="overflow-hidden rounded-2xl border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
             >
-              <CloudEndpoint />
-            </div>
-          </section>
-        {/if}
+            <CloudEndpoint />
+          </div>
+        </section>
 
         <!-- Separate auth from Recast Cloud above; both are external
                    integrations that take exports off this machine. -->
@@ -867,6 +861,26 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               />
             </SettingsRow>
           {/each}
+        </SectionCard>
+
+        <SectionCard
+          id="settings-export-engine"
+          label="Exporting"
+          description="How exports are composited. The default matches the preview exactly."
+        >
+          {#snippet icon()}
+            <Clapperboard class="size-4 text-muted-foreground" />
+          {/snippet}
+          <SettingsRow
+            label="Use the legacy exporter"
+            description="Composite exports with FFmpeg instead of the preview's own engine. Slower and not a pixel-for-pixel match, but worth trying if an export comes out wrong on this machine."
+          >
+            <Switch
+              checked={exportPreferences.forceLegacy}
+              onCheckedChange={(v) => exportPreferences.setForceLegacy(v)}
+              aria-label="Use the legacy exporter"
+            />
+          </SettingsRow>
         </SectionCard>
 
         <SectionCard

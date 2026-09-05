@@ -1,7 +1,7 @@
 ---
 kind: architecture
 title: "System overview"
-description: "A Rust recorder, a Svelte editor engine, and one WebGL2 compositor that draws both the preview and the export."
+description: "A Rust recorder, a Svelte editor engine, and one wgpu compositor that draws both the preview and the export."
 position: 0
 status: production
 domain: platform
@@ -25,7 +25,7 @@ invariants:
 
 Recast is an **offline-first desktop screen recorder + video editor**. Stack: **Tauri v2** (Rust backend) + **Svelte 5** (runes) frontend, in a **pnpm monorepo**. The editor engine lives in the `@recast/editor` package; the desktop app (`recast-desktop`) is a thin **host** that wires it to native capabilities through injected services and host-hooks.
 
-The guiding architectural bet: **one compositor** drives *both* the live preview and the export, so the two can never diverge. It is a Rust crate over wgpu, compiled to wasm for the browser and natively for the desktop, and FFmpeg is demoted from a second compositor to a pure **muxer**. Recording is Rust; editing, preview and export compositing run in the WebView (WebGPU or WebGL2, plus WebCodecs); persistence and heavy native work cross the Tauri IPC boundary.
+The guiding architectural bet: **one compositor** drives *both* the live preview and the export, so the two can never diverge. It is a Rust crate over wgpu, compiled to wasm for the browser and natively for the desktop, and FFmpeg is demoted from a second compositor to a pure **muxer**. Recording is Rust; editing and preview run in the WebView, where the engine is the same crate compiled to wasm; export composites either there with WebCodecs or natively in the same crates, and persistence and heavy native work cross the Tauri IPC boundary.
 
 ## Package & host map
 
@@ -51,7 +51,7 @@ The `@recast/*` packages **ship source** (their `exports` map points at `./src`)
 flowchart LR
     subgraph WV["WebView2 (frontend, one per window)"]
         svelte["Svelte UI"]
-        gl["WebGL2 / WebCodecs"]
+        gl["wasm engine / WebCodecs"]
         wk["Web Workers ×5<br/>(mediabunny, filmstrip,<br/>render, export, smoothing)"]
         svelte --> gl
         svelte --> wk

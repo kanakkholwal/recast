@@ -53,6 +53,7 @@ import {
 import type { CameraCapture } from "@recast/editor/lib/wire-types";
 import { createEditorStore, type VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
 import { experimentalStore } from "@recast/editor/stores/experimental.svelte";
+import { exportPreferences } from "$lib/stores/export-preferences.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	ArrowLeft,
@@ -1027,11 +1028,12 @@ async function handleExport() {
 	exportNow = Date.now();
 
 	try {
-		// Engine first: it decides whether the render state needs its visual half. The beta toggle is the gate.
-		const wantBrowser = experimentalStore.isEnabled("browserExportBeta");
-		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
+		// Engine first: it decides whether the render state needs its visual half. On by default now, with the legacy setting as the way back.
+		const forceLegacy = exportPreferences.forceLegacy;
+		const capability = forceLegacy ? null : await probeBrowserExportCapability();
 		const engine = chooseExportEngine({
-			masterEnabled: wantBrowser,
+			masterEnabled: true,
+			forceLegacy,
 			blockedReason: browserExportBlockedReason(store),
 			capabilitySupported: capability?.supported ?? false,
 		});

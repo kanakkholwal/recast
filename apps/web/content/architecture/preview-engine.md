@@ -149,6 +149,48 @@ canvas into a WebCodecs `CanvasSource`. The producer/consumer split is the only
 structure left: `build-export-job.ts` touches the store and the DOM,
 `run-export-job.ts` is pure and runs in the worker.
 
+## Camera layouts
+
+A clip can arrange the screen and the camera four ways beyond the floating
+bubble: side by side, stacked, screen only, camera only. `recast-compositor`
+resolves each to one struct, so a change between them is a lerp of a few values
+rather than a second render target:
+
+```rust
+LayoutRects { screen, camera, screen_opacity, camera_opacity, camera_rounding }
+```
+
+`LayerParams` already carries `dest` and `opacity`, so this feeds the existing
+card pass: no new shaders, and layouts place rects INSIDE the canvas without
+touching canvas geometry. The screen **fits** its half, because cropping would
+hide the edge of what is being demonstrated; the camera **covers** its own, as
+the bubble already does.
+
+Three rules are easy to get wrong and are each pinned by a test:
+
+- **Two time axes.** A layout is anchored to its clip's ORIGINAL start, the same
+  key `SegmentSpeed` and `SegmentAnim` use, so re-deriving segments
+  re-associates by start. A transition is timed on the OUTPUT axis, because a
+  cross-fade is what the viewer sees: reading the boundary on the original axis
+  starts the move late by the length of every cut before it.
+- **An anchor is resolved against the segments**, not against raw time. A cut
+  that leaves a key on no clip drops it rather than applying it from its own
+  timestamp, which is the rule the editor's timeline labels already used.
+- **A hidden camera layer decides nothing.** `to_scene` marks the layer hidden
+  rather than removing it, so the evaluator has to skip it or switching the
+  camera off leaves a split reserving half an empty frame.
+
+The bubble's rounding and shadow are not a boolean. `camera_rounding` blends
+with the rects, so the camera rounds down as it grows into its half instead of
+squaring its corners on the first frame of the move. The pointer and
+annotations are anchored to the screen card, so they carry the screen's own
+opacity and leave with it when a layout hides it.
+
+Layouts and pointer dodging are engine-only. The FFmpeg graph places the camera
+with a sampled expression LUT already at its parser's term budget, so it
+refuses them by name rather than drawing something else. See
+[Export pipeline](/architecture/export-pipeline).
+
 ## Invariants & gotchas
 
 - **Picture clock is master, not `<video>`.** On the MediaBunny path the gapless

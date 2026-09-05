@@ -118,8 +118,10 @@ rand = "0.8"
 # Silence detection runs Silero VAD on `tract` — PURE RUST, no native ONNX
 # Runtime. This keeps the always-on silence path OS-agnostic (builds on every
 # target, incl. x86_64-apple-darwin where `ort` has no prebuilt). Replaces the
-# old `vad-rs` (which pulled `ort`). `silero_vad.onnx` is downloaded on first use
-# (see silence.rs); tract runs its Conv+LSTM graph natively.
+# old `vad-rs` (which pulled `ort`). The model is EMBEDDED (see silence.rs), and
+# pre-folded to 16 kHz by scripts/build-silero-vad.py: tract cannot analyse the
+# ONNX `If` that upstream uses to pick a sample rate, so the published file
+# fails to load as published.
 tract-onnx = "0.21"
 # On-device transcription engine: Handy's transcribe.cpp — a ggml-native engine
 # (GGUF) that runs 16+ model families (Parakeet, Whisper, Canary, ...) from a

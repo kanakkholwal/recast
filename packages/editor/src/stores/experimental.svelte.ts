@@ -6,12 +6,7 @@
 
 import { PersistedState } from "@recast/ui/persisted-state";
 
-export type ExperimentalFlag =
-	| "silenceDetection"
-	| "selfHosting"
-	| "remoteTranscription"
-	| "browserExportBeta"
-	| "engineExport";
+export type ExperimentalFlag = "silenceDetection" | "remoteTranscription" | "engineExport";
 
 interface FlagMeta {
 	key: ExperimentalFlag;
@@ -24,25 +19,13 @@ export const FLAG_META: FlagMeta[] = [
 		key: "silenceDetection",
 		label: "Silence detection & cuts (alpha)",
 		description:
-			"Find quiet stretches with no cursor movement and skip them on playback and export. Alpha: the detector is being replaced, so where it puts a cut will change.",
-	},
-	{
-		key: "selfHosting",
-		label: "Self-hosting server endpoint (beta)",
-		description:
-			"Point the app at your own Recast Cloud server instead of the hosted one. Beta: usable, but endpoints and stored shapes can still change between releases.",
+			"Find quiet stretches with no cursor movement and skip them on playback and export. Alpha: nothing is cut for you, and the thresholds that decide what counts as a pause are still being tuned.",
 	},
 	{
 		key: "remoteTranscription",
 		label: "Remote transcription endpoints",
 		description:
 			"Transcribe captions through an OpenAI-compatible endpoint (LM Studio, a self-hosted server, or a third-party API) instead of an on-device model. Response formats vary between servers, so treat this as early.",
-	},
-	{
-		key: "browserExportBeta",
-		label: "Export in the preview window (beta)",
-		description:
-			"Run the engine in the preview window and encode with WebCodecs. Same renderer as the preview, so it matches exactly. Falls back automatically above 1080p60 and where WebCodecs is missing.",
 	},
 	{
 		key: "engineExport",
@@ -54,9 +37,7 @@ export const FLAG_META: FlagMeta[] = [
 
 const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	silenceDetection: false,
-	selfHosting: false,
 	remoteTranscription: false,
-	browserExportBeta: false,
 	engineExport: false,
 };
 

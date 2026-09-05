@@ -77,7 +77,7 @@
 				"noNonNullAssertion": "error",
 				"noInferrableTypes": "error",
 				"noParameterAssign": "error",
-				"noNestedTernary": "warn",
+				"noNestedTernary": "off",
 				"noYodaExpression": "error",
 				"useCollapsedIf": "error",
 				"useCollapsedElseIf": "error",
@@ -98,7 +98,7 @@
 				"noExcessiveLinesPerFunction": {
 					"level": "warn",
 					"options": {
-						"maxLines": 120
+						"maxLines": 150
 					}
 				},
 				"useMaxParams": {

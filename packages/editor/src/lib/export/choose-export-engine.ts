@@ -2,20 +2,19 @@
  * Export-engine resolver: the single decision for whether an export runs through
  * the wasm engine (the same compositor the preview draws with, so it is WYSIWYG
  * by construction) or the legacy Rust/FFmpeg one. Pure and dependency-free so it
- * unit-tests without the store/DOM; the caller feeds the master flag, the
- * escape-hatch setting, the feature-gate reason, and the WebCodecs capability.
+ * unit-tests without the store/DOM.
  *
- * Rust stays only as an automatic fallback (capability / feature-gate / user
- * escape hatch) — never a user-facing engine choice.
+ * The engine is the default. Rust is reached by an automatic fallback
+ * (capability, feature gate, throughput) or by the legacy setting.
  */
 
 export type ExportEngine = "browser" | "rust";
 
 export interface ExportEngineInputs {
-	/** The `browserExportBeta` experimental flag. While false, everything is Rust. */
+	/** Kill switch for the whole path. True in the app; false only in tests. */
 	masterEnabled: boolean;
-	/** Support escape hatch for when browser export flips default-on. No producer
-	 *  yet, so omitting it is the normal case. */
+	/** The "Use the legacy exporter" setting: the way back for a machine whose
+	 *  WebView encodes badly, now that the engine is the default. */
 	forceLegacy?: boolean;
 	/** browserExportBlockedReason(store): non-null routes to Rust with the reason. */
 	blockedReason: string | null;
