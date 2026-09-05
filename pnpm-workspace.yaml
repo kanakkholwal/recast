@@ -5,7 +5,7 @@ allowBuilds:
   core-js: true
   esbuild: true
   sharp: true
-  workerd: set this to true or false
+  workerd: true
 minimumReleaseAgeExclude:
   - mediabunny@1.52.0
 # Moved here from the `pnpm` field in package.json, which pnpm 11 no longer reads
