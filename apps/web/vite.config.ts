@@ -1,9 +1,15 @@
+import { existsSync } from "node:fs";
 import { docvia } from "@docvia/plugin-vite";
-import adapter from "@sveltejs/adapter-auto";
+import adapter_auto from "@sveltejs/adapter-auto";
+import adapter_cf from "@sveltejs/adapter-cloudflare";
+
 import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import docviaConfig from "./docvia.config.ts";
+
+// Cloudflare only when wrangler.jsonc is present; otherwise adapter-auto for Vercel/Node/preview.
+const useCloudflare = existsSync(new URL("./wrangler.jsonc", import.meta.url));
 
 export default defineConfig({
 	plugins: [
@@ -16,7 +22,7 @@ export default defineConfig({
 			},
 
 			// Cloudflare Workers: the build lands in .svelte-kit/cloudflare and wrangler.jsonc points the deploy at it.
-			adapter: adapter(),
+			adapter: useCloudflare ? adapter_cf() : adapter_auto(),
 			prerender: {
 				// Without this, prerendered pages bake SvelteKit's placeholder origin into canonical and og:url.
 				origin: process.env.PUBLIC_APP_URL ?? "https://recast.li",

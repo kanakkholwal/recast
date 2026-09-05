@@ -2,9 +2,24 @@ import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, searchForWorkspaceRoot } from "vite";
 import pkg from "./package.json" with { type: "json" };
+import adapter from "@sveltejs/adapter-static";
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [
+		tailwindcss(),
+		sveltekit({
+			adapter: adapter(),
+			alias: {
+				$components: "src/components",
+				$utils: "src/utils",
+				$hooks: "src/lib/hooks",
+				$constants: "src/constants",
+				$tools: "src/tools",
+				$stores: "src/stores",
+				"@": "./src/@",
+			},
+		}),
+	],
 	define: {
 		__NAME__: `"${pkg.name}"`,
 		__VERSION__: `"${pkg.version}"`,

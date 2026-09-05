@@ -568,7 +568,7 @@ mod tests {
     fn the_minimum_duration_is_inclusive_at_its_boundary() {
         let with_gap = |gap: usize| {
             let mut probs = vec![0.9];
-            probs.extend(std::iter::repeat(0.01).take(gap));
+            probs.extend(std::iter::repeat_n(0.01, gap));
             probs.push(0.9);
             super::silence_runs(&probs, 0.1, 0.5, 0.3).len()
         };
@@ -679,7 +679,7 @@ mod tests {
     /// One frame is 32ms, so these lengths are in frames of that.
     fn gap(frames: usize) -> Vec<f32> {
         let mut probs = vec![0.9];
-        probs.extend(std::iter::repeat(0.01).take(frames));
+        probs.extend(std::iter::repeat_n(0.01, frames));
         probs.push(0.9);
         probs
     }
