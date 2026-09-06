@@ -20,8 +20,7 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 	canvasHeight: number,
 ): Promise<T[]> {
 	if (canvasWidth <= 0 || canvasHeight <= 0) return annotations;
-	// Make sure webfonts have finished loading before we rasterize, so a text
-	// annotation doesn't bake in a fallback font it was never previewed with.
+	// Wait for webfonts, so a text annotation doesn't bake in a fallback font it was never previewed with.
 	if (typeof document !== "undefined" && document.fonts?.ready) {
 		try {
 			await document.fonts.ready;
@@ -36,7 +35,7 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 			continue;
 		}
 		const k = a.kind;
-		const rendered = await renderTextToDataUrl(k, canvasWidth, canvasHeight);
+		const rendered = renderTextToDataUrl(k, canvasWidth, canvasHeight);
 		if (!rendered) {
 			// Drop the annotation rather than fail the whole export.
 			console.warn("rasterize-text: failed to render text annotation, skipping", k.content);
@@ -49,8 +48,7 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 				x: Math.min(k.x, k.x + k.w),
 				y: Math.min(k.y, k.y + k.h),
 				w: Math.abs(k.w),
-				// Grow to the rendered content height so overflow isn't clipped
-				// (matches the preview's min-height box).
+				// Grow to the rendered content height so overflow isn't clipped, matching the preview's min-height box.
 				h: rendered.heightPx / canvasHeight,
 				path: rendered.url,
 				opacity: 1,
@@ -61,19 +59,18 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 	return out;
 }
 
-async function renderTextToDataUrl(
+function renderTextToDataUrl(
 	k: Extract<Annotation["kind"], { kind: "text" }>,
 	canvasWidth: number,
 	canvasHeight: number,
-): Promise<{ url: string; heightPx: number } | null> {
+): { url: string; heightPx: number } | null {
 	// UV box → export-canvas pixels.
 	const boxW = Math.max(1, Math.round(Math.abs(k.w) * canvasWidth));
 	const boxH = Math.max(1, Math.round(Math.abs(k.h) * canvasHeight));
 	const fontPx = Math.max(1, Math.round(k.fontSize * canvasHeight));
 	const font = `${k.fontWeight} ${fontPx}px ${k.fontFamily}`;
 
-	// Wrap on a scratch context first so we can size the canvas to the content.
-	// The preview grows the box (min-height) rather than clipping overflow.
+	// Wrap on a scratch context first so the canvas can be sized to the content, as the preview's min-height does.
 	const scratch = document.createElement("canvas").getContext("2d");
 	if (!scratch) return null;
 	scratch.font = font;
@@ -90,8 +87,7 @@ async function renderTextToDataUrl(
 	ctx.clearRect(0, 0, boxW, outH);
 	ctx.font = font;
 	ctx.fillStyle = k.color;
-	// Centre each line vertically in its line box (half-leading), matching the
-	// preview's CSS `line-height` instead of hugging the top of the box.
+	// Centre each line in its line box (half-leading), matching the preview's CSS line-height.
 	ctx.textBaseline = "middle";
 	ctx.textAlign = k.align === "center" ? "center" : k.align === "right" ? "right" : "left";
 	const xAnchor = k.align === "center" ? boxW / 2 : k.align === "right" ? boxW - 1 : 0;

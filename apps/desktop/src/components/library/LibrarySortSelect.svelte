@@ -1,8 +1,10 @@
 <script lang="ts">
-// One sort vocabulary for every library page. The two pages used to disagree
-// on the Size icon (Film vs Download) for the same concept.
+// One sort vocabulary for every library page: the two pages used to disagree on the Size icon for one concept.
+
 import { Clock, HardDrive, SortAsc } from "@recast/icons";
+import { buttonVariants } from "@recast/ui/button";
 import * as Select from "@recast/ui/select";
+import { cn } from "@recast/ui/utils";
 import type { LibrarySort } from "$lib/library/list";
 
 interface Props {
@@ -28,12 +30,11 @@ const LABELS: Record<LibrarySort, string> = {
   }}
 >
   <Select.Trigger
-    size="sm"
-    class="h-7 gap-1 rounded-lg border-border/50 px-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+    class={cn(buttonVariants({ variant: "raw"}), "border-none border-0 bg-transparent! px-2")}
     aria-label={`Sort ${noun}`}
   >
-    <span data-slot="select-value" class="flex items-center gap-1">
-      <SortAsc size={11} />
+    <span data-slot="select-value" class="flex items-center gap-1.5">
+      <SortAsc size={12} class="text-muted-foreground" />
       {LABELS[value]}
     </span>
   </Select.Trigger>

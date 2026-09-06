@@ -9,10 +9,7 @@ import {
 	Play,
 	RotateCcw,
 	RotateCw,
-	// @recast/icons maps Lucide-style names onto Tabler glyphs, and Tabler's
-	// volume scale runs the other way: `Volume` is the two-arc loud one and
-	// `Volume2` (IconVolume3) draws no arcs at all. Aliased to what they
-	// actually render so the level mapping below can't be read backwards.
+	// Tabler's volume scale runs the other way, so alias each glyph to what it actually renders.
 	Volume as VolumeHigh,
 	Volume1 as VolumeMedium,
 	Volume2 as VolumeLow,
@@ -45,9 +42,7 @@ import {
 import CaptionBox from "@recast/captions/box";
 import { EngagementTracker, markerLeftPct, resolveDownloadPlan, volumeLevel } from "./player.logic";
 
-// Minimal by default: play, time, then speed / volume / fullscreen. The +-10s
-// jog buttons and PiP are opt-in — the scrubber covers the same intent and a
-// six-button row was reading as a toolbar bolted onto the video.
+// Jog buttons and PiP are opt-in: the scrubber covers the same intent and six buttons read as a toolbar.
 const DEFAULT_CONTROLS: RecastPlayerControls = {
 	bigPlay: true,
 	seek: false,
@@ -95,8 +90,7 @@ let controllerEl = $state<HTMLElement | null>(null);
 let videoEl = $state<HTMLVideoElement | null>(null);
 let intrinsicWidth = $state(0);
 let intrinsicHeight = $state(0);
-// Mirrors videoEl.duration into reactive state: the DOM property itself never
-// invalidates, so marker positions computed from it would stay frozen at 0.
+// The DOM property never invalidates, so marker positions computed from it would stay frozen at 0.
 let duration = $state(0);
 let isTheaterMode = $state(false);
 let isPictureInPicture = $state(false);
@@ -106,18 +100,13 @@ const engagement = new EngagementTracker();
 const rateMenuId = $props.id();
 
 const isHls = $derived(/\.m3u8(\?|#|$)/i.test(src));
-// media-chrome's `autohide` only suppresses the inactivity timer; the bar
-// still starts hidden on an autoplaying clip. `noautohide` on the control bar
-// is what keeps it visible from frame one (negative autohide = never hide).
+// `autohide` only suppresses the inactivity timer; `noautohide` is what keeps the bar visible from frame one.
 const pinControls = $derived(typeof autohide === "number" && autohide < 0);
 const mergedControls = $derived({ ...DEFAULT_CONTROLS, ...controls });
 const playerLabel = $derived(ariaLabel || title || "Video player");
 const mediaTag = $derived(isHls ? "hls-video" : "video");
 
-// Mute is a plain button, not `media-mute-button`: media-chrome swaps its
-// off/low/medium/high icons via shadow-DOM rules keyed on a
-// `mediavolumelevel` attribute the controller does not propagate reliably
-// here. Deriving from our own state is deterministic.
+// A plain button: media-chrome keys its icon swap on a `mediavolumelevel` the controller doesn't propagate reliably here.
 const VolumeIcon = $derived(
 	{
 		muted: VolumeMuted,
@@ -132,10 +121,7 @@ function toggleMute() {
 	videoEl.muted = !videoEl.muted;
 }
 
-// ── Styled caption overlay ──────────────────────────────────────────────
-// Renders captions through the shared @recast/captions CaptionBox (the same
-// look as the editor) instead of the browser's default cue boxes: word-by-word
-// highlight when the VTT carries inline timestamps, else the whole cue.
+// --- Styled caption overlay: the shared CaptionBox, with word-by-word highlight when the VTT carries inline timestamps.
 const resolvedCaptionStyle = $derived({ ...DEFAULT_CAPTION_STYLE, ...captionStyle });
 const captionAnim = $derived(resolveCaptionAnimation(resolvedCaptionStyle.animation));
 const hasCaptionTrack = $derived(
@@ -144,9 +130,7 @@ const hasCaptionTrack = $derived(
 let captionsEnabled = $state(true);
 let cueWords = $state<TranscriptWord[]>([]);
 
-// The chunk to show at the playhead + its progress, mirroring the editor's
-// CaptionOverlay. Times are output-time seconds (the uploaded VTT is output-
-// time-mapped), matching `currentTime`.
+// Times are output-time seconds matching `currentTime`, since the uploaded VTT is output-time-mapped.
 const captionView = $derived.by(() => {
 	if (!captionsEnabled || cueWords.length === 0) return null;
 	const runs = chunkWords(cueWords, captionAnim);
@@ -175,17 +159,14 @@ const captionJustify = $derived(
 			: "center",
 );
 
-// Bind the caption track: keep it "hidden" (cues stay parsed, but the UA never
-// paints its default boxes — our overlay renders instead) and refresh the
-// active cue's words on every cue change.
+// Keep the track hidden so cues stay parsed but the UA never paints its own boxes; our overlay renders instead.
 $effect(() => {
 	const video = videoEl;
 	if (!video || !hasCaptionTrack) return;
 	let track: TextTrack | null = null;
 	const readActive = () => {
 		if (!track) return;
-		// Re-assert hidden so a stray "showing" (e.g. the `default` track attr)
-		// can't double-render native cues over our overlay.
+		// Re-assert hidden so a stray 'showing' (the `default` track attribute) can't double-render native cues.
 		if (track.mode === "showing") track.mode = "hidden";
 		const cue = track.activeCues?.[0] as VTTCue | undefined;
 		cueWords = cue ? parseKaraokeCue(cue.text, cue.startTime, cue.endTime) : [];
@@ -218,8 +199,7 @@ const resolvedAspectRatio = $derived.by(() => {
 });
 const playerStyle = $derived.by(() => {
 	const vars = [
-		// Reserve 16/9 before metadata loads; `auto` would collapse the
-		// slotted <video> to 300×150 and cause a layout shift on the common case.
+		// Reserve 16/9 before metadata: `auto` collapses the slotted <video> to 300x150 and shifts layout.
 		resolvedAspectRatio
 			? `--recast-player-aspect-ratio: ${resolvedAspectRatio};`
 			: "--recast-player-aspect-ratio: 16 / 9;",
@@ -278,8 +258,7 @@ function setTheaterMode(next: boolean) {
 async function enterFullscreen() {
 	if (!controllerEl) return;
 	if (document.fullscreenElement === controllerEl) return;
-	// iOS Safari has no Element.requestFullscreen; the video element owns
-	// fullscreen there and only in its own native presentation mode.
+	// iOS Safari has no Element.requestFullscreen; the video element owns fullscreen there.
 	if (typeof controllerEl.requestFullscreen !== "function") {
 		(videoEl as unknown as { webkitEnterFullscreen?: () => void })?.webkitEnterFullscreen?.();
 		return;
@@ -324,8 +303,7 @@ async function download() {
 	anchor.rel = "noreferrer";
 	let objectUrl: string | null = null;
 	if (plan.strategy === "fetch-blob") {
-		// A cross-origin `download` attribute is ignored and the anchor
-		// navigates instead, so the bytes have to come through us.
+		// A cross-origin `download` attribute is ignored and the anchor navigates, so the bytes come through us.
 		try {
 			const response = await fetch(src, { mode: "cors", credentials: "omit" });
 			if (!response.ok) throw new Error(`${response.status}`);
@@ -493,9 +471,9 @@ const errorMessage = $derived.by(() => {
 	}
 });
 
-// Reset per-session state when the source changes, otherwise a reused
-// component keeps the previous clip's view-start and progress high-water mark.
+// A reused component otherwise keeps the previous clip's view-start and progress high-water mark.
 $effect(() => {
+	// biome-ignore lint/suspicious/noUnusedExpressions: the bare read is the effect's dependency.
 	src;
 	engagement.reset();
 	mediaError = null;
@@ -524,9 +502,7 @@ $effect(() => {
 	};
 });
 
-// Home/End only. Every other transport key belongs to <media-controller>'s
-// own hotkeys, which already handle range-focus and per-button opt-out —
-// duplicating them here made each press fire twice.
+// Home/End only: <media-controller>'s own hotkeys own the rest, and duplicating them fired each press twice.
 function handleKeyDown(event: KeyboardEvent) {
 	if (!videoEl || !keyboardShortcuts) return;
 	const target = event.target as HTMLElement | null;
@@ -548,8 +524,7 @@ function handleKeyDown(event: KeyboardEvent) {
 	}
 }
 
-// Bound imperatively: media-chrome owns keydown on the controller, so a
-// template handler here just trips Svelte's non-interactive-element rule.
+// Bound imperatively: media-chrome owns keydown, so a template handler trips Svelte's non-interactive-element rule.
 $effect(() => {
 	const el = controllerEl;
 	if (!el) return;
@@ -583,7 +558,7 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (!videoEl || !isFinite(currentTime)) return;
+	if (!videoEl || !Number.isFinite(currentTime)) return;
 	if (Math.abs(videoEl.currentTime - currentTime) > 0.05) {
 		videoEl.currentTime = Math.max(0, currentTime);
 	}
@@ -841,9 +816,7 @@ $effect(() => {
 		white-space: nowrap;
 	}
 
-	/* Styled caption overlay. Fills the media area (a size container so the
-	   caption's `cqh` font tracks the player height) and never eats pointer
-	   events. The active caption box is placed by `.recast-caption-slot`. */
+	/* Fills the media area as a size container so the caption's `cqh` font tracks player height; never eats pointer events. */
 	.recast-caption-layer {
 		position: absolute;
 		inset: 0;
@@ -859,8 +832,7 @@ $effect(() => {
 		padding: 0 6%;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		/* CaptionBox drops its own entrance/scale; this covers the branding and
-		   control transitions. Opacity fades are kept; they aren't motion. */
+		/* CaptionBox drops its own entrance; opacity fades are kept, since they aren't motion. */
 		:global(.recast-player *) {
 			transition-property: opacity, background-color, color !important;
 			animation-duration: 0.01ms !important;

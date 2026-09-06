@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { Button } from "../button";
-	import { IconLayoutSidebar } from '@tabler/icons-svelte';
-	import { cn } from "@recast/ui/utils";
-	import type { ComponentProps } from "svelte";
-	import { useSidebar } from "./context.svelte";
+import { Button } from "../button";
+import { PanelLeft } from "@recast/icons";
+import { cn } from "@recast/ui/utils";
+import type { ComponentProps } from "svelte";
+import { useSidebar } from "./context.svelte";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		onclick,
-		...restProps
-	}: ComponentProps<typeof Button> & {
-		onclick?: (e: MouseEvent) => void;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	onclick,
+	...restProps
+}: ComponentProps<typeof Button> & {
+	onclick?: (e: MouseEvent) => void;
+} = $props();
 
-	const sidebar = useSidebar();
+const sidebar = useSidebar();
 </script>
 
 <Button
@@ -31,6 +31,6 @@
 	}}
 	{...restProps}
 >
-	<IconLayoutSidebar  />
+	<PanelLeft  />
 	<span class="sr-only">Toggle Sidebar</span>
 </Button>

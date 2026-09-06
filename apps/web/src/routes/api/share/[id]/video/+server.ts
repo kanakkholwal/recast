@@ -3,18 +3,10 @@ import { and, eq } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { member, recast, share, shareMember, user } from "$lib/db/schema";
-import {
-	constantTimeEquals,
-	unlockCookieName,
-	unlockToken,
-} from "$lib/share/password";
 import { grantCookieName, normalizeEmail, readGrantedEmail } from "$lib/share/grant";
+import { constantTimeEquals, unlockCookieName, unlockToken } from "$lib/share/password";
 import { isStorageConfigured, signDownloadUrl } from "$lib/storage";
-import {
-	deliveryState,
-	getQuotaSnapshot,
-	recordDelivery,
-} from "$lib/storage/quota";
+import { deliveryState, getQuotaSnapshot, recordDelivery } from "$lib/storage/quota";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = {
@@ -82,12 +74,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 			const [m] = await db
 				.select({ id: member.id })
 				.from(member)
-				.where(
-					and(
-						eq(member.userId, session.user.id),
-						eq(member.organizationId, s.organizationId),
-					),
-				)
+				.where(and(eq(member.userId, session.user.id), eq(member.organizationId, s.organizationId)))
 				.limit(1);
 			if (!m) error(403, "Not a member of this workspace");
 			break;
@@ -97,24 +84,15 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 			// Owner short-circuits.
 			if (session?.user && s.ownerId === session.user.id) break;
 
-			// Identity can come from a signed-in email OR an account-less grant
-			// cookie (see $lib/share/grant) — both re-checked against the
-			// allowlist below so a removed invitee loses access immediately.
-			const grantedEmail = await readGrantedEmail(
-				s.slug,
-				cookies.get(grantCookieName(s.slug)),
-			);
+			// Identity can be a signed-in email or an account-less grant cookie; both are re-checked against the allowlist below.
+			const grantedEmail = await readGrantedEmail(s.slug, cookies.get(grantCookieName(s.slug)));
 			const candidates = [session?.user?.email, grantedEmail]
 				.filter((e): e is string => Boolean(e))
 				.map(normalizeEmail);
 
 			if (candidates.length === 0) {
-				// No session and no grant — signal the player to render the
-				// "request access" prompt rather than a bare 401.
-				return json(
-					{ ok: false, reason: "claim_required" },
-					{ status: 401 },
-				);
+				// No session and no grant: signal the player to render the request-access prompt rather than a bare 401.
+				return json({ ok: false, reason: "claim_required" }, { status: 401 });
 			}
 
 			const members = await db
@@ -131,8 +109,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 		case "private": {
 			if (!session?.user) error(401, "Sign in required");
 			if (session.user.id === s.ownerId) break;
-			// Re-read role server-side rather than trusting session.user.role
-			// so a role change takes effect on the next request.
+			// Re-read the role server-side rather than trusting the session, so a role change takes effect next request.
 			const [u] = await db
 				.select({ role: user.role })
 				.from(user)
@@ -150,10 +127,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 		const got = cookies.get(unlockCookieName(s.slug));
 		const expected = await unlockToken(s.slug);
 		if (!got || !constantTimeEquals(got, expected)) {
-			return json(
-				{ ok: false, reason: "password_required" },
-				{ status: 401 },
-			);
+			return json({ ok: false, reason: "password_required" }, { status: 401 });
 		}
 	}
 
@@ -171,10 +145,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 		return json({ ok: false, reason: "archived" }, { status: 410 });
 	}
 
-	// Egress is the dominant infra cost, so the monthly delivery allowance is
-	// enforced here — the one place a playable URL is handed out. Paid plans
-	// keep streaming past the cap (metered as overage); breaking a customer's
-	// live demo would cost more than the bandwidth.
+	// Egress dominates infra cost, so the allowance is enforced where a playable URL is handed out; paid plans stream past the cap as overage.
 	if (s.organizationId) {
 		const snapshot = await getQuotaSnapshot(s.organizationId);
 		if (snapshot) {
@@ -197,8 +168,7 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 		expiresInSeconds: SIGNED_URL_TTL_SECONDS,
 	});
 
-	// Counted per URL grant at full file size — an upper bound, since viewers
-	// who drop off transfer less. Deliberately conservative: it guards the bill.
+	// Counted per URL grant at full file size, an upper bound kept deliberately conservative because it guards the bill.
 	if (s.organizationId && r.sizeBytes) {
 		await recordDelivery(s.organizationId, r.sizeBytes).catch((err) => {
 			console.error("[delivery] failed to record", err);

@@ -25,9 +25,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	if (row.status === "archived") return json({ ok: true }); // idempotent
 	if (row.status !== "published") error(409, "Only published recasts can be archived");
 
-	// State first, object after: a failed transaction must not leave a
-	// published row whose video no longer exists. Delivery already served is
-	// never reversed here, only the stored-bytes and active-count meters.
+	// State first, object after: a failed transaction must not leave a published row whose video is gone. Served delivery is never reversed.
 	await getDb().transaction(async (tx) => {
 		await tx
 			.update(recast)
@@ -44,8 +42,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 			.where(eq(workspaceUsage.workspaceId, row.workspaceId));
 	});
 
-	// The poster stays: the archive list renders it, and a thumbnail is not
-	// what the storage bill is made of.
+	// The poster stays: the archive list renders it, and a thumbnail isn't what the storage bill is made of.
 	await deleteRecastObjects(row.id, [row.videoUrl]);
 
 	return json({ ok: true });

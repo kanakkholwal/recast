@@ -1,7 +1,4 @@
-// Browser-side camera enumeration. Rust enumerates DirectShow friendly names but
-// getUserMedia operates on MediaDevices deviceIds; when they disagree, passing a
-// DirectShow name silently fails and `video: true` lets the browser pick its own
-// default (often Phone Link on Windows). Use this module to open a specific camera.
+// Rust enumerates DirectShow names but getUserMedia takes MediaDevices ids; passing the wrong one lets the browser pick its own default.
 
 const VIRTUAL_CAMERA_PATTERNS: RegExp[] = [
 	/phone\s*link/i,
@@ -81,17 +78,15 @@ function assertMediaDevices(): MediaDevices {
 export async function enumerateCameras(): Promise<BrowserCamera[]> {
 	const media = assertMediaDevices();
 	let devices = await media.enumerateDevices();
-	// No videoinput → no camera connected. Return empty rather than probing,
-	// which would no-op or pop a needless prompt.
+	// No videoinput means no camera: return empty rather than probing and popping a needless prompt.
 	if (!devices.some((d) => d.kind === "videoinput")) return [];
 
-	const labelsPopulated = devices.some((d) => d.kind === "videoinput" && !!d.label);
+	const labelsPopulated = devices.some((d) => d.kind === "videoinput" && Boolean(d.label));
 	if (!labelsPopulated) {
-		// Labels stay blank until capture is authorized once. Probe to unlock
-		// them, and to surface a silent block as an actionable error.
+		// Labels stay blank until capture is authorized once; probing unlocks them and surfaces a silent block.
 		try {
 			const probe = await media.getUserMedia({ video: true });
-			probe.getTracks().forEach((t) => t.stop());
+			for (const t of probe.getTracks()) t.stop();
 		} catch (e) {
 			if (isPermissionDenied(e)) {
 				throw new CameraAccessError(

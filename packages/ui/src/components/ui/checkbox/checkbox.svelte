@@ -1,8 +1,8 @@
 <script lang="ts">
 import { Checkbox as CheckboxPrimitive } from "bits-ui";
 import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-import { IconCheck } from "@tabler/icons-svelte";
-import { IconMinus } from "@tabler/icons-svelte";
+import { Check } from "@recast/icons";
+import { Minus } from "@recast/icons";
 
 let {
 	ref = $bindable(null),
@@ -49,9 +49,9 @@ let {
 			class="[&>svg]:size-3.5 grid place-content-center text-current transition-none"
 		>
 			{#if indeterminate}
-				<IconMinus stroke={3} />
+				<Minus stroke={3} />
 			{:else if checked}
-				<IconCheck stroke={3} />
+				<Check stroke={3} />
 			{/if}
 		</div>
 	{/snippet}

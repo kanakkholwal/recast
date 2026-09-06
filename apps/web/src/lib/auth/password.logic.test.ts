@@ -3,9 +3,9 @@ import {
 	canResetPassword,
 	canSignUp,
 	passwordsMatch,
-	scorePasswordStrength,
 	STRENGTH_COLORS,
 	STRENGTH_LABELS,
+	scorePasswordStrength,
 } from "./password.logic";
 
 describe("scorePasswordStrength", () => {

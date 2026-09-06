@@ -96,20 +96,14 @@ $effect(() => {
 	}
 });
 
-// Preview the cursor's preset in the editor behind the dialog. Armed only
-// once the user actually moves or types — merely opening the picker must not
-// change the project. Reads `selectedPreset`, so an unchanged cursor is a no-op.
-// `untrack`: the callback writes editor state and reads far more of it (undo
-// snapshots read every field), which would otherwise all become dependencies of
-// this effect — an effect that reads and writes the same state never settles.
+// Armed only once the user moves or types, so opening the picker changes nothing. `untrack` because an effect that reads and writes the same state never settles.
 $effect(() => {
 	if (!open || !previewArmed) return;
 	const preset = selectedPreset;
 	if (preset) untrack(() => onpreview?.(preset));
 });
 
-// Restore covers every close path, including the shortcut toggling `open`
-// from outside — cancel() alone would leak the preview into the project.
+// Restore covers every close path, including a shortcut toggling `open`; cancel() alone leaked the preview into the project.
 let committed = false;
 let wasOpen = false;
 $effect(() => {
@@ -146,8 +140,7 @@ function select(index: number) {
 	});
 }
 
-// Vertical move: jump a whole row, preserving the column (clamped when the
-// target row is shorter). See `rowMoveIndex`. No-op at the top/bottom edge.
+// Jump a whole row, preserving the column (clamped on a shorter row); a no-op at the top and bottom edges.
 function moveRow(dir: 1 | -1) {
 	const next = rowMoveIndex(model, selectedIndex, dir);
 	if (next !== null) select(next);
@@ -157,8 +150,7 @@ function moveCol(delta: 1 | -1) {
 	select(clampIndex(selectedIndex + delta, model.flat.length));
 }
 
-// Left/Right belong to the search caret first; only navigate when the caret
-// sits at the matching edge (or the field is empty) so typing isn't hijacked.
+// Left and Right belong to the search caret first, so only navigate at the matching edge or an empty field.
 function caretAtStart(): boolean {
 	if (!inputRef) return true;
 	return inputRef.selectionStart === 0 && inputRef.selectionEnd === 0;
@@ -209,8 +201,7 @@ function handleKeydown(e: KeyboardEvent) {
 	}
 }
 
-// Hover only claims the cursor after a real pointer move: without this, a
-// pointer resting over the list yanked the selection back on every arrow key.
+// Hover claims the cursor only after a real pointer move; otherwise a resting pointer yanked selection back on every arrow key.
 let pointerActive = $state(false);
 function hoverSelect(index: number) {
 	if (!pointerActive) return;
@@ -241,12 +232,7 @@ function categoryIcon(category: string): IconComponent {
 	}
 }
 
-// Re-parent to body, then make the rest of the page inert. Ancestors of this
-// component (e.g. the editor preview) use `transform`/`filter`, which pins
-// `position: fixed` to that ancestor and breaks z-index against the rest of the
-// app. `inert` is what makes aria-modal true — without it Tab walked straight
-// out of the dialog into the editor behind it. Both live in the action because
-// it is the only point where the node is guaranteed to be in its final parent.
+// Ancestors use transform or filter, which pins `position: fixed` to them; `inert` is also what makes aria-modal real, or Tab walks into the editor behind.
 const INERT_FLAG = "data-preset-picker-inert";
 
 function releaseInert(el: Element) {
@@ -256,9 +242,7 @@ function releaseInert(el: Element) {
 
 function overlay(node: HTMLElement) {
 	document.body.appendChild(node);
-	// If this component ever dies mid-render, `destroy` never runs and the app is
-	// left permanently unclickable. Sweeping our own marker first makes that
-	// recoverable by reopening the picker.
+	// If this component dies mid-render, `destroy` never runs and the app stays unclickable; sweeping our marker makes that recoverable.
 	for (const stale of Array.from(document.querySelectorAll(`[${INERT_FLAG}]`))) releaseInert(stale);
 	const blocked = Array.from(document.body.children).filter((el) => !el.contains(node));
 	for (const el of blocked) {
@@ -275,8 +259,7 @@ function overlay(node: HTMLElement) {
 	};
 }
 
-// Svelte transitions are JS-driven, so the global prefers-reduced-motion CSS
-// block never reaches them. Zero duration is the opt-out.
+// Svelte transitions are JS-driven, so the global reduced-motion CSS never reaches them; zero duration is the opt-out.
 const motion = $derived(prefersReducedMotion.current ? 0 : 1);
 </script>
 

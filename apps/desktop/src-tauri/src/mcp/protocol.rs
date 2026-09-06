@@ -1,9 +1,5 @@
-//! MCP over stdio: newline-delimited JSON-RPC 2.0.
-//!
-//! Hand-rolled rather than pulled from `rmcp`, whose current release needs a
-//! newer rustc than this crate's `rust-version`. The surface we need is small
-//! (initialize, tools/list, tools/call, ping), and keeping it here means the
-//! request handling is a pure function that tests without a socket or a process.
+//! MCP over stdio: newline-delimited JSON-RPC 2.0, hand-rolled because `rmcp` needs a newer rustc than this crate's `rust-version`.
+//! The surface is small enough that request handling stays a pure function, testable without a socket or a process.
 
 use serde_json::{json, Value};
 
@@ -22,9 +18,7 @@ pub const NOT_INITIALIZED: i64 = -32002;
 /// Runs the verb behind a tool. The stdio server proxies to the control socket;
 /// tests substitute a fake.
 pub trait ToolHost {
-    /// # Errors
-    /// The message is surfaced to the model as tool output, not as a transport
-    /// failure, so it should read as something the model can act on.
+    /// # Errors The message is surfaced to the model as tool output, not as a transport failure, so it should read as something the model can act on.
     fn call(&self, verb: &str, params: Value) -> Result<Value, String>;
 }
 
@@ -39,9 +33,7 @@ impl Server {
     }
 
     /// Handle one line from the client.
-    ///
-    /// Returns the line to write back, or `None` for a notification, which
-    /// JSON-RPC says must not be answered.
+    /// Returns the line to write back, or `None` for a notification, which JSON-RPC says must not be answered.
     pub fn handle_line(&mut self, line: &str, host: &impl ToolHost) -> Option<String> {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -128,8 +120,7 @@ fn call_tool(params: &Value, host: &impl ToolHost) -> Result<Value, CallError> {
         .cloned()
         .unwrap_or_else(|| json!({}));
 
-    // A verb that fails is a tool result the model can read and retry, not a
-    // protocol error: `isError` is exactly what MCP reserves for this.
+    // A failed verb is a tool result the model can read and retry, which is exactly what MCP reserves `isError` for.
     Ok(match host.call(tool.verb, arguments) {
         Ok(value) => tool_result(&value, false),
         Err(message) => tool_result(&Value::String(message), true),
@@ -147,11 +138,8 @@ fn tool_result(value: &Value, is_error: bool) -> Value {
     })
 }
 
-/// Projects are resources as well as tool arguments, so a client can attach one
-/// to the conversation without spending a tool call on it.
-///
-/// The path is percent-encoded into the URI rather than appended raw: a Windows
-/// path carries `:` and `\`, and a recording title routinely carries a space.
+/// Projects are resources as well as tool arguments, so a client can attach one to the conversation without spending a tool call on it.
+/// The path is percent-encoded into the URI rather than appended raw: a Windows path carries `:` and `\`, and a recording title routinely carries a space.
 const RESOURCE_PREFIX: &str = "recast://project/";
 
 fn resource_uri(path: &str) -> String {

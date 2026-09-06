@@ -1,111 +1,97 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Recast",
-  "version": "0.0.0-0",
-  "identifier": "com.kanakkholwal.recast",
-  "build": {
-    "frontendDist": "../build",
-    "devUrl": "http://localhost:4421",
-    "beforeDevCommand": "pnpm run ui:dev",
-    "beforeBuildCommand": "pnpm run ui:build"
-  },
-  "app": {
-    "macOSPrivateApi": true,
-    "windows": [
-      {
-        "label": "main",
-        "title": "Recast",
-        "url": "/",
-        "width": 1280,
-        "height": 800,
-        "resizable": true,
-        "fullscreen": false,
-        "maximizable": true,
-        "decorations": false,
-        "transparent": true,
-        "center": true,
-        "shadow": false
-      }
-    ],
-    "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https: data: blob:; media-src 'self' asset: http://asset.localhost blob: data:; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost https://*.i.posthog.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval';",
-      "dangerousDisableAssetCspModification": [
-        "style-src"
-      ],
-      "assetProtocol": {
-        "enable": true,
-        "scope": [
-          "**"
-        ]
-      }
-    }
-  },
-  "bundle": {
-    "active": true,
-    "targets": [
-      "app",
-      "msi",
-      "nsis",
-      "appimage",
-      "deb",
-      "dmg"
-    ],
-    "publisher": "KanakKholwal",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ],
-    "externalBin": [
-      "binaries/ffmpeg",
-      "binaries/ffprobe"
-    ],
-    "windows": {
-      "digestAlgorithm": "sha256",
-      "timestampUrl": "http://timestamp.digicert.com",
-      "nsis": {
-        "installerHooks": "./installer-hooks.nsh",
-        "installerIcon": "icons/icon.ico",
-        "headerImage": "installer/header.bmp",
-        "sidebarImage": "installer/sidebar.bmp"
-      },
-      "wix": {
-        "bannerPath": "installer/wix-banner.bmp",
-        "dialogImagePath": "installer/wix-dialog.bmp"
-      }
-    },
-    "macOS": {
-      "minimumSystemVersion": "13.0",
-      "infoPlist": "Info.plist"
-    },
-    "linux": {
-      "appimage": {}
-    },
-    "createUpdaterArtifacts": true,
-    "fileAssociations": [
-      {
-        "ext": ["recast"],
-        "name": "Recast Project",
-        "description": "A Recast recording project",
-        "role": "Editor",
-        "mimeType": "application/x-recast-project"
-      }
-    ]
-  },
-  "plugins": {
-    "deep-link": {
-      "desktop": {
-        "schemes": ["recast"]
-      }
-    },
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2Mzg5MEYxRDMxNTQ3RUIKUldUclJ4WFQ4WkE0MXFhYXNVOVhhdCtRM2FSRjRMMU01YTk1NHNvZS9VUUxCVjRCNDZDcm1Jb1AK",
-      "endpoints": [
-        "https://github.com/kanakkholwal/recast/releases/latest/download/latest.json"
-      ],
-      "dialog": false
-    }
-  }
+	"$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+	"productName": "Recast",
+	"version": "0.0.0-0",
+	"identifier": "com.kanakkholwal.recast",
+	"build": {
+		"frontendDist": "../build",
+		"devUrl": "http://localhost:4421",
+		"beforeDevCommand": "pnpm run ui:dev",
+		"beforeBuildCommand": "pnpm run ui:build"
+	},
+	"app": {
+		"macOSPrivateApi": true,
+		"windows": [
+			{
+				"label": "main",
+				"title": "Recast",
+				"url": "/",
+				"width": 1280,
+				"height": 800,
+				"resizable": true,
+				"fullscreen": false,
+				"maximizable": true,
+				"decorations": false,
+				"transparent": true,
+				"center": true,
+				"minWidth": 800,
+				"minHeight": 600,
+				"shadow": false
+			}
+		],
+		"security": {
+			"csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https: data: blob:; media-src 'self' asset: http://asset.localhost blob: data:; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost https://*.i.posthog.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval';",
+			"dangerousDisableAssetCspModification": ["style-src"],
+			"assetProtocol": {
+				"enable": true,
+				"scope": ["**"]
+			}
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": ["app", "msi", "nsis", "appimage", "deb", "dmg"],
+		"publisher": "KanakKholwal",
+		"icon": [
+			"icons/32x32.png",
+			"icons/128x128.png",
+			"icons/128x128@2x.png",
+			"icons/icon.icns",
+			"icons/icon.ico"
+		],
+		"externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
+		"windows": {
+			"digestAlgorithm": "sha256",
+			"timestampUrl": "http://timestamp.digicert.com",
+			"nsis": {
+				"installerHooks": "./installer-hooks.nsh",
+				"installerIcon": "icons/icon.ico",
+				"headerImage": "installer/header.bmp",
+				"sidebarImage": "installer/sidebar.bmp"
+			},
+			"wix": {
+				"bannerPath": "installer/wix-banner.bmp",
+				"dialogImagePath": "installer/wix-dialog.bmp"
+			}
+		},
+		"macOS": {
+			"minimumSystemVersion": "13.0",
+			"infoPlist": "Info.plist"
+		},
+		"linux": {
+			"appimage": {}
+		},
+		"createUpdaterArtifacts": true,
+		"fileAssociations": [
+			{
+				"ext": ["recast"],
+				"name": "Recast Project",
+				"description": "A Recast recording project",
+				"role": "Editor",
+				"mimeType": "application/x-recast-project"
+			}
+		]
+	},
+	"plugins": {
+		"deep-link": {
+			"desktop": {
+				"schemes": ["recast"]
+			}
+		},
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2Mzg5MEYxRDMxNTQ3RUIKUldUclJ4WFQ4WkE0MXFhYXNVOVhhdCtRM2FSRjRMMU01YTk1NHNvZS9VUUxCVjRCNDZDcm1Jb1AK",
+			"endpoints": ["https://github.com/kanakkholwal/recast/releases/latest/download/latest.json"],
+			"dialog": false
+		}
+	}
 }

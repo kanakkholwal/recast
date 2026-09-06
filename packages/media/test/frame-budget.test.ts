@@ -3,8 +3,7 @@ import { frameBudget, textureRingFrames } from "../src/cache/frame-budget";
 
 describe("textureRingFrames", () => {
 	it("buffers more than the decoder-surface budget allows at 4K", () => {
-		// The point of owning textures: decoder surfaces cap at 4 frames at 4K,
-		// which is ~66ms of buffer and stalls on any hiccup.
+		// The point of owning textures: decoder surfaces cap at 4 frames at 4K, ~66ms of buffer that stalls on any hiccup.
 		expect(textureRingFrames(3840, 2160)).toBeGreaterThan(frameBudget(3840, 2160).cacheMax);
 	});
 

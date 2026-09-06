@@ -1,35 +1,5 @@
 #!/usr/bin/env node
-// Promote pending changesets into a new CHANGELOG.md section.
-//
-// Usage:
-//   pnpm release:prepare <version>      # explicit version, e.g. "0.1.6" or "v0.1.6"
-//   pnpm release:prepare --dry-run …    # preview without writing files
-//
-// What it does:
-//   1. Reads `.changeset/*.md` (excluding README.md and config.json) and
-//      parses YAML-ish frontmatter for the `recast-desktop` bump kind plus
-//      the optional `kind:` field (added | changed | fixed | deprecated;
-//      default: changed).
-//   2. Validates the requested version is a sane bump from the latest
-//      released version in CHANGELOG.md (warns on downgrades / skips, does
-//      not block — final call is the maintainer's).
-//   3. Builds a new `## [<version>] — <today>` section by merging:
-//        a) anything currently sitting under `## [Unreleased]` in CHANGELOG.md
-//        b) the entries collected from `.changeset/*.md`, grouped by kind.
-//      Preserves any existing `### Highlights` block under [Unreleased].
-//   4. Inserts that section above the previous topmost release, leaves a
-//      fresh empty `## [Unreleased]` placeholder above it.
-//   5. Deletes consumed changeset files (keeps README.md, config.json, and
-//      any file starting with "_" so authors can stash drafts).
-//   6. Re-runs `sync-desktop-changelog.mjs` so the desktop typed RELEASES
-//      array reflects the new section immediately.
-//
-// What it does NOT do:
-//   - Does not write source-file versions. The 0.0.0-0 placeholder
-//     strategy means tauri.conf.json / Cargo.toml / package.json stay at
-//     the placeholder; the release workflow rewrites them from the git tag.
-//   - Does not commit, tag, or push. The maintainer reviews the diff and
-//     does that themselves.
+// Promotes pending changesets into a new CHANGELOG.md section, merging [Unreleased], deleting consumed changesets and re-syncing the desktop array. It never writes versions, commits or tags.
 
 import { spawnSync } from "node:child_process";
 import { readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -45,8 +15,7 @@ const CHANGELOG_PATH = join(REPO_ROOT, "CHANGELOG.md");
 const CHANGESETS_DIR = join(REPO_ROOT, ".changeset");
 const SYNC_SCRIPT = join(__dirname, "sync-desktop-changelog.mjs");
 
-// Official SemVer 2.0.0 regex (semver.org). Anchored, so trailing junk like
-// "1.2.3foo" or invalid pre-release identifiers are rejected.
+// Official SemVer 2.0.0 regex, anchored so trailing junk like '1.2.3foo' is rejected.
 const SEMVER_RE =
 	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
@@ -64,9 +33,7 @@ function parseArgs(args) {
 	for (const a of args) {
 		if (a === "--dry-run" || a === "-n") out.dryRun = true;
 		else if (a === "-h" || a === "--help") {
-			stdout.write(
-				"Usage: release-prepare.mjs <version> [--dry-run]\n",
-			);
+			stdout.write("Usage: release-prepare.mjs <version> [--dry-run]\n");
 			exit(0);
 		} else if (!out.version) out.version = a.replace(/^v/, "");
 	}
@@ -82,7 +49,10 @@ function parseFrontmatter(source) {
 		if (!line || line.startsWith("#")) continue;
 		const idx = line.indexOf(":");
 		if (idx === -1) continue;
-		const key = line.slice(0, idx).trim().replace(/^["']|["']$/g, "");
+		const key = line
+			.slice(0, idx)
+			.trim()
+			.replace(/^["']|["']$/g, "");
 		const val = line
 			.slice(idx + 1)
 			.trim()
@@ -113,9 +83,7 @@ async function readChangesets() {
 		if (!bump) continue;
 		let kind = (frontmatter.kind ?? "changed").toLowerCase();
 		if (!KIND_VALUES.has(kind)) {
-			stderr.write(
-				`warn: ${name}: unknown kind "${kind}", defaulting to "changed"\n`,
-			);
+			stderr.write(`warn: ${name}: unknown kind "${kind}", defaulting to "changed"\n`);
 			kind = "changed";
 		}
 		collected.push({ file, name, bump, kind, summary: body.replace(/\s+/g, " ").trim() });
@@ -169,10 +137,7 @@ function isoToday() {
 }
 
 function splitSections(markdown) {
-	// Split CHANGELOG.md into { preamble, unreleased, releases } where
-	// unreleased is the [Unreleased] block (header included) or null,
-	// and releases is the rest of the file from the first non-Unreleased
-	// `## [` onwards.
+	// Split into preamble, the [Unreleased] block (header included) or null, and the rest from the first other release heading.
 	const lines = markdown.split(/\r?\n/);
 	let unreleasedStart = -1;
 	let releasesStart = -1;
@@ -187,22 +152,16 @@ function splitSections(markdown) {
 		}
 	}
 	const preambleEnd =
-		unreleasedStart !== -1
-			? unreleasedStart
-			: releasesStart !== -1
-				? releasesStart
-				: lines.length;
+		unreleasedStart !== -1 ? unreleasedStart : releasesStart !== -1 ? releasesStart : lines.length;
 	const preamble = lines.slice(0, preambleEnd).join("\n");
 	const unreleasedLines =
 		unreleasedStart === -1
 			? []
-			: lines.slice(
-					unreleasedStart,
-					releasesStart === -1 ? lines.length : releasesStart,
-				);
-	const releases = (
-		releasesStart === -1 ? "" : lines.slice(releasesStart).join("\n")
-	).replace(/\s+$/, "");
+			: lines.slice(unreleasedStart, releasesStart === -1 ? lines.length : releasesStart);
+	const releases = (releasesStart === -1 ? "" : lines.slice(releasesStart).join("\n")).replace(
+		/\s+$/,
+		"",
+	);
 	return { preamble, unreleased: unreleasedLines.join("\n"), releases };
 }
 
@@ -223,15 +182,10 @@ function parseUnreleasedBlock(unreleasedMd) {
 			const heading = sub[1].trim().toLowerCase();
 			if (heading === "highlights") mode = "highlights";
 			else if (heading === "added" || heading === "new") mode = "added";
-			else if (
-				heading === "changed" ||
-				heading === "updated" ||
-				heading === "improved"
-			)
+			else if (heading === "changed" || heading === "updated" || heading === "improved")
 				mode = "changed";
 			else if (heading === "fixed" || heading === "bug fixes") mode = "fixed";
-			else if (heading === "deprecated" || heading === "removed")
-				mode = "deprecated";
+			else if (heading === "deprecated" || heading === "removed") mode = "deprecated";
 			else mode = null;
 			continue;
 		}
@@ -275,7 +229,7 @@ function renderSection({ version, date, highlights, byKind }) {
 		for (const it of items) out.push(`- ${it}`);
 		out.push("");
 	}
-	return out.join("\n").trim() + "\n";
+	return `${out.join("\n").trim()}\n`;
 }
 
 function renderEmptyUnreleased() {
@@ -333,12 +287,9 @@ async function main() {
 	const merged = mergeEntries(parsedUnreleased, changesets);
 
 	const totalEntries =
-		KIND_ORDER.reduce((sum, k) => sum + merged.byKind[k].length, 0) +
-		merged.highlights.length;
+		KIND_ORDER.reduce((sum, k) => sum + merged.byKind[k].length, 0) + merged.highlights.length;
 	if (totalEntries === 0) {
-		stderr.write(
-			"error: nothing to release — no [Unreleased] entries and no changesets found.\n",
-		);
+		stderr.write("error: nothing to release — no [Unreleased] entries and no changesets found.\n");
 		exit(1);
 	}
 

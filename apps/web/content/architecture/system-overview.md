@@ -1,7 +1,7 @@
 ---
 kind: architecture
 title: "System overview"
-description: "A Rust recorder, a Svelte editor engine, and one WebGL2 compositor that draws both the preview and the export."
+description: "A Rust recorder, a Svelte editor engine, and one wgpu compositor that draws both the preview and the export."
 position: 0
 status: production
 domain: platform
@@ -18,14 +18,14 @@ entrypoints:
   - "packages/editor/src/components/Editor.svelte"
   - "apps/desktop/src/routes/+layout.svelte"
 invariants:
-  - "One compositor (RenderCore) serves preview and export, so a visual bug is fixed once."
+  - "One compositor (the Rust engine, wasm in the browser) serves preview and export, so a visual bug is fixed once."
   - "@recast/editor never imports @tauri-apps; the desktop host injects every native capability."
   - "The @recast/* packages ship source, so each app compiles their .svelte and .ts itself."
 ---
 
 Recast is an **offline-first desktop screen recorder + video editor**. Stack: **Tauri v2** (Rust backend) + **Svelte 5** (runes) frontend, in a **pnpm monorepo**. The editor engine lives in the `@recast/editor` package; the desktop app (`recast-desktop`) is a thin **host** that wires it to native capabilities through injected services and host-hooks.
 
-The guiding architectural bet: **one compositor** (`RenderCore`, WebGL2) drives *both* the live preview and the export, so the two can never diverge. FFmpeg is demoted from a second compositor to a pure **muxer**. Recording is Rust; editing/preview/export compositing is browser (WebView2 + WebGL2 + WebCodecs); persistence and heavy native work cross the Tauri IPC boundary.
+The guiding architectural bet: **one compositor** drives *both* the live preview and the export, so the two can never diverge. It is a Rust crate over wgpu, compiled to wasm for the browser and natively for the desktop, and FFmpeg is demoted from a second compositor to a pure **muxer**. Recording is Rust; editing and preview run in the WebView, where the engine is the same crate compiled to wasm; export composites either there with WebCodecs or natively in the same crates, and persistence and heavy native work cross the Tauri IPC boundary.
 
 ## Package & host map
 
@@ -51,7 +51,7 @@ The `@recast/*` packages **ship source** (their `exports` map points at `./src`)
 flowchart LR
     subgraph WV["WebView2 (frontend, one per window)"]
         svelte["Svelte UI"]
-        gl["WebGL2 / WebCodecs"]
+        gl["wasm engine / WebCodecs"]
         wk["Web Workers ×5<br/>(mediabunny, filmstrip,<br/>render, export, smoothing)"]
         svelte --> gl
         svelte --> wk

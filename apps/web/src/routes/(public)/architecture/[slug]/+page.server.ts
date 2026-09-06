@@ -5,9 +5,7 @@ import type { EntryGenerator, PageServerLoad } from "./$types";
 
 export const prerender = true;
 
-// The prerenderer only finds pages it can reach by crawling links, and the
-// system map's links are built in the browser. Enumerating the slugs keeps every
-// page prerendered whether or not the index happens to link to it.
+// The prerenderer only crawls links and the system map builds its own in the browser, so enumerate the slugs.
 export const entries: EntryGenerator = async () => {
 	const docs = await listDocs();
 	return docs.map((doc) => ({ slug: doc.slug }));

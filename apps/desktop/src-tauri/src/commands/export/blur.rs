@@ -1,8 +1,5 @@
-//! Annotation blur regions for the export filter graph.
-//!
-//! Split out of `run_export_job`. Pure: UV rects from the render state mapped
-//! to canvas pixels. Touches no FFmpeg inputs, so it cannot disturb the
-//! input-index arithmetic elsewhere in the graph.
+//! Annotation blur regions for the export filter graph: UV rects mapped to canvas pixels.
+//! Pushes no FFmpeg input, so it cannot disturb the input-index arithmetic elsewhere in the graph.
 
 use crate::commands::ffmpeg::BlurRegion;
 use crate::render::graph::CanvasGeometry;
@@ -30,12 +27,7 @@ pub(crate) fn blur_regions<'a>(
                 radius: corner_frac,
                 ..
             } => {
-                // UV → canvas-pixel rect, over the annotation's anchor rect:
-                // the video region (video anchor, matches preview) or the padded
-                // frame (frame anchor). Identical to the old full-canvas mapping
-                // when there's no padding. Static either way — FFmpeg can't
-                // follow a per-frame zoom, so a zoomed video-anchored blur holds
-                // its un-zoomed spot.
+                // UV to canvas pixels over the annotation's anchor rect; static either way, since FFmpeg can't follow a per-frame zoom.
                 let (rx, ry, rw_ref, rh_ref) = match a.anchor {
                     AnnotationAnchor::Frame => (
                         geom.comp_x as f64,
@@ -57,18 +49,14 @@ pub(crate) fn blur_regions<'a>(
                 if cw < 4 || ch < 4 {
                     return None;
                 }
-                // Strength 0..1 → kernel radius up to 12% of the shorter edge,
-                // clamped at FFmpeg boxblur's hard max of 127. Mirrors
-                // ffmpeg.rs::make_blur_region — both paths must agree so the
-                // export and editor previews match.
+                // Strength maps to a radius up to 12% of the shorter edge, clamped at boxblur's 127; must agree with ffmpeg.rs::make_blur_region.
                 let max_dim = geom.canvas_w.min(geom.canvas_h) as f64 * 0.12;
                 let radius = (strength.clamp(0.0, 1.0) * max_dim)
                     .round()
                     .clamp(1.0, 127.0) as u32;
                 let tint_rgb =
                     u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0x000000);
-                // Corner radius as a fraction (0..0.5) of the region's shorter
-                // side — same basis as the preview's `radius * min(w, h)`.
+                // Corner radius as a fraction of the region's shorter side, the same basis as the preview's radius times min(w, h).
                 let corner_px = corner_frac.clamp(0.0, 0.5) * (cw.min(ch) as f64);
                 Some(BlurRegion {
                     x: cx,

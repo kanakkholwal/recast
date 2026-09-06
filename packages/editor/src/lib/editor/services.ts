@@ -24,8 +24,6 @@ import type {
 } from "../wire-types";
 import type { Transcript, TranscriptSegment, TranscriptWord, VideoMetadata } from "./render-state";
 
-export type { Transcript, TranscriptSegment, TranscriptWord, VideoMetadata };
-
 export type {
 	CaptionDownloadProgress,
 	CaptionModelInfo,
@@ -34,6 +32,10 @@ export type {
 	SilenceDetectOptions,
 	SilenceSegment,
 	TranscribeProgress,
+	Transcript,
+	TranscriptSegment,
+	TranscriptWord,
+	VideoMetadata,
 	VideoTextTimeline,
 	ZoomSuggestion,
 };
@@ -110,6 +112,10 @@ export interface MediaAnalysisService {
 export interface AssetService {
 	/** Download-once + cache a Google Font woff2; resolves to an asset ref. */
 	googleFont(family: string, weight: number): Promise<string>;
+	/** The same family as a TTF. The engine shapes with rustybuzz, which reads
+	 *  neither woff2 nor a `FontFace`, so it needs the file itself. Absent on a
+	 *  host with no TTF cache, where engine captions fall back to the default. */
+	captionFontFile?(family: string, weight: number): Promise<string>;
 	ensureInstalled(manifestUrl: string): Promise<AssetInstallResult>;
 	getCachedPath(id: string): Promise<string | null>;
 	hydrate(): Promise<HydratedAsset[]>;

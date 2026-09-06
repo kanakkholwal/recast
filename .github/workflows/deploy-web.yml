@@ -5,13 +5,25 @@ on:
     branches:
       - main
     paths:
-      - 'apps/web/**'  # Only trigger if changes in this directory
+      - "apps/web/**"
+      - "packages/**"
+      - ".github/workflows/deploy-web.yml"
   pull_request:
-    branches:
-      - main
     paths:
-      - 'apps/web/**'  # Only trigger if changes in this directory
-  workflow_dispatch: 
+      - "apps/web/**"
+      - "packages/**"
+      - ".github/workflows/deploy-web.yml"
+  workflow_dispatch:
+
+# Serialised per ref: two pushes to main otherwise race two production deploys AND two
+# `db:migrate` runs. In-progress runs are NOT cancelled, since a half-applied migration is worse.
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: write
 
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -19,84 +31,87 @@ env:
   NODE_VERSION: "22"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
-  
 jobs:
-  deploy:
+  verify:
+    name: Lint + test
     runs-on: ubuntu-latest
-    environment: 
-      name: 'production'
-      url: 'https://recast.li'
-    # Set default working directory for all steps
-    defaults:
-      run:
-        working-directory: apps/web
-    
+    timeout-minutes: 20
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      # pnpm version comes from the root package.json `packageManager` field.
-      # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
-      # while the repo had moved to 11.
+      - uses: actions/checkout@v4
       - name: Install pnpm
-        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
-        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
-        # installs the pinned version directly and never takes that path.
+        # Pinned to v4: v6 bootstraps an older pnpm then runs `pnpm self-update`, which crashes on our pinned version (pnpm/pnpm#12959).
         uses: pnpm/action-setup@v4
         with:
           run_install: false
-
-      # Must come after pnpm/action-setup: `cache: pnpm` shells out to
-      # `pnpm store path`. setup-node v6 only auto-caches npm, so pnpm has to
-      # be named explicitly.
+      # Must come after pnpm/action-setup, since `cache: pnpm` shells out to `pnpm store path`.
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
-
       - name: Install dependencies
-        run: pnpm install --filter=recast-web --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Run linter (optional)
-        run: pnpm run lint
-        continue-on-error: true
+      # Was `pnpm run lint` with continue-on-error, but apps/web has no `lint` script:
+      # the step failed on every run and the flag hid it. Biome is the real linter.
+      - name: Lint
+        run: pnpm exec biome lint --no-errors-on-unmatched apps/web
+      - name: Unit tests
+        if: ${{ !cancelled() }}
+        run: pnpm --filter recast-web test:unit
 
-      # Blocking on purpose: a deploy should not ship past a red test. It used to
-      # be `continue-on-error: true`, so the suite could go red indefinitely.
-      # NOTE: every step here runs with `working-directory: apps/web` (see
-      # `defaults` above), so this must be a script that exists in
-      # apps/web/package.json. `test:web` only exists in the ROOT package.json and
-      # would fail here with "Missing script".
-      - name: Run web unit tests
-        run: pnpm run test:unit
+  deploy:
+    name: Deploy (${{ github.event_name == 'pull_request' && 'preview' || 'production' }})
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ github.event_name == 'pull_request' && 'preview' || 'production' }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-      # Database migrations
-      - name: Apply DB migrations (Production only)
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      # Production only, and before the deploy: migrations must be expand-only so the
+      # currently-live code keeps working if the deploy below fails.
+      - name: Apply DB migrations
+        if: github.event_name != 'pull_request'
+        timeout-minutes: 10
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-        run: pnpm db:migrate
+        run: pnpm --filter recast-web db:migrate
 
-      # npm, not pnpm: `pnpm add -g` installs into $PNPM_HOME/bin, which
-      # action-setup@v4 does not put on PATH. `pnpm setup` cannot fix that from
-      # here either, since it edits a shell rc that these non-interactive steps
-      # never source. npm's global bin is already on PATH via setup-node.
+      # npm, not pnpm: `pnpm add -g` installs into $PNPM_HOME/bin, which action-setup@v4 leaves off PATH.
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
-        working-directory: .
 
-      - name: Deploy to Vercel (Production)
-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      # One step for both targets. The previous preview branch was unreachable: on a
+      # `pull_request` event `github.ref` is `refs/pull/<n>/merge`, never `refs/heads/main`.
+      - name: Deploy to Vercel
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          IS_PROD: ${{ github.event_name != 'pull_request' }}
         run: |
-          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Deploy to Vercel (Preview)
-        if: github.event_name == 'pull_request' && github.ref == 'refs/heads/main'
-        run: |
-          vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
-          vercel build --token=${{ secrets.VERCEL_TOKEN }}
-          vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
+          set -euo pipefail
+          if [ "$IS_PROD" = "true" ]; then
+            target=production; prod_flag=--prod
+          else
+            target=preview; prod_flag=
+          fi
+          vercel pull --yes --environment="$target" --token="$VERCEL_TOKEN"
+          vercel build $prod_flag --token="$VERCEL_TOKEN"
+          url=$(vercel deploy --prebuilt $prod_flag --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "::notice::Deployed $target to $url"

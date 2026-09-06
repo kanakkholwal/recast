@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
-	import { IconCheck } from '@tabler/icons-svelte';
-	import { cn, type WithoutChild } from "@recast/ui/utils";
+import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
+import { Check } from "@recast/icons";
+import { cn, type WithoutChild } from "@recast/ui/utils";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		children: childrenProp,
-		...restProps
-	}: WithoutChild<DropdownMenuPrimitive.RadioItemProps> = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	children: childrenProp,
+	...restProps
+}: WithoutChild<DropdownMenuPrimitive.RadioItemProps> = $props();
 </script>
 
 <DropdownMenuPrimitive.RadioItem
@@ -26,7 +26,7 @@
 			data-slot="dropdown-menu-radio-item-indicator"
 		>
 			{#if checked}
-				<IconCheck  />
+				<Check  />
 			{/if}
 		</span>
 		{@render childrenProp?.({ checked })}

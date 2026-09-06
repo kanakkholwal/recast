@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
-	import { IconChevronRight } from '@tabler/icons-svelte';
-	import { cn } from "@recast/ui/utils";
+import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
+import { ChevronRight } from "@recast/icons";
+import { cn } from "@recast/ui/utils";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		inset,
-		children,
-		...restProps
-	}: ContextMenuPrimitive.SubTriggerProps & {
-		inset?: boolean;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	inset,
+	children,
+	...restProps
+}: ContextMenuPrimitive.SubTriggerProps & {
+	inset?: boolean;
+} = $props();
 </script>
 
 <ContextMenuPrimitive.SubTrigger
@@ -25,5 +25,5 @@
 	{...restProps}
 >
 	{@render children?.()}
-	<IconChevronRight class="ml-auto" />
+	<ChevronRight class="ml-auto" />
 </ContextMenuPrimitive.SubTrigger>

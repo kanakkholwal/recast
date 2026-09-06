@@ -12,19 +12,19 @@
  */
 export type MediaErrorCode =
 	/** A required WebCodecs capability (decode/encode) isn't available here. */
-	| 'unsupported'
+	| "unsupported"
 	/** Couldn't demux / parse the input file (unsupported container/codec). */
-	| 'bad-input'
+	| "bad-input"
 	/** A decoder or encoder failed mid-stream. */
-	| 'decode-failed'
+	| "decode-failed"
 	/** The media worker died unexpectedly. */
-	| 'worker-died'
+	| "worker-died"
 	/** Caller aborted the operation. */
-	| 'cancelled'
+	| "cancelled"
 	/** Input exceeds this device's in-browser budget. */
-	| 'too-large'
+	| "too-large"
 	/** Programmer error in the package itself. */
-	| 'internal';
+	| "internal";
 
 /**
  * Error class for the media package. Always prefer `throw new MediaError(code, message)`
@@ -36,12 +36,12 @@ export class MediaError extends Error {
 
 	constructor(code: MediaErrorCode, message: string, options?: { cause?: unknown }) {
 		super(message, options);
-		this.name = 'MediaError';
+		this.name = "MediaError";
 		this.code = code;
 	}
 
 	/** True when the operation was cancelled by the caller (not a bug). */
 	get isCancelled(): boolean {
-		return this.code === 'cancelled';
+		return this.code === "cancelled";
 	}
 }

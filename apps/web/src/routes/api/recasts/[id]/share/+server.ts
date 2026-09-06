@@ -3,24 +3,21 @@ import { and, eq, inArray } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { getDb } from "$lib/db";
-import { organization, recast, share, shareMember, user } from "$lib/db/schema";
+import { organization, share, shareMember, user } from "$lib/db/schema";
 import { publicEnv } from "$lib/env/public";
 import { authorizeRecast } from "$lib/server/recast-guard";
 import { hashSharePassword, verifySharePassword } from "$lib/share/password";
 import { emailField } from "$lib/validation/email";
 import type { RequestHandler } from "./$types";
 
-// Lower-case alphanumeric only — URL-clean, double-click-selectable, no
-// homoglyph footguns. 10 chars × 36 alphabet = ~5.2e15 combos, plenty for
-// our scale and short enough to fit in a chat message.
+// Lower-case alphanumeric only: URL-clean, double-click-selectable, no homoglyphs, and 36^10 is ample.
 const slugAlphabet = "0123456789abcdefghijklmnopqrstuvwxyz";
 const generateSlug = customAlphabet(slugAlphabet, 10);
 
 const BodySchema = z
 	.object({
 		visibility: z.enum(["private", "workspace", "selected", "public"]).default("workspace"),
-		// Optional bcrypt-style password — hashed before persist. Empty
-		// string = no password.
+		// Optional password, hashed before persist; an empty string means none.
 		password: z
 			.string()
 			.transform((v) => v.trim())
@@ -30,8 +27,7 @@ const BodySchema = z
 			.optional(),
 		// ISO date string; null = no expiry.
 		expiresAt: z.iso.datetime().nullish(),
-		// For `selected` visibility — list of invitee emails. Owner is
-		// implicit; don't include them here.
+		// Invitee emails for `selected` visibility; the owner is implicit and must not be listed.
 		invitees: z
 			.array(
 				z.object({
@@ -66,14 +62,12 @@ const BodySchema = z
  *
  * Returns `{ slug, shareUrl }`. Caller turns shareUrl into a clickable.
  */
-export const POST: RequestHandler = async ({ params, request, url }) => {
+export const POST: RequestHandler = async ({ params, request }) => {
 	let raw: unknown;
 	try {
 		raw = await request.json();
 	} catch {
-		// Allow empty body — defaults to workspace visibility, no password,
-		// no expiry, no invitees. This is the "share with one click" path
-		// the dashboard's quick-share button uses.
+		// An empty body is the dashboard's one-click share: workspace visibility, no password, expiry or invitees.
 		raw = {};
 	}
 	const parsed = BodySchema.safeParse(raw);
@@ -87,13 +81,10 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 	const row = await authorizeRecast(request, params.id);
 	if (row.status === "archived") error(410, "Recast is archived");
 
-	// `workspace` visibility needs the recast's owning org as the gate.
-	// Fall back to `private` if somehow missing rather than 500.
+	// `workspace` visibility gates on the owning org; fall back to `private` rather than 500.
 	const orgId = body.visibility === "workspace" ? row.workspaceId : null;
 
-	// Plan gate for forced expiry. Read the recast's workspace plan
-	// (same source as the quota snapshot) so it stays consistent, and treat both
-	// paid tiers as Pro — `=== "pro"` alone wrongly demoted Enterprise to free.
+	// Read the plan from the quota snapshot's source, and treat both paid tiers as Pro: `=== 'pro'` demoted Enterprise.
 	const [org] = await db
 		.select({ plan: organization.plan })
 		.from(organization)
@@ -104,9 +95,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 	const passwordHash = await hashSharePassword(body.password);
 	const requestedExpiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
 
-	// Free workspaces get a forced 15-day link expiry (to keep hosting costs
-	// down) — default it when the client sent nothing, and cap anything longer.
-	// Pro honours the request as-is, including "never" (null).
+	// Free workspaces get a forced 15-day expiry; Pro honours the request as-is, including never.
 	const FREE_MAX_EXPIRY_DAYS = 15;
 	const expiresAt = isPro
 		? requestedExpiresAt
@@ -124,12 +113,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 
 	const base = publicEnv().PUBLIC_APP_URL.replace(/\/$/, "");
 
-	// Dedup: if an identical live link already exists for this recast, hand it
-	// back instead of minting a near-duplicate. "Identical" = same visibility,
-	// comments, expiry, password, and (for `selected`) the same invitee set —
-	// anything different falls through and gets its own fresh link. Note expiring
-	// links rarely match (their absolute expiry differs by when they were made),
-	// which is intended: a new expiry is a new window.
+	// Dedup an identical live link (same visibility, comments, expiry, password and invitees); an expiring link rarely matches, which is intended.
 	const reqExpiry = expiresAt ? expiresAt.getTime() : null;
 	const reqEmails = new Set(invitees.map((i) => i.email.toLowerCase()));
 	const candidates = await db
@@ -164,10 +148,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 		});
 	}
 
-	// Slug generation — retry a couple of times on the (vanishingly rare)
-	// collision. 10 chars over 36-symbol alphabet gives ~5×10^15 combos,
-	// so a real collision should never happen, but the unique constraint
-	// is authoritative and we'd rather retry than 500.
+	// Retry a couple of times on the vanishingly rare collision: the unique constraint is authoritative and beats a 500.
 	let slug = generateSlug();
 	let attempts = 0;
 	while (attempts < 3) {
@@ -181,10 +162,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 		attempts++;
 	}
 
-	// Resolve invitee emails to user IDs in one trip so we can populate
-	// `shareMember.userId` for already-registered users. Unregistered
-	// emails get null and will be claimed when they sign in via magic
-	// link (follow-up unlock flow).
+	// Resolve invitees in one trip; unregistered emails get null and are claimed on magic-link sign-in.
 	const resolvedInvitees = invitees.length > 0 ? await resolveInvitees(invitees, db) : [];
 
 	await db.transaction(async (tx) => {

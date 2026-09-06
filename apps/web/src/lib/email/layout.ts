@@ -35,11 +35,11 @@ export const EMAIL_COLORS = {
 export const EMAIL_LOGO_URL = "https://recast.li/email/logo.png";
 
 /**
- * Geist is the product typeface but no mail client will have it, so the stack
+ * Inter is the product text face but no mail client will have it, so the stack
  * degrades to the platform UI font rather than a generic serif.
  */
 const FONT_STACK =
-	"Geist, 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+	"Inter, 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
 
 export type LayoutOptions = {
 	subject: string;
@@ -125,11 +125,7 @@ export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
  * landing page uses. Pass `accent` for the lime variant, reserved for the
  * one moment where the brand color should be the focal point (verify-email).
  */
-export function ctaButton(
-	label: string,
-	url: string,
-	tone: "ink" | "accent" = "ink",
-): string {
+export function ctaButton(label: string, url: string, tone: "ink" | "accent" = "ink"): string {
 	const bg = tone === "accent" ? EMAIL_COLORS.primary : EMAIL_COLORS.buttonBg;
 	const ink = tone === "accent" ? EMAIL_COLORS.primaryInk : EMAIL_COLORS.buttonInk;
 	return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0 4px;">

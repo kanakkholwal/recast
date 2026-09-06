@@ -1,7 +1,5 @@
 <script lang="ts">
-// Search is the spine of a library page, so it owns its own shortcuts:
-// `/` focuses it from anywhere on the page, Escape empties it without moving
-// focus away. The page just says what is being searched.
+// Search owns its own shortcuts: '/' focuses it from anywhere and Escape empties it without moving focus.
 import { Search, X } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { onMount } from "svelte";
@@ -20,7 +18,7 @@ onMount(() => {
 	const onKey = (e: KeyboardEvent) => {
 		const t = e.target as HTMLElement | null;
 		const typing =
-			!!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+			t !== null && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
 		if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
 			e.preventDefault();
 			el?.focus();
@@ -33,10 +31,10 @@ onMount(() => {
 </script>
 
 <label
-  class="group/search flex h-12 items-center gap-3 rounded-xl border border-border/60 bg-card/70 px-4 shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:border-border hover:bg-card hover:shadow-craft-sm focus-within:border-border focus-within:bg-card focus-within:shadow-craft-sm"
+  class="group/search flex h-9 items-center gap-2 rounded-lg bg-muted/60 px-3 ring-1 ring-inset ring-border/40 transition-[background-color,box-shadow] duration-150 hover:bg-muted focus-within:bg-card focus-within:ring-ring/50"
 >
   <Search
-    class="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground group-focus-within/search:text-foreground"
+    class="size-3.5 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground group-focus-within/search:text-foreground"
   />
   <input
     bind:this={el}
@@ -48,15 +46,23 @@ onMount(() => {
       }
     }}
     type="text"
-    placeholder={`Search ${noun}…  (press / )`}
+    placeholder={`Search ${noun}…`}
     aria-label={`Search ${noun}`}
-    class="flex-1 bg-transparent text-[13px] font-medium text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
+    class="flex-1 bg-transparent text-[12.5px] font-medium text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
   />
+  {#if !value}
+    <kbd
+      class="pointer-events-none hidden rounded border border-border/50 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/70 group-focus-within/search:hidden sm:block"
+      aria-hidden="true"
+    >
+      /
+    </kbd>
+  {/if}
   {#if value}
     <Button
       variant="ghost"
       size="icon-sm"
-      class="size-6"
+      class="-mr-1 size-5"
       onclick={() => (value = "")}
       aria-label="Clear search"
       title="Clear search"

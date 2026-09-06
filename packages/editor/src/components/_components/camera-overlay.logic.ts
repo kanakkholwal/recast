@@ -1,18 +1,67 @@
-// Pure geometry for the camera bubble overlay: where it sits on the canvas,
-// its shape's border-radius, and the drag clamp. The .svelte owns the video
-// element, sync effects, and pointer wiring.
+// Pure geometry for the camera bubble: placement, corner radius and the drag clamp. The component owns the wiring.
 
-import { bezierY, type Easing } from "../../lib/easing/cubic-bezier";
 import type { CanvasGeometry } from "../../lib/canvas-geometry";
+import { bezierY, EASE, EASE_IN_OUT, type Easing } from "../../lib/easing/cubic-bezier";
 import type {
 	CameraKeyframe,
 	CameraMotionSegment,
+	CameraOverlaySettings,
 	CameraOverlayShape,
 	CameraPlacement,
 	ZoomRegion,
 } from "../../stores/editor-store.svelte";
 
 export type { CameraKeyframe };
+
+/**
+ * The camera overlay a loaded project should start with.
+ *
+ * Recorded `motionSegments` are CARRIED, never applied: dragging the preview
+ * window mid-take to see your own face is a record of the session, not an edit.
+ * The panel offers them as an explicit import instead.
+ */
+export function cameraOverlayFromState(
+	loaded: Partial<CameraOverlaySettings> | undefined,
+	fallbackPlacement: CameraPlacement,
+): CameraOverlaySettings {
+	const defaultPlacement = clampPlacement({
+		x: loaded?.defaultPlacement?.x ?? fallbackPlacement.x,
+		y: loaded?.defaultPlacement?.y ?? fallbackPlacement.y,
+		width: loaded?.defaultPlacement?.width ?? fallbackPlacement.width,
+		height: loaded?.defaultPlacement?.height ?? fallbackPlacement.height,
+	});
+	return {
+		enabled: loaded?.enabled ?? false,
+		mirror: loaded?.mirror ?? true,
+		shape: loaded?.shape ?? "rounded",
+		cornerRadius: loaded?.cornerRadius ?? 0.16,
+		animationPreset: loaded?.animationPreset ?? "soft",
+		zoomFollow: loaded?.zoomFollow ?? true,
+		zoomFollowStrength: loaded?.zoomFollowStrength ?? 0.6,
+		zoomFollowDuration: loaded?.zoomFollowDuration ?? 0.4,
+		zoomFollowEasing: { ...(loaded?.zoomFollowEasing ?? EASE_IN_OUT) },
+		keyframes: (loaded?.keyframes ?? []).map((k) => ({
+			atSec: k.atSec,
+			placement: { ...k.placement },
+		})),
+		keyframeEasing: { ...(loaded?.keyframeEasing ?? EASE_IN_OUT) },
+		clipLayouts: (loaded?.clipLayouts ?? []).map((c) => ({
+			start: c.start,
+			layout: { ...c.layout },
+		})),
+		layoutTransition: loaded?.layoutTransition ?? 0,
+		layoutTransitionEasing: { ...(loaded?.layoutTransitionEasing ?? EASE_IN_OUT) },
+		cursorDodge: loaded?.cursorDodge ?? false,
+		cursorDodgeStrength: loaded?.cursorDodgeStrength ?? 0.6,
+		shadow: loaded?.shadow ?? 0.35,
+		defaultPlacement,
+		motionSegments: (loaded?.motionSegments ?? []).map((segment) => ({
+			...segment,
+			easeIn: segment.easeIn ?? { ...EASE },
+			easeOut: segment.easeOut ?? { ...EASE },
+		})),
+	};
+}
 
 /**
  * Inline style placing the bubble as canvas percentages. Bubble UV is in VIDEO
@@ -31,9 +80,7 @@ export function bubblePlacementStyle(
 	return `left:${left}%;top:${top}%;width:${width}%;`;
 }
 
-// Drop-shadow geometry as FRACTIONS of the bubble's size, so it's resolution-
-// independent and the Rust export can mirror it exactly (see camera.rs
-// CAMERA_SHADOW_* — these MUST stay in lockstep). Strength scales all three.
+// Fractions of the bubble's size, so it is resolution-independent and camera.rs's CAMERA_SHADOW_* can mirror it exactly.
 export const CAMERA_SHADOW_BLUR_FRACTION = 0.14;
 export const CAMERA_SHADOW_OFFSET_FRACTION = 0.05;
 export const CAMERA_SHADOW_MAX_OPACITY = 0.6;
@@ -179,6 +226,46 @@ export function cameraPlacementAt(
 }
 
 /**
+ * Keep a placement fully inside the frame. The drag path already clamps, but a
+ * recorded one does not: a live capture can write `x: 1`, which puts the whole
+ * bubble past the right edge until the glide happens to pull it back.
+ */
+export function clampPlacement(p: CameraPlacement): CameraPlacement {
+	const width = Math.max(0, Math.min(1, p.width));
+	const height = Math.max(0, Math.min(1, p.height));
+	return {
+		width,
+		height,
+		x: Math.max(0, Math.min(1 - width, p.x)),
+		y: Math.max(0, Math.min(1 - height, p.y)),
+	};
+}
+
+/**
+ * The bubble's drawn placement expressed as a delta on its LAYOUT box, as
+ * `translate(%)` + `scale`. Percentages are relative to the layout box's own
+ * width (and its square height in UV, which is `width * videoAspect`), because
+ * that is what a CSS percentage translate resolves against.
+ *
+ * Keeping the layout box out of the playhead is the point: it is written by
+ * Svelte reactivity and the transform is written per rAF, so a layout box that
+ * moved with the clock made the two race and the bubble judder.
+ */
+export function cameraBubbleDelta(
+	layout: CameraPlacement,
+	drawn: CameraPlacement,
+	videoAspect: number,
+): { tx: number; ty: number; scale: number } {
+	if (!(layout.width > 0)) return { tx: 0, ty: 0, scale: 1 };
+	const baseH = Math.min(1, layout.width * videoAspect);
+	return {
+		tx: ((drawn.x - layout.x) / layout.width) * 100,
+		ty: baseH > 0 ? ((drawn.y - layout.y) / baseH) * 100 : 0,
+		scale: drawn.width / layout.width,
+	};
+}
+
+/**
  * Camera moves made DURING a recording, as keyframes.
  *
  * The recorder writes `motionSegments`; the preview and the export both read
@@ -186,29 +273,53 @@ export function cameraPlacementAt(
  * render at all — a second evaluator would be a parity liability, and the
  * recorded moves become editable once they are keyframes.
  */
+/**
+ * A recorded segment longer than this cannot be a drag. Before the recorder had
+ * a movement dead zone, sub-pixel jitter in the preview geometry made every tick
+ * read as a move and the coalescing rule extended one segment for the whole
+ * take, so the file records a minutes-long glide that never happened.
+ *
+ * Kept in step with `MAX_MOTION_SEGMENT_SECS` in
+ * `apps/desktop/src-tauri/src/recording/mod.rs`, which stops new recordings
+ * producing one.
+ */
+export const MAX_RECORDED_MOVE_SECS = 10;
+
+/**
+ * Trims a segment that spans more than a drag can. Only the endpoints were ever
+ * sampled, so the honest repair is to HOLD the start placement and move over
+ * the last {@link MAX_RECORDED_MOVE_SECS}: the bubble ends up where the file
+ * says it ended, without drifting across the whole video on the way.
+ */
+function repairLongMove(segment: CameraMotionSegment): CameraMotionSegment {
+	if (segment.end - segment.start <= MAX_RECORDED_MOVE_SECS) return segment;
+	return { ...segment, start: segment.end - MAX_RECORDED_MOVE_SECS };
+}
+
 export function keyframesFromMotionSegments(
 	segments: readonly CameraMotionSegment[],
 	defaultPlacement: CameraPlacement,
 ): CameraKeyframe[] {
 	if (segments.length === 0) return [];
-	const sorted = [...segments].sort((a, b) => a.start - b.start);
+	const sorted = [...segments].map(repairLongMove).sort((a, b) => a.start - b.start);
 	const out: CameraKeyframe[] = [];
 	const push = (atSec: number, placement: CameraPlacement) => {
 		const last = out[out.length - 1];
-		// Two segments meeting at one instant: the later one wins, matching the
-		// segment walk, which adopted each segment's `to` as it passed.
+		// Two segments meeting at one instant: the later wins, matching the walk that adopts each segment's `to`.
 		if (last && Math.abs(last.atSec - atSec) < 1e-6) out[out.length - 1] = { atSec, placement };
 		else out.push({ atSec, placement });
 	};
 	for (const s of sorted) {
-		push(s.start, { x: s.fromX, y: s.fromY, width: s.fromWidth, height: s.fromHeight });
-		push(s.end, { x: s.toX, y: s.toY, width: s.toWidth, height: s.toHeight });
+		push(
+			s.start,
+			clampPlacement({ x: s.fromX, y: s.fromY, width: s.fromWidth, height: s.fromHeight }),
+		);
+		push(s.end, clampPlacement({ x: s.toX, y: s.toY, width: s.toWidth, height: s.toHeight }));
 	}
 	const head = out[0];
-	// The bubble sat at `defaultPlacement` until the first move. Only pin it when
-	// it actually differs — holding the first keyframe already covers the rest.
+	// Only pin the head when it differs from `defaultPlacement`; holding the first keyframe covers the rest.
 	if (head.atSec > 0 && !samePlacement(head.placement, defaultPlacement)) {
-		out.unshift({ atSec: 0, placement: { ...defaultPlacement } });
+		out.unshift({ atSec: 0, placement: clampPlacement(defaultPlacement) });
 	}
 	return out;
 }
@@ -286,7 +397,7 @@ export function applyZoomFollow(
 	base: CameraPlacement,
 	zoom: { scale: number; cx: number; cy: number },
 	opts: ZoomFollowOpts,
-	aspect: number = 1,
+	aspect = 1,
 ): CameraPlacement {
 	const k = Math.max(0, Math.min(1, opts.strength));
 	if (!opts.enabled || k <= 0 || zoom.scale <= 1.0001) return base;
@@ -296,17 +407,13 @@ export function applyZoomFollow(
 	const height = Math.min(1, width * aspect);
 	const bcx = base.x + base.width / 2;
 	const bcy = base.y + baseH / 2;
-	let dx = bcx - zoom.cx;
-	let dy = bcy - zoom.cy;
-	const len = Math.hypot(dx, dy);
+	// Away-from-focus is SCREEN-SPACE but bcx-cx/bcy-cy are UV (one UV-x unit=videoW px, one UV-y unit=videoH px); normalise in pixels (videoH unit) then back to UV per axis, else the angle is wrong on a wide frame. Mirror of Rust `follow_placement` (D-2); keep in lockstep.
 	const drift = amount * DRIFT_MAX;
-	if (len > 1e-4) {
-		dx = (dx / len) * drift;
-		dy = (dy / len) * drift;
-	} else {
-		dx = 0;
-		dy = 0;
-	}
+	const px = (bcx - zoom.cx) * aspect;
+	const py = bcy - zoom.cy;
+	const len = Math.hypot(px, py);
+	const dx = len > 1e-4 ? ((px / len) * drift) / aspect : 0;
+	const dy = len > 1e-4 ? (py / len) * drift : 0;
 	return {
 		x: Math.max(0, Math.min(1 - width, bcx + dx - width / 2)),
 		y: Math.max(0, Math.min(1 - height, bcy + dy - height / 2)),

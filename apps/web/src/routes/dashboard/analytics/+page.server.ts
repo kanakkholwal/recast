@@ -33,16 +33,14 @@ export const load: PageServerLoad = async ({ parent }) => {
 		loadWorkspacePerformance(workspaceId),
 	]);
 
-	// Sign each recast's poster key into a displayable URL once (cheap/local per
-	// row), reused by both the performance table thumbnails and the recasts list.
+	// Sign each poster key once, reused by both the performance table thumbnails and the recasts list.
 	const posterFor = new Map<string, string>(
 		await Promise.all(
 			recasts.map(async (r) => [r.id, await resolvePlaybackUrl(r.posterUrl)] as const),
 		),
 	);
 
-	// Per-recast comparison rows (views/avg watch/completion/comments). Views use
-	// the cached share total; the rest come from the aggregate rollups.
+	// Views use the cached share total; the rest of the comparison rows come from the aggregate rollups.
 	const performance = recasts.map((r) => {
 		const p = perf.get(r.id);
 		return {
@@ -55,7 +53,6 @@ export const load: PageServerLoad = async ({ parent }) => {
 			comments: p?.comments ?? 0,
 		};
 	});
-	// Only `activity` + `performance` reach the page. The full recast list and a
-	// lifetime comment total used to ship too, unread.
+	// Only activity and performance reach the page; the full recast list and a lifetime comment total used to ship unread.
 	return { activity, performance };
 };

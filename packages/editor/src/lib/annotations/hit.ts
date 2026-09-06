@@ -1,6 +1,4 @@
-// Hit-testing primitives for annotations: handle picking, body picking, and
-// topmost selection. All functions take container-pixel inputs and return
-// container-pixel positions or string handle IDs, with no DOM dependencies.
+// Hit-testing for annotations: container-pixel inputs and outputs, handle IDs, and no DOM dependencies.
 
 import type { Annotation } from "../../stores/editor-store.svelte";
 import { normaliseBox } from "./uv";
@@ -112,9 +110,7 @@ export function hitTestAnnotation(
 		if (a.hidden) continue;
 		if (a.locked) continue;
 		if (a.kind.kind === "text") continue;
-		// Test the visibility window, not per-frame opacity: the fade-in ramp
-		// briefly drops opacity below the old threshold, which made fresh
-		// annotations un-selectable until the ramp finished.
+		// Test the visibility window, not per-frame opacity: the fade-in ramp made fresh annotations un-selectable.
 		if (opts.t < a.start || opts.t > a.end) continue;
 
 		if (a.kind.kind === "arrow") {

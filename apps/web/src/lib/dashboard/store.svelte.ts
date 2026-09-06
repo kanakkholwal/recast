@@ -38,8 +38,7 @@ export type Recast = {
 export const STORAGE_QUOTA_BYTES = 5 * 1024 ** 3;
 
 const REC_KEY = "recast.dashboard.recordings.v1";
-// Pointer to the workspace whose recast cache is "current", so a cold load
-// restores the right team's list instead of whichever was cached last.
+// Pointer to the workspace the recast cache belongs to, so a cold load restores the right team's list.
 const REC_WS_KEY = "recast.dashboard.recordings.ws";
 const SET_KEY = "recast.dashboard.settings.v1";
 
@@ -66,7 +65,7 @@ function seedRecordings(): Recast[] {
 			id: "rec_walkthrough",
 			title: "Series A — product walkthrough",
 			durationSec: 252,
-			createdAt: now - 1 * DAY,
+			createdAt: now - DAY,
 			sizeBytes: 191_000_000,
 			source: "cloud",
 			provider: "Cloudinary",
@@ -143,15 +142,12 @@ function reconcile(r: Recast): Recast {
 class RecordingsStore {
 	items = $state<Recast[]>([]);
 	hydrated = $state(false);
-	// Which workspace the cached list belongs to. Read from the pointer so a
-	// cold load restores that workspace's cache, not a stale other-team one.
+	// Read from the pointer so a cold load restores that workspace's cache, not a stale other-team one.
 	#workspaceId: string | null = safeStorage.get<string | null>(REC_WS_KEY, null);
 
 	constructor() {
 		const stored = safeStorage.get<Recast[] | null>(recKeyFor(this.#workspaceId), null);
-		// Until `hydrate()` is called we show the last cached server list for
-		// this workspace, or — if we've never seen one — the dummy seed so the
-		// design surface stays explorable on logged-out previews.
+		// Until `hydrate()` runs, show the last cached list for this workspace, or the dummy seed on logged-out previews.
 		this.items = (stored ?? seedRecordings()).map(reconcile);
 	}
 
@@ -312,7 +308,7 @@ class SettingsStore {
 				.split(/\s+/)
 				.filter(Boolean)
 				.slice(0, 2)
-				.map((w) => w[0]!.toUpperCase())
+				.map((w) => w[0].toUpperCase())
 				.join("") || "R"
 		);
 	}

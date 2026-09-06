@@ -10,8 +10,7 @@ describe("libraryStatus", () => {
 		expect(libraryStatus({ ...base, loading: true, total: 4, matches: 4 })).toBe("ready");
 	});
 
-	// The bug this exists to prevent: a failed scan left `entries` empty and the
-	// page said "No recordings yet", which reads as "your disk is empty".
+	// The bug: a failed scan left entries empty and the page said 'No recordings yet', which reads as an empty disk.
 	it("separates a failed scan from an empty one", () => {
 		expect(libraryStatus({ ...base, error: "boom" })).toBe("error");
 		expect(libraryStatus({ ...base })).toBe("empty");
@@ -26,8 +25,7 @@ describe("libraryStatus", () => {
 		expect(libraryStatus({ ...base, total: 0, matches: 0, query: "zzz" })).toBe("empty");
 	});
 
-	// A whitespace-only query is not a search, so its 0 results are not "no
-	// matches" — that would offer a "Clear search" button for an empty box.
+	// A whitespace-only query isn't a search, so its zero results must not offer a Clear search button.
 	it("treats a blank query as no query", () => {
 		expect(libraryStatus({ ...base, total: 5, matches: 0, query: "   " })).toBe("empty");
 	});

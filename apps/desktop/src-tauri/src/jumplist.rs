@@ -1,10 +1,5 @@
-//! Windows taskbar Jump List: a "New Recording" task plus a Recent Projects
-//! category, reached by right-clicking the taskbar or Start icon. Tauri has no
-//! API for this, so it is built directly on the Shell COM interfaces.
-//!
-//! "New Recording" relaunches the exe with `--new-recording` (single-instance
-//! forwards it to the running app). Recent items relaunch the exe with a
-//! `.recast` path, which the existing file-association argv path opens.
+//! Windows taskbar Jump List built directly on the Shell COM interfaces, since Tauri exposes no API for it.
+//! Entries relaunch the exe with `--new-recording` or a `.recast` path, which the existing argv paths already handle.
 
 use std::path::PathBuf;
 
@@ -117,7 +112,7 @@ fn recent_recasts(app: &AppHandle, limit: usize) -> Vec<(String, String)> {
             .unwrap_or_default();
         rows.push((mtime, path, label));
     }
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.0));
     rows.into_iter()
         .take(limit)
         .map(|(_, path, label)| (path.to_string_lossy().to_string(), label))

@@ -1,21 +1,13 @@
-//! On-demand Google Fonts: fetch a family's woff2 once and cache it on device,
-//! so captions (and later annotations) can render any Google font offline after
-//! the first use. Returns a local path the frontend loads via the FontFace API.
-//!
-//! The export burn-in needs a different format: libass/FreeType can't read
-//! woff2, so [`ensure_caption_font_dir`] fetches the TTF (Google serves it to an
-//! older UA) into a dedicated directory that the `ass` filter's `fontsdir`
-//! points at — that's how a preset's branded font actually appears in the MP4.
+//! Fetches a Google family's woff2 once and caches it, so captions render any font offline after first use.
+//! Burn-in needs TTF instead: neither libass nor rustybuzz reads woff2, which is what [`ensure_caption_font_file`] is for.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 
 use crate::commands::error::{AppError, AppResult};
 
-/// Ensure the woff2 for `family` at `weight` is cached under
-/// `app_data/fonts/`, downloading it from Google Fonts on first use. Returns the
-/// local file path.
+/// Ensure the woff2 for `family` at `weight` is cached under `app_data/fonts/`, downloading it from Google Fonts on first use. Returns the local file path.
 #[tauri::command]
 pub async fn ensure_google_font(app: AppHandle, family: String, weight: u32) -> AppResult<String> {
     let dir = app
@@ -63,16 +55,14 @@ pub async fn ensure_google_font(app: AppHandle, family: String, weight: u32) -> 
     Ok(dest.to_string_lossy().to_string())
 }
 
-/// Ensure the TTF for `family` at `weight` is cached under `app_data/fonts/ttf/`
-/// and return that DIRECTORY (for libass `fontsdir`). Uses an older UA so Google
-/// serves TTF instead of woff2. Called from the export burn-in path.
-pub(crate) async fn ensure_caption_font_dir(
+/// The cached TTF for `family` at `weight`, downloading it on first use. Uses an
+/// older UA so Google serves TTF instead of woff2.
+pub(crate) async fn ensure_caption_font_file(
     app: &AppHandle,
     family: &str,
     weight: u32,
 ) -> Result<PathBuf, String> {
-    // A per-family dir keeps `fontsdir` tiny — libass scans everything in it, so
-    // pointing at one shared dir with many fonts would slow font matching.
+    // A per-family dir keeps `fontsdir` tiny: libass scans everything in it, so one shared dir would slow matching.
     let safe: String = family
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
@@ -86,7 +76,7 @@ pub(crate) async fn ensure_caption_font_dir(
         .join(&safe);
     let dest = dir.join(format!("{safe}-{weight}.ttf"));
     if dest.exists() {
-        return Ok(dir);
+        return Ok(dest);
     }
 
     // Old UA → Google Fonts serves a TTF (FreeType-readable) instead of woff2.
@@ -111,7 +101,31 @@ pub(crate) async fn ensure_caption_font_dir(
     let ttf = extract_font_url(&css, ".ttf")
         .ok_or_else(|| format!("no ttf URL for '{family}' in Google Fonts CSS"))?;
     crate::transcription::download_file(&client, &ttf, None, &dest, |_, _| {}).await?;
-    Ok(dir)
+    Ok(dest)
+}
+
+/// The directory holding only this family's TTF, for libass `fontsdir`.
+/// A per-family dir keeps the scan tiny: libass matches against everything in there, so one shared dir with many fonts slows every burn-in down.
+pub(crate) async fn ensure_caption_font_dir(
+    app: &AppHandle,
+    family: &str,
+    weight: u32,
+) -> Result<PathBuf, String> {
+    let file = ensure_caption_font_file(app, family, weight).await?;
+    file.parent()
+        .map(Path::to_path_buf)
+        .ok_or_else(|| format!("cached font for '{family}' has no parent directory"))
+}
+
+/// The TTF path for a caption font, for a renderer that needs the BYTES rather
+/// than a fontconfig directory. The engine's shaper cannot read woff2, which is
+/// what [`ensure_google_font`] caches for the DOM.
+#[tauri::command]
+pub async fn caption_font_file(app: AppHandle, family: String, weight: u32) -> AppResult<String> {
+    ensure_caption_font_file(&app, &family, weight)
+        .await
+        .map(|p| p.to_string_lossy().to_string())
+        .map_err(AppError::msg)
 }
 
 /// Pull the first font URL with `ext` out of a Google Fonts `css2` response
@@ -142,8 +156,7 @@ mod tests {
 
     #[test]
     fn extract_font_url_skips_other_extensions_to_the_requested_one() {
-        // A css2 body can carry several formats; the picker must match on `ext`,
-        // not just take the first url().
+        // A css2 body can carry several formats, so the picker must match on `ext` rather than take the first url().
         let css = "src: url(https://x/a.woff2) format('woff2'), \
                    url(https://x/a.ttf) format('truetype');";
         assert_eq!(

@@ -1,42 +1,41 @@
 <script lang="ts">
-	import { syncConsent } from "$lib/analytics/client";
-	import { desktopConsent } from "$lib/stores/consent.svelte";
-	import { Button } from "@recast/ui/button";
-	import { cn } from "@recast/ui/utils";
-	import { ShieldCheck } from "@recast/icons";
+import { ShieldCheck } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { cn } from "@recast/ui/utils";
+import { syncConsent } from "$lib/analytics/client";
+import { desktopConsent } from "$lib/stores/consent.svelte";
 
-	let { onclose }: { onclose: () => void } = $props();
+let { onclose }: { onclose: () => void } = $props();
 
-	// Mirror the store into local reactive state so the switches feel instant;
-	// commit on "Continue".
-	let product = $state(desktopConsent.product);
-	let errors = $state(desktopConsent.errors);
+// Mirrored into local state so the switches feel instant; committed on Continue.
+let product = $state(desktopConsent.product);
+let errors = $state(desktopConsent.errors);
 
-	function done() {
-		desktopConsent.setProduct(product);
-		desktopConsent.setErrors(errors);
-		desktopConsent.markFirstRunSeen();
-		// Inits / opts-in / opts-out the live analytics client as needed.
-		syncConsent();
-		onclose();
-	}
+function done() {
+	desktopConsent.setProduct(product);
+	desktopConsent.setErrors(errors);
+	desktopConsent.markFirstRunSeen();
+	// Inits / opts-in / opts-out the live analytics client as needed.
+	syncConsent();
+	onclose();
+}
 </script>
 
 <div
-	class="fixed inset-0 z-[100] flex items-center justify-center bg-background/70 backdrop-blur-sm"
+	class="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm"
 	role="dialog"
 	aria-modal="true"
 	aria-label="Privacy preferences"
 >
 	<div
-		class="mx-4 w-full max-w-md rounded-2xl border border-border/60 bg-card/95 p-6 shadow-xl backdrop-blur"
+		class="mx-4 w-full max-w-md rounded-xl border border-border/50 bg-card p-6 shadow-(--shadow-craft-floating) backdrop-blur"
 	>
 		<div
-			class="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary"
+			class="flex size-10 items-center justify-center rounded-xl bg-muted/60 text-foreground ring-1 ring-inset ring-border/40"
 		>
 			<ShieldCheck class="size-5" />
 		</div>
-		<h2 class="mt-4 text-[17px] font-semibold tracking-tight text-foreground">
+		<h2 class="mt-4 text-[15px] font-semibold tracking-tight text-foreground">
 			Help improve Recast
 		</h2>
 		<p class="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
@@ -67,14 +66,16 @@
 				<span
 					aria-hidden="true"
 					class={cn(
-						"mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-						errors ? "bg-primary" : "bg-input ring-1 ring-inset ring-border/50",
+						"mt-0.5 flex h-6.5 w-10.5 shrink-0 items-center rounded-full transition-colors duration-200",
+						errors
+							? "bg-primary"
+							: "bg-muted-foreground/25 ring-1 ring-inset ring-border-control/60",
 					)}
 				>
 					<span
 						class={cn(
-							"size-4 rounded-full bg-card shadow-sm transition-transform",
-							errors ? "translate-x-4.5" : "translate-x-0.5",
+							"size-5.5 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25),0_2px_6px_rgb(0_0_0/0.15)] transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
+							errors ? "translate-x-4" : "translate-x-0.5",
 						)}
 					></span>
 				</span>
@@ -101,14 +102,16 @@
 				<span
 					aria-hidden="true"
 					class={cn(
-						"mt-0.5 flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-						product ? "bg-primary" : "bg-input ring-1 ring-inset ring-border/50",
+						"mt-0.5 flex h-6.5 w-10.5 shrink-0 items-center rounded-full transition-colors duration-200",
+						product
+							? "bg-primary"
+							: "bg-muted-foreground/25 ring-1 ring-inset ring-border-control/60",
 					)}
 				>
 					<span
 						class={cn(
-							"size-4 rounded-full bg-card shadow-sm transition-transform",
-							product ? "translate-x-4.5" : "translate-x-0.5",
+							"size-5.5 rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25),0_2px_6px_rgb(0_0_0/0.15)] transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)]",
+							product ? "translate-x-4" : "translate-x-0.5",
 						)}
 					></span>
 				</span>

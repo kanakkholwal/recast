@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { cn } from "@recast/ui/utils";
-  import { Tabs as TabsPrimitive } from "bits-ui";
+import { cn } from "@recast/ui/utils";
+import { Tabs as TabsPrimitive } from "bits-ui";
 
-  let {
-    ref = $bindable(null),
-    class: className,
-    ...restProps
-  }: TabsPrimitive.TriggerProps = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	...restProps
+}: TabsPrimitive.TriggerProps = $props();
 </script>
 
 <TabsPrimitive.Trigger

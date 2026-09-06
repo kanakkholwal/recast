@@ -28,11 +28,7 @@ export const load: PageServerLoad = async (event) => {
 		.limit(20);
 
 	const sub = (async () => {
-		const [row] = await db
-			.select()
-			.from(subscription)
-			.where(eq(subscription.userId, id))
-			.limit(1);
+		const [row] = await db.select().from(subscription).where(eq(subscription.userId, id)).limit(1);
 		return row ?? null;
 	})();
 
@@ -65,11 +61,7 @@ export const actions: Actions = {
 		const name = String(fd.get("name") ?? "").trim();
 		if (!name) return fail(400, { error: "Name required" });
 
-		// `auth.api.updateUser` is the *self-update* endpoint — it operates on
-		// the calling session's user. There's no admin-side "update arbitrary
-		// user's profile" endpoint in the plugin, so we update the row
-		// directly. Stays safe because requireAdmin() ran above and the
-		// column set is small (just `name`, by design).
+		// `auth.api.updateUser` is self-update only and the plugin has no admin equivalent, so update the row directly; requireAdmin ran above.
 		await getDb().update(user).set({ name, updatedAt: new Date() }).where(eq(user.id, id));
 		await logAudit({
 			actorId: admin.user.id,
@@ -110,8 +102,7 @@ export const actions: Actions = {
 		if (!["active", "pending"].includes(status)) {
 			return fail(400, { error: "Invalid status" });
 		}
-		// `status` is app-owned (not managed by the admin plugin), so we
-		// update Drizzle directly.
+		// `status` is app-owned rather than managed by the admin plugin, so update Drizzle directly.
 		await getDb().update(user).set({ status, updatedAt: new Date() }).where(eq(user.id, id));
 		await logAudit({
 			actorId: admin.user.id,
@@ -134,8 +125,7 @@ export const actions: Actions = {
 			headers: event.request.headers,
 			body: { userId: id, banReason: reason, banExpiresIn },
 		});
-		// Banning doesn't auto-revoke existing sessions per Better Auth docs;
-		// kill them too so the user is logged out immediately.
+		// Banning doesn't auto-revoke existing sessions, so kill them too and log the user out immediately.
 		await getAuth().api.revokeUserSessions({
 			headers: event.request.headers,
 			body: { userId: id },

@@ -16,18 +16,14 @@
 import { createHash } from "node:crypto";
 import { serverEnv } from "$lib/env/server";
 
-export function resolveClientIp(
-	request: Request,
-	getClientAddress: () => string,
-): string {
+export function resolveClientIp(request: Request, getClientAddress: () => string): string {
 	const forwarded = request.headers.get("x-forwarded-for");
 	if (forwarded) {
 		// `x-forwarded-for: client, proxy1, proxy2` — the client is first.
 		const first = forwarded.split(",")[0]?.trim();
 		if (first) return first;
 	}
-	const direct =
-		request.headers.get("cf-connecting-ip") ?? request.headers.get("x-real-ip");
+	const direct = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-real-ip");
 	if (direct) return direct.trim();
 	try {
 		return getClientAddress();
@@ -41,15 +37,11 @@ export function reactorKey(opts: {
 	ip: string;
 	sessionId: string;
 }): string {
-	// Account id first (stable, and never leaves the server), then IP, then the
-	// browser session so anonymous viewers with an unresolved IP don't all
-	// collapse onto one shared token.
+	// Account id first (stable and server-only), then IP, then the browser session, so unresolved IPs don't share one token.
 	const basis = opts.userId
 		? `uid:${opts.userId}`
 		: opts.ip
 			? `ip:${opts.ip}`
 			: `sid:${opts.sessionId}`;
-	return createHash("sha256")
-		.update(`${serverEnv().BETTER_AUTH_SECRET}:${basis}`)
-		.digest("hex");
+	return createHash("sha256").update(`${serverEnv().BETTER_AUTH_SECRET}:${basis}`).digest("hex");
 }

@@ -60,8 +60,7 @@ export function usageView(quota: QuotaSnapshot | null): UsageView {
 				? "Limit reached"
 				: `${linksLimit - activeRecasts} remaining`;
 
-	// Optional-chained through `delivery` itself: a quota cached in localStorage
-	// before this field existed would otherwise throw on hydrate.
+	// Optional-chained through `delivery` itself: a quota cached before that field existed would throw on hydrate.
 	const deliveryBytes = quota?.delivery?.usedBytes ?? 0;
 	const deliveryLimit = quota?.delivery?.capBytes ?? null;
 	const deliveryPct = Math.min(100, Math.round((quota?.delivery?.ratio ?? 0) * 100));

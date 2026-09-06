@@ -6,8 +6,7 @@
  * both by ShareManageDialog and inline in the upload flow (CloudShareDialog).
  * Primes current state from the server; the parent applies via bound `save`.
  */
-import { recastCloudListShares } from "$lib/ipc";
-import { cloudShare } from "$lib/stores/cloudShare.svelte";
+
 import type { IconComponent } from "@recast/icons";
 import {
 	CalendarClock,
@@ -23,6 +22,8 @@ import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";
 import * as Select from "@recast/ui/select";
 import { toast } from "@recast/ui/sonner";
+import { recastCloudListShares } from "$lib/ipc";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { buildShareUpdate, toVisibility, type Visibility } from "./share-manage-dialog.logic";
 
 let {
@@ -45,10 +46,7 @@ let {
 type ExpiryChoice = "keep" | "never" | "7d" | "30d";
 
 let views = $state(0);
-// Set until the server's current settings are known. Every control below
-// defaults to "public / no password / never", so showing the form before the
-// prime lands would misreport a private link and make "Remove password"
-// unreachable — `buildShareUpdate` would diff against the wrong baseline.
+// Showing the form before the prime lands would misreport a private link and make Remove password unreachable, since `buildShareUpdate` would diff the wrong baseline.
 let primeError = $state<string | null>(null);
 let visibility = $state<Visibility>("public");
 let initialVisibility = $state<Visibility>("public");

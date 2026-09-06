@@ -4,7 +4,6 @@ import { z } from "zod";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { recast } from "$lib/db/schema";
-import { bumpUsageOnUpload, getQuotaSnapshot } from "$lib/storage/quota";
 import {
 	captionsObjectKey,
 	deleteObject,
@@ -12,6 +11,7 @@ import {
 	posterObjectKey,
 	statObject,
 } from "$lib/storage";
+import { bumpUsageOnUpload, getQuotaSnapshot } from "$lib/storage/quota";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = { user: { id: string } };
@@ -21,7 +21,12 @@ const BodySchema = z.object({
 	width: z.number().int().positive().optional(),
 	height: z.number().int().positive().optional(),
 	fps: z.number().int().positive().max(240).optional(),
-	durationSec: z.number().int().nonnegative().max(24 * 60 * 60).optional(),
+	durationSec: z
+		.number()
+		.int()
+		.nonnegative()
+		.max(24 * 60 * 60)
+		.optional(),
 	/** Client PUT a poster WebP to the signed URL from /init. */
 	hasPoster: z.boolean().optional(),
 	/** Client PUT a captions VTT to the signed URL from /init. */
@@ -92,37 +97,29 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const stat = await statObject(row.videoUrl);
 	if (!stat) {
-		// Object isn't in R2 — either the PUT never finished or it
-		// hit the wrong key. Caller should retry the upload.
+		// Object isn't in R2: the PUT never finished or hit the wrong key, so the caller should retry.
 		return json({ ok: false, reason: "upload_missing" }, { status: 410 });
 	}
 
 	const actualBytes = stat.contentLength;
 
-	// Refuse 0-byte uploads — common symptom of an aborted PUT that
-	// somehow returned 2xx (or a misbehaving client). Clean up and 422
-	// so the client treats it as an upload failure, not a row to keep.
+	// A 0-byte upload is an aborted PUT that still returned 2xx; clean up and 422 so the client treats it as a failure.
 	if (actualBytes === 0) {
-		await deleteObject(row.videoUrl).catch(() => {});
+		await deleteObject(row.videoUrl).catch(() => undefined);
 		await db.delete(recast).where(eq(recast.id, row.id));
 		return json({ ok: false, reason: "empty_upload" }, { status: 422 });
 	}
 
-	// Re-check quota with the *actual* size — the init pre-check used
-	// the client's declared size, which could have lied. If we'd blow
-	// past the cap, refuse and clean up.
+	// Re-check quota with the ACTUAL size: the init pre-check trusted the client's declared size.
 	const snapshot = await getQuotaSnapshot(row.workspaceId);
 	if (snapshot) {
-		// Resolution backstop — mirrors the init gate so a client that lied
-		// about (or skipped) `height` at init can't slip an over-cap file
-		// through. Reject + clean up rather than publish a frame we'd refuse
-		// to play back.
+		// Resolution backstop mirroring the init gate, so a client that lied about `height` can't slip an over-cap file through.
 		if (
 			body.height != null &&
 			Number.isFinite(snapshot.limits.playbackMaxHeight) &&
 			body.height > snapshot.limits.playbackMaxHeight + 8
 		) {
-			await deleteObject(row.videoUrl).catch(() => {});
+			await deleteObject(row.videoUrl).catch(() => undefined);
 			await db.delete(recast).where(eq(recast.id, row.id));
 			return json(
 				{
@@ -139,7 +136,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 		const projected = snapshot.usage.storageBytes + actualBytes;
 		if (projected > snapshot.limits.storageBytes) {
-			await deleteObject(row.videoUrl).catch(() => {});
+			await deleteObject(row.videoUrl).catch(() => undefined);
 			await db.delete(recast).where(eq(recast.id, row.id));
 			return json(
 				{
@@ -156,19 +153,13 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	}
 
-	// Poster: the client PUT a WebP frame to the signed URL from /init. Persist
-	// the bare object key and sign it on read, exactly like the video, so the
-	// thumbnail works on every provider (a stored public-CDN URL breaks the
-	// moment that CDN isn't actually fronting the bucket).
+	// Persist the bare object key and sign on read, like the video: a stored public-CDN URL breaks the moment that CDN isn't fronting the bucket.
 	const posterUrl: string | undefined = body.hasPoster
 		? posterObjectKey(row.workspaceId, row.id)
 		: undefined;
 
-	// Captions track: persist the bare key (signed on read, like the video) so
-	// the player can load it as a `<track>`. Only when the client uploaded one.
-	const captionsUrl = body.hasCaptions
-		? captionsObjectKey(row.workspaceId, row.id)
-		: undefined;
+	// Persist the bare key, signed on read, so the player can load it as a track; only when the client uploaded one.
+	const captionsUrl = body.hasCaptions ? captionsObjectKey(row.workspaceId, row.id) : undefined;
 
 	await db.transaction(async (tx) => {
 		await tx

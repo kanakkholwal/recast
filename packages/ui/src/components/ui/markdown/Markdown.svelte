@@ -1,42 +1,33 @@
 <script lang="ts" module>
-  import { marked } from "marked";
-  import DOMPurify from "dompurify";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 
-  // GFM is on by default in marked (tables, strikethrough, autolinks, task
-  // lists). `breaks: false` keeps GitHub's "two spaces / blank line" newline
-  // semantics rather than turning every `\n` into a `<br>`.
-  marked.setOptions({ gfm: true, breaks: false });
+// GFM is on by default; `breaks: false` keeps GitHub's newline semantics instead of turning every newline into a break.
+marked.setOptions({ gfm: true, breaks: false });
 
-  // Release bodies come from the GitHub API and can contain raw HTML, so the
-  // marked output MUST be sanitized before it reaches `{@html}` — marked does
-  // not sanitize (the maintainers explicitly defer to DOMPurify). Register the
-  // link-hardening hook once; it only runs in the browser (DOMPurify needs a
-  // DOM, which both consumers — the Tauri webview and the client-only web
-  // changelog — have).
-  let hookInstalled = false;
-  function ensureHook() {
-    if (hookInstalled || typeof window === "undefined") return;
-    DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-      if (node.tagName === "A") {
-        node.setAttribute("target", "_blank");
-        node.setAttribute("rel", "noopener noreferrer");
-      }
-    });
-    hookInstalled = true;
-  }
+// marked does not sanitize, so its output MUST go through DOMPurify before `{@html}`; the link-hardening hook registers once, in the browser.
+let hookInstalled = false;
+function ensureHook() {
+	if (hookInstalled || typeof window === "undefined") return;
+	DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+		if (node.tagName === "A") {
+			node.setAttribute("target", "_blank");
+			node.setAttribute("rel", "noopener noreferrer");
+		}
+	});
+	hookInstalled = true;
+}
 
-  export function renderMarkdown(source: string, inline: boolean): string {
-    const src = source ?? "";
-    const parsed = inline ? marked.parseInline(src) : marked.parse(src);
-    // We never enable marked's async mode, so the result is always a string;
-    // guard anyway so a future option flip can't inject a `[object Promise]`.
-    if (typeof parsed !== "string") return "";
-    // DOMPurify needs a DOM. Under SSR there is none — return empty and let
-    // client hydration fill it in (both current consumers render client-side).
-    if (typeof window === "undefined") return "";
-    ensureHook();
-    return DOMPurify.sanitize(parsed);
-  }
+export function renderMarkdown(source: string, inline: boolean): string {
+	const src = source ?? "";
+	const parsed = inline ? marked.parseInline(src) : marked.parse(src);
+	// Async mode is never enabled, so the result is always a string; guard anyway against a future option flip.
+	if (typeof parsed !== "string") return "";
+	// DOMPurify needs a DOM, so return empty under SSR and let client hydration fill it in.
+	if (typeof window === "undefined") return "";
+	ensureHook();
+	return DOMPurify.sanitize(parsed);
+}
 </script>
 
 <script lang="ts">
@@ -62,9 +53,7 @@
 {/if}
 
 <style>
-  /* `{@html}` content isn't touched by Svelte's style scoping, so style it via
-     `:global()` nested under the scoped wrapper. All colours come from the
-     design tokens so it tracks the active theme. */
+  /* `{@html}` content escapes Svelte's scoping, so style it via `:global()` under the wrapper, using design tokens. */
   .markdown {
     color: var(--foreground);
     font-size: inherit;

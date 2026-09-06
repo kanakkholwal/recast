@@ -1,5 +1,5 @@
 import { getDb } from "$lib/db";
-import { auditLog, type AuditAction } from "$lib/db/schema";
+import { type AuditAction, auditLog } from "$lib/db/schema";
 
 /**
  * Records a single audit entry. Call this *after* the underlying admin
@@ -14,13 +14,15 @@ export async function logAudit(args: {
 	metadata?: Record<string, unknown>;
 }): Promise<void> {
 	try {
-		await getDb().insert(auditLog).values({
-			id: crypto.randomUUID(),
-			actorId: args.actorId,
-			action: args.action,
-			targetUserId: args.targetUserId ?? null,
-			metadata: args.metadata ?? null,
-		});
+		await getDb()
+			.insert(auditLog)
+			.values({
+				id: crypto.randomUUID(),
+				actorId: args.actorId,
+				action: args.action,
+				targetUserId: args.targetUserId ?? null,
+				metadata: args.metadata ?? null,
+			});
 	} catch (err) {
 		console.error("[audit] failed to record entry", { args, err });
 	}

@@ -1,22 +1,11 @@
-//! Offline captions / transcription (M1 foundation).
-//!
-//! Transcribes a *recorded clip's* audio on-device — Recast doesn't capture a
-//! live mic for this (that's dictation; out of scope). The flow is:
-//!   model download (verified) → FFmpeg decode to 16 kHz mono f32 → engine.
-//!
-//! Everything here is async + `spawn_blocking` for CPU/FFmpeg work — sync Tauri
-//! commands freeze the macOS WebView (see the recording-IPC hardening). On-device
-//! inference runs through the ggml engine (see `engine.rs` / `ggml.rs`); remote
-//! endpoints post audio over HTTP (see `remote.rs`).
-//!
-//! Full design: `apps/desktop/docs/captions-transcription-plan.md`.
+//! Offline transcription of a recorded clip: verified model download, FFmpeg decode to 16 kHz mono f32, then the engine.
+//! Everything is async plus `spawn_blocking`, since sync Tauri commands freeze the macOS WebView.
 
 mod audio;
 mod cancel;
 mod capabilities;
 mod engine;
-// The on-device engine (transcribe.cpp / ggml). On by default; absent in a
-// `--no-default-features` build, which then transcribes via remote endpoints.
+// On by default; absent in a `--no-default-features` build, which then transcribes via remote endpoints.
 #[cfg(feature = "ggml")]
 mod ggml;
 mod models;
@@ -37,19 +26,13 @@ use models::{CaptionModel, Engine as ModelEngine, ModelSource, Runtime};
 
 use crate::commands::error::{AppError, AppResult};
 
-// Reused by silence detection to fetch the Silero VAD model (vad-rs needs an
-// external silero_vad.onnx; the download/verify path lives in `models`).
+// Reused by silence detection to fetch the Silero VAD model; the download and verify path lives in `models`.
 pub(crate) use models::{download_file, models_dir};
 
 // - Transcript data model (mirrors the planned project-format `transcript` section) -
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TranscriptWord {
-    pub start: f64,
-    pub end: f64,
-    pub text: String,
-}
+// The model lives in `recast-captions`, shared with the compositor so burn-in and preview can't disagree.
+pub use recast_captions::{CaptionAnimation, CaptionStyle, TranscriptWord};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,157 +53,28 @@ pub struct Transcript {
     pub segments: Vec<TranscriptSegment>,
 }
 
-/// Word-by-word animation spec — mirrors the frontend `CaptionAnimation`. Drives
-/// the per-word ASS markup in the burn-in path. Absent (`None`) = static.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CaptionAnimation {
-    pub chunk: String, // "line" | "phrase" | "word"
-    pub chunk_size: u32,
-    pub emphasis: String, // "none" | "color" | "scale"
-    pub emphasis_color: String,
-    /// "none" | "active" | "progressive". Absent in a project saved before this
-    /// field existed -> resolves to "active" (the legacy per-word behaviour),
-    /// matching `resolveCaptionAnimation` in @recast/captions. See `highlight()`.
-    #[serde(default)]
-    pub highlight: Option<String>,
-    pub entrance: String, // "none" | "fade" | "pop" | "slide"
-    pub entrance_ms: f64,
-    pub hold_gaps: bool,
-}
-
-impl Default for CaptionAnimation {
-    /// Mirrors `DEFAULT_CAPTION_ANIMATION` in @recast/captions (a static line).
-    fn default() -> Self {
-        Self {
-            chunk: "line".into(),
-            chunk_size: 3,
-            emphasis: "none".into(),
-            emphasis_color: "#facc15".into(),
-            highlight: Some("none".into()),
-            entrance: "none".into(),
-            entrance_ms: 220.0,
-            hold_gaps: true,
-        }
+/// Combine per-source transcripts (system, mic) into one, ordered by start time.
+/// Ids are reassigned since two sources' engines both start numbering at zero.
+fn merge_transcripts(mut parts: Vec<Transcript>) -> Transcript {
+    let engine = parts.first().map(|t| t.engine.clone()).unwrap_or_default();
+    let model_id = parts
+        .first()
+        .map(|t| t.model_id.clone())
+        .unwrap_or_default();
+    let language = parts.iter().find_map(|t| t.language.clone());
+    let mut segments: Vec<TranscriptSegment> = parts
+        .iter_mut()
+        .flat_map(|t| std::mem::take(&mut t.segments))
+        .collect();
+    segments.sort_by(|a, b| a.start.total_cmp(&b.start));
+    for (i, seg) in segments.iter_mut().enumerate() {
+        seg.id = format!("seg-{i}");
     }
-}
-
-impl CaptionAnimation {
-    /// True when the spec has no visible effect — the generator can take the
-    /// static (one Dialogue per line) path. Mirrors `isStaticAnimation`.
-    pub fn is_static(&self) -> bool {
-        self.chunk == "line"
-            && self.emphasis == "none"
-            && self.highlight() == "none"
-            && self.entrance == "none"
-    }
-
-    /// Resolved highlight mode. Absent (old projects) -> "active".
-    pub fn highlight(&self) -> &str {
-        self.highlight.as_deref().unwrap_or("active")
-    }
-}
-
-/// How captions render over the video — mirrors the frontend `CaptionStyle`.
-/// Used by the export burn-in (ASS) path; deserialized from the render state's
-/// `captionStyle` passthrough field.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CaptionStyle {
-    pub enabled: bool,
-    pub font_family: String,
-    pub font_weight: u32,
-    pub font_size_pct: f64,
-    pub position: String,
-    pub align: String,
-    pub offset_pct: f64,
-    pub color: String,
-    /// Unspoken-word colour for progressive highlight. Defaulted so a project
-    /// saved before it existed still deserializes.
-    #[serde(default = "default_muted_color")]
-    pub muted_color: String,
-    pub uppercase: bool,
-    pub letter_spacing: f64,
-    pub background: String,
-    pub background_color: String,
-    pub background_opacity: f64,
-    /// Pill padding / radius (em of font size) + line height. Defaulted for
-    /// back-compat with pre-pill projects.
-    #[serde(default = "default_box_padding_x")]
-    pub box_padding_x_em: f64,
-    #[serde(default = "default_box_padding_y")]
-    pub box_padding_y_em: f64,
-    #[serde(default = "default_box_radius")]
-    pub box_radius_em: f64,
-    #[serde(default = "default_line_height")]
-    pub line_height: f64,
-    pub outline_width: f64,
-    pub outline_color: String,
-    pub max_lines: u32,
-    #[serde(default = "default_max_chars_per_line")]
-    pub max_chars_per_line: u32,
-    /// Word-by-word animation; `None` (or absent in JSON) = static.
-    #[serde(default)]
-    pub animation: Option<CaptionAnimation>,
-}
-
-fn default_muted_color() -> String {
-    "#a1a1aa".into()
-}
-fn default_box_padding_x() -> f64 {
-    0.7
-}
-fn default_box_padding_y() -> f64 {
-    0.32
-}
-fn default_box_radius() -> f64 {
-    0.6
-}
-fn default_line_height() -> f64 {
-    1.35
-}
-fn default_max_chars_per_line() -> u32 {
-    42
-}
-
-impl Default for CaptionStyle {
-    /// Mirrors `DEFAULT_CAPTION_STYLE` in @recast/captions (the Loom preset).
-    /// Keep in sync: there is no shared source across the TS/Rust boundary.
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            font_family: "'Inter', sans-serif".into(),
-            font_weight: 600,
-            font_size_pct: 3.8,
-            position: "bottom".into(),
-            align: "center".into(),
-            offset_pct: 8.0,
-            color: "#ffffff".into(),
-            muted_color: default_muted_color(),
-            uppercase: false,
-            letter_spacing: 0.0,
-            background: "box".into(),
-            background_color: "#0b0b12".into(),
-            background_opacity: 78.0,
-            box_padding_x_em: default_box_padding_x(),
-            box_padding_y_em: default_box_padding_y(),
-            box_radius_em: default_box_radius(),
-            line_height: default_line_height(),
-            outline_width: 0.0,
-            outline_color: "#0a0a0a".into(),
-            max_lines: 2,
-            max_chars_per_line: default_max_chars_per_line(),
-            animation: Some(CaptionAnimation {
-                chunk: "phrase".into(),
-                chunk_size: 6,
-                emphasis: "none".into(),
-                emphasis_color: "#ffffff".into(),
-                highlight: Some("progressive".into()),
-                entrance: "slide".into(),
-                entrance_ms: 125.0,
-                hold_gaps: true,
-            }),
-        }
+    Transcript {
+        engine,
+        model_id,
+        language,
+        segments,
     }
 }
 
@@ -319,9 +173,7 @@ pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelIn
         .map(|m| {
             let runtime = m.engine.runtime();
             let downloadable = !m.files.is_empty();
-            // Availability is evaluated differently for a remote endpoint (is a
-            // key configured?) than a local model (runtime built + device caps +
-            // files present).
+            // A remote endpoint is available when a key is configured; a local model needs runtime, device caps and files.
             let (installed, runnable, runtime_available, warning) = match m.remote.as_ref() {
                 Some(ep) => {
                     let has_key = remote::has_key(&ep.id);
@@ -333,8 +185,7 @@ pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelIn
                     let installed = models::is_installed(&app, &m).unwrap_or(false);
                     let (rt_available, rt_reason) = models::runtime_status(runtime);
                     let (runnable, device_warning) = evaluate(&m, &caps);
-                    // An unavailable runtime is the dominant blocker, so its reason
-                    // wins over a soft device caveat when both apply.
+                    // An unavailable runtime is the dominant blocker, so its reason wins over a soft device caveat.
                     (
                         installed,
                         runnable,
@@ -461,8 +312,7 @@ pub async fn transcribe_project(
     let model = models::find(&app, &model_id)
         .ok_or_else(|| AppError::msg(format!("unknown caption model: {model_id}")))?;
 
-    // Availability gate: a remote model needs a stored key; a local model needs
-    // its runtime built, the device to support it, and its files present.
+    // Availability gate: a remote model needs a stored key, a local one its runtime, device support and files.
     let remote_ep = model.remote.clone();
     match remote_ep.as_ref() {
         Some(ep) => {
@@ -496,64 +346,76 @@ pub async fn transcribe_project(
         phase: "extracting".into(),
     });
 
-    // Decode audio to 16 kHz mono f32 off the UI thread (CPU + ffmpeg), for both
-    // paths.
     let sources: Vec<String> = [audio_path, microphone_path]
         .into_iter()
         .flatten()
         .collect();
-    let samples: Vec<f32> = tokio::task::spawn_blocking(move || {
-        let refs: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
-        let samples = audio::extract_pcm_f32(&refs)?;
-        if samples.is_empty() {
-            return Err("no audio to transcribe".to_string());
-        }
-        Ok::<Vec<f32>, String>(samples)
-    })
-    .await
-    .map_err(|e| AppError::msg(format!("audio extract task panicked: {e}")))??;
-
-    // Extract runs as one ffmpeg call, so this is the first point it can stop.
-    if cancel::is_requested() {
-        return Err(AppError::from(cancel::CANCELLED_MSG));
+    if sources.is_empty() {
+        return Err(AppError::from("no audio to transcribe"));
     }
+    // Resolved once; only the local path needs it.
+    let model_dir = match remote_ep.as_ref() {
+        Some(_) => None,
+        None => Some(models::model_dir(&app, &model.id)?),
+    };
 
     let _ = on_phase.send(TranscribeProgress {
         phase: "transcribing".into(),
     });
 
-    let transcript = match remote_ep.as_ref() {
-        // Remote: the network call is async, so it must NOT run on a blocking
-        // thread. The key is read here in Rust and never crosses IPC.
-        Some(ep) => {
-            let key = remote::read_key(&ep.id)
-                .ok_or_else(|| AppError::from("Add an API key for this endpoint first."))?;
-            remote::transcribe_remote(ep, &key, &samples, language.as_deref())
+    // Per-source then merge: a summed mono track drowns a quiet mic under loud system speech (Whisper also hallucinates on the music); one source stays one pass.
+    let mut parts: Vec<Transcript> = Vec::new();
+    for source in &sources {
+        if cancel::is_requested() {
+            return Err(AppError::from(cancel::CANCELLED_MSG));
+        }
+        // Decode to 16 kHz mono f32 off the UI thread (CPU plus ffmpeg).
+        let src = source.clone();
+        let samples: Vec<f32> =
+            tokio::task::spawn_blocking(move || audio::extract_pcm_f32(&[src.as_str()]))
                 .await
-                .map_err(AppError::msg)?
+                .map_err(|e| AppError::msg(format!("audio extract task panicked: {e}")))??;
+        // A silent or unreadable source contributes nothing rather than failing the run.
+        if samples.is_empty() {
+            continue;
         }
-        // Local: inference is CPU-bound, so run it on a blocking thread.
-        None => {
-            let model_dir = models::model_dir(&app, &model.id)?;
-            let lang = language.clone();
-            tokio::task::spawn_blocking(move || {
-                engine::transcribe(&model, &model_dir, &samples, lang.as_deref())
-            })
-            .await
-            .map_err(|e| AppError::msg(format!("transcription task panicked: {e}")))??
-        }
-    };
 
-    // The remote path can't be interrupted mid-request; drop its result rather
-    // than overwrite a transcript the user asked to stop replacing.
+        let part = match remote_ep.as_ref() {
+            // Remote: the network call is async, so it must NOT run on a blocking thread. The key never crosses IPC.
+            Some(ep) => {
+                let key = remote::read_key(&ep.id)
+                    .ok_or_else(|| AppError::from("Add an API key for this endpoint first."))?;
+                remote::transcribe_remote(ep, &key, &samples, language.as_deref())
+                    .await
+                    .map_err(AppError::msg)?
+            }
+            // Local: inference is CPU-bound, so run it on a blocking thread.
+            None => {
+                let model = model.clone();
+                let dir = model_dir.clone().expect("local path resolved a model dir");
+                let lang = language.clone();
+                tokio::task::spawn_blocking(move || {
+                    engine::transcribe(&model, &dir, &samples, lang.as_deref())
+                })
+                .await
+                .map_err(|e| AppError::msg(format!("transcription task panicked: {e}")))??
+            }
+        };
+        parts.push(part);
+    }
+
+    // The remote path can't be interrupted mid-request, so drop its result rather than overwrite a stopped transcript.
     if cancel::is_requested() {
         return Err(AppError::from(cancel::CANCELLED_MSG));
+    }
+    if parts.is_empty() {
+        return Err(AppError::from("no audio to transcribe"));
     }
 
     let _ = on_phase.send(TranscribeProgress {
         phase: "done".into(),
     });
-    Ok(transcript)
+    Ok(merge_transcripts(parts))
 }
 
 /// Ask the in-flight transcription to stop. No-op when nothing is running.
@@ -562,16 +424,8 @@ pub fn cancel_transcription() {
     cancel::request();
 }
 
-/// Path-aware counterpart to [`transcribe_project`]. Identical pipeline
-/// (`audio::extract_pcm_f32` → `engine::transcribe_at_path` →
-/// `words::build_segments`) but no `AppHandle`, no `Channel<TranscribeProgress>`,
-/// no model-registry lookup — the caller supplies the audio path, the GGUF
-/// path, and the model id directly. Used by the CLI `transcribe` verb
-/// (`apps/desktop/src-tauri/src/cli.rs`) and the CI / release smoke test
-/// (`scripts/release/smoke-test-transcription.ps1`).
-///
-/// Streams the three phases to stderr (one line each) so a CLI observer sees
-/// progress. The frontend's IPC `Channel` is a no-op equivalent for scripts.
+/// Path-aware counterpart to [`transcribe_project`]: same pipeline, but the caller supplies the audio, GGUF and model id directly, with no `AppHandle`.
+/// Used by the CLI `transcribe` verb and the release smoke test; streams the three phases to stderr instead of an IPC `Channel`.
 pub async fn transcribe_for_paths(
     audio_path: &Path,
     model_path: &Path,
@@ -723,8 +577,7 @@ mod tests {
 
     #[test]
     fn default_animation_is_static() {
-        // The default spec (line chunks, no emphasis, no entrance) must take the
-        // static one-Dialogue-per-line generator path.
+        // The default spec (line chunks, no emphasis, no entrance) must take the static one-Dialogue-per-line path.
         assert!(CaptionAnimation::default().is_static());
     }
 
@@ -751,8 +604,7 @@ mod tests {
 
     #[test]
     fn highlight_resolves_absent_to_active() {
-        // A pre-highlight project (field absent) must keep the legacy per-word
-        // behaviour, so `highlight()` returns "active"; a fresh default is static.
+        // A pre-highlight project keeps the legacy per-word behaviour, while a fresh default is static.
         let legacy = CaptionAnimation {
             highlight: None,
             ..Default::default()
@@ -763,8 +615,7 @@ mod tests {
 
     #[test]
     fn caption_style_default_mirrors_loom_preset() {
-        // Guards B1 (Rust/TS default drift). These must equal DEFAULT_CAPTION_STYLE
-        // in @recast/captions (the Loom preset). Update both together.
+        // Guards Rust/TS default drift: these must equal DEFAULT_CAPTION_STYLE in @recast/captions. Update both together.
         let d = CaptionStyle::default();
         assert_eq!(d.font_weight, 600);
         assert_eq!(d.font_size_pct, 3.8);
@@ -772,5 +623,45 @@ mod tests {
         assert_eq!(d.muted_color, "#a1a1aa");
         assert_eq!(d.max_chars_per_line, 42);
         assert_eq!(d.animation.as_ref().unwrap().highlight(), "progressive");
+    }
+
+    use super::{merge_transcripts, Transcript, TranscriptSegment};
+
+    fn seg(start: f64, text: &str) -> TranscriptSegment {
+        TranscriptSegment {
+            id: "0".into(),
+            start,
+            end: start + 1.0,
+            text: text.into(),
+            words: Vec::new(),
+        }
+    }
+    fn transcript(segments: Vec<TranscriptSegment>) -> Transcript {
+        Transcript {
+            engine: "whisper".into(),
+            model_id: "m".into(),
+            language: Some("en".into()),
+            segments,
+        }
+    }
+
+    #[test]
+    fn merge_interleaves_two_sources_by_time_with_unique_ids() {
+        // Both sources numbered from zero, so the merge must reorder by start and re-id.
+        let system = transcript(vec![seg(0.0, "system a"), seg(4.0, "system b")]);
+        let mic = transcript(vec![seg(2.0, "mic a"), seg(6.0, "mic b")]);
+        let merged = merge_transcripts(vec![system, mic]);
+        let texts: Vec<&str> = merged.segments.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, ["system a", "mic a", "system b", "mic b"]);
+        let ids: Vec<&str> = merged.segments.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["seg-0", "seg-1", "seg-2", "seg-3"]);
+        assert_eq!(merged.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn merge_of_one_source_is_that_source_time_ordered() {
+        let merged = merge_transcripts(vec![transcript(vec![seg(1.0, "x"), seg(0.0, "y")])]);
+        assert_eq!(merged.segments[0].text, "y");
+        assert_eq!(merged.segments[0].id, "seg-0");
     }
 }

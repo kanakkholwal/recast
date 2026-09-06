@@ -1,9 +1,5 @@
-//! Sequenced log of the app events the control socket streams.
-//!
-//! One set of listeners feeds this log for the life of the process, so a
-//! watcher that reconnects can replay from where it dropped instead of
-//! re-snapshotting. Without the log a `watch` client had no way to tell "nothing
-//! happened" from "I missed it".
+//! Sequenced event log fed by one set of listeners for the life of the process, so a reconnecting watcher replays instead of re-snapshotting.
+//! Without it a `watch` client could not tell "nothing happened" from "I missed it".
 
 use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex};
@@ -92,12 +88,8 @@ impl EventLog {
         self.lock().next_seq
     }
 
-    /// Everything after `cursor` whose name is in `names`.
-    ///
-    /// `missed` counts events evicted before this watcher reached them, so a
-    /// slow client learns its stream has a hole instead of assuming continuity.
-    /// The returned cursor advances past filtered-out events too, so a watcher
-    /// subscribed to one group is not dragged back by traffic on another.
+    /// Everything after `cursor` whose name is in `names`; `missed` counts events evicted first, so a slow client learns its stream has a hole instead of assuming continuity.
+    /// The returned cursor advances past filtered-out events too, so a watcher on one group is not dragged back by traffic on another.
     pub fn since(&self, cursor: u64, names: &[String]) -> Replay {
         let ring = self.lock();
         let missed = match ring.oldest_seq() {
@@ -118,7 +110,6 @@ impl EventLog {
     }
 
     /// Block until an event newer than `cursor` is logged, or `timeout` passes.
-    ///
     /// Returns `false` on timeout, which the caller turns into a keepalive.
     pub fn wait_past(&self, cursor: u64, timeout: Duration) -> bool {
         let ring = self.lock();

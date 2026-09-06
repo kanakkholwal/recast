@@ -8,9 +8,7 @@ export const ROW_SPACING_PX = 4;
 export const ROW_GAP_PX = 4;
 /** Narrowest a card may render, so a one-frame item stays clickable. */
 export const CARD_MIN_WIDTH_PX = 36;
-// Fixed-height lanes. These live here, not in the components, because the track
-// RAIL sizes its label rows from the same numbers — when the clip bar owned its
-// own `h-12` the rail had to hard-code a matching class, and the two drifted.
+// Here, not in the components: the track rail sizes its label rows from the same numbers, and hard-coded classes drifted.
 /** Lane padding above and below the stack, matching the lane's py class. */
 export const LANE_PADDING_PX = 6;
 
@@ -46,9 +44,7 @@ export interface CardSpan {
  */
 export function packRows(spans: CardSpan[], pinned?: ReadonlyMap<string, number>): number[] {
 	const rows = new Array<number>(spans.length).fill(0);
-	// Occupied intervals per row, not just each row's rightmost edge: a pinned
-	// card can be placed out of left-to-right order, and a later card must be
-	// able to take the room before it rather than being pushed down a row.
+	// Occupied intervals per row, not just the rightmost edge: a pinned card can sit out of order and a later card must take the room.
 	const occupied: Array<Array<{ left: number; right: number }>> = [];
 
 	function place(index: number, row: number) {

@@ -70,10 +70,7 @@ describe("chunkWords", () => {
 });
 
 describe("activeChunkIndex", () => {
-	const runs = chunkWords(
-		[W(0, 1), W(1, 2), W(5, 6)],
-		anim({ chunk: "word" }),
-	);
+	const runs = chunkWords([W(0, 1), W(1, 2), W(5, 6)], anim({ chunk: "word" }));
 
 	it("holds the previous chunk through the gap before the next", () => {
 		expect(activeChunkIndex(runs, 0.5)).toBe(0);

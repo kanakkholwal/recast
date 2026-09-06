@@ -159,11 +159,7 @@ export function buildGapMap(map: TimeMap): TimeMap {
  * seam), matching cuts.ts, where a time inside a cut maps to the cut's start.
  */
 export function originalToOutput(map: TimeMap, t: number): number {
-	// Binary search for the first span with `origEnd >= t` — identical to the
-	// linear "first span where t <= origEnd" (a time before that span's start
-	// collapses onto its seam). Spans are ordered and non-overlapping, so origEnd
-	// is non-decreasing. The waveform lane evaluates this per bucket over ~2000
-	// buckets, so at high cut counts the old O(spans) scan dominated a zoom.
+	// Binary search: spans are ordered and non-overlapping, and the waveform lane's per-bucket scan made the old O(spans) walk dominate a zoom.
 	const spans = map.spans;
 	let lo = 0;
 	let hi = spans.length;
@@ -191,6 +187,17 @@ export function outputToOriginal(map: TimeMap, t: number): number {
 		if (t < s.outEnd - EPS) return s.origStart + (t - s.outStart) * s.speed;
 	}
 	return spans[spans.length - 1].origEnd;
+}
+
+/**
+ * The kept spans as `@recast/media` regions: the same intervals the preview
+ * scheduler and the browser export consume. This adapter exists so the map is
+ * the ONE place kept-content-with-speed is derived; anything that rebuilt the
+ * list from segments plus a speed lookup was a second implementation waiting to
+ * disagree with this one.
+ */
+export function toRegions(map: TimeMap): Array<{ start: number; end: number; speed: number }> {
+	return map.spans.map((s) => ({ start: s.origStart, end: s.origEnd, speed: s.speed }));
 }
 
 /** The kept span covering original time `t`, or null if `t` is removed. */

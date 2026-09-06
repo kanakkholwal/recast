@@ -1,6 +1,4 @@
 <script lang="ts">
-import type { CameraCapture } from "../../lib/wire-types";
-import type { EditorStore, PanelTab } from "../../stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	Blocks,
@@ -16,13 +14,14 @@ import {
 	Volume,
 	ZoomIn,
 } from "@recast/icons";
-import { untrack } from "svelte";
 import * as Tabs from "@recast/ui/tabs";
-import * as Tooltip from "@recast/ui/tooltip";
+import { untrack } from "svelte";
+import type { CameraCapture } from "../../lib/wire-types";
+import type { EditorStore, PanelTab } from "../../stores/editor-store.svelte";
 import AnnotationsPanel from "./AnnotationsPanel.svelte";
 import AudioPanel from "./AudioPanel.svelte";
-import BackgroundPicker from "./BackgroundPicker.svelte";
 import CameraPanel from "./CameraPanel.svelte";
+import CanvasPanel from "./CanvasPanel.svelte";
 import CaptionsPanel from "./CaptionsPanel.svelte";
 import ClipPanel from "./ClipPanel.svelte";
 import CursorPanel from "./CursorPanel.svelte";
@@ -47,11 +46,6 @@ interface Props {
 	readOnly?: boolean;
 }
 
-// A section is one of three kinds. The rail groups by kind (thin dividers
-// between groups) so ~9 sections read as structure, not a flat wall of icons:
-//   composition  the whole video's look + sound (the panel's "home")
-//   selection    properties of whatever is selected on the timeline
-//   meta         packs + read-only info
 type TabGroup = "composition" | "selection" | "meta";
 type TabType = {
 	id: PanelTab;
@@ -62,13 +56,11 @@ type TabType = {
 	hint: string;
 };
 
-// Clip/Zoom/Markup are selection-driven (the effects below force the panel to
-// them when you select on the timeline), so a clip with no button would strand
-// the panel; every id here has a rail button.
+// Clip, Zoom and Markup are selection-driven, so every id here needs a rail button or the panel strands.
 const TABS: TabType[] = [
 	{
-		id: "background",
-		label: "Background",
+		id: "canvas",
+		label: "Canvas",
 		icon: ImageIcon,
 		group: "composition",
 		hint: "Wallpaper, padding, and shadow.",
@@ -96,14 +88,7 @@ const TABS: TabType[] = [
 		group: "composition",
 		hint: "Volume and mute.",
 	},
-	// TODO: re-enable when we have a music panel. The audio panel is enough for now.
-	// {
-	// 	id: "music",
-	// 	label: "Music",
-	// 	icon: AudioLines,
-	// 	group: "composition",
-	// 	hint: "Background music and voiceover.",
-	// },
+	// TODO: re-add a music tab; the audio panel covers it for now.
 	{
 		id: "captions",
 		label: "Captions",
@@ -134,7 +119,7 @@ const TABS: TabType[] = [
 	},
 	{
 		id: "extensions",
-		label: "Extensions",
+		label: "Plugins",
 		icon: Blocks,
 		group: "meta",
 		hint: "Installed asset packs.",
@@ -177,8 +162,7 @@ const groupedTabs = $derived(
 	GROUP_ORDER.map((g) => visibleTabs.filter((t) => t.group === g)).filter((g) => g.length > 0),
 );
 
-// A host that drops the active section (or a stale persisted one) would leave
-// the rail with nothing selected and the body blank.
+// A host that drops the active section would leave the rail with nothing selected and the body blank.
 $effect(() => {
 	const tabs = visibleTabs;
 	untrack(() => {
@@ -211,45 +195,31 @@ $effect(() => {
 
 const activeTab = $derived(visibleTabs.find((t) => t.id === store.activePanel) ?? visibleTabs[0]);
 
-const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent";
+const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 no-scrollbar";
 </script>
 
-<!-- One icon-per-section rail (fixed column, never reflows) beside the content.
-     The active section's name + hint live in the content header, since the rail
-     icons are unlabeled (label on hover). -->
+
 {#snippet railTab(tab: TabType)}
   {@const Icon = tab.icon}
-  <Tooltip.Root>
-    <Tooltip.Trigger>
-      {#snippet child({ props })}
-        <Tabs.Trigger
-          {...props}
-          value={tab.id}
-          aria-label={tab.label}
-          class="relative size-7 flex-none rounded-md px-0 group-data-[orientation=vertical]/tabs:justify-center data-[state=active]:text-foreground data-[state=active]:bg-foreground/10"
-        >
-          <Icon class="size-4" />
-        </Tabs.Trigger>
-      {/snippet}
-    </Tooltip.Trigger>
-    <Tooltip.Content side="left">{tab.label}</Tooltip.Content>
-  </Tooltip.Root>
+  <Tabs.Trigger value={tab.id} title={tab.label} aria-label={tab.label} class="size-8 flex-none px-0">
+    <Icon class="size-4" />
+  </Tabs.Trigger>
 {/snippet}
 
 <aside
-  class="@container/panel flex h-full min-h-0 flex-row bg-background text-[12px]"
+  class="@container/panel flex h-full min-h-0 flex-col bg-background text-[12px]"
 >
   <Tabs.Root
     value={store.activePanel}
     onValueChange={(v: string) => {
       store.activePanel = v as PanelTab;
     }}
-    orientation="vertical"
-    class="h-full shrink-0"
+    orientation="horizontal"
+    class="w-full shrink-0"
   >
     <Tabs.List
       variant="soft"
-      class="h-full w-11 px-1.5 shrink-0 flex-col gap-1 overflow-y-auto border-r border-b border-border/60 bg-transparent scrollbar-transparent no-scrollbar"
+      class="w-full mx-2 gap-0.5 overflow-x-auto border-b border-border/60 bg-transparent px-2 no-scrollbar"
     >
       {#each groupedTabs as group, gi (gi)}
         {#each group as tab (tab.id)}
@@ -258,24 +228,26 @@ const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-tran
         {#if gi < groupedTabs.length - 1}
           <div
             role="separator"
-            class="mx-auto my-0.5 h-px w-5 shrink-0 bg-border/60"
+            class="mx-1 h-4 w-px shrink-0 self-center bg-border/60"
           ></div>
         {/if}
       {/each}
     </Tabs.List>
   </Tabs.Root>
 
-  <div class="flex min-w-0 flex-1 flex-col">
-    <header class="shrink-0 border-b border-border/60 px-3 py-2.5">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+    <header
+      class="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 px-3"
+    >
       <h2
-        class="flex items-center gap-1.5 text-[13px] font-semibold leading-none text-foreground"
+        class="flex shrink-0 items-center gap-1.5 text-[12px] font-semibold leading-none text-foreground"
       >
         {activeTab.label}
         {#if readOnly}
           <Lock class="size-3 text-muted-foreground" aria-hidden="true" />
         {/if}
       </h2>
-      <p class="mt-1 truncate text-[11px] leading-none text-muted-foreground">
+      <p class="min-w-0 flex-1 truncate text-right text-[10.5px] leading-none text-muted-foreground/80">
         {readOnly ? "Read-only while the agent is editing." : activeTab.hint}
       </p>
     </header>
@@ -290,8 +262,8 @@ const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-tran
     >
       {#if store.activePanel === "clip"}
         <ClipPanel {store} />
-      {:else if store.activePanel === "background"}
-        <BackgroundPicker {store} />
+      {:else if store.activePanel === "canvas"}
+        <CanvasPanel {store} />
       {:else if store.activePanel === "focus"}
         <FocusPanel {store} {onRegenerateAutoZoom} />
       {:else if store.activePanel === "annotations"}

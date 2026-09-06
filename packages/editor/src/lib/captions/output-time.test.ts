@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Transcript, TranscriptSegment, TranscriptWord } from "../wire-types";
 import { buildTimeMap } from "../timeline/time-map";
+import type { Transcript, TranscriptSegment, TranscriptWord } from "../wire-types";
 import { toOutputTimeTranscript } from "./output-time";
 
 function word(start: number, end: number, text: string): TranscriptWord {
@@ -61,8 +61,7 @@ describe("toOutputTimeTranscript", () => {
 	});
 
 	it("emits cues in order and never overlapping", () => {
-		// Non-overlapping in SOURCE time, and straddling the cut — the old
-		// endpoint-only remap turned this pair into overlapping output cues.
+		// Non-overlapping in SOURCE time and straddling the cut: the old endpoint-only remap made these overlap in output.
 		const src = transcript([
 			seg("a", 10, 19, [word(10, 11, "a1"), word(18, 19, "a2")]),
 			seg("b", 19.5, 22, [word(19.5, 20, "b1"), word(21, 22, "b2")]),

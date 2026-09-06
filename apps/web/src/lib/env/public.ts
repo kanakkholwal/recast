@@ -1,5 +1,5 @@
 import { env as rawPublicEnv } from "$env/dynamic/public";
-import { publicEnvSchema, type PublicEnv } from "./schema";
+import { type PublicEnv, publicEnvSchema } from "./schema";
 
 /**
  * Validated public env. Safe to import from both server and client — every
@@ -19,9 +19,7 @@ export function getPublicEnv(): PublicEnv {
 		const flat = result.error.issues
 			.map((i) => `  • ${i.path.join(".") || "(root)"}: ${i.message}`)
 			.join("\n");
-		throw new Error(
-			`Invalid PUBLIC_* environment variables:\n${flat}`,
-		);
+		throw new Error(`Invalid PUBLIC_* environment variables:\n${flat}`);
 	}
 	cached = result.data;
 	return cached;

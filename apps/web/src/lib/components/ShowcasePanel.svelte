@@ -1,10 +1,8 @@
 <script lang="ts">
-import type { Snippet } from "svelte";
 import { cn } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
 
-// Section container. A tonal paper surface or a hairline-bordered card —
-// never a tinted wash, because a coloured surface competes with the feature
-// tags that are supposed to carry the page's only chroma.
+// A tonal paper surface or a hairline card, never a tinted wash: a coloured surface competes with the feature tags.
 let {
 	children,
 	tone = "paper",

@@ -1,0 +1,28 @@
+{
+	"name": "@recast/engine",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"default": "./src/index.ts"
+		}
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.56.0",
+		"@types/node": "^25.9.0",
+		"sharp": "^0.34.5",
+		"typescript": "^5.9.3",
+		"vite": "^8.2.2",
+		"vitest": "^3.2.7"
+	},
+	"scripts": {
+		"build": "node scripts/build-wasm.mjs",
+		"build:wasm": "node scripts/build-wasm.mjs",
+		"check": "tsc --noEmit -p tsconfig.json",
+		"test:unit": "vitest run --passWithNoTests",
+		"test:unit:watch": "vitest",
+		"test:golden": "playwright test",
+		"build:wasm:ensure": "node scripts/ensure-wasm.mjs"
+	}
+}

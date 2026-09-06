@@ -9,8 +9,7 @@ import {
 	sortRows,
 } from "./RecastPerformanceTable.logic";
 
-// Sortable per-recast comparison table. Each row drills into
-// /dashboard/recasts/[id].
+// Sortable per-recast comparison; each row drills into the recast's own page.
 let { rows, limit = 25 }: { rows: Row[]; limit?: number } = $props();
 
 let sortKey = $state<SortKey>("views");

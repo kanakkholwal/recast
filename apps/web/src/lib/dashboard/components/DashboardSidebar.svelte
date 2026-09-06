@@ -15,9 +15,7 @@ import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 import Logo from "$lib/logo.svelte";
 import { isActive, resolveActiveOrg, resolveMemberships } from "./DashboardSidebar.logic";
 
-// A nav entry; the same shape powers both the dashboard and admin shells.
-// All Lucide icons share one component type, so `typeof LayoutDashboard`
-// accepts any of them without `any`.
+// One shape powers the dashboard and admin shells; every @recast/icons icon shares a component type, so no `any` is needed.
 interface NavItem {
 	title: string;
 	href: string;
@@ -45,9 +43,7 @@ interface Props {
 	showOrgSwitcher?: boolean;
 }
 
-// Default dashboard nav, grouped like the Loom-style shell: primary
-// workspace destinations up top, the media library below. Settings lives in
-// the header profile menu + command palette, not the rail.
+// Primary workspace destinations up top, media library below; Settings lives in the profile menu, not the rail.
 const defaultGroups: NavGroup[] = [
 	{
 		label: "Workspace",
@@ -99,8 +95,7 @@ const sidebar = useSidebar();
 const open = $derived(sidebar.state === "expanded");
 const currentPath = $derived(page.url.pathname);
 
-// Grouped nav wins; a flat `nav` becomes one group; otherwise the dashboard
-// default. Keeps the admin shell (flat `nav`) working unchanged.
+// Grouped nav wins, a flat `nav` becomes one group, else the dashboard default; the admin shell stays unchanged.
 const resolvedGroups = $derived<NavGroup[]>(
 	groups ?? (nav ? [{ label: groupLabel, items: nav }] : defaultGroups),
 );

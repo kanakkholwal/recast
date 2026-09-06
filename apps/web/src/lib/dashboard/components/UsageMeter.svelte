@@ -4,8 +4,7 @@ import { barWidth, formatBytes } from "$lib/dashboard/format";
 import { quotaStore } from "$lib/dashboard/store.svelte";
 import { type UsageTone, usageView } from "./UsageMeter.logic";
 
-// Reactive snapshot pulled from the layout-injected quota. Every plan has a
-// concrete cap, so all three bars read the same way on every tier.
+// Every plan has a concrete cap, so all three bars read the same way on every tier.
 const view = $derived(usageView(quotaStore.value));
 
 const barFill: Record<UsageTone, string> = {

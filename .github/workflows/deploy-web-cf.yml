@@ -1,60 +1,94 @@
 name: Deploy Web to Cloudflare Workers
 
+# Not yet wired to push: deploy-web.yml (Vercel) is still the live pipeline, and two
+# pipelines on the same ref would double-deploy. Flip the `push`/`pull_request` triggers
+# on once the preflight below passes and Vercel is retired.
 on:
-  # push:
-  #   branches: 
-  #     - main
-  #   paths:
-  #     - 'apps/web/**'  
-  # pull_request:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'apps/web/**'  
-  workflow_dispatch: 
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        default: preview
+        options: [preview, production]
 
-  
 concurrency:
-  group: deploy-web 
+  group: deploy-web-cf-${{ github.event.inputs.environment || 'preview' }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  deployments: write
+
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  
+  NODE_VERSION: "24"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Force wrangler to Azure Blob's node build (SAS-capable); its browser build strips SAS signing.
+  WRANGLER_BUILD_PLATFORM: "node"
+  WRANGLER_BUILD_CONDITIONS: "workerd,worker,import,module,node,default"
+
 jobs:
-  deploy:
-    name: Build & deploy to CF Workers
+  # Circuit breaker: three prerequisites are still missing, and without this the run
+  # fails deep inside wrangler with an error that names none of them.
+  preflight:
+    name: Preflight
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: write
-    environment: 
-      name: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'production' || 'preview' }}
-      url: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'https://recast.li' || 'https://preview.recast.li' }}
+    timeout-minutes: 5
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Check Cloudflare prerequisites
+        run: |
+          set -euo pipefail
+          missing=0
+          if [ -z "$(ls apps/web/wrangler.* 2>/dev/null)" ]; then
+            echo "::error::apps/web/wrangler.jsonc (or .toml) is missing; wrangler deploy has nothing to read."
+            missing=1
+          fi
+          if ! node -e "const d={...require('./apps/web/package.json').dependencies,...require('./apps/web/package.json').devDependencies};process.exit(d['@sveltejs/adapter-cloudflare']?0:1)"; then
+            echo "::error::@sveltejs/adapter-cloudflare is not installed; adapter-auto cannot emit a Workers bundle in CI."
+            missing=1
+          fi
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] || [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are not set."
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Cloudflare deploy is not bootstrapped yet. See the checklist in this workflow's header."
+            exit 1
+          fi
+          echo "::notice::Cloudflare prerequisites satisfied."
 
-      - name: Setup pnpm
+  deploy:
+    name: Deploy (${{ github.event.inputs.environment || 'preview' }})
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ github.event.inputs.environment || 'preview' }}
+      url: ${{ github.event.inputs.environment == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pnpm
         uses: pnpm/action-setup@v4
-
+        with:
+          run_install: false
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           # Wrangler 4.x requires Node >= 22.
-          node-version: 24
-          cache: pnpm
-
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build apps/web
-        run: pnpm -F @docvia/web build
         env:
-            NODE_ENV: production
-            FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-            PUBLIC_APP_URL: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'https://recast.li' || 'https://preview.recast.li' }}
+          NODE_ENV: production
+          PUBLIC_APP_URL: ${{ github.event.inputs.environment == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
+        run: pnpm --filter recast-web build
 
+      # `--env production` selects the matching block in wrangler.jsonc; preview is the default.
       - name: Deploy via Wrangler
         uses: cloudflare/wrangler-action@v3
         with:
@@ -62,6 +96,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/web
           wranglerVersion: "4"
-          command: >-
-            deploy
-            ${{ inputs.environment != '' && format('--env {0}', inputs.environment) || '' }}
+          command: deploy ${{ github.event.inputs.environment == 'production' && '--env production' || '' }}

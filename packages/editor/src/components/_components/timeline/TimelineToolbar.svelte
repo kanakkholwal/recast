@@ -1,8 +1,6 @@
 <script lang="ts">
-import InspectorHint from "../../InspectorHint.svelte";
-import { experimentalStore } from "../../../stores/experimental.svelte";
-import type { EditorStore } from "../../../stores/editor-store.svelte";
 import {
+	AiWand,
 	AudioLines,
 	Clapperboard,
 	Clock,
@@ -15,27 +13,25 @@ import {
 	Minus,
 	Pencil,
 	Plus,
-	Redo2,
 	Scissors,
 	SlidersHorizontal,
 	SquareSplitHorizontal,
 	Target,
-	Undo2,
 	VolumeX,
 	ZoomIn,
-	AiWand,
 } from "@recast/icons";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { Kbd } from "@recast/ui/kbd";
 import * as Popover from "@recast/ui/popover";
 import { cn } from "@recast/ui/utils";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { experimentalStore } from "../../../stores/experimental.svelte";
+import InspectorHint from "../../InspectorHint.svelte";
 import SilenceReviewPopover from "../../SilenceReviewPopover.svelte";
 import ZoomSuggestionsPopover from "../../ZoomSuggestionsPopover.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
-// Three clusters: EDIT (split + trim to playhead) · INSERT (focus/suggest/
-// silence) · VIEW (zoom + display options). Popovers are portalled because the
-// timeline lives in an `overflow-hidden` slide wrapper that would clip them.
+// Three clusters (edit, insert, view); popovers are portalled because the timeline's overflow-hidden wrapper would clip them.
 
 interface Props {
 	store: EditorStore;
@@ -106,9 +102,7 @@ let {
 const trimHint =
 	"Trim start / Trim end keep the middle. Cut removes a section between two clicks. Split breaks the clip at the playhead so you can delete or re-speed one piece.";
 
-// `splitAt` already returns false for a split that can't land (clip edges, a
-// point inside a removed range, or one that already exists) but the caller
-// discarded that, so the button and the S key both silently did nothing.
+// `splitAt` already refuses a split that can't land, but the caller discarded that, so the button silently did nothing.
 const canSplit = $derived(store.canSplitAt(store.currentTime));
 const splitTitle = $derived(
 	canSplit
@@ -122,27 +116,21 @@ let showSilence = $state(false);
 // Counts only silence-detected cuts; manual ripple deletes shouldn't inflate this.
 const silenceCutCount = $derived(store.cuts.filter((c) => c.source === "silence").length);
 
-// How many export-affecting effects are currently switched off. Surfaced as a
-// badge on the Layers button so "my cuts didn't apply" is visible without
-// opening the menu: this is the state that changes the output file, unlike the
-// lane-visibility toggles above it (which are purely cosmetic).
+// A badge for export-affecting effects that are off, so 'my cuts didn't apply' is visible without opening the menu.
 const effectsOff = $derived(
 	(store.cutsEnabled ? 0 : 1) +
 		(store.focusEnabled ? 0 : 1) +
 		(store.annotationsGloballyHidden ? 1 : 0),
 );
 
-// Shared control styling so every toolbar affordance reads the same.
-const GROUP =
-	"flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40";
+// Flat, quiet segments with hairline separators rather than boxed trays.
+const GROUP = "flex items-center gap-0.5";
 const SEG =
-	"flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
+	"flex h-6 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground disabled:opacity-40";
 const SEG_ICON =
-	"flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
-const SEG_ACTIVE =
-	"bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40";
-const SOLO =
-	"flex h-6 items-center gap-1 rounded-md border border-border/40 bg-muted/40 px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
+	"flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted/70 hover:text-foreground disabled:opacity-40";
+const SEG_ACTIVE = "bg-foreground/10 text-foreground";
+const SOLO = SEG;
 
 const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
 </script>
@@ -152,31 +140,8 @@ const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
   <div class="flex items-center gap-1">
     <InspectorHint content={trimHint} />
 
-    <!-- History -->
-    <div class={GROUP}>
-      <button
-        type="button"
-        onclick={() => store.undo()}
-        disabled={!store.canUndo}
-        title="Undo (Ctrl+Z)"
-        aria-label="Undo"
-        class={SEG_ICON}
-      >
-        <Undo2 class="size-3" />
-      </button>
-      <button
-        type="button"
-        onclick={() => store.redo()}
-        disabled={!store.canRedo}
-        title="Redo (Ctrl+Shift+Z)"
-        aria-label="Redo"
-        class={SEG_ICON}
-      >
-        <Redo2 class="size-3" />
-      </button>
-    </div>
-
-    <!-- Edit: split + trim to playhead. Shortcuts live in tooltips and the View
+    <!-- Edit: split + trim to playhead. Undo/redo lives in the app toolbar, not
+         here. Shortcuts live in tooltips and the View
          menu's Shortcuts list, never as chips on the buttons themselves. -->
     <div class={GROUP}>
       <button
@@ -237,6 +202,8 @@ const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
         <span class="hidden sm:inline">Use full clip</span>
       </button>
     {/if}
+
+    <div class="mx-1 h-4 w-px bg-border/60" role="separator"></div>
 
     <!-- Insert: focus regions, suggestions, silence removal -->
     <div class={GROUP}>
@@ -388,6 +355,8 @@ const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
         <Target class="size-3" />
       </button>
     </div>
+
+    <div class="mx-0.5 h-4 w-px bg-border/60" role="separator"></div>
 
     <DropdownMenu.Root>
       <DropdownMenu.Trigger>

@@ -1,9 +1,9 @@
 <script lang="ts">
-import { prefersReducedMotion } from "$lib/motion-core";
-import NotchedShelf from "./NotchedShelf.svelte";
 import { buttonVariants } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
+import { prefersReducedMotion } from "$lib/motion-core";
 import type { HeroStep } from "./Hero.logic";
+import NotchedShelf from "./NotchedShelf.svelte";
 
 let {
 	steps,
@@ -26,8 +26,7 @@ let videoEls = $state<Array<HTMLVideoElement | null>>([]);
 
 const DWELL_MS = 5200;
 
-// Auto-advance. Reduced motion pins the shelf to whatever the visitor picked,
-// so the steps never move under someone who asked for stillness.
+// Reduced motion pins the shelf to whatever the visitor picked, so steps never move under someone who asked for stillness.
 $effect(() => {
 	if (reduced || paused) return;
 	const id = setInterval(() => {
@@ -36,15 +35,14 @@ $effect(() => {
 	return () => clearInterval(id);
 });
 
-// Only the visible clip decodes. Three simultaneous <video> decodes is the
-// cheapest way to make a landing page stutter on a laptop.
+// Only the visible clip decodes: three simultaneous <video> decodes is the cheapest way to stutter a landing page.
 $effect(() => {
 	const current = active;
 	videoEls.forEach((el, i) => {
 		if (!el) return;
 		if (i === current) {
 			el.currentTime = 0;
-			void el.play().catch(() => {});
+			void el.play().catch(() => undefined);
 		} else {
 			el.pause();
 		}
@@ -107,8 +105,7 @@ const accentClass = {
 					class={cn(
 						buttonVariants({ variant: "ghost", size: "default" }),
 						"relative isolate border-transparent bg-transparent hover:bg-transparent",
-						// Button padding from `sm` up; tightened below it so three tabs plus
-						// both fillets still fit a 320px viewport without a scroller.
+						// Tightened below `sm` so three tabs plus both fillets still fit a 320px viewport without a scroller.
 						"gap-1.5 px-2 text-xs sm:gap-2 sm:px-5 sm:text-sm",
 						on ? "text-foreground" : "text-muted-foreground hover:text-foreground",
 					)}

@@ -35,8 +35,7 @@ export function verdictFrom(p: Probes): SupportVerdict {
 				"This browser can't run the editor — it needs WebCodecs and WebGL2. Chrome, Edge or Arc will work, or use the desktop app.",
 		};
 	}
-	// A phone can decode and composite, but a three-pane timeline editor on a
-	// small touch screen is not the experience. Say so rather than let them find out.
+	// A phone can decode and composite, but a three-pane timeline editor on a small touch screen is not the experience.
 	if (p.mobile) {
 		return {
 			level: "mobile",

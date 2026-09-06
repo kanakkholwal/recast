@@ -1,13 +1,7 @@
-//! Pure helpers for cursor animation effects (click bounce, idle sway,
-//! motion-blur trail alpha). Kept free of FFmpeg/render-state types so the
-//! curves can be unit-tested in isolation.
+//! Pure cursor-animation curves (click bounce, idle sway, trail alpha), free of FFmpeg and render-state types so they unit-test in isolation.
 
-/// One captured click — wall-clock μs of the rising edge (`down_us`) and the
-/// falling edge (`up_us`), plus the cursor (x, y) at the rising edge in
-/// SOURCE pixels. Built from the raw cursor track samples in
-/// `cursor_export.rs`. Smoothing must NEVER reshape these — the rendered
-/// click impact has to land on the same frame the audio click sound plays
-/// AND on the captured click target, regardless of smoothing settings.
+/// One captured click: rising and falling edge in wall-clock μs, plus the cursor position at the rising edge in SOURCE pixels.
+/// Smoothing must NEVER reshape these, or the rendered impact drifts off both the click sound's frame and the captured target.
 #[derive(Debug, Clone, Copy)]
 pub struct PressEvent {
     pub down_us: u64,
@@ -21,21 +15,8 @@ pub struct PressEvent {
     pub dragged: bool,
 }
 
-/// Per-frame press state — visibility boost, sprite key, scale impact.
-///
-/// `visible_alpha` is *additive on top of* the regular `idle_alpha`: even if
-/// idle-hide would zero the cursor, an upcoming click pulls it back into
-/// view so the viewer sees "intent → click → release" rather than a cursor
-/// teleporting in on the impact frame.
-///
-/// `pressed_sprite` flips on at `down_us - PRESS_PREROLL_US` so the link-pointer
-/// (or per-style alt sprite) telegraphs the click before it lands.
-///
-/// `scale` is a multiplier applied to the rendered sprite size — three
-/// phases keyed on `dt = ts - down_us`:
-///   dt ∈ [-ANTICIP, 0):  1 → 1+LIFT  (smooth lift, anticipation)
-///   dt = 0:              snap to 1-PUNCH  (click frame — the sync point)
-///   dt ∈ [0, RECOVERY]:  1-PUNCH → 1+BOUNCE → 1
+/// Per-frame press state. `visible_alpha` is additive on top of `idle_alpha`, so an upcoming click pulls a hidden cursor back rather than teleporting it in on impact.
+/// `pressed_sprite` leads by `PRESS_PREROLL_US`, and `scale` runs anticipation lift, a snap to `1-PUNCH` on the click frame, then bounce and settle.
 #[derive(Debug, Clone, Copy)]
 pub struct PressFrameState {
     pub pressed_sprite: bool,
@@ -60,9 +41,7 @@ impl PressFrameState {
 /// Cursor displacement (source px) during a hold beyond which it's a drag.
 const DRAG_THRESHOLD_PX: f64 = 8.0;
 
-// MUST mirror the constants in apps/desktop/src/components/editor/VideoPreview.svelte
-// (`PRESS_*_US`, `PRESS_LIFT`, `PRESS_PUNCH`, `PRESS_BOUNCE`). Drift here
-// means preview and export disagree on click feel.
+// MUST mirror the `PRESS_*` constants in VideoPreview.svelte: drift means preview and export disagree on click feel.
 const PRESS_MIN_HOLD_US: i64 = 320_000;
 const PRESS_LINGER_US: i64 = 320_000;
 const PRESS_PREROLL_US: i64 = 320_000;
@@ -87,20 +66,14 @@ fn smooth_step_01(t: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// All click-relative state for a given moment. Picks the press event whose
-/// `down_us` is closest to `ts_us` among those whose influence window
-/// contains it — for sub-300 ms double-clicks this hands the curve to the
-/// upcoming click as soon as we're nearer to it than to the previous one.
-///
-/// `events` MUST be sorted ascending by `down_us`.
+/// All click-relative state at a moment, picking the press whose `down_us` is nearest among those whose influence window contains it. `events` MUST be sorted by `down_us`.
+/// For sub-300 ms double-clicks that hands the curve to the upcoming click as soon as it is the closer one.
 pub fn press_state_at(ts_us: i64, events: &[PressEvent]) -> PressFrameState {
     let mut best: Option<(PressEvent, i64, i64, i64, i64)> = None; // (ev, hold_end, vis_start, vis_end, abs_dt)
     for &ev in events {
         let down = ev.down_us as i64;
         let up = ev.up_us as i64;
-        // holdEnd: latest of (release + LINGER) and (down + MIN_HOLD) so
-        // both flash clicks and long holds get a visible post-release dwell
-        // on the pressed sprite. Mirrors VideoPreview.svelte's pressStateAt.
+        // holdEnd is the later of release plus LINGER and down plus MIN_HOLD, so flash clicks and long holds both dwell visibly.
         let hold_end = (up + PRESS_LINGER_US).max(down + PRESS_MIN_HOLD_US);
         let vis_start = down - PRESS_PREROLL_US - PRESS_VIS_RAMP_US;
         let vis_end = hold_end + PRESS_POSTROLL_US + PRESS_VIS_RAMP_US;
@@ -240,13 +213,8 @@ pub fn click_anchor_at(ts_us: i64, events: &[PressEvent]) -> Option<(f64, f64, f
 const HIGHLIGHT_FADE_IN_US: i64 = 40_000;
 const HIGHLIGHT_FADE_OUT_US: i64 = 220_000;
 
-/// Pinned click-highlight envelope. Returns the CAPTURED click position
-/// (source px) and an alpha that rises the instant the click lands, holds
-/// through the press, then fades out. The ring is keyed to the raw click —
-/// NOT the (smoothed) cursor — so it marks exactly where and when the click
-/// happened even with smoothing on; riding the lagging cursor read as delayed,
-/// off-target feedback. Mirrors `clickHighlightAt` in VideoPreview.svelte.
-/// `events` MUST be sorted ascending by `down_us`.
+/// Click-highlight envelope: the CAPTURED click position and an alpha that rises on impact, holds through the press, then fades. `events` MUST be sorted by `down_us`.
+/// Keyed to the raw click, not the smoothed cursor, or the ring rides the lagging position and reads as delayed, off-target feedback.
 pub fn click_highlight_at(ts_us: i64, events: &[PressEvent]) -> Option<(f64, f64, f64)> {
     let mut best: Option<PressEvent> = None;
     let mut best_dt = i64::MAX;
@@ -282,21 +250,8 @@ pub fn click_highlight_at(ts_us: i64, events: &[PressEvent]) -> Option<(f64, f64
     Some((ev.down_x, ev.down_y, alpha))
 }
 
-/// Map a click-bounce sample to a sprite scale multiplier.
-///
-/// `t_ms` is the signed offset (in ms) from the *nearest* click event:
-/// negative means the click hasn't happened yet, positive means it just
-/// fired. `duration_ms` is the full bounce window (the user-tunable
-/// "Bounce speed" knob — typically 120..400 ms).
-///
-/// `amplitude` is the raw 0..5 slider value; we treat 1.0 as "Apple-style
-/// subtle squash" (~12% size delta) and let larger values exaggerate.
-///
-/// The curve:
-/// - Pre-anticipation: a tiny inward dip (~3% of amplitude) just before the
-///   click, so the bounce doesn't feel like it appears from nowhere.
-/// - Impact: a hard outward pop at t=0.
-/// - Settle: damped sinusoidal decay for the rest of the window.
+/// Sprite scale for a click bounce; `t_ms` is signed from the nearest click and `amplitude` treats 1.0 as a subtle ~12% squash.
+/// A small inward dip precedes the click so the pop does not appear from nowhere, then a damped sinusoid settles it.
 pub fn click_bounce_scale(t_ms: f64, duration_ms: f64, amplitude: f64) -> f64 {
     if amplitude.abs() < 1e-6 || duration_ms <= 0.0 {
         return 1.0;
@@ -306,10 +261,7 @@ pub fn click_bounce_scale(t_ms: f64, duration_ms: f64, amplitude: f64) -> f64 {
     }
     // Normalised time in [-1, 1] across the window.
     let n = (t_ms / duration_ms).clamp(-1.0, 1.0);
-    // Apple's Materials team uses ~0.12 of the parameter as the visible
-    // amplitude; multiplying by amplitude_factor lets the slider's "1×" look
-    // like a real macOS bounce while "5×" still has headroom for cinematic
-    // squash demos without going non-physical.
+    // About 0.12 of the parameter is the visible amplitude, so the slider's 1x looks like a real bounce and 5x still has headroom.
     const PER_UNIT_DELTA: f64 = 0.12;
     let amp = amplitude * PER_UNIT_DELTA;
 
@@ -321,18 +273,14 @@ pub fn click_bounce_scale(t_ms: f64, duration_ms: f64, amplitude: f64) -> f64 {
         return 1.0 - dip;
     }
 
-    // Post-impact damped oscillation.
-    // exp(-4n) decays to ~1.8% of starting amplitude by n=1; cos(2πn·1.5)
-    // gives a single overshoot that lands just below 1.0 then settles back.
+    // exp(-4n) decays to ~1.8% by n=1, and the cosine gives one overshoot that settles just below 1.0.
     let damp = (-4.0 * n).exp();
     let osc = (std::f64::consts::TAU * n * 1.5).cos();
     1.0 + amp * damp * osc
 }
 
-/// Add a small sinusoidal wobble (in source pixels) to an idle/slow cursor.
-///
-/// `amplitude` is the 0..1 slider; we map 1.0 to ±2 source pixels of sway,
-/// which reads as "alive" without ever drifting visibly off the click target.
+/// Adds a small sinusoidal wobble in source pixels to an idle or slow cursor.
+/// `amplitude` is the 0..1 slider, with 1.0 mapping to about two pixels of sway: alive without drifting visibly off the click target.
 /// `velocity` is current cursor speed in source-px/sec — sway tapers to 0
 /// once the cursor is moving fast enough that the wobble would just smear.
 pub fn idle_sway_offset(t_ms: f64, amplitude: f64, velocity_px_per_s: f64) -> (f64, f64) {
@@ -345,29 +293,22 @@ pub fn idle_sway_offset(t_ms: f64, amplitude: f64, velocity_px_per_s: f64) -> (f
     if amp_px < 1e-3 {
         return (0.0, 0.0);
     }
-    // Two slightly out-of-phase axes so the path traces a Lissajous-like
-    // figure rather than a straight line. Periods are coprime to avoid a
-    // visible "loop" point.
+    // Two slightly out-of-phase axes trace a Lissajous figure; coprime periods avoid a visible loop point.
     let t_s = t_ms / 1000.0;
     let dx = amp_px * (std::f64::consts::TAU * t_s * 0.7).sin();
     let dy = amp_px * (std::f64::consts::TAU * t_s * 0.9 + 1.2).sin();
     (dx, dy)
 }
 
-/// Per-step trail alpha for the motion-blur effect.
-///
-/// Returns the alpha for the i-th historical position (0 = current frame,
-/// `steps - 1` = oldest). Alpha falls off linearly and is scaled by the
-/// 0..1 strength slider so MB=0 contributes no visible trail.
+/// Per-step trail alpha for the motion-blur effect, for the i-th historical position where 0 is the current frame.
+/// Alpha falls off linearly and is scaled by the 0..1 strength slider, so a strength of 0 contributes no visible trail.
 pub fn motion_blur_step_alpha(i: usize, steps: usize, strength: f64) -> f64 {
     if strength <= 0.0 || steps == 0 {
         return 0.0;
     }
     let t = (i as f64) / (steps as f64);
     let s = strength.clamp(0.0, 1.0);
-    // Quadratic falloff reads more like real motion blur than linear —
-    // most of the brightness sits near the current position, the tail
-    // dims fast.
+    // Quadratic falloff reads more like real motion blur than linear: brightness sits near the current position.
     s * (1.0 - t).powi(2) * 0.5
 }
 

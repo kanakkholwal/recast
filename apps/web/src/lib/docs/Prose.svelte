@@ -16,9 +16,7 @@ let { nodes, width = "article" }: Props = $props();
 </article>
 
 <style>
-	/* The Renderer emits its own elements, so Svelte's scoped classes never land
-	   on them. Style them through `:global()` under this wrapper, and take every
-	   colour from a design token so the page tracks the active theme. */
+	/* The Renderer emits its own elements, so style them via `:global()` under this wrapper, using design tokens. */
 	.prose {
 		color: var(--foreground);
 		font-size: 1.0625rem;
@@ -85,8 +83,7 @@ let { nodes, width = "article" }: Props = $props();
 		text-decoration-color: var(--primary);
 	}
 
-	/* A file reference is a link to the source, so it reads as a link: primary,
-	   underlined, and without the code chip's background competing with it. */
+	/* A file reference is a link to the source, so it reads as one: primary and underlined, without the code chip. */
 	.prose :global(a code) {
 		background: none;
 		padding: 0;
@@ -121,8 +118,7 @@ let { nodes, width = "article" }: Props = $props();
 		color: var(--foreground);
 		overflow-wrap: anywhere;
 	}
-	/* Shiki bakes the highlighted markup (and its own background) into the block
-	   at build time, so only the frame is ours. */
+	/* Shiki bakes the highlighted markup and its background in at build time, so only the frame is ours. */
 	.prose :global(pre) {
 		margin: 0 0 1.6em;
 		padding: 1.1em 1.25em;

@@ -1,12 +1,5 @@
-//! `.recast` format v2 layout, edits split/merge, and canonical serialization.
-//!
-//! v2 explodes the old single `edits.json` into a `project.json` manifest plus
-//! per-concern `edits/<section>.json` files, alongside `assets/` media.
-//!
-//! The split is a key→section grouping table, not a type mirror: `RenderState`
-//! has a `#[serde(flatten)] passthrough`, so regrouping the flat camelCase key
-//! space round-trips losslessly. The reader merges sections back into one
-//! `edits.json` in the cache, leaving the export/thumbnail pipeline untouched.
+//! `.recast` v2: a `project.json` manifest plus per-concern `edits/<section>.json`, beside `assets/` media.
+//! The split is a key-to-section table, not a type mirror, so `RenderState`'s flattened passthrough round-trips losslessly.
 
 use std::collections::BTreeMap;
 
@@ -65,8 +58,7 @@ pub fn section_path(section: &str) -> String {
 /// Unrecognised keys fall back to `frame`, so a new editor toggle is never
 /// dropped on round-trip even before this table learns about it.
 pub fn section_for_key(key: &str) -> &'static str {
-    // Export-time cursor sprites are bulky data-URIs — keep them out of the
-    // cursor *settings* section. Checked first because they also start "cursor".
+    // Export-time cursor sprites are bulky data URIs, kept out of cursor settings; checked first, since they also start 'cursor'.
     if key.starts_with("cursorSprite") {
         return SECTION_OVERLAYS;
     }
@@ -138,11 +130,8 @@ where
     Value::Object(merged)
 }
 
-/// Canonicalize a value for diff-stable output: object keys are already sorted
-/// (serde_json `Map` is a `BTreeMap` — no `preserve_order` feature here), and
-/// this additionally sorts arrays whose every element is an object with a
-/// string `id` by that id, so reordering an array never produces a spurious
-/// diff. Recurses into nested structures.
+/// Canonicalizes a value for diff-stable output, recursing into nested structures; object keys are already sorted, since serde_json's `Map` is a `BTreeMap` here.
+/// It additionally sorts arrays whose every element is an object with a string `id`, so reordering one never produces a spurious diff.
 pub fn canonicalize(value: Value) -> Value {
     match value {
         Value::Array(items) => {
@@ -324,8 +313,7 @@ mod tests {
 
     #[test]
     fn canonical_string_is_order_independent() {
-        // Two objects with the same content but different insertion order must
-        // serialize identically (sorted keys + id-sorted arrays).
+        // Two objects with the same content but different insertion order must serialize identically.
         let a = json!({ "b": 1, "a": 2, "arr": [{ "id": "y" }, { "id": "x" }] });
         let b = json!({ "a": 2, "arr": [{ "id": "x" }, { "id": "y" }], "b": 1 });
         assert_eq!(

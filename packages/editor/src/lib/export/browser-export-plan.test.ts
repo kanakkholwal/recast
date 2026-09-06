@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
 import {
 	QUALITY_HIGH,
 	QUALITY_LOW,
 	QUALITY_MEDIUM,
 	QUALITY_VERY_HIGH,
 } from "@recast/media/mediabunny";
+import { describe, expect, it } from "vitest";
 import { exportFrameCount, exportFrameTime, videoEncodingConfigFor } from "./browser-export-plan";
 
 describe("exportFrameCount", () => {

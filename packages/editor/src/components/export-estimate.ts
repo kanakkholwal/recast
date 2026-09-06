@@ -43,8 +43,7 @@ const FORMAT_FACTOR: Record<ExportFormat, number> = {
 	gif: 6.5,
 };
 
-// FFmpeg's scale rounds to nearest, and only the follow-up
-// `trunc(iw/2)*2` pass forces even — flooring first is off by two.
+// FFmpeg's scale rounds to nearest and only the follow-up trunc pass forces even, so flooring first is off by two.
 function even(n: number) {
 	return Math.max(2, Math.floor(Math.round(n) / 2) * 2);
 }
@@ -105,8 +104,7 @@ function unitize(bytes: number): { value: number; unit: "KB" | "MB" | "GB" } {
 	return { value: bytes / 1_000, unit: "KB" };
 }
 
-// Two significant figures at most: the range is already +-40%, so a decimal
-// on megabytes is false precision.
+// Two significant figures at most: the range is already plus or minus 40%, so a decimal on megabytes is false precision.
 function round(value: number, unit: "KB" | "MB" | "GB") {
 	if (unit === "GB" && value < 10) return Number(value.toFixed(1));
 	return Math.round(value);

@@ -1,38 +1,38 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "windows-11-cursors",
-  "name": "Windows 11 Cursors",
-  "version": "1.0.0",
-  "author": "jepricreations",
-  "description": "Windows 11 concept cursors by jepricreations (https://www.deviantart.com/jepricreations) — light and dark arrows that turn into the link pointer on click. Free to use; credited to the author.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "cursors": [
-      {
-        "id": "light",
-        "label": "Win 11 Light",
-        "description": "Light Windows 11 arrow that turns into the link pointer on click.",
-        "rest": "light-arrow",
-        "press": "light-hand",
-        "hotspot": { "x": 4, "y": 4 },
-        "pressedHotspot": { "x": 12, "y": 2 }
-      },
-      {
-        "id": "dark",
-        "label": "Win 11 Dark",
-        "description": "Dark Windows 11 arrow that turns into the link pointer on click.",
-        "rest": "dark-arrow",
-        "press": "dark-hand",
-        "hotspot": { "x": 4, "y": 4 },
-        "pressedHotspot": { "x": 12, "y": 2 }
-      }
-    ]
-  },
-  "assets": [
-    { "id": "light-arrow", "file": "assets/light-arrow.svg" },
-    { "id": "light-hand", "file": "assets/light-hand.svg" },
-    { "id": "dark-arrow", "file": "assets/dark-arrow.svg" },
-    { "id": "dark-hand", "file": "assets/dark-hand.svg" }
-  ]
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "windows-11-cursors",
+	"name": "Windows 11 Cursors",
+	"version": "1.0.0",
+	"author": "jepricreations",
+	"description": "Windows 11 concept cursors by jepricreations (https://www.deviantart.com/jepricreations) — light and dark arrows that turn into the link pointer on click. Free to use; credited to the author.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"cursors": [
+			{
+				"id": "light",
+				"label": "Win 11 Light",
+				"description": "Light Windows 11 arrow that turns into the link pointer on click.",
+				"rest": "light-arrow",
+				"press": "light-hand",
+				"hotspot": { "x": 4, "y": 4 },
+				"pressedHotspot": { "x": 12, "y": 2 }
+			},
+			{
+				"id": "dark",
+				"label": "Win 11 Dark",
+				"description": "Dark Windows 11 arrow that turns into the link pointer on click.",
+				"rest": "dark-arrow",
+				"press": "dark-hand",
+				"hotspot": { "x": 4, "y": 4 },
+				"pressedHotspot": { "x": 12, "y": 2 }
+			}
+		]
+	},
+	"assets": [
+		{ "id": "light-arrow", "file": "assets/light-arrow.svg" },
+		{ "id": "light-hand", "file": "assets/light-hand.svg" },
+		{ "id": "dark-arrow", "file": "assets/dark-arrow.svg" },
+		{ "id": "dark-hand", "file": "assets/dark-hand.svg" }
+	]
 }

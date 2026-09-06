@@ -16,24 +16,24 @@
  * a 4K recording, scrub across the cut, observe the frame).
  */
 
-import { describe, expect, it } from "vitest";
-import {
-	outputToOriginal,
-	spanAtOriginal,
-	timeMapFromSegments,
-} from "@recast/editor/lib/timeline/time-map";
 import {
 	activeClippedSegment,
 	clipSegmentToSpan,
 	clipWordsToSpan,
 } from "@recast/editor/lib/captions/clip-with-cuts";
-import type { TranscriptSegment, TranscriptWord } from "$lib/ipc";
+import {
+	outputToOriginal,
+	spanAtOriginal,
+	timeMapFromSegments,
+} from "@recast/editor/lib/timeline/time-map";
+import { describe, expect, it } from "vitest";
+import type { TranscriptSegment } from "$lib/ipc";
 
 const N_ITERATIONS = 50;
 const CUT = { start: 10, end: 12 };
 const RECORDING_SEC = 60; // arbitrary; we only need a long-enough recording
 
-const segments = (function () {
+const segments = (() => {
 	// One segment before the cut, one after. No per-segment speed.
 	const out: { start: number; end: number; index: number }[] = [];
 	out.push({ start: 0, end: CUT.start, index: 0 });
@@ -41,23 +41,14 @@ const segments = (function () {
 	return out;
 })();
 const timeMap = timeMapFromSegments(segments);
-const outputDuration = timeMap.outputDuration;
 
 describe("cut-jump parity: the playback surface is correct across a cut", () => {
 	it(`50 iterations of seek-and-span-lookup complete in p95 < 250ms`, () => {
-		// The fixture simulates the editor's cut-jump behavior:
-		//   - Player requests a seek to just after the cut
-		//   - The editor maps the seek back to source time
-		//   - The editor finds the kept span that contains it
-		// We measure the wall-clock time of the seek → map → span lookup
-		// pipeline, 50 times. p95 must be < 250 ms (the existing baseline
-		// for the WebCodecs preview engine — see content/blog post on the
-		// legacy cut-crossing work).
+		// Times the seek, map and span-lookup pipeline 50 times; p95 must stay under the 250 ms WebCodecs baseline.
 		const latencies: number[] = [];
 		for (let i = 0; i < N_ITERATIONS; i++) {
 			const start = performance.now();
-			// "Seek" to just after the cut. Output 10 + epsilon is the first
-			// source time strictly inside the post-cut kept span.
+			// Output 10 plus epsilon is the first source time strictly inside the post-cut kept span.
 			const seekOutput = 10.0001;
 			const nowOrig = outputToOriginal(timeMap, seekOutput);
 			// The kept span starts at source 12 (cut.end).
@@ -81,14 +72,7 @@ describe("cut-jump parity: the playback surface is correct across a cut", () => 
 	});
 
 	it("supersede: a new seek cancels a stale in-flight seek (output-side)", () => {
-		// Simulate the editor's preview loop:
-		//   1. At output 9.5 (pre-cut), the active segment is one in the
-		//      pre-cut kept span.
-		//   2. The playhead crosses the cut to output 10.001.
-		//   3. The new nowOrig is in the post-cut kept span, and the
-		//      active segment is the one in the post-cut.
-		// The "stale" decode response from the pre-cut seek must not
-		// apply to the post-cut frame capture.
+		// Crossing the cut must not let the stale pre-cut decode response apply to the post-cut frame capture.
 		const preSpan = { origStart: 0, origEnd: 10 };
 		const postSpan = { origStart: 12, origEnd: 60 };
 
@@ -106,15 +90,13 @@ describe("cut-jump parity: the playback surface is correct across a cut", () => 
 		expect(postKept?.origStart).toBe(postSpan.origStart);
 		expect(postKept?.origEnd).toBe(postSpan.origEnd);
 
-		// The two kept spans are distinct: a stale decode response keyed
-		// to the pre-cut playhead is not in the post-cut kept span.
+		// The two kept spans are distinct, so a stale decode keyed to the pre-cut playhead isn't in the post-cut span.
 		expect(preKept?.origStart).not.toBe(postKept?.origStart);
 	});
 });
 
 describe("cut-jump parity: caption clipping behaves across a cut", () => {
-	// A segment that spans the cut. We assert the post-cut display
-	// shows ONLY the kept portion, with clipped per-word timing.
+	// A segment spanning the cut must display ONLY the kept portion, with clipped per-word timing.
 	const spanningSegment: TranscriptSegment = {
 		id: "spanning",
 		start: 9, // 1s before the cut
@@ -157,9 +139,7 @@ describe("cut-jump parity: caption clipping behaves across a cut", () => {
 		const postClipped = activeClippedSegment([spanningSegment], postSpan, 12.3);
 		expect(postClipped?.visible).toEqual({ start: 12, end: 13 });
 
-		// The previous clip's [9, 10] window and the post-cut's [12, 13] are
-		// distinct — the editor renders each only while the playhead is in
-		// its respective span.
+		// The pre-cut and post-cut windows are distinct: each renders only while the playhead is in its span.
 		expect(preClipped?.visible).not.toEqual(postClipped?.visible);
 	});
 
@@ -187,9 +167,7 @@ describe("cut-jump parity: caption clipping behaves across a cut", () => {
 });
 
 describe("cut-jump parity: editor audio engine per-track math", () => {
-	// A simple truth table for master × per-track gain composition.
-	// The production code computes `volume * trackVolume / 10000` then
-	// zeros it on any mute. The test pins the contract.
+	// Production computes `volume * trackVolume / 10000` and zeros it on any mute; this pins that contract.
 	function effective(
 		master: number,
 		masterMuted: boolean,
@@ -235,10 +213,7 @@ describe("cut-jump parity: editor audio engine per-track math", () => {
 });
 
 describe("cut-jump parity: layer system clip math", () => {
-	// The editor's annotation layers have a parallel time-map problem. An
-	// annotation at original time [9, 11] that crosses a cut at [10, 12]
-	// should only be shown during the kept portion. The math is the same as
-	// caption clipping; the test pins the contract.
+	// An annotation crossing a cut shows only on the kept portion, the same math as caption clipping.
 	it("a layer that spans a cut is visible only on the kept portion", () => {
 		const layer = { start: 9, end: 11 };
 		const span = { origStart: 12, origEnd: 60 };
@@ -247,9 +222,7 @@ describe("cut-jump parity: layer system clip math", () => {
 			end: Math.min(layer.end, span.origEnd),
 		};
 		expect(visible).toEqual({ start: 12, end: 11 });
-		// A degenerate clip (end <= start) means the layer is fully inside
-		// the cut → not drawn. The renderer should treat visible.end <=
-		// visible.start as "not visible this frame".
+		// A degenerate clip (end <= start) is fully inside the cut, and the renderer treats that as not visible.
 		expect(visible.end <= visible.start).toBe(true);
 	});
 });

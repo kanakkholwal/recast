@@ -1,14 +1,5 @@
-//! End-to-end harness for the OCR pipeline. These tests drive the REAL decode
-//! path, so they need FFmpeg on the machine (and, for the OCR leg, a network
-//! round trip to fetch the models). They are `#[ignore]`d so CI stays hermetic:
-//! the pure logic is covered by the unit tests in the sibling modules, and the
-//! Rust CI job deliberately never executes FFmpeg.
-//!
-//! Run them by hand (`ocr` is a default feature, so no extra flag is needed):
-//!
-//! ```text
-//! cargo test --lib ocr::harness -- --ignored --nocapture
-//! ```
+//! End-to-end OCR harness driving the real decode path, so it needs FFmpeg and a model download.
+//! `#[ignore]`d to keep CI hermetic: run `cargo test --lib ocr::harness -- --ignored --nocapture`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,12 +10,8 @@ use super::engine::{OcrEngine, OcrsEngine};
 use super::frames::{probe_dims, sample_frames, SampleOpts, SampleTick};
 use super::timeline::{build_timeline, TimelineOpts};
 
-/// Build a video with `scenes` hard cuts between flat colours, each `secs` long.
-///
-/// Flat colour is deliberate: it is the case that breaks a naive detector. A solid
-/// frame has no luma gradient, so every scene hashes identically under dHash, and
-/// only the colour-aware score can tell them apart. If the sampler ever regresses
-/// to a grayscale or hash-only gate, this video is what catches it.
+/// Builds a video of `scenes` hard cuts between flat colours, each `secs` long.
+/// Flat colour is the case that breaks a naive detector: every scene hashes alike under dHash, so only the colour-aware score separates them.
 fn synth_video(dir: &Path, scenes: &[&str], secs: u32) -> Result<PathBuf, String> {
     let out = dir.join("synth.mp4");
     let mut cmd = Command::new(ffmpeg_path());
@@ -81,9 +68,7 @@ fn sampler_keeps_one_frame_per_scene() {
     let mut ticks: Vec<SampleTick> = Vec::new();
     let frames = sample_frames(&video, &opts, &mut |t| ticks.push(t)).expect("sample");
 
-    // The bar must count every frame the decoder walked, not just the kept ones.
-    // ~27 at the 3fps coarse rate over 9s; the exact count depends on how ffmpeg's
-    // fps filter rounds the tail, so this asserts the magnitude, not a hard number.
+    // The bar counts every frame the decoder walked, not just kept ones; ffmpeg's fps rounding makes the tail approximate.
     let last = ticks.last().expect("at least one tick");
     assert!(
         (26..=28).contains(&last.scanned),
@@ -91,13 +76,11 @@ fn sampler_keeps_one_frame_per_scene() {
         last.scanned
     );
     assert!(ticks.iter().all(|t| t.total > 0), "duration was probed");
-    // A tick reports the keeps made BEFORE its own frame was judged, so the running
-    // count only ever climbs and never overshoots the result.
+    // A tick reports keeps made BEFORE its own frame was judged, so the running count only climbs and never overshoots.
     assert!(ticks.windows(2).all(|w| w[0].kept <= w[1].kept));
     assert!(ticks.iter().all(|t| (t.kept as usize) <= frames.len()));
 
-    // 9s at the 3fps coarse rate is ~27 candidate frames; only the 3 scene starts
-    // carry new information.
+    // 9s at the 3fps coarse rate is ~27 candidate frames, and only the 3 scene starts carry new information.
     assert_eq!(
         frames.len(),
         3,
@@ -216,9 +199,7 @@ fn download_models(_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
     Ok((det, rec))
 }
 
-/// Where the time actually goes on a realistic clip. Prints per-stage timings so
-/// a slow read can be attributed rather than guessed at.
-///
+/// Where the time actually goes on a realistic clip, printing per-stage timings so a slow read is attributed rather than guessed at.
 /// Run it against both profiles to see the build-mode gap:
 /// ```text
 /// cargo test --lib ocr::harness::benchmark -- --ignored --nocapture

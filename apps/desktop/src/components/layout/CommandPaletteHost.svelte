@@ -1,14 +1,14 @@
 <script lang="ts">
-import { buildGlobalCommands } from "$lib/commands";
-import { commandPalette, type PaletteCommand } from "$lib/stores/command-palette.svelte";
-import { groupCommands, highlight, rankCommands } from "./command-palette-host.logic";
+import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import { CornerDownLeft, Search, X } from "@recast/icons";
 import { Kbd, KbdGroup } from "@recast/ui/kbd";
 import { cn } from "@recast/ui/utils";
 import { onMount, tick } from "svelte";
 import { cubicOut } from "svelte/easing";
-import { motionDuration } from "@recast/editor/lib/motion.svelte";
 import { fade, scale } from "svelte/transition";
+import { buildGlobalCommands } from "$lib/commands";
+import { commandPalette, type PaletteCommand } from "$lib/stores/command-palette.svelte";
+import { groupCommands, highlight, rankCommands } from "./command-palette-host.logic";
 
 let query = $state("");
 let selectedIndex = $state(0);
@@ -16,8 +16,7 @@ let inputRef = $state<HTMLInputElement | null>(null);
 let listRef = $state<HTMLDivElement | null>(null);
 let contentHeight = $state(0);
 
-// Safe on every mount: registerMany dedupes by id. The Mod+K open shortcut
-// lives in the central registry (general.palette), not a window listener here.
+// Safe on every mount, since registerMany dedupes by id; the open shortcut lives in the central registry.
 onMount(() => {
 	commandPalette.registerMany(buildGlobalCommands());
 });
@@ -35,8 +34,7 @@ const filtered = $derived(rankCommands(commandPalette.commands, query));
 
 const grouped = $derived.by<[string, PaletteCommand[]][]>(() => groupCommands(filtered, query));
 
-// Flat order used for keyboard navigation; mirrors render order so the
-// selected index always points at a real button.
+// Mirrors render order, so the selected index always points at a real button.
 const flatItems = $derived(grouped.flatMap(([, cmds]) => cmds));
 
 $effect(() => {
@@ -128,7 +126,7 @@ function clearQuery() {
           bind:this={inputRef}
           bind:value={query}
           class="command-palette-input flex h-12 w-full bg-transparent text-sm tracking-normal text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
-          placeholder="Search commands…"
+          placeholder="Type a command or search…"
           aria-label="Search commands"
           role="combobox"
           aria-expanded="true"
@@ -168,15 +166,12 @@ function clearQuery() {
             >
               {#each grouped as [category, cmds] (category)}
                 <div
-                  class="sticky top-0 z-10 flex items-center gap-2 bg-popover px-2 pb-1.5 pt-2"
+                  class="sticky top-0 z-10 flex items-center bg-popover px-3 pb-1 pt-3"
                 >
                   <span
-                    class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+                    class="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70"
                   >
                     {category}
-                  </span>
-                  <span class="text-[10px] font-medium tabular-nums text-muted-foreground/50">
-                    {cmds.length}
                   </span>
                 </div>
                 {#each cmds as cmd (cmd.id)}
@@ -191,67 +186,39 @@ function clearQuery() {
                     data-index={i}
                     class={cn(
                       // scroll-mt clears the sticky category header on ↑/↓ nav.
-                      "group relative flex w-full scroll-mt-8 items-center gap-2.5 rounded-lg py-1.5 pl-2.5 pr-2 text-left transition-colors",
+                      "group flex w-full scroll-mt-8 items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-100",
                       active
-                        ? "bg-muted text-foreground"
-                        : "text-foreground/90 hover:bg-muted/50",
+                        ? "bg-foreground/8 text-foreground"
+                        : "text-foreground/80 hover:bg-foreground/5",
                     )}
                     onclick={() => runCommand(cmd)}
                     onmouseenter={() => (selectedIndex = i)}
                   >
-                    <!-- The selected row is the palette's only --primary fill;
-                         match highlighting stays neutral so it can't wallpaper. -->
-                    <span
-                      class={cn(
-                        "absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary transition-opacity",
-                        active ? "opacity-100" : "opacity-0",
-                      )}
-                    ></span>
-                    <span
-                      class={cn(
-                        "flex size-7 shrink-0 items-center justify-center rounded-md border transition-colors",
-                        active
-                          ? "border-border/60 bg-background text-foreground"
-                          : "border-border/40 bg-muted/40 text-muted-foreground",
-                      )}
-                    >
-                      {#if Icon}
-                        <Icon size={14} />
-                      {:else}
-                        <span class="size-1.5 rounded-full bg-current opacity-40"></span>
-                      {/if}
-                    </span>
-                    <span class="flex min-w-0 flex-1 items-baseline gap-2">
-                      <span class="truncate text-xs font-medium">
-                        {#each highlight(cmd.title, query) as part, k (k)}
-                          {#if part.hl}
-                            <span class="font-semibold text-foreground">{part.text}</span>
-                          {:else}{part.text}{/if}
-                        {/each}
-                      </span>
-                      {#if cmd.description}
-                        <span
-                          class="hidden min-w-0 truncate text-[11px] text-muted-foreground/80 sm:inline"
-                        >
-                          {#each highlight(cmd.description, query) as part, k (k)}
-                            {#if part.hl}
-                              <span class="font-medium text-foreground/90">{part.text}</span>
-                            {:else}{part.text}{/if}
-                          {/each}
-                        </span>
-                      {/if}
-                    </span>
-                    {#if query.trim()}
+                    {#if Icon}
+                      <Icon
+                        size={18}
+                        class={cn("shrink-0", active ? "text-foreground" : "text-muted-foreground")}
+                      />
+                    {:else}
                       <span
-                        class="hidden shrink-0 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground/50 sm:block"
+                        class="flex size-4.5 shrink-0 items-center justify-center text-muted-foreground"
                       >
-                        {cmd.category}
+                        <span class="size-1.5 rounded-full bg-current opacity-40"></span>
                       </span>
                     {/if}
+                    <span class="min-w-0 flex-1 truncate text-[13px] font-medium">
+                      {#each highlight(cmd.title, query) as part, k (k)}
+                        {#if part.hl}
+                          <span class="font-semibold text-foreground">{part.text}</span>
+                        {:else}{part.text}{/if}
+                      {/each}
+                    </span>
                     {#if cmd.shortcut}
-                      <Kbd class="hidden shrink-0 sm:inline-flex">
-                        {cmd.shortcut}
-                      </Kbd>
+                      <span class="hidden shrink-0 items-center gap-1 sm:flex">
+                        {#each cmd.shortcut.split(/[+\s]+/).filter(Boolean) as key (key)}
+                          <Kbd>{key}</Kbd>
+                        {/each}
+                      </span>
                     {/if}
                   </button>
                 {/each}

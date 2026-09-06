@@ -1,21 +1,5 @@
-//! Declarative asset-pack extensions (Tier 1).
-//!
-//! An extension is a *manifest + static assets* — no executable code, so there
-//! is no privilege-escalation surface to sandbox. The trust model is therefore
-//! validation, not isolation:
-//!   - HTTPS-only manifest/asset URLs (localhost allowed for dev),
-//!   - per-asset SHA256 verification (reuses [`crate::commands::assets::ensure_one`]),
-//!   - strict manifest schema (`kind == "asset-pack"`, **no** permissions),
-//!   - filename-traversal rejection (bare filenames only; Windows device names
-//!     and drive prefixes blocked),
-//!   - a reserved `signature` field + [`verify_signature`] seam for a future
-//!     Ed25519 publisher-signing fast-follow.
-//!
-//! Installed packs live under `app_data_dir/extensions/<extId>/` with the
-//! resolved manifest persisted as `extension.lock.json` and an enable flag in
-//! `state.json`. The render boundary already accepts absolute file paths for
-//! backgrounds and (rasterized) cursor sprites, so packs need **no** new render
-//! code — only this installer.
+//! Declarative asset-pack extensions: a manifest plus static assets, never executable code.
+//! The trust model is validation, not isolation: HTTPS-only, per-asset sha256, strict schema, no traversal.
 
 use std::path::{Path, PathBuf};
 
@@ -113,10 +97,7 @@ fn url_allowed(url: &str) -> bool {
     match reqwest::Url::parse(url) {
         Ok(u) => match u.scheme() {
             "https" => true,
-            "http" => matches!(
-                u.host_str(),
-                Some("localhost") | Some("127.0.0.1") | Some("::1")
-            ),
+            "http" => matches!(u.host_str(), Some("localhost" | "127.0.0.1" | "::1")),
             _ => false,
         },
         Err(_) => false,
@@ -187,7 +168,7 @@ fn validate_manifest(m: &ExtensionManifest) -> Result<(), String> {
         }
         if let Some(tn) = &a.thumb_filename {
             if !is_safe_filename(tn) {
-                return Err(format!("unsafe thumbnail filename '{}'", tn));
+                return Err(format!("unsafe thumbnail filename '{tn}'"));
             }
         }
     }
@@ -249,9 +230,7 @@ fn build_installed(dir: &Path, manifest: ExtensionManifest, enabled: bool) -> In
 
 // ── Commands ────────────────────────────────────────────────────────────────
 
-/// Install (or update) a pack from its manifest URL. Validates the envelope,
-/// downloads + verifies every asset, persists the lock + enabled state, and
-/// returns the hydrated record.
+/// Install (or update) a pack from its manifest URL. Validates the envelope, downloads + verifies every asset, persists the lock + enabled state, and returns the hydrated record.
 #[tauri::command]
 pub async fn install_extension(
     app: AppHandle,
@@ -359,8 +338,7 @@ pub fn list_installed_extensions(app: AppHandle) -> AppResult<Vec<InstalledExten
             out.push(build_installed(&dir, manifest, enabled));
         }
     }
-    // `read_dir` yields no defined order, so sort by id to keep startup
-    // hydration (and thus registry registration / picker order) stable.
+    // `read_dir` has no defined order, so sort by id to keep hydration and picker order stable.
     out.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
     Ok(out)
 }

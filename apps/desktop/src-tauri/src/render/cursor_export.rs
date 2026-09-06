@@ -1,17 +1,5 @@
-//! Pre-renders the editor's cursor overlay (cursor dot + click highlight,
-//! annotations, drop shadow) as an alpha QTRLE-in-MOV video so it can be muxed
-//! onto the main export via a single FFmpeg `overlay` filter. Mirrors the
-//! WebGL2 preview in `src/components/editor/VideoPreview.svelte`.
-//!
-//! QTRLE (QuickTime Animation, fourcc `rle `) is a lossless RLE codec with
-//! true RGBA alpha support that ships with every FFmpeg build. We previously
-//! used `libvpx-vp9 -pix_fmt yuva420p`, but the gyan.dev Windows builds (and
-//! several Linux distros) silently drop the alpha plane during VP9 encode
-//! — the overlay file ends up `pix_fmt=yuv420p` and decodes opaque, painting
-//! the entire source area black during the final composite. QTRLE round-trips
-//! alpha cleanly and compresses the (mostly transparent) cursor frames very
-//! efficiently. The intermediate file lives in a scratch directory that the
-//! TempDirGuard wipes after export.
+//! Pre-renders the cursor overlay as an alpha QTRLE-in-MOV so one FFmpeg `overlay` filter muxes it onto the export.
+//! Not VP9: gyan.dev and several Linux builds silently drop the alpha plane, painting the source area black.
 
 use std::collections::HashMap;
 use std::fs;
@@ -42,11 +30,8 @@ use crate::render::node_types::{
 pub struct CursorOverlayRequest {
     /// Path to the cursor.json track file (from `.recast` project).
     pub cursor_track_path: PathBuf,
-    /// Comp dimensions (= source + padding × 2). The overlay PNG is
-    /// rendered at these dimensions even when the final canvas is larger
-    /// (aspect-changing preset). The caller composites it at the comp's
-    /// offset inside the canvas via the FFmpeg overlay filter, so we
-    /// don't pipe gigabytes of RGBA through stdin for a tall 9:16 canvas.
+    /// Comp dimensions, which the overlay PNG is rendered at even when the final canvas is larger under an aspect-changing preset.
+    /// The caller composites it at the comp's offset via the overlay filter, so a tall 9:16 canvas does not pipe gigabytes of RGBA through stdin.
     pub canvas_width: u32,
     pub canvas_height: u32,
     /// Source video dimensions (without padding).
@@ -125,9 +110,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         return Err(anyhow!("cursor track has no samples"));
     }
 
-    // Pre-compute click rising-edge timestamps (seconds, on the cursor-track
-    // clock) for the bounce curve. We treat any 0→1 transition on either
-    // mouse button as a click impact, deduplicated by sample boundaries.
+    // Click rising edges (seconds, cursor-track clock) for the bounce curve; either button counts.
     let mut click_events_secs: Vec<f64> = Vec::new();
     {
         let mut prev_left = false;
@@ -143,12 +126,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         }
     }
 
-    // Pre-compute the full press-event list (down/up timestamps + click
-    // anchor x/y). Drives the sprite preroll, visibility boost, click-
-    // impact scale, AND the always-on click-anchor snap that ensures the
-    // visual click lands on the captured target regardless of smoothing.
-    // Mirrors `rebuildPressEvents` in VideoPreview.svelte. Built from raw
-    // samples so neither timing nor position can drift with smoothing.
+    // Built from RAW samples so click timing and position can't drift with smoothing. Mirrors `rebuildPressEvents`.
     let press_events = build_press_events_from_iter(track.samples.iter().map(|s| {
         (
             s.timestamp_us,
@@ -159,13 +137,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         )
     }));
 
-    // Smooth the cursor PATH exactly like the WebGL preview. The click timing
-    // and click positions above are taken from the RAW samples and the pinned
-    // highlight, so this only reshapes motion — it can never move where/when a
-    // click lands. Every position lookup below interpolates this smoothed
-    // buffer instead of the raw track; without it the export drew the raw path
-    // while the preview drew the smoothed one, and a zoom magnified the gap
-    // into a visibly off cursor.
+    // Smooths the PATH only, exactly like the WebGL preview: the export drew the raw path and a zoom magnified the gap.
     let smoothed = smooth_cursor_path(
         &track.samples,
         smoothing_strength_to_sigma_ms(request.render_state.cursor_smoothing),
@@ -173,9 +145,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         request.render_state.cursor_snap_window_ms,
     );
 
-    /// Find the click event nearest `t_secs`. Returns the offset in ms
-    /// (`t - click_t`, signed, negative = click is in the future) or None
-    /// when the track has no clicks.
+    /// Find the click event nearest `t_secs`. Returns the offset in ms (`t - click_t`, signed, negative = click is in the future) or None when the track has no clicks.
     fn nearest_click_offset_ms(events: &[f64], t_secs: f64) -> Option<f64> {
         let mut best: Option<f64> = None;
         for &e in events {
@@ -203,17 +173,10 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     };
     let overlay_path = scratch_dir.join("cursor.mov");
 
-    // Precompute derived settings (mirrors VideoPreview.svelte's draw loop).
-    // Note: callers also invoke this overlay pass when only the drop-shadow
-    // is enabled (the shadow draws further down the FFmpeg graph but lives
-    // in the same alpha-VP9 overlay file), so we deliberately allow
-    // both flags to be false here. The frame loop below will simply emit
-    // fully-transparent frames in that case — composited as a no-op.
+    // Both flags may be false: the drop-shadow-only caller shares this alpha-VP9 file and just gets transparent frames.
     let cursor_enabled = request.render_state.cursor_enabled;
 
-    // Cursor radius in canvas pixels. WebGL shader uses:
-    //   const cursorRadiusCanvas = (cs.size * 2 * canvasEl.width) / compW;
-    // where compW = source_width + padding * 2.
+    // Mirrors the shader: (cs.size * 2 * canvas_width) / comp_w, where comp_w = source_width + padding * 2.
     let comp_w = request.source_width + request.padding * 2;
     let cursor_radius_canvas = if comp_w > 0 {
         ((request.render_state.cursor_size * 2.0) * request.canvas_width as f64 / comp_w as f64)
@@ -226,19 +189,12 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let (hr, hg, hb) =
         parse_hex_color(&request.render_state.cursor_highlight_color).unwrap_or((0x3b, 0x82, 0xf6));
 
-    // Frame geometry. Each frame below allocates its own zero-filled buffer so
-    // the render can fan out across cores (see the parallel driver after the
-    // closure) — frames are independent timestamp lookups, so the only ordering
-    // constraint is the sequential stdin write.
+    // Each frame allocates its own buffer so the render can fan out; only the stdin write is ordered.
     let canvas_w = request.canvas_width as usize;
     let canvas_h = request.canvas_height as usize;
     let bytes_per_frame = canvas_w * canvas_h * 4;
 
-    // Spawn FFmpeg to encode raw RGBA → QTRLE-in-MOV. QTRLE is a lossless
-    // RLE codec with true alpha (`-pix_fmt argb`) that compresses
-    // mostly-transparent frames very efficiently — exactly the shape of a
-    // cursor/annotation overlay. We do NOT use `-crf` / `-b:v` here: QTRLE
-    // is lossless and ignores rate-control flags.
+    // QTRLE is lossless with true alpha and compresses mostly-transparent frames well; it ignores rate-control flags.
     let mut ffmpeg = Command::new(crate::ffmpeg::ffmpeg_path());
     ffmpeg
         .args([
@@ -272,8 +228,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         .spawn()
         .context("failed to start ffmpeg for cursor overlay encode")?;
 
-    // The frame loop below blocks on stdin, so an undrained stderr pipe filling
-    // up deadlocks the whole export with no watchdog covering it.
+    // The frame loop blocks on stdin, so an undrained stderr pipe deadlocks the export with no watchdog covering it.
     let stderr_tail = child.stderr.take().map(crate::ffmpeg::StderrTail::spawn);
 
     let mut stdin = child
@@ -289,13 +244,9 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let highlight_alpha_base =
         (request.render_state.cursor_highlight_opacity / 100.0).clamp(0.0, 1.0);
 
-    // Pre-decode every image referenced by an Image annotation. The hybrid-
-    // raster pipeline can produce many of these (one per text annotation),
-    // but the count is bounded by the project size — far cheaper to decode
-    // once than to re-decode per frame.
+    // Bounded by project size, and far cheaper to decode once than to re-decode per frame.
     let mut image_cache = build_image_cache(&request.render_state.annotations);
-    // Pre-decode the cursor sprite (rest + press) once. Same cache so the
-    // same blend_pixel path serves every overlay sprite.
+    // Same cache, so one blend_pixel path serves every overlay sprite.
     const CURSOR_SPRITE_KEY_REST: &str = "__recast_cursor_rest__";
     const CURSOR_SPRITE_KEY_PRESS: &str = "__recast_cursor_press__";
     const CURSOR_SPRITE_KEY_RIGHT_PRESS: &str = "__recast_cursor_right_press__";
@@ -326,13 +277,10 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     }
     let cursor_sprite_active = image_cache.contains_key(CURSOR_SPRITE_KEY_REST);
 
-    // Z-order is immutable for the whole render; sorting it per frame cost two
-    // allocations + a sort 54,000× on a 30-min export.
+    // Z-order is immutable for the render; sorting per frame cost two allocations 54,000 times on a 30-min export.
     let ordered_annotations = sorted_visible_annotations(&request.render_state.annotations);
 
-    // Renders frame `i` into its own buffer. Pure function of `i` over the
-    // precomputed, read-only state above (smoothed path, press events, zoom
-    // LUT, idle periods, image cache), so it's safe to call concurrently.
+    // Pure function of `i` over the read-only precomputed state, so it is safe to call concurrently.
     let render_one = |i: u64| -> Vec<u8> {
         // Fresh buffer, zero-filled = fully transparent.
         let mut frame = vec![0u8; bytes_per_frame];
@@ -340,17 +288,10 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         // Wall-clock time relative to the trimmed output, mapped to cursor-track time.
         let t_out_us = (i * 1_000_000) / request.fps as u64;
         let t_track_us = trim_start_us + t_out_us;
-        // `t_track_secs` is the project-timeline time. Annotation/zoom-region
-        // start/end fields are stored in timeline coordinates, so every check
-        // against them must use this value — using output-stream time would
-        // skip annotations whose timeline range falls before/around
-        // `trim_start`, the same class of bug the FFmpeg zoom LUT had.
+        // Annotation and zoom ranges are stored in timeline coordinates, so output-stream time would skip ones before `trim_start`.
         let t_track_secs = t_track_us as f64 / 1_000_000.0;
 
-        // Render in z-order so stacking is deterministic; skip hidden so the
-        // user-toggled visibility flag matches the preview. `z_index` defaults
-        // to 0 for v1 projects, which preserves insertion order via the stable
-        // sort in `sorted_visible_annotations`.
+        // `z_index` defaults to 0 on v1 projects, so the stable sort preserves insertion order.
         for annotation in ordered_annotations.iter().copied() {
             draw_annotation(
                 &mut frame,
@@ -380,18 +321,10 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             return frame;
         }
 
-        // Per-frame click state — sprite-key preroll, visibility boost,
-        // click-impact scale. Pulled once and reused below; mirrors the
-        // preview's pressStateAt so a frame at this timestamp looks the
-        // same in the editor and the rendered MP4.
+        // Mirrors the preview's pressStateAt, so a frame at this timestamp looks the same in the editor and the MP4.
         let press = press_state_at(t_track_us as i64, &press_events);
 
-        // Idle hide — smooth fade rather than a hard cut. Mirrors
-        // `idleAlphaAt` in VideoPreview.svelte; same constants. The press
-        // window can override an idle-zero so a click that lands deep in
-        // an idle stretch still gets its anticipation + impact + recovery
-        // visible (e.g. a viewer can see "user reaches in, clicks, leaves"
-        // even though the cursor was hidden moments before).
+        // Mirrors `idleAlphaAt`; the press window overrides an idle-zero so a click deep in idle still shows its impact.
         let idle_alpha_raw = if request.render_state.cursor_hide_when_idle {
             cursor_idle_alpha(t_track_us, &track.idle_periods, idle_timeout_us)
         } else {
@@ -402,15 +335,9 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             return frame;
         }
 
-        // Apply zoom transform in source-video coordinates. Zoom regions
-        // index by timeline time (same as the FFmpeg-side LUT).
+        // Zoom is applied in source-video coordinates and indexed by timeline time, like the FFmpeg LUT.
         let (mut cursor_source_x, mut cursor_source_y) = (sample.x, sample.y);
-        // Always-on click-anchor snap. Cosine ramp pulls the rendered
-        // cursor through the captured click target inside the snap
-        // window, so the click impact lands exactly where the user
-        // clicked regardless of any smoothing applied upstream. Done
-        // pre-zoom so the anchor x/y is in the same source-pixel space
-        // as the captured sample.
+        // Pre-zoom cosine ramp through the captured click target, so the impact lands where the user clicked despite smoothing.
         if let Some((ax, ay, w)) = click_anchor_at(t_track_us as i64, &press_events) {
             cursor_source_x = cursor_source_x * (1.0 - w) + ax * w;
             cursor_source_y = cursor_source_y * (1.0 - w) + ay * w;
@@ -425,8 +352,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             cursor_source_x = (cursor_source_x - src_cx) * scale + src_cx;
             cursor_source_y = (cursor_source_y - src_cy) * scale + src_cy;
 
-            // Cursor must remain inside the (zoomed-visible) source rect — the
-            // WebGL shader skips rendering if the cursor leaves the visible area.
+            // The WebGL shader skips rendering outside the zoomed-visible source rect, so match it here.
             if cursor_source_x < 0.0
                 || cursor_source_x > request.source_width as f64
                 || cursor_source_y < 0.0
@@ -436,10 +362,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             }
         }
 
-        // Cursor-anim: idle sway. Adds a tiny sinusoidal wobble in source-px
-        // for slow-moving cursors. We approximate cursor velocity by sampling
-        // 16 ms in the past and measuring distance — keeps sway alive at rest
-        // and tapers it cleanly during fast gestures.
+        // Velocity is approximated from a sample 16 ms back, keeping sway alive at rest and tapering it in fast gestures.
         if request.render_state.cursor_sway > 0.0 {
             let velocity_px_per_s = {
                 let lookback_us = 16_000_u64;
@@ -464,15 +387,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             cursor_source_y += dy;
         }
 
-        // Cursor-anim: click bounce — modulates a per-frame scale multiplier
-        // applied to both the soft-dot radius and the sprite render size.
-        //
-        // The baseline `press.scale` (anticipation lift → impact snap →
-        // bounce-back) is always on so every click reads as a deliberate
-        // tap. The user-tunable `cursor_click_bounce` knob is composed on
-        // top via the legacy `click_bounce_scale` curve when set — it adds
-        // extra squash/overshoot for cinematic demos without flattening the
-        // baseline impact when it's at zero.
+        // The baseline `press.scale` is always on; `cursor_click_bounce` composes extra squash on top without flattening it.
         let user_bounce_factor = if request.render_state.cursor_click_bounce > 0.0 {
             if let Some(dt_ms) = nearest_click_offset_ms(&click_events_secs, t_track_secs) {
                 click_bounce_scale(
@@ -488,24 +403,18 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         };
         let bounce_scale = press.scale * user_bounce_factor;
 
-        // Map source coords → canvas coords.
-        // Video area in the canvas is [padding, padding + source_width].
+        // The video area in the canvas is [padding, padding + source_width].
         let scale_canvas =
             request.canvas_width as f64 / (request.source_width + request.padding * 2) as f64;
         let cursor_canvas_x = (request.padding as f64 + cursor_source_x) * scale_canvas;
         let cursor_canvas_y = (request.padding as f64 + cursor_source_y) * scale_canvas;
 
-        // Per-frame motion-blur trail positions: sample the cursor track at
-        // a few sub-frames into the past at decreasing alpha so the export
-        // shows a velocity-proportional smear that tracks the actual motion
-        // path (not a uniform blur). Strength and step count come from the
-        // render state's motion-blur slider.
+        // Sub-frame samples at decreasing alpha give a velocity-proportional smear rather than a uniform blur.
         let mb_strength = request.render_state.cursor_motion_blur.clamp(0.0, 1.0);
         let mut motion_trail: Vec<(f64, f64, f64)> = Vec::new(); // (canvas_x, canvas_y, alpha)
         if mb_strength > 0.0 {
             const TRAIL_STEPS: usize = 6;
-            // 8ms per step keeps the trail visible at 60fps without smearing
-            // into prior gestures.
+            // 8ms per step keeps the trail visible at 60fps without smearing into prior gestures.
             const STEP_DT_US: i64 = 8_000;
             for i in 1..=TRAIL_STEPS {
                 let alpha = motion_blur_step_alpha(i, TRAIL_STEPS, mb_strength);
@@ -537,20 +446,12 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             }
         }
 
-        // Click highlight halo — PINNED to the captured click point + instant
-        // (via `click_highlight_at` on the raw press events), NOT the smoothed
-        // cursor. The ring therefore lands exactly where and when the click
-        // happened, independent of smoothing — riding `cursor_canvas_*` made it
-        // lag behind under smoothing, reading as delayed/off-target feedback.
-        // Drawn underneath the dot/sprite so both share one press indicator.
-        // Mirrors the pinned `u_highlightPos` halo in VideoPreview.svelte.
+        // PINNED to the raw click point and instant: riding the smoothed cursor made the ring lag and read as off-target.
         if request.render_state.cursor_highlight_clicks {
             if let Some((click_x, click_y, hl_env)) =
                 click_highlight_at(t_track_us as i64, &press_events)
             {
-                // Same affine zoom as the cursor so the ring tracks the
-                // zoomed video; only draw when the click point is inside the
-                // visible (zoomed) source rect.
+                // Same affine zoom as the cursor, and only drawn while the click point is inside the visible source rect.
                 let (mut hx, mut hy) = (click_x, click_y);
                 if let Some((scale, center_x, center_y)) = active_zoom_at(
                     &request.render_state.zoom_regions,
@@ -569,8 +470,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                 {
                     let hl_canvas_x = (request.padding as f64 + hx) * scale_canvas;
                     let hl_canvas_y = (request.padding as f64 + hy) * scale_canvas;
-                    // Ring radius pulses with the press scale to match the
-                    // preview's `u_cursorRadius` (which includes press.scale).
+                    // Ring radius pulses with the press scale to match the preview's `u_cursorRadius`.
                     let hr_radius = cursor_radius_canvas * 6.0 * press.scale;
                     draw_filled_circle_soft(
                         &mut frame,
@@ -589,16 +489,9 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         }
 
         if cursor_sprite_active {
-            // SVG sprite path — composite the rasterized cursor at the
-            // sample position. The preroll-aware `pressed_sprite` flag
-            // swaps to the alt sprite ~320 ms before the click so the
-            // pointer-hand telegraphs the impending press; the actual
-            // click halo (below) still keys on the literal sample state
-            // so the ring fires on the audio-sync frame.
+            // The preroll swaps to the alt sprite ~320 ms early to telegraph the press; the halo still keys on the literal sample.
             let pressed = press.pressed_sprite;
-            // Preferred slot for this frame, falling back to whatever art the
-            // style actually shipped: drag → press → rest, rightPress → press
-            // → rest. The rest sprite is guaranteed present here.
+            // Falls back through drag to press to rest; the rest sprite is guaranteed present.
             let rs = &request.render_state;
             let (key, slot_hotspot) = if pressed {
                 if press.dragged && image_cache.contains_key(CURSOR_SPRITE_KEY_DRAG) {
@@ -620,17 +513,13 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                 let hotspot = slot_hotspot
                     .or(rs.cursor_sprite_hotspot_rest)
                     .unwrap_or([0.5, 0.5]);
-                // Sprite size: source-pixel design size from JS, mapped to
-                // canvas pixels with the same `scale_canvas` factor used
-                // for the cursor position above. Bounce scale modulates
-                // it per-frame so click impacts visually pop.
+                // Source-pixel design size mapped by the same `scale_canvas`, modulated per frame by the bounce scale.
                 let sprite_source_px = request
                     .render_state
                     .cursor_sprite_size_px
                     .unwrap_or(request.render_state.cursor_size * 16.0);
                 let target_size_px = sprite_source_px * scale_canvas * bounce_scale;
-                // Motion-blur trail (drawn before the sharp head so the
-                // current position remains crisp on top).
+                // Trail first, so the sharp head stays crisp on top.
                 for &(tx, ty, talpha) in &motion_trail {
                     blit_cursor_sprite(
                         &mut frame,
@@ -657,8 +546,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                 );
             }
         } else {
-            // Soft-dot path (white, 90% alpha) — bounce scales the radius,
-            // motion-blur draws faint copies behind the head.
+            // Soft-dot path (white, 90% alpha): bounce scales the radius, motion blur draws faint copies behind.
             let bounced_radius = cursor_radius_canvas * bounce_scale;
             for &(tx, ty, talpha) in &motion_trail {
                 draw_filled_circle_soft(
@@ -691,12 +579,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         frame
     };
 
-    // Drive the render in parallel, writing each chunk to FFmpeg's stdin in
-    // order. Frames within a chunk are produced concurrently across cores; the
-    // chunk is bounded so peak memory stays modest even at 4K (a 4K RGBA frame
-    // is ~33 MB, so an unbounded fan-out would balloon RAM). This turns the
-    // formerly single-threaded pre-render — the dominant cost of a cursor
-    // export — into an N-core pass.
+    // Chunked fan-out: a 4K RGBA frame is ~33 MB, so an unbounded parallel render would balloon RAM.
     let threads = rayon::current_num_threads().max(1);
     const MAX_INFLIGHT_BYTES: usize = 256 * 1024 * 1024;
     let max_inflight = (MAX_INFLIGHT_BYTES / bytes_per_frame.max(1)).clamp(1, 512);
@@ -706,8 +589,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let mut write_err: Option<anyhow::Error> = None;
     'write_frames: while next < frame_count {
         let end = (next + chunk as u64).min(frame_count);
-        // Render this window of frames concurrently, preserving order in the
-        // collected Vec so the sequential write below stays in frame order.
+        // Order is preserved in the collected Vec, so the sequential write below stays in frame order.
         let frames: Vec<Vec<u8>> = (next..end).into_par_iter().map(&render_one).collect();
         for f in &frames {
             if let Err(e) = stdin.write_all(f) {
@@ -761,10 +643,7 @@ struct InterpolatedCursor {
     x: f64,
     y: f64,
     visible: bool,
-    // Interpolated button state, kept to mirror the JS `interpolateCursor`
-    // shape. The click halo now keys off the raw press events
-    // (`click_highlight_at`) rather than the per-sample button state, so these
-    // are currently unread on the Rust side.
+    // Kept to mirror the JS `interpolateCursor` shape; the halo keys off raw press events, so these are unread here.
     #[allow(dead_code)]
     left_down: bool,
     #[allow(dead_code)]
@@ -833,35 +712,19 @@ fn interpolate_cursor(samples: &[SmoothedSample], timestamp_us: u64) -> Option<I
 
 //  Zoom lookup (mirror of nested_region_expr in graph.rs)
 
-/// Returns `(scale, center_x, center_y)` for the zoom active at timeline time
-/// `t_secs`, or `None` when no zoom applies.
-///
-/// CRITICAL: the scale is sampled from the SAME 20 Hz piecewise-linear LUT the
-/// FFmpeg video filter uses (`build_zoom_filter` / `sample_region`), NOT the
-/// exact bezier (`scale_at`). The exported video can only approximate the
-/// easing curve as a linear LUT — so if the cursor used the exact curve while
-/// the video used the LUT, the two would disagree on the zoom factor *during
-/// the ramps*, and that disagreement is multiplied by the focus distance and
-/// the zoom scale, making the cursor visibly drift off the content as the zoom
-/// animates in/out. Reproducing the LUT here keeps the cursor locked to the
-/// video frame-for-frame. (The focus centre is constant, so it factors out of
-/// the LUT interpolation and the affine transform at the call sites stays
-/// exact — see the alignment proof in `graph::sample_region`.) `time_offset`
-/// is the export trim-start, matching `sample_region`'s clamp.
-fn active_zoom_at(
+/// `(scale, center_x, center_y)` for the zoom active at `t_secs`, or `None` when none applies. `time_offset` is the export trim-start.
+/// CRITICAL: sampled from the same 20 Hz LUT the video filter uses, not the exact bezier, or the cursor visibly drifts off content during ramps.
+pub(crate) fn active_zoom_at(
     regions: &[crate::render::node_types::ZoomRegion],
     t_secs: f64,
     time_offset: f64,
 ) -> Option<(f64, f64, f64)> {
     for region in regions {
-        // Hidden regions are muted in the video filter too — keep the cursor's
-        // affine in lockstep so it isn't transformed by a zoom that never renders.
+        // Hidden regions are muted in the video filter too, so the cursor must not follow a zoom that never renders.
         if region.hidden || t_secs < region.start || t_secs > region.end {
             continue;
         }
-        // Rebuild the exact sample grid `sample_region` emits, then linearly
-        // interpolate scale across the bracketing samples — i.e. evaluate the
-        // video's LUT at `t_secs`.
+        // Rebuild the grid `sample_region` emits and interpolate across the bracketing samples: the video's LUT at `t_secs`.
         let effective_start = region.start.max(time_offset);
         let duration = (region.end - effective_start).max(0.0);
         let n = ((duration * 20.0).ceil() as usize).clamp(8, 200);
@@ -948,18 +811,13 @@ fn draw_annotation(
             }
         }
         AnnotationKind::Blur { .. } => {
-            // Blur regions are handled by the main video filter chain
-            // (`build_annotation_blur_complex`) — the alpha overlay carries
-            // no underlying pixels to blur, so this is a deliberate no-op.
+            // The alpha overlay carries no underlying pixels to blur; `build_annotation_blur_complex` handles it.
         }
         AnnotationKind::Text { .. } => {
-            // Text reaches export pre-rasterized as an `Image` (rasterize-text);
-            // the raw Text variant only exists to round-trip save/load, so skip.
+            // Text reaches export pre-rasterized as an `Image`; the raw variant exists only to round-trip save/load.
         }
         AnnotationKind::Unsupported => {
-            // Silently skip — caller (JS) was supposed to rasterize/replace
-            // before sending. Logged once at deserialize time would be ideal
-            // but there's no hook for that here.
+            // The caller was supposed to rasterize or replace before sending; there is no deserialize hook to log it here.
         }
     }
 }
@@ -978,8 +836,7 @@ fn draw_shape(
     };
 
     let anchor = annotation.anchor;
-    // Stroke width scales with the frame (ref_w); corner radius scales with the
-    // box (below), so only the width reference is needed here.
+    // Stroke width scales with the frame; corner radius scales with the box, so only the width reference is needed.
     let (ref_w, _) = anchor_ref_dims(request, anchor);
     let (x1, y1) = uv_to_canvas(request, x, y, t_secs, anchor);
     let (x2, y2) = uv_to_canvas(request, x + w, y + h, t_secs, anchor);
@@ -1041,11 +898,7 @@ fn draw_shape(
         }
     }
 
-    // v2 stroke-style fallback: dashed/dotted patterns require segmenting the
-    // path, which the current SDF-based draw_rect/draw_ellipse can't express.
-    // The preview canvas honors them; export falls back to solid here. See
-    // docs/rfcs/annotations-v2.md (Phase F follow-up). Carrying the field on
-    // the wire so the v2.1 Rust dash impl is a renderer-only change.
+    // Dashed and dotted need path segmenting the SDF draw can't express, so export falls back to solid (annotations-v2 Phase F).
     if annotation.stroke.width > 0.0 {
         if let Some((r, g, b, a)) = parse_css_color(&annotation.stroke.color) {
             if a > 0.0 {
@@ -1126,8 +979,7 @@ fn draw_arrow(
 
     let head_len = (head_size.clamp(0.05, 0.4) * line_len).max(stroke_px * 2.0);
     let head_width = head_len * 0.7;
-    // Trim the line so it ends at the base of the head, otherwise the
-    // capsule pokes through the triangle and looks blunt.
+    // Trim the line to the base of the head, or the capsule pokes through the triangle and looks blunt.
     let ux = dx / line_len;
     let uy = dy / line_len;
     let line_end_x = cx2 - ux * head_len;
@@ -1201,8 +1053,7 @@ fn draw_image(
     if img_w == 0 || img_h == 0 {
         return;
     }
-    // Corner radius in dst pixels, mirroring the preview (`radius` × shorter
-    // side of the box). Clamped so it can't exceed half the box.
+    // Mirrors the preview (radius times the shorter side), clamped so it can't exceed half the box.
     let corner = (radius_uv.max(0.0) * dw.min(dh)).min(dw.min(dh) / 2.0);
 
     // Soft shadow / glow behind the image, mirroring the preview's Glow.
@@ -1222,8 +1073,7 @@ fn draw_image(
             let u = ((px as f64 + 0.5 - dx) / dw).clamp(0.0, 1.0);
             // Bilinear sample so scaled images aren't blocky (the preview smooths).
             let s = sample_bilinear(img, u, v);
-            // Rounded-corner coverage: distance from the pixel to the inner
-            // rect (box shrunk by `corner`); 1px anti-aliased falloff.
+            // Distance from the pixel to the box shrunk by `corner`, with a 1px anti-aliased falloff.
             let cover = if corner > 0.5 {
                 let lx = px as f64 + 0.5 - dx;
                 let ly = py as f64 + 0.5 - dy;
@@ -1306,8 +1156,7 @@ fn draw_image_shadow(
     let Some((gr, gg, gb, ga)) = parse_css_color(&glow.color) else {
         return;
     };
-    // Blur radius in dst pixels, relative to the anchor rect's width so it
-    // matches the preview's `glow.blur × rect.width`.
+    // Relative to the anchor rect's width, matching the preview's `glow.blur * rect.width`.
     let (fx0, _) = uv_to_canvas(request, 0.0, 0.0, t_secs, anchor);
     let (fx1, _) = uv_to_canvas(request, 1.0, 0.0, t_secs, anchor);
     let radius = (glow.blur * (fx1 - fx0).abs()).clamp(0.0, 80.0);
@@ -1506,11 +1355,8 @@ fn box_blur_alpha(buf: &mut [f32], w: usize, h: usize, radius: usize) {
     }
 }
 
-/// Smooth idle-fade — mirror of `idleAlphaAt` in VideoPreview.svelte.
-/// Returns 1.0 when the cursor should be fully visible at `t_us`, 0.0
-/// inside an idle period (past the timeout + fade-in), and a linear ramp
-/// across 200 ms at each boundary so the cursor dissolves rather than
-/// blinks. The constants match the JS side exactly.
+/// Smooth idle-fade mirroring `idleAlphaAt` in the preview, with constants matching the JS side exactly.
+/// 1.0 when the cursor should be visible at `t_us`, 0.0 inside an idle period, and a 200 ms linear ramp at each boundary so it dissolves rather than blinks.
 fn cursor_idle_alpha(
     t_us: u64,
     idle_periods: &[crate::cursor::smoothing::IdlePeriod],
@@ -1645,9 +1491,7 @@ fn decode_image_path_or_url(path: &str) -> Option<RgbaImage> {
     };
     match decoded {
         Ok(img) => {
-            // Cap the longest side so a huge source (e.g. an 8000×8000 photo,
-            // ~256 MB as RGBA) can't OOM the export — it's only ever composited
-            // at the annotation's box size anyway.
+            // Cap the longest side: an 8000x8000 photo is ~256 MB as RGBA, and it only composites at the annotation's box size.
             const MAX_DIM: u32 = 4096;
             let (w, h) = (img.width(), img.height());
             let img = if w > MAX_DIM || h > MAX_DIM {
@@ -1782,11 +1626,7 @@ fn draw_triangle_filled(
     let y_max = ((ay.max(by).max(cy)).ceil() as i64)
         .min(height as i64 - 1)
         .max(0) as usize;
-    // Edge-function rasterizer. The raw edge function is twice the signed area
-    // of (p, a, b); dividing by the edge length gives the perpendicular pixel
-    // distance to that edge. Taking the min distance across the three edges and
-    // running a 1px smoothstep gives an anti-aliased edge instead of a hard
-    // stair-step (matching the AA'd capsule shaft the head attaches to).
+    // The edge function over the edge length is the perpendicular pixel distance; a 1px smoothstep gives AA, not stair-steps.
     let sign = |px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64| -> f64 {
         (px - bx) * (ay - by) - (ax - bx) * (py - by)
     };
@@ -1835,7 +1675,7 @@ fn annotation_box(annotation: &Annotation) -> Option<(f64, f64, f64, f64, f64)> 
     }
 }
 
-fn annotation_opacity(annotation: &Annotation, t_secs: f64) -> f64 {
+pub(crate) fn annotation_opacity(annotation: &Annotation, t_secs: f64) -> f64 {
     if t_secs < annotation.start || t_secs > annotation.end {
         return 0.0;
     }
@@ -1853,9 +1693,7 @@ fn annotation_opacity(annotation: &Annotation, t_secs: f64) -> f64 {
     } else {
         1.0
     };
-    // Multiply by the v2 master opacity. Defaults to 1.0 for v1 projects via
-    // the serde fallback so the export stays byte-identical to v1 unless the
-    // user explicitly dialled the master slider.
+    // Serde defaults this to 1.0 on v1 projects, so the export stays byte-identical unless the master slider moved.
     raw * annotation.opacity.clamp(0.0, 1.0)
 }
 
@@ -1880,8 +1718,7 @@ fn uv_to_canvas(
     t_secs: f64,
     anchor: AnnotationAnchor,
 ) -> (f64, f64) {
-    // Frame-anchored annotations span the whole comp buffer (canvas_* = comp
-    // dims) and ignore zoom — the export mirror of the preview's frame anchor.
+    // Frame-anchored annotations span the whole comp buffer and ignore zoom, mirroring the preview's frame anchor.
     if anchor == AnnotationAnchor::Frame {
         return (
             x * request.canvas_width as f64,
@@ -1986,9 +1823,7 @@ fn draw_ellipse(
             let dx = px as f64 + 0.5 - cx;
             let dy = py as f64 + 0.5 - cy;
             let dist = ((dx / rx).powi(2) + (dy / ry).powi(2)).sqrt();
-            // Convert the normalized distance to a pixel distance via the field
-            // gradient, so the edge AA and the stroke are a uniform pixel width
-            // even for an eccentric (flat/tall) ellipse.
+            // The field gradient converts normalized to pixel distance, keeping AA and stroke uniform on an eccentric ellipse.
             let grad =
                 ((dx / (rx * rx)).powi(2) + (dy / (ry * ry)).powi(2)).sqrt() / dist.max(1e-6);
             let px_signed = (dist - 1.0) / grad.max(1e-6);
@@ -2013,8 +1848,7 @@ fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-// Hot per-pixel blend: discrete channel args avoid packing/unpacking a struct
-// in the inner loop.
+// Hot per-pixel blend: discrete channel args avoid packing and unpacking a struct in the inner loop.
 #[allow(clippy::too_many_arguments)]
 fn blend_pixel(buf: &mut [u8], width: usize, x: usize, y: usize, r: u8, g: u8, b: u8, alpha: f64) {
     if alpha <= 0.0 {
@@ -2226,8 +2060,7 @@ mod anchor_tests {
         let (vx0, _) = uv_to_canvas(&r0, 0.75, 0.5, 0.0, AnnotationAnchor::Video);
         assert!((vx0 - (0.75 * 200.0 + 10.0)).abs() < 1e-9); // 160
 
-        // With a 2x zoom about centre, the same UV is pushed outward — proving
-        // video anchor tracks zoom while frame anchor (above) does not.
+        // A 2x zoom about centre pushes the same UV outward, proving video anchor tracks zoom while frame anchor does not.
         let r = req(vec![active_zoom()]);
         let (vx, _) = uv_to_canvas(&r, 0.75, 0.5, 2.0, AnnotationAnchor::Video);
         assert!(vx > 200.0, "expected zoom to push x past 200, got {vx}");

@@ -1,31 +1,5 @@
-//! Cloud sign-in via OAuth 2.0 Device Authorization Grant (RFC 8628).
-//!
-//! Flow from the desktop's point of view:
-//!
-//!   1. `auth_start` posts to `/api/auth/device/code`, gets a `device_code`,
-//!      `user_code`, `verification_uri_complete`, and polling `interval`.
-//!      Opens the user's default browser to `verification_uri_complete`
-//!      (the verification page with the user code already in the URL).
-//!      Returns the `user_code` immediately so the UI can surface it as a
-//!      fallback if the browser launch silently failed.
-//!   2. A background poller hits `/api/auth/device/token` every `interval`
-//!      seconds until it sees `access_token` (approved), `access_denied`,
-//!      or the token expires. On success, Better Auth's plugin has already
-//!      created a real session row in the same request — so the row's
-//!      `ipAddress` and `userAgent` are this desktop's, not the browser's.
-//!      We just persist the returned token to the OS keyring.
-//!   3. The frontend listens for `auth:signed-in`, `auth:denied`,
-//!      `auth:expired`, and `auth:error` events to update its state.
-//!
-//! Cancellation: `auth_start` stores the spawned poller's `JoinHandle` in
-//! `AppState.auth_poller`. `auth_cancel` aborts it, preventing the
-//! "user clicks Cancel, then approves in the browser tab" race where the UI
-//! would lurch from signed-out to signed-in without further user action.
-//! Only one poller may be live at a time; calling `auth_start` while one is
-//! already running returns an error.
-//!
-//! Token storage uses `keyring` — DPAPI on Windows, Keychain on macOS,
-//! SecretService on Linux. Service name is the bundle identifier.
+//! Cloud sign-in over the OAuth 2.0 Device Authorization Grant (RFC 8628).
+//! Only one poller may be live: `auth_cancel` aborts it, or a Cancel-then-approve race signs the user in anyway.
 
 use parking_lot::RwLock;
 use std::time::{Duration, Instant};
@@ -44,18 +18,12 @@ const KEYRING_ENTRY: &str = "cloud-session-token";
 const CLIENT_ID: &str = "recast-desktop";
 const DEFAULT_CLOUD_API_URL: &str = "https://recast.li";
 
-/// Self-hosting override for the cloud API base URL, cached in-process so the
-/// no-arg `cloud_api_url()` resolver (called from many sites that don't carry
-/// `AppState`) can read it without threading state everywhere. Mirrors
-/// `AppConfig.cloud_api_url`: seeded from disk on startup via
-/// `init_cloud_api_override`, updated by the `set_cloud_api_url` command.
+/// Self-hosting override for the cloud API base URL, cached in-process so the no-arg resolver can read it without threading `AppState` everywhere.
+/// Mirrors `AppConfig.cloud_api_url`: seeded from disk at startup and updated by the `set_cloud_api_url` command.
 static CLOUD_API_OVERRIDE: RwLock<Option<String>> = RwLock::new(None);
 
-/// Validate + normalize a user-supplied self-host URL. Accepts only an
-/// absolute `http`/`https` URL with a non-empty host; returns the
-/// trailing-slash-stripped form. `None` for anything malformed — the caller
-/// treats that as "no usable override" (setter rejects it; resolver ignores
-/// it and falls back to the default endpoint).
+/// Validates a user-supplied self-host URL, accepting only an absolute http(s) URL with a non-empty host and returning it without a trailing slash.
+/// `None` means no usable override: the setter rejects it and the resolver falls back to the default endpoint.
 pub(crate) fn normalize_api_url(raw: &str) -> Option<String> {
     let trimmed = raw.trim().trim_end_matches('/');
     if trimmed.is_empty() {
@@ -77,18 +45,8 @@ pub(crate) fn init_cloud_api_override(value: Option<String>) {
     *CLOUD_API_OVERRIDE.write() = value;
 }
 
-/// Resolves the cloud API base URL. Resolution order:
-///   1. The self-host override the user set in Settings → Cloud, if present
-///      and still valid. This is deliberate user action, so unlike an
-///      injected env var it's honored in release builds too — it's how
-///      self-hosters point the desktop at their own server.
-///   2. In debug builds only, the `CLOUD_API_URL` env var (dev convenience —
-///      lets `pnpm tauri dev` target a local SvelteKit server). Release
-///      builds skip this so a stray/injected env can't silently redirect
-///      auth traffic to an attacker host.
-///   3. The bundled default endpoint.
-///
-/// Trailing slashes are stripped at every layer.
+/// Cloud API base URL: the Settings self-host override first, then `CLOUD_API_URL` in debug builds only, then the bundled default. Trailing slashes stripped.
+/// Release builds skip the env var so a stray one cannot silently redirect auth traffic; the override is deliberate user action, so it is honoured everywhere.
 pub(crate) fn cloud_api_url() -> String {
     if let Some(raw) = CLOUD_API_OVERRIDE.read().clone() {
         if let Some(valid) = normalize_api_url(&raw) {
@@ -103,18 +61,7 @@ pub(crate) fn cloud_api_url() -> String {
 }
 
 pub(crate) fn user_agent() -> String {
-    // Better Auth captures this header into `session.userAgent`. Putting the
-    // OS + hostname here gives the user a recognizable label in the future
-    // Settings → Devices list ("Kanak-Desktop on Windows") without needing
-    // a custom field on the deviceCode body schema.
-    //
-    // PRIVACY NOTE: `hostname::get()` returns the OS hostname which is often
-    // a real first name or device name (e.g. "Kanak-MacBook-Pro"). It lands
-    // in the `session.user_agent` Postgres column. This is by design — it's
-    // only ever shown back to the same user in their own Devices list — and
-    // is covered by the privacy policy's "Web server access logs (... user
-    // agent ...)" disclosure. If we ever expose `session.user_agent` to
-    // OTHER users (e.g. team-admin views), redact this field there.
+    // Better Auth captures this into `session.userAgent` for the Devices list. PRIVACY: the OS hostname is often a real name, so redact if that column is ever shown to other users.
     let host = hostname::get()
         .ok()
         .and_then(|h| h.into_string().ok())
@@ -148,13 +95,8 @@ fn read_session_token() -> Option<String> {
     keyring_entry().ok().and_then(|e| e.get_password().ok())
 }
 
-/// Best-effort local token removal. Returns `Ok(())` even if the keyring
-/// entry can't be opened — the goal of this function is "make sure no token
-/// is usable from this process," not "successfully interact with the OS
-/// secrets store." If we can't open the entry we couldn't have read a token
-/// either, so the user is effectively signed out from the desktop's POV
-/// and surfacing an error to the UI ("Couldn't sign out") would be
-/// misleading.
+/// Best-effort local token removal, returning `Ok(())` even when the keyring entry will not open.
+/// The goal is that no token is usable from this process; an unopenable entry could not have been read either, so an error would only mislead.
 fn delete_session_token() -> Result<(), String> {
     let Ok(entry) = keyring_entry() else {
         return Ok(());
@@ -216,12 +158,8 @@ pub struct AuthUsage {
     shares_limit: Option<u64>,
 }
 
-/// One workspace (Better Auth `organization`) the signed-in user belongs to.
-/// Mirrors the `workspaces[]` entries `/api/desktop/profile` returns so the
-/// desktop can offer a target picker at share time. Uploads carry an explicit
-/// `workspaceId` and the server re-validates membership on
-/// `/api/uploads/init`, so a stale id fails closed rather than silently
-/// uploading into a team the user was removed from.
+/// One workspace the signed-in user belongs to, mirroring `/api/desktop/profile` so the desktop can offer a target picker at share time.
+/// Uploads carry an explicit `workspaceId` the server re-validates, so a stale id fails closed rather than uploading into a team the user left.
 #[derive(Serialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Workspace {
@@ -266,12 +204,8 @@ pub struct AuthStatus {
     default_workspace_id: Option<String>,
 }
 
-/// Parses Better Auth's `/api/auth/get-session` response body into our
-/// `AuthStatus` (minimal — email/name/image only). Used as a fallback when
-/// the desktop profile endpoint isn't reachable. Returns `signed_in: true`
-/// with empty identity fields when the body is shaped unexpectedly — we
-/// already know the token was accepted (the caller checked status), so the
-/// user IS signed in even if we can't surface their display name.
+/// Parses Better Auth's session body into a minimal `AuthStatus`, used when the desktop profile endpoint is unreachable.
+/// An unexpected shape still returns `signed_in: true` with empty identity: the caller already saw the token accepted, so the user IS signed in.
 fn parse_session_body(body: &serde_json::Value) -> AuthStatus {
     let user = body.get("user");
     AuthStatus {
@@ -394,30 +328,16 @@ fn parse_profile_body(body: &serde_json::Value) -> AuthStatus {
     }
 }
 
-/// Kicks off a device-authorization sign-in. Returns immediately with the
-/// user code (for UI fallback) and spawns a background poller that emits
-/// `auth:signed-in` / `auth:denied` / `auth:expired` / `auth:error` events
-/// when the flow terminates.
-///
-/// Returns an error if a sign-in flow is already in progress, or if the
-/// user is already signed in (the caller should `auth_sign_out` first).
+/// Starts a device-authorization sign-in, returning the user code immediately and spawning a poller that emits `auth:signed-in`, `denied`, `expired` or `error`.
+/// Errors when a flow is already in progress, or when already signed in: the caller should `auth_sign_out` first.
 #[tauri::command]
 pub async fn auth_start(app: AppHandle, state: State<'_, AppState>) -> AppResult<AuthStartResult> {
-    // Abort any previous poller first. There's a sub-instant race in the
-    // poller between "/device/token returned approved → token written to
-    // keyring" and "abort fires at the next await" — `store_session_token`
-    // is synchronous so an abort during that window still leaves a token
-    // behind. Killing the poller first narrows the window.
+    // Abort the previous poller first: `store_session_token` is synchronous, so an abort mid-write still leaves a token behind.
     if let Some(prev) = state.auth_poller.lock().take() {
         prev.abort();
     }
 
-    // Clear any stale token (UI desync, lost-race-with-cancel, leftover
-    // from a previous install, etc.) before starting a new flow. The user
-    // clicking "Sign in" is unambiguous intent; if the keyring still holds
-    // an old token the right answer is to throw it away — not to refuse
-    // the sign-in and leave the user stuck. Server-side revoke is
-    // best-effort: offline or 404 doesn't block the new flow.
+    // Clicking Sign in is unambiguous intent, so throw a stale token away rather than refuse; server-side revoke is best-effort.
     if let Some(stale) = read_session_token() {
         log::info!("auth_start: clearing stale token before fresh sign-in");
         if let Ok(client) = http_client() {
@@ -463,8 +383,7 @@ pub async fn auth_start(app: AppHandle, state: State<'_, AppState>) -> AppResult
         .clone()
         .unwrap_or_else(|| code.verification_uri.clone());
     if let Err(e) = tauri_plugin_opener::open_url(&open_url, None::<&str>) {
-        // Non-fatal — the UI still surfaces the user code so the user can
-        // navigate manually. Just log.
+        // Non-fatal: the UI still shows the user code, so they can navigate manually.
         log::warn!("auth: failed to open browser to {open_url}: {e}");
     }
 
@@ -500,14 +419,8 @@ pub async fn auth_start(app: AppHandle, state: State<'_, AppState>) -> AppResult
     Ok(result)
 }
 
-/// Aborts the in-flight device-authorization poller (if any). Used when
-/// the user clicks Cancel in the Settings → Cloud panel — without this,
-/// the poller keeps running until the device code expires, and an
-/// approval in the browser tab would silently sign the desktop in even
-/// though the user has moved on from the flow.
-///
-/// Returns `Ok(())` whether or not a poller was running — Cancel is
-/// idempotent.
+/// Aborts the in-flight device-authorization poller; idempotent, returning `Ok(())` whether or not one was running.
+/// Without it the poller outlives Cancel, and a later browser approval would silently sign the desktop in.
 #[tauri::command]
 pub fn auth_cancel(state: State<'_, AppState>) -> AppResult<()> {
     if let Some(handle) = state.auth_poller.lock().take() {
@@ -552,20 +465,13 @@ async fn poll_for_token(
                 .await
                 .map_err(|e| format!("device/token success parse failed: {e}"))?;
             store_session_token(&body.access_token)?;
-            // PRIVACY NOTE: this event payload carries the signed-in user's
-            // email + name. Tauri events fan out to every listener in the
-            // WebView, so any future bundled third-party JS would be able to
-            // subscribe via `listen('auth:signed-in', ...)`. We currently
-            // ship only first-party code, but if that ever changes, switch
-            // this to an empty payload and have the frontend re-call
-            // `auth_status` to fetch the identity over IPC instead.
+            // PRIVACY: this payload carries email and name, and Tauri events fan out to every WebView listener. Switch to an empty payload if third-party JS is ever bundled.
             let status = fetch_status(client, base, &body.access_token).await;
             let _ = app.emit("auth:signed-in", status);
             return Ok(());
         }
 
-        // Non-2xx — try to parse the OAuth error envelope. RFC 8628 reserves
-        // a specific set of error codes for the polling path.
+        // Non-2xx: parse the OAuth error envelope, whose codes RFC 8628 reserves for the polling path.
         let err: DeviceTokenError = resp
             .json()
             .await
@@ -639,18 +545,8 @@ async fn fetch_status(client: &reqwest::Client, base: &str, token: &str) -> Auth
     }
 }
 
-/// Returns the current sign-in state. Hits the server to validate the
-/// stored token — a revoked/expired token reports as signed-out and is
-/// cleared from the keyring so the next `auth_start` is clean.
-///
-/// OFFLINE BEHAVIOR: if we have a stored token but the request fails at the
-/// transport layer (offline, DNS error, server unreachable), we report
-/// `signed_in: true` with no identity. Recast is offline-first ([1]) — flipping
-/// to "Not signed in" on every network blip would defeat the whole point.
-/// A 401/403 from the server is still treated as signed-out, since that's
-/// an authoritative "your token is no longer valid."
-///
-/// [1]: see project memory `project_overview.md`.
+/// Current sign-in state, validated against the server; a revoked token reports signed-out and is cleared from the keyring.
+/// A transport failure keeps `signed_in: true` with no identity, since Recast is offline-first; only a 401/403 is authoritative.
 #[tauri::command]
 pub async fn auth_status() -> AppResult<AuthStatus> {
     let Some(token) = read_session_token() else {
@@ -663,10 +559,7 @@ pub async fn auth_status() -> AppResult<AuthStatus> {
         http_client().map_err(|e| AppError::msg(format!("http client init failed: {e}")))?;
     let base = cloud_api_url();
 
-    // Hit the desktop profile endpoint first — it both validates the token
-    // (returns 401 if invalid) AND returns the rich plan + usage data the
-    // Settings card needs. Falling through to /api/auth/get-session only if
-    // /api/desktop/profile is missing on the server (older build).
+    // The desktop profile endpoint both validates the token and returns the plan and usage the Settings card needs.
     let resp = match client
         .get(format!("{base}/api/desktop/profile"))
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
@@ -674,8 +567,7 @@ pub async fn auth_status() -> AppResult<AuthStatus> {
         .await
     {
         Ok(resp) => resp,
-        // Transport failure (no network, DNS, TLS, timeout). Trust the local
-        // token and assume signed-in — offline-first.
+        // Transport failure (no network, DNS, TLS, timeout): trust the local token and assume signed in, offline-first.
         Err(e) => {
             log::warn!("auth_status: transport failure, assuming signed-in: {e}");
             return Ok(AuthStatus {
@@ -687,8 +579,7 @@ pub async fn auth_status() -> AppResult<AuthStatus> {
 
     let status = resp.status();
     if status.as_u16() == 401 || status.as_u16() == 403 {
-        // Authoritative server response: token is no longer valid — purge it
-        // locally so we don't stay in a "signed in" UI state forever.
+        // Authoritative: the token is no longer valid, so purge it locally rather than stay signed in forever.
         let _ = delete_session_token();
         return Ok(AuthStatus {
             signed_in: false,
@@ -711,8 +602,7 @@ pub async fn auth_status() -> AppResult<AuthStatus> {
         return Ok(parse_profile_body(&body));
     }
 
-    // Non-401 non-success (404 if endpoint missing, 5xx, etc.) — fall back to
-    // get-session for at least the minimal identity.
+    // Non-401 failures (404 on older servers, 5xx) fall back to get-session for at least the minimal identity.
     Ok(fetch_status(&client, &base, &token).await)
 }
 
@@ -765,19 +655,8 @@ pub fn get_cloud_api_config(state: State<'_, AppState>) -> CloudApiConfig {
     }
 }
 
-/// Set (or clear) the self-host cloud API override.
-///
-/// Passing an empty/whitespace string or `null` clears the override and
-/// reverts to the bundled default. A non-empty value must be a valid absolute
-/// http(s) URL — otherwise this returns an error and nothing is persisted (the
-/// "fall back to the default" behavior the resolver guarantees only kicks in
-/// for already-stored values; we reject bad input up front so the user gets a
-/// clear message instead of a silent revert).
-///
-/// Because a session token is only valid against the server that issued it,
-/// changing the effective endpoint clears the locally-stored token so the UI
-/// shows signed-out and the user re-authenticates against the new server
-/// rather than firing a stale token at it.
+/// Sets or clears the self-host cloud API override; empty or null reverts to the bundled default, and a bad URL is rejected rather than silently ignored.
+/// Changing the endpoint clears the stored token, since a session is only valid against the server that issued it.
 #[tauri::command]
 pub fn set_cloud_api_url(
     app: AppHandle,
@@ -801,8 +680,7 @@ pub fn set_cloud_api_url(
     save_config(&app, &snapshot);
     init_cloud_api_override(normalized.clone());
 
-    // If the endpoint actually moved, drop the old server's token locally so
-    // we don't carry a now-invalid session across servers.
+    // If the endpoint really moved, drop the old server's token so an invalid session doesn't cross servers.
     if cloud_api_url() != previous_effective {
         let _ = delete_session_token();
     }

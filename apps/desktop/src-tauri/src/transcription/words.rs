@@ -1,18 +1,5 @@
-//! Word-timestamp post-processing for captions.
-//!
-//! An engine reply (ggml on-device, or a remote endpoint) may carry segments,
-//! per-word timing, both, or (for a text-only model) neither. Animated captions
-//! need clean, per-word timing in every case, so this module:
-//!   - normalizes word times (monotonic, non-overlapping, a minimum on-screen
-//!     duration so single-frame flicker doesn't read as a glitch),
-//!   - groups a flat word stream into display-line segments,
-//!   - synthesizes approximate word times for segments that arrived without any,
-//!     and
-//!   - maps a reply (`build_segments`) through those fallbacks so on-device and
-//!     remote captions come out identical.
-//!
-//! Pure functions over the transcript types — compiled and unit-tested in every
-//! build (the remote path uses them unconditionally).
+//! Word-timestamp post-processing: normalise, group into display lines, and synthesize timing a reply omitted.
+//! Runs unconditionally for both on-device and remote engines, so captions come out identical either way.
 
 use super::{TranscriptSegment, TranscriptWord};
 
@@ -34,10 +21,7 @@ fn is_punctuation(text: &str) -> bool {
 
 /// True when the token ends a sentence (forces a line break after it).
 fn ends_sentence(text: &str) -> bool {
-    matches!(
-        text.trim_end().chars().last(),
-        Some('.') | Some('!') | Some('?') | Some('…')
-    )
+    matches!(text.trim_end().chars().last(), Some('.' | '!' | '?' | '…'))
 }
 
 /// Normalize a word list in place: clamp to non-negative, force monotonic
@@ -201,12 +185,7 @@ pub(crate) fn fill_segment_words(segments: &mut [TranscriptSegment]) {
     }
 }
 
-// - Engine result mapping -
-//
-// Both engines feed captions the same way: the ggml engine and the remote path
-// each reduce their reply to these plain (ms) structs and call `build_segments`,
-// so on-device and remote captions come out identical. Plain structs also let the
-// mapping be unit-tested without a model or a network call.
+// --- Engine result mapping: both engines reduce their reply to these plain ms structs and call `build_segments`, so on-device and remote captions come out identical and unit-testable.
 
 /// A segment row, reduced to what caption mapping needs (used only when a reply
 /// carries no per-word timing). Times in ms.
@@ -227,25 +206,15 @@ fn ms_to_secs(v: i64) -> f64 {
     v as f64 / 1000.0
 }
 
-/// Turn a transcribe.cpp result into caption segments. Captions want consistent,
-/// word-timed display lines regardless of how the model chunks its output, so:
-///   1. real per-word timing (the primary path) -> group the flat word stream
-///      into display lines. Whisper emits many short segments and Parakeet emits
-///      one long segment holding every word; grouping the words gives both the
-///      same word-by-word lines (this is the behavior the old ONNX Parakeet path
-///      produced),
-///   2. segment timing only, no words -> map each segment, synthesizing per-word
-///      timing so animation still has something to drive,
-///   3. text only -> one block spanning the clip with synthesized word timing.
+/// Turns a transcribe.cpp result into word-timed display lines however the model chunked its output.
+/// Per-word timing groups the flat stream (Whisper's many short segments and Parakeet's single long one come out alike); segment-only and text-only synthesize timing.
 pub(crate) fn build_segments(
     full_text: &str,
     total_secs: f64,
     segs: &[RawSeg],
     words: &[RawWord],
 ) -> Vec<TranscriptSegment> {
-    // 1. Prefer real word timing over the model's own segmentation. A model that
-    //    returns the whole utterance as one segment (Parakeet) must not become a
-    //    single caption line when it carried per-word times.
+    // Prefer real word timing over the model's segmentation: a model returning one segment must not become one caption line.
     let flat: Vec<TranscriptWord> = words
         .iter()
         .filter_map(|w| {
@@ -429,8 +398,7 @@ mod tests {
 
     #[test]
     fn build_prefers_real_word_timing_over_model_segmentation() {
-        // Parakeet-style: ONE segment covering the whole clip, but real per-word
-        // times. Words must win so it becomes word-timed lines, not one blob line.
+        // Parakeet-style: one segment covering the clip but real per-word times, so words must win over the blob line.
         let words = vec![
             rw(0, 300, "hello"),
             rw(300, 600, "world."),

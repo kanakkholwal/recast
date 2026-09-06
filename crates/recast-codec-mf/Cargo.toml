@@ -1,0 +1,37 @@
+[package]
+name = "recast-codec-mf"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Media Foundation codec enumeration on Windows. Empty everywhere else."
+
+[dependencies]
+recast-codec = { path = "../recast-codec" }
+
+[dev-dependencies]
+recast-codec = { path = "../recast-codec" }
+# Test-only, and only so one test can prove the compositor's own device draws
+# into the surface the encoder reads. Nothing in the crate depends on wgpu.
+recast-gpu = { path = "../recast-gpu" }
+wgpu = { version = "=30.0.1", default-features = false, features = ["dx12", "wgsl"] }
+recast-mux = { path = "../recast-mux" }
+recast-testkit = { path = "../recast-testkit" }
+
+[target.'cfg(windows)'.dependencies]
+# Pinned to match recast-gpu: wgpu-hal decides this version, and a caret bump
+# breaks COM type unification across the two crates (S-1 finding F1).
+windows = { version = "=0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media_MediaFoundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    # VARIANT sits behind this, and ICodecAPI needs one to carry the GOP size.
+    "Win32_System_Ole",
+] }

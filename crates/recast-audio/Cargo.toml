@@ -1,0 +1,15 @@
+[package]
+name = "recast-audio"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Audio time stretching, resampling and mixing for the export graph."
+
+[features]
+# On by default so CI tests it. `--no-default-features` leaves the stretch and
+# the resampler alone, for a wasm build that wants neither the scene nor serde.
+default = ["scene"]
+scene = ["dep:recast-scene"]
+
+[dependencies]
+recast-scene = { path = "../recast-scene", optional = true }

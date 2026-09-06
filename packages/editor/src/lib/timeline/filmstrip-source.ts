@@ -13,9 +13,9 @@
  */
 
 import { type MediaRef, toMediaRef } from "@recast/media";
+import { createEditorWorker } from "../host-hooks";
 import { type FilmstripTile, LruCache } from "./filmstrip";
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
-import { createEditorWorker } from "../host-hooks";
 
 /** A built storyboard sprite: one image of `cols`×`rows` cells (`cellW`×`cellH`
  *  each) holding `count` frames evenly spaced across `durationSec`. Cell `i`
@@ -101,6 +101,8 @@ class MediabunnyTileProvider implements TileProvider {
 		this.#cache = new LruCache<string>(MAX_TILES, (url) => URL.revokeObjectURL(url));
 		this.#hoverCache = new LruCache<string>(MAX_HOVER_FRAMES, (url) => URL.revokeObjectURL(url));
 		this.#worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) => this.#onMessage(e.data);
+		// Replaces the init promise's `reject`, which is settled: left in place it swallowed every later worker crash and suppressed the default console report too.
+		this.#worker.onerror = (e) => console.error("filmstrip worker crashed:", e.message);
 	}
 
 	static async create(
@@ -109,10 +111,7 @@ class MediabunnyTileProvider implements TileProvider {
 		onChange: () => void,
 		durationSec?: number,
 	): Promise<MediabunnyTileProvider> {
-		// No `fetch().arrayBuffer()` here anymore: the worker reads the source
-		// lazily, so the main thread never holds the whole recording. That
-		// whole-file buffer (~600MB, doubled by the worker's Blob copy) was the
-		// single largest allocation when opening a 4K clip.
+		// The worker reads the source lazily, so the main thread never holds the whole recording (~600MB on a 4K clip).
 		const worker = createEditorWorker("filmstrip");
 		try {
 			await new Promise<void>((resolve, reject) => {
@@ -234,16 +233,21 @@ class MediabunnyTileProvider implements TileProvider {
 	}
 
 	#onMessage(msg: FromFilmstripWorker): void {
+		if (msg.type === "storyboard-error") {
+			console.error("filmstrip storyboard:", msg.message);
+			// Latch cleared so the next request rebuilds: one failure used to drop hover scrub to per-position decodes for the rest of the session.
+			this.#storyboardRequested = false;
+			this.#storyboardQueued = false;
+			return;
+		}
 		if (msg.type === "error") {
 			console.error("filmstrip worker:", msg.message);
-			// A per-request decode error carries its id: release it so the tile can
-			// be re-requested and #idToKey/#inflight don't grow without bound.
+			// Release the id so the tile can be re-requested and the id and inflight maps don't grow without bound.
 			if (msg.id !== undefined) this.#release(msg.id);
 			return;
 		}
 		if (msg.type === "drop") {
-			// Evicted, not failed — release it so it can be re-requested when it
-			// scrolls back in, and stay quiet.
+			// Evicted, not failed: release it so it can be re-requested when it scrolls back in, and stay quiet.
 			this.#release(msg.id);
 			return;
 		}

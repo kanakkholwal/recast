@@ -1,11 +1,11 @@
 ---
 kind: architecture
 title: "Export pipeline"
-description: "Browser compositing, the Rust mux tail, the durable export queue, and the automatic FFmpeg fallback."
+description: "Three render paths behind one queue: the browser engine, the same engine natively, and the FFmpeg compositor they fall back to."
 position: 6
 status: production
 domain: pipeline
-summary: "The browser composites every frame. Rust only muxes the audio back in."
+summary: "One engine composites, in the browser or natively. FFmpeg muxes, and composites only what the engine has not taken over."
 inputs:
   - "An EditorRenderState snapshot"
   - "Source media from the .recast bundle"
@@ -18,7 +18,8 @@ entrypoints:
   - "apps/desktop/src/lib/stores/exportActivity.svelte.ts"
   - "apps/desktop/src-tauri/src/commands/export/"
 invariants:
-  - "The Rust FFmpeg compositor is an automatic fallback, never a user-facing choice."
+  - "The FFmpeg compositor is the fallback, chosen for the user rather than by them; the two engine paths are opt-in flags."
+  - "A scene the FFmpeg graph cannot draw is REFUSED by name, never exported as something else."
   - "A video stream copy means the browser must render at source-composition resolution."
   - "Two serial queues cooperate: an app-scoped render queue, and a durable Rust queue that survives restart."
   - "A browser-path failure falls back to Rust without the user losing the job."
@@ -27,14 +28,25 @@ invariants:
 ## Overview
 
 Recast has **one compositor**. The browser renders every output frame through the
-same `RenderCore` the live preview uses and WebCodecs-encodes them to a
+same wasm engine the live preview draws with and WebCodecs-encodes them to a
 **video-only temp mp4**; Rust/FFmpeg then only **muxes** the processed audio in
 with `-c:v copy`. Because a single renderer produces both preview and export,
 the two can't visually diverge.
 
-The legacy Rust/FFmpeg `filter_complex` compositor still exists and runs as an
-**automatic fallback**: never a user-facing choice. It is selected when the
-browser path is disabled, blocked, incapable, or fails mid-render.
+The same engine also runs **natively**, behind the `engineExport` flag
+(`export_engine.rs`): no browser window, no resolution ceiling, and the encode
+goes through `recast-codec-mf` and `recast-mux` rather than FFmpeg.
+
+The legacy Rust/FFmpeg `filter_complex` compositor still exists and runs as the
+**fallback**: chosen for the user rather than by them. It is selected when both
+engine flags are off, or when a path is blocked, incapable, or fails mid-render.
+
+That fallback can no longer draw everything the engine can, so features it
+lacks are **refused by name** instead of silently exported as something else.
+`unsupported_by_graph` (`commands/editor.rs`) names the camera layout or
+pointer dodging and tells the user which flag renders it: its camera placement
+is a sampled expression LUT already at `av_expr_parse`'s term budget, with no
+room for a second moving rect.
 
 Two independent serial queues cooperate:
 
@@ -47,8 +59,8 @@ Two independent serial queues cooperate:
   path) and the full Rust composite (fallback path).
 
 Engine selection (`chooseExportEngine`) is a pure resolver behind the
-`browserExportBeta` experimental flag; while that flag is off, everything is
-Rust.
+`browserExportBeta` experimental flag. Both it and `engineExport` are off by
+default, so an untouched install still composites in FFmpeg.
 
 ## Diagram
 
@@ -60,7 +72,7 @@ flowchart TD
 
     subgraph browserPath["Browser engine"]
         buildJob --> renderQ["exportActivity render queue<br/>(serial, N=1)"]
-        renderQ --> render["run-export-job → RenderCore<br/>→ MediaBunny CanvasSource"]
+        renderQ --> render["run-export-job → engine<br/>→ MediaBunny CanvasSource"]
         render --> tempmp4["video-only temp mp4"]
         tempmp4 --> save["saveBrowserExportVideo → temp path"]
     end
@@ -84,7 +96,7 @@ flowchart TD
 sequenceDiagram
     participant Ed as Editor page
     participant EA as exportActivity (render queue)
-    participant RC as RenderCore + MediaBunny
+    participant RC as engine + MediaBunny
     participant IPC as Tauri commands
     participant WK as Rust export worker
 
@@ -111,14 +123,16 @@ sequenceDiagram
 | `probeBrowserExportCapability` | `packages/editor/src/lib/export/export-capability.ts` | Cached WebCodecs H.264-encode probe |
 | `buildExportJob` | `packages/editor/src/lib/export/build-export-job.ts` | **Producer** (main thread): snapshot scene, rasterize DOM assets → serializable `ExportJob` |
 | `ExportJob` + bitmap helpers | `packages/editor/src/lib/export/export-job.ts` | Handoff contract; `collectTransferables` / `closeJobBitmaps` |
-| `runExportJob` | `packages/editor/src/lib/export/run-export-job.ts` | **Consumer** (DOM-free): rebuild per-frame callbacks, drive the renderer |
-| `renderTimelineToVideo` | `packages/editor/src/lib/export/offscreen-export.ts` | Offline `RenderCore` + WebCodecs loop → mp4 bytes |
+| `runExportJob` | `packages/editor/src/lib/export/run-export-job.ts` | **Consumer** (DOM-free): wire the job's assets to the renderer and drive it |
+| `renderTimelineToVideo` | `packages/editor/src/lib/export/offscreen-export.ts` | Offline engine + WebCodecs loop → mp4 bytes |
 | `videoEncodingConfigFor` | `packages/editor/src/lib/export/browser-export-plan.ts` | Quality-tier → MediaBunny `VideoEncodingConfig` |
 | `runBrowserExport` / `renderToBytes` / `renderJobToBytes` | `packages/editor/src/lib/export/browser-export.ts` /  /  | Orchestrator + worker-vs-main-thread render + worker→main fallback |
 | `exportActivity` store | `apps/desktop/src/lib/stores/exportActivity.svelte.ts` | App-scoped serial render queue + read-model over the Rust queue |
 | `run_mux_job` / `mux_browser_gif` | `apps/desktop/src-tauri/src/commands/editor.rs` /  | `-c:v copy` + audio mux; 2-pass GIF palette on the browser video |
 | `export_queue` commands + worker | `apps/desktop/src-tauri/src/commands/export_queue.rs` | Durable SQLite queue, serial worker, `save_browser_export_video`, reconcile/sweep |
 | Rust composite fallback | `apps/desktop/src-tauri/src/commands/export/*.rs` | `run_export_job` full FFmpeg compositor (cuts/speed, captions, camera, blur, codec) |
+| Native engine export | `apps/desktop/src-tauri/src/export_engine.rs` | The wgpu compositor plus `recast-codec-mf`/`recast-mux`, behind `engineExport` |
+| Graph refusal | `unsupported_by_graph` in `apps/desktop/src-tauri/src/commands/editor.rs` | Names a camera layout or pointer dodge the FFmpeg graph cannot draw |
 
 ## Control / data flow
 
@@ -143,7 +157,7 @@ sequenceDiagram
 5. **Render**: `pumpRenderQueue` runs one job at a time via `renderJobToBytes`
    (`browser-export.ts`): worker when supported, else main thread; a worker
    failure retries the same job main-thread. `renderTimelineToVideo`
-   (`offscreen-export.ts`) composites each output frame through `RenderCore`
+   (`offscreen-export.ts`) composites each output frame through the engine
    into a MediaBunny `CanvasSource` and WebCodecs-encodes to mp4. Render progress
    maps to `0..RENDER_MAX` (95).
 6. **Persist**: `saveBrowserExportVideo(exact)` (`exportActivity` →
@@ -239,12 +253,56 @@ clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
   it stops fighting the export (`exportActivity`; `store.isPlaying = false`
   at `+page.svelte`).
 
+## The native engine path
+
+A third route, behind the `engineExport` experimental flag: the SAME compositor
+run natively in Rust rather than in the preview window. `export_engine.rs`
+drives `Session` -> `FrameLoop` -> a codec backend.
+
+It exists because the browser route has a ceiling. Above 1080p60 the throughput
+gate sends work to the FFmpeg compositor, and WebCodecs is not always present.
+The native route has no ceiling and needs no browser, so the two together are a
+ladder rather than a duplicate: preview-window export for ordinary sources, the
+native engine for heavy ones.
+
+- **One renderer, two runtimes.** `browserExportBeta` loads
+  `recast_engine_webgpu.wasm`; `engineExport` links the same crates natively.
+  Neither is the old TypeScript compositor, which is deleted.
+- **Codec backends.** Media Foundation in process on Windows; elsewhere the
+  bundled FFmpeg encodes frames piped to its stdin (`recast-export::ffmpeg`).
+  Both are selectable at runtime, so the piped path is testable on the platform
+  that has a native one.
+- **RGBA becomes NV12 on the GPU** in a compute pass, byte-identical to the CPU
+  encoder it replaced and about nine times faster at 1080p. A canvas whose width
+  is not a multiple of four falls back to the CPU.
+- **Only a Windows MP4 is finished in process.** Every other format and platform
+  renders a video-only intermediate and hands it to `run_mux_job`, the same
+  mux-only tail the preview-window route uses.
+- **Every export logs what it did**: codec backend, pixel path, canvas, the
+  source size a quality cap shrank from, audio and captions. Quote that line
+  when an export looks wrong.
+
+### Where contributors can take it
+
+Deliberately incremental, and none of it blocks the rest of the pipeline:
+
+- **VideoToolbox on macOS** behind the same `Sink`/`Pictures` seam, which would
+  drop the FFmpeg encode pass and leave only the mux. The seam takes it with no
+  further change.
+- **Zero-copy on Windows**: render straight into a D3D11 shared texture for the
+  Media Foundation encoder, skipping the readback entirely. Proven viable in
+  `crates/spike-d3d11-wgpu`, which measures 0.170 ms a frame for the fence round
+  trip on a hybrid-GPU laptop.
+- **Retiring more FFmpeg spawns**: thumbnails, posters and the faststart remux
+  still shell out. GIF (`palettegen`/`paletteuse`) and WebM (VP9, Opus) have no
+  Rust replacement and are expected to keep using it.
+
 ## Related
 
-- [03-preview-and-rendercore.md](/architecture/preview-rendercore): the shared
-  `RenderCore`/`WebGL2Backend` that composites both preview and export frames.
-- [04-media-decode-and-workers.md](/architecture/media-decode-workers): MediaBunny
-  decode, `samplesAtTimestamps`, and the render-worker ownership pattern.
+- [preview-engine.md](/architecture/preview-engine): the one compositor that
+  paints both preview and export frames.
+- [media-decode-workers.md](/architecture/media-decode-workers): MediaBunny
+  decode, `samplesAtTimestamps`, and worker ownership.
 - [07-ipc-and-tauri-boundary.md](/architecture/ipc-tauri-boundary): the
   `export-state` / `export-jobs-changed` event streams, `AppError` boundary, and
   the raw-bytes `save_browser_export_video` invoke.

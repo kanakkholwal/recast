@@ -19,8 +19,7 @@ interface Case {
 	};
 }
 
-// The same values a Rust test asserts against, so preview and export cannot
-// drift. If you change a heuristic, update the fixture and BOTH sides.
+// The same values a Rust test asserts against, so preview and export can't drift; change a heuristic and update both.
 describe("caption parity fixture", () => {
 	const cases = (fixture as { cases: Case[] }).cases;
 
@@ -34,7 +33,9 @@ describe("caption parity fixture", () => {
 			it("chunks words as expected", () => {
 				const runs = chunkWords(c.words, anim);
 				const asIndices = runs.map((run) =>
-					run.words.map((w) => c.words.findIndex((cw) => cw.start === w.start && cw.text === w.text)),
+					run.words.map((w) =>
+						c.words.findIndex((cw) => cw.start === w.start && cw.text === w.text),
+					),
 				);
 				expect(asIndices).toEqual(c.expected.chunks);
 			});

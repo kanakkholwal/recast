@@ -1,0 +1,126 @@
+[package]
+name = "capturekit"
+version = "0.1.0"
+edition = "2021"
+# 1.88 is the LINUX floor, and rust-version cannot vary by platform. The
+# xdg-desktop-portal stack (ashpd -> zbus -> icu 2.3) is edition 2024.
+# Windows and macOS build at 1.81; CI gates all three at the declared value.
+rust-version = "1.88"
+license = "Apache-2.0"
+description = "Cross-platform screen, window and camera capture: one-shot screenshots and streaming recording on one backend."
+repository = "https://github.com/kanakkholwal/capturekit"
+keywords = ["screen-capture", "screenshot", "screen-recording", "video"]
+categories = ["multimedia::video", "graphics", "os"]
+# Flipped on when the API is settled and the name is reserved.
+publish = false
+
+[features]
+default = ["cpu-readback", "wayland", "pipewire-audio"]
+# Frames can be read back to host memory.
+cpu-readback = []
+# Linux Wayland capture through xdg-desktop-portal and PipeWire. Needs
+# libpipewire-0.3-dev and libdbus-1-dev on the build host, so it is separable:
+# without it a Linux build still serves X11 and XWayland sessions.
+wayland = ["dep:ashpd", "dep:pipewire", "dep:async-std"]
+# Linux audio through PipeWire. Separate from `wayland` because an X11 session
+# has PipeWire audio too, and a build that wants neither should need neither.
+pipewire-audio = ["dep:pipewire"]
+serde = ["capturekit-core/serde"]
+# A scripted capture source, so a downstream crate can test against the real
+# pipeline with no display. Off by default: it is test scaffolding, not capture.
+mock = []
+
+[dependencies]
+capturekit-core = { path = "../capturekit-core" }
+log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58.0", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    # SECURITY_ATTRIBUTES, which CreateSharedHandle takes even when passed None.
+    "Win32_Security",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_Media_MediaFoundation",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_System_Com",
+    "Win32_System_Performance",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Foundation",
+    "Graphics_Capture",
+    "Graphics_DirectX",
+    "Graphics_DirectX_Direct3D11",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_WinRT_Graphics_Capture",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["randr", "shm", "xfixes"] }
+ashpd = { version = "0.10", default-features = false, features = ["async-std"], optional = true }
+# The portal handshake is async and this crate's API is not, so the executor has
+# to be named explicitly rather than inherited from ashpd's feature.
+async-std = { version = "1", optional = true }
+# `v0_3_44` is what exposes PW_KEY_TARGET_OBJECT, the only way to name a device
+# rather than take the session manager's default. PipeWire 0.3.44 is from 2022.
+pipewire = { version = "0.9", features = ["v0_3_44"], optional = true }
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-core-foundation = "0.3"
+objc2-core-graphics = "0.3"
+objc2-core-media = "0.3"
+objc2-core-audio-types = "0.3"
+# The device registry: CoreAudio is the only place a Mac lists its audio
+# hardware, and AVFoundation opens those devices by the UID it reports.
+objc2-core-audio = { version = "0.3", default-features = false, features = [
+    "std",
+    "AudioHardware",
+    "objc2-core-audio-types",
+] }
+objc2-av-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "AVCaptureAudioDataOutput",
+    "AVCaptureDevice",
+    "AVCaptureInput",
+    "AVCaptureOutput",
+    "AVCaptureOutputBase",
+    "AVCaptureSession",
+    "AVCaptureVideoDataOutput",
+    "AVMediaFormat",
+    "objc2-core-media",
+    "dispatch2",
+    "block2",
+] }
+objc2-core-video = "0.3"
+# Trimmed of the AVFoundation and uniform-type-identifiers halves, which pull
+# extra frameworks this backend never touches.
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "SCStream",
+    "SCShareableContent",
+    "SCError",
+    "bitflags",
+    # `SCRunningApplication::processID` is gated behind it; without it a window
+    # row reports pid 0 and nothing can match a capture back to its process.
+    "libc",
+    "block2",
+    "dispatch2",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+    "objc2-core-media",
+] }
+block2 = "0.6"
+dispatch2 = "0.3"
+
+[lints]
+workspace = true

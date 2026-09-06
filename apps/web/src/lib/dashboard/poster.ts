@@ -90,7 +90,7 @@ export async function uploadPosterBlob(recastId: string, webp: Blob): Promise<st
 	const initRes = await fetch(`/api/recasts/${recastId}/poster`, { method: "POST" });
 	if (!initRes.ok) throw new Error((await readMessage(initRes)) || "Couldn't start the upload.");
 	const init = (await initRes.json()) as { version?: string; upload?: SignedEnvelope };
-	if (!init.upload || init.upload.method?.toUpperCase() !== "PUT" || !init.version) {
+	if (init.upload?.method?.toUpperCase() !== "PUT" || !init.version) {
 		throw new Error("This storage provider doesn't support poster replacement yet.");
 	}
 

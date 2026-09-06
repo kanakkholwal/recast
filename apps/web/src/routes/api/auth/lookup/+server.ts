@@ -24,8 +24,7 @@ import type { RequestHandler } from "./$types";
  * below (not secrecy) is what bounds enumeration.
  */
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
-	// Bound the existence-oracle: a generous per-IP cap that real login forms
-	// never reach but an enumeration script does.
+	// Bound the existence oracle with a per-IP cap real login forms never reach but an enumeration script does.
 	const limited = await enforceRateLimit(
 		{ getClientAddress },
 		{ bucket: "auth-lookup", limit: 20, windowMs: 60_000 },

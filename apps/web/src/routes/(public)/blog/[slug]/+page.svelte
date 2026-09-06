@@ -12,8 +12,7 @@ import Prose from "$lib/docs/Prose.svelte";
 import { prefersReducedMotion } from "$lib/motion-core";
 import type { PageData } from "./$types";
 
-// Hero entrance: same 80ms stagger as the rest of the public pages.
-// 460ms per element lands the whole ladder in well under a second.
+// Hero entrance on the same 80ms stagger as the other public pages, landing the whole ladder under a second.
 const reduced = $derived(prefersReducedMotion());
 const heroStagger = 80;
 const riseM = (delay: number) =>

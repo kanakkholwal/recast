@@ -1,18 +1,5 @@
 #!/usr/bin/env node
-// Extract the section for a given version from CHANGELOG.md.
-//
-// Usage:
-//   node scripts/extract-changelog.mjs <version> [--file CHANGELOG.md] [--out body.md]
-//
-// <version> may be passed as "v0.1.2-beta" or "0.1.2-beta"; the leading "v"
-// is stripped. The extracted block is the markdown between
-// `## [<version>]` and the next `## [` heading, with the `## [...]` header
-// itself omitted (the GitHub release UI already shows the version + tag).
-//
-// Exit codes:
-//   0 — section found and printed (and written to --out if given)
-//   2 — version not found in changelog
-//   1 — usage / IO error
+// Prints the CHANGELOG.md block between a version heading and the next one, header omitted. Exit 2 means the version is absent, 1 a usage or IO error.
 
 import { readFile, writeFile } from "node:fs/promises";
 import { argv, exit, stderr, stdout } from "node:process";
@@ -35,18 +22,13 @@ function parseArgs(args) {
 	return out;
 }
 
-function normalize(v) {
-	return v.replace(/^v/, "").trim();
+function normalize(raw) {
+	return raw.replace(/^v/, "").trim();
 }
 
-function escapeRegex(s) {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function extractSection(markdown, version) {
-	const lines = markdown.split(/\r?\n/);
+function extractSection(source, target) {
+	const lines = source.split(/\r?\n/);
 	const headerRe = /^##\s+\[([^\]]+)\]/;
-	const target = version;
 	let start = -1;
 	let end = lines.length;
 	for (let i = 0; i < lines.length; i++) {
@@ -84,5 +66,5 @@ if (!body) {
 	exit(2);
 }
 
-if (outPath) await writeFile(outPath, body + "\n", "utf8");
-stdout.write(body + "\n");
+if (outPath) await writeFile(outPath, `${body}\n`, "utf8");
+stdout.write(`${body}\n`);

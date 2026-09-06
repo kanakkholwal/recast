@@ -8,14 +8,7 @@ import type { ErrorContext, ScrubbedError } from "./types";
  * Applied in `core.captureError` before any provider sees the error.
  */
 
-const ALLOWED_CONTEXT_KEYS = [
-	"route",
-	"command",
-	"os",
-	"app_version",
-	"source",
-	"phase",
-] as const;
+const ALLOWED_CONTEXT_KEYS = ["route", "command", "os", "app_version", "source", "phase"] as const;
 
 // Order matters: paths and origins first (most specific), then identifiers.
 const REDACTIONS: Array<[RegExp, string]> = [
@@ -28,7 +21,7 @@ const REDACTIONS: Array<[RegExp, string]> = [
 	// file:// , tauri:// , http(s):// origins  ->  scheme://<host> (drops host + path tail handled below)
 	[/((?:file|tauri|https?):\/\/)[^\s/"'`)]+/g, "$1<host>"],
 	// Bearer / Authorization tokens
-	[/(bearer\s+)[A-Za-z0-9._\-]+/gi, "$1<redacted>"],
+	[/(bearer\s+)[A-Za-z0-9._-]+/gi, "$1<redacted>"],
 	[/(authorization["':\s]+)[A-Za-z0-9._\-\s]+/gi, "$1<redacted>"],
 	// Email addresses
 	[/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<email>"],
@@ -49,8 +42,7 @@ export function redact(input: string): string {
 
 /** Stable, low-cardinality fingerprint so the same error groups together. */
 function fingerprint(name: string, message: string): string {
-	// Normalize volatile bits (numbers, the redaction tokens) out of the message
-	// so "failed after 1234ms" and "failed after 5678ms" share a fingerprint.
+	// Normalize volatile bits out of the message, so 'failed after 1234ms' and 'failed after 5678ms' share a fingerprint.
 	const normalized = `${name}:${message}`
 		.replace(/\d+/g, "#")
 		.replace(/<[a-z]+>/g, "#")
@@ -81,10 +73,7 @@ export function scrubError(err: unknown, ctx: ErrorContext = {}): ScrubbedError 
 	} else if (err && typeof err === "object") {
 		const e = err as Record<string, unknown>;
 		name = typeof e.name === "string" ? e.name : "Error";
-		message =
-			typeof e.message === "string"
-				? e.message
-				: safeStringify(e);
+		message = typeof e.message === "string" ? e.message : safeStringify(e);
 		stack = typeof e.stack === "string" ? e.stack : undefined;
 	} else {
 		message = String(err);

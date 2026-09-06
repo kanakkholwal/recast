@@ -4,10 +4,10 @@
  * with the encoded bytes. One worker per export — terminated on completion.
  */
 
-import { collectTransferables, type ExportJob } from "./export-job";
-import type { ExportRuntime } from "./run-export-job";
-import type { FromExportWorker, ToExportWorker } from "./export-worker-protocol";
 import { createEditorWorker } from "../host-hooks";
+import { collectTransferables, type ExportJob } from "./export-job";
+import type { FromExportWorker, ToExportWorker } from "./export-worker-protocol";
+import type { ExportRuntime } from "./run-export-job";
 
 /** Whether this runtime can host the export worker (dedicated Worker + OffscreenCanvas). */
 export function exportWorkerSupported(): boolean {

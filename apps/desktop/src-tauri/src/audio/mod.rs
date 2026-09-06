@@ -1,4 +1,7 @@
-mod platform;
+#[cfg(test)]
+mod live;
+mod session;
+mod track;
 pub mod wav;
 
 use std::path::PathBuf;
@@ -6,6 +9,13 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use anyhow::Result;
+
+use crate::audio::session::{Source, TrackSession};
+use crate::recording::clock::TrackStart;
+
+/// Receives a 0..1 input level (RMS) from the mic capture thread, throttled, so
+/// the panel can draw a real meter instead of a decorative wave.
+pub type MicLevelSink = Arc<dyn Fn(f32) + Send + Sync>;
 
 /// Configuration for system/loopback audio capture.
 #[derive(Debug, Clone)]
@@ -15,31 +25,35 @@ pub struct AudioCaptureConfig {
     /// When set, capture continues draining the device but stops writing
     /// samples — keeps the WAV gap-free across recording pauses.
     pub pause_flag: Arc<AtomicBool>,
+    /// Marked when the first PCM sample is written, so the muxer can align this
+    /// track against the video's own start instant.
+    pub start: TrackStart,
 }
 
 /// Handle to a running system audio capture session.
-/// The capture runs on a background thread and writes PCM data to a WAV file.
-/// Call `stop()` to finalize the WAV file and get the output path.
-pub struct AudioCaptureSession {
-    inner: platform::PlatformAudioSession,
-}
+pub struct AudioCaptureSession(TrackSession);
 
 impl AudioCaptureSession {
-    pub fn start(config: AudioCaptureConfig) -> Result<Self> {
-        let inner = platform::PlatformAudioSession::start(config)?;
-        Ok(Self { inner })
-    }
-
-    /// Whether real system audio is being captured, as opposed to the silence
-    /// fallback used when no loopback source is reachable. Lets project
-    /// metadata report system audio honestly instead of claiming a captured
-    /// track that is actually silent.
-    pub fn is_capturing(&self) -> bool {
-        self.inner.is_capturing()
+    /// Start capturing, or `None` when no loopback device is reachable: macOS needs the screen-recording grant and a Linux host without PipeWire has nothing to read.
+    /// The caller writes the silence a `None` needs, since it owns the pause-aware clock and a wall-clock silence track outruns the video by every paused second.
+    pub fn start(config: AudioCaptureConfig) -> Option<Self> {
+        match TrackSession::start(
+            Source::Loopback,
+            config.output_path,
+            config.pause_flag,
+            config.start,
+            None,
+        ) {
+            Ok(session) => Some(Self(session)),
+            Err(err) => {
+                log::warn!("system-audio loopback unavailable: {err:#}");
+                None
+            }
+        }
     }
 
     pub fn stop(self) -> Result<PathBuf> {
-        self.inner.stop()
+        self.0.stop()
     }
 }
 
@@ -53,21 +67,87 @@ pub struct MicrophoneCaptureConfig {
     /// When set, capture continues draining the device but stops writing
     /// samples — keeps the WAV gap-free across recording pauses.
     pub pause_flag: Arc<AtomicBool>,
+    /// Marked when the first PCM sample is written; see [`AudioCaptureConfig::start`].
+    pub start: TrackStart,
 }
 
 /// Handle to a running microphone capture session.
-/// Captures from a specific microphone device and writes PCM data to a WAV file.
-pub struct MicrophoneCaptureSession {
-    inner: platform::PlatformMicrophoneSession,
-}
+/// Unlike the loopback there is no silence fallback: a user who asked for the microphone and has no working one is told, rather than handed a mute track.
+pub struct MicrophoneCaptureSession(TrackSession);
 
 impl MicrophoneCaptureSession {
-    pub fn start(config: MicrophoneCaptureConfig) -> Result<Self> {
-        let inner = platform::PlatformMicrophoneSession::start(config)?;
-        Ok(Self { inner })
+    pub fn start(config: MicrophoneCaptureConfig, level: Option<MicLevelSink>) -> Result<Self> {
+        TrackSession::start(
+            Source::input(config.device_id),
+            config.output_path,
+            config.pause_flag,
+            config.start,
+            level,
+        )
+        .map(Self)
+    }
+
+    /// Everything non-fatal the user should know about this track.
+    /// The quality ceiling comes from the negotiated format, not a device listing: the backend picks the endpoint, and enumerating activates every other one while the user waits.
+    pub fn warnings(&self) -> Vec<String> {
+        let format = self.0.format();
+        self.0
+            .notices()
+            .iter()
+            .cloned()
+            .chain(describe_microphone_quality(
+                format.sample_rate,
+                format.channels,
+            ))
+            .collect()
     }
 
     pub fn stop(self) -> Result<PathBuf> {
-        self.inner.stop()
+        self.0.stop()
+    }
+}
+
+/// Where the remedy for a low-rate endpoint lives.
+#[cfg(windows)]
+const LOW_RATE_REMEDY: &str =
+    "Windows has it in communications mode, which caps recording quality. Change it under Sound settings → Recording → Properties → Advanced.";
+#[cfg(not(windows))]
+const LOW_RATE_REMEDY: &str =
+    "That caps recording quality. Pick another input, or raise its rate in your system's sound settings.";
+
+/// Communications-mode endpoints report a 16 kHz mono format, which is a hard
+/// ceiling on the take no amount of processing recovers from.
+fn describe_microphone_quality(sample_rate: u32, channels: u16) -> Option<String> {
+    if sample_rate >= 32_000 {
+        return None;
+    }
+    Some(format!(
+        "Your microphone is running at {} kHz{} — {LOW_RATE_REMEDY}",
+        sample_rate / 1000,
+        if channels <= 1 { " mono" } else { "" }
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::describe_microphone_quality;
+
+    #[test]
+    fn a_communications_mode_endpoint_is_reported() {
+        let warning = describe_microphone_quality(16_000, 1).expect("16 kHz mono should warn");
+        assert!(warning.contains("16 kHz mono"), "{warning}");
+    }
+
+    #[test]
+    fn a_normal_endpoint_is_silent() {
+        assert!(describe_microphone_quality(48_000, 2).is_none());
+        assert!(describe_microphone_quality(44_100, 1).is_none());
+        assert!(describe_microphone_quality(32_000, 1).is_none());
+    }
+
+    #[test]
+    fn stereo_low_rate_omits_the_mono_note() {
+        let warning = describe_microphone_quality(22_050, 2).expect("22 kHz should warn");
+        assert!(!warning.contains("mono"), "{warning}");
     }
 }

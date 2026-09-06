@@ -1,141 +1,141 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
-	import { page } from "$app/state";
-	import { enhance } from "$app/forms";
-	import {
-	  ChevronLeft,
-	  ChevronRight,
-	  Crown,
-	  LoaderCircle,
-	  Search,
-	  ShieldOff,
-	  UserPlus,
-	  X,
-	} from "@recast/icons";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import * as Dialog from "@recast/ui/dialog";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import * as Select from "@recast/ui/select";
-	import { Skeleton } from "@recast/ui/skeleton";
-	import { cn } from "@recast/ui/utils";
-	import { untrack } from "svelte";
-	import { enhanceAction } from "$lib/forms/enhance";
-	import { isValidEmail } from "$lib/validation/email";
-	import {
-		ariaSort,
-		buildPageQuery,
-		buildSortQuery,
-		buildUsersQuery,
-		sortIndicator,
-	} from "./users-filters.logic";
+import {
+	ChevronLeft,
+	ChevronRight,
+	Crown,
+	LoaderCircle,
+	Search,
+	ShieldOff,
+	UserPlus,
+	X,
+} from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import * as Select from "@recast/ui/select";
+import { Skeleton } from "@recast/ui/skeleton";
+import { cn } from "@recast/ui/utils";
+import { untrack } from "svelte";
+import { enhance } from "$app/forms";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import InlineError from "$lib/components/InlineError.svelte";
+import { enhanceAction } from "$lib/forms/enhance";
+import { isValidEmail } from "$lib/validation/email";
+import {
+	ariaSort,
+	buildPageQuery,
+	buildSortQuery,
+	buildUsersQuery,
+	sortIndicator,
+} from "./users-filters.logic";
 
-	import InlineError from "$lib/components/InlineError.svelte";
+let { data } = $props();
 
-	let { data } = $props();
+// Seeded once from the URL-driven filters, so a later navigation can't clobber what the user just typed.
+let q = $state(untrack(() => data.filters.q));
+let searchField = $state<"email" | "name">(untrack(() => data.filters.field));
+let roleFilter = $state<string>(untrack(() => data.filters.role ?? "all"));
+let statusFilter = $state<string>(untrack(() => data.filters.status ?? "all"));
 
-	// Seed editable form state once from the URL-driven `data.filters` — we
-	// don't want a later page navigation to clobber what the user just typed.
-	let q = $state(untrack(() => data.filters.q));
-	let searchField = $state<"email" | "name">(untrack(() => data.filters.field));
-	let roleFilter = $state<string>(untrack(() => data.filters.role ?? "all"));
-	let statusFilter = $state<string>(untrack(() => data.filters.status ?? "all"));
+// Human labels: the raw enum values read as unfinished in the UI.
+const FIELD_LABEL: Record<string, string> = { email: "Email", name: "Name" };
+const ROLE_LABEL: Record<string, string> = { all: "All roles", user: "Users", admin: "Admins" };
+const STATUS_LABEL: Record<string, string> = {
+	all: "All statuses",
+	active: "Active",
+	pending: "Waitlist",
+};
+const hasActiveFilters = $derived(
+	q.trim() !== "" || roleFilter !== "all" || statusFilter !== "all",
+);
 
-	// Human labels for the filter controls — the raw enum values ("all",
-	// "pending") read as unfinished in the UI.
-	const FIELD_LABEL: Record<string, string> = { email: "Email", name: "Name" };
-	const ROLE_LABEL: Record<string, string> = { all: "All roles", user: "Users", admin: "Admins" };
-	const STATUS_LABEL: Record<string, string> = { all: "All statuses", active: "Active", pending: "Waitlist" };
-	const hasActiveFilters = $derived(
-		q.trim() !== "" || roleFilter !== "all" || statusFilter !== "all",
+let inviteOpen = $state(false);
+let inviting = $state(false);
+let inviteEmail = $state("");
+let inviteName = $state("");
+const canInvite = $derived(isValidEmail(inviteEmail));
+
+function resetInvite() {
+	inviteOpen = false;
+	inviteEmail = "";
+	inviteName = "";
+}
+
+function applyFilters(reset = true) {
+	goto(
+		buildUsersQuery(
+			{
+				q,
+				field: searchField,
+				role: roleFilter,
+				status: statusFilter,
+				sort: data.filters.sort,
+				dir: data.filters.dir,
+			},
+			{ limit: data.limit, offset: data.offset, reset },
+		),
+		{ keepFocus: true },
 	);
+}
 
-	let inviteOpen = $state(false);
-	let inviting = $state(false);
-	let inviteEmail = $state("");
-	let inviteName = $state("");
-	const canInvite = $derived(isValidEmail(inviteEmail));
+// Debounced so we don't navigate on every keystroke; Enter applies immediately and cancels the pending debounce.
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+function debouncedSearch() {
+	clearTimeout(searchTimer);
+	searchTimer = setTimeout(() => applyFilters(), 350);
+}
+function submitSearch(e: SubmitEvent) {
+	e.preventDefault();
+	clearTimeout(searchTimer);
+	applyFilters();
+}
 
-	function resetInvite() {
-		inviteOpen = false;
-		inviteEmail = "";
-		inviteName = "";
-	}
+// Discrete controls apply on change — no separate "Apply" step.
+function selectField(v: string) {
+	searchField = v as "email" | "name";
+	if (q.trim()) applyFilters();
+}
+function selectRole(v: string) {
+	roleFilter = v;
+	applyFilters();
+}
+function selectStatus(v: string) {
+	statusFilter = v;
+	applyFilters();
+}
+function clearFilters() {
+	clearTimeout(searchTimer);
+	q = "";
+	searchField = "email";
+	roleFilter = "all";
+	statusFilter = "all";
+	applyFilters();
+}
 
-	function applyFilters(reset = true) {
-		goto(
-			buildUsersQuery(
-				{
-					q,
-					field: searchField,
-					role: roleFilter,
-					status: statusFilter,
-					sort: data.filters.sort,
-					dir: data.filters.dir,
-				},
-				{ limit: data.limit, offset: data.offset, reset },
-			),
-			{ keepFocus: true },
-		);
-	}
+function changePage(delta: number) {
+	goto(
+		buildPageQuery({
+			search: page.url.searchParams.toString(),
+			offset: data.offset,
+			limit: data.limit,
+			delta,
+		}),
+	);
+}
 
-	// Live search — debounced so we don't navigate on every keystroke. Enter
-	// (form submit) applies immediately and cancels the pending debounce.
-	let searchTimer: ReturnType<typeof setTimeout> | undefined;
-	function debouncedSearch() {
-		clearTimeout(searchTimer);
-		searchTimer = setTimeout(() => applyFilters(), 350);
-	}
-	function submitSearch(e: SubmitEvent) {
-		e.preventDefault();
-		clearTimeout(searchTimer);
-		applyFilters();
-	}
-
-	// Discrete controls apply on change — no separate "Apply" step.
-	function selectField(v: string) {
-		searchField = v as "email" | "name";
-		if (q.trim()) applyFilters();
-	}
-	function selectRole(v: string) {
-		roleFilter = v;
-		applyFilters();
-	}
-	function selectStatus(v: string) {
-		statusFilter = v;
-		applyFilters();
-	}
-	function clearFilters() {
-		clearTimeout(searchTimer);
-		q = "";
-		searchField = "email";
-		roleFilter = "all";
-		statusFilter = "all";
-		applyFilters();
-	}
-
-	function changePage(delta: number) {
-		goto(
-			buildPageQuery({
-				search: page.url.searchParams.toString(),
-				offset: data.offset,
-				limit: data.limit,
-				delta,
-			}),
-		);
-	}
-
-	function toggleSort(field: string) {
-		goto(
-			buildSortQuery({
-				search: page.url.searchParams.toString(),
-				currentSort: data.filters.sort,
-				currentDir: data.filters.dir,
-				field,
-			}),
-		);
-	}
+function toggleSort(field: string) {
+	goto(
+		buildSortQuery({
+			search: page.url.searchParams.toString(),
+			currentSort: data.filters.sort,
+			currentDir: data.filters.dir,
+			field,
+		}),
+	);
+}
 </script>
 
 <header class="mb-6 flex flex-wrap items-end justify-between gap-3">

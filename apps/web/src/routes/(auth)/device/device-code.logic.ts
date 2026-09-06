@@ -1,6 +1,4 @@
-// RFC 8628 user codes are random ASCII. The convention is to show them split
-// in half with a dash for readability; the plugin tolerates either form on the
-// wire (POST /device/approve strips dashes before lookup).
+// RFC 8628 codes are random ASCII, shown split with a dash; the plugin strips dashes before lookup, so either form works.
 export function formatUserCode(code: string | null | undefined): string {
 	if (!code) return "";
 	const clean = code.replace(/-/g, "").toUpperCase();
@@ -9,8 +7,10 @@ export function formatUserCode(code: string | null | undefined): string {
 	return `${clean.slice(0, half)}-${clean.slice(half)}`;
 }
 
-// Sanitize manual entry down to the character set the plugin accepts before
-// we round-trip it through the /device navigation.
+// Sanitize manual entry to the character set the plugin accepts before round-tripping through /device.
 export function normalizeUserCode(code: string): string {
-	return code.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
+	return code
+		.trim()
+		.toUpperCase()
+		.replace(/[^A-Z0-9-]/g, "");
 }

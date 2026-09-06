@@ -1,16 +1,4 @@
-// Reactive `prefers-reduced-motion`, readable anywhere: modules, `$derived`,
-// or inline transition params.
-//
-// Svelte 5 runs its built-in transitions (fade/fly/slide/...) through
-// `element.animate()` (WAAPI). The global `@media (prefers-reduced-motion)`
-// override in app.css only zeroes CSS `transition-duration`/`animation-duration`,
-// which WAAPI ignores, so those transitions keep their full duration under
-// "reduce motion". Durations that feed a Svelte transition or a JS-driven
-// animation must therefore be zeroed in JS, via `motionDuration()` below.
-//
-// Backed by the framework's own media query rather than a second listener, so
-// packages that can't import this module (`@recast/ui`) can read
-// `prefersReducedMotion.current` from `svelte/motion` and always agree with it.
+// Svelte's transitions run through WAAPI, which the CSS reduced-motion override never reaches, so JS-fed durations must be zeroed via `motionDuration()`. Backed by the framework's own query so `@recast/ui` agrees.
 
 import { prefersReducedMotion as reducedMotion } from "svelte/motion";
 

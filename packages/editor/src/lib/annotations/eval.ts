@@ -1,14 +1,11 @@
-// Pure evaluators for annotation timing and the editor's zoom transform.
-// Single copy (was duplicated in AnnotationOverlay/TextAnnotationLayer) so the
-// math is unit-testable and fixed in one place.
+// Pure evaluators for annotation timing and the zoom transform; one copy, so the math is testable and fixed in one place.
 
 import type { ZoomTransform } from "@recast/render";
-import { bezierY, type Easing } from "../easing/cubic-bezier";
 import type { Annotation } from "../../stores/editor-store.svelte";
+import { bezierY, type Easing } from "../easing/cubic-bezier";
 import { activeZoomIndex } from "../zoom/resolve";
 
-// Re-exported so existing importers of `./eval` keep one site; the transform
-// type now lives with the pure projection in @recast/render.
+// Re-exported so existing importers of `./eval` keep one site; the type lives with the projection in @recast/render.
 export type { ZoomTransform };
 
 export interface ZoomRegionLike {
@@ -61,10 +58,7 @@ export function evalZoom(zoomRegions: ZoomRegionLike[], t: number): ZoomTransfor
 		const eased = atHold ? 1 : bezierY(curve, phase);
 		return {
 			scale: 1 + (r.scale - 1) * eased,
-			// Centre is PINNED at the target for the whole region; only scale
-			// eases. Must match VideoPreview's `evaluateZoomAt` 1:1: the shader
-			// dollies straight in, so easing the centre would slide overlays off
-			// their content pixels during the ramp while the video stays put.
+			// The centre is PINNED for the whole region and only scale eases, matching the shader: easing it would slide overlays off their pixels.
 			cx: cxTarget,
 			cy: cyTarget,
 		};

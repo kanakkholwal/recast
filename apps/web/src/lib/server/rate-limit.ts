@@ -37,10 +37,7 @@ export async function consumeRateLimit(
 	const db = getDb();
 	const now = new Date();
 	const newExpiry = new Date(now.getTime() + windowMs);
-	// Raw `sql` interpolation doesn't run values through the column's timestamp
-	// mapper, so a bare Date reaches postgres-js unconverted and it throws
-	// (`ERR_INVALID_ARG_TYPE`). Pass ISO strings; Postgres casts them to the
-	// timestamp column for the comparison/assignment.
+	// Raw `sql` interpolation skips the column's timestamp mapper, so a bare Date throws; ISO strings let Postgres cast.
 	const nowIso = now.toISOString();
 	const newExpiryIso = newExpiry.toISOString();
 
@@ -88,8 +85,7 @@ export async function enforceRateLimit(
 	event: Pick<RequestEvent, "getClientAddress">,
 	opts: EnforceOptions,
 ): Promise<Response | null> {
-	// `getClientAddress()` throws on adapters that can't determine the address;
-	// never let that 500 the handler — fall back to a shared bucket instead.
+	// `getClientAddress()` throws on adapters that can't determine the address, so fall back to a shared bucket.
 	let ip: string;
 	try {
 		ip = event.getClientAddress();
@@ -103,10 +99,7 @@ export async function enforceRateLimit(
 	try {
 		({ ok, retryAfterSec } = await consumeRateLimit(key, opts.limit, opts.windowMs));
 	} catch (err) {
-		// Fail-open: rate limiting is a best-effort guardrail, so an infrastructure
-		// failure (a drifted/missing rate_limit table or its `key` primary key)
-		// must never 500 the request it protects. Log loudly so the root cause
-		// still gets fixed rather than silently masked.
+		// Fail-open: a guardrail must never 500 the request it protects, but log loudly so the cause still gets fixed.
 		console.error(`[rate-limit] consume failed for "${opts.bucket}"; allowing`, err);
 		return null;
 	}

@@ -1,6 +1,6 @@
 import { toast } from "@recast/ui/sonner";
-import { getEditorServices } from "../editor/services";
 import type { AnnotationKind, EditorStore } from "../../stores/editor-store.svelte";
+import { getEditorServices } from "../editor/services";
 import { fitImageBox } from "./resize-constraints";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];

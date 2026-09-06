@@ -5,7 +5,7 @@
 		"sharp": "^0.34.5"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.5.9",
+		"@biomejs/biome": "^2.5.10",
 		"@changesets/cli": "^2.31.1",
 		"husky": "^9.1.7",
 		"turbo": "^2.10.11"
@@ -29,7 +29,13 @@
 		"fmt:js:check": "biome format .",
 		"lint": "turbo lint",
 		"lint:fix": "turbo lint:fix",
-		"test": "pnpm test:captions && pnpm test:media && pnpm test:editor && pnpm test:player && pnpm test:render && pnpm test:application && pnpm test:web && pnpm test:desktop && pnpm test:rust",
+		"lint:js": "biome lint --changed --since=origin/main --no-errors-on-unmatched .",
+		"lint:js:all": "biome lint .",
+		"lint:js:fix": "biome lint --write --changed --since=origin/main --no-errors-on-unmatched .",
+		"lint:comments": "node scripts/check-comments.mjs",
+		"lint:comments:all": "node scripts/check-comments.mjs --all",
+		"test": "pnpm test:engine && pnpm test:captions && pnpm test:media && pnpm test:editor && pnpm test:player && pnpm test:render && pnpm test:application && pnpm test:web && pnpm test:desktop && pnpm test:rust",
+		"test:engine": "pnpm --filter @recast/engine test:unit",
 		"test:captions": "pnpm --filter @recast/captions test:unit",
 		"test:media": "pnpm --filter @recast/media test:unit",
 		"test:editor": "pnpm --filter @recast/editor test:unit",

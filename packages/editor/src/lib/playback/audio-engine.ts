@@ -29,6 +29,8 @@ import {
 	type Region,
 	sliceChunksForPlayback,
 } from "./audio-schedule";
+import { rescheduleDecision } from "./reschedule-throttle";
+import { timeStretch } from "./time-stretch";
 
 /**
  * Output-time position the listener is actually HEARING right now.
@@ -133,8 +135,7 @@ const HAVE_METADATA = 1;
  * drop music that used to play.
  */
 function probeMediaDuration(url: string): Promise<number> {
-	// No `Audio` outside a browser (unit tests): report unknown, which keeps the
-	// buffered path and the behaviour those tests pin.
+	// No `Audio` outside a browser (unit tests): unknown keeps the buffered path those tests pin.
 	if (typeof Audio === "undefined") return Promise.resolve(Number.NaN);
 	return new Promise((resolve) => {
 		const el = new Audio();
@@ -176,11 +177,12 @@ export interface AudioTrackSpec {
 	/** Where to read + decode the audio from. `null`/`""` skips this slot. */
 	src: MediaRef | Blob | string | null;
 	kind: AudioTrackKind;
+	/** Seconds this track's first sample lands after video frame 0, as measured
+	 *  at capture. Omitted for sources with no measurement, which align at 0. */
+	offsetSec?: number;
 }
 
-// How far ahead of the playhead (output seconds) the streaming scheduler keeps
-// audio scheduled + decoded, and how far behind it keeps decoded chunks before
-// evicting. The window bounds resident PCM regardless of recording length.
+// Lookahead and behind windows bound resident PCM regardless of recording length.
 const AUDIO_LOOKAHEAD_SEC = 12;
 const AUDIO_BEHIND_SEC = 4;
 const TOPUP_INTERVAL_MS = 2000;
@@ -198,42 +200,37 @@ export class AudioTimelineEngine {
 	#muted = false;
 	#trackVolumes: Record<AudioTrackKind, number> = { system: 1, mic: 1 };
 	#trackMuted: Record<AudioTrackKind, boolean> = { system: false, mic: false };
-	// Master fade-in/out envelope, applied downstream of the per-track gains so
-	// the exported `afade` is audible in the preview too.
+	// Downstream of the per-track gains, so the exported `afade` is audible in the preview too.
 	#fadeGain: GainNode;
 	#fadeIn = 0;
 	#fadeOut = 0;
 	#outputDuration = 0;
-	// Anchor mapping output time onto the audio hardware clock, so the picture
-	// can follow audio instead of free-running on a second, drifting clock.
+	// Anchors output time to the audio hardware clock, so the picture follows audio instead of a second drifting clock.
 	#anchorCtxTime = 0;
 	#anchorOutputTime = 0;
 	#scheduled = false;
-	// Music/extra-audio clips on the output timeline, each with its own gain
-	// (routed straight to destination — the master fade applies to the recording
-	// only, matching the export where music is amixed AFTER the source's fade).
+	// Music feeds #fadeGain like the tracks, so the master fade applies to it too, matching the Rust mixer.
 	#music: MusicEntry[] = [];
 	#musicActive: AudioBufferSourceNode[] = [];
 	/** Deferred start/stop for streamed clips; a media element has no `start(when)`. */
 	#musicTimers: Array<ReturnType<typeof setTimeout>> = [];
 	/** Bumped on every stop so a deferred streamed start knows it was superseded. */
 	#musicSchedule = 0;
-	// Streaming schedule-ahead state: schedule ~AUDIO_LOOKAHEAD_SEC of output
-	// time past the playhead and evict decoded chunks behind it, so a long
-	// recording never holds the whole file's PCM at once.
+	// Schedule ahead of the playhead and evict behind it, so a long recording never holds the whole file's PCM.
 	#regions: ReadonlyArray<Region> = [];
 	#scheduledUpToOutput = 0;
 	#topUpTimer: ReturnType<typeof setInterval> | undefined;
 	#topUpRunning = false;
-	// Bumped on every (re)schedule so an in-flight async top-up bails instead
-	// of scheduling stale nodes after a scrub.
+	// Bumped on every reschedule so an in-flight top-up bails instead of scheduling stale nodes after a scrub.
 	#generation = 0;
-	// Bumped on every setMusicClips so a slower concurrent call can't push stale
-	// buffers (doubled music + leaked gain nodes) after a newer one took over.
+	// Bumped per setMusicClips so a slower concurrent call can't push stale buffers over a newer one.
 	#musicGen = 0;
-	// Aborts the in-flight decode on a scrub so a stale 12s window can't block the
-	// fresh one — without it a seek can stall until the next interval top-up.
+	// Aborts the in-flight decode on a scrub, or a stale 12s window blocks the fresh one until the next top-up.
 	#abort: AbortController | null = null;
+	// Throttle state for `reschedule`; the newest request always wins.
+	#pendingReschedule: { regions: ReadonlyArray<Region>; fromOutputTime: number } | null = null;
+	#rescheduleTimer: ReturnType<typeof setTimeout> | null = null;
+	#lastRescheduleMs = Number.NEGATIVE_INFINITY;
 
 	private constructor(ctx: AudioContext, tracks: AudioTrack[], fadeGain: GainNode) {
 		this.#ctx = ctx;
@@ -251,13 +248,11 @@ export class AudioTimelineEngine {
 		const Ctx: typeof AudioContext | undefined =
 			typeof AudioContext !== "undefined"
 				? AudioContext
-				: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-					(globalThis as any).webkitAudioContext;
+				: (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 		if (!Ctx) throw new Error("Web Audio API unavailable");
 
 		const ctx = new Ctx();
-		// Per-track gains feed a shared fade node feeding the destination, so the
-		// fade envelope rides the whole mix.
+		// Per-track gains feed one fade node into the destination, so the envelope rides the whole mix.
 		const fadeGain = ctx.createGain();
 		fadeGain.connect(ctx.destination);
 		const tracks: AudioTrack[] = [];
@@ -266,6 +261,7 @@ export class AudioTimelineEngine {
 			try {
 				const store = await AudioChunkStore.create(spec.src);
 				if (!store) continue;
+				store.setOffsetSec(spec.offsetSec ?? 0);
 				const gain = ctx.createGain();
 				gain.connect(fadeGain);
 				tracks.push({ store, gain, kind: spec.kind });
@@ -328,8 +324,7 @@ export class AudioTimelineEngine {
 		if (this.#scheduled) this.#scheduleFades(this.positionOutputSec ?? this.#anchorOutputTime);
 	}
 
-	// Schedule the fade envelope on the audio clock. Output time o maps to ctx
-	// time now + (o − from), so ramp breakpoints land where the ear expects.
+	// Output time o maps to ctx time now + (o - from), so ramp breakpoints land where the ear expects.
 	#scheduleFades(from: number): void {
 		const g = this.#fadeGain.gain;
 		const now = this.#ctx.currentTime;
@@ -359,9 +354,7 @@ export class AudioTimelineEngine {
 	async setMusicClips(clips: ReadonlyArray<MusicClipSpec>): Promise<void> {
 		const gen = ++this.#musicGen;
 		this.#disposeMusic();
-		// One decode per distinct URL. `AudioBuffer`s are shareable across source
-		// nodes, so the same track placed twice used to cost two full decodes and
-		// two resident copies of its PCM.
+		// One decode per distinct URL: the same track placed twice cost two full decodes and two resident PCM copies.
 		const decoded = new Map<string, Promise<AudioBuffer>>();
 		const decode = (url: string): Promise<AudioBuffer> => {
 			const existing = decoded.get(url);
@@ -384,20 +377,19 @@ export class AudioTimelineEngine {
 		for (const spec of clips) {
 			if (spec.gain <= 0) continue;
 			try {
-				// Metadata first: decoding to find out the file was 30 minutes long
-				// is the cost we're avoiding.
+				// Metadata first: decoding just to learn the file is 30 minutes long is the cost being avoided.
 				const duration = await probe(spec.url);
 				const mode = musicPlaybackMode(duration);
 				const el = mode === "stream" ? makeMusicElement(spec.url) : null;
 				const buffer = mode === "buffer" ? await decode(spec.url) : null;
-				// A newer call took over while we were decoding — drop this result
-				// (its #disposeMusic already ran) so we don't double up or leak a gain.
+				// A newer call took over during the decode (its #disposeMusic already ran), so drop this result.
 				if (gen !== this.#musicGen) {
 					el?.removeAttribute("src");
 					return;
 				}
 				const gain = this.#ctx.createGain();
-				gain.connect(this.#ctx.destination);
+				// Through #fadeGain like the tracks, so the master fade rides music too, matching the Rust mixer.
+				gain.connect(this.#fadeGain);
 				if (el) {
 					this.#ctx.createMediaElementSource(el).connect(gain);
 					this.#music.push({ spec, gain, duration, mode: "stream", el });
@@ -490,15 +482,11 @@ export class AudioTimelineEngine {
 		playDur: number,
 	): void {
 		const { el, spec } = entry;
-		// A deferred start must not fire after a stop/reschedule; timers are
-		// cleared there, but a pending `loadedmetadata` is not.
+		// A stop or reschedule clears timers but not a pending `loadedmetadata`, so a deferred start must not fire after one.
 		const schedule = this.#musicSchedule;
 		const begin = () => {
 			if (schedule !== this.#musicSchedule) return;
-			// Seeking before metadata is a no-op, which would start the clip at 0
-			// instead of `sourceStart` — wrong for any clip with an offset or a
-			// mid-timeline start. The probe ran on a different element, so this one
-			// may still be loading.
+			// Seeking before metadata is a no-op that would start the clip at 0; the probe ran on a different element.
 			if (el.readyState < HAVE_METADATA) {
 				el.addEventListener("loadedmetadata", begin, { once: true });
 				return;
@@ -511,7 +499,7 @@ export class AudioTimelineEngine {
 		el.onended = spec.loop
 			? () => {
 					el.currentTime = spec.offsetSec;
-					void el.play().catch(() => {});
+					void el.play().catch(() => undefined);
 				}
 			: null;
 		if (whenDelay <= 0.001) begin();
@@ -578,8 +566,7 @@ export class AudioTimelineEngine {
 	#schedule(regions: ReadonlyArray<Region>, from: number): void {
 		this.#stopActive();
 		this.#stopTopUp();
-		// Cut short any decode from the previous position so this seek's window
-		// starts immediately instead of queueing behind a now-stale 12s decode.
+		// Cut short the previous position's decode, so this seek's window doesn't queue behind a stale 12s one.
 		this.#abort?.abort();
 		this.#abort = new AbortController();
 		this.#anchorCtxTime = this.#ctx.currentTime;
@@ -594,9 +581,7 @@ export class AudioTimelineEngine {
 		this.#topUpTimer = setInterval(() => void this.#topUp(), TOPUP_INTERVAL_MS);
 	}
 
-	// Schedule the next output slice a window ahead of the playhead and evict
-	// decoded audio behind it. whenDelay is anchored to the fixed play-start, so
-	// scheduling ahead still lands each source at the correct ctx time.
+	// whenDelay is anchored to the fixed play-start, so scheduling ahead still lands each source at the right ctx time.
 	async #topUp(): Promise<void> {
 		if (!this.#scheduled || this.#topUpRunning || this.#tracks.length === 0) return;
 		this.#topUpRunning = true;
@@ -623,8 +608,7 @@ export class AudioTimelineEngine {
 							let startAt = this.#anchorCtxTime + sub.whenDelay;
 							let offset = sub.offsetInChunk;
 							let dur = sub.playDuration;
-							// Late (decode slower than the lead): skip the past part so we stay
-							// in sync instead of playing it delayed.
+							// Late (decode slower than the lead): skip the past part rather than play it delayed.
 							const late = this.#ctx.currentTime - startAt;
 							if (late > 0) {
 								offset += late * sub.rate;
@@ -633,14 +617,23 @@ export class AudioTimelineEngine {
 								if (dur <= 1e-4) continue;
 							}
 							const node = this.#ctx.createBufferSource();
-							node.buffer = buf;
-							node.playbackRate.value = sub.rate;
+							// Pre-stretch off 1x instead of riding playbackRate, which resamples and raises pitch.
+							const warped =
+								Math.abs(sub.rate - 1) > 1e-6
+									? this.#stretchSlice(buf, offset, dur, sub.rate)
+									: null;
+							if (warped) {
+								node.buffer = warped;
+								node.start(startAt, 0, warped.duration);
+							} else {
+								node.buffer = buf;
+								node.start(startAt, offset, dur);
+							}
 							node.connect(track.gain);
 							node.onended = () => {
 								const i = this.#active.indexOf(node);
 								if (i >= 0) this.#active.splice(i, 1);
 							};
-							node.start(startAt, offset, dur);
 							this.#active.push(node);
 						}
 					}
@@ -648,20 +641,38 @@ export class AudioTimelineEngine {
 				this.#scheduledUpToOutput = windowEnd;
 			}
 			const behind = outputToSource(this.#regions, Math.max(0, heard - AUDIO_BEHIND_SEC));
-			// Bound the FORWARD side too. Source time is monotonic in output time
-			// (cuts only remove), so a single source range covers the kept window;
-			// a cut spanned by it is over-retained, which is bounded and harmless.
+			// Source time is monotonic in output time, so one source range covers the kept window and a spanned cut is harmlessly over-retained.
 			const ahead = outputToSource(this.#regions, windowEnd + AUDIO_BEHIND_SEC);
 			for (const track of this.#tracks) track.store.evictOutside(behind, ahead);
 		} catch (err) {
 			console.error("audio streaming top-up failed:", err);
 		} finally {
 			this.#topUpRunning = false;
-			// A scrub bumped the generation while we were decoding (and the guard above
-			// skipped its own top-up). Re-run now for the current playhead instead of
-			// waiting out the interval, so audio catches up right after the seek.
+			// A scrub bumped the generation mid-decode, so re-run now instead of waiting out the interval.
 			if (this.#scheduled && this.#generation !== gen) void this.#topUp();
 		}
+	}
+
+	/**
+	 * Slice `[offset, offset+dur]` source seconds out of `buf` and warp it to
+	 * `rate` pitch-preserving, ready to play back at playbackRate 1.
+	 */
+	#stretchSlice(buf: AudioBuffer, offset: number, dur: number, rate: number): AudioBuffer | null {
+		const sr = buf.sampleRate;
+		const from = Math.max(0, Math.floor(offset * sr));
+		const to = Math.min(buf.length, from + Math.ceil(dur * sr));
+		if (to - from < 2) return null;
+		const channels: Float32Array[] = [];
+		for (let c = 0; c < buf.numberOfChannels; c++) {
+			channels.push(timeStretch(buf.getChannelData(c).slice(from, to), rate, sr));
+		}
+		const length = channels[0]?.length ?? 0;
+		if (length < 1) return null;
+		const out = this.#ctx.createBuffer(channels.length, length, sr);
+		for (let c = 0; c < channels.length; c++) {
+			out.copyToChannel(channels[c] as Float32Array<ArrayBuffer>, c);
+		}
+		return out;
 	}
 
 	#stopTopUp(): void {
@@ -723,14 +734,44 @@ export class AudioTimelineEngine {
 	/**
 	 * Re-plan playback to a new OUTPUT time: on a scrub, or when the cut set
 	 * changes while playing. No-op while paused (the next `play` will schedule).
+	 *
+	 * Throttled, because `#schedule` tears the whole graph down: a drag emits one
+	 * call per pointer move, and unthrottled that aborted every decode before it
+	 * could make a sound. Latest-wins with a trailing run, so the sound still
+	 * lands where the user let go. Mirrors the video source's seek limiter.
 	 */
 	reschedule(regions: ReadonlyArray<Region>, fromOutputTime: number): void {
-		this.#schedule(regions, fromOutputTime);
+		this.#pendingReschedule = { regions, fromOutputTime };
+		const decision = rescheduleDecision(
+			performance.now(),
+			this.#lastRescheduleMs,
+			this.#rescheduleTimer !== null,
+		);
+		if (decision.act === "coalesce") return;
+		if (decision.act === "now") {
+			this.#flushReschedule();
+			return;
+		}
+		this.#rescheduleTimer = setTimeout(() => {
+			this.#rescheduleTimer = null;
+			this.#flushReschedule();
+		}, decision.afterMs);
+	}
+
+	#flushReschedule(): void {
+		const pending = this.#pendingReschedule;
+		if (!pending) return;
+		this.#pendingReschedule = null;
+		this.#lastRescheduleMs = performance.now();
+		this.#schedule(pending.regions, pending.fromOutputTime);
 	}
 
 	dispose(): void {
 		this.#stopActive();
 		this.#stopTopUp();
+		if (this.#rescheduleTimer !== null) clearTimeout(this.#rescheduleTimer);
+		this.#rescheduleTimer = null;
+		this.#pendingReschedule = null;
 		this.#abort?.abort();
 		this.#disposeMusic();
 		this.#scheduled = false;

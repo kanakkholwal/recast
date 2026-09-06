@@ -1,8 +1,8 @@
 <script lang="ts">
-import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { Scissors, X } from "@recast/icons";
 import { type TimelineCut } from "../../../lib/timeline/cuts";
 import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
-import { Scissors, X } from "@recast/icons";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
 import {
 	CLIP_BASE,
@@ -12,21 +12,16 @@ import {
 	clipSurface,
 } from "./timeline-clip.styles";
 import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
+import { frameStep } from "./timeline-helpers";
 import {
-	cardSpan,
 	CUT_LANE_HEIGHT_PX,
+	cardSpan,
 	edgeHandleWidth,
 	LANE_PADDING_PX,
 	ROW_HEIGHT_PX,
 } from "./timeline-stack";
-import { frameStep } from "./timeline-helpers";
 
-// Hosts cut bands. Drag empty lane space to carve a cut; drag a band's edges or body to adjust it.
-//
-// This lane deliberately draws NO waveform. It used to render a faint copy
-// whenever the Audio lane was hidden, which put the envelope in a lane that
-// isn't the audio track and made it appear exactly when the user had asked for
-// it to be gone. The waveform lives in TimelineAudioLane and nowhere else.
+// Hosts cut bands and deliberately draws NO waveform: it used to copy the envelope in exactly when the user hid the Audio lane.
 
 interface Props {
 	store: EditorStore;
@@ -39,16 +34,13 @@ let { store, pixelsPerSecond, duration, fps }: Props = $props();
 
 // Cuts shorter than this are dropped. A sub-100ms removal reads as a glitch.
 const MIN_CUT = 0.1;
-// A band narrower than this can't hold two grips and a middle to drag. Kept well
-// under the other lanes' 28px so the band doesn't overstate what was removed.
+// A narrower band can't hold two grips and a middle; kept under the other lanes' 28px so it doesn't overstate the removal.
 const MIN_BAND_PX = 16;
 
 let laneEl = $state<HTMLDivElement | null>(null);
 const surface = clipSurface("cut");
 
-// Output axis via the shared render map. An applied cut normally collapses to
-// zero width (a seam); with "Show cut gaps" on the map re-spaces it to real
-// width, so the same band UI (drag/resize/restore) renders it as a gap.
+// An applied cut collapses to a seam; with 'Show cut gaps' the map re-spaces it, so the same band UI renders a gap.
 const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
 const axisWidth = $derived(xOf(duration));
 
@@ -68,17 +60,10 @@ interface DragState {
 	precision: boolean;
 }
 let drag = $state<DragState | null>(null);
-// Pushed on the first real move: clicking a band to select it used to leave an
-// undo entry that changed nothing.
+// Pushed on the first real move: clicking a band to select it used to leave an undo entry that changed nothing.
 let dragUndoPushed = false;
 
-// A create-drag is PREVIEWED, then committed on release.
-//
-// It used to call addCut() as soon as the span passed MIN_CUT, which applied
-// the cut immediately: the time map collapsed the removed range, every later
-// frame slid left, and the original time under the pointer changed mid-gesture.
-// The band you were dragging shrank to a seam under your own cursor and the
-// drag came apart. Nothing touches the store now until pointerup.
+// Previewed, then committed on release: applying at MIN_CUT collapsed the map mid-gesture and the band shrank under the cursor.
 let pending = $state<{ start: number; end: number } | null>(null);
 
 function timeAt(clientX: number): number {
@@ -89,15 +74,11 @@ function timeAt(clientX: number): number {
 }
 
 function onLaneDown(e: PointerEvent) {
-	// Only the bare lane background starts a create-drag; bands and their
-	// handles stop propagation in their own handlers. Left button only: a
-	// right-drag is for the context menu, not for carving a cut.
+	// Only the bare lane background starts a create-drag, and left button only: a right-drag is the context menu.
 	if (e.target !== laneEl || duration <= 0 || e.button !== 0) return;
-	// The razor tool owns clicks timeline-wide: let this one bubble to the
-	// scroller's razor handler instead of starting a create-drag.
+	// The razor owns clicks timeline-wide, so let this one bubble to the scroller's razor handler.
 	if (store.timelineTool === "razor") return;
-	// Bypassed track: refuse the edit rather than carve a cut that silently
-	// wouldn't apply. The inline hint says why.
+	// Bypassed track: refuse the edit rather than carve a cut that silently wouldn't apply.
 	if (!store.cutsEnabled) return;
 	// Stop the timeline's scrub handler from also claiming this drag.
 	e.preventDefault();
@@ -146,19 +127,17 @@ function onBandDown(e: PointerEvent, cut: TimelineCut, mode: DragMode) {
 
 function onMove(e: PointerEvent) {
 	if (!drag || e.pointerId !== drag.pointerId) return;
-	// A band press is a click until it clears the threshold, so selecting a band
-	// can't nudge it or leave an undo entry that changed nothing.
+	// A band press stays a click until it clears the threshold, so selecting can't nudge it or leave a no-op undo entry.
 	if (drag.mode !== "create" && !drag.engaged) {
 		if (!dragEngaged(e.clientX, drag.startClientX)) return;
 		drag.engaged = true;
 	}
-	// Shift damps pointer travel for fine positioning. Re-seed the anchor (and,
-	// for a band, its origin) on a modifier flip so the change in gearing is
-	// continuous rather than a jump.
+	// Shift damps travel; re-seed the anchor on a modifier flip so the change in gearing is continuous, not a jump.
 	if (e.shiftKey !== drag.precision) {
 		drag.precision = e.shiftKey;
 		drag.anchorTime = timeAt(e.clientX);
-		const live = drag.id ? store.cuts.find((c) => c.id === drag!.id) : null;
+		const dragId = drag.id;
+		const live = dragId ? store.cuts.find((c) => c.id === dragId) : null;
 		if (live) {
 			drag.originStart = live.start;
 			drag.originEnd = live.end;
@@ -203,10 +182,7 @@ function onMove(e: PointerEvent) {
 
 function onUp(e: PointerEvent) {
 	if (!drag || e.pointerId !== drag.pointerId) return;
-	// Commit the previewed span now, as one undo entry. addCut() pushes the undo
-	// state itself, so pushing here too would leave a duplicate snapshot: the
-	// first Ctrl+Z removes the cut, the second re-applies the same state and
-	// looks like undo is broken.
+	// addCut() pushes undo itself; pushing here too left a duplicate snapshot that made the second Ctrl+Z look broken.
 	if (drag.mode === "create" && pending) {
 		const id = store.addCut(pending.start, pending.end, "manual");
 		if (id) store.mergeCuts();
@@ -224,8 +200,7 @@ function remove(e: Event, id: string) {
 	store.removeCut(id);
 }
 
-// Keyboard equivalent of dragging the band and its two grips. Mirrors
-// ZoomLayerCard: Shift = 1s, plain = one frame, Alt resizes the trailing edge.
+// Mirrors ZoomLayerCard: Shift is 1s, plain is one frame, Alt resizes the trailing edge.
 function onBandKeydown(e: KeyboardEvent, cut: TimelineCut) {
 	if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
 	if (duration <= 0) return;

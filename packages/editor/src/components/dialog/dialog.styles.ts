@@ -7,18 +7,17 @@
  * radius/ring combinations had drifted in before this existed.
  */
 export const DIALOG_SURFACE =
-	"overflow-hidden rounded-2xl p-0! ring-1 ring-border/60 shadow-(--shadow-craft-inset-strong)";
+	"overflow-hidden rounded-xl p-0! ring-1 ring-border/50 shadow-(--shadow-craft-floating)";
 
-/** Header bar: flush, bordered, left-aligned. */
-export const DIALOG_HEADER = "space-y-0 border-b border-border/40 px-4 py-3.5 text-left";
+/** Header: flush on the surface, no divider. Copy carries the separation. */
+export const DIALOG_HEADER = "space-y-0 px-5 pt-5 text-left";
 
-/** Footer bar: bordered, muted, actions right. */
-export const DIALOG_FOOTER =
-	"flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5";
+/** Footer: on the same surface, no bar or divider — actions right, roomy. */
+export const DIALOG_FOOTER = "flex items-center justify-end gap-2 px-5 pb-5 pt-2";
 
 /**
- * Scrolling body. The ceiling matches the most generous one the dialogs used
- * before they were unified — a tighter cap shrank the share and player dialogs.
- * Media dialogs pass `max-h-none` and size themselves.
+ * Scrolling body, flush under the header (no divider). `pb-4` stands alone for
+ * footer-less dialogs. Ceiling matches the most generous pre-unification cap;
+ * media dialogs pass `max-h-none` and size themselves.
  */
-export const DIALOG_BODY = "max-h-[min(88vh,720px)] overflow-y-auto px-4 py-3.5";
+export const DIALOG_BODY = "max-h-[min(88vh,720px)] overflow-y-auto px-5 pt-2.5 pb-4";

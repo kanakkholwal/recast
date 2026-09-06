@@ -1,13 +1,5 @@
-//! Branch journals: edits an agent has proposed but not yet applied.
-//!
-//! A branch records a list of [`Op`]s against the [`StateHash`] of the render
-//! state it forked from. Nothing here touches the `.recast` bundle, so an agent
-//! edit costs one small sidecar write instead of a full archive rewrite; the
-//! bundle is rewritten once, when a human applies the branch.
-//!
-//! The fork point is identified by content hash rather than a revision counter:
-//! the hash also catches a bundle edited out of band, which a counter stored
-//! beside it would miss.
+//! Branch journals: [`Op`]s an agent proposed against a forked [`StateHash`], written as a sidecar rather than a bundle rewrite.
+//! The fork point is a content hash, not a counter, so a bundle edited out of band is caught.
 
 use std::path::{Path, PathBuf};
 
@@ -28,9 +20,7 @@ pub const EMPTY_BRANCH_MAX_AGE_MS: i64 = 24 * 60 * 60 * 1000;
 /// Never deleted: it is pending human review, and the reviewer decides.
 pub const STALE_AFTER_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
-/// Live branches one project may hold before [`BranchStore::create`] refuses.
-/// Journals are KB-scale, so this bounds a runaway agent and the reviewer's
-/// reading list, not disk.
+/// Live branches one project may hold before [`BranchStore::create`] refuses. Journals are KB-scale, so this bounds a runaway agent and the reviewer's reading list, not disk.
 pub const MAX_BRANCHES_PER_PROJECT: usize = 32;
 
 #[derive(Debug, thiserror::Error)]
@@ -233,15 +223,8 @@ impl Branch {
         self.entries.len() >= COMPACT_AFTER_ENTRIES
     }
 
-    /// Record `ops` as one entry.
-    ///
-    /// Re-sending an `idem_key` that is already present is a no-op that reports
-    /// the original sequence number, so a client that retries after a dropped
-    /// socket never double-applies.
-    ///
-    /// # Errors
-    /// [`JournalError::SeqMismatch`] when `expect_seq` does not match
-    /// [`Branch::next_seq`], meaning another writer got in first.
+    /// Records `ops` as one entry; re-sending a present `idem_key` is a no-op reporting the original seq, so a retry after a dropped socket never double-applies.
+    /// Errors with [`JournalError::SeqMismatch`] when `expect_seq` does not match [`Branch::next_seq`], meaning another writer got in first.
     pub fn append(
         &mut self,
         idem_key: impl Into<String>,
@@ -284,10 +267,7 @@ impl Branch {
     }
 
     /// Fold every recorded op onto the state the branch forked from.
-    ///
-    /// # Errors
-    /// [`JournalError::BaseMoved`] when `base_state` is not the fork point, and
-    /// [`JournalError::Replay`] when an op no longer fits the state it reaches.
+    /// # Errors [`JournalError::BaseMoved`] when `base_state` is not the fork point, and [`JournalError::Replay`] when an op no longer fits the state it reaches.
     pub fn materialize(&self, base_state: &RenderState) -> Result<RenderState, JournalError> {
         let actual = StateHash::of(base_state)?;
         if actual != self.base {
@@ -308,14 +288,8 @@ impl Branch {
         Ok(state)
     }
 
-    /// Collapse every recorded op into a single [`Op::Replace`].
-    ///
-    /// The fork point is left alone: it is what [`Branch::materialize`] checks
-    /// the project against, so moving it would reject the very state the branch
-    /// is meant to apply to.
-    ///
-    /// # Errors
-    /// Whatever [`Branch::materialize`] would return for `base_state`.
+    /// Collapses every recorded op into a single [`Op::Replace`], leaving the fork point alone.
+    /// Moving it would reject the very state the branch applies to, since that is what [`Branch::materialize`] checks against.
     pub fn compact(&mut self, base_state: &RenderState, now_ms: i64) -> Result<(), JournalError> {
         let folded = self.materialize(base_state)?;
         let seq = self.next_seq();
@@ -333,10 +307,7 @@ impl Branch {
 }
 
 /// On-disk journals for one project.
-///
-/// Branches live under the app's data directory rather than beside the
-/// `.recast`: they are pending work, so neither the temp-dir sweeper nor the
-/// user's own folder is the right home for them.
+/// Branches live under the app data directory rather than beside the `.recast`: they are pending work, so neither the temp sweeper nor the user's folder is the right home.
 #[derive(Debug, Clone)]
 pub struct BranchStore {
     dir: PathBuf,
@@ -369,9 +340,7 @@ impl BranchStore {
         ids
     }
 
-    /// # Errors
-    /// [`JournalError::NoSuchBranch`] when the journal is absent, and
-    /// [`JournalError::Corrupt`] when it will not parse.
+    /// # Errors [`JournalError::NoSuchBranch`] when the journal is absent, and [`JournalError::Corrupt`] when it will not parse.
     pub fn load(&self, id: &BranchId) -> Result<Branch, JournalError> {
         let path = self.path_for(id);
         let bytes = match std::fs::read(&path) {
@@ -384,16 +353,8 @@ impl BranchStore {
         serde_json::from_slice(&bytes).map_err(|source| JournalError::Corrupt { path, source })
     }
 
-    /// Persist a branch that does not exist yet, refusing to overwrite proposed
-    /// work. Every surface forks through here; [`Self::save`] is the unguarded
-    /// door an already-loaded branch is written back through.
-    ///
-    /// Re-forking an id that exists but holds no ops succeeds, so an agent that
-    /// crashed between create and its first append can simply retry.
-    ///
-    /// # Errors
-    /// [`JournalError::BranchExists`] when the id holds ops, and
-    /// [`JournalError::TooManyBranches`] at [`MAX_BRANCHES_PER_PROJECT`].
+    /// Forks a new branch, refusing to overwrite proposed work; [`Self::save`] is the unguarded door for an already-loaded one.
+    /// Re-forking an id that holds no ops succeeds, so an agent that crashed between create and first append can retry. Errors: `BranchExists`, `TooManyBranches`.
     pub fn create(&self, branch: &Branch) -> Result<(), JournalError> {
         match self.load(&branch.id) {
             Ok(existing) if !existing.is_empty() => {
@@ -401,16 +362,14 @@ impl BranchStore {
             }
             Ok(_) => {}
             Err(JournalError::NoSuchBranch(_)) => {
-                // Sweeping first is what makes the cap count live branches
-                // rather than crashed agents' leftovers.
+                // Sweeping first is what makes the cap count live branches rather than crashed agents' leftovers.
                 self.sweep(branch.created_at_ms);
                 let open = self.list().len();
                 if open >= MAX_BRANCHES_PER_PROJECT {
                     return Err(JournalError::TooManyBranches(open));
                 }
             }
-            // A corrupt journal might hold work, so it blocks the id rather
-            // than being silently replaced.
+            // A corrupt journal might hold work, so it blocks the id rather than being silently replaced.
             Err(other) => return Err(other),
         }
         self.save(branch)
@@ -431,13 +390,8 @@ impl BranchStore {
         crate::commands::system::write_atomic(&tmp, &path, &bytes).map_err(write)
     }
 
-    /// Discard branches that are provably worthless: created, never appended to,
-    /// and older than [`EMPTY_BRANCH_MAX_AGE_MS`].
-    ///
-    /// A branch carrying ops is never touched, however old. It is pending human
-    /// review, and quietly deleting someone's proposed edits is worse than the
-    /// few KB a stale journal costs. Unreadable journals are left alone too: we
-    /// cannot tell whether they hold work.
+    /// Discards branches created, never appended to, and older than [`EMPTY_BRANCH_MAX_AGE_MS`].
+    /// A branch carrying ops is never touched however old, since it is pending review; unreadable journals are left alone because we cannot tell whether they hold work.
     pub fn sweep(&self, now_ms: i64) -> Vec<BranchId> {
         self.list()
             .into_iter()
@@ -473,9 +427,7 @@ pub struct FieldChange {
 }
 
 /// Leaf-level differences between two render states, in path order.
-///
-/// # Errors
-/// [`JournalError::StateNotSerializable`] if either state will not serialize.
+/// # Errors [`JournalError::StateNotSerializable`] if either state will not serialize.
 pub fn diff(before: &RenderState, after: &RenderState) -> Result<Vec<FieldChange>, JournalError> {
     let to_json = |state: &RenderState| {
         serde_json::to_value(state).map_err(|source| JournalError::StateNotSerializable { source })
@@ -578,18 +530,29 @@ mod tests {
         Op::CutAdd { start, end }
     }
 
-    /// Scratch store in a per-run temp dir, matching `project::reader`'s test
-    /// idiom rather than pulling in a dev-dependency.
-    fn temp_store() -> BranchStore {
+    /// A store whose directory is removed when the test ends. Holds the guard
+    /// beside it, since dropping that guard is what does the cleaning.
+    struct TempStore {
+        _dir: recast_testkit::Scratch,
+        store: BranchStore,
+    }
+
+    impl std::ops::Deref for TempStore {
+        type Target = BranchStore;
+
+        fn deref(&self) -> &BranchStore {
+            &self.store
+        }
+    }
+
+    fn temp_store() -> TempStore {
         use std::sync::atomic::{AtomicU32, Ordering};
         static N: AtomicU32 = AtomicU32::new(0);
 
         let n = N.fetch_add(1, Ordering::Relaxed);
-        BranchStore::new(
-            std::env::temp_dir()
-                .join(format!("recast-journal-{}-{n}", std::process::id()))
-                .join("branches"),
-        )
+        let dir = recast_testkit::Scratch::new(&format!("journal-{n}"));
+        let store = BranchStore::new(dir.join("branches"));
+        TempStore { _dir: dir, store }
     }
 
     mod branch_id {
@@ -899,7 +862,7 @@ mod tests {
 
         const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
-        fn store_with(branches: &[Branch]) -> BranchStore {
+        fn store_with(branches: &[Branch]) -> TempStore {
             let store = temp_store();
             for branch in branches {
                 store.save(branch).unwrap();
@@ -1303,12 +1266,8 @@ mod tests {
     }
 }
 
-/// The branch cycle against a real `.recast` on disk.
-///
-/// The unit tests above prove the journal folds correctly in memory. These prove
-/// the part that only shows up on disk: that a branch saved, reloaded and
-/// materialized against a freshly-opened project still lands the right edits in
-/// the bundle, and that its fork point stops matching once it has.
+/// The branch cycle against a real `.recast` on disk, which the in-memory unit tests above cannot reach.
+/// A branch saved, reloaded and materialized against a freshly-opened project must still land the right edits, and its fork point must stop matching once it has.
 #[cfg(test)]
 mod disk_roundtrip_tests {
     use std::fs;
@@ -1326,12 +1285,9 @@ mod disk_roundtrip_tests {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     const NOW: i64 = 1_700_000_000_000;
 
-    fn workspace() -> PathBuf {
+    fn workspace() -> recast_testkit::Scratch {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("recast-branch-{}-{n}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("workspace");
-        dir
+        recast_testkit::Scratch::new(&format!("branch-{n}"))
     }
 
     fn fixture_metadata() -> ProjectMetadata {

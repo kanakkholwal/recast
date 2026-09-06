@@ -1,10 +1,10 @@
 <script lang="ts">
-import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
-import { clockDecis as fmtTime } from "../../../lib/format/time";
-import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import { Copy, Eye, EyeOff, GripVertical, Lock, Trash2, Unlock } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
+import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
+import { clockDecis as fmtTime } from "../../../lib/format/time";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import { reorderZ } from "./annotation-layer.logic";
 
 interface Props {
@@ -53,14 +53,16 @@ function handleDragStart(e: DragEvent, a: Annotation) {
 		return;
 	}
 	dragId = a.id;
-	e.dataTransfer?.setData("text/plain", a.id);
-	e.dataTransfer!.effectAllowed = "move";
+	if (e.dataTransfer) {
+		e.dataTransfer.setData("text/plain", a.id);
+		e.dataTransfer.effectAllowed = "move";
+	}
 }
 
 function handleDragOver(e: DragEvent, target: Annotation) {
 	if (!dragId) return;
 	e.preventDefault();
-	e.dataTransfer!.dropEffect = "move";
+	if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
 	dragOverId = target.id;
 }
 
@@ -94,16 +96,17 @@ function handleDragEnd() {
 }
 </script>
 
-<section class="flex flex-col gap-1">
+<section class="flex flex-col gap-2">
   <header class="flex items-center justify-between">
-    <h3 class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
+    <h3 class="text-[13px] font-semibold tracking-tight text-foreground">
       Layers
     </h3>
-    <span class="text-[10px] tabular-nums text-muted-foreground/70">
+    <span class="text-[11px] tabular-nums text-muted-foreground">
       {ordered.length}
     </span>
   </header>
 
+  <div class="flex flex-col gap-1">
   {#each ordered as a (a.id)}
     {@const Icon = kindIcon(a)}
     {@const isActive = a.id === store.selectedAnnotationId}
@@ -135,16 +138,16 @@ function handleDragEnd() {
         "group relative flex items-center gap-1.5 rounded-md border px-1.5 py-1.5 transition-all",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         isActive
-          ? "border-primary/60 bg-primary/10 shadow-(--shadow-craft-inset)"
+          ? "border-foreground/40 bg-card shadow-(--shadow-craft-inset) ring-1 ring-inset ring-foreground/20"
           : "border-border/60 bg-card/60 hover:border-border hover:bg-card",
         isDragging && "opacity-40",
-        isOverThis && "ring-1 ring-primary/40",
+        isOverThis && "ring-1 ring-foreground/30",
         a.hidden && "opacity-60",
       )}
       data-annotation-row={a.id}
     >
       {#if isActive}
-        <span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" aria-hidden="true"></span>
+        <span class="absolute inset-y-1 left-0 w-0.5 rounded-full bg-foreground" aria-hidden="true"></span>
       {/if}
 
       <span
@@ -157,7 +160,7 @@ function handleDragEnd() {
       <span
         class={cn(
           "grid size-5 shrink-0 place-items-center rounded text-[10px]",
-          isActive ? "bg-primary/15 text-primary" : "bg-muted/60 text-muted-foreground",
+          isActive ? "bg-foreground/10 text-foreground" : "bg-muted/60 text-muted-foreground",
         )}
       >
         <Icon size={11} />
@@ -171,7 +174,7 @@ function handleDragEnd() {
             tabindex="0"
             contenteditable="true"
             spellcheck="false"
-            class="truncate rounded bg-background px-1 text-[11px] font-medium text-foreground outline-1 outline-primary/50"
+            class="truncate rounded bg-background px-1 text-[11px] font-medium text-foreground outline-1 outline-ring"
             onblur={(e) => commitRename(a, e.currentTarget as HTMLElement)}
             onkeydown={(e) => handleRenameKey(e, a)}
           >{kindLabel(a)}</span>
@@ -252,4 +255,5 @@ function handleDragEnd() {
       </div>
     </div>
   {/each}
+  </div>
 </section>

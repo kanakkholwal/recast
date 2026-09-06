@@ -40,9 +40,7 @@ const PRESS_RECOVERY_US = 380_000; // recovery duration after click snap
 const PRESS_LIFT = 0.04; // anticipation peak: scale = 1 + LIFT
 const PRESS_PUNCH = 0.16; // click compression: scale = 1 - PUNCH
 const PRESS_BOUNCE = 0.03; // recovery overshoot above 1
-// Always-on click snap: a cosine ramp pulls the rendered cursor x/y through the
-// captured click anchor inside ±CLICK_SNAP_HALF_US so the impact frame ALWAYS
-// lands on the click target, regardless of smoothing strength / snap toggle.
+// A cosine ramp pulls the cursor through the captured click anchor, so the impact frame always lands on target.
 const CLICK_SNAP_HALF_US = 200_000;
 const HIGHLIGHT_FADE_IN_US = 40_000;
 const HIGHLIGHT_FADE_OUT_US = 220_000;
@@ -107,8 +105,7 @@ export function buildPressEvents(samples: PressSample[]): PressEvent[] {
 
 type PressIndex = { downs: Float64Array; maxSpan: number };
 
-// Keyed on array identity: `pressEvents` is rebuilt wholesale from the raw
-// track, so a new array IS the invalidation signal.
+// Keyed on array identity: `pressEvents` is rebuilt wholesale, so a new array IS the invalidation signal.
 const indexCache = new WeakMap<PressEvent[], PressIndex>();
 
 function pressIndex(events: PressEvent[]): PressIndex {
@@ -234,8 +231,7 @@ export function pressStateAt(events: PressEvent[], tsUs: number): PressState {
 		const holdEnd = Math.max(ev.upUs + PRESS_LINGER_US, ev.downUs + PRESS_MIN_HOLD_US);
 		const visStart = ev.downUs - PRESS_PREROLL_US - PRESS_VIS_RAMP_US;
 		const visEnd = holdEnd + PRESS_POSTROLL_US + PRESS_VIS_RAMP_US;
-		// Events are sorted by downUs ascending, so once we're before an event's
-		// window we're before every later event's window too.
+		// Events are sorted by downUs, so being before one event's window means being before every later one.
 		if (tsUs < visStart) break;
 		if (tsUs > visEnd) continue;
 		const absDt = Math.abs(tsUs - ev.downUs);
@@ -267,10 +263,7 @@ export function pressStateAt(events: PressEvent[], tsUs: number): PressState {
 	// Pressed sprite: from preroll start through the held window.
 	const pressedSprite = tsUs >= bestEv.downUs - PRESS_PREROLL_US && tsUs <= bestHoldEnd;
 
-	// Scale curve: three phases keyed on `dt = tsUs - downUs`.
-	//   dt ∈ [-ANTICIP, 0):  1 → 1+LIFT (smooth lift)
-	//   dt = 0:              snap to 1-PUNCH (click frame, the sync point)
-	//   dt ∈ [0, RECOVERY]:  1-PUNCH → 1+BOUNCE → 1
+	// Three phases on `dt`: a lift before the click, a snap to 1-PUNCH at it, then bounce back to 1.
 	let scale = 1;
 	const dt = tsUs - bestEv.downUs;
 	if (dt >= -PRESS_ANTICIP_US && dt < 0) {

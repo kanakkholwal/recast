@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	formatUserCode,
-	initials,
-	planLabel,
-	roleLabel,
-} from "./cloud-signin.logic";
+import { formatUserCode, initials, planLabel, roleLabel } from "./cloud-signin.logic";
 
 describe("roleLabel", () => {
 	it("title-cases, defaults to Member", () => {

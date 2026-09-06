@@ -1,21 +1,23 @@
 import { describe, expect, it } from "vitest";
+import type { Easing } from "../lib/easing/cubic-bezier";
 // Relative runtime import: no `$lib` alias in the standalone vitest config.
 import { LINEAR } from "../lib/easing/cubic-bezier";
-import type { Easing } from "../lib/easing/cubic-bezier";
 import type { ZoomRegion } from "../stores/editor-store.svelte";
 import {
+	cameraStall,
+	type CursorSampleJS,
 	classifyMbError,
 	evaluateZoomAt,
+	type IdlePeriodJS,
 	idleAlphaAt,
 	interpolateCursor,
 	resolutionTier,
 	shouldRecoverMbSource,
-	type CursorSampleJS,
-	type IdlePeriodJS,
+	zoomScaleAt,
 } from "./video-preview.logic";
+import zoomCases from "../../../../fixtures/zoom-scale.json";
 
-// A linear-eased region so the eased scale is a plain lerp, which locks the ramp
-// shape (ramp-in → hold → ramp-out) without depending on a bezier's curvature.
+// A linear-eased region makes the scale a plain lerp, locking the ramp shape without depending on a bezier's curvature.
 function region(overrides: Partial<ZoomRegion> = {}): ZoomRegion {
 	return {
 		id: "z",
@@ -186,5 +188,137 @@ describe("classifyMbError", () => {
 		expect(classifyMbError(new Error("decoder config unsupported"))).toBe("codec_unsupported");
 		expect(classifyMbError(new Error("fetch failed"))).toBe("fetch_failed");
 		expect(classifyMbError("something else")).toBe("decode_error");
+	});
+});
+
+describe("overlapping zoom regions", () => {
+	const overlapping = (over: Record<string, unknown>) =>
+		({
+			id: "z",
+			start: 0,
+			end: 10,
+			scale: 2,
+			rampIn: 0.5,
+			rampOut: 0.5,
+			centerX: 0.5,
+			centerY: 0.5,
+			easeIn: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+			easeOut: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+			motionBlur: 0,
+			...over,
+		}) as never;
+
+	/** Latest-start-wins handed over at the incoming overlapping's ramp START, which
+	 *  snapped the zoom to ~1 for a frame. Everything riding it flickered. */
+	it("hands over without a step", () => {
+		const regions = [
+			overlapping({ start: 1, end: 8, scale: 2 }),
+			overlapping({ start: 5, end: 12, scale: 2.5 }),
+		];
+		let previous: number | null = null;
+		for (let t = 0.5; t < 12.5; t += 1 / 60) {
+			const { scale } = evaluateZoomAt(regions, t);
+			if (previous !== null) expect(Math.abs(scale - previous)).toBeLessThanOrEqual(0.15);
+			previous = scale;
+		}
+	});
+
+	it("keeps the tighter overlapping in force", () => {
+		const regions = [
+			overlapping({ start: 0, end: 10, scale: 3, rampIn: 0, rampOut: 0 }),
+			overlapping({ start: 4, end: 6, scale: 1.2, rampIn: 0, rampOut: 0 }),
+		];
+		expect(evaluateZoomAt(regions, 5).scale).toBeCloseTo(3, 6);
+	});
+
+	/** Rust picks the same winner, or the preview and the export disagree about
+	 *  where the frame is pointing. */
+	it("matches the compositor on a nested overlapping", () => {
+		const regions = [
+			overlapping({ start: 0, end: 10, scale: 1.5, rampIn: 0, rampOut: 0 }),
+			overlapping({ start: 4, end: 6, scale: 3, rampIn: 0, rampOut: 0 }),
+		];
+		expect(evaluateZoomAt(regions, 5).scale).toBeCloseTo(3, 6);
+	});
+});
+
+// Shared with `crates/recast-scene/src/v1/nodes.rs`: the eased ramp is written twice, and a drift means the preview zooms at a rate the file does not.
+describe("zoom ramp parity with the Rust scene", () => {
+	interface Case {
+		ease: Easing;
+		start: number;
+		end: number;
+		scale: number;
+		rampIn: number;
+		rampOut: number;
+		t: number;
+		expect: number;
+	}
+
+	it("has enough cases to catch a drift", () => {
+		expect((zoomCases as Case[]).length).toBeGreaterThanOrEqual(100);
+	});
+
+	// Rust evaluates the bezier in f32 and TypeScript in f64, so the curves agree to single precision, not to the bit.
+	it("eases every case to within single precision", () => {
+		for (const c of zoomCases as Case[]) {
+			const got = zoomScaleAt(
+				region({
+					start: c.start,
+					end: c.end,
+					scale: c.scale,
+					rampIn: c.rampIn,
+					rampOut: c.rampOut,
+					easeIn: c.ease,
+					easeOut: c.ease,
+				}),
+				c.t,
+			);
+			const inForce = c.t > c.start && c.t < c.end;
+			expect(inForce ? got : 1).toBeCloseTo(c.expect, 5);
+		}
+	});
+});
+
+describe("cameraStall", () => {
+	const ok = {
+		enabled: true,
+		hasSrc: true,
+		elementMounted: true,
+		readyState: 4,
+		videoWidth: 1280,
+		gated: true,
+		frameReady: false,
+		boundInEngine: true,
+	};
+
+	it("says nothing when the camera is drawing", () => {
+		expect(cameraStall(ok)).toBeNull();
+	});
+
+	// A camera nobody asked for is not a fault, so it must stay silent.
+	it("says nothing when the camera is switched off", () => {
+		expect(cameraStall({ ...ok, enabled: false, hasSrc: false })).toBeNull();
+	});
+
+	it("names each broken link, earliest first", () => {
+		expect(cameraStall({ ...ok, hasSrc: false })).toMatch(/no camera file/);
+		expect(cameraStall({ ...ok, elementMounted: false })).toMatch(/never mounted/);
+		expect(cameraStall({ ...ok, readyState: 1 })).toMatch(/readyState 1/);
+		expect(cameraStall({ ...ok, videoWidth: 0 })).toMatch(/zero width/);
+		expect(cameraStall({ ...ok, boundInEngine: false, frameReady: true })).toMatch(/bound none/);
+	});
+
+	// The gate is normal between presented frames; it only counts as a stall while nothing has ever been bound.
+	it("reports the gate only when it is the earliest break", () => {
+		expect(cameraStall({ ...ok, frameReady: false, boundInEngine: true })).toBeNull();
+		expect(cameraStall({ ...ok, gated: true, frameReady: false, boundInEngine: false })).toMatch(
+			/no new camera frame/,
+		);
+	});
+
+	// Reported symptom: the file is attached and decoding, but nothing shows.
+	it("blames the engine when every host-side link is healthy", () => {
+		expect(cameraStall({ ...ok, boundInEngine: false, frameReady: true })).toMatch(/bound none/);
 	});
 });

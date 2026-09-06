@@ -1,8 +1,8 @@
+// biome-ignore-all lint/suspicious/useAwait: the fakes mirror MediaBunny's async API, which is what the worker is written against.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
 
-// MediaBunny builds a fresh `VideoDecoder` per `getCanvas` call, so overlapping
-// calls mean overlapping hardware decoders. This sink counts the overlap.
+// MediaBunny builds a fresh `VideoDecoder` per `getCanvas`, so overlapping calls mean overlapping hardware decoders.
 const state = vi.hoisted(() => ({ live: 0, peak: 0, calls: 0 }));
 
 vi.mock("@recast/media/mediabunny", () => ({
@@ -15,7 +15,9 @@ vi.mock("@recast/media/mediabunny", () => ({
 		async computeDuration() {
 			return 60;
 		}
-		dispose() {}
+		dispose() {
+			// the fake sink holds nothing to release
+		}
 	},
 	CanvasSink: class {
 		async getCanvas() {
@@ -27,6 +29,20 @@ vi.mock("@recast/media/mediabunny", () => ({
 			return {
 				canvas: { width: 160, height: 90, convertToBlob: async () => new Blob() },
 			};
+		}
+		async *canvasesAtTimestamps(timestamps: number[]) {
+			// One decoder streams the whole batch; live tracks that single pass so peak stays 1.
+			state.calls++;
+			state.live++;
+			state.peak = Math.max(state.peak, state.live);
+			try {
+				for (let i = 0; i < timestamps.length; i++) {
+					await new Promise((resolve) => setTimeout(resolve, 1));
+					yield { canvas: { width: 160, height: 90, convertToBlob: async () => new Blob() } };
+				}
+			} finally {
+				state.live--;
+			}
 		}
 	},
 }));
@@ -70,8 +86,7 @@ describe("filmstrip worker decode serialization", () => {
 
 	beforeEach(async () => {
 		send({ type: "init", src: {} as never, tileHeightPx: 90, durationSec: 60 });
-		// Let any drain still running from the previous test finish before the
-		// counters are zeroed, or its decodes land in this test's numbers.
+		// Let a drain from the previous test finish before zeroing counters, or its decodes land in this test's numbers.
 		await waitFor(() => state.live === 0 && posted.some((m) => m.type === "ready"));
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		posted = [];
@@ -81,8 +96,7 @@ describe("filmstrip worker decode serialization", () => {
 	});
 
 	it("never runs two decodes at once, even across separate decode messages", async () => {
-		// Two rAF flushes landing back to back — the pre-fix dispatcher started a
-		// concurrent drain loop per message.
+		// Two rAF flushes back to back: the pre-fix dispatcher started a concurrent drain loop per message.
 		send({
 			type: "decode",
 			requests: [
@@ -146,8 +160,7 @@ describe("filmstrip worker decode serialization", () => {
 		const firstTile = posted.findIndex((m) => m.type === "tile");
 		const storyboardStarted = posted.findIndex((m) => m.type === "storyboard");
 		expect(firstTile).toBeGreaterThanOrEqual(0);
-		// Tiles land before the storyboard reply (or it errored out on the missing
-		// OffscreenCanvas in node — either way it did not preempt the strip).
+		// Tiles land before the storyboard reply, so either way it did not preempt the strip.
 		if (storyboardStarted >= 0) expect(storyboardStarted).toBeGreaterThan(firstTile);
 		expect(state.peak).toBe(1);
 	});

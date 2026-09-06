@@ -9,7 +9,7 @@ describe("deleteRecastObjects", () => {
 	beforeEach(() => {
 		deleteObject.mockReset();
 		deleteObject.mockResolvedValue(undefined);
-		vi.spyOn(console, "error").mockImplementation(() => {});
+		vi.spyOn(console, "error").mockImplementation(() => undefined);
 	});
 
 	it("removes every object the recast owns, video and poster", async () => {

@@ -8,9 +8,19 @@
 
 import { type CaptionStyle, DEFAULT_CAPTION_STYLE } from "@recast/captions";
 import { backgroundNeedsShadow, migrateBackgroundValue } from "@recast/design/backgrounds";
-import { keyframesFromMotionSegments } from "../components/_components/camera-overlay.logic";
-import { scaleTranscript, transcriptTimeScale } from "../lib/captions/normalize";
+import {
+	cameraOverlayFromState,
+	clampPlacement,
+	keyframesFromMotionSegments,
+} from "../components/_components/camera-overlay.logic";
 import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
+import {
+	editAnchor,
+	layoutAtStart,
+	layoutAtTime,
+	pruneClipLayouts,
+	setClipLayout,
+} from "../lib/timeline/camera-clip-layout";
 import {
 	type AudioClip,
 	type AudioClipSource,
@@ -18,8 +28,52 @@ import {
 	splitClip,
 	voiceClip,
 } from "../lib/audio/music";
+import { scaleTranscript, transcriptTimeScale } from "../lib/captions/normalize";
 import type { CursorSampleLike } from "../lib/cursor/smoothing";
 import { EASE, EASE_IN_OUT, type Easing } from "../lib/easing/cubic-bezier";
+import {
+	type Annotation,
+	type AnnotationKind,
+	type AnnotationKindName,
+	type AudioSettings,
+	type BackgroundSelection,
+	type BackgroundType,
+	type CameraLayout,
+	type CameraOverlaySettings,
+	type CameraPlacement,
+	type CaptionExportOptions,
+	type CursorSettings,
+	cameraPlacementFromPreset,
+	clampFramePaddingPercent,
+	DEFAULT_ANNOTATION_FILL,
+	DEFAULT_ANNOTATION_RAMP,
+	DEFAULT_ANNOTATION_STROKE,
+	DEFAULT_CAPTION_EXPORT,
+	DEFAULT_GIF_SETTINGS,
+	DEFAULT_ZOOM_CENTER,
+	DEFAULT_ZOOM_MOTION_BLUR,
+	DEFAULT_ZOOM_RAMP,
+	type DeleteSelectionResult,
+	type EditorRenderState,
+	type EditorSelection,
+	type ExportFormat,
+	type ExportQuality,
+	type ExportSpeed,
+	type GifSettings,
+	generateId,
+	type LayoutMode,
+	normalizeFramePaddingPercent,
+	type OutputAspect,
+	type PanelTab,
+	type ShadowSettings,
+	type TimelineCommands,
+	type TimelineTool,
+	type Transcript,
+	type VideoMetadata,
+	WALLPAPERS,
+	wallpaperBackgroundValue,
+	type ZoomRegion,
+} from "../lib/editor/render-state";
 import type { TimeMode } from "../lib/editor/time";
 import { log } from "../lib/log";
 import { resolveBackgroundWireValue } from "../lib/registry/resolve";
@@ -61,48 +115,6 @@ import {
 	timeMapFromSegments,
 } from "../lib/timeline/time-map";
 import { experimentalStore } from "./experimental.svelte";
-import {
-	type Annotation,
-	type AnnotationKind,
-	type AnnotationKindName,
-	type AudioSettings,
-	type BackgroundSelection,
-	type BackgroundType,
-	type CameraOverlaySettings,
-	type CameraPlacement,
-	type CaptionExportOptions,
-	type CursorSettings,
-	DEFAULT_ANNOTATION_FILL,
-	DEFAULT_ANNOTATION_RAMP,
-	DEFAULT_ANNOTATION_STROKE,
-	DEFAULT_CAPTION_EXPORT,
-	DEFAULT_GIF_SETTINGS,
-	DEFAULT_ZOOM_CENTER,
-	DEFAULT_ZOOM_MOTION_BLUR,
-	DEFAULT_ZOOM_RAMP,
-	type DeleteSelectionResult,
-	type EditorRenderState,
-	type EditorSelection,
-	type ExportFormat,
-	type ExportQuality,
-	type ExportSpeed,
-	type GifSettings,
-	type LayoutMode,
-	type OutputAspect,
-	type ShadowSettings,
-	type TimelineCommands,
-	type TimelineTool,
-	type Transcript,
-	type VideoMetadata,
-	WALLPAPERS,
-	type ZoomRegion,
-	cameraPlacementFromPreset,
-	clampFramePaddingPercent,
-	generateId,
-	normalizeFramePaddingPercent,
-	type PanelTab,
-	wallpaperBackgroundValue,
-} from "../lib/editor/render-state";
 
 export * from "../lib/editor/render-state";
 
@@ -110,28 +122,21 @@ export function createEditorStore() {
 	// Video source
 	let videoPath = $state("");
 	let cursorPath = $state<string | null>(null);
-	// Raw on-disk media paths (the extracted recording / audio tracks), needed
-	// by Rust-side analysis commands such as silence detection.
+	// Raw on-disk media paths, needed by Rust analysis commands such as silence detection.
 	let recordingPath = $state<string | null>(null);
 	let audioPath = $state<string | null>(null);
 	let microphonePath = $state<string | null>(null);
-	// Captions: the generated transcript (session-only for now; project-format
-	// persistence is deferred) + how it renders over the preview.
+	// Generated transcript (session-only; project persistence deferred) plus how it renders.
 	let transcript = $state.raw<Transcript | null>(null);
 	let captionStyle = $state<CaptionStyle>({ ...DEFAULT_CAPTION_STYLE });
 	let metadata = $state<VideoMetadata | null>(null);
-	// The transcribed audio's duration (probed on load). The transcript is timed
-	// on the AUDIO axis but the playhead maps to VIDEO SOURCE time; count-based
-	// CFR makes them differ by a whole-clip gap, so `captionTranscript` rescales.
+	// The transcript is timed on the AUDIO axis while the playhead is VIDEO SOURCE time; count-based CFR makes them differ.
 	let captionAudioDurationSec = $state<number | null>(null);
-	// Memoized so the per-frame caption redraw doesn't re-map every word: only
-	// recomputes when the transcript, video duration, or audio duration changes.
+	// Memoized so the per-frame caption redraw doesn't re-map every word.
 	const captionTranscriptMemo = $derived(
 		scaleTranscript(transcript, transcriptTimeScale(metadata?.duration, captionAudioDurationSec)),
 	);
-	// `$state.raw` for large replace-only arrays: swapped wholesale, never
-	// mutated element-wise, so deep-proxying thousands of entries is pure
-	// overhead; only the array identity needs reactivity. See AGENTS.md.
+	// `$state.raw`: replaced wholesale, never mutated element-wise, so deep proxying is pure overhead.
 	let thumbnailStrip = $state.raw<string[]>([]);
 	// Audio peak envelope (0..1 per bucket) for the timeline waveform. Transient.
 	let waveform = $state.raw<number[]>([]);
@@ -139,16 +144,12 @@ export function createEditorStore() {
 	// Playback
 	let currentTime = $state(0);
 	let isPlaying = $state(false);
-	// The component that owns the <video>/picture-clock registers a transport
-	// seek here. `seek()` moves the playhead AND the transport in lockstep, so a
-	// seek from a panel (e.g. a transcript line) lands even mid-playback; setting
-	// `currentTime` alone is overwritten by the next playback time publish.
+	// `seek()` moves the playhead AND the transport together; setting `currentTime` alone loses to the next time publish.
 	let seekHandler: ((time: number) => void) | null = null;
 	// Registered by Timeline.svelte on mount (see TimelineCommands).
 	let timelineCommands: TimelineCommands | null = null;
 
-	// Active pointer tool. Reset to 'select' on every document load: a mode should
-	// never survive into a different recording.
+	// Reset to 'select' on every document load: a mode must not survive into a different recording.
 	let timelineTool = $state<TimelineTool>("select");
 
 	// Trim
@@ -157,38 +158,26 @@ export function createEditorStore() {
 
 	// Silence / manual cuts: removed ranges, in original-recording seconds.
 	let cuts = $state<TimelineCut[]>([]);
-	// Split markers (original-recording seconds) that divide the clip into
-	// individually deletable segments. Purely an editing aid, with no export effect
-	// until a segment between two boundaries is ripple-deleted (→ a manual cut).
+	// Editing aid only: no export effect until a segment between two boundaries is ripple-deleted.
 	let splitPoints = $state<number[]>([]);
 	let segmentSpeeds = $state<SegmentSpeed[]>([]);
-	// Per-segment scene animations (entrance/exit transforms on the video layer),
-	// anchored to a segment's original start. A segment with no entry is static.
+	// Anchored to a segment's original start; a segment with no entry is static.
 	let segmentAnims = $state<SegmentAnim[]>([]);
-	// Project-wide motion style for scene animations. Authoring-only: it bakes
-	// concrete values into each spec, so the export pipeline never reads it.
+	// Authoring-only: it bakes concrete values into each spec, so the export never reads it.
 	let motionTone = $state<MotionTone>("balanced");
-	// Transient (not serialized): true only while a trim handle is being dragged.
-	// Flips the timeline onto the full-recording axis so the handle can move
-	// across the whole source and reveal the trimmed head/tail (Cap-style ghost).
+	// Transient: flips the timeline onto the full-recording axis so a trim handle can reveal the head and tail.
 	let isTrimming = $state(false);
-	// Transient UI selection: the start time of the highlighted clip block, or
-	// null. Not serialized (mirrors selectedZoomRegionId).
+	// Transient UI selection: start time of the highlighted clip block (mirrors selectedZoomRegionId).
 	let selectedClipStart = $state<number | null>(null);
 	// Transient UI selection: the highlighted cut band's id, or null.
 	let selectedCutId = $state<string | null>(null);
 	// Transient UI selection: the highlighted music/audio clip's id, or null.
 	let selectedMusicClipId = $state<string | null>(null);
-	// Timeline view pref (not serialized): show cuts as restorable GAPS instead of
-	// collapsing them to seams. Rendering only — playback/export stay continuous.
+	// Rendering only: cuts show as restorable gaps while playback and export stay continuous.
 	let showCutGaps = $state(false);
-	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
-	// project reopen doesn't resurface ranges they already rejected.
+	// Persisted so a re-scan or reopen doesn't resurface ranges the user already rejected.
 	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
-	// Per-lane "enable" toggles. When off, the lane greys out, its effect is
-	// bypassed in preview, and the data is excluded from the export pipeline.
-	// The underlying data (cuts, zoom regions) is preserved either way so the
-	// toggle is fully reversible.
+	// Bypasses the lane in preview and export while keeping its data, so the toggle is reversible.
 	let cutsEnabled = $state(true);
 	let focusEnabled = $state(true);
 
@@ -212,62 +201,44 @@ export function createEditorStore() {
 	// Layout
 	let layoutMode = $state<LayoutMode>("auto");
 
-	// Final-canvas aspect. `source` means "follow the input video"; any other
-	// value reframes the canvas via letterbox/pillarbox bars. The preset
-	// picker writes this when the user picks an Instagram/YouTube/X preset.
+	// 'source' follows the input video; any other value reframes the canvas with letterbox or pillarbox bars.
 	let outputAspect = $state<OutputAspect>("source");
 
-	// Id of the most recently applied preset. Pure UI affordance that lets the
-	// toolbar surface "Story · 9:16" so users see, per project, what's in
-	// effect. Cleared when the user resets back to source.
+	// UI affordance only, so the toolbar can show which preset is in effect; cleared on reset to source.
 	let lastAppliedPresetId = $state<string | null>(null);
 
-	// Raw cursor samples shared by the preview compositor and the Cursor panel's
-	// trajectory minimap. Set by VideoPreview on load; read-only elsewhere.
-	// `$state.raw`: tens of thousands of samples, replace-only on load.
+	// `$state.raw`: tens of thousands of samples, replaced on load. Set by VideoPreview, read-only elsewhere.
 	let cursorSamplesRaw = $state.raw<CursorSampleLike[]>([]);
-	// Idle spans (µs, from the cursor track) for the idle-hide fade. Published by
-	// VideoPreview with the raw samples; read by the browser export for parity.
+	// Idle spans (us) for the idle-hide fade; the browser export reads them for parity.
 	let cursorIdlePeriods = $state.raw<{ startUs: number; endUs: number }[]>([]);
 
 	// Annotations + active tool (for the preview canvas's place-mode).
 	let annotations = $state<Annotation[]>([]);
 	let selectedAnnotationId = $state<string | null>(null);
 	let annotationTool = $state<AnnotationKindName | null>(null);
-	// Layer-panel hover state: when set, the overlay flashes the matching
-	// annotation so users can find a layer in a busy frame.
+	// Layer-panel hover: the overlay flashes the matching annotation so a layer is findable in a busy frame.
 	let hoveredAnnotationId = $state<string | null>(null);
-	// Master visibility toggle (the status rail's eye icon). Independent of
-	// per-annotation `hidden` so it can flip without trampling user state.
+	// Independent of per-annotation `hidden`, so the master toggle never tramples user state.
 	let annotationsGloballyHidden = $state<boolean>(false);
 	// Snap engine on/off. Default on. Alt held during drag bypasses regardless.
 	let annotationSnapEnabled = $state<boolean>(true);
-	// Monotonic z-index counter so newly created annotations always start
-	// above existing ones and ordering survives reorder operations.
+	// Monotonic so new annotations start above existing ones and ordering survives reorders.
 	let annotationZSeq = 1;
 
 	// Zoom regions
 	let zoomRegions = $state<ZoomRegion[]>([]);
 	let selectedZoomRegionId = $state<string | null>(null);
-	// Smart Auto-Zoom: persisted per-project so we only auto-apply on the
-	// first editor load. `enabled` is the user's preference; `applied` is
-	// the latch that prevents re-running on every reopen.
+	// `enabled` is the user preference; `applied` is the latch that stops a re-run on every reopen.
 	let autoZoomEnabled = $state(true);
 	let autoZoomApplied = $state(false);
 
-	// Which properties-panel tab is active. Overlays (FocusOverlay,
-	// AnnotationOverlay) gate their editing UI on this so users don't interact
-	// with handles for a feature whose panel isn't visible.
-	let activePanel = $state<PanelTab>("background");
+	// Overlays gate their editing UI on this, so handles never appear for a hidden panel's feature.
+	let activePanel = $state<PanelTab>("canvas");
 
-	// How every timecode in the editor renders. Lives here, not in Timeline.svelte,
-	// so the transport readout and the timeline agree: when this was timeline-local
-	// the player controls had their own hardcoded format and ignored the setting.
-	// UI-only, never serialized into a project.
+	// Lives here so the transport readout and the timeline agree; timeline-local, the player had its own format.
 	let timeMode = $state<TimeMode>("smpte");
 
-	// Global cursor motion easing. `null` means linear (today's behaviour);
-	// a non-null curve reshapes the per-sample lerp in the WebGL preview.
+	// `null` means linear; a curve reshapes the per-sample lerp in the WebGL preview.
 	let cursorMotionEasing = $state<Easing | null>(null);
 
 	// Cursor settings
@@ -305,12 +276,7 @@ export function createEditorStore() {
 	// Music / extra-audio clips laid on the output timeline (mixed in at export).
 	let musicClips = $state<AudioClip[]>([]);
 
-	// Camera overlay defaults, Phase 1 spec:
-	// - Bottom-right corner at 16% size, 1:1 aspect
-	// - Rounded shape (16% corner radius)
-	// - Mirrored on (matches the recording-time webcam preview)
-	// - Soft drop shadow (applied unconditionally in the overlay component)
-	// Position uses normalized 0..1 UV so it survives output-aspect changes.
+	// Phase 1 defaults: bottom-right, 16% size, 1:1, 16% radius, mirrored, in normalized UV so aspect changes survive.
 	let cameraOverlay = $state<CameraOverlaySettings>({
 		enabled: false,
 		mirror: true,
@@ -324,57 +290,45 @@ export function createEditorStore() {
 		defaultPlacement: cameraPlacementFromPreset("bottom-right"),
 		motionSegments: [],
 		keyframes: [],
+		clipLayouts: [],
+		layoutTransition: 0,
+		layoutTransitionEasing: { ...EASE_IN_OUT },
+		cursorDodge: false,
+		cursorDodgeStrength: 0.6,
 		keyframeEasing: { ...EASE_IN_OUT },
 		shadow: 0.35,
 	});
 
 	// Export
 	let exportFormat = $state<ExportFormat>("mp4");
-	// Default to source resolution; downscaling a 1080p+ screen recording to a
-	// fixed "HD" needlessly softens sharp text/UI.
+	// Source resolution by default: downscaling a 1080p+ screen recording softens sharp text and UI.
 	let exportQuality = $state<ExportQuality>("source");
 	let exportSpeed = $state<ExportSpeed>("balanced");
-	// Output frame rate for MP4/WebM. `null` = keep the source recording's rate
-	// (the quality-preserving default). A number requests a clean downsample to
-	// that rate (only ever offered ≤ source, so we never duplicate frames). GIF
-	// has its own fps control in `gifSettings`.
+	// `null` keeps the source rate; a number only ever downsamples. GIF has its own fps in `gifSettings`.
 	let exportFps = $state<number | null>(null);
-	// Seed the 60fps export default once per project (see the `metadata` setter):
-	// a >60fps recording exports far faster at 60 with no perceptible loss, but
-	// Original/30/24 stay selectable. The flag stops a later metadata set from
-	// clobbering a user's choice.
+	// A >60fps recording exports far faster at 60; the flag stops a later metadata set clobbering the user's choice.
 	let exportFpsDefaulted = false;
 	let gifSettings = $state<GifSettings>({ ...DEFAULT_GIF_SETTINGS });
-	// How captions are emitted on export (burn-in / sidecar). Session-only, like
-	// the other export prefs.
+	// Burn-in or sidecar; session-only, like the other export prefs.
 	let captionExport = $state<CaptionExportOptions>({ ...DEFAULT_CAPTION_EXPORT });
 	let exportProgress = $state<number | null>(null);
 	let isExporting = $state(false);
 
-	// Undo/redo history: arrays of de-proxied settings snapshots, always
-	// reassigned with spreads (never index-mutated) and bounded to
-	// `MAX_UNDO_HISTORY`. `$state.raw` since only the array identity is read
-	// reactively; the snapshot contents are already plain.
+	// `$state.raw`: only array identity is read reactively and snapshots are already plain; bounded to MAX_UNDO_HISTORY.
 	type EditorSettings = ReturnType<typeof captureSettings>;
 	let undoStack = $state.raw<EditorSettings[]>([]);
 	let redoStack = $state.raw<EditorSettings[]>([]);
 
-	// Dirty tracking: flips to true the moment the user makes any undoable edit,
-	// clears when the edits are persisted to the .recast archive (markSaved) or
-	// when a fresh render state is loaded from disk.
+	// True from the first undoable edit; cleared by markSaved or by loading a fresh render state.
 	let isDirty = $state(false);
 	let lastSavedAt = $state<number | null>(null);
-	// Frozen snapshot of the last on-disk state. Used by `revertToSaved` to
-	// blow away every unsaved edit at once without walking the undo stack.
-	// Captured whenever the project is loaded from disk or successfully saved.
+	// Frozen last-on-disk state, so `revertToSaved` drops every unsaved edit without walking the undo stack.
 	let savedSnapshot = $state<EditorSettings | null>(null);
 
 	// Timeline zoom
 	let timelineZoom = $state(1); // 1x = fit to width
 
-	// Every undoable state field. Anything left out here silently survives a
-	// `pushUndoState` call but isn't restored on undo: the user sees unrelated
-	// edits revert while their tweak stays put. Keep in sync with `applySnapshot`.
+	// Anything omitted here survives `pushUndoState` but is not restored on undo. Keep in sync with `applySnapshot`.
 	function captureSettings() {
 		return {
 			backgroundType,
@@ -402,12 +356,11 @@ export function createEditorStore() {
 			lastAppliedPresetId,
 			cursorMotionEasing,
 			musicClips,
+			captionStyle,
 		};
 	}
 
-	// Deep, de-proxied clone via `$state.snapshot` rather than a JSON round-trip,
-	// so undo/redo never pays a stringify+parse on the press. `applySnapshot`
-	// copies each field into fresh state, so the stored snapshot stays pristine.
+	// `$state.snapshot`, not a JSON round-trip, so undo/redo never pays stringify+parse on the press.
 	function getSettingsSnapshot(): EditorSettings {
 		return $state.snapshot(captureSettings()) as EditorSettings;
 	}
@@ -439,17 +392,12 @@ export function createEditorStore() {
 		}
 	}
 
-	// Drop the most recent undo entry. For unwinding a push that turned into a
-	// no-op, e.g. a placement that pushed at pointer-down but was cancelled
-	// (too-small drag / stray click) before it changed anything.
+	// Unwinds a push that turned into a no-op, e.g. a placement cancelled before it changed anything.
 	function popUndoState() {
 		if (undoStack.length > 0) undoStack = undoStack.slice(0, -1);
 	}
 
-	// Coalesced undo: a sequence of small edits that share the same `key`
-	// inside `ttlMs` of each other becomes a single undo entry. Used for
-	// keyboard nudges (e.g. holding ArrowLeft on a trim handle) so a
-	// 30-frame walk-back is one Ctrl+Z press, not thirty.
+	// Edits sharing a `key` within `ttlMs` collapse into one entry, so a 30-frame nudge is one Ctrl+Z.
 	let lastCoalesceKey: string | null = null;
 	let lastCoalesceAt = 0;
 	function pushUndoStateCoalesced(key: string, ttlMs = 500) {
@@ -472,9 +420,7 @@ export function createEditorStore() {
 
 	function revertToSaved() {
 		if (!savedSnapshot) return;
-		// Push the current state onto the undo stack so the revert itself
-		// is undoable, so a user who reverts by mistake can Ctrl+Z their way
-		// back to the work they discarded.
+		// Push first so the revert itself is undoable and a mistaken revert can be walked back.
 		undoStack = [...undoStack, getSettingsSnapshot()].slice(-MAX_UNDO_HISTORY);
 		redoStack = [];
 		applySnapshot(savedSnapshot);
@@ -497,8 +443,7 @@ export function createEditorStore() {
 		applySnapshot(next);
 	}
 
-	// Each field is copied (spread/map) into fresh state, never aliased: the
-	// snapshot lives on the undo stack and must stay immutable across re-applies.
+	// Fields are copied, never aliased: the snapshot stays immutable across re-applies.
 	function applySnapshot(s: EditorSettings) {
 		backgroundType = s.backgroundType;
 		backgroundValue = s.backgroundValue;
@@ -526,9 +471,7 @@ export function createEditorStore() {
 		segmentSpeeds = (s.segmentSpeeds ?? []).map((o: SegmentSpeed) => ({ ...o }));
 		segmentAnims = (s.segmentAnims ?? []).map((o: SegmentAnim) => ({ ...o }));
 		motionTone = s.motionTone ?? "balanced";
-		// Annotation undo: restore the captured array. Each entry already
-		// carries its own id from the snapshot, so we keep them so refs from
-		// `selectedAnnotationId` etc. survive the undo cleanly.
+		// Entries keep their snapshot ids, so refs like `selectedAnnotationId` survive the undo.
 		if (Array.isArray(s.annotations)) {
 			annotations = s.annotations.map((a: Annotation) => ({ ...a }));
 			annotationZSeq = annotations.length + 1;
@@ -540,9 +483,7 @@ export function createEditorStore() {
 			}
 		}
 		cursorSettings = { ...s.cursorSettings };
-		// Backward-compat: old project files don't have per-track volumes.
-		// Fall back to the master volume for any missing per-track field so
-		// pre-Fix-1 projects keep their mix at 100% system/mic.
+		// Old projects have no per-track volumes; fall back to master so their mix stays 100% system and mic.
 		if (s.audioSettings) {
 			const loaded = s.audioSettings;
 			audioSettings = {
@@ -556,12 +497,8 @@ export function createEditorStore() {
 				fadeOut: loaded.fadeOut,
 				normalizeLoudness: loaded.normalizeLoudness ?? false,
 			};
-		} else {
-			audioSettings = audioSettings;
 		}
-		// Camera overlay was previously captured in the snapshot but not
-		// restored here, which silently destroyed camera-overlay edits on
-		// undo. Deep-copy so subsequent mutations don't alias the snapshot.
+		// Camera overlay was captured but never restored, which silently destroyed overlay edits on undo.
 		if (s.cameraOverlay) {
 			cameraOverlay = {
 				...s.cameraOverlay,
@@ -573,6 +510,13 @@ export function createEditorStore() {
 					atSec: k.atSec,
 					placement: { ...k.placement },
 				})),
+				clipLayouts: (s.cameraOverlay.clipLayouts ?? []).map((c) => ({
+					start: c.start,
+					layout: { ...c.layout },
+				})),
+				layoutTransitionEasing: {
+					...(s.cameraOverlay.layoutTransitionEasing ?? EASE_IN_OUT),
+				},
 				keyframeEasing: { ...(s.cameraOverlay.keyframeEasing ?? EASE_IN_OUT) },
 			};
 		}
@@ -580,6 +524,8 @@ export function createEditorStore() {
 		outputAspect = s.outputAspect ?? "source";
 		lastAppliedPresetId = s.lastAppliedPresetId ?? null;
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
+		// Merge over defaults so an older snapshot missing newer style keys stays valid.
+		if (s.captionStyle) captionStyle = { ...DEFAULT_CAPTION_STYLE, ...s.captionStyle };
 	}
 
 	function addZoomRegion(
@@ -649,21 +595,19 @@ export function createEditorStore() {
 		}
 	}
 
-	function setBackground(selection: BackgroundSelection) {
-		const hasChanged = backgroundType !== selection.type || backgroundValue !== selection.value;
+	function setBackground(next: BackgroundSelection) {
+		const hasChanged = backgroundType !== next.type || backgroundValue !== next.value;
 		if (!hasChanged) return;
 		pushUndoState();
-		backgroundType = selection.type;
-		backgroundValue = selection.value;
-		// A backdrop too close in luminance to the recording leaves the frame with
-		// no visible edge. Turn the shadow on rather than shipping a broken frame;
-		// only ever on, so an explicit disable on a safe backdrop is respected.
-		if (!shadow.enabled && backgroundNeedsShadow(selection.value)) {
+		backgroundType = next.type;
+		backgroundValue = next.value;
+		// A backdrop close in luminance to the recording leaves no visible edge; only ever turned on, never off.
+		if (!shadow.enabled && backgroundNeedsShadow(next.value)) {
 			shadow = { ...shadow, enabled: true };
 			log.info("background", "auto-enabled drop shadow for low-separation backdrop");
 		}
 		// `value` can be a long wallpaper/gradient string, so log only the type.
-		log.info("background", "changed", { type: selection.type });
+		log.info("background", "changed", { type: next.type });
 	}
 
 	/**
@@ -735,11 +679,9 @@ export function createEditorStore() {
 		return true;
 	}
 
-	// The recording's own audio, detached for independent editing, lives as `voice`
-	// clips in `musicClips` (same model + render paths). "Detached" is simply "a
-	// voice clip exists" — no separate flag to keep in sync across undo/serialize.
+	// 'Detached' is just 'a voice clip exists', so there is no separate flag to keep in sync.
 	const audioDetached = $derived(musicClips.some((c) => c.role === "voice"));
-	const canDetachAudio = $derived(!!(audioPath || microphonePath));
+	const canDetachAudio = $derived(Boolean(audioPath || microphonePath));
 	const voiceClips = $derived(musicClips.filter((c) => c.role === "voice"));
 	const musicOnlyClips = $derived(musicClips.filter((c) => c.role !== "voice"));
 
@@ -809,9 +751,7 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
-	// Route a position edit (preset/drag/resize): in per-cut mode it upserts a
-	// keyframe at the playhead (glide between cuts); otherwise it sets the single
-	// static placement. Callers push undo before a drag/preset gesture.
+	// Per-cut mode upserts a keyframe at the playhead; otherwise it sets the single static placement.
 	function setCameraPlacement(placement: CameraPlacement) {
 		if (cameraOverlay.keyframes.length > 0) {
 			const atSec = currentTime;
@@ -824,9 +764,7 @@ export function createEditorStore() {
 		}
 	}
 
-	// Toggle per-cut (keyframed) camera position. Turning on seeds one keyframe at
-	// the playhead from the current static placement, so nothing jumps; turning
-	// off collapses back to the static placement (dropping the keyframes).
+	// On seeds a keyframe at the playhead from the static placement so nothing jumps; off drops the keyframes.
 	function setCameraPerCut(on: boolean) {
 		pushUndoState();
 		if (on && cameraOverlay.keyframes.length === 0) {
@@ -848,15 +786,42 @@ export function createEditorStore() {
 		cameraOverlay = { ...cameraOverlay, keyframes: next };
 	}
 
-	// ---- Selection ---------------------------------------------------------
-	//
-	// Exactly one thing is selected at a time. The three backing fields used to be
-	// independent, so a clip, a zoom region and an annotation could all be lit at
-	// once; Delete then resolved against whichever DOM node held focus rather than
-	// against what was highlighted, and because one Delete handler was window-level
-	// and another was element-level, a single keypress could destroy two objects.
-	// Selecting anything now clears the others, and Delete is a document-level
-	// command over `selection` (see `deleteSelection`).
+	/**
+	 * Turn the camera moves recorded during the take into position keyframes.
+	 * Explicit, because dragging the preview window to see your face is not the
+	 * same as authoring an animation. Replaces existing keyframes, and keeps the
+	 * recorded segments so it can be run again after an undo.
+	 */
+	function importRecordedCameraMoves(): boolean {
+		const imported = keyframesFromMotionSegments(
+			cameraOverlay.motionSegments,
+			cameraOverlay.defaultPlacement,
+		);
+		if (imported.length === 0) return false;
+		pushUndoState();
+		cameraOverlay = { ...cameraOverlay, keyframes: imported };
+		isDirty = true;
+		return true;
+	}
+
+	/** Retime the keyframe nearest `fromSec` to `toSec`, for the timeline's
+	 *  drag-a-keyframe gesture. Keeps its placement; collapses onto a neighbour it lands on. */
+	function moveCameraKeyframe(fromSec: number, toSec: number) {
+		const kfs = cameraOverlay.keyframes;
+		const i = kfs.reduce(
+			(best, k, j) =>
+				Math.abs(k.atSec - fromSec) < Math.abs(kfs[best].atSec - fromSec) ? j : best,
+			0,
+		);
+		if (kfs.length === 0 || Math.abs(kfs[i].atSec - fromSec) > 0.15) return;
+		const at = Math.max(0, toSec);
+		const next = kfs.filter((_, j) => j !== i).filter((k) => Math.abs(k.atSec - at) > 0.05);
+		next.push({ ...kfs[i], atSec: at });
+		next.sort((a, b) => a.atSec - b.atSec);
+		cameraOverlay = { ...cameraOverlay, keyframes: next };
+	}
+
+	// --- Selection: exactly one thing at a time. Selecting clears the others, and Delete is a document-level command over `selection`.
 
 	function selectClip(start: number | null) {
 		selectedClipStart = start;
@@ -991,8 +956,7 @@ export function createEditorStore() {
 		let start = src.end;
 		let end = start + duration;
 		if (end > clipEnd) {
-			// No room after the original: clamp the tail; if that collapses the
-			// window, just stack it on top of the original (user can drag it).
+			// No room after the original: clamp the tail, and if the window collapses, stack it on top.
 			end = clipEnd;
 			start = Math.max(trimStart, end - duration);
 			if (end - start < 0.1) {
@@ -1033,8 +997,7 @@ export function createEditorStore() {
 		log.debounced(`zoom-${id}`, "focus", "zoom_updated", { id, ...updates });
 		zoomRegions = zoomRegions.map((z) => {
 			if (z.id !== id) return z;
-			// First user edit on an auto region detaches it, so "Clear auto
-			// zooms" should leave anything they've tweaked alone.
+			// A first user edit detaches an auto region, so 'Clear auto zooms' leaves tweaked ones alone.
 			const next = { ...z, ...updates };
 			if (z.source === "auto" && updates.source === undefined) {
 				next.source = "manual";
@@ -1051,8 +1014,7 @@ export function createEditorStore() {
 	): Annotation {
 		pushUndoState();
 		const clipEnd = trimEnd || metadata?.duration || 0;
-		// Clamp the playhead into the trimmed clip so adding an annotation while
-		// parked at/past the trim end still yields a valid forward [start,end].
+		// Clamp into the trimmed clip so an annotation added at the trim end still yields a forward range.
 		const now = Math.min(Math.max(currentTime, trimStart), clipEnd);
 		let s = start ?? now;
 		let e = end ?? Math.min(clipEnd, s + 2.0);
@@ -1060,9 +1022,7 @@ export function createEditorStore() {
 			s = Math.max(trimStart, clipEnd - 2.0);
 			e = clipEnd;
 		}
-		// New annotations pick up the current theme colour rather than a fixed
-		// blue, so markup matches the app out of the box (resolved to a concrete
-		// colour here since the export bakes it).
+		// Theme colour rather than a fixed blue, resolved to a concrete value here because the export bakes it.
 		const themeColor = resolveTokenRgb("var(--primary)");
 		const annotation: Annotation = {
 			id: generateId(),
@@ -1072,8 +1032,7 @@ export function createEditorStore() {
 			rampOut: DEFAULT_ANNOTATION_RAMP,
 			easeIn: { ...EASE },
 			easeOut: { ...EASE },
-			// Images start borderless (opt-in via the Appearance controls); shapes
-			// keep the default hairline stroke.
+			// Images start borderless (opt-in via Appearance); shapes keep the hairline stroke.
 			stroke: {
 				...DEFAULT_ANNOTATION_STROKE,
 				color: themeColor,
@@ -1182,8 +1141,7 @@ export function createEditorStore() {
 		const targetIdx = idx + direction;
 		if (targetIdx < 0 || targetIdx >= ordered.length) return;
 		pushUndoState();
-		// Reassign z values to a strictly-monotonic 1..N sequence with the
-		// pair swapped so the result is stable under repeated reorders.
+		// Strictly monotonic 1..N with the pair swapped, so repeated reorders stay stable.
 		const next = [...ordered];
 		[next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
 		const zMap = new Map(next.map((a, i) => [a.id, i + 1]));
@@ -1195,7 +1153,10 @@ export function createEditorStore() {
 	function setAnnotationZOrder(orderedIds: string[]) {
 		pushUndoState();
 		const zMap = new Map(orderedIds.map((id, i) => [id, i + 1]));
-		annotations = annotations.map((a) => (zMap.has(a.id) ? { ...a, zIndex: zMap.get(a.id)! } : a));
+		annotations = annotations.map((a) => {
+			const z = zMap.get(a.id);
+			return z === undefined ? a : { ...a, zIndex: z };
+		});
 		annotationZSeq = orderedIds.length + 1;
 	}
 
@@ -1280,6 +1241,11 @@ export function createEditorStore() {
 			defaultPlacement: cameraPlacementFromPreset("bottom-right"),
 			motionSegments: [],
 			keyframes: [],
+			clipLayouts: [],
+			layoutTransition: 0,
+			layoutTransitionEasing: { ...EASE_IN_OUT },
+			cursorDodge: false,
+			cursorDodgeStrength: 0.6,
 			keyframeEasing: { ...EASE_IN_OUT },
 			shadow: 0.35,
 			zoomFollow: true,
@@ -1360,23 +1326,12 @@ export function createEditorStore() {
 		};
 	}
 
-	// Manual split/cut is an always-on feature now; auto silence is still its own
-	// opt-in flag (`silenceDetection`). A cut is only "active" (i.e. shown on the
-	// timeline and applied in playback/export) when its source allows it AND the
-	// cuts lane is enabled. A disabled silence flag preserves those edits but
-	// ignores them, so toggling it back on restores them.
+	// A cut applies only when its source flag allows it and the lane is on; a disabled flag preserves the edits.
 	function cutFlagAllows(c: TimelineCut): boolean {
 		return c.source === "silence" ? experimentalStore.silenceDetection : true;
 	}
 	/** Cuts that actually apply right now (flag-gated + lane-enabled). */
-	// The cut → segment → time-map chain is memoized with $derived, then exposed
-	// through the same accessor functions so no caller changes. It used to rebuild
-	// on EVERY read: the waveform lane's `xOf → timeMap` runs twice per bucket over
-	// ~2000 buckets, so a single zoom frame rebuilt it thousands of times. $derived
-	// auto-tracks every input ($state cuts/splits/trim/speeds/isTrimming/metadata +
-	// the reactive `silenceDetection` flag), so it caches yet cannot go stale — the
-	// pure math (deriveSegments/timeMapFromSegments) is unchanged, only re-run when
-	// an input actually changes.
+	// $derived, not per-read: the waveform lane's xOf rebuilt this thousands of times per zoom frame.
 	const cutsMemo = $derived.by<TimelineCut[]>(() =>
 		cutsEnabled ? cuts.filter(cutFlagAllows) : [],
 	);
@@ -1408,12 +1363,15 @@ export function createEditorStore() {
 	 * closed to seams. `output 0 == inPoint`; the clip fills the track from the
 	 * left. Every lane, the playhead, and the preview clock position against this.
 	 * At all-1× speeds it's the cut translation map restricted to [inPoint,outPoint]. */
+	// Playback and export position against the KEPT axis; `timeMapMemo` swaps in the full recording mid trim-drag.
+	const keptTimeMapMemo = $derived.by(() =>
+		timeMapFromSegments(segmentsMemo, buildSpeedOf(segmentsMemo, segmentSpeeds)),
+	);
+
 	const timeMapMemo = $derived.by(() => {
-		const segs = segmentsMemo;
-		const speedOf = buildSpeedOf(segs, segmentSpeeds);
-		// While trimming, un-collapse onto the full recording so the handle can
-		// move across the whole source (and reveal/restore the trimmed head/tail).
+		// While trimming, un-collapse onto the full recording so the handle can reveal the trimmed head and tail.
 		if (isTrimming) {
+			const segs = segmentsMemo;
 			const { start, end } = clipBounds();
 			return displayTimeMap({
 				trimStart: start,
@@ -1421,21 +1379,18 @@ export function createEditorStore() {
 				durationSec: metadata?.duration ?? end,
 				segments: segs,
 				cuts: cutsMemo,
-				speedOf,
+				speedOf: buildSpeedOf(segs, segmentSpeeds),
 			});
 		}
-		return timeMapFromSegments(segs, speedOf);
+		return keptTimeMapMemo;
 	});
 	function currentTimeMap() {
 		return timeMapMemo;
 	}
 
-	// The axis lanes RENDER against. Identical to `timeMap` unless "show cut gaps"
-	// is on (then cuts get real width). Playback/export never read this — only the
-	// playhead position, ruler, and lane layouts do — so seeking stays gapless.
+	// Lanes render against this; playback and export never read it, so seeking stays gapless.
 	const renderMap = $derived(showCutGaps ? buildGapMap(timeMapMemo) : timeMapMemo);
-	// Convert an OUTPUT-axis position (music/voice clips live there) to the render
-	// axis, and back for pointer math. Identity when gaps are off.
+	// OUTPUT axis (where music and voice clips live) to the render axis and back; identity when gaps are off.
 	function outputToRenderSec(outputSec: number): number {
 		if (!showCutGaps) return outputSec;
 		return originalToOutput(renderMap, outputToOriginal(timeMapMemo, outputSec));
@@ -1464,6 +1419,39 @@ export function createEditorStore() {
 		pushUndoStateCoalesced(`segment-speed-${start.toFixed(3)}`, 400);
 		const next = upsertSegmentSpeed(segmentSpeeds, start, speed);
 		segmentSpeeds = pruneSegmentSpeeds(next, currentSegments());
+		isDirty = true;
+	}
+
+	/** The camera layout of the clip containing original time `t`. */
+	function cameraLayoutAtTime(t: number): CameraLayout {
+		return layoutAtTime(currentSegments(), cameraOverlay.clipLayouts, t);
+	}
+
+	/** The clip the layout controls edit: the selected one, else the playhead's. */
+	function cameraLayoutAnchor(): number | null {
+		return editAnchor(currentSegments(), selectedClipStart, currentTime);
+	}
+
+	/** The layout of that clip, so the panel shows what it is about to change. */
+	function currentCameraLayout(): CameraLayout {
+		const start = cameraLayoutAnchor();
+		return start === null ? { kind: "pip" } : layoutAtStart(cameraOverlay.clipLayouts, start);
+	}
+
+	/**
+	 * Set the camera layout of the clip containing the playhead. Anchored to the
+	 * clip's original start like a segment speed, and orphaned anchors are pruned
+	 * so a later trim cannot leave a layout pinned to a clip that no longer exists.
+	 */
+	function setCameraLayoutAtPlayhead(layout: CameraLayout) {
+		const start = cameraLayoutAnchor();
+		if (start === null) return;
+		pushUndoStateCoalesced(`camera-layout-${start.toFixed(3)}`, 400);
+		const next = setClipLayout(cameraOverlay.clipLayouts, start, layout);
+		cameraOverlay = {
+			...cameraOverlay,
+			clipLayouts: pruneClipLayouts(next, currentSegments()),
+		};
 		isDirty = true;
 	}
 
@@ -1645,9 +1633,7 @@ export function createEditorStore() {
 			},
 		].sort((a, b) => a.start - b.start);
 		selectedClipStart = null;
-		// `seg.end` is the first kept frame after the removed range (end-exclusive
-		// cut), so it's a safe spot for the playhead; `seg.start` would land
-		// inside the new cut.
+		// `seg.end` is the first kept frame after the removed range; `seg.start` would land inside the new cut.
 		return seg.end;
 	}
 
@@ -1673,8 +1659,7 @@ export function createEditorStore() {
 			outputAspect,
 			lastAppliedPresetId,
 			backgroundType,
-			// `ext:` background ids → the pack's hydrated absolute path; built-in
-			// values (hex/gradient/`asset:<id>`) pass through unchanged.
+			// `ext:` ids resolve to the pack's absolute path; built-in values pass through unchanged.
 			backgroundValue: resolveBackgroundWireValue(backgroundValue),
 			backgroundBlur,
 			padding,
@@ -1738,6 +1723,11 @@ export function createEditorStore() {
 					atSec: k.atSec,
 					placement: { ...k.placement },
 				})),
+				clipLayouts: cameraOverlay.clipLayouts.map((c) => ({
+					start: c.start,
+					layout: { ...c.layout },
+				})),
+				layoutTransitionEasing: { ...cameraOverlay.layoutTransitionEasing },
 				keyframeEasing: { ...cameraOverlay.keyframeEasing },
 			},
 			layoutMode,
@@ -1750,9 +1740,7 @@ export function createEditorStore() {
 		outputAspect = state.outputAspect ?? "source";
 		lastAppliedPresetId = state.lastAppliedPresetId ?? null;
 		backgroundType = state.backgroundType ?? "color";
-		// Retired stock presets forward to their replacement, so a project saved
-		// against the old set still highlights a swatch instead of reading as
-		// "custom". Untouched for any value that was never a preset.
+		// Retired stock presets forward to their replacement, so an old project still highlights a swatch.
 		backgroundValue = migrateBackgroundValue(state.backgroundValue ?? "#111111");
 		backgroundBlur = state.backgroundBlur ?? 0;
 		padding = normalizeFramePaddingPercent(state.padding ?? 0, metadata);
@@ -1790,9 +1778,7 @@ export function createEditorStore() {
 			source: region.source ?? "manual",
 			hidden: region.hidden ?? false,
 		}));
-		// Legacy projects predate the auto-zoom flags. Treat them as already
-		// processed so we don't retroactively scatter zooms across footage
-		// the user already finished editing.
+		// Legacy projects predate the flags; treat them as processed so zooms aren't scattered over finished edits.
 		autoZoomEnabled = state.autoZoomEnabled ?? true;
 		autoZoomApplied = state.autoZoomApplied ?? state.zoomRegions !== undefined;
 		cuts = (state.cuts ?? []).map((c) => ({
@@ -1827,63 +1813,16 @@ export function createEditorStore() {
 				fadeOut: loaded.fadeOut,
 				normalizeLoudness: loaded.normalizeLoudness ?? false,
 			};
-		} else {
-			audioSettings = audioSettings;
 		}
 		transcript = state.transcript ?? null;
 		captionStyle = state.captionStyle
 			? { ...DEFAULT_CAPTION_STYLE, ...state.captionStyle }
 			: { ...DEFAULT_CAPTION_STYLE };
-		// Camera overlay defaults match the Phase 1 spec: bottom-right at
-		// 16% size. Older projects stored top-right at 22%; the explicit
-		// `?? `-fallbacks below preserve those if present, only swapping in
-		// the new defaults when the field is absent on the loaded state.
-		const fallbackPlacement = cameraPlacementFromPreset("bottom-right");
-		const loadedPlacement = {
-			x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
-			y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
-			width: state.cameraOverlay?.defaultPlacement?.width ?? fallbackPlacement.width,
-			height: state.cameraOverlay?.defaultPlacement?.height ?? fallbackPlacement.height,
-		};
-		const loadedKeyframes = (state.cameraOverlay?.keyframes ?? []).map((k) => ({
-			atSec: k.atSec,
-			placement: { ...k.placement },
-		}));
-		// Camera moves made during the recording arrive as `motionSegments`, which
-		// nothing evaluates. Fold them into the keyframes both the preview and the
-		// export already read, then drop them — authored keyframes win, since the
-		// user has since edited the path by hand.
-		const recordedKeyframes =
-			loadedKeyframes.length > 0
-				? loadedKeyframes
-				: keyframesFromMotionSegments(
-						(state.cameraOverlay?.motionSegments ?? []).map((segment) => ({
-							...segment,
-							easeIn: segment.easeIn ?? { ...EASE },
-							easeOut: segment.easeOut ?? { ...EASE },
-						})),
-						loadedPlacement,
-					);
-		cameraOverlay = {
-			enabled: state.cameraOverlay?.enabled ?? false,
-			mirror: state.cameraOverlay?.mirror ?? true,
-			shape: state.cameraOverlay?.shape ?? "rounded",
-			cornerRadius: state.cameraOverlay?.cornerRadius ?? 0.16,
-			animationPreset: state.cameraOverlay?.animationPreset ?? "soft",
-			zoomFollow: state.cameraOverlay?.zoomFollow ?? true,
-			zoomFollowStrength: state.cameraOverlay?.zoomFollowStrength ?? 0.6,
-			zoomFollowDuration: state.cameraOverlay?.zoomFollowDuration ?? 0.4,
-			zoomFollowEasing: state.cameraOverlay?.zoomFollowEasing
-				? { ...state.cameraOverlay.zoomFollowEasing }
-				: { ...EASE_IN_OUT },
-			keyframes: recordedKeyframes,
-			keyframeEasing: state.cameraOverlay?.keyframeEasing
-				? { ...state.cameraOverlay.keyframeEasing }
-				: { ...EASE_IN_OUT },
-			shadow: state.cameraOverlay?.shadow ?? 0.35,
-			defaultPlacement: loadedPlacement,
-			motionSegments: [],
-		};
+		// Phase 1 defaults (bottom-right, 16%); an older project's top-right 22% placement survives as its own value.
+		cameraOverlay = cameraOverlayFromState(
+			state.cameraOverlay,
+			cameraPlacementFromPreset("bottom-right"),
+		);
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		layoutMode = state.layoutMode ?? layoutMode;
 		annotations = (state.annotations ?? []).map((a, idx) => ({
@@ -1911,8 +1850,7 @@ export function createEditorStore() {
 		annotationTool = null;
 		timelineTool = "select";
 		hoveredAnnotationId = null;
-		// Restore the "hide all annotations" toggle. Hidden only when explicitly
-		// disabled; absent (older projects) or true → visible.
+		// Hidden only when explicitly disabled; absent (older projects) or true means visible.
 		annotationsGloballyHidden = state.annotationsEnabled === false;
 		// A freshly loaded document matches on-disk state, so no unsaved edits.
 		isDirty = false;
@@ -1962,9 +1900,7 @@ export function createEditorStore() {
 		},
 		set metadata(v: VideoMetadata | null) {
 			metadata = v;
-			// Default export to 60fps for >60fps recordings: imperceptible for a
-			// screen demo, ~halves export time. Seeded once so a later user choice is
-			// never clobbered; Original/30/24 remain selectable in the dialog.
+			// 60fps for >60fps recordings roughly halves export time; seeded once so a later user choice stands.
 			if (v) {
 				if (!exportFpsDefaulted && v.fps > 60.5) exportFps = 60;
 				exportFpsDefaulted = true;
@@ -2034,10 +1970,7 @@ export function createEditorStore() {
 			isPlaying = v;
 		},
 
-		// Raw mark fields. Setters intentionally do NOT push undo; callers
-		// (Timeline drag/keyboard handlers) own undo coalescing via
-		// `pushUndoStateCoalesced` so a single drag or held arrow key is one
-		// undo entry, not one-per-pointer-frame.
+		// Setters do NOT push undo: Timeline handlers own coalescing, so a drag is one entry, not one per frame.
 		get trimStart() {
 			return trimStart;
 		},
@@ -2054,9 +1987,7 @@ export function createEditorStore() {
 			isDirty = true;
 		},
 
-		// Convenience accessors using NLE terminology. `outPoint` resolves
-		// the legacy `0 = unset` sentinel against the source duration so
-		// callers never need the `trimEnd || duration` dance.
+		// `outPoint` resolves the legacy `0 = unset` sentinel, so callers skip the `trimEnd || duration` dance.
 		get inPoint() {
 			return Math.max(0, trimStart);
 		},
@@ -2168,9 +2099,7 @@ export function createEditorStore() {
 			return zoomRegions;
 		},
 
-		// Silence / manual cuts. `cuts` is the raw stored list (used by feature
-		// banners and the silence review); `effectiveCuts` is the flag-gated +
-		// lane-enabled subset that actually applies in playback/export/display.
+		// `cuts` is the raw stored list; `effectiveCuts` is the flag- and lane-gated subset that actually applies.
 		get cuts() {
 			return cuts;
 		},
@@ -2184,8 +2113,7 @@ export function createEditorStore() {
 			return dismissedSilences;
 		},
 
-		// Lane "enable" toggles: bypass the lane's effect in preview/export
-		// while keeping the underlying data intact.
+		// Lane toggles bypass the effect in preview and export while keeping the underlying data intact.
 		get cutsEnabled() {
 			return cutsEnabled;
 		},
@@ -2195,9 +2123,7 @@ export function createEditorStore() {
 			log.info("feature", "toggled", { feature: "cuts", enabled: v });
 		},
 
-		// Split/segment editing. `segments` is derived (trim − active cuts, sliced
-		// by active splits); `splitPoints` is the marker list the timeline renders
-		// Both empty out when timeline editing is opted off.
+		// `segments` is derived (trim minus active cuts, sliced by splits); both empty when timeline editing is off.
 		get segments() {
 			return currentSegments();
 		},
@@ -2207,11 +2133,14 @@ export function createEditorStore() {
 		get segmentSpeeds() {
 			return segmentSpeeds;
 		},
-		// Warped output axis (kept segments × per-segment speed). Reduces to the
-		// cut translation map when every segment is 1×. Un-collapses to the full
-		// recording while `isTrimming` so a trim drag can reveal the trimmed parts.
+		// Reduces to the cut translation map at 1x, and un-collapses to the full recording while `isTrimming`.
 		get timeMap() {
 			return currentTimeMap();
+		},
+		/** The kept axis, never the trim-drag display axis. What the export
+		 *  replays and what playback positions against. */
+		get keptTimeMap() {
+			return keptTimeMapMemo;
 		},
 		get renderMap() {
 			return renderMap;
@@ -2244,8 +2173,7 @@ export function createEditorStore() {
 		setMotionTone,
 		setSeamTransition,
 		seamTransitionAt,
-		// Setters route through the exclusive selectors, so every existing call site
-		// (and every future one) gets one-selection-at-a-time for free.
+		// Setters route through the exclusive selectors, so every call site gets one-selection-at-a-time.
 		get selectedClipStart() {
 			return selectedClipStart;
 		},
@@ -2415,6 +2343,8 @@ export function createEditorStore() {
 			isDirty = true;
 		},
 		updateCaptionStyle(updates: Partial<CaptionStyle>) {
+			// Coalesce by field so a slider drag is one undo entry; distinct controls stay separate.
+			pushUndoStateCoalesced(`caption:${Object.keys(updates).sort().join(",")}`);
 			captionStyle = { ...captionStyle, ...updates };
 			isDirty = true;
 		},
@@ -2501,9 +2431,7 @@ export function createEditorStore() {
 		get canRedo() {
 			return redoStack.length > 0;
 		},
-		// Revert is only meaningful once we have a saved baseline AND the
-		// user has diverged from it. Without `isDirty` the button would be
-		// a no-op that still consumed an undo slot.
+		// Needs a saved baseline AND divergence; without `isDirty` the button is a no-op that eats an undo slot.
 		get canRevert() {
 			return isDirty && savedSnapshot !== null;
 		},
@@ -2534,7 +2462,13 @@ export function createEditorStore() {
 		updateCameraOverlayLive,
 		setCameraPlacement,
 		setCameraPerCut,
+		cameraLayoutAtTime,
+		cameraLayoutAnchor,
+		currentCameraLayout,
+		setCameraLayoutAtPlayhead,
+		importRecordedCameraMoves,
 		removeCameraKeyframeNear,
+		moveCameraKeyframe,
 		addZoomRegion,
 		addAutoZoomRegion,
 		clearAutoZooms,

@@ -1,29 +1,24 @@
 <script lang="ts" module>
-  import type { SVGAttributes } from "svelte/elements";
+import type { SVGAttributes } from "svelte/elements";
 
-  /**
-   * Icon geometry as data, mirroring `@lucide/svelte`'s `IconNode`: an array of
-   * `[svgTag, attributes]` tuples. Authoring an icon is pure data — no new
-   * component file — which keeps the local set extensible and tree-shakeable.
-   */
-  export type IconNode = [tag: string, attrs: Record<string, string | number>][];
+/**
+ * Icon geometry as data, mirroring `@lucide/svelte`'s `IconNode`: an array of
+ * `[svgTag, attributes]` tuples. Authoring an icon is pure data — no new
+ * component file — which keeps the local set extensible and tree-shakeable.
+ */
+export type IconNode = [tag: string, attrs: Record<string, string | number>][];
 
-  export interface LocalIconProps extends SVGAttributes<SVGSVGElement> {
-    size?: number | string;
-    color?: string;
-    strokeWidth?: number | string;
-    absoluteStrokeWidth?: boolean;
-    iconNode?: IconNode;
-  }
+export interface LocalIconProps extends SVGAttributes<SVGSVGElement> {
+	size?: number | string;
+	color?: string;
+	strokeWidth?: number | string;
+	absoluteStrokeWidth?: boolean;
+	iconNode?: IconNode;
+}
 </script>
 
 <script lang="ts">
-  // Lucide-compatible custom-icon base. The prop surface matches a Lucide icon
-  // (`size` / `color` / `strokeWidth` / `absoluteStrokeWidth` / `class` +
-  // currentColor stroke), so a `<LocalIcon iconNode={…} />` drops into the same
-  // call sites and a `size-*` class overrides the width/height attrs via CSS.
-  // Documented exception to AGENTS.md §4 "Lucide icons only", alongside
-  // `brand-icons` — for first-party glyphs Lucide doesn't ship.
+  // A @recast/icons-compatible prop surface so custom glyphs drop into the same call sites; a documented exception to the @recast/icons-only rule.
   import { cn } from "@recast/ui/utils";
   import type { Snippet } from "svelte";
 

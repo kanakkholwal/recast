@@ -1,15 +1,15 @@
 <script lang="ts">
+import { AudioLines, Repeat, Scissors, Trash2 } from "@recast/icons";
 import {
+	type AudioClip,
 	clipDisplayName,
 	clipEndSec,
 	moveClip,
 	trimClipLeft,
 	trimClipRight,
-	type AudioClip,
 } from "../../../lib/audio/music";
-import type { EditorStore, PanelTab } from "../../../stores/editor-store.svelte";
 import { originalToOutput } from "../../../lib/timeline/time-map";
-import { AudioLines, Repeat, Scissors, Trash2 } from "@recast/icons";
+import type { EditorStore, PanelTab } from "../../../stores/editor-store.svelte";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
 import {
 	CLIP_BASE,
@@ -21,11 +21,7 @@ import {
 } from "./timeline-clip.styles";
 import { CLIP_ROW_HEIGHT_PX, edgeHandleWidth, type LaneCardLayout } from "./timeline-stack";
 
-// Editable audio clips on the OUTPUT timeline: drag the body to move, the edges
-// to trim, and split/delete a selected clip. Serves both the music lane and the
-// detached-recording "voice" lane — same model, same store ops (keyed by id),
-// only the subset (`clips`) and colour (`variant`) differ. The model, preview
-// engine, and export all already read startOutputSec/offsetSec/durationSec.
+// Editable audio clips on the OUTPUT timeline; the music and voice lanes share the model and store ops, differing only by subset and colour.
 
 interface Props {
 	store: EditorStore;
@@ -77,8 +73,7 @@ interface Drag {
 	gearOffset: number;
 }
 let drag = $state<Drag | null>(null);
-// Pushed on the first real move, not at pointer-down: clicking a clip to select
-// it used to leave an undo entry that changed nothing.
+// Pushed on the first real move: clicking a clip to select it used to leave an undo entry that changed nothing.
 let dragUndoPushed = false;
 
 function outputSecAt(clientX: number): number {
@@ -87,8 +82,7 @@ function outputSecAt(clientX: number): number {
 	return Math.max(0, store.renderSecToOutputSec(x / pps));
 }
 
-// Snap the dragged edge/position to the playhead and the timeline ends.
-// `bypass` is Ctrl/Cmd held, for a placement the magnetism fights.
+// Snaps to the playhead and the timeline ends; `bypass` is Ctrl held, for a placement the magnetism fights.
 function snap(sec: number, bypass = false): number {
 	if (bypass) return sec;
 	const tol = pps > 0 ? 6 / pps : 0;
@@ -106,9 +100,7 @@ function gearedValue(raw: number): number {
 	return base + drag.gearOffset;
 }
 
-// Pointer position in output seconds, damped while Shift is held. On a modifier
-// flip the anchor and offset are re-seeded so `gearedValue` is continuous —
-// otherwise letting go of Shift would teleport the clip to the raw pointer.
+// Re-seed the anchor and offset on a modifier flip, or letting go of Shift teleports the clip to the raw pointer.
 function gearedSecAt(event: PointerEvent): number {
 	if (!drag) return 0;
 	const raw = outputSecAt(event.clientX);
@@ -143,13 +135,13 @@ function startDrag(e: PointerEvent, clip: AudioClip, mode: DragMode) {
 
 function onMove(e: PointerEvent) {
 	if (!drag || e.pointerId !== drag.pointerId) return;
-	// A press is a click until it clears the threshold, so selecting a clip
-	// can't nudge it or leave an undo entry that changed nothing.
+	// A press is a click until it clears the threshold, so selecting can't nudge it or leave a no-op undo entry.
 	if (!drag.engaged) {
 		if (!dragEngaged(e.clientX, drag.startClientX)) return;
 		drag.engaged = true;
 	}
-	const clip = store.musicClips.find((c) => c.id === drag!.id);
+	const dragId = drag.id;
+	const clip = store.musicClips.find((c) => c.id === dragId);
 	if (!clip) return;
 	if (!dragUndoPushed) {
 		store.pushUndoState();
@@ -188,8 +180,7 @@ function splitSelected() {
 	if (store.selectedMusicClipId) store.splitMusicClip(store.selectedMusicClipId, playheadOutput);
 }
 
-// Arrow moves the clip, Alt+Arrow trims its end. Sequential presses coalesce
-// into one undo entry so a held key is one edit.
+// Arrow moves the clip and Alt+Arrow trims its end; sequential presses coalesce so a held key is one edit.
 function onClipKeydown(e: KeyboardEvent, clip: AudioClip) {
 	if (e.key === "Enter" || e.key === " ") {
 		e.preventDefault();

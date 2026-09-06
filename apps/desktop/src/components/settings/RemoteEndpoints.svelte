@@ -1,135 +1,125 @@
 <script lang="ts">
-	import {
-		Check,
-		KeyRound,
-		LoaderCircle,
-		Pencil,
-		Plus,
-		Server,
-		Trash2,
-		X,
-	} from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
-	import { cn } from "@recast/ui/utils";
-	import { onMount } from "svelte";
-	import {
-		deleteRemoteAsrEndpoint,
-		listRemoteAsrEndpoints,
-		setRemoteAsrEndpoint,
-		setRemoteAsrKey,
-		type RemoteAsrEndpointInfo,
-	} from "$lib/ipc";
-	import {
-		emptyForm,
-		formFromEndpoint,
-		slugify,
-		validateForm,
-		toEndpoint,
-		type EndpointForm,
-	} from "./remote-endpoints.logic";
+import { Check, KeyRound, LoaderCircle, Pencil, Plus, Server, Trash2, X } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { onMount } from "svelte";
+import {
+	deleteRemoteAsrEndpoint,
+	listRemoteAsrEndpoints,
+	type RemoteAsrEndpointInfo,
+	setRemoteAsrEndpoint,
+	setRemoteAsrKey,
+} from "$lib/ipc";
+import {
+	type EndpointForm,
+	emptyForm,
+	formFromEndpoint,
+	slugify,
+	toEndpoint,
+	validateForm,
+} from "./remote-endpoints.logic";
 
-	/**
-	 * Manage OpenAI-compatible transcription endpoints. Config (name/URL/model) is
-	 * non-secret and returned by `list_remote_asr_endpoints`; the API key is
-	 * write-only via `set_remote_asr_key` (never read back), so the UI only shows
-	 * whether a key is stored.
-	 */
-	let endpoints = $state<RemoteAsrEndpointInfo[] | null>(null);
-	let form = $state<EndpointForm | null>(null);
-	/** Non-null while editing an existing endpoint (id is locked then). */
-	let editingId = $state<string | null>(null);
-	let keyInput = $state("");
-	/** Auto-derive the id from the name while adding, until the user edits it. */
-	let autoSlug = $state(true);
-	let busy = $state(false);
+/**
+ * Manage OpenAI-compatible transcription endpoints. Config (name/URL/model) is
+ * non-secret and returned by `list_remote_asr_endpoints`; the API key is
+ * write-only via `set_remote_asr_key` (never read back), so the UI only shows
+ * whether a key is stored.
+ */
+let endpoints = $state<RemoteAsrEndpointInfo[] | null>(null);
+let form = $state<EndpointForm | null>(null);
+/** Non-null while editing an existing endpoint (id is locked then). */
+let editingId = $state<string | null>(null);
+let keyInput = $state("");
+/** Auto-derive the id from the name while adding, until the user edits it. */
+let autoSlug = $state(true);
+let busy = $state(false);
 
-	async function load() {
-		try {
-			endpoints = await listRemoteAsrEndpoints();
-		} catch (e) {
-			toast.error(`Couldn't load remote endpoints: ${e}`);
-			endpoints = [];
-		}
+async function load() {
+	try {
+		endpoints = await listRemoteAsrEndpoints();
+	} catch (e) {
+		toast.error(`Couldn't load remote endpoints: ${e}`);
+		endpoints = [];
 	}
+}
 
-	function openAdd() {
-		form = emptyForm();
-		editingId = null;
-		keyInput = "";
-		autoSlug = true;
+function openAdd() {
+	form = emptyForm();
+	editingId = null;
+	keyInput = "";
+	autoSlug = true;
+}
+
+function openEdit(ep: RemoteAsrEndpointInfo) {
+	form = formFromEndpoint(ep);
+	editingId = ep.id;
+	keyInput = "";
+	autoSlug = false;
+}
+
+function closeForm() {
+	form = null;
+	editingId = null;
+	keyInput = "";
+}
+
+function onNameInput() {
+	if (form && autoSlug && !editingId) form.id = slugify(form.displayName);
+}
+
+async function save() {
+	if (!form || busy) return;
+	const error = validateForm(form);
+	if (error) {
+		toast.error(error);
+		return;
 	}
-
-	function openEdit(ep: RemoteAsrEndpointInfo) {
-		form = formFromEndpoint(ep);
-		editingId = ep.id;
-		keyInput = "";
-		autoSlug = false;
+	busy = true;
+	try {
+		const saved = await setRemoteAsrEndpoint(toEndpoint(form));
+		// Only touch the key when the user typed one: blank on edit keeps the stored key.
+		if (keyInput.trim()) await setRemoteAsrKey(saved.id, keyInput.trim());
+		toast.success(editingId ? "Endpoint updated" : "Endpoint added");
+		closeForm();
+		await load();
+	} catch (e) {
+		toast.error(String(e));
+	} finally {
+		busy = false;
 	}
+}
 
-	function closeForm() {
-		form = null;
-		editingId = null;
-		keyInput = "";
+async function remove(ep: RemoteAsrEndpointInfo) {
+	if (busy) return;
+	busy = true;
+	try {
+		await deleteRemoteAsrEndpoint(ep.id);
+		toast.success(`Removed ${ep.displayName}`);
+		if (editingId === ep.id) closeForm();
+		await load();
+	} catch (e) {
+		toast.error(String(e));
+	} finally {
+		busy = false;
 	}
+}
 
-	function onNameInput() {
-		if (form && autoSlug && !editingId) form.id = slugify(form.displayName);
+async function clearKey(ep: RemoteAsrEndpointInfo) {
+	if (busy) return;
+	busy = true;
+	try {
+		await setRemoteAsrKey(ep.id, "");
+		toast.success("API key removed");
+		await load();
+	} catch (e) {
+		toast.error(String(e));
+	} finally {
+		busy = false;
 	}
+}
 
-	async function save() {
-		if (!form || busy) return;
-		const error = validateForm(form);
-		if (error) {
-			toast.error(error);
-			return;
-		}
-		busy = true;
-		try {
-			const saved = await setRemoteAsrEndpoint(toEndpoint(form));
-			// Only touch the key when the user typed one; blank on edit keeps the
-			// stored key.
-			if (keyInput.trim()) await setRemoteAsrKey(saved.id, keyInput.trim());
-			toast.success(editingId ? "Endpoint updated" : "Endpoint added");
-			closeForm();
-			await load();
-		} catch (e) {
-			toast.error(String(e));
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function remove(ep: RemoteAsrEndpointInfo) {
-		if (busy) return;
-		busy = true;
-		try {
-			await deleteRemoteAsrEndpoint(ep.id);
-			toast.success(`Removed ${ep.displayName}`);
-			if (editingId === ep.id) closeForm();
-			await load();
-		} catch (e) {
-			toast.error(String(e));
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function clearKey(ep: RemoteAsrEndpointInfo) {
-		if (busy) return;
-		busy = true;
-		try {
-			await setRemoteAsrKey(ep.id, "");
-			toast.success("API key removed");
-			await load();
-		} catch (e) {
-			toast.error(String(e));
-		} finally {
-			busy = false;
-		}
-	}
-
-	onMount(load);
+onMount(load);
 </script>
 
 <div class="flex flex-col gap-3 px-4 py-3">

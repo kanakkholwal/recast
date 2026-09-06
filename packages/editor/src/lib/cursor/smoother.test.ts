@@ -9,7 +9,9 @@ class FakeWorker {
 	postMessage(msg: { type?: string }): void {
 		this.posted.push(msg);
 	}
-	terminate(): void {}
+	terminate(): void {
+		// the fake worker owns no thread to stop
+	}
 	reply(data: unknown): void {
 		this.onmessage?.({ data });
 	}
@@ -29,7 +31,7 @@ const track = Array.from({ length: 5 }, (_, i) => ({
 function newSmoother(): CursorSmoother {
 	worker = new FakeWorker();
 	setEditorHostHooks({ workers: { create: () => worker as unknown as Worker } });
-	return new CursorSmoother(() => {});
+	return new CursorSmoother(() => undefined);
 }
 
 describe("CursorSmoother track loading", () => {

@@ -1,52 +1,49 @@
 <script lang="ts">
 import {
+	CameraOff,
 	Circle,
 	FlipHorizontal2,
 	LoaderCircle,
 	Maximize2,
+	RefreshCw,
 	Square,
 	Squircle,
 	X,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { emit, listen } from "@tauri-apps/api/event";
-import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
-
-import { CameraNotFoundError, openCameraStream } from "@recast/editor/lib/camera/browser-devices";
+import { Channel } from "@tauri-apps/api/core";
 import {
-	finishCameraFlush,
-	saveRecordedCamera,
 	setWindowAspectRatio,
+	startCameraPreview,
+	stopCameraPreview,
 	updateCameraPreviewState,
 	validateCameraSource,
 } from "$lib/ipc";
-import { isBrowserDeviceId } from "$lib/runtime/device-id";
 import {
-	allowedShapesFor,
 	ASPECT_RATIO,
 	ASPECTS,
+	type AspectKey,
+	allowedShapesFor,
 	buildPreviewState,
-	computeSizeConstraints,
+	type CameraStatus,
 	CONTROL_BAR_HEIGHT,
+	computeSizeConstraints,
 	fitInsideMax,
 	MAX_SCREEN_FRACTION,
 	MIN_LOGICAL_SIZE,
-	pickCameraMimeType,
+	type ShapeKey,
 	targetWindowSize,
 	WINDOW_RADIUS,
-	type AspectKey,
-	type CameraStatus,
-	type ShapeKey,
 } from "./camera-preview.logic";
 
-// Cached max logical size; aspect-snap helpers clamp against it because the
-// OS max-size only bounds drag-resize, not our programmatic setSize calls.
+// The OS max-size only bounds drag-resize, not our programmatic setSize calls, so aspect-snap clamps against this.
 let maxLogicalW = $state(640);
 let maxLogicalH = $state(360);
 
-let videoEl: HTMLVideoElement | null = $state(null);
-let stream: MediaStream | null = $state(null);
+let canvasEl: HTMLCanvasElement | null = $state(null);
 let errorMessage: string | null = $state(null);
 let statusMessage = $state("Connecting to camera…");
 let status = $state<CameraStatus>("loading");
@@ -57,26 +54,47 @@ let liveProbeTimer: number | null = $state(null);
 let videoFrameSeen = $state(false);
 let isSnapping = false;
 
-// Camera track recorder: the SAME stream feeds the <video> preview and this
-// recorder, so the device is opened once. Recording it separately here (rather
-// than a second FFmpeg device-open in Rust) is what stops the "camera in use"
-// failure. Bytes are handed to Rust on flush, before stop_recording runs.
-let mediaRecorder: MediaRecorder | null = null;
-let recordedChunks: Blob[] = [];
+// Rust owns the camera and feeds this preview; getUserMedia cannot also hold it.
+let frames: Channel<ArrayBuffer> | null = null;
+let session = 0;
+let painter: ImageData | null = null;
 
 const params = new URLSearchParams(window.location.search);
 // Accepts both legacy DirectShow names and browser MediaDevices ids.
 const deviceQuery = params.get("deviceId");
 
-$effect(() => {
-	if (videoEl && stream) {
-		videoEl.srcObject = stream;
+/** Paint one BGRA frame: `width: u32le, height: u32le` then rows. */
+function paint(message: ArrayBuffer) {
+	const canvas = canvasEl;
+	if (!canvas || message.byteLength < 8) return;
+	const header = new DataView(message, 0, 8);
+	const width = header.getUint32(0, true);
+	const height = header.getUint32(4, true);
+	const pixels = new Uint8ClampedArray(message, 8);
+	if (pixels.length < width * height * 4) return;
+
+	if (canvas.width !== width || canvas.height !== height) {
+		canvas.width = width;
+		canvas.height = height;
+		painter = null;
 	}
-});
+	// BGRA in, RGBA out: swap in place rather than allocating per frame.
+	for (let i = 0; i < pixels.length; i += 4) {
+		const b = pixels[i];
+		pixels[i] = pixels[i + 2];
+		pixels[i + 2] = b;
+	}
+	painter ??= new ImageData(width, height);
+	painter.data.set(pixels);
+	canvas.getContext("2d")?.putImageData(painter, 0, 0);
+	if (!videoFrameSeen) {
+		videoFrameSeen = true;
+		status = "live";
+	}
+}
 
 onMount(() => {
-	// Make the WebView see-through so only the inner rounded container paints;
-	// the OS window is already transparent, so corners show the desktop.
+	// Make the WebView see-through so only the inner rounded container paints and the corners show the desktop.
 	const html = document.documentElement;
 	const body = document.body;
 	html.style.background = "transparent";
@@ -95,26 +113,13 @@ onMount(() => {
 		stopCamera();
 		getCurrentWindow().close();
 	});
+	// Rust drives the track now; these only keep the preview's own state in step.
 	const unlistenStarted = listen<{ startedAtUnixMs: number }>("camera-recording-started", () => {
-		startRecorder();
 		void reportPreviewState();
 	});
-	const unlistenStopped = listen("camera-recording-stopped", () => {});
-	// MediaRecorder pause/resume tracks the recording's own pause so the camera
-	// track drops paused spans and stays aligned with the screen timeline.
-	const unlistenPaused = listen("camera-recording-paused", () => {
-		if (mediaRecorder?.state === "recording") mediaRecorder.pause();
-	});
-	const unlistenResumed = listen("camera-recording-resumed", () => {
-		if (mediaRecorder?.state === "paused") mediaRecorder.resume();
-	});
-	// Stop requested (driven by Rust stop_recording): finalize the recorder and
-	// hand the bytes to Rust, which is waiting on the delivery before it writes
-	// the project.
-	const unlistenFlush = listen("camera-flush", () => flushRecorder());
+	const unlistenStopped = listen("camera-recording-stopped", () => undefined);
 
-	// Push preview state only on actual window changes, not on a poll
-	// (the old 350ms poll hit a Rust mutex thrice a second even when idle).
+	// Push preview state on actual window changes: the old 350ms poll hit a Rust mutex three times a second while idle.
 	const unlistenResize = getCurrentWindow().onResized(({ payload }) => {
 		void snapToAspect(payload.width, payload.height);
 		void reportPreviewState();
@@ -129,9 +134,6 @@ onMount(() => {
 		unlistenStop.then((fn) => fn());
 		unlistenStarted.then((fn) => fn());
 		unlistenStopped.then((fn) => fn());
-		unlistenPaused.then((fn) => fn());
-		unlistenResumed.then((fn) => fn());
-		unlistenFlush.then((fn) => fn());
 		unlistenResize.then((fn) => fn());
 		unlistenMove.then((fn) => fn());
 	};
@@ -142,32 +144,28 @@ async function startCamera() {
 		errorMessage = null;
 		status = "loading";
 		statusMessage = "Connecting to camera…";
+		videoFrameSeen = false;
 
-		// Validation only applies to DirectShow names; skip browser deviceId hashes.
-		if (deviceQuery && !isBrowserDeviceId(deviceQuery)) {
-			try {
-				const validation = await validateCameraSource(deviceQuery);
-				if (validation.status === "warning" || validation.status === "error") {
-					status = validation.status === "error" ? "failed" : "warning";
-					statusMessage = validation.statusMessage ?? "Camera source requires validation.";
-				}
-			} catch {
-				// Non-fatal. Preview can still open via browser enumeration.
-			}
+		if (!deviceQuery) {
+			throw new Error("No camera was selected.");
 		}
-
-		const { stream: openedStream, camera } = await openCameraStream(deviceQuery);
-		stream = openedStream;
-		console.info(`[camera-preview] opened ${camera.label} (virtual=${camera.isVirtual})`);
+		const channel = new Channel<ArrayBuffer>();
+		channel.onmessage = paint;
+		frames = channel;
+		const geometry = await startCameraPreview(deviceQuery, channel);
+		session = geometry.session;
+		console.info(
+			`[camera-preview] Rust opened ${deviceQuery} at ${geometry.width}x${geometry.height}`,
+		);
 
 		startLivelinessProbe();
 		window.setTimeout(() => {
 			void reportPreviewState();
 		}, 150);
 	} catch (e) {
-		const msg =
-			e instanceof CameraNotFoundError ? e.message : e instanceof Error ? e.message : String(e);
+		const msg = e instanceof Error ? e.message : String(e);
 		console.error("Camera access failed:", e);
+		frames = null;
 		errorMessage = msg;
 		status = "failed";
 		statusMessage = msg;
@@ -175,122 +173,33 @@ async function startCamera() {
 }
 
 function startLivelinessProbe() {
-	videoFrameSeen = false;
-
-	const markLive = () => {
-		if (!videoEl) return;
-		if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
-			videoFrameSeen = true;
-			if (status !== "failed") {
-				status = "live";
-				statusMessage = "Camera live";
-			}
-		}
-	};
-
-	const interval = window.setInterval(() => {
-		markLive();
-		if (videoFrameSeen) window.clearInterval(interval);
-	}, 150);
-
+	// `paint` flips `videoFrameSeen`; this only reports a device that never delivered.
 	liveProbeTimer = window.setTimeout(() => {
-		window.clearInterval(interval);
 		if (!videoFrameSeen && status !== "failed") {
 			status = "warning";
 			statusMessage = "Camera opened but no live frames arrived.";
+		} else if (status === "live") {
+			statusMessage = "Camera live";
 		}
 	}, 2200);
 }
 
-function makeRecorder(mimeType: string): MediaRecorder | null {
-	try {
-		return new MediaRecorder(stream!, mimeType ? { mimeType } : undefined);
-	} catch {
-		return null;
-	}
-}
-
-function startRecorder() {
-	if (!stream || mediaRecorder) return;
-	// isTypeSupported can lie (true, but the constructor still throws for some
-	// MP4/H.264 strings on Chromium), so fall back to the browser default —
-	// which always constructs (WebM) and Rust transcodes.
-	const rec = makeRecorder(pickCameraMimeType()) ?? makeRecorder("");
-	if (!rec) {
-		console.error("[camera-preview] MediaRecorder unavailable for this stream");
-		return;
-	}
-	recordedChunks = [];
-	rec.ondataavailable = (e) => {
-		if (e.data.size > 0) recordedChunks.push(e.data);
-	};
-	// 1s timeslice so data flushes incrementally instead of buffering the whole
-	// take in one chunk (bounds memory on a long recording).
-	rec.start(1000);
-	mediaRecorder = rec;
-}
-
-// Stop the recorder, assemble the blob, and deliver it to Rust. ALWAYS calls
-// finishCameraFlush at the end (success, failure, or nothing recorded) so
-// stop_recording's wait is released promptly and the reason a track went
-// missing reaches the backend log instead of the hidden WebView console.
-async function flushRecorder() {
-	const rec = mediaRecorder;
-	mediaRecorder = null;
-	if (!rec || rec.state === "inactive") {
-		await finishCameraFlush("camera recorder was not running").catch(() => {});
-		return;
-	}
-	await new Promise<void>((resolve) => {
-		rec.onstop = async () => {
-			let error: string | null = null;
-			try {
-				const blob = new Blob(recordedChunks, { type: rec.mimeType });
-				recordedChunks = [];
-				if (blob.size > 0) {
-					await saveRecordedCamera(await blob.arrayBuffer());
-				} else {
-					error = "camera recorder produced no data";
-				}
-			} catch (e) {
-				error = e instanceof Error ? e.message : String(e);
-				console.error("[camera-preview] camera save failed:", e);
-			}
-			await finishCameraFlush(error).catch(() => {});
-			resolve();
-		};
-		rec.stop();
-	});
-}
-
 function stopCamera() {
-	// Best-effort recorder teardown; a graceful flush goes through `flushRecorder`.
-	if (mediaRecorder && mediaRecorder.state !== "inactive") {
-		try {
-			mediaRecorder.stop();
-		} catch {
-			// Already stopping/stopped.
-		}
-	}
-	mediaRecorder = null;
-	if (stream) {
-		stream.getTracks().forEach((t) => t.stop());
-		stream = null;
-	}
+	// Releases the device; any recording was already finalized by stop_recording.
+	frames = null;
+	if (session === 0) return;
+	void stopCameraPreview(session).catch(() => undefined);
+	session = 0;
 }
 
 function closeWindow() {
-	// Tell the panel the user dismissed the preview so its camera toggle syncs.
-	// Only the user paths (this button + Escape) run through here; the panel's
-	// own programmatic closes use a raw close() and must not flip the toggle.
+	// Only the user paths run through here; the panel's programmatic closes use a raw close() and must not flip the toggle.
 	void emit("camera-preview-closed");
 	stopCamera();
 	getCurrentWindow().close();
 }
 
-// Apply OS min/max size constraints. Cap is keyed off screen width; every
-// aspect is landscape-or-square (ratio ≥ 1) so a square max box bounds the
-// window by width without clipping the proportional height.
+// Every aspect is landscape-or-square, so a square max box bounds the window by width without clipping the height.
 async function applySizeConstraints() {
 	const {
 		maxLogicalW: maxW,
@@ -314,9 +223,7 @@ async function applySizeConstraints() {
 	void applyNativeAspectLock();
 }
 
-// Hand the aspect ratio to the Windows-native WM_SIZING constraint so drag
-// resizes proportionally. No-op off Windows, where `snapToAspect` is the
-// fallback. The drag rect is in physical pixels, so the min crosses as such.
+// Windows-native WM_SIZING lock for proportional drag resizes; elsewhere `snapToAspect` is the fallback.
 async function applyNativeAspectLock() {
 	try {
 		const ratio = ASPECT_RATIO[aspect];
@@ -366,8 +273,7 @@ async function snapToAspect(physWidth: number, physHeight: number) {
 	if (isSnapping) return;
 	const factor = window.devicePixelRatio || 1;
 	const w = physWidth / factor;
-	// Drag deltas arrive as *window* dimensions, so peel off the control strip to
-	// get the video box the aspect ratio actually governs.
+	// Drag deltas arrive as window dimensions, so peel off the control strip to get the box the ratio governs.
 	const videoH = physHeight / factor - CONTROL_BAR_HEIGHT;
 	const target = ASPECT_RATIO[aspect];
 	const expectedVideoH = w / target;
@@ -392,8 +298,7 @@ async function snapToAspect(physWidth: number, physHeight: number) {
 function cycleAspect() {
 	const nextIndex = (ASPECTS.indexOf(aspect) + 1) % ASPECTS.length;
 	const next = ASPECTS[nextIndex];
-	// Circle → rounded off 1:1; a circle on a non-square box renders as an
-	// ellipse the editor's composited bubble doesn't support.
+	// Circle falls back to rounded off 1:1: on a non-square box it renders as an ellipse the editor can't composite.
 	if (next !== "1:1" && shape === "circle") {
 		shape = "rounded";
 	}
@@ -473,35 +378,57 @@ function handleKeydown(e: KeyboardEvent) {
   <!-- Video bubble, the only clipped/rounded surface; `flex-1` is the window
        height minus the control strip, the region the aspect lock governs. -->
   <div
-    class="relative min-h-0 w-full flex-1 overflow-hidden bg-card transition-[border-radius] duration-150 ease-out motion-reduce:transition-none"
+    class="@container/bubble relative min-h-0 w-full flex-1 overflow-hidden bg-card transition-[border-radius] duration-150 ease-out motion-reduce:transition-none"
     data-tauri-drag-region
     style="border-radius: {cssRadius}"
   >
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <video
-      bind:this={videoEl}
-      autoplay
-      playsinline
-      muted
+    <canvas
+      bind:this={canvasEl}
       class="pointer-events-none h-full w-full object-cover"
       style="transform: {isMirrored ? 'scaleX(-1)' : 'none'}"
-    ></video>
+    ></canvas>
 
     {#if status !== "live" || errorMessage}
+      <!-- Sized to the bubble via container queries: the window shrinks to
+           ~168px, so text wraps to the box (never `max-w` beyond it) and the
+           description/label hide progressively so nothing clips at small sizes. -->
       <div
-        class="absolute inset-0 flex items-center justify-center bg-background/85 p-4 text-center backdrop-blur-md"
+        class="absolute inset-0 flex flex-col items-center justify-center gap-1.5 overflow-hidden bg-background/85 px-2.5 py-2 text-center backdrop-blur-md @[220px]/bubble:gap-2 @[220px]/bubble:p-4"
       >
-        <div class="space-y-2">
-          {#if status === "loading"}
-            <LoaderCircle size={18} class="mx-auto animate-spin text-muted-foreground" />
-          {/if}
-          <p class="text-[11px] font-semibold text-foreground">
-            {status === "failed" ? "Camera unavailable" : "Camera"}
+        {#if status === "loading"}
+          <LoaderCircle size={18} class="shrink-0 animate-spin text-muted-foreground" />
+          <p
+            class="hidden max-w-full text-[10px] font-medium leading-tight text-muted-foreground @[150px]/bubble:block"
+          >
+            {statusMessage}
           </p>
-          <p class="max-w-[16rem] text-[10px] leading-relaxed text-muted-foreground">
+        {:else}
+          <span
+            class="grid size-8 shrink-0 place-items-center rounded-lg ring-1 ring-inset @[220px]/bubble:size-9 @[220px]/bubble:rounded-xl {status ===
+            'failed'
+              ? 'bg-destructive/10 text-destructive ring-destructive/25'
+              : 'bg-warning/10 text-warning ring-warning/25'}"
+          >
+            <CameraOff size={15} />
+          </span>
+          <p class="max-w-full text-[11px] font-semibold leading-tight text-foreground">
+            {status === "failed" ? "Camera unavailable" : "No live picture"}
+          </p>
+          <p
+            class="hidden max-w-full text-pretty text-[9.5px] leading-snug text-muted-foreground @[180px]/bubble:line-clamp-3 @[180px]/bubble:block @[260px]/bubble:line-clamp-none"
+          >
             {errorMessage ?? statusMessage}
           </p>
-        </div>
+          <Button
+            variant="secondary"
+            size="xs"
+            class="mt-0.5 shrink-0 gap-1.5 rounded-lg"
+            onclick={() => void startCamera()}
+          >
+            <RefreshCw size={11} />
+            Try again
+          </Button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -548,9 +475,11 @@ function handleKeydown(e: KeyboardEvent) {
       <Button
         onclick={toggleMirror}
         onmousedown={(e: MouseEvent) => e.stopPropagation()}
-        variant={isMirrored ? "default_soft" : "ghost"}
+        variant="ghost"
         size="icon-sm"
-        class="size-6 rounded-full"
+        class="size-6 rounded-full {isMirrored
+          ? 'bg-foreground text-background hover:bg-foreground/90 hover:text-background'
+          : ''}"
         title={isMirrored ? "Mirror: on (flip horizontally)" : "Mirror: off"}
       >
         <FlipHorizontal2 size={12} stroke={2} />
@@ -573,8 +502,7 @@ function handleKeydown(e: KeyboardEvent) {
 </div>
 
 <style>
-  /* Hide the scrollbar + gutter for this page only so the rounded corners read
-     through to the desktop (the global stylesheet sets scrollbar-gutter: stable). */
+  /* Page-local scrollbar hide so the rounded corners read through to the desktop. */
   :global(html) {
     background: transparent !important;
     scrollbar-width: none;

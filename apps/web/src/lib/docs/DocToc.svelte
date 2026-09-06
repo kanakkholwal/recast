@@ -10,8 +10,7 @@ let { headings, label = "On this page" }: Props = $props();
 
 let activeId = $state<string | null>(null);
 
-// Highlight the section the reader is in. One observer over every heading,
-// with a top margin that fires the swap as a heading clears the navbar.
+// One observer over every heading, with a top margin that fires the swap as a heading clears the navbar.
 $effect(() => {
 	if (headings.length === 0 || typeof IntersectionObserver === "undefined") return;
 

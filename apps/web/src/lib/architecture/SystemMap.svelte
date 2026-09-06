@@ -7,8 +7,7 @@ import { SYSTEM_EDGES, SYSTEM_NODES } from "./system-map";
 
 const nodeTypes = { subsystem: SubsystemNode };
 
-// $state.raw, not $state: the flow reassigns these wholesale on interaction, and
-// deep proxying every node would re-render the graph on each pan frame.
+// `$state.raw`: the flow reassigns these wholesale, and deep proxying every node would re-render the graph per pan frame.
 let nodes = $state.raw<Node[]>(
 	SYSTEM_NODES.map((node) => ({
 		id: node.id,
@@ -65,8 +64,7 @@ function open({ node }: { node: Node }) {
 		overflow: hidden;
 	}
 
-	/* xyflow paints its own canvas, controls, and edges from these variables, so
-	   overriding them is what keeps the map inside the design system. */
+	/* xyflow paints its canvas, controls and edges from these variables, so overriding them keeps the map in the design system. */
 	.map :global(.svelte-flow) {
 		--xy-background-color: var(--color-paper);
 		--xy-edge-stroke: var(--color-muted-foreground);

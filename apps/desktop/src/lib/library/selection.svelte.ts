@@ -4,9 +4,9 @@
  * reads through `has`/`count` stay reactive across this factory boundary.
  */
 
-import type { RecordingEntry } from "$lib/recorder-types";
 import { toast } from "@recast/ui/sonner";
 import { SvelteSet } from "svelte/reactivity";
+import type { RecordingEntry } from "$lib/recorder-types";
 
 interface SelectionConfig {
 	/** Singular listing noun for toast copy, e.g. `recording` / `export`. */

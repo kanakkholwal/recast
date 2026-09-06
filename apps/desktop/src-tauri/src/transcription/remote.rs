@@ -1,16 +1,5 @@
-//! Remote transcription over an OpenAI-compatible `/audio/transcriptions`
-//! endpoint (on-device like LM Studio, self-hosted, or a third-party API).
-//!
-//! Unlike the local ONNX path this needs no model files and no `captions`
-//! Cargo feature: it is just an HTTP POST, so it compiles into every build. Each
-//! endpoint is a user-configured *profile* (non-secret metadata in
-//! `app_data_dir/remote-asr.json`); its API key lives in the OS keyring under
-//! `remote-asr-<id>` and is read only here in Rust, never over IPC — the same
-//! discipline as the Cloud + Drive tokens (`auth.rs` / `gdrive.rs`).
-//!
-//! Each profile surfaces in the catalog as a `CaptionModel` with id
-//! `remote:<profileId>` (the colon can't collide with a built-in or pack id,
-//! which are dot/dash slugs).
+//! Remote transcription over an OpenAI-compatible `/audio/transcriptions` endpoint; plain HTTP, so it needs no model files or Cargo feature.
+//! The API key lives in the OS keyring and is read only here, never over IPC, matching the Cloud and Drive tokens.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -31,9 +20,7 @@ const KEYRING_SERVICE: &str = "com.kanakkholwal.recast";
 /// Long clips over a slow endpoint can take a while; err on generous.
 const REQUEST_TIMEOUT_SECS: u64 = 300;
 
-/// A user-configured remote transcription endpoint. Non-secret: the API key is
-/// NOT here (it lives in the keyring), so this is safe to persist and to return
-/// over IPC.
+/// A user-configured remote transcription endpoint. Non-secret: the API key is NOT here (it lives in the keyring), so this is safe to persist and to return over IPC.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteEndpoint {
@@ -205,8 +192,7 @@ pub fn remote_models(app: &AppHandle) -> Vec<CaptionModel> {
             min_ram_bytes: None,
             source: ModelSource::Remote,
             remote: Some(ep),
-            // The server owns the real model, so we can't honestly score it or
-            // claim capabilities on its behalf.
+            // The server owns the real model, so we can't honestly score it or claim capabilities on its behalf.
             capabilities: Default::default(),
             language_count: None,
             speed_score: None,
@@ -257,15 +243,10 @@ fn secs_to_ms(v: f64) -> i64 {
     (v * 1000.0).round() as i64
 }
 
-/// Map an OpenAI-compatible transcription response into caption segments via the
-/// shared `build_segments`, so remote captions come out identical to on-device:
-/// `words[]` (real word timing, requested via `timestamp_granularities[]`) is
-/// preferred and grouped into display lines; otherwise `segments[]`; otherwise a
-/// single block from `text`. Pure, so it's unit-tested.
+/// Maps an OpenAI-compatible response into caption segments through the shared `build_segments`, so remote captions come out identical to on-device. Pure, so it unit-tests.
+/// Real `words[]` timing is preferred and grouped into display lines, then `segments[]`, then a single block from `text`.
 pub(crate) fn response_to_segments(body: &Value, total_secs: f64) -> Vec<TranscriptSegment> {
-    // OpenAI word rows use the key `word`; segment rows use `text`. Times are in
-    // seconds on both. A server that ignores the word-granularity request simply
-    // returns no `words[]`, and build_segments falls back to segments/text.
+    // OpenAI word rows key on `word` and segment rows on `text`; a server ignoring word granularity returns no `words[]`.
     let words: Vec<RawWord> = body
         .get("words")
         .and_then(Value::as_array)
@@ -340,11 +321,7 @@ pub async fn transcribe_remote(
         .part("file", file_part)
         .text("model", endpoint.model.clone())
         .text("response_format", "verbose_json")
-        // Ask for word-level timestamps so captions render word-by-word like the
-        // on-device engine. OpenAI wants `timestamp_granularities[]` as a repeated
-        // field; also request `segment` so a fallback has data. A server that
-        // doesn't support it ignores the fields (build_segments then uses whatever
-        // shape came back).
+        // Ask for word timestamps (OpenAI wants a repeated field) plus segment as a fallback; a server without support ignores both.
         .text("timestamp_granularities[]", "word")
         .text("timestamp_granularities[]", "segment");
     // Omit for auto-detect; a bogus/empty value would make some servers 400.
@@ -472,8 +449,7 @@ mod tests {
 
     #[test]
     fn response_prefers_words_over_coarse_segments() {
-        // Word timestamps requested + returned: they win over a single coarse
-        // segment so remote captions render word-by-word like on-device.
+        // Word timestamps win over a single coarse segment, so remote captions render word-by-word like on-device.
         let body = json!({
             "text": "hello world. foo",
             "segments": [ { "start": 0.0, "end": 2.0, "text": "hello world. foo" } ],

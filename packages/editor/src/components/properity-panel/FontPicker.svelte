@@ -1,16 +1,15 @@
 <script lang="ts">
-// Searchable font combobox (system + a curated set of popular Google Fonts),
-// shared by the caption and annotation panels. Picking a Google font fetches +
-// registers it on demand.
+// Searchable font combobox shared by the caption and annotation panels; a Google font is fetched and registered on demand.
+
+import { Check, ChevronsUpDown, Search } from "@recast/icons";
+import * as Popover from "@recast/ui/popover";
 import {
 	ensureFontLoaded,
+	type FontOption,
 	fontLabel,
 	GOOGLE_FONT_OPTIONS,
 	SYSTEM_FONTS,
-	type FontOption,
 } from "../../lib/fonts/font-options";
-import { Check, ChevronsUpDown, Search } from "@recast/icons";
-import * as Popover from "@recast/ui/popover";
 
 let {
 	value,

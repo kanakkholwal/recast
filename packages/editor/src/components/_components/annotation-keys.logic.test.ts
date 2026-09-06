@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nudgeVectorPx, NUDGE_STEP_COARSE_PX, NUDGE_STEP_PX } from "./annotation-keys.logic";
+import { NUDGE_STEP_COARSE_PX, NUDGE_STEP_PX, nudgeVectorPx } from "./annotation-keys.logic";
 
 function chord(
 	key: string,
@@ -15,8 +15,7 @@ function chord(
 }
 
 describe("nudgeVectorPx", () => {
-	// The player tooltips advertise bare arrows as frame-step. A selected shape
-	// must not quietly take them over.
+	// The player tooltips advertise bare arrows as frame-step, so a selected shape must not quietly take them over.
 	it("ignores bare arrows so the transport keeps them", () => {
 		for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
 			expect(nudgeVectorPx(chord(key))).toBeNull();

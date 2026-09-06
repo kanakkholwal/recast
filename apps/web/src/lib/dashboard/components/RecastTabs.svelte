@@ -5,8 +5,7 @@ import { cubicOut } from "svelte/easing";
 import { crossfade, fade } from "svelte/transition";
 import { page } from "$app/state";
 
-// Overview / Analytics switcher for a single recast. Mirrors SettingsTabs so
-// the two tab surfaces read identically across the dashboard.
+// Overview and Analytics for one recast, mirroring SettingsTabs so both tab surfaces read identically.
 let { id }: { id: string } = $props();
 
 const tabs = $derived([

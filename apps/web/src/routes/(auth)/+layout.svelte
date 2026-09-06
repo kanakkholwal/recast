@@ -1,8 +1,8 @@
 <script lang="ts">
-import { steps } from "$lib/components/Hero.logic";
-import Logo from "$lib/logo.svelte";
 import { ArrowLeft } from "@recast/icons";
 import { Button } from "@recast/ui/button";
+import { steps } from "$lib/components/Hero.logic";
+import Logo from "$lib/logo.svelte";
 
 let { children } = $props();
 

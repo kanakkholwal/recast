@@ -1,0 +1,72 @@
+use core::time::Duration;
+
+use capturekit_core::{
+    AudioDesc, CursorSample, DirtyRects, GpuHandle, Rect, Result, SourceDesc, Timestamp,
+};
+
+/// A frame as the backend holds it, before capturekit copies or wraps it.
+pub(crate) struct RawFrame<'a> {
+    /// When the source produced it, on the source's own clock.
+    pub pts: Timestamp,
+    /// Pixels, at the stride the source declared.
+    pub bytes: &'a [u8],
+    /// Bytes between rows.
+    pub stride: u32,
+    /// Regions that changed, empty when the backend cannot say.
+    pub dirty: DirtyRects,
+    /// Where the cursor was when this frame was produced, on the same clock.
+    /// `None` from a backend whose `Capabilities::cursor_samples` is false.
+    pub cursor: Option<CursorSample>,
+    /// The same frame left on the GPU, when the caller asked for handles.
+    pub gpu: Option<GpuHandle>,
+}
+
+/// A source of video frames, whatever produced them.
+/// One trait rather than one per surface is what makes a screenshot, a recording and a camera the same acquisition, so a fix to staleness or colour lands on all of them.
+pub(crate) trait FrameSource: Send {
+    /// What the backend actually negotiated, which is not always what was asked for.
+    fn describe(&self) -> &SourceDesc;
+
+    /// The region the backend cropped to during acquisition, if it did.
+    /// Reported rather than inferred from the frame size: a region the size of the display but offset would look uncropped and silently skip the host-side fallback.
+    fn region(&self) -> Option<Rect> {
+        None
+    }
+
+    /// The cursor image most recently reported, if this backend reports one.
+    fn cursor_shape(&self) -> Option<&capturekit_core::CursorShape> {
+        None
+    }
+
+    /// Wait for the next frame.
+    /// Push backends serve this from their delivery callback; pull backends poll. Returns [`capturekit_core::CaptureError::Timeout`] if none arrives.
+    fn next_frame(&mut self, timeout: Duration) -> Result<RawFrame<'_>>;
+
+    /// Release the source. Called on drop, and safe to call twice.
+    fn stop(&mut self) -> Result<()>;
+}
+
+/// Samples as the backend holds them, before capturekit wraps them.
+pub(crate) struct RawAudio<'a> {
+    /// When the samples were captured, on the source's clock.
+    pub pts: Timestamp,
+    /// Interleaved samples in the described format.
+    pub bytes: &'a [u8],
+    /// Whether the backend generated this to cover a gap the device ran through.
+    pub silence: bool,
+    /// Whether the device reported a break before these samples.
+    pub discontinuous: bool,
+}
+
+/// A source of audio samples, separate from [`FrameSource`] because audio is continuous and counted in sample frames while video is discrete and counted in pictures.
+/// What they share is the clock, which is what lets a session line them up.
+pub(crate) trait AudioSource: Send {
+    /// What the backend negotiated, which shared-mode capture never converts.
+    fn describe(&self) -> &AudioDesc;
+
+    /// Wait for the next buffer of samples.
+    fn next_buffer(&mut self, timeout: Duration) -> Result<RawAudio<'_>>;
+
+    /// Release the device. Safe to call twice.
+    fn stop(&mut self) -> Result<()>;
+}

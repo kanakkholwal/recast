@@ -50,8 +50,7 @@ describe("usageTone", () => {
 		expect(usageTone(100, true)).toBe("critical");
 	});
 
-	// The uncapped path now only happens when there is no quota loaded at all —
-	// every plan carries a concrete ceiling.
+	// The uncapped path only happens with no quota loaded at all, since every plan carries a concrete ceiling.
 	it("stays neutral at any percentage when no cap is known", () => {
 		expect(usageTone(0, false)).toBe("neutral");
 		expect(usageTone(95, false)).toBe("neutral");
@@ -85,11 +84,10 @@ describe("usageView delivery", () => {
 		expect(view.deliveryTone).toBe("critical");
 	});
 
-	// Regression: quota snapshots persisted to localStorage before `delivery`
-	// existed hydrate without it, and a non-optional read crashed the sidebar.
+	// Regression: snapshots cached before `delivery` existed hydrate without it, and a non-optional read crashed the sidebar.
 	it("survives a cached quota that predates the delivery field", () => {
-		const stale = quota();
-		delete (stale as Partial<QuotaSnapshot>).delivery;
+		const { delivery: _delivery, ...rest } = quota();
+		const stale = rest as QuotaSnapshot;
 		expect(() => usageView(stale)).not.toThrow();
 		expect(usageView(stale).deliveryBytes).toBe(0);
 		expect(usageView(stale).deliveryLimit).toBeNull();

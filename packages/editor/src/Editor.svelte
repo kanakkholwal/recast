@@ -25,6 +25,8 @@ export interface EditorProps {
 	/** Same source as a ref, when the host can stream it off a File. */
 	video?: MediaRef;
 	cameraSrc?: string;
+	/** Milliseconds the camera track lags video frame 0 (measured at capture). */
+	cameraOffsetMs?: number;
 	/** Path to the camera track, for the Camera panel's own controls. */
 	cameraPath?: string | null;
 	/** Why that path is or isn't set, so the panel can say which. */
@@ -95,7 +97,10 @@ import { slide } from "svelte/transition";
 import { motionDuration } from "./lib/motion.svelte";
 import EditorToolbar from "./components/EditorToolbar.svelte";
 import PropertiesPanel from "./components/properity-panel/PropertiesPanel.svelte";
-import Timeline from "./components/Timeline.svelte";
+import AspectPicker from "./components/_components/AspectPicker.svelte";
+import MarkupControls from "./components/_components/MarkupControls.svelte";
+import StageViewControls from "./components/_components/StageViewControls.svelte";
+import TimelineCanvas from "./components/_components/timeline/TimelineCanvas.svelte";
 import VideoPlayerControls from "./components/VideoPlayerControls.svelte";
 import VideoPreview from "./components/VideoPreview.svelte";
 import {
@@ -125,6 +130,7 @@ let {
 	videoSrc,
 	video,
 	cameraSrc = "",
+	cameraOffsetMs = 0,
 	cameraPath = null,
 	cameraCapture = "legacy",
 	cursorPath = null,
@@ -166,8 +172,7 @@ setEditorServices(untrack(() => services));
 
 const storage = typeof localStorage === "undefined" ? null : localStorage;
 
-// Layout: the host may drive it (bindable, e.g. from a URL) or leave it to us,
-// in which case we seed from localStorage and remember changes.
+// The host may drive layout (bindable, e.g. from a URL) or leave it to us, in which case localStorage seeds it.
 const seeded = parseLayout(storage?.getItem(LAYOUT_KEY) ?? null);
 let sidebarOpen = $state(showSidebar ?? seeded.sidebar);
 let timelineOpen = $state(showTimeline ?? seeded.timeline);
@@ -208,9 +213,25 @@ $effect(() => {
 });
 
 
-// --- panel sizing ---
-// Measured so the timeline's ceiling is a share of the space actually
-// available, not a fixed number that overwhelms a short window.
+// Fullscreen shows only the picture + video controls, so the stage drawers hide.
+let isFullscreen = $state(false);
+$effect(() => {
+	const onChange = () => (isFullscreen = Boolean(document.fullscreenElement));
+	document.addEventListener("fullscreenchange", onChange);
+	return () => document.removeEventListener("fullscreenchange", onChange);
+});
+
+// Opening export drops annotation selection/tool so the preview shows the clean composite.
+$effect(() => {
+	if (exportPanel) {
+		untrack(() => {
+			store.selectedAnnotationId = null;
+			store.annotationTool = null;
+		});
+	}
+});
+
+// --- Panel sizing, measured so the timeline's ceiling is a share of the available space, not a fixed number.
 let editorColumnH = $state(0);
 let sidebarWidth = $state(
 	clampSidebarWidth(readStoredNumber(storage?.getItem(SIDEBAR_WIDTH_KEY) ?? null, SIDEBAR_DEFAULT_WIDTH_PX)),
@@ -223,8 +244,7 @@ let resizingTimeline = $state(false);
 
 const timelineMax = $derived(timelineMaxHeight(editorColumnH));
 
-// Re-clamp when the window changes, so a panel sized in a big window doesn't
-// swallow a small one.
+// Re-clamp on window changes, so a panel sized in a big window doesn't swallow a small one.
 $effect(() => {
 	const column = editorColumnH;
 	untrack(() => {
@@ -246,8 +266,7 @@ $effect(() => {
 
 function handleTimeUpdate() {
 	if (onTimeUpdate) return onTimeUpdate();
-	// The WebCodecs clock owns `store.currentTime`; echoing the element's time
-	// while it free-runs through the un-cut source snaps playback across cuts.
+	// The WebCodecs clock owns `store.currentTime`; echoing the free-running element snaps playback across cuts.
 	if (webcodecsActive || !videoEl) return;
 	store.currentTime = videoEl.currentTime;
 }
@@ -321,7 +340,7 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 
 <div
 	class={cn(
-		"bg-background text-foreground flex h-full min-h-0 w-full flex-col overflow-hidden",
+		"bg-[var(--editor-canvas)] text-foreground flex h-full min-h-0 w-full flex-col overflow-hidden",
 		className,
 	)}
 >
@@ -337,12 +356,14 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 		})}
 	{:else}
 		<div class="h-9 shrink-0">
+			<!-- exportMode is derived, not a prop: a host with no handler has no export to run, and a button that does nothing is worse than none. -->
 			<EditorToolbar
 				{store}
 				{filename}
 				{onexport}
 				{onsave}
 				{isSaving}
+				exportMode={onexport ? "export" : "none"}
 				showSidebar={sidebarOpen}
 				showTimeline={timelineOpen}
 				onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
@@ -352,12 +373,14 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 	{/if}
 	{@render banner?.()}
 
-	<div class="flex min-h-0 flex-1 overflow-hidden">
-		<!-- Preview + playback + timeline -->
-		<div bind:clientHeight={editorColumnH} class="flex min-h-0 flex-1 flex-col overflow-hidden">
+	<div bind:clientHeight={editorColumnH} class="flex min-h-0 flex-1 flex-col overflow-hidden">
+		<!-- Top row: preview + right-rail properties panel. -->
+		<div class="flex min-h-0 flex-1 overflow-hidden">
+			<!-- Preview + playback -->
+			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 			<div
 				bind:this={previewContainerEl}
-				class="bg-background flex min-h-0 flex-1 flex-col items-center justify-center px-2 pt-1.5 pb-1"
+				class="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pt-1.5 pb-1"
 			>
 				<div class="relative flex min-h-0 w-full flex-1 items-center justify-center">
 					<VideoPreview
@@ -369,6 +392,7 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 						{video}
 						{cursorPath}
 						{cameraSrc}
+						{cameraOffsetMs}
 						onTimeUpdate={handleTimeUpdate}
 						onEnded={handleEnded}
 						onLoadedMetadata={onLoadedMetadata ?? (() => {})}
@@ -378,55 +402,28 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 						audioPositionSec={audioPositionSec ??
 							(() => audioEngine?.positionOutputSec ?? null)}
 					/>
+					<!-- Markup tools dock to the left edge (Markup tab only); hidden in
+					     fullscreen and export, which show only picture + video controls. -->
+					{#if !isFullscreen && !exportPanel}
+						<div class="pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center">
+							<div class="pointer-events-auto">
+								<MarkupControls {store} vertical />
+							</div>
+						</div>
+					{/if}
 				</div>
-				<VideoPlayerControls
-					{store}
-					{videoEl}
-					{captureFrame}
-					bind:loopEnabled
-					fullscreenTargetEl={previewContainerEl}
-					showScrubber={!timelineOpen}
-				/>
+				<!-- Bottom control row: aspect (left), scrubber/transport (centre), view (right). -->
+				<div class="flex w-full max-w-280 items-center gap-2 px-2">
+					{#if !isFullscreen && !exportPanel}
+						<AspectPicker {store} />
+					{/if}
+					<div class="min-w-0 flex-1">
+						<VideoPlayerControls {store} {videoEl} showScrubber={!timelineOpen} />
+					</div>
+					<StageViewControls {store} {captureFrame} fullscreenTargetEl={previewContainerEl} />
+				</div>
 			</div>
 
-			<!-- `slide` (axis:y) animates the wrapper height to 0 while the inner keeps
-			     its height, so the preview reclaims the space smoothly. -->
-			{#if timelineOpen && !exportPanel}
-				<div
-					class="shrink-0 overflow-hidden"
-					transition:slide={{ axis: "y", duration: motionDuration(280), easing: cubicOut }}
-				>
-					<!-- Height on the INNER div: `slide` animates the wrapper's own
-					     height, so the two would otherwise fight over one property. -->
-					<div class="relative" style="height: {timelineHeight}px;">
-						<div
-							role="slider"
-							tabindex="0"
-							aria-orientation="horizontal"
-							aria-label="Resize timeline"
-							aria-valuemin={TIMELINE_MIN_HEIGHT_PX}
-							aria-valuemax={timelineMax}
-							aria-valuenow={timelineHeight}
-							onpointerdown={startTimelineResize}
-							onkeydown={onTimelineHandleKey}
-							class="group absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize focus-visible:outline-none"
-						>
-							<div
-								class="bg-border/50 group-hover:bg-primary/60 group-focus-visible:bg-primary my-auto h-px w-full transition-colors {resizingTimeline
-									? 'bg-primary!'
-									: ''}"
-							></div>
-						</div>
-						<Timeline
-							{store}
-							{videoEl}
-							{tileProvider}
-							{filmstripVersion}
-							readOnly={timelineReadOnly}
-						/>
-					</div>
-				</div>
-			{/if}
 		</div>
 
 		<!-- Right rail. Editing shows the properties panel; a host running an
@@ -474,6 +471,37 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 					/>
 				</div>
 			</aside>
+		{/if}
+		</div>
+
+		<!-- Timeline: FULL WIDTH along the bottom, under both preview and properties. -->
+		{#if timelineOpen && !exportPanel}
+			<div
+				class="shrink-0 overflow-hidden"
+				transition:slide={{ axis: "y", duration: motionDuration(280), easing: cubicOut }}
+			>
+				<div class="relative" style="height: {timelineHeight}px;">
+					<div
+						role="slider"
+						tabindex="0"
+						aria-orientation="horizontal"
+						aria-label="Resize timeline"
+						aria-valuemin={TIMELINE_MIN_HEIGHT_PX}
+						aria-valuemax={timelineMax}
+						aria-valuenow={timelineHeight}
+						onpointerdown={startTimelineResize}
+						onkeydown={onTimelineHandleKey}
+						class="group absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize focus-visible:outline-none"
+					>
+						<div
+							class="bg-border/50 group-hover:bg-primary/60 group-focus-visible:bg-primary my-auto h-px w-full transition-colors {resizingTimeline
+								? 'bg-primary!'
+								: ''}"
+						></div>
+					</div>
+					<TimelineCanvas {store} {videoEl} {tileProvider} {filmstripVersion} bind:loopEnabled />
+				</div>
+			</div>
 		{/if}
 	</div>
 	{@render overlays?.()}

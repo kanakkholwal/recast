@@ -1,4 +1,4 @@
-import { count, desc, eq, sql } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import { requireAdmin } from "$lib/admin/guard";
 import { getDb } from "$lib/db";
 import { member as memberTable, organization as organizationTable } from "$lib/db/schema";

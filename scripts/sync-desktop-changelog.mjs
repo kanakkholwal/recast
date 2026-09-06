@@ -1,18 +1,5 @@
 #!/usr/bin/env node
-// Regenerate `apps/desktop/src/constants/changelog.ts` from `CHANGELOG.md`.
-//
-// CHANGELOG.md is the canonical Keep-a-Changelog source (also used by the
-// release workflow via `scripts/extract-changelog.mjs`). The desktop app's
-// "What's new" dialog and full changelog page read from a typed RELEASES
-// array. This script parses CHANGELOG.md and rewrites that array between
-// the `RELEASES:START` … `RELEASES:END` markers.
-//
-// Run manually with `pnpm sync:changelog`, or automatically before each
-// desktop build (the `predev` / `prebuild` hook in `apps/desktop/package.json`).
-//
-// Parsing is intentionally permissive, so anything we can't classify is
-// treated as a `changed` entry rather than blocking the build, so a
-// malformed CHANGELOG.md never breaks `pnpm dev`.
+// Regenerates the desktop's typed RELEASES array from CHANGELOG.md between the RELEASES markers; parsing is permissive, so a malformed changelog never breaks the build.
 
 import { readFile, writeFile } from "node:fs/promises";
 import { argv, exit, stderr, stdout } from "node:process";
@@ -24,14 +11,7 @@ const __dirname = dirname(__filename);
 const REPO_ROOT = resolve(__dirname, "..");
 
 const CHANGELOG_PATH = join(REPO_ROOT, "CHANGELOG.md");
-const CONSTANTS_PATH = join(
-	REPO_ROOT,
-	"apps",
-	"desktop",
-	"src",
-	"constants",
-	"changelog.ts",
-);
+const CONSTANTS_PATH = join(REPO_ROOT, "apps", "desktop", "src", "constants", "changelog.ts");
 const REGION_START = "// RELEASES:START";
 const REGION_END = "// RELEASES:END";
 
@@ -48,9 +28,7 @@ const KIND_BY_HEADING = new Map([
 ]);
 
 function tsString(s) {
-	// Single-quote with backslash-escapes for backslash and apostrophe.
-	// Smart quotes / em-dashes pass through unchanged so the rendered text
-	// matches what's in CHANGELOG.md exactly.
+	// Single quotes with backslash escapes; smart quotes and dashes pass through so the text matches CHANGELOG.md.
 	return `'${s.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
@@ -62,9 +40,7 @@ function parseChangelog(markdown) {
 
 	for (const line of lines) {
 		// Version header: `## [<version>] — <date>` (em-dash) or `## [<version>] - <date>`.
-		const versionMatch = line.match(
-			/^##\s+\[([^\]]+)\](?:\s*[—-]\s*(.+))?\s*$/,
-		);
+		const versionMatch = line.match(/^##\s+\[([^\]]+)\](?:\s*[—-]\s*(.+))?\s*$/);
 		if (versionMatch) {
 			const version = versionMatch[1].trim();
 			const date = (versionMatch[2] ?? "").trim();
@@ -130,7 +106,6 @@ function parseChangelog(markdown) {
 		) {
 			const last = current.changes[current.changes.length - 1];
 			last.summary = collapseWhitespace(`${last.summary} ${continuation[1]}`);
-			continue;
 		}
 	}
 
@@ -143,10 +118,8 @@ function collapseWhitespace(s) {
 
 function renderReleasesBlock(releases) {
 	const out = [];
-	out.push(REGION_START + ", auto-generated, do not edit by hand");
-	out.push(
-		"export const RELEASES: readonly ChangelogRelease[] = [",
-	);
+	out.push(`${REGION_START}, auto-generated, do not edit by hand`);
+	out.push("export const RELEASES: readonly ChangelogRelease[] = [");
 	for (const r of releases) {
 		out.push("\t{");
 		out.push(`\t\tversion: ${tsString(r.version)},`);
@@ -163,9 +136,7 @@ function renderReleasesBlock(releases) {
 		}
 		out.push("\t\tchanges: [");
 		for (const c of r.changes) {
-			out.push(
-				`\t\t\t{ kind: ${tsString(c.kind)}, summary: ${tsString(c.summary)} },`,
-			);
+			out.push(`\t\t\t{ kind: ${tsString(c.kind)}, summary: ${tsString(c.summary)} },`);
 		}
 		out.push("\t\t],");
 		out.push("\t},");
@@ -179,9 +150,7 @@ function spliceRegion(source, replacement) {
 	const startIdx = source.indexOf(REGION_START);
 	const endIdx = source.indexOf(REGION_END);
 	if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
-		throw new Error(
-			`Could not find ${REGION_START} … ${REGION_END} markers in ${CONSTANTS_PATH}`,
-		);
+		throw new Error(`Could not find ${REGION_START} … ${REGION_END} markers in ${CONSTANTS_PATH}`);
 	}
 	const endLineEnd = source.indexOf("\n", endIdx);
 	const tail = endLineEnd === -1 ? "" : source.slice(endLineEnd);
@@ -195,9 +164,7 @@ async function main() {
 	const markdown = await readFile(CHANGELOG_PATH, "utf8");
 	const releases = parseChangelog(markdown);
 	if (releases.length === 0) {
-		stderr.write(
-			"warn: no released versions found in CHANGELOG.md (only [Unreleased]?)\n",
-		);
+		stderr.write("warn: no released versions found in CHANGELOG.md (only [Unreleased]?)\n");
 	}
 
 	const before = await readFile(CONSTANTS_PATH, "utf8");
@@ -228,12 +195,7 @@ main().catch((e) => {
 	if (argv.slice(2).includes("--check")) {
 		exit(1);
 	}
-	// Build/dev mode: NEVER exit non-zero here. `ui:build` is
-	// `sync:changelog && vite build`, so an exit(1) short-circuits the chain
-	// and skips `vite build` entirely, leaving `tauri build` to bundle a STALE
-	// `build/` (the "player CSS broken in release" class of bug). A changelog
-	// problem is not worth shipping a stale frontend, so warn loudly and let the
-	// real build run with a stale changelog.
+	// NEVER exit non-zero: `ui:build` chains this before `vite build`, so a failure here would ship a stale frontend.
 	stderr.write(
 		"sync-desktop-changelog: WARNING continuing the build with a STALE changelog; fix CHANGELOG.md and its markers.\n",
 	);

@@ -1,48 +1,48 @@
 <script lang="ts">
-	import { Search, X } from "@recast/icons";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import { Input } from "@recast/ui/input";
-	import * as Select from "@recast/ui/select";
-	import { Skeleton } from "@recast/ui/skeleton";
+import { Search, X } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import { Input } from "@recast/ui/input";
+import * as Select from "@recast/ui/select";
+import { Skeleton } from "@recast/ui/skeleton";
 
-	import InlineError from "$lib/components/InlineError.svelte";
+import InlineError from "$lib/components/InlineError.svelte";
 
-	let { data } = $props();
+let { data } = $props();
 
-	const statusVariant: Record<string, "default" | "outline" | "destructive" | "secondary"> = {
-		active: "secondary",
-		trialing: "secondary",
-		past_due: "destructive",
-		canceled: "outline",
-		unpaid: "destructive",
-		incomplete: "outline",
-	};
+const statusVariant: Record<string, "default" | "outline" | "destructive" | "secondary"> = {
+	active: "secondary",
+	trialing: "secondary",
+	past_due: "destructive",
+	canceled: "outline",
+	unpaid: "destructive",
+	incomplete: "outline",
+};
 
-	// Client-side filtering — streamed whole (≤200 rows), so it's instant.
-	let q = $state("");
-	let statusFilter = $state("all");
-	const STATUS_LABEL: Record<string, string> = {
-		all: "All statuses",
-		active: "Active",
-		trialing: "Trialing",
-		past_due: "Past due",
-		canceled: "Canceled",
-		unpaid: "Unpaid",
-		incomplete: "Incomplete",
-	};
-	const hasFilters = $derived(q.trim() !== "" || statusFilter !== "all");
+// Client-side filtering — streamed whole (≤200 rows), so it's instant.
+let q = $state("");
+let statusFilter = $state("all");
+const STATUS_LABEL: Record<string, string> = {
+	all: "All statuses",
+	active: "Active",
+	trialing: "Trialing",
+	past_due: "Past due",
+	canceled: "Canceled",
+	unpaid: "Unpaid",
+	incomplete: "Incomplete",
+};
+const hasFilters = $derived(q.trim() !== "" || statusFilter !== "all");
 
-	function matches(r: { sub: { status: string }; user: { name: string; email: string } }): boolean {
-		const needle = q.trim().toLowerCase();
-		if (needle && !`${r.user.name} ${r.user.email}`.toLowerCase().includes(needle)) return false;
-		if (statusFilter !== "all" && r.sub.status !== statusFilter) return false;
-		return true;
-	}
-	function clearFilters() {
-		q = "";
-		statusFilter = "all";
-	}
+function matches(r: { sub: { status: string }; user: { name: string; email: string } }): boolean {
+	const needle = q.trim().toLowerCase();
+	if (needle && !`${r.user.name} ${r.user.email}`.toLowerCase().includes(needle)) return false;
+	if (statusFilter !== "all" && r.sub.status !== statusFilter) return false;
+	return true;
+}
+function clearFilters() {
+	q = "";
+	statusFilter = "all";
+}
 </script>
 
 <header class="mb-6">

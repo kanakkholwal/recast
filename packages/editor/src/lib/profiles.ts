@@ -7,9 +7,9 @@
  */
 
 import { safeStorage } from "@recast/ui/persisted-state";
-import type { AudioDeviceInfo } from "./wire-types";
 import type { BrowserCamera } from "./camera/browser-devices";
 import { findCamera } from "./camera/browser-devices";
+import type { AudioDeviceInfo } from "./wire-types";
 
 /** Stored profile record. v2 schema, adding device identity fields over v1. */
 export interface RecordingProfile {
@@ -48,9 +48,7 @@ interface RecordingProfileV1 {
 export const PROFILES_STORAGE_KEY = "recast-recording-profiles";
 export const PROFILES_ENABLED_STORAGE_KEY = "recast-profiles-enabled";
 
-// Global capture quality + frame rate. Capture-WIDE preferences (like the
-// global countdown), so they live outside profile records, kept clear of
-// `capSig` and the combination cap, applied to every recording.
+// Capture-wide preferences like the global countdown, so they live outside profile records and apply to every recording.
 
 export const RECORDING_QUALITY_STORAGE_KEY = "recast-recording-quality";
 export const RECORDING_FPS_STORAGE_KEY = "recast-recording-fps";
@@ -115,7 +113,7 @@ function camSlot(p: Pick<RecordingProfile, "camera" | "cameraDeviceId">): string
  * id; trailing segment is the countdown slot. See `COUNTDOWN_OPTIONS`.
  */
 export function capSig(p: RecordingProfile): string {
-	return `${+p.systemAudio}|${micSlot(p)}|${camSlot(p)}|${countdownToken(p.countdown)}`;
+	return `${Number(p.systemAudio)}|${micSlot(p)}|${camSlot(p)}|${countdownToken(p.countdown)}`;
 }
 
 /** Enforce the "exactly one default" invariant in-place (returns a new array). */
@@ -204,8 +202,7 @@ function isV2(p: unknown): p is RecordingProfile {
  * unparseable, or every entry was unrecognizable. Never throws.
  */
 export function loadProfiles(): RecordingProfile[] {
-	// `safeStorage` returns [] for missing key / no-window / malformed JSON,
-	// so every empty-ish case funnels into the seed below.
+	// `safeStorage` returns an empty array for a missing key or malformed JSON, so every empty case funnels into the seed.
 	const parsed = safeStorage.get<unknown[]>(PROFILES_STORAGE_KEY, []);
 	if (!Array.isArray(parsed) || parsed.length === 0) return seedProfiles();
 
@@ -223,7 +220,6 @@ export function loadProfiles(): RecordingProfile[] {
 				cameraLabel: null,
 				cameraDeviceId: null,
 			});
-			continue;
 		}
 		// Drop unrecognized rows rather than throwing on the whole list.
 	}

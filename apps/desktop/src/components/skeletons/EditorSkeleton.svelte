@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Skeleton } from "@recast/ui/skeleton";
+import { Skeleton } from "@recast/ui/skeleton";
 </script>
 
 <div class="flex flex-1 min-h-0">

@@ -1,0 +1,143 @@
+{
+	"note": "Shared by packages/editor cursor-parity.test.ts and crates/recast-cursor/tests/parity.rs. Both sides must agree; the numbers were produced by the TypeScript implementation, which shipped first.",
+	"source": { "width": 1920, "height": 1080 },
+	"samples": [
+		{
+			"timestampUs": 0,
+			"x": 100,
+			"y": 100,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 16000,
+			"x": 140,
+			"y": 108,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 32000,
+			"x": 173,
+			"y": 121,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 48000,
+			"x": 210,
+			"y": 130,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 64000,
+			"x": 244,
+			"y": 149,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 80000,
+			"x": 300,
+			"y": 160,
+			"visible": true,
+			"leftDown": true,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 96000,
+			"x": 302,
+			"y": 161,
+			"visible": true,
+			"leftDown": true,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 112000,
+			"x": 305,
+			"y": 163,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 128000,
+			"x": 340,
+			"y": 190,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 144000,
+			"x": 388,
+			"y": 214,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 160000,
+			"x": 420,
+			"y": 240,
+			"visible": false,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 176000,
+			"x": 455,
+			"y": 268,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": true
+		},
+		{
+			"timestampUs": 192000,
+			"x": 470,
+			"y": 280,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": true
+		},
+		{
+			"timestampUs": 208000,
+			"x": 480,
+			"y": 288,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 224000,
+			"x": 480,
+			"y": 288,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		},
+		{
+			"timestampUs": 400000,
+			"x": 480,
+			"y": 288,
+			"visible": true,
+			"leftDown": false,
+			"rightDown": false
+		}
+	],
+	"idlePeriods": [{ "startUs": 224000, "endUs": 1400000, "x": 480, "y": 288 }],
+	"smoothing": { "sigmaMs": 37.5, "snapToClicks": true, "snapWindowMs": 80 },
+	"settings": {
+		"hideWhenIdle": true,
+		"idleTimeout": 0.3,
+		"highlightClicks": true,
+		"highlightOpacity": 40
+	},
+	"queryTimesUs": [0, 24000, 80000, 88000, 130000, 165000, 200000, 560000, 900000, 1500000]
+}

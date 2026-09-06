@@ -1,0 +1,16 @@
+[package]
+name = "recast-color"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "The single colour authority: CSS parsing, transfer functions, primaries, and matrices."
+
+[features]
+default = ["serde"]
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1.0.151"

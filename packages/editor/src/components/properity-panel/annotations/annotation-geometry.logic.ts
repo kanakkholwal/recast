@@ -1,16 +1,4 @@
-/** AnnotationGeometry pure helpers: percent field formatting + frame-align maths. */
-
-/** UV fraction → percent string for the number inputs. */
-export function fmt(n: number): string {
-	return (n * 100).toFixed(2);
-}
-
-/** Parse a percent input back to a UV fraction, keeping `fallback` on garbage. */
-export function parseAndCommit(value: string, fallback: number): number {
-	const parsed = parseFloat(value);
-	if (Number.isNaN(parsed)) return fallback;
-	return parsed / 100;
-}
+/** AnnotationGeometry pure helpers: frame-align maths. */
 
 /**
  * Target UV position for aligning a box of size `box` to the frame along `axis`:

@@ -1,8 +1,4 @@
-// Keyframe animation engine ported from the reference app: a preset is a set of
-// tracks, each track a list of keyframes over time; playback interpolates the
-// animatable properties at any moment and the stage applies them as a live CSS
-// transform + opacity. The same interpolation drives the video export, so the
-// clip matches the preview exactly.
+// A preset is tracks of keyframes over time; playback interpolates the animatable properties, and the video export uses the same interpolation.
 
 export type Easing =
 	| "linear"
@@ -110,11 +106,11 @@ const EASINGS: Record<Easing, (t: number) => number> = {
 	linear: (t) => t,
 	"ease-in": (t) => t * t,
 	"ease-out": (t) => 1 - (1 - t) * (1 - t),
-	"ease-in-out": (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
+	"ease-in-out": (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2),
 	"ease-in-cubic": (t) => t * t * t,
-	"ease-out-cubic": (t) => 1 - Math.pow(1 - t, 3),
-	"ease-in-expo": (t) => (t === 0 ? 0 : Math.pow(2, 10 * t - 10)),
-	"ease-out-expo": (t) => (t === 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+	"ease-out-cubic": (t) => 1 - (1 - t) ** 3,
+	"ease-in-expo": (t) => (t === 0 ? 0 : 2 ** (10 * t - 10)),
+	"ease-out-expo": (t) => (t === 1 ? 1 : 1 - 2 ** (-10 * t)),
 };
 
 function ease(progress: number, easing: Easing): number {
@@ -176,7 +172,7 @@ export function propsToTransform(p: AnimatableProperties): string {
 
 // --- Presets ----------------------------------------------------------------
 
-const t = (
+const definePreset = (
 	name: string,
 	category: AnimationCategory,
 	duration: number,
@@ -201,28 +197,28 @@ const k = (
 
 export const ANIMATION_PRESETS: AnimationPreset[] = [
 	// Reveal
-	t("Hero Landing", "reveal", 1200, [
+	definePreset("Hero Landing", "reveal", 1200, [
 		[
 			k(0, { rotateX: 25, scale: 0.95, perspective: 2400 }),
 			k(1200, { rotateX: 0, scale: 1, perspective: 2400 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(600, { opacity: 1 })],
 	]),
-	t("Slide In 3D", "reveal", 1000, [
+	definePreset("Slide In 3D", "reveal", 1000, [
 		[
 			k(0, { rotateY: 30, translateX: 35, perspective: 2400 }),
 			k(1000, { rotateY: 0, translateX: 0, perspective: 2400 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(500, { opacity: 1 })],
 	]),
-	t("Rise & Settle", "reveal", 1000, [
+	definePreset("Rise & Settle", "reveal", 1000, [
 		[
 			k(0, { translateY: 25, rotateX: -15, perspective: 2400, scale: 0.97 }),
 			k(1000, { translateY: 0, rotateX: 0, perspective: 2400, scale: 1 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(500, { opacity: 1 })],
 	]),
-	t("Drop In", "reveal", 1000, [
+	definePreset("Drop In", "reveal", 1000, [
 		[
 			k(0, { translateY: -20, rotateX: 12, perspective: 2400, scale: 0.97 }),
 			k(1000, { translateY: 0, rotateX: 0, perspective: 2400, scale: 1 }, "ease-out-cubic"),
@@ -230,28 +226,28 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 		[k(0, { opacity: 0 }), k(500, { opacity: 1 })],
 	]),
 	// Slide
-	t("Slide Up", "slide", 800, [
+	definePreset("Slide Up", "slide", 800, [
 		[
 			k(0, { translateY: 30, perspective: 2400 }),
 			k(800, { translateY: 0, perspective: 2400 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(400, { opacity: 1 })],
 	]),
-	t("Slide Down", "slide", 800, [
+	definePreset("Slide Down", "slide", 800, [
 		[
 			k(0, { translateY: -30, perspective: 2400 }),
 			k(800, { translateY: 0, perspective: 2400 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(400, { opacity: 1 })],
 	]),
-	t("Slide Left", "slide", 800, [
+	definePreset("Slide Left", "slide", 800, [
 		[
 			k(0, { translateX: 35, perspective: 2400 }),
 			k(800, { translateX: 0, perspective: 2400 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(400, { opacity: 1 })],
 	]),
-	t("Slide Right", "slide", 800, [
+	definePreset("Slide Right", "slide", 800, [
 		[
 			k(0, { translateX: -35, perspective: 2400 }),
 			k(800, { translateX: 0, perspective: 2400 }, "ease-out-cubic"),
@@ -259,22 +255,22 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 		[k(0, { opacity: 0 }), k(400, { opacity: 1 })],
 	]),
 	// Fade
-	t("Fade In", "fade", 800, [[k(0, { opacity: 0 }), k(800, { opacity: 1 })]]),
-	t("Fade Scale", "fade", 800, [
+	definePreset("Fade In", "fade", 800, [[k(0, { opacity: 0 }), k(800, { opacity: 1 })]]),
+	definePreset("Fade Scale", "fade", 800, [
 		[
 			k(0, { scale: 0.96, perspective: 2400 }),
 			k(800, { scale: 1, perspective: 2400 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(600, { opacity: 1 })],
 	]),
-	t("Fade Rise", "fade", 800, [
+	definePreset("Fade Rise", "fade", 800, [
 		[
 			k(0, { translateY: 12, scale: 0.98, perspective: 2400 }),
 			k(800, { translateY: 0, scale: 1, perspective: 2400 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(600, { opacity: 1 })],
 	]),
-	t("Fade Zoom Out", "fade", 1000, [
+	definePreset("Fade Zoom Out", "fade", 1000, [
 		[
 			k(0, { scale: 1.08, perspective: 2400 }),
 			k(1000, { scale: 1, perspective: 2400 }, "ease-out-cubic"),
@@ -282,21 +278,21 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 		[k(0, { opacity: 0 }), k(600, { opacity: 1 })],
 	]),
 	// Flip
-	t("Flip X", "flip", 1500, [
+	definePreset("Flip X", "flip", 1500, [
 		[
 			k(0, { rotateX: 0, scale: 1, perspective: 2400 }),
 			k(750, { rotateX: 90, scale: 0.95, perspective: 2400 }, "ease-in"),
 			k(1500, { rotateX: 180, scale: 1, perspective: 2400 }),
 		],
 	]),
-	t("Flip Y", "flip", 1500, [
+	definePreset("Flip Y", "flip", 1500, [
 		[
 			k(0, { rotateY: 0, scale: 1, perspective: 2400 }),
 			k(750, { rotateY: 90, scale: 0.95, perspective: 2400 }, "ease-in"),
 			k(1500, { rotateY: 180, scale: 1, perspective: 2400 }),
 		],
 	]),
-	t("Peek", "flip", 2000, [
+	definePreset("Peek", "flip", 2000, [
 		[
 			k(0, { rotateY: 0, perspective: 2400 }),
 			k(600, { rotateY: 35, perspective: 2400 }, "ease-out-cubic"),
@@ -304,7 +300,7 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 			k(2000, { rotateY: 0, perspective: 2400 }, "ease-out-cubic"),
 		],
 	]),
-	t("Flip Reveal", "flip", 1200, [
+	definePreset("Flip Reveal", "flip", 1200, [
 		[
 			k(0, { rotateY: -90, scale: 0.95, perspective: 2400 }),
 			k(800, { rotateY: 5, scale: 1.02, perspective: 2400 }, "ease-out-cubic"),
@@ -313,19 +309,19 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 		[k(0, { opacity: 0 }), k(400, { opacity: 1 })],
 	]),
 	// Perspective
-	t("Showcase Tilt", "perspective", 2500, [
+	definePreset("Showcase Tilt", "perspective", 2500, [
 		[
 			k(0, { rotateY: 0, rotateX: 0, perspective: 2400 }, "ease-in-out"),
 			k(2500, { rotateY: 18, rotateX: 6, perspective: 2400 }, "ease-in-out"),
 		],
 	]),
-	t("Isometric", "perspective", 2000, [
+	definePreset("Isometric", "perspective", 2000, [
 		[
 			k(0, { rotateX: 0, rotateY: 0, scale: 1, perspective: 2400 }, "ease-in-out"),
 			k(2000, { rotateX: 22, rotateY: -22, scale: 0.95, perspective: 2400 }, "ease-in-out"),
 		],
 	]),
-	t("Hover Float", "perspective", 3000, [
+	definePreset("Hover Float", "perspective", 3000, [
 		[
 			k(0, { rotateX: 0, translateY: 0, scale: 1, perspective: 2400 }, "ease-in-out"),
 			k(750, { rotateX: 4, translateY: -3, scale: 1.01, perspective: 2400 }, "ease-in-out"),
@@ -334,7 +330,7 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 			k(3000, { rotateX: 0, translateY: 0, scale: 1, perspective: 2400 }, "ease-in-out"),
 		],
 	]),
-	t("Apple Showcase", "perspective", 1500, [
+	definePreset("Apple Showcase", "perspective", 1500, [
 		[
 			k(0, { rotateX: 20, rotateY: -15, scale: 0.96, perspective: 2400 }),
 			k(1500, { rotateX: 5, rotateY: -8, scale: 1, perspective: 2400 }, "ease-out-cubic"),
@@ -342,27 +338,27 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 		[k(0, { opacity: 0 }), k(600, { opacity: 1 })],
 	]),
 	// Orbit
-	t("Orbit Left", "orbit", 2500, [
+	definePreset("Orbit Left", "orbit", 2500, [
 		[
 			k(0, { rotateY: 0, scale: 1, perspective: 2400 }, "ease-in-out"),
 			k(1250, { rotateY: -25, scale: 0.97, perspective: 2400 }, "ease-in-out"),
 			k(2500, { rotateY: 0, scale: 1, perspective: 2400 }, "ease-in-out"),
 		],
 	]),
-	t("Orbit Right", "orbit", 2500, [
+	definePreset("Orbit Right", "orbit", 2500, [
 		[
 			k(0, { rotateY: 0, scale: 1, perspective: 2400 }, "ease-in-out"),
 			k(1250, { rotateY: 25, scale: 0.97, perspective: 2400 }, "ease-in-out"),
 			k(2500, { rotateY: 0, scale: 1, perspective: 2400 }, "ease-in-out"),
 		],
 	]),
-	t("Turntable", "orbit", 3000, [
+	definePreset("Turntable", "orbit", 3000, [
 		[
 			k(0, { rotateY: 0, scale: 0.95, perspective: 2400 }, "linear"),
 			k(3000, { rotateY: 360, scale: 0.95, perspective: 2400 }, "linear"),
 		],
 	]),
-	t("Swing", "orbit", 2000, [
+	definePreset("Swing", "orbit", 2000, [
 		[
 			k(0, { rotateZ: 0, rotateY: 0, perspective: 2400 }, "ease-in-out"),
 			k(500, { rotateZ: -8, rotateY: -10, perspective: 2400 }, "ease-in-out"),
@@ -372,26 +368,26 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 		],
 	]),
 	// Depth
-	t("Push Away", "depth", 2000, [
+	definePreset("Push Away", "depth", 2000, [
 		[
 			k(0, { scale: 1, perspective: 2400, rotateX: 0 }, "ease-in-out"),
 			k(2000, { scale: 0.85, perspective: 1600, rotateX: 8 }, "ease-in-out"),
 		],
 	]),
-	t("Pull Close", "depth", 1200, [
+	definePreset("Pull Close", "depth", 1200, [
 		[
 			k(0, { scale: 0.95, perspective: 1800, rotateX: -4 }),
 			k(1200, { scale: 1.03, perspective: 2400, rotateX: 0 }, "ease-out-cubic"),
 		],
 	]),
-	t("Dramatic Zoom", "depth", 1200, [
+	definePreset("Dramatic Zoom", "depth", 1200, [
 		[
 			k(0, { scale: 0.95, perspective: 1400 }),
 			k(1200, { scale: 1.08, perspective: 2400 }, "ease-out-cubic"),
 		],
 		[k(0, { opacity: 0 }), k(500, { opacity: 1 })],
 	]),
-	t("Breathe 3D", "depth", 3000, [
+	definePreset("Breathe 3D", "depth", 3000, [
 		[
 			k(0, { scale: 1, rotateX: 0, rotateY: 0, perspective: 2400 }, "ease-in-out"),
 			k(1500, { scale: 1.03, rotateX: 2, rotateY: -2, perspective: 2400 }, "ease-in-out"),
@@ -399,25 +395,25 @@ export const ANIMATION_PRESETS: AnimationPreset[] = [
 		],
 	]),
 	// Ken Burns
-	t("Zoom In", "kenburns", 4000, [
+	definePreset("Zoom In", "kenburns", 4000, [
 		[
 			k(0, { scale: 1, translateX: 0, translateY: 0, perspective: 2400 }, "ease-in-out"),
 			k(4000, { scale: 1.15, translateX: 3, translateY: -2, perspective: 2400 }, "ease-in-out"),
 		],
 	]),
-	t("Zoom Out", "kenburns", 4000, [
+	definePreset("Zoom Out", "kenburns", 4000, [
 		[
 			k(0, { scale: 1.12, translateX: -3, translateY: 2, perspective: 2400 }, "ease-in-out"),
 			k(4000, { scale: 1, translateX: 0, translateY: 0, perspective: 2400 }, "ease-in-out"),
 		],
 	]),
-	t("Pan Left", "kenburns", 4000, [
+	definePreset("Pan Left", "kenburns", 4000, [
 		[
 			k(0, { translateX: 8, scale: 1.05, perspective: 2400 }, "ease-in-out"),
 			k(4000, { translateX: -8, scale: 1.08, perspective: 2400 }, "ease-in-out"),
 		],
 	]),
-	t("Pan Right", "kenburns", 4000, [
+	definePreset("Pan Right", "kenburns", 4000, [
 		[
 			k(0, { translateX: -8, scale: 1.05, perspective: 2400 }, "ease-in-out"),
 			k(4000, { translateX: 8, scale: 1.08, perspective: 2400 }, "ease-in-out"),

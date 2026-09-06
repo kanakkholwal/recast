@@ -149,23 +149,14 @@ fn merge_section_files(archive: &mut ZipArchive<File>) -> Result<serde_json::Val
     Ok(format::merge_sections(sections))
 }
 
-/// Stable extraction directory for a project.
-///
-/// Keyed on the project's PATH alone — never its length or mtime. Keying on
-/// length meant every save minted a fresh directory and re-extracted the whole
-/// recording on the next open: three revisions of one 700 MB project left 2.1 GB
-/// of identical copies, and the re-extraction itself is a multi-hundred-MB
-/// synchronous flush that stalls the machine mid-edit. Per-asset freshness is
-/// `already_extracted`'s job, so a save that only rewrites `edits.json` reuses
-/// the media untouched.
+/// Stable extraction directory, keyed on the project PATH alone.
+/// Keying on length minted a fresh directory per save: three revisions of one 700 MB project left 2.1 GB of copies, each re-extraction a stalling synchronous flush.
 fn cache_dir_for(project_path: &Path) -> Result<PathBuf> {
     let stem = project_path
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("project");
-    // Disambiguates same-named projects in different folders. `DefaultHasher` is
-    // deterministic within a toolchain; a bump costs one re-extraction, which the
-    // sweeper reclaims.
+    // Disambiguates same-named projects in different folders; a `DefaultHasher` bump costs one re-extraction.
     let mut hasher = DefaultHasher::new();
     project_path.to_string_lossy().hash(&mut hasher);
     Ok(env::temp_dir()
@@ -219,13 +210,8 @@ fn remove_entry(path: &Path) {
     }
 }
 
-/// Evict stale and excess extraction caches.
-///
-/// Call at STARTUP only. A time-based sweep during a session would delete assets
-/// out from under an open editor; at startup nothing is open, so every entry is
-/// safely evictable. Returns nothing because this is best-effort maintenance —
-/// a failure means the cache stays larger than intended, never that opening
-/// fails.
+/// Evicts stale and excess extraction caches. STARTUP only: a mid-session sweep would delete assets out from under an open editor.
+/// Best-effort, so it returns nothing; a failure means the cache stays larger than intended, never that opening fails.
 pub fn sweep_cache() {
     sweep_cache_in(
         &env::temp_dir().join(CACHE_ROOT),
@@ -288,12 +274,7 @@ fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Res
     let mut entry = archive
         .by_name(name)
         .with_context(|| format!("missing {name} in project"))?;
-    // Size equality against the zip entry is what makes a save cheap: the media
-    // is byte-identical across saves, so this short-circuits and only the small
-    // `edits.json` is rewritten. Re-extracting would also TRUNCATE — and
-    // `File::create` does that instantly while the rewrite takes seconds on a
-    // large recording, so any reader mid-window sees a headerless file
-    // ("no video track").
+    // Size equality makes a save cheap, and re-extracting would TRUNCATE: `File::create` is instant while the rewrite takes seconds, so a reader mid-window sees a headerless file.
     if already_extracted(path, entry.size()) {
         return Ok(path.to_path_buf());
     }
@@ -310,8 +291,7 @@ fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Res
         }
         output.sync_all()?;
     }
-    // Rename is atomic within a directory: readers see the old file or the new
-    // one, never a partial.
+    // Rename is atomic within a directory: readers see the old file or the new one, never a partial.
     fs::rename(&partial, path)?;
     Ok(path.to_path_buf())
 }
@@ -320,11 +300,8 @@ fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Res
 mod backcompat_tests {
     use super::*;
 
-    /// Load every real `.recast` in `$RECAST_BACKCOMPAT_DIR` through the current
-    /// `open_project` and assert it parses. This is the concrete backward-
-    /// compatibility check: pre-change recasts must still deserialize against
-    /// the present `ProjectMetadata`/`RecordingStats` structs. Skips silently
-    /// when the env var is unset so normal `cargo test` is unaffected.
+    /// Loads every real `.recast` in `$RECAST_BACKCOMPAT_DIR` through the current `open_project` and asserts it parses, the concrete backward-compatibility check.
+    /// Skips silently when the env var is unset, so a normal `cargo test` is unaffected.
     #[test]
     fn opens_existing_recasts_from_dir() {
         let Some(dir) = std::env::var_os("RECAST_BACKCOMPAT_DIR") else {
@@ -361,8 +338,7 @@ mod backcompat_tests {
 /// Try to extract an optional entry from the archive. Returns None if the entry doesn't exist.
 fn try_extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Option<PathBuf> {
     let mut entry = archive.by_name(name).ok()?;
-    // Same reuse + atomic-publish rules as `extract_entry`; audio.wav is large
-    // enough to hit the same truncation window.
+    // Same reuse and atomic-publish rules as `extract_entry`; audio.wav is large enough to hit the same window.
     if already_extracted(path, entry.size()) {
         return Some(path.to_path_buf());
     }
@@ -392,11 +368,9 @@ mod extract_tests {
 
     static N: AtomicU32 = AtomicU32::new(0);
 
-    fn scratch() -> PathBuf {
+    fn scratch() -> recast_testkit::Scratch {
         let n = N.fetch_add(1, Ordering::Relaxed);
-        let dir = env::temp_dir().join(format!("recast-extract-{}-{}", std::process::id(), n));
-        fs::create_dir_all(&dir).expect("create scratch");
-        dir
+        recast_testkit::Scratch::new(&format!("extract-{n}"))
     }
 
     fn archive_with(dir: &Path, body: &[u8]) -> ZipArchive<File> {
@@ -418,9 +392,7 @@ mod extract_tests {
         fs::write(&project, b"original bundle").expect("write project");
         let before = cache_dir_for(&project).expect("cache dir");
 
-        // A save rewrites the bundle; `edits.json` grows, so the file length
-        // changes. Keying on length minted a whole new directory here and
-        // re-extracted the entire recording on the next open.
+        // A save grows `edits.json`, so keying on length minted a new directory and re-extracted the whole recording.
         fs::write(&project, b"bundle after a save, now longer").expect("rewrite project");
         let after = cache_dir_for(&project).expect("cache dir");
 
@@ -429,8 +401,10 @@ mod extract_tests {
 
     #[test]
     fn cache_dir_differs_for_same_name_in_different_folders() {
-        let one = scratch().join("Recast.recast");
-        let two = scratch().join("Recast.recast");
+        // Both guards held: a temporary would delete its directory before the write.
+        let (dir_one, dir_two) = (scratch(), scratch());
+        let one = dir_one.join("Recast.recast");
+        let two = dir_two.join("Recast.recast");
         fs::write(&one, b"a").expect("write one");
         fs::write(&two, b"b").expect("write two");
 
@@ -449,8 +423,7 @@ mod extract_tests {
         fs::create_dir_all(&fresh).expect("fresh");
         touch_last_used(&fresh);
 
-        // Zero TTL expires everything whose marker predates `now`; `fresh` was
-        // just touched, so only entries with no recent use should go.
+        // Zero TTL expires everything older than `now`; `fresh` was just touched, so only unused entries should go.
         sweep_cache_in(&root, Duration::from_secs(3600), u64::MAX);
         assert!(fresh.exists(), "recently used entry must survive");
 
@@ -488,9 +461,7 @@ mod extract_tests {
         extract_entry(&mut archive, "assets/recording.mp4", &target).expect("first extract");
         assert_eq!(fs::read(&target).expect("read"), b"video-bytes");
 
-        // Same length => treated as already extracted. Sentinel content proves
-        // the second call didn't truncate and rewrite: re-extracting a 637MB
-        // recording blanks it for seconds, and readers see a headerless file.
+        // Same length means already extracted; the sentinel proves the second call didn't truncate and rewrite.
         fs::write(&target, b"SENTINEL-XX").expect("sentinel");
         extract_entry(&mut archive, "assets/recording.mp4", &target).expect("second extract");
         assert_eq!(fs::read(&target).expect("read"), b"SENTINEL-XX");
@@ -533,12 +504,9 @@ mod roundtrip_tests {
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-    fn workspace() -> PathBuf {
+    fn workspace() -> recast_testkit::Scratch {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("recast-fmt-{}-{}", std::process::id(), n));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        recast_testkit::Scratch::new(&format!("fmt-{n}"))
     }
 
     fn fixture_metadata() -> ProjectMetadata {

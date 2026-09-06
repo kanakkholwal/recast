@@ -1,317 +1,22 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 
-use super::node_types::{
-    Annotation, AudioSettings, BackgroundNode, CameraOverlaySettings, CursorNode, RenderNode,
-    ShadowSettings, TrimNode, ZoomNode, ZoomRegion,
+use super::node_types::{BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNode, ZoomRegion};
+
+pub use recast_scene::v1::{CutRange, RenderState, SegmentSpeed};
+
+// One authority for the composite's rects. The graph and the compositor each held a copy, which is how the camera bubble's crop went odd in one and not the other and alphamerge refused the frame.
+pub use recast_compositor::{
+    canvas_geometry as compute_canvas_geometry, parse_aspect_ratio, CanvasGeometry,
 };
-
-fn default_bounce_speed_ms() -> f64 {
-    220.0
-}
-
-// Defaults mirror the editor's cursor-smoothing presets (see
-// editor-store.svelte.ts: snapToClicks/snapWindowMs default true / 80 ms).
-fn default_snap_to_clicks() -> bool {
-    true
-}
-fn default_snap_window_ms() -> f64 {
-    80.0
-}
-
-/// A removed range on the timeline (a silence cut or a manual cut), in
-/// original-recording seconds. The export drops these via `select`/`aselect`.
-/// Unknown JS-side fields (`id`, `source`) round-trip through `extra`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CutRange {
-    pub start: f64,
-    pub end: f64,
-    #[serde(flatten, default)]
-    pub extra: serde_json::Map<String, serde_json::Value>,
-}
-
-/// Per-segment speed override, anchored to a kept segment's ORIGINAL start time
-/// (see apps/desktop/src/lib/timeline/segment-speed.ts). A segment with no entry
-/// plays at 1×. Read by the export pipeline to warp the kept stream's timing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SegmentSpeed {
-    pub start: f64,
-    pub speed: f64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RenderState {
-    pub trim_start: f64,
-    pub trim_end: f64,
-    pub background_type: String,
-    pub background_value: String,
-    pub background_blur: f64,
-    /// Frame padding as percent of the shorter source edge (0..20).
-    pub padding: f64,
-    /// Final-canvas aspect: "source" (default) or one of the preset
-    /// labels ("16:9", "9:16", "1:1", "1.91:1"). Anything we don't
-    /// recognise falls back to source-matched.
-    #[serde(default)]
-    pub output_aspect: Option<String>,
-    /// Corner rounding as a percentage (0..50) of the shorter video edge.
-    #[serde(default)]
-    pub border_radius: f64,
-    pub cursor_enabled: bool,
-    pub cursor_size: f64,
-    pub cursor_smoothing: f64,
-    /// Anchor the smoothed path to exact click x/y inside the snap window so
-    /// presses stay pixel-perfect. Mirrors `cursorSnapToClicks` in the editor;
-    /// must be read here so the export's smoothing matches the preview's.
-    #[serde(default = "default_snap_to_clicks")]
-    pub cursor_snap_to_clicks: bool,
-    /// Half-width (ms) of the cosine click-snap ramp. Mirrors
-    /// `cursorSnapWindowMs`.
-    #[serde(default = "default_snap_window_ms")]
-    pub cursor_snap_window_ms: f64,
-    pub cursor_highlight_clicks: bool,
-    pub cursor_highlight_color: String,
-    pub cursor_highlight_opacity: f64,
-    pub cursor_hide_when_idle: bool,
-    pub cursor_idle_timeout: f64,
-    /// Motion-blur strength (0..1). Drives a velocity-proportional alpha trail
-    /// in the export compositor (0 = no trail).
-    #[serde(default)]
-    pub cursor_motion_blur: f64,
-    /// Click-bounce amplitude (0..5). Modulates the cursor sprite scale around
-    /// each mouse-down event for a satisfying "press" feel.
-    #[serde(default)]
-    pub cursor_click_bounce: f64,
-    /// Bounce/squash duration in milliseconds.
-    #[serde(default = "default_bounce_speed_ms")]
-    pub cursor_bounce_speed_ms: f64,
-    /// Idle sway amplitude (0..1). Adds a subtle sinusoidal wobble during
-    /// slow-motion sections so cursors don't feel mechanically rigid.
-    #[serde(default)]
-    pub cursor_sway: f64,
-    pub zoom_regions: Vec<ZoomRegion>,
-    /// User-accepted silence/manual cuts removed from the timeline.
-    #[serde(default)]
-    pub cuts: Vec<CutRange>,
-    /// Split markers (original-recording seconds) dividing the kept clip into
-    /// addressable segments. Editor-only on their own; here they bound the
-    /// segments that `segment_speeds` retimes.
-    #[serde(default)]
-    pub split_points: Vec<f64>,
-    /// Per-segment speed overrides (empty = every segment plays at 1×).
-    #[serde(default)]
-    pub segment_speeds: Vec<SegmentSpeed>,
-    /// Per-segment scene animations — entrance/exit transforms on the video
-    /// layer, anchored to a segment's original start (empty = every segment
-    /// static). Read by the export to build the video-layer overlay LUT. The
-    /// frontend serialises these under `segmentAnims` (see the editor store); the
-    /// key must match or the export silently drops every animation to passthrough.
-    #[serde(rename = "segmentAnims", default)]
-    pub scene_animations: Vec<crate::render::scene_anim::SegmentAnim>,
-    /// Annotation overlays (rect/ellipse/arrow/image/blur; text arrives
-    /// pre-rasterized as image). Composited in export by the cursor-overlay
-    /// pass (`render/cursor_export.rs`) and the FFmpeg blur filter.
-    #[serde(default)]
-    pub annotations: Vec<Annotation>,
-    /// Drop shadow cast by the video rect.
-    ///
-    /// Rendered in both the WebGL preview and the export. On export, the
-    /// shadow is rasterised once as a canvas-sized RGBA PNG by
-    /// `render::mask_export::render_drop_shadow_mask` and overlaid onto the
-    /// background by `build_export_plan_with` before the video composite.
-    /// This bakes `blur`, `spread`, `offset_y`, `opacity`, and `color` into
-    /// the static PNG — no time-varying parameters are involved, so the
-    /// FFmpeg filter chain stays free of expression evaluation here.
-    #[serde(default)]
-    pub shadow: ShadowSettings,
-    #[serde(default)]
-    pub audio_settings: AudioSettings,
-    /// Music / extra-audio clips on the output timeline (mixed in at export).
-    #[serde(default)]
-    pub music_clips: Vec<crate::render::node_types::AudioClip>,
-    #[serde(default)]
-    pub camera_overlay: CameraOverlaySettings,
-    // Hybrid-raster cursor sprite. Populated by the JS export trigger
-    // when the active style is non-`dot`; the soft-dot path is unchanged
-    // when these are `None`.
-    #[serde(default)]
-    pub cursor_sprite_rest: Option<String>,
-    #[serde(default)]
-    pub cursor_sprite_press: Option<String>,
-    #[serde(default)]
-    pub cursor_sprite_right_press: Option<String>,
-    #[serde(default)]
-    pub cursor_sprite_drag: Option<String>,
-    #[serde(default)]
-    pub cursor_sprite_hotspot_rest: Option<[f64; 2]>,
-    #[serde(default)]
-    pub cursor_sprite_hotspot_press: Option<[f64; 2]>,
-    #[serde(default)]
-    pub cursor_sprite_hotspot_right_press: Option<[f64; 2]>,
-    #[serde(default)]
-    pub cursor_sprite_hotspot_drag: Option<[f64; 2]>,
-    #[serde(default)]
-    pub cursor_sprite_size_px: Option<f64>,
-    /// Catch-all for any JS-only settings (e.g. `cursorStyle`,
-    /// `layoutMode`, `lastAppliedPresetId`, `cursorMotionEasing`,
-    /// `cursorSnapToClicks`, `cursorSnapWindowMs`, `autoZoomEnabled`,
-    /// `autoZoomApplied`) that JS owns but Rust never reads. The Rust
-    /// load path deserialises `edits.json` through this struct and then
-    /// re-serialises it back to JS — without this catch-all every field
-    /// not declared above would be silently dropped on a project reopen,
-    /// resetting the user's tweaks to defaults. `#[serde(flatten)]` slurps
-    /// all unrecognised keys at this level into the map and emits them
-    /// on serialisation, so JS-only settings round-trip cleanly without
-    /// every new editor toggle needing a mirror Rust field.
-    #[serde(flatten, default)]
-    pub passthrough: serde_json::Map<String, serde_json::Value>,
-}
-
-impl Default for RenderState {
-    fn default() -> Self {
-        Self {
-            trim_start: 0.0,
-            trim_end: 0.0,
-            background_type: "color".into(),
-            background_value: "#111111".into(),
-            background_blur: 0.0,
-            padding: 0.0,
-            output_aspect: None,
-            border_radius: 0.0,
-            cursor_enabled: true,
-            cursor_size: 3.0,
-            cursor_smoothing: 50.0,
-            cursor_snap_to_clicks: default_snap_to_clicks(),
-            cursor_snap_window_ms: default_snap_window_ms(),
-            cursor_highlight_clicks: true,
-            cursor_highlight_color: "#3b82f6".into(),
-            cursor_highlight_opacity: 40.0,
-            cursor_hide_when_idle: false,
-            cursor_idle_timeout: 3.0,
-            cursor_motion_blur: 0.0,
-            cursor_click_bounce: 0.0,
-            cursor_bounce_speed_ms: default_bounce_speed_ms(),
-            cursor_sway: 0.0,
-            zoom_regions: Vec::new(),
-            cuts: Vec::new(),
-            split_points: Vec::new(),
-            segment_speeds: Vec::new(),
-            scene_animations: Vec::new(),
-            annotations: Vec::new(),
-            shadow: ShadowSettings::default(),
-            audio_settings: AudioSettings::default(),
-            music_clips: Vec::new(),
-            camera_overlay: CameraOverlaySettings::default(),
-            cursor_sprite_rest: None,
-            cursor_sprite_press: None,
-            cursor_sprite_right_press: None,
-            cursor_sprite_drag: None,
-            cursor_sprite_hotspot_rest: None,
-            cursor_sprite_hotspot_press: None,
-            cursor_sprite_hotspot_right_press: None,
-            cursor_sprite_hotspot_drag: None,
-            cursor_sprite_size_px: None,
-            passthrough: serde_json::Map::new(),
-        }
-    }
-}
-
-/// Final-canvas geometry, mirroring `lib/canvas-geometry.ts` exactly. The
-/// preview and the export must agree on the same numbers — if they
-/// diverge the rendered file won't match what the user previews.
-#[derive(Debug, Clone, Copy)]
-pub struct CanvasGeometry {
-    pub canvas_w: u32,
-    pub canvas_h: u32,
-    pub video_x: u32,
-    pub video_y: u32,
-    pub video_w: u32,
-    pub video_h: u32,
-    pub padding_px: u32,
-    pub comp_x: u32,
-    pub comp_y: u32,
-    pub comp_w: u32,
-    pub comp_h: u32,
-}
-
-/// Parse the OutputAspect tag into a width/height ratio. `None` keeps
-/// the canvas aligned to source dims (the v1 default).
-fn parse_aspect_ratio(label: Option<&str>) -> Option<f64> {
-    match label.unwrap_or("source") {
-        "16:9" => Some(16.0 / 9.0),
-        "9:16" => Some(9.0 / 16.0),
-        "1:1" => Some(1.0),
-        "1.91:1" => Some(1.91),
-        _ => None,
-    }
-}
-
-pub fn compute_canvas_geometry(
-    src_w: u32,
-    src_h: u32,
-    padding_pct: f64,
-    output_aspect: Option<&str>,
-) -> CanvasGeometry {
-    let pct = padding_pct.clamp(0.0, 20.0);
-    let shorter = src_w.min(src_h) as f64;
-    let padding_px = ((shorter * pct) / 100.0).round() as u32;
-
-    let comp_w = src_w + padding_px * 2;
-    let comp_h = src_h + padding_px * 2;
-
-    let mut canvas_w = comp_w;
-    let mut canvas_h = comp_h;
-    if let Some(target) = parse_aspect_ratio(output_aspect) {
-        if comp_w > 0 && comp_h > 0 {
-            let comp_aspect = comp_w as f64 / comp_h as f64;
-            if comp_aspect > target {
-                // Comp is wider than target → extend HEIGHT.
-                canvas_h = ((comp_w as f64) / target).round() as u32;
-            } else if comp_aspect < target {
-                // Comp is narrower → extend WIDTH.
-                canvas_w = ((comp_h as f64) * target).round() as u32;
-            }
-        }
-    }
-
-    // Even alignment so H.264 / pad filter behave.
-    canvas_w = (canvas_w + 1) & !1;
-    canvas_h = (canvas_h + 1) & !1;
-
-    let comp_x = canvas_w.saturating_sub(comp_w) / 2;
-    let comp_y = canvas_h.saturating_sub(comp_h) / 2;
-    let video_x = comp_x + padding_px;
-    let video_y = comp_y + padding_px;
-
-    CanvasGeometry {
-        canvas_w,
-        canvas_h,
-        video_x,
-        video_y,
-        video_w: src_w,
-        video_h: src_h,
-        padding_px,
-        comp_x,
-        comp_y,
-        comp_w,
-        comp_h,
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct SourceVideoMetadata {
     pub width: u32,
     pub height: u32,
-    /// Source frame rate. The generated background source (`color=`) MUST be
-    /// pinned to this — otherwise FFmpeg defaults the generator to 25 fps and,
-    /// because the background is the BASE of the composite `overlay`, the whole
-    /// export inherits 25 fps. A 60 fps recording then gets frame-dropped to 25,
-    /// which judders every motion (most visibly under a zoom). See
-    /// `build_color_background_filter`.
+    /// Source frame rate, which the generated `color=` background MUST be pinned to.
+    /// FFmpeg otherwise defaults that generator to 25 fps, and since the background is the composite's BASE the whole export inherits it, juddering a 60 fps recording.
     pub fps: f64,
 }
 
@@ -390,54 +95,30 @@ impl RenderGraph {
             _ => None,
         });
 
-        // Canvas geometry is computed by the caller so the same value
-        // feeds the cursor overlay PNG and drop-shadow PNG. video_x/y
-        // already include any letterbox offset from an aspect preset.
+        // Computed by the caller so the cursor and drop-shadow PNGs share it; video_x/y already include the letterbox offset.
         let canvas_width = canvas.canvas_w;
         let canvas_height = canvas.canvas_h;
         let video_x = canvas.video_x;
         let video_y = canvas.video_y;
         let _ = background.map(|n| n.padding); // ack — read through canvas now
-                                               // Zoom region times are stored in PROJECT-timeline seconds, but the
-                                               // FFmpeg expression evaluator's `t` is OUTPUT-stream time, which is
-                                               // reset to 0 by the input-side `-ss <trim_start>` we emit in
-                                               // `export_video`. If we don't subtract the trim offset here, the LUT
-                                               // fires at timeline-t inside the output stream — which, with any
-                                               // trim, is past the output's end, so the zoom never visibly applies.
-                                               // Without trim the offset is 0 and the behaviour is unchanged.
+
+        // Zoom times are PROJECT-timeline seconds but the evaluator's `t` is output-stream time (reset by `-ss`), so subtract the trim.
         let trim_start = self.trim_range().0.max(0.0);
         let zoom_filter = zoom
             .map(|node| build_zoom_filter(node, source, trim_start))
             .filter(|value: &String| !value.is_empty());
 
-        // The mask, when present, occupies the first extra_input slot so its
-        // input index is deterministic (= background_input_index). The
-        // background image (if any) shifts to the next slot.
+        // The mask takes the first extra_input slot so its index is deterministic; a background image shifts to the next.
         let mut extra_inputs: Vec<PathBuf> = Vec::new();
         let mask_input_index = border_radius_mask.as_ref().map(|_| background_input_index);
         if let Some(path) = border_radius_mask {
             extra_inputs.push(path);
         }
         let bg_image_input_index = background_input_index + extra_inputs.len();
-        // Drop-shadow PNG slot is reserved up front so its index is known
-        // before the bg image is conditionally pushed; the actual push (if
-        // any) happens below, AFTER the bg image, so existing
-        // `cursor_input_index = 1 + extra_inputs.len()` math stays correct.
-        // `shadow_input_index` is `None` when the caller didn't supply a
-        // shadow PNG; the filter chain below treats that as "no shadow stage".
+        // Reserved up front so the index is known before the bg image is pushed; None means no shadow stage.
         let mut shadow_input_index: Option<usize> = None;
 
-        // Build the chain that produces the source-video label `[video0]`.
-        // When neither zoom nor mask are present, the source can be referenced
-        // directly as `[0:v]` (saves a filter pass).
-        //
-        // For the mask paths we MUST normalize pixel formats: alphamerge
-        // expects the main input to already carry an alpha plane (yuva420p)
-        // and the mask input to be a single-plane gray image. Without these
-        // explicit `format=` conversions FFmpeg tends to negotiate yuv420p
-        // (no alpha) on the main input, at which point alphamerge silently
-        // outputs a fully-transparent stream — the visual symptom is a black
-        // background showing through with only the cursor overlay visible.
+        // The mask paths must force `format=`: alphamerge needs a yuva420p main and a gray mask, or FFmpeg negotiates yuv420p and outputs fully transparent.
         let mut prelude_segments: Vec<String> = Vec::new();
         let mut video_label: String = match (zoom_filter.as_ref(), mask_input_index) {
             (None, None) => "[0:v]".into(),
@@ -459,55 +140,39 @@ impl RenderGraph {
             }
         };
 
-        // Scene entrance/exit animation on the video layer only. `scale_expr`, when
-        // present, resizes the layer per frame (about its centre — the overlay
-        // position folds in the recentre); the overlay `x/y` expressions below then
-        // reposition it. Absent → the static overlay path is byte-identical to the
-        // no-animation output. Mirrors scenes/eval.ts; see render::scene_anim.
+        // `scale_expr` resizes the layer per frame about its centre; absent, the static overlay path is byte-identical.
         if let Some(scale_expr) = scene.and_then(|s| s.scale_expr.as_ref()) {
             prelude_segments.push(format!(
                 "{video_label}scale=w='iw*({scale_expr})':h='ih*({scale_expr})':eval=frame[videoScene]"
             ));
             video_label = "[videoScene]".into();
         }
-        // Rotation spins the card about its centre; `c=none` leaves the exposed
-        // corners transparent (needs alpha), keeping the frame size so the overlay
-        // recentre math above is unaffected. `a` re-evaluates per frame.
+        // `c=none` leaves the exposed corners transparent and keeps the frame size, so the recentre math above still holds.
         if let Some(rot_expr) = scene.and_then(|s| s.rotate_expr.as_ref()) {
             prelude_segments.push(format!(
                 "{video_label}format=yuva420p,rotate=a='({rot_expr})*PI/180':c=none:ow=iw:oh=ih[videoSceneRot]"
             ));
             video_label = "[videoSceneRot]".into();
         }
-        // Fade to background: multiply the layer's alpha plane by the opacity LUT
-        // so the background shows through (overlay does the blend). `geq`'s time
-        // variable is `T`; colour planes pass through untouched. geq is per-pixel
-        // (offline-only) and runs only when a fade exists, so non-fade exports are
-        // unaffected. Composes with the rounded-corner/rotate alpha already present.
+        // `geq` multiplies the alpha plane by the opacity LUT (its time variable is `T`); per-pixel, so it runs only when a fade exists.
         if let Some(op_expr) = scene.and_then(|s| s.opacity_expr.as_ref()) {
             prelude_segments.push(format!(
                 "{video_label}format=yuva420p,geq=lum='p(X,Y)':cb='p(X,Y)':cr='p(X,Y)':a='p(X,Y)*({op_expr})'[videoSceneFade]"
             ));
             video_label = "[videoSceneFade]".into();
         }
-        // The overlay position: expression-driven when animating, else the static
-        // `video_x:video_y` (identical to the pre-scene output).
+        // Expression-driven while animating, else the static `video_x:video_y`, identical to the pre-scene output.
         let overlay_pos = match scene {
             Some(s) => format!("x='{}':y='{}'", s.x_expr, s.y_expr),
             None => format!("{video_x}:{video_y}"),
         };
 
-        // Resolve the wallpaper/image bg path up-front (without pushing yet)
-        // so we know whether a bg-image input slot will be allocated; that
-        // determines the shadow-input slot index, which is then baked into
-        // the filter strings before any extra_inputs are pushed.
+        // Resolved before pushing, because whether a bg slot exists decides the shadow index baked into the filter strings.
         let resolved_bg_image = match background {
             Some(bg) if matches!(bg.background_type.as_str(), "wallpaper" | "image") => {
                 resolve_background_path(&bg.value, static_root, asset_cache_dir)
             }
-            // Gradients are pre-rasterised to a PNG by the caller and composited
-            // exactly like an image — so the export matches the WebGL preview
-            // instead of collapsing to a flat fallback color.
+            // Gradients are pre-rasterised to a PNG so the export matches the WebGL preview instead of a flat fallback colour.
             Some(bg) if bg.background_type == "gradient" => gradient_image.clone(),
             _ => None,
         };
@@ -526,9 +191,7 @@ impl RenderGraph {
             {
                 if resolved_bg_image.is_some() {
                     let mut segments = prelude_segments.clone();
-                    // Gradients render edge-to-edge and must NOT be blurred (the
-                    // preview shader doesn't blur them); blur is an image-only
-                    // finishing control.
+                    // Gradients render edge-to-edge and must NOT be blurred; blur is an image-only finishing control.
                     let blur_sigma = if background.background_type == "gradient" {
                         0.0
                     } else {
@@ -578,8 +241,7 @@ impl RenderGraph {
                 if prelude_segments.is_empty() {
                     None
                 } else {
-                    // Source is `[video0]`; surface it as `[vout]` so the
-                    // outer pipeline always maps a labelled stream.
+                    // Surface `[video0]` as `[vout]` so the outer pipeline always maps a labelled stream.
                     let mut segments = prelude_segments.clone();
                     segments.push(format!("{video_label}null[vout]"));
                     Some(segments.join(";"))
@@ -587,9 +249,7 @@ impl RenderGraph {
             }
         };
 
-        // Now that filter strings are built (and reference the eventual
-        // shadow input index), push the actual extra inputs in the
-        // committed order: bg_image then drop_shadow.
+        // The filter strings already reference the eventual shadow index, so push in the committed order: bg image, then shadow.
         if let Some(path) = resolved_bg_image {
             extra_inputs.push(path);
         }
@@ -630,11 +290,7 @@ fn build_color_background_filter(
         _ => "#111111".into(),
     };
 
-    // Pin the generator to the source frame rate. Without `:r=` FFmpeg defaults
-    // `color=` to 25 fps; since this is the BASE of the composite `overlay`, the
-    // entire export would inherit 25 fps and frame-drop a 60 fps recording into
-    // a juddery mess (very visible under a zoom). Fall back to 60 for a bogus
-    // metadata value rather than emitting an invalid rate.
+    // Without `:r=`, `color=` defaults to 25 fps, and as the composite base that drops a 60 fps recording into judder.
     let rate = if fps.is_finite() && fps >= 1.0 {
         fps
     } else {
@@ -656,16 +312,8 @@ fn build_color_background_filter(
     Some(segments.join(";"))
 }
 
-/// When a drop-shadow PNG is supplied, append the two extra filter segments
-/// that overlay it on top of the freshly-emitted `[bg0]` stage and produce
-/// the `[bg]` label the video composite consumes. Returns the label that the
-/// next stage should use as its background — `[bg]` when shadow is present,
-/// `[bg0]` otherwise (the latter is a label rename, no extra filter pass).
-///
-/// The shadow PNG is sized to comp dims (= source + padding × 2), not the
-/// final canvas. We overlay it at the comp's (x, y) offset inside the
-/// canvas so an aspect-changing preset still drops the shadow under the
-/// source video and not into the letterbox bars.
+/// Appends the drop-shadow overlay onto `[bg0]`, returning `[bg]` when a shadow is present and `[bg0]` otherwise (a rename, not a pass).
+/// The PNG is sized to comp dims and overlaid at the comp offset, so an aspect-changing preset drops the shadow under the video, not into the letterbox.
 fn compose_shadow_stage(
     segments: &mut Vec<String>,
     shadow_input_index: Option<usize>,
@@ -674,10 +322,7 @@ fn compose_shadow_stage(
 ) -> &'static str {
     match shadow_input_index {
         Some(idx) => {
-            // `format=rgba` normalises the shadow input — the PNG already
-            // carries an alpha plane, but ffmpeg sometimes negotiates a
-            // non-alpha pixel format on the decoder side which would make
-            // the overlay opaque.
+            // `format=rgba` normalises the shadow input: ffmpeg can negotiate a non-alpha format and make the overlay opaque.
             segments.push(format!("[{idx}:v]format=rgba[shadow]"));
             segments.push(format!("[bg0][shadow]overlay={overlay_x}:{overlay_y}[bg]"));
             "[bg]"
@@ -691,31 +336,7 @@ fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata, time_offset: 
         return String::new();
     }
 
-    // Pre-sample each region's curve. FFmpeg's expression evaluator can't
-    // call our Rust bezier solver, but a dense piecewise-linear LUT at 20 Hz
-    // is visually indistinguishable from the real curve.
-    //
-    // `time_offset` (= trim_start) shifts the LUT so its t-values are in
-    // OUTPUT-stream coordinates rather than project-timeline coordinates;
-    // see `build_export_plan_with` for the rationale.
-    //
-    // Filter shape — IMPORTANT:
-    //   `scale=w='iw*Z(t)':h='ih*Z(t)':eval=frame, crop=W:H:x='X(t)':y='Y(t)'`
-    //
-    // We deliberately do NOT use the more obvious `crop=w='iw/Z':h='ih/Z',
-    // scale=W:H` form, because **ffmpeg's `crop` filter evaluates `w` and
-    // `h` only ONCE at filter init**, where `t = 0`. With the LUT default
-    // returning `iw`/`ih` outside any region, that one-time evaluation
-    // resolves to the source dimensions and the crop is a fixed identity for
-    // the whole export — zoom never visibly applies. `scale=eval=frame`
-    // re-evaluates per frame, and `crop` with literal `w/h` (the constant
-    // source dimensions) doesn't hit the init-only limitation; its `x` and
-    // `y` are evaluated per frame regardless. This was the actual root cause
-    // of "zoom is missing in exported videos" — verified by pixel-diffing
-    // FFmpeg outputs of both filter shapes against an identity baseline.
-    // Skip hidden regions (non-destructive mute) and regions whose entire
-    // timeline window precedes `trim_start` (their LUT entries would all
-    // have negative output-t and never fire).
+    // `crop` evaluates w/h ONCE at init (t=0), so the obvious crop-then-scale form is a fixed identity; `scale=eval=frame` with literal crop w/h is why zoom applies at all.
     let visible: Vec<&ZoomRegion> = node
         .regions
         .iter()
@@ -731,27 +352,12 @@ fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata, time_offset: 
         return String::new();
     }
 
-    // Three time-varying expressions, ALL built on the SAME merged scale
-    // breakpoints (see `build_zoom_exprs`):
-    //   z_expr — multiplicative zoom factor, default 1.0 outside regions.
-    //   x_expr — crop top-left X in POST-SCALE absolute pixels, default 0.
-    //   y_expr — crop top-left Y in POST-SCALE absolute pixels, default 0.
-    //
-    // The crop origin is `cx*iw*(Z-1)` — the exact inverse of the preview's
-    // focus-pinned affine (`content_uv = (screen_uv - c)/scale + c`). Critically
-    // the crop LUT is derived from the SAME piecewise segments as the scale LUT,
-    // not merged independently, so `x` and `z` agree on `Z` at every t. Merging
-    // them separately (the previous bug) let their breakpoints/round-off diverge;
-    // since the implied focus is `x / (iw*(Z-1))`, that disagreement is divided
-    // by `(Z-1)` and blew up near the ramp ends (Z≈1) into a visible focus slide
-    // — EXPORT-only, because the preview computes the affine exactly per frame.
+    // Crop and scale LUTs share one set of merged breakpoints: derived separately their round-off diverged and, divided by (Z-1), slid focus near ramp ends.
     let iw = source.width as f64;
     let ih = source.height as f64;
     let (z_expr, x_expr, y_expr) = build_zoom_exprs(&samples_per_region, iw, ih);
 
-    // Clamp scaled dims to >= crop size and force even: FP drift in the piecewise
-    // z_expr can dip a hair below 1.0 at ramp tails, shrinking the frame under the
-    // fixed crop rect -> crop reads out of bounds -> segfault (0xC0000005).
+    // Clamp scaled dims to at least the crop size and force even: FP drift below 1.0 makes crop read out of bounds and segfault.
     format!(
         "scale=w='max({w},ceil(iw*({z_expr})/2)*2)':h='max({h},ceil(ih*({z_expr})/2)*2)':eval=frame,\
          crop={w}:{h}:x='{x_expr}':y='{y_expr}'",
@@ -768,63 +374,95 @@ struct ZoomSample {
     center_y: f64,     // focus centre Y in UV space (0..1), constant per region
 }
 
-/// Disjoint `(region_index, start, end)` windows in which each region actually
-/// applies. Only one zoom can apply at a time, but the filter graph SUMS every
-/// region's term (`wrap_flat_sum`), so overlapping regions would stack their
-/// zoom — two 1.8x regions rendering as 2.6x while the preview shows 1.8x.
-/// A later-starting region takes over, matching `activeZoomIndex` in
-/// `src/lib/zoom/resolve.ts`; the earlier region resumes after it ends.
-fn disjoint_zoom_windows(regions: &[&ZoomRegion], time_offset: f64) -> Vec<(usize, f64, f64)> {
-    let mut out = Vec::new();
-    for (i, r) in regions.iter().enumerate() {
-        // Blockers are the regions that outrank this one at a shared instant:
-        // a later start, or an equal start later in the list (the tie-break).
-        let mut blockers: Vec<(f64, f64)> = regions
-            .iter()
-            .enumerate()
-            .filter(|(j, o)| {
-                *j != i && (o.start > r.start || (o.start == r.start && *j > i)) && o.end > o.start
-            })
-            .map(|(_, o)| (o.start, o.end))
-            .collect();
-        blockers.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+/// Sampling step for the handover search. The graph emits per-frame LUTs
+/// anyway, so a window edge landing within a few milliseconds of the true
+/// crossover is below the resolution the export can express.
+const ZOOM_WINDOW_STEP: f64 = 1.0 / 240.0;
 
-        let mut cursor = r.start.max(time_offset);
-        for (bs, be) in blockers {
-            if be <= cursor {
-                continue;
-            }
-            if bs >= r.end {
-                break;
-            }
-            if bs > cursor {
-                out.push((i, cursor, bs.min(r.end)));
-            }
-            cursor = cursor.max(be);
-            if cursor >= r.end {
-                break;
-            }
+/// The region in force at `t`, or `None`. Mirrors `active_zoom` in
+/// `crates/recast-compositor/src/eval.rs`: the TIGHTEST region wins, so the
+/// winner can only change where two scales are equal and the zoom is continuous
+/// across the handover. Ties keep the later start, then the later list entry.
+fn zoom_winner_at(regions: &[&ZoomRegion], t: f64) -> Option<usize> {
+    let mut best: Option<(usize, f64)> = None;
+    for (index, region) in regions.iter().enumerate() {
+        if region.hidden || t <= region.start || t >= region.end {
+            continue;
         }
-        if cursor < r.end {
-            out.push((i, cursor, r.end));
+        let scale = region.scale_at(t);
+        match best {
+            Some((current, best_scale))
+                if best_scale > scale
+                    || (best_scale == scale && region.start < regions[current].start) => {}
+            _ => best = Some((index, scale)),
         }
     }
+    best.map(|(index, _)| index)
+}
+
+/// Disjoint windows in which each region actually applies: only one zoom can, but the graph SUMS every term, so overlaps would stack 1.8x twice as 2.6x.
+/// Starts and ends are exact edges; a handover between overlapping regions is sampled, because it falls where their eased scales cross, not at a boundary.
+fn disjoint_zoom_windows(regions: &[&ZoomRegion], time_offset: f64) -> Vec<(usize, f64, f64)> {
+    let mut edges: Vec<f64> = Vec::new();
+    for region in regions {
+        if region.hidden || region.end <= region.start || region.end <= time_offset {
+            continue;
+        }
+        edges.push(region.start.max(time_offset));
+        edges.push(region.end);
+    }
+    edges.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    edges.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+
+    let mut out: Vec<(usize, f64, f64)> = Vec::new();
+    let mut push = |index: usize, start: f64, end: f64| match out.last_mut() {
+        Some(last) if last.0 == index && (start - last.2).abs() < 1e-9 => last.2 = end,
+        _ => out.push((index, start, end)),
+    };
+
+    for pair in edges.windows(2) {
+        let (from, to) = (pair[0], pair[1]);
+        if to - from <= 1e-9 {
+            continue;
+        }
+        // The active set is constant across this interval, so the winner can only change where two of them cross.
+        let mut cursor = from;
+        let mut current: Option<usize> = None;
+        let mut first = true;
+        let mut t = from;
+        while t < to {
+            let next = (t + ZOOM_WINDOW_STEP).min(to);
+            // Sampled at the midpoint, so an open region boundary never decides.
+            let winner = zoom_winner_at(regions, (t + next) * 0.5);
+            if first {
+                current = winner;
+                first = false;
+            } else if winner != current {
+                if let Some(index) = current {
+                    push(index, cursor, t);
+                }
+                cursor = t;
+                current = winner;
+            }
+            t = next;
+        }
+        if let Some(index) = current {
+            push(index, cursor, to);
+        }
+    }
+
     out.retain(|(_, a, b)| b - a > 1e-6);
     out
 }
 
 fn sample_region(
     region: &ZoomRegion,
-    // Source dimensions are no longer needed: the crop origin is derived from
-    // the crop filter's own `in_w`/`in_h` at render time, not pre-computed in
-    // absolute pixels here. Kept in the signature for call-site symmetry.
+    // Unused: the crop origin comes from the filter's own `in_w`/`in_h` at render time. Kept for call-site symmetry.
     _source: SourceVideoMetadata,
     time_offset: f64,
     window: (f64, f64),
 ) -> Vec<ZoomSample> {
-    // Clamp the sampling window to the post-trim portion of the region.
-    // `region.scale_at` still receives the true timeline t, so the eased
-    // ramp curve is sampled correctly.
+    // Clamp to the post-trim portion; `region.scale_at` still gets the true timeline t, so the ease is sampled correctly.
     let effective_start = window.0.max(region.start).max(time_offset);
     let window_end = window.1.min(region.end);
     let duration = (window_end - effective_start).max(0.0);
@@ -834,20 +472,12 @@ fn sample_region(
     } else {
         0.0
     };
-    // Each sample carries the eased scale plus the region's CONSTANT focus
-    // centre (only the scale eases). The crop origin is NOT precomputed here as
-    // absolute pixels: it's derived later in `build_zoom_exprs` from the same
-    // merged scale segments, so the crop and scale LUTs share breakpoints and
-    // can't disagree on `Z` (the cause of the export-only focus drift). The
-    // centre must match the preview's focus-pinned affine
-    // (`content_uv = (screen_uv - c)/scale + c`) and the cursor overlay, which
-    // uses the same affine forward transform.
+    // Focus is constant (only the scale eases) and must match the preview's focus-pinned affine and the cursor overlay.
     let fx_target = region.center_x.clamp(0.0, 1.0);
     let fy_target = region.center_y.clamp(0.0, 1.0);
     let mut out = Vec::with_capacity(samples + 1);
     for i in 0..=samples {
-        // `timeline_t` drives `scale_at`; `output_t` is what we emit into
-        // the FFmpeg LUT (t inside the filter is post-trim output time).
+        // `timeline_t` drives `scale_at`; `output_t` is what the LUT emits, since filter `t` is post-trim output time.
         let timeline_t = effective_start + step * i as f64;
         let output_t = timeline_t - time_offset;
         let scale = region.scale_at(timeline_t).max(1.0);
@@ -871,34 +501,14 @@ const MAX_TERMS_PER_EXPR: usize = 48;
 /// `(ta, va)` to `(tb, vb)`.
 type Segment = (f64, f64, f64, f64);
 
-/// Build the three time-varying FFmpeg expressions for the zoom — `(z, x, y)`:
-///   z — multiplicative zoom factor, default 1.0 outside every region.
-///   x — crop top-left X in post-scale pixels, default 0.
-///   y — crop top-left Y in post-scale pixels, default 0.
-///
-/// All three are emitted from the SAME merged scale breakpoints. The crop
-/// origin is the exact inverse of the preview's focus-pinned affine —
-/// `crop_x = cx*iw*(Z-1)`, `crop_y = cy*ih*(Z-1)` — evaluated at the very same
-/// segment endpoints as `Z`. Because `crop_x` is an affine function of `Z` and
-/// `Z` is linear within each segment, `crop_x` is exactly linear over that same
-/// segment, so the crop LUT and scale LUT can never disagree on `Z` at any `t`.
-/// (Merging them independently was the old bug: their breakpoints diverged and
-/// the implied focus `x/(iw*(Z-1))` blew up near the ramp ends where `Z≈1`,
-/// producing the export-only focus slide.)
-///
-/// Emitted as a FLAT SUM (`default + if(window,Δ,0) + …`) rather than nested
-/// `if`s, because FFmpeg's evaluator has a recursion-depth limit; at most one
-/// window fires per `t` (regions don't overlap; segments abut as half-open
-/// windows) so the sum equals the active segment's value or the default.
+/// The zoom's `(z, x, y)` expressions, all emitted from the SAME merged breakpoints so the crop and scale LUTs cannot disagree on `Z`.
+/// A flat sum rather than nested `if`s, because FFmpeg's evaluator has a recursion-depth limit and at most one window fires per `t`.
 fn build_zoom_exprs(
     samples_per_region: &[Vec<ZoomSample>],
     iw: f64,
     ih: f64,
 ) -> (String, String, String) {
-    // Merge the eased scale into the fewest linear segments per region, then
-    // coarsen (double the tolerance) until the total fits the parser budget.
-    // The hold phase collapses to one segment for free; a smooth ramp collapses
-    // from ~8 samples to a few.
+    // Merge into the fewest linear segments per region, doubling the tolerance until the total fits the parser budget.
     let base_tol = 0.0035_f64;
     let mut tol = base_tol;
     let mut segs = merge_scale_segments(samples_per_region, tol);
@@ -1014,9 +624,7 @@ pub(crate) fn fmt_term(
             "if(gte({var},{ta:.4})*lt({var},{tb:.4}),{offset:.4},0)"
         ))
     } else {
-        // Guard a degenerate (zero-width) window: without it the ramp's
-        // `(t-ta)/dt` divides by zero and bakes `inf` into the filter expression,
-        // breaking the whole zoom graph at init.
+        // A zero-width window makes the ramp's `(t-ta)/dt` divide by zero and bake `inf` into the filter, breaking the graph at init.
         let dt = (tb - ta).max(1e-6);
         let dv = vb - va;
         let offset_a = va - default_val;
@@ -1099,8 +707,7 @@ pub(crate) fn resolve_background_path(
         return None;
     }
 
-    // External-asset scheme: `asset:<id>` resolves against the downloaded
-    // manifest cache in the app data dir. Read manifest.lock.json there.
+    // `asset:<id>` resolves against manifest.lock.json in the downloaded manifest cache under the app data dir.
     if let Some(id) = value.strip_prefix("asset:") {
         if let Some(dir) = asset_cache_dir {
             let lock = dir.join("manifest.lock.json");
@@ -1120,9 +727,7 @@ pub(crate) fn resolve_background_path(
         return None;
     }
 
-    // Frontend wallpapers are served from `/backgrounds/wallpapers/...` — map
-    // those back to `static/backgrounds/wallpapers/...` on disk. Also handle the
-    // legacy `/wallpapers/...` prefix for any stored projects.
+    // Map served `/backgrounds/wallpapers/...` back to `static/...` on disk, plus the legacy `/wallpapers/...` prefix.
     if let Some(rest) = value.strip_prefix("/backgrounds/wallpapers/") {
         let resolved = static_root
             .join("backgrounds")
@@ -1302,10 +907,7 @@ mod tests {
 
     #[test]
     fn scene_anims_use_the_frontend_segment_anims_key() {
-        // Regression: the frontend serialises scene animations as `segmentAnims`,
-        // but the Rust field deserialised `sceneAnimations`, so every animation was
-        // silently dropped into passthrough and never reached the export graph
-        // (perfect in preview, absent in export). The key must round-trip.
+        // Regression: Rust read `sceneAnimations` while the frontend wrote `segmentAnims`, so animations were perfect in preview and absent in export.
         let value = serde_json::to_value(RenderState::default()).unwrap();
         assert!(
             value.get("segmentAnims").is_some(),
@@ -1329,9 +931,7 @@ mod tests {
 
     #[test]
     fn scene_overlay_injects_video_layer_stages() {
-        // The scene overlay must reach the graph: a scale/rotate/opacity overlay
-        // produces the per-frame video-layer stages and an expression-driven
-        // overlay position (not the static one).
+        // A scale/rotate/opacity overlay must produce the per-frame stages and an expression-driven overlay position.
         let state = RenderState {
             trim_start: 0.0,
             trim_end: 10.0,
@@ -1437,14 +1037,8 @@ mod tests {
             .expect("plan")
     }
 
-    /// Without trim, the LUT t-values are timeline = output, and the filter
-    /// must include `between(t,1.0,...)` segments because the zoom region
-    /// starts at timeline 1.0.
-    /// The filter MUST be a `scale=eval=frame` + fixed-size `crop` chain.
-    /// The previous `crop=w='<expr>':h='<expr>'` form silently never fired
-    /// because ffmpeg's `crop` evaluates `w`/`h` only ONCE at filter init,
-    /// where `t = 0`; that was the actual root cause of "zoom missing in
-    /// exported videos". This test asserts the new shape directly.
+    /// The filter MUST be a `scale=eval=frame` plus fixed-size `crop` chain, which this asserts directly.
+    /// The previous `crop=w='<expr>'` form never fired, because ffmpeg evaluates `crop`'s `w`/`h` once at init where `t = 0`: the root cause of zoom missing from exports.
     #[test]
     fn zoom_filter_uses_scale_eval_frame_not_crop_wh_lut() {
         let state = render_state_with_zoom(0.0, 5.0, vec![region(1.0, 4.0, 1.5)]);
@@ -1457,8 +1051,7 @@ mod tests {
             fc.contains("ceil(iw*(") && fc.contains(":eval=frame"),
             "zoom must scale via eval=frame: {fc}"
         );
-        // Crop must have LITERAL fixed w/h (=source dims) — anything inside
-        // `crop=w='<expr>'` would hit the init-only evaluation bug again.
+        // Crop must keep LITERAL w/h: an expression there hits the init-only evaluation bug again.
         assert!(
             fc.contains("crop=1920:1080:"),
             "crop must use fixed source dimensions, not LUT-driven w/h: {fc}"
@@ -1470,12 +1063,8 @@ mod tests {
         );
     }
 
-    /// With trim_start = 2.0, the FFmpeg `t` is OUTPUT-stream time. A region
-    /// at timeline [3.0, 5.0] must appear in the LUT at output [1.0, 3.0].
-    /// Pre-fix, this assertion failed: the LUT had `between(t,3.0000,...)`
-    /// which never fires because the output never reaches t=3 (the visible
-    /// duration is 5 - 2 = 3 s, but scrubbing/preview seeing zoom at
-    /// timeline 3 expects it at output 1).
+    /// With `trim_start` at 2.0 the FFmpeg `t` is OUTPUT time, so a region at timeline [3.0, 5.0] must land in the LUT at output [1.0, 3.0].
+    /// Pre-fix the LUT held `between(t,3.0,...)`, which never fires because the visible duration is only 3 s.
     #[test]
     fn zoom_filter_shifts_lut_by_trim_start() {
         let state = render_state_with_zoom(2.0, 5.0, vec![region(3.0, 5.0, 1.5)]);
@@ -1493,12 +1082,8 @@ mod tests {
         );
     }
 
-    /// A zoom region whose entire timeline range precedes trim_start used
-    /// to produce a LUT whose t-values were negative — harmless to FFmpeg
-    /// (`between(t, -2.0, -1.0)` simply never fires) but a waste of filter
-    /// string. Now we prune those regions entirely, so the planner doesn't
-    /// emit a zoom prelude at all in this case. The test still verifies
-    /// "doesn't panic" and that the rest of the plan is intact.
+    /// A zoom region entirely before `trim_start` used to emit a LUT with negative t-values: harmless to FFmpeg but wasted filter string.
+    /// Those regions are pruned now, so no zoom prelude is emitted at all; this still checks it does not panic and the rest of the plan survives.
     #[test]
     fn zoom_region_entirely_before_trim_does_not_panic() {
         let state = render_state_with_zoom(5.0, 10.0, vec![region(1.0, 3.0, 1.5)]);
@@ -1527,9 +1112,7 @@ mod tests {
         assert_eq!(plan.video_map, "[vout]");
     }
 
-    /// Auto-zoom typically produces 3-6 regions. Each must contribute
-    /// segments to the LUT, and a sample at each region's start should be
-    /// represented.
+    /// Auto-zoom typically produces 3-6 regions. Each must contribute segments to the LUT, and a sample at each region's start should be represented.
     #[test]
     fn multiple_zoom_regions_all_appear_in_lut() {
         let state = render_state_with_zoom(
@@ -1570,10 +1153,12 @@ mod tests {
         }
     }
 
-    /// A later-starting region takes over, then the enclosing one resumes —
-    /// the same rule as `activeZoomIndex` in src/lib/zoom/resolve.ts.
+    /// The nested region takes over and the enclosing one resumes, but the
+    /// handover is where their SCALES cross, not at the nested region's start:
+    /// at its start it is still ramping from 1.0 and would zoom the frame OUT.
+    /// Mirrors `active_zoom` in the compositor.
     #[test]
-    fn nested_zoom_region_wins_then_outer_resumes() {
+    fn a_nested_zoom_takes_over_where_the_scales_cross() {
         let outer = region(0.0, 10.0, 1.5);
         let inner = region(4.0, 6.0, 2.0);
         let mut windows = disjoint_zoom_windows(&[&outer, &inner], 0.0);
@@ -1583,12 +1168,52 @@ mod tests {
             3,
             "expected outer/inner/outer, got {windows:?}"
         );
-        assert_eq!(windows[0].0, 0);
-        assert!((windows[0].2 - 4.0).abs() < 1e-9, "{windows:?}");
-        assert_eq!(windows[1].0, 1);
-        assert!((windows[1].1 - 4.0).abs() < 1e-9 && (windows[1].2 - 6.0).abs() < 1e-9);
-        assert_eq!(windows[2].0, 0);
-        assert!((windows[2].1 - 6.0).abs() < 1e-9 && (windows[2].2 - 10.0).abs() < 1e-9);
+        assert_eq!((windows[0].0, windows[1].0, windows[2].0), (0, 1, 0));
+
+        let (handover, resume) = (windows[1].1, windows[1].2);
+        assert!(
+            handover > inner.start && handover < inner.start + inner.ramp_in,
+            "handover at {handover} is not inside the nested ramp"
+        );
+        assert!(
+            resume > inner.end - inner.ramp_out && resume < inner.end,
+            "resume at {resume} is not inside the nested ramp-out"
+        );
+        // Equal scales at the handover is what makes it invisible.
+        for t in [handover, resume] {
+            let step = 1e-3;
+            let before = outer.scale_at(t - step).max(inner.scale_at(t - step));
+            let after = outer.scale_at(t + step).max(inner.scale_at(t + step));
+            assert!(
+                (after - before).abs() < 0.02,
+                "scale stepped {before} -> {after} at {t}"
+            );
+        }
+    }
+
+    /// The defect this rule exists for: handing over at the incoming region's
+    /// own start snapped the frame from full zoom back to ~1.0 for a moment,
+    /// and everything riding the zoom flickered with it.
+    #[test]
+    fn an_overlap_never_hands_over_to_a_looser_zoom() {
+        let a = region(1.0, 8.0, 2.0);
+        let b = region(5.0, 12.0, 2.5);
+        let windows = disjoint_zoom_windows(&[&a, &b], 0.0);
+        let regions = [&a, &b];
+        for (index, start, end) in &windows {
+            let mut t = start + 1e-3;
+            while t < end - 1e-3 {
+                let winner = regions[*index].scale_at(t);
+                for other in &regions {
+                    assert!(
+                        winner >= other.scale_at(t) - 0.02,
+                        "a looser region held {t:.4} at {winner:.4} vs {:.4}",
+                        other.scale_at(t)
+                    );
+                }
+                t += 1.0 / 120.0;
+            }
+        }
     }
 
     /// Non-overlapping regions must be left exactly as authored.
@@ -1603,10 +1228,7 @@ mod tests {
     }
 
     /// The generated `color=` background MUST carry an explicit `:r=<fps>`.
-    /// Without it FFmpeg defaults the generator to 25 fps, and since it's the
-    /// base of the composite overlay the whole export drops to 25 fps —
-    /// frame-dropping a 60 fps recording into juddery motion (the export-only
-    /// "shake", very visible under a zoom).
+    /// FFmpeg otherwise defaults that generator to 25 fps, and as the composite's base it drops the whole export there, juddering a 60 fps recording most visibly under a zoom.
     #[test]
     fn color_background_pins_source_framerate() {
         let state = RenderState {
@@ -1891,8 +1513,7 @@ mod tests {
         let state = render_state_with_zoom(2.0, 6.0, vec![region(1.0, 4.0, 1.5)]);
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex must exist");
-        // First segment should start at output t = 0 (corresponding to
-        // timeline t = 2.0, the clamped effective_start).
+        // First segment starts at output t = 0, which is timeline t = 2.0, the clamped effective_start.
         assert!(
             fc.contains("gte(t,0.0000)"),
             "clamped LUT must start at output t=0: {fc}"
@@ -1904,9 +1525,7 @@ mod tests {
         );
     }
 
-    /// Region whose entire timeline range is before trim_start should not
-    /// contribute ANY segments to the LUT (and previously emitted dead
-    /// `between(t, negative, negative)` calls).
+    /// Region whose entire timeline range is before trim_start should not contribute ANY segments to the LUT (and previously emitted dead `between(t, negative, negative)` calls).
     #[test]
     fn fully_pre_trim_zoom_region_is_dropped() {
         let state = render_state_with_zoom(
@@ -1919,8 +1538,7 @@ mod tests {
         );
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex must exist");
-        // Note: in this state, region [1,3] is pre-trim and dropped, only
-        // region [6,8] survives — its post-trim start is output_t = 1.0.
+        // Region [1,3] is pre-trim and dropped; only [6,8] survives, at post-trim output_t = 1.0.
         assert!(
             fc.contains("gte(t,1.0000)"),
             "post-trim region present: {fc}"

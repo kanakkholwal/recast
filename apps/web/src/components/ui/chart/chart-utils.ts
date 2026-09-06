@@ -1,5 +1,5 @@
 import type { Tooltip } from "layerchart";
-import { getContext, setContext, type Component, type Snippet } from "svelte";
+import { type Component, getContext, type Snippet, setContext } from "svelte";
 
 export const THEMES = { light: "", dark: ":is(.dark, [data-theme='dark'])" } as const;
 
@@ -22,7 +22,7 @@ export function getPayloadConfigFromPayload(
 	config: ChartConfig,
 	payload: TooltipPayload,
 	key: string,
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// biome-ignore lint/suspicious/noExplicitAny: upstream shadcn-svelte shape: the chart datum is caller-defined.
 	data?: Record<string, any> | null,
 ) {
 	if (typeof payload !== "object" || payload === null) return undefined;

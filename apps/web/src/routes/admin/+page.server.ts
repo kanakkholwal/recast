@@ -1,7 +1,7 @@
 import { count, desc, eq, gte, inArray, type SQL } from "drizzle-orm";
 import { requireAdmin } from "$lib/admin/guard";
 import { getDb } from "$lib/db";
-import { auditLog, subscription, user, type AuditLog } from "$lib/db/schema";
+import { type AuditLog, auditLog, subscription, user } from "$lib/db/schema";
 import type { PageServerLoad } from "./$types";
 
 /**
@@ -15,9 +15,7 @@ import type { PageServerLoad } from "./$types";
  * specific Postgres error instead of one opaque "Failed query".
  */
 export const load: PageServerLoad = async (event) => {
-	// Defense-in-depth: every admin load re-asserts admin rather than trusting the
-	// parent layout load to have run first. A refactor that detaches this page
-	// from the layout must not silently expose user PII / audit log / sub counts.
+	// Defense in depth: every admin load re-asserts admin, so detaching this page from the layout can't expose PII.
 	await requireAdmin(event);
 
 	const db = getDb();
@@ -38,42 +36,30 @@ export const load: PageServerLoad = async (event) => {
 		(await db.select({ c: count() }).from(user).where(cond))[0]?.c ?? 0;
 
 	const metrics = (async () => {
-		const [
-			total,
-			active,
-			pending,
-			admins,
-			banned,
-			signups7d,
-			signups30d,
-			subsTotal,
-			subsActive,
-		] = await Promise.all([
-			safeCount(
-				"total",
-				async () => (await db.select({ c: count() }).from(user))[0]?.c ?? 0,
-			),
-			safeCount("active", () => countWhere(eq(user.status, "active"))),
-			safeCount("pending", () => countWhere(eq(user.status, "pending"))),
-			safeCount("admins", () => countWhere(eq(user.role, "admin"))),
-			safeCount("banned", () => countWhere(eq(user.banned, true))),
-			safeCount("signups7d", () => countWhere(gte(user.createdAt, sevenDaysAgo))),
-			safeCount("signups30d", () => countWhere(gte(user.createdAt, thirtyDaysAgo))),
-			safeCount(
-				"subsTotal",
-				async () => (await db.select({ c: count() }).from(subscription))[0]?.c ?? 0,
-			),
-			safeCount(
-				"subsActive",
-				async () =>
-					(
-						await db
-							.select({ c: count() })
-							.from(subscription)
-							.where(inArray(subscription.status, ["active", "trialing"] as const))
-					)[0]?.c ?? 0,
-			),
-		]);
+		const [total, active, pending, admins, banned, signups7d, signups30d, subsTotal, subsActive] =
+			await Promise.all([
+				safeCount("total", async () => (await db.select({ c: count() }).from(user))[0]?.c ?? 0),
+				safeCount("active", () => countWhere(eq(user.status, "active"))),
+				safeCount("pending", () => countWhere(eq(user.status, "pending"))),
+				safeCount("admins", () => countWhere(eq(user.role, "admin"))),
+				safeCount("banned", () => countWhere(eq(user.banned, true))),
+				safeCount("signups7d", () => countWhere(gte(user.createdAt, sevenDaysAgo))),
+				safeCount("signups30d", () => countWhere(gte(user.createdAt, thirtyDaysAgo))),
+				safeCount(
+					"subsTotal",
+					async () => (await db.select({ c: count() }).from(subscription))[0]?.c ?? 0,
+				),
+				safeCount(
+					"subsActive",
+					async () =>
+						(
+							await db
+								.select({ c: count() })
+								.from(subscription)
+								.where(inArray(subscription.status, ["active", "trialing"] as const))
+						)[0]?.c ?? 0,
+				),
+			]);
 		return {
 			counts: { total, active, pending, admins, banned, signups7d, signups30d },
 			subs: { total: subsTotal, active: subsActive },
@@ -82,11 +68,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const recentAudit: Promise<AuditLog[]> = (async () => {
 		try {
-			return await db
-				.select()
-				.from(auditLog)
-				.orderBy(desc(auditLog.createdAt))
-				.limit(8);
+			return await db.select().from(auditLog).orderBy(desc(auditLog.createdAt)).limit(8);
 		} catch (err) {
 			console.error("[admin overview] recent audit failed:", (err as Error).message);
 			return [];

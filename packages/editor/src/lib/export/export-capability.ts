@@ -15,8 +15,7 @@ export interface BrowserExportCapability {
 	reason?: string;
 }
 
-// A representative baseline-AVC config — a proxy for "does this WebView do H.264
-// WebCodecs encode at all", independent of MediaBunny's exact per-export profile.
+// A baseline-AVC probe for whether this WebView does H.264 WebCodecs encode at all, not MediaBunny's exact profile.
 const PROBE_CONFIG = {
 	codec: "avc1.42001f",
 	width: 1280,

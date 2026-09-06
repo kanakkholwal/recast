@@ -1,59 +1,59 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "classic-cursors",
-  "name": "Classic Cursors",
-  "version": "1.0.0",
-  "description": "Soft macOS and Windows arrows, a crisp outline pointer, and a precision target reticle.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "cursors": [
-      {
-        "id": "macos",
-        "label": "macOS",
-        "description": "Apple-style arrow that turns into the link pointer on click.",
-        "rest": "macos-arrow",
-        "press": "macos-pointer",
-        "hotspot": { "x": 8, "y": 6 },
-        "pressedHotspot": { "x": 12, "y": 4 }
-      },
-      {
-        "id": "windows",
-        "label": "Windows 11",
-        "description": "Fluent-style white arrow that turns into the link pointer on click.",
-        "rest": "windows-arrow",
-        "press": "windows-pointer",
-        "hotspot": { "x": 10, "y": 6 },
-        "pressedHotspot": { "x": 12, "y": 4 }
-      },
-      {
-        "id": "outline",
-        "label": "Outline",
-        "description": "Crisp white outline that turns into the link pointer on click.",
-        "rest": "outline-arrow",
-        "press": "outline-pointer",
-        "hotspot": { "x": 10, "y": 6 },
-        "pressedHotspot": { "x": 12, "y": 4 }
-      },
-      {
-        "id": "target",
-        "label": "Target",
-        "description": "Precision reticle that locks on with a glow on click.",
-        "rest": "target",
-        "press": "target-press",
-        "hotspot": { "x": 32, "y": 32 },
-        "pressedHotspot": { "x": 32, "y": 32 }
-      }
-    ]
-  },
-  "assets": [
-    { "id": "macos-arrow", "file": "assets/macos-arrow.svg" },
-    { "id": "macos-pointer", "file": "assets/macos-pointer.svg" },
-    { "id": "windows-arrow", "file": "assets/windows-arrow.svg" },
-    { "id": "windows-pointer", "file": "assets/windows-pointer.svg" },
-    { "id": "outline-arrow", "file": "assets/outline-arrow.svg" },
-    { "id": "outline-pointer", "file": "assets/outline-pointer.svg" },
-    { "id": "target", "file": "assets/target.svg" },
-    { "id": "target-press", "file": "assets/target-press.svg" }
-  ]
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "classic-cursors",
+	"name": "Classic Cursors",
+	"version": "1.0.0",
+	"description": "Soft macOS and Windows arrows, a crisp outline pointer, and a precision target reticle.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"cursors": [
+			{
+				"id": "macos",
+				"label": "macOS",
+				"description": "Apple-style arrow that turns into the link pointer on click.",
+				"rest": "macos-arrow",
+				"press": "macos-pointer",
+				"hotspot": { "x": 8, "y": 6 },
+				"pressedHotspot": { "x": 12, "y": 4 }
+			},
+			{
+				"id": "windows",
+				"label": "Windows 11",
+				"description": "Fluent-style white arrow that turns into the link pointer on click.",
+				"rest": "windows-arrow",
+				"press": "windows-pointer",
+				"hotspot": { "x": 10, "y": 6 },
+				"pressedHotspot": { "x": 12, "y": 4 }
+			},
+			{
+				"id": "outline",
+				"label": "Outline",
+				"description": "Crisp white outline that turns into the link pointer on click.",
+				"rest": "outline-arrow",
+				"press": "outline-pointer",
+				"hotspot": { "x": 10, "y": 6 },
+				"pressedHotspot": { "x": 12, "y": 4 }
+			},
+			{
+				"id": "target",
+				"label": "Target",
+				"description": "Precision reticle that locks on with a glow on click.",
+				"rest": "target",
+				"press": "target-press",
+				"hotspot": { "x": 32, "y": 32 },
+				"pressedHotspot": { "x": 32, "y": 32 }
+			}
+		]
+	},
+	"assets": [
+		{ "id": "macos-arrow", "file": "assets/macos-arrow.svg" },
+		{ "id": "macos-pointer", "file": "assets/macos-pointer.svg" },
+		{ "id": "windows-arrow", "file": "assets/windows-arrow.svg" },
+		{ "id": "windows-pointer", "file": "assets/windows-pointer.svg" },
+		{ "id": "outline-arrow", "file": "assets/outline-arrow.svg" },
+		{ "id": "outline-pointer", "file": "assets/outline-pointer.svg" },
+		{ "id": "target", "file": "assets/target.svg" },
+		{ "id": "target-press", "file": "assets/target-press.svg" }
+	]
 }

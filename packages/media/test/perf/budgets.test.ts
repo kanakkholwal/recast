@@ -83,7 +83,7 @@ describe("perf budgets (REQUIREMENTS.md §3 — non-negotiable)", () => {
  */
 describe("perf budgets — enforced against real code", () => {
 	function frame(w: number, h: number) {
-		return { width: w, height: h, close: () => {} } as unknown as CachedFrame;
+		return { width: w, height: h, close: () => undefined } as unknown as CachedFrame;
 	}
 
 	it("FrameCache defaults to the §3 decoded-frame memory cap", () => {
@@ -109,5 +109,4 @@ describe("perf budgets — enforced against real code", () => {
 	});
 });
 
-// Bundle rows are gated in ./bundle.test.ts. Still unenforced (needs a browser
-// harness): TTFF, scrub p95, frame-to-glass, INP, audio drift.
+// Bundle rows are gated in ./bundle.test.ts; TTFF, scrub p95, frame-to-glass, INP and audio drift still need a browser harness.

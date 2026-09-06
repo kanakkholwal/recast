@@ -1,7 +1,7 @@
 import { error, json } from "@sveltejs/kit";
 import { serverEnv } from "$lib/env/server";
-import { runExpirySweep } from "$lib/storage/expire";
 import { isStorageConfigured } from "$lib/storage";
+import { runExpirySweep } from "$lib/storage/expire";
 import type { RequestHandler } from "./$types";
 
 /**
@@ -50,6 +50,5 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	});
 };
 
-// Allow GET too so a simple `curl` or a browser pageload can invoke it
-// for ops smoke-testing. Same auth requirement.
+// GET is allowed too, so a curl or browser load can smoke-test it under the same auth requirement.
 export const GET = POST;

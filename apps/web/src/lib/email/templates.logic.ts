@@ -1,12 +1,4 @@
-import {
-	ctaButton,
-	fallbackLink,
-	heading,
-	muted,
-	paragraph,
-	strong,
-	wrap,
-} from "./layout";
+import { ctaButton, fallbackLink, heading, muted, paragraph, strong, wrap } from "./layout";
 
 /**
  * Template registry — the only place HTML email markup lives. Each entry
@@ -58,7 +50,9 @@ const templates: {
 				preheader: "One-tap sign-in link, expires in 10 minutes.",
 				body:
 					heading("Sign in to Recast") +
-					paragraph(`${hello.replace(",", "")}, tap below to sign in. The link expires in <strong>10 minutes</strong>.`) +
+					paragraph(
+						`${hello.replace(",", "")}, tap below to sign in. The link expires in <strong>10 minutes</strong>.`,
+					) +
 					ctaButton("Sign in to Recast", url) +
 					muted(
 						"If you didn't request this, you can ignore the email. No account changes were made.",
@@ -115,9 +109,7 @@ const templates: {
 						`${hello.replace(",", "")}, someone (hopefully you) asked to reset your Recast password.`,
 					) +
 					ctaButton("Set a new password", url) +
-					muted(
-						"If this wasn't you, just ignore the email. Your password won't change.",
-					) +
+					muted("If this wasn't you, just ignore the email. Your password won't change.") +
 					fallbackLink(url),
 			}),
 		};
@@ -175,7 +167,7 @@ const templates: {
 					) +
 					ctaButton("Set your password", url) +
 					muted(
-						"This link works for 7 days. After that, use \"Forgot password\" on the sign-in page to get a new one.",
+						'This link works for 7 days. After that, use "Forgot password" on the sign-in page to get a new one.',
 					) +
 					fallbackLink(url),
 			}),
@@ -222,19 +214,11 @@ const templates: {
  * on real output (asset URLs, link presence, copy rules) instead of trusting
  * that a string built across four helpers came out right.
  */
-export function renderTemplate<N extends TemplateName>(
-	name: N,
-	data: TemplateData[N],
-): Rendered {
+export function renderTemplate<N extends TemplateName>(name: N, data: TemplateData[N]): Rendered {
 	return templates[name](data);
 }
 
-// Tiny helper used only inside this file — anything richer should call
-// the exported `strong()` from ./layout. Kept private so callers don't
-// hand-roll HTML strings outside the template registry.
+// Private on purpose: anything richer should call the exported `strong()` rather than hand-roll HTML.
 function escapeText(s: string): string {
-	return s
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;");
+	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

@@ -1,3 +1,2 @@
-// Every page in this group renders its own <SeoMeta>; suppress the root
-// layout's default tags to avoid duplicate description / og: tags.
+// Every page here renders its own <SeoMeta>, so suppress the root layout's defaults to avoid duplicate tags.
 export const load = () => ({ customSeo: true });

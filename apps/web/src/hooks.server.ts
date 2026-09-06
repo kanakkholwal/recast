@@ -1,27 +1,18 @@
-import { building } from "$app/environment";
-import { svelteKitHandler } from "better-auth/svelte-kit";
-import { getAuth } from "$lib/auth/server";
-import { getServerEnv } from "$lib/env/server";
-import { getPublicEnv } from "$lib/env/public";
 import type { Handle, HandleServerError } from "@sveltejs/kit";
+import { svelteKitHandler } from "better-auth/svelte-kit";
+import { building } from "$app/environment";
+import { getAuth } from "$lib/auth/server";
+import { getPublicEnv } from "$lib/env/public";
+import { getServerEnv } from "$lib/env/server";
 
-// Validate env at server startup. Throws synchronously if anything is missing
-// or malformed so the process refuses to serve traffic with a half-configured
-// .env instead of failing inside a request handler later. `building` skips this
-// during the prerender pass where env isn't available.
+// Validate env at startup so the process refuses traffic with a half-configured .env; `building` skips the prerender pass.
 if (!building) {
 	getServerEnv();
 	getPublicEnv();
 }
 
-export const handle: Handle = async ({ event, resolve }) => {
-	// `svelteKitHandler` already no-ops while building, but `auth: getAuth()` is
-	// an argument, so it is evaluated *before* that guard runs — and building the
-	// instance validates the server env and opens the Drizzle/pg adapter. The
-	// prerenderer runs hooks for every prerendered page, so on a build box with
-	// no DATABASE_URL / BETTER_AUTH_SECRET that throw turned into a 500 on every
-	// page under /blog and /tools. Nothing prerendered ever hits /api/auth, so
-	// return before touching auth at all.
+export const handle: Handle = ({ event, resolve }) => {
+	// `auth: getAuth()` is an argument, so it evaluates before svelteKitHandler's own building guard, and on a box with no DATABASE_URL that threw a 500 on every prerendered page.
 	if (building) return resolve(event);
 	return svelteKitHandler({ event, resolve, auth: getAuth(), building });
 };
@@ -45,11 +36,9 @@ function describeError(error: unknown): string {
 
 	if (error instanceof Error) {
 		const parts = [flatten(error.stack || "") || flatten(`${error.name}: ${error.message}`)];
-		// Zod/better-auth wrap the real failure in `cause`; without this the log
-		// names the wrapper and stops exactly where the useful detail begins.
+		// Zod and better-auth wrap the real failure in `cause`, so without this the log stops where the detail begins.
 		if (error.cause !== undefined) parts.push(`cause: ${describeError(error.cause)}`);
-		// Anything the class hangs off the error beyond the standard fields
-		// (`issues` on a ZodError, `code` on a Node error).
+		// Anything the class hangs off the error beyond the standard fields, such as `issues` or `code`.
 		const extras = Object.getOwnPropertyNames(error).filter(
 			(k) => !["name", "message", "stack", "cause"].includes(k),
 		);

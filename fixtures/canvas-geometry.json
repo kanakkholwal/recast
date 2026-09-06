@@ -1,0 +1,230 @@
+[
+  {
+    "srcW": 1920,
+    "srcH": 1080,
+    "paddingPct": 0.0,
+    "outputAspect": null,
+    "expect": {
+      "canvasW": 1920,
+      "canvasH": 1080,
+      "videoX": 0,
+      "videoY": 0,
+      "videoW": 1920,
+      "videoH": 1080,
+      "paddingPx": 0,
+      "compX": 0,
+      "compY": 0,
+      "compW": 1920,
+      "compH": 1080
+    }
+  },
+  {
+    "srcW": 1920,
+    "srcH": 1080,
+    "paddingPct": 10.0,
+    "outputAspect": null,
+    "expect": {
+      "canvasW": 2136,
+      "canvasH": 1296,
+      "videoX": 108,
+      "videoY": 108,
+      "videoW": 1920,
+      "videoH": 1080,
+      "paddingPx": 108,
+      "compX": 0,
+      "compY": 0,
+      "compW": 2136,
+      "compH": 1296
+    }
+  },
+  {
+    "srcW": 1920,
+    "srcH": 1080,
+    "paddingPct": 0.0,
+    "outputAspect": "9:16",
+    "expect": {
+      "canvasW": 1920,
+      "canvasH": 3414,
+      "videoX": 0,
+      "videoY": 1167,
+      "videoW": 1920,
+      "videoH": 1080,
+      "paddingPx": 0,
+      "compX": 0,
+      "compY": 1167,
+      "compW": 1920,
+      "compH": 1080
+    }
+  },
+  {
+    "srcW": 1080,
+    "srcH": 1920,
+    "paddingPct": 0.0,
+    "outputAspect": "16:9",
+    "expect": {
+      "canvasW": 3414,
+      "canvasH": 1920,
+      "videoX": 1167,
+      "videoY": 0,
+      "videoW": 1080,
+      "videoH": 1920,
+      "paddingPx": 0,
+      "compX": 1167,
+      "compY": 0,
+      "compW": 1080,
+      "compH": 1920
+    }
+  },
+  {
+    "srcW": 1280,
+    "srcH": 720,
+    "paddingPct": 5.0,
+    "outputAspect": "1:1",
+    "expect": {
+      "canvasW": 1352,
+      "canvasH": 1352,
+      "videoX": 36,
+      "videoY": 316,
+      "videoW": 1280,
+      "videoH": 720,
+      "paddingPx": 36,
+      "compX": 0,
+      "compY": 280,
+      "compW": 1352,
+      "compH": 792
+    }
+  },
+  {
+    "srcW": 1921,
+    "srcH": 1081,
+    "paddingPct": 0.0,
+    "outputAspect": "16:9",
+    "expect": {
+      "canvasW": 1922,
+      "canvasH": 1082,
+      "videoX": 0,
+      "videoY": 0,
+      "videoW": 1921,
+      "videoH": 1081,
+      "paddingPx": 0,
+      "compX": 0,
+      "compY": 0,
+      "compW": 1921,
+      "compH": 1081
+    }
+  },
+  {
+    "srcW": 1921,
+    "srcH": 1081,
+    "paddingPct": 7.0,
+    "outputAspect": "9:16",
+    "expect": {
+      "canvasW": 2074,
+      "canvasH": 3686,
+      "videoX": 76,
+      "videoY": 1302,
+      "videoW": 1921,
+      "videoH": 1081,
+      "paddingPx": 76,
+      "compX": 0,
+      "compY": 1226,
+      "compW": 2073,
+      "compH": 1233
+    }
+  },
+  {
+    "srcW": 640,
+    "srcH": 480,
+    "paddingPct": 20.0,
+    "outputAspect": "1.91:1",
+    "expect": {
+      "canvasW": 1284,
+      "canvasH": 672,
+      "videoX": 322,
+      "videoY": 96,
+      "videoW": 640,
+      "videoH": 480,
+      "paddingPx": 96,
+      "compX": 226,
+      "compY": 0,
+      "compW": 832,
+      "compH": 672
+    }
+  },
+  {
+    "srcW": 1920,
+    "srcH": 1080,
+    "paddingPct": 25.0,
+    "outputAspect": null,
+    "expect": {
+      "canvasW": 2352,
+      "canvasH": 1512,
+      "videoX": 216,
+      "videoY": 216,
+      "videoW": 1920,
+      "videoH": 1080,
+      "paddingPx": 216,
+      "compX": 0,
+      "compY": 0,
+      "compW": 2352,
+      "compH": 1512
+    }
+  },
+  {
+    "srcW": 100,
+    "srcH": 100,
+    "paddingPct": 0.0,
+    "outputAspect": "1:1",
+    "expect": {
+      "canvasW": 100,
+      "canvasH": 100,
+      "videoX": 0,
+      "videoY": 0,
+      "videoW": 100,
+      "videoH": 100,
+      "paddingPx": 0,
+      "compX": 0,
+      "compY": 0,
+      "compW": 100,
+      "compH": 100
+    }
+  },
+  {
+    "srcW": 1920,
+    "srcH": 1080,
+    "paddingPct": 0.0,
+    "outputAspect": "4:3",
+    "expect": {
+      "canvasW": 1920,
+      "canvasH": 1080,
+      "videoX": 0,
+      "videoY": 0,
+      "videoW": 1920,
+      "videoH": 1080,
+      "paddingPx": 0,
+      "compX": 0,
+      "compY": 0,
+      "compW": 1920,
+      "compH": 1080
+    }
+  },
+  {
+    "srcW": 3840,
+    "srcH": 2160,
+    "paddingPct": 12.5,
+    "outputAspect": "1.91:1",
+    "expect": {
+      "canvasW": 5158,
+      "canvasH": 2700,
+      "videoX": 659,
+      "videoY": 270,
+      "videoW": 3840,
+      "videoH": 2160,
+      "paddingPx": 270,
+      "compX": 389,
+      "compY": 0,
+      "compW": 4380,
+      "compH": 2700
+    }
+  }
+]

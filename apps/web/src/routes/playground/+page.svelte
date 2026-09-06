@@ -1,24 +1,22 @@
 <script lang="ts">
-import { onDestroy, onMount, untrack } from "svelte";
+// Type-only: a value import would statically bind the whole editor and defeat the split below.
+import type { Editor as EditorComponent, EditorStore, PanelTab } from "@recast/editor";
 import { createAudioEngineHost } from "@recast/editor";
+// A value import, but a leaf module with no editor deps, so it doesn't drag the editor bundle into the landing chunk.
+import { decoderBudget } from "@recast/editor/lib/playback/decoder-budget";
+import type { TileProvider } from "@recast/editor/lib/timeline/filmstrip-source";
+import { AlertTriangle, Download, Sparkles, Upload } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Spinner } from "@recast/ui/spinner";
+import { onDestroy, onMount, untrack } from "svelte";
 import { pushState } from "$app/navigation";
 import { page } from "$app/state";
 import Logo from "$lib/logo.svelte";
-import { Button } from "@recast/ui/button";
-import { Spinner } from "@recast/ui/spinner";
-import { AlertTriangle, Download, Sparkles, Upload } from "@recast/icons";
-// Type-only: a value import here would statically bind the whole editor and
-// defeat the split below (rolldown reports INEFFECTIVE_DYNAMIC_IMPORT).
-import type { Editor as EditorComponent, EditorStore, PanelTab } from "@recast/editor";
-import type { TileProvider } from "@recast/editor/lib/timeline/filmstrip-source";
-// Value import, but a leaf module with no editor deps — it doesn't drag the
-// editor bundle into the landing chunk.
-import { decoderBudget } from "@recast/editor/lib/playback/decoder-budget";
 import { ACCEPTED_EXTENSIONS, probeSource } from "$lib/playground/probe";
 import { SAMPLE_CLIP } from "$lib/playground/sample";
-import { checkSupport, type SupportVerdict } from "$lib/playground/support";
 import { webEditorServices } from "$lib/playground/services";
 import { playgroundSession } from "$lib/playground/session.svelte";
+import { checkSupport, type SupportVerdict } from "$lib/playground/support";
 
 let dragging = $state(false);
 let busy = $state(false);
@@ -26,8 +24,7 @@ let error = $state<string | null>(null);
 let showDesktopCta = $state(false);
 let fileInput = $state<HTMLInputElement | null>(null);
 
-// Probed on mount, not at module scope: this route is prerendered, so the
-// build-time environment would answer for every visitor.
+// Probed on mount, not at module scope: this route is prerendered, so build time would answer for every visitor.
 let support = $state<SupportVerdict | null>(null);
 onMount(() => {
 	support = checkSupport();
@@ -36,9 +33,7 @@ onMount(() => {
 const canEdit = $derived(support?.canEdit ?? true);
 const accept = ACCEPTED_EXTENSIONS.map((e) => `.${e}`).join(",");
 
-// --- Editor island ---
-// One route, two views. History state (not a second route) drives the swap, so
-// Back returns to the drop surface instead of leaving the site.
+// --- Editor island: history state, not a second route, drives the swap so Back returns to the drop surface.
 let Editor = $state<typeof EditorComponent | null>(null);
 let store = $state<EditorStore | null>(null);
 let panels = $state<readonly PanelTab[]>([]);
@@ -77,8 +72,9 @@ async function mountEditor() {
 		const { workerHost } = await import("$lib/workers");
 		m.setEditorHostHooks({ workers: workerHost });
 		const next = m.createEditorStore();
-		const meta = playgroundSession.metadata!;
-		next.metadata = { ...meta, codec: "", sizeBytes: playgroundSession.source!.file.size };
+		const meta = playgroundSession.metadata;
+		const src = playgroundSession.source;
+		if (meta && src) next.metadata = { ...meta, codec: "", sizeBytes: src.file.size };
 		next.loadRenderState({});
 		store = next;
 		panels = m.WEB_PANEL_TABS;
@@ -90,8 +86,7 @@ async function mountEditor() {
 	void buildTileProvider();
 }
 
-// Filmstrip thumbnails decode in their own worker off the picked File — the
-// main thread never holds the bytes.
+// Thumbnails decode in their own worker off the picked File, so the main thread never holds the bytes.
 async function buildTileProvider() {
 	const ref = playgroundSession.videoRef;
 	if (!ref) return;
@@ -116,9 +111,7 @@ async function buildTileProvider() {
 	}
 }
 
-// Preview owns decode priority: the shared budget pauses the filmstrip decoder
-// while the preview is playing or scrubbing, so the two never over-subscribe
-// the GPU's decode sessions.
+// Preview owns decode priority: the shared budget pauses the filmstrip decoder while the preview is busy.
 let unregisterLease: (() => void) | null = null;
 let scrubBusyTimer: ReturnType<typeof setTimeout> | undefined;
 let lastPreviewTime = -1;
@@ -142,8 +135,7 @@ $effect(() => {
 	}
 });
 
-// Popping back to the drop surface tears the editor down; a fresh pick rebuilds
-// it. Keeping a detached store alive across the swap only risks a stale decoder.
+// Popping back tears the editor down and a fresh pick rebuilds it; a detached store would only risk a stale decoder.
 $effect(() => {
 	if (editing) return;
 	untrack(() => {
@@ -197,18 +189,20 @@ const audioTracks = $derived(
 		? [{ src: playgroundSession.videoRef, kind: "system" as const }]
 		: undefined,
 );
-// The editor no longer builds this: an AudioContext is host-owned so a host
-// driving its own transport can't race a second engine.
+// The AudioContext is host-owned, so a host driving its own transport can't race a second engine.
 const audio = createAudioEngineHost(() => audioTracks);
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} />
 
 <svelte:head>
-	<title>Video editor playground — edit a clip in your browser | Recast</title>
+	<title>Editor preview (unfinished) | Recast</title>
+	<!-- Unlisted while export is unfinished: off the nav and the sitemap, and not
+	     indexable, so the only way here is a link someone was given. -->
+	<meta name="robots" content="noindex,nofollow" />
 	<meta
 		name="description"
-		content="Try Recast's video editor in your browser. Drop in an MP4 or WebM and add backgrounds, zoom, annotations and captions, then export — no upload, no account. Your file never leaves your device."
+		content="An unfinished in-browser preview of the Recast editor. Editing and preview work; export does not. The desktop app is the finished one."
 	/>
 </svelte:head>
 
@@ -273,10 +267,14 @@ const audio = createAudioEngineHost(() => audioTracks);
 
 	<main class="mx-auto flex w-full max-w-3xl flex-col gap-10 px-6 pt-10 pb-20">
 		<div class="flex flex-col gap-4 text-center">
-			<h1 class="text-display-md font-semibold text-balance">The Recast editor, in your browser</h1>
+			<h1 class="text-display-md font-semibold text-balance">
+				Editor preview <span class="text-muted-foreground">(unfinished)</span>
+			</h1>
 			<p class="text-muted-foreground mx-auto max-w-xl text-pretty">
-				Drop in a clip and try the real editor — backgrounds, zoom, annotations, captions and a
-				proper timeline. Nothing is uploaded; your file is decoded on your own machine.
+				An early in-browser build of the Recast editor, kept for development. Editing and preview
+				work; <strong class="text-foreground">saving and export do not</strong> — use the desktop
+				app for anything you want to keep. Nothing is uploaded; your file is decoded on your own
+				machine.
 			</p>
 		</div>
 
@@ -354,7 +352,7 @@ const audio = createAudioEngineHost(() => audioTracks);
 			</div>
 			<div>
 				<h2 class="text-foreground mb-1 font-medium">The real editor</h2>
-				<p>Same timeline, preview and export the desktop app ships.</p>
+				<p>The same timeline and preview the desktop app ships. Export is not wired up here.</p>
 			</div>
 			<div>
 				<h2 class="text-foreground mb-1 font-medium">Recording lives in the app</h2>

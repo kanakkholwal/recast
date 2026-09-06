@@ -1,12 +1,5 @@
-//! Embedded local store (SQLite): the operational/index layer that sits beside
-//! the file-authoritative document store (`.recast` bundles + media on disk).
-//!
-//! Files stay the source of truth for documents. This DB holds structured
-//! operational state that either does not exist as a file (the export queue's run
-//! state, later upload history) or is a rebuildable index over files (the
-//! recordings/exports library list, deferred). Heavy payloads are NEVER blobbed
-//! here: a queued export's render state is written as a file on disk and only its
-//! path is stored in the row.
+//! Embedded SQLite index beside the file-authoritative document store; files stay the source of truth.
+//! Heavy payloads are never blobbed here: a queued export's render state is a file, and the row holds only its path.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -50,8 +43,7 @@ impl Db {
             let _ = std::fs::create_dir_all(parent);
         }
         let conn = Connection::open(&path)?;
-        // WAL so readers (list_export_jobs) never block the worker's writes;
-        // NORMAL is durable enough under WAL; foreign_keys on for future tables.
+        // WAL so readers never block the worker's writes, NORMAL is durable enough under it, and foreign keys are on for later tables.
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
@@ -61,9 +53,7 @@ impl Db {
         Ok(Db(Arc::new(Mutex::new(conn))))
     }
 
-    /// Run `f` with the locked connection. Callers MUST already be off the UI
-    /// thread (inside `spawn_blocking` or the worker task); the lock is held for
-    /// the duration of `f`.
+    /// Run `f` with the locked connection. Callers MUST already be off the UI thread (inside `spawn_blocking` or the worker task); the lock is held for the duration of `f`.
     pub fn with<T>(
         &self,
         f: impl FnOnce(&Connection) -> rusqlite::Result<T>,

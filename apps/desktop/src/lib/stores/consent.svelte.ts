@@ -37,8 +37,7 @@ function mirrorToRust(consent: DesktopConsent) {
 }
 
 function createConsentStore() {
-	// Merged over DEFAULTS, so a consent key added in a future build keeps its
-	// default for existing users.
+	// Merged over DEFAULTS, so a consent key added in a later build keeps its default for existing users.
 	const consent = new PersistedState<DesktopConsent>(STORAGE_KEY, DEFAULTS);
 
 	return {

@@ -3,8 +3,10 @@
  * that places a preset chip's dot where the bubble will land in the frame.
  */
 
-import type { CameraPositionPreset } from "../../stores/editor-store.svelte";
+import type { CameraLayout } from "../../lib/editor/render-state";
+import { DEFAULT_SPLIT_FRACTION, LAYOUT_LABELS } from "../../lib/timeline/camera-clip-layout";
 import type { CameraCapture } from "../../lib/wire-types";
+import type { CameraPositionPreset } from "../../stores/editor-store.svelte";
 
 export interface CameraAvailability {
 	/** Whether the overlay controls can be used at all. */
@@ -77,8 +79,7 @@ export function labelFor(preset: CameraPositionPreset): string {
  */
 export function dotStyleFor(preset: CameraPositionPreset): string {
 	if (preset === "custom") return "left:50%;top:50%;transform:translate(-50%,-50%);";
-	// Detect each axis by token: the ids mix 'row-col' ('top-left') and 'col-row'
-	// ('left-center') conventions, so a positional split mis-places the dot.
+	// Detect each axis by token: the ids mix row-col and col-row conventions, so a positional split misplaces the dot.
 	const tokens = preset.split("-");
 	const col = tokens.includes("left") ? "left" : tokens.includes("right") ? "right" : "center";
 	const row = tokens.includes("top") ? "top" : tokens.includes("bottom") ? "bottom" : "center";
@@ -105,4 +106,78 @@ export function dotStyleFor(preset: CameraPositionPreset): string {
 				? `transform:${translateX || translateY};`
 				: "";
 	return xPart + yPart + transform;
+}
+
+/** Which of the panel's control groups the current arrangement actually uses. */
+export interface CameraControls {
+	/** The bubble's own geometry: position, size, shape and shadow. */
+	bubble: boolean;
+	/** What moves the bubble: per-cut positions and grow-on-zoom. */
+	motion: boolean;
+	/** Pointer dodging, which also needs a pointer to dodge. */
+	dodge: boolean;
+	/** Why the bubble controls do not apply, or null when they do. */
+	reason: string | null;
+	/** Why dodging does not apply. It has a second cause the others do not. */
+	dodgeReason: string | null;
+}
+
+/** Why each layout ignores the bubble controls, in the panel's own words. */
+const IGNORES_THE_BUBBLE: Partial<Record<CameraLayout["kind"], string>> = {
+	splitH: "This clip splits the frame, so the camera fills its half.",
+	splitV: "This clip splits the frame, so the camera fills its half.",
+	screenOnly: "This clip hides the camera.",
+	cameraOnly: "This clip gives the camera the whole frame.",
+};
+
+/**
+ * A layout decides which controls mean anything. Offering all of them for every
+ * arrangement let a split's Position grid and Width field write state that
+ * nothing read, which reads as a broken control rather than an unused one.
+ */
+export function cameraControls(layout: CameraLayout, cursorEnabled: boolean): CameraControls {
+	const reason = IGNORES_THE_BUBBLE[layout.kind] ?? null;
+	const bubble = reason === null;
+	return {
+		bubble,
+		motion: bubble,
+		dodge: bubble && cursorEnabled,
+		reason,
+		dodgeReason: bubble && !cursorEnabled ? "Turn the pointer on to dodge it." : reason,
+	};
+}
+
+/** Picker rows for the layout select, named the same as the timeline's clips. */
+export const CAMERA_LAYOUT_OPTIONS = LAYOUT_LABELS.map((l) => ({
+	value: l.kind,
+	label: l.label,
+}));
+
+/** What the two halves are called, which differs by split axis. */
+export function splitSideOptions(kind: "splitH" | "splitV") {
+	return kind === "splitH"
+		? [
+				{ value: "start", label: "Left" },
+				{ value: "end", label: "Right" },
+			]
+		: [
+				{ value: "start", label: "Top" },
+				{ value: "end", label: "Bottom" },
+			];
+}
+
+/**
+ * The layout to store when the picker changes kind. The picker carries only a
+ * kind, so a split needs its share and side filled in: carried over from the
+ * layout being replaced where it had them, so flipping between the two split
+ * axes keeps the framing the user just set.
+ */
+export function layoutForKind(current: CameraLayout, kind: CameraLayout["kind"]): CameraLayout {
+	if (kind !== "splitH" && kind !== "splitV") return { kind } as CameraLayout;
+	const wasSplit = current.kind === "splitH" || current.kind === "splitV";
+	return {
+		kind,
+		fraction: wasSplit ? current.fraction : DEFAULT_SPLIT_FRACTION,
+		side: wasSplit ? current.side : "start",
+	};
 }

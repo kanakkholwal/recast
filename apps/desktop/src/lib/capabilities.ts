@@ -1,12 +1,6 @@
-// Capture-capability gating: caches the `capture_capabilities` probe and turns an
-// unsupported feature into a ready-to-toast verdict, worded by reason:
-//   - `unsupported` → OS / native API can't do it → "not supported on <os>"
-//   - `planned`     → not shipped here yet → "not available yet"
-//
-// Fails OPEN: probe errors or unknown keys verdict `ok`, so a diagnostic hiccup
-// never blocks a feature that might actually work.
+// Caches the capability probe and turns an unsupported feature into a worded verdict; fails OPEN, so a hiccup never blocks a feature that works.
 
-import { captureCapabilities, type CaptureCapabilities } from "$lib/ipc";
+import { type CaptureCapabilities, captureCapabilities } from "$lib/ipc";
 
 let cached: Promise<CaptureCapabilities> | null = null;
 

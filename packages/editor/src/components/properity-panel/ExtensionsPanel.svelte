@@ -1,13 +1,4 @@
 <script lang="ts">
-import {
-	installFromUrl,
-	loadRegistryIndex,
-	toggleExtension,
-	type RegistryIndexEntry,
-} from "../../lib/extensions";
-import type { InstalledExtension } from "../../lib/wire-types";
-import type { EditorStore } from "../../stores/editor-store.svelte";
-import { extensionsStore } from "../../stores/extensions-store.svelte";
 import { Blocks, ChevronRight, Download, Package, RefreshCw } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";
@@ -16,6 +7,15 @@ import { toast } from "@recast/ui/sonner";
 import { Spinner } from "@recast/ui/spinner";
 import { cn } from "@recast/ui/utils";
 import { onMount } from "svelte";
+import {
+	installFromUrl,
+	loadRegistryIndex,
+	type RegistryIndexEntry,
+	toggleExtension,
+} from "../../lib/extensions";
+import type { InstalledExtension } from "../../lib/wire-types";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import { extensionsStore } from "../../stores/extensions-store.svelte";
 import ExtensionDetailsDialog from "./ExtensionDetailsDialog.svelte";
 import { contribCount, countUpdates, updateAvailableFor } from "./extensions-panel.logic";
 import PanelSection from "./PanelSection.svelte";
@@ -31,8 +31,7 @@ let installingUrl = $state(false);
 let index = $state<RegistryIndexEntry[] | null>(null);
 let loadingIndex = $state(false);
 
-// Addressed by id so the dialog resolves entry + installed reactively (reflects
-// install/uninstall without re-opening).
+// Addressed by id, so the dialog resolves entry and installed state reactively without being re-opened.
 let dialogOpen = $state(false);
 let selectedId = $state<string | null>(null);
 
@@ -287,6 +286,7 @@ async function onToggle(ext: InstalledExtension, enabled: boolean) {
               <img
                 src={entry.iconUrl}
                 alt=""
+                loading="lazy"
                 class="size-7 shrink-0 rounded-md object-cover"
               />
             {:else}

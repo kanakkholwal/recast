@@ -17,10 +17,10 @@
 		"svelte": "^5.56.1"
 	},
 	"devDependencies": {
-		"svelte": "^5.56.1",
-		"svelte-check": "^4.4.2",
+		"svelte": "5.56.3",
+		"svelte-check": "^4.7.6",
 		"typescript": "^5.9.3",
-		"vitest": "^3.2.4"
+		"vitest": "^3.2.7"
 	},
 	"scripts": {
 		"build": "exit 0",

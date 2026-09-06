@@ -1,10 +1,5 @@
-//! Device capability probe for caption-model gating.
-//!
-//! Cheap, best-effort detection of OS / arch / RAM / GPU so the UI can disable
-//! models a device can't run and warn about ones that'll be slow. Deliberately
-//! conservative on GPU: we only *confirm* an accelerator we can prove (Metal on
-//! macOS, CUDA via `nvidia-smi`); everything else reports CPU mode rather than
-//! overpromising.
+//! Cheap OS/arch/RAM/GPU probe so the UI can disable models a device cannot run.
+//! Deliberately conservative: only a provable accelerator (Metal, CUDA via `nvidia-smi`) counts, everything else reports CPU.
 
 use serde::Serialize;
 
@@ -54,9 +49,7 @@ fn detect_gpu() -> GpuInfo {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        // Only claim a GPU we can prove. `nvidia-smi` confirms CUDA; otherwise
-        // report CPU mode (a discrete/integrated GPU may exist but we can't rely
-        // on an ASR-capable accelerated backend without more native probing).
+        // Only claim a GPU we can prove: `nvidia-smi` confirms CUDA, and anything else reports CPU without more native probing.
         match nvidia_name() {
             Some(name) => GpuInfo {
                 available: true,

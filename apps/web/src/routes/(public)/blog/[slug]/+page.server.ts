@@ -4,9 +4,7 @@ import type { EntryGenerator, PageServerLoad } from "./$types";
 
 export const prerender = true;
 
-// The prerenderer only finds pages it can reach by crawling links. Enumerating
-// the slugs explicitly keeps the build independent of what the index happens to
-// link to, so a post is still prerendered if the listing ever filters it out.
+// The prerenderer only crawls links, so enumerating slugs keeps a post prerendered even if the listing filters it out.
 export const entries: EntryGenerator = async () => {
 	const posts = await listPosts();
 	return posts.map((post) => ({ slug: post.slug }));
@@ -14,8 +12,7 @@ export const entries: EntryGenerator = async () => {
 
 export const load: PageServerLoad = async ({ params }) => {
 	const post = await getPost(params.slug);
-	// Also the unpublished-draft path in production: `getPost` returns null, and
-	// a draft URL should not be a live page.
+	// Also the unpublished-draft path in production: `getPost` returns null, and a draft URL must not be a live page.
 	if (!post) error(404, "Article not found");
 	return post;
 };

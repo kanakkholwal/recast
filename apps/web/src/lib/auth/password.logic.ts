@@ -1,9 +1,6 @@
-// Shared password rules for the signup and reset-password forms. Pure — no
-// runes, no DOM; the .svelte files wrap these in $derived.
+// Shared password rules for the signup and reset forms; pure, so the .svelte files wrap these in $derived.
 
-// 0..4 heuristic: length, mixed case, a digit, a symbol. Index into the
-// LABELS/COLORS arrays below (which have a 5th "Excellent" entry for a
-// maxed-out score).
+// 0..4 heuristic (length, mixed case, digit, symbol), indexing LABELS and COLORS, which carry a 5th maxed-out entry.
 export function scorePasswordStrength(password: string): number {
 	let score = 0;
 	if (password.length >= 8) score++;
@@ -23,8 +20,7 @@ export const STRENGTH_COLORS = [
 	"bg-success",
 ];
 
-// True while the two fields agree, or while the confirm field is still empty
-// (so the mismatch hint stays hidden until the user starts typing it).
+// True while the fields agree or confirm is still empty, so the mismatch hint waits until the user types.
 export function passwordsMatch(password: string, confirmPassword: string): boolean {
 	return password === confirmPassword || confirmPassword.length === 0;
 }
@@ -45,9 +41,6 @@ export function canSignUp(input: {
 	);
 }
 
-export function canResetPassword(input: {
-	password: string;
-	confirmPassword: string;
-}): boolean {
+export function canResetPassword(input: { password: string; confirmPassword: string }): boolean {
 	return input.password.length >= 8 && input.password === input.confirmPassword;
 }

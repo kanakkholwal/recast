@@ -142,9 +142,7 @@ export function loadVideoElement(url: string): Promise<HTMLVideoElement> {
 		v.preload = "auto";
 		v.muted = true;
 		v.playsInline = true;
-		// Attach off-screen (not fully detached): a detached <video> doesn't
-		// reliably decode frames, so canvas capture comes back blank/failed and
-		// the recast ends up with no cover. A 2px rendered element decodes fine.
+		// Attach off-screen, not detached: a detached <video> doesn't reliably decode, so canvas capture comes back blank.
 		v.style.cssText =
 			"position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;";
 		let settled = false;
@@ -160,8 +158,7 @@ export function loadVideoElement(url: string): Promise<HTMLVideoElement> {
 				reject(new Error("Couldn't read this video file."));
 			}
 		};
-		// Resolve on `loadeddata` (a frame is available), not just metadata, so
-		// the first seek+draw has something to capture.
+		// Resolve on `loadeddata`, not metadata, so the first seek and draw has a frame to capture.
 		v.onloadeddata = () => finish(true);
 		v.onerror = () => finish(false);
 		const timer = setTimeout(() => finish(false), 15000);
@@ -179,11 +176,7 @@ export function releaseVideoElement(video: HTMLVideoElement): void {
 
 function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
 	return new Promise((resolve) => {
-		// Resolve on `seeked` (fires reliably for a detached/offscreen video), with
-		// a safety timeout so a seek that never completes can never stall the
-		// upload. (Do NOT gate this on requestVideoFrameCallback: it only fires
-		// when a frame is composited, which a hidden, non-playing element never
-		// does, so it would hang here forever.)
+		// `seeked` fires reliably for an offscreen video, with a timeout backstop; requestVideoFrameCallback never fires for a hidden element.
 		let settled = false;
 		const finish = () => {
 			if (settled) return;
@@ -368,8 +361,7 @@ function putWithProgress(
 		const headers = envelope.headers ?? {};
 		const hasContentType = Object.keys(headers).some((k) => k.toLowerCase() === "content-type");
 		for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
-		// Presigned PUTs sign the content-type; match what /init signed when the
-		// envelope didn't carry it explicitly.
+		// Presigned PUTs sign the content-type, so match what /init signed when the envelope didn't carry it.
 		if (!hasContentType) xhr.setRequestHeader("Content-Type", contentTypeFallback);
 
 		if (onProgress) {
@@ -407,9 +399,7 @@ export async function uploadRecastFile(
 	const contentType = uploadContentType(file);
 	handlers.onPhase?.("preparing");
 
-	// Metadata + cover frame: reuse the caller's pre-probed media when present
-	// (the dialog loads the file's <video> once for its own preview + scrubber),
-	// otherwise load the video and auto-pick a cover here.
+	// Reuse the caller's pre-probed media when present (the dialog already loads the <video>), else load and pick a cover here.
 	let objectUrl: string | null = null;
 	let video: HTMLVideoElement | null = null;
 	let durationSec: number;
@@ -459,7 +449,7 @@ export async function uploadRecastFile(
 		const videoUpload = init?.upload as SignedEnvelope | undefined;
 		const posterUpload = init?.posterUpload as SignedEnvelope | undefined;
 		const recastId = init?.recastId as string;
-		if (!videoUpload || videoUpload.method?.toUpperCase() !== "PUT") {
+		if (videoUpload?.method?.toUpperCase() !== "PUT") {
 			throw new Error("This storage provider isn't supported by the web uploader yet.");
 		}
 
@@ -508,8 +498,7 @@ export async function uploadRecastFile(
 			);
 		}
 
-		// 4. share (public link, matching the desktop "Share to Cloud" default).
-		//    Skipped when the caller configures + mints the link afterwards.
+		// Public link, matching the desktop Share to Cloud default; skipped when the caller mints the link afterwards.
 		if (handlers.autoShare === false) {
 			return { recastId, slug: "", shareUrl: "" };
 		}

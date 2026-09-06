@@ -3,7 +3,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::recording::{CaptureTarget, RecordingStats};
+use crate::capture::CaptureTarget;
+use crate::recording::RecordingStats;
 
 pub mod autosave;
 pub mod format;
@@ -68,20 +69,8 @@ pub struct ProjectMetadata {
 }
 
 impl ProjectMetadata {
-    /// Duration of the recorded *media*, in seconds — not of the capture
-    /// session.
-    ///
-    /// `stats.duration_ms` (and, for projects written before this split,
-    /// `video.duration_ms`) is wall-clock elapsed time. The encoder writes CFR
-    /// at `nominal_fps`, so whenever the capture dropped frames the file is
-    /// SHORTER than the wall clock: a 27.102 s session that encoded 3195 frames
-    /// at 120 fps produces exactly 26.625 s of video. Seeding `trim_end` from
-    /// the wall clock therefore wrote a render state the export validator
-    /// (which probes the real file) rejects as `trim_end_exceeds_source`.
-    ///
-    /// `encoded_frames / nominal_fps` is that CFR identity, so this matches
-    /// ffprobe to the microsecond without paying for a probe spawn. Falls back
-    /// to the stored duration when the frame count is unavailable.
+    /// Duration of the recorded media, not of the capture session: CFR encoding makes a dropped-frame recording SHORTER than the wall clock.
+    /// `encoded_frames / nominal_fps` matches ffprobe without a probe spawn; seeding `trim_end` from wall clock produced `trim_end_exceeds_source`.
     pub fn media_duration_secs(&self) -> f64 {
         if self.stats.encoded_frames > 0 && self.stats.nominal_fps > 0 {
             self.stats.encoded_frames as f64 / self.stats.nominal_fps as f64
@@ -106,15 +95,15 @@ pub struct ProjectMediaMetadata {
     pub has_system_audio: bool,
     pub has_microphone: bool,
     pub has_camera: bool,
-    /// Whether the camera was ASKED for, regardless of whether a track arrived.
-    ///
-    /// `has_camera` alone can't tell a camera that was switched off from one
-    /// that was requested and failed (device busy, permission denied) — and the
-    /// editor otherwise tells someone to "turn the camera on" when they did.
-    /// Defaulted so bundles written before this field read as "not requested",
-    /// which for them is indistinguishable from off anyway.
+    /// Whether the camera was ASKED for, regardless of whether a track arrived: `has_camera` alone cannot separate switched-off from requested-and-failed.
+    /// Defaulted, so bundles written before this field read as not requested, which for them is indistinguishable from off.
     #[serde(default)]
     pub camera_requested: bool,
+    /// Signed millisecond offsets of the audio / mic / camera tracks relative
+    /// to video frame 0. Absent on bundles written before offsets were
+    /// measured, which read as "assume aligned" (the old behaviour).
+    #[serde(default)]
+    pub track_offsets: crate::recording::TrackOffsets,
 }
 
 #[cfg(test)]

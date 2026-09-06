@@ -1,5 +1,7 @@
-/* Chrome surfaces stay dark + glassy regardless of host theme — the player
-   always sits over black video frames. */
+/* biome-ignore-all lint/complexity/noImportantStyles: media-chrome ships its own shadow-DOM defaults these have to beat. */
+/* biome-ignore-all lint/style/noHexColors: the chrome is theme-independent by design, so these are literals, not tokens. */
+/* biome-ignore-all lint/nursery/noDuplicateSelectors: the .recast-player blocks are grouped by concern (font, layout, chrome). */
+/* Chrome stays dark and glassy regardless of host theme: the player always sits over black frames. */
 
 .recast-player,
 .recast-player * {
@@ -9,9 +11,7 @@
 	user-select: none;
 }
 
-/* media-chrome tooltips, time displays, and menu items live in shadow
-   DOM that doesn't always inherit from the host — push the font via the
-   library's own CSS variables so it lands inside the shadow roots. */
+/* media-chrome shadow DOM doesn't inherit host fonts, so push the face through its own CSS variables. */
 .recast-player {
 	--media-font-family: "Geist Variable", "Inter", ui-sans-serif, system-ui,
 		-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -23,15 +23,12 @@
 }
 
 .recast-player {
-	/* Neutral, not brand. The player sits over arbitrary video, so the chrome
-	   stays white-on-scrim and lets the frame be the only colourful thing. */
+	/* Neutral, not brand: chrome stays white-on-scrim so the frame is the only colourful thing. */
 	--media-primary-color: rgba(255, 255, 255, 0.92);
 	--media-secondary-color: rgba(255, 255, 255, 0.92);
 	--media-icon-color: rgba(255, 255, 255, 0.92);
 
-	/* Default control background — transparent. Hover affordances are
-	   applied per-button below via `.recast-btn:hover`, so ranges + time
-	   displays never pick up a white-overlay rectangle on hover. */
+	/* Transparent by default; hover lives on `.recast-btn:hover`, so ranges never pick up a white rectangle. */
 	--media-control-background: transparent;
 	--media-control-hover-background: transparent;
 	--media-menu-background: var(--popover, #1f1f1f);
@@ -94,8 +91,7 @@
 }
 
 .recast-control-bar {
-	/* The scrim is the only thing making the controls legible now that the
-	   pill surface is gone, so it carries more weight than it used to. */
+	/* The scrim is the only thing making the controls legible now that the pill surface is gone. */
 	background: linear-gradient(
 		to top,
 		rgba(0, 0, 0, 0.68),
@@ -112,13 +108,8 @@
 		transform 220ms ease;
 }
 
-/* media-chrome flags pointer inactivity with `userinactive` on the controller.
-   Fade the bar out then (but keep it while paused, the usual player behaviour);
-   it fades back on the next pointer move when the attribute clears. A control
-   bar marked `noautohide` (pinned surfaces) opts out. */
-/* `:focus-within`: media-chrome only counts pointer moves and keyup as
-   activity, so a keyboard user who pauses to read loses sight of the control
-   they're focused on. */
+/* Fade on media-chrome's `userinactive`, but stay while paused; `noautohide` opts a pinned bar out. */
+/* `:focus-within`: media-chrome counts only pointer moves and keyup, so a reading keyboard user loses their control. */
 media-controller.recast-player[userinactive]:not([mediapaused])
 	.recast-control-bar:not([noautohide]):not(:focus-within) {
 	opacity: 0;
@@ -126,11 +117,7 @@ media-controller.recast-player[userinactive]:not([mediapaused])
 	pointer-events: none;
 }
 
-/* Captions do NOT fade with the controls: they stay visible until toggled off.
-   A bottom caption instead lifts clear of the control bar while it's visible
-   (pointer active, or paused) and settles back to its normal margin when the
-   bar auto-hides, so the two never overlap. Only bottom captions shift; top and
-   centre never sit over the bar. */
+/* Captions never fade with the controls; a bottom caption lifts clear of the bar while it is visible. */
 .recast-caption-slot {
 	transition: transform 220ms ease;
 }
@@ -139,9 +126,7 @@ media-controller.recast-player[mediapaused] .recast-caption-bottom {
 	transform: translateY(-3.75rem);
 }
 
-/* Two rows, flush to the frame: scrubber on top, transport below. Deliberately
-   NOT a floating card — the frosted pill read as a second UI panel sitting on
-   the video instead of chrome belonging to it. */
+/* Two rows flush to the frame, not a floating card: the frosted pill read as a second panel on the video. */
 .recast-pill {
 	display: flex;
 	flex-direction: column;
@@ -184,8 +169,7 @@ media-controller.recast-player.recast-player-theater {
 	background: rgba(255, 255, 255, 0.14) !important;
 }
 
-/* White ring + dark halo rather than --primary: the ring has to clear 3:1
-   against an arbitrary video frame, and --primary is reserved elsewhere. */
+/* White ring plus dark halo, not --primary: the ring must clear 3:1 against an arbitrary frame. */
 .recast-btn:focus-visible,
 .recast-error-retry:focus-visible {
 	outline: 2px solid #ffffff;
@@ -199,8 +183,7 @@ media-controller.recast-player.recast-player-theater {
 	box-shadow: inset 0 0 0 5px rgba(0, 0, 0, 0.6);
 }
 
-/* Text-only buttons (playback rate). Tighter padding, mono digit width
-   so 1× → 1.25× → 1.5× doesn't jitter the bar. */
+/* Mono digit width so 1x to 1.25x to 1.5x doesn't jitter the bar. */
 .recast-btn-text {
 	padding: 0 10px;
 	font-family: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo,
@@ -218,8 +201,7 @@ media-controller.recast-player.recast-player-theater {
 	height: 100%;
 }
 
-/* On = held background, off = a strikethrough rule. The old off-state dimmed
-   the icon to 0.55 white, which read as disabled and missed 3:1 (WCAG 1.4.11). */
+/* Off is a strikethrough rule: dimming the icon to 0.55 white read as disabled and missed 3:1 (WCAG 1.4.11). */
 .recast-caption-btn {
 	position: relative;
 	color: rgba(255, 255, 255, 0.92);
@@ -287,8 +269,7 @@ media-controller.recast-player.recast-player-theater {
 	background: transparent !important;
 }
 
-/* The mute button sits next to volume; volume range expands a bit on
-   hover for easier scrubbing without snapping shut. */
+/* Volume expands slightly on hover so scrubbing it doesn't snap shut. */
 .recast-volume {
 	width: 64px;
 	height: 30px;
@@ -332,16 +313,14 @@ media-controller.recast-player.recast-player-theater {
 	color: rgba(255, 255, 255, 0.95);
 }
 
-/* Hide while playing — media-chrome strips `mediapaused` from the
-   controller as soon as the video starts. */
+/* media-chrome strips `mediapaused` from the controller as soon as the video starts. */
 media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	opacity: 0;
 	transform: translate(-50%, -50%) scale(0.92);
 	pointer-events: none;
 }
 
-/* Loading indicator centered. Default media-chrome positions it via
-   slot but we removed the slot reliance — set position here. */
+/* Position set here: we dropped media-chrome's slot-based placement. */
 .recast-loading {
 	position: absolute;
 	top: 50%;
@@ -351,16 +330,13 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	pointer-events: none;
 }
 
-/* Thin line, but the element keeps a taller invisible hit area so seeking
-   stays grabbable. Height here is the target, --media-range-track-height is
-   what you actually see. */
+/* Height here is the hit target; --media-range-track-height is what you actually see. */
 .recast-scrubber {
 	flex: 1;
 	min-width: 60px;
 	margin: 0 2px;
 	height: 24px;
-	/* Buffered ahead of the playhead — without this the rail gives no sign
-	   anything is downloading on a cold fetch. */
+	/* Buffered ahead of the playhead: without it the rail gives no sign anything is downloading. */
 	--media-time-range-buffered-color: rgba(255, 255, 255, 0.42);
 }
 
@@ -385,8 +361,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	pointer-events: none;
 }
 
-/* 24px hit target (WCAG 2.5.8) around an 8px dot. It overlaps the scrubber,
-   but a click here seeks to the marker — the same intent as scrubbing to it. */
+/* 24px hit target (WCAG 2.5.8) around an 8px dot; a click here seeks to the marker. */
 .recast-marker {
 	position: absolute;
 	top: 50%;
@@ -437,8 +412,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	align-items: center;
 }
 
-/* Speed used to cycle on click — eight rates meant seven clicks to go
-   1× → 0.75×. It's a menu now. */
+/* A menu, not a click-cycle: eight rates meant seven clicks to reach 0.75x. */
 .recast-menu {
 	--media-menu-background: rgba(18, 18, 18, 0.96);
 	--media-menu-color: rgba(255, 255, 255, 0.96);
@@ -482,8 +456,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	}
 }
 
-/* Very narrow: drop the ±10s jog buttons so the transport group doesn't
-   crowd the pill — tap-to-seek on the scrubber covers the same intent. */
+/* Very narrow: drop the jog buttons, since tap-to-seek on the scrubber covers the same intent. */
 @media (max-width: 460px) {
 	.recast-btn-seek {
 		display: none;

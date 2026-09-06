@@ -1,0 +1,17 @@
+[package]
+name = "recast-time"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "The single source-to-output time authority: cuts, segments, per-segment speed, and the piecewise-linear time map."
+
+[features]
+default = ["serde", "clock"]
+serde = ["dep:serde"]
+clock = []
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = "1.0.151"

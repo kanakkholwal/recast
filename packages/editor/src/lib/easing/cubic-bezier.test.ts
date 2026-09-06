@@ -16,9 +16,7 @@ describe("clampEasingCoord", () => {
 		expect(clampEasingCoord("x1", 0.42)).toBe(0.42);
 	});
 
-	// Overshoot is the point of a bounce curve, so y is deliberately allowed
-	// outside [0,1] — just not so far that the handle leaves the editor's viewBox
-	// and becomes ungrabbable. Typing used to skip this clamp entirely.
+	// Overshoot is the point of a bounce curve, but not so far that the handle leaves the viewBox and becomes ungrabbable.
 	it("allows y to overshoot but not escape the graph", () => {
 		expect(clampEasingCoord("y1", -0.55)).toBe(-0.55);
 		expect(clampEasingCoord("y2", 1.55)).toBe(1.55);
@@ -31,8 +29,7 @@ describe("clampEasingCoord", () => {
 		expect(clampEasingCoord("y1", Number.POSITIVE_INFINITY)).toBe(1 + EASING_OVERSHOOT);
 	});
 
-	// Tightening the overshoot band would silently flatten Bounce, which is the
-	// one shipped preset that depends on it.
+	// Tightening the overshoot band would silently flatten Bounce, the one shipped preset that depends on it.
 	it("leaves every shipped preset untouched", () => {
 		for (const preset of EASING_PRESETS) {
 			const v = preset.value;

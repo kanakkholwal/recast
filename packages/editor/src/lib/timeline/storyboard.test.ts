@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
 	planStoryboard,
+	type StoryboardMeta,
 	storyboardCellIndex,
 	storyboardCellSec,
 	storyboardCoverCrop,
 	storyboardCrop,
 	storyboardSampleSec,
-	type StoryboardMeta,
 } from "./storyboard";
 
 /** Baseline sheet meta; individual tests override what they care about. */

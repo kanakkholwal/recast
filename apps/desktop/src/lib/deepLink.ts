@@ -12,11 +12,11 @@ import { openProjectFromExternalPath } from "$lib/openProject";
 
 export type { DeepLinkAction } from "$lib/deepLink.logic";
 export {
-  buildDeepLink,
-  buildNavigateLink,
-  buildOpenProjectLink,
-  isAllowedRoute,
-  parseDeepLink,
+	buildDeepLink,
+	buildNavigateLink,
+	buildOpenProjectLink,
+	isAllowedRoute,
+	parseDeepLink,
 } from "$lib/deepLink.logic";
 
 /**
@@ -25,14 +25,14 @@ export {
  * Unrecognised links are logged and dropped.
  */
 export async function handleDeepLink(raw: string): Promise<void> {
-  const action = parseDeepLink(raw);
-  if (!action) {
-    console.warn("[deep-link] ignored", raw);
-    return;
-  }
-  if (action.kind === "open-project") {
-    await openProjectFromExternalPath(action.path);
-  } else {
-    await goto(action.route);
-  }
+	const action = parseDeepLink(raw);
+	if (!action) {
+		console.warn("[deep-link] ignored", raw);
+		return;
+	}
+	if (action.kind === "open-project") {
+		await openProjectFromExternalPath(action.path);
+	} else {
+		await goto(action.route);
+	}
 }

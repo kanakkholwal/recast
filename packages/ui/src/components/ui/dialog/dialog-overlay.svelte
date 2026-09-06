@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { Dialog as DialogPrimitive } from "bits-ui";
-	import { CRAFT_OVERLAY_BACKDROP_ANIMATION, cn } from "@recast/ui/utils";
+import { Dialog as DialogPrimitive } from "bits-ui";
+import { CRAFT_OVERLAY_BACKDROP_ANIMATION, cn } from "@recast/ui/utils";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		...restProps
-	}: DialogPrimitive.OverlayProps = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	...restProps
+}: DialogPrimitive.OverlayProps = $props();
 </script>
 
 <DialogPrimitive.Overlay

@@ -33,8 +33,7 @@ describe("blurTint", () => {
 });
 
 describe("withAlpha", () => {
-	// Bakes glow opacity into the shadow colour so the shape stays full-opacity,
-	// matching the export (which dims only the cast glow, not the shape).
+	// Glow opacity is baked into the shadow colour so the shape stays full-opacity, matching the export.
 	it("applies alpha to a #rrggbb colour", () => {
 		expect(withAlpha("#ff8000", 0.5)).toBe("rgba(255,128,0,0.500)");
 		expect(withAlpha("00ff00", 1)).toBe("rgba(0,255,0,1.000)");

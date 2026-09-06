@@ -13,8 +13,7 @@ import type { PageServerLoad } from "./$types";
 export const load: PageServerLoad = async ({ parent }) => {
 	const { user, activeOrganization, quota } = await parent();
 
-	// Billing is workspace-scoped: the subscription is looked up by workspace,
-	// never by user. A user can own several workspaces on different plans.
+	// Billing is workspace-scoped, never per user: one user can own several workspaces on different plans.
 	const [subscription] = await getDb()
 		.select({
 			plan: subscriptionTable.plan,

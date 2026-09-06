@@ -91,6 +91,18 @@ by **Kartik Labhshetwar**, © 2025, Apache-2.0. Full text and statement of chang
 [`packages/application/NOTICE.md`](packages/application/NOTICE.md) and
 [`packages/application/licenses/`](packages/application/licenses/).
 
+### Silero VAD → `apps/desktop/src-tauri/resources/silero_vad_16k.onnx`
+
+The voice-activity model behind silence detection, from
+[snakers4/silero-vad](https://github.com/snakers4/silero-vad) v5.1.2,
+© Silero Team, **MIT**. Embedded in the desktop binary rather than downloaded.
+
+Statement of changes: the published model selects between an 8 kHz and a 16 kHz
+sub-model with an ONNX `If`, which `tract` (our pure-Rust inference runtime)
+cannot analyse. `scripts/build-silero-vad.py` splices out the 16 kHz branch and
+constant-folds the remainder, and verifies the result bit-identical to upstream
+before writing it. The weights are unchanged.
+
 ---
 
 ## 4. Compiled-in dependencies
@@ -118,6 +130,12 @@ licence (no unlicensed crates in the tree).
 **No GPL or AGPL crates.** The five MPL-2.0 crates (`cssparser`, `cssparser-macros`,
 `dtoa-short`, `selectors`, `option-ext`) are file-level copyleft: fine to link, and we
 have not modified them, so no source-disclosure duty arises.
+
+Added since the count above, not yet folded into it: `tauri-plugin-clipboard-manager`
+brings 17 crates (`arboard`, `wl-clipboard-rs`, the `wayland-*` set, `tree_magic_mini`,
+`clipboard-win`, …). All permissive, all checked individually: MIT, Apache-2.0,
+BSL-1.0 and Zlib, none copyleft. `tree_magic_mini` is the MIT rewrite, not the
+GPL `tree_magic` it is named after.
 
 Worth naming individually:
 

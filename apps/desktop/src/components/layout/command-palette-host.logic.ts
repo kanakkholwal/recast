@@ -13,17 +13,13 @@ export function matchScore(cmd: PaletteCommand, q: string): number {
 	if (t.startsWith(needle)) return 100;
 	if (t.includes(needle)) return 80;
 	if ((cmd.description ?? "").toLowerCase().includes(needle)) return 60;
-	if ((cmd.keywords ?? []).some((k) => k.toLowerCase().includes(needle)))
-		return 40;
+	if ((cmd.keywords ?? []).some((k) => k.toLowerCase().includes(needle))) return 40;
 	if (cmd.category.toLowerCase().includes(needle)) return 20;
 	return 0;
 }
 
 /** Commands with a non-zero score, ranked most-relevant first. */
-export function rankCommands(
-	commands: PaletteCommand[],
-	query: string,
-): PaletteCommand[] {
+export function rankCommands(commands: PaletteCommand[], query: string): PaletteCommand[] {
 	return commands
 		.map((c) => ({ cmd: c, score: matchScore(c, query) }))
 		.filter((x) => x.score > 0)
@@ -43,17 +39,18 @@ export function groupCommands(
 	if (query.trim()) return [["Results", filtered]];
 	const map = new Map<string, PaletteCommand[]>();
 	for (const cmd of filtered) {
-		if (!map.has(cmd.category)) map.set(cmd.category, []);
-		map.get(cmd.category)!.push(cmd);
+		let bucket = map.get(cmd.category);
+		if (!bucket) {
+			bucket = [];
+			map.set(cmd.category, bucket);
+		}
+		bucket.push(cmd);
 	}
 	return Array.from(map.entries());
 }
 
 /** Split `text` into runs, flagging the parts that match `search` for emphasis. */
-export function highlight(
-	text: string,
-	search: string,
-): { text: string; hl: boolean }[] {
+export function highlight(text: string, search: string): { text: string; hl: boolean }[] {
 	if (!search.trim()) return [{ text, hl: false }];
 	const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const regex = new RegExp(`(${escaped})`, "gi");

@@ -1,15 +1,5 @@
-//! Local control channel between the `recast` CLI and a running app.
-//!
-//! The GUI hosts a small server on an OS local socket (named pipe on Windows,
-//! Unix socket on macOS/Linux via `interprocess`). The CLI connects, sends one
-//! JSON request line, and reads one JSON response line. This is how live
-//! commands (`status`, `rec ...`) reach an already-running instance, since the
-//! single-instance argv path is one-way and cannot answer a query.
-//!
-//! Auth: the server writes a random token to a 0600 file in the temp dir; the
-//! CLI reads it and includes it in every request. Same-user gating comes from
-//! the socket/pipe ACL; the token is defense in depth. Phase 2 is synchronous
-//! request/response only; the event stream (`watch`) lands later.
+//! Local control channel: the GUI serves one JSON request per connection on a named pipe or Unix socket.
+//! Needed because the single-instance argv path is one-way and cannot answer a query; a 0600 token file backs the socket ACL.
 
 mod events;
 
@@ -28,9 +18,30 @@ use crate::render::graph::RenderState;
 use crate::render::ops::{apply_op, Op};
 use crate::render::scene_anim::SceneAnimSpec;
 
-/// Namespaced socket name. Maps to `\\.\pipe\<name>` on Windows and an abstract
-/// or temp-dir socket on Unix. One app per user, so a fixed name is fine.
-const SOCKET_NAME: &str = "com.kanakkholwal.recast.cli.sock";
+const SOCKET_BASE: &str = "com.kanakkholwal.recast.cli";
+
+/// Windows pipe names are machine-global, so two signed-in users sharing a
+/// machine collide on a fixed name and the second bind fails with os error 5.
+fn socket_name_for(user: Option<&str>) -> String {
+    match user.map(str::trim).filter(|u| !u.is_empty()) {
+        Some(user) => {
+            let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+            for byte in user.as_bytes() {
+                hash ^= *byte as u64;
+                hash = hash.wrapping_mul(0x1000_0000_01b3);
+            }
+            format!("{SOCKET_BASE}.{hash:016x}.sock")
+        }
+        None => format!("{SOCKET_BASE}.sock"),
+    }
+}
+
+fn socket_name() -> String {
+    let user = std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .ok();
+    socket_name_for(user.as_deref())
+}
 
 /// Path to the auth token file. Both server and client compute it without an
 /// `AppHandle`, so the headless CLI can find it too.
@@ -55,9 +66,7 @@ struct Response {
     error: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Server (app side)
-// ---------------------------------------------------------------------------
+// --- Server (app side) ---
 
 /// Start the control server on a background thread. Non-fatal on failure: the
 /// GUI still works, the CLI just can't reach this instance.
@@ -84,9 +93,7 @@ fn event_log(app: &tauri::AppHandle) -> std::sync::Arc<events::EventLog> {
 }
 
 /// Mirror every watchable Tauri event into the log, once for the process.
-///
-/// Listening here rather than per connection is what makes replay possible: a
-/// watcher that was not connected still finds the events waiting.
+/// Listening here rather than per connection is what makes replay possible: a watcher that was not connected still finds the events waiting.
 fn feed_event_log(app: &tauri::AppHandle) {
     use tauri::Listener;
     let log = event_log(app);
@@ -103,17 +110,25 @@ fn feed_event_log(app: &tauri::AppHandle) {
 fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
     feed_event_log(app);
     let token = write_token()?;
-    let name = SOCKET_NAME
+    let socket = socket_name();
+    let name = socket
+        .clone()
         .to_ns_name::<GenericNamespaced>()
         .map_err(|e| e.to_string())?;
-    let listener = ListenerOptions::new()
-        .name(name)
-        .create_sync()
-        .map_err(|e| format!("bind {SOCKET_NAME}: {e}"))?;
-    log::info!("cli control server listening on {SOCKET_NAME}");
+    let listener = match ListenerOptions::new().name(name).create_sync() {
+        Ok(listener) => listener,
+        Err(e) => {
+            // Another live instance already owns the socket: expected on a second launch, not worth surfacing.
+            if connect().is_ok() {
+                log::debug!("cli control server already running in another instance");
+                return Ok(());
+            }
+            return Err(format!("bind {socket}: {e}"));
+        }
+    };
+    log::info!("cli control server listening on {socket}");
 
-    // One thread per connection so a long-lived `watch` never blocks other
-    // commands (`status`, `rec ...`) from being accepted and answered.
+    // One thread per connection so a long-lived `watch` never blocks `status` or `rec` from being answered.
     for incoming in listener.incoming() {
         match incoming {
             Ok(mut stream) => {
@@ -167,8 +182,7 @@ fn handle_conn(app: &tauri::AppHandle, stream: &mut Stream, token: &str) -> Resu
     if req.token != token {
         return write_response(stream, &err_response("unauthorized".into()));
     }
-    // `watch` takes over the connection and streams frames until the client
-    // hangs up, rather than returning a single response.
+    // `watch` takes over the connection and streams frames until the client hangs up.
     if req.method == "watch" {
         return handle_watch(app, stream, &req.params);
     }
@@ -236,11 +250,8 @@ fn watch_event_names(params: &Value) -> Vec<String> {
 /// Idle gap after which a keepalive goes out, so a dead client is noticed.
 const WATCH_KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// Stream events as `{seq, event, data}` frames until the client hangs up.
-///
-/// `since` replays from a cursor a previous connection reported, so an agent
-/// that reconnects picks up where it dropped. A cursor older than the ring gets
-/// a `watch.lagged` frame first: an incomplete stream is worth saying out loud.
+/// Streams events as `{seq, event, data}` frames until the client hangs up; `since` replays from a previous cursor so a reconnecting agent picks up where it dropped.
+/// A cursor older than the ring gets a `watch.lagged` frame first, because an incomplete stream is worth saying out loud.
 fn handle_watch(app: &tauri::AppHandle, stream: &mut Stream, params: &Value) -> Result<(), String> {
     let names = watch_event_names(params);
     let log = event_log(app);
@@ -327,9 +338,9 @@ fn apply_edit(
 #[serde(rename_all = "camelCase")]
 struct StartParams {
     target_type: String,
-    target_id: u32,
+    target_id: u64,
     #[serde(default)]
-    region: Option<crate::recording::RegionRect>,
+    region: Option<crate::capture::RegionRect>,
     #[serde(default)]
     options: Option<crate::recording::RecordingOptions>,
 }
@@ -345,7 +356,7 @@ fn apply_patch(intent: &mut crate::commands::types::CaptureIntent, params: &Valu
         intent.target_type = v.as_str().map(str::to_string);
     }
     if let Some(n) = map.get("targetId").and_then(Value::as_u64) {
-        intent.target_id = n as u32;
+        intent.target_id = n;
     }
     if map.contains_key("region") {
         intent.region = serde_json::from_value(map["region"].clone()).ok();
@@ -433,16 +444,14 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                     .and_then(Value::as_bool)
                     .unwrap_or(false),
             };
-            // xcap capture can stall; safe here because each connection runs on
-            // its own thread, never the GTK/main thread.
+            // xcap capture can stall; safe here because each connection runs on its own thread, never the GTK thread.
             let shot = crate::commands::screenshot::capture_app_window(app, label, &opts)?;
             serde_json::to_value(shot).map_err(|e| e.to_string())
         }
         "rec.start" => {
             // Read the auto-stop before `params` is consumed below.
             let timeout_ms = params.get("timeoutMs").and_then(Value::as_u64);
-            // Explicit target flags are a one-off; without them we record the
-            // stored capture intent (set via `recast select`/`set`).
+            // Explicit target flags are a one-off; without them we record the stored capture intent.
             let explicit = params.get("targetType").and_then(|v| v.as_str()).is_some();
             let (target_type, target_id, region, options) = if explicit {
                 let p: StartParams = serde_json::from_value(params).map_err(|e| e.to_string())?;
@@ -465,8 +474,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 state,
             ))
             .map_err(|e| e.to_string())?;
-            // Backend-owned auto-stop: survives the CLI process exiting. Only
-            // stops if still recording (a manual stop first is a no-op).
+            // Backend-owned auto-stop survives the CLI process exiting, and no-ops if a manual stop came first.
             if let Some(ms) = timeout_ms {
                 schedule_auto_stop(app.clone(), ms);
             }
@@ -486,17 +494,13 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             crate::commands::resume_recording(state).map_err(|e| e.to_string())?;
             Ok(Value::Null)
         }
-        // On-device OCR of a video into a structured text timeline. No previews:
-        // an agent consumes the structured elements, not base64 images.
+        // On-device OCR of a video into a structured text timeline; an agent reads elements, not base64 images.
         "screen.read" => {
             let path = params
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("screen.read requires a path")?;
-            // block_on is safe here: each connection runs on its own thread. No
-            // previews (an agent reads the structured elements, not base64 images)
-            // and no range filter: the CLI is handed a bare file with no edit
-            // context, so the whole thing is the clip.
+            // block_on is safe: each connection has its own thread. The CLI is handed a bare file, so the whole thing is the clip.
             let timeline = tauri::async_runtime::block_on(crate::ocr::run(
                 app,
                 path,
@@ -506,13 +510,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             ))?;
             serde_json::to_value(timeline).map_err(|e| e.to_string())
         }
-        // Phase A (read-only): editor + export introspection for CLI agents.
-        // Each path loads the project on demand through the same
-        // `load_editor_document`/`list_export_jobs` paths the GUI uses; nothing
-        // here mutates state, so the future `EditorSession` write-lock doesn't
-        // need to be touched for v1.
-        // Where an agent starts. Without this it has no way to learn a project
-        // path, and every other project verb requires one.
+        // Where an agent starts: without it there is no way to learn a project path, and every other verb needs one.
         "project.list" => {
             let entries = tauri::async_runtime::block_on(crate::commands::list_recasts(state))
                 .map_err(stringify)?;
@@ -575,9 +573,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             .map_err(|e| e.to_string())?;
             serde_json::to_value(doc.render_state.annotations).map_err(|e| e.to_string())
         }
-        // Read-only queue inspection. `export.show` filters the same list by
-        // id; the surface stays small because the queue is a single SQLite
-        // table and a second method would just be SELECT * WHERE id=?.
+        // `export.show` filters the same list by id; a second method would just be SELECT * WHERE id=?.
         "export.list" => {
             let jobs = tauri::async_runtime::block_on(crate::commands::list_export_jobs(state))
                 .map_err(|e| e.to_string())?;
@@ -596,9 +592,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .ok_or_else(|| format!("no export job with id '{id}'"))?;
             serde_json::to_value(job).map_err(|e| e.to_string())
         }
-        // Phase B write-lifecycle. `editor-session:changed` is emitted by each
-        // verb that takes/releases the lock so a `recast watch editor` stream
-        // sees the transition in real time.
+        // Every lock verb emits `editor-session:changed`, so a `recast watch editor` stream sees the transition live.
         "editor.lock" => {
             use crate::commands::types::EditorWriterKind;
             let path_str = params
@@ -653,8 +647,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
         "editor.session" => serde_json::to_value(crate::commands::snapshot(state.inner()))
             .map_err(|e| e.to_string()),
         "editor.patch" => {
-            // Replace the project's render state with the supplied JSON.
-            // Validates against the source's metadata before any disk write.
+            // Replaces the render state with the supplied JSON, validated against the source metadata before any disk write.
             let path_str = params
                 .get("path")
                 .and_then(Value::as_str)
@@ -714,15 +707,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             let op = Op::CutAdd { start, end };
             apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
-        // ---- Timeline: cuts, zoom regions, split points, segment speeds, scene animations, annotations.
-        // The targeted verbs that follow each share the same shape:
-        //   • look up a row by either an id (annotations) or a value match (cuts,
-        //     split points, scene animations) or a positional index (zoom regions,
-        //     segment speeds).
-        //   • mutate, validate, persist — all routed through `patch_render_state`
-        //     so the lock/validator/event semantics stay identical across verbs.
-        // The result is whatever the closure returned; dispatch arms rebuild
-        // the wire payload outside the closure for clarity.
+        // --- Timeline verbs: each looks a row up by id, value or index, then mutates through `patch_render_state` so lock, validator and event semantics stay identical.
         "editor.cut.list" => {
             let path_str = params
                 .get("path")
@@ -752,9 +737,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .and_then(Value::as_str)
                 .ok_or("editor.cut.remove requires a writerId")?
                 .to_string();
-            // Identify by index. Falls back to `(start, end)` match when an
-            // `--index` wasn't provided; the validator guarantees no
-            // overlap, so `start==start && end==end` is unambiguous.
+            // Falls back to a `(start, end)` match without `--index`; the validator forbids overlap, so it is unambiguous.
             let target_index: Option<usize> = match params.get("index").cloned() {
                 Some(serde_json::Value::Number(n)) => Some(
                     n.as_u64()
@@ -1163,10 +1146,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             };
             apply_edit(app, state.inner(), path_str, &writer_id, op)
         }
-        // Universal mutator: any scalar/struct field via dotted JSON pointer.
-        // Used as the escape hatch for every field that doesn't get its own
-        // targeted verb. `--value` accepts a JSON value (string for strings,
-        // number, true/false, array, object).
+        // Escape hatch for any field without its own targeted verb; `--value` accepts any JSON value.
         "editor.set" => {
             let path_str = params
                 .get("path")
@@ -1307,7 +1287,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             let caption_sidecar = match params.get("captionSidecar") {
                 Some(Value::String(fmt)) if fmt == "vtt" || fmt == "srt" => {
                     Some(crate::commands::types::CaptionSidecar {
-                        format: fmt.to_string(),
+                        format: fmt.clone(),
                         transcript: doc_transcript(state.inner(), path_str, fmt)?,
                     })
                 }
@@ -1343,8 +1323,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             } else {
                 None
             };
-            // Validate `--speed` against the same enum the encode uses
-            // (`fast` | `balanced` | `quality`), if supplied.
+            // Validate `--speed` against the same enum the encode uses, when supplied.
             if let Some(ref s) = speed {
                 if !matches!(s.as_str(), "fast" | "balanced" | "quality") {
                     return Err(format!(
@@ -1385,11 +1364,15 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 quality,
                 speed,
                 render_state,
+                // The CLI has no editor session, so the export derives the time map from the render state.
+                time_map: None,
                 gif_settings,
                 fps,
                 burn_captions,
                 caption_sidecar,
                 browser_video_path: None,
+                // The CLI has no experimental flags; RECAST_ENGINE_EXPORT still forces it.
+                engine_export: false,
             };
             tauri::async_runtime::block_on(crate::commands::enqueue_export(
                 app.clone(),
@@ -1432,13 +1415,8 @@ fn now_unix_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Resolve the project's recorded transcript for a `CaptionSidecar`.
-///
-/// This is intentionally a no-op stub for now — the GUI export path is
-/// the canonical reader, and the CLI sidecar surfaces mirror only when
-/// a transcript exists. Callers should pass `--burn-captions` or
-/// `--caption-sidecar` only after verifying via `recast project show`
-/// that the project has a `transcript` populated in its render state.
+/// Resolves the project's recorded transcript for a `CaptionSidecar`; intentionally a stub, since the GUI export path is the canonical reader.
+/// Pass `--burn-captions` or `--caption-sidecar` only after `recast project show` confirms the render state has a transcript.
 fn doc_transcript(
     _state: &crate::commands::types::AppState,
     _path: &str,
@@ -1669,9 +1647,7 @@ fn write_token() -> Result<String, String> {
     Ok(token)
 }
 
-// ---------------------------------------------------------------------------
-// Client (CLI side)
-// ---------------------------------------------------------------------------
+// --- Client (CLI side) ---
 
 /// Send one request to the running app and return its result value. Auto-launches
 /// the app (unless `auto_launch` is false) and waits up to `timeout_ms` for the
@@ -1770,7 +1746,7 @@ pub fn watch(
 }
 
 fn connect() -> Result<Stream, String> {
-    let name = SOCKET_NAME
+    let name = socket_name()
         .to_ns_name::<GenericNamespaced>()
         .map_err(|e| e.to_string())?;
     Stream::connect(name).map_err(|e| e.to_string())
@@ -1963,5 +1939,37 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod socket_name_tests {
+    use super::*;
+
+    #[test]
+    fn different_users_get_different_sockets() {
+        assert_ne!(
+            socket_name_for(Some("kanak")),
+            socket_name_for(Some("alice"))
+        );
+    }
+
+    #[test]
+    fn the_same_user_is_stable_across_calls() {
+        assert_eq!(
+            socket_name_for(Some("kanak")),
+            socket_name_for(Some("kanak"))
+        );
+    }
+
+    #[test]
+    fn a_missing_or_blank_user_falls_back_to_the_shared_name() {
+        assert_eq!(socket_name_for(None), format!("{SOCKET_BASE}.sock"));
+        assert_eq!(socket_name_for(Some("   ")), format!("{SOCKET_BASE}.sock"));
+    }
+
+    #[test]
+    fn every_name_stays_within_the_windows_pipe_limit() {
+        assert!(socket_name_for(Some("a-very-long-windows-account-name")).len() < 200);
     }
 }

@@ -1,4 +1,10 @@
 <script lang="ts">
+import { AiAtom } from "@recast/icons";
+import { ColorField } from "@recast/ui/color-field";
+import { ColorPicker } from "@recast/ui/color-picker";
+import * as Popover from "@recast/ui/popover";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { cn } from "@recast/ui/utils";
 import {
 	hasFill as kindHasFill,
 	hasStroke as kindHasStroke,
@@ -11,15 +17,11 @@ import type {
 	AnnotationStrokeStyle,
 	EditorStore,
 } from "../../../stores/editor-store.svelte";
-import { defaultGlow } from "./annotation-appearance.logic";
-import { AiAtom } from "@recast/icons";
-import { ColorPicker } from "@recast/ui/color-picker";
-import * as Popover from "@recast/ui/popover";
-import { Segmented } from "@recast/ui/segmented";
-import { SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
-import { cn } from "@recast/ui/utils";
 import PanelSection from "../PanelSection.svelte";
+import PropRow from "../PropRow.svelte";
+import PropSelect from "../PropSelect.svelte";
+import SliderRow from "../SliderRow.svelte";
+import { defaultGlow } from "./annotation-appearance.logic";
 
 interface Props {
 	store: EditorStore;
@@ -85,8 +87,8 @@ const hasFill = $derived(kindHasFill(annotation.kind.kind));
   <div class="flex flex-col gap-3">
     {#if hasStroke}
       <div class="space-y-2">
-        <SliderControl
-          label="Stroke width"
+        <SliderRow
+          label="Width"
           value={annotation.stroke.width * 1000}
           min={0}
           max={20}
@@ -97,70 +99,40 @@ const hasFill = $derived(kindHasFill(annotation.kind.kind));
           onchange={(v) => setStroke({ width: v / 1000 })}
         />
 
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-[10px] text-muted-foreground">Style</span>
-          <Segmented
-            size="xs"
-            fill={false}
-            aria-label="Stroke style"
+        <PropRow label="Style">
+          <PropSelect
+            class="flex-1"
+            label="Stroke style"
             value={annotation.stroke.style ?? "solid"}
             options={STROKE_STYLES}
-            onValueChange={(v) => {
+            onChange={(v) => {
               store.pushUndoState();
               setStroke({ style: v as AnnotationStrokeStyle });
             }}
           />
-        </div>
+        </PropRow>
 
-        <div class="flex flex-wrap items-center gap-1">
-          {#each STROKE_SWATCHES as swatch (swatch)}
-            {@const isActive = annotation.stroke.color === swatch}
-            <button
-              type="button"
-              aria-label={`Stroke ${swatch}`}
-              aria-pressed={isActive}
-              onclick={() => {
-                store.pushUndoState();
-                setStrokeColor(swatch);
-              }}
-              class={cn(
-                "size-5 rounded-full border-2 transition",
-                isActive ? "border-foreground shadow-sm" : "border-border/40 hover:border-border",
-              )}
-              style:background={swatch}
-            ></button>
-          {/each}
-          <Popover.Root>
-            <Popover.Trigger>
-              {#snippet child({ props })}
-                <button
-                  type="button"
-                  {...props}
-                  aria-label="Custom stroke color"
-                  class="grid size-5 place-items-center rounded-full border-2 border-dashed border-border/60 text-[11px] leading-none text-muted-foreground transition hover:border-border hover:text-foreground"
-                >
-                  +
-                </button>
-              {/snippet}
-            </Popover.Trigger>
-            <Popover.Content align="start" class="w-auto p-0">
-              <ColorPicker
-                value={annotation.stroke.color}
-                {recents}
-                oncommit={(c: string) => {
-                  store.pushUndoState();
-                  setStrokeColor(c);
-                }}
-              />
-            </Popover.Content>
-          </Popover.Root>
-        </div>
+        <PropRow label="Color">
+          <ColorField
+            dense
+            hideLabel
+            class="flex-1"
+            label="Stroke color"
+            value={annotation.stroke.color}
+            swatches={STROKE_SWATCHES}
+            {recents}
+            oncommit={(c: string) => {
+              store.pushUndoState();
+              setStrokeColor(c);
+            }}
+          />
+        </PropRow>
       </div>
     {/if}
 
     {#if hasFill}
       <div class="space-y-1.5">
-        <span class="text-[10px] text-muted-foreground">Fill</span>
+        <span class="text-[11px] text-muted-foreground">Fill</span>
         <div class="flex flex-wrap items-center gap-1">
           {#each FILL_SWATCHES as swatch (swatch)}
             {@const isActive = annotation.fill === swatch}
@@ -215,7 +187,7 @@ const hasFill = $derived(kindHasFill(annotation.kind.kind));
       </div>
     {/if}
 
-    <SliderControl
+    <SliderRow
       label="Opacity"
       value={(annotation.opacity ?? 1) * 100}
       min={0}
@@ -227,12 +199,10 @@ const hasFill = $derived(kindHasFill(annotation.kind.kind));
       onchange={(v) => setOpacity(v / 100)}
     />
 
-    <div
-      class="space-y-2 rounded-xl border border-border/60 bg-card/40 p-2 shadow-(--shadow-craft-inset)"
-    >
+    <div class="space-y-2">
       <div class="flex items-center justify-between gap-2">
         <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground">
-          <AiAtom size={11} class="text-primary" />
+          <AiAtom size={11} class="text-muted-foreground" />
           Glow
         </span>
         <SegmentedToggle
@@ -247,34 +217,22 @@ const hasFill = $derived(kindHasFill(annotation.kind.kind));
       </div>
       {#if annotation.glow}
         {@const g = annotation.glow}
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-[10px] text-muted-foreground">Color</span>
-          <Popover.Root>
-            <Popover.Trigger>
-              {#snippet child({ props })}
-                <button
-                  type="button"
-                  {...props}
-                  aria-label="Glow color"
-                  class="size-5 rounded-full border-2 border-border/40 shadow-sm transition hover:border-border"
-                  style:background={g.color}
-                ></button>
-              {/snippet}
-            </Popover.Trigger>
-            <Popover.Content align="start" class="w-auto p-0">
-              <ColorPicker
-                value={g.color}
-                {recents}
-                oncommit={(c: string) => {
-                  store.pushUndoState();
-                  setGlow({ color: c });
-                  rememberColor(c);
-                }}
-              />
-            </Popover.Content>
-          </Popover.Root>
-        </div>
-        <SliderControl
+        <PropRow label="Color">
+          <ColorField
+            dense
+            hideLabel
+            class="flex-1"
+            label="Glow color"
+            value={g.color}
+            {recents}
+            oncommit={(c: string) => {
+              store.pushUndoState();
+              setGlow({ color: c });
+              rememberColor(c);
+            }}
+          />
+        </PropRow>
+        <SliderRow
           label="Blur"
           value={g.blur * 1000}
           min={0}
@@ -285,7 +243,7 @@ const hasFill = $derived(kindHasFill(annotation.kind.kind));
           onstart={() => store.pushUndoState()}
           onchange={(v) => setGlow({ blur: v / 1000 })}
         />
-        <SliderControl
+        <SliderRow
           label="Intensity"
           value={g.opacity * 100}
           min={0}

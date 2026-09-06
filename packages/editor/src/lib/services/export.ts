@@ -6,24 +6,32 @@
  */
 
 import { getEditorServices } from "../editor/services";
+import { type CaptionExportPayload, exportPayload, type RunExportOptions } from "./export-payload";
 
-// The native render queue. Absent on hosts where the browser compositor is the
-// only engine, which surface the failure rather than silently exporting nothing.
+export {
+	exportTimeMap,
+	type CaptionExportPayload,
+	type ExportTimeSpan,
+	type RunExportOptions,
+} from "./export-payload";
+
+// The native render queue; absent where the browser compositor is the only engine, which surfaces the failure.
 function enqueueViaSink(job: unknown): Promise<string[]> {
 	const enqueue = getEditorServices().exportSink?.enqueue;
 	if (!enqueue) throw new Error("this host has no native export queue");
 	return enqueue(job);
 }
-import { rasterizeCursorSprites } from "../export/rasterize-cursor";
-import { expandTextAnnotations } from "../export/rasterize-text";
-import { type ExportGifSettings, type ExportSpeed, type Transcript } from "../wire-types";
+
 import {
 	type EditorRenderState,
 	type EditorStore,
-	type VideoMetadata,
 	framePaddingPixels,
+	type VideoMetadata,
 } from "../../stores/editor-store.svelte";
 import { toOutputTimeTranscript } from "../captions/output-time";
+import { rasterizeCursorSprites } from "../export/rasterize-cursor";
+import { expandTextAnnotations } from "../export/rasterize-text";
+import type { Transcript } from "../wire-types";
 
 /** Optional progress hooks for the hybrid-raster "Preparing…" phase. Each fires
  *  as its lane starts/finishes so the UI can show sub-stage progress. Omit for
@@ -62,11 +70,7 @@ export async function buildExportRenderState(
 	const renderState = store.toRenderState();
 	const meta = store.metadata;
 
-	// Browser engine: the mux job reads only audio/cuts/speed, and buildExportJob
-	// rasterizes the visuals itself — so skip the text/cursor raster passes.
-	// Annotations are dropped entirely: the mux never draws them, and Rust only
-	// knows pre-rasterized (image) annotations, so raw `text` kinds would fail to
-	// deserialize. Cuts still gate the audio warp.
+	// The browser engine rasterizes visuals itself, so skip those passes; annotations are dropped because Rust only knows image kinds.
 	if (skipVisualRaster) {
 		return {
 			renderState: {
@@ -88,8 +92,7 @@ export async function buildExportRenderState(
 	hooks?.onText?.(hasText ? "running" : "done");
 	hooks?.onCursor?.(hasStyledCursor ? "running" : "done");
 
-	// Run both hybrid-raster passes in parallel: independent, and the cursor SVG
-	// decode is non-trivial on cold boot (Image() onload is async even for blobs).
+	// Independent, and the cursor SVG decode is non-trivial cold, since Image() onload is async even for blobs.
 	const [expandedAnnotations, cursorSprites] = await Promise.all([
 		expandTextAnnotations(renderState.annotations, canvasW, canvasH).then((r) => {
 			hooks?.onText?.("done");
@@ -107,8 +110,7 @@ export async function buildExportRenderState(
 		...renderState,
 		annotations: store.annotationsGloballyHidden ? [] : expandedAnnotations,
 		zoomRegions: store.focusEnabled ? renderState.zoomRegions : [],
-		// `effectiveCuts` = the flag-gated, lane-enabled subset, so the export
-		// matches the previewed edit. Inactive cuts stay on the store, not here.
+		// `effectiveCuts` is the flag-gated, lane-enabled subset, so the export matches the previewed edit.
 		cuts: store.effectiveCuts,
 		cursorSpriteRest: cursorSprites?.rest,
 		cursorSpritePress: cursorSprites?.press,
@@ -183,13 +185,6 @@ export function hasBlurUnderZoom(store: EditorStore): boolean {
 
 /** What to emit for generated captions on export. Built from the store via
  *  {@link buildCaptionExport}; `null`/empty when there's no transcript. */
-export interface CaptionExportPayload {
-	/** Burn captions into the video pixels. */
-	burnCaptions: boolean;
-	/** Subtitle sidecar to write next to the export (output-time), or null. */
-	sidecar: { format: "vtt" | "srt"; transcript: Transcript } | null;
-}
-
 /** Re-exported so existing callers (export dialog, Cloud track, Captions
  *  panel) keep one import site; the math lives with the other caption logic. */
 export { toOutputTimeTranscript };
@@ -200,8 +195,7 @@ export { toOutputTimeTranscript };
  * unconditionally ("only export captions when there are captions").
  */
 export function buildCaptionExport(store: EditorStore): CaptionExportPayload {
-	// captionTranscript is rescaled onto the video/timeMap axis so the sidecar cue
-	// times line up with the exported frames (audio-vs-video CFR drift fix).
+	// Rescaled onto the video and timeMap axis so sidecar cue times line up with the exported frames.
 	const transcript = store.captionTranscript;
 	const opts = store.captionExport;
 	if (!transcript || transcript.segments.length === 0) {
@@ -227,25 +221,6 @@ export function buildCloudCaptionTranscript(store: EditorStore): Transcript | nu
 	return toOutputTimeTranscript(store.timeMap, t);
 }
 
-export interface RunExportOptions {
-	/** Source media path (the recording file or project path). */
-	inputPath: string;
-	format: string;
-	quality: string;
-	/** Built via {@link buildExportRenderState}. */
-	renderState: EditorRenderState;
-	exportId: string;
-	gifSettings?: ExportGifSettings;
-	speed?: ExportSpeed;
-	/** Output frame rate for MP4/WebM; `null`/omitted keeps source rate. */
-	fps?: number | null;
-	/** Caption emission (burn-in + sidecar). Built via {@link buildCaptionExport}. */
-	captions?: CaptionExportPayload;
-	/** Browser-rendered composited video temp path (Phase 4). When set, the job
-	 *  mux-copies it instead of running the Rust filter_complex compositor. */
-	browserVideoPath?: string;
-}
-
 /**
  * Queue an export on the backend. The Rust export queue owns the run: it persists
  * the payload, executes it on the single serial worker (so two exports never
@@ -257,21 +232,8 @@ export interface RunExportOptions {
  * it off the same way. Progress + completion are observed via the queue (see
  * `listExportJobs` / `export-state`), not a returned promise of the output path.
  */
+// biome-ignore lint/suspicious/useAwait: `async` turns enqueueViaSink's synchronous throw into a rejection callers already .catch().
 export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
-	// Returns any auto-repairs the backend applied to the render state (e.g. a
-	// too-long trim_end clamped to the real video length) so a UI caller can
-	// surface a "verify this" notice. Empty = nothing needed repair.
-	return enqueueViaSink({
-		inputPath: opts.inputPath,
-		format: opts.format,
-		quality: opts.quality,
-		renderState: opts.renderState,
-		exportId: opts.exportId,
-		gifSettings: opts.gifSettings,
-		speed: opts.speed,
-		fps: opts.fps,
-		burnCaptions: opts.captions?.burnCaptions ?? false,
-		captionSidecar: opts.captions?.sidecar ?? null,
-		browserVideoPath: opts.browserVideoPath ?? null,
-	});
+	// Returns any auto-repairs the backend applied, so a caller can surface a verify-this notice; empty means none.
+	return enqueueViaSink(exportPayload(opts));
 }

@@ -1,10 +1,10 @@
 <script lang="ts">
-import { authClient } from "$lib/auth/client";
-import { Container, HeroSteps, Section, SelectionWord } from "$lib/components";
-import { prefersReducedMotion, TextLoop } from "$lib/motion-core";
 import { ArrowRight, ArrowUpRight, CloudDownloadIcon } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { fly } from "svelte/transition";
+import { authClient } from "$lib/auth/client";
+import { Container, HeroSteps, Section, SelectionWord } from "$lib/components";
+import { prefersReducedMotion, TextLoop } from "$lib/motion-core";
 import { heroStagger, platforms, rise, steps, words } from "./Hero.logic";
 
 const session = authClient.useSession();

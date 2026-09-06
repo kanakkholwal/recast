@@ -18,8 +18,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
   let layerEl = $state<HTMLElement | null>(null);
   let editingId = $state<string | null>(null);
 
-  // Pointer drag in stage-percent space, so overlays track the cursor at any
-  // preview size and keep their position on export.
+  // Drag in stage-percent space, so overlays track the cursor at any preview size and keep their position on export.
   function startDrag(e: PointerEvent, ov: Overlay) {
     if (editingId === ov.id || !layerEl) return;
     e.stopPropagation();
@@ -105,8 +104,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
     }
   }
 
-  // Seed the contenteditable once and drop the caret at the end, without a
-  // reactive write-back (which would fight the cursor).
+  // Seed the contenteditable once and drop the caret at the end, with no reactive write-back to fight the cursor.
   function initEditable(node: HTMLElement, text: string) {
     node.textContent = text;
     node.focus();

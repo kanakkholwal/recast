@@ -1,7 +1,6 @@
 <script lang="ts">
 import { Grid3x3, List } from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import { ButtonGroup } from "@recast/ui/button-group";
+import { Segmented } from "@recast/ui/segmented";
 
 interface Props {
 	value: "grid" | "list";
@@ -10,25 +9,18 @@ interface Props {
 let { value = $bindable("grid") }: Props = $props();
 </script>
 
-<ButtonGroup>
-  <Button
-    variant={value === "grid" ? "secondary" : "ghost"}
-    size="icon-sm"
-    onclick={() => (value = "grid")}
-    aria-label="Grid view"
-    aria-pressed={value === "grid"}
-    title="Grid view"
-  >
-    <Grid3x3 size={12} />
-  </Button>
-  <Button
-    variant={value === "list" ? "secondary" : "ghost"}
-    size="icon-sm"
-    onclick={() => (value = "list")}
-    aria-label="List view"
-    aria-pressed={value === "list"}
-    title="List view"
-  >
-    <List size={12} />
-  </Button>
-</ButtonGroup>
+{#snippet gridIcon()}<Grid3x3 size={13} />{/snippet}
+{#snippet listIcon()}<List size={13} />{/snippet}
+
+<Segmented
+	size="md"
+	fill={false}
+	segmentClass="w-8 px-0"
+	options={[
+		{ value: "grid", icon: gridIcon, title: "Grid view" },
+		{ value: "list", icon: listIcon, title: "List view" },
+	]}
+	{value}
+	onValueChange={(v) => (value = v)}
+	aria-label="View"
+/>

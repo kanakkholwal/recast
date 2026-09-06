@@ -1,9 +1,11 @@
 <script lang="ts">
+import { onDestroy, onMount } from "svelte";
 import { type EditorStore, type ZoomRegion } from "../../stores/editor-store.svelte";
 import {
 	canvasToUV as canvasToUVPure,
 	cursorForHandle,
 	HANDLE_RADIUS_PX,
+	type HandleName,
 	handlePositions,
 	hitTestHandle,
 	MAX_SCALE,
@@ -12,9 +14,7 @@ import {
 	resizeFocusRegion,
 	uvToCanvas as uvToCanvasPure,
 	videoRectPx as videoRectPxPure,
-	type HandleName,
 } from "./focus-overlay.logic";
-import { onDestroy, onMount } from "svelte";
 
 interface Props {
 	store: EditorStore;
@@ -54,8 +54,7 @@ function getDpr(): number {
 	return window.devicePixelRatio || 1;
 }
 
-// Thin wrappers over the pure geometry: bind the canvas dims + store to the
-// shared projections so call sites stay two-arg.
+// Thin wrappers binding canvas dims and the store to the shared projections, so call sites stay two-arg.
 function videoRectPx(): { x: number; y: number; w: number; h: number } {
 	if (!canvasEl) return { x: 0, y: 0, w: 0, h: 0 };
 	return videoRectPxPure(canvasEl.width, canvasEl.height, store.metadata, store.padding);
@@ -212,7 +211,8 @@ function handlePointerMove(e: PointerEvent) {
 		return;
 	}
 
-	const r = store.zoomRegions.find((z) => z.id === drag!.id);
+	const dragId = drag.id;
+	const r = store.zoomRegions.find((z) => z.id === dragId);
 	if (!r) return;
 	const pt = pointerToCanvasPx(e);
 
@@ -245,7 +245,9 @@ function handlePointerUp(e: PointerEvent) {
 	if (drag) {
 		try {
 			(e.currentTarget as Element).releasePointerCapture(e.pointerId);
-		} catch {}
+		} catch {
+			// The pointer was already released, which is not a failure of this handler.
+		}
 		drag = null;
 	}
 }
@@ -265,16 +267,14 @@ onDestroy(() => {
 	resizeObserver?.disconnect();
 });
 
-// The RAF loop already reads the store each frame; touching these keeps the
-// Svelte 5 effect graph wired.
+// The rAF loop already reads the store each frame; touching these keeps the effect graph wired.
 $effect(() => {
 	void store.selectedZoomRegionId;
 	void store.zoomRegions;
 	void store.padding;
 });
 
-// Off the Focus tab the overlay hides and stops swallowing pointer events so
-// clicks reach the AnnotationOverlay / preview underneath.
+// Off the Focus tab the overlay hides and stops swallowing pointer events, so clicks reach the layers beneath.
 const isActive = $derived(store.activePanel === "focus" && store.selectedZoomRegionId !== null);
 </script>
 

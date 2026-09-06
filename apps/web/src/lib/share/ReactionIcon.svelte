@@ -7,10 +7,10 @@
 	button that wraps this.
 -->
 <script lang="ts">
-	import type { ReactionId } from "$lib/share/reactions";
-	import { cn } from "@recast/ui/utils";
+import { cn } from "@recast/ui/utils";
+import type { ReactionId } from "$lib/share/reactions";
 
-	let { id, class: className = "" }: { id: ReactionId; class?: string } = $props();
+let { id, class: className = "" }: { id: ReactionId; class?: string } = $props();
 </script>
 
 <svg viewBox="0 0 24 24" class={cn("shrink-0", className)} aria-hidden="true">

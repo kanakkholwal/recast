@@ -30,8 +30,7 @@ export function appOrigin(): string {
  * path stays closed to them.
  */
 export async function createSetPasswordLink(userId: string): Promise<string> {
-	// 128 bits of opaque entropy; the token is the only thing guarding the
-	// account until it's used.
+	// 128 bits of opaque entropy: the token is the only thing guarding the account until it is used.
 	const token = `${crypto.randomUUID()}${crypto.randomUUID()}`.replace(/-/g, "");
 	await getDb()
 		.insert(verification)

@@ -3,8 +3,8 @@
  * sentiment reactions. Each reaction has a STABLE `id` that is what we persist
  * (`share_reaction.emoji` holds the id, not a raw glyph) so the rendered icon
  * can be swapped later without a data migration. `emoji` is kept only as a
- * text/analytics fallback; the viewer-facing icon is a Lucide component mapped
- * by `id` on the client (design system is Lucide-only).
+ * text/analytics fallback; the viewer-facing icon is a @recast/icons component mapped
+ * by `id` on the client (design system is @recast/icons-only).
  *
  * Pure + component-free so both server (rate-limit allow-list, owner analytics)
  * and client can import it.

@@ -1,16 +1,5 @@
-//! IPC commands for the file-association path.
-//!
-//! Three commands cooperate to deliver a `.recast` file the OS handed us
-//! into a fresh editor window:
-//!
-//! * `take_pending_open_file` — drains the path stashed in `AppState` from
-//!   the cold-start argv (see `lib.rs::run`). Called by the main window on
-//!   mount; subsequent calls return `None`.
-//! * `peek_recast_project` — opens the zip and reads ONLY the
-//!   `metadata.json` entry (~5ms). Lets the frontend validate before
-//!   committing to navigate — bad file ⇒ toast, no broken editor window.
-//! * `is_recording_active` — guard so we never spawn an editor window
-//!   (which kicks off FFmpeg thumbnail probes) while capture is live.
+//! IPC commands delivering an OS-opened `.recast` into a fresh editor window.
+//! `peek_recast_project` reads only `metadata.json` so the frontend can reject a bad file before navigating.
 
 use std::fs::File;
 use std::path::PathBuf;
@@ -47,8 +36,7 @@ pub fn peek_recast_project(path: String) -> AppResult<ProjectMetadata> {
 }
 
 fn peek_recast_project_inner(path: &std::path::Path) -> anyhow::Result<ProjectMetadata> {
-    // File::open propagates "not found" vs "permission denied" distinctly,
-    // which the frontend's toast surfaces verbatim.
+    // File::open distinguishes not-found from permission-denied, which the frontend's toast surfaces verbatim.
     let file = File::open(path)?;
     let mut archive = ZipArchive::new(file)?;
     let mut entry = archive.by_name("metadata.json")?;

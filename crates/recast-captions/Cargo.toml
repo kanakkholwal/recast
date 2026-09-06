@@ -1,0 +1,12 @@
+[package]
+name = "recast-captions"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "The caption model and the placement maths shared by the ASS burn-in and the compositor."
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0.151"

@@ -82,9 +82,7 @@ export const ACCENT_BACKDROP: Record<ErrorAccent, string> = {
 	destructive: "color-mix(in srgb, var(--color-destructive) 8%, transparent)",
 };
 
-// Suggestion tiles — what to try next. Curated rather than site-map-y on
-// purpose: 3 anchored next steps reads as helpful, a 12-link tree reads like a
-// dead end.
+// Curated, not site-map-y: three anchored next steps reads as helpful where a twelve-link tree reads as a dead end.
 export const suggestions = [
 	{ icon: Home, label: "Home", href: "/", desc: "The product overview." },
 	{ icon: MonitorPlay, label: "Download", href: "/download", desc: "Get the app for your OS." },

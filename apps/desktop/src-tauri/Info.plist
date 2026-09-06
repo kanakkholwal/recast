@@ -12,10 +12,10 @@
       calls throw before they can even prompt. (This was the "Camera
       unavailable: undefined is not an object" bug on Apple Silicon.)
 
-    - Without NSMicrophoneUsageDescription, the FFmpeg AVFoundation
-      microphone subprocess (audio/platform/ffmpeg_unix.rs) is denied by
-      TCC and captures no samples, since it inherits the app's TCC
-      identity and that identity has declared no mic intent.
+    - Without NSMicrophoneUsageDescription, the AVCaptureSession that
+      records the microphone (capturekit's AVFoundation audio backend) is
+      denied by TCC: the device does not enumerate and does not open.
+      System audio is separate, and rides the Screen Recording grant.
 
   The text is shown verbatim in the macOS permission prompt — keep it
   plain-language and specific to what the user is about to do.

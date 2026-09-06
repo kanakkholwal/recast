@@ -1,14 +1,5 @@
-//! Best-effort on-disk cache for expensive, file-derived artifacts —
-//! thumbnails, ffprobe metadata, audio waveforms. Each of these is recomputed
-//! from scratch every time a recording is opened in the editor (a full FFmpeg
-//! decode for thumbnails/waveform, an ffprobe spawn for metadata), which is the
-//! bulk of the "slow load" the user feels on reopen.
-//!
-//! An entry is keyed by the *identity* of its source file(s) — absolute path +
-//! mtime + size — so it's reused across opens but invalidated the instant a
-//! source changes (re-record, trim-in-place, etc.). The cache is purely an
-//! optimization: any read/write failure silently falls back to recomputation,
-//! and the store lives under the OS temp dir, so a temp sweep just rebuilds it.
+//! Best-effort disk cache for thumbnails, ffprobe metadata and waveforms, keyed on source path plus mtime and size.
+//! Purely an optimization: any read or write failure falls back to recomputation, and it lives under the OS temp dir.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

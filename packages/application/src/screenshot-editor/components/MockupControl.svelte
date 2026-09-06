@@ -1,18 +1,18 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface MockupControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface MockupControlProps {
+	editor: ScreenshotEditorState;
+}
 
-  const KINDS = [
-    { value: "none", label: "None" },
-    { value: "window", label: "Window" },
-    { value: "safari", label: "Safari" },
-    { value: "chrome", label: "Chrome" },
-    { value: "phone", label: "Phone" },
-    { value: "tablet", label: "Tablet" },
-  ] as const;
+const KINDS = [
+	{ value: "none", label: "None" },
+	{ value: "window", label: "Window" },
+	{ value: "safari", label: "Safari" },
+	{ value: "chrome", label: "Chrome" },
+	{ value: "phone", label: "Phone" },
+	{ value: "tablet", label: "Tablet" },
+] as const;
 </script>
 
 <script lang="ts">

@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod audio;
+pub mod audio_decode;
 mod cache;
+mod camera;
+pub mod caption_parity;
 mod capture;
 pub mod cli;
 mod commands;
@@ -10,26 +13,27 @@ mod control;
 mod cursor;
 mod db;
 mod encoder;
+pub mod export_audio;
+pub mod export_engine;
+pub mod export_parity;
 pub mod ffmpeg;
 mod fonts;
 #[cfg(windows)]
 mod jumplist;
 mod mcp;
-// On-device OCR for screen understanding (agent automation). The plumbing always
-// compiles; only the ocrs engine seam is behind the `ocr` feature, so a
-// `--no-default-features` build still exposes the command and reports that the
-// engine is absent (same graceful degradation as the ggml captions engine).
+// Only the ocrs engine seam is behind the `ocr` feature; a no-default-features build still reports the engine absent.
 mod ocr;
 mod path_install;
 mod permissions;
 mod power;
 mod project;
 mod recording;
-mod render;
+pub mod render;
 mod silence;
 mod telemetry;
 mod transcription;
 mod tray;
+#[cfg(windows)]
 mod window_aspect;
 
 use commands::system::load_config;
@@ -38,20 +42,8 @@ use parking_lot::Mutex;
 use recording::RecordingManager;
 use tauri::{Emitter, Manager};
 
-/// Pull a `.recast` file path out of process argv if the OS launched us
-/// with one via the file association (Windows registry shell-open, macOS
-/// LaunchServices, Linux xdg-open). Returns `None` for normal launches.
-///
-/// Defensive rules:
-/// * Skip `argv[0]` (executable path).
-/// * Skip any arg starting with `-` — covers dev-mode flags (`--port`,
-///   etc.) and the macOS `-psn_NNNN_NNNN` process serial number that
-///   LaunchServices sometimes prepends.
-/// * Match the extension case-insensitively — Windows is case-insensitive
-///   and APFS *can* be case-sensitive, so users may have `.Recast` files.
-/// * Verify the path exists. If a user double-clicks then deletes the file
-///   before we boot, we want to report "no longer exists" instead of
-///   navigating to an editor window that immediately errors.
+/// A `.recast` path from argv when the OS launched us via the file association, else `None`.
+/// Skips `argv[0]` and any `-` flag (dev flags, macOS `-psn_`), matches the extension case-insensitively, and verifies the file still exists.
 fn parse_open_arg(argv: &[String]) -> Option<PathBuf> {
     argv.iter()
         .skip(1)
@@ -65,21 +57,8 @@ fn parse_open_arg(argv: &[String]) -> Option<PathBuf> {
         })
 }
 
-/// Linux (WebKitGTK) only: enable `getUserMedia`/`enumerateDevices` for a
-/// webview and grant the media `permission-request` it raises.
-///
-/// macOS (WKWebView) and Windows (WebView2) expose `navigator.mediaDevices`
-/// as soon as the OS-level privacy gates are satisfied (see `Info.plist` for
-/// the macOS usage strings). WebKitGTK is the odd one out: it ships with
-/// `enable-media-stream` OFF, so `navigator.mediaDevices` is `undefined`
-/// until we flip it — and even then every `getUserMedia` call raises a
-/// `permission-request` that WebKit DENIES by default unless answered.
-///
-/// Applied per-webview and deduped by label (a `OnceLock` set) so it also
-/// covers the `camera-preview` / `device-picker` windows, which the frontend
-/// spawns at runtime via the JS `WebviewWindow` API — they never pass through
-/// `setup()`. Wired from `on_page_load`, which fires for every webview
-/// regardless of how it was created.
+/// Linux only: WebKitGTK ships `enable-media-stream` off, so `navigator.mediaDevices` is undefined until flipped and every `getUserMedia` raises a `permission-request` it denies by default.
+/// Wired from `on_page_load` and deduped by label, so runtime-spawned windows that never pass through `setup()` are covered too.
 #[cfg(target_os = "linux")]
 fn enable_webview_media(webview: &tauri::Webview) {
     use parking_lot::Mutex;
@@ -87,10 +66,7 @@ fn enable_webview_media(webview: &tauri::Webview) {
     use std::sync::OnceLock;
 
     static CONFIGURED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    // Connecting the signal twice would stack handlers across reloads, so
-    // configure each webview exactly once. `parking_lot::Mutex` can't poison —
-    // a panic here would otherwise abort the app rather than just leaving media
-    // unconfigured for one webview.
+    // Configure each webview once, or reloads stack handlers; `parking_lot::Mutex` can't poison a panic into an abort.
     if !CONFIGURED
         .get_or_init(|| Mutex::new(HashSet::new()))
         .lock()
@@ -100,11 +76,7 @@ fn enable_webview_media(webview: &tauri::Webview) {
     }
 
     let result = webview.with_webview(|platform| {
-        // webkit2gtk 2.0.x has no `prelude` module — pull the extension
-        // traits in directly. `WebViewExt` gives `settings()` +
-        // `connect_permission_request()`, `SettingsExt` gives
-        // `set_enable_media_stream()`, `PermissionRequestExt` gives
-        // `allow()`, and glib's `Cast` (via its prelude) gives `.is::<T>()`.
+        // webkit2gtk 2.0.x has no `prelude` module, so pull the extension traits in directly.
         use webkit2gtk::glib::prelude::*;
         use webkit2gtk::{PermissionRequestExt, SettingsExt, WebViewExt};
 
@@ -113,9 +85,7 @@ fn enable_webview_media(webview: &tauri::Webview) {
             settings.set_enable_media_stream(true);
         }
         wv.connect_permission_request(|_, request| {
-            // getUserMedia (camera-preview + device-picker) is the only
-            // permission this app ever triggers. Grant it; leave anything
-            // else to WebKit's deny-by-default rather than blanket-allowing.
+            // getUserMedia is the only permission this app triggers; leave the rest to WebKit's deny-by-default.
             if request.is::<webkit2gtk::UserMediaPermissionRequest>() {
                 request.allow();
             }
@@ -127,36 +97,18 @@ fn enable_webview_media(webview: &tauri::Webview) {
     }
 }
 
-/// Registers `tauri-plugin-single-instance` on the builder — in release
-/// builds only. In dev (`cargo tauri dev`) the plugin is skipped entirely
-/// so a developer's running iteration of the app doesn't immediately forward
-/// its argv to the installed production binary and exit. The plugin's OS
-/// mutex is keyed on `app.identifier()` from `tauri.conf.json`, which is the
-/// same string in dev and release — without this split the two binaries
-/// are guaranteed to collide.
-///
-/// `release-desktop.yml` and `ci-desktop.yml` build with the release
-/// profile, so this branch fires there. Hot-reload + multi-window dev work
-/// work as expected; the trade-off is that dev *does not* enforce single-
-/// instance, which is acceptable (it's never the right time to die with
-/// "another instance is already running" during local iteration).
+/// Registers `tauri-plugin-single-instance` in release builds only.
+/// Its OS mutex is keyed on `app.identifier()`, identical in dev and release, so without the split a dev run forwards its argv to the installed binary and exits.
 #[cfg(not(debug_assertions))]
 fn install_singleton_plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    // Single-instance MUST be the first plugin registered. The handler
-    // fires inside the second-launched process — by the time it runs,
-    // any later plugin would have already initialized in that ghost
-    // process. The plugin shuts the ghost down after the handler returns,
-    // so we just refocus the existing window and exit.
+    // MUST be first: the handler runs inside the second-launched process, where any earlier plugin would already have initialized.
     builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.show();
             let _ = window.unminimize();
             let _ = window.set_focus();
         }
-        // Warm-start file-association path: the ghost process's argv is
-        // forwarded here. Emit to the main window which always-new-windows
-        // it via openProjectFromExternalPath. Close-to-tray keeps main's
-        // JS alive even when hidden, so the listener catches this.
+        // Warm start: the ghost process's argv arrives here, and close-to-tray keeps main's JS alive to catch the emit.
         if let Some(path) = parse_open_arg(&argv) {
             let payload = path.to_string_lossy().to_string();
             if let Err(e) = app.emit("app://open-recast", payload) {
@@ -172,9 +124,7 @@ fn install_singleton_plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> ta
 
 #[cfg(debug_assertions)]
 fn install_singleton_plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    // Dev builds: no single-instance enforcement. Lets `cargo tauri dev`
-    // run its own windowed instance alongside any installed production
-    // build. See the release-build variant above for the full rationale.
+    // Dev builds skip single-instance so `cargo tauri dev` can run alongside an installed build.
     builder
 }
 
@@ -210,22 +160,12 @@ fn sweep_stale_temp(root: PathBuf, prefix: Option<&str>) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Load the desktop app's single `.env` at `apps/desktop/.env` (the same
-    // file Vite reads), so dev config lives in ONE place for both the Svelte
-    // frontend and this Rust backend: PUBLIC_POSTHOG_*, GOOGLE_OAUTH_*,
-    // CLOUD_API_URL, TAURI_SIGNING_PRIVATE_KEY, … We load it by an EXPLICIT
-    // path rather than `dotenvy::dotenv()`'s walk-up: the cargo CWD is
-    // `src-tauri/`, and a stray `.env` there would otherwise shadow the app
-    // file. `CARGO_MANIFEST_DIR` is `…/apps/desktop/src-tauri`, so `../.env` is
-    // the app root .env. Silent on missing/invalid file — release installs have
-    // no .env (and release reads creds via `option_env!` at build time anyway).
+    // Explicit path, not `dotenvy::dotenv()`'s walk-up: the cargo CWD is `src-tauri/`, where a stray `.env` would shadow the app file.
     #[cfg(debug_assertions)]
     let _ = dotenvy::from_path(concat!(env!("CARGO_MANIFEST_DIR"), "/../.env"));
 
     let mut builder = tauri::Builder::default();
-    // Single-instance plugin registration is gated on cfg(debug_assertions);
-    // see `install_singleton_plugin` for the full rationale. The plugin
-    // MUST be the first `.plugin(...)` call in release builds.
+    // Gated on cfg(debug_assertions); in release this MUST be the first `.plugin(...)` call. See `install_singleton_plugin`.
     builder = install_singleton_plugin(builder);
     let mut builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -233,15 +173,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        // JS-injecting plugin — must be on the Builder before any window,
-        // same constraint as dialog/os (see the comment block below).
+        // Injects JS, so it joins the pre-window group like dialog/os/sharekit.
+        .plugin(tauri_plugin_clipboard_manager::init())
+        // JS-injecting plugin: must be on the Builder before any window, like dialog and os below.
         .plugin(tauri_plugin_sharekit::init())
-        // Deep-link injects JS (onOpenUrl/getCurrent) into the webview, so it
-        // sits in the pre-window group like dialog/os/sharekit.
+        // Deep-link injects JS into the webview, so it sits in the pre-window group too.
         .plugin(tauri_plugin_deep_link::init())
-        // OS-wide recording hotkeys, handled in Rust so they fire when Recast is
-        // unfocused. Alt+Shift+R stops (routed to the panel via tray:record-toggle)
-        // when recording, else launches the panel; Alt+Shift+P pauses/resumes.
+        // OS-wide hotkeys in Rust so they fire unfocused: Alt+Shift+R record, +P pause, +S capture area.
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -259,42 +197,22 @@ pub fn run() {
                         };
                     } else if shortcut == &Shortcut::new(Some(mods), Code::KeyP) && recording {
                         let _ = app.emit("global-shortcut:toggle-pause", ());
+                    } else if shortcut == &Shortcut::new(Some(mods), Code::KeyS) && !recording {
+                        // Refused mid-recording: the overlay lands in the recording it interrupts.
+                        if let Err(e) = crate::commands::screenshot::open_region_overlay(app) {
+                            log::warn!("region overlay failed to open: {e}");
+                        }
                     }
                 })
                 .build(),
         )
         .plugin(tauri_plugin_os::init());
 
-    // JS-injecting plugins (dialog, os) MUST be added on the Builder before
-    // any window is created — registering them later via `app.handle().plugin()`
-    // inside `setup()` is too late: the WebView has already loaded the bundle
-    // without the plugin's init script, so `window.__TAURI_OS_PLUGIN_INTERNALS__`
-    // is undefined and synchronous calls like `platform()` throw at module
-    // evaluation time, taking the whole frontend down. The Rust-only log plugin
-    // can stay inside `setup()`.
-    //
-    // Why log in release too: without this, MSI/NSIS/DMG installs were
-    // silent — when a user hit a recording error there was no way to ask
-    // them for a log file, so every report had to be reproduced live.
-    // `tauri_plugin_log`'s defaults write to both stdout AND a rotating
-    // file under the OS log dir (Windows: `%LOCALAPPDATA%\com.kanakkholwal.recast\logs\`,
-    // macOS: `~/Library/Logs/com.kanakkholwal.recast/`, Linux:
-    // `~/.local/share/com.kanakkholwal.recast/logs/`).
-    //
-    // The dispatch is built permissively (Trace); the EFFECTIVE level is set at
-    // runtime by `commands::system::apply_log_level` from the persisted
-    // `diagnostic_logging` flag (see below in `setup`). That single
-    // `log::set_max_level` gate covers both the Rust backend and the webview
-    // logs the frontend forwards through this same plugin — so a user can flip
-    // verbose diagnostics on without a restart. Default stays quiet: Warn in
-    // release (no per-frame info noise on user disks), Info in debug builds.
+    // JS-injecting plugins must precede any window, or the bundle loads without their init script and `platform()` throws at module eval. Log ships in release too, at the level `apply_log_level` sets at runtime.
     builder = builder.plugin(
         tauri_plugin_log::Builder::default()
             .level(log::LevelFilter::Trace)
-            // Third-party crates that flood the log at debug/trace and drown our
-            // own diagnostics (e.g. tract's per-tensor shape-inference dump when
-            // the VAD model loads, tao's event-loop churn). Cap them at Warn even
-            // when the user turns diagnostic logging all the way up.
+            // Cap crates that flood debug and trace (tract's shape dump, tao's event churn) at Warn even on full diagnostics.
             .level_for("tract_hir", log::LevelFilter::Warn)
             .level_for("tract_core", log::LevelFilter::Warn)
             .level_for("tract_linalg", log::LevelFilter::Warn)
@@ -309,9 +227,7 @@ pub fn run() {
     );
 
     builder
-        // Enable camera/mic in the WebView the moment each page starts
-        // loading. No-op everywhere but Linux (WebKitGTK); macOS/Windows
-        // expose MediaDevices natively once their privacy gates are met.
+        // No-op outside Linux and WebKitGTK; macOS and Windows expose MediaDevices once their privacy gates are met.
         .on_page_load(|_webview, _payload| {
             #[cfg(target_os = "linux")]
             enable_webview_media(_webview);
@@ -320,10 +236,7 @@ pub fn run() {
             let handle = app.handle();
             let mut config = load_config(handle);
 
-            // First run: default the output location to <Videos>/Recast so
-            // recordings land somewhere discoverable and durable, not the temp
-            // dir the OS periodically purges. Persisted so it shows in Settings
-            // and the user can still change it.
+            // First run: default output to <Videos>/Recast so recordings don't land in a temp dir the OS purges.
             if config.output_dir.is_none() {
                 let default_dir = commands::system::default_output_dir(handle);
                 let _ = std::fs::create_dir_all(&default_dir);
@@ -331,26 +244,18 @@ pub fn run() {
                 commands::system::save_config(handle, &config);
             }
 
-            // Apply the saved log verbosity now (the plugin was built at Trace).
-            // Off by default → release stays at Warn; on → Debug captures
-            // backend + forwarded webview diagnostics for support bundles.
+            // The plugin was built at Trace: off leaves release at Warn, on captures backend and forwarded webview diagnostics.
             commands::system::apply_log_level(config.diagnostic_logging);
 
-            // Seed the self-host cloud-endpoint override from persisted config
-            // so the no-arg `cloud_api_url()` resolver reflects the user's
-            // saved choice from the very first auth/sync request onward.
+            // Seed the self-host override so the no-arg `cloud_api_url()` reflects the saved choice from the first request.
             commands::auth::init_cloud_api_override(config.cloud_api_url.clone());
 
-            // Cold-start file-association path: stash any `.recast` arg the
-            // OS handed us so the main window can drain it on mount via
-            // `take_pending_open_file`. None for a normal launch.
+            // Cold start: stash any `.recast` arg for the main window to drain via `take_pending_open_file`.
             let cold_open_file: Vec<String> = std::env::args().collect();
             let pending_open_file = parse_open_arg(&cold_open_file);
             let launched_for_new_recording = cold_open_file.iter().any(|a| a == "--new-recording");
 
-            // Load the saved recording profiles into the shared store so the CLI
-            // (`recast profile list/use`) and the panel read one source. Absent
-            // file => in-memory seed, initialized=false (frontend migrates once).
+            // One source for the CLI and the panel; an absent file seeds in memory with initialized=false.
             let (profiles_state, profiles_initialized) =
                 commands::profiles::load_profiles_state(handle);
 
@@ -374,21 +279,11 @@ pub fn run() {
                 editor_session: parking_lot::RwLock::new(commands::types::EditorSession::default()),
             });
 
-            // Restore a previously-held editor lock if its holder is still
-            // alive. Best-effort — failure leaves the lock idle.
+            // Restore a previously-held editor lock if its holder is still alive; failure just leaves the lock idle.
             let _ =
                 commands::load_on_startup(app.state::<commands::types::AppState>().inner(), handle);
 
-            // First-launch auto-install of the `recast` CLI: a fresh user
-            // shipping the app out of the box should be able to open a
-            // terminal and run `recast --help` without first clicking the
-            // settings toggle. Runs once (gated by `cli_install_attempted`)
-            // and never blocks the UI thread — the install itself is fast
-            // (a symlink + a single rc-file write on Unix; one registry
-            // key + a broadcast on Windows). The user can opt out via
-            // `cli_auto_install: false` from the settings panel; the verb
-            // `recast uninstall` (or the GUI button) also stamps the setting
-            // so an explicit removal is sticky.
+            // One-shot CLI install so `recast --help` works out of the box; opt out via `cli_auto_install`, and `recast uninstall` is sticky.
             let app_state = app.state::<commands::types::AppState>();
             {
                 let mut cfg = app_state.config.write();
@@ -406,19 +301,13 @@ pub fn run() {
                 }
             }
 
-            // Export queue: recover any job left mid-run by an unclean shutdown
-            // (mark it interrupted), then start the single serial worker that
-            // drains the queue. Must run after AppState is managed.
+            // Mark any job left mid-run as interrupted, then start the serial worker. Must run after AppState is managed.
             commands::export_queue::reconcile_on_load(handle);
             commands::export_queue::spawn_export_worker(handle.clone());
-            // GC stale queue entries (terminal jobs older than the TTL) + orphaned
-            // payloads. Runs on a blocking worker so it never stalls startup.
+            // GC terminal jobs past the TTL and orphaned payloads, on a blocking worker so startup never stalls.
             commands::export_queue::sweep_stale_jobs(handle);
 
-            // Register the `recast://` scheme at runtime for dev builds. In
-            // release the installer writes the Windows registry / Linux .desktop
-            // entry from tauri.conf; macOS uses the generated Info.plist and
-            // cannot register at runtime.
+            // Dev only: release installers write the registry or .desktop entry, and macOS cannot register at runtime.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -427,9 +316,7 @@ pub fn run() {
                 }
             }
 
-            // Bring the app forward when a `recast://` URL arrives (esp. macOS
-            // in-process delivery and close-to-tray). Routing itself is done in
-            // the frontend via getCurrent()/onOpenUrl() → handleDeepLink.
+            // Bring the app forward on a `recast://` URL; the frontend does the routing via getCurrent and onOpenUrl.
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 let focus_handle = handle.clone();
@@ -442,20 +329,15 @@ pub fn run() {
                 });
             }
 
-            // Register the OS-wide hotkeys. Non-fatal: a conflict (another app
-            // owns the combo) just makes that hotkey unavailable. Successful
-            // registrations are stashed in `AppState.registered_shortcuts` so
-            // the `run` block can explicitly unregister each on exit — the
-            // plugin doesn't auto-release on Tauri shutdown, and a stale
-            // registration survives a force-kill, blocking the next launch
-            // from picking that combo up.
+            // Non-fatal on conflict. Registrations are stashed so `run` can unregister them: the plugin never auto-releases.
             use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
             let registered: Vec<Shortcut> = {
                 let mods = Modifiers::ALT | Modifiers::SHIFT;
-                let mut registered = Vec::with_capacity(2);
+                let mut registered = Vec::with_capacity(3);
                 for sc in [
                     Shortcut::new(Some(mods), Code::KeyR),
                     Shortcut::new(Some(mods), Code::KeyP),
+                    Shortcut::new(Some(mods), Code::KeyS),
                 ] {
                     match app.global_shortcut().register(sc) {
                         Ok(()) => registered.push(sc),
@@ -468,14 +350,10 @@ pub fn run() {
                 *state.registered_shortcuts.lock() = registered;
             }
 
-            // Native crash reporting. Installed after AppState is managed so the
-            // panic hook can read the consent flag + install id. Gated on the
-            // user's `telemetry_errors` consent (default on) and PII-scrubbed.
+            // After AppState, so the panic hook can read the consent flag and install id; PII-scrubbed.
             telemetry::install_panic_hook(handle.clone());
 
-            // System tray. Init failure is non-fatal — the app still works
-            // without a tray (the user just can't quick-access actions while
-            // the window is hidden, which is fine). Log + continue.
+            // Non-fatal: without a tray the user only loses quick actions while the window is hidden.
             if let Err(e) = tray::init(handle) {
                 log::warn!("tray init failed: {e}");
             }
@@ -483,36 +361,17 @@ pub fn run() {
             #[cfg(windows)]
             jumplist::update(handle);
 
-            // Local control server for the `recast` CLI (status, rec ...).
-            // Non-fatal if it can't bind: the GUI is unaffected, the CLI just
-            // can't reach this instance.
+            // Local control server for the CLI; non-fatal if it can't bind, the CLI just can't reach this instance.
             control::spawn_server(handle.clone());
 
-            // FFmpeg path resolution probes ffmpeg/ffprobe `-version` against
-            // up to 4 candidate locations, each spawn taking ~100–300 ms cold.
-            // Doing this on the main thread froze the splash window for up to
-            // a second on Windows. Resolve on a blocking worker; commands that
-            // need the path will block on the OnceLock if they fire first.
-            //
-            // We also pre-warm `preferred_h264_encoder()` here (one extra
-            // `ffmpeg -encoders` spawn, also ~200–300 ms cold). Without this,
-            // the encoder probe ran *during the first recording-start*,
-            // delaying the start_recording command by that much — the Windows
-            // tester report described it as "the whole window freezes
-            // suddenly". Pre-warming on the same blocking worker that
-            // resolves FFmpeg paths fixes the first-recording case without
-            // adding any extra spawn for subsequent recordings (the result is
-            // cached behind an OnceLock).
+            // Off the main thread: probing four FFmpeg locations plus the encoder froze the splash ~1s and delayed the first recording.
             let resolver_handle = handle.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 ffmpeg::init(&resolver_handle);
                 if let Err(e) = ffmpeg::check_availability() {
                     log::warn!("FFmpeg not available: {e}");
                 }
-                // Touch the OnceLock so the encoder probe runs here, not
-                // during the user's first recording. Result is ignored —
-                // the function logs internally and falls back to libx264
-                // on probe failure.
+                // Touch the OnceLock so the encoder probe runs here, not during the user's first recording.
                 let _ = ffmpeg::preferred_h264_encoder();
             });
 
@@ -520,30 +379,20 @@ pub fn run() {
             let state = app.state::<AppState>();
             let output_dir = state.config.read().output_dir.clone();
             if let Some(dir) = output_dir {
-                // Off the main thread: this readdir was the one disk walk left in
-                // setup(), which runs before the event loop and so delays first
-                // paint on macOS (in-process WKWebView). It only cleans abandoned
-                // autosave sessions, so it never races the just-opened UI.
+                // The last disk walk in setup(), which runs before the event loop and delayed first paint on macOS.
                 tauri::async_runtime::spawn_blocking(move || {
                     project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
                 });
             }
 
-            // Evict stale/excess project extractions. Startup-only: nothing is
-            // open yet, so no live editor can lose the assets under it.
+            // Startup-only: nothing is open yet, so no live editor can lose the assets under it.
             tauri::async_runtime::spawn_blocking(project::reader::sweep_cache);
 
-            // Sweep scratch dirs left behind by crashed/killed sessions. Both
-            // owners remove their own dir on the happy path, but `Drop` doesn't
-            // run on a kill or a quit-mid-export, so these accumulate gigabytes
-            // on a long-running install. Startup-only + single-instance means no
-            // live process is still writing into them.
+            // `Drop` doesn't run on a kill, so scratch dirs pile up; startup plus single-instance means nothing is still writing.
             tauri::async_runtime::spawn_blocking(|| {
                 // `recast-thumbnails/*`: orphaned JPEGs from a crash mid-scrub.
                 sweep_stale_temp(std::env::temp_dir().join("recast-thumbnails"), None);
-                // `recast-export-{cursor,mask,shadow,cam-shadow,gradient,bg}-*`:
-                // TempDirGuard's territory. `cursor.mov` alone is lossless QTRLE
-                // at composite resolution for the whole timeline.
+                // TempDirGuard's territory; `cursor.mov` alone is lossless QTRLE at composite resolution for the whole timeline.
                 sweep_stale_temp(std::env::temp_dir(), Some("recast-export-"));
                 // Oversized `-filter_complex_script` files.
                 sweep_stale_temp(std::env::temp_dir(), Some("recast-filtergraph-"));
@@ -591,13 +440,15 @@ pub fn run() {
             commands::cancel_export_job,
             commands::dismiss_export_job,
             commands::retry_export_job,
+            commands::screenshot::capture_region_shot,
+            commands::screenshot::open_area_picker,
             commands::get_audio_devices,
             commands::get_camera_devices,
             commands::validate_camera_source,
             commands::update_camera_preview_state,
-            commands::save_recorded_camera,
+            commands::start_camera_preview,
+            commands::stop_camera_preview,
             commands::save_browser_export_video,
-            commands::finish_camera_flush,
             commands::exclude_window_from_capture,
             commands::set_window_aspect_ratio,
             commands::autosave_project,
@@ -622,6 +473,7 @@ pub fn run() {
             transcription::delete_remote_asr_endpoint,
             transcription::set_remote_asr_key,
             fonts::ensure_google_font,
+            fonts::caption_font_file,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,
             commands::hydrate_cached_assets,
@@ -654,6 +506,9 @@ pub fn run() {
             commands::set_close_to_tray,
             commands::get_cli_auto_install,
             commands::set_cli_auto_install,
+            commands::get_native_encoder,
+            commands::set_native_encoder,
+            commands::native_encoder_available,
             commands::get_hide_panel_from_capture,
             commands::set_hide_panel_from_capture,
             commands::get_window_transparency,
@@ -681,14 +536,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            // RAII for global-shortcut registrations. The plugin doesn't
-            // auto-release on Tauri shutdown, so an unclean close (crash,
-            // force-kill via Task Manager, dev/prod coexistence where one
-            // instance is killed while another holds the slot) leaves the
-            // OS-level hotkey bound to a dead process and the next launch
-            // logs `HotKey already registered` for the lifetime of the OS.
-            // We hand the lock from setup() to the run closure via the
-            // registered Shortcut objects in `AppState`.
+            // The plugin never auto-releases, so an unclean close leaves the hotkey bound to a dead process for the OS lifetime.
             if matches!(
                 event,
                 tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
@@ -702,34 +550,18 @@ pub fn run() {
                         }
                     }
                 }
-                // Final flush of the editor lock snapshot to disk so a
-                // managed shutdown doesn't strand a held lock in memory
-                // only. The next boot's PID-alive check recovers it
-                // correctly; a force-kill leaves the snapshot stale, which
-                // the PID check rejects and clears.
+                // Flush the lock snapshot so a managed shutdown doesn't strand a held lock in memory only.
                 commands::persist(app_handle.state::<AppState>().inner(), app_handle);
             }
 
-            // Reap a live recording before the process ends. Only on `Exit`:
-            // `ExitRequested` can still be cancelled, and killing the user's
-            // in-progress recording on a quit they backed out of would be worse
-            // than the leak. Quitting via the tray calls `app.exit(0)`, which
-            // ends in `process::exit` and skips every destructor, so
-            // `Drop for RecordingManager` never fires and the mic/camera
-            // children outlive the app holding their devices.
+            // Only on `Exit`: tray quit calls `process::exit` and skips `Drop for RecordingManager`, so mic and camera children would outlive the app.
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.recording_manager.abort_for_shutdown();
                 }
             }
 
-            // macOS/iOS deliver file-association opens (a double-clicked
-            // `.recast` in Finder) and URL opens via RunEvent::Opened, NOT argv
-            // — so the argv/single-instance path that works on Windows/Linux
-            // never fires here. Route file:// paths through the same
-            // `app://open-recast` bridge. `recast://` scheme URLs are owned by
-            // the deep-link plugin's on_open_url, so filter to file:// to avoid
-            // double-handling.
+            // macOS delivers file opens via RunEvent::Opened, not argv; filter to file:// so the deep-link plugin keeps `recast://`.
             #[cfg(any(target_os = "macos", target_os = "ios"))]
             if let tauri::RunEvent::Opened { urls } = &event {
                 for url in urls {
@@ -746,10 +578,7 @@ pub fn run() {
                     if !is_recast || !path.exists() {
                         continue;
                     }
-                    // Warm path: main's JS listener catches the event (close-to-
-                    // tray keeps it alive). Cold path: stash so the mount-time
-                    // drain picks it up. Both are safe — openProjectInNewWindow
-                    // dedupes by window label, so a double-fire just refocuses.
+                    // Warm path: main's JS listener catches it. Cold path: stash for the mount drain. Both dedupe by window label.
                     if let Some(state) = app_handle.try_state::<AppState>() {
                         *state.pending_open_file.lock() = Some(path.clone());
                     }
@@ -764,20 +593,22 @@ pub fn run() {
                 }
             }
 
-            // Main-window close handling has two modes, gated by the user's
-            // `close_to_tray` setting (default on):
-            //
-            //   * close_to_tray=true: prevent the close, hide the window
-            //     instead. The tray icon is the only way to bring the app
-            //     back or to truly quit. Background captures (recording,
-            //     editor autosave) keep running.
-            //
-            //   * close_to_tray=false: legacy behavior — close auxiliaries
-            //     explicitly before exit(0) so Linux/Wayland doesn't race
-            //     surface teardown against the main-thread exit.
-            //
-            // Tray "Quit" calls `app.exit(0)` directly, bypassing this
-            // branch entirely (no CloseRequested event fires).
+            // Rust owns the release: the panel closes the preview with a raw `close()`, skipping its teardown.
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } = &event
+            {
+                // A replacement under the same label means this was a reopen, not a close.
+                if label == "camera-preview"
+                    && app_handle.get_webview_window("camera-preview").is_none()
+                {
+                    crate::camera::session::release();
+                }
+            }
+
+            // close_to_tray hides instead of closing (the tray is the only way back); otherwise auxiliaries close before exit(0) so Wayland doesn't race teardown.
             if let tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { api, .. },

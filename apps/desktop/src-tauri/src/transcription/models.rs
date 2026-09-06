@@ -1,15 +1,5 @@
-//! Caption model registry + verified, resumable-friendly download.
-//!
-//! Models are fetched **directly from HuggingFace** (decided 2026-06-29) into
-//! `app_data_dir/models/<id>/`, sha256-verified when a hash is known. The
-//! download/verify path mirrors `commands/assets.rs` (streamed `.tmp` + atomic
-//! rename) but emits per-byte progress so the UI can show a real bar.
-//!
-//! NOTE ON DATA: every model is a single GGUF file hosted under the
-//! `handy-computer` HuggingFace org (the canonical transcribe.cpp catalog).
-//! `sha256` is left `None` for now (skip-verify with a warning) — pin the hashes
-//! before release once the exact files are locked. `download`/`transcribe` guard
-//! against an empty file list.
+//! Caption model registry and verified download from HuggingFace into `app_data_dir/models/<id>/`.
+//! Every built-in is sha256-pinned and a test keeps it so: an unpinned GGUF is arbitrary bytes handed to a native parser.
 
 use std::path::{Path, PathBuf};
 
@@ -20,11 +10,8 @@ use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-/// How a model runs. There are exactly two engines: `ggml` (on-device,
-/// transcribe.cpp) and `remote` (an OpenAI-compatible endpoint). The GGUF file
-/// decides the model architecture for the ggml engine, so the architecture
-/// (Parakeet / Whisper / ...) is display-only metadata (`CaptionModel::family`),
-/// not a separate code path.
+/// How a model runs. There are exactly two engines: `ggml` on-device and `remote` against an OpenAI-compatible endpoint.
+/// The GGUF file decides the architecture for ggml, so Parakeet or Whisper is display-only metadata rather than a separate code path.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
@@ -35,11 +22,8 @@ pub enum Engine {
     Remote,
 }
 
-/// The inference backend a model runs on. This is the axis the UI gates
-/// availability on: a `ggml` build ships the on-device engine, a
-/// `--no-default-features` build does not. Kept as its own enum (rather than
-/// folded into `Engine`) so the UI's `runtime` / `runtimeAvailable` contract is
-/// stable.
+/// The inference backend a model runs on, and the axis the UI gates availability on: a `ggml` build ships the on-device engine, a `--no-default-features` one does not.
+/// Kept as its own enum rather than folded into `Engine`, so the UI's `runtime` and `runtimeAvailable` contract stays stable.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Runtime {
@@ -72,14 +56,10 @@ pub enum ModelSource {
     Remote,
 }
 
-/// Whether a runtime can actually run in this build, plus a user-facing reason
-/// when it can't. Composed with the device-capability check (`evaluate`) to
-/// decide if a model is offerable.
+/// Whether a runtime can actually run in this build, plus a user-facing reason when it can't. Composed with the device-capability check (`evaluate`) to decide if a model is offerable.
 pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
     match runtime {
-        // The on-device engine needs the `ggml` feature (transcribe.cpp compiled
-        // in). A `--no-default-features` build reports it unavailable, so the UI
-        // falls back to remote endpoints.
+        // The on-device engine needs the `ggml` feature, so a no-default-features build reports it unavailable.
         #[cfg(feature = "ggml")]
         Runtime::Ggml => (true, None),
         #[cfg(not(feature = "ggml"))]
@@ -87,8 +67,7 @@ pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
             false,
             Some("On-device transcription isn't available in this build.".into()),
         ),
-        // Remote availability is decided per-endpoint (is a key stored?), so the
-        // global gate is always "not available" with guidance.
+        // Remote availability is per-endpoint (is a key stored?), so the global gate is always unavailable with guidance.
         Runtime::Remote => (
             false,
             Some("Configure a remote transcription endpoint to use this model.".into()),
@@ -143,9 +122,7 @@ pub struct CaptionModel {
     /// What the model can do beyond plain transcription.
     #[serde(default)]
     pub capabilities: ModelCapabilities,
-    /// How many languages the model covers. `languages` carries `["multi"]` for
-    /// multilingual models rather than 99 entries, so the count is stored
-    /// separately instead of derived from it.
+    /// How many languages the model covers. `languages` carries `["multi"]` for multilingual models rather than 99 entries, so the count is stored separately instead of derived from it.
     #[serde(default)]
     pub language_count: Option<u32>,
     /// Relative speed / accuracy, 0-100, for the picker's comparison bars.
@@ -160,9 +137,7 @@ pub struct CaptionModel {
     pub recommended: bool,
 }
 
-/// Model abilities beyond plain same-language transcription. `streaming` /
-/// `translate` / `lang_detect` are presentation only. `timestamps` is NOT:
-/// see `TimestampGranularity`.
+/// Model abilities beyond plain same-language transcription. `streaming` / `translate` / `lang_detect` are presentation only. `timestamps` is NOT: see `TimestampGranularity`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelCapabilities {
@@ -180,14 +155,8 @@ pub struct ModelCapabilities {
     pub timestamps: TimestampGranularity,
 }
 
-/// How precisely a model reports WHEN each piece of text was said.
-///
-/// This is a hard requirement for captions, not a nicety: a caption without
-/// timing can't be placed on the timeline, clipped at a cut, or highlighted
-/// per word. A `None` model returns bare text, which `words.rs` then has to
-/// spread evenly across the whole clip — captions that drift further out of
-/// sync the longer you talk. 34 of the 65 models in the upstream catalog are
-/// `None`, so this must be checked before adding any model, not assumed.
+/// How precisely a model reports WHEN each piece of text was said: a hard requirement, since untimed captions cannot be placed, clipped at a cut, or highlighted.
+/// A `None` model returns bare text that `words.rs` spreads evenly, drifting further out of sync the longer you talk. 34 of the upstream catalog's 65 are `None`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TimestampGranularity {
@@ -255,15 +224,12 @@ impl CaptionModel {
     }
 }
 
-/// A built-in ggml model: one GGUF file from a `handy-computer` HuggingFace repo.
-/// `family` is the display group for the picker; the GGUF itself tells
-/// transcribe.cpp which architecture to run. `sha256` is the exact-byte
-/// SHA-256 of the file at the URL above — pinned releases need this to
-/// reject a corrupted / truncated / upstream-replaced download at the
-/// `is_installed` gate (downloaded mismatches auto-redownload; see
-/// `download_file` at `models.rs:357-367`). Compute via
-/// `tools/dev/pin-model-sha256.ps1` once per release.
-#[allow(clippy::too_many_arguments)]
+/// A built-in ggml model: one GGUF from a `handy-computer` repo, with `family` only the picker's display group since the file itself picks the architecture.
+/// `sha256` is exact-byte and pinned, rejecting a corrupted or upstream-replaced download at the `is_installed` gate; compute it with `tools/dev/pin-model-sha256.ps1`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a registry row: every column is independent data"
+)]
 fn ggml_model(
     id: &str,
     name: &str,
@@ -303,11 +269,8 @@ fn ggml_model(
     }
 }
 
-/// The built-in model catalog: single-file GGUF models run by the ggml
-/// (transcribe.cpp) engine. Parakeet V3 (multilingual, word-timestamped) is the
-/// default. Whisper is offered as an alternative family. All entries are plain
-/// data and compile in every build; whether they can RUN is gated at runtime by
-/// `runtime_status` (the `ggml` feature).
+/// The built-in catalog of single-file GGUF models run by the ggml engine, with multilingual word-timestamped Parakeet V3 as the default and Whisper as an alternative.
+/// All entries are plain data and compile in every build; whether they can RUN is gated at runtime by `runtime_status`.
 pub fn registry() -> Vec<CaptionModel> {
     vec![
         ggml_model(
@@ -317,9 +280,9 @@ pub fn registry() -> Vec<CaptionModel> {
             "handy-computer/parakeet-tdt-0.6b-v3-gguf",
             "parakeet-tdt-0.6b-v3-Q8_0.gguf",
             vec!["multi".into()],
-            660_000_000,
+            739_508_576,
             true,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7"),
         )
         .scored(79, 88)
         .langs(25)
@@ -331,15 +294,14 @@ pub fn registry() -> Vec<CaptionModel> {
             "handy-computer/parakeet-tdt-0.6b-v2-gguf",
             "parakeet-tdt-0.6b-v2-Q8_0.gguf",
             vec!["en".into()],
-            660_000_000,
+            729_574_912,
             false,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("f0d0e99cebb6d3b83f1f7069b82b5d3c2e39a54545b0da039cb4bafd9c4e5caa"),
         )
         .scored(85, 89)
         .langs(1)
         .caps(false, false, false, TimestampGranularity::Token),
-        // NVIDIA Nemotron streaming ASR. transcribe.cpp runs it under its
-        // `parakeet` architecture (same encoder family), so no engine work.
+        // transcribe.cpp runs Nemotron under its `parakeet` architecture (same encoder family), so no engine work.
         ggml_model(
             "nemotron-streaming-3.5",
             "Nemotron Streaming 3.5",
@@ -349,7 +311,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             751_094_240,
             false,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("b94545b313b3223fda7b2857a52681da813935c2127643d1e9ff0c23d988089c"),
         )
         .scored(84, 82)
         .langs(28)
@@ -365,10 +327,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             60_000_000,
             false,
-            // SHA-256 of the GGUF at the URL above — pinned 2026-07-15
-            // against `handy-computer/whisper-base-gguf` HEAD. Mismatches
-            // at download time are auto-detected (`download_file` at
-            // `models.rs:357-367`); re-pin when upgrading the URL.
+            // SHA-256 of the GGUF above, pinned 2026-07-15; `download_file` detects mismatches, so re-pin when the URL changes.
             Some("8E0FEB7BC35780353CF31821018E601BB7B7CFF6C9A0E17ADA5A5DB23F4DB867"),
         )
         .scored(99, 71)
@@ -381,9 +340,9 @@ pub fn registry() -> Vec<CaptionModel> {
             "handy-computer/whisper-small-gguf",
             "whisper-small-Q5_K_M.gguf",
             vec!["multi".into()],
-            190_000_000,
+            193_749_056,
             false,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("326cd00c3e7217c751667c7c1600eaf7e0de174e186ca2c16b4bf590251c3c3b"),
         )
         .scored(78, 80)
         .langs(99)
@@ -398,7 +357,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             831_538_144,
             false,
-            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+            Some("09e6a65e7de377aa5b10bae24608bc6f8ca2ed04b3993ef10d4a02bcd9a82adf"),
         )
         .scored(42, 84)
         .langs(99)
@@ -420,8 +379,7 @@ pub fn all_models(app: &AppHandle) -> Vec<CaptionModel> {
             models.push(m);
         }
     }
-    // User-configured remote endpoints. Their ids are namespaced (`remote:<id>`)
-    // so they can't collide with built-ins or packs.
+    // Remote endpoint ids are namespaced `remote:<id>` so they can't collide with built-ins or packs.
     models.extend(super::remote::remote_models(app));
     models
 }
@@ -545,10 +503,7 @@ pub async fn download_file(
             return Err(format!("sha256 mismatch (expected {expected}, got {got})"));
         }
     } else {
-        log::warn!(
-            "caption model file {} downloaded without sha256 verification",
-            url
-        );
+        log::warn!("caption model file {url} downloaded without sha256 verification");
     }
 
     if dest.exists() {
@@ -572,9 +527,7 @@ mod tests {
 
     #[test]
     fn ggml_availability_tracks_the_feature() {
-        // The on-device engine needs the `ggml` feature (transcribe.cpp compiled
-        // in); a `--no-default-features` build must report it unavailable so the
-        // UI falls back to remote endpoints.
+        // The on-device engine needs the `ggml` feature, so a no-default-features build must report it unavailable.
         let (available, reason) = runtime_status(Runtime::Ggml);
         assert_eq!(available, cfg!(feature = "ggml"));
         assert_eq!(reason.is_none(), cfg!(feature = "ggml"));
@@ -582,8 +535,7 @@ mod tests {
 
     #[test]
     fn remote_runtime_is_never_globally_available() {
-        // Remote availability is decided per-endpoint (key present), so the
-        // global gate is always "not available" with a reason.
+        // Remote availability is per-endpoint, so the global gate is always unavailable with a reason.
         let (available, reason) = runtime_status(Runtime::Remote);
         assert!(!available);
         assert!(reason.is_some());
@@ -607,9 +559,24 @@ mod tests {
         }
     }
 
-    /// The URL is built from the repo + filename, so a typo in either yields a
-    /// 404 only at download time — on the user's machine, after they clicked.
-    /// Assert the shape here instead.
+    /// An unpinned entry downloads over the network and goes straight into a
+    /// native GGUF parser with nothing checking the bytes.
+    #[test]
+    fn every_builtin_model_is_hash_pinned() {
+        for m in registry() {
+            for f in &m.files {
+                let pinned = f.sha256.as_deref().unwrap_or_default();
+                assert_eq!(pinned.len(), 64, "{} has no sha256 pin", m.id);
+                assert!(
+                    pinned.chars().all(|c| c.is_ascii_hexdigit()),
+                    "{} sha256 is not hex",
+                    m.id
+                );
+            }
+        }
+    }
+
+    /// The URL is built from the repo + filename, so a typo in either yields a 404 only at download time — on the user's machine, after they clicked. Assert the shape here instead.
     #[test]
     fn every_builtin_url_points_at_its_own_gguf_in_the_handy_org() {
         for m in registry() {
@@ -654,12 +621,8 @@ mod tests {
         }
     }
 
-    /// Captions are a timeline feature: without timing there is nothing to
-    /// place, clip at a cut, or highlight. Canary 180M Flash and Cohere
-    /// Transcribe were both shipped and pulled for exactly this — they
-    /// transcribe fine but emit `timestamps: none`, so their captions were
-    /// spread evenly across the clip and drifted. 34 of the 65 models in the
-    /// upstream catalog are `none`; check before adding, don't assume.
+    /// Captions are a timeline feature: without timing there is nothing to place, clip at a cut, or highlight.
+    /// Canary 180M Flash and Cohere Transcribe both shipped and were pulled for emitting no timestamps. 34 of the catalog's 65 are `none`, so check rather than assume.
     #[test]
     fn every_builtin_can_actually_time_its_captions() {
         for m in registry() {

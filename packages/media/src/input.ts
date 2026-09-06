@@ -9,8 +9,8 @@
  * - The returned `Input` must be `dispose()`-d by the caller; no leak.
  */
 
-import { ALL_FORMATS, BlobSource, Input } from 'mediabunny';
-import { ConvertError } from './protocol';
+import { ALL_FORMATS, BlobSource, Input } from "mediabunny";
+import { ConvertError } from "./protocol";
 
 /** A file-like thing a user hands us: a `File` (browser/web) or a `Blob`.
  *  String URLs are intentionally not supported yet — open the URL and pass
@@ -28,13 +28,13 @@ export async function openInput(source: MediaSource): Promise<Input> {
 	});
 	try {
 		if (!(await input.canRead())) {
-			throw new ConvertError('bad-input', "Couldn't read this file. Try MP4, MOV, or WebM.");
+			throw new ConvertError("bad-input", "Couldn't read this file. Try MP4, MOV, or WebM.");
 		}
 	} catch (err) {
 		input.dispose();
 		if (err instanceof ConvertError) throw err;
 		throw new ConvertError(
-			'bad-input',
+			"bad-input",
 			"This file isn't a supported video. Try MP4, MOV, or WebM.",
 		);
 	}

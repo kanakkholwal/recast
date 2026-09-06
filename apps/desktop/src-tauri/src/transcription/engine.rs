@@ -1,19 +1,12 @@
-//! Inference seam — where an on-device model is actually run.
-//!
-//! There is one on-device engine: transcribe.cpp (ggml), which runs any
-//! supported GGUF file. A model is a single `.gguf` under its model dir; the file
-//! decides the architecture, so there's no per-architecture dispatch here. The
-//! real work lives in `ggml.rs` (behind the `ggml` Cargo feature). Remote models
-//! never reach this seam — `transcribe_project` posts them over HTTP first.
+//! The on-device inference seam. One engine, transcribe.cpp, and the loaded GGUF decides the architecture, so there is no dispatch here.
+//! Remote models never reach this seam; `transcribe_project` posts them over HTTP first.
 
 use std::path::Path;
 
 use super::models::CaptionModel;
 use super::Transcript;
 
-/// Run a local model over 16 kHz mono f32 PCM. Resolves the model's single GGUF
-/// file and hands it to the ggml engine. `language` is an optional ISO hint
-/// (`None` = autodetect).
+/// Run a local model over 16 kHz mono f32 PCM. Resolves the model's single GGUF file and hands it to the ggml engine. `language` is an optional ISO hint (`None` = autodetect).
 #[cfg(feature = "ggml")]
 pub fn transcribe(
     model: &CaptionModel,

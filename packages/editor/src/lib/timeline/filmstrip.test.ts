@@ -51,8 +51,7 @@ describe("planFilmstrip virtualization", () => {
 			{ leftPx: 1000, widthPx: 200 },
 			{ tileWidthPx: 100, tileHeightPx: 48 },
 		);
-		// Window [1000,1200] over 100px tiles → the 2 covered tiles plus the two
-		// boundary-touchers, never all 40.
+		// A 200-wide window over 100px tiles yields the 2 covered tiles plus the two boundary-touchers, never all 40.
 		expect(tiles.length).toBeLessThanOrEqual(4);
 		for (const t of tiles) {
 			expect(t.offsetPx + t.widthPx).toBeGreaterThanOrEqual(1000);

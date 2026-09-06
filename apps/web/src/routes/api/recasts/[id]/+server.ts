@@ -3,8 +3,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { folder, recast, workspaceUsage } from "$lib/db/schema";
 import { authorizeRecast } from "$lib/server/recast-guard";
-import { deleteRecastObjects } from "$lib/storage/recast-objects";
 import { decrementUsageOnDelete } from "$lib/storage/quota";
+import { deleteRecastObjects } from "$lib/storage/recast-objects";
 import type { RequestHandler } from "./$types";
 
 const MAX_TITLE = 200;
@@ -56,8 +56,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		if (body.folderId === null) {
 			patch.folderId = null;
 		} else if (typeof body.folderId === "string") {
-			// The folder must exist and belong to the recast's workspace —
-			// otherwise a user could file a recast into another workspace's tree.
+			// The folder must exist and belong to the recast's workspace, or a recast could be filed into another workspace's tree.
 			const [f] = await db
 				.select({ id: folder.id })
 				.from(folder)
@@ -104,14 +103,7 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 	const row = await authorizeRecast(request, params.id);
 	const db = getDb();
 
-	// The row goes first, and its objects after. A Postgres cascade removes the
-	// shares, views, comments, reactions and tag links inside this transaction,
-	// so the delete is all-or-nothing. Dropping the blobs first would leave a
-	// live row pointing at a missing object if the transaction then failed.
-	//
-	// Consumed delivery is deliberately NOT reversed: `deliveryBytesThisMonth`
-	// meters egress we have already paid for and billed. Only the state meters
-	// (stored bytes, active count) are reclaimed.
+	// The row first, objects after: a cascade makes the delete all-or-nothing, and dropping blobs first could strand a live row. Consumed delivery is deliberately not reversed.
 	await db.transaction(async (tx) => {
 		await tx.delete(recast).where(eq(recast.id, row.id));
 		if (row.status === "published") {
@@ -128,10 +120,7 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 		// `draft` never bumped usage — nothing to reverse.
 	});
 
-	// Best-effort, post-commit. The poster used to be left behind on every
-	// delete, so we kept paying to store thumbnails for recasts that no longer
-	// existed. A failure here orphans an object (recoverable from the storage
-	// console) rather than stranding the row.
+	// Best-effort, post-commit: a failure orphans an object (recoverable from the storage console) rather than stranding the row.
 	await deleteRecastObjects(row.id, [row.videoUrl, row.posterUrl]);
 
 	return json({ ok: true });

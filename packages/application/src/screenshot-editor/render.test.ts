@@ -22,8 +22,7 @@ const NEUTRAL: ImageFilters = {
 
 describe("filtersCss", () => {
 	it("is 'none' when every adjustment is neutral", () => {
-		// Not the empty string: an empty `filter` is invalid CSS and the browser
-		// would keep whatever was there before.
+		// Not the empty string: an empty `filter` is invalid CSS and the browser would keep whatever was there.
 		expect(filtersCss(NEUTRAL)).toBe("none");
 	});
 

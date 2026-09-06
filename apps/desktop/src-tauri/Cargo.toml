@@ -9,7 +9,11 @@ edition = "2021"
 # Reflects the real minimum: the code uses APIs stabilized in 1.81/1.82
 # (PanicHookInfo, etc.). CI builds on stable, so this only documents the floor
 # and keeps clippy's `incompatible_msrv` honest.
-rust-version = "1.82.0"
+# The VERIFIED floor, not a minimised one: cargo checks each dependency's MSRV
+# against the installed rustc, and the tree already needs far newer than the
+# 1.82 this used to claim. Raise when a dependency forces it (kstring 2.0.4 is
+# pinned back at 2.0.2 for exactly that reason).
+rust-version = "1.93.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -26,10 +30,38 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "recast"
 path = "src/main.rs"
 
+[dev-dependencies]
+recast-testkit = { path = "../../../crates/recast-testkit" }
+# Caption parity samples both paths, and only the compositor's takes a shaped face.
+recast-text = { path = "../../../crates/recast-text" }
+# Scripts an audio device, so the recorder's own loop is testable without one.
+capturekit = { path = "../../../crates/capturekit", features = ["serde", "mock"] }
+# Goldens are PNGs, not raw RGBA: 5.7 MB of committed binary per fixture set is
+# not worth the decode cost saved.
+image = "0.25.10"
+
 [build-dependencies]
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
+# Every screen, window and camera capture in the app, on all three platforms.
+# `serde` because its `Rect` is the rectangle the project format stores.
+capturekit = { path = "../../../crates/capturekit", features = ["serde"] }
+# Phase 4: the FFmpeg-free encode and mux path the recorder writes through.
+recast-codec = { path = "../../../crates/recast-codec" }
+recast-mux = { path = "../../../crates/recast-mux" }
+recast-captions = { path = "../../../crates/recast-captions" }
+recast-scene = { path = "../../../crates/recast-scene" }
+recast-time = { path = "../../../crates/recast-time" }
+recast-color = { path = "../../../crates/recast-color" }
+# The engine, in the shipping binary rather than only in tests. `recast-export`
+# is the one render path; the FFmpeg graph is still the default until parity.
+recast-compositor = { path = "../../../crates/recast-compositor" }
+recast-cursor = { path = "../../../crates/recast-cursor" }
+recast-gpu = { path = "../../../crates/recast-gpu" }
+recast-export = { path = "../../../crates/recast-export" }
+recast-audio = { path = "../../../crates/recast-audio", features = ["scene"] }
+wgpu = { version = "=30.0.1", default-features = false, features = ["dx12", "wgsl"] }
 anyhow = "1.0"
 thiserror = "2.0"
 crossbeam-queue = "0.3"
@@ -40,7 +72,6 @@ parking_lot = "0.12"
 libc = "0.2"
 tauri = { version = "2.10.3", features = ["macos-private-api", "protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-log = "2"
-xcap = "0.8.3"
 tokio = { version = "1.50.0", features = ["full"] }
 image = "0.25"
 rayon = "1"
@@ -87,8 +118,10 @@ rand = "0.8"
 # Silence detection runs Silero VAD on `tract` — PURE RUST, no native ONNX
 # Runtime. This keeps the always-on silence path OS-agnostic (builds on every
 # target, incl. x86_64-apple-darwin where `ort` has no prebuilt). Replaces the
-# old `vad-rs` (which pulled `ort`). `silero_vad.onnx` is downloaded on first use
-# (see silence.rs); tract runs its Conv+LSTM graph natively.
+# old `vad-rs` (which pulled `ort`). The model is EMBEDDED (see silence.rs), and
+# pre-folded to 16 kHz by scripts/build-silero-vad.py: tract cannot analyse the
+# ONNX `If` that upstream uses to pick a sample rate, so the published file
+# fails to load as published.
 tract-onnx = "0.21"
 # On-device transcription engine: Handy's transcribe.cpp — a ggml-native engine
 # (GGUF) that runs 16+ model families (Parakeet, Whisper, Canary, ...) from a
@@ -137,17 +170,14 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 fontdb = "0.23"
 ttf-parser = "0.25"
 rustybuzz = "0.20"
+tauri-plugin-clipboard-manager = "2"
 
 [target.'cfg(windows)'.dependencies]
+# Media Foundation H.264, including the zero-copy texture encode path.
+recast-codec-mf = { path = "../../../crates/recast-codec-mf" }
 windows = { version = "0.58.0", features = [
     "Win32_Foundation",
-    "Win32_Graphics_Direct3D",
-    "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Gdi",
-    "Win32_Graphics_Dxgi",
-    "Win32_Graphics_Dxgi_Common",
-    "Win32_Devices_FunctionDiscovery",
-    "Win32_Media_Audio",
     "Win32_System_SystemInformation",
     "Win32_System_Threading",
     # AttachConsole + CONOUT$/CONIN$ rebind so the headless CLI branch can
@@ -156,48 +186,20 @@ windows = { version = "0.58.0", features = [
     "Win32_Storage_FileSystem",
     "Win32_Security",
     "Win32_System_Com",
-    "Win32_System_Com_StructuredStorage",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
-    # Windows Graphics Capture (WGC): true per-window capture bound to an HWND,
-    # so a maximized/overlapped app records only its own pixels (see
-    # capture/platform/windows.rs WgcSource). The WinRT half + the Win32 interop
-    # (item-from-HWND, D3D device wrap, surface->texture access).
-    "Foundation",
-    "Graphics_Capture",
-    "Graphics_DirectX",
-    "Graphics_DirectX_Direct3D11",
-    "Win32_System_WinRT_Direct3D11",
-    "Win32_System_WinRT_Graphics_Capture",
 ] }
 # Safe user PATH edits for the CLI install action (REG_EXPAND_SZ preserved, no
 # NSIS string-truncation footgun). See path_install.rs.
 winreg = "0.52"
 
-# Native Wayland screen-capture stack. The portal (`ashpd`) negotiates
-# permission and hands us a PipeWire node ID + file descriptor; `pipewire`
-# attaches to that node and pulls BGRA frames. Both are Linux-only crates
-# with C system-library dependencies (`libpipewire-0.3-dev`,
-# `libdbus-1-dev`) — the build host needs those packages installed.
-#
-# `default-features = false` for ashpd so we don't pull in the gtk3/gtk4
-# integration crates we don't need; we just want the raw portal client.
-# The `tokio` feature picks the tokio runtime to match Tauri's own.
+# X11, the Wayland portal and PipeWire now reach this crate through capturekit,
+# which owns every screen backend; the build host still needs
+# `libpipewire-0.3-dev` and `libdbus-1-dev` for it.
 [target.'cfg(target_os = "linux")'.dependencies]
-ashpd = { version = "0.10", default-features = false, features = ["tokio"] }
-# Must match the major version `xcap` pulls in transitively (it uses
-# pipewire for Wayland source enumeration). Two different major versions
-# both `links = "pipewire-0.3"` → cargo-resolution failure. Keep this
-# pinned to the same major as xcap or bump them together.
-pipewire = "0.9"
-# Pure-Rust X11 client. xcap also depends on x11rb so the version line
-# is shared — keeping these in lockstep avoids resolution churn. The
-# `shm` feature lets us upgrade to XShm later for the perf win without
-# touching Cargo.toml again; we only use plain `GetImage` for MVP.
-x11rb = { version = "0.13", features = ["shm"] }
 # Direct handle to the WebKitGTK view behind each Tauri window. Needed to
 # flip `enable-media-stream` ON — WebKitGTK ships it OFF (unlike WKWebView /
 # WebView2), so `navigator.mediaDevices` is `undefined` and the camera
@@ -207,36 +209,6 @@ x11rb = { version = "0.13", features = ["shm"] }
 # `PlatformWebview::inner()` unifies with this crate's `WebView`.
 webkit2gtk = "2.0"
 
-# Cross-platform pointer + button sampling for the cursor-capture thread.
-# `device_query` wraps CoreGraphics on macOS and xcb on Linux behind one
-# API, sparing us two separate `unsafe` FFI implementations. On Wayland
-# sessions it falls back through XWayland (present on every mainstream
-# distro). True Wayland-native pointer tracking would need libei and is
-# out of scope — see the cross-platform plan, Phase 2 caveats.
-[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
-device_query = "2.1"
-
-# macOS-only: native ScreenCaptureKit bindings for system-audio loopback
-# (and later screen capture). Eliminates the BlackHole virtual-driver
-# requirement that the FFmpeg fallback chain depends on.
-#
-# **Opt-in feature `sckit-loopback`.** The `screencapturekit` 6.x crate
-# transitively pulls `apple-metal`, whose Swift bridge references macOS
-# 10.15 SDK symbols (`MTLSamplerReductionMode`) and macOS 14.4 SDK symbols
-# (`reactiveTextureUsage`) unconditionally — neither is available on the
-# GH Actions `macos-latest` runner's Xcode. Pinning `apple-metal` to
-# older versions doesn't help; the macOS 14.4 references go back to 0.6.x.
-# This is an upstream packaging bug in `apple-metal` (should be `#if
-# canImport(...)` compile-time gates, not runtime `#available` checks).
-#
-# Until upstream is fixed (or the runner gets a newer SDK), the dep is
-# gated behind the `sckit-loopback` feature so default builds stay green.
-# Builds with `--features sckit-loopback` against a Mac that has the
-# required SDK locally will exercise the native SCKit path; everyone else
-# falls through to the existing BlackHole / silence chain in
-# `audio/platform/ffmpeg_unix.rs`.
-[target.'cfg(target_os = "macos")'.dependencies]
-screencapturekit = { version = "6.0", default-features = false, features = ["macos_13_0"], optional = true }
 
 [features]
 # On-device captions on by default via the ggml (transcribe.cpp) engine. It builds
@@ -261,10 +233,6 @@ ggml = ["dep:transcribe-cpp"]
 # The models are fetched on first use, not bundled, so this costs no install size.
 # `--no-default-features` still drops it (and ggml) for a minimal build.
 ocr = ["dep:ocrs", "dep:rten", "dep:rten-imageproc"]
-# Enables the native ScreenCaptureKit audio loopback path on macOS.
-# See `audio/platform/macos_sckit.rs` for the runtime smoke-test
-# checklist before flipping this on for a release build.
-sckit-loopback = ["dep:screencapturekit"]
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
@@ -310,3 +278,26 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+# Curated anti-slop set, mirroring crates/Cargo.toml. Deliberately not
+# `pedantic`: its top lints are cast_* and must_use_candidate, which are noise in
+# per-pixel and per-sample code rather than signals of bad code.
+[lints.clippy]
+# Stated here rather than relying on CI's `-D warnings`, so a local run and the
+# pipeline give the same answer. Matches the crates workspace.
+all = { level = "deny", priority = -1 }
+cloned_instead_of_copied = "deny"
+implicit_clone = "deny"
+inconsistent_struct_constructor = "deny"
+inefficient_to_string = "deny"
+redundant_else = "deny"
+uninlined_format_args = "deny"
+unnested_or_patterns = "deny"
+
+# Mirrored from biome.json so Rust and TypeScript are held to one standard.
+# Thresholds live in clippy.toml next to this file.
+too_many_arguments = "deny"           # biome complexity/useMaxParams
+unused_async = "deny"                 # biome suspicious/useAwait
+# NOT too_many_lines: 19 hits in the command handlers today. The crates
+# workspace denies it; this one owes the cleanup before it can.
+

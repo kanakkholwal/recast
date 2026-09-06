@@ -51,8 +51,7 @@ function createBranchReview() {
 		try {
 			changes = await driver.diff(path, id);
 		} catch (cause) {
-			// A branch whose fork point moved cannot be diffed; the row stays
-			// selected so the reason is visible next to it.
+			// A branch whose fork point moved can't be diffed, so the row stays selected and the reason sits beside it.
 			changes = [];
 			error = message(cause);
 		}
@@ -161,7 +160,7 @@ function createBranchReview() {
 			selectedId = null;
 			changes = [];
 			error = null;
-			if (!driver?.branches) return () => {};
+			if (!driver?.branches) return () => undefined;
 
 			let disposed = false;
 			let unsubscribe: (() => void) | undefined;

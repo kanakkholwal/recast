@@ -1,19 +1,5 @@
-//! Backend-owned export queue. The single source of truth for every export's
-//! lifecycle. The frontend builds a self-contained `ExportRequest` (render state
-//! rasterized in the browser) and hands it here via `enqueue_export`; a single
-//! serial worker task drains the queue one job at a time (the real
-//! concurrency-of-1 lock, replacing the old JS guard), so an export survives
-//! closing its editor and an app restart.
-//!
-//! Durability split (see `crate::db`): the heavy `ExportRequest` payload is
-//! written to a file under `export_queue/<id>.json`; the `export_jobs` table holds
-//! only lightweight metadata plus that payload's path. Files stay authoritative
-//! for the heavy data.
-//!
-//! Progress is surfaced two ways: `run_export_job` keeps emitting the per-job
-//! `export-state` events exactly as before (live ring), and this module emits a
-//! lightweight `export-jobs-changed` event whenever queue membership or a job's
-//! status changes (the frontend re-fetches `list_export_jobs`).
+//! Backend-owned export queue: one serial worker drains it, so an export survives closing its editor and an app restart.
+//! The heavy `ExportRequest` payload stays a file under `export_queue/<id>.json`; the table holds only its path.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -34,9 +20,7 @@ const JOBS_CHANGED_EVENT: &str = "export-jobs-changed";
 /// stale; the exported FILE on disk is never touched, only the queue record.
 const TERMINAL_JOB_TTL_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
-/// A queue row as the frontend read-model consumes it. Field names mirror the TS
-/// `ExportItem`: `file_path` = the source project (camelCase `filePath`), `path` =
-/// the output on success.
+/// A queue row as the frontend read-model consumes it. Field names mirror the TS `ExportItem`: `file_path` = the source project (camelCase `filePath`), `path` = the output on success.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportJobDto {
@@ -198,12 +182,7 @@ fn write_sidecar(output_path: &str, sidecar: &CaptionSidecar) {
 /// and it runs one job at a time, this IS the concurrency-of-1 guarantee.
 pub(crate) fn spawn_export_worker(app: AppHandle) {
     let wake = { app.state::<AppState>().export_wake.clone() };
-    // Its OWN thread and runtime, not `tauri::async_runtime::spawn`. Between its
-    // awaits this worker does minutes of blocking work — bundle extraction,
-    // ffprobe, background prebake, a full cursor pre-render — plus blocking
-    // SQLite claims and a blocking payload read, all of which parked a shared
-    // runtime worker and starved every other command. The queue is serial by
-    // design, so one dedicated thread matches it exactly.
+    // Its OWN thread and runtime: between awaits this does minutes of blocking work that starved a shared runtime worker.
     let spawned = std::thread::Builder::new()
         .name("recast-export-worker".into())
         .spawn(move || {
@@ -219,8 +198,7 @@ pub(crate) fn spawn_export_worker(app: AppHandle) {
             };
             runtime.block_on(async move {
                 loop {
-                    // Drain first so queued-at-startup jobs (survivors of a restart) run
-                    // without waiting for a notify.
+                    // Drain first, so jobs queued at startup (restart survivors) run without waiting for a notify.
                     loop {
                         let db = { app.state::<AppState>().db.clone() };
                         let Some(job) = claim_next_queued(&db) else {
@@ -252,8 +230,7 @@ async fn run_one(app: &AppHandle, job: ClaimedJob) {
     };
     let sidecar = request.caption_sidecar.clone();
 
-    // Browser-rendered payloads take the mux-only path (`-c:v copy` + audio);
-    // everything else runs the classic Rust filter_complex compositor.
+    // Browser-rendered payloads take the mux-only path; everything else runs the Rust filter_complex compositor.
     let run_result = if let Some(browser_video) = request.browser_video_path.clone() {
         crate::commands::editor::run_mux_job(app.clone(), request, browser_video).await
     } else {
@@ -335,8 +312,7 @@ pub(crate) fn sweep_stale_jobs(app: &AppHandle) {
         for p in removed {
             let _ = std::fs::remove_file(p);
         }
-        // Orphan payloads (and leaked `.tmp` files): a file whose full path is no
-        // longer referenced by any row. Keep the file if the lookup errors.
+        // Orphan payloads and leaked `.tmp` files: a path no row references any more. Keep the file if the lookup errors.
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
@@ -371,12 +347,7 @@ pub async fn enqueue_export(
     mut request: ExportRequest,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<String>> {
-    // Fail-fast validation: probe the source's metadata on a blocking worker,
-    // run `validate_render_state` against it, and reject bad payloads BEFORE
-    // we serialize / persist. The cost is one extra ffprobe spawn per
-    // enqueue; the win is that an agent's bad JSON never reaches the
-    // eventual FFmpeg filter graph (where it manifests as a confusing crash
-    // mid-encode instead of a structured error at the IPC door).
+    // One extra ffprobe per enqueue buys rejecting bad JSON at the IPC door instead of a confusing crash mid-encode.
     let input_path = PathBuf::from(&request.input_path);
     let source_video: PathBuf =
         if input_path.extension().and_then(|value| value.to_str()) == Some("recast") {
@@ -398,10 +369,7 @@ pub async fn enqueue_export(
     .await
     .map_err(|e| AppError::msg(format!("probe source join error: {e}")))?
     .map_err(AppError::msg)?;
-    // Auto-repair before validating: an older project can carry a wall-clock
-    // trim_end slightly past the real (CFR-encoded) video, which the strict
-    // validator would otherwise reject. Clamp to the probed duration + tell the
-    // caller so it can surface a "verify this" toast.
+    // Auto-repair first: an older project's wall-clock trim_end can sit past the CFR video, which the strict validator rejects.
     let repairs =
         crate::commands::repair_render_state(&mut request.render_state, source_meta.duration);
     if !repairs.is_empty() {

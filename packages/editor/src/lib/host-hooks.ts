@@ -20,7 +20,7 @@ export interface ShortcutHost {
  *  a `new URL(…, import.meta.url)` inside this package resolves outside the
  *  app root, which then only fails in dev — see
  *  `packages/media/test/worker-resolution.test.ts`. */
-export type EditorWorkerName = "mediabunny" | "render" | "filmstrip" | "smoothing" | "exportRender";
+export type EditorWorkerName = "mediabunny" | "filmstrip" | "smoothing" | "exportRender";
 
 export interface WorkerHost {
 	create(name: EditorWorkerName): Worker;
@@ -40,7 +40,7 @@ interface HostHooks {
 }
 
 const noop: HostHooks = {
-	analytics: { capture: () => {} },
+	analytics: { capture: () => undefined },
 	workers: {
 		create: (name) => {
 			// Loud on purpose: a silently-missing worker degrades to no decode.
@@ -50,7 +50,7 @@ const noop: HostHooks = {
 			);
 		},
 	},
-	shortcuts: { chordLabel: () => "", registerShortcutHandlers: () => () => {} },
+	shortcuts: { chordLabel: () => "", registerShortcutHandlers: () => () => undefined },
 	exportActivity: { renderingInBrowser: false },
 };
 

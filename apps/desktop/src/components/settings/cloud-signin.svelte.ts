@@ -3,18 +3,18 @@
  * States: loading | signed-out | waiting | signed-in | denied | expired.
  */
 
+import { toast } from "@recast/ui/sonner";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+	type AuthPlan,
+	type AuthStatus,
+	type AuthUsage,
 	authCancel,
 	authSignOut,
 	authStart,
 	authStatus,
-	type AuthPlan,
-	type AuthStatus,
-	type AuthUsage,
 } from "$lib/ipc";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
-import { toast } from "@recast/ui/sonner";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type SignedInProfile = {
 	email: string | null;
@@ -132,8 +132,7 @@ export class CloudAuth {
 	start(): void {
 		this.loadStatus();
 
-		// Each handler ignores the firing if the view left "waiting". Defense in
-		// depth over `auth_cancel`, in case a poll landed between Cancel and abort.
+		// Each handler ignores a firing once the view leaves waiting: defense in depth if a poll lands between Cancel and abort.
 		void (async () => {
 			const handles = await Promise.all([
 				listen<AuthStatus>("auth:signed-in", (event) => {
@@ -160,8 +159,7 @@ export class CloudAuth {
 					toast.error(`Sign-in error: ${event.payload}`);
 					this.#view = { kind: "signed-out" };
 				}),
-				// Self-host endpoint changed: Rust dropped the old token, so re-check
-				// against the new endpoint without a reload.
+				// The self-host endpoint changed and Rust dropped the old token, so re-check against the new one without a reload.
 				listen("cloud:endpoint-changed", () => {
 					if (this.#view.kind === "waiting") void this.cancelSignIn();
 					this.#view = { kind: "loading" };

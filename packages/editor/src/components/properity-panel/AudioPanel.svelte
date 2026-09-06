@@ -1,24 +1,42 @@
 <script lang="ts">
-import type { EditorStore } from "../../stores/editor-store.svelte";
-import { isEditableTarget } from "../../lib/dom/editable";
-import { clock } from "../../lib/format/time";
-import {
-	activePreset as activePresetLabel,
-	dbForVolume,
-	envelopePath as envelopePathBase,
-	FADE_PRESETS,
-	volumeZone as classifyVolume,
-	type FadePreset,
-} from "./audio-panel.logic";
-import { AudioLines, Mic, MicOff, RotateCcw, Speaker, VolumeOff, Waves } from "@recast/icons";
+import { Mic, MicOff, RotateCcw, Speaker, VolumeOff, Waves } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
+import { SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
+import { isEditableTarget } from "../../lib/dom/editable";
+import { clock } from "../../lib/format/time";
 import { motionDuration } from "../../lib/motion.svelte";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import {
+	activePreset as activePresetLabel,
+	volumeZone as classifyVolume,
+	dbForVolume,
+	envelopePath as envelopePathBase,
+	FADE_PRESETS,
+	type FadePreset,
+} from "./audio-panel.logic";
+import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
 import SettingRow from "./SettingRow.svelte";
+
+// A drag pushes undo once at the start, a typed/keyed edit is one undo entry.
+function fadeField(key: "fadeIn" | "fadeOut") {
+	return {
+		onDragStart: () => store.pushUndoState(),
+		onInput: (v: number) => store.updateAudioSettings({ [key]: v }),
+		onCommit: (v: number, viaDrag: boolean) => {
+			if (!viaDrag) store.pushUndoState();
+			store.updateAudioSettings({ [key]: v });
+		},
+	};
+}
+
+const fin = fadeField("fadeIn");
+const fout = fadeField("fadeOut");
 
 interface Props {
 	store: EditorStore;
@@ -63,30 +81,28 @@ function applyPreset(preset: FadePreset) {
 	store.updateAudioSettings({ fadeIn: preset.in, fadeOut: preset.out });
 }
 
-// Matching preset drives the Segmented selection; a custom slider value
-// leaves nothing selected.
+// A matching preset drives the Segmented selection; a custom slider value leaves nothing selected.
 const activePreset = $derived(activePresetLabel(store.audioSettings));
-const fadePresetOptions = $derived(FADE_PRESETS.map((p) => ({ value: p.label, label: p.label })));
+const fadePresetOptions = $derived([
+	...FADE_PRESETS.map((p) => ({ value: p.label, label: p.label })),
+	...(activePreset ? [] : [{ value: "custom", label: "Custom" }]),
+]);
 
 // Wrappers: read the reactive store, defer maths to the shared helpers.
 const envelopePath = (fadeIn: number, fadeOut: number): string =>
 	envelopePathBase(fadeIn, fadeOut, store.clipDuration || 1);
 const formatClipDuration = (): string => clock(store.clipDuration || 0);
 
-// Per-source gain only reaches the export when the source is a SEPARATE track:
-// `effective_audio_gain` (commands/editor.rs) ignores system/mic gain for
-// muxed `AudioKind::Source` audio. Showing sliders for a track that doesn't
-// exist meant setting mic gain to 180% on a recording with no mic.
-const hasSystemTrack = $derived(!!store.audioPath);
-const hasMicTrack = $derived(!!store.microphonePath);
+// Per-source gain only reaches the export for a SEPARATE track, so a slider for an absent track let mic gain be set on a recording with no mic.
+const hasSystemTrack = $derived(Boolean(store.audioPath));
+const hasMicTrack = $derived(Boolean(store.microphonePath));
 
-const zoneText = $derived(
-	volumeZone === "hot"
-		? "text-destructive"
-		: volumeZone === "boost"
-			? "text-warning"
-			: "text-muted-foreground",
-);
+function zoneTextClass(zone: string): string {
+	if (zone === "hot") return "text-destructive";
+	if (zone === "boost") return "text-warning";
+	return "text-muted-foreground";
+}
+const zoneText = $derived(zoneTextClass(volumeZone));
 </script>
 
 <!-- `M` toggles master mute. Bound here, so it only works while this panel is
@@ -114,8 +130,10 @@ const zoneText = $derived(
     {/snippet}
 
     <div class="flex flex-col gap-2.5">
-      <div class="flex items-center gap-1">
+      <PropRow label="Master">
         <SliderControl
+          dense
+          hideLabel
           class="min-w-0 flex-1"
           label="Master"
           value={store.audioSettings.volume}
@@ -127,22 +145,18 @@ const zoneText = $derived(
           onstart={() => store.pushUndoState()}
           onchange={(next) => store.updateAudioSettings({ volume: next })}
           formatValue={(v) => `${v}%`}
-        >
-          {#snippet icon()}
-            <AudioLines size={11} />
-          {/snippet}
-        </SliderControl>
+        />
         <Button
           variant="ghost"
           size="xs"
-          class="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+          class="size-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
           onclick={resetVolume}
           title="Reset master volume to 100%"
           aria-label="Reset master volume"
         >
           <RotateCcw size={11} />
         </Button>
-      </div>
+      </PropRow>
 
       <!-- dB, plus the boost/clipping warning. The old version put this in a
            hero card with a 0-200 bar that read as a level meter but only ever
@@ -227,15 +241,7 @@ const zoneText = $derived(
     flush
     collapsible
   >
-    {#snippet action()}
-      <!-- Dragging either slider off a preset leaves the Segmented with nothing
-           selected, which reads as broken unless the state is named. -->
-      {#if !activePreset}
-        <span class="text-[11px] text-muted-foreground">Custom</span>
-      {/if}
-    {/snippet}
-
-    <div class="rounded-md border border-border bg-background/60 p-2">
+    <div class="rounded-lg bg-muted/30 p-2 ring-1 ring-inset ring-border/40">
       <svg
         viewBox="0 0 100 24"
         preserveAspectRatio="none"
@@ -244,11 +250,11 @@ const zoneText = $derived(
       >
         <path
           d={`${envelopePath(store.audioSettings.fadeIn, store.audioSettings.fadeOut)} L 100 24 L 0 24 Z`}
-          class="fill-primary/15"
+          class="fill-foreground/10"
         />
         <path
           d={envelopePath(store.audioSettings.fadeIn, store.audioSettings.fadeOut)}
-          class="stroke-primary/80"
+          class="stroke-foreground/70"
           stroke-width="1.2"
           fill="none"
           vector-effect="non-scaling-stroke"
@@ -271,42 +277,51 @@ const zoneText = $derived(
       </div>
     </div>
 
-    <div class="mt-2">
-      <Segmented
-        size="xs"
-        aria-label="Fade preset"
-        value={activePreset}
-        options={fadePresetOptions}
-        onValueChange={(v) => {
-          const preset = FADE_PRESETS.find((p) => p.label === v);
-          if (preset) applyPreset(preset);
-        }}
-      />
-    </div>
-
-    <div class="mt-2.5 space-y-2.5">
-      <SliderControl
-        label="Fade in"
-        value={store.audioSettings.fadeIn}
-        min={0}
-        max={5}
-        step={0.05}
-        unit="s"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => store.updateAudioSettings({ fadeIn: next })}
-        formatValue={(v) => `${v.toFixed(2)}s`}
-      />
-      <SliderControl
-        label="Fade out"
-        value={store.audioSettings.fadeOut}
-        min={0}
-        max={5}
-        step={0.05}
-        unit="s"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => store.updateAudioSettings({ fadeOut: next })}
-        formatValue={(v) => `${v.toFixed(2)}s`}
-      />
+    <div class="mt-2.5 space-y-1.5">
+      <PropRow label="Preset">
+        <PropSelect
+          class="flex-1"
+          label="Fade preset"
+          value={activePreset ?? "custom"}
+          options={fadePresetOptions}
+          onChange={(v) => {
+            const preset = FADE_PRESETS.find((p) => p.label === v);
+            if (preset) applyPreset(preset);
+          }}
+        />
+      </PropRow>
+      <PropRow label="Fade in">
+        <NumberField
+          class="flex-1"
+          label="Fade in"
+          icon={Waves}
+          value={store.audioSettings.fadeIn}
+          min={0}
+          max={5}
+          step={0.05}
+          decimals={2}
+          suffix="s"
+          onDragStart={fin.onDragStart}
+          onInput={fin.onInput}
+          onCommit={fin.onCommit}
+        />
+      </PropRow>
+      <PropRow label="Fade out">
+        <NumberField
+          class="flex-1"
+          label="Fade out"
+          icon={Waves}
+          value={store.audioSettings.fadeOut}
+          min={0}
+          max={5}
+          step={0.05}
+          decimals={2}
+          suffix="s"
+          onDragStart={fout.onDragStart}
+          onInput={fout.onInput}
+          onCommit={fout.onCommit}
+        />
+      </PropRow>
     </div>
   </PanelSection>
 
@@ -322,8 +337,10 @@ const zoneText = $derived(
     {@const muted = isSystem
       ? store.audioSettings.systemMuted
       : store.audioSettings.micMuted}
-    <div class="flex items-center gap-1">
+    <PropRow label={isSystem ? "System" : "Mic"}>
       <SliderControl
+        dense
+        hideLabel
         class="min-w-0 flex-1"
         label={name}
         value={level}
@@ -350,7 +367,7 @@ const zoneText = $derived(
       <Button
         variant="ghost"
         size="xs"
-        class="size-6 shrink-0 p-0 {muted
+        class="size-8 shrink-0 p-0 {muted
           ? 'text-destructive hover:text-destructive'
           : 'text-muted-foreground hover:text-foreground'}"
         aria-label="Mute {name}"
@@ -374,14 +391,14 @@ const zoneText = $derived(
       <Button
         variant="ghost"
         size="xs"
-        class="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+        class="size-8 shrink-0 p-0 text-muted-foreground hover:text-foreground"
         onclick={isSystem ? resetSystemVolume : resetMicVolume}
         title="Reset {name} to 100%"
         aria-label="Reset {name} level"
       >
         <RotateCcw size={11} />
       </Button>
-    </div>
+    </PropRow>
   {/snippet}
 
   {#if hasSystemTrack || hasMicTrack}

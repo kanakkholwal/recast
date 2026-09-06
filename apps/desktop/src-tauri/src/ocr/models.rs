@@ -1,8 +1,5 @@
-//! ocrs model files: resolve their on-disk paths and download-on-first-use.
-//!
-//! The two models are ocrs's own defaults (the exact URLs its CLI uses), stored
-//! under the same `app_data_dir/models` root the caption models use, in an `ocrs`
-//! subfolder. Reuses the caption pipeline's verified streaming downloader.
+//! ocrs model paths and download-on-first-use, under an `ocrs` subfolder of the caption models root.
+//! These are ocrs's own default URLs, fetched through the caption pipeline's verified streaming downloader.
 
 use std::path::PathBuf;
 

@@ -32,8 +32,7 @@ describe("currentDeliveryPeriodStart", () => {
 		expect(currentDeliveryPeriodStart(JULY).toISOString()).toBe("2026-07-01T00:00:00.000Z");
 	});
 
-	// A local-time month boundary would shift the reset by hours for users
-	// east of UTC, letting a workspace serve two "first days" in a row.
+	// A local-time month boundary shifts the reset by hours east of UTC, letting a workspace serve two first days.
 	it("uses UTC, not local time, at a month edge", () => {
 		const edge = new Date("2026-08-01T00:30:00Z");
 		expect(currentDeliveryPeriodStart(edge).toISOString()).toBe("2026-08-01T00:00:00.000Z");
@@ -62,8 +61,7 @@ describe("deliveryState", () => {
 		expect(state.ratio).toBe(1);
 	});
 
-	// Without this, a workspace that maxed out in June would stay blocked
-	// through July until something happened to write the counter.
+	// Without this, a workspace that maxed out in June stays blocked through July until something writes the counter.
 	it("treats a previous month's counter as spent", () => {
 		const state = deliveryState(snapshot("free", 99 * GB, JUNE_START), JULY);
 		expect(state.usedBytes).toBe(0);

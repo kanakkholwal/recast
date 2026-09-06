@@ -222,8 +222,7 @@ export const shareReaction = pgTable(
 	},
 	(t) => [
 		index("share_reaction_share_idx").on(t.shareSlug),
-		// One reaction per (share, reactor). Replaces the old
-		// (share, session, emoji) key that let a viewer stack multiple emojis.
+		// One reaction per share and reactor, replacing the key that let a viewer stack multiple emojis.
 		unique("share_reaction_reactor_key").on(t.shareSlug, t.ipHash),
 	],
 );

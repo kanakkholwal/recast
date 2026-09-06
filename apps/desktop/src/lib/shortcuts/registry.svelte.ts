@@ -166,9 +166,7 @@ export const shortcutDefs: ShortcutDef[] = [
 		scopeNote: "On the Profiles page",
 	},
 
-	// Global (OS-wide) recording hotkeys, registered by the Rust global-shortcut
-	// plugin, not the window dispatcher (hence central: false). Listed here so
-	// the Shortcuts dialog documents them.
+	// Registered by the Rust global-shortcut plugin, not the window dispatcher, and listed here so the dialog documents them.
 	{
 		id: "global.recordToggle",
 		keys: "Alt+Shift+R",
@@ -349,8 +347,7 @@ export const shortcutDefs: ShortcutDef[] = [
 		scopeNote: "timeline focused",
 	},
 
-	// Navigation: the app sidebar (library routes). Same chord as the editor's
-	// properties panel, but a different route, so they never collide at runtime.
+	// Same chord as the editor's properties panel, but a different route, so the two never collide at runtime.
 	{ id: "app.sidebar", keys: "Mod+B", label: "Toggle sidebar", category: "Navigation" },
 ];
 
@@ -358,8 +355,12 @@ export const shortcutDefs: ShortcutDef[] = [
 export function shortcutsByCategory(): [string, ShortcutDef[]][] {
 	const map = new Map<string, ShortcutDef[]>();
 	for (const def of shortcutDefs) {
-		if (!map.has(def.category)) map.set(def.category, []);
-		map.get(def.category)!.push(def);
+		let bucket = map.get(def.category);
+		if (!bucket) {
+			bucket = [];
+			map.set(def.category, bucket);
+		}
+		bucket.push(def);
 	}
 	return Array.from(map.entries());
 }
@@ -371,9 +372,7 @@ for (const def of shortcutDefs) {
 	if (def.central) centralByChord.set(chordFromKeys(def.keys), def);
 }
 
-// Component-provided handlers, keyed by shortcut id. A def's handler takes
-// precedence over its default `action`; absent both, the chord is inert (e.g.
-// an editor shortcut while no editor is open).
+// A def's handler beats its default `action`; with neither the chord is inert, as an editor shortcut is with no editor open.
 const handlers = new Map<string, Handler>();
 
 /**
@@ -392,7 +391,7 @@ export function registerShortcutHandlers(map: Record<string, Handler>): () => vo
 
 function isEditableTarget(t: EventTarget | null): boolean {
 	const el = t as HTMLElement | null;
-	if (!el || !el.tagName) return false;
+	if (!el?.tagName) return false;
 	const tag = el.tagName;
 	return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
 }

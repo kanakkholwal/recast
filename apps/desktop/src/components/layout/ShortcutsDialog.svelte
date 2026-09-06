@@ -1,19 +1,18 @@
 <script lang="ts">
-import * as Dialog from "@recast/ui/dialog";
 import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
-import { cn } from "@recast/ui/utils";
-import { Kbd } from "@recast/ui/kbd";
 import { Keyboard } from "@recast/icons";
+import * as Dialog from "@recast/ui/dialog";
+import { Kbd } from "@recast/ui/kbd";
+import { cn } from "@recast/ui/utils";
 import {
 	formatChordTokens,
+	type ShortcutDef,
 	shortcutDefs,
 	shortcutsByCategory,
 	shortcutsDialog,
-	type ShortcutDef,
 } from "$lib/shortcuts/registry.svelte";
 
-// The list is static (declared once in the registry); compute the grouping
-// and the Mod+/ display tokens a single time.
+// The list is static (declared once in the registry), so group it and build the display tokens a single time.
 const groups = shortcutsByCategory();
 const openTokens = formatChordTokens("Mod+/");
 
@@ -27,11 +26,13 @@ function tokensFor(def: ShortcutDef): string[] {
     showCloseButton={false}
     class={cn("top-[6%] w-[min(92vw,52rem)] max-w-none translate-y-0 sm:max-w-none", DIALOG_SURFACE)}
   >
-    <Dialog.Header class="border-b border-border px-4 py-2.5">
+    <Dialog.Header class="px-5 pt-5 pb-1">
       <Dialog.Title
-        class="flex items-center gap-2 text-[13px] font-semibold tracking-tight text-foreground"
+        class="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-foreground"
       >
-        <Keyboard class="size-4 text-muted-foreground" />
+        <span class="grid size-9 shrink-0 place-items-center rounded-xl bg-muted/60 text-foreground ring-1 ring-inset ring-border/50">
+          <Keyboard class="size-4" />
+        </span>
         Keyboard shortcuts
       </Dialog.Title>
       <Dialog.Description class="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -83,7 +84,7 @@ function tokensFor(def: ShortcutDef): string[] {
     </div>
 
     <footer
-      class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+      class="flex items-center justify-between gap-2 px-5 pb-4 pt-2 text-[11px] text-muted-foreground"
     >
       <span class="flex items-center gap-1">
         <Kbd>Esc</Kbd>

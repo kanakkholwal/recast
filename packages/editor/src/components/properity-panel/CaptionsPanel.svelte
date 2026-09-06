@@ -1,7 +1,6 @@
 <script lang="ts" module>
 type StyleView = "style" | "motion" | "text";
-// Survives the panel unmounting when you switch rail tabs, so coming back to
-// Captions puts you where you left off.
+// Survives the panel unmounting on a rail-tab switch, so returning to Captions restores the view.
 let lastView: StyleView = "style";
 </script>
 
@@ -31,9 +30,9 @@ import {
 import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
 import * as Command from "@recast/ui/command";
-import * as Popover from "@recast/ui/popover";
+import { Combobox } from "@recast/ui/combobox";
 import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
+import SliderRow from "./SliderRow.svelte";
 import { toast } from "@recast/ui/sonner";
 import { Switch } from "@recast/ui/switch";
 import * as Tabs from "@recast/ui/tabs";
@@ -68,6 +67,8 @@ import {
 } from "./captions-panel.logic";
 import FontPicker from "./FontPicker.svelte";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
 import SettingRow from "./SettingRow.svelte";
 
 interface Props {
@@ -75,8 +76,7 @@ interface Props {
 }
 let { store }: Props = $props();
 
-// Absent on hosts with no on-device ASR (web): the whole generate surface —
-// model picker, download, probe — hides and import stays the only way in.
+// Absent on hosts with no on-device ASR: the whole generate surface hides and import is the only way in.
 const services = getEditorServices();
 const asr = services.transcription;
 const captionFiles = services.captionFiles;
@@ -99,9 +99,7 @@ let phase = $state<string>("");
 let error = $state<string | null>(null);
 let transcriptQuery = $state("");
 
-// No percentage to report: the Rust side runs inference as one blocking call and
-// only emits coarse phases. Elapsed time is the honest substitute for a spinner
-// that could sit there for minutes.
+// Rust runs inference as one blocking call with coarse phases, so elapsed time is the honest substitute for a percentage.
 let startedAt = 0;
 let elapsedMs = $state(0);
 $effect(() => {
@@ -114,14 +112,9 @@ $effect(() => {
 
 const selected = $derived(models.find((m) => m.id === selectedModelId) ?? null);
 const usable = $derived(models.filter((m) => m.installed && m.runnable && m.runtimeAvailable));
-// Remote endpoints transcribe over HTTP, so they work even where the on-device
-// engine isn't in the build (Intel Mac). Their presence lets us offer captions
-// there instead of a dead end.
+// Remote endpoints transcribe over HTTP, so captions work even where the on-device engine isn't in the build.
 const hasRemoteModels = $derived(models.some((m) => m.source === "remote"));
-// A recording can have an audio path but no actual audio stream (mic + system
-// audio off), so `hasAudio` is the ffprobe result, not just path existence.
-// `null` = not yet probed → fall back to path presence so the UI doesn't flash
-// the empty state before the probe resolves.
+// A recording can have an audio path with no stream, so this is the ffprobe result; `null` falls back to path presence.
 let audioProbe = $state<boolean | null>(null);
 const pathHasAudio = $derived(!!(store.audioPath || store.microphonePath));
 const hasAudio = $derived(audioProbe ?? pathHasAudio);
@@ -151,8 +144,7 @@ $effect(() => {
 		.then((present) => {
 			if (!cancelled) audioProbe = present;
 		})
-		// Don't hard-block on a probe failure. Let the transcribe call be the
-		// authority (it reports "no audio" if the extract is truly empty).
+		// Don't hard-block on a probe failure; the transcribe call is the authority on 'no audio'.
 		.catch(() => {
 			if (!cancelled) audioProbe = true;
 		});
@@ -170,8 +162,7 @@ async function refresh() {
 	if (!asr) return;
 	try {
 		const list = await asr.listModels();
-		// Remote endpoints are an experimental surface; hide them (and any models
-		// they contribute) unless the user opted in.
+		// Remote endpoints are experimental: hide them and any models they contribute unless the user opted in.
 		const showRemote = experimentalStore.isEnabled("remoteTranscription");
 		models = showRemote ? list : list.filter((m) => m.source !== "remote");
 		if (!selectedModelId || !models.some((m) => m.id === selectedModelId)) {
@@ -249,9 +240,7 @@ async function generate() {
 			},
 		});
 	} catch (e) {
-		// Keep whatever transcript is already loaded: this runs as "Regenerate"
-		// with real data on screen, and `transcript` is not in the undo snapshot,
-		// so clearing it here is unrecoverable.
+		// Keep the loaded transcript: this runs as Regenerate, and `transcript` isn't in the undo snapshot.
 		if (!`${e}`.includes(TRANSCRIBE_CANCELLED)) error = `${e}`;
 	} finally {
 		transcribing = false;
@@ -275,9 +264,7 @@ async function exportSubs(format: "srt" | "vtt") {
 	const t = store.transcript;
 	if (!t || !captionFiles) return;
 	try {
-		// Map onto the output timeline (trim + cuts + speed) so cues line up with
-		// the exported video, not the raw recording, using the same warp the export
-		// dialog and Cloud track apply.
+		// Map onto the output timeline with the same warp the export dialog and the Cloud track apply.
 		await captionFiles.exportSidecar(toOutputTimeTranscript(store.timeMap, t), format);
 		toast.success(`Exported ${format.toUpperCase()}`);
 	} catch (e) {
@@ -335,23 +322,19 @@ function rememberColor(c: string) {
 	recents = pushRecentColor(c);
 }
 
-// Caption themes from the asset registry: built-ins first, extension packs
-// appended. Applying one overwrites the style fields but keeps `enabled`.
+// Built-ins first, then extension packs; applying one overwrites the style fields but keeps `enabled`.
 const captionPresets = $derived(registry.list("captionPreset"));
 // The theme picker preloads its own fonts; this only covers the applied style.
 function applyPreset(style: Partial<CaptionStyle>) {
 	store.updateCaptionStyle(style);
 }
-// The preset matching the current style exactly (so the picker shows the
-// active theme), or null once the user has tweaked away from any preset.
+// The preset matching the current style exactly, or null once the user tweaks away from any preset.
 const activeTheme = $derived.by(() => {
 	const cs = store.captionStyle;
 	return captionPresets.find((p) => captionStyleMatchesPreset(cs, p.value)) ?? null;
 });
 
-// The transcript line under the playhead, highlighted so you can follow along
-// as it plays. Deliberately no auto-scroll: yanking the scroll position while
-// someone is reading is worse than a still list.
+// Deliberately no auto-scroll: yanking the scroll position while someone is reading is worse than a still list.
 const activeSegmentId = $derived.by(() => {
 	const t = store.currentTime;
 	const segs = store.transcript?.segments ?? [];
@@ -367,11 +350,7 @@ const visibleSegments = $derived(
 	filterSegments(store.transcript?.segments ?? [], transcriptQuery),
 );
 
-// Transcription that SUCCEEDED but returned nothing. Distinct from an error
-// (which sets `error`) and from a recording with no audio track at all
-// (`hasAudio`): here the model ran and genuinely heard no speech: silence, or
-// music/room tone only. Without this the panel just re-rendered its empty
-// pre-transcribe self, which reads as "the button did nothing".
+// Transcription that SUCCEEDED with nothing: the model ran and heard no speech, which the empty pre-transcribe state read as the button doing nothing.
 const noSpeechFound = $derived(
 	!!store.transcript && store.transcript.segments.length === 0 && !error,
 );
@@ -392,7 +371,7 @@ const noSpeechFound = $derived(
           title={caps.gpu.name ?? gpuLabel}
         >
           {#if caps.gpu.available}
-            <Zap size={9} class="text-primary" />
+            <Zap size={9} class="text-muted-foreground" />
           {:else}
             <Cpu size={9} />
           {/if}
@@ -442,152 +421,114 @@ const noSpeechFound = $derived(
           endpoints can transcribe here.</span>
       </div>
     {/if}
-    <!-- Combobox selector: only the chosen model shows here; the full list
-         lives in the popover so the tab stays compact. -->
-    <Popover.Root open={pickerOpen} onOpenChange={(v) => (pickerOpen = v)}>
-      <Popover.Trigger>
-        {#snippet child({ props })}
-          <button
-            {...props as Record<string, unknown>}
-            class="flex w-full items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-2 text-left transition-colors hover:border-border hover:bg-card"
+    <!-- Combobox: chosen model on the button, searchable grouped list in the popover. -->
+    <Combobox
+      bind:open={pickerOpen}
+      placeholder="Search models…"
+      emptyText="No models found"
+    >
+      {#snippet trigger({ props })}
+        <button
+          {...props}
+          class="flex w-full items-center gap-2 rounded-lg bg-muted/60 px-2.5 py-2 text-left ring-1 ring-inset ring-border/40 transition-colors hover:bg-muted"
+        >
+          <span
+            class={cn(
+              "grid size-7 shrink-0 place-items-center rounded-lg ring-1 ring-inset ring-border/40",
+              selected?.installed && selected?.runnable
+                ? "bg-background text-foreground"
+                : "bg-muted/60 text-muted-foreground",
+            )}
           >
-            <span
-              class={cn(
-                "grid size-7 shrink-0 place-items-center rounded-md",
-                selected?.installed && selected?.runnable
-                  ? "bg-ink/5 text-ink"
-                  : "bg-muted/60 text-muted-foreground",
-              )}
-            >
-              {#if selected && !selected.runnable}
-                <Lock size={13} />
-              {:else}
-                <Package size={13} />
-              {/if}
+            {#if selected && !selected.runnable}
+              <Lock size={13} />
+            {:else}
+              <Package size={13} />
+            {/if}
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-[13px] font-semibold text-foreground">
+              {selected?.displayName ?? "Select a model"}
             </span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-[12px] font-semibold text-foreground">
-                {selected?.displayName ?? "Select a model"}
+            {#if selected}
+              <span class="block truncate text-[10px] text-muted-foreground">
+                {selected.family}{#if selected.installed} · Installed{/if}
               </span>
-              {#if selected}
-                <span class="block truncate text-[10px] text-muted-foreground">
-                  {selected.family}{#if selected.installed} · Installed{/if}
-                </span>
-              {/if}
-            </span>
-            <ChevronsUpDown size={13} class="shrink-0 text-muted-foreground" />
-          </button>
-        {/snippet}
-      </Popover.Trigger>
-      <Popover.Content align="start" sideOffset={6} class="w-72 p-0">
-        <Command.Root>
-          <Command.Input placeholder="Search models…" class="h-9 text-[12px]" />
-          <Command.List class="max-h-72 scrollbar-transparent">
-            <Command.Empty class="py-6 text-center text-[11px] text-muted-foreground">
-              No models found
-            </Command.Empty>
-            {#each families as fam (fam.name)}
-              <Command.Group heading={fam.name}>
-                {#each fam.models as m (m.id)}
-                  <Command.Item
-                    value={`${m.displayName} ${m.family} ${m.engine}`}
-                    onSelect={() => pick(m.id)}
-                    class="gap-2"
-                  >
-                    <span class="flex size-4 shrink-0 items-center justify-center">
-                      {#if m.id === selectedModelId}<Check size={13} class="text-primary" />{/if}
+            {/if}
+          </span>
+          <ChevronsUpDown size={13} class="shrink-0 text-muted-foreground" />
+        </button>
+      {/snippet}
+      {#each families as fam (fam.name)}
+        <Command.Group heading={fam.name}>
+          {#each fam.models as m (m.id)}
+            <Command.Item
+              value={`${m.displayName} ${m.family} ${m.engine}`}
+              onSelect={() => pick(m.id)}
+              class="items-start"
+            >
+              <span class="mt-0.5 flex size-4 shrink-0 items-center justify-center text-foreground">
+                {#if m.id === selectedModelId}<Check size={14} />{/if}
+              </span>
+              <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span class="flex items-center gap-1.5">
+                  <span class="truncate">{m.displayName}</span>
+                  {#if m.recommended}
+                    <span
+                      class="shrink-0 rounded bg-foreground/8 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-muted-foreground"
+                    >
+                      Rec
                     </span>
-                    <span class="min-w-0 flex-1 truncate text-[12px]">{m.displayName}</span>
-                    {#if m.recommended}
-                      <span
-                        class="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary"
-                      >
-                        Rec
-                      </span>
-                    {/if}
-                    {#if !m.runnable}
-                      <Lock size={11} class="shrink-0 text-muted-foreground/70" />
-                    {:else if m.installed}
-                      <Check size={11} class="shrink-0 text-success" />
-                    {/if}
-                    {#if m.approxSizeBytes}
-                      <span class="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                        {formatSize(m.approxSizeBytes)}
-                      </span>
-                    {/if}
-                  </Command.Item>
-                {/each}
-              </Command.Group>
-            {/each}
-          </Command.List>
-        </Command.Root>
-      </Popover.Content>
-    </Popover.Root>
+                  {/if}
+                </span>
+                <span class="truncate text-[10.5px] text-muted-foreground">
+                  {m.family} · {langLabel(m)}{#if m.approxSizeBytes} · {formatSize(m.approxSizeBytes)}{/if}{#if m.requiresGpu} · Needs GPU{:else if m.prefersGpu} · GPU faster{/if}
+                </span>
+              </span>
+              {#if !m.runnable}
+                <Lock size={13} class="mt-0.5 shrink-0 text-muted-foreground/70" />
+              {:else if m.installed}
+                <Check size={13} class="mt-0.5 shrink-0 text-success" />
+              {/if}
+            </Command.Item>
+          {/each}
+        </Command.Group>
+      {/each}
+    </Combobox>
 
     <!-- Selected-model detail -->
     {#if selected}
-      <div class="mt-2 rounded-lg border border-border/60 bg-card/40 p-2.5">
-        <!-- Nine badges at 9px read as texture, not information. Only what
-             decides the pick stays inline: language, size, and whether this
-             machine can run it. The rest moved to one plain capability line. -->
-        <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
-          <span class="font-medium text-foreground">{selected.family}</span>
-          <span class="text-muted-foreground">·</span>
-          <span class="text-muted-foreground">{langLabel(selected)}</span>
-          {#if selected.approxSizeBytes}
-            <span class="text-muted-foreground">·</span>
-            <span class="tabular-nums text-muted-foreground">
-              {formatSize(selected.approxSizeBytes)}
-            </span>
-          {/if}
-          {#if selected.source === "extension"}
-            <span
-              class="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
-            >
-              Extension
-            </span>
-          {:else if selected.source === "remote"}
-            <span class="rounded bg-warning/12 px-1.5 py-0.5 text-[11px] font-medium text-warning">
-              Experimental
-            </span>
-          {/if}
-          {#if selected.requiresGpu}
-            <span
-              class="rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive"
-            >
-              Needs GPU
-            </span>
-          {:else if selected.prefersGpu}
-            <span class="rounded bg-warning/10 px-1.5 py-0.5 text-[11px] font-medium text-warning">
-              Faster with GPU
-            </span>
-          {/if}
-        </div>
-
+      <div class="mt-2.5 border-t border-border/40 pt-2.5">
+        <!-- Identity (family/language/size/GPU) now rides each picker row; this block keeps only what the row can't hold: the capability sentence, the comparison bars, and the action. -->
         {#if capabilityLine}
-          <p class="mt-1 text-[11px] text-muted-foreground">{capabilityLine}</p>
+          <p class="text-[11px] text-muted-foreground">{capabilityLine}</p>
         {/if}
 
         <!-- Relative comparison bars. Editorial scores for ranking models
              against each other, so they're labelled as such rather than shown
              as a percentage or a benchmark figure. -->
         {#if selected.accuracyScore !== null || selected.speedScore !== null}
-          <div class="mt-2 flex flex-col gap-1">
-            <p class="text-[11px] text-muted-foreground">Compared with the other models</p>
-            {#each [{ label: "accuracy", score: selected.accuracyScore }, { label: "speed", score: selected.speedScore }] as bar (bar.label)}
+          <div class="mt-2 flex flex-col gap-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-muted-foreground/80">
+              Compared with other models
+            </p>
+            {#each [{ label: "Accuracy", score: selected.accuracyScore }, { label: "Speed", score: selected.speedScore }] as bar (bar.label)}
               {#if bar.score !== null}
                 <div class="flex items-center gap-2">
-                  <span class="w-12 shrink-0 text-[10px] text-muted-foreground">{bar.label}</span>
+                  <span class="w-14 shrink-0 text-[11px] text-muted-foreground">{bar.label}</span>
                   <div
-                    class="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+                    class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
                     role="meter"
                     aria-label="{bar.label}, relative to other models"
                     aria-valuenow={bar.score}
                     aria-valuemin={0}
                     aria-valuemax={100}
                   >
-                    <div class="h-full rounded-full bg-primary" style="width: {bar.score}%"></div>
+                    <div class="h-full rounded-full bg-foreground" style="width: {bar.score}%"></div>
                   </div>
+                  <span class="w-7 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+                    {bar.score}
+                  </span>
                 </div>
               {/if}
             {/each}
@@ -770,35 +711,28 @@ const noSpeechFound = $derived(
             </div>
           {/if}
 
-          <SettingRow label="Font">
-            {#snippet children(props)}
+          <PropRow label="Font">
             <FontPicker
-              {...props}
               value={cs.fontFamily}
               weight={cs.fontWeight}
               onChange={(v) => store.updateCaptionStyle({ fontFamily: v })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
-          <SettingRow label="Weight">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Weight">
+            <PropSelect
+              class="flex-1"
+              label="Font weight"
               value={String(cs.fontWeight)}
               options={FONT_WEIGHTS.map((w) => ({
                 value: String(w.value),
                 label: w.label,
-                title: w.title,
               }))}
-              onValueChange={(v) => store.updateCaptionStyle({ fontWeight: Number(v) })}
+              onChange={(v) => store.updateCaptionStyle({ fontWeight: Number(v) })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
-          <SliderControl
+          <SliderRow
             label="Font size"
             value={cs.fontSizePct}
             min={2}
@@ -822,54 +756,55 @@ const noSpeechFound = $derived(
             {/snippet}
           </SettingRow>
 
-          <ColorField
-            label="Color"
-            value={cs.color}
-            swatches={CAPTION_SWATCHES}
-            {recents}
-            oncommit={(c) => {
-              store.updateCaptionStyle({ color: c });
-              rememberColor(c);
-            }}
-          />
+          <PropRow label="Color">
+            <ColorField
+              dense
+              hideLabel
+              class="flex-1"
+              label="Color"
+              value={cs.color}
+              swatches={CAPTION_SWATCHES}
+              {recents}
+              oncommit={(c) => {
+                store.updateCaptionStyle({ color: c });
+                rememberColor(c);
+              }}
+            />
+          </PropRow>
 
-          <SettingRow label="Position">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Position">
+            <PropSelect
+              class="flex-1"
+              label="Position"
               value={cs.position}
               options={positionOptions}
-              onValueChange={(v) =>
+              onChange={(v) =>
                 store.updateCaptionStyle({ position: v as "top" | "center" | "bottom" })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
-          <SettingRow label="Align">
-            {#snippet children(props)}
-            {#snippet alignLeftIcon()}<AlignLeft size={12} />{/snippet}
-            {#snippet alignCenterIcon()}<AlignCenter size={12} />{/snippet}
-            {#snippet alignRightIcon()}<AlignRight size={12} />{/snippet}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
-              value={cs.align}
-              options={[
-                { value: "left", icon: alignLeftIcon, title: "Left" },
-                { value: "center", icon: alignCenterIcon, title: "Center" },
-                { value: "right", icon: alignRightIcon, title: "Right" },
-              ]}
-              onValueChange={(v) =>
-                store.updateCaptionStyle({ align: v as "left" | "center" | "right" })}
-            />
-            {/snippet}
-          </SettingRow>
+          <PropRow label="Align">
+            <div class="contents">
+              {#snippet alignLeftIcon()}<AlignLeft size={12} />{/snippet}
+              {#snippet alignCenterIcon()}<AlignCenter size={12} />{/snippet}
+              {#snippet alignRightIcon()}<AlignRight size={12} />{/snippet}
+              <Segmented
+                size="xs"
+                fill={false}
+                value={cs.align}
+                options={[
+                  { value: "left", icon: alignLeftIcon, title: "Left" },
+                  { value: "center", icon: alignCenterIcon, title: "Center" },
+                  { value: "right", icon: alignRightIcon, title: "Right" },
+                ]}
+                onValueChange={(v) =>
+                  store.updateCaptionStyle({ align: v as "left" | "center" | "right" })}
+              />
+            </div>
+          </PropRow>
 
           {#if cs.position !== "center"}
-            <SliderControl
+            <SliderRow
               label="Offset"
               value={cs.offsetPct}
               min={-20}
@@ -890,33 +825,35 @@ const noSpeechFound = $derived(
           defaultOpen={false}
         >
           <fieldset class="flex flex-col gap-3 disabled:opacity-50" disabled={!cs.enabled}>
-            <SettingRow label="Background">
-              {#snippet children(props)}
-              <Segmented
-                size="xs"
-                fill={false}
-                {...props}
+            <PropRow label="Background">
+              <PropSelect
+                class="flex-1"
+                label="Background"
                 value={cs.background}
                 options={backgroundOptions}
-                onValueChange={(v) =>
+                onChange={(v) =>
                   store.updateCaptionStyle({ background: v as "none" | "soft" | "box" })}
               />
-              {/snippet}
-            </SettingRow>
+            </PropRow>
 
             {#if cs.background === "box"}
-              <ColorField
-                label="Box color"
-                value={cs.backgroundColor}
-                swatches={CAPTION_SWATCHES}
-                {recents}
-                oncommit={(c) => {
-                  store.updateCaptionStyle({ backgroundColor: c });
-                  rememberColor(c);
-                }}
-              />
+              <PropRow label="Box">
+                <ColorField
+                  dense
+                  hideLabel
+                  class="flex-1"
+                  label="Box color"
+                  value={cs.backgroundColor}
+                  swatches={CAPTION_SWATCHES}
+                  {recents}
+                  oncommit={(c) => {
+                    store.updateCaptionStyle({ backgroundColor: c });
+                    rememberColor(c);
+                  }}
+                />
+              </PropRow>
 
-              <SliderControl
+              <SliderRow
                 label="Box opacity"
                 value={cs.backgroundOpacity}
                 min={0}
@@ -927,7 +864,7 @@ const noSpeechFound = $derived(
                 formatValue={(v) => `${v}%`}
               />
 
-              <SliderControl
+              <SliderRow
                 label="Corner radius"
                 value={cs.boxRadiusEm}
                 min={0}
@@ -938,7 +875,7 @@ const noSpeechFound = $derived(
                 formatValue={(v) => (v >= 1.2 ? "Pill" : v === 0 ? "Square" : v.toFixed(2))}
               />
 
-              <SliderControl
+              <SliderRow
                 label="Padding"
                 value={cs.boxPaddingXEm}
                 min={0}
@@ -950,7 +887,7 @@ const noSpeechFound = $derived(
               />
             {/if}
 
-            <SliderControl
+            <SliderRow
               label="Outline"
               value={cs.outlineWidth}
               min={0}
@@ -962,16 +899,21 @@ const noSpeechFound = $derived(
             />
 
             {#if cs.outlineWidth > 0}
-              <ColorField
-                label="Outline color"
-                value={cs.outlineColor}
-                swatches={CAPTION_SWATCHES}
-                {recents}
-                oncommit={(c) => {
-                  store.updateCaptionStyle({ outlineColor: c });
-                  rememberColor(c);
-                }}
-              />
+              <PropRow label="Outline">
+                <ColorField
+                  dense
+                  hideLabel
+                  class="flex-1"
+                  label="Outline color"
+                  value={cs.outlineColor}
+                  swatches={CAPTION_SWATCHES}
+                  {recents}
+                  oncommit={(c) => {
+                    store.updateCaptionStyle({ outlineColor: c });
+                    rememberColor(c);
+                  }}
+                />
+              </PropRow>
             {/if}
           </fieldset>
         </PanelSection>
@@ -984,7 +926,7 @@ const noSpeechFound = $derived(
           defaultOpen={false}
         >
           <fieldset class="flex flex-col gap-3 disabled:opacity-50" disabled={!cs.enabled}>
-            <SliderControl
+            <SliderRow
               label="Max lines"
               value={cs.maxLines}
               min={1}
@@ -995,7 +937,7 @@ const noSpeechFound = $derived(
               formatValue={(v) => `${v}`}
             />
 
-            <SliderControl
+            <SliderRow
               label="Wrap width"
               value={cs.maxCharsPerLine}
               min={16}
@@ -1006,7 +948,7 @@ const noSpeechFound = $derived(
               formatValue={(v) => `${v} chars`}
             />
 
-            <SliderControl
+            <SliderRow
               label="Line height"
               value={cs.lineHeight}
               min={1}
@@ -1017,7 +959,7 @@ const noSpeechFound = $derived(
               formatValue={(v) => v.toFixed(2)}
             />
 
-            <SliderControl
+            <SliderRow
               label="Letter spacing"
               value={cs.letterSpacing}
               min={-0.05}
@@ -1040,21 +982,18 @@ const noSpeechFound = $derived(
           class="flex flex-col gap-3 disabled:opacity-50"
           disabled={!cs.enabled}
         >
-          <SettingRow label="Show">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Show">
+            <PropSelect
+              class="flex-1"
+              label="Show"
               value={ca.chunk}
               options={chunkOptions}
-              onValueChange={(v) => updateAnimation({ chunk: v as CaptionAnimation["chunk"] })}
+              onChange={(v) => updateAnimation({ chunk: v as CaptionAnimation["chunk"] })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           {#if ca.chunk === "phrase"}
-            <SliderControl
+            <SliderRow
               label="Words per chunk"
               value={ca.chunkSize}
               min={1}
@@ -1066,74 +1005,75 @@ const noSpeechFound = $derived(
             />
           {/if}
 
-          <SettingRow label="Highlight">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Highlight">
+            <PropSelect
+              class="flex-1"
+              label="Highlight"
               value={ca.highlight ?? "none"}
               options={highlightOptions}
-              onValueChange={(v) =>
+              onChange={(v) =>
                 updateAnimation({ highlight: v as CaptionAnimation["highlight"] })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           {#if (ca.highlight ?? "none") === "progressive"}
-            <ColorField
-              label="Unspoken color"
-              value={cs.mutedColor}
-              swatches={CAPTION_SWATCHES}
-              {recents}
-              oncommit={(c) => {
-                store.updateCaptionStyle({ mutedColor: c });
-                rememberColor(c);
-              }}
-            />
+            <PropRow label="Unspoken">
+              <ColorField
+                dense
+                hideLabel
+                class="flex-1"
+                label="Unspoken color"
+                value={cs.mutedColor}
+                swatches={CAPTION_SWATCHES}
+                {recents}
+                oncommit={(c) => {
+                  store.updateCaptionStyle({ mutedColor: c });
+                  rememberColor(c);
+                }}
+              />
+            </PropRow>
           {/if}
 
-          <SettingRow label="Active word">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Active word">
+            <PropSelect
+              class="flex-1"
+              label="Active word"
               value={ca.emphasis}
               options={emphasisOptions}
-              onValueChange={(v) => updateAnimation({ emphasis: v as CaptionAnimation["emphasis"] })}
+              onChange={(v) => updateAnimation({ emphasis: v as CaptionAnimation["emphasis"] })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           {#if ca.emphasis === "color"}
-            <ColorField
-              label="Highlight color"
-              value={ca.emphasisColor}
-              swatches={CAPTION_SWATCHES}
-              {recents}
-              oncommit={(c) => {
-                updateAnimation({ emphasisColor: c });
-                rememberColor(c);
-              }}
-            />
+            <PropRow label="Highlight">
+              <ColorField
+                dense
+                hideLabel
+                class="flex-1"
+                label="Highlight color"
+                value={ca.emphasisColor}
+                swatches={CAPTION_SWATCHES}
+                {recents}
+                oncommit={(c) => {
+                  updateAnimation({ emphasisColor: c });
+                  rememberColor(c);
+                }}
+              />
+            </PropRow>
           {/if}
 
-          <SettingRow label="Entrance">
-            {#snippet children(props)}
-            <Segmented
-              size="xs"
-              fill={false}
-              {...props}
+          <PropRow label="Entrance">
+            <PropSelect
+              class="flex-1"
+              label="Entrance"
               value={ca.entrance}
               options={entranceOptions}
-              onValueChange={(v) => updateAnimation({ entrance: v as CaptionAnimation["entrance"] })}
+              onChange={(v) => updateAnimation({ entrance: v as CaptionAnimation["entrance"] })}
             />
-            {/snippet}
-          </SettingRow>
+          </PropRow>
 
           {#if ca.entrance !== "none"}
-            <SliderControl
+            <SliderRow
               label="Entrance speed"
               value={ca.entranceMs}
               min={80}
@@ -1146,18 +1086,15 @@ const noSpeechFound = $derived(
           {/if}
 
           {#if ca.emphasis !== "none"}
-            <SettingRow label="In pauses">
-              {#snippet children(props)}
-              <Segmented
-                size="xs"
-                fill={false}
-              {...props}
+            <PropRow label="In pauses">
+              <PropSelect
+                class="flex-1"
+                label="In pauses"
                 value={ca.holdGaps ? "hold" : "clear"}
                 options={holdOptions}
-                onValueChange={(v) => updateAnimation({ holdGaps: v === "hold" })}
+                onChange={(v) => updateAnimation({ holdGaps: v === "hold" })}
               />
-              {/snippet}
-            </SettingRow>
+            </PropRow>
           {/if}
         </fieldset>
       </Tabs.Content>
@@ -1215,7 +1152,7 @@ const noSpeechFound = $derived(
               aria-current={isActive ? "true" : undefined}
               class={cn(
                 "group flex items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors",
-                isActive ? "bg-primary/10" : "hover:bg-muted/60",
+                isActive ? "bg-foreground/10" : "hover:bg-muted/60",
               )}
               onclick={() => store.seek(seg.start)}
             >
@@ -1223,7 +1160,7 @@ const noSpeechFound = $derived(
                 class={cn(
                   "shrink-0 pt-px font-mono text-[11px] tabular-nums",
                   isActive
-                    ? "text-primary"
+                    ? "text-foreground"
                     : "text-muted-foreground/70 group-hover:text-foreground",
                 )}
               >

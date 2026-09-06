@@ -1,25 +1,5 @@
-//! Recast Cloud upload + share — the desktop side of "Record → Polish →
-//! Share". Strictly **additive** and opt-in: recording, editing, and export
-//! never touch any of this and never require an account or network. The
-//! `.recast` on disk stays the source of truth; the cloud holds a derived
-//! MP4 only.
-//!
-//! Flow (frontend orchestrates the export, Rust does the network):
-//!   1. Frontend exports a web-ready MP4 (720p for Free / source for Pro)
-//!      via the existing `export_video` command, then calls
-//!      `recast_cloud_upload(mp4Path, title, workspaceId)`.
-//!   2. POST /api/uploads/init  → reserves a draft recast, returns a signed
-//!      PUT URL (files-sdk envelope).
-//!   3. PUT the file to that URL.
-//!   4. POST /api/uploads/complete → HEAD-verifies + publishes.
-//!   5. POST /api/recasts/{id}/share { visibility: "public" } → share link.
-//!
-//! Auth reuses the device-flow bearer token from `auth.rs` (OS keyring) —
-//! the frontend never sees the raw token. Live progress (coarse phase + PUT
-//! byte counts) streams on the command's request-scoped `on_event` channel;
-//! success is the resolved `CloudShareResult`, and failure additionally fires
-//! a detached `recast-cloud:error` event for corner notifications. The
-//! long-running granular progress is the export step (its own `export-state`).
+//! Recast Cloud upload and share: strictly additive and opt-in, with the on-disk `.recast` still the source of truth.
+//! The frontend runs the export and calls in with an MP4; Rust owns only the network legs and the keyring token.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -32,13 +12,9 @@ use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
 use super::auth::{cloud_api_url, current_session_token, user_agent};
 use super::error::{AppError, AppResult};
 
-// ──────────────────────────────────────────────────────────────────────────
-// HTTP helper (shared base + authed client, reused from the auth module)
-// ──────────────────────────────────────────────────────────────────────────
+// --- HTTP helper: shared base and authed client, reused from the auth module ---
 
-/// Upload-tuned client: a generous connect timeout but NO overall timeout —
-/// a 150 MB+ PUT over a slow link can legitimately run for minutes, and
-/// auth.rs's 15s client would kill it.
+/// Upload-tuned client: a generous connect timeout but NO overall timeout — a 150 MB+ PUT over a slow link can legitimately run for minutes, and auth.rs's 15s client would kill it.
 fn cloud_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent(user_agent())
@@ -55,11 +31,8 @@ fn bearer(token: &str) -> String {
     format!("Bearer {token}")
 }
 
-/// Resolve the workspace to upload into. Honors an explicit id; otherwise
-/// asks `/api/desktop/profile` for the user's `defaultWorkspaceId` (active
-/// org, else first membership). Returns `None` only if the profile call
-/// fails or the user belongs to no workspace — in which case `init` falls
-/// back to the session's active org and surfaces a clear error if unset.
+/// Resolves the workspace to upload into, honouring an explicit id and otherwise asking the profile endpoint for `defaultWorkspaceId`.
+/// `None` only when that call fails or the user belongs to no workspace, in which case `init` falls back to the session's active org and errors clearly if unset.
 async fn resolve_workspace_id(
     client: &reqwest::Client,
     base: &str,
@@ -84,12 +57,7 @@ async fn resolve_workspace_id(
         .map(str::to_string)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Local manifest — which local exports have a cloud copy, keyed by file path.
-// Lets the library swap "Share to Cloud" → "Copy link / Manage" without a
-// network round-trip. Independent of the cloud: deleting one never touches
-// the other. Mirrors the Google Drive manifest pattern.
-// ──────────────────────────────────────────────────────────────────────────
+// --- Local manifest: which local exports have a cloud copy, keyed by file path. Independent of the cloud, so deleting one never touches the other.
 
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -151,15 +119,10 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Events
-// ──────────────────────────────────────────────────────────────────────────
+// --- Events ---
 
-/// Live progress for an in-flight upload, streamed on the per-call `on_event`
-/// channel (one channel per upload → no path correlation). Terminal
-/// success/failure aren't repeated here: success rides the command's resolved
-/// `CloudShareResult`, failure its rejection (plus the `recast-cloud:error`
-/// broadcast below, for detached corner notifications).
+/// Live progress for an in-flight upload on the per-call `on_event` channel, one per upload, so nothing needs path correlation.
+/// Terminal states are not repeated here: success rides the resolved `CloudShareResult` and failure its rejection, plus a broadcast for detached notifications.
 #[derive(Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub(crate) enum CloudUploadEvent {
@@ -187,9 +150,7 @@ fn fail(app: &AppHandle, path: &str, message: String) -> String {
     message
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Wire types
-// ──────────────────────────────────────────────────────────────────────────
+// --- Wire types ---
 
 #[derive(Deserialize)]
 struct UploadEnvelope {
@@ -226,24 +187,17 @@ pub struct CloudShareResult {
     pub share_url: String,
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Commands
-// ──────────────────────────────────────────────────────────────────────────
+// --- Commands ---
 
-/// Upload an already-exported MP4 to Recast Cloud and create a public share
-/// link. `path` is the exported file (the caller runs `export_video` first);
-/// `workspace_id` comes from `/api/desktop/profile`'s `defaultWorkspaceId`.
-///
-/// Returns the recast id + slug + share URL, and records the result in the
-/// local manifest so the library row can switch to a "manage" affordance.
+/// Uploads an already-exported MP4 and creates a public share link; the caller runs `export_video` first and passes a `workspace_id` from the profile endpoint.
+/// Returns the recast id, slug and share URL, and records it in the local manifest so the library row can switch to a manage affordance.
 #[tauri::command]
 pub async fn recast_cloud_upload(
     app: AppHandle,
     path: String,
     title: String,
     workspace_id: Option<String>,
-    // Output-time transcript to publish as a selectable caption track. None /
-    // empty → no track uploaded. Serialized to VTT here.
+    // Output-time transcript published as a selectable caption track; None or empty uploads no track.
     captions_transcript: Option<crate::transcription::Transcript>,
     on_event: Channel<CloudUploadEvent>,
 ) -> AppResult<CloudShareResult> {
@@ -253,8 +207,7 @@ pub async fn recast_cloud_upload(
 
     send_phase(&on_event, "preparing");
 
-    // Probe the exported MP4 for the real dimensions / duration / size. This
-    // is authoritative; we don't trust caller-supplied numbers.
+    // Probe the exported MP4: this is authoritative, and caller-supplied numbers are not trusted.
     let meta = super::editor::get_video_metadata(path.clone())
         .await
         .map_err(|e| fail(&app, &path, format!("Couldn't read video metadata: {e}")))?;
@@ -264,8 +217,7 @@ pub async fn recast_cloud_upload(
     let duration_sec = meta.duration.round().max(0.0) as u64;
     let size_bytes = meta.size_bytes;
 
-    // Best-effort poster (a single WebP frame). Generated off the main thread;
-    // a failure here never blocks the upload — the recast just keeps no poster.
+    // Best-effort poster generated off the main thread; a failure just leaves the recast without one.
     let poster_src = path.clone();
     let poster_bytes = tauri::async_runtime::spawn_blocking(move || {
         super::editor::poster_webp_for_export(&poster_src)
@@ -288,11 +240,7 @@ pub async fn recast_cloud_upload(
     if let Some(ws) = resolved_workspace.as_ref().filter(|s| !s.is_empty()) {
         init_body.insert("workspaceId".into(), ws.clone().into());
     }
-    // Serialize the caption track up front so we can both tell init to sign a
-    // captions PUT URL and reuse the body for the upload below. A share from the
-    // editor carries a transcript; a share from the exports library has none, so
-    // fall back to a caption sidecar the export wrote next to the file (foo.vtt /
-    // foo.srt) — that's how library shares get captions at all.
+    // Serialized up front so init can sign a captions PUT and the body is reused; a library share falls back to a sidecar .vtt or .srt.
     let captions_vtt = captions_transcript
         .as_ref()
         .filter(|t| !t.segments.is_empty())
@@ -332,13 +280,7 @@ pub async fn recast_cloud_upload(
         .into());
     }
 
-    // ── PUT the file ──────────────────────────────────────────────────
-    // Stream the in-memory buffer in chunks so we can emit byte-level progress
-    // (mirrors the Google Drive uploader). We MUST still send an explicit
-    // Content-Length — S3/R2/Azure reject a chunked PUT, and `wrap_stream`
-    // otherwise defaults to `Transfer-Encoding: chunked`. Free uploads are
-    // 720p-capped (~150 MB), comfortably in RAM; only one ~1 MiB chunk is
-    // copied out of the buffer at a time.
+    // --- PUT the file: chunked for byte progress, but with an explicit Content-Length, since S3, R2 and Azure reject a chunked PUT.
     send_phase(&on_event, "uploading");
     let bytes = tokio::fs::read(&path)
         .await
@@ -366,8 +308,7 @@ pub async fn recast_cloud_upload(
             }
             let end = (offset + PUT_CHUNK_SIZE).min(buf.len());
             let chunk = buf[offset..end].to_vec();
-            // Cumulative bytes handed to the transport. The channel is scoped to
-            // this upload, so no path key is needed to correlate on the client.
+            // Cumulative bytes handed to the transport; the channel is scoped to this upload, so no path key is needed.
             let _ = progress_channel.send(CloudUploadEvent::Progress {
                 bytes_sent: end as u64,
                 total_bytes,
@@ -396,9 +337,7 @@ pub async fn recast_cloud_upload(
         return Err(fail(&app, &path, format!("Upload rejected ({status}).")).into());
     }
 
-    // ── PUT the poster (best-effort) ────────────────────────────────────
-    // Never fails the upload: if the WebP wasn't generated, the server didn't
-    // sign a poster URL, or the PUT errors, we just report `hasPoster: false`.
+    // --- PUT the poster, best-effort: a missing WebP, unsigned URL or failed PUT just reports `hasPoster: false`.
     let mut has_poster = false;
     if let (Some(poster), Some(penv)) = (poster_bytes.as_ref(), init.poster_upload.as_ref()) {
         if penv.method.eq_ignore_ascii_case("PUT") {
@@ -421,9 +360,7 @@ pub async fn recast_cloud_upload(
         }
     }
 
-    // ── PUT the captions VTT (best-effort) ──────────────────────────────
-    // Like the poster: a failure here never fails the upload; the recast just
-    // ships without a selectable caption track.
+    // --- PUT the captions VTT, best-effort: a failure just ships the recast without a selectable caption track.
     let mut has_captions = false;
     if let (Some(vtt), Some(cenv)) = (captions_vtt.as_ref(), init.captions_upload.as_ref()) {
         if cenv.method.eq_ignore_ascii_case("PUT") {
@@ -516,10 +453,8 @@ pub async fn recast_cloud_upload(
     Ok(result)
 }
 
-/// Update an existing share's settings. All knobs optional:
-///   - `visibility`: "public" | "workspace" | "private" (None = unchanged)
-///   - `password`:   None = unchanged; "" = remove; else set (≥4 chars)
-///   - `expires_at`: None = unchanged; "" = clear; else ISO-8601 future date
+/// Updates an existing share; every knob is optional and `None` leaves it unchanged.
+/// `visibility` is public, workspace or private; `password` clears on "" and otherwise needs 4+ chars; `expires_at` clears on "" and otherwise takes an ISO-8601 future date.
 #[tauri::command]
 pub async fn recast_cloud_update_share(
     slug: String,
@@ -531,8 +466,7 @@ pub async fn recast_cloud_update_share(
     let client = cloud_client()?;
     let base = cloud_api_url();
 
-    // Visibility lives in /access, which speaks the legacy {public,team,
-    // private} triplet — map "workspace" → "team".
+    // /access speaks the legacy public, team and private triplet, so map 'workspace' to 'team'.
     if let Some(v) = visibility.as_ref() {
         let mapped = match v.as_str() {
             "public" => "public",
@@ -556,8 +490,7 @@ pub async fn recast_cloud_update_share(
         }
     }
 
-    // Password + expiry go through /settings. Only send the keys provided so
-    // we never clobber an unrelated field.
+    // Send only the keys provided, so /settings never clobbers an unrelated field.
     let mut settings = serde_json::Map::new();
     if let Some(pw) = password {
         settings.insert(
@@ -663,12 +596,7 @@ pub async fn recast_cloud_list_shares(recast_id: String) -> AppResult<serde_json
 }
 
 /// All locally-recorded cloud uploads, keyed by local export path.
-///
-/// Async + `spawn_blocking`: a plain `fn` Tauri command runs on the main
-/// (UI) thread, so its `std::fs` manifest read would block the webview — the
-/// macOS WKWebView freeze this project has been bitten by. The frontend
-/// already awaits this, so moving the read onto a blocking worker is
-/// transparent to call sites.
+/// Async plus `spawn_blocking`, since a sync command's `std::fs` manifest read runs on the UI thread and freezes the macOS WKWebView.
 #[tauri::command]
 pub async fn recast_cloud_list_uploads(app: AppHandle) -> HashMap<String, CloudUploadRecord> {
     tauri::async_runtime::spawn_blocking(move || read_manifest(&app))
@@ -687,10 +615,7 @@ pub async fn recast_cloud_forget_upload(app: AppHandle, path: String) -> AppResu
         .map_err(|e| AppError::msg(format!("Forgetting upload failed: {e}")))
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Error humanization — turn the API's machine reasons into one-liners the
-// corner-notification / toast can show directly.
-// ──────────────────────────────────────────────────────────────────────────
+// --- Error humanization: turn the API's machine reasons into one-liners a toast can show directly.
 
 fn reason_of(body: &str) -> Option<String> {
     serde_json::from_str::<serde_json::Value>(body)

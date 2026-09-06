@@ -1,10 +1,8 @@
 /// <reference lib="webworker" />
-// Off-main-thread cursor smoothing. The Gaussian pass is O(N·window), which is hundreds
-// of ms on a long high-σ track, so it must not run on the UI thread. The raw
-// track is sent once via `load`; each slider change then ships only the tiny
-// opts, and the smoothed path comes back without ever touching the main thread.
 
-import { smoothCursorPath, type CursorSampleLike, type SmoothingOptions } from "./smoothing";
+// The Gaussian pass is O(N*window), hundreds of ms on a long high-sigma track, so the raw track is loaded once and each slider change ships only opts.
+
+import { type CursorSampleLike, type SmoothingOptions, smoothCursorPath } from "./smoothing";
 
 type InMsg =
 	| { type: "load"; raw: CursorSampleLike[] }
@@ -24,8 +22,7 @@ async function loadFromUrl(url: string): Promise<void> {
 		raw = json.samples ?? [];
 		self.postMessage({ type: "loaded" });
 	} catch (err) {
-		// The host can't assume a worker may fetch its asset URL, so say so and
-		// let it fall back to posting the array.
+		// The host can't assume a worker may fetch its asset URL, so say so and let it fall back to posting the array.
 		self.postMessage({
 			type: "loadFailed",
 			message: err instanceof Error ? err.message : String(err),

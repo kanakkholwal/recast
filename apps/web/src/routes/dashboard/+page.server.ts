@@ -43,11 +43,9 @@ export const load: PageServerLoad = async ({ parent }) => {
 	]);
 
 	return {
-		// Surfaced so the home page can upload into the active workspace
-		// (mirrors what the library loader returns).
+		// Surfaced so the home page can upload into the active workspace, mirroring the library loader.
 		workspaceId: activeOrganization.id,
-		// `videoUrl` is a bare object key — sign it into a playable URL (mirrors
-		// the share page; signing is local, and the list is capped at 12 here).
+		// `videoUrl` is a bare object key, signed like the share page does; the list is capped at 12 here.
 		recasts: await Promise.all(
 			recasts
 				.filter((r) => r.status !== "archived")

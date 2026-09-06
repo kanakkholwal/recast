@@ -35,8 +35,7 @@ const BodySchema = z.object({
  * mail") so the endpoint can't be used to enumerate who was invited.
  */
 export const POST: RequestHandler = async ({ params, request, url, getClientAddress }) => {
-	// Cap claim attempts per share+IP — each success sends an email to an
-	// allowlisted invitee, so this is the email-bomb / probing lever.
+	// Cap per share and IP: each success emails an allowlisted invitee, so this is the email-bomb lever.
 	const limited = await enforceRateLimit(
 		{ getClientAddress },
 		{ bucket: "share-claim", id: params.id, limit: 5, windowMs: 60_000 },
@@ -66,8 +65,7 @@ export const POST: RequestHandler = async ({ params, request, url, getClientAddr
 		error(400, "This share isn't invite-only");
 	}
 
-	// On the allowlist? If not, fall through to the same generic reply so the
-	// caller can't tell invited emails from non-invited ones.
+	// Not on the allowlist falls through to the same generic reply, so invited emails can't be told from others.
 	const [allowed] = await db
 		.select({ id: shareMember.id })
 		.from(shareMember)

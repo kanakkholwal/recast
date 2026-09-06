@@ -1,24 +1,5 @@
-//! Google Drive integration: connect/disconnect, status, resumable upload.
-//!
-//! Auth: OAuth 2.0 Authorization Code + PKCE via loopback redirect — the
-//! standard "desktop app" flow Google blesses for installed clients. The
-//! refresh token is persisted in the OS keyring (DPAPI on Windows, Keychain
-//! on macOS, SecretService on Linux); access tokens live only in memory and
-//! are refreshed on demand.
-//!
-//! Upload: files are uploaded into a `/Recast/` folder under the user's My
-//! Drive. The folder is created on first upload. Uploads use the resumable
-//! protocol so we can stream chunks and emit per-chunk progress without
-//! holding the whole file in memory. Files stay **private** — we do not
-//! issue `permissions.create`. The returned `webViewLink` is the Drive UI
-//! URL the owner can use to view the file or share it manually.
-//!
-//! Scopes:
-//!   * `drive.file` — read/write only the files this app creates. Least
-//!     privileged option; avoids the "restricted scope" Google verification
-//!     bar that full `drive` access would require.
-//!   * `userinfo.email` — populate the connected-account display in
-//!     Settings.
+//! Google Drive connect, status and resumable upload into a `/Recast/` folder.
+//! Scoped to `drive.file` so uploads stay private and Google's restricted-scope verification never applies.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -92,9 +73,7 @@ fn require_credentials() -> Result<(String, String), String> {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// In-memory state
-// ──────────────────────────────────────────────────────────────────────────
+// --- In-memory state ---
 
 #[derive(Clone)]
 struct CachedAccessToken {
@@ -107,12 +86,8 @@ struct CachedAccessToken {
 static ACCESS_TOKEN: Mutex<Option<CachedAccessToken>> = Mutex::new(None);
 static ACTIVE_UPLOADS: Mutex<Option<HashMap<String, Arc<AtomicBool>>>> = Mutex::new(None);
 
-/// Persistent record of which local exports have been uploaded to Drive,
-/// indexed by the local file path so the exports list can switch its menu
-/// from "Upload to Drive" to "Copy link / Re-upload" without hitting the
-/// network. Stored on disk as JSON in the app data dir — no database.
-/// Re-uploads overwrite the previous entry so users always see the latest
-/// Drive link.
+/// Which local exports have been uploaded to Drive, indexed by local path so the exports list can switch its menu without hitting the network.
+/// Plain JSON in the app data dir, no database; a re-upload overwrites the entry so users always see the latest Drive link.
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UploadRecord {
@@ -173,9 +148,7 @@ fn signal_upload_cancel(upload_id: &str) {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Keyring (refresh token) helpers
-// ──────────────────────────────────────────────────────────────────────────
+// --- Keyring (refresh token) helpers ---
 
 fn keyring_entry() -> keyring::Result<Entry> {
     Entry::new(KEYRING_SERVICE, KEYRING_ENTRY)
@@ -202,14 +175,10 @@ fn delete_refresh_token() -> Result<(), String> {
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// PKCE + state generation
-// ──────────────────────────────────────────────────────────────────────────
+// --- PKCE + state generation ---
 
 fn random_url_safe_string(len: usize) -> String {
-    // RFC 7636 §4.1: code_verifier = high-entropy cryptographic random string
-    // using the URL/filename-safe alphabet [A-Z][a-z][0-9]-._~. We sample from
-    // that exact charset to avoid needing further encoding.
+    // RFC 7636 4.1: sample the verifier straight from the URL-safe alphabet, so it needs no further encoding.
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
     let mut rng = rand::thread_rng();
     (0..len)
@@ -225,9 +194,7 @@ fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(digest)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// HTTP client
-// ──────────────────────────────────────────────────────────────────────────
+// --- HTTP client ---
 
 fn http_client() -> Result<Client, String> {
     Client::builder()
@@ -237,9 +204,7 @@ fn http_client() -> Result<Client, String> {
         .map_err(|e| format!("http client init failed: {e}"))
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Token exchange + refresh
-// ──────────────────────────────────────────────────────────────────────────
+// --- Token exchange + refresh ---
 
 #[derive(Deserialize)]
 struct TokenResponse {
@@ -332,9 +297,7 @@ async fn ensure_access_token(client: &Client) -> Result<String, String> {
     Ok(token)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Loopback OAuth flow
-// ──────────────────────────────────────────────────────────────────────────
+// --- Loopback OAuth flow ---
 
 /// HTML escape for the few characters that could break out of attributes
 /// or open tags when interpolating an `error` string Google handed us into
@@ -355,28 +318,13 @@ fn html_escape(value: &str) -> String {
     out
 }
 
-/// Renders the loopback callback page shown in the user's browser after
-/// the OAuth redirect lands. Styling is fully self-contained (no external
-/// CSS) and mirrors Recast's in-app design language: dark canvas, glass
-/// card with subtle border + shadow, primary-green accent, system font
-/// stack with deliberate letter-spacing. The page picks light or dark
-/// mode from the OS via `prefers-color-scheme` so it doesn't jar a user
-/// whose browser is in light mode.
-///
-/// Two states: success (consent approved, code captured) and error (user
-/// denied, or Google returned an `error=…` query param).
+/// The loopback callback page shown after the OAuth redirect, self-contained CSS following `prefers-color-scheme`.
+/// Two states: consent approved with a captured code, or an error when the user denied or Google returned one.
 fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
-    // Recast brand: primary is a vivid lime-green (`oklch(76% 0.21 125.904)`
-    // in light mode, `oklch(92% 0.23 125.904)` in dark). The page uses
-    // CSS custom properties + a `prefers-color-scheme` swap so users see
-    // the right palette without us shipping two pages.
+    // CSS custom properties plus a `prefers-color-scheme` swap, so one page serves both palettes.
     let success_icon = "M4.5 12.75l6 6 9-13.5";
     let error_icon = "M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z";
-    // Recast brand mark — three vertical rounded bars on a rounded square,
-    // mirroring `apps/desktop/src/components/logo.svelte`. Kept as raw
-    // <rect> markup so the silhouette is pixel-identical to the in-app
-    // and installer icon. `--brand-fill` / `--brand-bars` flip with the
-    // OS color scheme below.
+    // Raw `<rect>` markup so the silhouette is pixel-identical to `logo.svelte` and the installer icon.
     let recast_logo = r#"<svg class="brand-mark" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <rect width="512" height="512" rx="256" fill="var(--brand-fill)"/>
       <rect x="111" y="166" width="60" height="180" rx="30" fill="var(--brand-bars)"/>
@@ -415,9 +363,7 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>
 <style>
-  /* Dark is the canonical theme — token values mirror `@recast/design`
-     (index.css) and the desktop `app.css` overrides 1:1 so this page reads
-     as the same surface as the in-app Settings/Cloud panes. */
+  /* Dark is canonical; the token values mirror `@recast/design` and the desktop `app.css` 1:1. */
   :root {{
     color-scheme: dark light;
     --bg: oklch(20.352% 0.00157 197.844);
@@ -435,8 +381,7 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
     --error-soft: oklch(63.575% 0.20881 25.397 / 0.15);
     --error-ring: oklch(63.575% 0.20881 25.397 / 0.3);
     --code-bg: color-mix(in oklab, var(--fg) 8%, transparent);
-    /* Brand mark colors — mirror `logo.svelte`'s dark-mode mapping:
-       white rounded square (the "background") with black bars on top. */
+    /* Mirrors logo.svelte's dark mapping: a white rounded square with black bars on top. */
     --brand-fill: #ffffff;
     --brand-bars: #000000;
   }}
@@ -501,8 +446,7 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   }}
   .card {{
     width: min(28rem, 100%);
-    /* `craft-card`: rounded-[18px], bg-card/80, border-border/40,
-       shadow-craft-floating, backdrop-blur-xl. */
+    /* Mirrors `craft-card`: rounded-[18px], bg-card/80, border-border/40, shadow-craft-floating, backdrop-blur-xl. */
     border-radius: 18px;
     background: color-mix(in oklab, var(--card) 80%, transparent);
     border: 1px solid var(--card-border);
@@ -619,12 +563,6 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   </main>
 </body>
 </html>"##,
-        title = title,
-        recast_logo = recast_logo,
-        accent_class = accent_class,
-        icon_path = icon_path,
-        heading = heading,
-        sub = sub,
     );
 
     (body, http_status)
@@ -649,8 +587,7 @@ async fn await_oauth_callback(
         .read_line(&mut request_line)
         .await
         .map_err(|e| format!("read failed: {e}"))?;
-    // Request line: `GET /callback?code=...&state=... HTTP/1.1\r\n`
-    // We don't care about headers/body; close right after responding.
+    // Only the request line matters; headers and body are ignored and the socket closes right after responding.
     let path_query = request_line
         .split_whitespace()
         .nth(1)
@@ -727,9 +664,7 @@ pub async fn gdrive_connect(app: AppHandle) -> AppResult<()> {
     let (client_id, _) = require_credentials()?;
     let client = http_client()?;
 
-    // Bind first so we know what redirect_uri to send to Google. Port 0
-    // lets the kernel pick; Google's "Desktop app" client treats any
-    // 127.0.0.1 port as valid.
+    // Bind first so we know the redirect_uri; port 0 lets the kernel pick, and Google accepts any 127.0.0.1 port.
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| AppError::msg(format!("loopback bind failed: {e}")))?;
@@ -796,8 +731,7 @@ pub async fn gdrive_status() -> AppResult<GdriveStatus> {
     let access = match ensure_access_token(&client).await {
         Ok(t) => t,
         Err(_) => {
-            // Refresh failed — token was revoked or credentials missing.
-            // Clear local state so the UI stops claiming we're connected.
+            // Refresh failed (revoked or missing credentials): clear local state so the UI stops claiming a connection.
             let _ = delete_refresh_token();
             *ACCESS_TOKEN.lock() = None;
             return Ok(GdriveStatus {
@@ -818,10 +752,7 @@ pub async fn gdrive_disconnect() -> AppResult<()> {
     let token = read_refresh_token();
     if let Some(token) = token {
         if let Ok(client) = http_client() {
-            // Best-effort revoke. If this fails (offline, network glitch)
-            // we still purge the local entry — a stale UI is worse than a
-            // server-side session that can be revoked from the Google
-            // account dashboard later.
+            // Best-effort revoke: purge locally anyway, since a stale UI is worse than a session revocable from Google's dashboard.
             let _ = client
                 .post(REVOKE_URL)
                 .query(&[("token", token.as_str())])
@@ -833,20 +764,15 @@ pub async fn gdrive_disconnect() -> AppResult<()> {
     delete_refresh_token().map_err(Into::into)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Drive upload
-// ──────────────────────────────────────────────────────────────────────────
+// --- Drive upload ---
 
 async fn find_or_create_recast_folder(
     client: &Client,
     access_token: &str,
 ) -> Result<String, String> {
-    // Search `My Drive` (default corpus) for an existing top-level folder
-    // we own called `Recast`. The query escapes the literal name since
-    // Drive's q syntax treats single quotes as string delimiters.
+    // Escape the literal folder name: Drive's `q` syntax treats single quotes as string delimiters.
     let q = format!(
-        "name='{}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
-        RECAST_FOLDER_NAME
+        "name='{RECAST_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
     );
     let resp = client
         .get(format!("{DRIVE_API}/files"))
@@ -940,11 +866,8 @@ pub(crate) struct GdriveUploadProgress {
     total_bytes: u64,
 }
 
-/// Resumable upload of `path` into the `/Recast/` folder. Streams the file in
-/// chunks, sending byte progress on the `on_progress` channel between chunks,
-/// and honors a cancel flag the frontend can flip via `gdrive_cancel_upload`.
-/// Resolves with the Drive file result; a detached `gdrive:upload-error` event
-/// still fires on failure (with the cancelled flag) for the corner card.
+/// Resumable upload into the `/Recast/` folder, streaming in chunks with byte progress on `on_progress` and honouring the frontend's cancel flag.
+/// Resolves with the Drive file result; a detached `gdrive:upload-error` still fires on failure, carrying the cancelled flag for the corner card.
 #[tauri::command]
 pub async fn gdrive_upload(
     app: AppHandle,
@@ -957,11 +880,7 @@ pub async fn gdrive_upload(
     drop_upload_cancel_flag(&upload_id);
     match &result {
         Ok(payload) => {
-            // Persist a record of this upload keyed by the local file path
-            // so the exports list can switch its action from "Upload" to
-            // "Copy link / Re-upload" without re-querying Google. The
-            // write is best-effort — if the disk is full or the path is
-            // unwriteable, the in-app upload still succeeded.
+            // Best-effort record keyed by local path, so the exports list can offer 'Copy link' without re-querying Google.
             let uploaded_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -976,8 +895,7 @@ pub async fn gdrive_upload(
                     uploaded_at,
                 },
             );
-            // Success is the resolved `GdriveUploadResult`; the store updates its
-            // card + history from that, so no separate `upload-complete` event.
+            // Success is the resolved `GdriveUploadResult`, so there is no separate `upload-complete` event.
         }
         Err(err) => {
             let cancelled = cancel.load(Ordering::Relaxed);
@@ -1046,9 +964,7 @@ async fn gdrive_upload_inner(
         .ok_or_else(|| "upload init missing Location header".to_string())?
         .to_string();
 
-    // Stream chunks. For files smaller than one chunk, this is a single
-    // PUT covering the whole range. For larger files, repeated PUTs with
-    // 308 Resume Incomplete in between.
+    // One PUT for files under a chunk; larger files repeat PUTs with 308 Resume Incomplete between.
     let file = tokio::fs::File::open(&file_path)
         .await
         .map_err(|e| format!("open failed: {e}"))?;
@@ -1058,9 +974,7 @@ async fn gdrive_upload_inner(
 
     loop {
         if cancel.load(Ordering::Relaxed) {
-            // Best-effort DELETE on the session URL to free Drive's
-            // partial upload bookkeeping. The error path doesn't propagate
-            // this; we still want to bail out with a cancel message.
+            // Best-effort DELETE frees Drive's partial-upload bookkeeping; the error path still bails with a cancel message.
             let _ = client.delete(&session_url).send().await;
             return Err("upload cancelled".into());
         }
@@ -1118,9 +1032,7 @@ async fn gdrive_upload_inner(
             });
         }
         if status.as_u16() == 308 {
-            // Resume Incomplete. Advance our pointer past what Drive
-            // confirms received; on a fresh start that's exactly the
-            // chunk we just sent, so this is a sanity-check no-op.
+            // Advance past what Drive confirms it received; on a fresh start that is exactly the chunk just sent.
             bytes_sent += n as u64;
             let _ = on_progress.send(GdriveUploadProgress {
                 bytes_sent,

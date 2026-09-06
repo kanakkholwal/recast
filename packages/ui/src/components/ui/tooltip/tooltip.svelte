@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Tooltip as TooltipPrimitive } from "bits-ui";
-	import TooltipProvider from "./tooltip-provider.svelte";
+import { Tooltip as TooltipPrimitive } from "bits-ui";
+import TooltipProvider from "./tooltip-provider.svelte";
 
-	let { open = $bindable(false), ...restProps }: TooltipPrimitive.RootProps = $props();
+let { open = $bindable(false), ...restProps }: TooltipPrimitive.RootProps = $props();
 </script>
 
 <TooltipProvider>

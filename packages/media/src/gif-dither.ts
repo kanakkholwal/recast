@@ -27,7 +27,7 @@ const BAYER_8 = [
 const THRESHOLD = new Float32Array(64);
 for (let y = 0; y < 8; y++) {
 	for (let x = 0; x < 8; x++) {
-		THRESHOLD[y * 8 + x] = (BAYER_8[y]![x]! + 0.5) / 64 - 0.5;
+		THRESHOLD[y * 8 + x] = (BAYER_8[y][x] + 0.5) / 64 - 0.5;
 	}
 }
 
@@ -52,7 +52,7 @@ export function orderedDither(
 	for (let y = 0; y < height; y++) {
 		const row = (y & 7) * 8;
 		for (let x = 0; x < width; x++) {
-			const bias = THRESHOLD[row + (x & 7)]! * strength;
+			const bias = THRESHOLD[row + (x & 7)] * strength;
 			const i = (y * width + x) * 4;
 			out[i] = (rgba[i] as number) + bias;
 			out[i + 1] = (rgba[i + 1] as number) + bias;

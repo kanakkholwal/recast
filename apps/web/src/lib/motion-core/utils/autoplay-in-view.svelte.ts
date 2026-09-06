@@ -28,9 +28,8 @@ export function autoplayInView(node: HTMLVideoElement) {
 				return;
 			}
 			if (entry.isIntersecting) {
-				// play() rejects if the tab can't autoplay; the poster stays, so
-				// swallow it rather than throw an unhandled rejection.
-				void node.play().catch(() => {});
+				// play() rejects when the tab can't autoplay and the poster stays, so swallow it rather than throw.
+				void node.play().catch(() => undefined);
 			} else {
 				node.pause();
 			}

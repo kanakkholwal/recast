@@ -1,14 +1,5 @@
-//! transcribe.cpp (ggml / GGUF) on-device engine.
-//!
-//! One engine for every on-device model family (Parakeet, Whisper, Canary, ...):
-//! the loaded GGUF file decides the architecture. Compiled from source (its -sys
-//! crate runs CMake; ggml is vendored, no submodules), so unlike `ort` it builds
-//! on every OS including Intel Mac. Input PCM is 16 kHz mono f32 in [-1, 1] —
-//! exactly what `audio::extract_pcm_f32` produces.
-//!
-//! transcribe.cpp returns real per-segment and per-word timing (ms). We map those
-//! through `words::build_segments`, which handles every shape (segments+words,
-//! words-only, text-only) so animated captions always have clean timing.
+//! transcribe.cpp (ggml/GGUF) on-device engine; the loaded file picks the architecture, and it builds everywhere `ort` does not.
+//! Real per-segment and per-word timing goes through `words::build_segments`, which normalises every reply shape.
 
 use std::path::Path;
 
@@ -32,15 +23,13 @@ pub(crate) fn transcribe_gguf(
         .session()
         .map_err(|e| format!("open ggml session: {e}"))?;
 
-    // Default timestamps = Auto (richest the model supports). Only pass a language
-    // hint; leave task = Transcribe and the rest at their defaults.
+    // Timestamps default to Auto (the richest the model supports); only the language hint is passed.
     let opts = RunOptions {
         language: language.map(|s| s.to_string()),
         ..Default::default()
     };
 
-    // The native abort callback is the only thing that can interrupt inference
-    // part-way; without it Cancel would just hide a run still burning the CPU.
+    // The native abort callback is the only thing that interrupts inference; without it Cancel just hides a running CPU burn.
     let token = CancelToken::new();
     session.set_cancel_token(&token);
     cancel::install(&token);
@@ -54,8 +43,7 @@ pub(crate) fn transcribe_gguf(
         }
     })?;
 
-    // Shape varies by family (Whisper: many segments; Parakeet: one segment +
-    // per-word times). Logged so a missing-timing report can be diagnosed.
+    // Shape varies by family (Whisper many segments, Parakeet one plus word times), so log it for missing-timing reports.
     log::info!(
         "ggml {model_id}: kind={:?} segments={} words={} tokens={}",
         result.timestamp_kind,

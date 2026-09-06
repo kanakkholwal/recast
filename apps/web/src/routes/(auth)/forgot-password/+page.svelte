@@ -1,6 +1,4 @@
 <script lang="ts">
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
-import { authClient } from "$lib/auth/client";
 import { ArrowRight, LoaderCircle, MailCheck } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";
@@ -8,6 +6,8 @@ import { Label } from "@recast/ui/label";
 import { toast } from "@recast/ui/sonner";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
 
 let email = $state("");
 let loading = $state(false);
@@ -33,8 +33,7 @@ async function submit(e: SubmitEvent) {
 				error: (err) => (err as Error)?.message ?? "Couldn't send the reset email.",
 			},
 		);
-		// We tell the user the link was sent regardless of whether the email
-		// exists — standard pattern, prevents account enumeration.
+		// Report the link as sent whether or not the email exists, which is what prevents account enumeration.
 		sent = true;
 	} finally {
 		loading = false;

@@ -1,52 +1,56 @@
 <script lang="ts" module>
-	import type { Snippet } from "svelte";
+import type { Snippet } from "svelte";
 
-	export interface SliderControlProps {
-		label: string;
-		value: number;
-		min?: number;
-		max?: number;
-		step?: number;
-		/** Visible only via the `title` tooltip — no extra row height. */
-		description?: string;
-		/** Leading glyph rendered next to the label. */
-		icon?: Snippet;
-		/** Appended to the formatted value when no `formatValue` is given. */
-		unit?: string;
-		disabled?: boolean;
-		class?: string;
-		/** Show step/decile hash marks behind the fill. Default true. */
-		hashMarks?: boolean;
-		onstart?: () => void;
-		onchange?: (value: number) => void;
-		oncommit?: (value: number) => void;
-		formatValue?: (value: number, unit: string) => string;
-	}
+export interface SliderControlProps {
+	label: string;
+	value: number;
+	min?: number;
+	max?: number;
+	step?: number;
+	/** Visible only via the `title` tooltip — no extra row height. */
+	description?: string;
+	/** Leading glyph rendered next to the label. */
+	icon?: Snippet;
+	/** Appended to the formatted value when no `formatValue` is given. */
+	unit?: string;
+	disabled?: boolean;
+	class?: string;
+	/** Show step/decile hash marks behind the fill. Default true. */
+	hashMarks?: boolean;
+	/** Compact h-8 variant on the shared field surface, for inline panel rows. */
+	dense?: boolean;
+	/** Drop the in-track label (keep the aria name) when an outer row labels it. */
+	hideLabel?: boolean;
+	onstart?: () => void;
+	onchange?: (value: number) => void;
+	oncommit?: (value: number) => void;
+	formatValue?: (value: number, unit: string) => string;
+}
 
-	function decimalsForStep(step: number): number {
-		if (!Number.isFinite(step) || step <= 0) return 0;
-		const str = step.toString();
-		const idx = str.indexOf(".");
-		return idx === -1 ? 0 : str.length - idx - 1;
-	}
+function decimalsForStep(step: number): number {
+	if (!Number.isFinite(step) || step <= 0) return 0;
+	const str = step.toString();
+	const idx = str.indexOf(".");
+	return idx === -1 ? 0 : str.length - idx - 1;
+}
 
-	function roundValue(v: number, step: number): number {
-		return Number(v.toFixed(decimalsForStep(step)));
-	}
+function roundValue(v: number, step: number): number {
+	return Number(v.toFixed(decimalsForStep(step)));
+}
 
-	function snapToDecile(v: number, min: number, max: number): number {
-		const range = max - min;
-		if (range === 0) return min;
-		const ratio = (v - min) / range;
-		const decile = Math.round(ratio * 10) / 10;
-		return min + decile * range;
-	}
+function snapToDecile(v: number, min: number, max: number): number {
+	const range = max - min;
+	if (range === 0) return min;
+	const ratio = (v - min) / range;
+	const decile = Math.round(ratio * 10) / 10;
+	return min + decile * range;
+}
 </script>
 
 <script lang="ts">
+	import { cn } from "@recast/ui/utils";
 	import { tick } from "svelte";
 	import { Spring } from "svelte/motion";
-	import { cn } from "@recast/ui/utils";
 
 	let {
 		label,
@@ -60,17 +64,15 @@
 		disabled = false,
 		class: className,
 		hashMarks: showHashMarks = true,
+		dense = false,
+		hideLabel = false,
 		onstart,
 		onchange,
 		oncommit,
 		formatValue,
 	}: SliderControlProps = $props();
 
-	// `Row control` design — one card, label left, value right, animated fill
-	// behind both. Click-anywhere snaps with a spring; drag scrubs in real
-	// time; cursor past the track edges rubber-bands the row to telegraph the
-	// clamp. Mirrors the geometry of <ColorField> so a stacked panel reads as
-	// one form.
+	// Row control: one card, label left, value right, animated fill behind both; mirrors <ColorField> so a stacked panel reads as one form.
 
 	const CLICK_THRESHOLD = 3;
 	const DEAD_ZONE = 24;
@@ -90,9 +92,7 @@
 	let isDragging = $state(false);
 	let isHovered = $state(false);
 	let isValueHovered = $state(false);
-	// The value is ALWAYS typeable. It used to unlock only after an 800ms hover,
-	// which meant keyboard and touch users could never enter an exact number into
-	// any of the ~45 sliders in the editor -- in a precision tool.
+	// Always typeable: the old 800ms hover unlock meant keyboard and touch users could never enter an exact number.
 	const isValueEditable = $derived(!disabled);
 	let showInput = $state(false);
 	let inputValue = $state("");
@@ -101,10 +101,7 @@
 	// svelte-ignore state_referenced_locally
 	const initialPercent = ((value - min) / Math.max(max - min, 1e-9)) * 100;
 
-	// Spring-driven motion. Drag scrubs commit instant (no animation), and
-	// click-snap / release commits animate. Rubber-band stretches the track
-	// outward when the cursor pulls past either edge. Handle scale/opacity
-	// dodge when the thumb position would collide with label/value text.
+	// Drag scrubs commit instantly, click-snap and release animate, and rubber-band stretches the track past either edge.
 	const fillPercent = new Spring(initialPercent, {
 		stiffness: 0.25,
 		damping: 0.7,
@@ -173,8 +170,7 @@
 	const percentage = $derived(percentFromValue(value));
 	const isActive = $derived(isInteracting || isHovered);
 
-	// When the thumb would overlap the label or value text, dim+squish it so
-	// the row's typography stays the visual priority.
+	// When the thumb would overlap the label or value, dim and squish it so typography stays the priority.
 	const leftThreshold = $derived.by(() => {
 		const w = trackEl?.offsetWidth;
 		if (w && labelEl) {
@@ -206,8 +202,7 @@
 	});
 
 	$effect(() => {
-		// Keep fill spring in sync with external value changes (without
-		// re-animating during drag).
+		// Keep the fill spring in sync with external value changes without re-animating during a drag.
 		const p = percentFromValue(value);
 		if (!isInteracting) {
 			fillPercent.set(p, { instant: false });
@@ -229,8 +224,7 @@
 		}
 	});
 
-	// Hash marks. When discrete steps are sparse, show one per step; otherwise
-	// fall back to ten decile marks for visual rhythm.
+	// Sparse discrete steps get one mark each; otherwise ten decile marks give visual rhythm.
 	const discreteSteps = $derived((max - min) / Math.max(step, 1e-9));
 	const marks = $derived.by(() => {
 		if (!showHashMarks) return [];
@@ -422,9 +416,7 @@
 		}
 	}
 
-	// Inline transform/width strings — bound to spring `.current` for
-	// reactivity. The rubber-band shifts the *track* (not the wrapper) so the
-	// row's outline doesn't visibly move; only the fillable region stretches.
+	// Bound to spring `.current` for reactivity; the rubber-band shifts the track, not the wrapper, so the outline stays put.
 	const trackStyle = $derived(
 		`width: calc(100% + ${Math.abs(rubberStretchPx.current)}px); transform: translateX(${rubberStretchPx.current < 0 ? rubberStretchPx.current : 0}px);`,
 	);
@@ -435,11 +427,15 @@
 	role="group"
 	aria-label={label}
 	class={cn(
-		"relative h-10 w-full select-none overflow-hidden rounded-md border border-border/40 bg-card/60 outline-none transition-colors duration-150",
-		"focus-within:ring-2 focus-within:ring-primary/30 focus-within:ring-offset-1 focus-within:ring-offset-background",
+		"relative w-full select-none overflow-hidden outline-none transition-colors duration-150",
+		dense
+			? "h-7 rounded-md bg-muted/60 ring-1 ring-inset ring-border/40 focus-within:ring-ring/60"
+			: "h-10 rounded-md border border-border/40 bg-card/60 focus-within:ring-2 focus-within:ring-primary/30 focus-within:ring-offset-1 focus-within:ring-offset-background",
 		disabled
 			? "cursor-not-allowed opacity-50"
-			: "hover:border-border/60 hover:bg-card/80",
+			: dense
+				? "hover:bg-muted"
+				: "hover:border-border/60 hover:bg-card/80",
 		className,
 	)}
 	onmouseenter={() => (isHovered = true)}
@@ -488,9 +484,6 @@
 				: "0px"}
 		></div>
 
-		<!-- Pill thumb. Vertically positioned with symmetric inset so the
-		     transform stack only carries scale (origin: center) and stays
-		     glued to the row's midline regardless of scaleY. -->
 		<div
 			class={cn(
 				"pointer-events-none absolute inset-y-[21%] z-10 w-[3px] rounded-full bg-primary shadow-[0_0_0_1px_color-mix(in_srgb,_var(--color-background)_50%,_transparent)]",
@@ -501,7 +494,6 @@
 			style:transform={`scaleX(${handleScaleXMv.current}) scaleY(${handleScaleYMv.current})`}
 		></div>
 
-		<!-- Label (left). z-20 so it floats above the fill. -->
 		<div class="pointer-events-none relative z-20 flex min-w-0 flex-1 items-center gap-1.5">
 			{#if icon}
 				<span
@@ -510,12 +502,14 @@
 					{@render icon()}
 				</span>
 			{/if}
-			<span
-				bind:this={labelEl}
-				class="truncate text-[12px] font-medium text-muted-foreground"
-			>
-				{label}
-			</span>
+			{#if !hideLabel}
+				<span
+					bind:this={labelEl}
+					class={cn("truncate font-medium text-muted-foreground", dense ? "text-[11px]" : "text-[12px]")}
+				>
+					{label}
+				</span>
+			{/if}
 		</div>
 
 		<!-- Value (right). Click, or focus and press Enter, to type an exact value. -->
@@ -543,7 +537,8 @@
 					? `${label}: type an exact value`
 					: undefined}
 				class={cn(
-					"relative z-20 shrink-0 pl-3 font-mono text-[12px] font-medium tabular-nums text-foreground/85 transition-colors",
+					"relative z-20 shrink-0 pl-3 font-mono font-medium tabular-nums text-foreground/85 transition-colors",
+					dense ? "text-[11px]" : "text-[12px]",
 					"focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring",
 					isValueEditable &&
 						isValueHovered &&

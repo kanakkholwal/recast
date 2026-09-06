@@ -1,21 +1,16 @@
 <script lang="ts">
-import type { EditorStore } from "../../../stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
-import { type FilmstripTile, planFilmstrip } from "../../../lib/timeline/filmstrip";
-import type { TileProvider } from "../../../lib/timeline/filmstrip-source";
-import { storyboardCellSec, storyboardCoverCrop } from "../../../lib/timeline/storyboard";
-import { deriveSeams } from "../../../lib/timeline/segments";
-import { motionDuration } from "../../../lib/motion.svelte";
 import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@recast/icons";
 import * as ContextMenu from "@recast/ui/context-menu";
 import { fade } from "svelte/transition";
-import {
-	formatTimeByMode,
-	formatSmpte,
-	frameStep,
-	minClipDuration,
-	type TimeMode,
-} from "./timeline-helpers";
+import { motionDuration } from "../../../lib/motion.svelte";
+import { type FilmstripTile, planFilmstrip } from "../../../lib/timeline/filmstrip";
+import type { TileProvider } from "../../../lib/timeline/filmstrip-source";
+import { deriveSeams } from "../../../lib/timeline/segments";
+import { storyboardCellSec, storyboardCoverCrop } from "../../../lib/timeline/storyboard";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
+import { CLIP_LABEL, CLIP_META, CLIP_SELECTED } from "./timeline-clip.styles";
 import {
 	clampTrimIn,
 	clampTrimOut,
@@ -24,6 +19,14 @@ import {
 	nudgeTrimOut,
 } from "./timeline-clipbar.logic";
 import {
+	formatSmpte,
+	formatTimeByMode,
+	frameStep,
+	minClipDuration,
+	type TimeMode,
+} from "./timeline-helpers";
+import { buildSnapTargets, snapTime } from "./timeline-snap";
+import {
 	applySpineHandle,
 	buildSpineHandles,
 	canSlip,
@@ -31,13 +34,9 @@ import {
 	type SpineHandle,
 	type SpineShape,
 } from "./timeline-spine.logic";
-import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
-import { CLIP_LABEL, CLIP_META, CLIP_SELECTED } from "./timeline-clip.styles";
-import { buildSnapTargets, snapTime } from "./timeline-snap";
 import { CLIP_LANE_HEIGHT_PX } from "./timeline-stack";
 
-// Clip bar with thumbnails and in/out trim handles. Owns its drag state;
-// the parent only supplies `clientXToOutput` (handles scroll offset) to resolve pointer X.
+// Clip bar with thumbnails and trim handles; the parent only supplies `clientXToOutput` to resolve pointer X.
 
 interface Props {
 	store: EditorStore;
@@ -79,8 +78,7 @@ let {
 	viewportWidthPx,
 }: Props = $props();
 
-// Target tile width and the cache-key height namespace; overscan decodes a bit
-// beyond the viewport so tiles are ready just before they scroll in.
+// Overscan decodes a little past the viewport so tiles are ready just before they scroll in.
 const TILE_TARGET_W = 96;
 const FILMSTRIP_OVERSCAN = 240;
 /** Rendered height of the clip bar, and the box a sprite cell cover-crops into.
@@ -89,8 +87,7 @@ const CLIP_H = CLIP_LANE_HEIGHT_PX;
 
 const formatSpeed = (s: number) => `${s}×`;
 
-// One block per kept segment on the OUTPUT (post-cut) axis: a cut occupies zero
-// width and later clips slide left to close the gap. `xOf` maps original time onto that axis.
+// One block per kept segment on the OUTPUT axis: a cut has zero width and later clips slide left.
 const pps = $derived(pixelsPerSecond);
 const xOf = (t: number) => originalToOutput(store.renderMap, t) * pps;
 // Thumbnail strip is laid across this; each block is internally cut-free, so it shows its slice via a margin offset.
@@ -102,13 +99,11 @@ const thumbW = $derived(
 		: thumbnailWidth,
 );
 const clipBlocks = $derived(layoutClipBlocks(store.segments, xOf, pps, store.inPoint));
-// Every block comes from the one recording, so a split shows the same source
-// name on both halves — which is what an NLE does too.
+// One recording, so a split shows the same source name on both halves, as an NLE does.
 const clipName = $derived((store.videoPath ?? "").split(/[\\/]/).pop() || "Recording");
 // Block lengths read on the OUTPUT axis, like the ruler and every lane label.
 const outSec = (t: number) => originalToOutput(store.renderMap, t);
-// Density-based filmstrip tiles, planned per kept block and virtualized to the
-// viewport. Empty (fallback to the stretched strip) when there's no provider.
+// Planned per kept block and virtualized to the viewport; empty falls back to the stretched strip.
 const filmstripTiles = $derived(
 	tileProvider
 		? planFilmstrip(
@@ -128,14 +123,7 @@ const filmstripTiles = $derived(
 			)
 		: [],
 );
-// The clip bar's base layer is the STORYBOARD SPRITE: one image, built once in
-// the worker, cropped per tile with background-position. No per-tile decode, no
-// cache to evict, and every tile has pixels the moment the sheet lands.
-//
-// Per-tile decodes are now only a REFINEMENT, requested when the strip is
-// finer-grained than the sheet (i.e. zoomed in far enough that adjacent tiles
-// would otherwise crop the same cell). They fade in over the sprite, so the
-// strip is never blank and never stalls on a decoder.
+// The base layer is one storyboard sprite cropped per tile, so nothing is ever blank; per-tile decodes only refine when zoomed past the sheet's grain.
 const storyboard = $derived.by(() => {
 	void filmstripVersion;
 	return tileProvider?.storyboard();
@@ -167,10 +155,7 @@ const tileUrls = $derived.by(() => {
 	return map;
 });
 $effect(() => {
-	// Re-runs on `filmstripVersion` too, not just when the plan changes: a tile
-	// evicted from the LRU would otherwise stay grey forever, because nothing
-	// would ever ask for it again. `request` no-ops on cached/inflight tiles, so
-	// this settles immediately once the strip is populated.
+	// Re-runs on `filmstripVersion` so an LRU-evicted tile isn't grey forever; `request` no-ops on cached tiles.
 	void filmstripVersion;
 	if (!needsSharpTiles) return;
 	if (tileProvider && filmstripTiles.length > 0) {
@@ -183,7 +168,6 @@ const splitMarkers = $derived(
 		.filter((p) => p > store.inPoint && p < store.outPoint)
 		.map((p) => ({ time: p, x: xOf(p) })),
 );
-// Where a removed cut sits between two kept segments, collapsed to one seam.
 // deriveSeams is the pure unit-tested helper; here we only add the output-axis x.
 const seamMarkers = $derived(
 	deriveSeams(store.segments).map((s) => ({ ...s, x: xOf(s.gapStart) })),
@@ -207,18 +191,14 @@ function deleteSegment(start: number, end: number) {
 	if (videoEl) videoEl.currentTime = joinAt;
 }
 
-// Right-click menu: original time the menu was opened at (set on pointerdown,
-// which fires for the right button before `contextmenu`), so "Split here"
-// splits exactly where you clicked rather than at the playhead.
+// Set on pointerdown (which precedes `contextmenu`) so 'Split here' splits where you clicked, not at the playhead.
 const SPEED_PRESETS = [0.5, 1, 1.5, 2] as const;
 let menuTime = $state(0);
 function rememberMenuTime(clientX: number) {
 	menuTime = outputToOriginal(store.renderMap, clientXToOutput(clientX));
 }
 
-// Faint audio envelope over the footage, so you can see where to cut. Built in
-// output-pixel space (each bucket at `xOf(bucketTime)`) over the kept range
-// only; buckets inside a removed cut collapse onto the seam like the cut lane.
+// Envelope in output-pixel space over the kept range; buckets inside a removed cut collapse onto the seam.
 let activeTrimHandle = $state<"in" | "out" | null>(null);
 // Output-x of the active trim snap target (playhead/region/etc.), or null.
 let trimSnapX = $state<number | null>(null);
@@ -234,9 +214,7 @@ function startTrimDrag(event: PointerEvent, which: "in" | "out") {
 	event.stopPropagation();
 	// Single undo entry per drag.
 	store.pushUndoState();
-	// Un-collapse the axis for the drag: the clip un-brackets to the full
-	// recording (trimmed head/tail ghosted), the handle follows the cursor, and
-	// dragging outward restores. Reverts to the collapsed view on pointer-up.
+	// Un-collapse the axis for the drag so the handle can move across the whole source; reverts on pointer-up.
 	store.isTrimming = true;
 	activeTrimHandle = which;
 	trimDragContext = {
@@ -269,8 +247,7 @@ function startTrimDrag(event: PointerEvent, which: "in" | "out") {
 	window.addEventListener("pointercancel", onUp);
 }
 
-// Snap the dragged handle to the playhead, clip edges, and region/annotation
-// boundaries (not its own point); falls through to the frame grid otherwise.
+// Snaps to the playhead, clip edges and region boundaries but not its own point; else the frame grid.
 function snapTrim(raw: number, which: "in" | "out"): number {
 	const targets = buildSnapTargets({
 		playhead: store.currentTime,
@@ -290,9 +267,7 @@ function snapTrim(raw: number, which: "in" | "out"): number {
 }
 
 function updateTrimFromPointer(clientX: number, which: "in" | "out", scrub = false) {
-	// Output px → original time. While trimming, store.renderMap is the full
-	// recording axis (stable, not collapsing under the drag), so absolute
-	// mapping tracks the cursor and lets the handle move across the whole source.
+	// While trimming, store.renderMap is the full-recording axis, so absolute mapping tracks the cursor across the source.
 	const raw = outputToOriginal(store.renderMap, clientXToOutput(clientX));
 	const t = snapTrim(raw, which);
 	const min = minClipDuration(fps);
@@ -336,12 +311,7 @@ function handleTrimHandleKey(event: KeyboardEvent, which: "in" | "out") {
 	nudgeTrimByKey(which, event.key === "ArrowLeft" ? -1 : 1, event.shiftKey);
 }
 
-// ---- Spine edits (roll / slide / slip) -------------------------------------
-//
-// All three are length-preserving, so the output axis doesn't move under the
-// cursor mid-drag and the pointer can be mapped absolutely, like the trim
-// handles do with a frozen map. (Rolling across two segments at DIFFERENT
-// speeds does warp the axis; that's rare enough to leave alone.)
+// --- Spine edits (roll / slide / slip): all length-preserving, so the pointer maps absolutely. Rolling across differing speeds does warp the axis.
 
 /** Shortest removed range, matching TimelineCutLane's MIN_CUT. */
 const MIN_CUT = 0.1;
@@ -376,16 +346,14 @@ let slipDrag = $state<{
 	gearOffset: number;
 	delta: number;
 } | null>(null);
-// Deliberately not $state: it's the shape FROZEN at pointer-down, and wrapping
-// the store's segment/cut objects in a reactive proxy would be a trap.
+// Deliberately not $state: it is the shape FROZEN at pointer-down, and proxying the store's objects would be a trap.
 let slipShape: SpineShape | null = null;
 
 function originalAtPointer(clientX: number): number {
 	return outputToOriginal(store.renderMap, clientXToOutput(clientX));
 }
 
-// Same target list the trim handles use, minus the boundary's own position.
-// Ctrl/Cmd bypasses magnetism; the frame grid still applies.
+// Same targets as the trim handles minus the boundary's own position; Ctrl bypasses magnetism, the frame grid still applies.
 function snapBoundary(raw: number, self: number, bypass: boolean): number {
 	const targets = bypass
 		? []
@@ -401,9 +369,7 @@ function snapBoundary(raw: number, self: number, bypass: boolean): number {
 	return snapTime(raw, targets, tolerance, fps).time;
 }
 
-// A boundary marker is both a drag target and a click target (restore a cut,
-// rejoin a split). Set while a drag actually writes, so the click that follows
-// pointer-up doesn't also fire the destructive action.
+// Set only while a drag actually writes, so the click after pointer-up doesn't also fire the destructive action.
 let spineMoved = false;
 
 /** The handle sitting on a marker, or null when the boundary can't move. */
@@ -467,8 +433,7 @@ function gearedBoundary(raw: number): number {
 	return base + spineDrag.gearOffset;
 }
 
-// One undo entry per gesture, keyed by the boundary so a drag and a run of
-// arrow-key nudges each coalesce.
+// One undo entry per gesture, keyed by boundary, so a drag and a run of arrow nudges each coalesce.
 function applySpine(handle: SpineHandle, rawAt: number) {
 	store.pushUndoStateCoalesced(`spine-${handle.key}`, 600);
 	spineMoved = true;
@@ -491,12 +456,7 @@ function onSpineHandleKey(event: KeyboardEvent, handle: SpineHandle) {
 }
 
 function startSlip(event: PointerEvent, index: number) {
-	// Alt-gated: a bare drag across the clip bar is a scrub, and that's the most
-	// common gesture in a screen recorder. Alt+drag is the NLE slip modifier.
-	//
-	// Deliberately does NOT stop propagation: a plain click on a block still has
-	// to reach the scroller and seek. The scrub is cancelled below, but only once
-	// the pointer has travelled far enough to mean "slip".
+	// Alt-gated because a bare drag is a scrub; propagation continues so a plain click still reaches the scroller and seeks.
 	if (!event.altKey || event.button !== 0 || duration <= 0) return;
 	if (store.timelineTool === "razor") return;
 	if (!canSlip(spineShape, index)) return;
@@ -534,9 +494,7 @@ function moveSlip(event: PointerEvent) {
 		document.body.style.cursor = "ew-resize";
 		onSpineGesture();
 	}
-	// Planned from the shape frozen at pointer-down, so every move is absolute
-	// and re-applying can't compound. Shift damps the travel; the anchor moves
-	// with the modifier so the frames don't jump when it flips.
+	// Planned from the shape frozen at pointer-down so moves are absolute; the anchor moves with Shift so frames don't jump.
 	const raw = originalAtPointer(event.clientX);
 	if (event.shiftKey !== slipDrag.precision) {
 		const before = slipDelta(raw);

@@ -1,26 +1,26 @@
 <script lang="ts">
-	import { Dialog as DialogPrimitive } from "bits-ui";
-	import DialogPortal from "./dialog-portal.svelte";
-	import type { Snippet } from "svelte";
-	import * as Dialog from ".";
-	import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import type { ComponentProps } from "svelte";
-	import { Button } from "../button";
-	import { IconX } from '@tabler/icons-svelte';
+import { Dialog as DialogPrimitive } from "bits-ui";
+import DialogPortal from "./dialog-portal.svelte";
+import type { Snippet } from "svelte";
+import * as Dialog from ".";
+import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import type { ComponentProps } from "svelte";
+import { Button } from "../button";
+import { X } from "@recast/icons";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		portalProps,
-		children,
-		showCloseButton = true,
-		preventScroll = false,
-		...restProps
-	}: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
-		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof DialogPortal>>;
-		children: Snippet;
-		showCloseButton?: boolean;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	portalProps,
+	children,
+	showCloseButton = true,
+	preventScroll = false,
+	...restProps
+}: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
+	portalProps?: WithoutChildrenOrChild<ComponentProps<typeof DialogPortal>>;
+	children: Snippet;
+	showCloseButton?: boolean;
+} = $props();
 </script>
 
 <DialogPortal {...portalProps}>
@@ -41,7 +41,7 @@
 			<DialogPrimitive.Close data-slot="dialog-close">
 				{#snippet child({ props })}
 					<Button variant="ghost" class="absolute top-2 right-2" size="icon-sm" {...props}>
-						<IconX  />
+						<X  />
 						<span class="sr-only">Close</span>
 					</Button>
 				{/snippet}

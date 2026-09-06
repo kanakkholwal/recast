@@ -21,9 +21,7 @@ pub struct ProjectWriteRequest {
     pub edits_json: String,
 }
 
-/// Write a .recast project file atomically.
-/// Writes to a temporary file first, then renames to the final path.
-/// This prevents corrupted project files if the process crashes mid-write.
+/// Write a .recast project file atomically. Writes to a temporary file first, then renames to the final path. This prevents corrupted project files if the process crashes mid-write.
 pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
     let temp_path = request.output_path.with_extension("recast.tmp");
 
@@ -32,10 +30,7 @@ pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
 
     match result {
         Ok(()) => {
-            // `fs::rename` already replaces an existing target atomically
-            // (MOVEFILE_REPLACE_EXISTING on Windows, rename(2) elsewhere).
-            // Deleting first would open a window where the project exists only
-            // as the .tmp — a crash there loses it outright.
+            // `fs::rename` already replaces the target atomically; deleting first would leave a window where only the .tmp exists.
             fs::rename(&temp_path, &request.output_path)
                 .context("failed to atomically rename project file")?;
             Ok(request.output_path)
@@ -95,8 +90,7 @@ fn write_project_inner(path: &Path, request: &ProjectWriteRequest) -> Result<()>
         copy_file(cam_path, &mut writer)?;
     }
 
-    // Flush to disk before the caller renames: without it, power loss can leave
-    // a renamed-into-place file that is partial or zero-length.
+    // Flush before the caller renames: without it, power loss can leave a renamed-into-place file that is partial.
     writer.finish()?.sync_all()?;
     Ok(())
 }
@@ -117,13 +111,8 @@ fn write_edit_sections(
     Ok(())
 }
 
-/// Rewrite the `edits/` section files inside an existing v2 `.recast` archive in
-/// place, preserving all other entries (manifest, metadata, media) by raw-copying
-/// their compressed bytes — no decode/re-encode of media.
-///
-/// The write is atomic: a sibling `.recast.tmp` is produced first and only
-/// renamed over the original on success. Errors if the archive is not v2 (the
-/// editor migrates first), so a save can never produce a hybrid v1/v2 bundle.
+/// Rewrites the `edits/` sections of a v2 `.recast` in place, raw-copying every other entry's compressed bytes so media is never re-encoded.
+/// Atomic via a sibling `.recast.tmp` renamed on success, and it errors on a v1 archive so a save can never produce a hybrid bundle.
 pub fn update_project_edits(project_path: &Path, edits_json: &str) -> Result<()> {
     let temp_path = project_path.with_extension("recast.tmp");
 
@@ -131,8 +120,7 @@ pub fn update_project_edits(project_path: &Path, edits_json: &str) -> Result<()>
 
     match result {
         Ok(()) => {
-            // Replace in one step — see `write_project` for why the old file is
-            // not deleted first.
+            // Replace in one step; see `write_project` for why the old file isn't deleted first.
             fs::rename(&temp_path, project_path)
                 .context("failed to atomically rename project file")?;
             Ok(())

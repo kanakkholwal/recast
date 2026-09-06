@@ -1,51 +1,44 @@
 <script lang="ts">
-	import { onMount, onDestroy } from "svelte";
-	import {
-		INTERVAL_MS,
-		TRANSITION_MS,
-		buildReel,
-		slides,
-	} from "./ScreenshotSlideshow.logic";
+import { onDestroy, onMount } from "svelte";
+import { buildReel, INTERVAL_MS, slides, TRANSITION_MS } from "./ScreenshotSlideshow.logic";
 
-	const reel = buildReel(slides);
+const reel = buildReel(slides);
 
-	let step = $state(0);
-	let snapping = $state(false);
-	let timer: ReturnType<typeof setInterval> | null = null;
+let step = $state(0);
+let snapping = $state(false);
+let timer: ReturnType<typeof setInterval> | null = null;
 
-	function tick() {
-		step += 1;
-		// When step gets close to the reel boundary, schedule a silent reset
-		// after the slide transition has finished.
-		if (step >= reel.length - slides.length) {
-			setTimeout(() => {
-				snapping = true;
-				step = step - slides.length;
-				// Two RAFs: first commits the new step + `transition: none`,
-				// second restores transitions so the next tick animates again.
+function tick() {
+	step += 1;
+	// Near the reel boundary, schedule a silent reset for after the slide transition finishes.
+	if (step >= reel.length - slides.length) {
+		setTimeout(() => {
+			snapping = true;
+			step -= slides.length;
+			// Two rAFs: the first commits the new step with transitions off, the second restores them.
+			requestAnimationFrame(() => {
 				requestAnimationFrame(() => {
-					requestAnimationFrame(() => {
-						snapping = false;
-					});
+					snapping = false;
 				});
-			}, TRANSITION_MS);
-		}
+			});
+		}, TRANSITION_MS);
 	}
+}
 
-	function start() {
-		stop();
-		timer = setInterval(tick, INTERVAL_MS);
+function start() {
+	stop();
+	timer = setInterval(tick, INTERVAL_MS);
+}
+
+function stop() {
+	if (timer) {
+		clearInterval(timer);
+		timer = null;
 	}
+}
 
-	function stop() {
-		if (timer) {
-			clearInterval(timer);
-			timer = null;
-		}
-	}
-
-	onMount(start);
-	onDestroy(stop);
+onMount(start);
+onDestroy(stop);
 </script>
 
 <div
@@ -118,9 +111,7 @@
 		left: 50%;
 		width: var(--slide-width);
 		height: 100%;
-		/* Slot offset: every slide stays at a fixed position relative to the
-		   advancing `--step` counter. Active slide (i === step) lands at 0,
-		   the next sits one slot to the right, the previous one slot left. */
+		/* Every slide sits at a fixed offset from the advancing `--step`: active at 0, next one slot right, previous one left. */
 		transform: translate(-50%, 0)
 			translateX(
 				calc((var(--i) - var(--step)) * (var(--slide-width) + var(--gap)))
@@ -143,8 +134,7 @@
 		pointer-events: auto;
 	}
 
-	/* During the silent snap-back, suppress transitions so step can jump
-	   without animating across the whole reel. */
+	/* During the silent snap-back, suppress transitions so step can jump without animating across the reel. */
 	.slideshow.snapping .slide {
 		transition: none;
 	}

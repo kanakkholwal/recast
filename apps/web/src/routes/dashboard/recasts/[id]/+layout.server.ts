@@ -40,8 +40,7 @@ export const load: LayoutServerLoad = async ({ params, parent }) => {
 		.limit(1);
 	if (!row) error(404, "Recast not found");
 
-	// 404 rather than 403: a member has no business learning that an id they
-	// cannot open exists in the workspace.
+	// 404 rather than 403: a member has no business learning that an id they cannot open exists.
 	const allowed = canAccessRecast({
 		recastOwnerId: row.ownerId,
 		userId: user.id,

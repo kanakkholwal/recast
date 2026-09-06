@@ -1,37 +1,36 @@
 <script lang="ts">
-	import { Search, X } from "@recast/icons";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import { Input } from "@recast/ui/input";
-	import * as Select from "@recast/ui/select";
-	import { Skeleton } from "@recast/ui/skeleton";
+import { Search, X } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import { Input } from "@recast/ui/input";
+import * as Select from "@recast/ui/select";
+import { Skeleton } from "@recast/ui/skeleton";
 
-	import InlineError from "$lib/components/InlineError.svelte";
+import InlineError from "$lib/components/InlineError.svelte";
 
-	let { data } = $props();
+let { data } = $props();
 
-	// Client-side filtering — the list is capped at 200 rows and streamed whole,
-	// so filtering in the browser is instant (no round-trip, no debounce).
-	let q = $state("");
-	let planFilter = $state("all");
-	const PLAN_LABEL: Record<string, string> = {
-		all: "All plans",
-		free: "Free",
-		pro: "Pro",
-		enterprise: "Enterprise",
-	};
-	const hasFilters = $derived(q.trim() !== "" || planFilter !== "all");
+// The list is capped at 200 rows and streamed whole, so browser filtering is instant with no round-trip.
+let q = $state("");
+let planFilter = $state("all");
+const PLAN_LABEL: Record<string, string> = {
+	all: "All plans",
+	free: "Free",
+	pro: "Pro",
+	enterprise: "Enterprise",
+};
+const hasFilters = $derived(q.trim() !== "" || planFilter !== "all");
 
-	function matches(t: { name: string; slug: string; plan: string }): boolean {
-		const needle = q.trim().toLowerCase();
-		if (needle && !`${t.name} ${t.slug}`.toLowerCase().includes(needle)) return false;
-		if (planFilter !== "all" && t.plan !== planFilter) return false;
-		return true;
-	}
-	function clearFilters() {
-		q = "";
-		planFilter = "all";
-	}
+function matches(t: { name: string; slug: string; plan: string }): boolean {
+	const needle = q.trim().toLowerCase();
+	if (needle && !`${t.name} ${t.slug}`.toLowerCase().includes(needle)) return false;
+	if (planFilter !== "all" && t.plan !== planFilter) return false;
+	return true;
+}
+function clearFilters() {
+	q = "";
+	planFilter = "all";
+}
 </script>
 
 <header class="mb-6">

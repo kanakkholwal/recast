@@ -9,8 +9,7 @@ export const PLATFORM_LABEL: Record<string, string> = {
 	android: "Android",
 };
 
-// Windows 11 still reports NT kernel 10.0; only build ≥22000 distinguishes it
-// from 10, so we surface the build instead of the bare "10.0.26200".
+// Windows 11 still reports NT kernel 10.0, so only the build number distinguishes it and is what we surface.
 export function windowsBuild(v: string): number | null {
 	const m = /^\d+\.\d+\.(\d+)/.exec(v);
 	return m ? Number(m[1]) : null;

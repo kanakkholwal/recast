@@ -1,11 +1,12 @@
 <script lang="ts">
+import type { IconComponent } from "@recast/icons";
 import { cn } from "@recast/ui/utils";
 import { untrack } from "svelte";
-import { fly } from "svelte/transition";
 import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
 type Feature = {
-	icon: any;
+	icon: IconComponent;
 	tag: string;
 	title: string;
 	description: string;
@@ -20,35 +21,12 @@ let {
 	class?: string;
 } = $props();
 
-// Scroll-driven stepper.
-//
-// The outer section is `features.length × 100vh` tall. The inner content
-// is `sticky top-0` and stays pinned for the whole scroll range. As the
-// user scrolls, the active index tracks `window.scrollY` against the
-// section's top edge:
-//
-//   - section top crossing viewport top  → first step
-//   - one viewport per step             → each step owns a viewport
-//   - section bottom crossing viewport bottom → last step
-//
-// Scrolling past the section releases the pin and the next section
-// flows in normally; scrolling up reverses.
-//
-// Inside the sticky, the step list is a *sliding window* (3 steps
-// visible at a time). As the active index advances, the inner list
-// translates up so the active step is always vertically centered in
-// the window and the previous/next steps peek above/below. The
-// right panel morphs between icons with a slide-up transition so the
-// visual matches the list motion.
+// The section is one viewport per step with sticky content, so the active index tracks scrollY against its top edge; the list is a 3-step sliding window centred on the active step.
 let sectionEl: HTMLElement | undefined = $state();
 let current = $state(0);
 let progress = $state(0); // 0..1 across the whole section
 
-// `visible` is how many steps show in the window. Three is the sweet
-// spot the user asked for: one above, one active, one below. The
-// window is `VISIBLE * stepH` tall, and each step is `stepH` tall, so
-// the math falls out cleanly: `translateY(-current * stepH)` aligns
-// step `current` with the center of the window.
+// Three visible steps (one above, active, one below), so `translateY(-current * stepH)` centres the active one.
 const VISIBLE = 3;
 const stepH = 80; // px per step inside the window (its visual height)
 
@@ -66,9 +44,7 @@ function recompute() {
 		progress = Math.max(0, Math.min(1, scrolled / scrollRange));
 	}
 	const n = features.length;
-	// Six features across six viewports: index = floor(progress * n).
-	// Clamp so the first and last step "stick" for a beat at the
-	// ends and don't pop early/late.
+	// index = floor(progress * n), clamped so the first and last steps stick for a beat instead of popping.
 	const raw = Math.floor(progress * n);
 	current = Math.max(0, Math.min(n - 1, raw));
 }
@@ -86,9 +62,7 @@ $effect(() => {
 	};
 });
 
-// The step list translates by one step-height per index step. With
-// VISIBLE=3 and stepH=80px, the active step sits in the middle of
-// the window (offset = 1 * stepH from the top of the window).
+// One step-height per index step, so with VISIBLE=3 the active step sits in the middle of the window.
 const translateY = $derived(`translateY(-${current * stepH}px)`);
 </script>
 

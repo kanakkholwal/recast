@@ -23,9 +23,7 @@ import type { Recast } from "$lib/dashboard/store.svelte";
 import EmptyState from "./EmptyState.svelte";
 import RecastCard from "./RecastCard.svelte";
 
-// Responsive recast grid + its three empty states (no recasts / no match /
-// empty folder). Extracted from the library page so the page keeps only the
-// data + handlers.
+// The grid plus its three empty states, extracted so the library page keeps only data and handlers.
 let {
 	recasts,
 	folders,

@@ -6,8 +6,7 @@ import SectionError from "$lib/components/SectionError.svelte";
 import EmptyState from "$lib/dashboard/components/EmptyState.svelte";
 import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
 
-// A failing `[id]` layout load surfaces here, so a missing or out-of-scope
-// recast reads as "not found" instead of the generic dashboard boundary.
+// A failing `[id]` load surfaces here, so a missing recast reads as not-found rather than a generic error.
 const status = $derived(page.status);
 const notFound = $derived(status === 404);
 </script>

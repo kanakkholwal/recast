@@ -1,7 +1,6 @@
 import { type CachedFrame, estimateFrameBytes } from "./storage";
 
-// REQUIREMENTS.md §3. Each frame holds a GPU surface, so an uncapped Map is
-// a leak, not a cache.
+// Each frame holds a GPU surface, so an uncapped Map is a leak, not a cache. See REQUIREMENTS.md section 3.
 const DEFAULT_MEMORY_CAP_BYTES = 512 * 1024 * 1024;
 
 export interface FrameCacheConfig {
@@ -106,8 +105,7 @@ export class FrameCache {
 	 * before it would step the picture back into content the user cut.
 	 */
 	readNearest(tsUs: number, floorUs = 0): CachedFrame | null {
-		// Record it even on a miss: eviction needs to know where the playhead is
-		// before the first successful read.
+		// Record it even on a miss: eviction needs the playhead's position before the first successful read.
 		this.#lastReadUs = tsUs;
 		const idx = this.#floorIndex(tsUs);
 		if (idx < 0) return null;

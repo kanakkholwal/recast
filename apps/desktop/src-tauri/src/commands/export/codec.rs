@@ -1,6 +1,4 @@
-//! Format-specific codec + output args for the video export. Appends the encoder
-//! flags, audio codec, and output path for GIF / WebM(VP9) / MP4(H.264). Split
-//! out of commands/editor.rs's `export_video`.
+//! Format-specific codec and output args for GIF, WebM(VP9) and MP4(H.264).
 
 use std::path::Path;
 
@@ -35,16 +33,7 @@ pub(crate) fn append_codec_args(
 ) {
     match format {
         "gif" => {
-            // Explicit `-c:v gif` + `-f gif` keeps FFmpeg from probing the
-            // output container and falling back to an unrelated codec on
-            // some Windows builds — we've seen the auto-detect path emit
-            // "Could not find tag for codec none" when the filter chain
-            // ends in a labelled output rather than the default sink.
-            // `-vsync 0` (a.k.a. `-fps_mode passthrough`) honours the
-            // exact frame timing produced by the in-graph `fps=` filter
-            // instead of FFmpeg's downstream resampler nudging frames
-            // around, which previously produced 0-byte GIFs when the
-            // composite framerate didn't divide evenly.
+            // Explicit `-c:v gif` and `-f gif` stop auto-detect emitting 'Could not find tag for codec none'; `-vsync 0` keeps the in-graph `fps=` timing.
             args.extend([
                 "-c:v".to_string(),
                 "gif".to_string(),
@@ -59,16 +48,7 @@ pub(crate) fn append_codec_args(
             ]);
         }
         "webm" => {
-            // libvpx-vp9 is single-threaded and uses `deadline=best` by
-            // default — a combo that turned a 5-min 1080p export into a
-            // 30+ min job on a dual-core laptop with the machine pinned
-            // at one core. Switching on row-multithreading, letting FFmpeg
-            // pick the thread count, and bumping `cpu-used` to 4 with
-            // `deadline=good` gives ~4–8× faster encodes at the same CRF
-            // with quality loss that's invisible to viewers. `tile-columns`
-            // splits the frame for additional parallelism on multi-core
-            // machines — log2(2)=1 gives 2 tile columns, a safe default
-            // for 1080p+.
+            // libvpx-vp9 defaults to single-threaded `deadline=best`; row-mt, `cpu-used=4`, `deadline=good` and tile-columns give roughly 4-8x at the same CRF.
             args.extend([
                 "-c:v".to_string(),
                 "libvpx-vp9".to_string(),
@@ -95,18 +75,7 @@ pub(crate) fn append_codec_args(
             args.push(output_path.to_string_lossy().to_string());
         }
         _ => {
-            // NOTE: we intentionally do NOT pass `-movflags +faststart` here.
-            // Faststart does an in-place moov-atom rewrite at the very end of
-            // the mux, and on 4K clips that rewrite can take 10–60+ seconds
-            // while stdout stays silent — manifesting as a UI that's stuck in
-            // the "Finalizing…" state. Desktop playback (VLC, Windows Media,
-            // browsers reading from disk) works fine with moov-at-end. If we
-            // later need HTTP-streamable output, add it as a separate optional
-            // `-c copy -movflags +faststart` remux pass with its own progress.
-            // Export-quality codec args. NVENC/AMF/QSV get hardware rate control
-            // tuned for quality (not the lowlatency presets used for live
-            // recording); libx264 uses the user's chosen profile preset because
-            // export isn't bound by real-time pacing. See `encoder::h264`.
+            // No `+faststart`: its end-of-mux moov rewrite takes 10-60s on 4K with no progress, which reads as a stuck Finalizing.
             let encoder = if force_software {
                 crate::encoder::h264::H264Encoder::Libx264
             } else {
@@ -114,12 +83,7 @@ pub(crate) fn append_codec_args(
                     crate::ffmpeg::preferred_h264_encoder(),
                 )
             };
-            // Software x264 at `slow`/`slower` on a 4K frame is far below realtime
-            // and is what turned a ~40s export into minutes on GPU-less machines.
-            // Hardware encoders aren't preset-bound this way, so cap only libx264:
-            // slow→medium at the same CRF is ~2x faster for a barely-visible size
-            // change. The 4K profile's default is `slow`, so this only bites the
-            // pathological software-4K path.
+            // Software x264 at slow on a 4K frame is far below realtime; cap only libx264, where slow to medium is ~2x faster at the same CRF.
             let chosen_x264_preset = speed.x264_preset().unwrap_or(profile.mp4_preset);
             let x264_preset = if matches!(encoder, crate::encoder::h264::H264Encoder::Libx264) {
                 cap_software_x264_preset(chosen_x264_preset)
@@ -145,6 +109,11 @@ pub(crate) fn append_codec_args(
                     "aac".to_string(),
                     "-b:a".to_string(),
                     "192k".to_string(),
+                    // Pin the delivered format: otherwise the output takes whichever source survived the mix, so a 16 kHz mic shipped a 16 kHz export.
+                    "-ar".to_string(),
+                    "48000".to_string(),
+                    "-ac".to_string(),
+                    "2".to_string(),
                 ]);
             } else {
                 args.push("-an".to_string());

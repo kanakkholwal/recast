@@ -1,38 +1,38 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "material-cursors",
-  "name": "Material Design Cursors",
-  "version": "1.0.0",
-  "author": "jepricreations",
-  "description": "Material Design concept cursors by jepricreations (https://www.deviantart.com/jepricreations) — light and dark arrows that turn into the link pointer on click. Free to use; credited to the author.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "cursors": [
-      {
-        "id": "light",
-        "label": "Material Light",
-        "description": "Light Material Design arrow that turns into the link pointer on click.",
-        "rest": "light-arrow",
-        "press": "light-hand",
-        "hotspot": { "x": 4, "y": 6 },
-        "pressedHotspot": { "x": 14, "y": 6 }
-      },
-      {
-        "id": "dark",
-        "label": "Material Dark",
-        "description": "Dark Material Design arrow that turns into the link pointer on click.",
-        "rest": "dark-arrow",
-        "press": "dark-hand",
-        "hotspot": { "x": 4, "y": 6 },
-        "pressedHotspot": { "x": 14, "y": 6 }
-      }
-    ]
-  },
-  "assets": [
-    { "id": "light-arrow", "file": "assets/light-arrow.svg" },
-    { "id": "light-hand", "file": "assets/light-hand.svg" },
-    { "id": "dark-arrow", "file": "assets/dark-arrow.svg" },
-    { "id": "dark-hand", "file": "assets/dark-hand.svg" }
-  ]
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "material-cursors",
+	"name": "Material Design Cursors",
+	"version": "1.0.0",
+	"author": "jepricreations",
+	"description": "Material Design concept cursors by jepricreations (https://www.deviantart.com/jepricreations) — light and dark arrows that turn into the link pointer on click. Free to use; credited to the author.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"cursors": [
+			{
+				"id": "light",
+				"label": "Material Light",
+				"description": "Light Material Design arrow that turns into the link pointer on click.",
+				"rest": "light-arrow",
+				"press": "light-hand",
+				"hotspot": { "x": 4, "y": 6 },
+				"pressedHotspot": { "x": 14, "y": 6 }
+			},
+			{
+				"id": "dark",
+				"label": "Material Dark",
+				"description": "Dark Material Design arrow that turns into the link pointer on click.",
+				"rest": "dark-arrow",
+				"press": "dark-hand",
+				"hotspot": { "x": 4, "y": 6 },
+				"pressedHotspot": { "x": 14, "y": 6 }
+			}
+		]
+	},
+	"assets": [
+		{ "id": "light-arrow", "file": "assets/light-arrow.svg" },
+		{ "id": "light-hand", "file": "assets/light-hand.svg" },
+		{ "id": "dark-arrow", "file": "assets/dark-arrow.svg" },
+		{ "id": "dark-hand", "file": "assets/dark-hand.svg" }
+	]
 }

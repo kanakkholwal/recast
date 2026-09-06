@@ -1,8 +1,8 @@
 <script lang="ts">
+import { Check, Eye, GitGraph, LoaderCircle, Trash2, TriangleAlert, Undo2 } from "@recast/icons";
 import { Badge } from "@recast/ui/badge";
 import { Button } from "@recast/ui/button";
 import * as Popover from "@recast/ui/popover";
-import { Check, Eye, GitGraph, LoaderCircle, Trash2, TriangleAlert, Undo2 } from "@recast/icons";
 import { prefersReducedMotion } from "svelte/motion";
 import { scale } from "svelte/transition";
 import { branchReview } from "../lib/agent/branch-store.svelte";
@@ -22,18 +22,14 @@ interface Props {
 let { projectPath, writerId, onPreview, onApplied }: Props = $props();
 
 let open = $state(false);
-// Sampled once per open: a live clock would rerender the list every second for
-// a label that only reads "5m ago".
+// Sampled once per open: a live clock would rerender the list every second for a label reading '5m ago'.
 let openedAtMs = $state(Date.now());
-// Discarding deletes an agent's proposed work outright, so it asks once. Inline
-// rather than a dialog: a modal over this popover would hide the list behind it.
+// Discarding deletes an agent's work, so it asks once; inline, because a modal would hide the list behind it.
 let pendingDiscard = $state<string | null>(null);
-// Preview swaps the branch into the editor. The host stacks an undo state first,
-// which is worth saying rather than leaving the reader to find the way back.
+// Preview swaps the branch into the editor, and the host stacks an undo state first.
 let previewedId = $state<string | null>(null);
 
-// The badge appears the moment an agent proposes something, mid-edit. Fading it
-// in reads as arriving; popping in reads as a glitch.
+// The badge appears mid-edit, so fading it in reads as arriving where popping in reads as a glitch.
 const entrance = $derived(
 	prefersReducedMotion.current ? { duration: 0 } : { duration: 180, start: 0.95, opacity: 0 },
 );

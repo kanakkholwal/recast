@@ -1,31 +1,31 @@
 <script lang="ts">
-	import { THEMES, type ChartConfig } from "./chart-utils.js";
+import { type ChartConfig, THEMES } from "./chart-utils.js";
 
-	let { id, config }: { id: string; config: ChartConfig } = $props();
+let { id, config }: { id: string; config: ChartConfig } = $props();
 
-	const colorConfig = $derived(
-		config ? Object.entries(config).filter(([, config]) => config.theme || config.color) : null
-	);
+const colorConfig = $derived(
+	config ? Object.entries(config).filter(([, entry]) => entry.theme || entry.color) : null,
+);
 
-	const themeContents = $derived.by(() => {
-		if (!colorConfig || !colorConfig.length) return;
+const themeContents = $derived.by(() => {
+	if (!colorConfig?.length) return;
 
-		const themeContents = [];
-		for (const [_theme, prefix] of Object.entries(THEMES)) {
-			let content = `${prefix} [data-chart=${id}] {\n`;
-			const color = colorConfig.map(([key, itemConfig]) => {
-				const theme = _theme as keyof typeof itemConfig.theme;
-				const color = itemConfig.theme?.[theme] || itemConfig.color;
-				return color ? `\t--color-${key}: ${color};` : null;
-			});
+	const blocks = [];
+	for (const [themeName, prefix] of Object.entries(THEMES)) {
+		let content = `${prefix} [data-chart=${id}] {\n`;
+		const vars = colorConfig.map(([key, itemConfig]) => {
+			const theme = themeName as keyof typeof itemConfig.theme;
+			const value = itemConfig.theme?.[theme] || itemConfig.color;
+			return value ? `\t--color-${key}: ${value};` : null;
+		});
 
-			content += color.join("\n") + "\n}";
+		content += `${vars.join("\n")}\n}`;
 
-			themeContents.push(content);
-		}
+		blocks.push(content);
+	}
 
-		return themeContents.join("\n");
-	});
+	return blocks.join("\n");
+});
 </script>
 
 {#if themeContents}

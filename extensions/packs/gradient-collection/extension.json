@@ -1,21 +1,45 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "gradient-collection",
-  "name": "Gradient Collection",
-  "version": "1.0.0",
-  "author": "Recast",
-  "description": "Six extra background gradients — twilight, flamingo, citrus, nebula, forest, and bubblegum.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "gradients": [
-      { "id": "twilight", "label": "Twilight", "value": "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)" },
-      { "id": "flamingo", "label": "Flamingo", "value": "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)" },
-      { "id": "citrus", "label": "Citrus", "value": "linear-gradient(135deg, #fdc830 0%, #f37335 100%)" },
-      { "id": "nebula", "label": "Nebula", "value": "linear-gradient(135deg, #654ea3 0%, #eaafc8 100%)" },
-      { "id": "forest", "label": "Forest", "value": "linear-gradient(135deg, #134e5e 0%, #71b280 100%)" },
-      { "id": "bubblegum", "label": "Bubblegum", "value": "linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)" }
-    ]
-  },
-  "assets": []
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "gradient-collection",
+	"name": "Gradient Collection",
+	"version": "1.0.0",
+	"author": "Recast",
+	"description": "Six extra background gradients — twilight, flamingo, citrus, nebula, forest, and bubblegum.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"gradients": [
+			{
+				"id": "twilight",
+				"label": "Twilight",
+				"value": "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)"
+			},
+			{
+				"id": "flamingo",
+				"label": "Flamingo",
+				"value": "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"
+			},
+			{
+				"id": "citrus",
+				"label": "Citrus",
+				"value": "linear-gradient(135deg, #fdc830 0%, #f37335 100%)"
+			},
+			{
+				"id": "nebula",
+				"label": "Nebula",
+				"value": "linear-gradient(135deg, #654ea3 0%, #eaafc8 100%)"
+			},
+			{
+				"id": "forest",
+				"label": "Forest",
+				"value": "linear-gradient(135deg, #134e5e 0%, #71b280 100%)"
+			},
+			{
+				"id": "bubblegum",
+				"label": "Bubblegum",
+				"value": "linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)"
+			}
+		]
+	},
+	"assets": []
 }

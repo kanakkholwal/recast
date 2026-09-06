@@ -10,13 +10,13 @@
  * consumer is DOM-free and relocates unchanged.
  */
 
-import { getEditorServices } from "../editor/services";
 import type { EditorStore } from "../../stores/editor-store.svelte";
+import { getEditorServices } from "../editor/services";
 import type { ExportQuality } from "./browser-export-plan";
 import { buildExportJob, type ExportJobInputs } from "./build-export-job";
-import { runExportJob, type ExportRuntime } from "./run-export-job";
-import { exportWorkerSupported, runExportJobInWorker } from "./export-worker-client";
 import { closeJobBitmaps, type ExportJob } from "./export-job";
+import { exportWorkerSupported, runExportJobInWorker } from "./export-worker-client";
+import { type ExportRuntime, runExportJob } from "./run-export-job";
 
 export interface BrowserExportOptions {
 	/** Source video asset URL (what the preview decodes, e.g. `convertFileSrc(...)`). */
@@ -47,10 +47,7 @@ export async function runBrowserExport(
 	});
 	const sink = getEditorServices().exportSink;
 	if (!sink) throw new Error("no export sink is installed");
-	// Handed over as-is. This used to `slice` the whole backing buffer into a
-	// second copy, and the sink sliced again — two extra full-file copies of a
-	// multi-GB export, all three live at once. Narrowing to the exact bytes is
-	// the sink's job, and only when the view isn't already the whole buffer.
+	// Handed over as-is: slicing here plus the sink's own slice kept three full copies of a multi-GB export alive.
 	const delivered = await sink.deliver(mp4, "export.mp4");
 	return delivered ?? "";
 }
@@ -63,7 +60,7 @@ async function renderToBytes(
 	runtime: ExportRuntime,
 ): Promise<Uint8Array> {
 	const job = await buildExportJob(store, jobOpts);
-	if (exportWorkerSupported() && !job.caption?.mainThreadOnly) {
+	if (exportWorkerSupported()) {
 		try {
 			return await runExportJobInWorker(job, runtime);
 		} catch (err) {
@@ -83,7 +80,7 @@ export async function renderJobToBytes(
 	job: ExportJob,
 	runtime: ExportRuntime,
 ): Promise<Uint8Array> {
-	if (exportWorkerSupported() && !job.caption?.mainThreadOnly) {
+	if (exportWorkerSupported()) {
 		try {
 			const bytes = await runExportJobInWorker(job, runtime, { transfer: false });
 			closeJobBitmaps(job); // the worker consumed clones; free our originals

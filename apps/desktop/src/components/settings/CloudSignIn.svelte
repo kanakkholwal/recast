@@ -1,6 +1,7 @@
 <script lang="ts">
-import { formatBytes } from "@recast/editor/lib/format/bytes";
+import RecastMark from "$components/recast-mark.svelte";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
+import { formatBytes } from "@recast/editor/lib/format/bytes";
 import {
 	ArrowUpRight,
 	BarChart3,
@@ -18,11 +19,11 @@ import {
 	Video,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import RecastMark from "$components/recast-mark.svelte";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import { toast } from "@recast/ui/sonner";
 import { cn } from "@recast/ui/utils";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { Image } from "@unpic/svelte";
 import { onDestroy, onMount } from "svelte";
 import {
 	formatMemberSince,
@@ -33,9 +34,6 @@ import {
 } from "./cloud-signin.logic";
 import { CloudAuth } from "./cloud-signin.svelte";
 
-// Recast Cloud sign-in state machine (see cloud-signin.svelte.ts). `view` is
-// read through a local $derived so discriminated-union narrowing on it keeps
-// working in the markup below.
 const auth = new CloudAuth();
 const view = $derived(auth.view);
 const busy = $derived(auth.busy);
@@ -44,8 +42,6 @@ const startSignIn = () => auth.startSignIn();
 const signOut = () => auth.signOut();
 const cancelSignIn = () => auth.cancelSignIn();
 
-// Value-first sell for the signed-out state: show what Cloud unlocks before
-// asking the user to authenticate.
 const cloudBenefits = [
 	{ icon: BarChart3, label: "Viewer analytics" },
 	{ icon: MessageSquare, label: "Timestamped comments" },
@@ -53,6 +49,7 @@ const cloudBenefits = [
 	{ icon: Palette, label: "Custom branding" },
 ];
 
+// TODO: have env based config for this, so self-hosters can point at their own dashboard.
 const dashboardUrl = "https://recast.nexonauts.com/dashboard/settings/profile";
 
 async function openDashboard() {
@@ -80,13 +77,12 @@ onDestroy(() => auth.dispose());
     {@const shareCap = view.usage?.sharesLimit}
     {@const sharesActive = view.usage?.activeShares ?? 0}
     <div class="flex flex-col">
-      <!-- Identity row: avatar + name/email + plan badge -->
       <div class="flex items-center gap-3 px-4 py-4">
         <div
           class="relative flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted text-[13px] font-semibold text-foreground ring-1 ring-inset ring-border/50"
         >
           {#if view.image}
-            <img
+            <Image
               src={view.image}
               alt={view.name ?? view.email ?? "Profile"}
               referrerpolicy="no-referrer"
@@ -209,7 +205,7 @@ onDestroy(() => auth.dispose());
                     </span>
                   </span>
                   {#if selected}
-                    <Check class="size-3.5 shrink-0 text-primary" />
+                    <Check class="size-3.5 shrink-0 text-foreground" />
                   {:else}
                     <span class="size-3.5 shrink-0"></span>
                   {/if}
@@ -412,11 +408,11 @@ onDestroy(() => auth.dispose());
           No re-upload. Cloud layers on top of the files you already have.
         </div>
       </div>
-      <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <ul class="grid grid-cols-1 gap-2 sm:grid-cols-2 p-2">
         {#each cloudBenefits as benefit (benefit.label)}
           {@const Icon = benefit.icon}
           <li class="flex items-center gap-2 text-[11.5px] text-foreground/85">
-            <Icon class="size-3.5 shrink-0 text-primary" />
+            <Icon class="size-3.5 shrink-0 text-muted-foreground" />
             <span>{benefit.label}</span>
           </li>
         {/each}
@@ -424,21 +420,18 @@ onDestroy(() => auth.dispose());
       <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button
           size="sm"
-          class="h-8 gap-1.5"
+          variant="outline"
           disabled={busy}
           onclick={startSignIn}
         >
           {#if inFlight === "sign-in"}
             <LoaderCircle class="size-3.5 animate-spin" />
-            <span class="text-[11.5px]">Signing in…</span>
+            <span>Signing in…</span>
           {:else}
-            <RecastMark class="size-3.5" />
-            <span class="text-[11.5px]">Sign in to Recast Cloud</span>
+            <RecastMark class="size-3.5" color="var(--card)" fill="var(--card-foreground)" />
+            <span>Connect to Cloud</span>
           {/if}
         </Button>
-        <span class="text-[10.5px] text-muted-foreground">
-          The app never needs an account. Cloud is opt-in.
-        </span>
       </div>
     </div>
   {/if}

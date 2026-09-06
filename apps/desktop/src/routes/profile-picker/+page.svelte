@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { RecordingProfile } from "@recast/editor/lib/profiles";
 import {
 	Camera,
 	Check,
@@ -13,19 +14,22 @@ import { cn } from "@recast/ui/utils";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { onMount } from "svelte";
-
-import type { RecordingProfile } from "@recast/editor/lib/profiles";
+import { cubicOut } from "svelte/easing";
+import { scale } from "svelte/transition";
 import { profilesStore } from "$lib/stores/profiles.svelte";
 import { wrapIndex } from "$lib/util/wrap-index";
 import { parseSelectedParam, summarize } from "./profile-picker.logic";
 
 const initialSelected = parseSelectedParam(window.location.search);
 
+// Popup materializes (scale + fade) instead of popping in; static under reduced motion.
+const prefersReducedMotion =
+	typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
 let highlightedId = $state<string | null>(initialSelected);
 
 onMount(() => {
-	// Profiles load from the backend now (async); highlight the default once
-	// they arrive rather than reading synchronously on mount.
+	// Profiles load async now, so highlight the default once they arrive rather than reading synchronously on mount.
 	void profilesStore.hydrate().then(() => {
 		if (!highlightedId) {
 			const def = profilesStore.default();
@@ -84,6 +88,11 @@ function handleKeydown(e: KeyboardEvent) {
 
 <div
   class="group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-card backdrop-blur-3xl"
+  in:scale={{
+    start: prefersReducedMotion ? 1 : 0.97,
+    duration: prefersReducedMotion ? 0 : 180,
+    easing: cubicOut,
+  }}
 >
   <!-- Header -->
   <header
@@ -132,10 +141,10 @@ function handleKeydown(e: KeyboardEvent) {
             onmouseenter={() => (highlightedId = profile.id)}
             onmousedown={(e) => e.stopPropagation()}
             class={cn(
-              "group flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+              "group flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-[background-color,color,transform] duration-150 motion-safe:active:scale-[0.99]",
               "focus:outline-none focus:ring-1 focus:ring-ring",
               active
-                ? "bg-primary/10 text-foreground"
+                ? "bg-foreground/10 text-foreground"
                 : "text-foreground/80 hover:bg-muted/60",
             )}
           >
@@ -145,7 +154,7 @@ function handleKeydown(e: KeyboardEvent) {
                 profile.isDefault
                   ? "bg-primary/10 text-primary ring-primary/30"
                   : active
-                    ? "bg-primary text-primary-foreground ring-primary/40"
+                    ? "bg-foreground text-background ring-foreground/20"
                     : "bg-muted text-muted-foreground ring-border/40",
               )}
             >
@@ -191,7 +200,7 @@ function handleKeydown(e: KeyboardEvent) {
               >
             {/if}
             {#if profile.id === initialSelected}
-              <Check size={12} stroke={3} class="shrink-0 text-primary" />
+              <Check size={12} stroke={3} class="shrink-0 text-foreground" />
             {/if}
           </button>
         {/each}

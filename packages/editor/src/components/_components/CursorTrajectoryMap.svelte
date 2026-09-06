@@ -1,8 +1,8 @@
 <script lang="ts">
 import {
+	type CursorSampleLike,
 	smoothCursorPath,
 	smoothingStrengthToSigmaMs,
-	type CursorSampleLike,
 } from "../../lib/cursor/smoothing";
 import { pathFrom } from "./cursor-trajectory.logic";
 

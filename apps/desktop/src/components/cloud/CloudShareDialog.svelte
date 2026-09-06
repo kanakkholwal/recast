@@ -7,14 +7,15 @@
  * hands it to the activity center. The store also fires success/error toasts,
  * so feedback still lands if this dialog is minimized.
  */
+
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { formatSize } from "@recast/editor/lib/format/files";
 import { etaLabel } from "@recast/editor/lib/format/time";
-import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { AlertTriangle, Check, Minus } from "@recast/icons";
-import Logo from "$components/logo.svelte";
-import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
-import UploadProgress from "$components/recast/UploadProgress.svelte";
 import { Button } from "@recast/ui/button";
+import Logo from "$components/logo.svelte";
+import UploadProgress from "$components/recast/UploadProgress.svelte";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import CloudShareSettings from "./CloudShareSettings.svelte";
 
 let { path }: { path: string } = $props();
@@ -43,8 +44,7 @@ const pct = $derived(
 		? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
 		: null,
 );
-// Byte + ETA readout during the transfer so a multi-minute upload feels
-// in-control (e.g. "12.3 MB of 45.0 MB · ~40s left").
+// Byte and ETA readout, so a multi-minute upload feels in-control rather than stalled.
 const transferLabel = $derived.by(() => {
 	if (!upload || upload.totalBytes <= 0) return null;
 	const size = `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`;
@@ -86,7 +86,7 @@ async function done() {
 	title={status === "complete" ? "Shared to Recast Cloud" : "Share to Recast Cloud"}
 	subtitle={fileName}
 	icon={status === "complete" ? Check : status === "error" ? AlertTriangle : Logo}
-	tone={status === "error" ? "destructive" : "default"}
+	tone={status === "error" ? "destructive" : status === "complete" ? "success" : "default"}
 	widthClass="sm:max-w-lg"
 	onOpenChange={(v) => {
 		if (v) return;
@@ -121,17 +121,17 @@ async function done() {
 
 	{#snippet footer()}
 		{#if status === "uploading"}
-			<Button variant="default_soft" size="xs" onclick={onMinimize}>
+			<Button variant="secondary" size="sm" onclick={onMinimize}>
 				<Minus />
 				Minimize
 			</Button>
 		{:else if status === "complete"}
-			<Button size="xs" disabled={saving || loading} onclick={done}>
+			<Button size="sm" disabled={saving || loading} onclick={done}>
 				{saving ? "Saving…" : "Done"}
 			</Button>
 		{:else}
-			<Button variant="ghost" size="xs" onclick={onClose}>Close</Button>
-			<Button size="xs" onclick={onRetry}>Try again</Button>
+			<Button variant="ghost" size="sm" onclick={onClose}>Close</Button>
+			<Button size="sm" onclick={onRetry}>Try again</Button>
 		{/if}
 	{/snippet}
 </DialogShell>

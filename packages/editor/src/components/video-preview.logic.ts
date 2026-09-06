@@ -6,12 +6,10 @@
  */
 
 import type { Easing } from "../lib/easing/cubic-bezier";
-import type { ZoomRegion } from "../stores/editor-store.svelte";
-import { activeZoomIndex } from "../lib/zoom/resolve";
-// Runtime import via relative path (not `$lib`): the standalone vitest config
-// has no `$lib` alias, and this module is unit-tested. Type-only `$lib` imports
-// elsewhere are fine; they're erased before the test runs.
+// Relative path, not `$lib`: the standalone vitest config has no `$lib` alias and this module is unit-tested.
 import { bezierY } from "../lib/easing/cubic-bezier";
+import { activeZoomIndex } from "../lib/zoom/resolve";
+import type { ZoomRegion } from "../stores/editor-store.svelte";
 
 export type CursorSampleJS = {
 	timestampUs: number;
@@ -23,6 +21,30 @@ export type CursorSampleJS = {
 };
 
 export type IdlePeriodJS = { startUs: number; endUs: number };
+
+/** Why the camera is not on screen, or null when it is. Ordered by how early
+ *  the chain breaks, so the first true answer is the one to act on. */
+export function cameraStall(state: {
+	enabled: boolean;
+	hasSrc: boolean;
+	elementMounted: boolean;
+	readyState: number;
+	videoWidth: number;
+	gated: boolean;
+	frameReady: boolean;
+	boundInEngine: boolean;
+}): string | null {
+	if (!state.enabled) return null;
+	if (!state.hasSrc) return "no camera file is attached to this project";
+	if (!state.elementMounted) return "the camera element never mounted";
+	if (state.readyState < 2)
+		return `the camera file has not decoded (readyState ${state.readyState})`;
+	if (state.videoWidth === 0) return "the camera file reports a zero width";
+	// A bound frame keeps drawing between presentations, so the gate is only a stall while nothing has ever been bound.
+	if (state.boundInEngine) return null;
+	if (state.gated && !state.frameReady) return "no new camera frame has been presented yet";
+	return "frames were uploaded but the engine bound none of them";
+}
 
 export interface ZoomState {
 	scale: number;
@@ -36,39 +58,39 @@ export interface ZoomState {
  * centre in video UV, and motion-blur strength. Matches the Rust
  * `ZoomRegion::scale_at` 1:1 so preview and export stay aligned.
  */
+/** Eased scale for one region at `timeSec`, ignoring whether it is in force. */
+export function zoomScaleAt(r: ZoomRegion, timeSec: number): number {
+	const duration = Math.max(0, r.end - r.start);
+	const half = duration * 0.5;
+	const rampIn = Math.min(Math.max(0, r.rampIn), half);
+	const rampOut = Math.min(Math.max(0, r.rampOut), half);
+	const holdStart = r.start + rampIn;
+	const holdEnd = r.end - rampOut;
+	let phase: number;
+	let curve: Easing;
+	let atHold = false;
+	if (timeSec < holdStart) {
+		phase = rampIn > 0 ? (timeSec - r.start) / rampIn : 1;
+		curve = r.easeIn;
+	} else if (timeSec > holdEnd) {
+		phase = rampOut > 0 ? (r.end - timeSec) / rampOut : 1;
+		curve = r.easeOut;
+	} else {
+		atHold = true;
+		phase = 1;
+		curve = r.easeIn;
+	}
+	phase = Math.max(0, Math.min(1, phase));
+	const eased = atHold ? 1 : bezierY(curve, phase);
+	return 1.0 + (r.scale - 1.0) * eased;
+}
+
 export function evaluateZoomAt(regions: ZoomRegion[], timeSec: number): ZoomState {
-	const active = activeZoomIndex(regions, timeSec);
+	const active = activeZoomIndex(regions, timeSec, (i) => zoomScaleAt(regions[i], timeSec));
 	if (active !== -1) {
 		const r = regions[active];
-		const duration = Math.max(0, r.end - r.start);
-		const half = duration * 0.5;
-		const rampIn = Math.min(Math.max(0, r.rampIn), half);
-		const rampOut = Math.min(Math.max(0, r.rampOut), half);
-		const holdStart = r.start + rampIn;
-		const holdEnd = r.end - rampOut;
-		let phase: number;
-		let curve;
-		let atHold = false;
-		if (timeSec < holdStart) {
-			phase = rampIn > 0 ? (timeSec - r.start) / rampIn : 1;
-			curve = r.easeIn;
-		} else if (timeSec > holdEnd) {
-			phase = rampOut > 0 ? (r.end - timeSec) / rampOut : 1;
-			curve = r.easeOut;
-		} else {
-			atHold = true;
-			phase = 1;
-			curve = r.easeIn;
-		}
-		phase = Math.max(0, Math.min(1, phase));
-		const eased = atHold ? 1 : bezierY(curve, phase);
-		const scale = 1.0 + (r.scale - 1.0) * eased;
-		// Focus point is CONSTANT at the target for the whole region; only the
-		// scale eases. The affine zoom `(uv - c)/scale + c` is the identity at
-		// scale≈1 (no first-frame offset regardless of c) and dollies straight
-		// into the target as it ramps. Easing the centre from 0.5→target instead
-		// caused the "scale at centre, then slide" artifact, and a constant
-		// centre keeps the cursor (same forward transform) glued.
+		const scale = zoomScaleAt(r, timeSec);
+		// The focus point is CONSTANT for the region and only the scale eases; easing the centre caused the scale-then-slide artifact.
 		const cx = r.centerX ?? 0.5;
 		const cy = r.centerY ?? 0.5;
 		return { scale, cx, cy, motionBlur: r.motionBlur ?? 0 };
@@ -103,10 +125,7 @@ export function interpolateCursor(
 	const b = cursorSamples[idx];
 	const range = b.timestampUs - a.timestampUs;
 	const tLinear = range > 0 ? (timestampUs - a.timestampUs) / range : 0;
-	// Apply the user's cursor-motion easing if set. The curve reshapes
-	// the *interpolation parameter* between adjacent captured samples;
-	// boolean states still flip at the midpoint of the linear param to
-	// keep click/release timing predictable.
+	// The curve reshapes the interpolation parameter between samples; boolean states still flip at the linear midpoint.
 	const t = easing ? bezierY(easing, tLinear) : tLinear;
 	return {
 		timestampUs,
@@ -118,8 +137,7 @@ export function interpolateCursor(
 	};
 }
 
-// Idle hide fade: shared 200ms ramp at each end of an idle period.
-// Mirrored 1:1 in `cursor_export.rs` so preview and export agree.
+// Shared 200ms ramp at each end of an idle period, mirrored 1:1 in `cursor_export.rs`.
 export const CURSOR_IDLE_FADE_US = 200_000;
 
 /**
@@ -147,8 +165,7 @@ export function idleAlphaAt(
 	return 1;
 }
 
-// Coarse resolution bucket for telemetry cohorting (the default-on decision
-// is "decode-fps by OS + resolution"). Keyed off the larger dimension.
+// Coarse resolution bucket for telemetry cohorting, keyed off the larger dimension.
 export function resolutionTier(w: number, h: number): string {
 	const p = Math.max(w, h);
 	if (p >= 4500) return "5k";
@@ -178,12 +195,10 @@ export function shouldRecoverMbSource(code: string, attempts: number, maxAttempt
 	return MB_TRANSIENT_CODES.has(code) && attempts < maxAttempts;
 }
 
-// Map a source-init failure to a coarse, PII-safe reason. The raw message can
-// in principle carry a URL/path, so we NEVER send it; only this enum.
+// The raw message can carry a URL or path, so NEVER send it; only this coarse enum.
 export function classifyMbError(err: unknown): string {
 	const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
-	// A worker that never loaded is a BUILD problem, not a codec one. Lumping it
-	// under `unsupported` sent every such report chasing the user's video.
+	// A worker that never loaded is a BUILD problem: lumping it under `unsupported` sent reports chasing the user's video.
 	if (m.includes("worker script failed to load") || m.includes("worker-died"))
 		return "worker_failed";
 	if (m.includes("unavailable") || m.includes("worker") || m.includes("videoframe"))

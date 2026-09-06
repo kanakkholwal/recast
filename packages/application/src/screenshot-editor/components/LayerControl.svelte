@@ -27,8 +27,7 @@ function layerLabel(o: Overlay): string {
   // Top layer first (paint order is bottom-up, so reverse for display).
   const layers = $derived([...editor.overlays].reverse());
 
-  // Geometry for the selected layer. Colour/stroke/text live in their own
-  // Design-tab sections; this covers what nothing else exposes.
+  // Geometry only: colour, stroke and text live in their own Design sections, so this covers what nothing else exposes.
   const selected = $derived(editor.selectedOverlay);
   const selText = $derived(selected?.type === "text" ? (selected as TextOverlay) : null);
   const selShape = $derived(selected?.type === "shape" ? (selected as ShapeOverlay) : null);

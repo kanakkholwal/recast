@@ -1,8 +1,9 @@
+/* biome-ignore-all lint/complexity/noImportantStyles: the only uses are the reduced-motion overrides, which must win the cascade. */
 @import "@recast/design/index.css";
 @import "tailwindcss";
 
 @import "@fontsource-variable/inter";
-@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/jetbrains-mono";
 
 @source "../node_modules/@recast/ui/src";
 @source "../node_modules/@recast/player/src";
@@ -11,8 +12,7 @@
 
 @variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
 
-/* Satoshi is not on Fontsource (no @fontsource/satoshi package exists), so the
-   ITF-Free-Font-License woff2 files are vendored in static/fonts. */
+/* Satoshi has no Fontsource package, so the ITF-Free-Font-License woff2 files are vendored in static/fonts. */
 @font-face {
 	font-family: "Satoshi";
 	src: url("/fonts/Satoshi-400.woff2") format("woff2");
@@ -21,6 +21,7 @@
 	font-display: swap;
 }
 @font-face {
+	/* biome-ignore lint/suspicious/noDuplicateProperties: one @font-face per weight is how a family is declared. */
 	font-family: "Satoshi";
 	src: url("/fonts/Satoshi-500.woff2") format("woff2");
 	font-weight: 500;
@@ -39,7 +40,7 @@
 	--font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
 		"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 	--font-display: "Satoshi", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-	--font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
 	--sidebar: oklch(93.403% 0.00011 271.152);
 	--sidebar-foreground: oklch(0.145 0 0);
@@ -62,10 +63,7 @@
 	--sidebar-ring: oklch(0.439 0 0);
 }
 
-/* --- Marketing surface ---
-   Scoped to [data-site="marketing"] (set on <html> by the root layout) so the
-   border-first canvas never reaches /dashboard, /admin, or /share, which still
-   rely on a tonal card-over-canvas lift. */
+
 [data-site="marketing"] {
 	--background: oklch(100% 0 0);
 	--card: oklch(100% 0 0);
@@ -80,8 +78,7 @@
 [data-site="marketing"].dark,
 [data-site="marketing"][data-theme="dark"] {
 	--background: oklch(14.5% 0 0);
-	/* Card matches the canvas, as it does in light: the hairline is what makes a
-	   container, so a card on a paper band reads by its border, not by a lift. */
+	/* Card matches the canvas as in light: a container reads by its hairline, not by a lift. */
 	--card: oklch(14.5% 0 0);
 	--paper: oklch(18.5% 0 0);
 	--foreground: oklch(96% 0 0);
@@ -90,8 +87,7 @@
 	--border: oklch(30% 0 0);
 	--border-emphasis: oklch(42% 0 0);
 
-	/* Accents are lifted for dark: the light-mode hues sit at 54-64% L and go
-	   muddy against a 14.5% canvas. */
+	/* Accents lifted for dark: the light-mode hues sit at 54-64% L and go muddy on a 14.5% canvas. */
 	--color-tag-tangerine: oklch(74% 0.155 48);
 	--color-tag-lavender: oklch(74% 0.135 291);
 	--color-tag-green: oklch(75% 0.16 152);
@@ -100,14 +96,11 @@
 @theme {
 	--font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
 	--font-display: "Satoshi", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-	--font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-	/* @recast/design points font-heading at Geist, which the web app never
-	   loads, so every shared Dialog/Card/Sheet title fell back to plain sans.
-	   Same face as font-display here. Desktop keeps Geist. */
+	--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	/* @recast/design points font-heading at the sans face; the web app pins it to Satoshi so shared titles match the display type. */
 	--font-heading: var(--font-display);
 
-	/* The hairline IS the structure. Full-strength by default — the old
-	   border-low/30..70 dilutions measured 1.03:1 and drew nothing. */
+	/* The hairline IS the structure: the old border-low/30..70 dilutions measured 1.03:1 and drew nothing. */
 	--color-border-low: var(--border);
 	--color-border-strong: var(--border-emphasis, var(--border));
 	--color-paper: var(--paper, var(--muted));
@@ -122,15 +115,12 @@
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-ring: var(--sidebar-ring);
 
-	/* Feature-tag accents. One hue per tag, never two on one component.
-	   Recorded as oklch so they hold their identity in dark mode. */
+	/* One hue per feature tag, never two on a component; recorded as oklch so they hold identity in dark. */
 	--color-tag-tangerine: oklch(64.6% 0.1943 41.1);
 	--color-tag-lavender: oklch(54.1% 0.2466 293);
 	--color-tag-green: oklch(62.7% 0.1699 149.2);
 
-	/* Elevation is deliberately shallow. Borders define containers; these three
-	   exist for the two moments Dub allows: a 1px lift on a filled button, and a
-	   ring/drop on a floating product mockup. */
+	/* Elevation is deliberately shallow: a 1px lift on a filled button, and a ring on a floating mockup. */
 	--shadow-craft-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 	--shadow-craft-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
 	--shadow-craft-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
@@ -143,9 +133,7 @@
 		inset 0 1px 0 0 color-mix(in srgb, var(--color-foreground) 10%, transparent),
 		inset 0 -1px 0 0 color-mix(in srgb, var(--color-foreground) 4%, transparent);
 
-	/* Nine steps, no ad-hoc px. 16px/1.5 is the canonical body.
-	   Line height rides along via Tailwind v4's `--text-*--line-height` pairing,
-	   so `text-body` sets both and no call site needs a leading- utility. */
+	/* Nine steps, no ad-hoc px; Tailwind v4 pairs the line height, so `text-body` sets both. */
 	--text-caption: 0.6875rem;
 	--text-caption--line-height: 1.5;
 	--text-body-sm: 0.875rem;
@@ -224,21 +212,22 @@
 		overflow-x: hidden;
 	}
 
-	/* Display type is Satoshi at weight 500 and normal tracking — the confidence
-	   comes from the letterforms, not from bolding or negative tracking. Inter
-	   handles anything at or below 30px, where it keeps a slight optical tighten. */
+	h1, h2, h3, h4, h5, h6 {
+		@apply text-foreground;
+		line-height: 1.15;
+	}
+
+	/* Display type is Satoshi 500 at normal tracking; Inter handles 30px and below. */
 	[data-site="marketing"] h1,
 	[data-site="marketing"] h2 {
 		font-family: var(--font-display);
-		/* Satoshi ships 400/500/700 — no 600. 500 read too light at display sizes
-		   against the reference, so display type is Bold. */
+		/* Satoshi ships 400/500/700: 500 read too light at display sizes, so display type is Bold. */
 		font-weight: 700;
 		letter-spacing: -0.01em;
 		@apply text-foreground;
 	}
 
-	/* Subheads stay on the display face too, at 500: Satoshi has no 600, and 700
-	   is too heavy at body size. */
+	/* Subheads stay on the display face at 500: Satoshi has no 600 and 700 is too heavy at body size. */
 	[data-site="marketing"] h3 {
 		font-family: var(--font-display);
 		font-weight: 500;
@@ -255,12 +244,7 @@
 		@apply text-foreground;
 	}
 
-	h1, h2, h3, h4, h5, h6 {
-		@apply text-foreground;
-		line-height: 1.15;
-	}
-
-	a:has(href),
+	a[href],
 	button:not([disabled]) {
 		cursor: pointer;
 	}
@@ -275,10 +259,7 @@
 }
 
 @layer utilities {
-	/* --- Border-first containers ---
-	   A container is a 1px hairline and a radius. No blur, no elevation. The
-	   three radii below are the entire vocabulary: 12 for cards, 16 for feature
-	   surfaces, 9999 for pills. */
+	/* --- Border-first containers: a 1px hairline and one of three radii (12 cards, 16 feature surfaces, 9999 pills). */
 	.surface {
 		background-color: var(--color-card);
 		border: 1px solid var(--color-border-low);
@@ -291,8 +272,7 @@
 		border-radius: 1rem;
 	}
 
-	/* Tonal surface for nested panels and alternating bands. No border — the
-	   tone change is the separation. */
+	/* Tonal surface for nested panels and bands: no border, the tone change is the separation. */
 	.surface-alt {
 		background-color: var(--color-paper);
 		border-radius: 1rem;
@@ -304,8 +284,7 @@
 		border-radius: 9999px;
 	}
 
-	/* Product mockups are the one thing allowed to float: a 4px ring reads as a
-	   panel lifted off the canvas without a drop shadow's haze. */
+	/* Mockups are the one thing allowed to float: a 4px ring lifts them without a drop shadow's haze. */
 	.mockup-frame {
 		background-color: var(--color-card);
 		border: 1px solid var(--color-border-low);
@@ -313,12 +292,7 @@
 		box-shadow: var(--shadow-craft-floating);
 	}
 
-	/* --- Always-dark band ---
-	   The closing CTA is dark in both themes. It cannot use `bg-canvas`/`text-ink`
-	   with a mid-page `data-theme="dark"`: Tailwind's @theme aliases resolve
-	   `--color-canvas: var(--canvas)` once, at :root, so a token overridden on an
-	   inner element never reaches the utility. Literal values are the only way a
-	   nested surface can flip. */
+	/* --- Always-dark band: Tailwind's @theme aliases resolve once at :root, so only literal values flip a nested surface. */
 	.band-dark {
 		--band-ink: oklch(96% 0 0);
 		--band-muted: oklch(72% 0 0);
@@ -331,8 +305,7 @@
 		color: var(--band-muted);
 	}
 
-	/* Split deliberately: a grid needs the line as a background (gap-px), a
-	   button needs it as a border. One class doing both gives the button a fill. */
+	/* Split deliberately: a grid needs the line as a background (gap-px), a button needs it as a border. */
 	.band-dark .band-rule {
 		border-color: var(--band-line);
 	}
@@ -341,14 +314,12 @@
 		background-color: var(--band-line);
 	}
 
-	/* Cells sitting on a band-divide grid need the band's own surface back, or
-	   the gap-px hairline colour floods the whole cell. */
+	/* Cells on a band-divide grid need the band's own surface back, or the gap-px hairline floods the cell. */
 	.band-dark .band-surface {
 		background-color: oklch(14.5% 0 0);
 	}
 
-	/* In dark mode the canvas is already 14.5%, so the band needs to go lower or
-	   it stops reading as a band at all. */
+	/* The dark canvas is already 14.5%, so the band must go lower or it stops reading as a band. */
 	:where(.dark, [data-theme="dark"]) .band-dark,
 	:where(.dark, [data-theme="dark"]) .band-dark .band-surface {
 		background-color: oklch(10.5% 0 0);
@@ -367,8 +338,7 @@
 		mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 25%, transparent 75%);
 	}
 
-	/* Line grid — retained for /playground, /onboarding and /share, which are
-	   product shells rather than marketing surfaces. */
+	/* Line grid, retained for /playground, /onboarding and /share, which are product shells, not marketing. */
 	.bg-grid {
 		background-image:
 			linear-gradient(to right, color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px, transparent 1px),
@@ -392,10 +362,7 @@
 		@apply opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200;
 	}
 
-	/* --- Legacy glass aliases ---
-	   /dashboard, /admin and /share still compose with these. On marketing
-	   routes they resolve to the border-first surfaces above so the two systems
-	   can coexist during the migration. */
+	/* --- Legacy glass aliases: on marketing routes they resolve to the border-first surfaces above. */
 	.glass {
 		@apply bg-background/60 backdrop-blur-2xl border border-border-low;
 	}

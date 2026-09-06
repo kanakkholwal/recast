@@ -3,8 +3,7 @@ import { heardOutputSec } from "./audio-engine";
 
 describe("heardOutputSec", () => {
 	it("reports the position the listener is hearing, not the one submitted", () => {
-		// 2s of context time elapsed, but 200ms of it is still in the hardware
-		// buffer (typical Bluetooth), so only 1.8s has actually been heard.
+		// 2s of context time elapsed, but 200ms sits in the hardware buffer, so only 1.8s has actually been heard.
 		expect(heardOutputSec(0, 10, 12, 0.2)).toBeCloseTo(1.8, 6);
 	});
 
@@ -17,8 +16,7 @@ describe("heardOutputSec", () => {
 	});
 
 	it("never reports a position before the anchor", () => {
-		// Right after scheduling, nothing has reached the ears yet — reporting a
-		// negative position would drag the picture backwards.
+		// Right after scheduling nothing has been heard yet, and a negative position would drag the picture backwards.
 		expect(heardOutputSec(5, 10, 10.05, 0.2)).toBe(5);
 	});
 
@@ -28,8 +26,7 @@ describe("heardOutputSec", () => {
 	});
 
 	it("exceeds the resync threshold on a Bluetooth-class device", () => {
-		// The point of the fix: 150ms+ of uncompensated latency is far past the
-		// 60ms threshold, so the picture would sit permanently ahead of the sound.
+		// 150ms of uncompensated latency is far past the 60ms threshold, so the picture would sit permanently ahead.
 		const uncompensated = heardOutputSec(0, 10, 12, 0);
 		const compensated = heardOutputSec(0, 10, 12, 0.15);
 		expect(uncompensated - compensated).toBeGreaterThan(0.06);

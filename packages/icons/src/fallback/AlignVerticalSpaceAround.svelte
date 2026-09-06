@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { cn } from "../utils";
-	import type { IconProps } from "../types";
+import { cn } from "../utils";
+import type { IconProps } from "../types";
 
-	let {
-		class: klass = "",
-		size = 24,
-		stroke = 2,
-		color = "currentColor",
-		"aria-hidden": ariaHidden = "true",
-		...rest
-	}: IconProps = $props();
+let {
+	class: klass = "",
+	size = 24,
+	stroke = 2,
+	color = "currentColor",
+	"aria-hidden": ariaHidden = "true",
+	...rest
+}: IconProps = $props();
 </script>
 
 <!--
-Hand-stitched: Lucide had `align-vertical-space-around` for stacked-with-
+Hand-stitched: @recast/icons had `align-vertical-space-around` for stacked-with-
 vertical-spacing alignment. Tabler's `space-between` and `align-center`
 approximate it but with subtly different geometry. Kept as its own component
 so the editor's geometry panel doesn't depend on a third-party equivalent.

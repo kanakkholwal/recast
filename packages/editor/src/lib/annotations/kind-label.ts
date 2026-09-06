@@ -1,12 +1,11 @@
-// Display helpers for annotations: kind-aware label and icon. Used by the
-// layer panel, the status rail, and the selected-annotation header.
+// Kind-aware label and icon, used by the layer panel, the status rail and the selected-annotation header.
 
-import type { Annotation, AnnotationKindName } from "../../stores/editor-store.svelte";
-import { ArrowUpRight, Circle, Droplets, ImageIcon, Square, Type as TypeIcon } from "@recast/icons";
 import type { IconComponent } from "@recast/icons";
+import { ArrowUpRight, Circle, Droplets, ImageIcon, Square, Type as TypeIcon } from "@recast/icons";
+import type { Annotation, AnnotationKindName } from "../../stores/editor-store.svelte";
 
 export function kindLabel(a: Annotation): string {
-	if (a.name && a.name.trim()) return a.name.trim();
+	if (a.name?.trim()) return a.name.trim();
 	switch (a.kind.kind) {
 		case "rect":
 			return "Rectangle";

@@ -1,25 +1,19 @@
 <script lang="ts">
-// Review surface for the on-device OCR pass. Reads the recording into screen-state
-// spans and shows both halves of the result: the work (what the run is doing, on
-// what, and how far through it is) and the output (each frame it kept, the text it
-// read off it, and where on the frame that text was). Dev builds only, so the
-// output can be eyeballed against the real video before this is wired into the
-// agent/CLI surface for real.
-import { clock } from "../../lib/format/time";
+// Dev-only review surface for the on-device OCR pass: the run's progress, plus every frame it kept and the text read off it.
+
+import { Download, FlaskConical, ImageOff, RotateCw, ScanText } from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import { Progress } from "@recast/ui/progress";
+import { toast } from "@recast/ui/sonner";
 import {
 	getEditorServices,
 	type OcrProgress,
 	type VideoTextTimeline,
 } from "../../lib/editor/services";
+import { clock } from "../../lib/format/time";
 import type { ScreenStateSpan } from "../../lib/wire-types";
 import type { EditorStore } from "../../stores/editor-store.svelte";
-import { Badge } from "@recast/ui/badge";
-import { Button } from "@recast/ui/button";
-import { Progress } from "@recast/ui/progress";
-import { toast } from "@recast/ui/sonner";
-import { Download, FlaskConical, ImageOff, RotateCw, ScanText } from "@recast/icons";
-import OcrFrameDialog from "./OcrFrameDialog.svelte";
-import PanelSection from "./PanelSection.svelte";
 import {
 	etaLabel,
 	exportBodyFor,
@@ -27,10 +21,12 @@ import {
 	phaseDetail,
 	phaseTitle,
 	progressValue,
+	type RunStatus,
 	spanGist,
 	summaryRows,
-	type RunStatus,
 } from "./dev-ocr-panel.logic";
+import OcrFrameDialog from "./OcrFrameDialog.svelte";
+import PanelSection from "./PanelSection.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -46,22 +42,15 @@ let timeline = $state<VideoTextTimeline | null>(null);
 let elapsedMs = $state(0);
 let inspecting = $state<ScreenStateSpan | null>(null);
 
-// Elapsed time for the CURRENT phase, not the whole run. An ETA has to divide by
-// the time this phase has taken, since a frame of OCR costs orders of magnitude
-// more than a frame of decoding.
+// Elapsed for the CURRENT phase: an OCR frame costs orders of magnitude more than a decode frame.
 let phaseStartedAt = 0;
 let phaseElapsedMs = $state(0);
 let ticker: ReturnType<typeof setInterval> | null = null;
 
-// The raw .mp4 on disk. `store.videoPath` is the .recast container, which the
-// OCR command cannot decode directly. This file is the screen capture ONLY:
-// camera, background, zoom and annotations are composited at export, never
-// baked into the source, so OCR sees just the recorded screen.
+// The raw .mp4, not the .recast container; camera, background and annotations composite at export, so OCR sees the screen only.
 const mediaPath = $derived(store.recordingPath);
 
-// The footage the edit actually keeps, in original-recording seconds. Passing
-// this means trimmed-off and cut-out regions are never read, so we don't produce
-// spans for content that isn't in the video (and don't pay OCR for it).
+// The kept footage in original seconds, so trimmed and cut regions are never read or paid for.
 const keptRanges = $derived(store.segments.map((s) => [s.start, s.end] as [number, number]));
 
 const percent = $derived(progressValue(progress));
@@ -84,8 +73,7 @@ async function run() {
 	progress = null;
 	phaseStartedAt = performance.now();
 	phaseElapsedMs = 0;
-	// Drives the ETA between backend ticks, so the estimate counts down instead of
-	// sitting still through a slow frame.
+	// Drives the ETA between backend ticks, so the estimate counts down through a slow frame.
 	ticker = setInterval(() => {
 		phaseElapsedMs = performance.now() - phaseStartedAt;
 	}, 250);
@@ -112,9 +100,7 @@ async function run() {
 
 let exporting = $state(false);
 
-// Save the whole read to disk so it can move to another tool. The save dialog's
-// format filter picks JSON (lossless, machine) or Markdown (readable, images
-// embedded); the extension of the chosen path decides how it serializes.
+// The save dialog's filter picks JSON or Markdown, and the chosen path's extension decides how it serializes.
 async function exportRead() {
 	if (!timeline || exporting || !ocr) return;
 	exporting = true;

@@ -4,16 +4,21 @@ import {
 	CAMERA_SHADOW_BLUR_FRACTION,
 	CAMERA_SHADOW_MAX_OPACITY,
 	CAMERA_SHADOW_OFFSET_FRACTION,
+	type CameraKeyframe,
+	cameraBubbleDelta,
+	cameraOverlayFromState,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
 	cameraShadowStyle,
+	clampPlacement,
 	keyframesFromMotionSegments,
 	MAX_CAMERA_SIZE,
+	MAX_RECORDED_MOVE_SECS,
 	MIN_CAMERA_SIZE,
 	resizeCameraSquare,
 	upsertCameraKeyframe,
-	type CameraKeyframe,
 } from "./camera-overlay.logic";
+import placementCases from "../../../../../fixtures/camera-placement.json";
 
 const base = { x: 0.72, y: 0.08, width: 0.22, height: 0.22 };
 
@@ -47,8 +52,7 @@ describe("resizeCameraSquare", () => {
 
 	it("keeps the bubble square in PIXELS on a wide video (height = width*aspect)", () => {
 		const aspect = 16 / 9;
-		// tl anchor = bottom-right corner (0.94, 0.08 + 0.22*aspect). Drag the
-		// top-left inward; the result must stay square in pixels.
+		// The tl anchor is the bottom-right corner: drag the top-left inward and the result must stay square in pixels.
 		const r = resizeCameraSquare(base, "br", 0.86, 0.5, aspect);
 		expect(r.height).toBeCloseTo(r.width * aspect, 6);
 		// Anchor (top-left) stays fixed.
@@ -92,18 +96,18 @@ describe("cameraPlacementAt", () => {
 });
 
 describe("upsertCameraKeyframe", () => {
-	const base: CameraKeyframe[] = [
+	const existing: CameraKeyframe[] = [
 		{ atSec: 1, placement: { x: 0.1, y: 0, width: 0.2, height: 0.2 } },
 		{ atSec: 3, placement: { x: 0.7, y: 0, width: 0.2, height: 0.2 } },
 	];
 
 	it("inserts a new keyframe in sorted order", () => {
-		const r = upsertCameraKeyframe(base, 2, { x: 0.4, y: 0, width: 0.2, height: 0.2 });
+		const r = upsertCameraKeyframe(existing, 2, { x: 0.4, y: 0, width: 0.2, height: 0.2 });
 		expect(r.map((k) => k.atSec)).toEqual([1, 2, 3]);
 	});
 
 	it("replaces a keyframe within epsilon of an existing time", () => {
-		const r = upsertCameraKeyframe(base, 3.01, { x: 0.9, y: 0, width: 0.2, height: 0.2 });
+		const r = upsertCameraKeyframe(existing, 3.01, { x: 0.9, y: 0, width: 0.2, height: 0.2 });
 		expect(r).toHaveLength(2);
 		expect(r[1].placement.x).toBeCloseTo(0.9, 6);
 	});
@@ -199,6 +203,23 @@ describe("applyZoomFollow", () => {
 		);
 	});
 
+	it("drifts along the SCREEN direction, not the UV one, on a wide frame (D-2)", () => {
+		const aspect = 16 / 9;
+		const b = { x: 0.425, y: 0.267, width: 0.15, height: 0.15 * aspect };
+		const zoom = { scale: 1.5, cx: 0.3, cy: 0.3 };
+		const r = applyZoomFollow(b, zoom, { enabled: true, strength: 1 }, aspect);
+		const baseH = b.width * aspect;
+		const bc = { x: b.x + b.width / 2, y: b.y + baseH / 2 };
+		// Both vectors in screen pixels (videoH as the unit).
+		const away = [(bc.x - zoom.cx) * aspect, bc.y - zoom.cy];
+		const drift = [(r.x + r.width / 2 - bc.x) * aspect, r.y + r.height / 2 - bc.y];
+		const mag = Math.hypot(away[0], away[1]) * Math.hypot(drift[0], drift[1]);
+		expect(mag).toBeGreaterThan(1e-9);
+		// Collinear (cross ~ 0) and pointing away (dot > 0).
+		expect(Math.abs((away[0] * drift[1] - away[1] * drift[0]) / mag)).toBeLessThan(1e-3);
+		expect(away[0] * drift[0] + away[1] * drift[1]).toBeGreaterThan(0);
+	});
+
 	it("keeps the grown+drifted bubble fully inside the frame", () => {
 		for (const cx of [0, 0.5, 1]) {
 			const r = applyZoomFollow(base, { scale: 2.5, cx, cy: cx }, { enabled: true, strength: 1 });
@@ -254,9 +275,7 @@ describe("keyframesFromMotionSegments", () => {
 	});
 
 	it("reproduces the recorded path when evaluated", () => {
-		// Two moves with a pause between: 0.1 → 0.2 over [2,3], hold, then
-		// 0.2 → 0.3 over [5,6]. This is what the segment walk used to describe
-		// and nothing rendered.
+		// Two moves with a pause between, which is what the segment walk used to describe while nothing rendered.
 		const kfs = keyframesFromMotionSegments([at(2, 0.1), at(5, 0.2)], dflt);
 		expect(cameraPlacementAt(dflt, kfs, 0, EASE_LIN).x).toBeCloseTo(0.1, 6);
 		expect(cameraPlacementAt(dflt, kfs, 2.5, EASE_LIN).x).toBeCloseTo(0.15, 6);
@@ -277,5 +296,279 @@ describe("keyframesFromMotionSegments", () => {
 		// First move starts from the resting spot: no redundant keyframe.
 		const same = keyframesFromMotionSegments([at(2, dflt.x)], dflt);
 		expect(same[0].atSec).toBe(2);
+	});
+});
+
+describe("clampPlacement", () => {
+	/** A live capture wrote `x: 1` with a 0.16-wide bubble, which draws the whole
+	 *  thing past the right edge. The drag path clamps; recorded data did not. */
+	it("pulls a placement that starts off the right edge back inside", () => {
+		expect(clampPlacement({ x: 1, y: 0.86, width: 0.16, height: 0.29 })).toEqual({
+			x: 0.84,
+			y: 0.71,
+			width: 0.16,
+			height: 0.29,
+		});
+	});
+
+	it("leaves a placement that already fits alone", () => {
+		const p = { x: 0.2, y: 0.3, width: 0.16, height: 0.29 };
+		expect(clampPlacement(p)).toEqual(p);
+	});
+
+	it("clamps a negative origin to the top-left", () => {
+		expect(clampPlacement({ x: -0.4, y: -0.1, width: 0.2, height: 0.2 })).toEqual({
+			x: 0,
+			y: 0,
+			width: 0.2,
+			height: 0.2,
+		});
+	});
+});
+
+describe("recorded motion segments", () => {
+	it("clamps the recorded endpoints rather than gliding off-canvas", () => {
+		const frames = keyframesFromMotionSegments(
+			[
+				{
+					start: 0,
+					end: 10,
+					fromX: 1,
+					fromY: 0.86,
+					fromWidth: 0.16,
+					fromHeight: 0.29,
+					toX: 0.79,
+					toY: 0.5,
+					toWidth: 0.16,
+					toHeight: 0.29,
+					easeIn: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+					easeOut: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+				},
+			],
+			{ x: 0.5, y: 0.5, width: 0.16, height: 0.29 },
+		);
+		expect(frames[0].placement.x).toBeCloseTo(0.84, 6);
+		expect(frames[0].placement.y).toBeCloseTo(0.71, 6);
+	});
+});
+
+describe("cameraBubbleDelta", () => {
+	const at = (x: number, y: number, width = 0.2) => ({ x, y, width, height: width });
+
+	it("is the identity when the bubble sits on its layout box", () => {
+		const d = cameraBubbleDelta(at(0.4, 0.4), at(0.4, 0.4), 1);
+		expect(d).toEqual({ tx: 0, ty: 0, scale: 1 });
+	});
+
+	/** The whole point of freezing the layout box: wherever it sits, the delta
+	 *  has to put the bubble at the same place on screen. */
+	it("lands the bubble in the same place from any layout box", () => {
+		const drawn = at(0.7, 0.25);
+		const a = cameraBubbleDelta(at(0.1, 0.1), drawn, 1);
+		const b = cameraBubbleDelta(at(0.5, 0.5), drawn, 1);
+		const screenX = (layoutX: number, tx: number) => layoutX + (tx / 100) * 0.2;
+		expect(screenX(0.1, a.tx)).toBeCloseTo(drawn.x, 9);
+		expect(screenX(0.5, b.tx)).toBeCloseTo(drawn.x, 9);
+	});
+
+	/** A percentage translate on the Y axis resolves against the element's
+	 *  HEIGHT, which is square in pixels, not in UV. */
+	it("scales the vertical translate by the bubble's UV height", () => {
+		const wide = cameraBubbleDelta(at(0.2, 0.2), at(0.2, 0.3), 16 / 9);
+		const square = cameraBubbleDelta(at(0.2, 0.2), at(0.2, 0.3), 1);
+		expect(wide.ty).toBeLessThan(square.ty);
+	});
+
+	it("reports a grow as a scale rather than a size change", () => {
+		const d = cameraBubbleDelta(at(0.2, 0.2, 0.2), at(0.2, 0.2, 0.3), 1);
+		expect(d.scale).toBeCloseTo(1.5, 9);
+	});
+
+	it("refuses to divide by a zero-width layout box", () => {
+		expect(cameraBubbleDelta(at(0.2, 0.2, 0), at(0.5, 0.5), 1)).toEqual({
+			tx: 0,
+			ty: 0,
+			scale: 1,
+		});
+	});
+});
+
+describe("repairing an over-long recorded move", () => {
+	const glide = (start: number, end: number) => ({
+		start,
+		end,
+		fromX: 0.2,
+		fromY: 0.2,
+		fromWidth: 0.16,
+		fromHeight: 0.29,
+		toX: 0.6,
+		toY: 0.5,
+		toWidth: 0.16,
+		toHeight: 0.29,
+		easeIn: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+		easeOut: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+	});
+	const startPlacement = { x: 0.2, y: 0.2, width: 0.16, height: 0.29 };
+
+	/** Projects that recorded before the dead zone landed carry one segment for
+	 *  the whole take. Replaying it verbatim drifts the bubble across the entire
+	 *  video, which is what the file says and not what happened. */
+	it("holds the start placement instead of gliding for the whole recording", () => {
+		const frames = keyframesFromMotionSegments([glide(0.15, 153.47)], startPlacement);
+		const times = frames.map((f) => f.atSec);
+		expect(times[times.length - 1]).toBeCloseTo(153.47, 6);
+		expect(times[times.length - 2]).toBeCloseTo(153.47 - MAX_RECORDED_MOVE_SECS, 6);
+		// Held at the start placement until the move begins.
+		expect(cameraPlacementAt(startPlacement, frames, 60).x).toBeCloseTo(0.2, 6);
+		expect(cameraPlacementAt(startPlacement, frames, 153.47).x).toBeCloseTo(0.6, 6);
+	});
+
+	it("leaves a move short enough to be a real drag alone", () => {
+		const frames = keyframesFromMotionSegments([glide(1, 3)], startPlacement);
+		expect(frames.map((f) => f.atSec)).toEqual([1, 3]);
+	});
+});
+
+// Shared with `crates/recast-compositor/src/camera.rs`: the previewed bubble and the burned-in one were three implementations, and D-2 was fixed in only one.
+describe("zoom-follow parity with the Rust compositor", () => {
+	interface Case {
+		base: { x: number; y: number; width: number; height: number };
+		scale: number;
+		cx: number;
+		cy: number;
+		strength: number;
+		aspect: number;
+		expect: { x: number; y: number; width: number; height: number };
+	}
+
+	it("has enough cases to catch a drift", () => {
+		expect((placementCases as Case[]).length).toBeGreaterThanOrEqual(8);
+	});
+
+	for (const [i, c] of (placementCases as Case[]).entries()) {
+		it(`case ${i}: scale ${c.scale} focus (${c.cx},${c.cy}) strength ${c.strength}`, () => {
+			const got = applyZoomFollow(
+				c.base,
+				{ scale: c.scale, cx: c.cx, cy: c.cy },
+				{ enabled: true, strength: c.strength },
+				c.aspect,
+			);
+			expect(got.x).toBeCloseTo(c.expect.x, 12);
+			expect(got.y).toBeCloseTo(c.expect.y, 12);
+			expect(got.width).toBeCloseTo(c.expect.width, 12);
+			expect(got.height).toBeCloseTo(c.expect.height, 12);
+		});
+	}
+});
+
+describe("cameraOverlayFromState", () => {
+	const EASE_LIN = { x1: 0, y1: 0, x2: 1, y2: 1 };
+	const fallback = { x: 0.8, y: 0.8, width: 0.16, height: 0.16 };
+	const move = {
+		start: 2,
+		end: 3,
+		fromX: 0.1,
+		fromY: 0,
+		fromWidth: 0.2,
+		fromHeight: 0.2,
+		toX: 0.6,
+		toY: 0,
+		toWidth: 0.2,
+		toHeight: 0.2,
+		easeIn: EASE_LIN,
+		easeOut: EASE_LIN,
+		source: "live-recorded" as const,
+	};
+
+	// The whole point of Phase 0: dragging the preview window to see your own face must not author an animation on the timeline.
+	it("never turns recorded moves into keyframes", () => {
+		const overlay = cameraOverlayFromState({ motionSegments: [move] }, fallback);
+		expect(overlay.keyframes).toEqual([]);
+	});
+
+	it("carries the recorded moves so the panel can offer them", () => {
+		const overlay = cameraOverlayFromState({ motionSegments: [move] }, fallback);
+		expect(overlay.motionSegments).toHaveLength(1);
+		expect(overlay.motionSegments[0].toX).toBeCloseTo(0.6, 6);
+	});
+
+	it("keeps authored keyframes exactly as they were saved", () => {
+		const authored = [{ atSec: 1, placement: { x: 0.2, y: 0.3, width: 0.2, height: 0.2 } }];
+		const overlay = cameraOverlayFromState(
+			{ keyframes: authored, motionSegments: [move] },
+			fallback,
+		);
+		expect(overlay.keyframes).toEqual(authored);
+	});
+
+	// A live capture can report a placement off the frame; the drag clamp is the same one the overlay uses.
+	it("clamps a saved placement back into the frame", () => {
+		const overlay = cameraOverlayFromState(
+			{ defaultPlacement: { x: 1.4, y: -0.3, width: 0.2, height: 0.2 } },
+			fallback,
+		);
+		expect(overlay.defaultPlacement.x).toBeLessThanOrEqual(1);
+		expect(overlay.defaultPlacement.y).toBeGreaterThanOrEqual(0);
+	});
+
+	it("falls back to the preset placement when the project has none", () => {
+		expect(cameraOverlayFromState(undefined, fallback).defaultPlacement).toEqual(fallback);
+	});
+
+	it("defaults an older project's missing fields rather than dropping them", () => {
+		const overlay = cameraOverlayFromState({ enabled: true }, fallback);
+		expect(overlay.enabled).toBe(true);
+		expect(overlay.zoomFollow).toBe(true);
+		expect(overlay.shadow).toBeCloseTo(0.35, 6);
+		expect(overlay.shape).toBe("rounded");
+	});
+});
+
+const fallbackPlacement = { x: 0.8, y: 0.8, width: 0.16, height: 0.16 };
+
+describe("cameraOverlayFromState layout fields", () => {
+	// A project saved before layouts opens as a hard-cut bubble, never inheriting a transition it did not ask for.
+	it("defaults a project with no layout fields to a hard cut", () => {
+		const overlay = cameraOverlayFromState({ enabled: true }, fallbackPlacement);
+		expect(overlay.clipLayouts).toEqual([]);
+		expect(overlay.layoutTransition).toBe(0);
+	});
+
+	it("carries the authored layouts and transition", () => {
+		const overlay = cameraOverlayFromState(
+			{
+				clipLayouts: [{ start: 4, layout: { kind: "splitH", fraction: 0.3, side: "start" } }],
+				layoutTransition: 0.6,
+			},
+			fallbackPlacement,
+		);
+		expect(overlay.clipLayouts).toHaveLength(1);
+		expect(overlay.layoutTransition).toBeCloseTo(0.6, 6);
+	});
+
+	it("does not alias the layouts it was handed", () => {
+		const clipLayouts = [
+			{ start: 4, layout: { kind: "splitH" as const, fraction: 0.3, side: "start" as const } },
+		];
+		const overlay = cameraOverlayFromState({ clipLayouts }, fallbackPlacement);
+		expect(overlay.clipLayouts[0]).not.toBe(clipLayouts[0]);
+		expect(overlay.clipLayouts[0].layout).not.toBe(clipLayouts[0].layout);
+	});
+});
+
+describe("cursor dodge defaults", () => {
+	// Dodging moves the camera, so a project that never asked for it must open rendering exactly as it did.
+	it("is off for a project that predates it", () => {
+		const overlay = cameraOverlayFromState({ enabled: true }, fallbackPlacement);
+		expect(overlay.cursorDodge).toBe(false);
+	});
+
+	it("carries the setting and its strength", () => {
+		const overlay = cameraOverlayFromState(
+			{ cursorDodge: true, cursorDodgeStrength: 0.25 },
+			fallbackPlacement,
+		);
+		expect(overlay.cursorDodge).toBe(true);
+		expect(overlay.cursorDodgeStrength).toBeCloseTo(0.25, 6);
 	});
 });

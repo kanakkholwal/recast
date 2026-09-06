@@ -1,9 +1,9 @@
 /**
- * Pure planning for the browser-side export encoder (Phase 4): frame count and
- * the WebCodecs video-encoding config. The offline renderer composites each
- * frame through the shared RenderCore and hands it to MediaBunny's encoder; Rust
- * FFmpeg then muxes the resulting video with the processed audio (`-c:v copy`),
- * so the config here IS the final video quality.
+ * Pure planning for the browser-side export encoder: frame count and the
+ * WebCodecs video-encoding config. The offline renderer composites each frame
+ * through the engine and hands it to MediaBunny's encoder; Rust FFmpeg then
+ * muxes the resulting video with the processed audio (`-c:v copy`), so the
+ * config here IS the final video quality.
  */
 
 import {

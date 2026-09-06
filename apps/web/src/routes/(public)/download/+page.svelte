@@ -1,5 +1,4 @@
 <script lang="ts">
-import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
 import {
 	ArrowDownToLine,
 	Check,
@@ -15,6 +14,7 @@ import * as Collapsible from "@recast/ui/collapsible";
 import * as DropdownMenu from "@recast/ui/dropdown-menu";
 import * as Tabs from "@recast/ui/tabs";
 import { cn } from "@recast/ui/utils";
+import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
 import type { PageData } from "./$types";
 import type { OS } from "./data";
 import {

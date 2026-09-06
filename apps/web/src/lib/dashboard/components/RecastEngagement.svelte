@@ -3,8 +3,7 @@ import { MessageSquare, Smile } from "@recast/icons";
 import type { RecastEngagement } from "$lib/dashboard/activity";
 import { formatDuration, formatRelative } from "$lib/dashboard/format";
 
-// Surfaces the comments + reactions the player collects but never showed the
-// owner — read-only here (moderation still lives on the share page).
+// Surfaces the comments and reactions the player collects; read-only, since moderation lives on the share page.
 let { engagement }: { engagement: RecastEngagement } = $props();
 </script>
 

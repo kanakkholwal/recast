@@ -1,4 +1,2 @@
-// The homepage renders its own <SeoMeta>; signal the root layout to suppress
-// its default tags so there's a single, authoritative set (no duplicate
-// description / og: tags).
+// The homepage renders its own <SeoMeta>, so suppress the root layout's defaults for one authoritative set.
 export const load = () => ({ customSeo: true });

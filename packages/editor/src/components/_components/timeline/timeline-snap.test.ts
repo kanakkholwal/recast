@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSnapTargets, snapTime, type SnapTarget } from "./timeline-snap";
+import { buildSnapTargets, type SnapTarget, snapTime } from "./timeline-snap";
 
 const fps = 30;
 

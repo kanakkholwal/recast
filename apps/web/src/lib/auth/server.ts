@@ -1,6 +1,17 @@
+import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import {
+	admin,
+	bearer,
+	deviceAuthorization,
+	haveIBeenPwned,
+	magicLink,
+	organization,
+} from "better-auth/plugins";
+import { and, count, eq } from "drizzle-orm";
 import { dev } from "$app/environment";
-import { bearer, deviceAuthorization, haveIBeenPwned } from "better-auth/plugins";
-
+import { clearCheckoutIntent, resolveCheckoutWorkspace } from "$lib/billing/intent";
 import { limitsFor, planOf, polarProductIdFor } from "$lib/billing/plans";
 import { tryGetPolarClient } from "$lib/billing/polar";
 import {
@@ -8,23 +19,17 @@ import {
 	findWorkspaceByPolarSubscription,
 	upsertSubscription,
 } from "$lib/billing/sync";
-import { clearCheckoutIntent, resolveCheckoutWorkspace } from "$lib/billing/intent";
 import { getDb } from "$lib/db";
 import * as schema from "$lib/db/schema";
 import {
-	USER_TEAM_OWNERSHIP_CAPS,
 	member as memberTable,
 	organization as organizationTable,
+	USER_TEAM_OWNERSHIP_CAPS,
 	user as userTable,
 } from "$lib/db/schema";
 import { sendTemplatedEmail } from "$lib/email";
 import { publicEnv } from "$lib/env/public";
 import { serverEnv } from "$lib/env/server";
-import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { admin, magicLink, organization } from "better-auth/plugins";
-import { and, count, eq } from "drizzle-orm";
 
 /**
  * Better Auth instance — singleton, lazy-built on first request so the
@@ -44,14 +49,7 @@ function createAuth() {
 		baseURL: env.BETTER_AUTH_URL ?? publicEnv().PUBLIC_APP_URL,
 		trustedOrigins: buildTrustedOrigins(),
 		database: drizzleAdapter(getDb(), { provider: "pg", schema }),
-		// Production hosts the API behind Vercel / Cloudflare / proxies that
-		// terminate the client TCP connection — without these headers the
-		// session row's ipAddress would be the proxy's, not the user's. Order
-		// matters: Better Auth picks the first header that has a value and
-		// falls back to the request socket IP, so list the most specific
-		// (CDN-injected, harder to spoof when origin is locked down) first.
-		// Safe to keep enabled in dev — the headers just aren't present, so
-		// it falls through to the socket IP naturally.
+		// Proxies terminate the client TCP connection, so without these the session ipAddress is the proxy's; most specific first.
 		advanced: {
 			ipAddress: {
 				ipAddressHeaders: [
@@ -64,8 +62,7 @@ function createAuth() {
 				disableIpTracking: false,
 			},
 		},
-		// `status` is an app-owned column, separate from the plugin-owned
-		// `role`. Surfaces on session.user so the dashboard load can read it.
+		// `status` is app-owned, separate from the plugin-owned `role`; surfaced on session.user for the dashboard load.
 		user: {
 			additionalFields: {
 				status: { type: "string", defaultValue: "active", required: false },
@@ -74,10 +71,7 @@ function createAuth() {
 		},
 		emailAndPassword: {
 			enabled: true,
-			// We don't block sign-IN on verification (locked-out users with a
-			// flipped password can't recover). Instead the dashboard layout
-			// redirects unverified users to /verify-email — view-only is fine,
-			// mutations aren't reachable. See [dashboard/+layout.server.ts].
+			// Sign-in isn't blocked on verification (a locked-out user could never recover); the dashboard layout redirects instead.
 			requireEmailVerification: false,
 			sendResetPassword: async ({ user, url }) => {
 				await sendTemplatedEmail({
@@ -91,9 +85,7 @@ function createAuth() {
 			},
 		},
 		emailVerification: {
-			// Fire on signup automatically. Invitees + waitlist activations are
-			// minted with `emailVerified: true` already, so they skip this and
-			// land on the dashboard directly.
+			// Invitees and waitlist activations are minted already verified, so they skip this and land on the dashboard.
 			sendOnSignUp: true,
 			autoSignInAfterVerification: true,
 			expiresIn: 60 * 60 * 24, // 24h
@@ -110,9 +102,7 @@ function createAuth() {
 		},
 		socialProviders: buildSocialProviders(),
 		plugins: buildPlugins(),
-		// Auto-create a default org the first time a user row appears, so
-		// every signed-in account lands in a team. The org's plan starts at
-		// "free"; admins can elevate it from /admin/teams/[id].
+		// Every signed-in account lands in a team; the org starts on 'free' and admins can elevate it.
 		databaseHooks: {
 			user: {
 				create: {
@@ -125,11 +115,7 @@ function createAuth() {
 					},
 				},
 			},
-			// Private beta reserved a `status: "pending"` user row per waitlist
-			// email and skipped team creation for it. Sign-ups are open now, so
-			// the first session those accounts get promotes them in place —
-			// otherwise they'd sit locked out forever: they can't sign up (the
-			// email is taken) and had no team to land in.
+			// Private-beta 'pending' rows had no team, so the first session promotes them in place instead of locking them out.
 			session: {
 				create: {
 					after: async (createdSession) => {
@@ -162,9 +148,7 @@ const PRODUCTION_TRUSTED_ORIGINS = [
 function buildTrustedOrigins(): string[] {
 	const env = serverEnv();
 	const merged = new Set<string>(PRODUCTION_TRUSTED_ORIGINS);
-	// In dev, accept the common localhost ports we serve from so the desktop
-	// shell (Tauri uses tauri://localhost / http://localhost) and the web
-	// dev server can both hit /api/auth without tripping the origin check.
+	// Dev only: accept the localhost ports the Tauri shell and the web dev server hit /api/auth from.
 	if (dev) {
 		merged.add("http://localhost:5173");
 		merged.add("http://localhost:4420");
@@ -206,9 +190,7 @@ export function enabledSocialProviders(): SocialProviderId[] {
 export type SocialProviderId = "github" | "google";
 
 function buildPlugins() {
-	// Admin plugin — owns `role`, `banned`, `banReason`, `banExpires` on
-	// user and `impersonatedBy` on session. Endpoints live under
-	// /api/auth/admin/* with built-in 403 for non-admins.
+	// Admin plugin owns role, banned, banReason and banExpires on user plus impersonatedBy on session, with built-in 403 for non-admins.
 	const adminPlugin = admin({
 		defaultRole: "user",
 		adminRoles: ["admin"],
@@ -216,9 +198,7 @@ function buildPlugins() {
 	});
 
 	const linkPlugin = magicLink({
-		// Existing-users-only: /signup owns account creation, so it can collect a
-		// name and get consent to the terms. A link for an unknown email would
-		// mint a nameless account that never agreed to anything.
+		// Existing users only: /signup owns account creation, so an unknown email can't mint a nameless account.
 		disableSignUp: true,
 		expiresIn: 60 * 10,
 		sendMagicLink: async ({ email, url }) => {
@@ -269,23 +249,13 @@ function buildPlugins() {
 				]
 			: [];
 
-	// Organization plugin — owns the `organization`, `member`, `invitation`
-	// tables and `session.activeOrganizationId`. Caps:
-	//
-	//   • Per-team member count: the plan's seat ceiling, or the workspace's
-	//     negotiated `seatLimit` when a contract sets one.
-	//   • Per-user team-ownership count: 3 if all owned teams are free;
-	//     10 once any owned team is pro/enterprise.
-	//
-	// `allowUserToCreateOrganization` runs before /organization/create — we
-	// return false when the cap is hit; the plugin throws a clean 403.
+	// Owns the organization, member and invitation tables; `allowUserToCreateOrganization` returns false at the cap and the plugin throws a clean 403.
 	const orgPlugin = organization({
 		creatorRole: "owner",
 		invitationExpiresIn: 7 * 24 * 60 * 60, // 7 days
 		allowUserToCreateOrganization: async (u) => {
 			const db = getDb();
-			// Count teams this user OWNS (members with role=owner), join to org
-			// to read each team's plan.
+			// Count teams this user OWNS (role=owner), joined to org to read each team's plan.
 			const owned = await db
 				.select({ plan: organizationTable.plan })
 				.from(memberTable)
@@ -295,7 +265,7 @@ function buildPlugins() {
 			const cap = hasPaidTeam ? USER_TEAM_OWNERSHIP_CAPS.paid : USER_TEAM_OWNERSHIP_CAPS.free;
 			return owned.length < cap;
 		},
-		membershipLimit: async (_u, org) => {
+		membershipLimit: (_u, org) => {
 			const o = org as { plan?: string; seatLimit?: number | null };
 			// A negotiated seat count overrides the plan's ceiling.
 			return limitsFor(planOf(o.plan).id, { seatLimit: o.seatLimit }).members;
@@ -325,18 +295,7 @@ function buildPlugins() {
 		},
 	});
 
-	// OAuth 2.0 Device Authorization Grant (RFC 8628) — powers the desktop
-	// app's "Sign in to Cloud" flow. The desktop calls /device/code, opens
-	// the user's browser to verification_uri_complete (a /device page with
-	// the code pre-filled), then polls /device/token until the user approves.
-	// On approval the plugin's /device/token handler calls
-	// internalAdapter.createSession(user.id) during the desktop's polling
-	// request — meaning session.ipAddress and session.userAgent are the
-	// DESKTOP's, not the browser's. That's the whole reason this flow exists
-	// for us: we get a proper per-device session row we can revoke later.
-	//
-	// `validateClient` is the only thing standing between us and any random
-	// caller driving the device flow; keep the allowlist tight.
+	// Device grant (RFC 8628): the session is created during the DESKTOP's poll, so its ipAddress and userAgent are the device's and revocable. Keep `validateClient` tight.
 	const RECAST_DEVICE_CLIENTS = new Set(["recast-desktop"]);
 	const devicePlugin = deviceAuthorization({
 		verificationUri: "/device",
@@ -344,21 +303,11 @@ function buildPlugins() {
 		interval: "5s",
 		userCodeLength: 8,
 		validateClient: async (clientId) => RECAST_DEVICE_CLIENTS.has(clientId),
-		// Plugin bug in better-auth 1.6.11: `schema` is declared as a required
-		// `z.custom()` (no `.optional()`), so the Zod parse throws if it's
-		// missing — even though the field is meant for overriding model/field
-		// names (which we don't need). Passing `{}` satisfies the validator
-		// and falls through to the plugin's default schema.
+		// better-auth 1.6.11 declares `schema` as a required `z.custom()`, so `{}` satisfies the parse and falls through to the default.
 		schema: {},
 	});
 
-	// Bearer plugin — required for the desktop app to use its session token
-	// as `Authorization: Bearer <token>` against /api/auth/get-session,
-	// /api/auth/sign-out, and (later) cloud sync endpoints. The device-auth
-	// plugin's `/device/token` returns `session.token` as `access_token`;
-	// without the bearer plugin that token only works via the session cookie,
-	// which the desktop's reqwest client doesn't carry. Order doesn't matter
-	// for bearer — it adds request middleware that runs before route handlers.
+	// Bearer plugin: `/device/token` returns `session.token`, which otherwise only works via a cookie the desktop client doesn't carry.
 	const bearerPlugin = bearer();
 
 	return [
@@ -402,10 +351,9 @@ export async function ensureDefaultTeamForUser(u: {
 			.where(eq(memberTable.userId, u.id));
 		if ((existing?.c ?? 0) > 0) return;
 
-		const first = (u.name || u.email.split("@")[0] || "Personal").split(/\s+/)[0]!;
+		const first = (u.name || u.email.split("@")[0] || "Personal").split(/\s+/)[0];
 		const orgId = crypto.randomUUID();
-		// Slug needs to be unique — suffix with a short id so two "Kanak's
-		// Team" rows don't collide on the org.slug unique index.
+		// Suffix a short id so two identically named teams don't collide on the org.slug unique index.
 		const slugBase =
 			first
 				.toLowerCase()
@@ -413,10 +361,7 @@ export async function ensureDefaultTeamForUser(u: {
 				.replace(/(^-|-$)/g, "") || "team";
 		const slug = `${slugBase}-${orgId.slice(0, 6)}`;
 
-		// Both writes in one transaction — a failure on the member insert
-		// (e.g. FK violation, connection drop) would otherwise leave an
-		// ownerless org behind, which the org-count cap would still count
-		// against the user. Either both commit or neither.
+		// One transaction: a failed member insert would leave an ownerless org that still counts against the cap.
 		await db.transaction(async (tx) => {
 			await tx.insert(organizationTable).values({
 				id: orgId,

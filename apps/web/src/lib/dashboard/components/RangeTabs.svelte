@@ -1,6 +1,5 @@
 <script lang="ts">
-// Small segmented range selector, shared by the workspace analytics page and
-// the per-recast detail page so the control looks and behaves identically.
+// Shared by the workspace analytics page and the per-recast page so the control behaves identically.
 let {
 	value = $bindable("7d"),
 	options,

@@ -32,9 +32,9 @@ The editor preview decodes video frame-accurately off the main thread with
 decoded `VideoFrame` straight into a GPU texture, and closes the frame in the
 same tick. Nothing on the main thread ever retains a decoded frame; that is the
 load-bearing rule (`packages/media/src/playback/source.ts`,
-`packages/editor/src/lib/playback/frame-textures.ts`).
+`crates/recast-ffi-wasm/src/ring.rs`).
 
-Five Web Workers do the heavy lifting. They all follow one convention: **the host
+Four Web Workers do the heavy lifting. They all follow one convention: **the host
 app spawns the worker, the package supplies the worker body.** `@recast/editor`
 and `@recast/media` ship SOURCE (their `exports` point at `./src`) and would spawn
 workers via `new Worker(new URL("./x.worker", import.meta.url))`; a `new URL`
@@ -70,21 +70,18 @@ flowchart TB
 
   subgraph workers["Web Workers (bodies live in packages)"]
     mbw["mediabunny.worker<br/>Input + VideoSampleSink"]
-    rw["render.worker<br/>OffscreenCanvas + WebGL2 + FrameTextureRing"]
     fw["filmstrip.worker<br/>Input + CanvasSink"]
     sw["smoothing.worker<br/>Gaussian path"]
     xw["export-render.worker<br/>offscreen composite + encode"]
   end
 
-  idx -->|"new Worker(new URL(...))"| mbw & rw & fw & sw & xw
+  idx -->|"new Worker(new URL(...))"| mbw & fw & sw & xw
 
   vp --> src
   src -->|"init / seek / playhead"| mbw
   mbw -->|"decode → sample.toVideoFrame()<br/>transfer VideoFrame"| src
-  src -->|"onFrameDecoded(frame): upload, close SAME tick"| rwc
-  rwc -->|"framePort: frame.clone() transferred"| rw
-  rw -->|"FrameTextureRing.put → tex, ImageBitmap"| rwc
-  rwc -->|"bitmaprenderer present"| vp
+  src -->|"onFrameDecoded(frame): upload, close SAME tick"| eng["engine ring<br/>putLayerFrame"]
+  eng -->|"bindLayerFrame → render(outputTime)"| vp
 
   fsp --> fw
   csm --> sw
@@ -119,11 +116,10 @@ flowchart TD
 | Component | File | Role |
 |---|---|---|
 | mediabunny decode worker | `packages/media/src/playback/worker.ts` | Owns `Input` + `VideoSampleSink`; a `seek` starts a forward-streaming decode run, `playhead` only releases backpressure; transfers `VideoFrame`s back |
-| render worker | `packages/editor/src/lib/playback/render-worker.ts` | Off-thread WebGL2 compositor on its own `OffscreenCanvas`; holds the `FrameTextureRing`; composites and transfers an `ImageBitmap` back |
 | filmstrip worker | `packages/editor/src/lib/timeline/filmstrip-worker.ts` | Range-streams the source via MediaBunny `CanvasSink` to decode clip-bar thumbnails + storyboard sprite |
 | smoothing worker | `packages/editor/src/lib/cursor/smoothing-worker.ts` | Runs the O(N·window) Gaussian cursor-path pass off the UI thread |
-| export-render worker | `packages/editor/src/lib/export/export-render.worker.ts` | One-shot: composites an `ExportJob` (bitmaps transferred) and returns encoded mp4 bytes |
-| `FrameTextureRing` | `packages/editor/src/lib/playback/frame-textures.ts` | Ring of GPU textures; `put()` uploads a `VideoFrame` synchronously so the frame can close; `pickSlot`/`bind` choose the newest slot in `[floorUs, tUs]` |
+| export-render worker | `packages/editor/src/lib/export/export-render.worker.ts` | One-shot: runs an `ExportJob` (bitmaps transferred) through its own engine and returns encoded mp4 bytes |
+| engine frame ring | `crates/recast-ffi-wasm/src/ring.rs` | Ring of GPU textures; `putLayerFrame` uploads a `VideoFrame` synchronously so the frame can close; `bindLayerFrame` picks the newest slot in `[floorUs, tUs]` |
 | unsupported-formats list | `packages/media/src/cache/unsupported-formats.ts` | Curated container/codec gap (AVI, FLV, WMV/VC-1, RealVideo, 3GP); drives up-front rejection + PII-safe fallback telemetry tag |
 
 Worker hosts: `apps/desktop/src/lib/workers/index.ts` (`workerHost`) is installed
@@ -159,17 +155,12 @@ The no-op default throws loudly if a host installs nothing
    duration) ahead of the playhead.
 6. `#onMessage` hands the frame to `onFrameDecoded(frame, tsUs)` and closes it in
    a `finally`, same tick. The consumer (`VideoPreview`) forwards it to
-   `RenderWorkerClient.putFrame` (which `clone()`s + transfers a copy over the
-   frame `MessagePort`, since the source closes the original), or uploads directly
-   into a main-thread `FrameTextureRing.put` when there is no render worker
-   (`packages/media/src/playback/source.ts`,
-   `packages/editor/src/components/VideoPreview.svelte`,
-   `packages/editor/src/lib/playback/render-worker-client.ts`).
-7. The render worker uploads into its own ring and composites (reusing the same
-   `WebGL2Backend`+`RenderCore` as the on-screen path), then transfers an
-   `ImageBitmap` the client presents via a `bitmaprenderer` (`alpha:false`)
-   context, latest-wins mailbox so a slow frame never queues lag
-   (`packages/editor/src/lib/playback/render-worker-client.ts`).
+   `engine.putLayerFrame`, which uploads into a GPU texture synchronously so the
+   frame can close (`packages/media/src/playback/source.ts`,
+   `packages/editor/src/components/VideoPreview.svelte`).
+7. The decoded frame is handed straight to the engine
+   (`putLayerFrame`/`bindLayerFrame`), which owns the ring. The host never holds
+   a `VideoFrame` past the upload: retaining one starves the decoder.
 
 ### `<video>` fallback
 
@@ -204,7 +195,7 @@ GPU reset gets a bounded auto-rebuild, a permanent codec failure falls back to
   `onFrameDecoded` switches off the frame cache on purpose; upload synchronously
   and close. If the source is disposed, an in-flight transferred frame is still
   closed on arrival (`packages/media/src/playback/source.ts`,
-  `packages/editor/src/lib/playback/frame-textures.ts`).
+  `crates/recast-ffi-wasm/src/ring.rs`).
 - **Host-spawns-worker.** Packages export `startXWorker()` bodies; every
   `new Worker(new URL(...))` is a literal string in `apps/desktop/src/lib/workers/`
   so the bundler statically emits each chunk. `createWorker` / the `WorkerHost`
@@ -225,14 +216,10 @@ GPU reset gets a bounded auto-rebuild, a permanent codec failure falls back to
   key on `sample.timestamp` and read nearest-at-or-before; the `floorUs` argument
   is load-bearing: it stops a cut boundary from stepping the picture back into
   deleted content (`packages/media/src/playback/worker.ts`,
-  `packages/editor/src/lib/playback/frame-textures.ts`).
+  `crates/recast-ffi-wasm/src/ring.rs`).
 - **Supersede before waking.** A decode run parked on backpressure only re-checks
   `runId` once woken; bumping `runId` *then* notifying prevents it re-parking and
   sitting on its `VideoDecoder` (`packages/media/src/playback/worker.ts`).
-- **`texStorage2D` is immutable.** `FrameTextureRing.put` allocates sized storage
-  once per slot; a resolution change deletes and re-creates the texture rather than
-  re-`texImage2D`-ing every frame (which re-specified 33 MB per 4K frame)
-  (`packages/editor/src/lib/playback/frame-textures.ts`).
 
 ### The cache cap is load-bearing
 
@@ -248,9 +235,9 @@ frames were closed.
 
 ## Related
 
-- [03-preview-and-rendercore.md](/architecture/preview-rendercore): the shared
-  `WebGL2Backend`/`RenderCore` compositor the render + export workers reuse
-- [05-timeline-model.md](/architecture/timeline-model): cuts/segments and the `floorUs`
+- [preview-engine.md](/architecture/preview-engine): the one compositor the
+  preview and the export worker both drive
+- [timeline-model.md](/architecture/timeline-model): cuts/segments and the `floorUs`
   the decode path honors; filmstrip virtualization
-- [06-export-pipeline.md](/architecture/export-pipeline): the export-render worker and why
+- [export-pipeline.md](/architecture/export-pipeline): the export-render worker and why
   `exportActivity` stays host-side

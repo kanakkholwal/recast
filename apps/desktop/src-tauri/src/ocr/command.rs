@@ -1,13 +1,5 @@
-//! Entry point: read a video file into a structured text timeline.
-//!
-//! `run` is the shared core, used by the `screen.read` control method (CLI) and by
-//! the `read_video_text` Tauri command (the editor's dev OCR tab). It ensures the
-//! models are present, then does the CPU-heavy sampling + OCR on a blocking thread
-//! so it never stalls the app.
-//!
-//! This module compiles with or without the `ocr` feature. Without it, `run`
-//! reports that the engine is not in this build, exactly as the transcription seam
-//! does for `ggml`, so the command surface stays present and degrades gracefully.
+//! Reads a video into a structured text timeline; shared by the `screen.read` control method and the `read_video_text` command.
+//! Compiles without the `ocr` feature, reporting the engine as absent so the command surface degrades gracefully.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -22,12 +14,8 @@ use super::frames::{probe_dims, sample_frames, SampleOpts};
 use super::models;
 use super::timeline::{build_timeline, OcrStats, TimelineOpts, VideoTextTimeline};
 
-/// Progress of a read, as counted work rather than a spinner.
-///
-/// The units of `done`/`total` are whatever the phase counts: bytes while
-/// downloading, coarse frames while sampling, OCR'd frames while reading. A
-/// `total` of 0 means the phase cannot be counted yet and the UI should stay
-/// indeterminate instead of dividing by it.
+/// Progress of a read as counted work, the units being whatever the phase counts: bytes downloading, coarse frames sampling, OCR'd frames reading.
+/// A `total` of 0 means the phase cannot be counted yet, so the UI stays indeterminate instead of dividing by it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrProgress {
@@ -37,9 +25,7 @@ pub struct OcrProgress {
     pub done: u64,
     /// Units this phase expects, or 0 when not yet known.
     pub total: u64,
-    /// The result so far: frames kept while sampling, screen states found while
-    /// reading. Carried so a long read shows what it is producing, not just how
-    /// far along it is.
+    /// The result so far: frames kept while sampling, screen states found while reading. Carried so a long read shows what it is producing, not just how far along it is.
     pub found: u64,
 }
 
@@ -83,13 +69,8 @@ impl<F: Fn(OcrProgress)> Throttle<F> {
     }
 }
 
-/// Read `video_path` into a timeline. `on_progress` receives counted progress.
-/// `previews` attaches a small JPEG per span for review UIs.
-///
-/// `include_ranges` are the source-time ranges the edit actually keeps (the
-/// segments left after trim and cuts). Pass them from the editor so removed
-/// footage is never read; pass an empty list from a headless caller that has no
-/// edit context, which reads the whole file.
+/// Reads `video_path` into a timeline; `on_progress` receives counted progress and `previews` attaches a small JPEG per span.
+/// `include_ranges` are the source ranges the edit keeps, so removed footage is never read; an empty list reads the whole file.
 pub async fn run(
     app: &AppHandle,
     video_path: &str,
@@ -102,9 +83,7 @@ pub async fn run(
         return Err(format!("video not found: {video_path}"));
     }
 
-    // Only announce a download when there is one to do. Flashing a "downloading"
-    // phase on every run (the models are fetched exactly once, ever) would train
-    // the reader to ignore the phase label.
+    // Only announce a download when there is one: a phase that flashes on every run trains the reader to ignore it.
     let progress = Arc::new(on_progress);
     let paths = if models::models_present(app) {
         models::model_paths(app)?
@@ -127,10 +106,7 @@ pub async fn run(
     let timeline = tokio::task::spawn_blocking(move || -> Result<VideoTextTimeline, String> {
         let (_, _, duration) = probe_dims(&media)?;
 
-        // Per-stage timings. OCR dominates by a wide margin, and in a debug build
-        // the rten inference is orders of magnitude slower than release, so these
-        // numbers are the first thing to look at when a read feels slow. They ride
-        // out on the result, so the review UI can show them too.
+        // OCR dominates, and debug-build rten inference is orders of magnitude slower, so these timings ride out on the result.
         let sink = Arc::clone(&progress);
         let mut throttle = Throttle::new(move |p| sink(p));
 
@@ -149,9 +125,7 @@ pub async fn run(
         })?;
         let sample_ms = t0.elapsed().as_millis() as u64;
 
-        // Close the sampling bar at whatever it actually walked. The estimate from
-        // the container's duration can undershoot the real frame count, which would
-        // otherwise leave the bar parked at 97%.
+        // Close the bar at what it actually walked: the duration-derived estimate can undershoot and park it at 97%.
         throttle.send(
             OcrProgress::new("sampling", scanned, scanned, frames.len() as u64),
             true,
@@ -203,8 +177,7 @@ pub async fn run(
     .await
     .map_err(|e| format!("ocr task join: {e}"))??;
 
-    // Terminal phase, sent only once the result is in hand, so a consumer's bar and
-    // its summary can never disagree about whether the read finished.
+    // Terminal phase, sent only with the result in hand, so a consumer's bar and summary can't disagree.
     finished(OcrProgress::new(
         "done",
         timeline.stats.frames_read as u64,
@@ -232,13 +205,8 @@ fn build_engine(
     Err("on-device OCR is not available in this build".into())
 }
 
-/// Read a recording into a timestamped, structured text timeline.
-///
-/// `includeRanges` are the `[start, end]` source-second pairs the edit keeps, so
-/// trimmed-off and cut-out footage is never read. The caller (the editor) owns the
-/// edit state, so it passes them in rather than the backend re-deriving them.
-///
-/// Experimental: surfaced only by the editor's dev-only OCR tab today.
+/// Reads a recording into a timestamped, structured text timeline. Experimental: surfaced only by the editor's dev-only OCR tab today.
+/// `includeRanges` are the source-second pairs the edit keeps, passed in because the caller owns the edit state rather than the backend re-deriving it.
 #[tauri::command]
 pub async fn read_video_text(
     app: AppHandle,
@@ -255,11 +223,8 @@ pub async fn read_video_text(
     Ok(timeline)
 }
 
-/// Write an already-serialized read to `dest_path` (chosen by the caller via the
-/// save dialog). The caller owns the format: the timeline lives in the frontend as
-/// a plain object, so it serializes there (JSON, or the readable Markdown the review
-/// panel builds) rather than shipping the whole thing back here just to stringify
-/// it. This command only owns the disk write, so it needs no `ocr` feature.
+/// Writes an already-serialized read to a caller-chosen `dest_path`; the caller owns the format, since the timeline is a plain frontend object that serializes there.
+/// This command owns only the disk write, so it needs no `ocr` feature.
 #[tauri::command]
 pub async fn export_screen_text(body: String, dest_path: String) -> AppResult<()> {
     tokio::fs::write(&dest_path, body)
