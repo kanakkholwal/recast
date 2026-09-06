@@ -53,6 +53,31 @@ pub struct Transcript {
     pub segments: Vec<TranscriptSegment>,
 }
 
+/// Combine per-source transcripts (system, mic) into one, ordered by start time.
+/// Ids are reassigned since two sources' engines both start numbering at zero.
+fn merge_transcripts(mut parts: Vec<Transcript>) -> Transcript {
+    let engine = parts.first().map(|t| t.engine.clone()).unwrap_or_default();
+    let model_id = parts
+        .first()
+        .map(|t| t.model_id.clone())
+        .unwrap_or_default();
+    let language = parts.iter().find_map(|t| t.language.clone());
+    let mut segments: Vec<TranscriptSegment> = parts
+        .iter_mut()
+        .flat_map(|t| std::mem::take(&mut t.segments))
+        .collect();
+    segments.sort_by(|a, b| a.start.total_cmp(&b.start));
+    for (i, seg) in segments.iter_mut().enumerate() {
+        seg.id = format!("seg-{i}");
+    }
+    Transcript {
+        engine,
+        model_id,
+        language,
+        segments,
+    }
+}
+
 /// Flattened model row for the UI (registry meta + on-disk install state).
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -321,61 +346,76 @@ pub async fn transcribe_project(
         phase: "extracting".into(),
     });
 
-    // Decode to 16 kHz mono f32 off the UI thread (CPU plus ffmpeg), for both paths.
     let sources: Vec<String> = [audio_path, microphone_path]
         .into_iter()
         .flatten()
         .collect();
-    let samples: Vec<f32> = tokio::task::spawn_blocking(move || {
-        let refs: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
-        let samples = audio::extract_pcm_f32(&refs)?;
-        if samples.is_empty() {
-            return Err("no audio to transcribe".to_string());
-        }
-        Ok::<Vec<f32>, String>(samples)
-    })
-    .await
-    .map_err(|e| AppError::msg(format!("audio extract task panicked: {e}")))??;
-
-    // Extract runs as one ffmpeg call, so this is the first point it can stop.
-    if cancel::is_requested() {
-        return Err(AppError::from(cancel::CANCELLED_MSG));
+    if sources.is_empty() {
+        return Err(AppError::from("no audio to transcribe"));
     }
+    // Resolved once; only the local path needs it.
+    let model_dir = match remote_ep.as_ref() {
+        Some(_) => None,
+        None => Some(models::model_dir(&app, &model.id)?),
+    };
 
     let _ = on_phase.send(TranscribeProgress {
         phase: "transcribing".into(),
     });
 
-    let transcript = match remote_ep.as_ref() {
-        // Remote: the network call is async, so it must NOT run on a blocking thread. The key never crosses IPC.
-        Some(ep) => {
-            let key = remote::read_key(&ep.id)
-                .ok_or_else(|| AppError::from("Add an API key for this endpoint first."))?;
-            remote::transcribe_remote(ep, &key, &samples, language.as_deref())
+    // Per-source then merge: a summed mono track drowns a quiet mic under loud system speech (Whisper also hallucinates on the music); one source stays one pass.
+    let mut parts: Vec<Transcript> = Vec::new();
+    for source in &sources {
+        if cancel::is_requested() {
+            return Err(AppError::from(cancel::CANCELLED_MSG));
+        }
+        // Decode to 16 kHz mono f32 off the UI thread (CPU plus ffmpeg).
+        let src = source.clone();
+        let samples: Vec<f32> =
+            tokio::task::spawn_blocking(move || audio::extract_pcm_f32(&[src.as_str()]))
                 .await
-                .map_err(AppError::msg)?
+                .map_err(|e| AppError::msg(format!("audio extract task panicked: {e}")))??;
+        // A silent or unreadable source contributes nothing rather than failing the run.
+        if samples.is_empty() {
+            continue;
         }
-        // Local: inference is CPU-bound, so run it on a blocking thread.
-        None => {
-            let model_dir = models::model_dir(&app, &model.id)?;
-            let lang = language.clone();
-            tokio::task::spawn_blocking(move || {
-                engine::transcribe(&model, &model_dir, &samples, lang.as_deref())
-            })
-            .await
-            .map_err(|e| AppError::msg(format!("transcription task panicked: {e}")))??
-        }
-    };
+
+        let part = match remote_ep.as_ref() {
+            // Remote: the network call is async, so it must NOT run on a blocking thread. The key never crosses IPC.
+            Some(ep) => {
+                let key = remote::read_key(&ep.id)
+                    .ok_or_else(|| AppError::from("Add an API key for this endpoint first."))?;
+                remote::transcribe_remote(ep, &key, &samples, language.as_deref())
+                    .await
+                    .map_err(AppError::msg)?
+            }
+            // Local: inference is CPU-bound, so run it on a blocking thread.
+            None => {
+                let model = model.clone();
+                let dir = model_dir.clone().expect("local path resolved a model dir");
+                let lang = language.clone();
+                tokio::task::spawn_blocking(move || {
+                    engine::transcribe(&model, &dir, &samples, lang.as_deref())
+                })
+                .await
+                .map_err(|e| AppError::msg(format!("transcription task panicked: {e}")))??
+            }
+        };
+        parts.push(part);
+    }
 
     // The remote path can't be interrupted mid-request, so drop its result rather than overwrite a stopped transcript.
     if cancel::is_requested() {
         return Err(AppError::from(cancel::CANCELLED_MSG));
     }
+    if parts.is_empty() {
+        return Err(AppError::from("no audio to transcribe"));
+    }
 
     let _ = on_phase.send(TranscribeProgress {
         phase: "done".into(),
     });
-    Ok(transcript)
+    Ok(merge_transcripts(parts))
 }
 
 /// Ask the in-flight transcription to stop. No-op when nothing is running.
@@ -583,5 +623,45 @@ mod tests {
         assert_eq!(d.muted_color, "#a1a1aa");
         assert_eq!(d.max_chars_per_line, 42);
         assert_eq!(d.animation.as_ref().unwrap().highlight(), "progressive");
+    }
+
+    use super::{merge_transcripts, Transcript, TranscriptSegment};
+
+    fn seg(start: f64, text: &str) -> TranscriptSegment {
+        TranscriptSegment {
+            id: "0".into(),
+            start,
+            end: start + 1.0,
+            text: text.into(),
+            words: Vec::new(),
+        }
+    }
+    fn transcript(segments: Vec<TranscriptSegment>) -> Transcript {
+        Transcript {
+            engine: "whisper".into(),
+            model_id: "m".into(),
+            language: Some("en".into()),
+            segments,
+        }
+    }
+
+    #[test]
+    fn merge_interleaves_two_sources_by_time_with_unique_ids() {
+        // Both sources numbered from zero, so the merge must reorder by start and re-id.
+        let system = transcript(vec![seg(0.0, "system a"), seg(4.0, "system b")]);
+        let mic = transcript(vec![seg(2.0, "mic a"), seg(6.0, "mic b")]);
+        let merged = merge_transcripts(vec![system, mic]);
+        let texts: Vec<&str> = merged.segments.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, ["system a", "mic a", "system b", "mic b"]);
+        let ids: Vec<&str> = merged.segments.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["seg-0", "seg-1", "seg-2", "seg-3"]);
+        assert_eq!(merged.language.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn merge_of_one_source_is_that_source_time_ordered() {
+        let merged = merge_transcripts(vec![transcript(vec![seg(1.0, "x"), seg(0.0, "y")])]);
+        assert_eq!(merged.segments[0].text, "y");
+        assert_eq!(merged.segments[0].id, "seg-0");
     }
 }
