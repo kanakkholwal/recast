@@ -1,24 +1,4 @@
 <script lang="ts">
-import {
-	ArrowRight,
-	Check,
-	CircleHelp,
-	Cloud,
-	Compass,
-	Download,
-	HardDriveUpload,
-	KeyRound,
-	Monitor,
-	Play,
-	Share2,
-	Star,
-	Video,
-	Wand2,
-	X,
-} from "@recast/icons";
-import { GithubBrand } from "@recast/ui/brand-icons";
-import { Button } from "@recast/ui/button";
-import { Image } from "@unpic/svelte";
 import { goto } from "$app/navigation";
 import {
 	BeforeAfterSlider,
@@ -40,6 +20,26 @@ import {
 } from "$lib/components";
 import { steps } from "$lib/components/Hero.logic";
 import { prefersReducedMotion } from "$lib/motion-core";
+import {
+	ArrowRight,
+	Check,
+	CircleHelp,
+	Cloud,
+	Compass,
+	Download,
+	HardDriveUpload,
+	KeyRound,
+	Monitor,
+	Play,
+	Share2,
+	Star,
+	Video,
+	Wand2,
+	X,
+} from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { Image } from "@unpic/svelte";
 
 import {
 	beforeAfterClips,
@@ -407,7 +407,7 @@ function dragScroll(node: HTMLElement) {
           <SectionLabel icon={Wand2} label="Inside the editor" accent="lavender" />
         </Reveal>
         <Reveal variant="up" delay={60} class="mt-5">
-          <h2 class="font-display text-balance text-heading md:text-heading-lg">
+          <h2 class="font-display text-balance font-medium text-heading md:text-heading-lg">
             Every tool you need. None of the learning curve.
           </h2>
         </Reveal>
@@ -437,7 +437,7 @@ function dragScroll(node: HTMLElement) {
           <SectionLabel icon={Compass} label="Recast Extensions" accent="lavender" />
         </Reveal>
         <Reveal variant="up" delay={60} class="mt-5">
-          <h2 class="font-display font-semibold text-balance text-heading md:text-heading-lg">
+          <h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
             Open packs. No lock-in.
           </h2>
         </Reveal>
@@ -606,7 +606,7 @@ function dragScroll(node: HTMLElement) {
           <SectionLabel icon={Star} label="Built for builders" />
         </Reveal>
         <Reveal variant="up" delay={60} class="mt-5">
-          <h2 class="font-display text-balance text-heading md:text-heading-lg">
+          <h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
             Shaped for the people who ship
           </h2>
         </Reveal>
@@ -651,7 +651,7 @@ function dragScroll(node: HTMLElement) {
         <Reveal variant="up" delay={60} as="article" class="flex flex-col bg-background py-10 md:pr-10">
           <span class="text-body-sm font-medium text-muted-foreground">The app</span>
           <div class="mt-3 flex items-baseline gap-2">
-            <span class="font-display text-display text-foreground">Free</span>
+            <span class="font-display text-display font-medium text-foreground">Free</span>
             <span class="text-body-sm text-muted-foreground">forever</span>
           </div>
           <p class="mt-3 max-w-sm text-body-sm text-muted-foreground">
@@ -668,7 +668,7 @@ function dragScroll(node: HTMLElement) {
         <Reveal variant="up" delay={140} as="article" class="flex flex-col bg-background py-10 md:pl-10">
           <span class="text-body-sm font-medium text-muted-foreground">Recast Cloud</span>
           <div class="mt-3 flex items-baseline gap-2">
-            <span class="font-display text-display text-foreground">Hosted</span>
+            <span class="font-display text-display font-medium text-foreground">Hosted</span>
             <span class="text-body-sm text-muted-foreground">+ controls</span>
           </div>
           <p class="mt-3 max-w-sm text-body-sm text-muted-foreground">
@@ -694,7 +694,7 @@ function dragScroll(node: HTMLElement) {
             <SectionLabel icon={CircleHelp} label="Questions" />
           </Reveal>
           <Reveal variant="up" delay={60} class="mt-5">
-            <h2 class="font-display text-balance text-heading md:text-heading-lg">
+            <h2 class="font-display text-balance font-medium text-heading md:text-heading-lg">
               Before you download
             </h2>
           </Reveal>
@@ -747,15 +747,15 @@ function dragScroll(node: HTMLElement) {
 
           <Reveal variant="up" delay={210} duration={460} class="mt-9">
             <div class="flex flex-wrap items-center justify-center gap-3">
-              <Button href="/download" variant="raw" size="lg" class="gap-2 bg-white text-black">
+                <Button href="/download" variant="raw" size="lg" class="gap-2 bg-white text-black">
                 <Download class="size-4" />
                 Download free
               </Button>
               <Button
                 href="/signup"
-                variant="ghost"
+                variant="raw"
                 size="lg"
-                class="group/cta band-rule gap-2 bg-transparent text-current hover:bg-current/10"
+                class="group/cta band-rule gap-2 bg-transparent text-white hover:bg-current/10"
               >
                 Share your first demo
                 <ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />

@@ -131,7 +131,7 @@ const steps = [
 				<SectionLabel icon={ImageIcon} label="Screenshot editor" accent="green" />
 			</Reveal>
 			<Reveal variant="up" delay={100} class="mt-5">
-				<h1 class="max-w-2xl font-display text-balance text-heading-lg md:text-display">
+				<h1 class="max-w-2xl font-display font-semibold text-balance text-heading-lg md:text-display">
 					Free screenshot editor
 				</h1>
 			</Reveal>

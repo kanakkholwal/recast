@@ -5,24 +5,19 @@
  * mp4box + WebCodecs pipeline to MediaBunny's `Input` + `CanvasSink` so the
  * project no longer depends on `mp4box`.
  *
- * The worker holds one `Input` and one `CanvasSink`, and drains every decode
- * through a single `drain()` loop — `getCanvas` builds a fresh `VideoDecoder`
- * per call, so overlapping drains would mean one live hardware decoder per
- * in-flight message. Newest batch drains first (a scroll shouldn't wait behind
- * tiles that already left the viewport); the `storyboard` sprite for hover-scrub
- * runs only once no tiles are queued.
+ * The worker holds one `Input` and one `CanvasSink`, and drains queued tiles
+ * through a single `drain()` loop that batches each pass into one
+ * `canvasesAtTimestamps` call — one decoder streams the span and decodes each
+ * shared GOP once, instead of `getCanvas` rebuilding a decoder per tile. The
+ * `draining` latch keeps exactly one decoder alive. Newest tiles drain first (a
+ * scroll shouldn't wait behind tiles that already left the viewport); the
+ * `storyboard` sprite for hover-scrub runs only once no tiles are queued.
  *
- * Why this beats the legacy pipeline:
- *   - No mp4box: MediaBunny's `Input` parses the file (mp4/mov/webm).
- *   - No hand-rolled WebCodecs wiring: `CanvasSink` is the decode
- *     primitive, the worker just iterates `screenshotAtTimestamps`.
- *   - Concurrency model: one input + one sink, but the sink's `poolSize`
- *     lets MediaBunny do its own decode-ahead, so a flurry of
- *     `previewAt` calls in the same frame is batched internally.
+ * `getCanvas` remains only for the near-end retry, where a single miss is
+ * cheaper to re-request than to re-batch.
  *
- * Frame ownership: canvases returned from `getCanvas` are owned by the
- * worker until they're transferred. We copy to a fresh `OffscreenCanvas`
- * sized for the requested thumbnail, blit the source, then JPEG-encode
+ * Frame ownership: canvases are owned by the worker until transferred. We copy
+ * to a fresh `OffscreenCanvas` sized for the requested thumbnail, JPEG-encode,
  * and transfer the blob back to the main thread.
  */
 
@@ -83,6 +78,11 @@ let pending: DecodeRequest[] = [];
 let storyboardQueued = false;
 let draining = false;
 
+/** Tiles decoded per canvasesAtTimestamps pass. Bounded so a fresh scroll (its
+ *  requests prepended to `pending`) preempts after the current small batch
+ *  rather than waiting on the whole queue. */
+const TILE_BATCH = 12;
+
 function enqueueDecode(requests: readonly DecodeRequest[]): void {
 	// Newest batch first: it reflects where the user is now, so a scroll doesn't wait on tiles already off-screen.
 	pending = [...requests, ...pending];
@@ -94,53 +94,77 @@ function enqueueDecode(requests: readonly DecodeRequest[]): void {
 	void drain();
 }
 
-async function decodeOne(req: DecodeRequest): Promise<void> {
+async function postTile(req: DecodeRequest, src: OffscreenCanvas): Promise<void> {
+	const blob = await canvasToJpeg(src);
+	if (disposed) return;
+	// A Blob is structured-cloneable but NOT transferable; listing it throws and loses the whole tile.
+	post({ type: "tile", id: req.id, blob, width: src.width, height: src.height });
+}
+
+// Recorded duration overshoots the last frame, so a near-end tile decodes to nothing; step just inside so short clips don't go blank.
+async function decodeNearEndFallback(req: DecodeRequest): Promise<void> {
 	if (!sink) return;
 	try {
-		let wrapped = await sink.getCanvas(req.originalSec);
-		// Recorded files often report a duration a hair past the last frame, so a tile sampled near the end decodes to nothing; step just inside and retry so short clips (where that tile is a big fraction of the strip) don't go blank.
-		if (!wrapped && !disposed && req.originalSec > 0.05) {
-			wrapped = await sink.getCanvas(req.originalSec - 0.05);
-		}
+		const wrapped = req.originalSec > 0.05 ? await sink.getCanvas(req.originalSec - 0.05) : null;
 		if (disposed) return;
-		if (!wrapped) {
-			// Answered, not dropped: a silent return leaves the id in the provider's in-flight set, and that cache key is never requested again for the session.
-			post({
-				type: "error",
-				id: req.id,
-				message: `no frame at ${req.originalSec.toFixed(2)}s`,
-			});
+		if (wrapped) {
+			await postTile(req, wrapped.canvas as OffscreenCanvas);
 			return;
 		}
-		const src = wrapped.canvas as OffscreenCanvas;
-		const blob = await canvasToJpeg(src);
-		if (disposed) return;
-		// A Blob is structured-cloneable but NOT transferable; listing it throws and loses the whole tile.
-		post({ type: "tile", id: req.id, blob, width: src.width, height: src.height });
+		// Answered, not dropped: a silent return leaves the id in the provider's in-flight set, never re-requested this session.
+		post({ type: "error", id: req.id, message: `no frame at ${req.originalSec.toFixed(2)}s` });
 	} catch (err) {
-		// Carry the request id so the provider clears it from in-flight, or the tile wedges and the maps grow.
-		post({
-			type: "error",
-			id: req.id,
-			message: err instanceof Error ? err.message : String(err),
-		});
+		post({ type: "error", id: req.id, message: err instanceof Error ? err.message : String(err) });
 	}
 }
 
+async function flushMisses(misses: readonly DecodeRequest[]): Promise<void> {
+	for (const req of misses) {
+		if (disposed) return;
+		await decodeNearEndFallback(req);
+	}
+}
+
+// One failed pass must not wedge its tiles in the provider's in-flight set.
+function failRemaining(reqs: readonly DecodeRequest[], err: unknown): void {
+	const message = err instanceof Error ? err.message : String(err);
+	for (const r of reqs) post({ type: "error", id: r.id, message });
+}
+
+// One decoder pass for the batch: canvasesAtTimestamps decodes each packet once, versus getCanvas spinning a fresh decoder per tile and re-decoding shared GOPs.
+async function decodeBatch(reqs: DecodeRequest[]): Promise<void> {
+	if (!sink || reqs.length === 0) return;
+	// Ascending times keep the one decoder streaming forward; results come back in that order, so index maps to `ordered`.
+	const ordered = [...reqs].sort((a, b) => a.originalSec - b.originalSec);
+	const misses: DecodeRequest[] = [];
+	let i = 0;
+	try {
+		for await (const wrapped of sink.canvasesAtTimestamps(ordered.map((r) => r.originalSec))) {
+			if (disposed) return;
+			const req = ordered[i++];
+			if (wrapped) await postTile(req, wrapped.canvas as OffscreenCanvas);
+			else misses.push(req);
+		}
+	} catch (err) {
+		failRemaining(ordered.slice(Math.max(0, i - 1)), err);
+		return;
+	}
+	await flushMisses(misses);
+}
+
 /**
- * The ONLY place `sink.getCanvas` is driven. MediaBunny builds a fresh
- * `VideoDecoder` per `getCanvas` call, so overlapping drains meant one live
- * hardware decoder per in-flight message — tens of them during a scroll, each
- * holding its own surface pool. The `draining` latch keeps that at exactly one.
+ * Drains queued tiles through `canvasesAtTimestamps` in bounded batches. A
+ * single-flight `draining` latch keeps exactly one decoder alive; batching then
+ * makes that one decoder decode each GOP once for the whole span, instead of
+ * `getCanvas` rebuilding a decoder and re-decoding the GOP per tile.
  */
 async function drain(): Promise<void> {
 	if (draining) return;
 	draining = true;
 	try {
 		while (!disposed && sink) {
-			const req = pending.shift();
-			if (req) {
-				await decodeOne(req);
+			if (pending.length > 0) {
+				await decodeBatch(pending.splice(0, TILE_BATCH));
 				continue;
 			}
 			// Visible tiles always win; the storyboard is hover-scrub polish and runs only once the strip is full.
@@ -192,14 +216,17 @@ async function buildStoryboard(): Promise<void> {
 		for (let i = 0; i < count; i++) {
 			timestamps.push(((i + 0.5) / count) * videoDurationSec);
 		}
-		for (let i = 0; i < timestamps.length; i++) {
+		// One decoder pass for the whole sprite: getCanvas per cell spun 32 fresh VideoDecoders that re-decode each GOP and contend with the preview decoder.
+		let i = 0;
+		for await (const wrapped of sink.canvasesAtTimestamps(timestamps)) {
 			if (disposed) return;
-			const wrapped = await sink.getCanvas(timestamps[i] ?? 0);
-			if (!wrapped) continue;
-			const src = wrapped.canvas as OffscreenCanvas;
-			const col = i % cols;
-			const row = Math.floor(i / cols);
-			ctx2d.drawImage(src, col * cellW, row * cellH, cellW, cellH);
+			if (wrapped) {
+				const src = wrapped.canvas as OffscreenCanvas;
+				const col = i % cols;
+				const row = Math.floor(i / cols);
+				ctx2d.drawImage(src, col * cellW, row * cellH, cellW, cellH);
+			}
+			i++;
 		}
 		const blob = await sprite.convertToBlob({ type: "image/jpeg", quality: 0.85 });
 		post({

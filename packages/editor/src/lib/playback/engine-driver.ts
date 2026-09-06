@@ -185,11 +185,16 @@ export class PreviewEngineDriver {
 	 * An empty list clears them, which puts the engine back on the dot.
 	 */
 	setCursorSprites(key: string, sprites: CursorSpriteUpload[]): boolean {
-		if (key === this.#spriteKey) return false;
+		// The engine copies each bitmap into a texture, so close them after upload (and on the no-op early-return) or a style change leaks four.
+		if (key === this.#spriteKey) {
+			for (const sprite of sprites) sprite.image.close();
+			return false;
+		}
 		this.#spriteKey = key;
 		this.#engine.clearCursorSprites();
 		for (const sprite of sprites) {
 			this.#engine.setCursorSprite(sprite.slot, sprite.image, sprite.hotspot);
+			sprite.image.close();
 		}
 		return true;
 	}

@@ -199,9 +199,6 @@ importers:
       '@fontsource-variable/jetbrains-mono':
         specifier: ^5.3.0
         version: 5.3.0
-      '@phosphor-icons/core':
-        specifier: 2.1.1
-        version: 2.1.1
       '@polar-sh/better-auth':
         specifier: ^1.8.4
         version: 1.8.4(@polar-sh/sdk@0.48.1)(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@stripe/stripe-js@7.9.0)(better-auth@1.7.1(@opentelemetry/api@1.9.1)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.0)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.57.0)(typescript@5.9.3)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(kysely@0.29.5)(postgres@3.4.9))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(svelte@5.57.0)(vitest@3.2.7(@types/debug@4.1.13)(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.12)(yaml@2.9.0)))(react@19.2.6)(zod@4.4.3)
@@ -211,9 +208,6 @@ importers:
       '@sveltejs/adapter-auto':
         specifier: ^6.1.1
         version: 6.1.1(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.0)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.57.0)(typescript@5.9.3)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
-      '@tabler/icons-svelte':
-        specifier: ^3.46.0
-        version: 3.46.0(svelte@5.57.0)
       '@takumi-rs/wasm':
         specifier: ^2.13.6
         version: 2.13.6(preact@10.29.8)(react@19.2.6)
@@ -223,9 +217,6 @@ importers:
       '@xyflow/svelte':
         specifier: ^1.6.3
         version: 1.6.3(svelte@5.57.0)
-      aws4fetch:
-        specifier: ^1.0.20
-        version: 1.0.20
       better-auth:
         specifier: ^1.7.1
         version: 1.7.1(@opentelemetry/api@1.9.1)(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.0)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.57.0)(typescript@5.9.3)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(kysely@0.29.5)(postgres@3.4.9))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(svelte@5.57.0)(vitest@3.2.7(@types/debug@4.1.13)(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.12)(yaml@2.9.0))
@@ -273,14 +264,14 @@ importers:
         version: 4.4.3
     devDependencies:
       '@docvia/cli':
-        specifier: ^0.3.0
-        version: 0.3.0
+        specifier: ^1.0.0
+        version: 1.0.0(@docvia/source@0.3.1)
       '@docvia/plugin-shiki':
         specifier: ^0.2.2
         version: 0.2.2
       '@docvia/plugin-vite':
-        specifier: ^0.4.0
-        version: 0.4.0
+        specifier: ^1.0.0
+        version: 1.0.0(@docvia/source@0.3.1)
       '@docvia/renderer-svelte':
         specifier: ^0.2.4
         version: 0.2.4
@@ -329,18 +320,12 @@ importers:
       '@types/node':
         specifier: ^22.20.1
         version: 22.20.1
-      '@types/pg':
-        specifier: ^8.23.1
-        version: 8.23.1
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
       layerchart:
         specifier: 2.0.0-next.48
         version: 2.0.0-next.48(@sveltejs/kit@2.70.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@7.3.0(svelte@5.57.0)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.57.0)(typescript@5.9.3)(vite@8.2.2(@types/node@22.20.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(svelte@5.57.0)(zod@4.4.3)
-      portless:
-        specifier: ^0.10.3
-        version: 0.10.3
       svelte:
         specifier: 5.57.0
         version: 5.57.0
@@ -527,8 +512,8 @@ importers:
         specifier: ^1.0.3
         version: 1.0.3
       mediabunny:
-        specifier: ^1.55.2
-        version: 1.55.2
+        specifier: ^1.55.7
+        version: 1.55.7
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -1044,13 +1029,15 @@ packages:
   '@dagrejs/graphlib@3.0.4':
     resolution: {integrity: sha512-HxZ7fCvAwTLCWCO0WjDkzAFQze8LdC6iOpKbetDKHIuDfIgMlIzYzqZ4nxwLlclQX+3ZVeZ1K2OuaOE2WWcyOg==}
 
-  '@docvia/cli@0.3.0':
-    resolution: {integrity: sha512-4EwhpUjpVMwRckmygvzXHtkzdZdbg0KkfC/hTSVtu2m6eAMPGFCGhQ+l4pZOCHaWElAnvyH7CFOz8LqhhzF0FQ==}
+  '@docvia/cli@1.0.0':
+    resolution: {integrity: sha512-zfNNiKipwNw9I09WhEPbinipTKpl+ZTPTHZ0ynXynWZTZ60w+kSWYL0oHHwxl58NMJ3lhNoZxBaWxsEqQs5nzg==}
     engines: {node: '>=20.0.0'}
     hasBin: true
+    peerDependencies:
+      '@docvia/source': 0.4.0
 
-  '@docvia/compiler@0.2.2':
-    resolution: {integrity: sha512-ytaqB70R9Udgcac011rAgJuuoxyGeez3YXpg3gKr12N0QIk3C3OhR9ehkZQv1RhkkPNooybF8iJwGwE62NdJZw==}
+  '@docvia/compiler@0.2.3':
+    resolution: {integrity: sha512-rE9j6EI1TrzkkPrf7u0bnPFC+1/LeozN/5RGlrV70mwlrWGdIUwHUaUgEg7zwavVgw+nvOXartUWOWGlEpn94g==}
     engines: {node: '>=20.0.0'}
 
   '@docvia/core@0.2.0':
@@ -1069,12 +1056,14 @@ packages:
     resolution: {integrity: sha512-MVMsn1VcWAwxWi70Z/1PehYJcZyDKdMl6Hb2m4qq/EV1GGKyE1nuNyhkwp4IVHnERKpulvwxXvmHEyYJ+MrxZQ==}
     engines: {node: '>=20.0.0'}
 
-  '@docvia/plugin-vite@0.4.0':
-    resolution: {integrity: sha512-suOw1ljYx+j7r0Qte1v7HSgy4qnqrjsPENhcTmvY6GRy6YQqlO9rdhlg4HD6/rOz0yWOpbDUtRjXoADC9Olw/Q==}
+  '@docvia/plugin-vite@1.0.0':
+    resolution: {integrity: sha512-gOOosdYSHmcVsXdlipH/hlyEmmrQbL1J6cWpFnfzlpJ19fWLeYfu+7SbyoXpjQv/iebEs0OUz3GGQa4OMBCmrg==}
     engines: {node: '>=20.0.0'}
+    peerDependencies:
+      '@docvia/source': 0.4.0
 
-  '@docvia/plugins@0.3.0':
-    resolution: {integrity: sha512-oKtxKYlu8s9dbIfsDPIP3jMIYZLP9RtQRBeJ+CCF6A3gGMNttyFQSylwiouyFEAYLVrxqe3vDP0P/auK1E/LVA==}
+  '@docvia/plugins@0.3.1':
+    resolution: {integrity: sha512-P1D6shCoBEY4ybzc7G8pRYQTHlv+Vd1FLiotJArvn/8jp+pjAiXT5wKPiV83vAhmOTkCI/u82ptC8uE8j0YRlg==}
     engines: {node: '>=20.0.0'}
 
   '@docvia/renderer-core@0.2.2':
@@ -1089,12 +1078,16 @@ packages:
     resolution: {integrity: sha512-Isowh1/uJTkUi3vqtneExHZyAfvkwaGUetjeYl8IKi5G+NldMItoJ4dM6VeModP/sTk31gAiLSxw/w5MaWuKRg==}
     engines: {node: '>=20.0.0'}
 
-  '@docvia/runtime@0.4.0':
-    resolution: {integrity: sha512-7PvQmI6/3vRQh6OQKDnxQ3LULvCt3ACUXzVxxZwhVYmhMyDA3bJFi0RYH65kMYGCwq0pnlA8itfiYikrHlbr+A==}
+  '@docvia/runtime@0.5.0':
+    resolution: {integrity: sha512-XG5FaVqQl7G4/L5oVmR2/tI9rwBXiVUHGsu9Pi5/pG7Wg+WtpRioW2edMV9Na+jMblmELBmApsPGFCmi5eIPVg==}
     engines: {node: '>=20.0.0'}
 
   '@docvia/schema@0.3.0':
     resolution: {integrity: sha512-PoCVvmNcKg8zsw9Y5BsBjUHdGVTaLnq/IXq86WZeWMnoqF9Ny84Fy4aPnJ5KgXEF3YtctzDvjImvbcPflfZc7A==}
+    engines: {node: '>=20.0.0'}
+
+  '@docvia/schema@0.4.0':
+    resolution: {integrity: sha512-q3o9Q5WujW6LaeSNw/M2JH6RQ68XPBOEIkOhZqK158yGhi3UmwpzJ+dR1zRf46TMzi0M2ZXWoOND2XvBEBrmXA==}
     engines: {node: '>=20.0.0'}
 
   '@docvia/source@0.3.1':
@@ -3346,9 +3339,6 @@ packages:
   async-sema@3.1.1:
     resolution: {integrity: sha512-tLRNUXati5MFePdAk8dw7Qt7DpxPB60ofAgn8WRhW6a2rcimZnYBP9oxHiv0OHy+Wz7kPMG+t4LGdt31+4EmGg==}
 
-  aws4fetch@1.0.20:
-    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
-
   axobject-query@4.1.0:
     resolution: {integrity: sha512-qIj0G9wZbMGNLjLmg1PT6v2mE9AH2zlnADJD/2tC6E00hgmhUOfEB6greHPAfLRSufHqROIUTkw6E+M3lH0PTQ==}
     engines: {node: '>= 0.4'}
@@ -4773,8 +4763,8 @@ packages:
     resolution: {integrity: sha512-yz3xRaG20c6/BOzvYoDaGtPmGscs7YivItZEEqe6GbwNfHuxu9YNmvnEkMzKldAGY4/80pRcQRZSEnhquk9XuQ==}
     engines: {node: '>= 0.8'}
 
-  mediabunny@1.55.2:
-    resolution: {integrity: sha512-EEx4O6qYddAdCyWPMZNDwI7uc5hewNHrPAf9jLcVhIbXoPsiqNQ+D9i1pfadmGkjN2V318jSrZljkpoziYm6Lg==}
+  mediabunny@1.55.7:
+    resolution: {integrity: sha512-Sb/vI8frRiDPbPUwl3hz0n69NSe9yt4Nydcv5yxi8Rdgk0BgnujEGjZqE+uCTehFbafcqIu6gDAok8ln98dcqg==}
 
   memoize@10.2.0:
     resolution: {integrity: sha512-DeC6b7QBrZsRs3Y02A6A7lQyzFbsQbqgjI6UW0GigGWV+u1s25TycMr0XHZE4cJce7rY/vyw2ctMQqfDkIhUEA==}
@@ -5120,12 +5110,6 @@ packages:
 
   points-on-path@0.2.1:
     resolution: {integrity: sha512-25ClnWWuw7JbWZcgqY/gJ4FQWadKxGWk+3kR/7kD0tCaDtPPMj7oHu2ToLaVhfpnHrZzYby2w6tUA0eOIuUg8g==}
-
-  portless@0.10.3:
-    resolution: {integrity: sha512-lXbVUsNiwWMKJGMi49HhTMW0lS7u0EzawonDZQ+yglSnHioiQK18Y4Fe0Ilk+TuXej71E/nTOHIFIBjUGvTm9w==}
-    engines: {node: '>=20'}
-    os: [darwin, linux, win32]
-    hasBin: true
 
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
@@ -6570,22 +6554,23 @@ snapshots:
 
   '@dagrejs/graphlib@3.0.4': {}
 
-  '@docvia/cli@0.3.0':
+  '@docvia/cli@1.0.0(@docvia/source@0.3.1)':
     dependencies:
-      '@docvia/compiler': 0.2.2
-      '@docvia/ir': 0.3.0
-      '@docvia/plugins': 0.3.0
-      '@docvia/runtime': 0.4.0
+      '@docvia/compiler': 0.2.3
+      '@docvia/ir': 0.4.0
+      '@docvia/plugins': 0.3.1
+      '@docvia/runtime': 0.5.0
+      '@docvia/source': 0.3.1
       chokidar: 5.0.0
       commander: 14.0.3
       sirv: 3.0.2
     transitivePeerDependencies:
       - supports-color
 
-  '@docvia/compiler@0.2.2':
+  '@docvia/compiler@0.2.3':
     dependencies:
-      '@docvia/ir': 0.3.0
-      '@docvia/runtime': 0.4.0
+      '@docvia/ir': 0.4.0
+      '@docvia/runtime': 0.5.0
     transitivePeerDependencies:
       - supports-color
 
@@ -6618,20 +6603,20 @@ snapshots:
       '@docvia/ir': 0.4.0
       shiki: 4.4.3
 
-  '@docvia/plugin-vite@0.4.0':
+  '@docvia/plugin-vite@1.0.0(@docvia/source@0.3.1)':
     dependencies:
       '@docvia/core': 0.2.0
-      '@docvia/ir': 0.3.0
-      '@docvia/plugins': 0.3.0
-      '@docvia/runtime': 0.4.0
-      '@docvia/schema': 0.3.0
+      '@docvia/ir': 0.4.0
+      '@docvia/plugins': 0.3.1
+      '@docvia/runtime': 0.5.0
+      '@docvia/schema': 0.4.0
       '@docvia/source': 0.3.1
     transitivePeerDependencies:
       - supports-color
 
-  '@docvia/plugins@0.3.0':
+  '@docvia/plugins@0.3.1':
     dependencies:
-      '@docvia/ir': 0.3.0
+      '@docvia/ir': 0.4.0
       jiti: 2.7.0
 
   '@docvia/renderer-core@0.2.2':
@@ -6650,12 +6635,12 @@ snapshots:
     transitivePeerDependencies:
       - '@typescript-eslint/types'
 
-  '@docvia/runtime@0.4.0':
+  '@docvia/runtime@0.5.0':
     dependencies:
       '@docvia/core': 0.2.0
-      '@docvia/ir': 0.3.0
-      '@docvia/plugins': 0.3.0
-      '@docvia/schema': 0.3.0
+      '@docvia/ir': 0.4.0
+      '@docvia/plugins': 0.3.1
+      '@docvia/schema': 0.4.0
       '@node-rs/xxhash': 1.7.7
     transitivePeerDependencies:
       - supports-color
@@ -6663,6 +6648,13 @@ snapshots:
   '@docvia/schema@0.3.0':
     dependencies:
       '@docvia/ir': 0.3.0
+      '@standard-schema/spec': 1.1.0
+      yaml: 2.9.0
+      zod: 4.4.3
+
+  '@docvia/schema@0.4.0':
+    dependencies:
+      '@docvia/ir': 0.4.0
       '@standard-schema/spec': 1.1.0
       yaml: 2.9.0
       zod: 4.4.3
@@ -8222,9 +8214,10 @@ snapshots:
 
   '@types/pg@8.23.1':
     dependencies:
-      '@types/node': 22.20.1
+      '@types/node': 25.9.5
       pg-protocol: 1.16.0
       pg-types: 2.2.0
+    optional: true
 
   '@types/trusted-types@2.0.7':
     optional: true
@@ -8444,8 +8437,6 @@ snapshots:
   assertion-error@2.0.1: {}
 
   async-sema@3.1.1: {}
-
-  aws4fetch@1.0.20: {}
 
   axobject-query@4.1.0: {}
 
@@ -9902,7 +9893,7 @@ snapshots:
   media-typer@1.1.1:
     optional: true
 
-  mediabunny@1.55.2:
+  mediabunny@1.55.7:
     dependencies:
       '@types/dom-mediacapture-transform': 0.1.12
       '@types/dom-webcodecs': 0.1.13
@@ -10313,9 +10304,11 @@ snapshots:
 
   pathval@2.0.1: {}
 
-  pg-int8@1.0.1: {}
+  pg-int8@1.0.1:
+    optional: true
 
-  pg-protocol@1.16.0: {}
+  pg-protocol@1.16.0:
+    optional: true
 
   pg-types@2.2.0:
     dependencies:
@@ -10324,6 +10317,7 @@ snapshots:
       postgres-bytea: 1.0.1
       postgres-date: 1.0.7
       postgres-interval: 1.2.0
+    optional: true
 
   picocolors@1.1.1: {}
 
@@ -10351,23 +10345,25 @@ snapshots:
       path-data-parser: 0.1.0
       points-on-curve: 0.2.0
 
-  portless@0.10.3: {}
-
   postcss@8.5.26:
     dependencies:
       nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  postgres-array@2.0.0: {}
+  postgres-array@2.0.0:
+    optional: true
 
-  postgres-bytea@1.0.1: {}
+  postgres-bytea@1.0.1:
+    optional: true
 
-  postgres-date@1.0.7: {}
+  postgres-date@1.0.7:
+    optional: true
 
   postgres-interval@1.2.0:
     dependencies:
       xtend: 4.0.2
+    optional: true
 
   postgres@3.4.9: {}
 
@@ -11429,7 +11425,8 @@ snapshots:
 
   xml-naming@0.3.0: {}
 
-  xtend@4.0.2: {}
+  xtend@4.0.2:
+    optional: true
 
   yallist@5.0.0: {}
 

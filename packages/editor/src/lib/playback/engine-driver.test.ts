@@ -148,16 +148,21 @@ describe("frame ring", () => {
 describe("cursor sprites", () => {
 	const sprite = (slot: "rest" | "press") => ({
 		slot,
-		image: {} as ImageBitmap,
+		image: { close: vi.fn() } as unknown as ImageBitmap,
 		hotspot: [0.25, 0.75] as [number, number],
 	});
 
 	it("uploads a set once and skips the same key", async () => {
 		const d = await driver();
-		expect(d.setCursorSprites("arrow", [sprite("rest"), sprite("press")])).toBe(true);
-		expect(d.setCursorSprites("arrow", [sprite("rest")])).toBe(false);
+		const first = [sprite("rest"), sprite("press")];
+		expect(d.setCursorSprites("arrow", first)).toBe(true);
+		const skipped = sprite("rest");
+		expect(d.setCursorSprites("arrow", [skipped])).toBe(false);
 		expect(engine.setCursorSprite).toHaveBeenCalledTimes(2);
 		expect(engine.setCursorSprite).toHaveBeenCalledWith("rest", expect.anything(), [0.25, 0.75]);
+		// Bitmaps are closed after the GPU copy, and on the no-op path too, or a style change leaks four.
+		for (const s of first) expect(s.image.close).toHaveBeenCalledTimes(1);
+		expect(skipped.image.close).toHaveBeenCalledTimes(1);
 	});
 
 	/** Slots are not overwritten in place, so a style with fewer states than the
