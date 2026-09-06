@@ -3,7 +3,7 @@
 
 	// Top level IS the preview environment: `wrangler deploy` with no `--env` targets it.
 	// Production overrides live under `env.production` and are selected with `--env production`.
-	"name": "recast-web-preview",
+	"name": "recast-web-app",
 	"main": ".svelte-kit/cloudflare/_worker.js",
 	"compatibility_date": "2026-08-01",
 
@@ -22,7 +22,10 @@
 	// Postgres is reached directly on Neon's POOLED endpoint, which is why the client sets `prepare: false` (see lib/db).
 	// Non-secret, per-environment. Secrets, `DATABASE_URL` included, go through `wrangler secret put`, never this file.
 	"vars": {
-		"PUBLIC_APP_URL": "https://preview.recast.li"
+		"PUBLIC_APP_NAME": "Recast",
+		"PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com",
+		"PUBLIC_POSTHOG_UI_HOST": "https://us.posthog.com",
+		"EMAIL_FROM": "Recast <hello@recast.li>"
 	},
 
 	"env": {
@@ -35,6 +38,21 @@
 			"routes": [
 				{
 					"pattern": "recast.li",
+					"custom_domain": true
+				}
+			],
+			"observability": {
+				"enabled": true
+			}
+		},
+		"preview": {
+			"name": "recast-web-preview",
+			"vars": {
+				"PUBLIC_APP_URL": "https://preview.recast.li"
+			},
+			"routes": [
+				{
+					"pattern": "preview.recast.li",
 					"custom_domain": true
 				}
 			],

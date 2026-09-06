@@ -24,6 +24,9 @@ permissions:
 env:
   NODE_VERSION: "24"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # Force wrangler to Azure Blob's node build (SAS-capable); its browser build strips SAS signing.
+  WRANGLER_BUILD_PLATFORM: "node"
+  WRANGLER_BUILD_CONDITIONS: "workerd,worker,import,module,node,default"
 
 jobs:
   # Circuit breaker: three prerequisites are still missing, and without this the run

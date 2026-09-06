@@ -1,8 +1,9 @@
 # Turborepo internal cache
 .turbo
 .scratch
-
+.agents
 node_modules
+skills-lock.json
 
 # Output
 .output

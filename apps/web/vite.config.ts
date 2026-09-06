@@ -11,7 +11,7 @@ import docviaConfig from "./docvia.config.ts";
 // Cloudflare only when wrangler.jsonc is present; otherwise adapter-auto for Vercel/Node/preview.
 const useCloudflare = existsSync(new URL("./wrangler.jsonc", import.meta.url));
 
-export default defineConfig({
+export default defineConfig(({ isSsrBuild }) => ({
 	plugins: [
 		tailwindcss(),
 		sveltekit({
@@ -56,6 +56,8 @@ export default defineConfig({
 		// Inline the takumi wasm and the OG font: Vercel's function can't read the static assets dir, and 5 MB is too large for an Edge function.
 		assetsInlineLimit: (filePath) =>
 			filePath.includes("takumi_wasm_bg") || filePath.includes("Satoshi-") ? true : undefined,
+		// workerd boots with import.meta.url === undefined, so rolldown's eager createRequire(import.meta.url) shim throws.
+		rollupOptions: useCloudflare && isSsrBuild ? { output: { polyfillRequire: false } } : undefined,
 	},
 	// Surfaced as a global so analytics can tag every event with the running build.
 	define: {
@@ -111,4 +113,4 @@ export default defineConfig({
 	},
 	// Env variables starting with the item of `envPrefix` will be exposed in tauri's source code through `import.meta.env`.
 	envPrefix: ["VITE_", "TAURI_ENV_*"],
-});
+}));
