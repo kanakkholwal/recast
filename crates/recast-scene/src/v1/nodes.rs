@@ -682,8 +682,8 @@ pub struct ZoomRegion {
     /// Non-destructive mute: when true the region is excluded from the export (and the preview), but kept in the project file. Absent in older projects → visible.
     #[serde(default)]
     pub hidden: bool,
-    /// Preview motion-blur strength 0..1, PREVIEW-ONLY: the export silently ignores it.
-    /// FFmpeg has no faithful equivalent (`tmix` ghosts every frame, `gblur` takes a static sigma), so shipping one would look worse than no blur.
+    /// Zoom motion-blur strength 0..1, applied by the wgpu compositor in preview and compositor-based export (`streak_length`).
+    /// Only the legacy FFmpeg export skips it (`tmix` ghosts every frame, `gblur` takes a static sigma), so it stays sharp there.
     #[serde(default)]
     pub motion_blur: f64,
     /// JS-side fields (`id`, `source`) the export doesn't read but must round-trip — without this they'd be dropped when the load path re-serializes the render state back to the editor.

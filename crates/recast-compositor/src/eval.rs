@@ -1844,6 +1844,39 @@ mod cursor_tests {
             linear.x
         );
     }
+
+    // Guards a blank cursor layer: a visible sample must produce a drawable (alpha > 0) placement on-canvas.
+    #[test]
+    fn a_visible_sample_draws_on_canvas_with_positive_alpha() {
+        let placed = placement(&scene("", true), 1.0).expect("a visible sample places the cursor");
+        assert!(placed.alpha > 0.0, "alpha was {}", placed.alpha);
+        assert!(
+            (0.0..=1.0).contains(&placed.x) && (0.0..=1.0).contains(&placed.y),
+            "cursor off-canvas at ({}, {})",
+            placed.x,
+            placed.y
+        );
+    }
+
+    // An off-frame (visible:false) sample must not draw, matching the export.
+    #[test]
+    fn an_invisible_sample_hides_the_cursor() {
+        let mut scene = scene("", false);
+        let hidden = CursorSample {
+            visible: false,
+            ..sample(0, 100.0, 100.0)
+        };
+        let hidden_end = CursorSample {
+            timestamp_us: 2_000_000,
+            ..hidden
+        };
+        scene.cursor_track = Some(CursorTrack::new(vec![hidden, hidden_end], Vec::new()));
+        let placed = placement(&scene, 0.5);
+        assert!(
+            placed.map_or(true, |p| p.alpha == 0.0),
+            "an invisible sample must not draw"
+        );
+    }
 }
 
 #[cfg(test)]

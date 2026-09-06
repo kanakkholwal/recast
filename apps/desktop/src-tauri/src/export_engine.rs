@@ -598,7 +598,18 @@ pub fn export_video(
     }
     if state.cursor_enabled {
         match spec.cursor_track.map(load_cursor_track) {
-            Some(Ok(track)) => session.set_cursor_track(Some(track)),
+            Some(Ok(mut track)) => {
+                // The preview uploads TS-smoothed samples, so smooth here too or native export renders a rawer path.
+                let sigma = recast_cursor::smoothing_strength_to_sigma_ms(state.cursor_smoothing);
+                if sigma > 0.0 && track.samples.len() >= 2 {
+                    let opts = recast_cursor::SmoothingOptions {
+                        sigma_ms: sigma,
+                        ..Default::default()
+                    };
+                    track.samples = recast_cursor::smooth_cursor_path(&track.samples, opts).samples;
+                }
+                session.set_cursor_track(Some(track));
+            }
             // Refused rather than rendered bare: a cursor the user asked for and cannot see is a wrong file, not a degraded one.
             Some(Err(e)) => {
                 return Err(EngineExportError::Unsupported(format!(

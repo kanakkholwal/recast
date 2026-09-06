@@ -209,7 +209,7 @@ export class AudioTimelineEngine {
 	#anchorCtxTime = 0;
 	#anchorOutputTime = 0;
 	#scheduled = false;
-	// Routed straight to destination: the master fade applies to the recording only, matching the export's amix order.
+	// Music feeds #fadeGain like the tracks, so the master fade applies to it too, matching the Rust mixer.
 	#music: MusicEntry[] = [];
 	#musicActive: AudioBufferSourceNode[] = [];
 	/** Deferred start/stop for streamed clips; a media element has no `start(when)`. */
@@ -388,7 +388,8 @@ export class AudioTimelineEngine {
 					return;
 				}
 				const gain = this.#ctx.createGain();
-				gain.connect(this.#ctx.destination);
+				// Through #fadeGain like the tracks, so the master fade rides music too, matching the Rust mixer.
+				gain.connect(this.#fadeGain);
 				if (el) {
 					this.#ctx.createMediaElementSource(el).connect(gain);
 					this.#music.push({ spec, gain, duration, mode: "stream", el });

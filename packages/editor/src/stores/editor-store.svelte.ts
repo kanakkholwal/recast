@@ -356,6 +356,7 @@ export function createEditorStore() {
 			lastAppliedPresetId,
 			cursorMotionEasing,
 			musicClips,
+			captionStyle,
 		};
 	}
 
@@ -523,6 +524,8 @@ export function createEditorStore() {
 		outputAspect = s.outputAspect ?? "source";
 		lastAppliedPresetId = s.lastAppliedPresetId ?? null;
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
+		// Merge over defaults so an older snapshot missing newer style keys stays valid.
+		if (s.captionStyle) captionStyle = { ...DEFAULT_CAPTION_STYLE, ...s.captionStyle };
 	}
 
 	function addZoomRegion(
@@ -2340,6 +2343,8 @@ export function createEditorStore() {
 			isDirty = true;
 		},
 		updateCaptionStyle(updates: Partial<CaptionStyle>) {
+			// Coalesce by field so a slider drag is one undo entry; distinct controls stay separate.
+			pushUndoStateCoalesced(`caption:${Object.keys(updates).sort().join(",")}`);
 			captionStyle = { ...captionStyle, ...updates };
 			isDirty = true;
 		},

@@ -575,12 +575,10 @@ function applyPresetToBoth(preset: Easing) {
           onchange={(v) => updateSelected({ centerY: v })}
         />
 
-        <!-- Preview-only, and it must say so: the Rust compositor has no zoom
-             motion blur (only the cursor trail does), and every region defaults
-             to 0.5, so exports come out sharper than the editor looks. -->
+        <!-- Velocity-driven zoom blur from the shared compositor (streak_length), so it renders in the export too, not just the preview. -->
         <SliderRow
           label="Blur"
-          description="Preview only. Not applied to exported video."
+          description="Applied during zoom ramps, in preview and export."
           value={Math.round(region.motionBlur * 100)}
           min={0}
           max={100}
@@ -589,11 +587,6 @@ function applyPresetToBoth(preset: Easing) {
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ motionBlur: v / 100 })}
         />
-        {#if region.motionBlur > 0.001}
-          <p class="px-0.5 text-[10px] leading-snug text-muted-foreground">
-            Motion blur shows in the preview only. The exported video is not blurred.
-          </p>
-        {/if}
       </PanelSection>
 
       <PanelSection

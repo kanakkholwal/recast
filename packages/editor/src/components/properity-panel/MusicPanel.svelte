@@ -64,7 +64,10 @@ async function addMusic() {
                 aria-label={clip.muted ? "Unmute" : "Mute"}
                 title={clip.muted ? "Unmute" : "Mute"}
                 class="rounded p-1 text-muted-foreground hover:text-foreground"
-                onclick={() => store.updateMusicClip(clip.id, { muted: !clip.muted })}
+                onclick={() => {
+                  store.pushUndoState();
+                  store.updateMusicClip(clip.id, { muted: !clip.muted });
+                }}
               >
                 {#if clip.muted}<VolumeX size={13} />{:else}<Volume2 size={13} />{/if}
               </button>
@@ -119,7 +122,10 @@ async function addMusic() {
                   checked={clip.loop}
                   size="xs"
                   aria-label="Loop to fill the video"
-                  onCheckedChange={(next) => store.updateMusicClip(clip.id, { loop: next })}
+                  onCheckedChange={(next) => {
+                  store.pushUndoState();
+                  store.updateMusicClip(clip.id, { loop: next });
+                }}
                 />
               </div>
             </div>
