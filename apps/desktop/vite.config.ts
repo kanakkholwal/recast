@@ -8,7 +8,8 @@ export default defineConfig({
 	plugins: [
 		tailwindcss(),
 		sveltekit({
-			adapter: adapter(),
+			// A Tauri SPA: `+layout.ts` turns prerender off, so every route is dynamic and the fallback is what serves them.
+			adapter: adapter({ fallback: "index.html" }),
 			alias: {
 				$components: "src/components",
 				$utils: "src/utils",
