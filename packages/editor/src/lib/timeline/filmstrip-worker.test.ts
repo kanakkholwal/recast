@@ -30,6 +30,20 @@ vi.mock("@recast/media/mediabunny", () => ({
 				canvas: { width: 160, height: 90, convertToBlob: async () => new Blob() },
 			};
 		}
+		async *canvasesAtTimestamps(timestamps: number[]) {
+			// One decoder streams the whole batch; live tracks that single pass so peak stays 1.
+			state.calls++;
+			state.live++;
+			state.peak = Math.max(state.peak, state.live);
+			try {
+				for (let i = 0; i < timestamps.length; i++) {
+					await new Promise((resolve) => setTimeout(resolve, 1));
+					yield { canvas: { width: 160, height: 90, convertToBlob: async () => new Blob() } };
+				}
+			} finally {
+				state.live--;
+			}
+		}
 	},
 }));
 

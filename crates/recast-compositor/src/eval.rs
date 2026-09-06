@@ -1873,7 +1873,7 @@ mod cursor_tests {
         scene.cursor_track = Some(CursorTrack::new(vec![hidden, hidden_end], Vec::new()));
         let placed = placement(&scene, 0.5);
         assert!(
-            placed.map_or(true, |p| p.alpha == 0.0),
+            placed.is_none_or(|p| p.alpha == 0.0),
             "an invisible sample must not draw"
         );
     }
