@@ -29,8 +29,8 @@ export const FILL_SWATCHES = [
  * via @fontsource-variable/* in app.css, plus generic system fallbacks.
  */
 export const FONT_FAMILIES = [
-	{ value: "'Geist Variable', system-ui, sans-serif", label: "Geist" },
-	{ value: "'Geist Mono Variable', ui-monospace, monospace", label: "Geist Mono" },
+	{ value: "'Inter Variable', system-ui, sans-serif", label: "Inter" },
+	{ value: "'JetBrains Mono Variable', ui-monospace, monospace", label: "JetBrains Mono" },
 	{ value: "'Google Sans Variable', system-ui, sans-serif", label: "Google Sans" },
 	{ value: "system-ui, sans-serif", label: "System" },
 	{ value: "ui-serif, Georgia, serif", label: "Serif" },

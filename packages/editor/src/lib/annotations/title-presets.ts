@@ -20,7 +20,7 @@ export interface TitlePreset {
 	glow: AnnotationGlow;
 }
 
-const FONT = "'Geist Variable', system-ui, sans-serif";
+const FONT = "'Inter Variable', system-ui, sans-serif";
 // Soft dark halo (~7px at 1080p) so white text reads over any background.
 const LEGIBILITY_GLOW: AnnotationGlow = { color: "#000000", blur: 0.014, opacity: 0.7 };
 

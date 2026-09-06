@@ -53,8 +53,9 @@ export default defineConfig({
 		noExternal: ["@takumi-rs/wasm"],
 	},
 	build: {
-		// Inline the takumi wasm: Vercel's function can't read the static assets dir, and 5 MB is too large for an Edge function.
-		assetsInlineLimit: (filePath) => (filePath.includes("takumi_wasm_bg") ? true : undefined),
+		// Inline the takumi wasm and the OG font: Vercel's function can't read the static assets dir, and 5 MB is too large for an Edge function.
+		assetsInlineLimit: (filePath) =>
+			filePath.includes("takumi_wasm_bg") || filePath.includes("Satoshi-") ? true : undefined,
 	},
 	// Surfaced as a global so analytics can tag every event with the running build.
 	define: {

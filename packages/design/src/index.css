@@ -290,9 +290,9 @@
   --color-ring: var(--ring);
 
   /* - Fonts - */
-  --font-sans: 'Geist Variable', sans-serif;
-  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-heading: 'Geist Variable', sans-serif;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-heading: 'Satoshi', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
 
   /* Framer's --space-* and --tracking-* live in :root, not @theme: named keys there collapse widths and break tooltips. */
 

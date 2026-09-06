@@ -3,8 +3,11 @@ import ImageResponse from "takumi-js/response";
 import OgImage from "$lib/components/OgImage.svelte";
 import type { RequestHandler } from "./$types";
 
-const GEIST_CDN =
-	"https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5.2.8/files/geist-latin-wght-normal.woff2";
+// Satoshi has no Fontsource package, so the vendored woff2 is inlined at build time rather than read off disk.
+import satoshiUrl from "$lib/../../static/fonts/Satoshi-500.woff2?url";
+
+const INTER_CDN =
+	"https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.3.0/files/inter-latin-wght-normal.woff2";
 
 // Prod forces takumi's wasm renderer with base64-inlined bytes: the native addon fails to trace into a Vercel function, takumi's vite loader reads a client assets dir that isn't there, and 5 MB is over the Edge limit. Dev keeps the native path.
 let wasmModule: Promise<Uint8Array> | undefined;
@@ -17,15 +20,23 @@ const resolveTakumiModule = () => {
 	return wasmModule;
 };
 
-let cachedFont: Promise<ArrayBuffer> | null = null;
-const loadGeist = () => {
-	if (!cachedFont) {
-		cachedFont = fetch(GEIST_CDN).then((res) => {
-			if (!res.ok) throw new Error(`Geist font fetch failed: ${res.status}`);
-			return res.arrayBuffer();
-		});
-	}
-	return cachedFont;
+let cachedSatoshi: Promise<ArrayBuffer> | null = null;
+const loadSatoshi = () => {
+	// A data: URI after inlining, a real URL in dev; fetch reads both.
+	cachedSatoshi ??= fetch(satoshiUrl).then((res) => {
+		if (!res.ok) throw new Error(`Satoshi font load failed: ${res.status}`);
+		return res.arrayBuffer();
+	});
+	return cachedSatoshi;
+};
+
+let cachedInter: Promise<ArrayBuffer> | null = null;
+const loadInter = () => {
+	cachedInter ??= fetch(INTER_CDN).then((res) => {
+		if (!res.ok) throw new Error(`Inter font fetch failed: ${res.status}`);
+		return res.arrayBuffer();
+	});
+	return cachedInter;
 };
 
 const clip = (value: string | null, max: number, fallback = "") => {
@@ -56,10 +67,8 @@ export const GET: RequestHandler = ({ url }) => {
 		height: 630,
 		...(takumiModule ? { module: takumiModule } : {}),
 		fonts: [
-			{
-				name: "Geist",
-				data: loadGeist,
-			},
+			{ name: "Satoshi", data: loadSatoshi },
+			{ name: "Inter", data: loadInter },
 		],
 		headers: {
 			"Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800",

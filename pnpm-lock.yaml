@@ -33,13 +33,13 @@ importers:
       '@choochmeque/tauri-plugin-sharekit-api':
         specifier: ^0.3.1
         version: 0.3.1
-      '@fontsource-variable/geist-mono':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@fontsource-variable/google-sans':
         specifier: ^5.3.1
         version: 5.3.1
       '@fontsource-variable/inter':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource-variable/jetbrains-mono':
         specifier: ^5.3.0
         version: 5.3.0
       '@phosphor-icons/core':
@@ -97,9 +97,6 @@ importers:
         specifier: ^1.2.1
         version: 1.2.1(svelte@5.57.0)
     devDependencies:
-      '@fontsource-variable/geist':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@internationalized/date':
         specifier: ^3.12.3
         version: 3.12.3
@@ -199,6 +196,9 @@ importers:
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
+      '@fontsource-variable/jetbrains-mono':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@phosphor-icons/core':
         specifier: 2.1.1
         version: 2.1.1
@@ -284,12 +284,6 @@ importers:
       '@docvia/renderer-svelte':
         specifier: ^0.2.4
         version: 0.2.4
-      '@fontsource-variable/geist':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource-variable/geist-mono':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@recast/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics
@@ -1730,17 +1724,14 @@ packages:
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
 
-  '@fontsource-variable/geist-mono@5.3.0':
-    resolution: {integrity: sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw==}
-
-  '@fontsource-variable/geist@5.3.0':
-    resolution: {integrity: sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA==}
-
   '@fontsource-variable/google-sans@5.3.1':
     resolution: {integrity: sha512-FLB6ZktdAtYWj49W6TtmqThHb33XL5g8l6T+oKNcvmNUXou4PPdIkstt1Z/UyD6K+g/CYjiHF+j+eRMNZxYKZg==}
 
   '@fontsource-variable/inter@5.3.0':
     resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
+
+  '@fontsource-variable/jetbrains-mono@5.3.0':
+    resolution: {integrity: sha512-F32xpS2NsGYoQi2ADSkKTgpJj7ozajsGgDJ8woTnqjmIB+dxDIqImjl4pXZVEExu8UFZ2ndhmX18EBS/hdz3Lw==}
 
   '@hono/node-server@2.1.1':
     resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
@@ -7013,13 +7004,11 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
-  '@fontsource-variable/geist-mono@5.3.0': {}
-
-  '@fontsource-variable/geist@5.3.0': {}
-
   '@fontsource-variable/google-sans@5.3.1': {}
 
   '@fontsource-variable/inter@5.3.0': {}
+
+  '@fontsource-variable/jetbrains-mono@5.3.0': {}
 
   '@hono/node-server@2.1.1(hono@4.13.4)':
     dependencies:

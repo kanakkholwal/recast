@@ -549,8 +549,11 @@ function draw() {
 			let floorSec = 0;
 			for (const c of activeCuts) if (c.end <= playbackTime && c.end > floorSec) floorSec = c.end;
 			mbSource.advanceTo(Math.max(0, playbackTime));
+			// Half a frame ahead: pick_slot floors (newest ts<=target), which shows the picture up to a frame behind the audio clock; this binds the nearest decoded frame instead.
+			const fps = mbSource.fps > 0 ? mbSource.fps : (store.metadata?.fps ?? 60);
+			const halfFrameUs = Math.round(5e5 / fps);
 			bound = engineDriver.bindScreenFrame(
-				Math.max(0, Math.round(playbackTime * 1e6)),
+				Math.max(0, Math.round(playbackTime * 1e6) + halfFrameUs),
 				Math.max(0, Math.round(floorSec * 1e6)),
 			);
 		} else if (frameEl && frameEl.readyState >= 2 && frameEl.videoWidth > 0) {

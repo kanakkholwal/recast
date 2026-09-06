@@ -3,7 +3,7 @@
 @import "tailwindcss";
 
 @import "@fontsource-variable/inter";
-@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/jetbrains-mono";
 
 @source "../node_modules/@recast/ui/src";
 @source "../node_modules/@recast/player/src";
@@ -40,7 +40,7 @@
 	--font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
 		"Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 	--font-display: "Satoshi", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-	--font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
 	--sidebar: oklch(93.403% 0.00011 271.152);
 	--sidebar-foreground: oklch(0.145 0 0);
@@ -96,8 +96,8 @@
 @theme {
 	--font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
 	--font-display: "Satoshi", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-	--font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-	/* @recast/design points font-heading at Geist, which the web app never loads, so shared titles fell back to plain sans. */
+	--font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	/* @recast/design points font-heading at the sans face; the web app pins it to Satoshi so shared titles match the display type. */
 	--font-heading: var(--font-display);
 
 	/* The hairline IS the structure: the old border-low/30..70 dilutions measured 1.03:1 and drew nothing. */

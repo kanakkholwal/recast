@@ -39,7 +39,7 @@ export function fontLabel(value: string): string {
 }
 
 /** Fetch + register the font if it's a Google font. No-op for system stacks and
- *  fontsource-bundled fonts (Geist, etc.) — those are already in the document. */
+ *  fontsource-bundled fonts (Inter, etc.) — those are already in the document. */
 export function ensureFontLoaded(value: string, weight = 400): void {
 	if (isSystem(value)) return;
 	const family = googleFamilyFromStack(value);

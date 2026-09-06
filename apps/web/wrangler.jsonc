@@ -19,19 +19,11 @@
 		"enabled": true
 	},
 
-	// Non-secret, per-environment. Secrets go through `wrangler secret put`, never this file.
+	// Postgres is reached directly on Neon's POOLED endpoint, which is why the client sets `prepare: false` (see lib/db).
+	// Non-secret, per-environment. Secrets, `DATABASE_URL` included, go through `wrangler secret put`, never this file.
 	"vars": {
 		"PUBLIC_APP_URL": "https://preview.recast.li"
 	},
-
-	// Hyperdrive pools Postgres connections globally so a Worker isolate does not open its own.
-	// Point it at Neon's DIRECT string, not the pooled one: Hyperdrive is the pool.
-	"hyperdrive": [
-		{
-			"binding": "HYPERDRIVE",
-			"id": "<preview-hyperdrive-id>"
-		}
-	],
 
 	"env": {
 		"production": {
@@ -44,12 +36,6 @@
 				{
 					"pattern": "recast.li",
 					"custom_domain": true
-				}
-			],
-			"hyperdrive": [
-				{
-					"binding": "HYPERDRIVE",
-					"id": "<production-hyperdrive-id>"
 				}
 			],
 			"observability": {

@@ -35,11 +35,11 @@ export const EMAIL_COLORS = {
 export const EMAIL_LOGO_URL = "https://recast.li/email/logo.png";
 
 /**
- * Geist is the product typeface but no mail client will have it, so the stack
+ * Inter is the product text face but no mail client will have it, so the stack
  * degrades to the platform UI font rather than a generic serif.
  */
 const FONT_STACK =
-	"Geist, 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
+	"Inter, 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
 
 export type LayoutOptions = {
 	subject: string;

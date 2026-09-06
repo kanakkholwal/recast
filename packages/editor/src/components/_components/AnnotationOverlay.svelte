@@ -536,7 +536,7 @@ function handlePointerDown(e: PointerEvent) {
 					w: 0,
 					h: 0,
 					content: "Type here",
-					fontFamily: "'Geist Variable', system-ui, sans-serif",
+					fontFamily: "'Inter Variable', system-ui, sans-serif",
 					fontSize: 0.06,
 					fontWeight: 600,
 					color: "#ffffff",
