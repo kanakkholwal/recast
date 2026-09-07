@@ -103,7 +103,7 @@ function formatDate(iso: string | null) {
 			{:else}
 				<div class="grid gap-px border-y border-border-low bg-border-low md:grid-cols-12">
 					<!-- Rail -->
-					<div class="bg-background md:col-span-4">
+					<div class="min-w-0 bg-background md:col-span-4">
 						<ul class="flex flex-col divide-y divide-border-low">
 							{#each releases as release, i (release.tag)}
 								{@const active = i === selected}
@@ -151,10 +151,10 @@ function formatDate(iso: string | null) {
 					</div>
 
 					<!-- Body -->
-					<div class="bg-background md:col-span-8">
+					<div class="min-w-0 bg-background md:col-span-8">
 						{#key current?.tag}
 							<article
-								class="p-6 sm:p-8"
+								class="min-w-0 p-5 sm:p-8"
 								in:fly={reduced
 									? { duration: 0 }
 									: { y: 10, duration: 320, easing: cubicOut }}
@@ -197,7 +197,7 @@ function formatDate(iso: string | null) {
 								</div>
 
 								{#if current.body}
-									<Markdown source={current.body} class="mt-6 text-body-sm text-foreground" />
+									<Markdown source={current.body} class="prose prose-sm mt-6 max-w-none" />
 								{:else}
 									<p class="mt-6 text-body-sm text-muted-foreground">
 										No release notes provided.

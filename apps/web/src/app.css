@@ -1,6 +1,7 @@
 /* biome-ignore-all lint/complexity/noImportantStyles: the only uses are the reduced-motion overrides, which must win the cascade. */
 @import "@recast/design/index.css";
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/jetbrains-mono";
@@ -11,6 +12,56 @@
 @source "../node_modules/@recast/editor/src";
 
 @variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
+
+/* Drive @tailwindcss/typography off the design tokens so prose flips with the theme; used by docs (docvia) and the changelog's runtime markdown. */
+.prose {
+	--tw-prose-body: var(--foreground);
+	--tw-prose-headings: var(--foreground);
+	--tw-prose-lead: var(--muted-foreground);
+	--tw-prose-links: var(--primary);
+	--tw-prose-bold: var(--foreground);
+	--tw-prose-counters: var(--muted-foreground);
+	--tw-prose-bullets: var(--muted-foreground);
+	--tw-prose-hr: var(--border);
+	--tw-prose-quotes: var(--muted-foreground);
+	--tw-prose-quote-borders: var(--border);
+	--tw-prose-captions: var(--muted-foreground);
+	--tw-prose-code: var(--foreground);
+	--tw-prose-pre-code: var(--foreground);
+	--tw-prose-pre-bg: color-mix(in oklab, var(--muted) 60%, transparent);
+	--tw-prose-th-borders: var(--border);
+	--tw-prose-td-borders: var(--border);
+	/* Long tokens (URLs, hashes) in release notes must break instead of overflowing on mobile. */
+	overflow-wrap: break-word;
+}
+/* Design uses a code chip, not the plugin's backtick quotes; a file-reference link keeps neither. */
+.prose :where(code)::before,
+.prose :where(code)::after {
+	content: "";
+}
+.prose :where(code):not(:where(pre code, a code)) {
+	background: color-mix(in oklab, var(--muted) 70%, transparent);
+	padding: 0.15em 0.4em;
+	border-radius: 5px;
+	font-weight: 500;
+}
+/* Shiki bakes its own background in at build time, so only the frame is ours. */
+.prose :where(pre) {
+	border: 1px solid var(--border);
+}
+/* Wide tables scroll rather than pushing the page sideways on mobile. */
+.prose :where(table) {
+	display: block;
+	overflow-x: auto;
+}
+.prose :where(blockquote p):first-of-type::before,
+.prose :where(blockquote p):last-of-type::after {
+	content: none;
+}
+/* A jumped-to heading anchor must clear the fixed navbar. */
+.prose :where(h1, h2, h3, h4) {
+	scroll-margin-top: 6rem;
+}
 
 /* Satoshi has no Fontsource package, so the ITF-Free-Font-License woff2 files are vendored in static/fonts. */
 @font-face {

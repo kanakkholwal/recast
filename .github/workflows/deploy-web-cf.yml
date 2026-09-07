@@ -1,9 +1,20 @@
 name: Deploy Web to Cloudflare Workers
 
-# Not yet wired to push: deploy-web.yml (Vercel) is still the live pipeline, and two
-# pipelines on the same ref would double-deploy. Flip the `push`/`pull_request` triggers
-# on once the preflight below passes and Vercel is retired.
+# A push to main deploys production; every other branch and PR deploys preview. A manual
+# dispatch overrides via its environment input. Vercel (deploy-web.yml) still runs until retired.
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - ".github/workflows/deploy-web-cf.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "packages/**"
+      - ".github/workflows/deploy-web-cf.yml"
   workflow_dispatch:
     inputs:
       environment:
@@ -14,7 +25,7 @@ on:
         options: [preview, production]
 
 concurrency:
-  group: deploy-web-cf-${{ github.event.inputs.environment || 'preview' }}
+  group: deploy-web-cf-${{ github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -35,7 +46,12 @@ jobs:
     name: Preflight
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      target: ${{ steps.target.outputs.value }}
     steps:
+      # main → production; any other branch or PR → preview; a manual dispatch input wins.
+      - id: target
+        run: echo "value=${{ github.event.inputs.environment || (github.ref_name == 'main' && 'production' || 'preview') }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
       - name: Check Cloudflare prerequisites
         run: |
@@ -60,13 +76,13 @@ jobs:
           echo "::notice::Cloudflare prerequisites satisfied."
 
   deploy:
-    name: Deploy (${{ github.event.inputs.environment || 'preview' }})
+    name: Deploy (${{ needs.preflight.outputs.target }})
     needs: [preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
-      name: ${{ github.event.inputs.environment || 'preview' }}
-      url: ${{ github.event.inputs.environment == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
+      name: ${{ needs.preflight.outputs.target }}
+      url: ${{ needs.preflight.outputs.target == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install pnpm
@@ -85,7 +101,7 @@ jobs:
       - name: Build apps/web
         env:
           NODE_ENV: production
-          PUBLIC_APP_URL: ${{ github.event.inputs.environment == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
+          PUBLIC_APP_URL: ${{ needs.preflight.outputs.target == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
         run: pnpm --filter recast-web build
 
       # `--env production` selects the matching block in wrangler.jsonc; preview is the default.
@@ -96,4 +112,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/web
           wranglerVersion: "4"
-          command: deploy ${{ github.event.inputs.environment == 'production' && '--env production' || '' }}
+          command: deploy ${{ needs.preflight.outputs.target == 'production' && '--env production' || '' }}

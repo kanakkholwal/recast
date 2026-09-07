@@ -1,18 +1,18 @@
 name: Deploy to Vercel - Recast Web
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/web/**"
-      - "packages/**"
-      - ".github/workflows/deploy-web.yml"
-  pull_request:
-    paths:
-      - "apps/web/**"
-      - "packages/**"
-      - ".github/workflows/deploy-web.yml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "apps/web/**"
+  #     - "packages/**"
+  #     - ".github/workflows/deploy-web.yml"
+  # pull_request:
+  #   paths:
+  #     - "apps/web/**"
+  #     - "packages/**"
+  #     - ".github/workflows/deploy-web.yml"
   workflow_dispatch:
 
 # Serialised per ref: two pushes to main otherwise race two production deploys AND two
