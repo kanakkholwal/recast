@@ -70,14 +70,12 @@ async function ensureBindgen(pinned) {
 	await mkdir(toolsDir, { recursive: true });
 	const tarball = join(toolsDir, "wasm-bindgen.tar");
 	await pipeline(Readable.fromWeb(response.body), createGunzip(), createWriteStream(tarball));
-	// `tar` is present on all three CI images and on Windows 10+.
+	// Relative paths only: GNU tar (Git-for-Windows) reads an absolute `D:\...` as a remote host and fails. cwd is toolsDir, so the tarball and output land there.
 	run(
 		"tar",
 		[
 			"xf",
-			tarball,
-			"-C",
-			toolsDir,
+			"wasm-bindgen.tar",
 			"--strip-components=1",
 			`wasm-bindgen-${pinned}-${triple}/${process.platform === "win32" ? "wasm-bindgen.exe" : "wasm-bindgen"}`,
 		],
