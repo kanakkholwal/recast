@@ -34,7 +34,7 @@ const PRESETS: { value: ShadowPreset; label: string; shadow: string }[] = [
   let { editor }: ShadowPresetControlProps = $props();
 </script>
 
-<PanelSection title="Shadow" collapsible defaultOpen>
+<PanelSection variant="panel" title="Shadow" collapsible defaultOpen>
   <div class="grid grid-cols-2 gap-2">
     {#each PRESETS as preset (preset.value)}
       {@const selected = editor.shadowPreset === preset.value}
@@ -45,10 +45,10 @@ const PRESETS: { value: ShadowPreset; label: string; shadow: string }[] = [
       >
         <span
           class={cn(
-            "relative block aspect-square w-full overflow-hidden rounded-lg transition-all",
+            "relative block aspect-square w-full overflow-hidden rounded-lg transition-shadow",
             selected
-              ? "ring-primary ring-offset-card ring-[1.5px] ring-offset-1"
-              : "ring-border/50 ring-1",
+              ? "ring-foreground/60 ring-offset-card ring-2 ring-offset-1"
+              : "ring-border ring-1",
           )}
           style="background:rgb(210,210,214);"
         >

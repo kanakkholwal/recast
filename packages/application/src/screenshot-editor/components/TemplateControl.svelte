@@ -31,13 +31,15 @@ export interface TemplateControlProps {
   }
 </script>
 
-<PanelSection title="Templates">
+<PanelSection variant="panel" title="Templates">
   <div class="grid grid-cols-3 gap-2">
     {#each TEMPLATE_PRESETS as t (t.id)}
       <button
         type="button"
         class="ring-offset-background focus-visible:ring-ring group flex flex-col overflow-hidden rounded-lg border transition focus-visible:ring-2 focus-visible:outline-none"
-        class:border-primary={editor.backgroundId === t.backgroundId}
+        class:border-foreground={editor.backgroundId === t.backgroundId}
+        class:ring-1={editor.backgroundId === t.backgroundId}
+        class:ring-foreground={editor.backgroundId === t.backgroundId}
         class:border-border={editor.backgroundId !== t.backgroundId}
         onclick={() => editor.applyTemplate(t)}
       >
@@ -50,7 +52,7 @@ export interface TemplateControlProps {
   </div>
 </PanelSection>
 
-<PanelSection title="My Presets" collapsible defaultOpen={custom.length > 0}>
+<PanelSection variant="panel" title="My Presets" collapsible defaultOpen={custom.length > 0}>
   <div class="flex gap-1.5">
     <input
       class="border-border bg-card focus-visible:ring-ring h-8 min-w-0 flex-1 rounded-lg border px-2 text-xs focus-visible:ring-2 focus-visible:outline-none"
@@ -69,7 +71,7 @@ export interface TemplateControlProps {
   {:else}
     <ul class="flex flex-col gap-1">
       {#each custom as p (p.id)}
-        <li class="border-border hover:bg-muted/50 flex items-center gap-1.5 rounded-md border px-1.5 py-1">
+        <li class="border-border hover:bg-accent flex items-center gap-1.5 rounded-md border px-1.5 py-1">
           <button
             type="button"
             class="flex min-w-0 flex-1 items-center gap-2 text-left outline-none"

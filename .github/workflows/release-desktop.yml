@@ -74,7 +74,7 @@ jobs:
 
       - name: Create or reuse draft release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -287,7 +287,7 @@ jobs:
           subject-path: release-assets/*
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           draft: true
@@ -353,7 +353,7 @@ jobs:
           cat latest.json
 
       - name: Upload latest.json to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           draft: true
@@ -370,7 +370,7 @@ jobs:
       contents: write
     steps:
       - name: Publish draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           draft: false

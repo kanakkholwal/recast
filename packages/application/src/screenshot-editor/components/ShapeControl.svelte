@@ -8,7 +8,8 @@ export interface ShapeControlProps {
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
+  import { PropRow } from "@recast/ui/prop-row";
+  import { SliderRow } from "@recast/ui/slider-row";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { ColorField } from "@recast/ui/color-field";
   import { Button } from "@recast/ui/button";
@@ -39,30 +40,28 @@ export interface ShapeControlProps {
   }
 </script>
 
-<PanelSection title="Annotate">
+<PanelSection variant="panel" title="Annotate" collapsible defaultOpen>
   <div class="grid grid-cols-5 gap-1.5">
     {#each TOOLS as tool (tool.shape)}
       {@const Icon = tool.icon}
-      <Button variant="outline" size="sm" onclick={() => editor.addShape(tool.shape)}>
+      <Button
+        variant="outline"
+        size="sm"
+        aria-label={`Add ${tool.label.toLowerCase()}`}
+        title={`Add ${tool.label.toLowerCase()}`}
+        onclick={() => editor.addShape(tool.shape)}
+      >
         <Icon />
       </Button>
     {/each}
-    <Button variant="outline" size="sm" aria-label="Blur region" onclick={() => editor.addBlur()}>
+    <Button variant="outline" size="sm" aria-label="Add blur region" title="Add blur region" onclick={() => editor.addBlur()}>
       <Droplets />
     </Button>
   </div>
 
   {#if selBlur}
     {@const b = selBlur}
-    <SliderControl
-      label="Blur amount"
-      value={b.blurAmount}
-      min={2}
-      max={30}
-      step={1}
-      unit="px"
-      onchange={(v) => editor.updateOverlay(b.id, { blurAmount: v })}
-    />
+    <SliderRow label="Blur amount" value={b.blurAmount} min={2} max={30} step={1} unit="px" onchange={(v) => editor.updateOverlay(b.id, { blurAmount: v })} />
     <Button variant="ghost" size="sm" class="w-full" onclick={() => editor.removeOverlay(b.id)}>
       <Trash2 />
       Delete blur
@@ -71,38 +70,25 @@ export interface ShapeControlProps {
 
   {#if selected}
     {@const sel = selected}
-    <ColorField label="Stroke color" value={sel.strokeColor} oncommit={(c) => update({ strokeColor: c })} />
-    <SliderControl
-      label="Stroke"
-      value={sel.strokeWidth}
-      min={1}
-      max={24}
-      step={1}
-      unit="px"
-      onchange={(v) => update({ strokeWidth: v })}
-    />
+    <PropRow label="Stroke color">
+      <ColorField dense hideLabel class="flex-1" label="Stroke color" value={sel.strokeColor} oncommit={(c) => update({ strokeColor: c })} />
+    </PropRow>
+    <SliderRow label="Stroke" value={sel.strokeWidth} min={1} max={24} step={1} unit="px" onchange={(v) => update({ strokeWidth: v })} />
     {#if canFill}
-      <div class="flex items-center justify-between">
-        <span class="text-muted-foreground text-xs">Fill</span>
+      <PropRow label="Fill">
         <SegmentedToggle
           checked={sel.filled}
           onCheckedChange={(v) => update({ filled: v })}
           aria-label="Fill shape"
         />
-      </div>
+      </PropRow>
       {#if sel.filled}
-        <ColorField label="Fill color" value={sel.fillColor} oncommit={(c) => update({ fillColor: c })} />
+        <PropRow label="Fill color">
+          <ColorField dense hideLabel class="flex-1" label="Fill color" value={sel.fillColor} oncommit={(c) => update({ fillColor: c })} />
+        </PropRow>
       {/if}
     {/if}
-    <SliderControl
-      label="Opacity"
-      value={Math.round(sel.opacity * 100)}
-      min={0}
-      max={100}
-      step={1}
-      unit="%"
-      onchange={(v) => update({ opacity: v / 100 })}
-    />
+    <SliderRow label="Opacity" value={Math.round(sel.opacity * 100)} min={0} max={100} step={1} unit="%" onchange={(v) => update({ opacity: v / 100 })} />
     <Button variant="ghost" size="sm" class="w-full" onclick={() => editor.removeOverlay(sel.id)}>
       <Trash2 />
       Delete shape

@@ -8,11 +8,12 @@ export interface OverlayControlProps {
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
+  import { PropRow } from "@recast/ui/prop-row";
+  import { SliderRow } from "@recast/ui/slider-row";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import { FlipHorizontal2, ImagePlus, Trash2 } from "@recast/icons";
+  import { ImagePlus, Trash2 } from "@recast/icons";
   import { imageFromFile } from "../image-input";
   import { OVERLAY_SHADOWS } from "../image-backgrounds";
   import type { ImageOverlay } from "../types";
@@ -40,7 +41,7 @@ export interface OverlayControlProps {
 
 <input bind:this={fileInput} type="file" accept="image/*" class="hidden" onchange={onFile} />
 
-<PanelSection title="Images">
+<PanelSection variant="panel" title="Images" collapsible defaultOpen>
   {#snippet action()}
     <Button variant="ghost" size="xs" onclick={() => fileInput?.click()}>
       <ImagePlus />
@@ -50,7 +51,7 @@ export interface OverlayControlProps {
 
   {#if selected}
     {@const sel = selected}
-    <SliderControl
+    <SliderRow
       label="Size"
       value={sel.size}
       min={5}
@@ -59,7 +60,7 @@ export interface OverlayControlProps {
       unit="%"
       onchange={(v) => update({ size: v })}
     />
-    <SliderControl
+    <SliderRow
       label="Rotation"
       value={sel.rotation}
       min={-180}
@@ -68,7 +69,7 @@ export interface OverlayControlProps {
       unit="°"
       onchange={(v) => update({ rotation: v })}
     />
-    <SliderControl
+    <SliderRow
       label="Opacity"
       value={Math.round(sel.opacity * 100)}
       min={0}
@@ -77,7 +78,7 @@ export interface OverlayControlProps {
       unit="%"
       onchange={(v) => update({ opacity: v / 100 })}
     />
-    <SliderControl
+    <SliderRow
       label="Blur"
       value={sel.blur}
       min={0}
@@ -86,18 +87,12 @@ export interface OverlayControlProps {
       unit="px"
       onchange={(v) => update({ blur: v })}
     />
-    <div class="flex items-center justify-between">
-      <span class="text-muted-foreground flex items-center gap-1.5 text-xs">
-        <FlipHorizontal2 class="size-3.5" /> Flip X
-      </span>
+    <PropRow label="Flip X">
       <SegmentedToggle checked={sel.flipX} onCheckedChange={(v) => update({ flipX: v })} aria-label="Flip horizontal" />
-    </div>
-    <div class="flex items-center justify-between">
-      <span class="text-muted-foreground flex items-center gap-1.5 text-xs">
-        <FlipHorizontal2 class="size-3.5 rotate-90" /> Flip Y
-      </span>
+    </PropRow>
+    <PropRow label="Flip Y">
       <SegmentedToggle checked={sel.flipY} onCheckedChange={(v) => update({ flipY: v })} aria-label="Flip vertical" />
-    </div>
+    </PropRow>
     <Button variant="ghost" size="sm" class="w-full" onclick={() => editor.removeOverlay(sel.id)}>
       <Trash2 />
       Delete image
@@ -105,7 +100,7 @@ export interface OverlayControlProps {
   {:else}
     <button
       type="button"
-      class="border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium transition"
+      class="border-border text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium transition-colors"
       onclick={() => fileInput?.click()}
     >
       <ImagePlus class="size-4" />
@@ -117,13 +112,15 @@ export interface OverlayControlProps {
 <!-- Light & Shadow: a SINGLE soft overlay over the shot. Picking one replaces
      the current (never stacks); "None" clears it. Collapsed so its thumbnails
      only fetch when opened. -->
-<PanelSection title="Light & Shadow" collapsible defaultOpen={false}>
+<PanelSection variant="panel" title="Light & Shadow" collapsible defaultOpen={false}>
   <div class="grid grid-cols-4 gap-2">
     <button
       type="button"
       class={cn(
         "border-border text-muted-foreground flex aspect-square items-center justify-center rounded-lg border text-xs font-medium transition-colors",
-        editor.shadowOverlay ? "hover:bg-muted" : "border-primary bg-primary/10 text-foreground",
+        editor.shadowOverlay
+          ? "hover:bg-accent"
+          : "border-foreground/40 text-foreground ring-1 ring-inset ring-foreground/20",
       )}
       aria-pressed={!editor.shadowOverlay}
       onclick={() => editor.setShadowOverlay(null)}
@@ -135,8 +132,8 @@ export interface OverlayControlProps {
       <button
         type="button"
         class={cn(
-          "border-border bg-muted/40 aspect-square overflow-hidden rounded-lg border transition-transform hover:scale-105",
-          active && "ring-primary ring-2 ring-offset-1",
+          "border-border bg-muted aspect-square overflow-hidden rounded-lg border transition-transform hover:scale-105",
+          active && "ring-foreground/60 ring-2 ring-offset-1",
         )}
         aria-label={shadow.id}
         aria-pressed={active}
@@ -149,7 +146,7 @@ export interface OverlayControlProps {
 
   {#if editor.shadowOverlay}
     {@const s = editor.shadowOverlay}
-    <SliderControl
+    <SliderRow
       label="Shadow opacity"
       value={Math.round(s.opacity * 100)}
       min={0}

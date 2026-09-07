@@ -17,6 +17,8 @@ const KINDS = [
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
+  import { PropRow } from "@recast/ui/prop-row";
+  import { PropSelect } from "@recast/ui/prop-select";
   import { Segmented } from "@recast/ui/segmented";
   import { Input } from "@recast/ui/input";
   import type { MockupKind, MockupTheme } from "../types";
@@ -27,44 +29,41 @@ const KINDS = [
   const showUrl = $derived(editor.mockup.kind === "safari" || editor.mockup.kind === "chrome");
 </script>
 
-<PanelSection title="Mockup">
-  <div class="grid grid-cols-3 gap-1.5">
-    {#each KINDS as k (k.value)}
-      <button
-        type="button"
-        class="rounded-lg border px-2 py-1.5 text-xs font-medium transition"
-        class:bg-primary={editor.mockup.kind === k.value}
-        class:text-primary-foreground={editor.mockup.kind === k.value}
-        class:border-transparent={editor.mockup.kind === k.value}
-        class:bg-card={editor.mockup.kind !== k.value}
-        class:border-border={editor.mockup.kind !== k.value}
-        class:hover:bg-muted={editor.mockup.kind !== k.value}
-        aria-pressed={editor.mockup.kind === k.value}
-        onclick={() => editor.patchMockup({ kind: k.value as MockupKind })}
-      >
-        {k.label}
-      </button>
-    {/each}
-  </div>
+<PanelSection variant="panel" title="Mockup" collapsible defaultOpen>
+  <PropRow label="Kind">
+    <PropSelect
+      class="flex-1"
+      label="Mockup kind"
+      value={editor.mockup.kind}
+      options={KINDS.map((k) => ({ value: k.value, label: k.label }))}
+      onChange={(v) => editor.patchMockup({ kind: v as MockupKind })}
+    />
+  </PropRow>
 
   {#if showTheme}
-    <Segmented
-      options={[
-        { value: "light", label: "Light" },
-        { value: "dark", label: "Dark" },
-      ]}
-      value={editor.mockup.theme}
-      onValueChange={(v) => editor.patchMockup({ theme: v as MockupTheme })}
-      aria-label="Mockup theme"
-    />
+    <PropRow label="Theme">
+      <Segmented
+        class="flex-1"
+        options={[
+          { value: "light", label: "Light" },
+          { value: "dark", label: "Dark" },
+        ]}
+        value={editor.mockup.theme}
+        onValueChange={(v) => editor.patchMockup({ theme: v as MockupTheme })}
+        aria-label="Mockup theme"
+      />
+    </PropRow>
   {/if}
 
   {#if showUrl}
-    <Input
-      value={editor.mockup.url}
-      oninput={(e) => editor.patchMockup({ url: (e.currentTarget as HTMLInputElement).value })}
-      placeholder="example.com"
-      aria-label="Address bar URL"
-    />
+    <PropRow label="URL">
+      <Input
+        class="h-8 flex-1"
+        value={editor.mockup.url}
+        oninput={(e) => editor.patchMockup({ url: (e.currentTarget as HTMLInputElement).value })}
+        placeholder="example.com"
+        aria-label="Address bar URL"
+      />
+    </PropRow>
   {/if}
 </PanelSection>

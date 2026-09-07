@@ -16,7 +16,7 @@ function layerLabel(o: Overlay): string {
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
+  import { SliderRow } from "@recast/ui/slider-row";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import { ArrowDown, ArrowUp, Circle, Copy, Droplets, Eye, EyeOff, Image as ImageIcon, Square, Trash2, Type } from "@recast/icons";
@@ -33,7 +33,7 @@ function layerLabel(o: Overlay): string {
   const selShape = $derived(selected?.type === "shape" ? (selected as ShapeOverlay) : null);
 </script>
 
-<PanelSection title="Layers" flush>
+<PanelSection variant="panel" title="Layers" flush>
   {#if layers.length === 0}
     <p class="text-muted-foreground px-0.5 py-2 text-xs">
       No layers yet. Add text or a shape from the Design tab and it shows up here.
@@ -45,7 +45,9 @@ function layerLabel(o: Overlay): string {
         <li
           class={cn(
             "group/layer flex items-center gap-1.5 rounded-md border px-1.5 py-1 transition-colors",
-            selected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50",
+            selected
+              ? "border-foreground/40 bg-card ring-1 ring-inset ring-foreground/20"
+              : "border-border hover:bg-accent",
           )}
         >
           <button
@@ -132,8 +134,8 @@ function layerLabel(o: Overlay): string {
 
 {#if selected}
   {@const sel = selected}
-  <PanelSection title="Properties">
-    <SliderControl
+  <PanelSection variant="panel" title="Properties">
+    <SliderRow
       label="Rotation"
       value={sel.rotation}
       min={-180}
@@ -142,7 +144,7 @@ function layerLabel(o: Overlay): string {
       unit="°"
       onchange={(v) => editor.updateOverlay(sel.id, { rotation: v })}
     />
-    <SliderControl
+    <SliderRow
       label="Opacity"
       value={Math.round(sel.opacity * 100)}
       min={0}
@@ -153,7 +155,7 @@ function layerLabel(o: Overlay): string {
     />
     {#if selText}
       {@const t = selText}
-      <SliderControl
+      <SliderRow
         label="Font size"
         value={t.fontSize}
         min={8}
@@ -164,7 +166,7 @@ function layerLabel(o: Overlay): string {
       />
     {:else if selShape}
       {@const s = selShape}
-      <SliderControl
+      <SliderRow
         label="Width"
         value={s.w}
         min={5}
@@ -173,7 +175,7 @@ function layerLabel(o: Overlay): string {
         unit="%"
         onchange={(v) => editor.updateOverlay(s.id, { w: v })}
       />
-      <SliderControl
+      <SliderRow
         label="Height"
         value={s.h}
         min={5}

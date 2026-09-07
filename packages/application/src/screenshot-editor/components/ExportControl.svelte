@@ -13,8 +13,10 @@ export interface ExportControlProps {
 <script lang="ts">
   import { tick } from "svelte";
   import { PanelSection } from "@recast/ui/panel-section";
+  import { PropRow } from "@recast/ui/prop-row";
+  import { PropSelect } from "@recast/ui/prop-select";
+  import { SliderRow } from "@recast/ui/slider-row";
   import { Segmented } from "@recast/ui/segmented";
-  import { SliderControl } from "@recast/ui/slider-control";
   import { Button } from "@recast/ui/button";
   import { Copy, Download as DownloadIcon, Film, ImagePlus, Loader2, Package, X } from "@recast/icons";
   import {
@@ -169,31 +171,37 @@ export interface ExportControlProps {
   }
 </script>
 
-<PanelSection title="Export">
+<PanelSection variant="panel" title="Export">
   <div class="flex flex-col gap-2.5">
-    <Segmented
-      options={[
-        { value: "png", label: "PNG" },
-        { value: "jpeg", label: "JPG" },
-        { value: "webp", label: "WebP" },
-      ]}
-      value={editor.exportFormat}
-      onValueChange={(v) => (editor.exportFormat = v as ExportFormat)}
-      aria-label="Export format"
-    />
-    <Segmented
-      options={[
-        { value: "1", label: "1x" },
-        { value: "2", label: "2x" },
-        { value: "3", label: "3x" },
-        { value: "4", label: "4x" },
-      ]}
-      value={String(editor.exportScale)}
-      onValueChange={(v) => (editor.exportScale = Number(v))}
-      aria-label="Export resolution"
-    />
+    <PropRow label="Format">
+      <PropSelect
+        class="flex-1"
+        label="Export format"
+        value={editor.exportFormat}
+        options={[
+          { value: "png", label: "PNG" },
+          { value: "jpeg", label: "JPG" },
+          { value: "webp", label: "WebP" },
+        ]}
+        onChange={(v) => (editor.exportFormat = v as ExportFormat)}
+      />
+    </PropRow>
+    <PropRow label="Resolution">
+      <Segmented
+        class="flex-1"
+        options={[
+          { value: "1", label: "1x" },
+          { value: "2", label: "2x" },
+          { value: "3", label: "3x" },
+          { value: "4", label: "4x" },
+        ]}
+        value={String(editor.exportScale)}
+        onValueChange={(v) => (editor.exportScale = Number(v))}
+        aria-label="Export resolution"
+      />
+    </PropRow>
     {#if editor.exportFormat !== "png"}
-      <SliderControl
+      <SliderRow
         label="Quality"
         value={Math.round(editor.exportQuality * 100)}
         min={10}
@@ -246,7 +254,7 @@ export interface ExportControlProps {
     class="hidden"
     onchange={onAddSlides}
   />
-  <PanelSection title="Slides" collapsible defaultOpen={editor.slides.length > 1}>
+  <PanelSection variant="panel" title="Slides" collapsible defaultOpen={editor.slides.length > 1}>
     {#snippet action()}
       <Button variant="ghost" size="xs" onclick={() => slidesInput?.click()}>
         <ImagePlus />
@@ -258,7 +266,7 @@ export interface ExportControlProps {
         <div class="relative">
           <button
             type="button"
-            class="border-border aspect-video w-full overflow-hidden rounded-md border transition-transform hover:scale-105 {editor.activeSlide === i ? 'ring-primary ring-2 ring-offset-1' : ''}"
+            class="border-border aspect-video w-full overflow-hidden rounded-md border transition-transform hover:scale-105 {editor.activeSlide === i ? 'ring-foreground/60 ring-2 ring-offset-1' : ''}"
             aria-label={`Slide ${i + 1}`}
             aria-pressed={editor.activeSlide === i}
             onclick={() => editor.setActiveSlide(i)}
@@ -282,22 +290,25 @@ export interface ExportControlProps {
 {/if}
 
 {#if videoSupported}
-  <PanelSection title="Video">
+  <PanelSection variant="panel" title="Video">
     {#if editor.activePreset}
       <p class="text-muted-foreground text-xs">
         Motion: <span class="text-foreground font-medium">{editor.activePreset.name}</span>
         · {(editor.activePreset.duration / 1000).toFixed(1)}s
       </p>
       {#if canMp4 && canWebm}
-        <Segmented
-          options={[
-            { value: "mp4", label: "MP4" },
-            { value: "webm", label: "WebM" },
-          ]}
-          value={videoFormat}
-          onValueChange={(v) => (videoFormat = v as "mp4" | "webm")}
-          aria-label="Video format"
-        />
+        <PropRow label="Format">
+          <Segmented
+            class="flex-1"
+            options={[
+              { value: "mp4", label: "MP4" },
+              { value: "webm", label: "WebM" },
+            ]}
+            value={videoFormat}
+            onValueChange={(v) => (videoFormat = v as "mp4" | "webm")}
+            aria-label="Video format"
+          />
+        </PropRow>
       {/if}
       <Button class="w-full" variant="default" size="sm" disabled={videoBusy} onclick={doVideo}>
         {#if videoBusy}

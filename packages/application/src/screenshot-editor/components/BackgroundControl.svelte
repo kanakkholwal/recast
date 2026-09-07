@@ -83,27 +83,27 @@ export interface BackgroundControlProps {
     cn(
       "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors",
       active
-        ? "border-primary bg-primary/5 ring-primary/20 ring-1"
-        : "border-border bg-muted/30 hover:bg-accent hover:border-border",
+        ? "border-foreground/60 ring-1 ring-inset ring-foreground/20"
+        : "border-border hover:bg-accent",
     );
 
   const swatchClass = (active: boolean) =>
     cn(
       "border-border aspect-square border transition-transform hover:scale-105",
-      active ? "ring-primary rounded-full ring-2 ring-offset-1" : "rounded-lg",
+      active ? "ring-foreground/60 rounded-full ring-2 ring-offset-1" : "rounded-lg",
     );
 </script>
 
 <input bind:this={bgFileInput} type="file" accept="image/*" class="hidden" onchange={onBgFile} />
 
 <!-- Custom Background: Image / Color / Transparent (clone's 3-tile grid). -->
-<PanelSection title="Custom Background" collapsible defaultOpen>
+<PanelSection variant="panel" title="Custom Background" collapsible defaultOpen>
   <div class="grid grid-cols-3 gap-2">
     <button type="button" class={tileClass(customType === "image")} onclick={() => bgFileInput?.click()}>
       <span
         class={cn(
           "flex size-7 items-center justify-center rounded-lg",
-          customType === "image" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+          customType === "image" ? "bg-muted text-foreground" : "bg-muted text-muted-foreground",
         )}
       >
         <ImageUp class="size-3.5" />
@@ -142,7 +142,7 @@ export interface BackgroundControlProps {
       <span
         class={cn(
           "flex size-7 items-center justify-center rounded-lg",
-          customType === "transparent" ? "bg-primary/10" : "bg-muted",
+          customType === "transparent" ? "bg-foreground/10" : "bg-muted",
         )}
       >
         <span
@@ -166,7 +166,7 @@ export interface BackgroundControlProps {
   {/if}
 
   {#if isImage}
-    <div class="border-border bg-muted/50 relative aspect-video overflow-hidden rounded-lg">
+    <div class="border-border bg-muted relative aspect-video overflow-hidden rounded-lg border">
       <div class="size-full" style:background={imageCss}></div>
       <button
         type="button"
@@ -181,7 +181,7 @@ export interface BackgroundControlProps {
 </PanelSection>
 
 <!-- Gradients (classic + mesh). -->
-<PanelSection title="Gradients" collapsible defaultOpen>
+<PanelSection variant="panel" title="Gradients" collapsible defaultOpen>
   <div class="grid grid-cols-6 gap-2">
     {#each gradients as preset (preset.id)}
       <button
@@ -199,7 +199,7 @@ export interface BackgroundControlProps {
 
 <!-- Magic gradients (100): dark radial/conic/pattern glows. Collapsed by default
      so the heavy multi-layer swatches don't paint until the section is opened. -->
-<PanelSection title="Magic" collapsible defaultOpen={false}>
+<PanelSection variant="panel" title="Magic" collapsible defaultOpen={false}>
   {#snippet action()}
     <Button variant="ghost" size="xs" onclick={shuffleMagic}>
       <Sparkles class="size-3.5" />
@@ -224,14 +224,14 @@ export interface BackgroundControlProps {
 <!-- Bundled image wallpapers (radiant/mesh/pattern/paper). Each collapsed so its
      thumbnails only fetch when opened; images lazy-load and decode async. -->
 {#each IMAGE_BACKGROUND_CATEGORIES as cat (cat.id)}
-  <PanelSection title={cat.label} collapsible defaultOpen={false}>
+  <PanelSection variant="panel" title={cat.label} collapsible defaultOpen={false}>
     <div class="grid grid-cols-3 gap-2">
       {#each cat.images as img (img.id)}
         <button
           type="button"
           class={cn(
             "border-border aspect-video overflow-hidden border transition-transform hover:scale-105",
-            editor.backgroundId === img.id ? "ring-primary rounded-lg ring-2 ring-offset-1" : "rounded-lg",
+            editor.backgroundId === img.id ? "ring-foreground/60 rounded-lg ring-2 ring-offset-1" : "rounded-lg",
           )}
           aria-label={img.id}
           aria-pressed={editor.backgroundId === img.id}
@@ -251,7 +251,7 @@ export interface BackgroundControlProps {
 {/each}
 
 <!-- Patterns. -->
-<PanelSection title="CSS Patterns" collapsible defaultOpen>
+<PanelSection variant="panel" title="CSS Patterns" collapsible defaultOpen>
   <div class="grid grid-cols-6 gap-2">
     {#each PATTERN_PRESETS as preset (preset.id)}
       <button
@@ -268,7 +268,7 @@ export interface BackgroundControlProps {
 </PanelSection>
 
 <!-- Solid colors. -->
-<PanelSection title="Solid" collapsible defaultOpen>
+<PanelSection variant="panel" title="Solid" collapsible defaultOpen>
   <div class="grid grid-cols-6 gap-2">
     {#each SOLID_PRESETS as preset (preset.id)}
       <button

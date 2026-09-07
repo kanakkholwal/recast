@@ -20,7 +20,10 @@ const SWATCHES = [
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
+  import { PropRow } from "@recast/ui/prop-row";
+  import { PropSelect } from "@recast/ui/prop-select";
+  import { SliderRow } from "@recast/ui/slider-row";
+  import * as Select from "@recast/ui/select";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { ColorField } from "@recast/ui/color-field";
   import { Button } from "@recast/ui/button";
@@ -68,9 +71,24 @@ const SWATCHES = [
     const keep = selected && weights.includes(selected.fontWeight);
     update({ fontFamily: id, fontWeight: keep ? selected.fontWeight : "normal" });
   }
+
+  const selectedFontName = $derived.by(() => {
+    if (!selected) return "";
+    for (const cat of CATEGORY_ORDER) {
+      const f = fontsByCategory(cat).find((x) => x.id === selected.fontFamily);
+      if (f) return f.name;
+    }
+    return selected.fontFamily;
+  });
+  const weightOptions = $derived(
+    selected
+      ? fontWeights(selected.fontFamily).map((w) => ({ value: w, label: weightLabel(w) }))
+      : [],
+  );
 </script>
 
-<PanelSection title="Text">
+
+<PanelSection variant="panel" title="Text" collapsible defaultOpen>
   {#snippet action()}
     <Button variant="ghost" size="xs" onclick={() => editor.addText()}>
       <Plus />
@@ -80,48 +98,40 @@ const SWATCHES = [
 
   {#if selected}
     {@const sel = selected}
-    <label class="flex flex-col gap-1">
-      <span class="text-muted-foreground text-xs font-medium">Font</span>
-      <select
-        class="border-border bg-card focus-visible:ring-ring h-9 rounded-lg border px-2 text-sm focus-visible:ring-2 focus-visible:outline-none"
-        style:font-family={fontCss(sel.fontFamily)}
-        value={sel.fontFamily}
-        onchange={(e) => pickFont(e.currentTarget.value)}
-      >
-        {#each CATEGORY_ORDER as cat (cat)}
-          <optgroup label={FONT_CATEGORY_LABELS[cat]}>
-            {#each fontsByCategory(cat) as f (f.id)}
-              <option value={f.id}>{f.name}</option>
-            {/each}
-          </optgroup>
-        {/each}
-      </select>
-    </label>
-
-    <div class="flex gap-2">
-      <label class="flex flex-1 flex-col gap-1">
-        <span class="text-muted-foreground text-xs font-medium">Weight</span>
-        <select
-          class="border-border bg-card focus-visible:ring-ring h-9 rounded-lg border px-2 text-sm focus-visible:ring-2 focus-visible:outline-none"
-          value={sel.fontWeight}
-          onchange={(e) => update({ fontWeight: e.currentTarget.value })}
+    <PropRow label="Font">
+      <Select.Root type="single" value={sel.fontFamily} onValueChange={(v) => v && pickFont(v)}>
+        <Select.Trigger
+          aria-label="Font"
+          class="bg-muted/60 ring-border/40 text-foreground hover:bg-muted focus-visible:ring-ring/60 h-8 min-h-0 w-full flex-1 border-transparent py-0 pr-2 pl-2.5 text-xs leading-none font-medium ring-1 ring-inset transition-colors"
         >
-          {#each fontWeights(sel.fontFamily) as w (w)}
-            <option value={w}>{weightLabel(w)}</option>
+          <span class="truncate" style:font-family={fontCss(sel.fontFamily)}>{selectedFontName}</span>
+        </Select.Trigger>
+        <Select.Content>
+          {#each CATEGORY_ORDER as cat (cat)}
+            <Select.Group>
+              <Select.GroupHeading>{FONT_CATEGORY_LABELS[cat]}</Select.GroupHeading>
+              {#each fontsByCategory(cat) as f (f.id)}
+                <Select.Item value={f.id} label={f.name}>
+                  <span style:font-family={fontCss(f.id)}>{f.name}</span>
+                </Select.Item>
+              {/each}
+            </Select.Group>
           {/each}
-        </select>
-      </label>
-    </div>
+        </Select.Content>
+      </Select.Root>
+    </PropRow>
 
-    <SliderControl
-      label="Size"
-      value={sel.fontSize}
-      min={8}
-      max={150}
-      step={1}
-      unit="px"
-      onchange={(v) => update({ fontSize: v })}
-    />
+    <PropRow label="Weight">
+      <PropSelect
+        class="flex-1"
+        label="Font weight"
+        value={sel.fontWeight}
+        options={weightOptions}
+        onChange={(w) => update({ fontWeight: w })}
+      />
+    </PropRow>
+
+    <SliderRow label="Size" value={sel.fontSize} min={8} max={150} step={1} unit="px" onchange={(v) => update({ fontSize: v })} />
 
     <div class="flex gap-1.5">
       {#each ALIGNS as a (a.value)}
@@ -129,12 +139,12 @@ const SWATCHES = [
         <button
           type="button"
           class="flex flex-1 items-center justify-center rounded-lg border py-1.5 transition"
-          class:bg-primary={sel.align === a.value}
-          class:text-primary-foreground={sel.align === a.value}
+          class:bg-foreground={sel.align === a.value}
+          class:text-background={sel.align === a.value}
           class:border-transparent={sel.align === a.value}
           class:bg-card={sel.align !== a.value}
           class:border-border={sel.align !== a.value}
-          class:hover:bg-muted={sel.align !== a.value}
+          class:hover:bg-accent={sel.align !== a.value}
           aria-label={`Align ${a.value}`}
           onclick={() => update({ align: a.value })}
         >
@@ -143,23 +153,25 @@ const SWATCHES = [
       {/each}
     </div>
 
-    <div class="flex items-center justify-between">
-      <span class="text-muted-foreground text-xs">Vertical</span>
+    <PropRow label="Vertical">
       <SegmentedToggle
         checked={sel.orientation === "vertical"}
         onCheckedChange={(v) => update({ orientation: v ? "vertical" : "horizontal" })}
         aria-label="Vertical text"
       />
-    </div>
+    </PropRow>
 
-    <ColorField label="Color" value={sel.color} oncommit={(c) => update({ color: c })} />
+    <PropRow label="Color">
+      <ColorField dense hideLabel class="flex-1" label="Text color" value={sel.color} oncommit={(c) => update({ color: c })} />
+    </PropRow>
     <div class="flex flex-wrap gap-1.5">
       {#each SWATCHES as c (c)}
         <button
           type="button"
-          class="size-5 rounded-full border"
+          class="size-6 rounded-full border"
           class:ring-2={sel.color.toLowerCase() === c}
-          class:ring-primary={sel.color.toLowerCase() === c}
+          class:ring-foreground={sel.color.toLowerCase() === c}
+          class:ring-offset-1={sel.color.toLowerCase() === c}
           style:background-color={c}
           aria-label={`Color ${c}`}
           onclick={() => update({ color: c })}
@@ -167,58 +179,30 @@ const SWATCHES = [
       {/each}
     </div>
 
-    <SliderControl
-      label="Opacity"
-      value={Math.round(sel.opacity * 100)}
-      min={0}
-      max={100}
-      step={1}
-      unit="%"
-      onchange={(v) => update({ opacity: v / 100 })}
-    />
+    <SliderRow label="Opacity" value={Math.round(sel.opacity * 100)} min={0} max={100} step={1} unit="%" onchange={(v) => update({ opacity: v / 100 })} />
 
     <div class="border-border flex flex-col gap-2 border-t pt-2">
-      <div class="flex items-center justify-between">
-        <span class="text-muted-foreground text-xs">Text shadow</span>
+      <PropRow label="Text shadow">
         <SegmentedToggle
           checked={sel.shadow.enabled}
           onCheckedChange={(v) => update({ shadow: { ...sel.shadow, enabled: v } })}
           aria-label="Text shadow"
         />
-      </div>
+      </PropRow>
       {#if sel.shadow.enabled}
-        <ColorField
-          label="Shadow color"
-          value={sel.shadow.color}
-          oncommit={(c) => update({ shadow: { ...sel.shadow, color: c } })}
-        />
-        <SliderControl
-          label="Blur"
-          value={sel.shadow.blur}
-          min={0}
-          max={20}
-          step={1}
-          unit="px"
-          onchange={(v) => update({ shadow: { ...sel.shadow, blur: v } })}
-        />
-        <SliderControl
-          label="Offset X"
-          value={sel.shadow.offsetX}
-          min={-20}
-          max={20}
-          step={1}
-          unit="px"
-          onchange={(v) => update({ shadow: { ...sel.shadow, offsetX: v } })}
-        />
-        <SliderControl
-          label="Offset Y"
-          value={sel.shadow.offsetY}
-          min={-20}
-          max={20}
-          step={1}
-          unit="px"
-          onchange={(v) => update({ shadow: { ...sel.shadow, offsetY: v } })}
-        />
+        <PropRow label="Shadow color">
+          <ColorField
+            dense
+            hideLabel
+            class="flex-1"
+            label="Shadow color"
+            value={sel.shadow.color}
+            oncommit={(c) => update({ shadow: { ...sel.shadow, color: c } })}
+          />
+        </PropRow>
+        <SliderRow label="Blur" value={sel.shadow.blur} min={0} max={20} step={1} unit="px" onchange={(v) => update({ shadow: { ...sel.shadow, blur: v } })} />
+        <SliderRow label="Offset X" value={sel.shadow.offsetX} min={-20} max={20} step={1} unit="px" onchange={(v) => update({ shadow: { ...sel.shadow, offsetX: v } })} />
+        <SliderRow label="Offset Y" value={sel.shadow.offsetY} min={-20} max={20} step={1} unit="px" onchange={(v) => update({ shadow: { ...sel.shadow, offsetY: v } })} />
       {/if}
     </div>
 
@@ -229,7 +213,7 @@ const SWATCHES = [
   {:else}
     <button
       type="button"
-      class="border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium transition"
+      class="border-border text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-center gap-2 rounded-lg border border-dashed py-2.5 text-xs font-medium transition-colors"
       onclick={() => editor.addText()}
     >
       <Type class="size-4" />
