@@ -1,6 +1,6 @@
 <script lang="ts" module>
-import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { marked } from "marked";
 
 // GFM is on by default; `breaks: false` keeps GitHub's newline semantics instead of turning every newline into a break.
 marked.setOptions({ gfm: true, breaks: false });

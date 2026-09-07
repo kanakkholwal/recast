@@ -1,10 +1,9 @@
 import { render } from "svelte/server";
 import ImageResponse from "takumi-js/response";
+// `?inline` makes this a data: URI in dev and prod, so no fetch: SSR forbids a relative fetch and workerd's fetch cannot read data: URIs.
+import satoshiUri from "$lib/../../static/fonts/Satoshi-500.woff2?inline";
 import OgImage from "$lib/components/OgImage.svelte";
 import type { RequestHandler } from "./$types";
-
-// Satoshi has no Fontsource package, so the vendored woff2 is inlined at build time rather than read off disk.
-import satoshiUrl from "$lib/../../static/fonts/Satoshi-500.woff2?url";
 
 const INTER_CDN =
 	"https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.3.0/files/inter-latin-wght-normal.woff2";
@@ -20,13 +19,12 @@ const resolveTakumiModule = () => {
 	return wasmModule;
 };
 
-let cachedSatoshi: Promise<ArrayBuffer> | null = null;
+let cachedSatoshi: ArrayBuffer | null = null;
 const loadSatoshi = () => {
-	// A data: URI after inlining, a real URL in dev; fetch reads both.
-	cachedSatoshi ??= fetch(satoshiUrl).then((res) => {
-		if (!res.ok) throw new Error(`Satoshi font load failed: ${res.status}`);
-		return res.arrayBuffer();
-	});
+	if (!cachedSatoshi) {
+		const bytes = Buffer.from(satoshiUri.slice(satoshiUri.indexOf(",") + 1), "base64");
+		cachedSatoshi = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+	}
 	return cachedSatoshi;
 };
 

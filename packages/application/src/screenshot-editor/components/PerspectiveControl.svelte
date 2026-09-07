@@ -8,8 +8,9 @@ export interface PerspectiveControlProps {
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
+  import { SliderRow } from "@recast/ui/slider-row";
   import { Button } from "@recast/ui/button";
+  import { cn } from "@recast/ui/utils";
   import { RotateCcw } from "@recast/icons";
   import { DEFAULT_TRANSFORM, PERSPECTIVE_PRESETS } from "../presets";
 
@@ -32,20 +33,19 @@ export interface PerspectiveControlProps {
   }
 </script>
 
-<PanelSection title="3D perspective">
-  <div class="grid grid-cols-3 gap-1.5">
+<PanelSection variant="panel" title="3D perspective" collapsible defaultOpen>
+  <div class="flex flex-wrap gap-1">
     {#each PERSPECTIVE_PRESETS as preset (preset.id)}
+      {@const active = isActive(preset.id)}
       <button
         type="button"
-        class="ring-offset-background focus-visible:ring-ring rounded-lg border px-2 py-1.5 text-xs font-medium transition focus-visible:ring-2 focus-visible:outline-none"
-        class:bg-primary={isActive(preset.id)}
-        class:text-primary-foreground={isActive(preset.id)}
-        class:border-transparent={isActive(preset.id)}
-        class:bg-card={!isActive(preset.id)}
-        class:text-foreground={!isActive(preset.id)}
-        class:border-border={!isActive(preset.id)}
-        class:hover:bg-muted={!isActive(preset.id)}
-        aria-pressed={isActive(preset.id)}
+        class={cn(
+          "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+          active
+            ? "border-transparent bg-foreground text-background"
+            : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
+        aria-pressed={active}
         onclick={() => editor.setTransform(preset.transform)}
       >
         {preset.label}
@@ -53,68 +53,13 @@ export interface PerspectiveControlProps {
     {/each}
   </div>
 
-  <SliderControl
-    label="Tilt X"
-    value={editor.transform.rotateX}
-    min={-45}
-    max={45}
-    step={1}
-    unit="°"
-    onchange={(v) => editor.patchTransform({ rotateX: v })}
-  />
-  <SliderControl
-    label="Tilt Y"
-    value={editor.transform.rotateY}
-    min={-45}
-    max={45}
-    step={1}
-    unit="°"
-    onchange={(v) => editor.patchTransform({ rotateY: v })}
-  />
-  <SliderControl
-    label="Rotate"
-    value={editor.transform.rotateZ}
-    min={-45}
-    max={45}
-    step={1}
-    unit="°"
-    onchange={(v) => editor.patchTransform({ rotateZ: v })}
-  />
-  <SliderControl
-    label="Depth"
-    value={editor.transform.perspective}
-    min={50}
-    max={1000}
-    step={10}
-    unit="px"
-    onchange={(v) => editor.patchTransform({ perspective: v })}
-  />
-  <SliderControl
-    label="Scale"
-    value={editor.transform.scale}
-    min={0.5}
-    max={1.5}
-    step={0.01}
-    onchange={(v) => editor.patchTransform({ scale: v })}
-  />
-  <SliderControl
-    label="Translate X"
-    value={editor.transform.translateX}
-    min={-10}
-    max={10}
-    step={0.5}
-    unit="%"
-    onchange={(v) => editor.patchTransform({ translateX: v })}
-  />
-  <SliderControl
-    label="Translate Y"
-    value={editor.transform.translateY}
-    min={-10}
-    max={10}
-    step={0.5}
-    unit="%"
-    onchange={(v) => editor.patchTransform({ translateY: v })}
-  />
+  <SliderRow label="Tilt X" value={editor.transform.rotateX} min={-45} max={45} step={1} unit="°" onchange={(v) => editor.patchTransform({ rotateX: v })} />
+  <SliderRow label="Tilt Y" value={editor.transform.rotateY} min={-45} max={45} step={1} unit="°" onchange={(v) => editor.patchTransform({ rotateY: v })} />
+  <SliderRow label="Rotate" value={editor.transform.rotateZ} min={-45} max={45} step={1} unit="°" onchange={(v) => editor.patchTransform({ rotateZ: v })} />
+  <SliderRow label="Depth" value={editor.transform.perspective} min={50} max={1000} step={10} unit="px" onchange={(v) => editor.patchTransform({ perspective: v })} />
+  <SliderRow label="Scale" value={editor.transform.scale} min={0.5} max={1.5} step={0.01} onchange={(v) => editor.patchTransform({ scale: v })} />
+  <SliderRow label="Translate X" value={editor.transform.translateX} min={-10} max={10} step={0.5} unit="%" onchange={(v) => editor.patchTransform({ translateX: v })} />
+  <SliderRow label="Translate Y" value={editor.transform.translateY} min={-10} max={10} step={0.5} unit="%" onchange={(v) => editor.patchTransform({ translateY: v })} />
   <Button
     variant="ghost"
     size="sm"

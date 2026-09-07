@@ -15,6 +15,7 @@ export interface DropZoneProps {
 <script lang="ts">
   import { Button } from "@recast/ui/button";
   import { Input } from "@recast/ui/input";
+  import { cn } from "@recast/ui/utils";
   import { Camera, Globe, ImageUp, Clipboard, Loader2 } from "@recast/icons";
 
   let { hasCapture, dragging, urlBusy, onupload, oncapture, onwebsite }: DropZoneProps = $props();
@@ -23,14 +24,12 @@ export interface DropZoneProps {
 </script>
 
 <div
-  class="flex h-full w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 text-center transition-colors"
-  class:border-primary={dragging}
-  class:bg-primary={dragging}
-  class:border-border={!dragging}
+  class={cn(
+    "flex h-full w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed p-10 text-center transition-colors",
+    dragging ? "border-primary bg-primary/5" : "border-border",
+  )}
 >
-  <div class="bg-muted text-muted-foreground mb-5 flex size-14 items-center justify-center rounded-2xl">
-    <ImageUp class="size-6" />
-  </div>
+  <ImageUp class="text-muted-foreground mb-4 size-8" />
   <h2 class="text-foreground text-lg font-semibold">Drop a screenshot to beautify it</h2>
   <p class="text-muted-foreground mt-1.5 max-w-sm text-sm">
     Drag an image here, paste from your clipboard, or pick a file. Everything stays on your

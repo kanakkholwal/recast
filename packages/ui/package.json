@@ -180,6 +180,26 @@
 			"svelte": "./src/components/ui/slider-control/index.ts",
 			"default": "./src/components/ui/slider-control/index.ts"
 		},
+		"./prop-row": {
+			"svelte": "./src/components/ui/prop-row/index.ts",
+			"default": "./src/components/ui/prop-row/index.ts"
+		},
+		"./slider-row": {
+			"svelte": "./src/components/ui/slider-row/index.ts",
+			"default": "./src/components/ui/slider-row/index.ts"
+		},
+		"./number-field": {
+			"svelte": "./src/components/ui/number-field/index.ts",
+			"default": "./src/components/ui/number-field/index.ts"
+		},
+		"./number-field-logic": {
+			"svelte": "./src/components/ui/number-field/draggable-value.logic.ts",
+			"default": "./src/components/ui/number-field/draggable-value.logic.ts"
+		},
+		"./prop-select": {
+			"svelte": "./src/components/ui/prop-select/index.ts",
+			"default": "./src/components/ui/prop-select/index.ts"
+		},
 		"./segmented": {
 			"svelte": "./src/components/ui/segmented/index.ts",
 			"default": "./src/components/ui/segmented/index.ts"

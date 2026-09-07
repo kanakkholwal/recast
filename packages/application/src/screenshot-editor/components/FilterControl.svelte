@@ -8,7 +8,7 @@ export interface FilterControlProps {
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
+  import { SliderRow } from "@recast/ui/slider-row";
   import { Button } from "@recast/ui/button";
   import { RotateCcw } from "@recast/icons";
 
@@ -27,7 +27,7 @@ export interface FilterControlProps {
   );
 </script>
 
-<PanelSection title="Color Filters" collapsible defaultOpen={false}>
+<PanelSection variant="panel" title="Color Filters" collapsible defaultOpen={false}>
   {#snippet action()}
     {#if dirty}
       <Button
@@ -42,76 +42,12 @@ export interface FilterControlProps {
       </Button>
     {/if}
   {/snippet}
-  <SliderControl
-    label="Brightness"
-    value={editor.filters.brightness}
-    min={0}
-    max={200}
-    step={1}
-    unit="%"
-    onchange={(v) => editor.patchFilters({ brightness: v })}
-  />
-  <SliderControl
-    label="Contrast"
-    value={editor.filters.contrast}
-    min={0}
-    max={200}
-    step={1}
-    unit="%"
-    onchange={(v) => editor.patchFilters({ contrast: v })}
-  />
-  <SliderControl
-    label="Saturation"
-    value={editor.filters.saturate}
-    min={0}
-    max={200}
-    step={1}
-    unit="%"
-    onchange={(v) => editor.patchFilters({ saturate: v })}
-  />
-  <SliderControl
-    label="Grayscale"
-    value={editor.filters.grayscale}
-    min={0}
-    max={100}
-    step={1}
-    unit="%"
-    onchange={(v) => editor.patchFilters({ grayscale: v })}
-  />
-  <SliderControl
-    label="Sepia"
-    value={editor.filters.sepia}
-    min={0}
-    max={100}
-    step={1}
-    unit="%"
-    onchange={(v) => editor.patchFilters({ sepia: v })}
-  />
-  <SliderControl
-    label="Hue"
-    value={editor.filters.hueRotate}
-    min={0}
-    max={360}
-    step={1}
-    unit="°"
-    onchange={(v) => editor.patchFilters({ hueRotate: v })}
-  />
-  <SliderControl
-    label="Invert"
-    value={editor.filters.invert}
-    min={0}
-    max={100}
-    step={1}
-    unit="%"
-    onchange={(v) => editor.patchFilters({ invert: v })}
-  />
-  <SliderControl
-    label="Blur"
-    value={editor.filters.blur}
-    min={0}
-    max={20}
-    step={0.5}
-    unit="px"
-    onchange={(v) => editor.patchFilters({ blur: v })}
-  />
+  <SliderRow label="Brightness" value={editor.filters.brightness} min={0} max={200} step={1} unit="%" onchange={(v) => editor.patchFilters({ brightness: v })} />
+  <SliderRow label="Contrast" value={editor.filters.contrast} min={0} max={200} step={1} unit="%" onchange={(v) => editor.patchFilters({ contrast: v })} />
+  <SliderRow label="Saturation" value={editor.filters.saturate} min={0} max={200} step={1} unit="%" onchange={(v) => editor.patchFilters({ saturate: v })} />
+  <SliderRow label="Grayscale" value={editor.filters.grayscale} min={0} max={100} step={1} unit="%" onchange={(v) => editor.patchFilters({ grayscale: v })} />
+  <SliderRow label="Sepia" value={editor.filters.sepia} min={0} max={100} step={1} unit="%" onchange={(v) => editor.patchFilters({ sepia: v })} />
+  <SliderRow label="Hue" value={editor.filters.hueRotate} min={0} max={360} step={1} unit="°" onchange={(v) => editor.patchFilters({ hueRotate: v })} />
+  <SliderRow label="Invert" value={editor.filters.invert} min={0} max={100} step={1} unit="%" onchange={(v) => editor.patchFilters({ invert: v })} />
+  <SliderRow label="Blur" value={editor.filters.blur} min={0} max={20} step={0.5} unit="px" onchange={(v) => editor.patchFilters({ blur: v })} />
 </PanelSection>

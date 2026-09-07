@@ -36,7 +36,7 @@ function wrapperStyle(preset: ImageStylePreset): string {
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
+  import { SliderRow } from "@recast/ui/slider-row";
   import { cn } from "@recast/ui/utils";
 
   let { editor }: StyleControlProps = $props();
@@ -44,7 +44,7 @@ function wrapperStyle(preset: ImageStylePreset): string {
   const nonDefault = $derived(editor.imageStyle.preset !== "default");
 </script>
 
-<PanelSection title="Style" collapsible defaultOpen>
+<PanelSection variant="panel" title="Style" collapsible defaultOpen>
   <div class="grid grid-cols-3 gap-2">
     {#each PRESETS as preset (preset.value)}
       {@const selected = editor.imageStyle.preset === preset.value}
@@ -55,10 +55,10 @@ function wrapperStyle(preset: ImageStylePreset): string {
       >
         <span
           class={cn(
-            "relative block aspect-square w-full overflow-hidden rounded-lg transition-all",
+            "relative block aspect-square w-full overflow-hidden rounded-lg transition-shadow",
             selected
-              ? "ring-primary ring-offset-card ring-[1.5px] ring-offset-1"
-              : "ring-border/50 ring-1",
+              ? "ring-foreground/60 ring-offset-card ring-2 ring-offset-1"
+              : "ring-border ring-1",
           )}
           style={`background:${preset.value === "glass-dark" || preset.value === "border-dark" ? "rgb(160,160,165)" : "rgb(210,210,214)"};`}
         >
@@ -87,22 +87,7 @@ function wrapperStyle(preset: ImageStylePreset): string {
   </div>
 
   {#if nonDefault}
-    <SliderControl
-      label="Padding"
-      value={editor.imageStyle.padding}
-      min={0}
-      max={8}
-      step={0.5}
-      onchange={(v) => editor.patchImageStyle({ padding: v })}
-    />
-    <SliderControl
-      label="Opacity"
-      value={Math.round(editor.imageStyle.opacity * 100)}
-      min={5}
-      max={100}
-      step={1}
-      unit="%"
-      onchange={(v) => editor.patchImageStyle({ opacity: v / 100 })}
-    />
+    <SliderRow label="Padding" value={editor.imageStyle.padding} min={0} max={8} step={0.5} onchange={(v) => editor.patchImageStyle({ padding: v })} />
+    <SliderRow label="Opacity" value={Math.round(editor.imageStyle.opacity * 100)} min={5} max={100} step={1} unit="%" onchange={(v) => editor.patchImageStyle({ opacity: v / 100 })} />
   {/if}
 </PanelSection>

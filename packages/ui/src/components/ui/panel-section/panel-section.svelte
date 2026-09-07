@@ -16,6 +16,9 @@ export interface PanelSectionProps {
 	/** When true, child layout sets its own spacing. Default wraps body in
 	 * a `space-y-2.5` group. */
 	flush?: boolean;
+	/** Title register. "label" = uppercase micro-eyebrow (default); "panel" =
+	 * normal-case 13px semibold, matching the editor inspector panels. */
+	variant?: "label" | "panel";
 	/** Make the section header click-to-toggle. Adds a chevron. */
 	collapsible?: boolean;
 	/** Initial open state when `collapsible`. Default true. */
@@ -42,6 +45,7 @@ export interface PanelSectionProps {
 		action,
 		children,
 		flush = false,
+		variant = "label",
 		collapsible = false,
 		defaultOpen = true,
 		open = $bindable<boolean | undefined>(undefined),
@@ -77,6 +81,12 @@ export interface PanelSectionProps {
 	}
 
 	const hasHeader = $derived(!!title || !!action || collapsible);
+
+	const titleClass = $derived(
+		variant === "panel"
+			? "text-foreground text-[13px] font-semibold tracking-tight"
+			: "text-muted-foreground/70 group-hover/section:text-muted-foreground text-[10px] font-bold uppercase tracking-[0.15em]",
+	);
 </script>
 
 <section class={cn("flex flex-col gap-2", className)}>
@@ -100,10 +110,7 @@ export interface PanelSectionProps {
 						<ChevronDown class="size-3" />
 					</span>
 					{#if title}
-						<span
-							class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70 group-hover/section:text-muted-foreground"
-							title={hint}
-						>
+						<span class={titleClass} title={hint}>
 							{title}
 						</span>
 					{/if}
@@ -123,10 +130,7 @@ export interface PanelSectionProps {
 			<header class="flex min-h-5 items-center justify-between gap-2">
 				<div class="flex min-w-0 items-center gap-1.5">
 					{#if title}
-						<h3
-							class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-							title={hint}
-						>
+						<h3 class={titleClass} title={hint}>
 							{title}
 						</h3>
 					{/if}

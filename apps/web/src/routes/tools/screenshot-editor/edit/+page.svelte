@@ -32,7 +32,7 @@ function notify(message: string, kind: "success" | "error") {
        even as the side clusters change width (a Back label appearing, a longer
        CTA on wider screens), so nothing shifts under the pointer. -->
   <header
-    class="border-border/60 bg-card grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b px-3"
+    class="border-border bg-card grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b px-3"
   >
     <div class="flex min-w-0 items-center gap-1">
       <Button

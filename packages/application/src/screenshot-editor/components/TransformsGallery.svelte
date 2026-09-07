@@ -36,7 +36,7 @@ export interface TransformsGalleryProps {
 </script>
 
 {#each TRANSFORM_PRESET_CATEGORIES as cat (cat.name)}
-  <PanelSection title={cat.name} collapsible defaultOpen={cat.name === "Popular"}>
+  <PanelSection variant="panel" title={cat.name} collapsible defaultOpen={cat.name === "Popular"}>
     <div class="grid grid-cols-3 gap-2">
       {#each cat.presets as preset (preset.id)}
         <button
@@ -44,8 +44,8 @@ export interface TransformsGalleryProps {
           class={cn(
             "group/tile relative aspect-[4/3] overflow-hidden rounded-md border transition",
             isActive(preset.transform)
-              ? "border-primary ring-foreground/20 ring-1"
-              : "border-border hover:border-border",
+              ? "border-foreground/60 ring-foreground/60 ring-2"
+              : "border-border hover:bg-accent",
           )}
           title={preset.name}
           aria-label={preset.name}

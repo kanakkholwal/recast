@@ -23,7 +23,6 @@ const SNAP: { x: number; y: number; label: string }[] = [
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
 
   let { editor }: TransformPadProps = $props();
   let padEl = $state<HTMLElement | null>(null);
@@ -56,12 +55,12 @@ const SNAP: { x: number; y: number; label: string }[] = [
   }
 </script>
 
-<PanelSection title="Tilt">
+<PanelSection variant="panel" title="Tilt" collapsible defaultOpen>
   <div class="flex gap-3">
     <!-- Drag pad with a snap grid overlay. -->
     <div
       bind:this={padEl}
-      class="border-border bg-muted/30 relative aspect-square w-28 shrink-0 cursor-crosshair touch-none rounded-lg border"
+      class="border-border bg-muted relative aspect-square w-28 shrink-0 cursor-crosshair touch-none rounded-lg border"
       role="application"
       aria-label="Drag to tilt"
       onpointerdown={startDrag}
@@ -75,7 +74,7 @@ const SNAP: { x: number; y: number; label: string }[] = [
         {#each SNAP as cell (cell.label)}
           <button
             type="button"
-            class="hover:bg-primary/10 rounded-sm transition-colors"
+            class="hover:bg-accent rounded-sm transition-colors"
             aria-label={cell.label}
             onclick={() => editor.patchTransform({ rotateX: cell.x, rotateY: cell.y })}
           ></button>
@@ -88,25 +87,10 @@ const SNAP: { x: number; y: number; label: string }[] = [
       ></span>
     </div>
 
-    <!-- Zoom + Z-rotation next to the pad (the pad owns X/Y tilt). -->
-    <div class="flex min-w-0 flex-1 flex-col justify-center gap-2">
-      <SliderControl
-        label="Zoom"
-        value={editor.transform.scale}
-        min={0.5}
-        max={1.5}
-        step={0.01}
-        onchange={(v) => editor.patchTransform({ scale: v })}
-      />
-      <SliderControl
-        label="Rotation"
-        value={editor.transform.rotateZ}
-        min={-45}
-        max={45}
-        step={1}
-        unit="°"
-        onchange={(v) => editor.patchTransform({ rotateZ: v })}
-      />
-    </div>
+    <!-- The pad owns X/Y tilt; Scale and Rotate live in the 3D perspective
+         section below, so there is one home per value (no duplicate controls). -->
+    <p class="text-muted-foreground min-w-0 flex-1 self-center text-xs">
+      Drag to tilt. Scale and rotation are in 3D perspective below.
+    </p>
   </div>
 </PanelSection>

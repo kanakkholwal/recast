@@ -14,13 +14,13 @@ const RADIUS_PRESETS = [
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
-  import { SliderControl } from "@recast/ui/slider-control";
+  import { SliderRow } from "@recast/ui/slider-row";
   import { cn } from "@recast/ui/utils";
 
   let { editor }: BorderControlProps = $props();
 </script>
 
-<PanelSection title="Border" collapsible defaultOpen>
+<PanelSection variant="panel" title="Border" collapsible defaultOpen>
   <div class="grid grid-cols-3 gap-2">
     {#each RADIUS_PRESETS as preset (preset.value)}
       {@const selected = editor.frame.radius === preset.value}
@@ -31,10 +31,10 @@ const RADIUS_PRESETS = [
       >
         <span
           class={cn(
-            "relative block aspect-square w-full overflow-hidden rounded-lg transition-all",
+            "relative block aspect-square w-full overflow-hidden rounded-lg transition-shadow",
             selected
-              ? "ring-primary ring-offset-card ring-[1.5px] ring-offset-1"
-              : "ring-border/50 ring-1",
+              ? "ring-foreground/60 ring-offset-card ring-2 ring-offset-1"
+              : "ring-border ring-1",
           )}
           style="background:rgb(210,210,214);"
         >
@@ -56,7 +56,7 @@ const RADIUS_PRESETS = [
     {/each}
   </div>
 
-  <SliderControl
+  <SliderRow
     label="Radius"
     value={editor.frame.radius}
     min={0}
@@ -65,7 +65,7 @@ const RADIUS_PRESETS = [
     unit="px"
     onchange={(v) => editor.patchFrame({ radius: v })}
   />
-  <SliderControl
+  <SliderRow
     label="Scale"
     value={editor.imageScale / 100}
     min={0.1}

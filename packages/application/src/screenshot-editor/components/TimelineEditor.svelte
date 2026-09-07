@@ -14,6 +14,7 @@ const MIN_CLIP_MS = 200;
 
 <script lang="ts">
   import { Button } from "@recast/ui/button";
+  import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
   import { Film, GitCommit, Pause, Play, Plus, Repeat, Trash2, X } from "@recast/icons";
 
@@ -153,8 +154,10 @@ const MIN_CLIP_MS = 200;
 
 <!-- Bottom timeline. Height mirrors the clone's 210px track editor. -->
 <div class="border-border bg-card flex h-[210px] shrink-0 flex-col border-t">
-  <!-- Controls -->
-  <div class="border-border flex h-11 shrink-0 items-center gap-2 border-b px-3">
+  <!-- Controls — grouped by function (transport · authoring · config) with
+       hairline dividers, so a dense row stays scannable. -->
+  <div class="border-border flex h-11 shrink-0 items-center gap-1.5 border-b px-3">
+    <!-- Transport -->
     <Button
       variant="default"
       size="icon"
@@ -165,21 +168,6 @@ const MIN_CLIP_MS = 200;
     >
       {#if editor.playing}<Pause class="size-3.5" />{:else}<Play class="size-3.5" />{/if}
     </Button>
-
-    <Button
-      variant="secondary"
-      size="sm"
-      class="h-7 gap-1"
-      title="Capture the current 3D look as a keyframe at the playhead"
-      onclick={() => editor.addKeyframe()}
-    >
-      <Plus class="size-3.5" />
-      Key
-    </Button>
-
-    <span class="text-muted-foreground w-24 font-mono text-xs tabular-nums">
-      {seconds(editor.playhead)}s / {seconds(editor.timelineDuration)}s
-    </span>
 
     <Button
       variant={editor.loop ? "secondary" : "ghost"}
@@ -193,21 +181,41 @@ const MIN_CLIP_MS = 200;
       <Repeat class="size-3.5" />
     </Button>
 
-    <div class="ml-2 flex items-center gap-2">
-      <label class="text-muted-foreground text-xs" for="timeline-duration">Duration</label>
-      <input
-        id="timeline-duration"
-        type="range"
-        class="accent-primary h-1.5 w-28 cursor-pointer"
-        min="1"
-        max="30"
-        step="1"
+    <span class="text-muted-foreground ml-0.5 w-24 text-xs tabular-nums">
+      {seconds(editor.playhead)}s / {seconds(editor.timelineDuration)}s
+    </span>
+
+    <div class="bg-border mx-1 h-5 w-px"></div>
+
+    <!-- Authoring -->
+    <Button
+      variant="secondary"
+      size="sm"
+      class="h-7 gap-1"
+      title="Capture the current 3D look as a keyframe at the playhead"
+      onclick={() => editor.addKeyframe()}
+    >
+      <Plus class="size-3.5" />
+      Key
+    </Button>
+
+    <div class="bg-border mx-1 h-5 w-px"></div>
+
+    <!-- Config -->
+    <div class="flex items-center gap-2">
+      <span class="text-muted-foreground text-xs">Duration</span>
+      <SliderControl
+        dense
+        hideLabel
+        class="w-40"
+        label="Timeline duration"
         value={Math.round(editor.timelineDuration / 1000)}
-        oninput={(e) => editor.setTimelineDuration(Number(e.currentTarget.value) * 1000)}
+        min={1}
+        max={30}
+        step={1}
+        unit="s"
+        onchange={(v) => editor.setTimelineDuration(v * 1000)}
       />
-      <span class="text-muted-foreground w-8 font-mono text-xs tabular-nums">
-        {Math.round(editor.timelineDuration / 1000)}s
-      </span>
     </div>
 
     <div class="flex-1"></div>
@@ -223,6 +231,7 @@ const MIN_CLIP_MS = 200;
         Clear
       </Button>
     {/if}
+    <div class="bg-border mx-1 h-5 w-px"></div>
     <Button variant="ghost" size="icon" class="size-7" aria-label="Close timeline" onclick={onclose}>
       <X class="size-3.5" />
     </Button>
@@ -248,7 +257,7 @@ const MIN_CLIP_MS = 200;
     </div>
 
     <!-- Scrollable track area -->
-    <div bind:this={trackEl} class="relative min-w-0 flex-1 overflow-x-auto">
+    <div bind:this={trackEl} class="scrollbar-transparent relative min-w-0 flex-1 overflow-x-auto">
       <div class="relative" style:width={`${contentWidth}px`} style:min-width="100%">
         <!-- Time ruler: click/drag to scrub, arrows to step. -->
         <div
@@ -272,7 +281,7 @@ const MIN_CLIP_MS = 200;
               style:left={`${t * 1000 * pxPerMs}px`}
             ></span>
             <span
-              class="text-muted-foreground absolute top-2 font-mono text-xs tabular-nums"
+              class="text-muted-foreground absolute top-2 text-xs tabular-nums"
               style:left={`${t * 1000 * pxPerMs + 3}px`}
             >
               {t}s
@@ -281,7 +290,7 @@ const MIN_CLIP_MS = 200;
         </div>
 
         <!-- Animation track -->
-        <div class="bg-muted/20 relative h-12">
+        <div class="bg-muted relative h-12">
           {#if editor.keyframeMode}
             <!-- Keyframe diamonds: drag to retime, click to edit, Delete to remove. -->
             {#each editor.keyframes as kf (kf.id)}
