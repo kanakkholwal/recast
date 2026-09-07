@@ -1,4 +1,4 @@
-import { error, redirect, type RequestEvent } from "@sveltejs/kit";
+import { error, type RequestEvent, redirect } from "@sveltejs/kit";
 import { getAuth } from "$lib/auth/server";
 
 /**

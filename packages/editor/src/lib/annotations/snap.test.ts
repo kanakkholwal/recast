@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FRAME_ANCHORS, snap, snapBox, type SnapAnchor } from "./snap";
+import { FRAME_ANCHORS, type SnapAnchor, snap, snapBox } from "./snap";
 
 describe("snap (single point)", () => {
 	it("snaps to the nearest anchor within tolerance", () => {

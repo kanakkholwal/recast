@@ -1,8 +1,4 @@
 <script lang="ts">
-import { formatBytes as formatBytesBase } from "../../lib/format/bytes";
-import { clock } from "../../lib/format/time";
-import { getEditorServices } from "../../lib/editor/services";
-import type { AnnotationKindName, EditorStore, PanelTab } from "../../stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	ArrowUpRight,
@@ -29,6 +25,10 @@ import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import * as Tooltip from "@recast/ui/tooltip";
 import { onDestroy, onMount } from "svelte";
+import { getEditorServices } from "../../lib/editor/services";
+import { formatBytes as formatBytesBase } from "../../lib/format/bytes";
+import { clock } from "../../lib/format/time";
+import type { AnnotationKindName, EditorStore, PanelTab } from "../../stores/editor-store.svelte";
 import { countByKind, formatRelative } from "./info-panel.logic";
 import PanelSection from "./PanelSection.svelte";
 

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	clampTimelineZoom,
 	MAX_PIXELS_PER_SECOND,
 	MIN_TIMELINE_ZOOM,
-	clampTimelineZoom,
 	maxTimelineZoom,
 	steppedZoom,
 } from "./timeline-helpers";
@@ -15,9 +15,7 @@ function pixelsPerSecond(zoom: number, duration: number): number {
 }
 
 describe("maxTimelineZoom", () => {
-	// The bug: a flat 5x ceiling made magnification a function of clip length. A
-	// 30-minute recording bottomed out at 2.5 px/sec (0.04px per frame at 60fps),
-	// so it could not be trimmed to a frame at all.
+	// The bug: a flat 5x ceiling made magnification a function of clip length, so a 30-minute recording couldn't be trimmed to a frame.
 	it("lets a long recording reach the same px/sec as a short one", () => {
 		for (const duration of [30, 300, 1800]) {
 			const zoom = maxTimelineZoom(duration, VIEWPORT);

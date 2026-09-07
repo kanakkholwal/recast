@@ -104,7 +104,7 @@ const close = () => (open = false);
 				</Collapsible.Root>
 			{/each}
 
-			<ul class="mt-1 border-t border-border-low pt-1">
+			<ul class="mt-1 pt-1">
 				{#each links as link (link.href)}
 					<li>
 						<a

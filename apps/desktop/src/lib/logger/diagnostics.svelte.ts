@@ -17,13 +17,12 @@ const STORAGE_KEY = "recast-diagnostic-logging";
 function createDiagnosticsStore() {
 	const state = new PersistedState<boolean>(STORAGE_KEY, false);
 
-	// Adopt the backend value so the toggle is correct even after localStorage
-	// is cleared. Best-effort: non-Tauri previews keep the local/default value.
+	// Adopt the backend value so the toggle is right after localStorage is cleared; non-Tauri previews keep the local one.
 	void getDiagnosticLogging()
 		.then((backend) => {
 			if (typeof backend === "boolean") state.current = backend;
 		})
-		.catch(() => {});
+		.catch(() => undefined);
 
 	return {
 		/** Reactive: read inside an `$effect`/`$derived` to track changes. */
@@ -33,7 +32,7 @@ function createDiagnosticsStore() {
 		/** Persist the choice to localStorage (cross-window) AND Rust (log level). */
 		set(value: boolean) {
 			state.current = value;
-			void setDiagnosticLogging(value).catch(() => {});
+			void setDiagnosticLogging(value).catch(() => undefined);
 		},
 	};
 }

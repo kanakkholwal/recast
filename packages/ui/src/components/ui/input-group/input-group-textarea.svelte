@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import { Textarea } from "../textarea";
-	import type { ComponentProps } from "svelte";
+import { cn } from "@recast/ui/utils";
+import { Textarea } from "../textarea";
+import type { ComponentProps } from "svelte";
 
-	let {
-		ref = $bindable(null),
-		value = $bindable(),
-		class: className,
-		...props
-	}: ComponentProps<typeof Textarea> = $props();
+let {
+	ref = $bindable(null),
+	value = $bindable(),
+	class: className,
+	...props
+}: ComponentProps<typeof Textarea> = $props();
 </script>
 
 <Textarea

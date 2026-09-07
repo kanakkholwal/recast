@@ -30,15 +30,14 @@ const sectionMap = $derived(
 const crumb = $derived.by(() => {
 	const parts = page.url.pathname.split("/").filter(Boolean); // ["dashboard", ...]
 	if (parts.length <= 1) return { section: rootLabel, sub: null };
-	const second = parts[1]!;
+	const second = parts[1];
 	const section = sectionMap[second] ?? titleCase(second);
 	// Only settings has deeper routes (Profile / Integrations / Preferences).
 	const sub = second === "settings" && parts[2] ? titleCase(parts[2]) : null;
 	return { section, sub };
 });
 
-// On the dashboard home the search lives in the hero, so the header trigger
-// stands down there to avoid two search bars on one screen.
+// On the dashboard home the search lives in the hero, so the header trigger stands down to avoid two search bars.
 const isHome = $derived(page.url.pathname === "/dashboard");
 </script>
 

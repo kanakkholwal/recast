@@ -1,0 +1,8 @@
+[package]
+name = "recast-testkit"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Synthetic media and verification oracles for the Recast engine test harnesses."
+
+[dependencies]

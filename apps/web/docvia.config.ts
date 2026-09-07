@@ -53,11 +53,9 @@ function mermaidBlocks(): DocviaPlugin {
 const post = z.object({
 	kind: z.literal("post"),
 	author: z.string(),
-	// YAML turns an unquoted `2026-07-13` into a Date already; coercing means a
-	// quoted string behaves identically rather than silently differing.
+	// YAML already turns an unquoted date into a Date, so coercing makes a quoted string behave identically.
 	date: z.coerce.date(),
-	// Drafts are excluded from the production listing and 404 on direct hit.
-	// Flip to `true` to publish.
+	// Drafts are excluded from the production listing and 404 on a direct hit.
 	published: z.boolean().default(false),
 });
 
@@ -144,8 +142,7 @@ function preserveCustomFrontmatter(base: Renderer): Renderer {
 		...base,
 		async renderPage(doc) {
 			const rendered = await base.renderPage(doc);
-			// The adapter emits `meta` first, as a pretty-printed JSON literal, so
-			// its object ends at the first `\n};`.
+			// The adapter emits `meta` first as a pretty-printed JSON literal, so its object ends at the first newline-brace-semicolon.
 			const end = rendered.code.indexOf("\n};");
 			if (!rendered.code.startsWith(PREFIX) || end < 0) {
 				// Fail the build rather than quietly losing every byline and date.
@@ -165,15 +162,11 @@ function preserveCustomFrontmatter(base: Renderer): Renderer {
 }
 
 export default defineConfig({
-	// The parent of every collection, not a collection itself: the Vite plugin
-	// watches this one path for hot reload, so pointing it at `content/blog`
-	// would leave architecture edits needing a dev-server restart.
+	// The parent of every collection: the Vite plugin watches one path, so pointing it at content/blog would strand architecture edits.
 	sourceDir: "content",
 	outDir: ".docvia",
 
-	// Named explicitly so the virtual module exports `blog`/`architecture` (the
-	// implicit default would be one `docs` collection at baseUrl `/`) and page
-	// URLs resolve under the matching route.
+	// Named explicitly so the virtual module exports `blog` and `architecture` and page URLs resolve under the right route.
 	collections: [
 		{ name: "blog", sourceDir: "content/blog", baseUrl: "/blog" },
 		{ name: "architecture", sourceDir: "content/architecture", baseUrl: "/architecture" },
@@ -183,9 +176,7 @@ export default defineConfig({
 
 	renderer: preserveCustomFrontmatter(createSvelteRenderer()),
 
-	// Syntax highlighting is a build-time plugin: the highlighted HTML is baked
-	// into the IR, so no highlighter ships to the browser. The current posts are
-	// pure prose, but this is ready for the ones that aren't.
+	// Highlighting is a build-time plugin, so the highlighted HTML is baked into the IR and no highlighter ships.
 	plugins: [
 		shiki({
 			theme: "github-dark",

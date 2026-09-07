@@ -1,131 +1,131 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "simple-pointy-cursors",
-  "name": "Simple Pointy Cursors",
-  "version": "1.0.0",
-  "author": "Recast",
-  "description": "Five minimal narrow wide-tail arrow cursors with a click-press state.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "cursors": [
-      {
-        "id": "light",
-        "label": "Pointy — Light",
-        "description": "Narrow wide-tail arrow.",
-        "rest": "light",
-        "press": "light-press",
-        "hotspot": {
-          "x": 5.7,
-          "y": 3.8
-        },
-        "pressedHotspot": {
-          "x": 5.7,
-          "y": 3.8
-        }
-      },
-      {
-        "id": "dark",
-        "label": "Pointy — Dark",
-        "description": "Narrow wide-tail arrow.",
-        "rest": "dark",
-        "press": "dark-press",
-        "hotspot": {
-          "x": 5.7,
-          "y": 3.8
-        },
-        "pressedHotspot": {
-          "x": 5.7,
-          "y": 3.8
-        }
-      },
-      {
-        "id": "orange",
-        "label": "Pointy — Orange",
-        "description": "Narrow wide-tail arrow.",
-        "rest": "orange",
-        "press": "orange-press",
-        "hotspot": {
-          "x": 5.7,
-          "y": 3.8
-        },
-        "pressedHotspot": {
-          "x": 5.7,
-          "y": 3.8
-        }
-      },
-      {
-        "id": "yellow",
-        "label": "Pointy — Yellow",
-        "description": "Narrow wide-tail arrow.",
-        "rest": "yellow",
-        "press": "yellow-press",
-        "hotspot": {
-          "x": 5.7,
-          "y": 3.8
-        },
-        "pressedHotspot": {
-          "x": 5.7,
-          "y": 3.8
-        }
-      },
-      {
-        "id": "blue",
-        "label": "Pointy — Blue",
-        "description": "Narrow wide-tail arrow.",
-        "rest": "blue",
-        "press": "blue-press",
-        "hotspot": {
-          "x": 5.7,
-          "y": 3.8
-        },
-        "pressedHotspot": {
-          "x": 5.7,
-          "y": 3.8
-        }
-      }
-    ]
-  },
-  "assets": [
-    {
-      "id": "light",
-      "file": "assets/light.svg"
-    },
-    {
-      "id": "light-press",
-      "file": "assets/light-press.svg"
-    },
-    {
-      "id": "dark",
-      "file": "assets/dark.svg"
-    },
-    {
-      "id": "dark-press",
-      "file": "assets/dark-press.svg"
-    },
-    {
-      "id": "orange",
-      "file": "assets/orange.svg"
-    },
-    {
-      "id": "orange-press",
-      "file": "assets/orange-press.svg"
-    },
-    {
-      "id": "yellow",
-      "file": "assets/yellow.svg"
-    },
-    {
-      "id": "yellow-press",
-      "file": "assets/yellow-press.svg"
-    },
-    {
-      "id": "blue",
-      "file": "assets/blue.svg"
-    },
-    {
-      "id": "blue-press",
-      "file": "assets/blue-press.svg"
-    }
-  ]
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "simple-pointy-cursors",
+	"name": "Simple Pointy Cursors",
+	"version": "1.0.0",
+	"author": "Recast",
+	"description": "Five minimal narrow wide-tail arrow cursors with a click-press state.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"cursors": [
+			{
+				"id": "light",
+				"label": "Pointy — Light",
+				"description": "Narrow wide-tail arrow.",
+				"rest": "light",
+				"press": "light-press",
+				"hotspot": {
+					"x": 5.7,
+					"y": 3.8
+				},
+				"pressedHotspot": {
+					"x": 5.7,
+					"y": 3.8
+				}
+			},
+			{
+				"id": "dark",
+				"label": "Pointy — Dark",
+				"description": "Narrow wide-tail arrow.",
+				"rest": "dark",
+				"press": "dark-press",
+				"hotspot": {
+					"x": 5.7,
+					"y": 3.8
+				},
+				"pressedHotspot": {
+					"x": 5.7,
+					"y": 3.8
+				}
+			},
+			{
+				"id": "orange",
+				"label": "Pointy — Orange",
+				"description": "Narrow wide-tail arrow.",
+				"rest": "orange",
+				"press": "orange-press",
+				"hotspot": {
+					"x": 5.7,
+					"y": 3.8
+				},
+				"pressedHotspot": {
+					"x": 5.7,
+					"y": 3.8
+				}
+			},
+			{
+				"id": "yellow",
+				"label": "Pointy — Yellow",
+				"description": "Narrow wide-tail arrow.",
+				"rest": "yellow",
+				"press": "yellow-press",
+				"hotspot": {
+					"x": 5.7,
+					"y": 3.8
+				},
+				"pressedHotspot": {
+					"x": 5.7,
+					"y": 3.8
+				}
+			},
+			{
+				"id": "blue",
+				"label": "Pointy — Blue",
+				"description": "Narrow wide-tail arrow.",
+				"rest": "blue",
+				"press": "blue-press",
+				"hotspot": {
+					"x": 5.7,
+					"y": 3.8
+				},
+				"pressedHotspot": {
+					"x": 5.7,
+					"y": 3.8
+				}
+			}
+		]
+	},
+	"assets": [
+		{
+			"id": "light",
+			"file": "assets/light.svg"
+		},
+		{
+			"id": "light-press",
+			"file": "assets/light-press.svg"
+		},
+		{
+			"id": "dark",
+			"file": "assets/dark.svg"
+		},
+		{
+			"id": "dark-press",
+			"file": "assets/dark-press.svg"
+		},
+		{
+			"id": "orange",
+			"file": "assets/orange.svg"
+		},
+		{
+			"id": "orange-press",
+			"file": "assets/orange-press.svg"
+		},
+		{
+			"id": "yellow",
+			"file": "assets/yellow.svg"
+		},
+		{
+			"id": "yellow-press",
+			"file": "assets/yellow-press.svg"
+		},
+		{
+			"id": "blue",
+			"file": "assets/blue.svg"
+		},
+		{
+			"id": "blue-press",
+			"file": "assets/blue-press.svg"
+		}
+	]
 }

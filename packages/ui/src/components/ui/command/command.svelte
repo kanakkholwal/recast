@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import { Command as CommandPrimitive } from "bits-ui";
+import { cn } from "@recast/ui/utils";
+import { Command as CommandPrimitive } from "bits-ui";
 
-	export type CommandRootApi = CommandPrimitive.Root;
+export type CommandRootApi = CommandPrimitive.Root;
 
-	let {
-		api = $bindable(null),
-		ref = $bindable(null),
-		value = $bindable(""),
-		class: className,
-		...restProps
-	}: CommandPrimitive.RootProps & {
-		api?: CommandRootApi | null;
-	} = $props();
+let {
+	api = $bindable(null),
+	ref = $bindable(null),
+	value = $bindable(""),
+	class: className,
+	...restProps
+}: CommandPrimitive.RootProps & {
+	api?: CommandRootApi | null;
+} = $props();
 </script>
 
 <CommandPrimitive.Root

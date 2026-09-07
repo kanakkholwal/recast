@@ -24,6 +24,7 @@ function readCookie(): ConsentChoice {
 
 function writeCookie(choice: "accepted" | "declined") {
 	if (!browser) return;
+	// biome-ignore lint/suspicious/noDocumentCookie: cookieStore is Chromium-only; document.cookie is the portable write.
 	document.cookie = `${COOKIE}=${choice}; path=/; max-age=${ONE_YEAR}; samesite=lax`;
 }
 

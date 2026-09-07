@@ -249,7 +249,7 @@ the parity fixtures (`time-map.ts`, `time-map.test.ts`).
 
 ## Related
 
-- `03-preview-and-rendercore.md`, how the preview consumes the time-map for
+- [preview-engine.md](/architecture/preview-engine), how the preview consumes the time-map for
   playhead/scrub and the shared compositor.
 - `06-export-pipeline.md`, the Rust FFmpeg filtergraph that applies cuts + speed
   (`cuts_speed.rs`) and the export-side duration cap.

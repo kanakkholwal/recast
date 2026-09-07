@@ -1,12 +1,5 @@
-//! Typed, replayable edit operations over a [`RenderState`].
-//!
-//! Every agent-facing mutating verb reduces to one [`Op`], and [`apply_op`] is
-//! the only place that knows how each one changes the state. The CLI socket,
-//! the branch journal and MCP therefore share a single implementation.
-//!
-//! [`apply_op`] is a pure function of `(state, op)`: no clock, no randomness, no
-//! I/O. Journals are replayed to rebuild state, so anything generated at edit
-//! time is resolved at the dispatch edge and baked into the op.
+//! Typed, replayable edits over a [`RenderState`]; the CLI socket, branch journal and MCP all reduce to [`apply_op`].
+//! Pure in `(state, op)`: no clock, randomness or I/O, so anything generated at edit time is baked in at the dispatch edge.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -59,9 +52,7 @@ pub enum OpError {
 }
 
 /// One edit.
-///
-/// Variant and field names are serialized into stored journals, so renaming one
-/// invalidates every journal already on disk.
+/// Variant and field names are serialized into stored journals, so renaming one invalidates every journal already on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Op {
@@ -130,12 +121,8 @@ pub enum Op {
     },
 }
 
-/// Apply one op in place, returning the verb's wire result.
-///
-/// # Errors
-/// Returns [`OpError`] when the op does not match the state (a missing id, an
-/// out-of-range index, a patch that breaks the target's shape). The state is
-/// left untouched in every error case.
+/// Applies one op in place, returning the verb's wire result.
+/// Errors with [`OpError`] on a missing id, an out-of-range index, or a patch that breaks the target's shape, leaving the state untouched in every case.
 pub fn apply_op(state: &mut RenderState, op: &Op) -> Result<Value, OpError> {
     match op {
         Op::Replace { state: next } => {
@@ -283,10 +270,7 @@ pub fn apply_op(state: &mut RenderState, op: &Op) -> Result<Value, OpError> {
 }
 
 /// Fold ops in order, returning each one's wire result.
-///
-/// # Errors
-/// Propagates the first [`OpError`]. `state` is left partially applied, so
-/// callers fold onto a clone they can discard.
+/// # Errors Propagates the first [`OpError`]. `state` is left partially applied, so callers fold onto a clone they can discard.
 pub fn apply_ops(state: &mut RenderState, ops: &[Op]) -> Result<Vec<Value>, OpError> {
     ops.iter().map(|op| apply_op(state, op)).collect()
 }

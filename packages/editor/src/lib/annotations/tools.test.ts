@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-// @recast/icons re-exports @tabler/icons-svelte, whose barrel can't resolve under
-// node. The registry only stores the components, so stub the whole namespace.
+// @recast/icons re-exports a barrel that can't resolve under node, and the registry only stores components.
 vi.mock("@recast/icons", () => ({
 	__esModule: true,
 	default: {},
@@ -19,8 +18,7 @@ describe("ANNOTATION_TOOLS", () => {
 		expect(ANNOTATION_TOOLS[0].id).toBe("select");
 	});
 
-	// Image is a one-shot file-picker insert, so a tile for it could never light
-	// up, and the canvas placement path has no branch to create one.
+	// Image is a one-shot file-picker insert, so its tile could never light up and placement has no branch for it.
 	it("lists only modal tools", () => {
 		expect(ANNOTATION_TOOLS.map((t) => t.id)).not.toContain("image");
 	});
@@ -47,8 +45,7 @@ describe("toolForHotkey", () => {
 		expect(toolForHotkey("q")).toBeNull();
 	});
 
-	// The panel checks the image key before delegating here, so this must not
-	// claim it — otherwise `I` would arm a mode instead of opening the picker.
+	// The panel checks the image key first, so this must not claim it or `I` would arm a mode instead of opening the picker.
 	it("does not claim the image shortcut", () => {
 		expect(toolForHotkey(IMAGE_TOOL.hotkey)).toBeNull();
 	});

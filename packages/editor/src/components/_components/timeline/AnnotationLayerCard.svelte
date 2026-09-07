@@ -1,11 +1,10 @@
 <script lang="ts">
-import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
-import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
-import { motionDuration } from "../../../lib/motion.svelte";
-
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
+import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
+import { motionDuration } from "../../../lib/motion.svelte";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import {
 	computeCardMove,
 	computeCardNudge,
@@ -27,8 +26,7 @@ import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 import { type SnapResult, type SnapTarget } from "./timeline-snap";
 import { EDGE_HIT_OVERHANG_PX, edgeHandleWidth, ROW_HEIGHT_PX } from "./timeline-stack";
 
-// Mirrors ZoomLayerCard's drag/resize/snap on annotations; outline-only
-// (no sparkline) so the two lanes are distinguishable at a glance.
+// Mirrors ZoomLayerCard's drag, resize and snap; outline-only so the two lanes are distinguishable at a glance.
 
 interface Props {
 	store: EditorStore;
@@ -81,9 +79,7 @@ interface DragContext {
 }
 
 let drag = $state<DragContext | null>(null);
-// Undo is pushed on the first real move, not at pointer-down: clicking a card
-// to select it used to leave an undo entry that changed nothing, so Ctrl+Z
-// after selecting five cards did nothing five times.
+// Pushed on the first real move: clicking a card to select it used to leave an undo entry that changed nothing.
 let dragUndoPushed = false;
 // Holds this card's row for the gesture, so re-packing can't move it off the cursor.
 const laneDrag = useLaneDrag();
@@ -126,14 +122,12 @@ function beginDrag(mode: DragMode, event: PointerEvent) {
 
 function onPointerMove(event: PointerEvent) {
 	if (!drag) return;
-	// A press is a click until it clears the threshold, so selecting a card
-	// can't nudge it or leave an undo entry that changed nothing.
+	// A press is a click until it clears the threshold, so selecting can't nudge it or leave a no-op undo entry.
 	if (!drag.engaged) {
 		if (!dragEngaged(event.clientX, drag.startClientX)) return;
 		drag.engaged = true;
 	}
-	// Shift can go down or up mid-drag; re-seed the anchor to the current
-	// pointer and bounds so the change in gearing never jumps the card.
+	// Re-seed the anchor and bounds on a Shift flip, so the change in gearing never jumps the card.
 	if (event.shiftKey !== drag.precision) {
 		drag.precision = event.shiftKey;
 		drag.startClientX = event.clientX;

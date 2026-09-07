@@ -5,14 +5,15 @@
  * shared CloudShareSettings), or delete the cloud copy. Deleting NEVER touches
  * the local export. That stays the source of truth.
  */
-import CloudShareSettings from "./CloudShareSettings.svelte";
+
+import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
+import { Link2, Trash2 } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
 import { type CloudUploadRecord } from "$lib/ipc";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
-import { Button } from "@recast/ui/button";
-import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
-import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
-import { toast } from "@recast/ui/sonner";
-import { Link2, Trash2 } from "@recast/icons";
+import CloudShareSettings from "./CloudShareSettings.svelte";
 
 let {
 	open = false,
@@ -36,8 +37,7 @@ let save = $state<() => Promise<boolean>>(async () => true);
 let saving = $state(false);
 let loading = $state(true);
 let deleting = $state(false);
-// Deleting the cloud copy revokes a link other people may already hold, so
-// it asks first — like every other destructive action in the app.
+// Deleting the cloud copy revokes a link other people may hold, so it asks first, like every destructive action.
 let confirmDelete = $state(false);
 
 async function onSave() {
@@ -79,7 +79,7 @@ async function deleteCloudCopy() {
 		<Button
 			type="button"
 			variant="destructive_soft"
-			size="xs"
+			size="sm"
 			class="mr-auto gap-1.5"
 			disabled={deleting || saving}
 			onclick={() => (confirmDelete = true)}
@@ -87,8 +87,8 @@ async function deleteCloudCopy() {
 			<Trash2 class="size-3.5" />
 			{deleting ? "Deleting…" : "Delete cloud copy"}
 		</Button>
-		<Button type="button" variant="ghost" size="xs" onclick={close}>Cancel</Button>
-		<Button type="button" size="xs" disabled={saving || loading} onclick={onSave}>
+		<Button type="button" variant="ghost" size="sm" onclick={close}>Cancel</Button>
+		<Button type="button" size="sm" disabled={saving || loading} onclick={onSave}>
 			{saving ? "Saving…" : "Save"}
 		</Button>
 	{/snippet}

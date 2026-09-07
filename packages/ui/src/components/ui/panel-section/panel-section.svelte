@@ -49,11 +49,7 @@ export interface PanelSectionProps {
 		class: className,
 	}: PanelSectionProps = $props();
 
-	// Two modes:
-	//   • Static (default): a labelled section with optional action — same
-	//     visual as the legacy PanelSection.
-	//   • Collapsible: header becomes a button that toggles a slide-animated
-	//     body, with a spring-rotated chevron mirroring DialKit's Folder.
+	// Static is a labelled section like the legacy PanelSection; collapsible turns the header into a toggle with a slide and a spring chevron.
 
 	const isControlled = $derived(open !== undefined);
 	// svelte-ignore state_referenced_locally
@@ -67,8 +63,7 @@ export interface PanelSectionProps {
 		damping: 0.62,
 	});
 
-	// Both the spring and the body's slide run on JS/WAAPI, which the CSS
-	// reduced-motion override in app.css never reaches.
+	// The spring and the slide both run on JS and WAAPI, which the CSS reduced-motion override never reaches.
 	$effect(() => {
 		chevronRotation.set(isOpen ? 0 : -90, { instant: prefersReducedMotion.current });
 	});

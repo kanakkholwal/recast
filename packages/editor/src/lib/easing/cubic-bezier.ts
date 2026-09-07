@@ -1,6 +1,4 @@
-// Unit-interval cubic-bezier evaluator (implicit anchors P0=(0,0), P3=(1,1)),
-// returns y for a given x. Same as Blink/WebKit: solve x(t)=x via Newton-Raphson
-// with a bisection fallback. y may exceed [0,1] for overshoot curves (e.g. Bounce).
+// Unit-interval cubic-bezier (anchors at 0,0 and 1,1) solved like Blink's: Newton-Raphson with a bisection fallback, y may overshoot.
 
 export interface Easing {
 	x1: number;
@@ -97,8 +95,7 @@ export function bezierY(easing: Easing, x: number): number {
 	return sample(t, ay, by, cy);
 }
 
-// Build a sampled curve for drawing: returns N+1 (x,y) points from t=0..1.
-// Uses the t parameter directly (not x-inverse) since we're stroking the path.
+// Samples N+1 points for stroking the path, walking t directly rather than inverting x.
 export function sampleCurve(easing: Easing, segments = 32): Array<[number, number]> {
 	const { x1, y1, x2, y2 } = easing;
 	const [ax, bx, cx] = coeffs(x1, x2);

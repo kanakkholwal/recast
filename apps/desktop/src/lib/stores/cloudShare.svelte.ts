@@ -1,18 +1,18 @@
 import { createRateTracker } from "@recast/editor/lib/format/transfer-rate";
-import { isTauriApp } from "$lib/runtime/tauri";
 import { toast } from "@recast/ui/sonner";
 import {
 	authStatus,
+	type CloudShareResult,
+	type CloudUploadRecord,
+	type CloudWorkspace,
 	recastCloudDelete,
 	recastCloudForgetUpload,
 	recastCloudListUploads,
 	recastCloudUpdateShare,
 	recastCloudUpload,
-	type CloudShareResult,
-	type CloudUploadRecord,
-	type CloudWorkspace,
 	type Transcript,
 } from "$lib/ipc";
+import { isTauriApp } from "$lib/runtime/tauri";
 
 export type { CloudWorkspace };
 
@@ -79,8 +79,7 @@ function writeWorkspacePref(id: string | null): void {
 		if (id) globalThis.localStorage?.setItem(WORKSPACE_PREF_KEY, id);
 		else globalThis.localStorage?.removeItem(WORKSPACE_PREF_KEY);
 	} catch {
-		// Private mode / disabled storage: selection won't persist across
-		// launches, but the in-memory choice still holds.
+		// Private mode or disabled storage: the choice won't persist across launches, but holds in memory.
 	}
 }
 
@@ -89,8 +88,7 @@ function createCloudShareStore() {
 	let planName = $state<string | undefined>(undefined);
 	let usage = $state<CloudAuth["usage"] | undefined>(undefined);
 
-	// `workspaces` + `defaultWorkspaceId` come from the server each refresh;
-	// `selectedWorkspaceId` is the desktop's persisted, validated preference.
+	// The server supplies workspaces and the default; `selectedWorkspaceId` is the desktop's validated preference.
 	let workspaces = $state<CloudWorkspace[]>([]);
 	let defaultWorkspaceId = $state<string | null>(null);
 	let selectedWorkspaceId = $state<string | null>(readWorkspacePref());
@@ -98,23 +96,17 @@ function createCloudShareStore() {
 	const uploads = $state<Record<string, CloudUpload>>({});
 	const uploadHistory = $state<Record<string, CloudUploadRecord>>({});
 
-	// Path of the upload currently shown in a foreground progress dialog, if any.
-	// The corner-notification card suppresses this one to avoid double UI; it
-	// reappears when the dialog is minimized (cleared).
+	// The corner-notification card suppresses this one to avoid double UI, and it reappears when the dialog is minimized.
 	let foregroundPath = $state<string | null>(null);
 
 	// Per-upload transfer-rate estimate, feeding the dialog's ETA readout.
 	const rate = createRateTracker();
 
-	// True after the first `init()`. Lets the share flow open the picker from
-	// the cached workspace list instead of a blocking round-trip per click.
+	// True after the first `init()`: the share flow opens the picker from the cached list instead of a round-trip.
 	let initialized = $state(false);
 	let listenersAttached = false;
 
-	// Only the terminal error stays a global broadcast; it's a detached corner
-	// notification, and the `share()` catch already covers the awaited path.
-	// Live progress now streams on each upload's own channel (see `share`), and
-	// success comes back on the resolved `recastCloudUpload` promise.
+	// Only the terminal error stays a global broadcast; progress streams on each upload's channel and success resolves the promise.
 	async function attachListeners() {
 		if (listenersAttached) return;
 		if (!(await isTauriApp())) return;
@@ -205,9 +197,7 @@ function createCloudShareStore() {
 		workspaceId?: string,
 		captionsTranscript?: Transcript | null,
 	): Promise<CloudShareResult> {
-		// Seed SYNCHRONOUSLY (before any await) so the "Preparing…" card renders
-		// the instant Share is clicked; the awaits below would otherwise leave
-		// the screen looking frozen for a beat.
+		// Seed SYNCHRONOUSLY before any await, so the 'Preparing' card renders the instant Share is clicked.
 		const fileName = path.split(/[\\/]/).pop() ?? path;
 		uploads[path] = {
 			sourcePath: path,
@@ -222,8 +212,7 @@ function createCloudShareStore() {
 		};
 		if (!(await isTauriApp())) throw new Error("not running in Tauri");
 		await attachListeners();
-		// Explicit target wins, else the resolved active workspace; `undefined`
-		// lets Rust fall back to the server profile's defaultWorkspaceId.
+		// An explicit target wins, else the resolved active workspace; `undefined` lets Rust fall back to the server default.
 		const target = workspaceId ?? resolveActiveWorkspaceId() ?? undefined;
 		try {
 			// Progress rides this upload's own channel: phase + byte counts.
@@ -244,8 +233,7 @@ function createCloudShareStore() {
 				}
 			});
 			rate.clear(path);
-			// Success is the resolved result (identical data the old
-			// `recast-cloud:complete` event carried), so update the card + manifest here.
+			// Success is the resolved result, so update the card and the manifest here.
 			const existing = uploads[path];
 			if (existing) {
 				uploads[path] = {
@@ -261,15 +249,12 @@ function createCloudShareStore() {
 				shareUrl: result.shareUrl,
 				uploadedAt: Math.floor(Date.now() / 1000),
 			};
-			// Toast alongside the dialog/activity card so feedback still lands when
-			// the share was minimized. This is the one place every entry point
-			// (exports, editor, retry) funnels through.
+			// Toast alongside the card so feedback lands when the share was minimized; every entry point funnels through here.
 			toast.success("Shared to Recast Cloud.", { description: fileName });
 			return result;
 		} catch (e) {
 			rate.clear(path);
-			// Rust also fires a detached `recast-cloud:error`; ensure the card
-			// reflects the failure even if that event was missed, then re-throw.
+			// Rust also fires a detached `recast-cloud:error`; reflect the failure here in case that event was missed.
 			const existing = uploads[path];
 			if (existing && existing.status !== "error") {
 				uploads[path] = { ...existing, status: "error", error: String(e) };
@@ -294,7 +279,7 @@ function createCloudShareStore() {
 		if (!u) return;
 		const { title, workspaceId, captionsTranscript } = u;
 		dismiss(path);
-		void share(path, title, workspaceId, captionsTranscript).catch(() => {});
+		void share(path, title, workspaceId, captionsTranscript).catch(() => undefined);
 	}
 
 	/** Delete the cloud copy (blob + row + shares). Local file untouched. */

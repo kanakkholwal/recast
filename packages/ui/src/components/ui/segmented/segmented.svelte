@@ -21,6 +21,8 @@ export interface SegmentedProps<T extends string = string> {
 	fill?: boolean;
 	disabled?: boolean;
 	class?: string;
+	/** Extra classes per segment button, e.g. to square up icon-only segments. */
+	segmentClass?: string;
 	"aria-label"?: string;
 	/** Point at a visible label instead of duplicating it as `aria-label`. */
 	"aria-labelledby"?: string;
@@ -29,6 +31,7 @@ export interface SegmentedProps<T extends string = string> {
 
 <script lang="ts" generics="T extends string">
 	import { cn } from "@recast/ui/utils";
+	import { buttonVariants } from "../button";
 
 	let {
 		options,
@@ -38,12 +41,12 @@ export interface SegmentedProps<T extends string = string> {
 		fill = true,
 		disabled = false,
 		class: className,
+		segmentClass,
 		"aria-label": ariaLabel,
 		"aria-labelledby": ariaLabelledby,
 	}: SegmentedProps<T> = $props();
 
-	// Animated pill that slides under the active segment. First render skips
-	// the transition so the pill doesn't fly in from `left: 0` on mount.
+	// The first render skips the transition so the pill doesn't fly in from `left: 0` on mount.
 	let containerEl: HTMLDivElement | null = $state(null);
 	let pillLeft = $state<number | null>(null);
 	let pillWidth = $state<number | null>(null);
@@ -64,8 +67,7 @@ export interface SegmentedProps<T extends string = string> {
 	}
 
 	$effect(() => {
-		// Re-measure when value/options/size change. ResizeObserver covers
-		// container width changes (e.g. panel resize) so the pill stays glued.
+		// Re-measure on value, options and size changes; the ResizeObserver covers container resizes.
 		void value;
 		void options.length;
 		void size;
@@ -80,8 +82,7 @@ export interface SegmentedProps<T extends string = string> {
 	});
 
 	$effect(() => {
-		// Flip the animate flag one tick after first measurement so subsequent
-		// value changes animate but the initial render snaps in place.
+		// Flip the flag a tick after the first measurement, so later value changes animate but the initial render snaps.
 		if (pillLeft !== null && pillWidth !== null && !hasAnimated) {
 			queueMicrotask(() => {
 				hasAnimated = true;
@@ -89,9 +90,7 @@ export interface SegmentedProps<T extends string = string> {
 		}
 	});
 
-	// Roving tabindex + arrow keys: the ARIA radiogroup contract. Without it each
-	// segment was its own tab stop and arrows did nothing, so a panel of these
-	// cost a dozen tab presses to cross.
+	// Roving tabindex is the ARIA radiogroup contract: without it every segment was a tab stop and arrows did nothing.
 	let buttons = $state<(HTMLButtonElement | null)[]>([]);
 	const selectableIndexes = $derived(
 		options.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i !== -1),
@@ -162,7 +161,7 @@ export interface SegmentedProps<T extends string = string> {
 		<div
 			aria-hidden="true"
 			class={cn(
-				"pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-md bg-card shadow-[0_1px_2px_color-mix(in_srgb,var(--color-foreground)_8%,transparent)] ring-1 ring-inset ring-border/40",
+				"pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-md bg-foreground shadow-craft-md",
 				hasAnimated &&
 					"transition-[left,width] duration-200 ease-[cubic-bezier(0.25,1,0.5,1)]",
 			)}
@@ -194,12 +193,16 @@ export interface SegmentedProps<T extends string = string> {
 				onValueChange(option.value);
 			}}
 			class={cn(
-				"relative z-10 inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors duration-150",
+				"relative z-10",
+				buttonVariants({
+					variant: "raw",
+				}),
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
 				sizing.btn,
+				segmentClass,
 				fill && "flex-1",
 				active
-					? "text-foreground"
+					? "text-background"
 					: "text-muted-foreground hover:text-foreground",
 				(disabled || option.disabled) && "cursor-not-allowed",
 			)}

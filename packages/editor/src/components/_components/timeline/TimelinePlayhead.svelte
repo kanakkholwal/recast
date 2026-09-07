@@ -2,14 +2,7 @@
 import { motionDuration } from "../../../lib/motion.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
-// Positioned with `transform: translate3d`, not `left`: `left` relays out the
-// whole track every frame of playback, and its transition made the head lag the
-// picture. transform is composited and cheap.
-//
-// The tween exists only to smooth a discrete jump (click-to-seek, frame step).
-// During playback the store already publishes a fresh position every frame, so
-// any tween there is pure lag: suppressed, like it is while dragging. Reduced
-// motion drops it everywhere.
+// `transform`, not `left`, which relays out the track every frame. The tween only smooths a discrete jump, so it is suppressed during playback, dragging and reduced motion.
 
 interface Props {
 	/** Seconds on the OUTPUT (post-cut) axis: the same axis as the ruler under

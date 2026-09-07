@@ -22,7 +22,7 @@ export type TargetSource = {
 /** Displays + non-empty-titled windows → a flat, tabbable source list. */
 export function buildSources(displays: DisplayInfo[], windows: WindowInfo[]): TargetSource[] {
 	const next: TargetSource[] = [];
-	displays.forEach((d, i) =>
+	for (const [i, d] of displays.entries()) {
 		next.push({
 			type: "monitor",
 			id: d.id,
@@ -30,8 +30,8 @@ export function buildSources(displays: DisplayInfo[], windows: WindowInfo[]): Ta
 			thumbnail: d.thumbnail,
 			resolution: `${d.width} × ${d.height}`,
 			refreshHz: d.refreshHz || undefined,
-		}),
-	);
+		});
+	}
 	windows.forEach((w) => {
 		if (w.title?.trim()) {
 			next.push({
@@ -68,7 +68,7 @@ export function regionEventToSource(ev: {
 /** Persisted `LastSource` → the "remembered" region tile, or null if not a
  *  fully-specified region. */
 export function lastRegionToSource(last: LastSource | null): TargetSource | null {
-	if (!last || last.kind !== "region" || !last.regionWidth || !last.regionHeight) {
+	if (last?.kind !== "region" || !last.regionWidth || !last.regionHeight) {
 		return null;
 	}
 	return {

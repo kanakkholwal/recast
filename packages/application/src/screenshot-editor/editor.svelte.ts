@@ -53,9 +53,7 @@ function newId(): string {
  * touches the DOM, so it stays unit-testable and SSR-safe. */
 export class ScreenshotEditorState {
 	image = $state<EditorImage | null>(null);
-	// Slideshow: the set of images that share the current design. `image` mirrors
-	// the active slide; a single upload is just a one-slide set. Used for batch
-	// export. (Persisted in the autosave snapshot, not in design/history.)
+	// The images sharing the current design; `image` mirrors the active slide, and a single upload is a one-slide set.
 	slides = $state<EditorImage[]>([]);
 	activeSlide = $state(0);
 	background = $state<Background>(DEFAULT_BACKGROUND.background);
@@ -70,8 +68,7 @@ export class ScreenshotEditorState {
 	overlays = $state<Overlay[]>([]);
 	selectedId = $state<string | null>(null);
 
-	// Screenshot color adjustments + size/opacity (mirror the clone's
-	// imageFilters/imageScale/imageOpacity).
+	// Screenshot colour adjustments plus size and opacity, mirroring the clone's imageFilters, imageScale and imageOpacity.
 	filters = $state<ImageFilters>({ ...DEFAULT_FILTERS });
 	imageScale = $state<number>(100); // percent of natural fit
 	imageOpacity = $state<number>(1); // 0..1
@@ -81,9 +78,7 @@ export class ScreenshotEditorState {
 	backgroundNoise = $state<number>(0); // 0..100 grain overlay opacity
 	canvasRadius = $state<number>(DEFAULT_CANVAS_RADIUS); // px corner radius on the whole stage
 
-	// Live animation + timeline (playback state is transient — not in history).
-	// `playhead` is TIMELINE time; the clip maps it into preset-local time, so a
-	// clip can be moved and stretched without touching the preset itself.
+	// `playhead` is TIMELINE time; the clip maps it into preset-local time, so a clip can move and stretch untouched.
 	animationId = $state<string | null>(null);
 	playing = $state(false);
 	playhead = $state(0); // ms along the timeline
@@ -92,9 +87,7 @@ export class ScreenshotEditorState {
 	clipStart = $state(0); // ms where the clip begins
 	clipDuration = $state<number | null>(null); // ms; null = the preset's own length
 
-	// User-authored keyframes. When any exist they become a synthetic preset that
-	// drives playback/export, overriding any selected preset (persisted in the
-	// design; selection is transient).
+	// User keyframes become a synthetic preset that drives playback and export, overriding any selected preset.
 	keyframes = $state<KeyframeEntry[]>([]);
 	selectedKeyframeId = $state<string | null>(null);
 
@@ -103,8 +96,7 @@ export class ScreenshotEditorState {
 	exportScale = $state<number>(2);
 	exportQuality = $state<number>(0.95); // 0..1, used by jpeg/webp only
 
-	// Editing guides. View-only, so they stay out of history and out of exports
-	// (their nodes carry `data-export-ignore`).
+	// View-only, so guides stay out of history and out of exports (their nodes carry `data-export-ignore`).
 	showRulers = $state(false);
 	showGrid = $state(false);
 	gridSize = $state(50); // px between grid lines
@@ -122,8 +114,7 @@ export class ScreenshotEditorState {
 		this.showGrid = !this.showGrid;
 	}
 
-	// Undo/redo over the design (not the image); coalesced so a slider drag is
-	// one step. Driven by a single $effect in the component (see `record`).
+	// Undo over the design, not the image; coalesced so a slider drag is one step. See `record`.
 	_undo = $state<string[]>([]);
 	_redo = $state<string[]>([]);
 	_lastSnap = "";
@@ -156,9 +147,7 @@ export class ScreenshotEditorState {
 	);
 
 	setImage(image: EditorImage) {
-		// A fresh upload starts from default styling (matches the reference's
-		// reset-on-upload), but keeps the chosen aspect ratio. First load is a
-		// no-op reset since everything is already default. Resets the slide set.
+		// A fresh upload resets styling but keeps the aspect ratio and clears the slide set; the first load is a no-op.
 		if (this.image) this.resetDesign(true);
 		this.image = image;
 		this.slides = [image];
@@ -181,8 +170,7 @@ export class ScreenshotEditorState {
 
 	removeSlide(i: number) {
 		if (i < 0 || i >= this.slides.length) return;
-		// Track the active slide by identity so removing one BEFORE it keeps the
-		// same slide active (index-clamping would shift to a different image).
+		// Track the active slide by identity, so removing an earlier one keeps the same slide active.
 		const activeImg = this.slides[this.activeSlide];
 		const next = this.slides.filter((_, j) => j !== i);
 		this.slides = next;

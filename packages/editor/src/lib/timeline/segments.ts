@@ -131,8 +131,7 @@ export function planSplit(t: number, shape: ClipShape): number[] | null {
 	const { trimStart, trimEnd, splitPoints } = shape;
 	// Can't split at or beyond the clip's outer edges.
 	if (t <= trimStart + EPS || t >= trimEnd - EPS) return null;
-	// Can't split inside a removed range; can't split exactly on a cut edge
-	// (that boundary already exists).
+	// No split inside a removed range, and none on a cut edge, where the boundary already exists.
 	for (const c of normalizeCuts(shape.cuts)) {
 		if (t > c.start - EPS && t < c.end + EPS) return null;
 	}

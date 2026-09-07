@@ -1,11 +1,4 @@
-import {
-	bigint,
-	index,
-	integer,
-	pgTable,
-	text,
-	timestamp,
-} from "drizzle-orm/pg-core";
+import { bigint, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { limitsFor } from "$lib/billing/catalog";
 import { organization } from "./organization";
 
@@ -20,9 +13,7 @@ export const workspaceUsage = pgTable(
 			.primaryKey()
 			.references(() => organization.id, { onDelete: "cascade" }),
 		/** Sum of `recast.size_bytes` for non-archived, non-deleted recasts. */
-		storageBytes: bigint("storage_bytes", { mode: "number" })
-			.notNull()
-			.default(0),
+		storageBytes: bigint("storage_bytes", { mode: "number" }).notNull().default(0),
 		/** Count of recasts with status='published' (counts toward link cap). */
 		activeRecastsCount: integer("active_recasts_count").notNull().default(0),
 		/** Count of recasts in `archived` state — billed at $0 but visible to owner. */
@@ -40,9 +31,7 @@ export const workspaceUsage = pgTable(
 			.notNull()
 			.default(0),
 		/** Start of the window `deliveryBytesThisMonth` covers; reset rolls it forward. */
-		deliveryPeriodStart: timestamp("delivery_period_start")
-			.notNull()
-			.defaultNow(),
+		deliveryPeriodStart: timestamp("delivery_period_start").notNull().defaultNow(),
 		/**
 		 * Rolling 30d view count across all shares in the workspace. Used for
 		 * the analytics overview card and abuse detection (sudden spike).

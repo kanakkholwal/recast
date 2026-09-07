@@ -58,11 +58,11 @@ let {
 	ondelete: () => void;
 } = $props();
 
-const isShared = $derived(!!recast.latestShareSlug);
+const isShared = $derived(Boolean(recast.latestShareSlug));
 const showViews = $derived(recast.source === "cloud" && recast.views > 0);
 
 let posterFailed = $state(false);
-const showPoster = $derived(!!recast.posterUrl && !posterFailed);
+const showPoster = $derived(Boolean(recast.posterUrl) && !posterFailed);
 
 const assignedTags = $derived(resolveAssignedTags(recast.tags, tags));
 const assignedSet = $derived(new Set(recast.tags));

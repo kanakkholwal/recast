@@ -13,7 +13,7 @@ const DEFAULT_BOUNCE_SPEED_MS = 220;
  * loads in secure static mode, so no script executes from untrusted packs.
  */
 export function svgSwatchUrl(svg: string): string {
-	return "data:image/svg+xml;utf8," + encodeURIComponent(svg.trim().replace(/\n\s*/g, " "));
+	return `data:image/svg+xml;utf8,${encodeURIComponent(svg.trim().replace(/\n\s*/g, " "))}`;
 }
 
 /** Whether any cursor-animation knob differs from its default (drives Reset). */

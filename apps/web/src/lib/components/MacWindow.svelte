@@ -2,18 +2,13 @@
 import { cn } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
 
-// macOS-style window chrome (traffic lights + titlebar), extracted from the
-// hero preview and the Auto-polish editor mock so the three product mocks
-// share one visual language instead of drifting. `url` renders the
-// browser-style origin crumb the hero uses; omit it for plain app windows.
+// Shared window chrome so the three product mocks don't drift; `url` renders the hero's origin crumb, omit it for app windows.
 type Props = {
 	title?: string;
 	url?: string;
 	class?: string;
 	children: Snippet;
-	// Traffic lights tint red/amber/green on hover of the window (a nice
-	// macOS touch). On by default; the parent must own a `group/win`, which
-	// this component provides on its root.
+	// Traffic lights tint on window hover; on by default, and this component provides the required `group/win` on its root.
 	hoverLights?: boolean;
 };
 

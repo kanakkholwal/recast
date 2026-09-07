@@ -4,9 +4,7 @@ import { formatDuration, formatRelative } from "$lib/dashboard/format";
 import type { Recast } from "$lib/dashboard/store.svelte";
 import EmptyState from "./EmptyState.svelte";
 
-// Visual recent-recasts rail for the home overview — poster thumbnails that
-// link through to each recast. A warmer, more product-forward counterpart to
-// the text-only "Top recasts" list.
+// Poster thumbnails linking through to each recast: a product-forward counterpart to the text-only top list.
 let {
 	recasts,
 	limit = 4,

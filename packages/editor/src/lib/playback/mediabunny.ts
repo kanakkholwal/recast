@@ -4,7 +4,7 @@
  * here, next to the worker entry it points at.
  */
 
-import { type MediaRef, MediabunnyVideoSource } from "@recast/media/playback";
+import { MediabunnyVideoSource, type MediaRef } from "@recast/media/playback";
 import { createEditorWorker } from "../host-hooks";
 
 /**

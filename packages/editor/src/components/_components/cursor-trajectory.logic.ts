@@ -1,5 +1,4 @@
-// Pure helpers for the cursor-trajectory sparkline: even down-sampling and the
-// normalised SVG path builder. The .svelte owns smoothing derivation + markup.
+// Pure helpers for the trajectory sparkline; the component owns smoothing derivation and markup.
 
 /** Evenly down-sample to at most `target` points, preserving order and endpoints roughly. */
 export function decimate<T>(arr: T[], target: number): T[] {

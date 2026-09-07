@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-// @recast/icons re-exports @tabler/icons-svelte, whose barrel can't resolve
-// under node. Only identity matters here, so stub the namespace.
+// @recast/icons re-exports a barrel that can't resolve under node, and only identity matters here.
 vi.mock("@recast/icons", () => ({
 	__esModule: true,
 	default: {},
@@ -20,8 +19,7 @@ describe("shareTargetFor", () => {
 		expect(shareTargetFor("linux").icon).toBe(icons.BrandLinux);
 	});
 
-	// Tauri's Platform union says "macos", never "darwin" — a mapping keyed on
-	// "darwin" silently falls through to the generic branch on every Mac.
+	// Tauri's Platform union says 'macos', never 'darwin', so a darwin-keyed mapping falls through on every Mac.
 	it("does not key macOS off 'darwin'", () => {
 		expect(shareTargetFor("darwin" as never).icon).toBe(icons.Share2);
 		expect(shareTargetFor("macos").icon).not.toBe(icons.Share2);

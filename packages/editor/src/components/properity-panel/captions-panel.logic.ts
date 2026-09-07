@@ -5,8 +5,8 @@
  */
 
 import { resolveCaptionAnimation } from "@recast/captions";
-import type { CaptionModelInfo, DeviceCapabilities, TranscriptSegment } from "../../lib/wire-types";
 import type { CaptionPresetValue } from "../../lib/registry/types";
+import type { CaptionModelInfo, DeviceCapabilities, TranscriptSegment } from "../../lib/wire-types";
 import type { CaptionStyle } from "../../stores/editor-store.svelte";
 
 /** Models grouped by family, preserving first-seen order, for the picker. */

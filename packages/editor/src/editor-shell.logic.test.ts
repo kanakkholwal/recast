@@ -29,8 +29,7 @@ describe("transport", () => {
 		expect(endOfClipAction(false)).toBe("pause");
 	});
 
-	// Echoing the element's time while the WebCodecs clock owns playback snaps
-	// the playhead back across every cut.
+	// Echoing the element's time while the WebCodecs clock owns playback snaps the playhead back across every cut.
 	it("ignores the element's time while WebCodecs drives the picture", () => {
 		expect(shouldEchoElementTime(true)).toBe(false);
 		expect(shouldEchoElementTime(false)).toBe(true);

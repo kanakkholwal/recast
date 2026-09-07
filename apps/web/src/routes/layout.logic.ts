@@ -5,8 +5,7 @@
  * trivially callable and testable.
  */
 
-// The dashboard, auth, and waitlist screens ship their own focused shells —
-// keep the marketing chrome off them.
+// Dashboard, auth and waitlist ship their own focused shells, so keep the marketing chrome off them.
 const CHROMELESS_PATHS = new Set([
 	"/login",
 	"/signup",
@@ -23,12 +22,9 @@ export function isChromeless(pathname: string): boolean {
 		pathname.startsWith("/admin") ||
 		pathname.startsWith("/onboarding") ||
 		pathname.startsWith("/share/") ||
-		// The screenshot editor is a full-height app, not a marketing page: it
-		// ships its own top bar. Its landing (/tools/screenshot-editor) keeps the
-		// site chrome.
+		// The screenshot editor is a full-height app with its own top bar; its landing page keeps the site chrome.
 		pathname.startsWith("/tools/screenshot-editor/edit") ||
-		// The video editor playground is one page: the drop surface swaps
-		// in-place for a full-height editor, so it owns its whole shell.
+		// The playground is one page whose drop surface swaps in-place for the editor, so it owns its whole shell.
 		pathname.startsWith("/playground") ||
 		pathname === "/accept-invitation" ||
 		pathname === "/verify-email" ||
@@ -52,15 +48,12 @@ export function isMarketing(pathname: string): boolean {
 	);
 }
 
-// Product surfaces ("the app", not "the website") — these get the branded
-// splash + route loading screen. Keep in sync with the inline path check in
-// `app.html`, which can't import this (it runs before any bundle loads).
+// Product surfaces get the branded splash; keep in sync with the inline path check in `app.html`, which can't import this.
 export function isAppArea(pathname: string): boolean {
 	return pathname.startsWith("/dashboard") || pathname.startsWith("/share/");
 }
 
-// Only the public marketing/tool pages should be indexed; everything else
-// (dashboard, admin, auth, onboarding, shares) is marked noindex.
+// Only public marketing and tool pages are indexed; everything else is marked noindex.
 const PUBLIC_PREFIXES = [
 	"/features",
 	"/extensions",
@@ -76,8 +69,7 @@ const PUBLIC_PREFIXES = [
 
 /** True on the home page and the public marketing/tool trees. */
 export function isIndexable(pathname: string): boolean {
-	// Client-only app surface: a real route, but an empty editor is thin content.
-	// `/tools` below would otherwise mark it indexable.
+	// A real route, but an empty editor is thin content, and `/tools` below would otherwise mark it indexable.
 	if (pathname.startsWith("/tools/screenshot-editor/edit")) return false;
 	return (
 		pathname === "/" ||

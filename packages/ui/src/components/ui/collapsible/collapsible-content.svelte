@@ -29,8 +29,7 @@ let {
 	easing?: (t: number) => number;
 } = $props();
 
-// Svelte transitions run on WAAPI, which the CSS reduced-motion override in
-// app.css can't reach — this component leaked that to every call site.
+// Svelte transitions run on WAAPI, which the CSS reduced-motion override can't reach, and this leaked to every call site.
 const slideMs = $derived(prefersReducedMotion.current ? 0 : duration);
 </script>
 

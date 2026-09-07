@@ -1,20 +1,17 @@
 <script lang="ts">
 /**
- * The app's one dialog chrome: flush content, a bordered header carrying an
- * icon + title + subtitle, and a bordered footer on a muted bar.
- *
- * It exists because the dialogs had drifted into two dialects — the "craft"
- * one (Confirm, Rename, profiles: `p-0`, ring, bordered footer, `xs` buttons)
- * and the plain primitive one (the cloud dialogs: default padding,
- * `Dialog.Header`/`Footer`, `sm` buttons). Same product, two visual languages.
+ * The app's one dialog chrome: a flush header (neutral rounded-xl icon chip +
+ * title + subtitle, no divider) over a scrolling body and a borderless footer,
+ * matching the settings/home/editor card language. Every modal routes through
+ * it so they read as one object; the surface tokens live in `dialog.styles`.
  */
 import type { IconComponent } from "@recast/icons";
 import * as Dialog from "@recast/ui/dialog";
-import { DIALOG_BODY, DIALOG_FOOTER, DIALOG_HEADER, DIALOG_SURFACE } from "./dialog.styles";
 import { cn } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
+import { DIALOG_BODY, DIALOG_FOOTER, DIALOG_HEADER, DIALOG_SURFACE } from "./dialog.styles";
 
-type Tone = "default" | "destructive" | "muted";
+type Tone = "default" | "destructive" | "success" | "muted";
 
 interface Props {
 	open: boolean;
@@ -47,9 +44,10 @@ let {
 }: Props = $props();
 
 const TONE_CHIP: Record<Tone, string> = {
-	default: "border-primary/20 bg-primary/10 text-primary",
-	destructive: "border-destructive/20 bg-destructive/10 text-destructive",
-	muted: "border-border/50 bg-muted text-muted-foreground",
+	default: "bg-muted/60 text-foreground ring-1 ring-inset ring-border/50",
+	destructive: "bg-destructive/10 text-destructive ring-1 ring-inset ring-destructive/20",
+	success: "bg-success/10 text-success ring-1 ring-inset ring-success/20",
+	muted: "bg-muted text-muted-foreground ring-1 ring-inset ring-border/50",
 };
 </script>
 
@@ -64,26 +62,26 @@ const TONE_CHIP: Record<Tone, string> = {
 		showCloseButton={false}
 		class={cn("block! gap-0!", DIALOG_SURFACE, widthClass)}
 	>
-		<Dialog.Header class={cn("flex-row items-start gap-3", DIALOG_HEADER)}>
+		<Dialog.Header class={cn("flex-row items-center gap-3", DIALOG_HEADER)}>
 			{#if Icon}
 				<span
 					class={cn(
-						"grid size-8 shrink-0 place-items-center rounded-lg border",
+						"grid size-9 shrink-0 place-items-center rounded-xl",
 						TONE_CHIP[tone],
 					)}
 					aria-hidden="true"
 				>
-					<Icon class="size-3.5" />
+					<Icon class="size-4" />
 				</span>
 			{/if}
 			<span class="flex min-w-0 flex-1 flex-col gap-0.5">
-				<Dialog.Title class="text-[13px] font-semibold tracking-tight text-foreground">
+				<Dialog.Title class="text-[15px] leading-tight font-semibold tracking-tight text-balance text-foreground">
 					{title}
 				</Dialog.Title>
 				<!-- Always rendered: bits-ui warns when a dialog has no description,
 				     and an empty one keeps the header height stable between states. -->
 				<Dialog.Description
-					class={cn("truncate text-[11px] leading-relaxed text-muted-foreground", !subtitle && "sr-only")}
+					class={cn("truncate text-[11.5px] leading-relaxed text-muted-foreground", !subtitle && "sr-only")}
 				>
 					{subtitle ?? title}
 				</Dialog.Description>

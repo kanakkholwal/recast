@@ -17,6 +17,7 @@ outputs:
   - "camera.mp4"
 entrypoints:
   - "apps/desktop/src-tauri/src/recording/mod.rs"
+  - "apps/desktop/src-tauri/src/camera/session.rs"
   - "apps/desktop/src-tauri/src/recording/pipeline.rs"
   - "apps/desktop/src-tauri/src/encoder/mod.rs"
   - "apps/desktop/src-tauri/src/capture/"
@@ -25,7 +26,7 @@ invariants:
   - "The pacer is count-based CFR, and dropped frames are compensated so duration never shifts."
   - "Every FFmpeg spawn goes through configure_silent_command, or Windows flashes a console and steals focus."
   - "A long-lived FFmpeg child's stderr must be drained on a side thread or the pipe fills and stdin deadlocks."
-  - "Rust never opens the camera; a preview WebView records it via getUserMedia."
+  - "A camera serves one reader, so one Rust thread owns it and fans frames to both the preview and the file."
 ---
 
 ## Overview
@@ -41,14 +42,17 @@ on `spawn_blocking` workers rather than the UI thread.
 
 A session runs three joined threads plus separate OS capture sessions:
 a **capture/pacer** thread (`recording/pipeline.rs`), an **encoder** thread
-(`encoder/mod.rs`), and a **cursor** sampler thread (`cursor/mod.rs`). The
+(`encoder/mod.rs`), and a **cursor** sampler thread (`cursor/mod.rs`). A camera
+adds a fourth, owned by `camera/session.rs` rather than by the session. The
 capture thread pulls raw BGRA frames from a platform `CaptureSource`
 (`capture/`), paces them to a constant frame rate, and hands them to the encoder
 thread through a bounded `ArrayQueue` (`RecordingPipeline`). The encoder pipes
 those frames to a long-lived FFmpeg child for H.264 encoding. Audio (system
-loopback + microphone) is captured by independent OS sessions (`audio/`). The
-camera is *not* opened by Rust at all; it is recorded in a preview WebView via
-`getUserMedia` → `MediaRecorder` and delivered to disk before stop.
+loopback + microphone) is two more capturekit sessions, one thread each
+(`audio/`). The
+camera is opened by Rust through capturekit and read by a thread of its own,
+which fans every frame two ways: downscaled to the preview bubble over IPC, and
+full-size into a second encoder that writes `camera.mp4`.
 
 The pipeline's central design constraint is **wall-clock ↔ video-PTS ↔
 cursor-clock equality**: 1 real second of recording must equal 1 second of video
@@ -72,11 +76,11 @@ flowchart TD
     RM --> CLOCK[RecordingClock<br/>pause-aware]
 
     CT --> CAP[capture/pacer thread<br/>pipeline.rs]
-    CAP --> SRC{CaptureSource<br/>per platform}
-    SRC -->|Windows window| WGC[WGC per-window]
+    CAP --> SRC{capturekit<br/>capture/source.rs}
+    SRC -->|Windows window| WGC[Windows Graphics Capture]
     SRC -->|Windows display| DXGI[DXGI duplication]
-    SRC -->|macOS| AVF[FFmpeg avfoundation]
-    SRC -->|Linux| X11WL[X11 xcb / Wayland portal]
+    SRC -->|macOS| SCK[ScreenCaptureKit]
+    SRC -->|Linux| X11WL[X11 GetImage / Wayland portal]
 
     CAP -->|BGRA frames| Q[RecordingPipeline<br/>ArrayQueue + stats]
     Q --> ENC[encoder thread<br/>encoder/mod.rs]
@@ -85,9 +89,15 @@ flowchart TD
 
     CLOCK --> CUR[cursor thread 125Hz<br/>cursor/mod.rs]
     CUR --> CJSON[(cursor.json)]
-    CLOCK --> AUD[audio + mic sessions<br/>audio/]
+    CLOCK --> AUD[audio + mic sessions<br/>audio/session.rs]
+    AUD --> AUDK{capturekit<br/>WASAPI / SCK / PipeWire}
     AUD --> WAV[(audio.wav / mic.wav)]
-    PREVIEW[preview WebView<br/>getUserMedia+MediaRecorder] --> CAMFILE[(camera.mp4)]
+
+    CLOCK --> CAM[camera thread<br/>camera/session.rs]
+    CAM --> CAPK{capturekit<br/>MF / AVFoundation / V4L2}
+    CAM -->|downscaled BGRA| BUBBLE[preview window canvas]
+    CAM -->|full-size BGRA| CENC[camera encoder<br/>encoder/mod.rs]
+    CENC --> CAMFILE[(camera.mp4)]
 ```
 
 ```mermaid
@@ -110,8 +120,8 @@ sequenceDiagram
         Enc->>Enc: write frame + dup per pacer drop
     end
     UI->>Cmd: stop_recording()
-    Cmd->>UI: emit camera-flush (if requested)
-    Cmd->>Mgr: stop() waits for camera file
+    Cmd->>Mgr: stop()
+    Mgr->>Mgr: detach_recorder(): camera.mp4 closes, preview stays live
     Mgr->>Cap: stop_flag = true, join
     Mgr->>Enc: drain queue, close stdin, join
     Mgr->>Cur: stop_flag = true, join -> CursorTrack
@@ -124,8 +134,10 @@ sequenceDiagram
 
 | Component | File | Responsibility |
 |---|---|---|
-| `RecordingManager` | `recording/mod.rs` | Owns the single live session; `start`/`stop`/`pause`/`resume`; camera-ready gate; shutdown reaping |
+| `RecordingManager` | `recording/mod.rs` | Owns the single live session; `start`/`stop`/`pause`/`resume`; shutdown reaping |
 | `RecordingSession` | `recording/mod.rs` | Handles for the 3 threads + audio/mic sessions, clock, paths, camera overlay tracker |
+| `camera::session` | `camera/session.rs` | The one owner of the device; one thread fans frames to the preview sink and the file encoder |
+| `camera::scale` | `camera/scale.rs` | Box downscale to a 480px longest edge before a preview frame crosses IPC |
 | `RecordingClock` | `recording/mod.rs` | Pause-aware wall clock; `effective_elapsed()` subtracts every paused interval |
 | `CaptureTarget` / `resolve*` | `recording/mod.rs` | Resolves display/window/region to `source`+`crop`+`scale_factor` in physical pixels |
 | `spawn_capture_loop` | `recording/pipeline.rs` | Count-based CFR pacer; drains `CaptureSource`, emits exactly `fps` frames/sec |
@@ -133,16 +145,17 @@ sequenceDiagram
 | `spawn_encoder_loop` | `encoder/mod.rs` | Pipes BGRA rawvideo to FFmpeg H.264; dropped-frame duplication; GOP + quality tiers |
 | `pump_stderr_tail` | `encoder/mod.rs` | Drains FFmpeg stderr on a side thread (deadlock avoidance, diagnostics tail) |
 | `H264Encoder` / `codec_args` | `encoder/h264.rs` | Per-encoder (NVENC/AMF/QSV/VideoToolbox/libx264) FFmpeg arg generation |
-| `CaptureSource` trait | `capture/mod.rs` | Platform-independent full-`source`-sized BGRA frame source; `set_target_fps` hint |
-| Windows capture | `capture/platform/windows.rs` | WGC per-window (`WgcSource`), DXGI monitor duplication (`DxgiSource`), xcap fallback |
-| macOS capture | `capture/platform/macos.rs` | Long-lived FFmpeg avfoundation child streaming BGRA to a reader thread |
-| Linux capture | `capture/platform/linux_x11.rs`, `linux_wayland.rs` | xcb `GetImage` on root; xdg-desktop-portal + PipeWire on Wayland |
+| `CaptureSource` trait | `capture/mod.rs` | Full-`source`-sized BGRA frame source; the seam the pacer's tests script |
+| `CapturekitSource` | `capture/source.rs` | The only screen backend: opens a resolved target, repacks rows, reopens on loss |
+| `CaptureTarget` | `capture/target.rs` | Resolves a picker id to a display, window or region, as pure functions over the enumerated lists |
+| `capture::grab` | `capture/shot.rs` | One-shot captures for picker thumbnails and agent screenshots, off the same backends |
+| `pack_rows` | `encoder/mod.rs` | Copies rows off the driver's stride into the tight `width * 4` FFmpeg's `rawvideo` demuxer expects |
 | `spawn_cursor_capture` | `cursor/mod.rs` | 125Hz deadline sampler; virtual-desktop→frame mapping; click tracking |
 | `sample_cursor_state` | `cursor/platform/` | Win32 `GetCursorPos`/`GetCursorInfo`/`GetAsyncKeyState`; `device_query` on macOS/Linux |
 | `shift_cursor_track` | `cursor/mod.rs` | Re-bases whole track earlier by `first_frame_offset_us` so cursor t=0 == video frame 0 |
 | `detect_idle_periods` / `detect_zoom_triggers` | `cursor/smoothing.rs` | Post-capture idle windows (2s/5px) and scored auto-zoom candidates |
-| Audio sessions | `audio/mod.rs`, `audio/platform/` | WASAPI loopback+mic (Windows); FFmpeg avfoundation/pulse + SCKit (macOS/Linux) |
-| `write_camera_track` | `recording/mod.rs` | Normalizes the WebView MediaRecorder blob (MP4/WebM) to plain H.264 MP4, atomic rename |
+| `TrackSession` | `audio/session.rs` | One capture loop over capturekit, for loopback and microphone alike |
+| `TrackWriter` | `audio/track.rs` | Pause gating, first-sample marking and the drift re-declaration, testable without a device |
 | `configure_silent_command` | `ffmpeg.rs` | `CREATE_NO_WINDOW` on every FFmpeg/ffprobe spawn (Windows console-flash / focus-steal) |
 
 ## Control / data flow
@@ -154,20 +167,24 @@ heavy on the calling thread, because a sync command blocks the thread WKWebView
 paints on.
 
 **Start.** The target is resolved first, and how depends on the platform. On
-Wayland the xdg-desktop-portal dialog is negotiated up front and its stream is
-stashed for the capture thread, with the portal's dimensions treated as
-authoritative. Everywhere else `CaptureTarget::resolve` enumerates monitors and
-windows through xcap and computes `source` plus `crop`, then `apply_device_scale`
-lifts logical coordinates to physical pixels. That last step is a no-op at scale
-1.0 and is the whole reason Retina captures are not half-size.
+Wayland the xdg-desktop-portal dialog decides the real surface, so the resolved
+target is advisory and `adopt_source_size` takes whatever the backend delivers.
+Everywhere else `CaptureTarget::resolve` asks capturekit for the displays and
+windows and computes `source` plus `crop` from them. Those rectangles are already
+in physical device pixels on every platform, which is why there is no
+logical-to-physical conversion left: the old one ran in both directions (the
+picker reported logical on macOS while the region overlay sent physical) and was
+behind half-size Retina captures and regions on the wrong monitor.
 
 `RecordingManager::start` then checks screen-recording permission, resolves fps
 (`24..=240`, default 60) and the quality tier, and sizes the frame queue from a
 256 MB BGRA budget clamped to 30-180 frames. A 4K frame is 33 MB, so that budget
 is what stops a slow encoder from turning backpressure into an out-of-memory
 kill. It spawns the capture, encoder and cursor threads, starts the system-audio
-and microphone sessions, and records that a camera was *requested*; nothing in
-Rust opens one. On success the command takes a wake lock and emits
+and microphone sessions, and, if a camera was requested, calls
+`camera::session::attach_recorder` to hang a second encoder off the already-open
+preview device. A camera that cannot be recorded downgrades to a warning rather
+than failing the recording. On success the command takes a wake lock and emits
 `recording:started`.
 
 **Steady state.** The pacer emits exactly `fps` frames per second, duplicating
@@ -178,11 +195,7 @@ each frame to FFmpeg and re-emits one duplicate per pacer-dropped frame, so
 skips work while it is set, which is why a paused stretch does not appear in the
 cursor track either.
 
-**Stop.** If a camera was requested and the preview window is still open,
-`stop_recording` emits `camera-flush` and waits up to 30 seconds for the
-MediaRecorder bytes to land.
-
-`RecordingManager::stop` then sets the stop flag, joins all three threads, and
+**Stop.** `RecordingManager::stop` sets the stop flag, joins all three threads, and
 stops the audio sessions, **reaping everything before surfacing any error**. The
 ordering is the point: returning early on the first failure would orphan an
 FFmpeg child or leave a capture device held.
@@ -245,28 +258,108 @@ lock, and surfaces any warnings.
   runs on its own thread for the whole child lifetime. If stderr isn't read, the
   ~64KB OS pipe buffer fills on a long recording, FFmpeg blocks on its stderr
   write, stops reading stdin, and the encoder's `stdin.write_all` deadlocks, freezing capture mid-recording. macOS/Linux hit it sooner (smaller pipe
-  buffers). The same reasoning applies to the macOS avfoundation capture child
-  (`encoder/mod.rs`, `capture/platform/macos.rs`).
+  buffers) (`encoder/mod.rs`).
+
+- **The source is opened before the encoder is configured.** The backend is the
+  authority on frame size, and under the Wayland portal it only knows once the
+  user has picked a surface. `adopt_source_size` takes the delivered size and
+  drops the crop with it, since a crop was a rectangle of a surface the backend
+  did not choose (`recording/mod.rs`).
+
+- **One enumerator, one id space.** Displays and windows are listed by
+  capturekit and its ids travel through the picker and back, so a target cannot
+  be resolved against one enumeration and captured from another. The ids are
+  HMONITOR / HWND / CGDirectDisplayID values, so they are `u64` in Rust and plain
+  JSON numbers on the wire — exact below 2^53, which every handle is. Audio
+  devices come from the same enumeration, so a mic picked in the panel is the
+  one opened (`commands/system.rs`, `capture/target.rs`).
 
 - **`CaptureSource` contract: emit full-`source`-sized frames; the encoder
   crops.** A backend must return `source`-dimensioned BGRA, never pre-cropped: the encoder is configured for `source` dims and applies its own crop filter.
   The X11 backend once pre-cropped, double-cropping and corrupting every
-  region/window recording; there are regression tests pinning this
-  (`capture/platform/linux_x11.rs`, `recording/mod.rs`).
+  region/window recording, which is why `CapturekitSource` asks for no
+  acquisition region even though capturekit can crop on the GPU
+  (`capture/source.rs`, `recording/mod.rs`).
 
 - **WGC readback throttling.** Windows Graphics Capture delivers a frame per
   window repaint (well above encode rate); each GPU→CPU readback maps GPU memory
   (a GPU stall). `set_target_fps` sets a min-extract interval so surplus frames
   are drained-and-closed cheaply and only one is read back per interval
-  (`capture/mod.rs`, `capture/platform/windows.rs`).
+  `readback_rate` carries the encode rate into the backend, because the
+  recording paces itself and so declares no capturekit `Pacing`
+  (`capture/source.rs`).
 
-- **Camera is never opened by Rust.** Opening the webcam a second time via
-  FFmpeg while the preview WebView already holds it fails on single-consumer
-  devices. The track is recorded in the preview (`getUserMedia` → `MediaRecorder`),
-  delivered via `save_recorded_camera` → `write_camera_track` (which sniffs
-  MP4 vs WebM by magic bytes and stream-copies or transcodes to plain H.264 MP4
-  with an atomic rename) *before* stop, and gated by the `camera_ready` flag
-  (`recording/mod.rs`, `1145-1160`, `1248-1319`).
+- **A camera serves exactly one reader.** Two concurrent opens were measured:
+  one gets frames, the other times out. So the preview cannot hold the device
+  with `getUserMedia` while a recording reads it, and `camera/session.rs` is the
+  single owner: one thread reads capturekit and fans each frame to the preview
+  sink and, while recording, to a second encoder. Recording *attaches to* the
+  live device rather than opening it, so `camera.mp4` shares the session's
+  `RecordingClock` and its A/V offset is measured rather than reported across
+  processes as wall-clock time (`camera/session.rs`, `recording/mod.rs`).
+
+- **Preview frames are downscaled before they cross IPC.** Capture-resolution
+  BGRA is 110 MB/s at 720p30. Frames are box-filtered to a 480px longest edge
+  and sent as `width: u32le, height: u32le` plus BGRA rows, so the bubble sizes
+  itself with no side channel (`camera/scale.rs`, `camera/session.rs`).
+
+- **Stopping the preview is keyed on a session token.** The panel closes the old
+  preview window and opens a new one, so the dying window's `stop_camera_preview`
+  can land *after* the new window's open. Without the token it would tear down
+  the camera the replacement just started, which read as an intermittent "camera
+  produced no frames" (`camera/session.rs`).
+
+- **Opening retries rather than waiting longer.** A source reader that has not
+  delivered in 4s will not deliver at 10s, but a fresh open usually will: the
+  device is briefly still held by whatever released it last. Three attempts with
+  a 400ms backoff, and only on errors capturekit marks recoverable, so an absent
+  camera still fails at once (`camera/session.rs`).
+
+- **A track is marked where its first buffer BEGAN, not where it arrived.** A
+  video frame's unit is an instant, so `TrackStart::mark()` suits it. An audio
+  buffer covers time before it is handed over, and on an idle loopback the first
+  delivery is capturekit's 100 ms silence chunk, so marking the arrival put the
+  whole system-audio track 100 ms late against the picture. Audio uses
+  `mark_at(now - duration_of(frames))` (`audio/track.rs`, `recording/clock.rs`).
+
+- **An idle loopback still owes samples.** A device with nothing playing
+  delivers no buffers at all, sometimes for minutes, so a track that just
+  concatenates what arrives comes out short and everything in it drifts early.
+  capturekit measures the gap against the device clock and hands back real
+  silence for it, flagged as inserted so the drift measurement can leave it out
+  (`audio/track.rs`).
+
+- **A paused stretch is dropped, not paused at the device.** The capture loop
+  keeps draining while `pause_flag` is set and only the WAV write is suppressed,
+  because a device left undrained overruns and the audio after the resume comes
+  back corrupt (`audio/track.rs`).
+
+- **The header states the rate the device delivered, not the one it declared.**
+  A capture crystal that runs off nominal drifts against the frame pacer for the
+  whole take instead of cancelling, so a take longer than 5s that measures
+  0.02–5% off is re-declared at its measured rate. Inserted silence and paused
+  spans are excluded: both are paced by wall clock and would mask the drift
+  (`audio/track.rs`, `audio/wav.rs`).
+
+- **A missing loopback becomes silence; a missing microphone becomes a
+  warning.** The muxer needs a system-audio track either way, so
+  `AudioCaptureSession::start` returns `None` for an unreachable loopback and
+  the RECORDER writes the silence, at `effective_elapsed()`. The session cannot:
+  it would measure wall clock, and the track would then outrun the picture by
+  every paused second. A user who explicitly asked for the mic is told instead
+  (`audio/mod.rs`, `recording/mod.rs`).
+
+- **An audio device that is lost ends its track.** `CaptureError::is_recoverable`
+  is true for a lost device, but an audio backend reports that with no wait at
+  all and keeps reporting it, and the audio loop has no reopen: retrying would
+  spin a core for the rest of the take. Only a timeout reads again; everything
+  else keeps what was captured and stops (`audio/session.rs`).
+
+- **The audio device is opened on its own capture thread.** WASAPI is COM, and
+  an `IAudioClient` created on the caller's apartment is not the capture
+  thread's to use. `TrackSession::start` spawns first and takes the open's
+  outcome back over a channel, so the caller still learns synchronously whether
+  the device opened (`audio/session.rs`).
 
 - **Shutdown reaping.** Quitting from the tray goes through `app.exit(0)` →
   `std::process::exit`, which runs no destructors. `abort_for_shutdown` must be
@@ -276,7 +369,7 @@ lock, and surfaces any warnings.
 
 ## Related
 
-- [03-preview-and-rendercore.md](/architecture/preview-rendercore): how the editor
+- [preview-engine.md](/architecture/preview-engine): how the editor
   previews `recording.mp4` and composites the stylized cursor / camera overlay
   from the sidecar tracks this pipeline writes.
 - [05-timeline-model.md](/architecture/timeline-model): the render state and cursor /

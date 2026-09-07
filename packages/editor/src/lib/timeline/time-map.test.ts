@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import parityFixtures from "./__fixtures__/cut-parity.json";
 import { originalToOutput as cutOriginalToOutput, normalizeCuts, type TimelineCut } from "./cuts";
+import type { Segment } from "./segments";
 import { deriveSegments } from "./segments";
 import {
 	buildGapMap,
@@ -9,8 +11,8 @@ import {
 	outputToOriginal,
 	spanAtOriginal,
 	timeMapFromSegments,
+	toRegions,
 } from "./time-map";
-import parityFixtures from "./__fixtures__/cut-parity.json";
 
 function cut(start: number, end: number, id = `${start}-${end}`): TimelineCut {
 	return { id, start, end, source: "manual" };
@@ -21,9 +23,7 @@ function span(origStart: number, origEnd: number, speed = 1) {
 }
 
 describe("originalToOutput binary search parity", () => {
-	// Reference linear scan: exactly the pre-optimization implementation. The
-	// binary-search version must agree with it for every input, including gaps,
-	// span interiors, seam-exact times, and out-of-range.
+	// Reference linear scan, exactly the pre-optimization implementation; the binary search must agree on every input.
 	function linearOriginalToOutput(map: ReturnType<typeof buildTimeMap>, t: number): number {
 		for (const s of map.spans) {
 			if (t < s.origStart) return s.outStart;
@@ -123,8 +123,7 @@ describe("originalToOutput / outputToOriginal (general map)", () => {
 	});
 
 	it("maps everything to 0 when the map is empty (all cut away)", () => {
-		// A fully-cut timeline yields no kept spans; both directions degrade to 0
-		// rather than reading past an empty span list.
+		// A fully-cut timeline has no kept spans, so both directions degrade to 0 rather than reading past an empty list.
 		const empty = buildTimeMap([]);
 		expect(empty.spans).toHaveLength(0);
 		expect(empty.outputDuration).toBe(0);
@@ -154,9 +153,7 @@ describe("spanAtOriginal", () => {
 });
 
 describe("speed=1 reduces exactly to the cut translation map", () => {
-	// Same shared fixtures the Rust export and cuts.test.ts assert against: at
-	// speed 1 the general map's output duration must equal the kept duration, and
-	// its mapping must match cuts.originalToOutput up to the trim-start offset.
+	// The same shared fixtures Rust and cuts.test.ts assert against: at 1x, output duration must equal kept duration.
 	for (const c of parityFixtures.cases) {
 		it(`matches fixture: ${c.name}`, () => {
 			const cuts = c.cuts.map(([s, e], i) => cut(s, e, `fx-${i}`));
@@ -170,8 +167,7 @@ describe("speed=1 reduces exactly to the cut translation map", () => {
 
 			expect(map.outputDuration).toBeCloseTo(c.expectedKeptDuration, 6);
 
-			// The general map's output axis starts at trimStart; the cut map's starts
-			// at original 0. They must agree once that constant offset is removed.
+			// The general map starts at trimStart and the cut map at original 0; they agree once that offset is removed.
 			const offset = cutOriginalToOutput(cuts, c.trimStart);
 			const normalized = normalizeCuts(cuts);
 			for (const seg of segments) {
@@ -187,8 +183,7 @@ describe("speed=1 reduces exactly to the cut translation map", () => {
 });
 
 describe("displayTimeMap (trim-drag axis) reduces to the full-duration cut map at 1x", () => {
-	// While trimming the timeline swaps onto this full-recording axis; at 1x it
-	// must match the cut translation map over [0, duration] so the layout matches.
+	// The trim-drag axis must match the cut translation map at 1x over the whole duration, or the layout shifts.
 	const DURATION = 12;
 	for (const c of parityFixtures.cases) {
 		if (c.trimEnd > DURATION) continue;
@@ -269,5 +264,66 @@ describe("timeMapFromSegments warps a sped-up segment (kept axis)", () => {
 		expect(map.outputDuration).toBeCloseTo(7);
 		expect(originalToOutput(map, 4)).toBeCloseTo(4);
 		expect(originalToOutput(map, 10)).toBeCloseTo(7);
+	});
+});
+
+describe("toRegions", () => {
+	it("is the same list the old segments + speed-lookup derivation produced", () => {
+		const segments: Segment[] = [
+			{ start: 0, end: 4, index: 0 },
+			{ start: 6, end: 10, index: 1 },
+			{ start: 12, end: 13, index: 2 },
+		];
+		const speeds = [1, 2, 0.5];
+		const map = timeMapFromSegments(segments, (i) => speeds[i]);
+		// What `audioRegions()` in the editor page used to rebuild by hand.
+		const rebuiltByHand = segments.map((s) => ({
+			start: s.start,
+			end: s.end,
+			speed: speeds[s.index],
+		}));
+		expect(toRegions(map)).toEqual(rebuiltByHand);
+	});
+
+	it("carries the clamped speed, not the raw override", () => {
+		const map = timeMapFromSegments([{ start: 0, end: 4, index: 0 }], () => 0);
+		expect(toRegions(map)[0].speed).toBe(1);
+	});
+
+	it("drops zero-width segments the way the map does", () => {
+		const map = timeMapFromSegments([
+			{ start: 0, end: 4, index: 0 },
+			{ start: 4, end: 4, index: 1 },
+		]);
+		expect(toRegions(map)).toEqual([{ start: 0, end: 4, speed: 1 }]);
+	});
+
+	it("is empty for an empty map", () => {
+		expect(toRegions(timeMapFromSegments([]))).toEqual([]);
+	});
+});
+
+describe("kept axis vs trim-display axis", () => {
+	// The trim-drag axis re-exposes the trimmed head and tail, so anything that PLAYS or EXPORTS must read the kept axis.
+	const SHAPE = {
+		trimStart: 5,
+		trimEnd: 15,
+		cuts: [] as TimelineCut[],
+		splitPoints: [] as number[],
+	};
+	const DURATION = 30;
+
+	it("the display axis spans the whole recording during a trim drag", () => {
+		const segments = deriveSegments(SHAPE);
+		const display = displayTimeMap({ ...SHAPE, durationSec: DURATION, segments });
+		const regions = toRegions(display);
+		expect(regions[0].start).toBe(0);
+		expect(regions[regions.length - 1].end).toBe(DURATION);
+	});
+
+	it("the kept axis stays inside the trim no matter what the UI is doing", () => {
+		const kept = timeMapFromSegments(deriveSegments(SHAPE));
+		expect(toRegions(kept)).toEqual([{ start: 5, end: 15, speed: 1 }]);
+		expect(kept.outputDuration).toBe(10);
 	});
 });

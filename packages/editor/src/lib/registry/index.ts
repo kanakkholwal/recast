@@ -15,26 +15,26 @@ import "./builtins";
 
 export { registry } from "./registry.svelte";
 export {
-	resolveBackgroundWireValue,
-	resolveCursorSprite,
-	resolveCursorDataUrl,
-	cursorSpriteSvg,
 	cursorSpriteHotspot,
+	cursorSpriteSvg,
+	resolveBackgroundWireValue,
+	resolveCursorDataUrl,
+	resolveCursorSprite,
 	resolveEasing,
 	resolveSmoothing,
 } from "./resolve";
 export {
+	type AssetKind,
+	type BackgroundValue,
+	type ColorValue,
+	type CursorValue,
+	type EasingValue,
 	EXT_PREFIX,
 	extEntryId,
+	type GradientValue,
 	isExtId,
 	parseExtId,
-	type AssetKind,
 	type RegistryEntry,
-	type Source,
-	type CursorValue,
-	type BackgroundValue,
-	type GradientValue,
-	type ColorValue,
-	type EasingValue,
 	type SmoothingValue,
+	type Source,
 } from "./types";

@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
-	import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import DropdownMenuPortal from "./dropdown-menu-portal.svelte";
-	import type { ComponentProps } from "svelte";
+import { DropdownMenu as DropdownMenuPrimitive } from "bits-ui";
+import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import DropdownMenuPortal from "./dropdown-menu-portal.svelte";
+import type { ComponentProps } from "svelte";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		portalProps,
-		...restProps
-	}: DropdownMenuPrimitive.SubContentProps & {
-		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof DropdownMenuPortal>>;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	portalProps,
+	...restProps
+}: DropdownMenuPrimitive.SubContentProps & {
+	portalProps?: WithoutChildrenOrChild<ComponentProps<typeof DropdownMenuPortal>>;
+} = $props();
 </script>
 
 <!-- Portal the submenu to <body>, same as the root Content. Without this the

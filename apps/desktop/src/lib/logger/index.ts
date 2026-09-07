@@ -27,8 +27,7 @@ interface RecastScope {
 	label: string;
 }
 
-// Per-window scope: each editor window is its own webview/JS context, so it
-// holds exactly the one recast it has open. Null in non-editor windows.
+// Per-window scope: each editor window is its own webview, so it holds exactly the recast it has open.
 let scope: RecastScope | null = null;
 
 /** Verbose (`debug`/`info`) logging is on in dev or when the user opted in. */
@@ -85,14 +84,12 @@ function toConsole(level: Level, msg: string): void {
 	fn(msg);
 }
 
-// Lazily loaded so a non-Tauri preview (or a build without the plugin) degrades
-// to console-only instead of throwing at import time.
+// Lazily loaded so a non-Tauri preview degrades to console-only instead of throwing at import time.
 let logPlugin: typeof import("@tauri-apps/plugin-log") | null = null;
 let logPluginFailed = false;
 
 async function toFile(level: Level, msg: string): Promise<void> {
-	// warn/error are never verbose, so always persist them (release keeps Warn+).
-	// debug/info only when dev or diagnostics is on.
+	// warn and error are never verbose, so always persist them; debug and info only in dev or with diagnostics on.
 	const always = level === "warn" || level === "error";
 	if (!always && !verboseEnabled()) return;
 	if (logPluginFailed) return;
@@ -128,8 +125,7 @@ function flush(key: string): void {
 	const entry = pending.get(key);
 	if (!entry) return;
 	pending.delete(key);
-	const data =
-		entry.count > 1 ? { ...entry.data, coalesced: entry.count } : entry.data;
+	const data = entry.count > 1 ? { ...entry.data, coalesced: entry.count } : entry.data;
 	emit("debug", entry.area, entry.event, data);
 }
 

@@ -87,8 +87,7 @@ export class EngagementTracker {
 	onTimeUpdate(currentTime: number, duration: number): RecastPlayerEngagement | null {
 		if (!duration || !Number.isFinite(duration)) return null;
 		const pct = Math.min(100, Math.round((currentTime / duration) * 100));
-		// Absolute distance, so scrubbing backwards re-arms reporting instead of
-		// going silent until playback climbs past the old high-water mark.
+		// Absolute distance, so scrubbing backwards re-arms reporting instead of going silent until the old high-water mark.
 		if (Math.abs(pct - this.#lastReportedPct) < 5) return null;
 		this.#lastReportedPct = pct;
 		return { type: "progress", percent: pct, currentTime };

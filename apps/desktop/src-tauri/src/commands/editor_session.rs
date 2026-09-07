@@ -1,21 +1,5 @@
-//! Per-project editor write-lock. The GUI user and a CLI agent both go
-//! through the same `try_acquire_write` API so one holds the project at a
-//! time; the other sees a structured `editor_locked` error (CLI) or a
-//! banner + disabled mutators (GUI).
-//!
-//! Crash-safety: the in-memory state is mirrored to `recast_session.json`
-//! under the app's data dir. On next boot the snapshot is read once and the
-//! `holder_pid` is checked for liveness — if the prior holder is gone the
-//! session is cleared, otherwise it stays valid.
-//!
-//! Activity: every successful acquire / release / mutate bumps
-//! `last_activity_at_ms`. After `EditorSession::TTL_MS` of inactivity the lock
-//! is reclaimable, so a crashed agent never strands the project.
-//!
-//! **Testability:** the lock helpers accept `&RwLock<EditorSession>` rather
-//! than `&AppState`. Both surfaces (`&AppState` for production, bare lock
-//! for tests) reduce to the same code — the production helpers just
-//! unwrap `state.editor_session` and forward.
+//! Per-project editor write-lock shared by the GUI user and a CLI agent, mirrored to `recast_session.json`.
+//! A dead `holder_pid` or `TTL_MS` of inactivity reclaims it, so a crashed agent never strands the project.
 
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -76,9 +60,7 @@ fn is_pid_alive(pid: u32) -> bool {
         let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
             return false;
         };
-        // The handle itself is a proof of existence: a successfully opened
-        // handle (even on a zombie we can't signal) means the kernel still
-        // has the PID. Close it immediately; we don't need to wait.
+        // The handle is proof of existence: opening one at all means the kernel still has the PID, so close it immediately.
         if handle.is_invalid() {
             return false;
         }
@@ -104,9 +86,7 @@ pub(crate) fn try_acquire_write(
 }
 
 /// The project is held by a different writer whose lock has not yet expired.
-///
-/// `Display` is a wire contract: the CLI and the GUI both branch on the
-/// `editor_locked:` prefix.
+/// `Display` is a wire contract: the CLI and the GUI both branch on the `editor_locked:` prefix.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
     "editor_locked: project '{project}' held by '{holder}' (acquired {held_for_ms} ms ago); \

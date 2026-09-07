@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
 	AUDIO_LANE_HEIGHT_PX,
-	cardLayout,
-	cardSpan,
 	CLIP_LANE_HEIGHT_PX,
 	CLIP_ROW_HEIGHT_PX,
 	CUT_LANE_HEIGHT_PX,
+	cardLayout,
+	cardSpan,
 	edgeHandleWidth,
 	LANE_BORDER_PX,
 	LANE_PADDING_PX,
@@ -27,8 +27,7 @@ describe("packRows", () => {
 		expect(rows).toEqual([0, 0, 0]);
 	});
 
-	// The bug this exists for: two cards at the same moment used to render at
-	// top: 50% on top of each other, and the covered one could not be clicked.
+	// The bug: two cards at the same moment rendered on top of each other and the covered one couldn't be clicked.
 	it("pushes an overlapping card onto the next row", () => {
 		const rows = packRows([span("a", 0, 100), span("b", 50, 150)]);
 		expect(rows).toEqual([0, 1]);
@@ -49,8 +48,7 @@ describe("packRows", () => {
 		expect(rows).toEqual([0, 1, 2]);
 	});
 
-	// Rows fill left-to-right so the packing can't depend on the store's ordering,
-	// but the result comes back aligned to the input array.
+	// Rows fill left-to-right, so packing can't depend on store ordering, but results come back in input order.
 	it("packs left-to-right and returns rows in input order", () => {
 		expect(packRows([span("late", 200, 300), span("early", 0, 100)])).toEqual([0, 0]);
 		expect(packRows([span("late", 50, 300), span("early", 0, 100)])).toEqual([1, 0]);
@@ -66,8 +64,7 @@ describe("packRows", () => {
 	});
 });
 
-// The bug this exists for: re-packing on every pointer move moved the DRAGGED
-// card to another row the instant it touched a neighbour, so it left the cursor.
+// The bug: re-packing on every pointer move moved the DRAGGED card to another row the instant it touched a neighbour.
 describe("packRows with a pinned card", () => {
 	const pin = (id: string, row: number) => new Map([[id, row]]);
 
@@ -82,8 +79,7 @@ describe("packRows with a pinned card", () => {
 		expect(packRows(spans, pin("dragged", 1))).toEqual([0, 1]);
 	});
 
-	// A pin placed out of left-to-right order must not push earlier cards down:
-	// tracking only each row's rightmost edge did exactly that.
+	// A pin placed out of order must not push earlier cards down: tracking only each row's rightmost edge did exactly that.
 	it("lets an earlier card take the room before a pinned one", () => {
 		const spans = [span("early", 0, 50), span("dragged", 300, 400)];
 		expect(packRows(spans, pin("dragged", 0))).toEqual([0, 0]);
@@ -95,9 +91,7 @@ describe("packRows with a pinned card", () => {
 	});
 });
 
-// One block height across every lane, so rows line up into a grid. The
-// single-block lanes (audio, cuts) derive their height from it rather than
-// carrying their own number, which is how they drifted apart before.
+// One block height across every lane so rows line up; single-block lanes derive from it instead of carrying their own.
 describe("block height is one number", () => {
 	it("is 36px, and every lane row height agrees", () => {
 		expect(ROW_HEIGHT_PX).toBe(36);
@@ -134,16 +128,13 @@ describe("laneHeight", () => {
 		expect(two).toBeGreaterThan(one);
 	});
 
-	// The zoom lane's cards are taller than the annotation lane's, so both the
-	// height and the row offsets have to follow the caller's row height.
+	// Zoom cards are taller than annotation cards, so height and row offsets must follow the caller's row height.
 	it("follows a taller row height", () => {
 		expect(laneHeight(2, 30)).toBeGreaterThan(laneHeight(2, 26));
 		expect(rowTop(1, 30)).toBeGreaterThan(rowTop(1, 26));
 	});
 
-	// A lane's absolute children are positioned in its PADDING box, so a row at
-	// top 0 sits against the padding edge and every pixel of slack pools at the
-	// bottom -- a single-row lane looked top-heavy by the full padding.
+	// Absolute children sit in the PADDING box, so a row at top 0 pools all the slack at the bottom and looks top-heavy.
 	it("centres a single row between the lane's padding edges", () => {
 		for (const rowHeight of [22, 26, 30]) {
 			const paddingBox = laneHeight(1, rowHeight) - LANE_BORDER_PX * 2;
@@ -158,8 +149,7 @@ describe("cardSpan", () => {
 		expect(cardSpan(100, 260)).toEqual({ left: 100, width: 160 });
 	});
 
-	// A one-frame annotation is a sub-pixel sliver. It gets widened to stay
-	// grabbable, centred on its real span so the card doesn't drift off its time.
+	// A one-frame annotation is a sub-pixel sliver: widened to stay grabbable, centred so it doesn't drift off its time.
 	it("widens a sliver around its own centre rather than only rightward", () => {
 		const s = cardSpan(100, 104);
 		expect(s.width).toBeGreaterThanOrEqual(28);
@@ -177,8 +167,7 @@ describe("edgeHandleWidth", () => {
 		expect(edgeHandleWidth(400)).toBeGreaterThanOrEqual(10);
 	});
 
-	// Two fixed 8px handles on a 28px card left 12px to grab for moving, so a
-	// short card was almost impossible to drag without resizing it instead.
+	// Two 8px handles on a 28px card left 12px to grab, so a short card resized instead of moving.
 	it("always leaves more card to move than to resize", () => {
 		for (const w of [28, 32, 40, 60, 120, 400]) {
 			const handle = edgeHandleWidth(w);
@@ -186,8 +175,7 @@ describe("edgeHandleWidth", () => {
 		}
 	});
 
-	// `Math.max(1, …)` used to hand a sliver card a 1px target, which no pointer
-	// can reliably hit.
+	// `Math.max(1, ...)` used to hand a sliver card a 1px target, which no pointer can reliably hit.
 	it("stays hittable on a narrow card", () => {
 		for (const w of [16, 20, 28]) {
 			expect(edgeHandleWidth(w), `width ${w}`).toBeGreaterThanOrEqual(5);
@@ -238,8 +226,7 @@ describe("cardLayout", () => {
 		expect(stacked.height).toBeGreaterThan(flat.height);
 	});
 
-	// The rail and the lane body both read `height`, so it must always be the
-	// height that actually fits `rowCount` rows at the given row height.
+	// The rail and the lane body both read `height`, so it must always fit `rowCount` rows at the given row height.
 	it("reports a height that matches its own row count and row height", () => {
 		const l = cardLayout(
 			[

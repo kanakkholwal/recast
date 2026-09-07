@@ -6,7 +6,7 @@
 
 import type { VideoMetadata } from "./render-state";
 
-export const MAX_FRAME_PADDING_PERCENT = 20;
+export const MAX_FRAME_PADDING_PERCENT = 40;
 
 export function clampFramePaddingPercent(value: number): number {
 	if (!Number.isFinite(value)) return 0;

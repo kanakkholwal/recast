@@ -1,12 +1,4 @@
-import {
-	bigint,
-	index,
-	integer,
-	pgTable,
-	text,
-	timestamp,
-	unique,
-} from "drizzle-orm/pg-core";
+import { bigint, index, integer, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { PLAN_IDS, PLANS } from "$lib/billing/catalog";
 import { user } from "./auth";
 
@@ -31,8 +23,7 @@ export const organization = pgTable("organization", {
 	metadata: text("metadata"),
 	/** Plan — "free" (default), "pro", "enterprise". Admin-managed. */
 	plan: text("plan").notNull().default("free"),
-	// Negotiated Enterprise caps. NULL falls back to the plan's number; there
-	// is no unlimited tier, so a contract always lands a concrete figure here.
+	// Negotiated Enterprise caps; NULL falls back to the plan's number, and no tier is unlimited.
 	seatLimit: integer("seat_limit"),
 	storageLimitBytes: bigint("storage_limit_bytes", { mode: "number" }),
 	deliveryLimitBytes: bigint("delivery_limit_bytes", { mode: "number" }),
@@ -57,9 +48,7 @@ export const member = pgTable(
 	(t) => [
 		index("member_org_idx").on(t.organizationId),
 		index("member_user_idx").on(t.userId),
-		// One row per (org, user) pair. Prevents duplicate memberships from
-		// botched invite-accept retries or concurrent addMember races — both
-		// the seat-count cap and role updates require this to be unambiguous.
+		// One row per org and user: the seat cap and role updates need it unambiguous against botched retries and races.
 		unique("member_organization_user_key").on(t.organizationId, t.userId),
 	],
 );

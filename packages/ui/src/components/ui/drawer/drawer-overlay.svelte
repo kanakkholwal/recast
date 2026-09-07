@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { Drawer as DrawerPrimitive } from "vaul-svelte";
-	import { CRAFT_OVERLAY_BACKDROP_ANIMATION, cn } from "@recast/ui/utils";
+import { Drawer as DrawerPrimitive } from "vaul-svelte";
+import { CRAFT_OVERLAY_BACKDROP_ANIMATION, cn } from "@recast/ui/utils";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		...restProps
-	}: DrawerPrimitive.OverlayProps = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	...restProps
+}: DrawerPrimitive.OverlayProps = $props();
 </script>
 
 <DrawerPrimitive.Overlay

@@ -33,9 +33,7 @@ export const PUSH_TRANSITIONS: PushTransition[] = [
 	"push-down",
 ];
 
-// The paired directions a push writes: the left segment's exit travels `out`, the
-// right segment's entrance comes FROM `in` (the opposite edge), together reading
-// as one continuous push in the exit's direction.
+// A push pairs the left segment's exit with the right's entrance from the opposite edge, reading as one continuous move.
 const PUSH_DIRS: Record<PushTransition, { out: SceneAnimDir; in: SceneAnimDir }> = {
 	"push-left": { out: "left", in: "right" },
 	"push-right": { out: "right", in: "left" },

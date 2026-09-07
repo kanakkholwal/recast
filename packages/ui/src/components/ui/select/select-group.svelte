@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { Select as SelectPrimitive } from "bits-ui";
-	import { cn } from "@recast/ui/utils";
+import { Select as SelectPrimitive } from "bits-ui";
+import { cn } from "@recast/ui/utils";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		...restProps
-	}: SelectPrimitive.GroupProps = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	...restProps
+}: SelectPrimitive.GroupProps = $props();
 </script>
 
 <SelectPrimitive.Group

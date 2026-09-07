@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { cn } from "../utils";
-	import type { IconProps } from "../types";
+import { cn } from "../utils";
+import type { IconProps } from "../types";
 
-	let {
-		class: klass = "",
-		size = 24,
-		stroke = 2,
-		color = "currentColor",
-		"aria-hidden": ariaHidden = "true",
-		...rest
-	}: IconProps = $props();
+let {
+	class: klass = "",
+	size = 24,
+	stroke = 2,
+	color = "currentColor",
+	"aria-hidden": ariaHidden = "true",
+	...rest
+}: IconProps = $props();
 </script>
 
 <!--
 Hand-stitched: Tabler ships equivalent primitives but no "monitor with play
 triad" specifically. Composes `device-desktop` with a smaller `player-play`
-overlay so call sites keep the same Lucide semantic ("a screen showing it's
+overlay so call sites keep the same @recast/icons semantic ("a screen showing it's
 ready to play / actively showing content").
 -->
 <svg

@@ -1,12 +1,7 @@
 <script lang="ts">
 import type { Snippet } from "svelte";
 
-// The label-on-the-left, control-on-the-right row, hand-rolled 24 times across
-// the properties panels. Beyond the duplication, none of those copies tied the
-// visible label to its control, and several controls carried an aria-label that
-// said something different from the label next to it (WCAG 2.5.3, Label in
-// Name): "Show" read as "Words shown at once" to a screen reader, so voice
-// control could not act on what the user saw.
+// Hand-rolled 24 times before this, and none of those copies tied the label to its control, so an aria-label could contradict the visible text (WCAG 2.5.3).
 interface Props {
 	label: string;
 	/** Extra context. Sits under the label, not in a `title` tooltip. */

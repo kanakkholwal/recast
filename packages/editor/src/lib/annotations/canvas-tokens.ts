@@ -32,7 +32,7 @@ let probe: HTMLElement | null = null;
 let readCtx: CanvasRenderingContext2D | null = null;
 
 function ensureProbe(): HTMLElement {
-	if (probe && probe.isConnected) return probe;
+	if (probe?.isConnected) return probe;
 	probe = document.createElement("span");
 	probe.setAttribute("aria-hidden", "true");
 	probe.style.cssText =

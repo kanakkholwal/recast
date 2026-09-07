@@ -27,8 +27,7 @@ describe("clickPlacedBox", () => {
 		}
 	});
 
-	// A fixed UV height would read squat on 16:9 and stretched on a portrait
-	// capture; the box is sized in visual pixels for that reason.
+	// A fixed UV height reads squat on 16:9 and stretched on a portrait capture, which is why the box is sized in visual pixels.
 	it("holds the same screen ratio across frame shapes", () => {
 		const wide = clickPlacedBox(0.5, 0.5, WIDE.w, WIDE.h);
 		const tall = clickPlacedBox(0.5, 0.5, TALL.w, TALL.h);

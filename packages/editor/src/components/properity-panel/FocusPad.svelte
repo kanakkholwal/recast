@@ -1,9 +1,7 @@
 <script lang="ts">
 import { focusWindow } from "./focus-panel.logic";
 
-// Two 0..1 sliders are a poor control for one point, so the pad is the primary
-// affordance and the sliders below stay for typed precision. aria-hidden because
-// those sliders already expose both values and ARIA has no two-axis slider role.
+// The pad is the primary affordance and the sliders stay for typed precision; aria-hidden, since they already expose both values.
 interface Props {
 	centerX: number;
 	centerY: number;

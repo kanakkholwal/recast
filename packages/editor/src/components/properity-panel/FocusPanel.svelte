@@ -1,40 +1,34 @@
 <script lang="ts">
 import {
 	AiWand,
-	Clock,
 	Copy,
 	Crosshair,
 	Eye,
 	EyeOff,
-	MoveHorizontal,
-	MoveVertical,
 	Plus,
 	Sparkles,
 	Trash2,
-	TrendingDown,
-	TrendingUp,
 	TriangleAlert,
-	Wind,
 	ZoomIn,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
-import { SliderControl } from "@recast/ui/slider-control";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 import { EASE, type Easing, easingEquals } from "../../lib/easing/cubic-bezier";
-import { clockCentis as fmtTime } from "../../lib/format/time";
+import { clock, clockCentis as fmtTime } from "../../lib/format/time";
 import { motionDuration } from "../../lib/motion.svelte";
 import { registry } from "../../lib/registry";
+import { resolveZoomCenter } from "../../lib/zoom/auto-apply";
+import { overlappingZoomIds } from "../../lib/zoom/resolve";
 import {
 	DEFAULT_ZOOM_CENTER,
 	type EditorStore,
 	type ZoomRegion,
 } from "../../stores/editor-store.svelte";
-import { resolveZoomCenter } from "../../lib/zoom/auto-apply";
-import { overlappingZoomIds } from "../../lib/zoom/resolve";
 import EasingControl from "./EasingControl.svelte";
+import FocusPad from "./FocusPad.svelte";
 import {
 	computeNewZoomBounds,
 	isOutsideClip,
@@ -43,8 +37,8 @@ import {
 	retimeStart,
 	sparklinePath,
 } from "./focus-panel.logic";
-import FocusPad from "./FocusPad.svelte";
 import PanelSection from "./PanelSection.svelte";
+import SliderRow from "./SliderRow.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -63,26 +57,21 @@ const selected = $derived<ZoomRegion | null>(
 	store.zoomRegions.find((r) => r.id === store.selectedZoomRegionId) ?? null,
 );
 
-// Listed in timeline order (by start time) so the panel scans the same way the
-// timeline reads, left to right, and numbered so a row correlates with the
-// "Region N" detail header.
+// Listed in timeline order so the panel scans left to right like the timeline, and numbered to match 'Region N'.
 const orderedRegions = $derived([...store.zoomRegions].sort((a, b) => a.start - b.start));
 const selectedIndex = $derived(
 	selected ? orderedRegions.findIndex((r) => r.id === selected.id) : -1,
 );
 
-// NLE accessors, not raw trim fields: `outPoint` resolves the legacy
-// `trimEnd === 0` sentinel, which the timeline lane already respects.
+// NLE accessors, not raw trim fields: `outPoint` resolves the legacy `trimEnd === 0` sentinel.
 const clipIn = $derived(store.inPoint);
 const clipOut = $derived(store.outPoint);
 
-// Overlapping regions are ambiguous in preview and the FFmpeg export SUMS
-// their zoom instead of picking one, so they get called out, not hidden.
+// Overlapping regions are ambiguous and the FFmpeg export SUMS their zoom, so they are called out, not hidden.
 const overlapping = $derived(new Set(overlappingZoomIds(store.zoomRegions)));
 const outOfClip = (r: ZoomRegion) => isOutsideClip(r, clipIn, clipOut);
 
-// Zoom is only legible with the playhead inside the region, so selecting one
-// parks the playhead at the moment it reaches full scale.
+// Zoom is only legible with the playhead inside the region, so selecting one parks it at full scale.
 function focusMoment(r: ZoomRegion) {
 	const half = Math.max(0, (r.end - r.start) * 0.5);
 	return Math.min(r.end - 0.01, r.start + Math.min(Math.max(0, r.rampIn), half) + 0.01);
@@ -97,8 +86,7 @@ const playheadInSelected = $derived(
 	selected ? store.currentTime > selected.start && store.currentTime < selected.end : true,
 );
 
-// Null when the playhead leaves no room, which disables the button instead of
-// snapping the edge somewhere the user didn't point at.
+// Null when the playhead leaves no room, disabling the button instead of snapping the edge somewhere unasked.
 const startFromPlayhead = $derived(
 	selected ? retimeStart(selected, store.currentTime, clipIn) : null,
 );
@@ -168,9 +156,7 @@ function updateSelected(updates: Partial<ZoomRegion>, trackUndo = false) {
 	store.updateZoomRegion(selected.id, updates);
 }
 
-// Curves only. It used to reset rampIn/rampOut too, which are Timing controls:
-// a button in one section silently changing another section's values is the same
-// trap `recenterFocus` is careful to avoid.
+// Curves only: it used to reset rampIn and rampOut, and a button silently changing another section is the trap `recenterFocus` avoids.
 function resetCurves() {
 	if (!selected) return;
 	store.pushUndoState();
@@ -180,8 +166,7 @@ function resetCurves() {
 	});
 }
 
-// The focus point only: scale and motion blur sit in the same section now, and
-// Recenter must not quietly reset those too.
+// The focus point only: scale and motion blur share this section and must not be quietly reset.
 function recenterFocus() {
 	if (!selected) return;
 	store.pushUndoState();
@@ -235,9 +220,9 @@ function applyPresetToBoth(preset: Easing) {
       </div>
     {/snippet}
 
-    <!-- A settings row, not an AI badge: the persistent preference reads on
-         the first line, the one-shot action sits under it. -->
-    <div class="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/70 px-2.5 py-2">
+    <!-- A plain preference + a leading action, not a boxed banner: the box read
+         as an alert. Toggle sets the persistent behaviour; the button runs it now. -->
+    <div class="flex flex-col gap-2.5">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <p class="text-[11px] font-medium text-foreground">Auto-zoom on import</p>
@@ -252,10 +237,7 @@ function applyPresetToBoth(preset: Easing) {
           onCheckedChange={(next) => (store.autoZoomEnabled = next)}
         />
       </div>
-      <div class="flex items-center justify-end gap-1 border-t border-border/50 pt-2">
-        {#if hasAutoZooms}
-          <Button variant="ghost" size="xs" onclick={clearAuto}>Remove generated</Button>
-        {/if}
+      <div class="flex items-center gap-1.5">
         <Button
           variant="secondary"
           size="xs"
@@ -266,6 +248,16 @@ function applyPresetToBoth(preset: Easing) {
           <AiWand size={11} />
           Generate now
         </Button>
+        {#if hasAutoZooms}
+          <Button
+            variant="ghost"
+            size="xs"
+            class="text-muted-foreground hover:text-destructive"
+            onclick={clearAuto}
+          >
+            Remove generated
+          </Button>
+        {/if}
       </div>
     </div>
 
@@ -301,7 +293,7 @@ function applyPresetToBoth(preset: Easing) {
             class={cn(
               "group relative flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all duration-150",
               isActive
-                ? "border-primary/60 bg-primary/10 shadow-(--shadow-craft-inset)"
+                ? "border-foreground/40 bg-card shadow-(--shadow-craft-inset) ring-1 ring-inset ring-foreground/20"
                 : "border-border/60 bg-card/60 hover:border-border hover:bg-card",
               isHidden && "opacity-55",
             )}
@@ -316,13 +308,13 @@ function applyPresetToBoth(preset: Easing) {
             <span
               class={cn(
                 "pointer-events-none w-3.5 shrink-0 text-center text-[10px] font-semibold tabular-nums",
-                isActive ? "text-primary" : "text-muted-foreground/70",
+                isActive ? "text-foreground" : "text-muted-foreground/70",
               )}>{i + 1}</span>
             <span
               class={cn(
                 "pointer-events-none flex h-8 w-12 shrink-0 items-center justify-center rounded-md border transition-colors",
                 isActive
-                  ? "border-primary/40 bg-background/40 text-primary"
+                  ? "border-foreground/40 bg-background/40 text-foreground"
                   : "border-border/50 bg-background/40 text-muted-foreground group-hover:text-foreground",
               )}
             >
@@ -338,17 +330,21 @@ function applyPresetToBoth(preset: Easing) {
               </svg>
             </span>
             <div class="pointer-events-none min-w-0 flex-1">
-              <div class="flex items-center gap-1.5">
-                <span
-                  class="truncate text-[11px] font-medium tabular-nums text-foreground"
-                >
-                  {region.scale.toFixed(2)}× · {fmtTime(region.start)}–{fmtTime(
-                    region.end,
-                  )}
+              <div class="flex items-baseline gap-1.5">
+                <span class="shrink-0 text-[12px] font-semibold tabular-nums text-foreground">
+                  {region.scale.toFixed(2)}×
+                </span>
+                <span class="truncate text-[11px] tabular-nums text-muted-foreground">
+                  {clock(region.start)}–{clock(region.end)}
+                </span>
+              </div>
+              <div class="mt-0.5 flex items-center gap-1">
+                <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                  {(region.end - region.start).toFixed(2)}s
                 </span>
                 {#if region.source === "auto"}
                   <span
-                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-primary/30 bg-primary/10 px-1 text-[9px] font-semibold uppercase tracking-wider text-primary"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-border/60 bg-muted/60 px-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground"
                   >
                     <Sparkles size={8} />
                     Auto
@@ -365,7 +361,7 @@ function applyPresetToBoth(preset: Easing) {
                 {#if overlapping.has(region.id)}
                   <span
                     title="Overlaps another region. Only one can apply, and export and preview can disagree."
-                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-amber-500/40 bg-amber-500/10 px-1 text-[9px] font-medium text-amber-600 dark:text-amber-400"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-warning/40 bg-warning/10 px-1 text-[9px] font-medium text-warning"
                   >
                     <TriangleAlert size={8} />
                     Overlaps
@@ -379,9 +375,6 @@ function applyPresetToBoth(preset: Easing) {
                     Outside clip
                   </span>
                 {/if}
-              </div>
-              <div class="text-[10px] tabular-nums text-muted-foreground">
-                {(region.end - region.start).toFixed(2)}s duration
               </div>
             </div>
             <!-- Row actions on hover/focus only. For the SELECTED row these
@@ -501,7 +494,7 @@ function applyPresetToBoth(preset: Easing) {
 
       {#if overlapping.has(region.id)}
         <div
-          class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-amber-700 dark:text-amber-300"
+          class="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-[10px] leading-snug text-warning"
         >
           <TriangleAlert size={11} class="mt-px shrink-0" />
           <span>
@@ -551,22 +544,17 @@ function applyPresetToBoth(preset: Easing) {
           onchange={(x, y) => updateSelected({ centerX: x, centerY: y })}
         />
 
-        <SliderControl
+        <SliderRow
           label="Scale"
           value={region.scale}
           min={1}
           max={3}
           step={0.05}
-          unit="×"
           formatValue={(v) => `${v.toFixed(2)}×`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ scale: v })}
-        >
-          {#snippet icon()}
-            <ZoomIn size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="Focus X"
           value={region.centerX}
           min={0}
@@ -575,12 +563,8 @@ function applyPresetToBoth(preset: Easing) {
           formatValue={(v) => v.toFixed(2)}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ centerX: v })}
-        >
-          {#snippet icon()}
-            <MoveHorizontal size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="Focus Y"
           value={region.centerY}
           min={0}
@@ -589,36 +573,20 @@ function applyPresetToBoth(preset: Easing) {
           formatValue={(v) => v.toFixed(2)}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ centerY: v })}
-        >
-          {#snippet icon()}
-            <MoveVertical size={11} />
-          {/snippet}
-        </SliderControl>
+        />
 
-        <!-- Preview-only, and it must say so: the Rust compositor has no zoom
-             motion blur (only the cursor trail does), and every region defaults
-             to 0.5, so exports come out sharper than the editor looks. -->
-        <SliderControl
-          label="Motion blur"
-          description="Preview only. Not applied to exported video."
+        <!-- Velocity-driven zoom blur from the shared compositor (streak_length), so it renders in the export too, not just the preview. -->
+        <SliderRow
+          label="Blur"
+          description="Applied during zoom ramps, in preview and export."
           value={Math.round(region.motionBlur * 100)}
           min={0}
           max={100}
           step={1}
-          unit="%"
           formatValue={(v) => (v === 0 ? "Off" : `${v.toFixed(0)}%`)}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ motionBlur: v / 100 })}
-        >
-          {#snippet icon()}
-            <Wind size={11} />
-          {/snippet}
-        </SliderControl>
-        {#if region.motionBlur > 0.001}
-          <p class="px-0.5 text-[10px] leading-snug text-muted-foreground">
-            Motion blur shows in the preview only. The exported video is not blurred.
-          </p>
-        {/if}
+        />
       </PanelSection>
 
       <PanelSection
@@ -651,66 +619,46 @@ function applyPresetToBoth(preset: Easing) {
             </Button>
           </div>
         {/snippet}
-        <SliderControl
+        <SliderRow
           label="Start"
           value={region.start}
           min={clipIn}
           max={Math.max(region.end - 0.1, clipIn)}
           step={0.01}
-          unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ start: v })}
-        >
-          {#snippet icon()}
-            <Clock size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="End"
           value={region.end}
           min={region.start + 0.1}
           max={clipOut}
           step={0.01}
-          unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ end: v })}
-        >
-          {#snippet icon()}
-            <Clock size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="Ramp in"
           value={region.rampIn}
           min={0}
           max={Math.max(maxRamp, 0.01)}
           step={0.01}
-          unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampIn: v })}
-        >
-          {#snippet icon()}
-            <TrendingUp size={11} />
-          {/snippet}
-        </SliderControl>
-        <SliderControl
+        />
+        <SliderRow
           label="Ramp out"
           value={region.rampOut}
           min={0}
           max={Math.max(maxRamp, 0.01)}
           step={0.01}
-          unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampOut: v })}
-        >
-          {#snippet icon()}
-            <TrendingDown size={11} />
-          {/snippet}
-        </SliderControl>
+        />
       </PanelSection>
 
       <!-- Presets lead; raw bezier curves live behind a "Custom curves" disclosure. -->

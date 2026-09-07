@@ -50,7 +50,7 @@ export function readCuesFromTrack(track: TextTrack): TranscriptCue[] {
 export function activeCueIndex(cues: TranscriptCue[], t: number): number {
 	let idx = -1;
 	for (let i = 0; i < cues.length; i++) {
-		if (cues[i]!.start <= t) idx = i;
+		if (cues[i].start <= t) idx = i;
 		else break;
 	}
 	return idx;

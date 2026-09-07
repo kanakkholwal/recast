@@ -7,12 +7,13 @@
  * the pick as the desktop's default (a local preference; it never touches the
  * web session's active org).
  */
-import type { CloudWorkspace } from "$lib/stores/cloudShare.svelte";
-import { planLabel, roleLabel } from "$components/settings/cloud-signin.logic";
+
 import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
+import { Check, Crown, Send, Users } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
-import { Check, Crown, Send, Users } from "@recast/icons";
+import { planLabel, roleLabel } from "$components/settings/cloud-signin.logic";
+import type { CloudWorkspace } from "$lib/stores/cloudShare.svelte";
 
 let {
 	open = false,
@@ -35,8 +36,7 @@ let {
 let chosen = $state<string | null>(null);
 let remember = $state(false);
 
-// Re-seed the selection each time the dialog opens so a prior cancel doesn't
-// leak into the next share. Defaults to the active workspace, else the first.
+// Re-seeded on open so a prior cancel can't leak into the next share; defaults to the active workspace, else the first.
 $effect(() => {
 	if (open) {
 		chosen = activeId ?? workspaces[0]?.id ?? null;
@@ -74,14 +74,14 @@ function confirm() {
 					class={cn(
 						"flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-xs transition-colors",
 						active
-							? "border-primary/50 bg-primary/8 text-foreground"
+							? "border-foreground/40 bg-foreground/5 text-foreground"
 							: "border-border-low/60 text-muted-foreground hover:bg-foreground/4",
 					)}
 				>
 					<span
 						class={cn(
 							"grid size-7 shrink-0 place-items-center rounded-md text-[11px] font-semibold",
-							active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+							active ? "bg-foreground text-background" : "bg-muted text-muted-foreground",
 						)}
 						aria-hidden="true"
 					>
@@ -111,7 +111,7 @@ function confirm() {
 							<span>{ws.recastsCount} {ws.recastsCount === 1 ? "recast" : "recasts"}</span>
 						</span>
 					</span>
-					{#if active}<Check class="size-4 shrink-0 text-primary" aria-hidden="true" />{/if}
+					{#if active}<Check class="size-4 shrink-0 text-foreground" aria-hidden="true" />{/if}
 				</button>
 			{/each}
 		</div>
@@ -124,7 +124,7 @@ function confirm() {
 				class={cn(
 					"grid size-4 shrink-0 place-items-center rounded border transition-colors",
 					"peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60",
-					remember ? "border-primary bg-primary text-primary-foreground" : "border-border",
+					remember ? "border-foreground bg-foreground text-background" : "border-border",
 				)}
 				aria-hidden="true"
 			>
@@ -135,10 +135,10 @@ function confirm() {
 	</div>
 
 	{#snippet footer()}
-		<Button type="button" variant="ghost" size="xs" onclick={() => onOpenChange?.(false)}>
+		<Button type="button" variant="ghost" size="sm" onclick={() => onOpenChange?.(false)}>
 			Cancel
 		</Button>
-		<Button type="button" size="xs" class="gap-2" disabled={!chosen} onclick={confirm}>
+		<Button type="button" size="sm" class="gap-2" disabled={!chosen} onclick={confirm}>
 			Share here
 			<Send class="size-3.5" />
 		</Button>

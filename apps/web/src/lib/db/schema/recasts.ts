@@ -1,12 +1,4 @@
-import {
-	bigint,
-	index,
-	integer,
-	pgEnum,
-	pgTable,
-	text,
-	timestamp,
-} from "drizzle-orm/pg-core";
+import { bigint, index, integer, pgEnum, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 import { folder } from "./folders";
 import { organization } from "./organization";
@@ -21,11 +13,7 @@ export const recastSourceEnum = pgEnum("recast_source", ["cloud", "local"]);
  *                   so the owner can re-upload from desktop. Hard-deleted at
  *                   day 30 via `deletedAt`.
  */
-export const recastStatusEnum = pgEnum("recast_status", [
-	"draft",
-	"published",
-	"archived",
-]);
+export const recastStatusEnum = pgEnum("recast_status", ["draft", "published", "archived"]);
 
 export const recast = pgTable(
 	"recast",

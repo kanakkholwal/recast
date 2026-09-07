@@ -34,10 +34,7 @@ function hex(bytes: Uint8Array): string {
 }
 
 async function sha256Hex(input: string): Promise<string> {
-	const digest = await crypto.subtle.digest(
-		"SHA-256",
-		new TextEncoder().encode(input),
-	);
+	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
 	return hex(new Uint8Array(digest));
 }
 
@@ -95,11 +92,7 @@ export async function unlockToken(slug: string): Promise<string> {
 		false,
 		["sign"],
 	);
-	const sig = await crypto.subtle.sign(
-		"HMAC",
-		key,
-		new TextEncoder().encode(`unlock:${slug}`),
-	);
+	const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`unlock:${slug}`));
 	return hex(new Uint8Array(sig)).slice(0, 32);
 }
 

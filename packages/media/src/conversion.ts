@@ -21,11 +21,11 @@ import {
 	Output,
 	type OutputFormat,
 	WebMOutputFormat,
-} from 'mediabunny';
-import { ConvertError, type JobContext } from './protocol';
+} from "mediabunny";
+import { ConvertError, type JobContext } from "./protocol";
 
 /** Container family the input file belongs to. */
-export type ContainerKind = 'mp4' | 'webm';
+export type ContainerKind = "mp4" | "webm";
 
 /**
  * Container-agnostic options for one conversion. Both video and audio are
@@ -62,24 +62,24 @@ export async function runConversion(
 	});
 	if (!conversion.isValid) {
 		throw new ConvertError(
-			'bad-input',
+			"bad-input",
 			"This file can't be converted with these settings (no usable track).",
 		);
 	}
 	conversion.onProgress = (p) => ctx.onProgress(p);
 
 	const onAbort = () => void conversion.cancel();
-	ctx.signal.addEventListener('abort', onAbort, { once: true });
+	ctx.signal.addEventListener("abort", onAbort, { once: true });
 	try {
 		await conversion.execute();
 	} catch (err) {
-		if (ctx.signal.aborted) throw new ConvertError('cancelled', 'Cancelled.');
-		throw new ConvertError('bad-input', err instanceof Error ? err.message : 'Conversion failed.');
+		if (ctx.signal.aborted) throw new ConvertError("cancelled", "Cancelled.");
+		throw new ConvertError("bad-input", err instanceof Error ? err.message : "Conversion failed.");
 	} finally {
-		ctx.signal.removeEventListener('abort', onAbort);
+		ctx.signal.removeEventListener("abort", onAbort);
 	}
 
-	if (!target.buffer) throw new ConvertError('internal', 'No output was produced.');
+	if (!target.buffer) throw new ConvertError("internal", "No output was produced.");
 	return target.buffer;
 }
 
@@ -88,7 +88,7 @@ export async function runConversion(
  * The caller picks the format; this helper just translates.
  */
 export function outputFormatFor(kind: ContainerKind): OutputFormat {
-	return kind === 'webm' ? new WebMOutputFormat() : new Mp4OutputFormat();
+	return kind === "webm" ? new WebMOutputFormat() : new Mp4OutputFormat();
 }
 
 /**
@@ -98,15 +98,15 @@ export function outputFormatFor(kind: ContainerKind): OutputFormat {
 export async function inputContainerKind(input: Input): Promise<ContainerKind> {
 	try {
 		const mime = await input.getMimeType();
-		return /webm|matroska|x-matroska/i.test(mime) ? 'webm' : 'mp4';
+		return /webm|matroska|x-matroska/i.test(mime) ? "webm" : "mp4";
 	} catch {
-		return 'mp4';
+		return "mp4";
 	}
 }
 
 /** Replace `name`'s extension with `ext`. */
 export function withExtension(name: string, ext: string): string {
-	const dot = name.lastIndexOf('.');
+	const dot = name.lastIndexOf(".");
 	const base = dot > 0 ? name.slice(0, dot) : name;
 	return `${base}.${ext}`;
 }

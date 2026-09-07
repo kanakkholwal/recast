@@ -54,8 +54,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	}
 
 	const db = getDb();
-	// Authorize: share owner, an owner/admin of the recast's workspace, or a
-	// global admin. Roles are re-read from the DB so changes take effect at once.
+	// Share owner, a workspace owner or admin, or a global admin; roles are re-read from the DB so changes apply at once.
 	const manage = await resolveShareManage(params.id, session.user.id);
 	if (!manage) error(404, "Share not found");
 	if (!manage.canManage) error(403, "Not allowed to change this share");
@@ -69,8 +68,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		expiresAt?: Date | null;
 	} = {};
 
-	// CTA is both-or-neither: a label without a destination (or vice versa)
-	// renders a dead button, so we treat a partial input as "clear".
+	// CTA is both-or-neither: a label without a destination renders a dead button, so a partial input clears it.
 	const hasCta = "ctaLabel" in body || "ctaUrl" in body;
 	if (hasCta) {
 		const label =
@@ -98,9 +96,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		patch.commentsEnabled = body.commentsEnabled;
 	}
 
-	// Search indexing opt-in. Only meaningful for public shares; the page gates
-	// the emitted robots/schema on visibility === "public" regardless, so a
-	// stale flag on a since-privated share can never make it crawlable.
+	// The page gates robots and schema on public visibility anyway, so a stale flag can't make a privated share crawlable.
 	if (typeof body.searchable === "boolean") {
 		patch.searchable = body.searchable;
 	}
@@ -133,8 +129,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		}
 	}
 
-	// Title + description live on the recast (the video's own text, reused for
-	// the OG card), not the share row — collected here and written in one update.
+	// Title and description live on the recast, not the share row; collected here and written in one update.
 	const recastPatch: { title?: string; description?: string | null } = {};
 	if ("title" in body) {
 		const title = typeof body.title === "string" ? body.title.trim().slice(0, MAX_TITLE) : "";
@@ -159,16 +154,13 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		await db.update(recast).set(recastPatch).where(eq(recast.id, manage.recastId));
 	}
 
-	// Never echo the password hash back. Report whether a password is now set
-	// and the other (safe) fields that changed.
+	// Never echo the password hash back; report whether a password is set plus the other safe fields.
 	const { passwordHash, expiresAt, ...safe } = patch;
 	return json({
 		ok: true,
 		...safe,
 		...recastPatch,
 		...("passwordHash" in patch ? { passwordSet: passwordHash !== null } : {}),
-		...("expiresAt" in patch
-			? { expiresAt: expiresAt ? expiresAt.toISOString() : null }
-			: {}),
+		...("expiresAt" in patch ? { expiresAt: expiresAt ? expiresAt.toISOString() : null } : {}),
 	});
 };

@@ -1,24 +1,20 @@
 <script lang="ts">
-	import { invalidateAll } from "$app/navigation";
-	import { Button } from "@recast/ui/button";
-	import { AlertTriangle, RotateCcw } from "@recast/icons";
+import { AlertTriangle, RotateCcw } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { invalidateAll } from "$app/navigation";
 
-	// Inline fallback for a single streamed `{#await}` section that rejected.
-	// Keeps the rest of the page usable (filters, forms, sibling sections) while
-	// this one degrades in place. "Try again" re-runs the page's load functions
-	// via `invalidateAll()`, which recreates the streamed promise — the
-	// surrounding `{#await}` then flips back to its pending skeleton and resolves.
-	let { message = "Couldn't load this section." }: { message?: string } = $props();
+// Keeps the rest of the page usable while one section degrades; Try again re-runs the loads, so the `{#await}` returns to pending.
+let { message = "Couldn't load this section." }: { message?: string } = $props();
 
-	let retrying = $state(false);
-	async function retry() {
-		retrying = true;
-		try {
-			await invalidateAll();
-		} finally {
-			retrying = false;
-		}
+let retrying = $state(false);
+async function retry() {
+	retrying = true;
+	try {
+		await invalidateAll();
+	} finally {
+		retrying = false;
 	}
+}
 </script>
 
 <div class="flex flex-col items-center gap-3 px-4 py-8 text-center">

@@ -1,0 +1,6 @@
+# The frame a drifted fixture actually rendered, written next to its golden so
+# the two can be compared by eye. Debug output, never a committed reference.
+#
+# Scoped to this suffix on purpose: the PNGs here ARE the test data and CI needs
+# every one of them, so this must never widen to `*.png`.
+*.actual.png

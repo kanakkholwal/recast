@@ -150,8 +150,7 @@ interface SegmentIndex {
 	maxEnd: Float64Array;
 }
 
-// Keyed on the array identity: the transcript is replaced wholesale on load and
-// on every edit, so a new array IS the invalidation signal.
+// Keyed on array identity: the transcript is replaced wholesale, so a new array IS the invalidation signal.
 const segmentIndexCache = new WeakMap<object, SegmentIndex>();
 
 function segmentIndex(segments: ReadonlyArray<TranscriptSegment>): SegmentIndex {
@@ -159,8 +158,7 @@ function segmentIndex(segments: ReadonlyArray<TranscriptSegment>): SegmentIndex 
 	if (cached) return cached;
 	const n = segments.length;
 	const order = Int32Array.from({ length: n }, (_, i) => i);
-	// Nothing in the pipeline asserts the transcript is sorted, so the index
-	// establishes that itself rather than assuming it.
+	// Nothing upstream asserts the transcript is sorted, so the index establishes that itself.
 	const sorted = Array.from(order).sort((a, b) => segments[a].start - segments[b].start);
 	const starts = new Float64Array(n);
 	const maxEnd = new Float64Array(n);
@@ -201,8 +199,7 @@ function segmentAt(
 		}
 	}
 	let best = -1;
-	// Walk back only while an earlier segment could still reach `t`. For a
-	// well-formed transcript that is one step.
+	// Walk back only while an earlier segment could still reach `t`; on a well-formed transcript that is one step.
 	for (let i = last; i >= 0 && maxEnd[i] > t; i--) {
 		const at = order[i];
 		const seg = segments[at];
@@ -222,9 +219,7 @@ export function activeClippedSegment(
 	span: KeptSpan,
 	nowOrig: number,
 ): { segment: TranscriptSegment; visible: { start: number; end: number } } | null {
-	// The kept span is fully before `nowOrig` (the player has scrolled past
-	// it) or fully after (the player hasn't reached it yet). Either way,
-	// no caption is on screen.
+	// The kept span is entirely before or after `nowOrig`, so no caption is on screen either way.
 	if (nowOrig < span.origStart || nowOrig >= span.origEnd) return null;
 	const segment = segmentAt(segments, nowOrig);
 	if (!segment) return null;

@@ -4,8 +4,7 @@ import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 import StatCard from "./StatCard.svelte";
 
-// Staggered row of StatCards. Pulls the repeated `{#each stats}` + per-item
-// fly stagger out of the home and library pages into one place.
+// Pulls the repeated each-block and per-item stagger out of the home and library pages into one place.
 let {
 	stats,
 	class: className = "grid grid-cols-2 gap-3 lg:grid-cols-4",

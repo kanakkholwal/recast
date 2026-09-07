@@ -6,8 +6,7 @@ import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 import type { Folder, Tag } from "$lib/dashboard/library.svelte";
 
-// Floating bulk-action bar shown while one or more recasts are selected.
-// Batches the same move / tag / delete mutations the per-card menu exposes.
+// Floating bulk-action bar, batching the same move, tag and delete mutations the per-card menu exposes.
 let {
 	count,
 	folders,

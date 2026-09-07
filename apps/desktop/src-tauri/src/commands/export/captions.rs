@@ -1,6 +1,4 @@
-//! Caption burn-in for the video export: styles the render-state transcript into
-//! an ASS script and splices a libass `subtitles` stage into the filter graph.
-//! Split out of commands/editor.rs's `export_video`.
+//! Caption burn-in: styles the render-state transcript into an ASS script and splices a libass `subtitles` stage into the graph.
 
 use tauri::AppHandle;
 
@@ -9,21 +7,8 @@ use crate::commands::ffmpeg::append_subtitles_to_complex;
 use crate::commands::types::ExportRequest;
 use crate::render::graph::CanvasGeometry;
 
-/// Burn captions into the export (overlay) via libass. The transcript + style
-/// ride along in the render-state passthrough; they're styled into an ASS script
-/// and composited on the trimmed-but-uncut axis, so the cut/speed stage re-times
-/// the burned pixels with the rest.
-///
-/// Returns the updated `(filter_complex, video_map)` when a caption stage was
-/// added, or `Ok(None)` when there's nothing to burn (no `burn_captions`, GIF
-/// export, whose paletteuse tail can't take another stage, an empty/absent
-/// transcript, or an ASS write failure, which degrades to no captions rather
-/// than failing).
-///
-/// Errors only when the user asked for captions and the resolved FFmpeg cannot
-/// render them. Silently exporting a caption-less video in that case would be
-/// worse: the user sees a "successful" export and only finds the missing
-/// captions after uploading it.
+/// Burns captions via libass on the trimmed-but-uncut axis, so the cut/speed stage re-times the pixels with everything else.
+/// `Ok(None)` when there is nothing to burn; errors only when captions were asked for and cannot render, since a silently caption-less export is worse.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn append_caption_burn_in(
     app: &AppHandle,
@@ -50,10 +35,7 @@ pub(crate) async fn append_caption_burn_in(
         Some(t) => t,
         None => return Ok(None),
     };
-    // libass is a separate `--enable-libass` build flag, so an otherwise complete
-    // FFmpeg can be missing the `ass` filter entirely. Caught here, before the
-    // graph is built, so the user gets a fix instead of FFmpeg's bare
-    // `No such filter: 'ass'` in the export log.
+    // libass is a separate build flag, so catch a missing `ass` filter here instead of FFmpeg's bare error mid-export.
     if !crate::ffmpeg::has_filter("ass") {
         return Err(AppError::msg(format!(
             "Captions can't be burned in: the FFmpeg at {} was built without libass (no `ass` filter). \
@@ -68,9 +50,7 @@ pub(crate) async fn append_caption_burn_in(
         .get("captionStyle")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
-    // Embed the preset's font so it renders in the burn instead of a libass
-    // fallback. System/generic faces are skipped (libass resolves them); a fetch
-    // failure degrades to the fallback, never blocks export.
+    // Embed the preset's font so it renders in the burn; system faces are skipped and a fetch failure degrades, never blocks.
     let family = crate::transcription::subtitles::first_family(&style.font_family);
     let is_system = crate::transcription::subtitles::is_system_family(&family);
     let fontsdir: Option<String> = if is_system {
@@ -84,11 +64,7 @@ pub(crate) async fn append_caption_burn_in(
             }
         }
     };
-    // Resolve the exact face libass will use, off the font file: its match name
-    // (legacy family, so a non-RIBBI weight like Inter-600 = "Inter SemiBold"
-    // resolves instead of falling back to Arial) and the size correction (libass
-    // scales Fontsize by winAscent+winDescent, not the em box). The name we search
-    // is the mapped generic for system faces, else the family itself.
+    // Resolve the exact face off the font file: its legacy match name (so Inter-600 isn't Arial) and libass's winAscent plus winDescent size correction.
     let search_name = if is_system {
         crate::transcription::subtitles::ass_font_name(&style.font_family)
     } else {
@@ -106,20 +82,14 @@ pub(crate) async fn append_caption_burn_in(
             ass_scale: m.ass_scale,
             measure: Some(m.measure),
         },
-        // Unresolved (offline / no match): best-effort name, no size correction.
-        // `fallback` maps the CSS stack to the same name we searched; keep the
-        // embed flag so libass still tries the fontsdir.
+        // Unresolved (offline or no match): best-effort name, no size correction, and keep the embed flag so libass tries the fontsdir.
         None => {
             let mut f = crate::transcription::subtitles::RenderFont::fallback(&style);
             f.embedded = fontsdir.is_some();
             f
         }
     };
-    // Split the transcript at the cut boundaries before styling it. The cut
-    // stage downstream drops the burned pixels with their frames, but chunking
-    // has to happen per kept span or a chunk straddling a cut burns words the
-    // export removed — and breaks at different points than the preview, which
-    // clips to the same spans (`clip-with-cuts.ts`).
+    // Chunk per kept span: a chunk straddling a cut burns words the export removed and breaks at different points than the preview.
     let trim_end = request.render_state.trim_end.max(trim_start);
     let cuts: Vec<(f64, f64)> = crate::commands::export::cuts_speed::collect_export_cuts(
         &request.render_state,
@@ -127,8 +97,7 @@ pub(crate) async fn append_caption_burn_in(
         trim_end,
     )
     .into_iter()
-    // `collect_export_cuts` returns trim-relative ranges; the transcript and
-    // the ASS axis are both source-time until `to_ass` subtracts the offset.
+    // `collect_export_cuts` returns trim-relative ranges, while the transcript and ASS axis stay source-time until `to_ass`.
     .map(|(lo, hi)| (lo + trim_start, hi + trim_start))
     .collect();
     let spans = crate::transcription::subtitles::kept_spans(trim_start, trim_end, &cuts);

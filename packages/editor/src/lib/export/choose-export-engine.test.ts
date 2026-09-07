@@ -13,7 +13,7 @@ describe("chooseExportEngine", () => {
 		expect(chooseExportEngine(READY)).toEqual({ engine: "browser", reason: "browser" });
 	});
 
-	it("stays on Rust while the master flag is off (current default — no behavior change)", () => {
+	it("stays on Rust while the master switch is off", () => {
 		const d = chooseExportEngine({ ...READY, masterEnabled: false });
 		expect(d.engine).toBe("rust");
 		expect(d.reason).toBe("browser-export-disabled");

@@ -20,8 +20,7 @@ const reduced = $derived(prefersReducedMotion());
 let active = $state(-1);
 const open = $derived(active >= 0);
 
-// Measured from the active panel and the active trigger, so the container can
-// animate between two known boxes instead of jumping.
+// Measured from the active panel and trigger, so the container animates between two known boxes instead of jumping.
 let panels = $state<(HTMLElement | null)[]>([]);
 let triggers = $state<(HTMLElement | null)[]>([]);
 let row: HTMLElement | undefined = $state();
@@ -50,9 +49,7 @@ $effect(() => {
 	measure();
 });
 
-// --- Hover intent -------------------------------------------------------
-// A diagonal path from a trigger to the panel below leaves the row for a
-// frame; closing instantly would make the menu unusable.
+// --- Hover intent: a diagonal path to the panel leaves the row for a frame, and closing instantly would make the menu unusable.
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 function cancelClose() {
 	if (closeTimer) clearTimeout(closeTimer);
@@ -116,7 +113,7 @@ const isCurrent = (href: string) => pathname === href || pathname.startsWith(`${
 			onclick={() => (active = active === i ? -1 : i)}
 			onkeydown={(e) => onTriggerKeydown(e, i)}
 			class={cn(
-				"inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-2 text-body-sm font-medium transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary motion-reduce:transition-none",
+				"inline-flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-primary motion-reduce:transition-none",
 				isOpen || isCurrent(group.href)
 					? "text-foreground"
 					: "text-muted-foreground hover:text-foreground",

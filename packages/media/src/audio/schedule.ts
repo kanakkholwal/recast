@@ -249,8 +249,7 @@ export function sliceChunksForPlayback(
 			chunkIndex: i,
 			offsetInChunk: overlapStart - chunk.startSec,
 			playDuration: overlapEnd - overlapStart,
-			// The earlier source part (overlapStart − playStart) has already played by
-			// the time this sub-play starts; at `rate` that is this much output time.
+			// The earlier source part has already played by the time this sub-play starts, which at `rate` is this much output time.
 			whenDelay: scheduled.whenDelay + (overlapStart - playStart) / rate,
 			rate,
 		});

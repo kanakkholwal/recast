@@ -31,8 +31,7 @@ const isPaid = $derived(plan.id !== "free");
 const canUsePortal = $derived(Boolean(data.subscription?.polarCustomerId));
 const status = $derived<string>(data.subscription?.status ?? "none");
 
-// Enterprise is provisioned by contract, so it has no Polar subscription.
-// Rendering that as "No subscription" reads like the plan failed to apply.
+// Enterprise is provisioned by contract with no Polar subscription, and 'No subscription' reads like the plan failed.
 const isAgreement = $derived(isPaid && data.currentMonthlyUsd == null);
 
 const STATUS_LABEL: Record<string, string> = {
@@ -69,8 +68,7 @@ const periodEndLabel = $derived(
 		: null,
 );
 
-// The rail only carries rows that say something. An agreement has no monthly
-// figure and no renewal date, and blank placeholders read as broken data.
+// The rail only carries rows that say something; an agreement has no monthly figure, and blanks read as broken data.
 const railRows = $derived(
 	[
 		data.currentMonthlyUsd != null
@@ -94,8 +92,7 @@ const featureRows = $derived([
 	{ label: "Custom branding", on: plan.features.customBranding },
 ]);
 
-// The workspace must be pinned before Polar redirects, or the webhook can't
-// tell which workspace the payment belongs to.
+// Pin the workspace before Polar redirects, or the webhook can't tell which workspace the payment belongs to.
 async function startCheckout() {
 	if (checkingOut || !data.billingConfigured || !data.isOwner) return;
 	checkingOut = true;

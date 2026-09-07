@@ -30,9 +30,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Minimal .env reader — we don't want to pull dotenv into runtime deps
-// just for a setup script. Handles `KEY=VALUE`, ignores comments and
-// blank lines, doesn't expand `${...}` references (not needed).
+// Minimal .env reader so a setup script doesn't pull dotenv into runtime deps; no `${...}` expansion, which isn't needed.
 function loadEnvFile() {
 	const path = resolve(__dirname, "..", ".env");
 	try {
@@ -83,10 +81,7 @@ if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY || !R2_BUCKET) 
 	process.exit(1);
 }
 
-// Origins that may PUT signed URLs and GET signed URLs from the bucket.
-// Public production hosts always allowed; dev hosts always allowed; the
-// configured PUBLIC_APP_URL is merged in case the dev port differs from
-// the defaults. Edit here when adding a new env.
+// Production and dev hosts are always allowed, plus PUBLIC_APP_URL in case the dev port differs; edit here for a new env.
 const ALLOWED_ORIGINS = [
 	"http://localhost:4420",
 	"http://localhost:4421",

@@ -1,10 +1,10 @@
 <script lang="ts">
+import { ArrowRight, LoaderCircle, LogOut, MailCheck, RefreshCw } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
 import { goto, invalidateAll } from "$app/navigation";
 import { authClient } from "$lib/auth/client";
 import AuthCard from "$lib/auth/components/AuthCard.svelte";
-import { Button } from "@recast/ui/button";
-import { toast } from "@recast/ui/sonner";
-import { ArrowRight, LoaderCircle, LogOut, MailCheck, RefreshCw } from "@recast/icons";
 
 let { data } = $props();
 
@@ -37,8 +37,7 @@ async function resend() {
 }
 
 async function refresh() {
-	// User clicked the link in another tab → re-run loaders so the gate
-	// sees the new `emailVerified` and lets them through.
+	// The link may have been clicked in another tab, so re-run loaders and let the gate see the new verified flag.
 	if (checking) return;
 	checking = true;
 	try {

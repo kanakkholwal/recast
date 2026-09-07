@@ -11,10 +11,10 @@ interface Props {
 let { view, count = 8 }: Props = $props();
 </script>
 
-<div class={cn("grid gap-3", view === "grid" ? GRID_CLASS : "grid-cols-1")}>
+<div class={cn("grid gap-3.5", view === "grid" ? GRID_CLASS : "grid-cols-1")}>
   {#each { length: count } as _, i (i)}
     <Skeleton
-      class={cn(view === "grid" ? "aspect-video" : "h-16")}
+      class={cn(view === "grid" ? "aspect-[16/12] rounded-2xl" : "h-16 rounded-xl")}
       style="animation-delay: {i * 80}ms"
     />
   {/each}

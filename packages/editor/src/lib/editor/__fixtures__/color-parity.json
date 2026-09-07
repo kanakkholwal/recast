@@ -1,0 +1,113 @@
+{
+	"_comment": "SHARED colour/gradient parity fixtures. Loaded by BOTH the frontend (packages/editor/src/lib/editor/render-state.color-parity.test.ts) and the Rust colour authority (crates/recast-color/tests/parity.rs). Colours are compared as [r,g,b,a] byte values, not as hex spellings, so the two sides may serialise differently but may never disagree on the value. If the parse rules change on either side and the two stop agreeing, one of these tests fails.",
+	"colors": [
+		{ "name": "six digit", "input": "#1e293b", "expected": [30, 41, 59, 255] },
+		{ "name": "six digit uppercase", "input": "#1E293B", "expected": [30, 41, 59, 255] },
+		{ "name": "three digit expands", "input": "#abc", "expected": [170, 187, 204, 255] },
+		{ "name": "four digit expands with alpha", "input": "#abcd", "expected": [170, 187, 204, 221] },
+		{ "name": "eight digit carries alpha", "input": "#0f172a80", "expected": [15, 23, 42, 128] },
+		{ "name": "five digit is not a colour", "input": "#12345", "expected": null },
+		{ "name": "ten digit is not a colour", "input": "#1e293bff00", "expected": null },
+		{ "name": "non hex digit", "input": "#gg0011", "expected": null },
+		{ "name": "empty", "input": "", "expected": null }
+	],
+	"gradients": [
+		{
+			"name": "angle and two positioned stops",
+			"input": "linear-gradient(45deg, #ff0000 0%, #0000ff 100%)",
+			"angle": 45,
+			"stops": [{ "color": [255, 0, 0, 255], "pos": 0 }, { "color": [0, 0, 255, 255], "pos": 100 }]
+		},
+		{
+			"name": "missing angle defaults to 135",
+			"input": "linear-gradient(#ff0000, #0000ff)",
+			"angle": 135,
+			"stops": [{ "color": [255, 0, 0, 255], "pos": 0 }, { "color": [0, 0, 255, 255], "pos": 100 }]
+		},
+		{
+			"name": "negative angle normalises",
+			"input": "linear-gradient(-90deg, #ffffff, #000000)",
+			"angle": 270,
+			"stops": [
+				{ "color": [255, 255, 255, 255], "pos": 0 },
+				{ "color": [0, 0, 0, 255], "pos": 100 }
+			]
+		},
+		{
+			"name": "over turn angle normalises",
+			"input": "linear-gradient(450deg, #ffffff, #000000)",
+			"angle": 90,
+			"stops": [
+				{ "color": [255, 255, 255, 255], "pos": 0 },
+				{ "color": [0, 0, 0, 255], "pos": 100 }
+			]
+		},
+		{
+			"name": "three stops distribute evenly",
+			"input": "linear-gradient(#ff0000, #00ff00, #0000ff)",
+			"angle": 135,
+			"stops": [
+				{ "color": [255, 0, 0, 255], "pos": 0 },
+				{ "color": [0, 255, 0, 255], "pos": 50 },
+				{ "color": [0, 0, 255, 255], "pos": 100 }
+			]
+		},
+		{
+			"name": "single stop widens to a flat pair",
+			"input": "linear-gradient(90deg, #123456)",
+			"angle": 90,
+			"stops": [
+				{ "color": [18, 52, 86, 255], "pos": 0 },
+				{ "color": [18, 52, 86, 255], "pos": 100 }
+			]
+		},
+		{
+			"name": "no colour falls back to the default pair",
+			"input": "linear-gradient(20deg, nonsense)",
+			"angle": 20,
+			"stops": [
+				{ "color": [99, 102, 241, 255], "pos": 0 },
+				{ "color": [217, 70, 239, 255], "pos": 100 }
+			]
+		},
+		{
+			"name": "eight digit stops keep alpha",
+			"input": "linear-gradient(0deg, #ff000080 0%, #0000ffff 100%)",
+			"angle": 0,
+			"stops": [{ "color": [255, 0, 0, 128], "pos": 0 }, { "color": [0, 0, 255, 255], "pos": 100 }]
+		},
+		{
+			"name": "short hex stops expand",
+			"input": "linear-gradient(#abc 0%, #def 100%)",
+			"angle": 135,
+			"stops": [
+				{ "color": [170, 187, 204, 255], "pos": 0 },
+				{ "color": [221, 238, 255, 255], "pos": 100 }
+			]
+		},
+		{
+			"name": "a five digit run takes four digits",
+			"input": "linear-gradient(#abcde, #012345)",
+			"angle": 135,
+			"stops": [
+				{ "color": [170, 187, 204, 221], "pos": 0 },
+				{ "color": [1, 35, 69, 255], "pos": 100 }
+			]
+		},
+		{
+			"name": "out of range positions clamp",
+			"input": "linear-gradient(#ff0000 -30%, #0000ff 300%)",
+			"angle": 135,
+			"stops": [{ "color": [255, 0, 0, 255], "pos": 0 }, { "color": [0, 0, 255, 255], "pos": 100 }]
+		},
+		{
+			"name": "fractional angle",
+			"input": "linear-gradient(22.5deg, #0f172a 10%, #6366f1 90%)",
+			"angle": 22.5,
+			"stops": [
+				{ "color": [15, 23, 42, 255], "pos": 10 },
+				{ "color": [99, 102, 241, 255], "pos": 90 }
+			]
+		}
+	]
+}

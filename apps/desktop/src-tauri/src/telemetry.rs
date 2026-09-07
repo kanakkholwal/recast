@@ -1,21 +1,5 @@
-//! Native crash + error reporting to PostHog.
-//!
-//! Covers the parts of the app that never touch JS — Rust panics and command
-//! errors — so a crash that kills the process (or happens before a webview is
-//! live) still produces a report. Mirrors the JS analytics abstraction's rules:
-//!
-//!   * Gated on the `telemetry_errors` consent flag (default opt-in / ON),
-//!     read from `AppConfig` (mirrored there by `set_telemetry_consent`).
-//!   * Suppressed entirely in debug builds (`tauri dev`) unless
-//!     `PUBLIC_POSTHOG_ALLOW_DEV=1`, mirroring the JS clients' `!import.meta.env.DEV`
-//!     gate so local development never pollutes the PostHog project.
-//!   * PII-scrubbed before anything leaves the machine.
-//!   * Uses the same anonymous `install_id` as JS events, so a Rust-side crash
-//!     and a later JS event attribute to the same person.
-//!
-//! Sends go directly over HTTP (PostHog capture API) rather than forwarding to
-//! JS, because a panic may occur with no live webview. The `reqwest` / EU-host
-//! / release-key-baking conventions mirror `commands/auth.rs`.
+//! Native crash and command-error reporting, gated on the `telemetry_errors` consent flag and off in debug builds.
+//! Posts straight to PostHog rather than through JS, since a panic can happen with no live webview.
 
 use std::panic::PanicHookInfo;
 use std::time::Duration;
@@ -26,14 +10,8 @@ use crate::commands::types::AppState;
 
 const DEFAULT_HOST: &str = "https://eu.i.posthog.com";
 
-/// PostHog project key. Honored from the environment in debug builds (so dev
-/// can point at a test project without recompiling); baked at compile time for
-/// release, deliberately ignoring the runtime env — same stance as
-/// `auth::cloud_api_url`, so an injected env can't redirect telemetry.
-///
-/// The `PUBLIC_` prefix is shared with the Svelte frontend (which reads the
-/// same `PUBLIC_POSTHOG_KEY` via Vite's `import.meta.env`) and the web app, so
-/// one injected value configures analytics on both sides of the app.
+/// PostHog project key: read from the environment in debug builds, baked in for release so an injected env cannot redirect telemetry.
+/// The `PUBLIC_` prefix is shared with the frontend and the web app, so one value configures analytics on both sides.
 fn posthog_key() -> Option<String> {
     #[cfg(debug_assertions)]
     {
@@ -58,11 +36,8 @@ fn posthog_host() -> String {
         .unwrap_or_else(|| DEFAULT_HOST.to_string())
 }
 
-/// Suppress all telemetry in debug builds so `tauri dev` never pollutes the
-/// PostHog project — the native parity of the JS clients' `!import.meta.env.DEV`
-/// gate. Opt back in with `PUBLIC_POSTHOG_ALLOW_DEV=1` to deliberately exercise
-/// the crash path against a test project (the same intent the debug env-read in
-/// `posthog_key` serves). Release builds always send, subject to consent.
+/// Suppresses telemetry in debug builds so `tauri dev` never pollutes the PostHog project, the native parity of the JS `!import.meta.env.DEV` gate.
+/// `PUBLIC_POSTHOG_ALLOW_DEV=1` opts back in to exercise the crash path against a test project; release builds always send, subject to consent.
 fn dev_telemetry_suppressed() -> bool {
     #[cfg(debug_assertions)]
     {
@@ -81,9 +56,7 @@ fn dev_telemetry_suppressed() -> bool {
 /// fuller scrubber; this is the Rust parity pass for native payloads.
 fn scrub(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    // Tokenize on whitespace and redact any token that looks like a path or
-    // an email. Coarser than the JS regex set but covers the high-risk cases
-    // (home directories, absolute paths, emails) without pulling in `regex`.
+    // Redact any whitespace token that looks like a path or email: coarser than the JS regexes but needs no `regex` dep.
     for (i, token) in input.split_whitespace().enumerate() {
         if i > 0 {
             out.push(' ');
@@ -149,11 +122,8 @@ fn read_consent(app: &AppHandle) -> (bool, String) {
     }
 }
 
-/// Capture a scrubbed exception. Always fire-and-forget: the HTTP send happens
-/// on a detached thread with its own short-lived runtime, so telemetry can never
-/// block or stall the app — not even on the crashing thread during a panic. If
-/// the process exits before the send finishes, the report is simply dropped
-/// (best-effort delivery; reliability is never traded for blocking the app).
+/// Captures a scrubbed exception, always fire-and-forget: the HTTP send runs on a detached thread with its own short-lived runtime, so telemetry never stalls the app.
+/// If the process exits first the report is dropped, since reliability is not worth blocking on, not even on the crashing thread.
 pub fn capture_exception(app: &AppHandle, name: &str, message: &str, stack: Option<String>) {
     if dev_telemetry_suppressed() {
         return;
@@ -192,10 +162,7 @@ pub fn capture_exception(app: &AppHandle, name: &str, message: &str, stack: Opti
     });
 
     let url = format!("{}/i/v0/e/", host.trim_end_matches('/'));
-    // Detached — never joined. A panic may fire on a thread with no tokio
-    // context, so we stand up a tiny current-thread runtime just for this send.
-    // `Builder::spawn` returns a Result (vs `thread::spawn`, which panics if the
-    // OS can't create a thread) so this can't double-panic inside the panic hook.
+    // Detached, with its own current-thread runtime since a panic may fire without one; `Builder::spawn` returns a Result, so it can't double-panic.
     let _ = std::thread::Builder::new().spawn(move || {
         let Ok(rt) = tokio::runtime::Builder::new_current_thread()
             .enable_all()

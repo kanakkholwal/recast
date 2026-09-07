@@ -44,8 +44,7 @@ describe("propsAtTime", () => {
 	});
 
 	it("leaves untouched properties at their defaults", () => {
-		// The track animates opacity and scale only; everything else must stay
-		// neutral or the stage would jump when a preset is applied.
+		// The track animates opacity and scale only, or the stage would jump when a preset is applied.
 		const at = propsAtTime(linear, 500);
 		expect(at.rotateX).toBe(DEFAULT_PROPS.rotateX);
 		expect(at.translateY).toBe(DEFAULT_PROPS.translateY);
@@ -67,8 +66,7 @@ describe("propsAtTime", () => {
 				{
 					keyframes: [
 						{ time: 0, props: { opacity: 0 }, easing: "linear" },
-						// ease-in = t², so halfway through time is a quarter of the way
-						// through the value.
+						// ease-in is t squared, so halfway through the time is a quarter of the way through the value.
 						{ time: 1000, props: { opacity: 1 }, easing: "ease-in" },
 					],
 				},
@@ -109,8 +107,7 @@ describe("shipped presets", () => {
 	});
 
 	it("settle on the neutral pose at the end so the still matches the export", () => {
-		// The video export ends on the last frame; if a preset finished mid-flight
-		// the exported still would not match the editor's resting stage.
+		// The video export ends on the last frame, so a preset finishing mid-flight wouldn't match the resting stage.
 		for (const p of ANIMATION_PRESETS) {
 			const end = propsAtTime(p, p.duration);
 			expect(end.opacity, p.id).toBeCloseTo(1, 6);

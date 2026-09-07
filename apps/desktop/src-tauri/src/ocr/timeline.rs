@@ -1,12 +1,5 @@
-//! Turn sampled frames into a screen-state timeline.
-//!
-//! Each kept frame is OCR'd into a list of elements (one per text line), then
-//! temporally-adjacent frames whose text is near-identical collapse into a single
-//! span. The element shape mirrors OmniParser's `parsed_content_list`: an id, a
-//! kind, a NORMALIZED (0..1) box, the text, and which engine read it. Normalized
-//! coordinates are resolution-independent, so a text-only tool-calling model can
-//! reason about "the element at these fractions" regardless of the recording's
-//! size (the UI-TARS / OS-Atlas convention).
+//! Sampled frames become OCR'd elements, then temporally adjacent near-identical frames collapse into spans.
+//! Boxes are normalized 0..1 (the OmniParser/UI-TARS convention) so a text-only model reasons independently of resolution.
 
 use serde::Serialize;
 
@@ -58,9 +51,7 @@ pub struct VideoTextTimeline {
 }
 
 /// Counters and per-stage timings for one read.
-///
-/// `build_timeline` fills in what it knows (the frames it read, the elements it
-/// found); the caller that owns the whole pass fills in the rest.
+/// `build_timeline` fills in what it knows (the frames it read, the elements it found); the caller that owns the whole pass fills in the rest.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrStats {
@@ -105,12 +96,8 @@ pub struct TimelineOpts {
     pub previews: bool,
 }
 
-/// OCR every sampled frame and collapse near-identical neighbors into spans.
-/// `total_secs` closes the final span's end.
-///
-/// `on_tick` fires after every frame is recognized. This is the phase worth
-/// reporting: OCR runs at roughly a third of a second a frame, so it is where a
-/// read spends nearly all of its wall clock.
+/// OCRs every sampled frame and collapses near-identical neighbours into spans; `total_secs` closes the final span.
+/// `on_tick` fires after each recognition, the phase worth reporting: OCR runs at about a third of a second a frame, so it is nearly all the wall clock.
 pub fn build_timeline(
     frames: &[SampledFrame],
     total_secs: f64,
@@ -137,9 +124,7 @@ pub fn build_timeline(
             .filter(|t| !t.is_empty())
             .collect();
 
-        // Tick even for a frame that merges away, so a run of unchanged frames still
-        // advances the bar. They cost a full OCR pass each; only their output is
-        // discarded.
+        // Tick even for a frame that merges away: it cost a full OCR pass, and only its output is discarded.
         let tick = |builds: &[Build], on_tick: &mut dyn FnMut(ReadTick)| {
             on_tick(ReadTick {
                 done: i as u64 + 1,
@@ -363,9 +348,7 @@ mod tests {
 
     #[test]
     fn progress_ticks_once_per_frame_even_when_a_frame_merges_away() {
-        // Three frames, two of them the same screen: the bar must still reach 3/3.
-        // Every frame costs a full OCR pass, so a merged frame that skipped its tick
-        // would stall the bar for a third of the run.
+        // Three frames, two the same screen: every frame costs an OCR pass, so a merged one skipping its tick stalls the bar.
         let frames = vec![frame(0.0), frame(1.0), frame(2.0)];
         let engine = StubEngine::new(vec![
             vec!["File"],

@@ -1,19 +1,4 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { page } from "$app/state";
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
-import OrDivider from "$lib/auth/components/OrDivider.svelte";
-import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
-import { authClient } from "$lib/auth/client";
-import { lookupEmailStatus } from "$lib/auth/lookup";
-import { safeNext } from "$lib/auth/redirect";
-import {
-	STRENGTH_COLORS,
-	STRENGTH_LABELS,
-	canSignUp,
-	passwordsMatch,
-	scorePasswordStrength,
-} from "$lib/auth/password.logic";
 import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Checkbox } from "@recast/ui/checkbox";
@@ -23,12 +8,26 @@ import { toast } from "@recast/ui/sonner";
 import { untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly, slide } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import OrDivider from "$lib/auth/components/OrDivider.svelte";
+import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
+import { lookupEmailStatus } from "$lib/auth/lookup";
+import {
+	canSignUp,
+	passwordsMatch,
+	STRENGTH_COLORS,
+	STRENGTH_LABELS,
+	scorePasswordStrength,
+} from "$lib/auth/password.logic";
+import { safeNext } from "$lib/auth/redirect";
 
 let { data } = $props();
 
 let name = $state("");
-// Seeded once from the `?email=` handoff (/login's "no account" banner, the
-// retired /waitlist route, the homepage CTA), then plain editable state.
+// Seeded once from the `?email=` handoff, then plain editable state.
 let email = $state(untrack(() => page.url.searchParams.get("email")?.trim() ?? ""));
 let password = $state("");
 let confirmPassword = $state("");
@@ -57,10 +56,7 @@ async function signUp(e: SubmitEvent) {
 	loading = true;
 	const trimmedEmail = email.trim();
 	try {
-		// "User already exists" is the single most common sign-up failure and
-		// the toast alone leaves people stuck. Catch it first so the banner
-		// can hand them a link to /login instead. Only a definite verdict
-		// blocks — `error`/`invalid` fall through to the real auth call.
+		// 'User already exists' is the most common failure, so catch it first and hand them a link to /login; only a definite verdict blocks.
 		const status = await lookupEmailStatus(trimmedEmail);
 		if (status === "active" || status === "pending") {
 			existing = trimmedEmail;
@@ -81,8 +77,7 @@ async function signUp(e: SubmitEvent) {
 				error: (err) => (err as Error)?.message ?? "Couldn't create your account.",
 			},
 		);
-		// invalidateAll so the destination's server load reads the fresh
-		// session cookie rather than the signed-out data it already cached.
+		// invalidateAll so the destination's server load reads the fresh session cookie, not its cached signed-out data.
 		await goto(next, { invalidateAll: true });
 	} finally {
 		loading = false;

@@ -142,15 +142,11 @@ export async function resolveShareAccess(
 	const isOwner = viewer?.id === row.ownerId;
 	const isAdmin = viewer?.role === "admin";
 	const inOrg = row.organizationId != null && viewer?.memberships.has(row.organizationId) === true;
-	// Owners/admins of the recast's workspace manage every share in it, not
-	// just the ones they personally created. See `resolveShareManage`.
+	// Workspace owners and admins manage every share in it, not just the ones they created. See `resolveShareManage`.
 	const workspaceRole = viewer?.memberships.get(row.workspaceId);
 	const isWorkspaceManager = workspaceRole === "owner" || workspaceRole === "admin";
 
-	// `selected` adds a per-share email allowlist on top of owner/admin. A
-	// viewer qualifies via their signed-in email OR an account-less grant
-	// cookie's certified email (`grantedEmail`) — both re-checked against
-	// `share_member` here so removing an invitee revokes access at once.
+	// `selected` adds a per-share allowlist; a signed-in email or a grant cookie both re-check `share_member`, so removal revokes at once.
 	let onAllowlist = false;
 	if (row.visibility === "selected" && !isOwner && !isAdmin) {
 		const candidates = [viewer?.email, grantedEmail]
@@ -166,13 +162,7 @@ export async function resolveShareAccess(
 		}
 	}
 
-	// `workspace` is the canonical name; `team` is the legacy alias. Both
-	// mean "any signed-in member of the share's org".
-	//
-	// Workspace owners/admins can view every share in their workspace — even
-	// `private` ones (schema contract: private → owner + workspace admins) — so
-	// manage implies view. Without this they'd hit manage endpoints yet be
-	// denied the share itself.
+	// `team` is the legacy alias for `workspace`. Manage implies view, or admins would reach manage endpoints yet be denied the share.
 	const canView =
 		row.visibility === "public" ||
 		isOwner ||
@@ -189,9 +179,7 @@ export async function resolveShareAccess(
 			reason: "denied",
 			visibility: row.visibility,
 			ownerEmail: row.ownerEmail,
-			// Same-team viewer: signed in, in the same org, but denied. This
-			// happens for `private` shares — the "request access" CTA only
-			// makes sense in that case.
+			// Signed in, same org, still denied: that is a private share, and the request-access CTA only makes sense there.
 			sameTeam: inOrg,
 		};
 	}

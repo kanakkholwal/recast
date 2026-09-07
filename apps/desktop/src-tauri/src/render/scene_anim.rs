@@ -1,21 +1,6 @@
-//! Per-segment scene animations for export — the video-layer entrance/exit
-//! transform (slide / scale), mirrored from the frontend
-//! (apps/desktop/src/lib/scenes/{segment-anim,eval}.ts).
-//!
-//! Like zoom, the animation is evaluated on the continuous post-trim timeline and
-//! the tail cut+speed stage re-times it, so nothing here is cut- or speed-aware.
-//! For each kept segment we sample the eased transform, merge it into a few linear
-//! pieces, and emit FFmpeg `if(gte(t,a)*lt(t,b),ramp,default)` flat-sum expressions
-//! — the SAME machinery as the zoom LUT (`fmt_term` / `wrap_flat_sum`), driving the
-//! per-frame `overlay=x:y` position and an `eval=frame` `scale` on the video layer.
-//!
-//! Phase 1 covers the geometric channels (slide, scale, shrink, pop). Opacity
-//! (fade) is preview-only for now — FFmpeg has no per-frame alpha expression on
-//! `overlay`, so `fade` produces no geometric change here and is skipped.
+//! Per-segment entrance/exit transforms for export, mirroring the frontend and evaluated pre-cut like zoom.
+//! Phase 1 is geometric only: FFmpeg has no per-frame alpha on `overlay`, so `fade` is skipped here.
 
-use serde::{Deserialize, Serialize};
-
-use super::easing::Easing;
 use super::graph::{fmt_term, wrap_flat_sum, CanvasGeometry};
 
 const SAMPLE_HZ: f64 = 20.0;
@@ -27,37 +12,13 @@ const DEFAULT_SCALE_DELTA: f64 = 0.3;
 const DEFAULT_POP_DELTA: f64 = 0.35;
 const DEFAULT_ROTATE_DEG: f64 = 15.0;
 const ANCHOR_EPS: f64 = 1e-4;
-// Mirror scenes/eval.ts: a segment shorter than this stays static, and each ramp
-// caps to this fraction of the window, so tiny fragments (aggressive silence-cuts)
-// never sit in a permanent in→out wobble.
+// Mirrors scenes/eval.ts: shorter segments stay static and each ramp caps to this fraction, so fragments never wobble.
 const MIN_ANIMATABLE_SEC: f64 = 0.2;
 const MAX_SIDE_FRACTION: f64 = 0.4;
 
 /// One side (entrance or exit) of a segment's animation. Mirrors
 /// `SceneAnimSpec` on the frontend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SceneAnimSpec {
-    pub kind: String,
-    pub duration_ms: f64,
-    #[serde(default)]
-    pub easing: Easing,
-    #[serde(default)]
-    pub dir: Option<String>,
-    #[serde(default)]
-    pub intensity: Option<f64>,
-}
-
-/// Entrance/exit animation anchored to a segment's ORIGINAL start time.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SegmentAnim {
-    pub start: f64,
-    #[serde(rename = "in", default)]
-    pub anim_in: Option<SceneAnimSpec>,
-    #[serde(rename = "out", default)]
-    pub anim_out: Option<SceneAnimSpec>,
-}
+pub use recast_scene::v1::{SceneAnimSpec, SegmentAnim};
 
 /// The video-layer overlay expressions for the whole timeline. `x_expr`/`y_expr`
 /// drive `overlay=x:y`; `scale_expr`, when present, drives an `eval=frame` scale
@@ -142,11 +103,8 @@ fn presence(spec: &SceneAnimSpec, p: f64) -> Tf {
     t
 }
 
-/// The transform at time `t` within a segment's window `[start, end]`. Mirrors
-/// `evalSegmentTransform`: entrance eases 0→1 over `in.durationMs`, exit eases
-/// 1→0 over `out.durationMs`, hold between is identity. Each side caps to
-/// `MAX_SIDE_FRACTION` of the window and segments shorter than `MIN_ANIMATABLE_SEC`
-/// stay static — the anti-wobble guards.
+/// The transform at `t` within a segment's window, mirroring `evalSegmentTransform`: entrance eases 0 to 1, exit eases 1 to 0, and the hold between is identity.
+/// Anti-wobble guards cap each side at `MAX_SIDE_FRACTION` of the window and leave segments under `MIN_ANIMATABLE_SEC` static.
 fn eval_segment(anim: &SegmentAnim, t: f64, start: f64, end: f64) -> Tf {
     let win = (end - start).max(0.0);
     if win < MIN_ANIMATABLE_SEC {
@@ -318,8 +276,7 @@ pub fn build_scene_overlay(
     // geq evaluates its expression with the uppercase time variable `T`.
     let opacity_expr = build_channel_expr(&op_seg, 1.0, "T");
 
-    // overlay top-left = video origin + translate(fraction·canvas) − recentre for
-    // the centred scale (video grows/shrinks about its own centre).
+    // Overlay top-left is the video origin plus translate, minus the recentre for a scale about the video's own centre.
     let x_expr = format!("{vx}+({tx_expr})*{cw}-{iw}*(({scale_expr})-1)/2");
     let y_expr = format!("{vy}+({ty_expr})*{ch}-{ih}*(({scale_expr})-1)/2");
 
@@ -338,11 +295,12 @@ pub fn build_scene_overlay(
 
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
+
+    use super::super::easing::Easing;
     use super::*;
 
-    // The fixture stores easing as a 4-element array; SceneAnimSpec expects an
-    // Easing object. Re-map here so the Rust geometric evaluator is checked
-    // against the exact same cases as the TS evaluator (scenes/eval.test.ts).
+    // The fixture stores easing as a 4-element array, so re-map it and check Rust against the exact same TS cases.
     #[derive(Deserialize)]
     struct RawSpec {
         kind: String,
@@ -373,8 +331,7 @@ mod tests {
 
     #[test]
     fn geometric_transform_matches_shared_parity_fixture() {
-        // Same file scenes/eval.test.ts asserts against — proves the Rust export
-        // evaluator and the TS preview evaluator agree on slide/scale/shrink/pop.
+        // The same file scenes/eval.test.ts asserts against, proving the Rust and TS evaluators agree.
         let raw = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../../packages/editor/src/lib/scenes/__fixtures__/scene-parity.json"
@@ -464,8 +421,7 @@ mod tests {
         }];
         let ov = build_scene_overlay(&[(0.0, 4.0)], 0.0, &anims, &canvas, 1920, 1080)
             .expect("fade is an active animation");
-        // Fade drives only the alpha channel — no scale/rotate stages — and its
-        // LUT uses geq's uppercase time variable.
+        // Fade drives only alpha, with no scale or rotate stages, and its LUT uses geq's uppercase time variable.
         assert!(ov.scale_expr.is_none());
         assert!(ov.rotate_expr.is_none());
         let op = ov.opacity_expr.expect("opacity expr");
@@ -474,8 +430,7 @@ mod tests {
 
     #[test]
     fn tiny_segment_is_guarded_to_no_overlay() {
-        // A sub-MIN_ANIMATABLE_SEC window with a real slide anim must produce no
-        // overlay expressions — the export stays on the static path (no wobble).
+        // A sub-MIN_ANIMATABLE_SEC window must produce no overlay expressions, so the export stays on the static path.
         let canvas = CanvasGeometry {
             canvas_w: 1920,
             canvas_h: 1080,

@@ -1,17 +1,17 @@
 <script lang="ts" module>
-  export interface ToolTrimRangeProps {
-    /** Total media length in seconds. 0 until metadata loads. */
-    duration: number;
-    start: number;
-    end: number;
-    onchange: (next: { start: number; end: number }) => void;
-    /** Playhead position, so the range reflects where the preview actually is. */
-    currentTime?: number;
-    onseek?: (seconds: number) => void;
-  }
+export interface ToolTrimRangeProps {
+	/** Total media length in seconds. 0 until metadata loads. */
+	duration: number;
+	start: number;
+	end: number;
+	onchange: (next: { start: number; end: number }) => void;
+	/** Playhead position, so the range reflects where the preview actually is. */
+	currentTime?: number;
+	onseek?: (seconds: number) => void;
+}
 
-  const MIN_SPAN = 0.1; // seconds
-  const KEY_STEP = 0.5;
+const MIN_SPAN = 0.1; // seconds
+const KEY_STEP = 0.5;
 </script>
 
 <script lang="ts">
@@ -73,8 +73,7 @@
     }
   }
 
-  // Clicking the track scrubs the preview rather than moving a handle, so the
-  // two gestures never fight each other.
+  // Clicking the track scrubs the preview rather than moving a handle, so the two gestures never fight.
   function scrub(e: PointerEvent) {
     if (drag || !onseek) return;
     onseek(secondsAt(e.clientX));

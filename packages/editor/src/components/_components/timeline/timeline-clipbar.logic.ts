@@ -11,9 +11,7 @@ export interface ClipBlock {
 	stripOffset: number;
 }
 
-// One block per kept segment on the OUTPUT (post-cut) axis. A cut occupies zero
-// width so later blocks slide left; each block reveals its slice of the original
-// strip via stripOffset. `xOf` maps original time onto the output axis.
+// One block per kept segment on the OUTPUT axis: a cut has zero width, and each block reveals its slice via stripOffset.
 export function layoutClipBlocks(
 	segments: ReadonlyArray<{ start: number; end: number }>,
 	xOf: (t: number) => number,

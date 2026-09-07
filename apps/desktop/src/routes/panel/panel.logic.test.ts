@@ -9,6 +9,7 @@ import {
 	intentToTargetType,
 	lastSourceToTarget,
 	type PanelSelection,
+	smoothMicLevel,
 	sourceFromIntent,
 	type TargetSource,
 	targetToLastSource,
@@ -350,12 +351,36 @@ describe("deviceOutcome", () => {
 		expect([outcome.on, outcome.warning]).toEqual([false, null]);
 	});
 
-	/// The panel tears the camera preview down differently for the two, so the
-	/// distinction has to survive.
+	// The panel tears the camera preview down differently for the two, so the distinction has to survive.
 	it("keeps missing and none distinguishable", () => {
 		const missing = deviceOutcome({ kind: "missing", requestedLabel: "X" }, "P", "camera", name);
 		const none = deviceOutcome({ kind: "none" }, "P", "camera", name);
 
 		expect([missing.kind, none.kind]).toEqual(["missing", "none"]);
+	});
+});
+
+describe("smoothMicLevel", () => {
+	it("stays at zero for silence", () => {
+		expect(smoothMicLevel(0, 0)).toBe(0);
+	});
+
+	it("jumps up instantly on a louder reading (fast attack)", () => {
+		expect(smoothMicLevel(0, 1)).toBe(1);
+	});
+
+	it("eases down rather than snapping on a quieter reading (slow release)", () => {
+		const next = smoothMicLevel(1, 0);
+		expect(next).toBeCloseTo(0.7, 5);
+		expect(next).toBeLessThan(1);
+	});
+
+	it("applies the sqrt curve so quiet speech still registers", () => {
+		expect(smoothMicLevel(0, 0.09)).toBeCloseTo(0.51, 5);
+	});
+
+	it("clamps loud input to 1 and floors negative payloads at 0", () => {
+		expect(smoothMicLevel(0, 4)).toBe(1);
+		expect(smoothMicLevel(0, -1)).toBe(0);
 	});
 });

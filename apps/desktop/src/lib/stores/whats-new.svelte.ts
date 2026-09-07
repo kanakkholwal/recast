@@ -31,8 +31,7 @@ function createWhatsNewStore() {
 			return cardVisible;
 		},
 
-		// On boot: surface the corner card (not a modal) when the build is newer
-		// than the last acknowledged version.
+		// On boot, surface the corner card (not a modal) when the build is newer than the last acknowledged version.
 		evaluateOnBoot(): void {
 			const seen = readSeen();
 			if (seen === config.appVersion) return;

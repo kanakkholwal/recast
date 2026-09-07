@@ -60,8 +60,7 @@ import {
 
 const reduced = $derived(prefersReducedMotion());
 
-// Same three hues the hero shelf uses, so the closing recap reads as the
-// same spine rather than a new set of tags.
+// The same three hues the hero shelf uses, so the closing recap reads as the same spine, not a new set.
 const stepGlyph = {
 	tangerine: "text-tag-tangerine",
 	lavender: "text-tag-lavender",
@@ -84,7 +83,7 @@ let editorImgErrored = $state<Record<string, boolean>>({});
 let openFaq = $state<number | null>(0);
 
 function dragScroll(node: HTMLElement) {
-	const reduced =
+	const noMotion =
 		typeof window !== "undefined" &&
 		window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
@@ -116,7 +115,7 @@ function dragScroll(node: HTMLElement) {
 		const now = performance.now();
 		samples.push({ x: e.clientX, t: now });
 		// Drop samples outside the window.
-		while (samples.length > 1 && now - samples[0]!.t > SAMPLE_WINDOW_MS) {
+		while (samples.length > 1 && now - samples[0].t > SAMPLE_WINDOW_MS) {
 			samples.shift();
 		}
 	}
@@ -130,7 +129,7 @@ function dragScroll(node: HTMLElement) {
 		} catch {
 			// Some browsers throw if the capture was already released; ignore.
 		}
-		if (reduced) return;
+		if (noMotion) return;
 
 		const first = samples[0];
 		const last = samples[samples.length - 1];
@@ -408,7 +407,7 @@ function dragScroll(node: HTMLElement) {
           <SectionLabel icon={Wand2} label="Inside the editor" accent="lavender" />
         </Reveal>
         <Reveal variant="up" delay={60} class="mt-5">
-          <h2 class="font-display text-balance text-heading md:text-heading-lg">
+          <h2 class="font-display text-balance font-medium text-heading md:text-heading-lg">
             Every tool you need. None of the learning curve.
           </h2>
         </Reveal>
@@ -438,7 +437,7 @@ function dragScroll(node: HTMLElement) {
           <SectionLabel icon={Compass} label="Recast Extensions" accent="lavender" />
         </Reveal>
         <Reveal variant="up" delay={60} class="mt-5">
-          <h2 class="font-display font-semibold text-balance text-heading md:text-heading-lg">
+          <h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
             Open packs. No lock-in.
           </h2>
         </Reveal>
@@ -607,7 +606,7 @@ function dragScroll(node: HTMLElement) {
           <SectionLabel icon={Star} label="Built for builders" />
         </Reveal>
         <Reveal variant="up" delay={60} class="mt-5">
-          <h2 class="font-display text-balance text-heading md:text-heading-lg">
+          <h2 class="font-display font-medium text-balance text-heading md:text-heading-lg">
             Shaped for the people who ship
           </h2>
         </Reveal>
@@ -652,7 +651,7 @@ function dragScroll(node: HTMLElement) {
         <Reveal variant="up" delay={60} as="article" class="flex flex-col bg-background py-10 md:pr-10">
           <span class="text-body-sm font-medium text-muted-foreground">The app</span>
           <div class="mt-3 flex items-baseline gap-2">
-            <span class="font-display text-display text-foreground">Free</span>
+            <span class="font-display text-display font-medium text-foreground">Free</span>
             <span class="text-body-sm text-muted-foreground">forever</span>
           </div>
           <p class="mt-3 max-w-sm text-body-sm text-muted-foreground">
@@ -669,7 +668,7 @@ function dragScroll(node: HTMLElement) {
         <Reveal variant="up" delay={140} as="article" class="flex flex-col bg-background py-10 md:pl-10">
           <span class="text-body-sm font-medium text-muted-foreground">Recast Cloud</span>
           <div class="mt-3 flex items-baseline gap-2">
-            <span class="font-display text-display text-foreground">Hosted</span>
+            <span class="font-display text-display font-medium text-foreground">Hosted</span>
             <span class="text-body-sm text-muted-foreground">+ controls</span>
           </div>
           <p class="mt-3 max-w-sm text-body-sm text-muted-foreground">
@@ -695,7 +694,7 @@ function dragScroll(node: HTMLElement) {
             <SectionLabel icon={CircleHelp} label="Questions" />
           </Reveal>
           <Reveal variant="up" delay={60} class="mt-5">
-            <h2 class="font-display text-balance text-heading md:text-heading-lg">
+            <h2 class="font-display text-balance font-medium text-heading md:text-heading-lg">
               Before you download
             </h2>
           </Reveal>
@@ -748,15 +747,15 @@ function dragScroll(node: HTMLElement) {
 
           <Reveal variant="up" delay={210} duration={460} class="mt-9">
             <div class="flex flex-wrap items-center justify-center gap-3">
-              <Button href="/download" variant="raw" size="lg" class="gap-2 bg-white text-black">
+                <Button href="/download" variant="raw" size="lg" class="gap-2 bg-white text-black">
                 <Download class="size-4" />
                 Download free
               </Button>
               <Button
                 href="/signup"
-                variant="ghost"
+                variant="raw"
                 size="lg"
-                class="group/cta band-rule gap-2 bg-transparent text-current hover:bg-current/10"
+                class="group/cta band-rule gap-2 bg-transparent text-white hover:bg-current/10"
               >
                 Share your first demo
                 <ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />

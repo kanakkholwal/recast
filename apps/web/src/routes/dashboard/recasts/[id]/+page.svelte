@@ -12,8 +12,7 @@ let { data }: { data: PageData } = $props();
 
 const recast = $derived(data.recast);
 
-// Local share list so revoke/create reflect immediately, re-seeded from the
-// loader on navigation / invalidateAll.
+// A local list so revoke and create reflect immediately, re-seeded from the loader on navigation.
 let shares = $state<ShareRow[]>([]);
 $effect(() => {
 	const next = data.shares;

@@ -27,8 +27,7 @@ describe("EditorServices registry", () => {
 		undoFirst();
 	});
 
-	// The whole contract: an omitted capability reads as absent rather than
-	// throwing when a panel calls it.
+	// The whole contract: an omitted capability reads as absent rather than throwing when a panel calls it.
 	it("reports omitted capabilities as undefined", () => {
 		const restore = setEditorServicesForApp(minimal);
 		const s = getEditorServices();
@@ -59,8 +58,7 @@ describe("WEB_PANEL_TABS", () => {
 		expect(WEB_PANEL_TABS).not.toContain("dev");
 	});
 
-	// A deep link to a tab the host doesn't serve must fall back, not render a
-	// dead panel.
+	// A deep link to a tab the host doesn't serve must fall back, not render a dead panel.
 	it("rejects an unavailable tab when parsing a URL param", () => {
 		expect(parsePanelTab("music", false, WEB_PANEL_TABS)).toBeNull();
 		expect(parsePanelTab("music")).toBe("music");

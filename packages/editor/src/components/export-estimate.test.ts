@@ -10,8 +10,7 @@ describe("outputResolution", () => {
 		expect(outputResolution(1280, 720, "4k")).toEqual({ width: 1280, height: 720 });
 	});
 
-	// The FFmpeg filter is min(iw,W)/min(ih,H) with force_original_aspect_ratio
-	// =decrease, so a portrait clip at "HD" is 608x1080 — NOT 1080p wide.
+	// The filter decreases to fit, so a portrait clip at HD is 608x1080, not 1080p wide.
 	it("fits portrait sources inside the bound without distorting them", () => {
 		expect(outputResolution(1080, 1920, "hd")).toEqual({ width: 608, height: 1080 });
 	});

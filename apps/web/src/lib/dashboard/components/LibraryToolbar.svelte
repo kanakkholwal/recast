@@ -7,10 +7,7 @@ import { focusOnMount } from "$lib/dashboard/focus";
 import { tagsStore } from "$lib/dashboard/library.svelte";
 import { isEditableTarget } from "$lib/dom/is-editable";
 
-// Library search/sort/tag/view toolbar. Bindable filter state lives here so the
-// page stays orchestration-only; folder selection is the breadcrumb's job, so
-// the page passes the combined `filtersActive` + an `onclear` that also resets
-// the folder.
+// Bindable filter state lives here so the page stays orchestration-only; folder selection belongs to the breadcrumb.
 let {
 	query = $bindable(""),
 	sortKey = $bindable("recent"),
@@ -65,8 +62,7 @@ function submitTag() {
 	if (name) oncreatetag(name);
 }
 
-// Keyboard-first: "/" focuses the search from anywhere on the page (unless
-// you're already typing); Escape clears it while focused.
+// Keyboard-first: '/' focuses search from anywhere unless you're typing, and Escape clears it while focused.
 function onWindowKeydown(e: KeyboardEvent) {
 	if (e.key === "/" && !isEditableTarget(e.target)) {
 		e.preventDefault();

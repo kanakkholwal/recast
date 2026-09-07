@@ -18,8 +18,7 @@ interface Props {
 
 let { duration, pixelsPerSecond, timeMode, fps, viewportLeftPx, viewportWidthPx }: Props = $props();
 
-// One screen of overscan each side so a scroll doesn't reveal a bare edge
-// before the next frame builds the ticks.
+// One screen of overscan each side, so a scroll never reveals a bare edge before the next frame builds ticks.
 const window_ = $derived.by(() => {
 	if (viewportLeftPx === undefined || !viewportWidthPx || pixelsPerSecond <= 0) return undefined;
 	return {

@@ -1,5 +1,4 @@
-// Pure snap engine for annotation drag/place: candidate UV point + anchors →
-// snapped point plus the anchors that fired (so the overlay can draw guides).
+// Pure snap engine: a candidate UV point plus anchors becomes a snapped point and the anchors that fired, so the overlay can draw guides.
 
 export type SnapAxis = "x" | "y";
 

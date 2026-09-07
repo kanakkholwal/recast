@@ -14,10 +14,10 @@
 		}
 	},
 	"dependencies": {
-		"posthog-js": "^1.379.2"
+		"posthog-js": "^1.418.12"
 	},
 	"devDependencies": {
-		"typescript": "^5.6.0"
+		"typescript": "^5.9.3"
 	},
 	"scripts": {
 		"build": "exit 0",

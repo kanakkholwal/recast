@@ -43,8 +43,7 @@ export function destinationTile(
 			return { status: "error", label: "Retry", disabled: false };
 		case "complete":
 			return { status: "done", label: labels.done, disabled: false };
-		// A cancel returns the tile to idle: the point of cancelling is to be able
-		// to start over, so it must not read as done or stay disabled.
+		// A cancel returns the tile to idle: the point of cancelling is to start over, so it must not read as done.
 		case "cancelled":
 			return { status: "idle", label: labels.idle, disabled: false };
 	}

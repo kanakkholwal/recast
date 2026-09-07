@@ -20,9 +20,7 @@ describe("mermaid theme", () => {
 		expect(unparseableThemeColors({ fontFamily: "inherit" })).toEqual([]);
 	});
 
-	/// Guards the real config against mermaid's own colour parser, which is where
-	/// the original failure surfaced rather than in any of our code.
-	// Importing mermaid is ~500KB of ESM; a cold run blows the default timeout.
+	// Guards the config against mermaid's own colour parser, where the original failure surfaced; importing it is ~500KB, so the timeout is raised.
 	it("initialises mermaid without a colour error", { timeout: 30_000 }, async () => {
 		const mermaid = (await import("mermaid")).default;
 		mermaid.initialize({

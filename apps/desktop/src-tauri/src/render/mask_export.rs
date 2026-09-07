@@ -1,11 +1,5 @@
-//! Pre-renders a static rounded-rectangle alpha mask as a PNG so FFmpeg's
-//! `alphamerge` filter can clip the source video's corners during export. The
-//! preview path uses a WebGL shader for this; for export we generate the same
-//! shape once and reuse it as a `-loop 1` image input.
-//!
-//! The PNG encodes coverage in the RGB channels (white = opaque, black =
-//! transparent) because `alphamerge` consumes the **luminance** of the second
-//! input as the alpha plane of the first. Alpha channel itself is set to 255.
+//! Pre-renders the rounded-corner mask as a PNG so FFmpeg's `alphamerge` can clip the source during export.
+//! Coverage is encoded in RGB, not alpha, because `alphamerge` consumes the second input's luminance.
 
 use std::fs;
 use std::path::PathBuf;
@@ -65,8 +59,7 @@ pub fn render_border_radius_mask(
             let qx = px.abs() - hx + r;
             let qy = py.abs() - hy + r;
             let sd = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - r;
-            // 1-pixel smooth edge keeps the corners from looking jagged when
-            // the source video has high contrast against its background.
+            // A 1-pixel smooth edge keeps the corners from looking jagged against a high-contrast background.
             let coverage = (1.0 - smoothstep(-1.0, 0.0, sd)).clamp(0.0, 1.0);
             let v = (coverage * 255.0).round().clamp(0.0, 255.0) as u8;
             img.put_pixel(x, y, Rgba([v, v, v, 255]));
@@ -87,11 +80,8 @@ fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-/// Inputs for the drop-shadow rasteriser. Mirrors the WebGL shader stanza in
-/// `VideoPreview.svelte` so the export visually matches the preview. All
-/// distances are in canvas pixels (= source pixels + padding × 2 — the
-/// preview's `vpToCanvas` factor is 1.0 here because we render directly at
-/// canvas resolution).
+/// Inputs for the drop-shadow rasteriser, mirroring the preview's WebGL stanza so the export matches it visually.
+/// All distances are canvas pixels; the preview's `vpToCanvas` factor is 1.0 here because this renders directly at canvas resolution.
 pub struct DropShadowRequest {
     /// Comp dimensions (= source + padding × 2). The PNG is rendered at
     /// these dims even when the final canvas is larger (aspect preset);
@@ -103,9 +93,7 @@ pub struct DropShadowRequest {
     pub video_height: u32,
     /// Padding around the video rect inside the comp.
     pub padding: u32,
-    /// Border radius in pixels applied to the video rect (preview also adds
-    /// `spread * 0.5` so the shadow has slightly softer corners than the
-    /// rect itself; we replicate that).
+    /// Border radius in pixels applied to the video rect (preview also adds `spread * 0.5` so the shadow has slightly softer corners than the rect itself; we replicate that).
     pub video_border_radius: f64,
     /// Soft-edge falloff distance. Clamped to ≥ 0.5 to match the shader.
     pub blur: f64,
@@ -120,12 +108,8 @@ pub struct DropShadowRequest {
     pub color: String,
 }
 
-/// Pre-render the drop shadow as a transparent canvas-sized RGBA PNG. The
-/// rect's position, soft edge, spread, offset, colour, and opacity are all
-/// baked in, so the FFmpeg side can simply `overlay=0:0` it onto the
-/// background before compositing the video on top.
-///
-/// Returns `Ok(None)` when the shadow would be invisible (`opacity <= 0`).
+/// Pre-renders the drop shadow as a transparent canvas-sized PNG with position, softness, spread, offset, colour and opacity baked in, so FFmpeg can `overlay=0:0` it.
+/// Returns `Ok(None)` when the shadow would be invisible.
 pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResult>> {
     if req.canvas_width == 0 || req.canvas_height == 0 {
         return Err(anyhow!("drop-shadow canvas has zero dimension"));
@@ -151,8 +135,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
 
     let mut img = RgbaImage::new(req.canvas_width, req.canvas_height);
 
-    // Video rect's centre on the canvas — the preview computes
-    // `videoCenter = padding + halfSize`. We do the same in canvas pixels.
+    // The video rect's centre on the canvas, matching the preview's padding plus half-size, in canvas pixels.
     let half_w = req.video_width as f64 / 2.0;
     let half_h = req.video_height as f64 / 2.0;
     let cx = req.padding as f64 + half_w;
@@ -160,9 +143,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
 
     let spread = req.spread.max(0.0);
     let blur_px = req.blur.max(0.5);
-    // The shader's corner radius for the shadow rect: `r + spread*0.5`. We
-    // additionally clamp to the half-extent of the spread-expanded rect so
-    // very large radii on small rects degrade gracefully (full ellipse).
+    // The shader's shadow radius is r + spread*0.5, clamped to the half-extent so large radii degrade to an ellipse.
     let shadow_r = (req.video_border_radius + spread * 0.5)
         .min((half_w + spread).min(half_h + spread))
         .max(0.0);
@@ -172,9 +153,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
 
     for y in 0..req.canvas_height {
         for x in 0..req.canvas_width {
-            // Same coordinate transform as the shader:
-            //     shadowP = (canvasPx - videoCenter) - offsetPx
-            // SDF then evaluated against `halfSize + spread`.
+            // Same transform as the shader: shadowP = (canvasPx - videoCenter) - offsetPx, then the SDF against halfSize + spread.
             let px = (x as f64 + 0.5) - cx;
             let py = (y as f64 + 0.5) - cy - req.offset_y;
             let hx = half_w + spread;
@@ -183,9 +162,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
             let qy = py.abs() - hy + shadow_r;
             let sd = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - shadow_r;
             let coverage = (1.0 - smoothstep(0.0, blur_px, sd)).clamp(0.0, 1.0);
-            // No `1 - videoCoverage` clip here: the FFmpeg side overlays
-            // the video AFTER this shadow layer, so the video physically
-            // covers any shadow underneath the rect — no need to mask.
+            // No video-coverage clip: FFmpeg overlays the video AFTER this layer, so it physically covers the shadow.
             let alpha = (coverage * opacity_norm * 255.0).round().clamp(0.0, 255.0) as u8;
             img.put_pixel(x, y, Rgba([sr, sg, sb, alpha]));
         }
@@ -219,11 +196,8 @@ pub struct CameraShadowRequest {
     pub padding: u32,
 }
 
-/// Pre-render the camera bubble's drop shadow as a transparent RGBA PNG sized
-/// `(bubble + 2·padding)`. Black silhouette, soft edge, offset and opacity baked
-/// in; the FFmpeg side scales it by the bubble's live size and overlays it just
-/// under the bubble. Mirrors the preview's `cameraShadowStyle` box-shadow.
-/// Returns `Ok(None)` when invisible (`opacity ≤ 0`).
+/// Pre-renders the camera bubble's drop shadow as a transparent PNG with silhouette, softness, offset and opacity baked in, mirroring the preview's `cameraShadowStyle`.
+/// FFmpeg scales it by the bubble's live size and overlays it just underneath; `Ok(None)` when it would be invisible.
 pub fn render_camera_shadow(req: CameraShadowRequest) -> Result<Option<MaskResult>> {
     if req.opacity <= 0.0 || req.bubble_w == 0 || req.bubble_h == 0 {
         return Ok(None);
@@ -310,11 +284,8 @@ struct GradStop {
     pos: f64,
 }
 
-/// Parse a CSS `linear-gradient(<deg>, <#hex> <pct>%, …)` string into an angle
-/// (radians) and a sorted list of stops. Mirrors the TS `parseGradient`: a
-/// missing angle defaults to 135°, missing positions distribute evenly, and at
-/// least two stops are always returned. Returns `None` only when no color can
-/// be found at all (caller falls back to a flat color).
+/// Parses a CSS `linear-gradient` into an angle in radians and a sorted stop list, mirroring the TS `parseGradient`.
+/// A missing angle defaults to 135°, missing positions distribute evenly, and at least two stops always come back; `None` only when no colour is found at all.
 fn parse_css_gradient(value: &str) -> Option<(f64, Vec<GradStop>)> {
     // Slice the comma-separated body inside the outermost parentheses.
     let inner = value
@@ -347,8 +318,7 @@ fn parse_css_gradient(value: &str) -> Option<(f64, Vec<GradStop>)> {
         let mut tokens = part.split_whitespace();
         let hex = tokens.next().unwrap_or("");
         let (r, g, b) = parse_hex_rgb(hex)?;
-        // Alpha (8-digit hex) — premultiplied over black on rasterisation so a
-        // translucent stop reads the same as the preview's clear-to-black.
+        // Alpha is premultiplied over black on rasterisation, so a translucent stop matches the preview's clear-to-black.
         let a = {
             let t = hex.trim_start_matches('#');
             if t.len() == 8 {
@@ -431,11 +401,8 @@ fn sample_gradient(stops: &[GradStop], t: f64) -> (f64, f64, f64) {
     (r * a, g * a, b * a)
 }
 
-/// Rasterise a CSS linear-gradient to an opaque PNG at the given canvas size so
-/// the FFmpeg export composites the exact gradient the preview shows (the
-/// pipeline otherwise collapses gradients to a flat color). The projection math
-/// is identical to the WebGL shader in `VideoPreview.svelte` — keep them in
-/// lockstep. Returns `Ok(None)` if the value carries no parseable color.
+/// Rasterises a CSS linear-gradient to an opaque PNG at canvas size, since the pipeline otherwise collapses gradients to a flat colour.
+/// The projection maths is identical to the preview's WebGL shader, so keep them in lockstep; `Ok(None)` when the value carries no parseable colour.
 pub fn render_gradient_background(
     value: &str,
     width: u32,

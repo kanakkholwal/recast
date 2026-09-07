@@ -1,4 +1,3 @@
-// The tool pages render their own <SeoMeta> (+ JSON-LD); suppress the root
-// layout's default tags to avoid duplicate description / og: tags.
+// The tool pages render their own <SeoMeta> and JSON-LD, so suppress the root layout's defaults.
 export const prerender = true;
 export const load = () => ({ customSeo: true });

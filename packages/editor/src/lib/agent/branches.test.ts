@@ -3,8 +3,8 @@ import {
 	changeGroup,
 	describeChange,
 	EDIT_OP_TAGS,
-	groupChanges,
 	type FieldChange,
+	groupChanges,
 } from "./branches";
 
 function change(field: string, before: unknown, after: unknown): FieldChange {

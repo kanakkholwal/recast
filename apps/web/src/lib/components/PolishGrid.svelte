@@ -1,17 +1,12 @@
 <script lang="ts">
-import { prefersReducedMotion } from "$lib/motion-core";
+import { Check, type IconComponent } from "@recast/icons";
 import { Reveal } from "@recast/ui/reveal";
 import { cn } from "@recast/ui/utils";
-import { Check } from "@recast/icons";
+import { prefersReducedMotion } from "$lib/motion-core";
 
-// Step 2's auto-polish grid. A soft "Applied" highlight ticks through the
-// cards one at a time, reading as edits being applied automatically while
-// you record. Deliberately slower and gentler than Step 1's palette so the
-// two steps don't compete. Reduced motion shows the grid with nothing
-// ticking — the visitor still reads each feature, just without the live cue.
+// A soft Applied highlight ticks through the cards, slower than Step 1 so the two don't compete; reduced motion shows the grid still.
 type Feature = {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	icon: any;
+	icon: IconComponent;
 	title: string;
 	description: string;
 };
@@ -41,12 +36,7 @@ $effect(() => {
 		<Reveal variant="up" delay={i * 70} class="h-full">
 			<div
 				class={cn(
-					// GPU-only props (transform, color, opacity). The ring
-					// transition is the "this card is being polished" affordance;
-					// the subtle scale reads as the card leaning into focus.
-					// Resting bg uses the page surface at 90% so the tile clearly
-					// sits above the showcase panel, even in dark mode where the
-					// panel is near-black.
+					// GPU-only props; the resting background sits at 90% of the page surface so a tile reads above the panel, even in dark mode.
 					"flex h-full flex-col gap-4 rounded-2xl border bg-background/90 p-7 backdrop-blur-md transition-[transform,box-shadow,background-color,border-color] duration-500 ease-out",
 					isApplied
 						? "scale-[1.015] border-primary/30 bg-background"

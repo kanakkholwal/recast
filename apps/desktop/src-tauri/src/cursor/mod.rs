@@ -1,4 +1,3 @@
-mod platform;
 pub mod smoothing;
 
 use std::path::Path;
@@ -8,11 +7,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use capturekit::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use crate::recording::RecordingClock;
+use crate::recording::{RecordingClock, TrackStart};
 
-use platform::sample_cursor_state;
 use smoothing::{detect_idle_periods, detect_zoom_triggers, IdlePeriod, ZoomTrigger};
 
 //  Data types
@@ -149,12 +148,7 @@ impl ClickTracker {
 }
 
 /// Pixel-space rectangle of the recorded frame inside the virtual desktop.
-/// `GetCursorPos` returns coordinates in virtual-desktop space (with each
-/// monitor offset by its position in the display arrangement); the recorded
-/// video is in frame-relative pixel space (0..width, 0..height). Without
-/// this conversion, recording a secondary monitor or a cropped region puts
-/// every cursor sample outside the [0..frame] range, and the editor
-/// renders the cursor at clamped/wrapped positions for the entire video.
+/// The OS reports the pointer in virtual-desktop space while the video is frame-relative, so without this a secondary monitor or region puts every sample outside the frame.
 #[derive(Debug, Clone, Copy)]
 pub struct CursorCaptureFrame {
     /// Top-left of the recorded frame, in physical device pixels (same space
@@ -171,26 +165,28 @@ pub struct CursorCaptureFrame {
     pub scale: f32,
 }
 
-/// Spawn a thread that samples cursor state at 125 Hz until the stop flag
-/// is set. Post-capture, computes idle periods and zoom triggers.
-///
-/// The capture loop:
-/// - Uses deadline-based scheduling (not `thread::sleep(8ms)` which drifts
-///   under load) so sample cadence stays uniform across long recordings.
-///   Falls back to a fresh baseline if we fall more than one period behind,
-///   which prevents burst catch-up after a long pause.
-/// - Converts cursor coordinates from virtual-desktop space to
-///   frame-relative pixel space using `frame.origin_*`. Samples whose
-///   cursor lies outside the frame are recorded with `visible = false` so
-///   the editor's `if (pos.visible)` gate hides the cursor cleanly when
-///   the user moves the mouse off the captured area, instead of rendering
-///   it at a clamped edge.
-/// - Logs at most one warning when `GetCursorPos` starts failing
-///   (rare — mostly UAC / secure-desktop transitions) so silent gaps in
-///   the track are observable in the recording log.
+impl CursorCaptureFrame {
+    /// Open the platform pointer reader for this frame.
+    /// The OS access, the button state and the virtual-desktop mapping all live in capturekit now, so all three agree with what the recorder captured.
+    fn open_pointer(&self) -> Result<capturekit::PointerCapturer> {
+        Ok(capturekit::PointerCapturer::open(
+            capturekit::Rect {
+                x: self.origin_x,
+                y: self.origin_y,
+                width: self.width,
+                height: self.height,
+            },
+            f64::from(self.scale),
+        )?)
+    }
+}
+
+/// Samples cursor state at 125 Hz on a deadline schedule until stopped, then derives idle periods and zoom triggers.
+/// Stamped in VIDEO time and blocked until the first encoded frame: sampling earlier piled every sample at t=0, teleporting the cursor.
 pub fn spawn_cursor_capture(
     stop_flag: Arc<AtomicBool>,
     clock: RecordingClock,
+    video_start: TrackStart,
     frame: CursorCaptureFrame,
 ) -> Result<thread::JoinHandle<CursorTrack>> {
     thread::Builder::new()
@@ -202,45 +198,44 @@ pub fn spawn_cursor_capture(
             let mut platform_failure_logged = false;
 
             const SAMPLE_PERIOD: Duration = Duration::from_micros(8_000); // 125 Hz
-            let start = Instant::now();
-            let mut next_tick = start + SAMPLE_PERIOD;
-            let frame_w = frame.width as i32;
-            let frame_h = frame.height as i32;
-            // Lift logical samples into the video's physical pixel space (macOS);
-            // 1.0 elsewhere makes this an exact identity.
-            let sample_scale = frame.scale as f64;
+            let mut pointer = match frame.open_pointer() {
+                Ok(pointer) => pointer,
+                Err(error) => {
+                    log::warn!("cursor capture: no pointer reader ({error}); track will be empty");
+                    return track;
+                }
+            };
+            // Video t=0 is the first encoded frame; the source warms up first.
+            let video_zero_us = loop {
+                if let Some(us) = video_start.elapsed_us() {
+                    break us;
+                }
+                if stop_flag.load(Ordering::Acquire) {
+                    return track;
+                }
+                thread::sleep(SAMPLE_PERIOD);
+            };
+            // Paced from the first frame, or the warmup is owed as catch-up ticks.
+            let mut next_tick = Instant::now() + SAMPLE_PERIOD;
 
             while !stop_flag.load(Ordering::Acquire) {
-                // While paused, stop sampling. The effective clock is frozen
-                // anyway; skipping keeps the track free of a run of
-                // identically-timestamped samples.
+                // While paused the effective clock is frozen, so skipping keeps the track free of identically-timestamped samples.
                 if clock.is_paused() {
                     thread::sleep(SAMPLE_PERIOD);
                     next_tick = Instant::now() + SAMPLE_PERIOD;
                     continue;
                 }
-                let now_us = clock.effective_elapsed().as_micros() as u64;
-                match sample_cursor_state() {
-                    Some(raw) => {
-                        // Map virtual-desktop coords to frame-relative coords.
-                        // We keep the math in i32 so cursors that wander off
-                        // the captured area produce negative / over-range x/y
-                        // — but we record `visible = false` for those so the
-                        // editor doesn't draw a cursor outside the frame.
-                        let mapped_x =
-                            (raw.x as f64 * sample_scale).round() as i32 - frame.origin_x;
-                        let mapped_y =
-                            (raw.y as f64 * sample_scale).round() as i32 - frame.origin_y;
-                        let on_frame = mapped_x >= 0
-                            && mapped_y >= 0
-                            && mapped_x < frame_w
-                            && mapped_y < frame_h;
+                let now_us =
+                    (clock.effective_elapsed().as_micros() as u64).saturating_sub(video_zero_us);
+                match pointer.sample(Timestamp::from_micros(now_us as i64)) {
+                    Some(read) => {
+                        // Unclamped: a cursor that wanders off must keep moving in the track.
                         let current = CursorState {
-                            x: mapped_x,
-                            y: mapped_y,
-                            visible: raw.visible && on_frame,
-                            left_down: raw.left_down,
-                            right_down: raw.right_down,
+                            x: read.offset.0,
+                            y: read.offset.1,
+                            visible: read.cursor.visible,
+                            left_down: read.cursor.buttons.left,
+                            right_down: read.cursor.buttons.right,
                         };
 
                         let (velocity_x, velocity_y) = previous
@@ -281,22 +276,18 @@ pub fn spawn_cursor_capture(
                     }
                 }
 
-                // Deadline-based sleep: target the next tick exactly,
-                // independent of how long the sampling itself took.
+                // Deadline-based sleep: target the next tick exactly, independent of how long the sampling took.
                 let now = Instant::now();
                 if next_tick > now {
                     thread::sleep(next_tick - now);
                 } else if now > next_tick + SAMPLE_PERIOD {
-                    // Fell more than one period behind (system stall, GC,
-                    // etc.). Reset the baseline so we don't fire a burst
-                    // of catch-up samples on the next recovery.
+                    // More than a period behind (a system stall), so reset the baseline instead of firing a burst of catch-up samples.
                     next_tick = now;
                 }
                 next_tick += SAMPLE_PERIOD;
             }
 
-            // Post-capture analysis: detect idle periods and zoom triggers.
-            // Idle: cursor within 5px radius for > 2 seconds.
+            // Post-capture analysis: idle is the cursor within a 5px radius for over 2 seconds.
             track.idle_periods = detect_idle_periods(&track.samples, 2_000_000, 5.0);
             track.zoom_triggers = detect_zoom_triggers(&track.samples, &track.clicks);
 
@@ -309,8 +300,7 @@ pub fn spawn_cursor_capture(
 
 /// Write a cursor track to a JSON file.
 pub fn write_cursor_track(path: &Path, track: &CursorTrack) -> Result<()> {
-    // Temp + fsync + rename: a truncated cursor.json makes the recording's
-    // cursor and zoom data unrecoverable.
+    // Temp, fsync, rename: a truncated cursor.json makes the recording's cursor and zoom data unrecoverable.
     let tmp = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec_pretty(track)?;
     if let Err(e) = crate::commands::system::write_atomic(&tmp, path, &bytes) {
@@ -320,99 +310,93 @@ pub fn write_cursor_track(path: &Path, track: &CursorTrack) -> Result<()> {
     Ok(())
 }
 
-/// Shift every timestamp in the track earlier by `offset_us`, clamping at 0.
-///
-/// The cursor clock starts at recording start, but the video timeline is
-/// frame-count based and its first encoded frame is whatever the DXGI
-/// duplication warmup produced first — i.e. video t=0 corresponds to
-/// wall-clock `offset_us`, not 0. Left uncorrected, the whole cursor track
-/// runs ahead of the video by the warmup, so clicks and the click highlight
-/// land that far off from the on-screen action (the ~half-second the user
-/// reported). Subtracting the offset re-bases the cursor track onto the video
-/// clock. Samples captured during the warmup (before the first frame) clamp to
-/// 0 — they have no corresponding video and collapse onto the first frame.
-pub fn shift_cursor_track(track: &mut CursorTrack, offset_us: u64) {
-    if offset_us == 0 {
-        return;
-    }
-    for s in &mut track.samples {
-        s.timestamp_us = s.timestamp_us.saturating_sub(offset_us);
-    }
-    for c in &mut track.clicks {
-        c.timestamp_us = c.timestamp_us.saturating_sub(offset_us);
-    }
-    for p in &mut track.idle_periods {
-        p.start_us = p.start_us.saturating_sub(offset_us);
-        p.end_us = p.end_us.saturating_sub(offset_us);
-    }
-    for z in &mut track.zoom_triggers {
-        z.timestamp_us = z.timestamp_us.saturating_sub(offset_us);
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::smoothing::ZoomTriggerReason;
     use super::*;
 
-    fn sample(ts: u64) -> CursorSample {
-        CursorSample {
-            timestamp_us: ts,
-            x: 0,
-            y: 0,
-            velocity_x: 0.0,
-            velocity_y: 0.0,
-            visible: true,
-            left_down: false,
-            right_down: false,
-        }
-    }
-
-    #[test]
-    fn shift_by_zero_is_a_noop() {
-        let mut track = CursorTrack::default();
-        track.samples.push(sample(5_000));
-        shift_cursor_track(&mut track, 0);
-        assert_eq!(track.samples[0].timestamp_us, 5_000);
-    }
-
-    #[test]
-    fn shift_subtracts_offset_across_every_track_and_saturates_at_zero() {
-        let mut track = CursorTrack {
-            samples: vec![sample(1_000), sample(5_000)],
-            clicks: vec![CursorClickEvent {
-                timestamp_us: 500,
-                button: "left".into(),
-                phase: "down".into(),
-                x: 0,
-                y: 0,
-                duration_us: 0,
-            }],
-            idle_periods: vec![IdlePeriod {
-                start_us: 1_000,
-                end_us: 4_000,
-                x: 0,
-                y: 0,
-            }],
-            zoom_triggers: vec![ZoomTrigger {
-                timestamp_us: 6_000,
-                x: 0,
-                y: 0,
-                reason: ZoomTriggerReason::Click,
-                score: 0.5,
-            }],
+    /// Run the capture thread against the real pointer, with `video_start`
+    /// marked `warmup` after the thread is already sampling.
+    fn track_after_warmup(warmup: Duration) -> CursorTrack {
+        let frame = CursorCaptureFrame {
+            origin_x: -32_768,
+            origin_y: -32_768,
+            width: 65_536,
+            height: 65_536,
+            scale: 1.0,
         };
+        let stop = Arc::new(AtomicBool::new(false));
+        let started = Instant::now();
+        let video_start = TrackStart::new(started);
+        let handle = spawn_cursor_capture(
+            Arc::clone(&stop),
+            RecordingClock::new(started),
+            video_start.clone(),
+            frame,
+        )
+        .expect("the thread spawns");
+        thread::sleep(warmup);
+        video_start.mark();
+        thread::sleep(Duration::from_millis(400));
+        stop.store(true, Ordering::Release);
+        handle.join().expect("the thread joins")
+    }
 
-        shift_cursor_track(&mut track, 2_000);
+    /// End-to-end over the real pointer: the capture thread, capturekit's
+    /// reader and the coordinate mapping together. The pieces have unit tests
+    /// either side of the boundary, but only this catches the wiring between
+    /// them, which is what the migration off `device_query` actually changed.
+    #[test]
+    #[ignore = "live: needs a real pointer"]
+    fn the_capture_thread_fills_a_track_from_the_real_pointer() {
+        if !capturekit::capabilities().cursor_pointer {
+            return;
+        }
+        let track = track_after_warmup(Duration::from_millis(0));
 
-        // A sample/click before the offset clamps to 0; later ones shift down.
-        assert_eq!(track.samples[0].timestamp_us, 0);
-        assert_eq!(track.samples[1].timestamp_us, 3_000);
-        assert_eq!(track.clicks[0].timestamp_us, 0);
-        // Idle windows shift both ends, clamping the start.
-        assert_eq!(track.idle_periods[0].start_us, 0);
-        assert_eq!(track.idle_periods[0].end_us, 2_000);
-        // Zoom triggers shift too.
-        assert_eq!(track.zoom_triggers[0].timestamp_us, 4_000);
+        // 400ms at 125Hz is ~50; anything near zero means it never sampled.
+        assert!(
+            track.samples.len() > 20,
+            "only {} samples in 400ms, so the reader is not keeping its rate",
+            track.samples.len()
+        );
+        assert!(
+            track
+                .samples
+                .windows(2)
+                .all(|w| w[1].timestamp_us >= w[0].timestamp_us),
+            "timestamps must not go backwards"
+        );
+        assert!(
+            track.samples.iter().all(|s| s.visible),
+            "a frame covering the desktop contains the pointer, so every sample draws"
+        );
+    }
+
+    /// The whole point of taking `video_start`: a 300ms capture warmup must not
+    /// put the cursor 300ms ahead of the picture. Before this the track began at
+    /// recording start and was re-based afterwards by `shift_cursor_track`,
+    /// which clamped every warmup sample onto t=0.
+    #[test]
+    #[ignore = "live: needs a real pointer"]
+    fn samples_are_stamped_from_video_zero_not_from_recording_start() {
+        if !capturekit::capabilities().cursor_pointer {
+            return;
+        }
+        const WARMUP: Duration = Duration::from_millis(300);
+        let track = track_after_warmup(WARMUP);
+        let first = track.samples.first().expect("samples were captured");
+
+        // Stamped from recording start, the first sample would sit at ~300_000.
+        assert!(
+            first.timestamp_us < 50_000,
+            "first sample at {}us, so it is still measured from recording start",
+            first.timestamp_us
+        );
+        // And nothing may pile up at zero the way clamping used to leave it.
+        let at_zero = track.samples.iter().filter(|s| s.timestamp_us == 0).count();
+        assert!(
+            at_zero <= 1,
+            "{at_zero} samples share t=0, which is the clamping this replaced"
+        );
     }
 }

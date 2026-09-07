@@ -1,12 +1,13 @@
 <script lang="ts">
-// The Recast mark for icon slots: the three bars alone, in currentColor.
-// The disc is dropped deliberately — a filled circle next to a row of outline
-// icons reads as a different kind of object, and at 12–16px the bars inside it
-// turn to mush. Without it the mark inherits hover/disabled colour like any
-// other icon.
+// The bars alone in currentColor: a filled disc reads as a different object beside outline icons and turns to mush at 16px.
 import Logo from "$components/logo.svelte";
 
-let { class: klass = "", size = 16 }: { class?: string; size?: string | number } = $props();
+let {
+	class: className = "",
+	size = 16,
+	fill = "none",
+	color = "currentColor",
+}: { class?: string; size?: string | number; fill?: string; color?: string } = $props();
 </script>
 
-<Logo fill="none" color="currentColor" {size} class={klass} aria-hidden="true" />
+<Logo fill={fill} color={color} {size} class={className} aria-hidden="true" />

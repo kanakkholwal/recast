@@ -32,6 +32,10 @@
 			"svelte": "./src/components/ui/card/index.ts",
 			"default": "./src/components/ui/card/index.ts"
 		},
+		"./notched-shelf": {
+			"svelte": "./src/components/ui/notched-shelf/index.ts",
+			"default": "./src/components/ui/notched-shelf/index.ts"
+		},
 		"./checkbox": {
 			"svelte": "./src/components/ui/checkbox/index.ts",
 			"default": "./src/components/ui/checkbox/index.ts"
@@ -39,6 +43,10 @@
 		"./collapsible": {
 			"svelte": "./src/components/ui/collapsible/index.ts",
 			"default": "./src/components/ui/collapsible/index.ts"
+		},
+		"./combobox": {
+			"svelte": "./src/components/ui/combobox/index.ts",
+			"default": "./src/components/ui/combobox/index.ts"
 		},
 		"./command": {
 			"svelte": "./src/components/ui/command/index.ts",
@@ -160,6 +168,10 @@
 			"svelte": "./src/components/ui/color-picker/index.ts",
 			"default": "./src/components/ui/color-picker/index.ts"
 		},
+		"./color-picker/logic": {
+			"svelte": "./src/components/ui/color-picker/color-picker.logic.ts",
+			"default": "./src/components/ui/color-picker/color-picker.logic.ts"
+		},
 		"./color-field": {
 			"svelte": "./src/components/ui/color-field/index.ts",
 			"default": "./src/components/ui/color-field/index.ts"
@@ -202,22 +214,22 @@
 	},
 	"dependencies": {
 		"@recast/icons": "workspace:*",
-		"@tabler/icons-svelte": "^3.44.0",
-		"bits-ui": "^2.18.1",
+		"@tabler/icons-svelte": "^3.46.0",
+		"bits-ui": "^2.19.0",
 		"clsx": "^2.1.1",
-		"dompurify": "^3.2.4",
-		"marked": "^15.0.7",
+		"dompurify": "^3.4.14",
+		"marked": "^15.0.12",
 		"mode-watcher": "^1.1.0",
-		"svelte-sonner": "^1.1.1",
+		"svelte-sonner": "^1.2.1",
 		"tailwind-merge": "^3.6.0",
-		"tailwind-variants": "^3.2.2",
+		"tailwind-variants": "^3.3.1",
 		"vaul-svelte": "1.0.0-next.7"
 	},
 	"devDependencies": {
-		"@internationalized/date": "^3.12.2",
-		"svelte": "^5.56.3",
-		"svelte-check": "^4.4.2",
-		"tailwindcss": "^4.3.1",
+		"@internationalized/date": "^3.12.3",
+		"svelte": "5.56.3",
+		"svelte-check": "^4.7.6",
+		"tailwindcss": "^4.3.3",
 		"typescript": "^5.9.3"
 	},
 	"scripts": {

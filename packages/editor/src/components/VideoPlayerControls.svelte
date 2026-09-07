@@ -1,35 +1,17 @@
 <script lang="ts">
-import type { EditorStore } from "../stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
-import { formatTimeByMode, frameStepOutput } from "../lib/editor/time";
-import {
-	Camera,
-	LoaderCircle,
-	Maximize2,
-	Minimize2,
-	Pause,
-	Play,
-	Repeat,
-	SkipBack,
-	SkipForward,
-} from "@recast/icons";
+import { Pause, Play, SkipBack, SkipForward } from "@recast/icons";
 import { Kbd } from "@recast/ui/kbd";
-import { toast } from "@recast/ui/sonner";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
 import { onDestroy } from "svelte";
-import MarkupControls from "./_components/MarkupControls.svelte";
-import { BAR_BTN, BAR_BTN_DISABLED, BAR_BTN_ON, BAR_GROUP } from "./_components/player-bar.styles";
+import { formatTimeByMode, frameStepOutput } from "../lib/editor/time";
+import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
+import type { EditorStore } from "../stores/editor-store.svelte";
+import { BAR_BTN, BAR_BTN_ON, BAR_GROUP } from "./_components/player-bar.styles";
 
 interface Props {
 	store: EditorStore;
 	videoEl?: HTMLVideoElement | null;
-	/** Element to request fullscreen on (usually the preview container). */
-	fullscreenTargetEl?: HTMLElement | null;
-	/** PNG blob of the current preview composite; undefined disables Copy-frame (WebGL2 not ready). */
-	captureFrame?: (() => Promise<Blob | null>) | undefined;
-	/** Loop toggle. Just flips the flag here; the editor page does the seek-and-replay (needs audio + `ended`). */
-	loopEnabled?: boolean;
 	/** Whether the timeline is hiding, so this bar owns the scrubbing. Off when
 	 *  the timeline is visible (it is the better scrubber): two scrubbers for one
 	 *  position is redundant, and only the timeline shows cuts/zoom/markup.
@@ -37,81 +19,33 @@ interface Props {
 	showScrubber?: boolean;
 }
 
-let {
-	store,
-	videoEl = null,
-	fullscreenTargetEl = null,
-	captureFrame = undefined,
-	loopEnabled = $bindable(false),
-	showScrubber = true,
-}: Props = $props();
-
-let capturing = $state(false);
-
-// Copy the current frame to the clipboard as PNG. `navigator.clipboard.write`
-// works on Tauri (tauri://localhost is a secure context). Pause first so the captured pixels match.
-async function copyFrameToClipboard() {
-	if (capturing || !captureFrame) return;
-	capturing = true;
-	const wasPlaying = store.isPlaying;
-	if (wasPlaying && videoEl) {
-		videoEl.pause();
-		store.isPlaying = false;
-	}
-	try {
-		const blob = await captureFrame();
-		if (!blob) {
-			toast.error("Couldn't capture frame. Preview isn't ready yet.");
-			return;
-		}
-		await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-		toast.success("Frame copied to clipboard.");
-	} catch (err) {
-		toast.error(`Couldn't copy frame: ${(err as Error)?.message ?? String(err)}`);
-	} finally {
-		capturing = false;
-	}
-}
+let { store, videoEl = null, showScrubber = true }: Props = $props();
 
 let isFullscreen = $state(false);
 
-// Mirror the browser's fullscreen state so the toggle icon reflects reality.
+// Mirror the browser's fullscreen state; the scrubber follows it (fullscreen has no timeline).
 $effect(() => {
 	const handler = () => {
-		isFullscreen = !!document.fullscreenElement;
+		isFullscreen = Boolean(document.fullscreenElement);
 	};
 	document.addEventListener("fullscreenchange", handler);
 	return () => document.removeEventListener("fullscreenchange", handler);
 });
 
-async function toggleFullscreen() {
-	if (document.fullscreenElement) {
-		await document.exitFullscreen();
-		return;
-	}
-	if (fullscreenTargetEl) await fullscreenTargetEl.requestFullscreen();
-}
-
-// Fullscreen puts ONLY the preview container on screen, so the timeline isn't
-// there to scrub with however `showScrubber` was resolved — leaving fullscreen
-// with no transport at all whenever the timeline happened to be open.
+// Fullscreen shows only the preview, so without this, leaving it with the timeline open left no transport at all.
 const scrubberVisible = $derived(showScrubber || isFullscreen);
 
-// OUTPUT (post-cut) time: readout/scrubber reflect the edited length and can't land
-// in a removed region. `store.currentTime` stays the source of truth (original time); we map to output only for display + seek.
+// OUTPUT time for display and seek only; `store.currentTime` stays the source of truth in original time.
 const timeMap = $derived(store.timeMap);
 const fullDuration = $derived(store.metadata?.duration ?? 0);
 const outputDuration = $derived(originalToOutput(timeMap, fullDuration));
 const currentOutput = $derived(originalToOutput(timeMap, store.currentTime));
 
-// Output time under the pointer while scrubbing, or null when the store owns the
-// position. The thumb used to be driven by `store.currentTime`, so it fought the
-// drag whenever a seek landed late.
+// Null when the store owns the position: driving the thumb from `store.currentTime` fought the drag on a late seek.
 let scrubOutput = $state<number | null>(null);
 const displayOutput = $derived(scrubOutput ?? currentOutput);
 
-// Same formatter and same Time-display setting as the timeline, so the readout
-// and the playhead can't show two different numbers for one moment.
+// Same formatter and Time-display setting as the timeline, so the readout and the playhead can't disagree.
 const fps = $derived(store.metadata?.fps || 60);
 const currentTimeFormatted = $derived(formatTimeByMode(displayOutput, store.timeMode, fps));
 const durationFormatted = $derived(formatTimeByMode(outputDuration, store.timeMode, fps));
@@ -123,11 +57,7 @@ const progressFraction = $derived(
 	outputDuration > 0 ? Math.min(1, Math.max(0, displayOutput / outputDuration)) : 0,
 );
 
-// A range input's thumb travels between its own half-widths, not 0→100%, so a
-// fill sized at a flat `fraction * 100%` only lines up with the thumb at the two
-// ends and drifts by up to a quarter thumb in between. Both the fill's width and
-// the thumb's centre are placed with THIS expression, so they cannot disagree at
-// any position, and it needs no measurement of the track.
+// A range thumb travels between its own half-widths, so a flat percentage fill drifts; both fill and thumb use this expression.
 const progressOffset = $derived(
 	`calc(${progressFraction} * (100% - ${THUMB_PX}px) + ${THUMB_PX / 2}px)`,
 );
@@ -143,26 +73,19 @@ function togglePlay() {
 	}
 }
 
-// Every seek here goes through `store.seek`, which moves the playhead AND the
-// registered transport. Writing `videoEl.currentTime` directly left the system
-// and microphone audio elements behind, so a frame-step or a scrub desynced
-// sound from picture on the <video> path.
+// `store.seek` moves the playhead AND the transport; writing `videoEl.currentTime` left the audio elements behind.
 function stepFrame(direction: number) {
 	if (!store.metadata) return;
-	// Step on the OUTPUT axis so stepping past a cut boundary lands on the next
-	// kept frame instead of inside the removed range.
+	// Step on the OUTPUT axis so stepping past a cut lands on the next kept frame, not inside the removed range.
 	store.seek(frameStepOutput(timeMap, store.metadata, store.currentTime, direction));
 }
 
-// The scrubber is in output time; map back to original (skipping over collapsed
-// cuts) before driving the transport.
+// The scrubber is output time; map back to original, skipping collapsed cuts, before driving the transport.
 function seekToOutput(outputTime: number) {
 	store.seek(outputToOriginal(timeMap, outputTime));
 }
 
-// Coalesced to one seek per frame. `oninput` fires per pointer-pixel and each
-// seek now moves three media elements, so writing straight through thrashed the
-// decoder for positions no one ever saw.
+// One seek per frame: `oninput` fires per pointer-pixel, and each seek moves three media elements.
 let scrubRaf: number | null = null;
 
 function flushScrub() {
@@ -242,6 +165,9 @@ onDestroy(() => {
 	     children of unequal width, space-between only centres the middle one by
 	     coincidence. flex-1 on both flanks keeps markup truly centred. -->
 	<div class="flex h-8 w-full items-center justify-between gap-2">
+		<!-- Transport + timecode live in the timeline header now; shown here only
+		     when the timeline is hidden or in fullscreen, where nothing else has them. -->
+		{#if scrubberVisible}
 		<div class="flex min-w-0 flex-1 shrink-0 items-center gap-2">
 			<div class={BAR_GROUP}>
 				<Tooltip.Root>
@@ -323,99 +249,8 @@ onDestroy(() => {
 				<span class="text-muted-foreground">{durationFormatted}</span>
 			</div>
 		</div>
-
-		<!-- Centre: drawing tools, directly under the picture they draw on. Empty on
-		     every tab but Markup, so the flanks keep their positions regardless. -->
-		<div class="flex shrink-0 items-center gap-2">
-			<MarkupControls {store} />
-		</div>
-
-		<div class="flex min-w-0 flex-1 shrink-0 items-center justify-end">
-			<div class={BAR_GROUP}>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<!-- A native `disabled` button swallows pointer events, so the two
-						     tooltips that explain WHY it's disabled never fired. The span
-						     carries the trigger; the button inside stays properly disabled. -->
-						{#snippet child({ props })}
-							<span {...props as Record<string, unknown>} class="inline-flex">
-								<button
-									type="button"
-									onclick={copyFrameToClipboard}
-									disabled={!captureFrame || capturing}
-									aria-label="Copy current frame to clipboard"
-									class={cn(BAR_BTN, BAR_BTN_DISABLED)}
-								>
-									{#if capturing}
-										<LoaderCircle size={13} class="animate-spin" />
-									{:else}
-										<Camera size={13} />
-									{/if}
-								</button>
-							</span>
-						{/snippet}
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						{#if capturing}
-							Copying frame…
-						{:else if !captureFrame}
-							Preview isn't ready yet
-						{:else}
-							Copy frame to clipboard
-						{/if}
-					</Tooltip.Content>
-				</Tooltip.Root>
-
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						{#snippet child({ props })}
-							<button
-								{...props}
-								type="button"
-								onclick={() => (loopEnabled = !loopEnabled)}
-								aria-pressed={loopEnabled}
-								aria-label="Loop within the trim"
-								class={cn(BAR_BTN, loopEnabled && [BAR_BTN_ON, "text-primary"])}
-							>
-								<Repeat size={13} />
-							</button>
-						{/snippet}
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						{loopEnabled ? "Looping within the trim" : "Loop within the trim"}
-					</Tooltip.Content>
-				</Tooltip.Root>
-
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<!-- Same disabled-swallows-pointer-events wrapper as Copy frame.
-						     The label flips with state, so no aria-pressed on top of it:
-						     "Exit fullscreen, pressed" is one signal too many. -->
-						{#snippet child({ props })}
-							<span {...props as Record<string, unknown>} class="inline-flex">
-								<button
-									type="button"
-									onclick={toggleFullscreen}
-									disabled={!fullscreenTargetEl}
-									aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-									class={cn(BAR_BTN, BAR_BTN_DISABLED)}
-								>
-									{#if isFullscreen}
-										<Minimize2 size={13} />
-									{:else}
-										<Maximize2 size={13} />
-									{/if}
-								</button>
-							</span>
-						{/snippet}
-					</Tooltip.Trigger>
-					<Tooltip.Content>
-						<span class="inline-flex items-center gap-1.5">
-							{isFullscreen ? "Exit fullscreen" : "Fullscreen"} <Kbd>F</Kbd>
-						</span>
-					</Tooltip.Content>
-				</Tooltip.Root>
-			</div>
-		</div>
+		{:else}
+			<div class="flex-1"></div>
+		{/if}
 	</div>
 </div>

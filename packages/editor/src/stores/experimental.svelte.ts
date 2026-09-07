@@ -6,11 +6,7 @@
 
 import { PersistedState } from "@recast/ui/persisted-state";
 
-export type ExperimentalFlag =
-	| "silenceDetection"
-	| "selfHosting"
-	| "remoteTranscription"
-	| "browserExportBeta";
+export type ExperimentalFlag = "silenceDetection" | "remoteTranscription" | "engineExport";
 
 interface FlagMeta {
 	key: ExperimentalFlag;
@@ -21,15 +17,9 @@ interface FlagMeta {
 export const FLAG_META: FlagMeta[] = [
 	{
 		key: "silenceDetection",
-		label: "Silence detection & cuts",
+		label: "Silence detection & cuts (alpha)",
 		description:
-			"Find quiet stretches with no cursor movement and skip them on playback and export.",
-	},
-	{
-		key: "selfHosting",
-		label: "Self-hosting server endpoint",
-		description:
-			"Point the app at your own Recast Cloud server. Cloud isn't ready yet, so this is for early self-hosters only.",
+			"Find quiet stretches with no cursor movement and skip them on playback and export. Alpha: nothing is cut for you, and the thresholds that decide what counts as a pause are still being tuned.",
 	},
 	{
 		key: "remoteTranscription",
@@ -38,26 +28,23 @@ export const FLAG_META: FlagMeta[] = [
 			"Transcribe captions through an OpenAI-compatible endpoint (LM Studio, a self-hosted server, or a third-party API) instead of an on-device model. Response formats vary between servers, so treat this as early.",
 	},
 	{
-		key: "browserExportBeta",
-		label: "New export engine (beta)",
+		key: "engineExport",
+		label: "Export in the background (alpha)",
 		description:
-			"Render exports through the new browser engine so they match the preview exactly, instead of the FFmpeg compositor. Falls back automatically if your device can't. Early — compare an export before relying on it.",
+			"Run the same engine natively instead of the FFmpeg compositor, with no resolution ceiling and no browser needed. Alpha: compare an export before relying on it, and quote the export log line if one looks wrong.",
 	},
 ];
 
 const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	silenceDetection: false,
-	selfHosting: false,
 	remoteTranscription: false,
-	browserExportBeta: false,
+	engineExport: false,
 };
 
 const STORAGE_KEY = "recast-experimental-flags";
 
 function createExperimentalStore() {
-	// Merges saved JSON over DEFAULTS so adding a flag later keeps existing
-	// choices. Tauri v2 webviews share a localStorage origin, so a flip in the
-	// settings window reaches open editor windows without a reload.
+	// Merged over DEFAULTS so a new flag keeps existing choices; Tauri webviews share an origin, so a flip reaches open editors.
 	const flags = new PersistedState<Record<ExperimentalFlag, boolean>>(STORAGE_KEY, DEFAULTS);
 
 	return {

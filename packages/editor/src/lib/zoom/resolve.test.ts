@@ -23,8 +23,7 @@ describe("activeZoomIndex", () => {
 		expect(activeZoomIndex([R("a", 2, 4, true)], 3)).toBe(-1);
 	});
 
-	// The nested region is the more specific intent, so it wins — and the rule
-	// must not depend on creation order, which the user cannot see.
+	// The nested region is the more specific intent, and the rule must not depend on invisible creation order.
 	it("gives a nested region priority over the one enclosing it", () => {
 		const enclosing = R("outer", 0, 10);
 		const nested = R("inner", 4, 6);

@@ -1,20 +1,6 @@
 <script lang="ts">
-import { EASE } from "../../lib/easing/cubic-bezier";
-import { motionDuration } from "../../lib/motion.svelte";
-import { registry } from "../../lib/registry";
-import type { EditorStore } from "../../stores/editor-store.svelte";
-import {
-	Activity,
-	AiAtom,
-	Check,
-	EyeOff,
-	GitGraph,
-	MousePointer,
-	Spline,
-	Target,
-	Waves,
-	Wind,
-} from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
+import { Check, EyeOff, GitGraph, Spline, Target } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
@@ -23,13 +9,19 @@ import { cn } from "@recast/ui/utils";
 import { Image } from "@unpic/svelte";
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
-import InspectorHint from "../InspectorHint.svelte";
+import { EASE } from "../../lib/easing/cubic-bezier";
+import { motionDuration } from "../../lib/motion.svelte";
+import { registry } from "../../lib/registry";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
+import InspectorHint from "../InspectorHint.svelte";
+import { isCursorAnimTouched, svgSwatchUrl } from "./cursor-panel.logic";
 import EasingControl from "./EasingControl.svelte";
 import PanelSection from "./PanelSection.svelte";
-import { isCursorAnimTouched, svgSwatchUrl } from "./cursor-panel.logic";
-// Named so the swatch announces "Amber", not "#f59e0b". Deliberately vivid:
-// this ring sits on top of the recording and has to survive busy content.
+import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
+
+// Named so the swatch announces 'Amber', not a hex; deliberately vivid, since this ring must survive busy content.
 const highlightColors: { label: string; value: string }[] = [
 	{ label: "Blue", value: "#3b82f6" },
 	{ label: "Red", value: "#ef4444" },
@@ -57,18 +49,98 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
 	if (trackUndo) store.pushUndoState();
 	store.updateCursorSettings(updates);
 }
+
+// A select, not a chip row: one active id, "custom" once values drift off every preset.
+const activeSmoothingId = $derived(
+	smoothingPresets.find(
+		(p) =>
+			p.value.smoothing === store.cursorSettings.smoothing &&
+			p.value.snapToClicks === store.cursorSettings.snapToClicks &&
+			p.value.snapWindowMs === store.cursorSettings.snapWindowMs,
+	)?.id ?? "custom",
+);
+const smoothingOptions = $derived([
+	{ value: "custom", label: "Custom" },
+	...smoothingPresets.map((p) => ({ value: p.id, label: p.label })),
+]);
+function applySmoothingPreset(id: string) {
+	const preset = smoothingPresets.find((p) => p.id === id);
+	if (!preset) return;
+	store.pushUndoState();
+	store.updateCursorSettings({
+		smoothing: preset.value.smoothing,
+		snapToClicks: preset.value.snapToClicks,
+		snapWindowMs: preset.value.snapWindowMs,
+	});
+}
 </script>
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
-  <div class="flex items-center justify-between gap-2">
-    <span class="text-[11px] font-medium text-foreground">Show cursor</span>
-    <SegmentedToggle
-      checked={store.cursorSettings.enabled}
-      size="xs"
-      aria-label="Show cursor"
-      onCheckedChange={(next) => updateCursorSettings({ enabled: next }, true)}
-    />
-  </div>
+  <!-- Dense inline slider row: external label column, compact field-surface track. -->
+  {#snippet sliderRow(cfg: {
+    label: string;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+    unit?: string;
+    description?: string;
+    set: (v: number) => void;
+  })}
+    <PropRow label={cfg.label}>
+      <SliderControl
+        dense
+        hideLabel
+        class="flex-1"
+        label={cfg.label}
+        value={cfg.value}
+        min={cfg.min}
+        max={cfg.max}
+        step={cfg.step}
+        unit={cfg.unit ?? ""}
+        description={cfg.description}
+        onstart={() => store.pushUndoState()}
+        onchange={cfg.set}
+      />
+    </PropRow>
+  {/snippet}
+
+  <!-- Borderless toggle row: icon + label (+ hint) left, switch right. The one
+       switch shape across the panel, consistent with the slider/select rows. -->
+  {#snippet switchRow(cfg: {
+    icon?: IconComponent;
+    label: string;
+    hint?: string;
+    checked: boolean;
+    onchange: (next: boolean) => void;
+  })}
+    <div class="flex items-center justify-between gap-2">
+      <span
+        class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground"
+      >
+        {#if cfg.icon}
+          {@const Icon = cfg.icon}
+          <Icon size={11} class="text-muted-foreground" />
+        {/if}
+        {cfg.label}
+        {#if cfg.hint}
+          <InspectorHint content={cfg.hint} />
+        {/if}
+      </span>
+      <SegmentedToggle
+        checked={cfg.checked}
+        size="xs"
+        aria-label={cfg.label}
+        onCheckedChange={cfg.onchange}
+      />
+    </div>
+  {/snippet}
+
+  {@render switchRow({
+    label: "Show cursor",
+    checked: store.cursorSettings.enabled,
+    onchange: (next) => updateCursorSettings({ enabled: next }, true),
+  })}
 
   {#if store.cursorSettings.enabled}
     <PanelSection
@@ -84,7 +156,7 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
         {/if}
       {/snippet}
       <div
-        class="grid grid-cols-5 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
+        class="grid grid-cols-4 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
       >
         {#each registry.list("cursor") as style (style.id)}
           {@const isActive = store.cursorSettings.style === style.id}
@@ -103,7 +175,7 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
               "inline-flex items-center justify-center group relative aspect-square overflow-hidden rounded-md border transition-all duration-150",
               "focus:outline-none focus:ring-2 focus:ring-ring/40",
               isActive
-                ? "border-primary/60 bg-primary/8 text-foreground"
+                ? "border-foreground/40 bg-foreground/10 text-foreground"
                 : "border-transparent bg-background/40 text-foreground/80 hover:border-border hover:bg-background/80 hover:text-foreground",
             )}
           >
@@ -111,15 +183,15 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
               src={svgSwatchUrl(style.value.svg)}
               alt={style.label}
               draggable="false"
-              class="size-10"
+              class="size-10 shadow-(0_0_0_1px_color-mix(in_srgb,var(--color-foreground)_85%,transparent))"
               layout="constrained"
               aria-hidden="true"
             />
-          
+
             {#if isActive}
               <span
                 aria-hidden="true"
-                class="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary shadow-[0_0_0_1.5px_color-mix(in_srgb,var(--color-background)_85%,transparent)]"
+                class="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-foreground shadow-[0_0_0_1.5px_color-mix(in_srgb,var(--color-background)_85%,transparent)]"
               ></span>
             {/if}
           </button>
@@ -135,20 +207,15 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
       {/if}
 
       <div class="mt-2.5">
-        <SliderControl
-          label="Cursor size"
-          value={store.cursorSettings.size}
-          min={1}
-          max={15}
-          step={1}
-          unit="x"
-          onstart={() => store.pushUndoState()}
-          onchange={(next) => store.updateCursorSettings({ size: next })}
-        >
-          {#snippet icon()}
-            <MousePointer size={11} />
-          {/snippet}
-        </SliderControl>
+        {@render sliderRow({
+          label: "Size",
+          value: store.cursorSettings.size,
+          min: 1,
+          max: 15,
+          step: 1,
+          unit: "x",
+          set: (v) => store.updateCursorSettings({ size: v }),
+        })}
       </div>
     </PanelSection>
 
@@ -192,118 +259,67 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
           />
         {/if}
 
-        <div class="flex flex-wrap gap-1">
-          {#each smoothingPresets as preset (preset.id)}
-            {@const isActive =
-              store.cursorSettings.smoothing === preset.value.smoothing &&
-              store.cursorSettings.snapToClicks === preset.value.snapToClicks &&
-              store.cursorSettings.snapWindowMs === preset.value.snapWindowMs}
-            <Button
-              type="button"
-              aria-pressed={isActive}
-              onclick={() => {
-                store.pushUndoState();
-                store.updateCursorSettings({
-                  smoothing: preset.value.smoothing,
-                  snapToClicks: preset.value.snapToClicks,
-                  snapWindowMs: preset.value.snapWindowMs,
-                });
-              }}
-              size="xs"
-              variant={isActive ? "default_soft" : "outline"}
-            >
-              {preset.label}
-            </Button>
-          {/each}
-        </div>
-
-        <SliderControl
-          label="Smoothing"
-          value={store.cursorSettings.smoothing}
-          min={0}
-          max={100}
-          step={5}
-          unit="%"
-          description={store.cursorSettings.smoothing === 0
-            ? "Off (cursor follows the raw capture)"
-            : undefined}
-          onstart={() => store.pushUndoState()}
-          onchange={(next) => store.updateCursorSettings({ smoothing: next })}
-        >
-          {#snippet icon()}
-            <AiAtom size={11} />
-          {/snippet}
-        </SliderControl>
-
-        <div
-          class="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-card/70 px-2 py-1.5 shadow-(--shadow-craft-inset) backdrop-blur"
-        >
-          <div class="flex items-center gap-1.5">
-            <Target size={11} class="text-muted-foreground" />
-            <span class="text-[11px] font-medium text-foreground">
-              Snap to clicks
-            </span>
-            <InspectorHint
-              content="Around every mouse-down, pin the smoothed curve to the exact click x/y inside the snap window. Prevents smoothing from rounding the corner off a press target."
-            />
-          </div>
-          <SegmentedToggle
-            checked={store.cursorSettings.snapToClicks}
-            size="xs"
-            aria-label="Snap to clicks"
-            onCheckedChange={(next) =>
-              updateCursorSettings({ snapToClicks: next }, true)}
+        <PropRow label="Preset">
+          <PropSelect
+            class="flex-1"
+            label="Smoothing preset"
+            value={activeSmoothingId}
+            options={smoothingOptions}
+            onChange={applySmoothingPreset}
           />
-        </div>
+        </PropRow>
+
+        {@render sliderRow({
+          label: "Smoothing",
+          value: store.cursorSettings.smoothing,
+          min: 0,
+          max: 100,
+          step: 5,
+          unit: "%",
+          description:
+            store.cursorSettings.smoothing === 0
+              ? "Off (cursor follows the raw capture)"
+              : undefined,
+          set: (v) => store.updateCursorSettings({ smoothing: v }),
+        })}
+
+        {@render switchRow({
+          icon: Target,
+          label: "Snap to clicks",
+          hint: "Around every mouse-down, pin the smoothed curve to the exact click x/y inside the snap window. Prevents smoothing from rounding the corner off a press target.",
+          checked: store.cursorSettings.snapToClicks,
+          onchange: (next) => updateCursorSettings({ snapToClicks: next }, true),
+        })}
 
         {#if store.cursorSettings.snapToClicks}
-          <SliderControl
-            label="Snap window"
-            value={store.cursorSettings.snapWindowMs}
-            min={0}
-            max={200}
-            step={10}
-            unit="ms"
-            description="Half-width of the cosine-ramped anchor around each click."
-            onstart={() => store.pushUndoState()}
-            onchange={(next) =>
-              store.updateCursorSettings({ snapWindowMs: next })}
-          >
-            {#snippet icon()}
-              <Target size={11} />
-            {/snippet}
-          </SliderControl>
+          {@render sliderRow({
+            label: "Snap window",
+            value: store.cursorSettings.snapWindowMs,
+            min: 0,
+            max: 200,
+            step: 10,
+            unit: "ms",
+            description: "Half-width of the cosine-ramped anchor around each click.",
+            set: (v) => store.updateCursorSettings({ snapWindowMs: v }),
+          })}
         {/if}
 
         <!-- Motion easing: opt-in, presets-first with a hidden custom graph -->
-        <div
-          class="space-y-2 rounded-xl border border-border/60 bg-card/40 p-2 shadow-(--shadow-craft-inset)"
-        >
-          <div class="flex items-center justify-between gap-2">
-            <span
-              class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground"
-            >
-              <Spline size={11} class="text-muted-foreground" />
-              Motion easing
-              <InspectorHint
-                content="Reshape how the cursor interpolates between captured samples. Default (off) preserves the raw trajectory; ease-out curves decelerate into rest. Preview only."
-              />
-            </span>
-            <SegmentedToggle
-              checked={!!store.cursorMotionEasing}
-              size="xs"
-              aria-label="Motion easing"
-              onCheckedChange={(next) =>
-                (store.cursorMotionEasing = next ? { ...EASE } : null)}
-            />
-          </div>
+        <div class="space-y-2">
+          {@render switchRow({
+            icon: Spline,
+            label: "Motion easing",
+            hint: "Reshape how the cursor interpolates between captured samples. Default (off) preserves the raw trajectory; ease-out curves decelerate into rest. Preview only.",
+            checked: !!store.cursorMotionEasing,
+            onchange: (next) =>
+              (store.cursorMotionEasing = next ? { ...EASE } : null),
+          })}
 
           {#if store.cursorMotionEasing}
             <EasingControl
               value={store.cursorMotionEasing}
               onpick={(next) => {
-                // The setter pushes its own undo entry; a second push here
-                // made one Ctrl+Z look like a no-op.
+                // The setter pushes its own undo entry; a second push here made one Ctrl+Z look like a no-op.
                 store.cursorMotionEasing = next;
               }}
               ondrag={(next) => store.setCursorMotionEasingLive(next)}
@@ -343,77 +359,56 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
           </Button>
         {/if}
       {/snippet}
-      <SliderControl
-        label="Click bounce"
-        description="How much the cursor squashes when you click"
-        value={store.cursorSettings.clickBounce}
-        min={0}
-        max={5}
-        step={0.05}
-        unit="x"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => store.updateCursorSettings({ clickBounce: next })}
-      >
-        {#snippet icon()}
-          <Activity size={11} />
-        {/snippet}
-      </SliderControl>
+      {@render sliderRow({
+        label: "Bounce",
+        description: "How much the cursor squashes when you click",
+        value: store.cursorSettings.clickBounce,
+        min: 0,
+        max: 5,
+        step: 0.05,
+        unit: "x",
+        set: (v) => store.updateCursorSettings({ clickBounce: v }),
+      })}
 
       {#if store.cursorSettings.clickBounce > 0}
         <span
           class="block"
           in:fly={{ y: 4, duration: motionDuration(180), easing: cubicOut }}
         >
-          <SliderControl
-            label="Bounce speed"
-            description="Length of the bounce window"
-            value={store.cursorSettings.bounceSpeedMs}
-            min={80}
-            max={500}
-            step={10}
-            unit=" ms"
-            onstart={() => store.pushUndoState()}
-            onchange={(next) =>
-              store.updateCursorSettings({ bounceSpeedMs: next })}
-          >
-            {#snippet icon()}
-              <Waves size={11} />
-            {/snippet}
-          </SliderControl>
+          {@render sliderRow({
+            label: "Speed",
+            description: "Length of the bounce window",
+            value: store.cursorSettings.bounceSpeedMs,
+            min: 80,
+            max: 500,
+            step: 10,
+            unit: " ms",
+            set: (v) => store.updateCursorSettings({ bounceSpeedMs: v }),
+          })}
         </span>
       {/if}
 
-      <SliderControl
-        label="Cursor sway"
-        description="Subtle wobble during slow motion. Fades as you move faster."
-        value={store.cursorSettings.sway}
-        min={0}
-        max={1}
-        step={0.01}
-        unit="x"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => store.updateCursorSettings({ sway: next })}
-      >
-        {#snippet icon()}
-          <Wind size={11} />
-        {/snippet}
-      </SliderControl>
+      {@render sliderRow({
+        label: "Sway",
+        description: "Subtle wobble during slow motion. Fades as you move faster.",
+        value: store.cursorSettings.sway,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        unit: "x",
+        set: (v) => store.updateCursorSettings({ sway: v }),
+      })}
 
-      <SliderControl
-        label="Motion blur"
-        description="Velocity-proportional trail behind fast cursor movement"
-        value={store.cursorSettings.motionBlur}
-        min={0}
-        max={1}
-        step={0.01}
-        unit="x"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => store.updateCursorSettings({ motionBlur: next })}
-      >
-        {#snippet icon()}
-          <AiAtom size={11} />
-        {/snippet}
-      </SliderControl>
+      {@render sliderRow({
+        label: "Blur",
+        description: "Velocity-proportional trail behind fast cursor movement",
+        value: store.cursorSettings.motionBlur,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        unit: "x",
+        set: (v) => store.updateCursorSettings({ motionBlur: v }),
+      })}
     </PanelSection>
 
     <PanelSection
@@ -455,7 +450,7 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
               class={cn(
                 "group relative aspect-square w-full overflow-hidden rounded-md border transition-all",
                 isSelected
-                  ? "border-primary ring-2 ring-primary/30"
+                  ? "border-foreground/60 ring-2 ring-foreground/25"
                   : "border-border hover:border-foreground/30",
               )}
               style="background-color: {swatch.value}"
@@ -467,7 +462,7 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
                   aria-hidden="true"
                 >
                   <span
-                    class="grid size-3.5 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm"
+                    class="grid size-3.5 place-items-center rounded-full bg-foreground text-background shadow-sm"
                   >
                     <Check class="size-2.5" />
                   </span>
@@ -478,17 +473,15 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
         </div>
 
         <div class="mt-2.5">
-          <SliderControl
-            label="Highlight opacity"
-            value={store.cursorSettings.highlightOpacity}
-            min={10}
-            max={100}
-            step={5}
-            unit="%"
-            onstart={() => store.pushUndoState()}
-            onchange={(next) =>
-              store.updateCursorSettings({ highlightOpacity: next })}
-          />
+          {@render sliderRow({
+            label: "Opacity",
+            value: store.cursorSettings.highlightOpacity,
+            min: 10,
+            max: 100,
+            step: 5,
+            unit: "%",
+            set: (v) => store.updateCursorSettings({ highlightOpacity: v }),
+          })}
         </div>
       {/if}
     </PanelSection>
@@ -510,16 +503,15 @@ function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, t
         />
       {/snippet}
       {#if store.cursorSettings.hideWhenIdle}
-        <SliderControl
-          label="Idle timeout"
-          value={store.cursorSettings.idleTimeout}
-          min={1}
-          max={10}
-          step={1}
-          unit="s"
-          onstart={() => store.pushUndoState()}
-          onchange={(next) => store.updateCursorSettings({ idleTimeout: next })}
-        />
+        {@render sliderRow({
+          label: "Timeout",
+          value: store.cursorSettings.idleTimeout,
+          min: 1,
+          max: 10,
+          step: 1,
+          unit: "s",
+          set: (v) => store.updateCursorSettings({ idleTimeout: v }),
+        })}
       {/if}
     </PanelSection>
   {:else}

@@ -1,4 +1,8 @@
 <script lang="ts">
+import { ArrowRight, Check, Layers, Share2, Sparkles, Star } from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { cn } from "@recast/ui/utils";
 import {
 	Container,
 	ExportMock,
@@ -11,10 +15,6 @@ import {
 	SeoMeta,
 } from "$lib/components";
 import { TextLoop } from "$lib/motion-core";
-import { ArrowRight, Check, Layers, Share2, Sparkles, Star } from "@recast/icons";
-import { GithubBrand } from "@recast/ui/brand-icons";
-import { Button } from "@recast/ui/button";
-import { cn } from "@recast/ui/utils";
 import { gapRows, integrations, pillars, platforms, stabilityChip, supports, verbs } from "./data";
 
 const REQUEST_URL = "https://github.com/kanakkholwal/recast/issues/new";

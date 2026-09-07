@@ -1,8 +1,8 @@
 <script lang="ts">
-import { resolveAsset } from "../../lib/assets";
-import { assetsStore } from "../../stores/assets-store.svelte";
 import { Skeleton } from "@recast/ui/skeleton";
 import { onMount, tick } from "svelte";
+import { resolveAsset } from "../../lib/assets";
+import { assetsStore } from "../../stores/assets-store.svelte";
 import { boxStyle as computeBoxStyle, pickSrc } from "./LazyExternalImage.logic";
 
 interface Props {
@@ -60,23 +60,20 @@ onMount(() => {
 	};
 });
 
-// Pre-converted at setPath time (not here): stable URL identity keeps <img>
-// from re-decoding when surrounding state churns.
+// Pre-converted at setPath time: a stable URL identity keeps <img> from re-decoding when surrounding state churns.
 const fullUrl = $derived(assetsStore.urls[assetId]);
 const thumbUrl = $derived(assetsStore.thumbUrls[assetId]);
 const src = $derived(pickSrc(tier, fullUrl, thumbUrl));
 const showOfflineBadge = $derived(!src && !online);
 
-// On src change, promote `loaded` if the <img> is already cache-complete:
-// `onload` doesn't refire for an already-decoded image (caused skeleton
-// flicker on tab return).
+// `onload` doesn't refire for an already-decoded image, which flickered the skeleton on tab return.
 $effect(() => {
 	if (src === lastSrc) return;
 	lastSrc = src;
 	loaded = false;
 	if (!src) return;
 	void tick().then(() => {
-		if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) loaded = true;
+		if (imgEl?.complete && imgEl.naturalWidth > 0) loaded = true;
 	});
 });
 

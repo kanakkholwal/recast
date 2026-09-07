@@ -38,15 +38,9 @@ export const load: PageServerLoad = async ({ request }) => {
 			role: invitationTable.role,
 		})
 		.from(invitationTable)
-		.innerJoin(
-			organizationTable,
-			eq(invitationTable.organizationId, organizationTable.id),
-		)
+		.innerJoin(organizationTable, eq(invitationTable.organizationId, organizationTable.id))
 		.where(
-			and(
-				eq(invitationTable.email, session.user.email),
-				eq(invitationTable.status, "pending"),
-			),
+			and(eq(invitationTable.email, session.user.email), eq(invitationTable.status, "pending")),
 		);
 
 	return {

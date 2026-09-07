@@ -33,8 +33,7 @@ describe("maxDurationSec", () => {
 		expect(maxDurationSec(2, false)).toBeLessThan(maxDurationSec(4, false));
 	});
 
-	// navigator.deviceMemory is absent in Safari and Firefox; assume mid-range
-	// rather than the floor, or those browsers get a needlessly tiny limit.
+	// `navigator.deviceMemory` is absent in Safari and Firefox, so assume mid-range rather than hand them a tiny limit.
 	it("assumes a mid-range device when memory is unreported", () => {
 		expect(maxDurationSec(null, false)).toBe(maxDurationSec(4, false));
 	});

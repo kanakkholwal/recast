@@ -1,17 +1,11 @@
 <script lang="ts">
-import type { EditorStore } from "../../../stores/editor-store.svelte";
 import { originalToOutput } from "../../../lib/timeline/time-map";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
 import { CLIP_LABEL, clipSurface } from "./timeline-clip.styles";
 import { buildWaveformPath } from "./timeline-helpers";
 import { AUDIO_LANE_HEIGHT_PX, LANE_PADDING_PX, ROW_HEIGHT_PX } from "./timeline-stack";
 
-// The audio track gets its own lane, like every real NLE.
-//
-// It used to be an either-or radio with the clip thumbnails, then a 16px strip
-// squeezed along the bottom of the clip bar. Neither works: cutting dead air is
-// the most common task in a screen recorder and it needs the waveform AND the
-// frames legible at the same time. A dedicated lane gives the envelope real
-// height and leaves the clip bar alone.
+// Its own lane, like a real NLE: cutting dead air needs the waveform and the frames legible at the same time.
 
 interface Props {
 	store: EditorStore;
@@ -26,8 +20,7 @@ const LANE_H = AUDIO_LANE_HEIGHT_PX;
 /** The block inside the lane, the same height as a block in any other lane. */
 const BLOCK_H = ROW_HEIGHT_PX;
 
-// Same output-axis mapping as every other lane: a removed range collapses onto
-// its seam, so the envelope stays aligned with the frames above it.
+// Same output-axis mapping as every lane, so a removed range collapses onto its seam and stays aligned with the frames.
 const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
 const axisWidth = $derived(Math.max(0, xOf(duration)));
 
@@ -42,14 +35,13 @@ const waveformPath = $derived(
 	}),
 );
 
-const hasAudio = $derived(!!store.audioPath || !!store.microphonePath);
+const hasAudio = $derived(Boolean(store.audioPath) || Boolean(store.microphonePath));
 const surface = clipSurface("audio");
 
-// Names what the envelope actually is. The waveform is a MIX of whichever
-// sources were captured, and nothing else in the editor says which those were.
+// The waveform is a MIX of whichever sources were captured, and nothing else in the editor says which.
 const sourceLabel = $derived.by(() => {
-	const system = !!store.audioPath;
-	const mic = !!store.microphonePath;
+	const system = Boolean(store.audioPath);
+	const mic = Boolean(store.microphonePath);
 	if (system && mic) return "System + Mic";
 	if (mic) return "Microphone";
 	return "System audio";

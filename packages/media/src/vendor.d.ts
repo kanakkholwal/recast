@@ -1,5 +1,5 @@
 /** Ambient declarations for dependencies that ship no types. */
-declare module 'gifenc' {
+declare module "gifenc" {
 	export function GIFEncoder(): {
 		writeFrame(
 			index: Uint8Array,

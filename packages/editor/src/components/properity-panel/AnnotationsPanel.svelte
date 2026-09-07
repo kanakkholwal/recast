@@ -1,16 +1,4 @@
 <script lang="ts">
-import { kindIcon, kindLabel } from "../../lib/annotations/kind-label";
-import { clockCentis as fmtTime } from "../../lib/format/time";
-import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
-import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
-import { FONT_WEIGHTS, STROKE_SWATCHES } from "../../lib/annotations/palette";
-import { getRecentColors, pushRecentColor } from "../../lib/annotations/recent-colors";
-import { EASE } from "../../lib/easing/cubic-bezier";
-import {
-	DEFAULT_ANNOTATION_RAMP,
-	type Annotation,
-	type EditorStore,
-} from "../../stores/editor-store.svelte";
 import {
 	AlignCenter,
 	AlignLeft,
@@ -18,26 +6,40 @@ import {
 	SquareDashedMousePointer,
 	Trash2,
 } from "@recast/icons";
-import { toast } from "@recast/ui/sonner";
-import { pickImageFile } from "../../lib/annotations/image-import";
-import type { TitlePreset } from "../../lib/annotations/title-presets";
 import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
 import { Kbd } from "@recast/ui/kbd";
-import { Segmented } from "@recast/ui/segmented";
-import { SegmentedToggle } from "@recast/ui/segmented";
-import FontPicker from "./FontPicker.svelte";
-import { SliderControl } from "@recast/ui/slider-control";
+import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
+import { toast } from "@recast/ui/sonner";
 import { Textarea } from "@recast/ui/textarea";
+import { untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { pickImageFile } from "../../lib/annotations/image-import";
+import { kindIcon, kindLabel } from "../../lib/annotations/kind-label";
+import { FONT_WEIGHTS, STROKE_SWATCHES } from "../../lib/annotations/palette";
+import { getRecentColors, pushRecentColor } from "../../lib/annotations/recent-colors";
+import type { TitlePreset } from "../../lib/annotations/title-presets";
+import { EASE } from "../../lib/easing/cubic-bezier";
+import { clockCentis as fmtTime } from "../../lib/format/time";
 import { motionDuration } from "../../lib/motion.svelte";
+import {
+	type Annotation,
+	DEFAULT_ANNOTATION_RAMP,
+	type EditorStore,
+} from "../../stores/editor-store.svelte";
 import InspectorHint from "../InspectorHint.svelte";
-import EasingControl from "./EasingControl.svelte";
 import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
 import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
 import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";
+import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
+import EasingControl from "./EasingControl.svelte";
+import FontPicker from "./FontPicker.svelte";
+import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
+import SliderRow from "./SliderRow.svelte";
 import TitlePresetTiles from "./TitlePresetTiles.svelte";
 
 interface Props {
@@ -55,8 +57,16 @@ const selected = $derived<Annotation | null>(
 	store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
 );
 
-// Insert a ready-styled title/lower-third: a positioned text annotation plus a
-// legibility glow. The user edits the placeholder text in place.
+// Selecting a layer jumps to Edit so its controls sit on top, not scrolled past the Insert tiles.
+let tab = $state<"insert" | "edit">("insert");
+$effect(() => {
+	const id = store.selectedAnnotationId;
+	untrack(() => {
+		if (id) tab = "edit";
+	});
+});
+
+// A positioned text annotation plus a legibility glow; the user edits the placeholder in place.
 function insertTitle(preset: TitlePreset) {
 	store.annotationTool = null;
 	store.addAnnotation(preset.build(), undefined, undefined, {
@@ -66,7 +76,7 @@ function insertTitle(preset: TitlePreset) {
 }
 
 async function replaceImage() {
-	if (!selected || selected.kind.kind !== "image") return;
+	if (selected?.kind.kind !== "image") return;
 	try {
 		const path = await pickImageFile();
 		if (!path) return;
@@ -85,8 +95,7 @@ function updateSelected(updates: Partial<Annotation>, trackUndo = false) {
 	store.updateAnnotation(selected.id, updates);
 }
 
-// Curves only. Resetting rampIn/rampOut from here changed the Fade in / Fade
-// out sliders in the Timing section above, with no hint that it would.
+// Curves only: resetting rampIn and rampOut here changed the Timing sliders above with no hint it would.
 function resetCurves() {
 	if (!selected) return;
 	store.pushUndoState();
@@ -107,15 +116,12 @@ function resetFades() {
 
 const toolHint = $derived(toolHintFor(store.annotationTool));
 
-// NLE accessors, matching FocusPanel: `outPoint` resolves the legacy
-// `trimEnd === 0` sentinel.
+// NLE accessors matching FocusPanel: `outPoint` resolves the legacy `trimEnd === 0` sentinel.
 const clipIn = $derived(store.inPoint);
 const clipOut = $derived(store.outPoint);
 
-// An annotation timed outside the trim never plays, and the Rust side silently
-// repairs it at export ("annotation_out_of_trim" in validate_render_state), so
-// it has to be visible and fixable here instead.
-const outOfClip = $derived(!!selected && isOutsideClip(selected, clipIn, clipOut));
+// An annotation outside the trim never plays and Rust silently repairs it at export, so it must be fixable here.
+const outOfClip = $derived(selected !== null && isOutsideClip(selected, clipIn, clipOut));
 
 function fitToClip() {
 	if (!selected) return;
@@ -164,17 +170,28 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
     {/if}
   </PanelSection>
 
-  <PanelSection
-    title="Titles"
-    hint="Drop in a styled title, subtitle, lower-third, or callout, then edit the text on the preview."
-    flush
-  >
-    <TitlePresetTiles oninsert={insertTitle} />
-  </PanelSection>
+  <Segmented
+    size="xs"
+    aria-label="Insert or edit"
+    value={tab}
+    options={[
+      { value: "edit", label: "Edit" },
+      { value: "insert", label: "Insert" },
+    ]}
+    onValueChange={(v) => (tab = v as "insert" | "edit")}
+  />
 
-  {#if store.annotations.length === 0}
+  {#if tab === "insert"}
+    <PanelSection
+      title="Titles"
+      hint="Drop in a styled title, subtitle, lower-third, or callout, then edit the text on the preview."
+      flush
+    >
+      <TitlePresetTiles oninsert={insertTitle} />
+    </PanelSection>
+  {:else if store.annotations.length === 0}
     <div
-      class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/70 bg-card/40 px-3 py-6 text-center"
+      class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border/60 bg-card/40 px-3 py-6 text-center"
     >
       <div
         class="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset)"
@@ -191,8 +208,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
   {/if}
 
   <!-- Selected annotation editor: appearance/content lead; timing, fade
-       curves, geometry collapse below. -->
-  {#if selected}
+       curves, geometry collapse below. Edit tab only. -->
+  {#if tab === "edit" && selected}
     {@const a = selected}
     {@const Icon = kindIcon(a)}
     <div
@@ -202,7 +219,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
       <div class="flex items-center justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
           <span
-            class="grid size-5 shrink-0 place-items-center rounded bg-primary/15 text-primary"
+            class="grid size-5 shrink-0 place-items-center rounded bg-muted text-muted-foreground"
           >
             <Icon size={11} />
           </span>
@@ -228,12 +245,10 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
         </Button>
       </div>
 
-      <PanelSection
-        title="Anchor"
-        hint="Video moves with zoom/focus; Frame pins it to the output frame."
-      >
+      <PropRow label="Anchor">
         <Segmented
           size="xs"
+          fill={false}
           aria-label="Anchor"
           value={a.anchor ?? "video"}
           options={[
@@ -245,13 +260,16 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             updateSelected({ anchor: v as "video" | "frame" });
           }}
         />
-      </PanelSection>
+        <InspectorHint
+          content="Video moves with zoom/focus; Frame pins it to the output frame."
+        />
+      </PropRow>
 
       {#if a.kind.kind === "text"}
         {@const k = a.kind}
         <PanelSection title="Text">
           <div class="flex flex-col gap-1">
-            <span class="text-[10px] text-muted-foreground">Content</span>
+            <span class="text-[11px] text-muted-foreground">Content</span>
             <Textarea
               rows={2}
               value={k.content}
@@ -269,8 +287,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             />
           </div>
 
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Font</span>
+          <PropRow label="Font">
             <FontPicker
               value={k.fontFamily}
               weight={k.fontWeight}
@@ -280,9 +297,9 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
                 updateSelected({ kind: { ...a.kind, fontFamily: v } });
               }}
             />
-          </div>
+          </PropRow>
 
-          <SliderControl
+          <SliderRow
             label="Size"
             value={k.fontSize * 100}
             min={2}
@@ -298,19 +315,16 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             }}
           />
 
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Weight</span>
-            <Segmented
-              size="xs"
-              fill={false}
-              aria-label="Font weight"
+          <PropRow label="Weight">
+            <PropSelect
+              class="flex-1"
+              label="Font weight"
               value={String(k.fontWeight)}
               options={FONT_WEIGHTS.map((w) => ({
                 value: String(w.value),
                 label: w.label,
-                title: w.title,
               }))}
-              onValueChange={(v) => {
+              onChange={(v) => {
                 if (a.kind.kind !== "text") return;
                 store.pushUndoState();
                 updateSelected({
@@ -321,55 +335,61 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
                 });
               }}
             />
-          </div>
+          </PropRow>
 
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Align</span>
-            {#snippet alignLeftIcon()}<AlignLeft size={12} />{/snippet}
-            {#snippet alignCenterIcon()}<AlignCenter size={12} />{/snippet}
-            {#snippet alignRightIcon()}<AlignRight size={12} />{/snippet}
-            <Segmented
-              size="xs"
-              fill={false}
-              aria-label="Text alignment"
-              value={k.align}
-              options={[
-                { value: "left", icon: alignLeftIcon, title: "Left" },
-                { value: "center", icon: alignCenterIcon, title: "Center" },
-                { value: "right", icon: alignRightIcon, title: "Right" },
-              ]}
-              onValueChange={(v) => {
+          <PropRow label="Align">
+            <div class="contents">
+              {#snippet alignLeftIcon()}<AlignLeft size={12} />{/snippet}
+              {#snippet alignCenterIcon()}<AlignCenter size={12} />{/snippet}
+              {#snippet alignRightIcon()}<AlignRight size={12} />{/snippet}
+              <Segmented
+                size="xs"
+                fill={false}
+                aria-label="Text alignment"
+                value={k.align}
+                options={[
+                  { value: "left", icon: alignLeftIcon, title: "Left" },
+                  { value: "center", icon: alignCenterIcon, title: "Center" },
+                  { value: "right", icon: alignRightIcon, title: "Right" },
+                ]}
+                onValueChange={(v) => {
+                  if (a.kind.kind !== "text") return;
+                  store.pushUndoState();
+                  updateSelected({
+                    kind: {
+                      ...a.kind,
+                      align: v as "left" | "center" | "right",
+                    },
+                  });
+                }}
+              />
+            </div>
+          </PropRow>
+
+          <PropRow label="Color">
+            <ColorField
+              dense
+              hideLabel
+              class="flex-1"
+              label="Color"
+              value={k.color}
+              swatches={STROKE_SWATCHES}
+              {recents}
+              oncommit={(c: string) => {
                 if (a.kind.kind !== "text") return;
                 store.pushUndoState();
-                updateSelected({
-                  kind: {
-                    ...a.kind,
-                    align: v as "left" | "center" | "right",
-                  },
-                });
+                updateSelected({ kind: { ...a.kind, color: c } });
+                rememberColor(c);
               }}
             />
-          </div>
-
-          <ColorField
-            label="Color"
-            value={k.color}
-            swatches={STROKE_SWATCHES}
-            {recents}
-            oncommit={(c: string) => {
-              if (a.kind.kind !== "text") return;
-              store.pushUndoState();
-              updateSelected({ kind: { ...a.kind, color: c } });
-              rememberColor(c);
-            }}
-          />
+          </PropRow>
         </PanelSection>
       {/if}
 
       {#if a.kind.kind === "blur"}
         {@const k = a.kind}
         <PanelSection title="Blur">
-          <SliderControl
+          <SliderRow
             label="Strength"
             value={k.strength * 100}
             min={0}
@@ -384,8 +404,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
               updateSelected({ kind: { ...a.kind, strength: v / 100 } });
             }}
           />
-          <SliderControl
-            label="Corner radius"
+          <SliderRow
+            label="Radius"
             value={(k.radius ?? 0) * 200}
             min={0}
             max={100}
@@ -398,12 +418,10 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
               updateSelected({ kind: { ...a.kind, radius: v / 200 } });
             }}
           />
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Style</span>
-            <Segmented
-              size="xs"
-              fill={false}
-              aria-label="Blur style"
+          <PropRow label="Style">
+            <PropSelect
+              class="flex-1"
+              label="Blur style"
               value={k.variant}
               options={[
                 { value: "glass", label: "Glass" },
@@ -411,7 +429,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
                 { value: "black", label: "Black" },
                 { value: "color", label: "Color" },
               ]}
-              onValueChange={(v) => {
+              onChange={(v) => {
                 if (a.kind.kind !== "blur") return;
                 store.pushUndoState();
                 updateSelected({
@@ -422,20 +440,25 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
                 });
               }}
             />
-          </div>
+          </PropRow>
           {#if k.variant === "color"}
-            <ColorField
-              label="Tint"
-              value={k.tintColor}
-              swatches={STROKE_SWATCHES}
-              {recents}
-              oncommit={(c: string) => {
-                if (a.kind.kind !== "blur") return;
-                store.pushUndoState();
-                updateSelected({ kind: { ...a.kind, tintColor: c } });
-                rememberColor(c);
-              }}
-            />
+            <PropRow label="Tint">
+              <ColorField
+                dense
+                hideLabel
+                class="flex-1"
+                label="Tint"
+                value={k.tintColor}
+                swatches={STROKE_SWATCHES}
+                {recents}
+                oncommit={(c: string) => {
+                  if (a.kind.kind !== "blur") return;
+                  store.pushUndoState();
+                  updateSelected({ kind: { ...a.kind, tintColor: c } });
+                  rememberColor(c);
+                }}
+              />
+            </PropRow>
           {/if}
         </PanelSection>
       {/if}
@@ -453,8 +476,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
               </span>
               <Button size="xs" variant="outline" onclick={replaceImage}>Replace</Button>
             </div>
-            <SliderControl
-              label="Corner radius"
+            <SliderRow
+              label="Radius"
               value={(k.radius ?? 0) * 200}
               min={0}
               max={100}
@@ -476,8 +499,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
       {#if a.kind.kind === "rect"}
         {@const k = a.kind}
         <PanelSection title="Shape">
-          <SliderControl
-            label="Corner radius"
+          <SliderRow
+            label="Radius"
             value={(k.radius ?? 0) * 200}
             min={0}
             max={100}
@@ -496,7 +519,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
       {#if a.kind.kind === "arrow"}
         {@const k = a.kind}
         <PanelSection title="Arrowhead">
-          <SliderControl
+          <SliderRow
             label="Head size"
             value={k.headSize * 100}
             min={5}
@@ -554,7 +577,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
         <!-- Bounded by the clip, not the raw recording: the old 0..duration range
              let you park an annotation outside the trim, which the export then
              silently moved back in. -->
-        <SliderControl
+        <SliderRow
           label="Start"
           value={a.start}
           min={clipIn}
@@ -565,7 +588,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ start: v })}
         />
-        <SliderControl
+        <SliderRow
           label="End"
           value={a.end}
           min={a.start + 0.1}
@@ -576,7 +599,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ end: v })}
         />
-        <SliderControl
+        <SliderRow
           label="Fade in"
           value={a.rampIn}
           min={0}
@@ -587,7 +610,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampIn: v })}
         />
-        <SliderControl
+        <SliderRow
           label="Fade out"
           value={a.rampOut}
           min={0}
@@ -620,8 +643,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
             updateSelected({ easeIn: { ...next }, easeOut: { ...next } });
           }}
           ondrag={(next, which) => {
-            // Fires per pointermove; coalesce so a whole curve drag is one undo
-            // entry, not one per frame.
+            // Fires per pointermove, so coalesce a whole curve drag into one undo entry.
             store.pushUndoStateCoalesced(`anno-curve-${a.id}-${which}`, 500);
             updateSelected(which === "out" ? { easeOut: next } : { easeIn: next });
           }}
@@ -631,7 +653,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
 
       <AnnotationGeometry {store} annotation={a} />
     </div>
-  {:else if store.annotations.length > 0}
+  {:else if tab === "edit" && store.annotations.length > 0}
     <p
       class="rounded-xl border border-dashed border-border/70 bg-card/40 px-3 py-3 text-center text-[10px] text-muted-foreground"
     >

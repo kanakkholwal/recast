@@ -3,10 +3,8 @@
  * response shapes live in `ipc-types.ts`; import there if you only need types.
  */
 
-// Type-only: erased at runtime, so no ESM cycle with `$lib/profiles` (which
-// imports value bindings from here).
+// Type-only: erased at runtime, so there is no ESM cycle with `$lib/profiles`.
 import type { RecordingProfile } from "@recast/editor/lib/profiles";
-import type { VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
 import type {
 	AssetInstallResult,
 	AudioDeviceInfo,
@@ -23,6 +21,12 @@ import type {
 	VideoTextTimeline,
 	ZoomSuggestion,
 } from "@recast/editor/lib/wire-types";
+import type { VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { platform } from "@tauri-apps/plugin-os";
+import { analytics } from "$lib/analytics/client";
 import type {
 	AuthStartResult,
 	AuthStatus,
@@ -60,17 +64,8 @@ import type {
 	RemoteAsrEndpointInfo,
 	WindowInfo,
 } from "$lib/recorder-types";
-import { analytics } from "$lib/analytics/client";
-import { Channel, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { platform } from "@tauri-apps/plugin-os";
 
-// Some Linux compositors (KWin/Wayland) let an undecorated transparent
-// always-on-top window trap input focus, breaking the main window's controls,
-// so drop `alwaysOnTop` on Linux. Lazy, not a top-level `const`: calling
-// `platform()` at module-eval time would make this module unsafe to import
-// outside the Tauri webview (web/SSR builds import it but guard calls).
+// KWin on Wayland lets an undecorated always-on-top window trap focus. Lazy, since `platform()` at module eval breaks web and SSR imports.
 const isLinux = () => platform() === "linux";
 
 export type {
@@ -91,11 +86,11 @@ export type {
 	ExtColorContribution,
 	ExtCursorContribution,
 	ExtEasingContribution,
-	ExtGradientContribution,
-	ExtSmoothingContribution,
 	ExtensionAssetEntry,
 	ExtensionContributions,
 	ExtensionManifest,
+	ExtGradientContribution,
+	ExtSmoothingContribution,
 	GpuInfo,
 	HydratedAsset,
 	InstalledExtension,
@@ -333,6 +328,27 @@ export function setLastSource(source: LastSource): Promise<void> {
 	return invoke("set_last_source", { source });
 }
 
+/** A screenshot written to disk, as the capture reports it. */
+export interface Screenshot {
+	path: string;
+	width: number;
+	height: number;
+	/** The captured surface: `display`, `window`, `region`, or `app`. */
+	kind: string;
+	base64?: string;
+	/** Absent when no copy was asked for; `false` when the OS refused one. */
+	copiedToClipboard?: boolean;
+}
+
+/**
+ * Capture a region of the screen at native resolution and save it under the
+ * output directory. `rect` is in physical virtual-desktop pixels, which is what
+ * the region overlay emits.
+ */
+export function captureRegionShot(rect: RegionRect): Promise<Screenshot> {
+	return invoke<Screenshot>("capture_region_shot", { rect });
+}
+
 export function getAudioDevices(): Promise<AudioDeviceInfo[]> {
 	return invoke<AudioDeviceInfo[]>("get_audio_devices");
 }
@@ -349,18 +365,23 @@ export function updateCameraPreviewState(state: CameraPreviewState): Promise<voi
 	return invoke("update_camera_preview_state", { state });
 }
 
-/** Deliver the camera track recorded in the preview window (MediaRecorder blob)
- *  to the active recording session. The ArrayBuffer is the raw invoke payload so
- *  it ships as a binary body, not a giant JSON number array. */
-export function saveRecordedCamera(buffer: ArrayBuffer): Promise<void> {
-	return invoke<void>("save_recorded_camera", buffer);
+/** Camera geometry plus the token identifying this capture session. */
+export type CameraGeometry = { width: number; height: number; session: number };
+
+/** Open the camera and stream preview frames.
+ *  Cameras are exclusive, so this also takes the device away from getUserMedia.
+ *  Each frame is `width: u32le, height: u32le` then BGRA rows. */
+export function startCameraPreview(
+	device: string,
+	onFrame: Channel<ArrayBuffer>,
+): Promise<CameraGeometry> {
+	return invoke<CameraGeometry>("start_camera_preview", { device, onFrame });
 }
 
-/** Tell Rust the preview finished its flush attempt (releasing stop_recording's
- *  wait). `error` is a human message when no track could be delivered, logged
- *  backend-side so the reason is visible. */
-export function finishCameraFlush(error: string | null): Promise<void> {
-	return invoke<void>("finish_camera_flush", { error });
+/** Release the camera held by `session`. A stale token is ignored, so a closing
+ *  preview window cannot stop the one that replaced it. */
+export function stopCameraPreview(session: number): Promise<void> {
+	return invoke<void>("stop_camera_preview", { session });
 }
 
 export function stopRecording(): Promise<string> {
@@ -537,6 +558,7 @@ export function enqueueExport(req: EnqueueExportRequest): Promise<string[]> {
 			burnCaptions: req.burnCaptions ?? false,
 			captionSidecar: req.captionSidecar ?? null,
 			browserVideoPath: req.browserVideoPath ?? null,
+			timeMap: req.timeMap ?? null,
 		},
 	});
 }
@@ -644,6 +666,11 @@ export function ensureGoogleFont(family: string, weight: number): Promise<string
 	return invoke<string>("ensure_google_font", { family, weight });
 }
 
+/** The same family's TTF. The engine's shaper cannot read the woff2 above. */
+export function captionFontFile(family: string, weight: number): Promise<string> {
+	return invoke<string>("caption_font_file", { family, weight });
+}
+
 /** Write a transcript to a subtitle sidecar at `destPath`. */
 export function exportCaptions(
 	transcript: Transcript,
@@ -705,11 +732,7 @@ export function cancelTranscription(): Promise<void> {
 	return invoke("cancel_transcription");
 }
 
-// ---------------------------------------------------------------------------
-// On-device OCR (experimental). Reads a recording into a timestamped, structured
-// text timeline so an agent can understand what happened on screen without any
-// narration. Surfaced only by the editor's dev-only OCR tab today.
-// ---------------------------------------------------------------------------
+// --- On-device OCR (experimental): reads a recording into a timestamped text timeline; only the dev-only OCR tab surfaces it.
 
 /**
  * Read a recording into a screen-state timeline. `previews` attaches a small JPEG
@@ -750,7 +773,7 @@ export function exportScreenText(body: string, destPath: string): Promise<void> 
  *  have a path but no audio track. */
 export function hasTranscribableAudio(paths: (string | null | undefined)[]): Promise<boolean> {
 	return invoke<boolean>("has_transcribable_audio", {
-		paths: paths.filter((p): p is string => !!p),
+		paths: paths.filter((p): p is string => Boolean(p)),
 	});
 }
 
@@ -846,8 +869,7 @@ export async function launchRecordingPanel(intent?: CaptureIntent) {
 	const existing = await WebviewWindow.getByLabel("recording-panel");
 	if (existing) {
 		await existing.setFocus();
-		// The window is already mounted, so a query param wouldn't re-trigger;
-		// hand the intent over on an event the panel listens for.
+		// The window is already mounted, so a query param wouldn't re-trigger; hand the intent over on an event.
 		if (intent) {
 			const { emit } = await import("@tauri-apps/api/event");
 			await emit("panel-capture-intent", { intent });
@@ -855,8 +877,7 @@ export async function launchRecordingPanel(intent?: CaptureIntent) {
 		return;
 	}
 
-	// Window is sized larger than the visible panel so the CSS drop shadow
-	// has room to paint without being clipped by the window bounds.
+	// Sized larger than the visible panel so the CSS drop shadow has room and isn't clipped by the window bounds.
 	const panelWidth = 520;
 	const panelHeight = 72;
 	const panelWin = new WebviewWindow("recording-panel", {
@@ -874,9 +895,7 @@ export async function launchRecordingPanel(intent?: CaptureIntent) {
 		y: window.screen.availHeight - panelHeight - 40,
 	});
 
-	// Keep Recast's own controls out of the recorded video. Gated on the
-	// user setting (default on); exclusion must run on `tauri://created`, once
-	// the native window handle exists. No-op on Linux (no OS support).
+	// Gated on the user setting; exclusion must run on `tauri://created`, once the native handle exists. No-op on Linux.
 	panelWin.once("tauri://created", async () => {
 		try {
 			if (await getHidePanelFromCapture()) {
@@ -891,17 +910,11 @@ export async function launchRecordingPanel(intent?: CaptureIntent) {
 	panelWin.once("tauri://error", (e) => console.error(e));
 }
 
-// Floating webcam preview window.
-//
-// MUST be excluded from screen capture or DXGI Desktop Duplication bakes the
-// camera bubble into the recorded screen video. `exclude_window_from_capture`
-// (Windows: SetWindowDisplayAffinity WDA_EXCLUDEFROMCAPTURE) runs on
-// `tauri://created`; any earlier and the HWND isn't reachable yet.
+// MUST be excluded or DXGI Desktop Duplication bakes the bubble into the recording; runs on `tauri://created`, when the HWND exists.
 export async function openCameraPreviewWindow() {
 	const existing = await WebviewWindow.getByLabel("camera-preview");
 	if (existing) {
-		// Re-apply the exclusion in case the window was reused after a crash
-		// or stop/restart cycle that dropped the affinity.
+		// Re-apply after a crash or stop/restart cycle, which can leave a reused window without the affinity.
 		excludeWindowFromCapture("camera-preview").catch((err) =>
 			console.warn("camera preview exclusion (existing) failed:", err),
 		);
@@ -910,10 +923,7 @@ export async function openCameraPreviewWindow() {
 	}
 
 	const previewSize = 320;
-	// The window is the square video bubble plus a control strip below it. Keep
-	// this strip height in sync with `CONTROL_BAR_HEIGHT` in
-	// `routes/camera-preview/+page.svelte` so the window opens at the right size
-	// and doesn't visibly resize itself once the aspect lock kicks in on mount.
+	// Keep in sync with `CONTROL_BAR_HEIGHT` in routes/camera-preview, so the window doesn't visibly resize on mount.
 	const CONTROL_BAR_HEIGHT = 40;
 	const previewWin = new WebviewWindow("camera-preview", {
 		url: "/camera-preview",
@@ -941,14 +951,30 @@ export async function openCameraPreviewWindow() {
 	});
 }
 
-// System tray, diagnostics & misc commands.
-// These wrappers are thin; web-safe callers guard with `isTauriApp()` themselves.
+// --- System tray, diagnostics and misc: thin wrappers; web-safe callers guard with `isTauriApp()` themselves.
 
 /** Exclude a window (by Tauri label) from screen capture (Windows
  *  `SetWindowDisplayAffinity`, macOS `NSWindow.sharingType`). No-op on Linux,
  *  which has no per-window exclusion API. */
 export function excludeWindowFromCapture(label: string): Promise<void> {
 	return invoke<void>("exclude_window_from_capture", { label });
+}
+
+/** Whether recordings are written by the FFmpeg-free GPU writer.
+ *  Backed by `AppConfig.native_encoder` (default off). */
+export function getNativeEncoder(): Promise<boolean> {
+	return invoke<boolean>("get_native_encoder");
+}
+
+export function setNativeEncoder(enabled: boolean): Promise<void> {
+	return invoke<void>("set_native_encoder", { enabled });
+}
+
+/** Whether this machine can honour the native writer (Windows + an MF H.264
+ *  encoder). False elsewhere, so the toggle is shown disabled rather than
+ *  silently doing nothing. */
+export function nativeEncoderAvailable(): Promise<boolean> {
+	return invoke<boolean>("native_encoder_available");
 }
 
 /** Whether the floating recording panel is hidden from screen recordings.
@@ -1025,9 +1051,7 @@ export function setDiagnosticLogging(enabled: boolean): Promise<void> {
 	return invoke<void>("set_diagnostic_logging", { enabled });
 }
 
-// Recast Cloud: account / auth.
-// All are `#[serde(rename_all = "camelCase")]` on the Rust side EXCEPT
-// `AuthStartResult` (noted inline).
+// --- Recast Cloud auth: all camelCase on the Rust side except `AuthStartResult`, noted inline.
 
 export function authStatus(): Promise<AuthStatus> {
 	return invoke<AuthStatus>("auth_status");
@@ -1055,8 +1079,7 @@ export function setCloudApiUrl(url: string | null): Promise<CloudApiConfig> {
 	return invoke<CloudApiConfig>("set_cloud_api_url", { url });
 }
 
-// Google Drive: `gdrive_*` commands (OAuth + Drive upload). Thin wrappers; the
-// gdrive store guards every call with `isTauriApp()`.
+// --- Google Drive `gdrive_*` commands: thin wrappers; the gdrive store guards every call with `isTauriApp()`.
 
 export function gdriveStatus(): Promise<GdriveStatus> {
 	return invoke<GdriveStatus>("gdrive_status");

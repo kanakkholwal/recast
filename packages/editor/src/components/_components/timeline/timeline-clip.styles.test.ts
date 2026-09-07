@@ -19,8 +19,7 @@ describe("clipSurface", () => {
 		}
 	});
 
-	// Tailwind scans source text, so a name built at runtime is never generated
-	// and the class silently does nothing.
+	// Tailwind scans source text, so a name built at runtime is never generated and the class silently does nothing.
 	it("names classes literally, never composed from the tone", () => {
 		for (const tone of TONES) {
 			const surface = clipSurface(tone);
@@ -38,11 +37,7 @@ describe("clipSurface", () => {
 });
 
 describe("shared clip classes", () => {
-	// The bug this exists for: CLIP_BASE opened with `relative`, and every
-	// consumer applies it to an element that is `absolute`. Tailwind emits
-	// `relative` AFTER `absolute`, so it won the cascade no matter the class
-	// order, `inset-0` stopped applying, and every clip shrank to the size of
-	// its own label instead of filling its 36px row.
+	// The bug: CLIP_BASE opened with `relative`, which Tailwind emits after `absolute`, so `inset-0` stopped applying and clips shrank to their label.
 	const POSITION = /(?:^|\s)(?:static|fixed|absolute|relative|sticky)(?:\s|$)/;
 
 	it("leaves positioning to the consumer", () => {

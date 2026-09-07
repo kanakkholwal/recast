@@ -1,6 +1,10 @@
 //! Subtitle serialization from a transcript: SRT / WebVTT sidecars, plus ASS
 //! for the FFmpeg burn-in path (libass renders the styled overlay into pixels).
 
+use recast_captions::{
+    break_into_lines, caption_height_frac, caption_top_frac, chunk_words, word_scaled,
+};
+
 use super::{CaptionAnimation, CaptionStyle, Transcript, TranscriptSegment, TranscriptWord};
 
 pub fn to_srt(t: &Transcript) -> String {
@@ -18,12 +22,8 @@ pub fn to_srt(t: &Transcript) -> String {
     out
 }
 
-/// WebVTT with word-level inline cue timestamps when the segment carries word
-/// timing: the body leads with each word's `<HH:MM:SS.mmm>` tag so the web
-/// player can drive progressive highlight. A player that ignores the tags still
-/// shows the whole cue text, so this stays compatible with older recasts (and
-/// segments without word timing fall back to plain text). Mirrors
-/// `serializeKaraokeVtt` in @recast/captions.
+/// WebVTT carrying inline `<HH:MM:SS.mmm>` word tags when a segment has word timing, so the web player can drive progressive highlight.
+/// A player ignoring the tags still shows the whole cue, and segments without word timing fall back to plain text; mirrors `serializeKaraokeVtt`.
 pub fn to_vtt(t: &Transcript) -> String {
     let mut out = String::from("WEBVTT\n\n");
     for seg in &t.segments {
@@ -64,11 +64,8 @@ pub fn srt_to_vtt(srt: &str) -> String {
     out
 }
 
-/// Read a caption sidecar sitting next to `media_path` (e.g. `foo.mp4` →
-/// `foo.vtt` or `foo.srt`) and return it as WebVTT, or `None` when neither
-/// exists. Prefers `.vtt` (already WebVTT); converts `.srt`. The export queue
-/// writes these sidecars next to an export, so a shared/previewed file can carry
-/// captions with no loaded project.
+/// Reads a caption sidecar beside `media_path` and returns it as WebVTT, preferring `.vtt` and converting `.srt`, or `None` when neither exists.
+/// The export queue writes these next to an export, so a shared or previewed file carries captions with no loaded project.
 pub(crate) fn read_caption_sidecar(media_path: &std::path::Path) -> Option<String> {
     let vtt = media_path.with_extension("vtt");
     if let Ok(text) = std::fs::read_to_string(&vtt) {
@@ -89,41 +86,6 @@ pub struct VideoRectPx {
     pub y: u32,
     pub w: u32,
     pub h: u32,
-}
-
-const MAX_CAP_FRAC: f64 = 0.7;
-
-/// Estimated caption block height as a fraction of frame height. Mirror of
-/// `captionHeightFrac` in $lib/captions/layout.ts — keep them in sync.
-fn caption_height_frac(font_size_pct: f64, max_lines: u32) -> f64 {
-    (font_size_pct / 100.0 * max_lines.max(1) as f64 * 1.35).min(MAX_CAP_FRAC)
-}
-
-/// Fraction-from-top of the caption block's TOP edge (grows down). `None` =
-/// centre. Mirror of `captionTopFrac` in $lib/captions/layout.ts.
-fn caption_top_frac(
-    position: &str,
-    offset_pct: f64,
-    cap: f64,
-    v_top: f64,
-    v_bottom: f64,
-) -> Option<f64> {
-    if position == "center" {
-        return None;
-    }
-    // Signed: + moves the caption INWARD over the video, - tucks it outward into
-    // the padding. Baseline anchors at the clamped frame edge so the whole Offset
-    // range stays live even for a full-bleed video.
-    let offset = offset_pct / 100.0;
-    let cap = cap.clamp(0.0, MAX_CAP_FRAC);
-    let max_top = (1.0 - cap).max(0.0);
-    if position == "bottom" {
-        let base = v_bottom.min(max_top);
-        Some((base - offset).clamp(0.0, max_top))
-    } else {
-        let base = (v_top - cap).max(0.0);
-        Some((base + offset).clamp(0.0, max_top))
-    }
 }
 
 /// The face `to_ass` should target, resolved by `text_measure` from the actual
@@ -158,16 +120,12 @@ impl RenderFont {
     }
 }
 
-/// Render a transcript to an ASS subtitle script for FFmpeg's `ass`/`subtitles`
-/// burn-in filter, styled from `CaptionStyle`. `play_w`/`play_h` are the canvas
-/// dimensions captions are laid out against (the composite size, pre-downscale),
-/// so font size / margins resolve in the same pixel space as the preview.
-/// `video` is the source-video rect inside that canvas — captions are placed in
-/// the padding relative to it. `offset` is the trim start (seconds): burn-in is
-/// injected before the cut/speed stage, so times are on the trimmed-but-uncut
-/// axis and the later select/setpts re-times the burned pixels. `clip_len` caps
-/// the output.
-#[allow(clippy::too_many_arguments)]
+/// Renders a transcript to an ASS script for the `subtitles` burn-in, laid out against `play_w`/`play_h` (the pre-downscale composite) so sizes match the preview.
+/// `video` is the source rect captions sit relative to, and `offset` is the trim start: burn-in precedes the cut/speed stage, which re-times the burned pixels.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the ASS header needs every style and geometry input at once"
+)]
 pub fn to_ass(
     t: &Transcript,
     style: &CaptionStyle,
@@ -179,15 +137,11 @@ pub fn to_ass(
     font: &RenderFont,
 ) -> String {
     let font_name = &font.ass_name;
-    // Rendered pixel height (matches the preview's `fontSizePct`cqh). All pixel
-    // geometry (spacing, outline, shadow, margins) is in this PlayRes space.
+    // Rendered pixel height (the preview's `fontSizePct`cqh); all pixel geometry lives in this PlayRes space.
     let css_px = (style.font_size_pct / 100.0 * play_h as f64).max(8.0);
-    // The value written into the Style `Fontsize` field: corrected so libass's
-    // winAscent+winDescent scaling lands the glyphs at `css_px` (see text_measure).
+    // Corrected so libass's winAscent plus winDescent scaling lands the glyphs at `css_px` (see text_measure).
     let font_size = css_px * font.ass_scale;
-    // An embedded font ships at its exact weight, so don't let libass synthesize
-    // bold on top of it (double-bolding). For a fallback system face, only bold
-    // from 700+ (600 = semibold should read as regular, not heavy).
+    // An embedded font ships at its exact weight, so only synthesize bold for a fallback face at 700 or above.
     let bold = if !font.embedded && style.font_weight >= 700 {
         -1
     } else {
@@ -198,9 +152,7 @@ pub fn to_ass(
 
     let anim = style.animation.clone().unwrap_or_default();
     let primary = ass_color(&style.color, 0.0);
-    // SecondaryColour is the pre-highlight colour in ASS. We colour words with
-    // inline `\c` overrides (so emphasis + progressive compose), not karaoke, so
-    // it is only a sensible default; keep it equal to primary.
+    // Words are coloured with inline `\c`, not karaoke, so SecondaryColour is only a sensible default.
     let outline_col = ass_color(&style.outline_color, 0.0);
     // ASS BackColour alpha: 00 = opaque, FF = transparent (inverse of our %).
     let back_col = ass_color(&style.background_color, 100.0 - style.background_opacity);
@@ -211,11 +163,7 @@ pub fn to_ass(
         _ => (1, outline_px, 0.0),
     };
 
-    // Place captions relative to the VIDEO rect, not the frame: top/bottom sit
-    // in the padding outside the video (mirrors `captionTopFrac` in
-    // $lib/captions/layout.ts). We anchor the caption's TOP and let it grow down,
-    // so both use the ASS top band (7-9); centre uses the middle band (4-6),
-    // which libass auto-centres on the frame == the (centred) video.
+    // Anchor the caption's TOP against the VIDEO rect (ASS band 7-9); centre uses 4-6, which libass centres on the frame.
     let v_top = video.y as f64 / play_h.max(1) as f64;
     let v_bottom = (video.y + video.h) as f64 / play_h.max(1) as f64;
     let cap = caption_height_frac(style.font_size_pct, style.max_lines);
@@ -230,8 +178,7 @@ pub fn to_ass(
             Some(top_frac) => (7, (top_frac * play_h as f64).round() as i32),
         };
     let alignment = band + h_offset;
-    // Constrain the text box to the video's horizontal extent (+ a small inset)
-    // so captions line up with the video content, not the letterbox bars.
+    // Constrain to the video's horizontal extent so captions line up with content, not the letterbox bars.
     let inset = (video.w as f64 * 0.04).round() as i32;
     let margin_l = video.x as i32 + inset;
     let margin_r = (play_w as i32 - (video.x + video.w) as i32).max(0) + inset;
@@ -241,8 +188,7 @@ pub fn to_ass(
     out.push_str("ScriptType: v4.00+\n");
     out.push_str("WrapStyle: 0\n");
     out.push_str("ScaledBorderAndShadow: yes\n");
-    // libass disables kerning unless asked; the browser preview kerns by default,
-    // so without this the burn-in is subtly wider on kern-heavy text.
+    // libass disables kerning unless asked, so without this the burn-in is subtly wider than the preview.
     out.push_str("Kerning: yes\n");
     out.push_str(&format!("PlayResX: {play_w}\nPlayResY: {play_h}\n\n"));
 
@@ -253,9 +199,8 @@ BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, 
 Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n",
     );
     out.push_str(&format!(
-        "Style: Default,{font_name},{size:.0},{primary},{primary},{outline_col},{back_col},{bold},0,0,0,\
+        "Style: Default,{font_name},{font_size:.0},{primary},{primary},{outline_col},{back_col},{bold},0,0,0,\
 100,100,{spacing:.1},0,{border_style},{outline:.1},{shadow:.1},{alignment},{margin_l},{margin_r},{margin_v},1\n\n",
-        size = font_size,
     ));
 
     out.push_str("[Events]\n");
@@ -315,17 +260,8 @@ pub fn kept_spans(trim_start: f64, trim_end: f64, cuts: &[(f64, f64)]) -> Vec<(f
 /// Matches the frontend's cut EPS so both sides agree on a boundary.
 const SPAN_EPS: f64 = 1e-4;
 
-/// Split every caption segment across the kept spans, dropping the parts inside
-/// a cut. Mirrors `splitSegmentAcrossSpans` in
-/// `apps/desktop/src/lib/captions/clip-with-cuts.ts` — keep the two in sync.
-///
-/// The burn is composited on the trimmed-but-uncut axis, so the cut stage
-/// downstream removes the burned pixels along with their frames. That is enough
-/// to keep a caption from *outlasting* a cut, but NOT enough to keep its
-/// content right: chunking over a segment's full word list groups words from
-/// both sides of the cut into one chunk, so the burn shows text for audio the
-/// export removed and breaks chunks at different points than the preview.
-/// Splitting first makes every emitted chunk lie wholly inside one kept span.
+/// Splits caption segments across kept spans, dropping the parts inside a cut. Mirrors `splitSegmentAcrossSpans`; keep the two in sync.
+/// The cut stage alone stops a caption outlasting a cut but not chunking across it, which showed text for removed audio and broke chunks unlike the preview.
 pub fn split_transcript_by_spans(t: &Transcript, spans: &[(f64, f64)]) -> Transcript {
     let mut segments = Vec::with_capacity(t.segments.len());
     for seg in &t.segments {
@@ -352,9 +288,7 @@ pub fn split_transcript_by_spans(t: &Transcript, spans: &[(f64, f64)]) -> Transc
                     })
                 })
                 .collect();
-            // A split piece is its own cue: its own id, and the half of the line
-            // actually spoken here rather than the whole line repeated on both
-            // sides. An unsplit segment keeps its identity untouched.
+            // A split piece is its own cue carrying the half actually spoken here; an unsplit segment keeps its identity.
             let text = if split && !words.is_empty() {
                 words
                     .iter()
@@ -403,7 +337,10 @@ fn push_dialogue(
 /// times onto the trimmed-but-uncut axis (subtract `offset`, clamp to
 /// `clip_len`). Skips fully out-of-range events. The pill draws on layer 0, the
 /// text on layer 1 so it sits on top.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one dialogue line: layer, timing, style and text are independent"
+)]
 fn push_dialogue_layer(
     out: &mut String,
     layer: u32,
@@ -436,21 +373,6 @@ fn push_dialogue_layer(
 
 /// Group a line's words into display chunks — mirrors `chunkWords` in
 /// `$lib/captions/animation.ts`. Keep the two in sync.
-fn chunk_words<'a>(
-    words: &'a [TranscriptWord],
-    anim: &CaptionAnimation,
-) -> Vec<&'a [TranscriptWord]> {
-    if words.is_empty() {
-        return Vec::new();
-    }
-    let size = match anim.chunk.as_str() {
-        "line" => words.len(),
-        "word" => 1,
-        _ => (anim.chunk_size as usize).max(1),
-    };
-    words.chunks(size).collect()
-}
-
 /// Everything the pill/positioning math needs, built once in `to_ass`.
 struct LayoutCtx<'a> {
     style: &'a CaptionStyle,
@@ -497,8 +419,7 @@ impl LayoutCtx<'_> {
         let ph = self.play_h.max(1) as f64;
         let v_top = self.video.y as f64 / ph;
         let v_bottom = (self.video.y + self.video.h) as f64 / ph;
-        // Use the ACTUAL pill height for the vertical clamp (more precise than
-        // the max-lines estimate the auto-box path relies on).
+        // The ACTUAL pill height is more precise than the max-lines estimate the auto-box path relies on.
         let cap = pill_h / ph;
         let pill_y = match caption_top_frac(
             &self.style.position,
@@ -553,7 +474,6 @@ fn pill_path(w: f64, h: f64, r: f64) -> String {
 }
 
 /// Emit the pill Dialogue (layer 0) for a chunk window.
-#[allow(clippy::too_many_arguments)]
 fn emit_pill(
     out: &mut String,
     style: &CaptionStyle,
@@ -574,15 +494,8 @@ fn emit_pill(
     push_dialogue_layer(out, 0, ds, de, offset, clip_len, &prefix, &body);
 }
 
-/// Emit the ASS events for one segment under an animation spec. Each display
-/// chunk is held until the next chunk starts (so single-word styles never blink
-/// to empty). When words need per-word colour (progressive highlight or active-
-/// word emphasis) the chunk is split into one sub-event per word window, each
-/// colouring every word by the same rule the preview uses; the first sub-event
-/// carries the entrance. When the chunk fits ONE line and the style is a box with
-/// a measurable font, an exact rounded pill (`\p1`, layer 0) is drawn behind the
-/// `\pos`-anchored text and the square auto box is suppressed; otherwise the
-/// Style's `BorderStyle:3` auto box handles the background.
+/// ASS events for one segment, each chunk held until the next starts so single-word styles never blink to empty.
+/// Per-word colour splits the chunk into one sub-event per word; a one-line chunk with a measurable font gets an exact `\p1` pill instead of the square auto box.
 fn emit_animated_segment(
     out: &mut String,
     ctx: &LayoutCtx,
@@ -607,9 +520,7 @@ fn emit_animated_segment(
     }
 
     let runs = chunk_words(&seg.words, anim);
-    // Per-word events are needed when a word's colour depends on progress
-    // (progressive highlight) or the active word is emphasised. Otherwise every
-    // word is the base colour and one event per chunk suffices.
+    // Per-word events only when a word's colour depends on progress or the active word is emphasised.
     let per_word = anim.highlight() == "progressive" || anim.emphasis != "none";
 
     for (i, run) in runs.iter().enumerate() {
@@ -621,8 +532,7 @@ fn emit_animated_segment(
             seg.end
         };
 
-        // Exact rounded pill only when the chunk fits one line (multi-line keeps
-        // the square auto box, whose height libass sizes correctly).
+        // Exact rounded pill only for a single line; multi-line keeps the square auto box libass sizes correctly.
         let single_line =
             break_into_lines(run, style.max_chars_per_line, style.max_lines).len() == 1;
         let line_text = run
@@ -635,8 +545,7 @@ fn emit_animated_segment(
         } else {
             None
         };
-        // In pill mode the text is `\pos`-anchored inside the pill and the auto
-        // box is made transparent so only the rounded pill shows.
+        // In pill mode the text is `\pos`-anchored inside the pill and the auto box is made transparent.
         let pos_prefix = pill.as_ref().map_or(String::new(), |p| {
             format!(
                 "{{\\an7\\pos({:.0},{:.0})\\3a&HFF&\\4a&HFF&}}",
@@ -674,8 +583,7 @@ fn emit_animated_segment(
             } else {
                 String::new()
             };
-            // At word j's window, words 0..=j are spoken and j is the active word,
-            // matching the preview's spokenWordCount/activeWordIndex at that time.
+            // At word j's window, words 0..=j are spoken and j is active, matching the preview at that time.
             push_dialogue_layer(
                 out,
                 text_layer,
@@ -690,11 +598,8 @@ fn emit_animated_segment(
     }
 }
 
-/// The run's words joined with spaces. Each word is wrapped in a `\c` colour
-/// override (from {@link word_color}) so progressive highlight and active-word
-/// accent compose; the active word additionally scales for `scale` emphasis.
-/// `active` is the currently-spoken word (None = none), `spoken` how many words
-/// are spoken. Mirrors `wordColor`/`wordScaled` in @recast/captions.
+/// The run's words joined with spaces, each wrapped in a `\c` override so progressive highlight and active-word accent compose; the active word also scales for emphasis.
+/// `active` is the currently-spoken word and `spoken` how many are; mirrors `wordColor` and `wordScaled` in @recast/captions.
 fn run_text(
     run: &[TranscriptWord],
     active: Option<usize>,
@@ -718,10 +623,7 @@ fn run_text(
         .join(" ")
 }
 
-/// Inline ASS colour literal for word `index`. Mirrors `wordColor` in
-/// @recast/captions: the active word wins the accent for `color` emphasis;
-/// otherwise progressive highlight paints spoken words base / unspoken muted,
-/// and `none`/`active` paint every word the base colour.
+/// Inline ASS colour literal for word `index`, wrapping the shared rule.
 fn word_color(
     index: usize,
     active: Option<usize>,
@@ -729,77 +631,9 @@ fn word_color(
     anim: &CaptionAnimation,
     style: &CaptionStyle,
 ) -> String {
-    if Some(index) == active && anim.emphasis == "color" {
-        return ass_primary(&anim.emphasis_color);
-    }
-    if anim.highlight() == "progressive" {
-        return if index < spoken {
-            ass_primary(&style.color)
-        } else {
-            ass_primary(&style.muted_color)
-        };
-    }
-    ass_primary(&style.color)
-}
-
-/// Whether word `index` scales up. Mirrors `wordScaled`: only the active word,
-/// only for `scale` emphasis, and only in a multi-word chunk (a lone word's pop
-/// entrance already carries the emphasis).
-fn word_scaled(
-    index: usize,
-    active: Option<usize>,
-    word_count: usize,
-    anim: &CaptionAnimation,
-) -> bool {
-    anim.emphasis == "scale" && Some(index) == active && word_count > 1
-}
-
-/// Words considered spoken at source-time `t`. Mirrors `spokenWordCount`.
-#[cfg_attr(not(test), allow(dead_code))]
-fn spoken_word_count(words: &[TranscriptWord], t: f64) -> usize {
-    let mut n = 0;
-    for (i, w) in words.iter().enumerate() {
-        if t >= w.start {
-            n = i + 1;
-        } else {
-            break;
-        }
-    }
-    n
-}
-
-/// Greedy line break by character count. Mirrors `breakIntoLines`: never splits
-/// inside a word, caps at `max_lines`. Returns word-index groups.
-fn break_into_lines(words: &[TranscriptWord], max_chars: u32, max_lines: u32) -> Vec<Vec<usize>> {
-    let limit = max_chars.max(1) as usize;
-    let cap = max_lines.max(1) as usize;
-    let mut lines: Vec<Vec<usize>> = Vec::new();
-    let mut current: Vec<usize> = Vec::new();
-    let mut current_len = 0usize;
-    for (i, w) in words.iter().enumerate() {
-        let word_len = w.text.chars().count();
-        let added = if current.is_empty() {
-            word_len
-        } else {
-            current_len + 1 + word_len
-        };
-        if !current.is_empty() && added > limit {
-            lines.push(std::mem::take(&mut current));
-            current.push(i);
-            current_len = word_len;
-        } else {
-            current.push(i);
-            current_len = added;
-        }
-        if lines.len() == cap {
-            break;
-        }
-    }
-    if !current.is_empty() && lines.len() < cap {
-        lines.push(current);
-    }
-    lines.truncate(cap);
-    lines
+    ass_primary(recast_captions::word_color(
+        index, active, spoken, anim, style,
+    ))
 }
 
 /// Leading override block for a chunk's entrance, or empty for `none`. `slide`
@@ -1139,8 +973,7 @@ mod tests {
     }
 
     fn style_bold(ass: &str) -> i32 {
-        // Style line: ...,BackColour,Bold,Italic,... → Bold is the field after the
-        // 7th comma of the "Style: Default,..." line.
+        // Bold is the field after the 7th comma of the `Style: Default,...` line.
         let line = ass
             .lines()
             .find(|l| l.starts_with("Style: Default,"))
@@ -1224,8 +1057,7 @@ mod tests {
         let top = caption_top_frac("bottom", 0.0, cap, 0.15, 0.85).unwrap();
         assert!(top >= 0.85 - 1e-9);
         assert!(top + cap <= 1.0 + 1e-9);
-        // Full-bleed video: baseline at the frame edge, positive Offset still lifts
-        // the caption up (inward) — no dead clamp across the range.
+        // Full-bleed video: baseline at the frame edge, and a positive Offset still lifts the caption inward.
         let base = caption_top_frac("bottom", 0.0, cap, 0.0, 1.0).unwrap();
         let lifted = caption_top_frac("bottom", 8.0, cap, 0.0, 1.0).unwrap();
         assert!((base - (1.0 - cap)).abs() < 1e-9);
@@ -1277,10 +1109,7 @@ mod tests {
         ))));
     }
 
-    // Manual render check (not run in CI): drives the REAL to_ass with a system
-    // font resolved through text_measure, writing an ASS a human renders via
-    // ffmpeg to confirm the rounded pill hugs the text.
-    //   cargo test --lib render_pill_ass_for_manual_inspection -- --ignored --nocapture
+    // Manual render check (ignored in CI): writes an ASS a human renders via ffmpeg to confirm the pill hugs the text.
     #[test]
     #[ignore]
     fn render_pill_ass_for_manual_inspection() {
@@ -1344,8 +1173,7 @@ mod tests {
 
     #[test]
     fn no_measure_face_keeps_the_square_auto_box_no_pill() {
-        // Tests build RenderFont via rf() (measure: None), so even a box style
-        // must NOT draw a \p1 pill — the square BorderStyle:3 auto box stays.
+        // Tests build RenderFont with measure: None, so even a box style must keep the square auto box, not a pill.
         let style = CaptionStyle {
             background: "box".into(),
             animation: Some(CaptionAnimation {
@@ -1373,8 +1201,7 @@ mod tests {
         let t = transcript(words(&[(4.12, 4.38, "but"), (4.38, 4.6, "it's")]));
         let vtt = to_vtt(&t);
         assert!(vtt.starts_with("WEBVTT"));
-        // Each word carries a leading inline timestamp; a tag-blind player still
-        // sees the plain words.
+        // Each word carries a leading inline timestamp; a tag-blind player still sees the plain words.
         assert!(vtt.contains("<00:00:04.120>but <00:00:04.380>it's"));
 
         // A segment without word timing falls back to plain cue text.
@@ -1401,8 +1228,7 @@ mod tests {
             (1.0, 1.5, "three"),
         ]));
         let ass = to_ass(&t, &style, 1920, 1080, full_vr(), 0.0, 10.0, &rf(false));
-        // 3 words -> 3 word-window events; the first (only "one" spoken) must paint
-        // the later words with the muted colour (#a1a1aa -> BGR &Haaa1a1&).
+        // The first of 3 word-window events must paint the later words with the muted colour.
         assert_eq!(dialogues(&ass).len(), 3);
         let first = dialogues(&ass)[0].to_lowercase();
         assert!(first.contains("&haaa1a1&"), "unspoken words muted: {first}");
@@ -1440,102 +1266,5 @@ mod tests {
             word_color(2, Some(2), 2, &prog_color, &style),
             ass_primary("#4ade80")
         );
-    }
-
-    // Shared parity fixture: the same JSON the @recast/captions vitest asserts on,
-    // so the preview and the burn-in agree on chunking, line breaks, and how many
-    // words are spoken at a given time. Keep the file and both sides in sync.
-    #[derive(serde::Deserialize)]
-    struct ParityFile {
-        cases: Vec<ParityCase>,
-    }
-    #[derive(serde::Deserialize)]
-    struct ParityCase {
-        name: String,
-        words: Vec<FixtureWord>,
-        animation: FixtureAnim,
-        #[serde(rename = "maxCharsPerLine")]
-        max_chars_per_line: u32,
-        #[serde(rename = "maxLines")]
-        max_lines: u32,
-        expected: ParityExpected,
-    }
-    #[derive(serde::Deserialize)]
-    struct FixtureWord {
-        start: f64,
-        end: f64,
-        text: String,
-    }
-    #[derive(serde::Deserialize)]
-    struct FixtureAnim {
-        chunk: String,
-        #[serde(rename = "chunkSize")]
-        chunk_size: u32,
-    }
-    #[derive(serde::Deserialize)]
-    struct ParityExpected {
-        chunks: Vec<Vec<usize>>,
-        lines: Vec<Vec<usize>>,
-        #[serde(rename = "spokenAt")]
-        spoken_at: Vec<SpokenAt>,
-    }
-    #[derive(serde::Deserialize)]
-    struct SpokenAt {
-        t: f64,
-        count: usize,
-    }
-
-    #[test]
-    fn matches_shared_caption_parity_fixture() {
-        let raw = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../packages/captions/src/__fixtures__/caption-parity.json"
-        ));
-        let file: ParityFile = serde_json::from_str(raw).expect("parse fixture");
-        assert!(!file.cases.is_empty());
-
-        for case in &file.cases {
-            let ws: Vec<TranscriptWord> = case
-                .words
-                .iter()
-                .map(|w| TranscriptWord {
-                    start: w.start,
-                    end: w.end,
-                    text: w.text.clone(),
-                })
-                .collect();
-            let a = CaptionAnimation {
-                chunk: case.animation.chunk.clone(),
-                chunk_size: case.animation.chunk_size,
-                ..Default::default()
-            };
-
-            // Chunking: map each returned slice back to word indices by start time.
-            let runs = chunk_words(&ws, &a);
-            let got_chunks: Vec<Vec<usize>> = runs
-                .iter()
-                .map(|run| {
-                    run.iter()
-                        .map(|w| ws.iter().position(|x| x.start == w.start).unwrap())
-                        .collect()
-                })
-                .collect();
-            assert_eq!(got_chunks, case.expected.chunks, "chunks [{}]", case.name);
-
-            // Line breaking.
-            let got_lines = break_into_lines(&ws, case.max_chars_per_line, case.max_lines);
-            assert_eq!(got_lines, case.expected.lines, "lines [{}]", case.name);
-
-            // Spoken counts at sampled times.
-            for s in &case.expected.spoken_at {
-                assert_eq!(
-                    spoken_word_count(&ws, s.t),
-                    s.count,
-                    "spokenAt t={} [{}]",
-                    s.t,
-                    case.name
-                );
-            }
-        }
     }
 }

@@ -7,8 +7,8 @@
  * worker's `self.fonts` before the first paint.
  */
 
-import { runExportJob } from "./run-export-job";
 import type { FromExportWorker, ToExportWorker } from "./export-worker-protocol";
+import { runExportJob } from "./run-export-job";
 
 const post = (msg: FromExportWorker, transfer: Transferable[] = []) =>
 	(self as unknown as Worker).postMessage(msg, transfer);

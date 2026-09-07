@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// Every workspace package must declare a real `check` script. `pnpm --filter`
-// silently SKIPS packages without one, so a missing script reads as a pass —
-// which is how ~16k LOC across 8 packages went unverified.
+// `pnpm --filter` silently SKIPS packages with no `check` script, so a missing one reads as a pass.
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -23,8 +21,7 @@ for (const name of readdirSync(packagesDir)) {
 		failures.push(`${manifest.name ?? name}: no "check" script`);
 		continue;
 	}
-	// `exit 0` is the shape this guard exists to catch: it makes `turbo check`
-	// report green over a package nothing has ever type-checked.
+	// `exit 0` is the shape this guard exists to catch: it makes `turbo check` report green over unverified code.
 	if (/^\s*exit\s+0\s*$/.test(check)) {
 		failures.push(`${manifest.name ?? name}: "check" is a no-op (${check})`);
 	}

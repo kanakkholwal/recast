@@ -8,16 +8,16 @@
  * a long editing session can't grow the performance buffer without bound.
  */
 
-const PREFIX = 'recast-media';
+const PREFIX = "recast-media";
 const MAX_ENTRIES = 200;
 
 let emitted = 0;
 
 function canMeasure(): boolean {
 	return (
-		typeof performance !== 'undefined' &&
-		typeof performance.measure === 'function' &&
-		typeof performance.now === 'function'
+		typeof performance !== "undefined" &&
+		typeof performance.measure === "function" &&
+		typeof performance.now === "function"
 	);
 }
 
@@ -41,7 +41,7 @@ export function measureSince(stage: string, startMs: number, detail?: unknown): 
 
 /** Monotonic timestamp for pairing with `measureSince`, or 0 when unavailable. */
 export function markNow(): number {
-	return typeof performance !== 'undefined' && typeof performance.now === 'function'
+	return typeof performance !== "undefined" && typeof performance.now === "function"
 		? performance.now()
 		: 0;
 }

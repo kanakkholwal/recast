@@ -1,9 +1,9 @@
 <script lang="ts" module>
-  import type { ScreenshotEditorState } from "../editor.svelte";
+import type { ScreenshotEditorState } from "../editor.svelte";
 
-  export interface CanvasControlProps {
-    editor: ScreenshotEditorState;
-  }
+export interface CanvasControlProps {
+	editor: ScreenshotEditorState;
+}
 </script>
 
 <script lang="ts">

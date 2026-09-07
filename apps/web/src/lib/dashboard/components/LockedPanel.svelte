@@ -3,8 +3,7 @@ import { ArrowRight, Lock } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import type { Snippet } from "svelte";
 
-// A Pro-only panel. The blurred layer is skeleton geometry, never invented
-// numbers: the data behind it is not fetched for free workspaces.
+// A Pro-only panel: the blurred layer is skeleton geometry, never invented numbers, since the data isn't fetched.
 let {
 	title,
 	description,

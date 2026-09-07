@@ -1,7 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-// Player logic is pure arithmetic + key/URL policy, so a plain Node run is
-// enough. Anything needing a real media element is verified in-app, not here.
+// Player logic is pure arithmetic and key/URL policy, so a plain Node run is enough; media elements are verified in-app.
 export default defineConfig({
 	test: {
 		include: ["src/**/*.{test,spec}.ts"],

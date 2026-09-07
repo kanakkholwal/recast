@@ -22,7 +22,6 @@ export {
 	Trigger,
 	Portal,
 	Close,
-
 	//
 	Root as Drawer,
 	NestedRoot as DrawerNestedRoot,

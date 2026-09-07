@@ -1,7 +1,5 @@
 <script lang="ts">
-// Decorative geometry for a LockedPanel: the shape of the chart or list that
-// Pro unlocks, with no numbers attached. Heights are a fixed pattern, not
-// random, so the panel renders identically on the server and the client.
+// The shape of what Pro unlocks, with no numbers; heights are a fixed pattern so server and client render alike.
 let { kind = "chart" }: { kind?: "chart" | "list" | "curve" } = $props();
 
 const bars = [38, 62, 45, 80, 55, 70, 34, 88, 50, 66, 42, 76];

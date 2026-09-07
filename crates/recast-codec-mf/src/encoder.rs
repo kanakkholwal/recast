@@ -1,0 +1,603 @@
+use windows::core::{Interface, GUID};
+use windows::Win32::Graphics::Direct3D11::ID3D11Texture2D;
+use windows::Win32::Media::MediaFoundation::*;
+use windows::Win32::System::Variant::{VARIANT, VT_UI4};
+
+use recast_codec::{EncoderDescriptor, VideoCodec};
+
+use crate::d3d::D3dContext;
+use crate::windows_mf::{activate_for, ensure_started};
+
+/// What the caller asks the encoder for. Deliberately small: everything else an H.264 encoder can be told is either a default we are happy with or a knob no user of ours has needed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EncodeConfig {
+    pub width: u32,
+    pub height: u32,
+    /// Numerator and denominator, so 30000/1001 stays exact.
+    pub frame_rate: (u32, u32),
+    pub bitrate: u32,
+    /// Frames between keyframes, or 0 to take the encoder's own default.
+    /// A seek decodes from the keyframe before it, so footage that will be scrubbed wants them close; NVIDIA's default is an infinite GOP, one keyframe for the whole recording.
+    pub keyframe_interval: u32,
+}
+
+/// One compressed access unit as the transform produced it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EncodedSample {
+    /// Annex B, which is what Media Foundation emits.
+    pub data: Vec<u8>,
+    /// 100 ns units, the Media Foundation clock.
+    pub timestamp: i64,
+    pub duration: i64,
+    pub is_sync: bool,
+}
+
+#[derive(Debug)]
+pub enum EncodeError {
+    /// Nothing on this machine matched the descriptor.
+    NotFound,
+    /// The frame handed in is smaller than the configured size.
+    ShortFrame,
+    /// A texture was offered to an encoder that was not opened on a device.
+    NotOnGpu,
+    Media(windows::core::Error),
+}
+
+impl From<windows::core::Error> for EncodeError {
+    fn from(value: windows::core::Error) -> Self {
+        Self::Media(value)
+    }
+}
+
+impl std::fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound => write!(f, "no matching Media Foundation encoder"),
+            Self::ShortFrame => write!(f, "the frame is smaller than the configured size"),
+            Self::NotOnGpu => write!(f, "this encoder was not opened on a D3D11 device"),
+            Self::Media(e) => write!(f, "media foundation: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for EncodeError {}
+
+/// Hardware transforms are asynchronous and event driven; the Microsoft
+/// software one is synchronous and pulled. The protocols differ enough that the
+/// mode is kept explicitly rather than probed per call.
+enum Mode {
+    Sync,
+    Async {
+        events: IMFMediaEventGenerator,
+        /// Outstanding `METransformNeedInput` events. The transform asks for frames ahead of time, so a credit here means `ProcessInput` can be called without waiting for another event.
+        credits: u32,
+    },
+}
+
+/// An H.264 transform, fed NV12 and drained of Annex B.
+pub struct H264Encoder {
+    transform: IMFTransform,
+    mode: Mode,
+    config: EncodeConfig,
+    frame_bytes: usize,
+    draining: bool,
+    gpu: bool,
+}
+
+impl H264Encoder {
+    /// Opens `descriptor`. The descriptor is matched by id against a fresh
+    /// enumeration rather than being held open, so nothing keeps a hardware
+    /// session reserved between the probe and the encode.
+    pub fn open(descriptor: &EncoderDescriptor, config: EncodeConfig) -> Result<Self, EncodeError> {
+        Self::open_inner(descriptor, config, None)
+    }
+
+    /// Opens `descriptor` bound to a D3D11 device, so frames can be handed over as textures instead of as bytes.
+    /// Falls back to the memory path rather than failing when the transform is not D3D-aware: the software encoder never is, and a machine with no hardware encoder should still export.
+    pub fn open_with_gpu(
+        descriptor: &EncoderDescriptor,
+        config: EncodeConfig,
+        context: &D3dContext,
+    ) -> Result<Self, EncodeError> {
+        Self::open_inner(descriptor, config, Some(context))
+    }
+
+    /// Whether frames may be handed to [`Self::encode_texture`].
+    pub fn takes_textures(&self) -> bool {
+        self.gpu
+    }
+
+    fn open_inner(
+        descriptor: &EncoderDescriptor,
+        config: EncodeConfig,
+        context: Option<&D3dContext>,
+    ) -> Result<Self, EncodeError> {
+        if descriptor.codec != VideoCodec::H264 {
+            return Err(EncodeError::NotFound);
+        }
+        if !ensure_started() {
+            return Err(EncodeError::NotFound);
+        }
+        let (activate, asynchronous) = activate_for(&descriptor.id).ok_or(EncodeError::NotFound)?;
+        // SAFETY: the activate came from MFTEnumEx and is alive here.
+        let transform: IMFTransform = unsafe { activate.ActivateObject() }?;
+
+        let mode = match asynchronous {
+            false => Mode::Sync,
+            true => {
+                // SAFETY: reading and writing the transform's own attributes; an async transform stays locked until the caller opts in.
+                unsafe {
+                    let attributes = transform.GetAttributes()?;
+                    attributes.SetUINT32(&MF_TRANSFORM_ASYNC_UNLOCK, 1)?;
+                }
+                Mode::Async {
+                    events: transform.cast()?,
+                    credits: 0,
+                }
+            }
+        };
+
+        // The manager must be set before the media types: a D3D-aware transform advertises different inputs once it has a device.
+        let gpu = match context {
+            Some(context) if is_d3d_aware(&transform) => {
+                // SAFETY: the manager outlives the message, which only stores a reference the transform add-refs itself.
+                unsafe {
+                    transform.ProcessMessage(
+                        MFT_MESSAGE_SET_D3D_MANAGER,
+                        context.manager().as_raw() as usize,
+                    )?;
+                }
+                true
+            }
+            _ => false,
+        };
+
+        let mut encoder = Self {
+            transform,
+            mode,
+            config,
+            frame_bytes: nv12_len(config.width, config.height),
+            draining: false,
+            gpu,
+        };
+        encoder.configure()?;
+        Ok(encoder)
+    }
+
+    /// Asks for a keyframe every `keyframe_interval` frames; best effort, since a transform without the property still encodes.
+    /// Two traps that both return S_OK and do nothing: the value must be VT_UI4, not VT_I4, and it must be set BEFORE the output media type.
+    fn set_gop_size(&self) {
+        if self.config.keyframe_interval == 0 {
+            return;
+        }
+        self.set_codec_u32(&CODECAPI_AVEncMPVGOPSize, self.config.keyframe_interval);
+    }
+
+    /// No B-pictures, so samples come back in presentation order.
+    /// `Mp4Sink` emits no composition offsets, and some MFTs default to two.
+    fn set_no_b_pictures(&self) {
+        self.set_codec_u32(&CODECAPI_AVEncMPVDefaultBPictureCount, 0);
+    }
+
+    /// Encode the next frame handed in as a keyframe.
+    /// A frame-count GOP cannot express a time interval under VARIABLE RATE: an idle desktop produces fewer frames per second than the GOP spans, leaving one keyframe per recording.
+    pub fn request_keyframe(&self) {
+        self.set_codec_u32(&CODECAPI_AVEncVideoForceKeyFrame, 1);
+    }
+
+    /// Set one UINT32 codec property, best effort.
+    /// The value must be VT_UI4: a VT_I4 is accepted with S_OK and then ignored, which is indistinguishable from success.
+    fn set_codec_u32(&self, property: &windows::core::GUID, value: u32) {
+        let Ok(codec) = self.transform.cast::<ICodecAPI>() else {
+            return;
+        };
+        let mut variant = VARIANT::default();
+        // SAFETY: writing the union arm named by the tag set beside it.
+        unsafe {
+            let inner = &mut *variant.Anonymous.Anonymous;
+            inner.vt = VT_UI4;
+            inner.Anonymous.ulVal = value;
+            let _ = codec.SetValue(property, &variant);
+        }
+    }
+
+    fn configure(&mut self) -> Result<(), EncodeError> {
+        // Output first: an H.264 transform won't accept an input type until it knows what it is producing.
+        let attributes = [
+            (MF_MT_MAJOR_TYPE, Value::Guid(MFMediaType_Video)),
+            (MF_MT_SUBTYPE, Value::Guid(MFVideoFormat_H264)),
+            (MF_MT_AVG_BITRATE, Value::U32(self.config.bitrate)),
+            (
+                MF_MT_INTERLACE_MODE,
+                Value::U32(MFVideoInterlace_Progressive.0 as u32),
+            ),
+            (
+                MF_MT_FRAME_SIZE,
+                Value::U64(pack(self.config.width, self.config.height)),
+            ),
+            (
+                MF_MT_FRAME_RATE,
+                Value::U64(pack(self.config.frame_rate.0, self.config.frame_rate.1)),
+            ),
+            (MF_MT_PIXEL_ASPECT_RATIO, Value::U64(pack(1, 1))),
+        ];
+        let output = media_type(&attributes)?;
+        // BEFORE the output type: set after, they return S_OK and change nothing.
+        self.set_gop_size();
+        self.set_no_b_pictures();
+        // SAFETY: stream 0 is the only stream an H.264 encoder MFT exposes.
+        unsafe { self.transform.SetOutputType(0, &output, 0) }?;
+
+        let input = media_type(&[
+            (MF_MT_MAJOR_TYPE, Value::Guid(MFMediaType_Video)),
+            (MF_MT_SUBTYPE, Value::Guid(MFVideoFormat_NV12)),
+            (
+                MF_MT_INTERLACE_MODE,
+                Value::U32(MFVideoInterlace_Progressive.0 as u32),
+            ),
+            (
+                MF_MT_FRAME_SIZE,
+                Value::U64(pack(self.config.width, self.config.height)),
+            ),
+            (
+                MF_MT_FRAME_RATE,
+                Value::U64(pack(self.config.frame_rate.0, self.config.frame_rate.1)),
+            ),
+            (MF_MT_PIXEL_ASPECT_RATIO, Value::U64(pack(1, 1))),
+        ])?;
+        // SAFETY: as above.
+        unsafe { self.transform.SetInputType(0, &input, 0) }?;
+
+        // SAFETY: the documented start-up message pair.
+        unsafe {
+            self.transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0)?;
+            self.transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0)?;
+        }
+        Ok(())
+    }
+
+    /// Bytes one NV12 frame of this size occupies.
+    pub fn frame_bytes(&self) -> usize {
+        self.frame_bytes
+    }
+
+    /// Feeds one NV12 frame and returns whatever came out. An encoder holds
+    /// frames back to look ahead, so an empty result is normal.
+    pub fn encode(
+        &mut self,
+        nv12: &[u8],
+        timestamp: i64,
+        duration: i64,
+    ) -> Result<Vec<EncodedSample>, EncodeError> {
+        if nv12.len() < self.frame_bytes {
+            return Err(EncodeError::ShortFrame);
+        }
+        let sample = memory_sample(&nv12[..self.frame_bytes], timestamp, duration)?;
+        self.submit(sample)
+    }
+
+    /// Feeds one NV12 texture. The frame never reaches system memory: this is the whole point of [`Self::open_with_gpu`].
+    /// The texture must belong to the device the encoder was opened against.
+    pub fn encode_texture(
+        &mut self,
+        nv12: &crate::d3d::Nv12Frame,
+        timestamp: i64,
+        duration: i64,
+    ) -> Result<Vec<EncodedSample>, EncodeError> {
+        if !self.gpu {
+            return Err(EncodeError::NotOnGpu);
+        }
+        let sample = texture_sample(nv12.texture(), timestamp, duration)?;
+        self.submit(sample)
+    }
+
+    fn submit(&mut self, sample: IMFSample) -> Result<Vec<EncodedSample>, EncodeError> {
+        match &self.mode {
+            Mode::Sync => {
+                // SAFETY: the sample lives for the call, and stream 0 is the only one an encoder MFT exposes.
+                unsafe { self.transform.ProcessInput(0, &sample, 0) }?;
+                self.drain_available()
+            }
+            Mode::Async { .. } => self.encode_async(sample),
+        }
+    }
+
+    /// Waits for the transform to ask for input, feeds it, then takes whatever
+    /// is already waiting. Blocking on the ask is correct: the transform always
+    /// raises one eventually, and returning without feeding would stall.
+    fn encode_async(&mut self, sample: IMFSample) -> Result<Vec<EncodedSample>, EncodeError> {
+        let mut out = Vec::new();
+        loop {
+            if let Mode::Async { credits, .. } = &mut self.mode {
+                if *credits > 0 {
+                    *credits -= 1;
+                    // SAFETY: a credit means the transform is ready for input.
+                    unsafe { self.transform.ProcessInput(0, &sample, 0) }?;
+                    break;
+                }
+            }
+            // Waiting for a credit is also when output arrives: the transform interleaves the two events, so nothing is polled.
+            match self.pump()? {
+                Some(produced) => out.push(produced),
+                None => continue,
+            }
+        }
+        Ok(out)
+    }
+
+    /// Handles one transform event, blocking for it. Blocking is always right
+    /// here: the caller only pumps when it needs something from the transform,
+    /// and the transform always raises an event eventually.
+    fn pump(&mut self) -> Result<Option<EncodedSample>, EncodeError> {
+        let Mode::Async { events, .. } = &self.mode else {
+            return Ok(None);
+        };
+        let events = events.clone();
+        // SAFETY: pulling from the transform's own event queue.
+        let event = unsafe { events.GetEvent(MEDIA_EVENT_GENERATOR_GET_EVENT_FLAGS(0)) }?;
+        // SAFETY: every event carries its type.
+        let kind = unsafe { event.GetType() }?;
+        if kind == METransformNeedInput.0 as u32 {
+            if let Mode::Async { credits, .. } = &mut self.mode {
+                *credits += 1;
+            }
+            return Ok(None);
+        }
+        if kind == METransformHaveOutput.0 as u32 {
+            return self.next_output();
+        }
+        if kind == METransformDrainComplete.0 as u32 {
+            self.draining = false;
+        }
+        Ok(None)
+    }
+
+    /// Tells the transform there is no more input and collects the tail.
+    pub fn finish(&mut self) -> Result<Vec<EncodedSample>, EncodeError> {
+        // SAFETY: the documented shutdown message pair.
+        unsafe {
+            self.transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM, 0)?;
+            self.transform
+                .ProcessMessage(MFT_MESSAGE_COMMAND_DRAIN, 0)?;
+        }
+        if matches!(self.mode, Mode::Sync) {
+            return self.drain_available();
+        }
+        // `draining` is cleared by the drain-complete event, the only finish signal; a plain read loop would block forever.
+        self.draining = true;
+        let mut out = Vec::new();
+        while self.draining {
+            if let Some(produced) = self.pump()? {
+                out.push(produced);
+            }
+        }
+        Ok(out)
+    }
+
+    fn drain_available(&mut self) -> Result<Vec<EncodedSample>, EncodeError> {
+        let mut out = Vec::new();
+        loop {
+            match self.next_output()? {
+                Some(sample) => out.push(sample),
+                None => return Ok(out),
+            }
+        }
+    }
+
+    fn next_output(&mut self) -> Result<Option<EncodedSample>, EncodeError> {
+        pull_output(&self.transform)
+    }
+}
+
+/// Takes one output sample from `transform`, or `None` when it wants more input.
+/// Shared with the AAC encoder: the buffer dance differs only in what the transform advertises, never in the shape of the call.
+pub(crate) fn pull_output(transform: &IMFTransform) -> Result<Option<EncodedSample>, EncodeError> {
+    // SAFETY: reading the stream info the transform advertises.
+    let info = unsafe { transform.GetOutputStreamInfo(0) }?;
+    // A transform that allocates its own samples wants a null one handed in.
+    let provides_samples = info.dwFlags
+        & (MFT_OUTPUT_STREAM_PROVIDES_SAMPLES.0 as u32
+            | MFT_OUTPUT_STREAM_CAN_PROVIDE_SAMPLES.0 as u32)
+        != 0;
+    let mut buffers = [MFT_OUTPUT_DATA_BUFFER {
+        dwStreamID: 0,
+        pSample: std::mem::ManuallyDrop::new(match provides_samples {
+            true => None,
+            false => Some(empty_sample(info.cbSize as usize)?),
+        }),
+        dwStatus: 0,
+        pEvents: std::mem::ManuallyDrop::new(None),
+    }];
+    let mut status = 0u32;
+    // SAFETY: one buffer for the one stream.
+    let result = unsafe { transform.ProcessOutput(0, &mut buffers, &mut status) };
+    // Unconditional, and before the error branch: both fields are owned by us on every path out.
+    let sample = drain(&mut buffers[0]);
+    if let Err(error) = result {
+        drop(sample);
+        // Not an error: the transform simply has nothing for us yet.
+        if error.code() == MF_E_TRANSFORM_NEED_MORE_INPUT {
+            return Ok(None);
+        }
+        return Err(EncodeError::Media(error));
+    }
+
+    let Some(sample) = sample else {
+        return Ok(None);
+    };
+    Ok(Some(read_sample(&sample)?))
+}
+
+/// Takes ownership of everything `ProcessOutput` wrote, `pEvents` included: it
+/// is an OUT parameter, so leaving it leaks a COM object per output sample.
+fn drain(buffer: &mut MFT_OUTPUT_DATA_BUFFER) -> Option<IMFSample> {
+    let sample = std::mem::ManuallyDrop::take_if_needed(&mut buffer.pSample);
+    drop(std::mem::ManuallyDrop::take_if_needed(&mut buffer.pEvents));
+    sample
+}
+
+impl Drop for H264Encoder {
+    fn drop(&mut self) {
+        // SAFETY: a shutdown message on a live transform. Releasing without ending the stream holds a hardware session on some drivers.
+        unsafe {
+            let _ = self
+                .transform
+                .ProcessMessage(MFT_MESSAGE_NOTIFY_END_STREAMING, 0);
+        }
+    }
+}
+
+/// Helper so the `ManuallyDrop` dance above reads once rather than three times.
+trait TakeIfNeeded<T> {
+    fn take_if_needed(slot: &mut std::mem::ManuallyDrop<T>) -> T;
+}
+
+impl<T> TakeIfNeeded<T> for std::mem::ManuallyDrop<T> {
+    fn take_if_needed(slot: &mut std::mem::ManuallyDrop<T>) -> T {
+        // SAFETY: every caller drops or returns the value, so it is taken once.
+        unsafe { std::mem::ManuallyDrop::take(slot) }
+    }
+}
+
+fn read_sample(sample: &IMFSample) -> Result<EncodedSample, EncodeError> {
+    // SAFETY: reading the attributes and contiguous buffer of a sample the transform just handed us.
+    unsafe {
+        let timestamp = sample.GetSampleTime().unwrap_or(0);
+        let duration = sample.GetSampleDuration().unwrap_or(0);
+        // Absent means FALSE per MF; defaulting to true marked every delta frame a random-access point, and the muxer then omitted `stss` entirely.
+        let is_sync = sample
+            .GetUINT32(&MFSampleExtension_CleanPoint)
+            .map(|v| v != 0)
+            .unwrap_or(false);
+        let buffer = sample.ConvertToContiguousBuffer()?;
+        let mut start = std::ptr::null_mut();
+        let mut length = 0u32;
+        buffer.Lock(&mut start, None, Some(&mut length))?;
+        let data = std::slice::from_raw_parts(start, length as usize).to_vec();
+        buffer.Unlock()?;
+        Ok(EncodedSample {
+            data,
+            timestamp,
+            duration,
+            is_sync,
+        })
+    }
+}
+
+/// An empty sample of `size` bytes for a transform that does not allocate its
+/// own. Safe: the size is clamped, so there is no precondition to violate.
+fn empty_sample(size: usize) -> Result<IMFSample, windows::core::Error> {
+    // SAFETY: MF allocates both objects and hands us the only references; `AddBuffer` takes its own.
+    unsafe {
+        let sample = MFCreateSample()?;
+        let buffer = MFCreateMemoryBuffer(size.max(1) as u32)?;
+        sample.AddBuffer(&buffer)?;
+        Ok(sample)
+    }
+}
+
+/// Wraps a D3D11 texture as a sample. No copy: the buffer refers to the
+/// surface, so it must not be overwritten until the transform has consumed it.
+fn texture_sample(
+    texture: &ID3D11Texture2D,
+    timestamp: i64,
+    duration: i64,
+) -> Result<IMFSample, windows::core::Error> {
+    // SAFETY: the texture outlives the call, and the sample holds its own reference to the surface from here on.
+    unsafe {
+        let buffer = MFCreateDXGISurfaceBuffer(&ID3D11Texture2D::IID, texture, 0, false)?;
+        // A DXGI buffer starts at length zero and a transform that checks it reads the frame as empty; NVENC doesn't check, so nothing here proves this line.
+        let two_d: IMF2DBuffer = buffer.cast()?;
+        buffer.SetCurrentLength(two_d.GetContiguousLength()?)?;
+        let sample = MFCreateSample()?;
+        sample.AddBuffer(&buffer)?;
+        sample.SetSampleTime(timestamp)?;
+        sample.SetSampleDuration(duration)?;
+        Ok(sample)
+    }
+}
+
+/// Whether the transform can take D3D11 surfaces at all. The software encoder
+/// cannot, and telling it about a device makes it fail rather than fall back.
+fn is_d3d_aware(transform: &IMFTransform) -> bool {
+    // SAFETY: reading the transform's own attribute store.
+    unsafe {
+        transform
+            .GetAttributes()
+            .and_then(|attributes| attributes.GetUINT32(&MF_SA_D3D11_AWARE))
+            .map(|value| value != 0)
+            .unwrap_or(false)
+    }
+}
+
+pub(crate) fn memory_sample(
+    data: &[u8],
+    timestamp: i64,
+    duration: i64,
+) -> Result<IMFSample, windows::core::Error> {
+    // SAFETY: the buffer is sized to the slice and unlocked before use.
+    unsafe {
+        let sample = MFCreateSample()?;
+        let buffer = MFCreateMemoryBuffer(data.len() as u32)?;
+        let mut start = std::ptr::null_mut();
+        buffer.Lock(&mut start, None, None)?;
+        std::ptr::copy_nonoverlapping(data.as_ptr(), start, data.len());
+        buffer.Unlock()?;
+        buffer.SetCurrentLength(data.len() as u32)?;
+        sample.AddBuffer(&buffer)?;
+        sample.SetSampleTime(timestamp)?;
+        sample.SetSampleDuration(duration)?;
+        Ok(sample)
+    }
+}
+
+enum Value {
+    Guid(GUID),
+    U32(u32),
+    U64(u64),
+}
+
+fn media_type(attributes: &[(GUID, Value)]) -> Result<IMFMediaType, windows::core::Error> {
+    // SAFETY: setting attributes on a type we just created.
+    unsafe {
+        let media = MFCreateMediaType()?;
+        for (key, value) in attributes {
+            match value {
+                Value::Guid(v) => media.SetGUID(key, v)?,
+                Value::U32(v) => media.SetUINT32(key, *v)?,
+                Value::U64(v) => media.SetUINT64(key, *v)?,
+            }
+        }
+        Ok(media)
+    }
+}
+
+/// Media Foundation packs paired values into one 64-bit attribute, high half first: frame size is width and height, frame rate is numerator and denominator.
+fn pack(high: u32, low: u32) -> u64 {
+    ((high as u64) << 32) | low as u64
+}
+
+/// NV12 is a full-size luma plane plus a half-height interleaved chroma plane.
+fn nv12_len(width: u32, height: u32) -> usize {
+    (width as usize * height as usize) * 3 / 2
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paired_attributes_pack_high_half_first() {
+        assert_eq!(pack(1920, 1080), (1920u64 << 32) | 1080);
+        assert_eq!(pack(30_000, 1001), (30_000u64 << 32) | 1001);
+    }
+
+    #[test]
+    fn an_nv12_frame_is_one_and_a_half_planes() {
+        assert_eq!(nv12_len(2, 2), 6);
+        assert_eq!(nv12_len(1920, 1080), 1920 * 1080 * 3 / 2);
+    }
+}

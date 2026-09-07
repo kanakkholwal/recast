@@ -40,8 +40,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 					title: r.title,
 					durationSec: r.durationSec,
 					sizeBytes: Number(r.sizeBytes),
-					// Sign the poster key on read, like the video (a raw key/CDN URL
-					// isn't directly loadable in an <img>).
+					// Sign the poster key on read like the video: a raw key isn't directly loadable in an <img>.
 					posterUrl: await resolvePlaybackUrl(r.posterUrl),
 					archivedAt: archivedMs,
 					deletesAt: archivedMs + HARD_DELETE_DAYS * DAY_MS,

@@ -2,9 +2,25 @@ import { sveltekit } from "@sveltejs/kit/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, searchForWorkspaceRoot } from "vite";
 import pkg from "./package.json" with { type: "json" };
+import adapter from "@sveltejs/adapter-static";
 
 export default defineConfig({
-	plugins: [tailwindcss(), sveltekit()],
+	plugins: [
+		tailwindcss(),
+		sveltekit({
+			// A Tauri SPA: `+layout.ts` turns prerender off, so every route is dynamic and the fallback is what serves them.
+			adapter: adapter({ fallback: "index.html" }),
+			alias: {
+				$components: "src/components",
+				$utils: "src/utils",
+				$hooks: "src/lib/hooks",
+				$constants: "src/constants",
+				$tools: "src/tools",
+				$stores: "src/stores",
+				"@": "./src/@",
+			},
+		}),
+	],
 	define: {
 		__NAME__: `"${pkg.name}"`,
 		__VERSION__: `"${pkg.version}"`,
@@ -19,9 +35,7 @@ export default defineConfig({
 			ignored: ["**/src-tauri/**"],
 		},
 		fs: {
-			// @recast/editor spawns workers via `new URL(..., import.meta.url)`, served
-			// as direct file requests from the sibling package's source — allow the
-			// workspace root so they resolve ("outside serving allow list" otherwise).
+			// @recast/editor spawns workers from the sibling package's source, so the workspace root must be servable.
 			allow: [searchForWorkspaceRoot(process.cwd())],
 		},
 	},

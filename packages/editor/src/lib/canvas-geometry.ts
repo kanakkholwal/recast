@@ -1,17 +1,6 @@
-// Canvas geometry shared with (mirrored in) the Rust export pipeline. Both MUST
-// agree on canvas dims and comp position or preview and exported MP4 disagree on
-// framing.
-//
-// Model:
-//   1. comp = source dims + uniform `padding` on every side (the v1 rectangle).
-//   2. outputAspect `source` → canvas equals comp.
-//   3. Otherwise extend whichever axis is too short for the target aspect; the
-//      comp stays centred, new bars (one axis only) filled by the background.
-//
-// We never CROP the comp, only extend around it, so every annotation, cursor,
-// and focus region keeps its source-pixel coordinates across aspect changes.
+// Canvas geometry mirrored in the Rust export: comp is source plus uniform padding, and a non-source aspect extends the short axis around a centred comp. Never cropped, so source-pixel coordinates survive aspect changes.
 
-import { aspectRatio, type OutputAspect } from "../stores/editor-store.svelte";
+import { aspectRatio, type OutputAspect } from "./editor/render-state";
 
 export interface CanvasGeometry {
 	/** Final canvas width in source pixels. */
@@ -70,13 +59,13 @@ export function computeCanvasGeometry(
 		}
 	}
 
-	// Round up to the next even pixel (H.264 refuses odd dims) without ever
-	// shrinking below the comp.
+	// Round up to the next even pixel (H.264 refuses odd dims) without ever shrinking below the comp.
 	canvasW = (canvasW + 1) & ~1;
 	canvasH = (canvasH + 1) & ~1;
 
-	const compX = Math.round((canvasW - compW) / 2);
-	const compY = Math.round((canvasH - compH) / 2);
+	// Floor, not round: an odd source makes the leftover odd, and rounding put the preview one pixel off the exported file. The Rust compositor is the authority.
+	const compX = Math.floor(Math.max(0, canvasW - compW) / 2);
+	const compY = Math.floor(Math.max(0, canvasH - compH) / 2);
 	const videoX = compX + paddingPx;
 	const videoY = compY + paddingPx;
 

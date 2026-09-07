@@ -6,23 +6,24 @@
  * activity center; the store fires success/error toasts either way. Drive
  * uploads can be cancelled, so the running state offers Cancel.
  */
+
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { formatSize } from "@recast/editor/lib/format/files";
 import { etaLabel } from "@recast/editor/lib/format/time";
-import { gdrive } from "$lib/stores/gdrive.svelte";
 import {
 	AlertTriangle,
 	Ban,
+	BrandGoogleDrive,
 	Check,
 	ExternalLink,
-	BrandGoogleDrive,
 	Link2,
 	Minus,
 } from "@recast/icons";
-import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
-import UploadProgress from "$components/recast/UploadProgress.svelte";
 import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";
 import { toast } from "@recast/ui/sonner";
+import UploadProgress from "$components/recast/UploadProgress.svelte";
+import { gdrive } from "$lib/stores/gdrive.svelte";
 
 let { uploadId }: { uploadId: string } = $props();
 
@@ -35,8 +36,7 @@ const pct = $derived(
 		? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
 		: null,
 );
-// Byte + ETA readout during the transfer so a multi-minute upload feels
-// in-control (e.g. "12.3 MB of 45.0 MB · ~40s left").
+// Byte and ETA readout, so a multi-minute upload feels in-control rather than stalled.
 const transferLabel = $derived.by(() => {
 	if (!upload || upload.totalBytes <= 0) return null;
 	const size = `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`;
@@ -99,7 +99,13 @@ async function openLink() {
 			: status === "cancelled"
 				? Ban
 				: BrandGoogleDrive}
-	tone={status === "error" ? "destructive" : status === "cancelled" ? "muted" : "default"}
+	tone={status === "error"
+		? "destructive"
+		: status === "complete"
+			? "success"
+			: status === "cancelled"
+				? "muted"
+				: "default"}
 	widthClass="sm:max-w-lg"
 	onOpenChange={(v) => {
 		if (v) return;
@@ -148,15 +154,15 @@ async function openLink() {
 
 	{#snippet footer()}
 		{#if status === "uploading"}
-			<Button variant="default_soft" size="xs" onclick={onMinimize}>
+			<Button variant="secondary" size="sm" onclick={onMinimize}>
 				<Minus />
 				Minimize
 			</Button>
 		{:else if status === "complete"}
-			<Button size="xs" onclick={onClose}>Done</Button>
+			<Button size="sm" onclick={onClose}>Done</Button>
 		{:else}
-			<Button variant="ghost" size="xs" onclick={onClose}>Close</Button>
-			<Button size="xs" onclick={() => gdrive.retry(uploadId)}>Try again</Button>
+			<Button variant="ghost" size="sm" onclick={onClose}>Close</Button>
+			<Button size="sm" onclick={() => gdrive.retry(uploadId)}>Try again</Button>
 		{/if}
 	{/snippet}
 </DialogShell>

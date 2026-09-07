@@ -1,84 +1,81 @@
 <script lang="ts">
-	import { enhance } from "$app/forms";
-	import { goto } from "$app/navigation";
-	import { untrack } from "svelte";
-	import { authClient } from "$lib/auth/client";
-	import { enhanceAction } from "$lib/forms/enhance";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import * as Collapsible from "@recast/ui/collapsible";
-	import * as Dialog from "@recast/ui/dialog";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import * as Select from "@recast/ui/select";
-	import { Skeleton } from "@recast/ui/skeleton";
-	import { toast } from "@recast/ui/sonner";
-	import {
-		ArrowLeft,
-		ChevronDown,
-		ClipboardList,
-		Crown,
-		Key,
-		LoaderCircle,
-		LogOut,
-		ShieldOff,
-		Trash2,
-		UserCog,
-	} from "@recast/icons";
+import {
+	ArrowLeft,
+	ChevronDown,
+	ClipboardList,
+	Crown,
+	Key,
+	LoaderCircle,
+	LogOut,
+	ShieldOff,
+	Trash2,
+	UserCog,
+} from "@recast/icons";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import * as Collapsible from "@recast/ui/collapsible";
+import * as Dialog from "@recast/ui/dialog";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import * as Select from "@recast/ui/select";
+import { Skeleton } from "@recast/ui/skeleton";
+import { toast } from "@recast/ui/sonner";
+import { untrack } from "svelte";
+import { enhance } from "$app/forms";
+import { goto } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import InlineError from "$lib/components/InlineError.svelte";
+import { enhanceAction } from "$lib/forms/enhance";
 
-	import InlineError from "$lib/components/InlineError.svelte";
+let { data } = $props();
 
-	let { data } = $props();
+const t = $derived(data.target);
 
-	const t = $derived(data.target);
+// Seeded from the initial load, so it doesn't reset itself when a form action returns and re-runs the load.
+let role = $state(untrack(() => data.target.role ?? "user"));
+let status = $state(untrack(() => data.target.status ?? "active"));
+let name = $state(untrack(() => data.target.name ?? ""));
 
-	// Seed editable form state from the initial server load so it doesn't
-	// reset itself when a form action returns and re-runs the load.
-	let role = $state(untrack(() => data.target.role ?? "user"));
-	let status = $state(untrack(() => data.target.status ?? "active"));
-	let name = $state(untrack(() => data.target.name ?? ""));
+let banReason = $state("");
+let banDays = $state("");
+let newPassword = $state("");
 
-	let banReason = $state("");
-	let banDays = $state("");
-	let newPassword = $state("");
+let confirmDelete = $state(false);
+let confirmBan = $state(false);
 
-	let confirmDelete = $state(false);
-	let confirmBan = $state(false);
+// Per-action in-flight tracking.
+let impersonating = $state(false);
+let savingProfile = $state(false);
+let settingRole = $state(false);
+let settingStatus = $state(false);
+let unbanning = $state(false);
+let revokingAll = $state(false);
+let revokingSessionToken = $state<string | null>(null);
+let settingPassword = $state(false);
+let deleting = $state(false);
+let banning = $state(false);
 
-	// Per-action in-flight tracking.
-	let impersonating = $state(false);
-	let savingProfile = $state(false);
-	let settingRole = $state(false);
-	let settingStatus = $state(false);
-	let unbanning = $state(false);
-	let revokingAll = $state(false);
-	let revokingSessionToken = $state<string | null>(null);
-	let settingPassword = $state(false);
-	let deleting = $state(false);
-	let banning = $state(false);
-
-	async function impersonate() {
-		if (impersonating) return;
-		impersonating = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.admin.impersonateUser({ userId: t.id });
-					if (error) throw new Error(error.message ?? "Couldn't start impersonation.");
-				})(),
-				{
-					loading: `Starting session as ${t.email}…`,
-					success: `Now acting as ${t.email}.`,
-					error: (err) => (err as Error)?.message ?? "Couldn't start impersonation.",
-				},
-			);
-			// Cookie has been swapped to the impersonation session — leave admin
-			// and land in the impersonated user's dashboard.
-			window.location.href = "/dashboard";
-		} finally {
-			impersonating = false;
-		}
+async function impersonate() {
+	if (impersonating) return;
+	impersonating = true;
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.admin.impersonateUser({ userId: t.id });
+				if (error) throw new Error(error.message ?? "Couldn't start impersonation.");
+			})(),
+			{
+				loading: `Starting session as ${t.email}…`,
+				success: `Now acting as ${t.email}.`,
+				error: (err) => (err as Error)?.message ?? "Couldn't start impersonation.",
+			},
+		);
+		// The cookie is now the impersonation session, so leave admin and land in the impersonated user's dashboard.
+		window.location.href = "/dashboard";
+	} finally {
+		impersonating = false;
 	}
+}
 </script>
 
 <a

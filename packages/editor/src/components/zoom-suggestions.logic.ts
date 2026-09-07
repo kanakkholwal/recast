@@ -4,7 +4,7 @@ import type { ZoomSuggestion, ZoomSuggestionReason } from "../lib/wire-types";
 
 /** Stable list key for a suggestion (timestamp + reason). */
 export function keyOf(sug: ZoomSuggestion): string {
-	return sug.timestampUs + "-" + sug.reason;
+	return `${sug.timestampUs}-${sug.reason}`;
 }
 
 export function reasonLabel(r: ZoomSuggestionReason): string {

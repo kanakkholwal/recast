@@ -27,8 +27,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 		.catch(() => null)) as SessionShape | null;
 	if (!session?.user) error(401, "Sign in required");
 
-	const workspaceId =
-		url.searchParams.get("workspaceId") ?? session.user.activeOrganizationId;
+	const workspaceId = url.searchParams.get("workspaceId") ?? session.user.activeOrganizationId;
 	if (!workspaceId) error(400, "No active workspace");
 
 	await assertWorkspaceMember(session.user.id, workspaceId);

@@ -1,11 +1,10 @@
 <script lang="ts">
-import { prefersReducedMotion } from "$lib/motion-core";
 import { Check, FileVideo, FolderOpen, Link2 } from "@recast/icons";
 import { buttonVariants } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
+import { prefersReducedMotion } from "$lib/motion-core";
 
-// Export, upload, link: three hairline stages under one file, ending in the
-// only thing the visitor actually wants, a link they can paste.
+// Export, upload, link: three hairline stages ending in the only thing the visitor wants, a pasteable link.
 const reduced = $derived(prefersReducedMotion());
 
 const STEP_MS = 1600;

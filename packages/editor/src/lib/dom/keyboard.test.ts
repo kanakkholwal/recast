@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { OVERLAY_SELECTOR, isOverlayOpen, tagActivatesOnSpace } from "./keyboard";
+import { isOverlayOpen, OVERLAY_SELECTOR, tagActivatesOnSpace } from "./keyboard";
 
 // A ParentNode stub is enough: isOverlayOpen only ever calls querySelector.
 function root(match: boolean): ParentNode {
@@ -22,8 +22,7 @@ describe("tagActivatesOnSpace", () => {
 		expect(tagActivatesOnSpace("A", false)).toBe(false);
 	});
 
-	// The regression this exists for: a div with role="button" has no Space
-	// handler of its own, so standing down would swallow the key entirely.
+	// A div with role=button has no Space handler of its own, so standing down would swallow the key entirely.
 	it("keeps Space for plain elements, including role=button divs", () => {
 		expect(tagActivatesOnSpace("DIV")).toBe(false);
 		expect(tagActivatesOnSpace("SPAN")).toBe(false);

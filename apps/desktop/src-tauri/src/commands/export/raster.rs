@@ -1,8 +1,5 @@
-//! Static layers rasterised once per export: the rounded-corner mask, the
-//! drop-shadow PNG, the gradient background, and the pre-baked wallpaper.
-//!
-//! Split out of `run_export_job`. Everything here is frame-independent, so it
-//! runs once before the filter graph is assembled rather than per frame.
+//! Static layers rasterised once per export: corner mask, drop shadow, gradient background, pre-baked wallpaper.
+//! All frame-independent, so this runs before the filter graph is assembled rather than per frame.
 
 use std::path::{Path, PathBuf};
 
@@ -13,9 +10,7 @@ use crate::render::graph::CanvasGeometry;
 use crate::render::mask_export::MaskResult;
 
 /// The rasterised layers plus the geometry they were sized against.
-///
-/// Holds the `MaskResult`/`TempDirGuard` values, not just their paths: each one
-/// deletes its PNG on drop, so this must outlive the encode that reads them.
+/// Holds the `MaskResult`/`TempDirGuard` values, not just their paths: each one deletes its PNG on drop, so this must outlive the encode that reads them.
 pub(crate) struct StaticLayers {
     pub geom: CanvasGeometry,
     pub border_radius_mask: Option<MaskResult>,
@@ -24,11 +19,8 @@ pub(crate) struct StaticLayers {
     _prebaked_bg: Option<TempDirGuard>,
 }
 
-/// Rasterise everything static for this export.
-///
-/// Takes `request` mutably because pre-baking a wallpaper/image background
-/// rewrites `background_value` to the baked PNG and zeroes `background_blur` —
-/// the caller must rebuild its `RenderGraph` afterwards so the plan sees it.
+/// Rasterises everything static for this export.
+/// Takes `request` mutably because pre-baking a background rewrites `background_value` and zeroes the blur, so the caller must rebuild its `RenderGraph` afterwards.
 pub(crate) fn rasterize_static_layers(
     request: &mut ExportRequest,
     source_width: u32,
@@ -37,10 +29,7 @@ pub(crate) fn rasterize_static_layers(
     static_root: &Path,
     prebake: impl Fn(&Path, u32, u32, f64) -> Option<(PathBuf, TempDirGuard)>,
 ) -> AppResult<StaticLayers> {
-    // Border-radius is stored as a 0..50 percentage of the shorter source edge.
-    // Generate a single-frame alpha mask at source dimensions; the export plan
-    // will alphamerge it onto the (zoomed) source video before background
-    // composition so the rounded corners cut through to the background.
+    // Border radius is a 0..50 percent of the shorter source edge; the mask alphamerges onto the zoomed source before background composition.
     let border_radius_pct = request.render_state.border_radius.clamp(0.0, 50.0);
     let border_radius_px = border_radius_pct / 100.0 * source_width.min(source_height) as f64;
     let border_radius_mask: Option<MaskResult> = if border_radius_px > 0.5 {
@@ -54,14 +43,7 @@ pub(crate) fn rasterize_static_layers(
         None
     };
 
-    // Canvas geometry feeds the drop-shadow rasteriser, the cursor
-    // overlay PNG, and the FFmpeg filter graph. Compute once.
-    //
-    // Cursor and drop-shadow PNGs are rendered at COMP dims (= source +
-    // padding * 2), not the final canvas dims. They're composited at the
-    // comp's offset inside the canvas via FFmpeg overlay. Doing it the
-    // other way piped a 1984×3528 RGBA stream for a 9:16 of 1080p
-    // (~28 MB/frame at 60fps), which stalled the cursor sub-encode.
+    // Cursor and shadow PNGs render at COMP dims, not canvas dims: the other way piped ~28 MB/frame for a 9:16 of 1080p and stalled the sub-encode.
     let geom = crate::render::graph::compute_canvas_geometry(
         source_width,
         source_height,
@@ -69,11 +51,7 @@ pub(crate) fn rasterize_static_layers(
         request.render_state.output_aspect.as_deref(),
     );
 
-    // Drop-shadow PNG: rasterised once and overlaid on the background by the
-    // FFmpeg planner. Skipped when the user has disabled the effect or set
-    // opacity to 0 — those gates are also enforced inside
-    // `render_drop_shadow_mask`, but checking here saves the canvas-sized
-    // allocation.
+    // The gates are also enforced inside `render_drop_shadow_mask`, but checking here saves the canvas-sized allocation.
     let shadow_settings = &request.render_state.shadow;
     let drop_shadow_mask: Option<MaskResult> =
         if shadow_settings.enabled && shadow_settings.opacity > 0.0 {
@@ -97,9 +75,7 @@ pub(crate) fn rasterize_static_layers(
             None
         };
 
-    // Gradient backgrounds are rasterised to a canvas-sized PNG so the export
-    // composites the exact multi-stop, angled gradient the WebGL preview shows.
-    // Without this the FFmpeg planner falls back to a single flat color.
+    // Rasterised to a canvas-sized PNG so the export matches the preview's angled multi-stop gradient, not a flat colour.
     let gradient_bg: Option<MaskResult> = if request.render_state.background_type == "gradient" {
         crate::render::mask_export::render_gradient_background(
             &request.render_state.background_value,
@@ -111,12 +87,7 @@ pub(crate) fn rasterize_static_layers(
         None
     };
 
-    // Pre-bake a static wallpaper/image background once (canvas-sized + blurred)
-    // so the filter graph doesn't re-scale/re-blur it on every frame — a static
-    // background is identical each frame (measured ~19.5 ms/frame at 120 fps).
-    // Point the background at the baked PNG with blur 0; the graph then loops it as
-    // a near-no-op, pixel-identical to the per-frame path. Best-effort: on failure
-    // the render state is untouched and the live per-frame path runs as before.
+    // A static background is identical every frame (~19.5 ms/frame at 120 fps), so bake it once and loop it with blur 0.
     let _prebaked_bg = if matches!(
         request.render_state.background_type.as_str(),
         "wallpaper" | "image"

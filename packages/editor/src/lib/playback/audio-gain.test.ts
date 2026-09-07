@@ -7,9 +7,7 @@ describe("gainFromPercent", () => {
 		expect(gainFromPercent(0)).toBe(0);
 	});
 
-	// The panel's slider runs to 200% and labels it "+6.0 dB" with a Boost badge.
-	// Capping the preview at unity made that readout a lie: you could not hear
-	// the boost (or the clipping the badge warns about) until after an export.
+	// The slider labels 200% as +6 dB with a Boost badge, so capping the preview at unity made that readout a lie.
 	it("passes boost above 100% through instead of capping at unity", () => {
 		expect(gainFromPercent(200)).toBe(2);
 		expect(gainFromPercent(150)).toBeCloseTo(1.5, 6);

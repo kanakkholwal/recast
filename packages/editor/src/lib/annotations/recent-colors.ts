@@ -1,6 +1,4 @@
-// Workspace-scoped LRU (max 12) of recently picked annotation colors, synced to
-// localStorage. Bleeds across projects deliberately: the palette follows the
-// user, not the file.
+// A 12-entry LRU of recent annotation colours in localStorage; it bleeds across projects deliberately, since the palette follows the user.
 
 import { safeStorage } from "@recast/ui/persisted-state";
 

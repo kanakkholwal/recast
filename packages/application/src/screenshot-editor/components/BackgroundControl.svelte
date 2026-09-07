@@ -38,8 +38,7 @@ export interface BackgroundControlProps {
     pick(next);
   }
 
-  // Which of the three custom-background tiles reads as active. A preset swatch
-  // selection leaves all three inactive.
+  // Which custom-background tile reads as active; a preset swatch selection leaves all three inactive.
   const customType = $derived.by(() => {
     if (editor.background.kind === "transparent") return "transparent";
     if (editor.backgroundId === "image") return "image";

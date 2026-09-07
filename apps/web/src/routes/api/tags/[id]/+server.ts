@@ -49,7 +49,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	try {
 		await db.update(tag).set(patch).where(eq(tag.id, t.id));
 	} catch (e) {
-		if (String((e as Error)?.message ?? e).includes("tag_workspace_name_key")) {
+		if (((e as Error)?.message ?? String(e)).includes("tag_workspace_name_key")) {
 			error(409, "A tag with that name already exists");
 		}
 		throw e;

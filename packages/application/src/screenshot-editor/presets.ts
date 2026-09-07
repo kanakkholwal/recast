@@ -26,8 +26,7 @@ export function t3d(p: Partial<Transform3D>): Transform3D {
 /** One-click 3D tilts, ported from the reference app's perspective presets. */
 export const PERSPECTIVE_PRESETS: PerspectivePreset[] = [
 	tilt("flat", "Flat", {}),
-	// Pin perspective on the tilts so the new 200px resting default doesn't make
-	// these curated quick-looks extreme.
+	// Pin perspective on the tilts so the 200px resting default doesn't make these curated quick-looks extreme.
 	tilt("left", "Left", { perspective: 1000, rotateX: 3, rotateY: -12 }),
 	tilt("right", "Right", { perspective: 1000, rotateX: 3, rotateY: 12 }),
 	tilt("up", "Up", { perspective: 1000, rotateX: 12 }),
@@ -86,7 +85,6 @@ function tilt(id: string, label: string, transform: Partial<Transform3D>): Persp
 	return { id, label, transform: t3d(transform) };
 }
 
-const NO_BORDER = { width: 0, color: "#ffffff" };
 const FLAT: Transform3D = { ...DEFAULT_TRANSFORM };
 const NO_MOCKUP = { kind: "none" as const, theme: "light" as const, url: "example.com" };
 
@@ -169,8 +167,7 @@ export const TEMPLATE_PRESETS: Template[] = [
 	},
 ];
 
-// Pattern backdrops are `gradient`-kind (a `background` shorthand); the swatch
-// reuses the same CSS so the picker preview matches the stage.
+// Pattern backdrops are gradient-kind, and the swatch reuses the same CSS so the preview matches the stage.
 function patternBg(id: string, label: string, css: string): BackgroundPreset {
 	return { id, label, background: { kind: "gradient", css }, swatch: css };
 }

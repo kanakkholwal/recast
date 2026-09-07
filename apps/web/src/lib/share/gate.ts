@@ -1,15 +1,11 @@
+import type { Cookies } from "@sveltejs/kit";
 import { error } from "@sveltejs/kit";
 import { and, eq } from "drizzle-orm";
-import type { Cookies } from "@sveltejs/kit";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { member, share, shareMember, user } from "$lib/db/schema";
-import {
-	constantTimeEquals,
-	unlockCookieName,
-	unlockToken,
-} from "$lib/share/password";
 import { resolveShareManage } from "$lib/share/manage";
+import { constantTimeEquals, unlockCookieName, unlockToken } from "$lib/share/password";
 
 /**
  * Shared visibility/password gate for share sub-resources (comments,
@@ -85,10 +81,7 @@ export async function gateShareAccess(
 					.select({ id: member.id })
 					.from(member)
 					.where(
-						and(
-							eq(member.userId, session.user.id),
-							eq(member.organizationId, s.organizationId),
-						),
+						and(eq(member.userId, session.user.id), eq(member.organizationId, s.organizationId)),
 					)
 					.limit(1);
 				if (!m) error(403, "Not a member of this workspace");
@@ -102,12 +95,7 @@ export async function gateShareAccess(
 				const allowed = await db
 					.select({ id: shareMember.id })
 					.from(shareMember)
-					.where(
-						and(
-							eq(shareMember.shareSlug, s.slug),
-							eq(shareMember.email, session.user.email),
-						),
-					)
+					.where(and(eq(shareMember.shareSlug, s.slug), eq(shareMember.email, session.user.email)))
 					.limit(1);
 				if (allowed.length === 0) error(403, "Not on the access list");
 			}
@@ -131,8 +119,7 @@ export async function gateShareAccess(
 			error(500, "Unknown visibility");
 	}
 
-	// Password gate (orthogonal to visibility) — same unlock cookie the
-	// page loader and video endpoint mint.
+	// The password gate is orthogonal to visibility and uses the same unlock cookie the loader and video endpoint mint.
 	if (s.passwordHash) {
 		const got = cookies.get(unlockCookieName(s.slug));
 		const expected = await unlockToken(s.slug);
@@ -141,9 +128,7 @@ export async function gateShareAccess(
 		}
 	}
 
-	// Manage = share owner, an owner/admin of the recast's workspace, or a
-	// global admin — see `resolveShareManage` (shared with the page loader and
-	// the settings/access endpoints so all four agree on who can moderate).
+	// Manage is the share owner, a workspace owner or admin, or a global admin; `resolveShareManage` keeps all four callers agreeing.
 	let canManage = false;
 	if (session?.user) {
 		const mng = await resolveShareManage(s.slug, session.user.id);

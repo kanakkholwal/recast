@@ -26,14 +26,12 @@ describe("reconcileAvDrift", () => {
 	});
 
 	it("does NOT rewind audio to a stalled picture (the echo case)", () => {
-		// Picture stalled at 1.0 while audio played to 1.4 (0.4s ahead, under
-		// maxLead). Rewinding replays 0.4s of audio = the live echo. Leave it.
+		// Audio is 0.4s ahead but under maxLead, and rewinding would replay it as the live echo, so leave it.
 		expect(act(1.4, 1.0)).toBe("none");
 	});
 
 	it("advances the picture when it stalls far behind the audio", () => {
-		// Audio 1.6, picture 1.0 → 0.6s lead (> maxLead). Catch the picture up
-		// instead of rewinding audio: no echo, and the lead can't accumulate.
+		// A 0.6s lead is past maxLead, so catch the picture up: no echo, and the lead can't accumulate.
 		expect(act(1.6, 1.0)).toBe("catch-picture");
 	});
 

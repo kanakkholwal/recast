@@ -69,11 +69,7 @@ export function buildSortQuery(params: {
 }
 
 /** Arrow shown on the active sort column header. */
-export function sortIndicator(
-	currentSort: string,
-	currentDir: string,
-	field: string,
-): string {
+export function sortIndicator(currentSort: string, currentDir: string, field: string): string {
 	if (currentSort !== field) return "";
 	return currentDir === "asc" ? "↑" : "↓";
 }

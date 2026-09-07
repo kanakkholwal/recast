@@ -1,5 +1,4 @@
-// Bundler-injected members we use. Declared locally rather than pulling in
-// `vite/client`, which the package has no dependency on.
+// Bundler-injected members, declared locally rather than pulling in `vite/client`, which this package doesn't depend on.
 interface ImportMetaEnv {
 	readonly DEV: boolean;
 	readonly PROD: boolean;

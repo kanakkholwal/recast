@@ -23,8 +23,7 @@ const defaultNow: NowFn = () =>
 
 export class PlaybackClock {
 	#now: NowFn;
-	// Anchor: at wall-clock `#anchorWallMs`, playback time was `#anchorTime`.
-	// While playing, current time = anchorTime + (now - anchorWall)/1000 * rate.
+	// Anchor pair: while playing, time is anchorTime plus elapsed wall time since anchorWall, scaled by rate.
 	#anchorWallMs: number;
 	#anchorTime: number;
 	#playing = false;

@@ -52,8 +52,7 @@ function viewRowToActivity(r: ViewRow): Activity {
 		viewer: viewerLabel(r.country),
 		sessionId: r.sessionId,
 		country: r.country,
-		// Prefer the stored device; back-fill from the UA for rows written before
-		// the `device` column existed so historical breakdowns still populate.
+		// Prefer the stored device, back-filling from the UA for rows written before the column existed.
 		device: r.device ?? deviceFromUA(r.userAgent),
 		referrer: r.referrer,
 		kind: r.completed ? "completed" : "viewed",
@@ -197,9 +196,7 @@ export async function loadRecastEngagement(recastId: string): Promise<RecastEnga
 	const counts = new Map<string, number>();
 	for (const r of reactionRows) counts.set(r.emoji, (counts.get(r.emoji) ?? 0) + 1);
 
-	// Every reaction + comment with its video timestamp — the heatmap input.
-	// Stored reaction values are registry ids; map to a display glyph (legacy
-	// rows that stored a bare emoji pass through unchanged).
+	// The heatmap input: stored reaction values are registry ids mapped to a glyph, and legacy bare emoji pass through.
 	const moments: EngagementMoment[] = [
 		...reactionRows.map((r) => ({
 			atSeconds: r.atSeconds,

@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
 import {
 	capSig,
 	ensureExactlyOneDefault,
 	findDefaultProfile,
-	reconcileProfileHydration,
 	type RecordingProfile,
+	reconcileProfileHydration,
 } from "@recast/editor/lib/profiles";
+import { describe, expect, it } from "vitest";
 
 function profile(over: Partial<RecordingProfile> = {}): RecordingProfile {
 	return {

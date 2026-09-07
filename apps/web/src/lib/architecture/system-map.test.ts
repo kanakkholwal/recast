@@ -42,8 +42,7 @@ describe("system map", () => {
 			.filter((file) => file.endsWith(".md"))
 			.map((file) => file.replace(/\.md$/, ""));
 		const linked = new Set(mappedSlugs());
-		// The overview and the two boundary pages describe the whole map rather
-		// than sitting at one point in it.
+		// The overview and the two boundary pages describe the whole map rather than sitting at one point in it.
 		const notInFlow = new Set(["system-overview", "editor-host-seam", "media-decode-workers"]);
 		const uncovered = pages.filter((slug) => !linked.has(slug) && !notInFlow.has(slug));
 

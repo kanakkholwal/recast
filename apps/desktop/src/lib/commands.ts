@@ -1,8 +1,3 @@
-import { goto } from "$app/navigation";
-import { config } from "$constants/app";
-import { getOutputDir, launchRecordingPanel, openFileLocation } from "$lib/ipc";
-import { chordLabel } from "$lib/shortcuts/registry.svelte";
-import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
 import {
 	Camera,
 	Download,
@@ -19,11 +14,14 @@ import {
 } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { toast } from "@recast/ui/sonner";
-import { setMode } from "@recast/ui/theme";
+import { setModeCircleBlur } from "@recast/ui/theme";
+import { goto } from "$app/navigation";
+import { config } from "$constants/app";
+import { getOutputDir, launchRecordingPanel, openFileLocation } from "$lib/ipc";
+import { chordLabel } from "$lib/shortcuts/registry.svelte";
+import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
 
-// Open external URLs via the Tauri opener plugin: `window.open` in WebView2
-// pops an in-app (often blocked) window instead of the default browser. Dynamic
-// import keeps this usable from the web build, which falls back to `window.open`.
+// `window.open` in WebView2 pops an in-app window instead of the browser; the dynamic import keeps this usable from the web build.
 async function openExternal(url: string) {
 	try {
 		const { openUrl } = await import("@tauri-apps/plugin-opener");
@@ -140,7 +138,7 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			category: "Theme",
 			icon: Sun,
 			keywords: ["light", "theme", "appearance"],
-			action: () => setMode("light"),
+			action: () => setModeCircleBlur("light"),
 		},
 		{
 			id: "theme.dark",
@@ -148,7 +146,7 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			category: "Theme",
 			icon: Moon,
 			keywords: ["dark", "theme", "appearance"],
-			action: () => setMode("dark"),
+			action: () => setModeCircleBlur("dark"),
 		},
 		{
 			id: "theme.system",
@@ -156,7 +154,7 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			category: "Theme",
 			icon: Monitor,
 			keywords: ["system", "auto", "theme"],
-			action: () => setMode("system"),
+			action: () => setModeCircleBlur("system"),
 		},
 
 		// External

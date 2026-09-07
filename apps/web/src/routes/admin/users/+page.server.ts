@@ -30,8 +30,7 @@ export const load: PageServerLoad = async (event) => {
 	const searchValue = url.searchParams.get("q")?.trim() ?? "";
 	const searchField = (url.searchParams.get("field") as "email" | "name") ?? "email";
 	const sortBy = url.searchParams.get("sort") ?? "createdAt";
-	const sortDirection =
-		url.searchParams.get("dir") === "asc" ? "asc" : ("desc" as const);
+	const sortDirection = url.searchParams.get("dir") === "asc" ? "asc" : ("desc" as const);
 	const roleFilter = url.searchParams.get("role")?.trim() || null;
 	const statusFilter = url.searchParams.get("status")?.trim() || null;
 
@@ -46,8 +45,7 @@ export const load: PageServerLoad = async (event) => {
 		query.searchField = searchField;
 		query.searchOperator = "contains";
 	}
-	// listUsers supports a single filter — combine with the search query when
-	// both are present. Role takes priority over status for the explicit filter.
+	// listUsers takes a single filter, so combine it with the search query; role wins over status.
 	if (roleFilter) {
 		query.filterField = "role";
 		query.filterValue = roleFilter;
@@ -58,8 +56,7 @@ export const load: PageServerLoad = async (event) => {
 		query.filterOperator = "eq";
 	}
 
-	// The plugin's listUsers types are dynamic; cast to the public shape we
-	// actually consume below. Schema-level validation already happened above.
+	// The plugin's listUsers types are dynamic; cast to the shape we consume, which schema validation already checked.
 	type ListUsersResult = {
 		users: Array<{
 			id: string;
@@ -78,7 +75,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const list: Promise<ListUsersResult> = getAuth().api.listUsers({
 		headers: event.request.headers,
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// biome-ignore lint/suspicious/noExplicitAny: better-auth's listUsers query type is narrower than the filters the admin UI sends.
 		query: query as any,
 	}) as Promise<ListUsersResult>;
 
@@ -126,8 +123,7 @@ export const actions: Actions = {
 			.where(eq(user.email, email))
 			.limit(1);
 
-		// An existing pending row means they signed up for the waitlist. Inviting
-		// them is the same as approving them, so activate rather than reject.
+		// An existing pending row means they signed up for the waitlist, so inviting them activates rather than rejects.
 		if (existing && existing.status !== "pending") {
 			return fail(400, { error: "That email already has an account." });
 		}
@@ -144,8 +140,7 @@ export const actions: Actions = {
 			await db.insert(user).values({ id: userId, email, name, status: "active" });
 		}
 
-		// New rows get a team from the user.create hook, but a promoted pending
-		// row was skipped while it was on the waitlist.
+		// New rows get a team from the user.create hook, but a promoted pending row was skipped on the waitlist.
 		await ensureDefaultTeamForUser({ id: userId, name, email });
 
 		await logAudit({
@@ -155,8 +150,7 @@ export const actions: Actions = {
 			metadata: { email, promotedFromWaitlist: Boolean(existing) },
 		});
 
-		// The account exists either way. Surface a send failure so the admin can
-		// resend instead of assuming the invite landed.
+		// The account exists either way, so surface a send failure and let the admin resend.
 		try {
 			const url = await createSetPasswordLink(userId);
 			await sendTemplatedEmail({

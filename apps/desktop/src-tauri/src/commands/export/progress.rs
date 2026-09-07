@@ -1,8 +1,5 @@
-/// True if the line is part of an FFmpeg `-progress` block (key=value metric
-/// lines that FFmpeg emits every `-stats_period` interval). These should be
-/// filtered out of the error ring buffer so a successful export's progress
-/// stream doesn't push a real FFmpeg error off the tail. The set matches the
-/// keys FFmpeg's `print_report()` writes before `progress=continue` / `end`.
+/// True for an FFmpeg `-progress` metric line, matching the keys `print_report()` writes.
+/// Filtered out of the error ring, or a successful export's progress stream pushes the real error off the tail.
 pub(crate) fn is_ffmpeg_progress_key_line(line: &str) -> bool {
     const KEYS: &[&str] = &[
         "frame=",

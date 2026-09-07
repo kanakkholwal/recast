@@ -89,8 +89,7 @@ export function createAnalytics(opts: CreateAnalyticsOptions): AnalyticsClient {
 	function ensureProviderUnsafe() {
 		if (!enabled) return;
 		if (!anyConsent(consent)) {
-			// Both channels off — if we were running, stop (keep the instance so a
-			// re-grant is a cheap opt-in rather than a full re-init).
+			// Both channels off: stop if running, but keep the instance so a re-grant is a cheap opt-in.
 			if (initialized && !optedOut) {
 				provider.optOut();
 				optedOut = true;
@@ -98,13 +97,7 @@ export function createAnalytics(opts: CreateAnalyticsOptions): AnalyticsClient {
 			return;
 		}
 		if (!initialized) {
-			// Mark initialized BEFORE init so a slow/failed init can't trigger a
-			// re-init storm. Call init SYNCHRONOUSLY (not deferred to a microtask)
-			// so its synchronous side-effects — e.g. the provider stashing config
-			// for a later upgradePersistence() — happen this tick, before any
-			// same-tick caller (returning-visitor upgrade) runs. Sync throws are
-			// caught by the enclosing safe(); the async tail (dynamic import of
-			// posthog-js) gets its own .catch so a rejection never surfaces.
+			// Mark initialized BEFORE init so a slow failure can't storm re-inits, and call it synchronously so a same-tick upgrade sees its side effects.
 			initialized = true;
 			optedOut = false;
 			const result = provider.init(opts.config) as void | Promise<void>;
@@ -119,10 +112,7 @@ export function createAnalytics(opts: CreateAnalyticsOptions): AnalyticsClient {
 
 	const ensureProvider = () => safe(ensureProviderUnsafe);
 
-	// Stand the provider up at construction only when behaviour tracking is
-	// already consented to, or the app explicitly asks for eager init (web). An
-	// errors-only desktop install stays fully silent until `captureError` (a real
-	// crash) or an opt-in calls `ensureProvider()` lazily — no startup phone-home.
+	// Stand the provider up only on product consent or an explicit eager init, so an errors-only install never phones home at startup.
 	if (consent.product || opts.eagerInit) ensureProvider();
 
 	return {
@@ -135,8 +125,7 @@ export function createAnalytics(opts: CreateAnalyticsOptions): AnalyticsClient {
 		},
 
 		identify(userId, traits) {
-			// Identity is part of product analytics — only link a real user when
-			// behaviour tracking is consented to.
+			// Identity is product analytics, so only link a real user when behaviour tracking is consented to.
 			if (!canCapture(consent)) return;
 			safe(() => {
 				ensureProviderUnsafe();
@@ -151,8 +140,7 @@ export function createAnalytics(opts: CreateAnalyticsOptions): AnalyticsClient {
 
 		captureError(err: unknown, ctx?: ErrorContext) {
 			safe(() => {
-				// Always scrub, even when we won't send — keeps the redaction path
-				// exercised and means callers can't leak PII through a later path.
+				// Always scrub, even when not sending: it keeps the redaction path exercised and closes later leak paths.
 				const scrubbed = scrubError(err, ctx);
 				if (!canReportErrors(consent)) return;
 				ensureProviderUnsafe();
@@ -162,11 +150,7 @@ export function createAnalytics(opts: CreateAnalyticsOptions): AnalyticsClient {
 
 		register(props) {
 			safe(() => {
-				// Merge into the init config NOW so a not-yet-initialized provider
-				// (desktop sets `os` before product opt-in) still picks these
-				// super-properties up when it eventually stands up. `opts.config` is
-				// the same object later handed to `provider.init`. Forward live too
-				// when already running.
+				// Merge into the init config NOW so a not-yet-initialized provider still picks these super-properties up.
 				opts.config.superProperties = {
 					...(opts.config.superProperties ?? {}),
 					...props,
@@ -180,9 +164,7 @@ export function createAnalytics(opts: CreateAnalyticsOptions): AnalyticsClient {
 			consent = { ...consent, ...next };
 			safe(() => {
 				ensureProviderUnsafe();
-				// Record the opt-in so we can measure consent rates. Revocation is
-				// intentionally silent — once product is off the gate would drop the
-				// event anyway, and sending a final beacon on opt-out is bad manners.
+				// Record the opt-in to measure consent rates; revocation is silent, since a final beacon on opt-out is bad manners.
 				if (next.product === true && prev.product !== true) {
 					provider.capture("consent_granted", { channel: "product" });
 				}

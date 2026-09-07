@@ -103,9 +103,7 @@ export async function exportVideo(
 	};
 	tilt.style.transition = "none";
 
-	// Declared out here so `finally` can close it: a VideoEncoder holds a scarce
-	// hardware encoder session, and every throw path below (domToCanvas, encode,
-	// flush) used to leak one for the life of the process.
+	// Declared out here so `finally` can close it: every throw path used to leak a scarce hardware encoder session.
 	let encoder: VideoEncoder | null = null;
 
 	try {
@@ -137,9 +135,7 @@ export async function exportVideo(
 		});
 		encoder.configure({ codec: "avc1.42001f", width, height, bitrate: 6_000_000, framerate: fps });
 
-		// Frame count comes from the clip's wall-clock length; the motion itself is
-		// always sampled across the preset's full range, so a stretched clip plays
-		// the same animation more slowly.
+		// Frame count comes from the clip's wall-clock length while motion samples the preset's full range, so a stretched clip plays slower.
 		const { total, timeAt } = sampler(preset, fps, timeline);
 		for (let i = 0; i < total; i++) {
 			const time = timeAt(i);
@@ -160,8 +156,7 @@ export async function exportVideo(
 		muxer.finalize();
 		return new Blob([muxer.target.buffer], { type: "video/mp4" });
 	} finally {
-		// `close()` on an already-closed encoder throws, and flush() succeeding
-		// still leaves it open.
+		// `close()` on an already-closed encoder throws, and a successful flush() still leaves it open.
 		if (encoder && encoder.state !== "closed") encoder.close();
 		persp.style.perspective = saved.perspective;
 		tilt.style.transform = saved.transform;
@@ -226,8 +221,7 @@ export async function exportVideoWebM(
 		const octx = out.getContext("2d", { alpha: false });
 		if (!octx) throw new Error("could not create a drawing context");
 
-		// captureStream(0) = manual frames: we push exactly one frame per drawn
-		// bitmap so the WebM has the intended frame set, paced to real time.
+		// `captureStream(0)` is manual frames: one push per drawn bitmap, paced to real time.
 		const stream = out.captureStream(0);
 		const track = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack;
 		const chunks: Blob[] = [];
@@ -252,7 +246,7 @@ export async function exportVideoWebM(
 		track.stop();
 		return new Blob(chunks, { type: "video/webm" });
 	} finally {
-		bitmaps.forEach((b) => b.close());
+		for (const b of bitmaps) b.close();
 		persp.style.perspective = saved.perspective;
 		tilt.style.transform = saved.transform;
 		tilt.style.opacity = saved.opacity;

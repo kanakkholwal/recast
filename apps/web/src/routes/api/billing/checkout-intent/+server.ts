@@ -17,8 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	const workspaceId = body.workspaceId?.trim();
 	if (!workspaceId) error(400, "workspaceId is required");
 
-	// Only an owner can put a workspace on a paid plan — members must not be
-	// able to attach someone else's card to a workspace they merely belong to.
+	// Only an owner can put a workspace on a paid plan; a member must not attach a card to one they merely belong to.
 	const [m] = await getDb()
 		.select({ role: member.role })
 		.from(member)

@@ -19,10 +19,7 @@ import type { TranscriptWord } from "./types";
  *
  * Returns 0 before the first word starts and `words.length` once the last has.
  */
-export function spokenWordCount(
-	words: Pick<TranscriptWord, "start" | "end">[],
-	t: number,
-): number {
+export function spokenWordCount(words: Pick<TranscriptWord, "start" | "end">[], t: number): number {
 	let n = 0;
 	for (let i = 0; i < words.length; i++) {
 		if (t >= words[i].start) n = i + 1;

@@ -34,8 +34,7 @@ export interface SegmentedToggleProps {
 		"aria-labelledby": ariaLabelledby,
 	}: SegmentedToggleProps = $props();
 
-	// Thin shorthand around <Segmented> for the canonical Off/On DialKit
-	// pattern — saves consumers from spelling out the options array.
+	// Thin shorthand around <Segmented> for the canonical Off/On pattern, so consumers skip the options array.
 	const options = $derived([
 		{ value: "off", label: offLabel },
 		{ value: "on", label: onLabel },

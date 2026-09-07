@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	DELIVERY_OVERAGE_USD_PER_GB,
 	INFRA,
-	PLAN_IDS,
-	PLANS,
 	infraCostUsd,
 	isPaidPlan,
 	limitsFor,
+	PLAN_IDS,
+	PLANS,
 	planOf,
 	priceForSeats,
 } from "./catalog";
@@ -20,8 +20,7 @@ describe("plan resolution", () => {
 		expect(planOf("team").id).toBe("free");
 	});
 
-	// Regression: `plan === "pro"` alone silently demoted Enterprise workspaces
-	// to Free, forcing link expiry on the top tier.
+	// Regression: comparing only against 'pro' silently demoted Enterprise workspaces to Free and forced link expiry.
 	it("treats enterprise as paid", () => {
 		expect(isPaidPlan("enterprise")).toBe(true);
 		expect(isPaidPlan("pro")).toBe(true);
@@ -72,7 +71,7 @@ describe("undercutting Loom", () => {
 	});
 
 	it("widens the gap as the team grows", () => {
-		const solo = 1 - priceForSeats("pro", 1)! / (LOOM_MONTHLY * 1);
+		const solo = 1 - priceForSeats("pro", 1)! / LOOM_MONTHLY;
 		const team = 1 - priceForSeats("pro", 5)! / (LOOM_MONTHLY * 5);
 		expect(team).toBeGreaterThan(solo);
 	});
@@ -87,8 +86,7 @@ describe("infra cost basis", () => {
 		expect(DELIVERY_OVERAGE_USD_PER_GB).toBeGreaterThan(INFRA.egressPerGb);
 	});
 
-	// The whole point of the Azure-sized allowances: Pro must not be
-	// structurally underwater at list rates the way $10/200GB was.
+	// The whole point of the Azure-sized allowances: Pro must not be structurally underwater at list rates.
 	it("keeps a fully-used Pro workspace at or under its base price", () => {
 		const cost = infraCostUsd(
 			PLANS.pro.limits.storageBytes,
@@ -155,8 +153,7 @@ describe("plan ladder", () => {
 		expect(PLANS.enterprise.seats.max).toBeGreaterThan(PLANS.pro.seats.max);
 	});
 
-	// No tier is uncapped: an Infinity limit can't be metered, invoiced, or
-	// shown to a customer, and it silently disables every enforcement check.
+	// No tier is uncapped: an Infinity limit can't be metered or invoiced, and it disables every enforcement check.
 	it("gives every plan a concrete, finite ceiling", () => {
 		for (const id of PLAN_IDS) {
 			const { limits, seats } = PLANS[id];

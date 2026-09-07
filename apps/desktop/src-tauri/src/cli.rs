@@ -1,10 +1,5 @@
-//! Headless CLI branch. Parsed in `main` before the Tauri app boots so agents
-//! and scripts can drive Recast without a running window.
-//!
-//! Enumeration verbs reuse the same functions the UI invokes; control verbs
-//! (status, rec) talk to a running app over the local socket (see control.rs).
-//! Output is YAML at a terminal and JSON when piped or captured, overridable
-//! with `--format`. See docs/cli-automation-plan.md.
+//! Headless CLI branch, parsed before Tauri boots so agents can drive Recast without a window.
+//! Enumeration reuses the UI's own functions; control verbs reach a running app over the local socket.
 
 use std::io::IsTerminal;
 use std::path::PathBuf;
@@ -176,15 +171,8 @@ enum Command {
         /// Path to the video file (e.g. an .mp4) to read.
         input: String,
     },
-    /// Transcribe an audio file against a downloaded `.gguf` model. Offline —
-    /// does not need the app or the GUI to be running. The CLI path into the
-    /// on-device engine; also used by the CI / release smoke test.
-    ///
-    /// SMOKE_TEST_VERB: the script `scripts/release/smoke-test-transcription.ps1`
-    /// calls this verb with these exact flag names. Rename the verb or change
-    /// any flag (`--input`, `--model`, `--out`, `--language`) and update the
-    /// script's `$TranscribeVerb` in the same commit. CI smoke tests will
-    /// start failing otherwise — that is by design, not noise.
+    /// Transcribe an audio file against a downloaded `.gguf`, offline and without the GUI running.
+    /// SMOKE_TEST_VERB: `smoke-test-transcription.ps1` calls these exact flags, so rename one and update the script in the same commit.
     Transcribe(TranscribeArgs),
     /// Stream backend events until interrupted. Frames carry a `seq`; pass the
     /// last one back as `--since` after a reconnect to replay what was missed.
@@ -330,9 +318,7 @@ enum ProjectAction {
         #[arg(long, value_name = "ID")]
         writer_id: String,
     },
-    /// Release the write-lock. By default only the holder can release; pass
-    /// `--force` to evict a stale or wrong-owner lock (use with care — it
-    /// erases the GUI's silent write window).
+    /// Release the write-lock. By default only the holder can release; pass `--force` to evict a stale or wrong-owner lock (use with care — it erases the GUI's silent write window).
     Unlock {
         /// Release even if the lock is held by another id.
         #[arg(long)]
@@ -367,18 +353,11 @@ enum EditorAction {
         #[arg(long, value_name = "ID")]
         writer_id: String,
     },
-    /// Universal mutator. Set any scalar/struct field in RenderState by
-    /// dotted-path JSON pointer; e.g. `borderRadius`, `cursorSize`,
-    /// `audioSettings.volume`, `cursorSettings.size`. Pair with
-    /// `--value <JSON>` (string for strings, number, true/false,
-    /// array, object). For array fields where you want to add or
-    /// remove entries use the targeted verbs (cut/zoom/split-point/
-    /// speed/animations/annotations) instead.
+    /// Universal mutator: sets any scalar or struct field in RenderState by dotted path, paired with `--value <JSON>`.
+    /// Use the targeted verbs (cut, zoom, split-point, speed, animations, annotations) to add or remove array entries.
     Set {
         path: String,
-        /// Dotted JSON pointer inside `RenderState`, e.g.
-        /// `borderRadius`, `cursorSize`, `audioSettings.volume`,
-        /// `cursorSettings.size`, `annotations.0.fill`.
+        /// Dotted JSON pointer inside `RenderState`, e.g. `borderRadius`, `cursorSize`, `audioSettings.volume`, `cursorSettings.size`, `annotations.0.fill`.
         #[arg(long, value_name = "DOTTED.PATH")]
         field: String,
         /// JSON value to set. Strings need quoting inside `--value`;
@@ -641,9 +620,7 @@ enum ExportAction {
         /// effect when no transcript exists in the render state.
         #[arg(long)]
         burn_captions: bool,
-        /// Emit a sidecar subtitles file next to the export:
-        /// `vtt` or `srt`. Implies a transcript must exist; empty
-        /// transcripts yield an empty sidecar.
+        /// Emit a sidecar subtitles file next to the export: `vtt` or `srt`. Implies a transcript must exist; empty transcripts yield an empty sidecar.
         #[arg(long, value_name = "vtt|srt")]
         caption_sidecar: Option<String>,
         /// Override the GIF frame rate (default = quality-profile gif_fps).
@@ -693,9 +670,9 @@ enum RecAction {
 #[derive(Subcommand)]
 enum SelectAction {
     /// Record a display by id (from `displays list`).
-    Screen { id: u32 },
+    Screen { id: u64 },
     /// Record a window by id (from `windows list`).
-    Window { id: u32 },
+    Window { id: u64 },
     /// Record a region given as X,Y,W,H in physical pixels.
     Region {
         #[arg(value_name = "X,Y,W,H")]
@@ -759,13 +736,29 @@ enum ProfileAction {
 enum ScreenshotTarget {
     /// A whole display by id (from `displays list`).
     Display {
-        id: u32,
+        id: u64,
         #[command(flatten)]
         shot: ShotArgs,
     },
     /// One application window by id (from `windows list`).
     Window {
-        id: u32,
+        id: u64,
+        #[command(flatten)]
+        shot: ShotArgs,
+    },
+    /// A rectangle of the virtual desktop, in physical pixels.
+    Region {
+        /// Left edge, in virtual-desktop pixels. May be negative on a layout
+        /// with a monitor above or left of the primary.
+        #[arg(long, allow_negative_numbers = true)]
+        x: i32,
+        /// Top edge, in virtual-desktop pixels.
+        #[arg(long, allow_negative_numbers = true)]
+        y: i32,
+        #[arg(long)]
+        width: u32,
+        #[arg(long)]
+        height: u32,
         #[command(flatten)]
         shot: ShotArgs,
     },
@@ -796,9 +789,7 @@ struct ShotArgs {
     base64: bool,
 }
 
-/// CLI args for the `transcribe` verb. Mirrors the flag shape the smoke test
-/// script (`scripts/release/smoke-test-transcription.ps1`) expects — keep
-/// both in lockstep.
+/// CLI args for the `transcribe` verb. Mirrors the flag shape the smoke test script (`scripts/release/smoke-test-transcription.ps1`) expects — keep both in lockstep.
 #[derive(clap::Args)]
 struct TranscribeArgs {
     /// Audio file to transcribe (any format FFmpeg can read).
@@ -995,9 +986,7 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             control(cli, "screen.read", json!({ "path": abs.to_string_lossy() }))
         }
         Command::Transcribe(args) => {
-            // The model_id we hand to the Transcript is informational only —
-            // the engine doesn't read it. Default to the file stem so the
-            // smoke test output identifies which GGUF was used.
+            // The model_id is informational (the engine ignores it); default to the file stem so smoke output names the GGUF.
             let model_id = args
                 .model
                 .file_stem()
@@ -1024,9 +1013,7 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
                 let _ = emit(frame, cli.format);
             })
         }
-        // Phase A (read-only): every verb hits `load_editor_document` /
-        // `list_export_jobs` through the existing control channel. Each takes
-        // a single `path`/`id` arg, so no JSON-patch surface here yet.
+        // Read-only verbs hit `load_editor_document` and `list_export_jobs` over the control channel, each taking one arg.
         Command::Project { action } => project_dispatch(cli, action),
         Command::Editor { action } => editor_dispatch(cli, action),
         Command::Export { action } => export_dispatch(cli, action),
@@ -1768,9 +1755,7 @@ fn control(cli: &Cli, method: &str, params: Value) -> Result<(), String> {
     emit(&value, cli.format)
 }
 
-/// Fetch the profile list and print the single entry matching `id` (by id, or
-/// case-insensitive name). Filtering client-side keeps the control surface to
-/// one `profile.list` method.
+/// Fetch the profile list and print the single entry matching `id` (by id, or case-insensitive name). Filtering client-side keeps the control surface to one `profile.list` method.
 fn show_profile(cli: &Cli, id: &str) -> Result<(), String> {
     let snapshot =
         crate::control::send("profile.list", Value::Null, !cli.no_launch, cli.timeout_ms)?;
@@ -1795,7 +1780,9 @@ fn show_profile(cli: &Cli, id: &str) -> Result<(), String> {
 /// enumeration verbs); the `app` shot goes through the running instance so it
 /// can target its own focused window.
 fn screenshot(cli: &Cli, target: &ScreenshotTarget) -> Result<(), String> {
-    use crate::commands::screenshot::{capture_display, capture_window, ShotOptions};
+    use crate::commands::screenshot::{
+        capture_display, capture_region, capture_window, ShotOptions,
+    };
     match target {
         ScreenshotTarget::Display { id, shot } => {
             let opts = ShotOptions {
@@ -1812,6 +1799,26 @@ fn screenshot(cli: &Cli, target: &ScreenshotTarget) -> Result<(), String> {
                 base64: shot.base64,
             };
             emit(&capture_window(*id, &opts)?, cli.format)
+        }
+        ScreenshotTarget::Region {
+            x,
+            y,
+            width,
+            height,
+            shot,
+        } => {
+            let opts = ShotOptions {
+                out: shot.resolved_out(),
+                max_edge: shot.max_edge(),
+                base64: shot.base64,
+            };
+            let rect = crate::capture::RegionRect {
+                x: *x,
+                y: *y,
+                width: *width,
+                height: *height,
+            };
+            emit(&capture_region(rect, &opts)?, cli.format)
         }
         ScreenshotTarget::App { window, shot } => {
             let mut params = serde_json::Map::new();
@@ -1848,8 +1855,7 @@ fn build_start_params(args: &StartArgs) -> Result<Value, String> {
         params.insert("region".into(), parse_region(spec)?);
     }
 
-    // Option flags only apply to the explicit path; the stored intent carries
-    // its own. Without a target, the flags are ignored (the intent wins).
+    // Option flags apply only to an explicit path; without a target the stored intent wins and they are ignored.
     if !params.contains_key("targetType") {
         return Ok(Value::Object(params));
     }
@@ -1996,9 +2002,7 @@ fn block_on<T, E: std::fmt::Display>(
 /// throughout; YAML is a render-time convenience for human eyes.
 fn emit<T: Serialize>(value: &T, format: Option<Format>) -> Result<(), String> {
     let format = format.unwrap_or_else(|| {
-        // A terminal reader wants YAML; a pipe or `$x = recast ...` capture
-        // wants machine-parseable JSON. `is_terminal` reflects the rebound
-        // console handle on Windows too (see attach_parent_console).
+        // A terminal wants YAML and a pipe wants JSON; `is_terminal` reflects the rebound console handle on Windows too.
         if std::io::stdout().is_terminal() {
             Format::Yaml
         } else {
@@ -2019,14 +2023,8 @@ fn emit<T: Serialize>(value: &T, format: Option<Format>) -> Result<(), String> {
     Ok(())
 }
 
-/// Make stdout/stderr usable for the release GUI-subsystem exe, which has no
-/// console of its own.
-///
-/// If the caller already gave us a stdout (a console, or a pipe/file from
-/// `recast status > out.json` or `$j = recast status`), leave it: that is where
-/// the output must go, and clobbering it would break scripted capture. Only when
-/// there is no usable stdout (interactive shell launching the GUI-subsystem
-/// build) do we attach to the parent console and bind CONOUT$.
+/// Makes stdout usable for the GUI-subsystem exe, which has no console of its own.
+/// An existing stdout (a console, or a pipe from `recast status > out.json`) is left alone, since clobbering it would break scripted capture.
 #[cfg(windows)]
 fn attach_parent_console() {
     use windows::core::PCWSTR;
@@ -2040,8 +2038,7 @@ fn attach_parent_console() {
     };
 
     unsafe {
-        // A valid inherited stdout (redirect or existing console) is
-        // authoritative: keep it so output reaches the caller's pipe/file.
+        // A valid inherited stdout (a redirect or existing console) is authoritative, so output reaches the caller's pipe.
         if let Ok(handle) = GetStdHandle(STD_OUTPUT_HANDLE) {
             if !handle.is_invalid() {
                 return;

@@ -1,7 +1,5 @@
-//! The backend-owned capture intent: the staged selection for the next
-//! recording. The CLI mutates it over the control socket, `rec start` reads it,
-//! and (Phase 3b) the panel renders it. Every edit broadcasts
-//! `capture-intent:changed` so subscribers stay in sync from one source.
+//! The backend-owned capture intent: the staged selection for the next recording, mutated by the CLI and read by `rec start`.
+//! Every edit broadcasts `capture-intent:changed` so subscribers stay in sync from one source.
 
 use tauri::{AppHandle, Emitter, Manager};
 

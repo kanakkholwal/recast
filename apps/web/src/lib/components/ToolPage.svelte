@@ -63,8 +63,7 @@ let budget = $state<SizeBudget | null>(null);
 
 let file = $state<File | null>(null);
 let fileInput = $state<HTMLInputElement | null>(null);
-// Depth counter: dragging over a child fires dragleave on the parent, which
-// made the highlight flicker.
+// A depth counter: dragging over a child fires dragleave on the parent and flickered the highlight.
 let dragDepth = $state(0);
 const dragOver = $derived(dragDepth > 0);
 let sizeError = $state<string | null>(null);
@@ -97,7 +96,7 @@ $effect(() => {
 
 const blocked = $derived(capability?.supported === false);
 const blockedReason = $derived(capability && !capability.supported ? capability.reason : null);
-const phase = $derived(resolvePhase(blocked, busy, !!resultUrl, !!file));
+const phase = $derived(resolvePhase(blocked, busy, Boolean(resultUrl), Boolean(file)));
 const isVideoInput = $derived((file?.type ?? "").startsWith("video/"));
 const outputKind = $derived(outputKindFor(resultMime));
 
@@ -202,14 +201,10 @@ const segmentedOptions = (c: ToolControl) =>
 
 const jsonLd = $derived(buildToolJsonLd(tool, page.url.origin));
 
-// The report link carries the browser string, because "it didn't work" without
-// it is the one report we can never act on.
+// The report link carries the browser string, because 'it didn't work' without it is unactionable.
 const issueUrl = $derived(buildIssueUrl(tool, browser ? navigator.userAgent : ""));
 
-// --- Preview media + direct manipulation ---------------------------------
-// The registry gives no max for the trim bounds (it can't: it depends on the
-// file). Read it off the loaded media so the sliders and the trim range have
-// a real ceiling instead of an invented one.
+// --- Preview media: the registry can't know the trim ceiling, so read it off the loaded media.
 let mediaEl = $state<HTMLMediaElement | null>(null);
 let duration = $state(0);
 let currentTime = $state(0);
@@ -225,8 +220,7 @@ function onMeta() {
 	const d = mediaEl?.duration;
 	if (!d || !Number.isFinite(d)) return;
 	duration = d;
-	// Default the out-point to the end of the media, so the first drag is a
-	// refinement rather than a correction.
+	// Default the out-point to the end of the media, so the first drag is a refinement, not a correction.
 	if (hasTrimBounds) {
 		numberValues.startSec = 0;
 		numberValues.endSec = Math.round(d * 10) / 10;
@@ -251,8 +245,7 @@ function seek(seconds: number) {
 	if (mediaEl) mediaEl.currentTime = seconds;
 }
 
-// A new file means new media: forget the old duration so a stale ceiling
-// never leaks across files.
+// A new file means new media, so forget the old duration or a stale ceiling leaks across files.
 $effect(() => {
 	void file;
 	duration = 0;
@@ -282,7 +275,7 @@ $effect(() => {
 			<div class="mt-6">
 				<SectionLabel icon={ShieldCheck} label="Free tool" accent="green" />
 			</div>
-			<h1 class="mt-5 font-display text-balance text-heading-lg">{tool.title}</h1>
+			<h1 class="mt-5 font-display font-medium text-balance text-heading-lg">{tool.title}</h1>
 			<p class="mt-4 max-w-xl text-pretty text-body-lg text-muted-foreground">{tool.tagline}</p>
 		</Container>
 
@@ -546,9 +539,9 @@ $effect(() => {
 		</Container>
 	</section>
 
-	<section class="mx-auto w-full max-w-3xl">
+	<section class="mx-auto w-full max-w-3xl py-10">
 		<Container class="py-10">
-			<h2 class="font-display text-heading-sm">More free tools</h2>
+			<h2 class="font-display text-heading-sm font-medium">More free tools</h2>
 			<p class="mt-2 max-w-lg text-pretty text-body-sm text-muted-foreground">
 				Every conversion runs the same way: on your device, with nothing uploaded.
 			</p>

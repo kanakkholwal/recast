@@ -1,18 +1,21 @@
-//! Full-resolution screenshots for the automation CLI, so an agent driving
-//! Recast can see on-screen state and decide when a step is done or what to do
-//! next. Reuses xcap (the same backend as the picker thumbnails), writes a PNG,
-//! and returns its path plus dimensions. Display/window shots are headless (no
-//! running app needed, like the enumeration verbs); the `app` shot goes through
-//! the running instance so it can target its own focused window.
+//! Full-resolution screenshots through capturekit so an agent can see on-screen state and decide what to do next.
+//! Display and window shots are headless; the `app` shot goes through the running instance to target its own focused window.
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use capturekit::{DisplayId, Rect, Target, WindowId};
 use image::RgbaImage;
 use serde::Serialize;
-use xcap::{Monitor, Window};
 
 use super::ffmpeg::{encode_png_bytes, encode_thumbnail_base64};
+use tauri::State;
+
+use super::error::{AppError, AppResult};
+use super::system::get_active_output_dir;
+use crate::capture::{CaptureTarget, RegionRect};
+use crate::AppState;
 
 /// Longest-edge cap for agent-facing shots. Vision models downsample anyway and
 /// a native 4K PNG is megabytes of wasted tokens, so bound it unless the caller
@@ -41,38 +44,159 @@ pub struct Screenshot {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base64: Option<String>,
+    /// Whether the shot also reached the system clipboard. Absent when no copy
+    /// was asked for, `false` when it was asked for and the OS refused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub copied_to_clipboard: Option<bool>,
 }
 
 /// Capture a whole monitor by its display id (from `displays list`).
-pub fn capture_display(id: u32, opts: &ShotOptions) -> Result<Screenshot, String> {
-    let monitor = Monitor::all()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|m| m.id().unwrap_or_default() == id)
-        .ok_or_else(|| format!("no display with id {id}"))?;
-    let img = monitor.capture_image().map_err(|e| e.to_string())?;
-    finalize(img, "display", opts)
+pub fn capture_display(id: u64, opts: &ShotOptions) -> Result<Screenshot, String> {
+    let img = crate::capture::grab(Target::Display(DisplayId(id))).map_err(|e| format!("{e:#}"))?;
+    finalize(&img, "display", opts)
 }
 
 /// Capture one application window by its window id (from `windows list`).
-pub fn capture_window(id: u32, opts: &ShotOptions) -> Result<Screenshot, String> {
-    let window = Window::all()
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|w| w.id().unwrap_or_default() == id)
-        .ok_or_else(|| format!("no window with id {id}"))?;
-    let img = window.capture_image().map_err(|e| e.to_string())?;
-    finalize(img, "window", opts)
+pub fn capture_window(id: u64, opts: &ShotOptions) -> Result<Screenshot, String> {
+    let img = crate::capture::grab(Target::Window(WindowId(id))).map_err(|e| format!("{e:#}"))?;
+    finalize(&img, "window", opts)
 }
 
-/// Capture Recast's own UI so an agent can read the current app state (which
-/// screen is up, whether a dialog blocks, an error toast, the live timer).
-///
-/// Targets the given window label, else the focused Recast window, else the
-/// first one. Captures the monitor the window sits on and crops to the window
-/// rectangle: portable across all three OSes and non-intrusive (no raise or
-/// focus steal). The tradeoff is that another window overlapping ours would show
-/// through, but the app window is normally focused and on top when an agent asks.
+/// Captures the region the overlay dragged out; `rect` is physical virtual-desktop pixels, resolved by the same pure functions the recorder uses.
+/// The crop happens during acquisition, on the GPU where there is one, so pixels outside the selection are never read back.
+pub fn capture_region(rect: RegionRect, opts: &ShotOptions) -> Result<Screenshot, String> {
+    finalize(&grab_region_pixels(rect)?, "region", opts)
+}
+
+/// The selection's pixels, cropped during acquisition.
+fn grab_region_pixels(rect: RegionRect) -> Result<RgbaImage, String> {
+    let target = CaptureTarget::resolve_region(rect).map_err(|e| format!("{e:#}"))?;
+    crate::capture::grab_region(
+        Target::Display(DisplayId(target.display_id)),
+        target.crop_relative_to_source(),
+    )
+    .map_err(|e| format!("{e:#}"))
+}
+
+/// Put a shot on the system clipboard, reporting rather than propagating a
+/// refusal: the PNG on disk is the artifact, and a clipboard another process is
+/// holding open should not turn a good capture into a failed one.
+fn copy_to_clipboard(app: &tauri::AppHandle, img: &RgbaImage) -> bool {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let image = tauri::image::Image::new(img.as_raw(), img.width(), img.height());
+    match app.clipboard().write_image(&image) {
+        Ok(()) => true,
+        Err(err) => {
+            log::warn!("screenshot clipboard copy failed: {err}");
+            false
+        }
+    }
+}
+
+/// Captures the dragged region at native resolution and copies it to the clipboard, since the user is about to edit and export these pixels.
+/// `spawn_blocking` because opening a source and reading a frame blocks, and a sync command runs on the thread WKWebView paints on.
+#[tauri::command]
+pub async fn capture_region_shot(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    rect: RegionRect,
+) -> AppResult<Screenshot> {
+    // Read the directory before the await: a state guard cannot cross one.
+    let out = get_active_output_dir(&state)
+        .join(SCREENSHOT_DIR)
+        .join(screenshot_name());
+    tauri::async_runtime::spawn_blocking(move || {
+        let img = grab_region_pixels(rect)?;
+        // Disk first: the durable artifact, and a clipboard write is not worth losing it over.
+        let mut shot = finalize(
+            &img,
+            "region",
+            &ShotOptions {
+                out: Some(out),
+                max_edge: 0,
+                base64: false,
+            },
+        )?;
+        shot.copied_to_clipboard = Some(copy_to_clipboard(&app, &img));
+        Ok::<_, String>(shot)
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("capture_region_shot join error: {e}")))?
+    .map_err(AppError::msg)
+}
+
+/// The overlay window's label, so a second trigger focuses the one already up
+/// rather than stacking another transparent full-screen window over it.
+const OVERLAY_LABEL: &str = "screenshot-region";
+
+/// The recording region picker's window, which the source page listens to.
+const PICKER_LABEL: &str = "region-picker";
+
+/// Opens the region overlay across every display, sized in PHYSICAL pixels from capturekit's own enumeration.
+/// The primary display's logical size would leave a second monitor unreachable and put an above-or-left origin in negative space no (0, 0) window covers.
+pub fn open_region_overlay(app: &tauri::AppHandle) -> Result<(), String> {
+    open_overlay(
+        app,
+        OVERLAY_LABEL,
+        "/select-area?mode=screenshot",
+        "Capture Area",
+    )
+}
+
+/// Opens the recording region picker over the whole virtual desktop, sized here rather than in the frontend.
+/// `window.screen` reports the primary display in logical points, which left a second monitor unselectable and put an above-or-left origin in uncovered negative space.
+#[tauri::command]
+pub async fn open_area_picker(app: tauri::AppHandle) -> Result<(), String> {
+    open_overlay(&app, PICKER_LABEL, "/select-area", "Select Area")
+}
+
+/// Place a borderless overlay across every display, in PHYSICAL pixels.
+fn open_overlay(app: &tauri::AppHandle, label: &str, url: &str, title: &str) -> Result<(), String> {
+    use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(existing) = app.get_webview_window(label) {
+        return existing.set_focus().map_err(|e| e.to_string());
+    }
+    let displays = capturekit::displays().map_err(|e| format!("{e:#}"))?;
+    let bounds = crate::capture::virtual_bounds(&displays)
+        .ok_or("no displays to put the capture overlay on")?;
+
+    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
+        .title(title)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Physical pixels: the builder takes logical points, and that conversion is the Retina half-size bug.
+    let placed = window
+        .set_position(PhysicalPosition::new(bounds.x, bounds.y))
+        .and_then(|()| window.set_size(PhysicalSize::new(bounds.width, bounds.height)))
+        .and_then(|()| window.set_focus());
+    if let Err(error) = placed {
+        // Left alive it holds the label and covers the screen; a retry only focuses it.
+        let _ = window.close();
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+/// Where shots land inside the output directory, beside the recordings rather
+/// than mixed in with them.
+const SCREENSHOT_DIR: &str = "Screenshots";
+
+/// A filename a person can read in a file manager, and that sorts by when it was taken. Colons are illegal on Windows and awkward everywhere, so the time is dashed.
+fn screenshot_name() -> String {
+    let now = chrono::Local::now();
+    format!("Recast {}.png", now.format("%Y-%m-%d %H-%M-%S"))
+}
+
+/// Captures Recast's own UI so an agent can read app state; targets the given label, else the focused window, else the first.
+/// Crops the containing monitor during acquisition: no raise or focus steal and portable, at the cost of an overlapping window showing through.
 pub fn capture_app_window(
     app: &tauri::AppHandle,
     label: Option<&str>,
@@ -82,21 +206,22 @@ pub fn capture_app_window(
     let pos = window.outer_position().map_err(|e| e.to_string())?;
     let size = window.outer_size().map_err(|e| e.to_string())?;
 
-    let monitors = Monitor::all().map_err(|e| e.to_string())?;
-    let center = (
-        pos.x + size.width as i32 / 2,
-        pos.y + size.height as i32 / 2,
-    );
-    let monitor = monitor_for_point(&monitors, center)
+    let displays = capturekit::displays().map_err(|e| e.to_string())?;
+    let frame = Rect::new(pos.x, pos.y, size.width, size.height);
+    let display = crate::capture::display_at(&displays, frame.centre())
         .ok_or("could not find the monitor the app window is on")?;
 
-    let full = monitor.capture_image().map_err(|e| e.to_string())?;
-    let mon_origin = (
-        monitor.x().unwrap_or_default(),
-        monitor.y().unwrap_or_default(),
-    );
-    let cropped = crop_to_window(&full, mon_origin, pos.into(), (size.width, size.height));
-    finalize(cropped, "app", opts)
+    // A window can hang off its display, and a crop past the frame is refused.
+    let region = frame
+        .relative_to(&display.bounds)
+        .fit_inside(&Rect::from_size(
+            display.bounds.width,
+            display.bounds.height,
+        ))
+        .ok_or("the app window is off screen")?;
+    let img = crate::capture::grab_region(Target::Display(display.id), Some(region))
+        .map_err(|e| format!("{e:#}"))?;
+    finalize(&img, "app", opts)
 }
 
 /// The webview window an `app` shot targets: the named one, else the focused
@@ -130,7 +255,7 @@ fn resolve_window(
 }
 
 /// Downscale (if requested), PNG-encode, write to disk, and build the result.
-fn finalize(img: RgbaImage, kind: &str, opts: &ShotOptions) -> Result<Screenshot, String> {
+fn finalize(img: &RgbaImage, kind: &str, opts: &ShotOptions) -> Result<Screenshot, String> {
     let img = downscale(img, opts.max_edge);
     let path = match &opts.out {
         Some(p) => p.clone(),
@@ -152,18 +277,24 @@ fn finalize(img: RgbaImage, kind: &str, opts: &ShotOptions) -> Result<Screenshot
         height: img.height(),
         kind: kind.to_string(),
         base64,
+        copied_to_clipboard: None,
     })
 }
 
 /// Resize so the longest edge is at most `max_edge`. `0`, an already-small
 /// image, or a degenerate dimension passes through untouched.
-fn downscale(img: RgbaImage, max_edge: u32) -> RgbaImage {
+fn downscale(img: &RgbaImage, max_edge: u32) -> Cow<'_, RgbaImage> {
     let (w, h) = (img.width(), img.height());
     let (tw, th) = scaled_dims(w, h, max_edge);
     if (tw, th) == (w, h) {
-        return img;
+        return Cow::Borrowed(img);
     }
-    image::imageops::resize(&img, tw, th, image::imageops::FilterType::Triangle)
+    Cow::Owned(image::imageops::resize(
+        img,
+        tw,
+        th,
+        image::imageops::FilterType::Triangle,
+    ))
 }
 
 /// Target dimensions after capping the longest edge to `max_edge` (0 = no cap),
@@ -177,45 +308,6 @@ fn scaled_dims(w: u32, h: u32, max_edge: u32) -> (u32, u32) {
     let sw = ((w as f32 * scale).round() as u32).max(1);
     let sh = ((h as f32 * scale).round() as u32).max(1);
     (sw, sh)
-}
-
-/// Crop a full-monitor image to a window rectangle expressed in virtual-desktop
-/// physical pixels. Clamps to the image so an off-screen or oversized window
-/// can't panic the crop.
-fn crop_to_window(
-    monitor_img: &RgbaImage,
-    monitor_origin: (i32, i32),
-    window_pos: (i32, i32),
-    window_size: (u32, u32),
-) -> RgbaImage {
-    let (mw, mh) = (monitor_img.width(), monitor_img.height());
-    let x = (window_pos.0 - monitor_origin.0).clamp(0, mw as i32) as u32;
-    let y = (window_pos.1 - monitor_origin.1).clamp(0, mh as i32) as u32;
-    let w = window_size.0.min(mw.saturating_sub(x)).max(1);
-    let h = window_size.1.min(mh.saturating_sub(y)).max(1);
-    image::imageops::crop_imm(monitor_img, x, y, w, h).to_image()
-}
-
-/// The first monitor whose bounds contain `point`, else the primary, else the
-/// first available. Pure over the monitor rects so it is unit-testable.
-fn monitor_for_point(monitors: &[Monitor], point: (i32, i32)) -> Option<&Monitor> {
-    monitors
-        .iter()
-        .find(|m| {
-            rect_contains(
-                m.x().unwrap_or_default(),
-                m.y().unwrap_or_default(),
-                m.width().unwrap_or_default(),
-                m.height().unwrap_or_default(),
-                point,
-            )
-        })
-        .or_else(|| monitors.iter().find(|m| m.is_primary().unwrap_or(false)))
-        .or_else(|| monitors.first())
-}
-
-fn rect_contains(x: i32, y: i32, w: u32, h: u32, point: (i32, i32)) -> bool {
-    point.0 >= x && point.0 < x + w as i32 && point.1 >= y && point.1 < y + h as i32
 }
 
 fn default_path(kind: &str) -> PathBuf {
@@ -266,22 +358,6 @@ mod tests {
     #[test]
     fn scaled_dims_never_collapses_to_zero() {
         assert_eq!(scaled_dims(2000, 1, 100), (100, 1));
-    }
-
-    #[test]
-    fn rect_contains_is_half_open_on_the_far_edge() {
-        assert!(rect_contains(0, 0, 100, 100, (0, 0)));
-        assert!(rect_contains(0, 0, 100, 100, (99, 99)));
-        // The right/bottom edge belongs to the next monitor, not this one.
-        assert!(!rect_contains(0, 0, 100, 100, (100, 50)));
-        assert!(!rect_contains(0, 0, 100, 100, (50, 100)));
-    }
-
-    #[test]
-    fn rect_contains_handles_a_negative_origin_monitor() {
-        // A left-of-primary monitor at x = -1920.
-        assert!(rect_contains(-1920, 0, 1920, 1080, (-1000, 500)));
-        assert!(!rect_contains(-1920, 0, 1920, 1080, (10, 500)));
     }
 
     #[test]

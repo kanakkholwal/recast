@@ -2,8 +2,7 @@
 import { Plus } from "@recast/icons";
 import * as Collapsible from "@recast/ui/collapsible";
 
-// One open at a time. Collapsible animates the real height, which `<details>`
-// cannot do.
+// One open at a time; Collapsible animates the real height, which `<details>` cannot do.
 let { items }: { items: Array<{ q: string; a: string }> } = $props();
 
 // First row opens on load so the affordance reads without a click.

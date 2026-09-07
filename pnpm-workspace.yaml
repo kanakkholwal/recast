@@ -5,10 +5,26 @@ allowBuilds:
   core-js: true
   esbuild: true
   sharp: true
+  workerd: true
 minimumReleaseAgeExclude:
   - mediabunny@1.52.0
+  - '@takumi-rs/core-darwin-arm64@2.13.6'
+  - '@takumi-rs/core-darwin-x64@2.13.6'
+  - '@takumi-rs/core-linux-arm64-gnu@2.13.6'
+  - '@takumi-rs/core-linux-arm64-musl@2.13.6'
+  - '@takumi-rs/core-linux-x64-gnu@2.13.6'
+  - '@takumi-rs/core-linux-x64-musl@2.13.6'
+  - '@takumi-rs/core-win32-arm64-msvc@2.13.6'
+  - '@takumi-rs/core-win32-x64-msvc@2.13.6'
+  - '@takumi-rs/core@2.13.6'
+  - '@takumi-rs/helpers@2.13.6'
+  - '@takumi-rs/wasm@2.13.6'
+  - takumi-js@2.13.6
 # Moved here from the `pnpm` field in package.json, which pnpm 11 no longer reads
 # (it warned "keys were ignored: pnpm.overrides" on every command, meaning these
 # pins were silently NOT being applied). Settings now live in this file.
 overrides:
-  svelte: 5.56.3
+  # 5.57.0 or newer: 5.56.3 strips the TYPE from an optional parameter but leaves
+  # the `?`, emitting `function f(x?)`, which rolldown then rejects. Our own code
+  # was rewritten around it (see the defect ledger); layerchart cannot be.
+  svelte: 5.57.0

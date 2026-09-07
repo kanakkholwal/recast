@@ -18,9 +18,7 @@ type Options = {
  * ever revealed. rAF-throttled; cleared and inert under reduced motion.
  */
 export function scrollRecede(node: HTMLElement, options: Options = {}) {
-	// Kept close to 1 so we barely magnify past the image's native size: a large
-	// zoom here upscales a `bg-cover` photo (WebP especially) and softens it. The
-	// zoom-out is still perceptible on a full-bleed hero at this range.
+	// Kept close to 1: a larger zoom upscales a bg-cover photo and softens it, and the zoom-out still reads at this range.
 	const from = options.from ?? 1.06;
 	const to = options.to ?? 1.0;
 	const start = options.start ?? 0.12;

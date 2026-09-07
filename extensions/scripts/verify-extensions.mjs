@@ -35,9 +35,28 @@ const EXT_ROOT = resolve(SCRIPTS_DIR, "..");
 const PACKS_DIR = join(EXT_ROOT, "packs");
 
 const RESERVED_NAMES = new Set([
-	"CON", "PRN", "AUX", "NUL",
-	"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-	"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+	"CON",
+	"PRN",
+	"AUX",
+	"NUL",
+	"COM1",
+	"COM2",
+	"COM3",
+	"COM4",
+	"COM5",
+	"COM6",
+	"COM7",
+	"COM8",
+	"COM9",
+	"LPT1",
+	"LPT2",
+	"LPT3",
+	"LPT4",
+	"LPT5",
+	"LPT6",
+	"LPT7",
+	"LPT8",
+	"LPT9",
 ]);
 
 const CURSOR_EXTS = new Set([".svg"]);
@@ -87,8 +106,7 @@ const ext = (file) => {
 };
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 
-const isSvg = (text) =>
-	/^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/.test(text);
+const isSvg = (text) => /^\s*(?:<\?xml[\s\S]*?\?>\s*)?(?:<!--[\s\S]*?-->\s*)*<svg[\s>]/.test(text);
 
 /** Collects all problems for one pack, then reports pass/fail. */
 class PackResult {
@@ -142,8 +160,7 @@ function validateContributions(res, contributes) {
 	const seenByKind = new Map(); // kind -> Set(ids)
 
 	const claimId = (kind, id, where) => {
-		// An invalid/missing id isn't worth uniqueness tracking — doing so would
-		// produce noisy follow-ups like `duplicate cursors id "undefined"`.
+		// An invalid id isn't worth uniqueness tracking: it only produces noise like 'duplicate id undefined'.
 		if (!isSafeExtId(id)) {
 			res.err(`${where}: id "${id}" must be a slug [A-Za-z0-9._-]`);
 			return;
@@ -167,7 +184,12 @@ function validateContributions(res, contributes) {
 
 	const c = contributes ?? {};
 	const kinds = [
-		"cursors", "backgrounds", "gradients", "colors", "easings", "smoothings",
+		"cursors",
+		"backgrounds",
+		"gradients",
+		"colors",
+		"easings",
+		"smoothings",
 		"captionPresets",
 	];
 	for (const u of Object.keys(c).filter((k) => !kinds.includes(k))) {
@@ -185,7 +207,8 @@ function validateContributions(res, contributes) {
 		if (cur?.rightPress != null) ref(cur.rightPress, "cursor", `${w}.rightPress`);
 		if (cur?.drag != null) ref(cur.drag, "cursor", `${w}.drag`);
 		validateHotspot(res, w, cur?.hotspot);
-		if (cur?.pressedHotspot != null) validateHotspot(res, `${w}.pressedHotspot`, cur.pressedHotspot);
+		if (cur?.pressedHotspot != null)
+			validateHotspot(res, `${w}.pressedHotspot`, cur.pressedHotspot);
 		if (cur?.rightPressedHotspot != null)
 			validateHotspot(res, `${w}.rightPressedHotspot`, cur.rightPressedHotspot);
 		if (cur?.dragHotspot != null) validateHotspot(res, `${w}.dragHotspot`, cur.dragHotspot);
@@ -240,9 +263,7 @@ function validateContributions(res, contributes) {
 		}
 	}
 
-	// Caption themes carry their whole style in the manifest and reference no
-	// assets — validate the fields + ranges (mirrors the JSON schema). Kept in
-	// sync with `CaptionPresetValue` in apps/desktop/src/lib/registry/types.ts.
+	// Caption themes carry their whole style and reference no assets; keep these ranges in sync with `CaptionPresetValue`.
 	const isHex = (v) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v ?? "");
 	const inRange = (v, lo, hi) => typeof v === "number" && v >= lo && v <= hi;
 	for (const p of c.captionPresets ?? []) {
@@ -345,10 +366,9 @@ function validatePack(dir) {
 		let buf;
 		try {
 			buf = readFileSync(abs);
-		} catch (e) {
-			// A directory, broken symlink, or unreadable file is a per-asset
-			// problem — record it and keep verifying so CI reports every issue.
-			res.err(`${w}: could not read file ${a.file}: ${e.message}`);
+		} catch (err) {
+			// A directory, broken symlink or unreadable file is per-asset: record it and keep going so CI reports every issue.
+			res.err(`${w}: could not read file ${a.file}: ${err.message}`);
 			continue;
 		}
 		const type = expectedType.get(a.id);
@@ -358,9 +378,8 @@ function validatePack(dir) {
 		} else if (type === "cursor") {
 			if (!CURSOR_EXTS.has(e)) res.err(`${w}: cursor asset must be .svg`);
 			else if (!isSvg(buf.toString("utf8"))) res.err(`${w}: not a valid SVG`);
-		} else if (type === "image") {
-			if (!IMAGE_EXTS.has(e)) res.err(`${w}: background asset must be .png/.jpg/.jpeg/.webp`);
-		}
+		} else if (type === "image" && !IMAGE_EXTS.has(e))
+			res.err(`${w}: background asset must be .png/.jpg/.jpeg/.webp`);
 
 		res.assets.push({ id: a.id, filename: fname, sha256: sha256(buf), bytes: buf.length });
 	}

@@ -15,11 +15,7 @@ export type ExportPanelPhase =
   import { fade } from "svelte/transition";
   import { isOverlayOpen } from "../lib/dom/keyboard";
 
-  // Inline right-rail export surface: the same phase snippets that used to live
-  // in a portaled modal, re-homed where the properties panel was so the live
-  // preview stays mounted beside it (no overlay covering the video). Each phase
-  // brings its own header/footer, so this is just a scroll host that crossfades
-  // between phases.
+  // Inline right-rail export surface: each phase brings its own header and footer, so this is a scroll host that crossfades.
   interface Props {
     phase: ExportPanelPhase | null;
     onEscape?: () => void;
@@ -42,11 +38,7 @@ export type ExportPanelPhase =
     error,
   }: Props = $props();
 
-  // Only mounted while a phase is active, so Escape here means "leave the export
-  // flow" (cancel a run, dismiss a result, or close the picker) -- but ONLY when
-  // nothing is stacked on top of us. A dialog, a menu, or a Select inside the
-  // options form owns Escape while it's open; without the guard, dismissing one
-  // falls through to here and cancels the export behind it.
+  // Escape leaves the export flow, but only when nothing is stacked on top: a dialog or Select owns Escape while open.
   function handleKeydown(e: KeyboardEvent) {
     if (e.key !== "Escape") return;
     if (e.defaultPrevented || isOverlayOpen()) return;
@@ -54,12 +46,7 @@ export type ExportPanelPhase =
     onEscape?.();
   }
 
-  // Move focus into the panel when the export flow opens, so keyboard and screen
-  // reader users are taken to the new task rather than left on the toolbar button
-  // behind it. The panel is a focused task (own Esc-to-leave, blocks editor
-  // shortcuts) but deliberately NOT a modal: the live preview stays beside it, so
-  // we move focus without trapping it. The route restores focus to the trigger on
-  // close. tabindex=-1 makes the region focusable without joining the tab order.
+  // Focus moves in but is not trapped: this is a focused task, not a modal, since the live preview stays beside it.
   let sectionEl = $state<HTMLElement | null>(null);
   onMount(() => {
     // Skip if a phase already placed focus on one of its own fields.

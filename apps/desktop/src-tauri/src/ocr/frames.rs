@@ -1,15 +1,5 @@
-//! Frame extraction and change-driven sampling.
-//!
-//! A screen recording changes a few times a second at most, so OCR-ing every
-//! frame is wasted work. `sample_frames` does ONE coarse decode pass (a few fps)
-//! and keeps only the frames where the screen actually changed, using a
-//! near-duplicate gate (self-computed dHash) plus a color-aware change score with
-//! an adaptive rolling-ratio threshold, bounded by min/max cadence. This is the
-//! "coverage + pre-filtering" that adaptive-keyframe-sampling work argues for,
-//! done cheaply and without knowing the query (we sample at ingest).
-//!
-//! All frames come out as raw RGBA (lossless), because re-encoding to JPEG before
-//! OCR only adds artifacts that hurt small text.
+//! One coarse decode pass keeping only frames where the screen changed, via a dHash gate plus an adaptive change score.
+//! Frames stay raw RGBA: re-encoding to JPEG before OCR only adds artifacts that hurt small text.
 
 use std::collections::VecDeque;
 use std::io::Read;
@@ -62,11 +52,8 @@ pub struct SampleOpts {
     /// Timestamps (seconds) that must be sampled regardless of change score, e.g.
     /// cursor clicks. Empty in slice 1 (cursor enrichment is a later layer).
     pub forced_timestamps: Vec<f64>,
-    /// Source-time ranges (seconds) that survive the current edit: the kept
-    /// segments after trim and cuts. Frames outside them are footage the user
-    /// removed, so reading them would produce spans for content that is not in the
-    /// video and would waste an OCR pass (~390ms) on each. EMPTY means the whole
-    /// file, which is what a headless/CLI caller with no edit context wants.
+    /// Source-time ranges surviving the current edit; frames outside them are removed footage, so reading them invents spans and wastes an OCR pass each.
+    /// EMPTY means the whole file, which is what a headless caller with no edit context wants.
     pub include_ranges: Vec<(f64, f64)>,
 }
 
@@ -130,9 +117,7 @@ pub fn probe_dims(media: &Path) -> Result<(u32, u32, f64), String> {
     Ok((width, height, duration))
 }
 
-/// Scale `(w, h)` so the long edge is at most `max_dim`, preserving aspect and
-/// rounding to even dimensions. `max_dim == 0` (or an already-small frame) keeps
-/// the source size.
+/// Scale `(w, h)` so the long edge is at most `max_dim`, preserving aspect and rounding to even dimensions. `max_dim == 0` (or an already-small frame) keeps the source size.
 fn target_dims(w: u32, h: u32, max_dim: u32) -> (u32, u32) {
     if max_dim == 0 || w.max(h) <= max_dim {
         return (even(w), even(h));
@@ -144,19 +129,15 @@ fn target_dims(w: u32, h: u32, max_dim: u32) -> (u32, u32) {
 }
 
 fn even(n: u32) -> u32 {
-    if n % 2 == 0 {
+    if n.is_multiple_of(2) {
         n
     } else {
         n + 1
     }
 }
 
-/// Sample the frames where the screen changed. One coarse decode pass, gated by
-/// dedup + adaptive change score + cadence bounds.
-///
-/// `on_tick` fires once per walked frame, including the ones skipped as outside
-/// the kept ranges, because the decode still pays for them and a progress bar that
-/// stalled through a cut would read as a hang.
+/// Samples the frames where the screen changed in one coarse decode pass, gated by dedup, an adaptive change score and cadence bounds.
+/// `on_tick` fires for skipped frames too, since the decode still pays for them and a bar stalling through a cut would read as a hang.
 pub fn sample_frames(
     media: &Path,
     opts: &SampleOpts,
@@ -187,8 +168,7 @@ pub fn sample_frames(
     configure_silent_command(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| format!("ffmpeg spawn: {e}"))?;
 
-    // Drain stderr on a side thread so a full pipe can never block ffmpeg while we
-    // read stdout. Bounded so an error spew cannot grow without limit.
+    // Drain stderr on a side thread so a full pipe can't block ffmpeg while we read stdout; bounded against a spew.
     let stderr = child.stderr.take();
     let stderr_handle = stderr.map(|mut s| {
         std::thread::spawn(move || {
@@ -213,11 +193,7 @@ pub fn sample_frames(
     };
     let mut frame = vec![0u8; frame_bytes];
 
-    // Retained frames are full-resolution RGBA (~5.8 MB at 1600x900) and nothing
-    // bounded them: a high-motion source kept thousands and ran the process out
-    // of memory. At the ceiling we halve what we hold and double the required
-    // spacing, so coverage stays whole-video at lower temporal resolution rather
-    // than truncating the tail.
+    // Retained RGBA frames are ~5.8 MB each and were unbounded; at the ceiling we halve holdings and double spacing, keeping whole-video coverage.
     let max_frames = (SAMPLE_BUDGET_BYTES / frame_bytes.max(1)).max(1);
     let mut gap_scale = 1.0f64;
 
@@ -238,10 +214,7 @@ pub fn sample_frames(
             kept: kept.len() as u64,
         });
 
-        // Skip footage the edit removed (outside the trim, or inside a cut) before
-        // doing any work on it. Decoding is one cheap streaming pass, but OCR is
-        // ~390ms a frame, so this is both a correctness fix (no spans for deleted
-        // content) and the cheapest speed win available.
+        // Skip footage the edit removed before doing any work: decode is one cheap pass, but OCR is ~390ms a frame.
         if !in_ranges(t, &opts.include_ranges) {
             continue;
         }
@@ -269,8 +242,7 @@ pub fn sample_frames(
         let dup = last_kept_t.is_some() && hamming(last_kept_hash, hash) <= opts.dedup_hamming;
         let keep = should_keep(t, last_kept_t, dup, forced, changed, opts);
 
-        // Once thinned, honour the widened spacing. Forced frames (a cursor
-        // click) are the whole reason the hook exists, so they still win.
+        // Once thinned, honour the widened spacing; forced frames are why the hook exists, so they still win.
         let spaced = last_kept_t.is_none_or(|last| t - last >= opts.min_gap_secs * gap_scale);
         if keep && (forced || spaced) {
             kept.push(SampledFrame {
@@ -286,7 +258,7 @@ pub fn sample_frames(
                 let mut seen = 0usize;
                 kept.retain(|_| {
                     seen += 1;
-                    seen % 2 == 0
+                    seen.is_multiple_of(2)
                 });
                 gap_scale *= 2.0;
                 log::warn!(
@@ -330,17 +302,13 @@ const MIN_ABS_SCORE: f32 = 2.0;
 /// Guard so a near-zero rolling average does not blow the ratio up.
 const SCORE_EPS: f32 = 0.5;
 
-/// Whether a frame's change score counts as a real change. It must clear an
-/// absolute noise floor AND exceed `adaptive_ratio` times the recent average.
-/// Dividing by the recent average (rather than testing a fixed threshold) is what
-/// keeps a steady scroll from registering as a change on every frame while a real
-/// transition still stands out.
+/// Whether a frame's change score is a real change: it must clear an absolute noise floor AND exceed `adaptive_ratio` times the recent average.
+/// Dividing by the recent average rather than testing a fixed threshold is what keeps a steady scroll from registering every frame while a real transition still stands out.
 fn is_changed(score: f32, recent_avg: f32, adaptive_ratio: f32) -> bool {
     if score <= MIN_ABS_SCORE {
         return false;
     }
-    // Coming out of a static run there is no meaningful average to divide by, so
-    // clearing the noise floor is enough.
+    // Coming out of a static run there is no meaningful average, so clearing the noise floor is enough.
     if recent_avg <= SCORE_EPS {
         return true;
     }
@@ -363,25 +331,12 @@ fn in_ranges(t: f64, ranges: &[(f64, f64)]) -> bool {
     ranges.iter().any(|(start, end)| t >= *start && t < *end)
 }
 
-/// The keep decision for one coarse frame. Pure, so the whole matrix is testable.
-///
-/// Order matters. `duplicate` comes from the dHash gate, which compares a
-/// luma gradient and is therefore blind to colour: two flat frames of different
-/// colours hash the same. So a detected change has to beat the duplicate veto,
-/// or a theme swap on a low-texture screen would be dropped as a "duplicate"
-/// before the colour-aware score ever got a say.
 /// Memory ceiling for retained sample frames. Expressed as bytes rather than a
 /// frame count because frame size scales with the sampling resolution.
 const SAMPLE_BUDGET_BYTES: usize = 512 * 1024 * 1024;
 
-/// Owns the sampler's ffmpeg child and its stderr drain thread so both are
-/// reaped on EVERY exit path.
-///
-/// The frame loop below propagates with `?`. Without this, such an exit left
-/// ffmpeg decoding the rest of the video with nobody reading stdout — it never
-/// terminates — and the drain thread blocked forever on a pipe that never
-/// closed. There is no cancel signal into that loop, so a dropped guard is the
-/// only thing that can stop it.
+/// Owns the sampler's ffmpeg child and its stderr drain so both are reaped on EVERY exit path.
+/// The frame loop propagates with `?`, and there is no cancel signal into it, so a dropped guard is the only thing that stops ffmpeg decoding the rest of the video.
 struct SamplerChild {
     child: Option<std::process::Child>,
     stderr: Option<std::thread::JoinHandle<String>>,
@@ -417,6 +372,8 @@ impl Drop for SamplerChild {
     }
 }
 
+/// The keep decision for one coarse frame. Pure, so the whole matrix is testable.
+/// Order matters: the dHash gate is luma-only, so a colour-aware change must outrank the duplicate veto or a theme swap on a flat screen is dropped.
 fn should_keep(
     t: f64,
     last_kept_t: Option<f64>,
@@ -445,9 +402,7 @@ fn should_keep(
     gap >= opts.max_gap_secs // coverage: catch slow drift the ratio missed
 }
 
-/// Read exactly `buf.len()` bytes. Returns `Ok(true)` on a full read, `Ok(false)`
-/// on a clean EOF at a frame boundary (zero bytes read), and an error on a
-/// partial trailing frame.
+/// Read exactly `buf.len()` bytes. Returns `Ok(true)` on a full read, `Ok(false)` on a clean EOF at a frame boundary (zero bytes read), and an error on a partial trailing frame.
 fn read_full<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<bool> {
     let mut filled = 0;
     while filled < buf.len() {
@@ -542,8 +497,7 @@ mod tests {
         assert_eq!(expected_frames(9.0, 3.0), 27);
         // Partial trailing frame still gets walked, so round up.
         assert_eq!(expected_frames(9.1, 3.0), 28);
-        // An unknown duration reports 0, which the UI reads as "indeterminate"
-        // rather than dividing by it.
+        // An unknown duration reports 0, which the UI reads as indeterminate rather than dividing by it.
         assert_eq!(expected_frames(0.0, 3.0), 0);
         assert_eq!(expected_frames(f64::NAN, 3.0), 0);
         assert_eq!(expected_frames(-1.0, 3.0), 0);
@@ -579,9 +533,7 @@ mod tests {
 
     #[test]
     fn color_mad_detects_constant_brightness_recolor() {
-        // Two colors with near-equal luma but different channels: a grayscale diff
-        // would miss this; color MAD must not. This is the whole reason the score
-        // is color-aware.
+        // Two colours with near-equal luma: a grayscale diff misses this, which is why the score is colour-aware.
         let red = RgbImage::from_pixel(8, 8, image::Rgb([180, 40, 40]));
         let green = RgbImage::from_pixel(8, 8, image::Rgb([40, 180, 40]));
         assert!(color_mad(&red, &green) > MIN_ABS_SCORE);
@@ -634,18 +586,14 @@ mod tests {
 
     #[test]
     fn should_keep_forced_beats_everything() {
-        // A click landing on a frame the screen barely changed on must still be
-        // sampled; this is the cursor hook's whole purpose. Forced even overrides
-        // the anti-spam gap.
+        // A click on a barely-changed frame must still be sampled; forced even overrides the anti-spam gap.
         assert!(should_keep(5.0, Some(4.0), true, true, false, &opts()));
         assert!(should_keep(4.1, Some(4.0), true, true, false, &opts()));
     }
 
     #[test]
     fn should_keep_lets_a_real_change_beat_the_duplicate_gate() {
-        // dHash compares a luma gradient, so two flat frames of different colours
-        // hash identically. A colour-aware change must therefore outrank the
-        // duplicate veto, or a theme swap on a low-texture screen is lost.
+        // dHash compares a luma gradient, so flat frames of different colours hash alike; colour-aware change must outrank the duplicate veto.
         assert!(should_keep(5.0, Some(4.0), true, false, true, &opts()));
     }
 

@@ -1,7 +1,5 @@
 <script lang="ts">
-// A failed scan is not an empty library. Without this the pages fell through
-// to the empty state, telling the user their disk was empty when the scan had
-// simply thrown — and the toast that said otherwise was long gone.
+// A failed scan is not an empty library: without this the pages claimed the disk was empty after the toast was gone.
 import { RefreshCw, TriangleAlert } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { fade } from "svelte/transition";

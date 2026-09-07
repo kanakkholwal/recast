@@ -1,78 +1,48 @@
 <script lang="ts">
-  import { config } from "$constants/app";
-  import { KIND_META, RELEASES, groupChanges } from "$constants/changelog";
-  import { whatsNew } from "$lib/stores/whats-new.svelte";
-  import { GithubBrand } from "@recast/ui/brand-icons";
-  import { AiWand } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { Markdown } from "@recast/ui/markdown";
-  import { onMount } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
+import { AiWand } from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { Markdown } from "@recast/ui/markdown";
+import { onMount } from "svelte";
+import StudioPage from "$components/layout/StudioPage.svelte";
+import { config } from "$constants/app";
+import { groupChanges, KIND_META, RELEASES } from "$constants/changelog";
+import { whatsNew } from "$lib/stores/whats-new.svelte";
 
-  // Visiting the full changelog page also counts as having seen the latest version.
-  onMount(() => {
-    whatsNew.markSeen();
-  });
+// Visiting the full changelog page also counts as having seen the latest version.
+onMount(() => {
+	whatsNew.markSeen();
+});
 </script>
 
-<div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
-  <div class="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
-    <header
-      in:fly={{ y: 12, duration: 320, easing: cubicOut }}
-      class="flex flex-col gap-3"
+<StudioPage
+  title="What's New"
+  subtitle={`Features, refinements and fixes — current build v${config.appVersion}`}
+>
+  {#snippet actions()}
+    <Button
+      href={`${config.github}/releases`}
+      target="_blank"
+      variant="outline"
+      size="sm"
+      class="gap-1.5"
     >
-      <span
-        class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur"
-      >
-        <AiWand class="size-3 text-primary" />
-        Changelog
-      </span>
-      <h1
-        class="text-balance text-[28px] font-semibold leading-tight tracking-tight text-foreground md:text-[32px]"
-      >
-        <span
-          class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
-        >
-          Everything new in {config.appName}.
-        </span>
-      </h1>
-      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        Per-release notes for features, refinements, and fixes. The current
-        build is
-        <span class="font-mono text-foreground/80">v{config.appVersion}</span>.
-      </p>
-      <div class="flex flex-wrap gap-2 pt-1">
-        <Button
-          href={`${config.github}/releases`}
-          target="_blank"
-          variant="outline"
-          size="sm"
-          class="h-8 gap-1.5"
-        >
-          <GithubBrand class="size-3.5" />
-          <span class="text-[11.5px]">Releases on GitHub</span>
-        </Button>
-      </div>
-    </header>
+      <GithubBrand class="size-3.5" />
+      <span class="text-[11.5px]">Releases on GitHub</span>
+    </Button>
+  {/snippet}
 
-    <div
-      in:fly={{ y: 12, duration: 320, delay: 80, easing: cubicOut }}
-      class="flex flex-col gap-10"
-    >
+  <div class="mx-auto flex w-full max-w-3xl flex-col gap-10">
       {#each RELEASES as release, i (release.version)}
         {@const isLatest = i === 0}
-        <section
-          in:fade={{ duration: 220, delay: 120 + i * 40 }}
-          class="relative flex flex-col gap-4"
-        >
+        <section class="relative flex flex-col gap-4">
           <div
             class="flex flex-col gap-1.5 border-l-2 pl-4 {isLatest
               ? 'border-primary'
               : 'border-border/60'}"
           >
             <div
-              class="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/80"
+              class="flex flex-wrap items-center gap-2 text-[10.5px] font-medium text-muted-foreground"
             >
               <span class="font-mono normal-case tracking-normal text-foreground">
                 v{release.version}
@@ -119,7 +89,7 @@
                 <div class="flex items-center gap-1.5">
                   <Icon class={`size-3.5 ${meta.tone}`} />
                   <span
-                    class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/80"
+                    class="text-[10.5px] font-medium text-muted-foreground"
                   >
                     {meta.label}
                   </span>
@@ -142,6 +112,5 @@
           </div>
         </section>
       {/each}
-    </div>
   </div>
-</div>
+</StudioPage>

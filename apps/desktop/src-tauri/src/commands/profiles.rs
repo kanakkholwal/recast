@@ -1,12 +1,5 @@
-//! Backend-owned recording profiles: the saved capture presets the panel,
-//! profile picker, and CLI all read from one store.
-//!
-//! Profiles used to live only in WebView `localStorage`, unreachable from Rust,
-//! so `recast profile list/use` had nothing to read. They now persist to
-//! `recast_profiles.json` in the app data dir and the frontend renders from
-//! this store (adopting it on hydrate, pushing edits back via `set_profiles`).
-//! Every write broadcasts `recording-profiles:changed` so every window stays in
-//! sync from one source. Mirrors the TS `RecordingProfile` (`$lib/profiles`).
+//! Backend-owned recording profiles in `recast_profiles.json`, so the panel, picker and CLI read one store.
+//! They used to live in WebView `localStorage`, which left `recast profile list` with nothing to read.
 
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -238,9 +231,7 @@ pub fn apply_profile_to_intent(intent: &mut CaptureIntent, profile: &RecordingPr
     intent.active_profile_id = Some(profile.id.clone());
 }
 
-/// Apply the profile matching `id` (by id, then case-insensitive name) to the
-/// capture intent and return the updated intent. Shared by the command and the
-/// CLI control server.
+/// Apply the profile matching `id` (by id, then case-insensitive name) to the capture intent and return the updated intent. Shared by the command and the CLI control server.
 pub fn use_profile_by_id(app: &AppHandle, id: &str) -> Result<CaptureIntent, String> {
     let profile = {
         let state = app.state::<AppState>();
@@ -277,8 +268,7 @@ pub fn set_profiles(
     enabled: bool,
 ) -> ProfilesSnapshot {
     let state = app.state::<AppState>();
-    // Snapshot under the write lock, drop it, THEN write to disk — never hold
-    // the lock across the disk write (matches the config-store discipline).
+    // Snapshot under the lock, drop it, then write: never hold the lock across a disk write, as the config store does.
     let to_save = {
         let mut guard = state.profiles.write();
         guard.profiles = profiles;

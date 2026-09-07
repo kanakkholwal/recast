@@ -7,7 +7,7 @@ import { IDENTITY_ZOOM } from "./annotation-draw.logic";
  * overlay and the HTML text layer so the two can't diverge.
  *
  * Frame-anchored markup ignores zoom by definition. `focusEnabled` off is the
- * subtler case: the composite draws unzoomed (frame-params.ts) and the export
+ * subtler case: the composite draws unzoomed and the export
  * drops the regions outright (services/export.ts), so applying zoom here would
  * put preview markup where neither the picture nor the file puts it.
  */

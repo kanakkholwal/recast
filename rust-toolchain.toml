@@ -1,0 +1,5 @@
+# Pinned, not floating: the clippy gates run with `-D warnings`, so a new stable
+# turns fresh lints into a red build on an unrelated change. Bump deliberately.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]

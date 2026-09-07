@@ -1,13 +1,13 @@
 <script lang="ts">
-import { goto, invalidateAll } from "$app/navigation";
-import { authClient } from "$lib/auth/client";
-import { isInviteBlocked } from "./invitation.logic";
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import { AlertTriangle, ArrowRight, Check, LoaderCircle, MailCheck, Wand2, X } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
-import { AlertTriangle, ArrowRight, Check, LoaderCircle, MailCheck, Wand2, X } from "@recast/icons";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { goto, invalidateAll } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import { isInviteBlocked } from "./invitation.logic";
 
 let { data } = $props();
 
@@ -30,9 +30,7 @@ async function accept() {
 		});
 		if (error) throw new Error(error.message ?? "Couldn't accept the invitation.");
 		toast.success(`Welcome to ${data.invite.orgName}.`, { id: toastId });
-		// Force-rerun every loader so the dashboard's auth + team gate
-		// sees the new membership / active-org cookie immediately;
-		// without this the gate can bounce the user back to onboarding.
+		// Re-run every loader so the dashboard's team gate sees the new membership rather than bouncing back to onboarding.
 		await invalidateAll();
 		await goto("/dashboard", { invalidateAll: true });
 	} catch (err) {

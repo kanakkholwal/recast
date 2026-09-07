@@ -1,29 +1,27 @@
 <script lang="ts">
-  // Use the *resolved* mode rune (not stored "system") so colours track the
-  // active OS theme and update reactively on toggle.
-  import { mode } from "@recast/ui/theme";
-  import type { SVGAttributes } from "svelte/elements";
+// The resolved mode rune, not the stored 'system', so colours track the active OS theme and update on toggle.
+import { mode } from "@recast/ui/theme";
+import type { SVGAttributes } from "svelte/elements";
 
-  let {
-    color: colorProp,
-    fill: fillProp,
-    size = "512",
-    ...rest
-  }: SVGAttributes<SVGSVGElement> & {
-    /** Bars colour. Defaults to the theme-appropriate contrast colour. */
-    color?: string;
-    /** Disc background. Defaults to the theme-appropriate contrast colour. */
-    fill?: string;
-    size?: string | number;
-  } = $props();
+let {
+	color: colorProp,
+	fill: fillProp,
+	size = "512",
+	...rest
+}: SVGAttributes<SVGSVGElement> & {
+	/** Bars colour. Defaults to the theme-appropriate contrast colour. */
+	color?: string;
+	/** Disc background. Defaults to the theme-appropriate contrast colour. */
+	fill?: string;
+	size?: string | number;
+} = $props();
 
-  // `mode.current` is undefined until mode-watcher hydrates; treat that as light.
-  const isDark = $derived(mode.current === "dark");
+// `mode.current` is undefined until mode-watcher hydrates; treat that as light.
+const isDark = $derived(mode.current === "dark");
 
-  // Light mode → black disc with white bars (reads on a light sidebar);
-  // dark mode → the inverse. Explicit props still win.
-  const fill = $derived(fillProp ?? (isDark ? "white" : "black"));
-  const color = $derived(colorProp ?? (isDark ? "black" : "white"));
+// Light mode is a black disc with white bars and dark mode the inverse; explicit props still win.
+const fill = $derived(fillProp ?? (isDark ? "white" : "black"));
+const color = $derived(colorProp ?? (isDark ? "black" : "white"));
 </script>
 
 <svg

@@ -26,8 +26,7 @@ describe("getExtension", () => {
 });
 
 describe("relativeDate", () => {
-	// 2024-01-01T00:00:00Z in epoch seconds, with a fixed `now` reference so the
-	// thresholds are deterministic.
+	// 2024-01-01 in epoch seconds, with a fixed `now` reference so the thresholds are deterministic.
 	const base = Date.UTC(2024, 0, 1) / 1000;
 	const now = (base + 0) * 1000;
 

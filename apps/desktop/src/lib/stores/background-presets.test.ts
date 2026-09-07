@@ -1,8 +1,8 @@
 import {
 	BACKGROUND_COLORS,
 	BACKGROUND_GRADIENTS,
-	LEGACY_BACKGROUND_VALUES,
 	backgroundNeedsShadow,
+	LEGACY_BACKGROUND_VALUES,
 	migrateBackgroundValue,
 } from "@recast/design/backgrounds";
 import { describe, expect, it } from "vitest";
@@ -70,8 +70,7 @@ describe("background preset palette", () => {
 	it("keeps gradients within a 0.25 lightness spread so they read as one surface", () => {
 		for (const p of BACKGROUND_GRADIENTS) {
 			const ls = stops(p.value).map(luminance);
-			// Compare in luminance-derived lightness terms via cube root, a close
-			// enough stand-in for OKLCH L for a spread assertion.
+			// Cube root of luminance stands in closely enough for OKLCH L in a spread assertion.
 			const spread = Math.max(...ls.map(Math.cbrt)) - Math.min(...ls.map(Math.cbrt));
 			expect(spread, p.id).toBeLessThanOrEqual(0.5);
 		}

@@ -1,14 +1,4 @@
 <script lang="ts">
-import { PLANS } from "$lib/billing/catalog";
-import {
-	Container,
-	FaqList,
-	Footer,
-	Reveal,
-	Section,
-	SectionLabel,
-	SeoMeta,
-} from "$lib/components";
 import type { IconComponent } from "@recast/icons";
 import {
 	BarChart3,
@@ -32,6 +22,16 @@ import {
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
+import { PLANS } from "$lib/billing/catalog";
+import {
+	Container,
+	FaqList,
+	Footer,
+	Reveal,
+	Section,
+	SectionLabel,
+	SeoMeta,
+} from "$lib/components";
 import { extraSeatPrice, formatUsd, gb, LOOM, proPrice, teamComparison } from "./pricing.logic";
 
 let annual = $state(false);

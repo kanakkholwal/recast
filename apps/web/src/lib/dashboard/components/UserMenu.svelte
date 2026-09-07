@@ -24,14 +24,12 @@ import { quotaStore, settingsStore } from "$lib/dashboard/store.svelte";
 
 const profile = $derived(settingsStore.value.profile);
 
-// Falls back to "user" if absent so the conditional safely returns false on
-// unauthenticated pages.
+// Falls back to 'user' when absent, so the check safely returns false on unauthenticated pages.
 const isAdmin = $derived((page.data?.user as { role?: string } | undefined)?.role === "admin");
 // Whether we're currently inside the admin shell — decides "enter" vs "exit".
 const inAdmin = $derived(page.url.pathname.startsWith("/admin"));
 
-// Plan label under the name — prefers the active org's plan, then the quota
-// snapshot, else "free".
+// Prefers the active org's plan, then the quota snapshot, else free.
 const plan = $derived(
 	((page.data as { activeOrganization?: { plan?: string } }).activeOrganization?.plan ??
 		quotaStore.value?.plan ??

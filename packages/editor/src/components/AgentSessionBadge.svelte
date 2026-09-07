@@ -1,7 +1,7 @@
 <script lang="ts">
+import { Sparkles } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import * as Popover from "@recast/ui/popover";
-import { Sparkles } from "@recast/icons";
 import { agentSession } from "../lib/agent/session.svelte";
 
 let open = $state(false);

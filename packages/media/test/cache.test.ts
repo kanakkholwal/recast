@@ -82,8 +82,7 @@ describe("frame lifetime (REQUIREMENTS.md §3 memory cap, §5 ownership)", () =>
 	});
 
 	it("charges a large fallback (never 0) when dimensions are non-finite", () => {
-		// A 0-byte estimate never adds to the total, so the cap check always
-		// passes and eviction silently stops — the Map then grows unbounded.
+		// A 0-byte estimate never adds to the total, so the cap always passes, eviction stops and the Map grows unbounded.
 		const bytes = estimateFrameBytes(fakeVideoFrame(Number.NaN, Number.NaN) as never);
 		expect(bytes).toBeGreaterThan(0);
 	});
@@ -152,8 +151,7 @@ describe("cache factory", () => {
 	it("resetFrameCache clears the singleton", () => {
 		setFrameCache(new FrameCache());
 		resetFrameCache();
-		// After reset, getFrameCache() lazily rebuilds — no assertion needed,
-		// the call must not throw.
+		// After reset, getFrameCache() lazily rebuilds; the call must simply not throw.
 		expect(() => resetFrameCache()).not.toThrow();
 	});
 });
@@ -186,8 +184,7 @@ describe("FrameCache.readNearest", () => {
 	});
 
 	it("never returns a frame older than the segment floor", () => {
-		// Playhead just past a cut ending at 66ms: 33ms is inside the removed
-		// range, so returning it would step the picture back into cut content.
+		// The playhead is just past a cut ending at 66ms, so returning the 33ms frame would step back into cut content.
 		const cache = seeded();
 		expect(cache.readNearest(70_000, 66_000)).toBe(cache.readMemory(66_000));
 		expect(cache.readNearest(50_000, 66_000)).toBeNull();

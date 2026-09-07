@@ -1,20 +1,35 @@
 <script lang="ts">
+import { Ruler, VideoOff } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import type { CameraLayout, LayoutSide } from "../../lib/editor/render-state";
+import { MAX_SPLIT_FRACTION, MIN_SPLIT_FRACTION } from "../../lib/editor/render-state";
+import { withFraction, withSide } from "../../lib/timeline/camera-clip-layout";
+import type { CameraCapture } from "../../lib/wire-types";
 import {
+	type CameraPositionPreset,
 	cameraPlacementFromPreset,
 	cameraPresetFromPlacement,
-	type CameraPositionPreset,
 	type EditorStore,
 } from "../../stores/editor-store.svelte";
 import { cameraPlacementAt } from "../_components/camera-overlay.logic";
-import { VideoOff } from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import { SegmentedToggle } from "@recast/ui/segmented";
-import { cn } from "@recast/ui/utils";
-import { SliderControl } from "@recast/ui/slider-control";
-import type { CameraCapture } from "../../lib/wire-types";
-import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
+import {
+	CAMERA_LAYOUT_OPTIONS,
+	cameraAvailability,
+	cameraControls,
+	dotStyleFor,
+	labelFor,
+	layoutForKind,
+	splitSideOptions,
+} from "./camera-panel.logic";
 import EasingControl from "./EasingControl.svelte";
+import NumberField from "./NumberField.svelte";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import PropSelect from "./PropSelect.svelte";
+import SliderRow from "./SliderRow.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -32,19 +47,27 @@ interface Props {
 
 let { store, cameraPath, cameraCapture = "legacy" }: Props = $props();
 
-const hasCamera = $derived(!!cameraPath);
+const hasCamera = $derived(Boolean(cameraPath));
 const availability = $derived(cameraAvailability(cameraCapture, hasCamera));
 
-// Video pixel aspect. The bubble is square in pixels, so its UV height is
-// `width * aspect`; the presets need it to anchor vertically on a wide frame.
+// Where the preview window was dragged mid-take. Offered, never applied on load: moving it to see your own face is not authoring an animation.
+const recordedMoveCount = $derived(store.cameraOverlay.motionSegments.length);
+
+function importRecordedMoves() {
+	if (!store.importRecordedCameraMoves()) return;
+	toast.success("Recorded camera moves applied", {
+		description: "Each move became a position keyframe. Undo to go back.",
+	});
+}
+
+// The bubble is square in pixels, so its UV height is width times aspect; the presets need it to anchor on a wide frame.
 const videoAspect = $derived(
-	store.metadata && store.metadata.height ? store.metadata.width / store.metadata.height : 1,
+	store.metadata?.height ? store.metadata.width / store.metadata.height : 1,
 );
 
 const perCut = $derived(store.cameraOverlay.keyframes.length > 0);
 
-// The placement being edited: in per-cut mode it's the glide value at the
-// playhead (the keyframe you're setting); else the static placement.
+// In per-cut mode this is the glide value at the playhead (the keyframe being set); else the static placement.
 const currentBase = $derived(
 	cameraPlacementAt(
 		store.cameraOverlay.defaultPlacement,
@@ -54,8 +77,7 @@ const currentBase = $derived(
 	),
 );
 
-// Derived from the placement so a preview drag onto a corner re-highlights
-// the matching chip without a re-click.
+// Derived from the placement, so a drag onto a corner re-highlights the matching chip without a re-click.
 const activePreset = $derived(cameraPresetFromPlacement(currentBase, videoAspect));
 
 function applyPreset(preset: CameraPositionPreset) {
@@ -66,8 +88,7 @@ function applyPreset(preset: CameraPositionPreset) {
 }
 
 function setSize(size: number) {
-	// Anchor the resize on the current preset corner so the bubble doesn't
-	// drift; custom placements just scale from their top-left.
+	// Anchor the resize on the current preset corner so the bubble doesn't drift; custom scales from its top-left.
 	if (activePreset === "custom") {
 		store.setCameraPlacement({
 			...currentBase,
@@ -79,8 +100,7 @@ function setSize(size: number) {
 	store.setCameraPlacement(cameraPlacementFromPreset(activePreset, size, undefined, videoAspect));
 }
 
-// 3×3 grid mirroring the spatial position each chip represents, so users
-// pick by location rather than reading labels.
+// A 3x3 grid mirroring the position each chip represents, so users pick by location rather than reading labels.
 const presetGrid: Array<CameraPositionPreset | null> = [
 	"top-left",
 	"top-center",
@@ -92,6 +112,12 @@ const presetGrid: Array<CameraPositionPreset | null> = [
 	"bottom-center",
 	"bottom-right",
 ];
+
+// The clip these controls edit: the selected one, else the one under the playhead.
+const layout = $derived(store.currentCameraLayout());
+
+// A split or a full-frame camera ignores the bubble's own geometry, so the controls for it say so instead of writing state nothing reads.
+const controls = $derived(cameraControls(layout, store.cursorSettings.enabled));
 
 const shapeOptions = [
 	{ id: "circle" as const, label: "Circle" },
@@ -141,6 +167,8 @@ const shapeOptions = [
       title="Position"
       hint="Pick a corner or edge anchor. Drag the bubble in the preview for a custom position."
       flush
+      disabled={!controls.bubble}
+      disabledReason={controls.reason ?? undefined}
     >
       {#snippet action()}
         <span class="font-mono text-[10px] tracking-tight text-foreground/80">
@@ -148,12 +176,12 @@ const shapeOptions = [
         </span>
       {/snippet}
       <div
-        class="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
+        class="grid max-w-56 grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
       >
         {#each presetGrid as cell, i (i)}
           {#if cell === null}
             <!-- Centre cell left empty so the chips map to bubble position. -->
-            <div aria-hidden="true" class="aspect-square"></div>
+            <div aria-hidden="true" class="aspect-video"></div>
           {:else}
             {@const isActive = activePreset === cell}
             <button
@@ -163,10 +191,10 @@ const shapeOptions = [
               title={labelFor(cell)}
               onclick={() => applyPreset(cell)}
               class={cn(
-                "group relative aspect-square overflow-hidden rounded-md border transition-all duration-150",
+                "group relative aspect-video overflow-hidden rounded-md border transition-all duration-150",
                 "focus:outline-none focus:ring-2 focus:ring-ring/40",
                 isActive
-                  ? "border-primary/60 bg-primary/8 text-foreground"
+                  ? "border-foreground/40 bg-foreground/10 text-foreground"
                   : "border-transparent bg-background/40 text-foreground/80 hover:border-border hover:bg-background/80",
               )}
             >
@@ -174,7 +202,7 @@ const shapeOptions = [
                 aria-hidden="true"
                 class={cn(
                   "absolute size-1.5 rounded-full transition-colors duration-150",
-                  isActive ? "bg-primary" : "bg-foreground/35 group-hover:bg-foreground/60",
+                  isActive ? "bg-foreground" : "bg-foreground/35 group-hover:bg-foreground/60",
                 )}
                 style={dotStyleFor(cell)}
               ></span>
@@ -185,9 +213,103 @@ const shapeOptions = [
     </PanelSection>
 
     <PanelSection
+      title="Layout"
+      hint="How this clip shares the frame. Split layouts letterbox the screen so nothing on it is cropped away, and they need the experimental export engine."
+      flush
+    >
+      <PropRow label="Arrangement">
+        <PropSelect
+          class="flex-1"
+          label="Camera layout"
+          value={layout.kind}
+          options={CAMERA_LAYOUT_OPTIONS}
+          onChange={(v) =>
+            store.setCameraLayoutAtPlayhead(layoutForKind(layout, v as CameraLayout["kind"]))}
+        />
+      </PropRow>
+      {#if layout.kind === "splitH" || layout.kind === "splitV"}
+        <PropRow label={layout.kind === "splitH" ? "Camera side" : "Camera edge"}>
+          <PropSelect
+            class="flex-1"
+            label="Which half the camera takes"
+            value={layout.side}
+            options={splitSideOptions(layout.kind)}
+            onChange={(v) =>
+              store.setCameraLayoutAtPlayhead(withSide(layout, v as LayoutSide))}
+          />
+        </PropRow>
+        <SliderRow
+          label="Camera share"
+          value={Math.round(layout.fraction * 100)}
+          min={Math.ceil(MIN_SPLIT_FRACTION * 100)}
+          max={Math.floor(MAX_SPLIT_FRACTION * 100)}
+          step={1}
+          unit="%"
+          onchange={(next) => store.setCameraLayoutAtPlayhead(withFraction(layout, next / 100))}
+        />
+      {/if}
+      <SliderRow
+        label="Transition"
+        value={Math.round(store.cameraOverlay.layoutTransition * 1000)}
+        min={0}
+        max={1500}
+        step={50}
+        unit="ms"
+        onstart={() => store.pushUndoState()}
+        onchange={(next) => store.updateCameraOverlay({ layoutTransition: next / 1000 })}
+      />
+      {#if store.cameraOverlay.layoutTransition > 0}
+        <EasingControl
+          value={store.cameraOverlay.layoutTransitionEasing}
+          size={220}
+          onpick={(v) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ layoutTransitionEasing: v });
+          }}
+          ondrag={(v) =>
+            store.updateCameraOverlayLive({ layoutTransitionEasing: v }, "camera-layout-easing")}
+        />
+      {/if}
+    </PanelSection>
+
+    <PanelSection
+      title="Dodge the pointer"
+      hint="Nudge the bubble aside when the pointer comes near it, so it never sits on top of what you are pointing at. The nudge fades out with distance rather than snapping, and the drag handle stays on the position you set rather than following the nudge."
+      flush
+      disabled={!controls.dodge}
+      disabledReason={controls.dodgeReason ?? undefined}
+    >
+      {#snippet action()}
+        <SegmentedToggle
+          checked={store.cameraOverlay.cursorDodge}
+          size="xs"
+          aria-label="Dodge the pointer"
+          onCheckedChange={(next) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ cursorDodge: next });
+          }}
+        />
+      {/snippet}
+      {#if store.cameraOverlay.cursorDodge && controls.dodge}
+        <SliderRow
+          label="Strength"
+          value={Math.round(store.cameraOverlay.cursorDodgeStrength * 100)}
+          min={0}
+          max={100}
+          step={5}
+          unit="%"
+          onstart={() => store.pushUndoState()}
+          onchange={(next) => store.updateCameraOverlay({ cursorDodgeStrength: next / 100 })}
+        />
+      {/if}
+    </PanelSection>
+
+    <PanelSection
       title="Per-cut position"
       hint="Give each cut its own camera position; the bubble glides between them. Scrub to a cut, then pick a preset or drag the bubble."
       flush
+      disabled={!controls.motion}
+      disabledReason={controls.reason ?? undefined}
     >
       {#snippet action()}
         <SegmentedToggle
@@ -213,51 +335,62 @@ const shapeOptions = [
           </Button>
         </div>
       {/if}
-    </PanelSection>
-
-    <PanelSection
-      title="Size"
-      hint="Bubble width as a percentage of the frame, or drag its corners in the preview. Height matches width (1:1 only for now)."
-    >
-      <SliderControl
-        label="Bubble size"
-        value={Math.round(currentBase.width * 100)}
-        min={8}
-        max={32}
-        step={1}
-        unit="%"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => setSize(next / 100)}
-      />
-    </PanelSection>
-
-    <PanelSection
-      title="Shape"
-      hint="Circle for talking-head puck, rounded for app-style overlay, square for a sharp cut."
-      flush
-    >
-      <div class="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)">
-        {#each shapeOptions as opt (opt.id)}
-          {@const isActive = store.cameraOverlay.shape === opt.id}
-          <button
-            type="button"
-            aria-pressed={isActive}
-            onclick={() => {
-              store.pushUndoState();
-              store.updateCameraOverlay({ shape: opt.id });
-            }}
-            class={cn(
-              "rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-150",
-              "focus:outline-none focus:ring-2 focus:ring-ring/40",
-              isActive
-                ? "border-primary/60 bg-primary/8 text-foreground"
-                : "border-transparent bg-background/40 text-foreground/80 hover:border-border hover:bg-background/80",
-            )}
+      {#if recordedMoveCount > 0}
+        <div class="flex items-center justify-between gap-2 pt-2">
+          <span class="text-[10px] text-muted-foreground">
+            {recordedMoveCount}
+            {recordedMoveCount === 1 ? "move" : "moves"} recorded while you were capturing
+          </span>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="text-[10.5px]"
+            onclick={importRecordedMoves}
           >
-            {opt.label}
-          </button>
-        {/each}
-      </div>
+            {perCut ? "Replace with recorded" : "Use recorded"}
+          </Button>
+        </div>
+      {/if}
+    </PanelSection>
+
+    <PanelSection
+      title="Size & shape"
+      hint="Bubble width as a percentage of the frame (drag its corners in the preview; height matches width), plus its outline shape."
+      flush
+      disabled={!controls.bubble}
+      disabledReason={controls.reason ?? undefined}
+    >
+      {@const sizePct = Math.round(currentBase.width * 100)}
+      <PropRow label="Width">
+        <NumberField
+          class="flex-1"
+          label="Bubble size"
+          icon={Ruler}
+          value={sizePct}
+          min={8}
+          max={32}
+          step={1}
+          suffix="%"
+          onDragStart={() => store.pushUndoState()}
+          onInput={(v) => setSize(v / 100)}
+          onCommit={(v, viaDrag) => {
+            if (!viaDrag) store.pushUndoState();
+            setSize(v / 100);
+          }}
+        />
+      </PropRow>
+      <PropRow label="Shape">
+        <PropSelect
+          class="flex-1"
+          label="Shape"
+          value={store.cameraOverlay.shape}
+          options={shapeOptions.map((o) => ({ value: o.id, label: o.label }))}
+          onChange={(v) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ shape: v as "circle" | "rounded" | "square" });
+          }}
+        />
+      </PropRow>
     </PanelSection>
 
     <PanelSection
@@ -282,6 +415,8 @@ const shapeOptions = [
       title="Grow on zoom"
       hint="When a zoom/focus region ramps in, the camera grows and drifts away from the focus so it never covers the zoomed area."
       flush
+      disabled={!controls.motion}
+      disabledReason={controls.reason ?? undefined}
     >
       {#snippet action()}
         <SegmentedToggle
@@ -294,8 +429,8 @@ const shapeOptions = [
           }}
         />
       {/snippet}
-      {#if store.cameraOverlay.zoomFollow}
-        <SliderControl
+      {#if store.cameraOverlay.zoomFollow && controls.motion}
+        <SliderRow
           label="Strength"
           value={Math.round(store.cameraOverlay.zoomFollowStrength * 100)}
           min={0}
@@ -305,7 +440,7 @@ const shapeOptions = [
           onstart={() => store.pushUndoState()}
           onchange={(next) => store.updateCameraOverlay({ zoomFollowStrength: next / 100 })}
         />
-        <SliderControl
+        <SliderRow
           label="Transition"
           value={Math.round(store.cameraOverlay.zoomFollowDuration * 1000)}
           min={200}
@@ -331,8 +466,14 @@ const shapeOptions = [
       {/if}
     </PanelSection>
 
-    <PanelSection title="Shadow" hint="Drop shadow cast by the bubble. 0% turns it off.">
-      <SliderControl
+    <PanelSection
+      title="Shadow"
+      hint="Drop shadow cast by the bubble. 0% turns it off."
+      flush
+      disabled={!controls.bubble}
+      disabledReason={controls.reason ?? undefined}
+    >
+      <SliderRow
         label="Shadow"
         value={Math.round(store.cameraOverlay.shadow * 100)}
         min={0}
@@ -344,7 +485,7 @@ const shapeOptions = [
       />
     </PanelSection>
 
-    {#if perCut}
+    {#if perCut && controls.motion}
       <PanelSection
         title="Animation smoothness"
         hint="How the camera eases as it glides between per-cut positions."

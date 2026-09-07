@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { organization, subscription } from "$lib/db/schema";
-import { planOf, type PlanId } from "./catalog";
+import { type PlanId, planOf } from "./catalog";
 
 /**
  * Polar webhook → DB sync. `subscription` is the billing record; the
@@ -16,13 +16,7 @@ export type SubscriptionSync = {
 	polarSubscriptionId: string;
 	plan: PlanId;
 	seats: number;
-	status:
-		| "active"
-		| "canceled"
-		| "past_due"
-		| "incomplete"
-		| "trialing"
-		| "unpaid";
+	status: "active" | "canceled" | "past_due" | "incomplete" | "trialing" | "unpaid";
 	currentPeriodEnd: Date | null;
 	cancelAtPeriodEnd: boolean;
 };
@@ -88,10 +82,7 @@ export async function downgradeToFree(organizationId: string): Promise<void> {
 			})
 			.where(eq(subscription.organizationId, organizationId));
 
-		await tx
-			.update(organization)
-			.set({ plan: "free" })
-			.where(eq(organization.id, organizationId));
+		await tx.update(organization).set({ plan: "free" }).where(eq(organization.id, organizationId));
 	});
 }
 

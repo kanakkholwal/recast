@@ -19,17 +19,10 @@ const MAX_BODY = 2000;
  * comments/reactions belong to the caller (drives self-delete + toggle UI)
  * without ever leaking other viewers' fingerprints.
  */
-export const GET: RequestHandler = async ({
-	params,
-	request,
-	cookies,
-	url,
-	getClientAddress,
-}) => {
+export const GET: RequestHandler = async ({ params, request, cookies, url, getClientAddress }) => {
 	const gate = await gateShareAccess(params.id, request, cookies);
 	const sessionId = url.searchParams.get("sessionId") ?? "";
-	// The caller's reaction identity — must match the POST handler so their own
-	// reaction renders pressed. Account id when signed in, else IP, else session.
+	// Must match the POST handler so the caller's own reaction renders pressed: account id, else IP, else session.
 	const key = reactorKey({
 		userId: gate.viewerId,
 		ip: resolveClientIp(request, getClientAddress),
@@ -49,9 +42,7 @@ export const GET: RequestHandler = async ({
 			createdAt: shareComment.createdAt,
 		})
 		.from(shareComment)
-		.where(
-			and(eq(shareComment.shareSlug, params.id), isNull(shareComment.deletedAt)),
-		)
+		.where(and(eq(shareComment.shareSlug, params.id), isNull(shareComment.deletedAt)))
 		.orderBy(asc(shareComment.createdAt));
 
 	const reactionRows = await db
@@ -62,8 +53,7 @@ export const GET: RequestHandler = async ({
 		.from(shareReaction)
 		.where(eq(shareReaction.shareSlug, params.id));
 
-	// Aggregate reactions per emoji → count, and flag the caller's own (a single
-	// reaction now) so the client can render the pressed state.
+	// Aggregate reactions per emoji and flag the caller's own, so the client can render the pressed state.
 	const counts = new Map<string, number>();
 	const mine: string[] = [];
 	for (const r of reactionRows) {
@@ -131,10 +121,7 @@ export const POST: RequestHandler = async ({ params, request, cookies, getClient
 			? Math.max(0, Math.floor(body.atSeconds))
 			: 0;
 
-	// A signed-in account comments under its own profile name — server-stamped
-	// from the gated session, NOT the client body, so the display name (and the
-	// verified badge it earns) can't be spoofed by posting straight to the API.
-	// Guests self-supply a name as before.
+	// Server-stamped from the gated session, not the client body, so a display name and its verified badge can't be spoofed.
 	const authorUserId = gate.viewerId;
 	const authorName = authorUserId
 		? (gate.viewerName?.trim() || clientName || "Member").slice(0, MAX_NAME)

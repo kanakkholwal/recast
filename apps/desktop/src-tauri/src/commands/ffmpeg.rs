@@ -50,13 +50,8 @@ pub fn resolve_export_profile(quality: &str) -> ExportProfile {
     }
 }
 
-/// Encoder *effort* axis, orthogonal to the resolution/quality `ExportProfile`.
-///
-/// This picks how hard each codec works for the SAME quality target — the
-/// CRF / cq values from `ExportProfile` are left untouched. It only moves the
-/// preset / cpu-used knobs, trading encode time against file size and a small
-/// amount of fidelity. `Balanced` reproduces the historical settings exactly,
-/// so existing exports are unchanged unless the user opts into Fast/Quality.
+/// Encoder effort axis, orthogonal to `ExportProfile`: it moves only the preset and cpu-used knobs, leaving the CRF and cq targets untouched.
+/// `Balanced` reproduces the historical settings exactly, so exports are unchanged unless the user opts into Fast or Quality.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ExportSpeed {
     Fast,
@@ -120,27 +115,14 @@ impl ExportSpeed {
 }
 
 pub fn build_output_scale_filter(profile: ExportProfile) -> Option<String> {
-    // libx264 + yuv420p (the chroma subsampling for our MP4 output) requires
-    // even width AND even height. Without enforcement, fitting an arbitrary
-    // source (e.g. 1599×962) into a preset bound (1280×720) preserves the
-    // aspect ratio and produces 1195×720 — the encoder fails to open with
-    // "width not divisible by 2".
-    //
-    // FFmpeg 4.4+ exposes `force_divisible_by=2` on the scale filter, but
-    // the version of FFmpeg we bundle isn't pinned, so we use the
-    // version-agnostic trick: chain a second scale with `trunc(.../2)*2`.
-    // It's effectively a no-op when the previous stage produced even
-    // dimensions, and snaps down by one pixel when it didn't. `neighbor`
-    // sampling on the second pass keeps it cheap (no resample math) and
-    // avoids any smear on the ±1px adjustment.
+    // libx264 + yuv420p need even w/h; chain `trunc(../2)*2` with `neighbor`, since the bundled FFmpeg may predate `force_divisible_by`.
     match (profile.max_width, profile.max_height) {
         (Some(max_width), Some(max_height)) => Some(format!(
             "scale=w='min(iw,{max_width})':h='min(ih,{max_height})':force_original_aspect_ratio=decrease:flags=lanczos,\
              scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2':flags=neighbor"
         )),
         _ => Some(
-            // "source" quality has no resize, but window/region captures can
-            // still be odd-dimensioned. Apply only the even-dim snap.
+            // 'source' quality skips the resize, but window and region captures can still be odd, so apply the even-dim snap.
             "scale=w='trunc(iw/2)*2':h='trunc(ih/2)*2':flags=neighbor".to_string(),
         ),
     }
@@ -211,18 +193,10 @@ pub fn append_subtitles_to_complex(
     } else {
         format!("[{current_video_map}]")
     };
-    // Escape the filename for FFmpeg's TWO-level filtergraph parse:
-    //   1. Single quotes protect the value at the filterchain level (so it isn't
-    //      split on `,`/`;`/`[`).
-    //   2. The drive colon must ALSO survive the filter-OPTION parse, which
-    //      splits options on `:` — single quotes alone don't stop that (hence the
-    //      original "No option name near '/Users/...'"). Backslash-escape it so
-    //      that level unescapes `\:` back to `:` for libass.
-    // Forward slashes work for libass and dodge backslash-escaping of separators.
+    // Two-level parse: quotes protect the filterchain level, and the drive colon needs `\:` to survive the filter-option split.
     let escape = |p: &str| p.replace('\\', "/").replace(':', "\\:");
     let safe = escape(ass_path);
-    // `fontsdir` points libass at a directory of TTFs so a preset's branded font
-    // actually renders in the burn (otherwise libass falls back to a system face).
+    // `fontsdir` points libass at the preset's TTFs, or it falls back to a system face.
     let fonts = fontsdir
         .map(|d| format!(":fontsdir='{}'", escape(d)))
         .unwrap_or_default();
@@ -234,14 +208,8 @@ pub fn append_subtitles_to_complex(
     (new_complex, out_label.to_string())
 }
 
-/// Parameters for `append_camera_overlay_to_complex`.
-///
-/// All pixel values are in **canvas pixels** (= source + padding × 2 with
-/// any letterbox bars), matching the coordinate space of every other overlay
-/// in the export filter graph.
-/// Time-varying camera bubble geometry (zoom-follow): FFmpeg `t`-expressions in
-/// output-stream time. `size_expr` drives both scale w and h (square). When set,
-/// the overlay animates; otherwise the fixed `bubble_*` pixels are used.
+/// Time-varying camera bubble geometry as FFmpeg `t`-expressions in output-stream time; `size_expr` drives both scale axes, and its absence means the fixed `bubble_*` pixels.
+/// All pixel values are canvas pixels (source plus padding, with any letterbox bars), matching every other overlay in the graph.
 #[derive(Debug, Clone)]
 pub struct CameraOverlayAnim {
     pub size_expr: String,
@@ -273,9 +241,7 @@ pub struct CameraOverlayParams {
     /// Top-left of the bubble in canvas pixels.
     pub bubble_x: u32,
     pub bubble_y: u32,
-    /// Bubble dimensions in canvas pixels. Phase 1 enforces 1:1 in CSS, so
-    /// width == height — but the function takes both for forward
-    /// compatibility with non-square shapes.
+    /// Bubble dimensions in canvas pixels. Phase 1 enforces 1:1 in CSS, so width == height — but the function takes both for forward compatibility with non-square shapes.
     pub bubble_w: u32,
     pub bubble_h: u32,
     /// Horizontally flip the camera so the rendered bubble matches what the
@@ -287,17 +253,8 @@ pub struct CameraOverlayParams {
     pub shadow: Option<CameraShadowOverlay>,
 }
 
-/// Append a camera-overlay stage to an existing filter_complex string.
-///
-/// Filter chain emitted (with mask):
-/// ```text
-///   [N:v] hflip?, scale=W:H, format=yuva420p     → [cam_pre]
-///   [M:v] format=gray                            → [cam_mask]
-///   [cam_pre][cam_mask] alphamerge               → [cam_shaped]
-///   [main][cam_shaped] overlay=X:Y               → [vcamera]
-/// ```
-/// Without a mask (square shape) the `format`/`alphamerge` stage is skipped
-/// — the camera is overlaid as a flat rectangle.
+/// Appends a camera-overlay stage to an existing `filter_complex`: scale, `format=yuva420p`, `alphamerge` with a gray mask, then `overlay`.
+/// Without a mask the shape is square, so the format and alphamerge stages are skipped and the camera overlays as a flat rectangle.
 pub fn append_camera_overlay_to_complex(
     filter_complex: Option<&str>,
     current_video_map: &str,
@@ -323,18 +280,14 @@ pub fn append_camera_overlay_to_complex(
     } = params;
     let (cam, bx, by, bw, bh, mirror) = (*cam, *bx, *by, *bw, *bh, *mirror);
     let hflip = if mirror { "hflip," } else { "" };
-    // Match the preview's `object-fit: cover`: scale the camera to COVER the
-    // bubble (preserve aspect, fill), then crop the overflow — never stretch a
-    // non-square webcam into the square (that distorted the picture in export).
-    // The mask/shadow PNGs are already bw×bh, so they keep a plain scale.
-    let cam_cover = format!("scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}");
+    // Cover-crops like the preview's `object-fit`; `exact=1` or an odd bubble snaps to the 4:2:0 grid and alphamerge rejects it.
+    let cam_cover =
+        format!("scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}:exact=1");
 
     let mut stages: Vec<String> = Vec::new();
 
     match anim {
-        // Fixed placement: scale straight to the bubble rect. Sizes are constant,
-        // so the mask/camera alphamerge never sees a size mismatch. The optional
-        // shadow PNG is overlaid at `bubble_xy - padding` just under the bubble.
+        // Fixed placement scales straight to the bubble rect, so mask and camera sizes always match at alphamerge.
         None => {
             let cam_chain = match mask_input_index {
                 Some(mask_idx) => format!(
@@ -362,13 +315,7 @@ pub fn append_camera_overlay_to_complex(
                 "{base_map}[vcam_shaped]overlay={bx}:{by}:format=auto{out_label}"
             ));
         }
-        // Animated placement (zoom-follow / per-cut keyframes). CRITICAL: build the
-        // shaped bubble at FIXED native size and apply the single `eval=frame`
-        // scale to the MERGED stream. Scaling the camera and the (looped-image)
-        // mask independently with `eval=frame` evaluates the size expression at
-        // each input's OWN pts — and the mask image streams at a different frame
-        // rate — so their per-frame sizes diverge and `alphamerge` fails with
-        // EINVAL. One post-merge scale keeps them locked (verified against ffmpeg).
+        // Build the bubble at FIXED native size and scale the MERGED stream: independent `eval=frame` scales resolve on each input's own pts and alphamerge fails EINVAL.
         Some(a) => {
             stages.push(match mask_input_index {
                 Some(mask_idx) => format!(
@@ -379,10 +326,7 @@ pub fn append_camera_overlay_to_complex(
                 None => format!("[{cam}:v]{hflip}{cam_cover},format=yuva420p[vcam_native]"),
             });
             match shadow {
-                // Bake the shadow UNDER the bubble at native size (the padded
-                // canvas needs alpha, hence yuva420p above), then scale the whole
-                // composite by the size expr so shadow + bubble grow/track together
-                // with ONE expression per axis.
+                // Bake the shadow under the bubble at native size, then scale the composite so both track with one expression per axis.
                 Some(sh) => {
                     let ratio_w = sh.canvas_w as f64 / bw.max(1) as f64;
                     let ratio_h = sh.canvas_h as f64 / bh.max(1) as f64;
@@ -430,18 +374,7 @@ pub fn append_camera_overlay_to_complex(
     (new_complex, out_label.to_string())
 }
 
-/// Wrap the current video chain in a palettegen/paletteuse pipeline so GIF
-/// exports have a stable, dithered palette instead of FFmpeg's naive
-/// per-frame 256-colour quantization (which produces heavy banding and noise).
-/// Always routes through `filter_complex`: the `split`/labelled-graph needed
-/// by palettegen is not expressible in the linear `-vf` form.
-///
-/// Returns the extended `filter_complex` string and the new output label to
-/// pass to `-map`. Any inline scale filter is baked into the `paletteuse` leg
-/// so we don't double-sample.
-/// Per-export GIF tuning passed in from the editor UI. Mirrors `GifSettings`
-/// on the JS side but expressed as primitive Rust types so the filter builder
-/// stays free of `serde_json::Value` parsing.
+/// Per-export GIF tuning from the editor UI, in primitive Rust types so the filter builder never parses `serde_json::Value`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GifFilterOptions<'a> {
     /// Output frame rate. Caller resolves overrides vs. quality profile defaults.
@@ -462,16 +395,8 @@ impl<'a> Default for GifFilterOptions<'a> {
     }
 }
 
-/// Pass-2 chain for the 2-pass GIF export. Pass 1 ran palettegen separately
-/// and wrote `palette.png`; the caller wires that file in as a regular FFmpeg
-/// input at `palette_input_index`, and this builder emits a paletteuse-only
-/// stage referencing it.
-///
-/// Single-pass `palettegen→paletteuse` was stalling the UI: palettegen has to
-/// consume every input frame before emitting its one palette frame, so the
-/// encoder's `out_time_us` stays at 0 for the entire palette phase and the
-/// progress bar never moved off 0%. With the palette pre-baked, paletteuse is
-/// a per-frame lookup — frames stream out in real time and progress advances.
+/// Pass-2 chain for the 2-pass GIF export: pass 1 wrote `palette.png`, wired in at `palette_input_index`, so this emits a paletteuse-only stage.
+/// Single-pass palettegen consumes every frame before emitting one, pinning `out_time_us` at 0 so the progress bar never moved.
 pub fn build_gif_paletteuse_external_complex(
     filter_complex: Option<&str>,
     input_label: &str,
@@ -495,9 +420,7 @@ pub fn build_gif_paletteuse_external_complex(
         _ => "dither=bayer:bayer_scale=5".to_string(),
     };
     let fps = options.fps.max(1);
-    // Pin input chain to GIF fps + output scale, then pair with the pre-baked
-    // palette via paletteuse. Two filter stages because paletteuse takes two
-    // input pads and we need a labelled intermediate to feed it.
+    // Two stages: paletteuse takes two input pads, so the fps and scale chain needs a labelled intermediate.
     let chain = format!(
         "{normalized_input}fps={fps}{scale_clause}[_gifv];[_gifv][{palette_input_index}:v]paletteuse={dither_clause}:diff_mode=rectangle{final_label}"
     );
@@ -508,11 +431,8 @@ pub fn build_gif_paletteuse_external_complex(
     (new_complex, final_label.to_string())
 }
 
-/// Build the `-vf` filter for the GIF palette pre-pass (pass 1 of the 2-pass
-/// GIF export). Drives a standalone FFmpeg invocation that consumes the source
-/// at the GIF target fps + scale and writes the resulting palette to a single
-/// PNG. Kept separate from the pipeline filter_complex because the pre-pass
-/// only needs a flat `-vf` chain — no overlay inputs, no labelled pads.
+/// The `-vf` filter for the GIF palette pre-pass, driving a standalone FFmpeg run that consumes the source at target fps and scale and writes one palette PNG.
+/// Kept out of the pipeline `filter_complex` because the pre-pass needs only a flat chain, with no overlay inputs or labelled pads.
 pub fn build_gif_palette_prepass_filter(
     options: GifFilterOptions<'_>,
     inline_scale: Option<&str>,
@@ -554,14 +474,30 @@ mod camera_overlay_tests {
 
     #[test]
     fn camera_is_cover_cropped_not_stretched() {
-        // Parity with the preview's `object-fit: cover`: the camera scales to
-        // COVER + crops, never stretches into the square. The mask keeps a plain
-        // scale (it is already bw×bh).
+        // Parity with `object-fit: cover`: the camera covers and crops; the mask keeps a plain scale, already bw by bh.
         let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &base_params());
         assert!(complex.contains(
-            "[2:v]hflip,scale=200:200:force_original_aspect_ratio=increase,crop=200:200,format=yuva420p[vcam_pre]"
+            "[2:v]hflip,scale=200:200:force_original_aspect_ratio=increase,crop=200:200:exact=1,format=yuva420p[vcam_pre]"
         ));
         assert!(complex.contains("[3:v]format=gray,scale=200:200[vcam_mask]"));
+    }
+
+    /// An odd bubble is the export-killer: without `exact=1` crop snaps the 4:2:0
+    /// camera to 374 while the gray mask stays 375 and alphamerge fails EINVAL.
+    #[test]
+    fn an_odd_bubble_crops_exactly_so_the_mask_still_matches() {
+        for anim in [None, Some(anim())] {
+            let mut p = base_params();
+            p.bubble_w = 375;
+            p.bubble_h = 375;
+            p.anim = anim;
+            let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &p);
+            assert!(
+                complex.contains("crop=375:375:exact=1"),
+                "an odd bubble was cropped onto the chroma grid: {complex}"
+            );
+            assert!(complex.contains("[3:v]format=gray,scale=375:375[vcam_mask]"));
+        }
     }
 
     #[test]
@@ -574,8 +510,7 @@ mod camera_overlay_tests {
             canvas_h: 248,
         });
         let (complex, _) = append_camera_overlay_to_complex(Some("PRE"), "vbg", &p);
-        // Shadow PNG normalised + overlaid at bubble_xy - padding, then the bubble
-        // composites on top of the shadowed background [vcam_bg].
+        // Shadow is normalised and overlaid at bubble_xy minus padding, then the bubble composites on top.
         assert!(complex.contains("[4:v]format=rgba[vcam_shadow]"));
         assert!(complex.contains("[vbg][vcam_shadow]overlay=76:56"));
         assert!(complex.contains("[vcam_bg][vcam_shaped]overlay=100:80"));
@@ -591,10 +526,7 @@ mod camera_overlay_tests {
 
     #[test]
     fn animated_no_shadow_alphamerges_at_native_size_then_scales_once() {
-        // Regression: the mask must scale to a FIXED native size (200:200), NOT
-        // with the per-frame size expr. Independent eval=frame scales on the
-        // camera and the looped-image mask desync (different pts) → alphamerge
-        // EINVAL. The single eval=frame scale lives on the merged stream.
+        // Regression: the mask must scale to a FIXED native size, or independent eval=frame scales desync and alphamerge fails EINVAL.
         let mut p = base_params();
         p.anim = Some(anim());
         let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &p);
@@ -616,8 +548,7 @@ mod camera_overlay_tests {
             canvas_h: 240,
         });
         let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &p);
-        // Bubble merged at native size, shadow padded under it, one composite scale
-        // (ratio 240/200 = 1.2), and the overlay tracks bubble - scaled padding.
+        // Bubble merged at native size, shadow padded under it, one composite scale, and the overlay tracks bubble minus scaled padding.
         assert!(complex.contains("[vcam_pre][vcam_mask]alphamerge[vcam_native]"));
         assert!(complex.contains("[vcam_native]pad=240:240:20:20:color=#00000000[vcam_padded]"));
         assert!(complex.contains("[vcam_sh][vcam_padded]overlay=0:0[vcam_comp]"));
@@ -821,8 +752,7 @@ mod gif_tests {
 
 #[cfg(test)]
 mod blur_tests {
-    // Assertions use `2*r + 1 <= dim` (odd kernel size fits the plane); the
-    // `+ 1` is the kernel semantics, so keep it over clippy's `2*r < dim`.
+    // `2*r + 1 <= dim` is the kernel semantics (an odd kernel fits the plane), so keep it over clippy's `2*r < dim`.
     #![allow(clippy::int_plus_one)]
     use super::*;
 
@@ -955,8 +885,7 @@ mod blur_tests {
 
     #[test]
     fn radius_huge_clamps_to_127() {
-        // Large region so boxblur's hard ceiling (127) — not the region size —
-        // is the binding limit.
+        // Large enough that boxblur's hard ceiling of 127, not the region size, is the binding limit.
         let regs = [BlurRegion {
             radius: 9999,
             w: 1024,
@@ -1075,9 +1004,7 @@ mod blur_tests {
 
     #[test]
     fn end_clamped_above_start() {
-        // Pathological project state: end < start. Filter should still emit
-        // a valid enable expression with end = start (so no exception, just
-        // a zero-length window).
+        // Pathological end < start must still emit a valid enable expression, as a zero-length window.
         let regs = [region_with("glass", 5.0, 1.0)];
         let (chain, _) = build_annotation_blur_complex(None, "vout", &regs);
         assert!(
@@ -1145,10 +1072,7 @@ mod export_profile_tests {
                 assert!(w >= 320 && h >= 240, "{quality}: bounds {w}x{h} too small");
             }
             assert!(!p.mp4_preset.is_empty(), "{quality}: empty x264 preset");
-            // The output scale filter always ends with the even-dimension snap
-            // (libx264 + yuv420p needs even w/h); bounded profiles additionally
-            // fit-within their max box. The unbounded "source" profile omits the
-            // fit step — that's correct, not a bug.
+            // Every profile ends with the even-dimension snap; only bounded ones also fit within their max box.
             let bounded = p.max_width.is_some();
             if let Some(f) = build_output_scale_filter(p) {
                 assert!(
@@ -1206,11 +1130,8 @@ mod export_profile_tests {
 
 #[cfg(test)]
 mod export_retention_tests {
-    //! End-to-end-style tests: verify that an `Annotation` carrying a `Blur`
-    //! kind survives the full pipeline from JSON → `RenderState` → filter
-    //! chain assembly, with the right region geometry preserved at every
-    //! step. Mirrors what `export_video` does on the live path, without
-    //! actually invoking ffmpeg (so the test stays hermetic and fast).
+    //! End-to-end tests that a `Blur` annotation survives JSON to `RenderState` to filter-chain assembly with its region geometry intact.
+    //! Mirrors what `export_video` does on the live path without invoking ffmpeg, so the tests stay hermetic and fast.
     use super::*;
     use crate::render::graph::RenderState;
     use crate::render::node_types::AnnotationKind;
@@ -1267,9 +1188,7 @@ mod export_retention_tests {
                     if cw < 4 || ch < 4 {
                         return None;
                     }
-                    // 12% of the short edge gives a redaction-grade cap:
-                    // 1080p → ~130, clamped to FFmpeg boxblur's hard max of
-                    // 127. The previous 5% cap left text readable.
+                    // 12% of the short edge is redaction-grade (1080p gives ~130, clamped to boxblur's 127); the old 5% left text readable.
                     let max_dim = canvas_w.min(canvas_h) as f64 * 0.12;
                     let radius = (strength.clamp(0.0, 1.0) * max_dim)
                         .round()
@@ -1553,8 +1472,7 @@ mod blur_serde_tests {
 
 #[cfg(test)]
 mod gif_settings_tests {
-    // Tests mutate one `GifSettings` across successive asserts, so the
-    // default-then-reassign pattern is intentional (not a struct-init case).
+    // Tests mutate one `GifSettings` across successive asserts, so default-then-reassign is intentional.
     #![allow(clippy::field_reassign_with_default)]
     use super::super::types::GifSettings;
     use serde_json::json;
@@ -1637,9 +1555,7 @@ pub struct BlurRegion<'a> {
     pub tint_rgb: u32,
     /// 0..=1 master opacity baked into the colour overlay.
     pub opacity: f64,
-    /// 0..=1 — the original blur strength. The tint pass scales its alpha
-    /// by this so high strength → near-opaque box (true redaction). The
-    /// preview applies the same scaling.
+    /// 0..=1 — the original blur strength. The tint pass scales its alpha by this so high strength → near-opaque box (true redaction). The preview applies the same scaling.
     pub strength: f64,
     /// Corner radius in pixels (0 = square). Rounds the blurred region via a
     /// per-pixel alpha mask so the corners show the sharp video, matching the
@@ -1647,28 +1563,17 @@ pub struct BlurRegion<'a> {
     pub corner_px: f64,
 }
 
-/// A `,format=yuva420p,geq=…` snippet that sets the alpha plane to a
-/// rounded-rect mask (opaque inside, transparent in the cut corners of radius
-/// `r` px) while copying the colour planes. `ox`/`oy` measure how far a pixel
-/// lies outside the inner rect (the box shrunk by `r`); if that offset is past
-/// the corner arc the pixel is transparent. Commas are escaped `\,` like the
-/// `enable=` expression so the filtergraph parser hands geq clean args.
+/// A `format=yuva420p,geq` snippet setting alpha to a rounded-rect mask of radius `r` while copying the colour planes.
+/// `ox`/`oy` measure how far a pixel lies outside the inner rect, and past the corner arc it is transparent; commas are escaped so the filtergraph parser hands geq clean args.
 fn rounded_alpha_filter(r: f64) -> String {
     let r = format!("{r:.2}");
     format!(
-        ",format=yuva420p,geq=lum='p(X\\,Y)':cb='p(X\\,Y)':cr='p(X\\,Y)':a='255*(1-gt(pow(max(0\\,max({r}-X\\,X-(W-1-{r})))\\,2)+pow(max(0\\,max({r}-Y\\,Y-(H-1-{r})))\\,2)\\,{r}*{r}))'",
-        r = r
+        ",format=yuva420p,geq=lum='p(X\\,Y)':cb='p(X\\,Y)':cr='p(X\\,Y)':a='255*(1-gt(pow(max(0\\,max({r}-X\\,X-(W-1-{r})))\\,2)+pow(max(0\\,max({r}-Y\\,Y-(H-1-{r})))\\,2)\\,{r}*{r}))'"
     )
 }
 
-/// Build a filter_complex chain that crops each `BlurRegion` out of the
-/// current video, runs `boxblur` on it, and `overlay`s the result back
-/// onto the main video — gated by an `enable=between(t,…)` expression so
-/// the blur is only visible during the annotation's lifetime.
-///
-/// The function is deterministic and pure: callers can unit-test it in
-/// isolation. Returns the new filter_complex string and the resulting
-/// video map label.
+/// Crops each `BlurRegion`, runs `boxblur`, and overlays it back, gated by `enable=between(t,…)` so the blur only shows during the annotation's lifetime.
+/// Deterministic and pure, so it unit-tests in isolation; returns the new `filter_complex` and the resulting video map label.
 pub fn build_annotation_blur_complex(
     filter_complex: Option<&str>,
     input_label: &str,
@@ -1687,10 +1592,7 @@ pub fn build_annotation_blur_complex(
         format!("[{input_label}]")
     };
 
-    // Each region produces three nodes:
-    //   [in] split  → [main_i][src_i]
-    //   [src_i] crop=… , boxblur=… , (optional)drawbox=color  → [blur_i]
-    //   [main_i][blur_i] overlay=x:y:enable='between(t,start,end)' → [in_{i+1}]
+    // Each region becomes a split, then crop plus boxblur (plus an optional drawbox), then an enable-gated overlay back onto the main copy.
     let mut lines: Vec<String> = Vec::new();
     let mut current_in = normalized_input;
 
@@ -1704,28 +1606,15 @@ pub fn build_annotation_blur_complex(
         };
         let blur_label = format!("[blur_done_{i}]");
 
-        // Split the current input. FFmpeg's split takes labels directly,
-        // no `=` between filter name and outputs.
+        // FFmpeg's split takes labels directly, with no `=` between the filter name and its outputs.
         lines.push(format!("{current_in}split{main_label}{src_label}"));
 
-        // Crop + box-blur the source copy.
-        //
-        // boxblur rejects a radius larger than `(min(plane_w, plane_h) - 1) / 2`
-        // for EACH plane, and under 4:2:0 the chroma plane is half-size, so it
-        // caps lower than luma. We therefore clamp each radius to its OWN plane:
-        // a small blur region can't request a radius bigger than itself. This
-        // was the "Invalid luma_param radius value 84 ... must be <= 81" export
-        // crash — a heavy blur on a small region. (127 is boxblur's hard ceiling;
-        // luma_power=3 stacks three passes so even a region-limited radius still
-        // obliterates detail for redaction. Luma stays as strong as the region
-        // allows; chroma may be softer without weakening the redaction.)
+        // Clamp the radius per PLANE: 4:2:0 chroma is half-size and caps lower, which crashed exports with 'radius must be <= 81'.
         let w = region.w.max(2);
         let h = region.h.max(2);
         let x = region.x.max(0);
         let y = region.y.max(0);
-        // FFmpeg requires `2*radius + 1 <= plane_dim`, i.e. radius <=
-        // (dim-1)/2 per plane. A region too small to support even radius 1
-        // resolves to 0 (a valid boxblur no-op) rather than an invalid literal.
+        // A region too small for even radius 1 resolves to 0, a valid boxblur no-op, rather than an invalid literal.
         let requested = region.radius.clamp(1, 127) as i32;
         let luma_max = (w.min(h) - 1) / 2;
         let chroma_max = ((w / 2).min(h / 2) - 1) / 2;
@@ -1735,12 +1624,7 @@ pub fn build_annotation_blur_complex(
             "{src_label}crop={w}:{h}:{x}:{y},boxblur=luma_radius={luma_r}:luma_power=3:chroma_radius={chroma_r}:chroma_power=3"
         );
 
-        // Tint variants overlay a translucent solid colour over the
-        // already-blurred crop using `drawbox` with `t=fill`. `glass`
-        // skips the tint pass entirely.
-        // Tint alpha tracks strength: 0.15 → 0.95 across the slider, so the
-        // strength control doubles as a redaction dial. Master opacity still
-        // multiplies on top. Mirrors the preview side in BlurAnnotationLayer.
+        // Tint alpha tracks strength (0.15 to 0.95) so the slider doubles as a redaction dial; `glass` skips the pass.
         let opacity = region.opacity.clamp(0.0, 1.0);
         let strength = region.strength.clamp(0.0, 1.0);
         let base_alpha = 0.15 + 0.80 * strength;
@@ -1756,17 +1640,14 @@ pub fn build_annotation_blur_complex(
                     base_alpha * opacity
                 ))
             }
-            // glass: pile a faint grey wash on past strength=0.6 so the
-            // glass variant also redacts when pushed hard.
+            // glass: add a faint grey wash past strength 0.6 so it redacts too when pushed hard.
             _ if strength > 0.6 => Some(format!("gray@{:.3}", ((strength - 0.6) * 0.6) * opacity)),
             _ => None,
         };
         if let Some(rgba) = tint_rgba {
             tail.push_str(&format!(",drawbox=x=0:y=0:w=iw:h=ih:color={rgba}:t=fill"));
         }
-        // Rounded corners: give the blurred crop a rounded-rect alpha so the
-        // overlay leaves the sharp video showing in the cut corners (matches the
-        // preview). Clamp to half the shorter side (fully rounded).
+        // A rounded alpha on the blurred crop leaves sharp video in the cut corners; clamped to half the shorter side.
         let corner = region.corner_px.min((w.min(h) as f64) / 2.0);
         if corner >= 1.0 {
             tail.push_str(&rounded_alpha_filter(corner));
@@ -1774,8 +1655,7 @@ pub fn build_annotation_blur_complex(
         tail.push_str(&blur_label);
         lines.push(tail);
 
-        // Overlay the blurred crop back onto the main copy at the
-        // region's position, gated on the enable window.
+        // Overlay the blurred crop back onto the main copy at the region's position, gated on the enable window.
         let enable = format!(
             "between(t\\,{start:.4}\\,{end:.4})",
             start = region.start_secs.max(0.0),
@@ -1798,11 +1678,8 @@ pub fn build_annotation_blur_complex(
     (combined, current_in)
 }
 
-/// Lines that should NOT count as part of the error context. We pipe
-/// progress to stderr (`-progress pipe:2 -stats_period 0.1`) so it
-/// streams in tens of times per second; without filtering, the last few
-/// stderr lines are always progress noise and the real diagnostic gets
-/// evicted.
+/// Lines that should NOT count as error context.
+/// Progress is piped to stderr tens of times a second, so without filtering the last stderr lines are always progress noise and the real diagnostic is evicted.
 fn is_progress_line(line: &str) -> bool {
     const PROGRESS_KEYS: &[&str] = &[
         "frame=",
@@ -1830,19 +1707,279 @@ pub fn summarize_ffmpeg_error(stderr: &[u8]) -> String {
         .collect();
 
     if lines.is_empty() {
-        "FFmpeg failed without returning a detailed error.".into()
-    } else {
-        lines
-            .iter()
-            .rev()
-            .take(12)
-            .copied()
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect::<Vec<_>>()
-            .join("\n")
+        return "FFmpeg failed without returning a detailed error.".into();
     }
+
+    // FFmpeg prints the real diagnostic FIRST then a long epilogue, so taking the tail reported the least informative lines.
+    let diagnostics: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|line| is_diagnostic_line(line))
+        .take(MAX_SUMMARY_LINES)
+        .collect();
+    if !diagnostics.is_empty() {
+        return diagnostics.join(
+            "
+",
+        );
+    }
+
+    lines
+        .iter()
+        .rev()
+        .take(MAX_SUMMARY_LINES)
+        .copied()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
+}
+
+const MAX_SUMMARY_LINES: usize = 8;
+
+/// Most diagnostic lines to retain per run. Errors are rare, so this is only a
+/// runaway guard; a normal failure never reaches it.
+pub(crate) const MAX_RETAINED_ERRORS: usize = 32;
+
+/// The user-facing failure message: the diagnostic lines captured live, else a summary of whatever tail survived.
+/// `errors` is collected as stderr streams precisely because the tail rotates: FFmpeg states the cause while opening inputs, then buries it under kilobytes of listings.
+pub fn summarize_ffmpeg_failure(errors: &[String], stderr_tail: &[u8]) -> String {
+    if errors.is_empty() {
+        return summarize_ffmpeg_error(stderr_tail);
+    }
+    errors
+        .iter()
+        .take(MAX_SUMMARY_LINES)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
+}
+
+/// Whether a line names a cause, as opposed to restating that the run failed.
+/// The generic epilogue lines are excluded on purpose: they are exactly what
+/// used to fill the whole summary while the real message scrolled out of it.
+pub(crate) fn is_diagnostic_line(line: &str) -> bool {
+    const GENERIC: &[&str] = &[
+        "conversion failed",
+        "task finished with error code",
+        "terminating thread with return code",
+    ];
+    const CAUSES: &[&str] = &[
+        "error",
+        "invalid",
+        "failed",
+        "unable to",
+        "cannot",
+        "could not",
+        "no such",
+        "not found",
+        "unsupported",
+        "denied",
+        "does not contain",
+        "incorrect",
+        "no space left",
+        "out of memory",
+    ];
+    let lower = line.to_ascii_lowercase();
+    if GENERIC.iter().any(|g| lower.contains(g)) {
+        return false;
+    }
+    CAUSES.iter().any(|c| lower.contains(c))
+}
+
+#[cfg(test)]
+mod error_summary_tests {
+    use super::summarize_ffmpeg_error;
+
+    /// A real failing mux, trimmed to shape: the cause is near the top and the
+    /// boilerplate epilogue is what the tail-based summary used to return.
+    const REAL_FAILURE: &str = "[aist#1:0/pcm_s16le @ 000001c9] Error submitting packet to decoder: Invalid data found when processing input
+Input #1, wav, from 'session.audio.wav':
+  Duration: 00:01:07.00, bitrate: 1536 kb/s
+Output #0, mp4, to 'Recast_export.mp4':
+  Metadata:
+    creation_time   : 2026-08-24T19:22:17.000000Z
+    handler_name    : MediabunnyVideoHandler
+    encoder         : Mediabunny
+  Stream #0:1: Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 192 kb/s
+  Metadata:
+    encoder         : Lavc62.28.100 aac
+[fc#0 @ 000001c9] Task finished with error code: -1094995529 (Invalid data found when processing input)
+[fc#0 @ 000001c9] Terminating thread with return code -1094995529 (Invalid data found when processing input)
+[mp4 @ 000001c9] Starting second pass: moving the moov atom to the beginning of the file
+[out#0/mp4 @ 000001c9] video:796KiB audio:1576KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 3.169816%
+[aac @ 000001c9] Qavg: 57616.910
+Conversion failed!
+";
+
+    #[test]
+    fn surfaces_the_cause_not_the_epilogue() {
+        let summary = summarize_ffmpeg_error(REAL_FAILURE.as_bytes());
+        assert!(
+            summary.contains("Error submitting packet to decoder"),
+            "the actual cause must survive: {summary}"
+        );
+    }
+
+    #[test]
+    fn drops_the_lines_that_only_restate_the_failure() {
+        let summary = summarize_ffmpeg_error(REAL_FAILURE.as_bytes());
+        assert!(!summary.contains("Conversion failed!"), "{summary}");
+        assert!(!summary.contains("Qavg"), "{summary}");
+        assert!(!summary.contains("muxing overhead"), "{summary}");
+        assert!(
+            !summary.contains("Task finished with error code"),
+            "{summary}"
+        );
+    }
+
+    #[test]
+    fn keeps_the_summary_short_enough_to_read_in_a_toast() {
+        let summary = summarize_ffmpeg_error(REAL_FAILURE.as_bytes());
+        assert!(summary.lines().count() <= 8, "{summary}");
+    }
+
+    #[test]
+    fn falls_back_to_the_tail_when_nothing_looks_diagnostic() {
+        let bland = "Input #0, mov,mp4
+  Duration: 00:00:10.00
+  Stream #0:0: Video: h264
+";
+        let summary = summarize_ffmpeg_error(bland.as_bytes());
+        assert!(summary.contains("Stream #0:0"), "{summary}");
+    }
+
+    #[test]
+    fn reports_plainly_when_ffmpeg_said_nothing() {
+        assert_eq!(
+            summarize_ffmpeg_error(b""),
+            "FFmpeg failed without returning a detailed error."
+        );
+    }
+
+    #[test]
+    fn a_missing_input_is_reported_as_the_missing_input() {
+        let stderr = "[in#1 @ 0x1] Error opening input: No such file or directory
+Error opening input file session.microphone.wav.
+Error opening input files: No such file or directory
+";
+        let summary = summarize_ffmpeg_error(stderr.as_bytes());
+        assert!(summary.contains("session.microphone.wav"), "{summary}");
+    }
+
+    #[test]
+    fn a_cause_captured_live_beats_whatever_the_tail_holds() {
+        // Pure epilogue, exactly as it arrives on a long export once the rotating buffer has drained the real message.
+        let captured = vec![
+            "[aist#2:0/pcm_s16le @ 0x1] Error submitting packet to decoder: Invalid data found when processing input"
+                .to_string(),
+        ];
+        let summary = super::summarize_ffmpeg_failure(&captured, REAL_FAILURE.as_bytes());
+        assert!(
+            summary.contains("Error submitting packet to decoder"),
+            "{summary}"
+        );
+        assert!(!summary.contains("Qavg"), "{summary}");
+    }
+
+    #[test]
+    fn with_nothing_captured_it_still_summarizes_the_tail() {
+        let summary = super::summarize_ffmpeg_failure(&[], REAL_FAILURE.as_bytes());
+        assert!(
+            summary.contains("Error submitting packet to decoder"),
+            "{summary}"
+        );
+    }
+
+    #[test]
+    fn a_flood_of_captured_errors_stays_toast_sized() {
+        let captured: Vec<String> = (0..40)
+            .map(|i| format!("[aac @ 0x1] Invalid frame {i}"))
+            .collect();
+        let summary = super::summarize_ffmpeg_failure(&captured, b"");
+        assert_eq!(summary.lines().count(), 8);
+        // The FIRST errors are the root cause; later ones are consequences.
+        assert!(summary.contains("Invalid frame 0"), "{summary}");
+        assert!(!summary.contains("Invalid frame 9"), "{summary}");
+    }
+
+    #[test]
+    fn the_generic_epilogue_is_never_captured_as_a_cause() {
+        assert!(!super::is_diagnostic_line(
+            "[fc#0 @ 0x1] Task finished with error code: -1094995529 (Invalid data found when processing input)"
+        ));
+        assert!(!super::is_diagnostic_line("Conversion failed!"));
+        assert!(super::is_diagnostic_line(
+            "[aist#1:0/pcm_f32le @ 0x1] Error submitting packet to decoder: Invalid data found when processing input"
+        ));
+    }
+
+    #[test]
+    fn progress_blocks_never_reach_the_summary() {
+        let stderr = "frame=120
+fps=30
+out_time_us=4000000
+[aac @ 0x1] Invalid channel layout
+progress=continue
+";
+        let summary = summarize_ffmpeg_error(stderr.as_bytes());
+        assert_eq!(summary, "[aac @ 0x1] Invalid channel layout");
+    }
+}
+
+/// The same four fields ffprobe is asked for, read in process. `None` where
+/// there is no such decoder or it cannot open the file, which falls back.
+#[cfg(windows)]
+fn probe_native(path: &Path, size_bytes: u64) -> Option<VideoMetadata> {
+    /// Media Foundation counts in 100 ns units.
+    const TICKS_PER_SECOND: f64 = 10_000_000.0;
+
+    let reader = match recast_codec_mf::VideoReader::open(path) {
+        Ok(reader) => reader,
+        Err(error) => {
+            log::debug!("native probe ({}): {error}", path.display());
+            return None;
+        }
+    };
+    let info = reader.info();
+    let (num, den) = info.frame_rate;
+    Some(VideoMetadata {
+        duration: info.duration as f64 / TICKS_PER_SECOND,
+        width: info.width,
+        height: info.height,
+        // Left at 0 when unstated so `usable` refuses the answer; a stand-in rate would silently pin the export's generators to a rate the file never claimed.
+        fps: match den > 0 && num > 0 {
+            true => f64::from(num) / f64::from(den),
+            false => 0.0,
+        },
+        codec: info.codec.clone(),
+        size_bytes,
+    })
+}
+
+/// Bumped when a probe answer that used to be cached is no longer trusted, so
+/// stale entries cannot outlive the guard that would now refuse them.
+const PROBE_GENERATION: u64 = 1;
+
+#[cfg(not(windows))]
+fn probe_native(_path: &Path, _size_bytes: u64) -> Option<VideoMetadata> {
+    None
+}
+
+/// A native answer worth using, or `None` to let ffprobe run.
+///
+/// Every field is load-bearing at export, so a partial answer is refused whole:
+/// Media Foundation describes some containers with no duration and a frame rate
+/// off by an order of magnitude, which pins the composite's generators there.
+fn usable(meta: Option<VideoMetadata>) -> Option<VideoMetadata> {
+    meta.filter(|m| m.width > 0 && m.height > 0 && m.duration > 0.0 && m.fps >= 1.0)
 }
 
 pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
@@ -1850,14 +1987,16 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
         return Err("File not found".into());
     }
 
-    // ffprobe is spawned on every editor open (100–500 ms cold) and again
-    // during thumbnail generation. The result is immutable for a given file,
-    // so serve it from the file-identity disk cache when available.
-    if let Some(cached) = crate::cache::get::<VideoMetadata>("probe", &[path], 0) {
+    // ffprobe costs 100-500 ms cold and its result is immutable per file, so serve it from the file-identity cache.
+    if let Some(cached) = crate::cache::get::<VideoMetadata>("probe", &[path], PROBE_GENERATION) {
         return Ok(cached);
     }
 
     let size_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or_default();
+    if let Some(meta) = usable(probe_native(path, size_bytes)) {
+        crate::cache::put("probe", &[path], PROBE_GENERATION, &meta);
+        return Ok(meta);
+    }
     let path_string = path.to_string_lossy().to_string();
     let mut command = Command::new(ffprobe_path());
     command.args([
@@ -1921,9 +2060,8 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
                 codec,
                 size_bytes,
             };
-            // Only the successful probe is cached — the zeroed fallback below
-            // represents a probe failure and must not be pinned.
-            crate::cache::put("probe", &[path], 0, &meta);
+            // Only a successful probe is cached; the zeroed fallback below must not be pinned.
+            crate::cache::put("probe", &[path], PROBE_GENERATION, &meta);
             Ok(meta)
         }
         _ => Ok(VideoMetadata {
@@ -1937,7 +2075,34 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
     }
 }
 
+/// Whether `path` carries an audio track. The in-process reader answers by
+/// opening one, which is what `Ok(None)` from it means.
+#[cfg(windows)]
+fn has_audio_native(path: &Path) -> Option<bool> {
+    use recast_codec_mf::{AudioFormat, AudioReader};
+
+    let format = AudioFormat {
+        sample_rate: 48_000,
+        channels: 2,
+    };
+    match AudioReader::open(path, format) {
+        Ok(reader) => Some(reader.is_some()),
+        Err(error) => {
+            log::debug!("native audio probe ({}): {error}", path.display());
+            None
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn has_audio_native(_path: &Path) -> Option<bool> {
+    None
+}
+
 pub fn has_audio(path: &Path) -> bool {
+    if let Some(answer) = has_audio_native(path) {
+        return answer;
+    }
     let mut command = Command::new(ffprobe_path());
     command.args([
         "-v",
@@ -2013,4 +2178,140 @@ pub fn encode_png_bytes(img: &image::RgbaImage) -> Option<Vec<u8>> {
 pub fn encode_thumbnail_base64(img: &image::RgbaImage) -> Option<String> {
     let b64 = general_purpose::STANDARD.encode(encode_png_bytes(img)?);
     Some(format!("data:image/png;base64,{b64}"))
+}
+
+#[cfg(all(test, windows))]
+mod native_probe_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    /// A clip with a known geometry, rate and audio track, written by the
+    /// sidecar so both probes read the same file.
+    fn clip(ffmpeg: &Path, path: &Path, with_audio: bool) {
+        let mut args: Vec<String> = vec![
+            "-hide_banner".into(),
+            "-loglevel".into(),
+            "error".into(),
+            "-y".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "testsrc=size=320x180:rate=25:duration=1".into(),
+        ];
+        if with_audio {
+            args.extend([
+                "-f".into(),
+                "lavfi".into(),
+                "-i".into(),
+                "sine=frequency=440:duration=1".into(),
+                "-c:a".into(),
+                "aac".into(),
+            ]);
+        }
+        args.extend([
+            "-c:v".into(),
+            "libx264".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            path.to_string_lossy().into_owned(),
+        ]);
+        let mut command = Command::new(ffmpeg);
+        command.args(&args);
+        crate::ffmpeg::configure_silent_command(&mut command);
+        let status = command.status().expect("ffmpeg runs");
+        assert!(status.success(), "the fixture clip did not encode");
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("recast-probe-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch");
+        dir
+    }
+
+    /// The swap is only safe if the in-process probe answers what ffprobe did.
+    #[test]
+    fn the_native_probe_agrees_with_ffprobe() {
+        let Some(ffmpeg) = recast_testkit::ffmpeg_path() else {
+            return;
+        };
+        let dir = scratch("agree");
+        let path = dir.join("clip.mp4");
+        clip(&ffmpeg, &path, true);
+
+        let native = probe_native(&path, 0).expect("the native probe reads the clip");
+        assert_eq!((native.width, native.height), (320, 180));
+        assert!((native.fps - 25.0).abs() < 0.01, "fps {}", native.fps);
+        assert!(
+            (native.duration - 1.0).abs() < 0.1,
+            "duration {}",
+            native.duration
+        );
+        assert_eq!(native.codec, "h264");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_clip_with_no_sound_is_reported_as_having_none() {
+        let Some(ffmpeg) = recast_testkit::ffmpeg_path() else {
+            return;
+        };
+        let dir = scratch("audio");
+        let silent = dir.join("silent.mp4");
+        let loud = dir.join("loud.mp4");
+        clip(&ffmpeg, &silent, false);
+        clip(&ffmpeg, &loud, true);
+
+        assert_eq!(has_audio_native(&silent), Some(false));
+        assert_eq!(has_audio_native(&loud), Some(true));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn meta(width: u32, height: u32) -> VideoMetadata {
+        VideoMetadata {
+            duration: 1.0,
+            width,
+            height,
+            fps: 30.0,
+            codec: "h264".into(),
+            size_bytes: 0,
+        }
+    }
+
+    /// A zero-sized answer is what a reader that opened a file it cannot really
+    /// read reports, and trusting it would size the whole export wrong.
+    #[test]
+    fn a_zero_sized_native_answer_is_refused_so_ffprobe_runs() {
+        assert!(usable(Some(meta(0, 180))).is_none());
+        assert!(usable(Some(meta(320, 0))).is_none());
+        assert!(usable(None).is_none());
+        assert!(usable(Some(meta(320, 180))).is_some());
+    }
+
+    /// Media Foundation described a real 1920x1080 recording as 7.7 fps with no
+    /// duration at all, and the export pinned its background generator there.
+    #[test]
+    fn a_native_answer_missing_duration_or_rate_is_refused_so_ffprobe_runs() {
+        let no_duration = VideoMetadata {
+            duration: 0.0,
+            ..meta(1920, 1080)
+        };
+        assert!(usable(Some(no_duration)).is_none());
+        let no_rate = VideoMetadata {
+            fps: 0.0,
+            ..meta(1920, 1080)
+        };
+        assert!(usable(Some(no_rate)).is_none());
+    }
+
+    /// A file the in-process reader cannot open must fall back rather than be
+    /// reported as a zero-sized video, which would size the whole export wrong.
+    #[test]
+    fn an_unreadable_file_falls_back_instead_of_answering_zero() {
+        let dir = scratch("unreadable");
+        let path = dir.join("not-a-video.mp4");
+        std::fs::write(&path, b"not a video").expect("write");
+        assert!(probe_native(&path, 0).is_none_or(|m| m.width == 0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -63,8 +63,7 @@ export const CURSOR_STYLES: CursorStyle[] = [
 		hotspot: { x: 32, y: 32 },
 	},
 	{
-		// Apple cursor set: rest=arrow, press=link hand, rightPress=context, drag=grab.
-		// See ./sprites/CREDITS.md for attribution.
+		// Apple set: rest=arrow, press=link hand, rightPress=context, drag=grab. See ./sprites/CREDITS.md.
 		id: "macos-system",
 		label: "macOS System",
 		description: "Apple cursor set: arrow, link hand, grab, and right-click states.",
@@ -78,9 +77,7 @@ export const CURSOR_STYLES: CursorStyle[] = [
 		dragHotspot: { x: 32, y: 32 },
 	},
 	{
-		// Windows cursor set. No distinct right-click cursor, so rightPress falls
-		// back to press → rest; drag uses the 4-way move cursor.
-		// See ./sprites/CREDITS.md for attribution.
+		// Windows set: no distinct right-click cursor, so rightPress falls back to press; drag uses the 4-way move.
 		id: "windows-system",
 		label: "Windows System",
 		description: "Windows cursor set: arrow, link hand, and move (drag) states.",
@@ -140,7 +137,7 @@ export function cursorStyleDataUrl(id: CursorStyleId, state: CursorStyleState = 
 	if (cached) return cached;
 	const style = getCursorStyle(id);
 	const svg = cursorStyleSvg(style, state);
-	const url = "data:image/svg+xml;utf8," + encodeURIComponent(svg.trim().replace(/\n\s*/g, " "));
+	const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg.trim().replace(/\n\s*/g, " "))}`;
 	dataUrlCache.set(key, url);
 	return url;
 }

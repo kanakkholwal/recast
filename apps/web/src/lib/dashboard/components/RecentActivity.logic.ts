@@ -1,6 +1,6 @@
 /**
  * Activity-kind → presentation lookup (icon, past-tense verb, tone class). A
- * pure table; importing the Lucide icon values here is fine since it's data, not
+ * pure table; importing the @recast/icons icon values here is fine since it's data, not
  * markup. The component owns the header/list rendering.
  */
 

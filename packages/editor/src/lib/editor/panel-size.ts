@@ -46,8 +46,7 @@ export const TIMELINE_DEFAULT_HEIGHT_PX = 260;
 export function timelineMaxHeight(columnHeightPx: number): number {
 	if (!(columnHeightPx > 0)) return TIMELINE_MAX_HEIGHT_PX;
 	const share = Math.round(columnHeightPx * TIMELINE_MAX_SHARE);
-	// The floor wins on a very short window: better to overflow the column than
-	// to render a panel with no usable rows in it.
+	// The floor wins on a very short window: better to overflow the column than render a panel with no usable rows.
 	return Math.max(TIMELINE_MIN_HEIGHT_PX, Math.min(TIMELINE_MAX_HEIGHT_PX, share));
 }
 

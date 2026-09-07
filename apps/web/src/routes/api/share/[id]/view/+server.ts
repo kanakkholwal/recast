@@ -27,9 +27,7 @@ import type { RequestHandler } from "./$types";
  * Body: { sessionId, event: "start" | "ended", watchPct? }
  */
 export const POST: RequestHandler = async ({ params, request, getClientAddress }) => {
-	// Per share+IP cap on engagement writes — keeps a forged loop from inflating
-	// view counts or indefinitely resetting `lastViewedAt` to dodge the Free-tier
-	// expiry sweep. Generous enough for legitimate viewers behind shared NAT.
+	// Per share and IP cap on engagement writes, so a forged loop can't inflate views or dodge the Free-tier expiry sweep.
 	const limited = await enforceRateLimit(
 		{ getClientAddress },
 		{ bucket: "share-view", id: params.id, limit: 40, windowMs: 60_000 },
@@ -48,8 +46,7 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress }
 		error(400, "Invalid JSON body");
 	}
 
-	const sessionId =
-		typeof body.sessionId === "string" ? body.sessionId.trim().slice(0, 128) : "";
+	const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim().slice(0, 128) : "";
 	if (!sessionId) error(400, "Missing session");
 	const event = body.event === "ended" ? "ended" : "start";
 	const watchPct =
@@ -72,14 +69,9 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress }
 		return json({ ok: false, reason: "expired" }, { status: 410 });
 	}
 
-	// Best-effort geo + UA from edge headers (Vercel / Cloudflare). Truncated
-	// so a hostile UA can't bloat the row. Device is derived from the UA here so
-	// audience breakdowns are a cheap GROUP BY; referrer comes from the player's
-	// `document.referrer` (the request `Referer` is always the share page).
+	// Best-effort geo and UA from edge headers, truncated so a hostile UA can't bloat the row; device is derived for a cheap GROUP BY.
 	const country =
-		request.headers.get("x-vercel-ip-country") ??
-		request.headers.get("cf-ipcountry") ??
-		null;
+		request.headers.get("x-vercel-ip-country") ?? request.headers.get("cf-ipcountry") ?? null;
 	const userAgent = request.headers.get("user-agent")?.slice(0, 512) ?? null;
 	const device = deviceFromUA(userAgent);
 	const referrer = referrerHost(
@@ -106,9 +98,7 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress }
 				.set({ viewsCount: sql`${share.viewsCount} + 1` })
 				.where(eq(share.slug, s.slug));
 		} else {
-			// "ended" — refine this session's most recent row, if any. (A view
-			// that ends without a recorded "start" — e.g. a fast autoplay — just
-			// refreshes lastViewedAt below; we don't fabricate a view row.)
+			// 'ended' refines this session's latest row; a view that ends with no recorded start just refreshes lastViewedAt.
 			const [latest] = await tx
 				.select({ id: shareView.id })
 				.from(shareView)
@@ -126,10 +116,7 @@ export const POST: RequestHandler = async ({ params, request, getClientAddress }
 			}
 		}
 
-		await tx
-			.update(recast)
-			.set({ lastViewedAt: now })
-			.where(eq(recast.id, s.recastId));
+		await tx.update(recast).set({ lastViewedAt: now }).where(eq(recast.id, s.recastId));
 	});
 
 	return json({ ok: true });

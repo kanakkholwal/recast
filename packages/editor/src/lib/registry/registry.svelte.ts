@@ -62,8 +62,7 @@ class Registry {
 	 *  to the end, regardless of hydration/registration timing. */
 	list<K extends AssetKind>(kind: K): RegistryEntry<K>[] {
 		const all = this.#entries[kind] as RegistryEntry<K>[];
-		// Common case (no extensions registered for this kind): return as-is so
-		// we don't allocate or churn picker reactivity.
+		// Common case with no extensions for this kind: return as-is rather than allocate and churn picker reactivity.
 		if (!all.some((e) => e.source.kind === "extension")) return all;
 		const builtins = all.filter((e) => e.source.kind !== "extension");
 		const extensions = all.filter((e) => e.source.kind === "extension");

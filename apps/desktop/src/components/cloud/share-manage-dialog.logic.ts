@@ -39,9 +39,7 @@ export function buildShareUpdate(input: ShareUpdateInput): ShareUpdateOpts {
 	else if (password.trim()) opts.password = password.trim();
 	if (expiryDate !== initialExpiry) {
 		// End-of-day in local time, ISO. Empty clears.
-		opts.expiresAt = expiryDate
-			? new Date(`${expiryDate}T23:59:59`).toISOString()
-			: "";
+		opts.expiresAt = expiryDate ? new Date(`${expiryDate}T23:59:59`).toISOString() : "";
 	}
 	return opts;
 }

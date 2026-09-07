@@ -1,56 +1,53 @@
 <script lang="ts">
-	import { authClient } from "$lib/auth/client";
-	import { readImpersonation } from "./ImpersonationBanner.logic";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
-	import { LoaderCircle, ShieldOff, UserCog } from "@recast/icons";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import { LoaderCircle, ShieldOff, UserCog } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { authClient } from "$lib/auth/client";
+import { readImpersonation } from "./ImpersonationBanner.logic";
 
-	/**
-	 * Global "you're impersonating someone" indicator. Mounted at the root
-	 * layout so it surfaces on EVERY page (marketing, dashboard, admin, even
-	 * the impersonated user's settings) — anywhere the admin might forget
-	 * they're operating as another user.
-	 *
-	 * Pulls live session state via `authClient.useSession()` so the bar
-	 * appears the moment the impersonation cookie is swapped, without a
-	 * full page reload.
-	 */
+/**
+ * Global "you're impersonating someone" indicator. Mounted at the root
+ * layout so it surfaces on EVERY page (marketing, dashboard, admin, even
+ * the impersonated user's settings) — anywhere the admin might forget
+ * they're operating as another user.
+ *
+ * Pulls live session state via `authClient.useSession()` so the bar
+ * appears the moment the impersonation cookie is swapped, without a
+ * full page reload.
+ */
 
-	const session = authClient.useSession();
+const session = authClient.useSession();
 
-	const impersonation = $derived(readImpersonation($session));
-	const impersonatedBy = $derived(impersonation.impersonatedBy);
-	const targetEmail = $derived(impersonation.targetEmail);
+const impersonation = $derived(readImpersonation($session));
+const impersonatedBy = $derived(impersonation.impersonatedBy);
+const targetEmail = $derived(impersonation.targetEmail);
 
-	let stopping = $state(false);
+let stopping = $state(false);
 
-	async function stop() {
-		if (stopping) return;
-		stopping = true;
-		// Wrapped in try/finally so a thrown rejection (network drop, aborted
-		// fetch) can't strand the button in a permanently-disabled state.
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.admin.stopImpersonating();
-					if (error) throw new Error(error.message ?? "Couldn't stop impersonating.");
-				})(),
-				{
-					loading: "Stopping impersonation…",
-					success: "Back in your admin session.",
-					error: (err) => (err as Error)?.message ?? "Couldn't stop impersonating.",
-				},
-			);
-			// Hard reload so every server load re-runs against the restored
-			// admin cookie. SvelteKit's `invalidateAll()` would leave the same
-			// module instances around and we want a clean slate.
-			window.location.href = "/admin";
-		} finally {
-			stopping = false;
-		}
+async function stop() {
+	if (stopping) return;
+	stopping = true;
+	// try/finally so a thrown rejection can't strand the button permanently disabled.
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.admin.stopImpersonating();
+				if (error) throw new Error(error.message ?? "Couldn't stop impersonating.");
+			})(),
+			{
+				loading: "Stopping impersonation…",
+				success: "Back in your admin session.",
+				error: (err) => (err as Error)?.message ?? "Couldn't stop impersonating.",
+			},
+		);
+		// A hard reload re-runs every server load against the restored admin cookie; `invalidateAll()` keeps the same module instances.
+		window.location.href = "/admin";
+	} finally {
+		stopping = false;
 	}
+}
 </script>
 
 {#if impersonatedBy}

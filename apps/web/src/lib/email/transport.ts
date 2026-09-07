@@ -39,9 +39,7 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
 			to: [msg.to],
 			subject: msg.subject,
 			text: msg.text,
-			// Resend accepts text-only, but HTML lifts deliverability AND
-			// rendering quality — fall back to a naive conversion if a caller
-			// somehow bypassed `sendTemplatedEmail` without supplying HTML.
+			// Resend accepts text-only, but HTML lifts deliverability, so fall back to a naive conversion if a caller supplied none.
 			html: msg.html ?? msg.text.replace(/\n/g, "<br>"),
 			reply_to: msg.replyTo,
 		}),

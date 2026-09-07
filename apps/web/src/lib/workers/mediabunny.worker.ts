@@ -1,5 +1,4 @@
-// Worker entry. The body lives in @recast/media; spawning belongs to the app so
-// `new URL(…, import.meta.url)` resolves inside this app's root.
+// Worker entry: the body lives in @recast/media, but spawning belongs to the app so `import.meta.url` resolves here.
 import { startMediabunnyWorker } from "@recast/media/playback/worker";
 
 startMediabunnyWorker();

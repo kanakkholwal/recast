@@ -1,12 +1,12 @@
 <script lang="ts">
-import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
-import { prefersReducedMotion } from "$lib/motion-core";
 import { ArrowUpRight, ExternalLink, GitCommit, Tag } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Markdown } from "@recast/ui/markdown";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { Container, Footer, Reveal, Section, SectionLabel, SeoMeta } from "$lib/components";
+import { prefersReducedMotion } from "$lib/motion-core";
 import type { PageData } from "./$types";
 
 let { data }: { data: PageData } = $props();
@@ -17,8 +17,7 @@ const releases = $derived(data.releases);
 let selected = $state(0);
 const current = $derived(releases[selected] ?? releases[0]);
 
-// Deep links: /changelog#v0.3.1 opens that release, and selecting one updates
-// the hash so the URL is shareable.
+// A hash deep-links to a release, and selecting one updates the hash so the URL stays shareable.
 $effect(() => {
 	const tag = decodeURIComponent(location.hash.replace(/^#/, ""));
 	if (!tag) return;
@@ -104,7 +103,7 @@ function formatDate(iso: string | null) {
 			{:else}
 				<div class="grid gap-px border-y border-border-low bg-border-low md:grid-cols-12">
 					<!-- Rail -->
-					<div class="bg-background md:col-span-4">
+					<div class="min-w-0 bg-background md:col-span-4">
 						<ul class="flex flex-col divide-y divide-border-low">
 							{#each releases as release, i (release.tag)}
 								{@const active = i === selected}
@@ -152,10 +151,10 @@ function formatDate(iso: string | null) {
 					</div>
 
 					<!-- Body -->
-					<div class="bg-background md:col-span-8">
+					<div class="min-w-0 bg-background md:col-span-8">
 						{#key current?.tag}
 							<article
-								class="p-6 sm:p-8"
+								class="min-w-0 p-5 sm:p-8"
 								in:fly={reduced
 									? { duration: 0 }
 									: { y: 10, duration: 320, easing: cubicOut }}
@@ -198,7 +197,7 @@ function formatDate(iso: string | null) {
 								</div>
 
 								{#if current.body}
-									<Markdown source={current.body} class="mt-6 text-body-sm text-foreground" />
+									<Markdown source={current.body} class="prose prose-sm mt-6 max-w-none" />
 								{:else}
 									<p class="mt-6 text-body-sm text-muted-foreground">
 										No release notes provided.

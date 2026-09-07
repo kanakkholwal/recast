@@ -22,10 +22,7 @@ export interface ReactionState {
  * Counts are bumped/dropped accordingly (entries removed at zero). Returns fresh
  * objects; does not mutate the input.
  */
-export function toggleReactionState(
-	current: ReactionState,
-	emoji: string,
-): ReactionState {
+export function toggleReactionState(current: ReactionState, emoji: string): ReactionState {
 	const next = current.reactions.map((r) => ({ ...r }));
 	const dec = (e: string) => {
 		const i = next.findIndex((r) => r.emoji === e);

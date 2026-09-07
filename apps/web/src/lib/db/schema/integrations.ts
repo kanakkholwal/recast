@@ -1,18 +1,7 @@
-import {
-	index,
-	jsonb,
-	pgEnum,
-	pgTable,
-	text,
-	timestamp,
-	uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { index, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
-export const integrationProviderEnum = pgEnum("integration_provider", [
-	"cloudinary",
-	"s3",
-]);
+export const integrationProviderEnum = pgEnum("integration_provider", ["cloudinary", "s3"]);
 
 /**
  * BYO storage credentials (Cloudinary, S3). The `config` payload should be

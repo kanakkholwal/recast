@@ -38,8 +38,7 @@ describe("progressValue", () => {
 	});
 
 	it("clamps an overshooting sampler past 100", () => {
-		// The scan's total is estimated from the container duration, which can
-		// undershoot the real frame count.
+		// The total is estimated from the container duration, which can undershoot the real frame count.
 		expect(progressValue(progress({ phase: "sampling", done: 28, total: 27 }))).toBe(100);
 	});
 });
@@ -110,8 +109,8 @@ describe("summaryRows", () => {
 		expect(byLabel["Frames read"]).toBe("12 of 90");
 		expect(byLabel["Screen states"]).toBe("5");
 		expect(byLabel["Text elements"]).toBe("47");
-		expect(byLabel["Scan"]).toBe("800ms");
-		expect(byLabel["Read"]).toBe("4.7s · 390ms/frame");
+		expect(byLabel.Scan).toBe("800ms");
+		expect(byLabel.Read).toBe("4.7s · 390ms/frame");
 	});
 
 	it("does not divide by zero when nothing was read", () => {

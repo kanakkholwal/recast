@@ -1,96 +1,64 @@
-import type { MediaRef } from "@recast/media";
-import type { AudioExportInputs } from "./offscreen-export";
 /**
- * Export job producer (main thread) — snapshots the editor scene and rasterizes
+ * Export job producer (main thread) — snapshots the editor scene and rasterises
  * every DOM-bound asset (background, cursor sprites, annotation images, caption
  * font) into a fully serializable {@link ExportJob} of plain data + transferable
- * bitmaps. This is the ONE place that touches the store / DOM; the consumer
- * (run-export-job) is pure so it can move into the render worker (Phase 3).
+ * bitmaps. This is the ONE place that touches the store or the DOM; the consumer
+ * (run-export-job) is pure so it runs in the render worker.
+ *
+ * The scene itself is `store.toRenderState()`, the same value the preview hands
+ * the engine, so there is nothing to keep in step between them.
  */
 
-import type { EditorStore } from "../../stores/editor-store.svelte";
-import { buildGradientUniforms } from "../../components/gradient.logic";
-import { computeCanvasGeometry } from "../canvas-geometry";
+import type { MediaRef } from "@recast/media";
 import { loadBackgroundBitmap } from "../../components/background-source";
-import { buildPressEvents } from "../../components/cursor-animation.logic";
-import { buildExportBase } from "./export-scene";
-import type { ExportQuality } from "./browser-export-plan";
-import { rasterizeCursorSprites } from "./rasterize-cursor";
-import { expandTextAnnotations } from "./rasterize-text";
-import { planCaptionFont } from "../fonts/font-options";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import { computeCanvasGeometry } from "../canvas-geometry";
+import { smoothCursorPath, smoothingStrengthToSigmaMs } from "../cursor/smoothing";
 import { getEditorServices } from "../editor/services";
+import { resolveEngineFont } from "../fonts/engine-font";
+import { loadCursorSprites } from "../playback/cursor-sprites";
+import { resolveCursorDataUrl } from "../registry";
 import { toStatic } from "../state-snapshot.svelte";
-import type { FrameGeometry } from "../../components/frame-params";
-import type { CursorSpriteSources } from "./cursor-overlay-export";
-import type { ExportJob, CameraJob, AnnotationJob, CaptionJob } from "./export-job";
+import type { ExportQuality } from "./browser-export-plan";
+import type { ExportJob } from "./export-job";
+import { expandTextAnnotations } from "./rasterize-text";
 
 export interface ExportJobInputs {
 	/** Source video asset URL (`convertFileSrc(...)`). */
 	videoUrl: MediaRef | string;
-	/** Source audio, when the host wants the browser export to carry it. */
-	audio?: AudioExportInputs | null;
 	/** Camera stream URL, or empty/undefined when none. */
 	cameraUrl?: string;
+	/** Milliseconds the camera track lags video frame 0, measured at capture. */
+	cameraOffsetMs?: number;
 	quality: ExportQuality;
 	fps: number;
 }
 
-/** Rasterize the SVG cursor sprites to transferable bitmaps + hotspots, or null
- *  for the dot style / disabled cursor (the main shader draws those). */
-async function buildCursorSprites(store: EditorStore): Promise<CursorSpriteSources | null> {
+/**
+ * The cursor track as the engine wants it: SMOOTHED, because the engine draws
+ * what it is given and does no smoothing of its own.
+ *
+ * This is the same path the preview shows. The old export shipped the raw
+ * samples, so its pointer took the recorded jitter that the preview had already
+ * ironed out.
+ */
+function buildCursorTrack(store: EditorStore): unknown | null {
+	const raw = store.cursorSamplesRaw ?? [];
+	if (raw.length === 0) return null;
+	const idlePeriods = store.cursorIdlePeriods ?? [];
 	const cs = store.cursorSettings;
-	if (!cs.enabled || cs.style === "dot") return null;
-	const bundle = await rasterizeCursorSprites(cs.style, cs.size * 16).catch(() => null);
-	if (!bundle) return null;
-	const toBmp = async (u: string) => createImageBitmap(await (await fetch(u)).blob());
-	const rest = await toBmp(bundle.rest);
-	// Share one bitmap when a state reuses the rest sprite (the consumer dedupes on ===).
-	const press = bundle.press === bundle.rest ? rest : await toBmp(bundle.press);
-	return {
-		rest,
-		press,
-		rightPress: bundle.rightPress ? await toBmp(bundle.rightPress) : undefined,
-		drag: bundle.drag ? await toBmp(bundle.drag) : undefined,
-		restHotspot: bundle.restHotspot,
-		pressHotspot: bundle.pressHotspot,
-		rightPressHotspot: bundle.rightPressHotspot,
-		dragHotspot: bundle.dragHotspot,
-	};
+	const sigmaMs = smoothingStrengthToSigmaMs(cs.smoothing);
+	if (sigmaMs <= 0) return toStatic({ samples: raw, idlePeriods });
+	const smoothed = smoothCursorPath(raw, {
+		sigmaMs,
+		snapToClicks: cs.snapToClicks,
+		snapWindowMs: cs.snapWindowMs,
+	});
+	return toStatic({ samples: smoothed.samples, idlePeriods });
 }
 
-/** Camera bubble as data (placementAt is rebuilt by the consumer), or null when
- *  there's no camera / it's disabled. Mirrors the old buildCameraInputs. */
-function buildCameraData(
-	store: EditorStore,
-	cameraUrl: string | undefined,
-	geom: FrameGeometry,
-): CameraJob | null {
-	const cam = store.cameraOverlay;
-	if (!cameraUrl || !cam.enabled) return null;
-	const videoAspect = geom.videoH > 0 ? geom.videoW / geom.videoH : 1;
-	return {
-		url: cameraUrl,
-		geom,
-		shape: cam.shape,
-		cornerRadius: cam.cornerRadius,
-		mirror: cam.mirror,
-		placement: {
-			defaultPlacement: cam.defaultPlacement,
-			keyframes: cam.keyframes,
-			keyframeEasing: cam.keyframeEasing,
-			zoomFollow: cam.zoomFollow,
-			focusEnabled: store.focusEnabled,
-			zoomRegions: store.zoomRegions,
-			zoomFollowDuration: cam.zoomFollowDuration,
-			zoomFollowEasing: cam.zoomFollowEasing,
-			zoomFollowStrength: cam.zoomFollowStrength,
-			videoAspect,
-		},
-	};
-}
-
-/** Decode image annotations to transferable bitmaps (path → bitmap). Failed loads
- *  are omitted; the consumer's getImage returns null → placeholder box. */
+/** Decode image annotations to transferable bitmaps (path → bitmap). Failed
+ *  loads are omitted, and the engine skips an annotation with no asset. */
 async function preloadAnnotationBitmaps(
 	annotations: ReadonlyArray<{ hidden?: boolean; kind: { kind: string; path?: string } }>,
 ): Promise<Array<[string, ImageBitmap]>> {
@@ -102,73 +70,23 @@ async function preloadAnnotationBitmaps(
 	await Promise.all(
 		[...paths].map(async (p) => {
 			try {
-				// Rasterized-text annotations carry a data: URL; file refs go through
-				// the host's resolver.
+				// Rasterised-text annotations carry a data: URL; file refs go through the host's resolver.
 				const src = p.startsWith("data:") ? p : getEditorServices().resolveAssetUrl(p);
 				out.push([p, await createImageBitmap(await (await fetch(src)).blob())]);
 			} catch {
-				/* miss → omitted; consumer draws the placeholder */
+				/* miss → omitted */
 			}
 		}),
 	);
 	return out;
 }
 
-/** Annotation layer as data, or null when nothing draws. Text annotations are
- *  rasterized to comp-resolution images up front (parity with preview + Rust). */
-async function buildAnnotationData(
-	store: EditorStore,
-	meta: { width: number; height: number },
-	canvasPxW: number,
-	canvasPxH: number,
-): Promise<AnnotationJob | null> {
-	if (store.annotationsGloballyHidden) return null;
-	const annotations = await expandTextAnnotations(store.annotationsByZ, canvasPxW, canvasPxH);
-	const drawable = ["rect", "ellipse", "arrow", "image", "blur"];
-	if (!annotations.some((a) => !a.hidden && drawable.includes(a.kind.kind))) return null;
-	const images = await preloadAnnotationBitmaps(annotations);
-	return {
-		annotations,
-		meta,
-		padding: store.padding,
-		outputAspect: store.outputAspect,
-		zoomRegions: store.zoomRegions,
-		canvasPxW,
-		canvasPxH,
-		images,
-	};
-}
-
-/** Caption layer as data, or null when captions aren't burned in. Gated on the
- *  export `burnIn` intent + a transcript ONLY (matching the Rust burn). The font
- *  URL is resolved here (Tauri IPC) so the consumer — worker OR main — registers
- *  it in its own scope before the first frame; the export can't repaint. */
-async function buildCaptionData(
-	store: EditorStore,
-	meta: { width: number; height: number },
-	canvasPxW: number,
-	canvasPxH: number,
-): Promise<CaptionJob | null> {
+/** Word timings for burned captions, or null when they are not burned in. Gated
+ *  on the export `burnIn` intent plus a transcript, matching the Rust burn. */
+function buildCaptionTrack(store: EditorStore): unknown | null {
 	const transcript = store.captionTranscript;
-	const style = store.captionStyle;
 	if (!store.captionExport.burnIn || !transcript || transcript.segments.length === 0) return null;
-	const plan = await planCaptionFont(style.fontFamily, style.fontWeight);
-	const g = computeCanvasGeometry(meta.width, meta.height, store.padding, store.outputAspect);
-	return {
-		transcript,
-		style,
-		timeMap: store.timeMap,
-		video: {
-			leftFrac: g.videoX / g.canvasW,
-			rightFrac: (g.videoX + g.videoW) / g.canvasW,
-			topFrac: g.videoY / g.canvasH,
-			bottomFrac: (g.videoY + g.videoH) / g.canvasH,
-		},
-		canvasPxW,
-		canvasPxH,
-		font: plan.where === "worker" ? plan.font : undefined,
-		mainThreadOnly: plan.where === "main",
-	};
+	return toStatic(transcript);
 }
 
 /** Snapshot the editor scene + assets into a serializable job. Throws if the
@@ -183,64 +101,56 @@ export async function buildExportJob(
 	const outputDurationSec = timeMap.outputDuration;
 	if (!(outputDurationSec > 0)) throw new Error("browser export: empty output timeline");
 
-	const gradient =
-		store.backgroundType === "gradient"
-			? buildGradientUniforms(store.backgroundValue || "")
-			: undefined;
+	// The composition's native size: no DPR cap, since export wants full res.
+	const geom = computeCanvasGeometry(meta.width, meta.height, store.padding, store.outputAspect);
+	const width = Math.max(1, Math.round(geom.canvasW));
+	const height = Math.max(1, Math.round(geom.canvasH));
+
 	const backgroundImage = await loadBackgroundBitmap(
 		store.backgroundType,
 		store.backgroundValue,
 	).catch(() => null);
-	// Cursor comes from the store's published raw samples (the preview loaded them);
-	// press events + idle spans derive from the same track.
-	const cursorSamples = store.cursorSamplesRaw ?? [];
-	const base = buildExportBase({
-		meta: { width: meta.width, height: meta.height },
-		padding: store.padding,
-		outputAspect: store.outputAspect,
-		segments: store.segments,
-		segmentAnims: store.segmentAnims,
-		backgroundType: store.backgroundType,
-		backgroundValue: store.backgroundValue,
-		backgroundBlur: store.backgroundBlur,
-		backgroundImageReady: backgroundImage != null,
-		gradient,
-		borderRadius: store.borderRadius ?? 0,
-		focusEnabled: store.focusEnabled,
-		zoomRegions: store.zoomRegions,
-		shadow: store.shadow,
-		cursor: store.cursorSettings,
-		cursorMotionEasing: store.cursorMotionEasing,
-		cursorSamples,
-		idlePeriods: store.cursorIdlePeriods ?? [],
-		pressEvents: buildPressEvents(cursorSamples),
-	});
-	const metaWH = { width: meta.width, height: meta.height };
-	const camera = buildCameraData(store, opts.cameraUrl, base.geom);
-	const annotation = await buildAnnotationData(store, metaWH, base.canvasPxW, base.canvasPxH);
-	const caption = await buildCaptionData(store, metaWH, base.canvasPxW, base.canvasPxH);
 
-	// De-proxy every store-sourced field so the job survives `postMessage` to the
-	// render worker; bitmaps (built locally) stay out of the snapshot.
+	const cs = store.cursorSettings;
+	const cursorSprites =
+		cs.enabled && cs.style !== "dot"
+			? await loadCursorSprites(cs.style, resolveCursorDataUrl).catch(() => [])
+			: [];
+
+	// Neither the engine nor Rust has a font rasteriser, so text reaches the scene pre-rendered at composition resolution.
+	const annotations = store.annotationsGloballyHidden
+		? []
+		: await expandTextAnnotations(store.annotationsByZ, width, height);
+	const annotationImages = await preloadAnnotationBitmaps(annotations);
+
+	const captionTrack = buildCaptionTrack(store);
+	// Copied, not handed over: the resolver caches these bytes, and transferring would detach the cache for later exports.
+	const font = captionTrack
+		? await resolveEngineFont(store.captionStyle.fontFamily, store.captionStyle.fontWeight)
+		: null;
+
+	// De-proxy every store-sourced field so the job survives `postMessage`.
 	return {
-		base: toStatic(base),
+		// The rasterised annotations replace the authored ones; everything else is what the preview hands the engine.
+		scene: { ...toStatic(store.toRenderState()), annotations: toStatic(annotations) },
 		timeMap: toStatic(timeMap),
 		outputDurationSec,
 		fps: opts.fps,
 		quality: opts.quality,
 		videoUrl: opts.videoUrl,
-		audio: opts.audio ?? null,
+		sourceWidth: meta.width,
+		sourceHeight: meta.height,
+		width,
+		height,
 		backgroundImage,
-		cursorSprites: await buildCursorSprites(store),
-		camera: camera ? toStatic(camera) : null,
-		annotation: staticAnnotation(annotation),
-		caption: caption ? toStatic(caption) : null,
+		cursorSprites,
+		cursorTrack: buildCursorTrack(store),
+		captionTrack,
+		captionFont: font ? new Uint8Array(font.data) : null,
+		annotationImages,
+		camera:
+			opts.cameraUrl && store.cameraOverlay.enabled
+				? { url: opts.cameraUrl, offsetMs: opts.cameraOffsetMs ?? 0 }
+				: null,
 	};
-}
-
-/** Snapshot the annotation data while preserving its transferable bitmaps. */
-function staticAnnotation(a: AnnotationJob | null): AnnotationJob | null {
-	if (!a) return null;
-	const { images, ...rest } = a;
-	return { ...toStatic(rest), images };
 }

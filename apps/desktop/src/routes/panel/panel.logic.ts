@@ -213,3 +213,10 @@ export function deviceOutcome<T>(
 			return { kind: "none", on: false, device: null, warning: null };
 	}
 }
+
+/** One step of the mic meter: a sqrt curve lifts quiet speech, then fast-attack
+ *  (jump up) / slow-release (ease down) makes it read like a real level meter. */
+export function smoothMicLevel(prev: number, payload: number): number {
+	const raw = Math.min(1, Math.sqrt(Math.max(0, payload)) * 1.7);
+	return raw > prev ? raw : prev * 0.7 + raw * 0.3;
+}

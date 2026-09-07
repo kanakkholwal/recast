@@ -38,10 +38,10 @@ export function wordColor(input: WordRenderInput): string {
 
 /** Whether this word should scale-up (the `punch`/impact pop). Suppressed for a
  *  single-word chunk, where the entrance pop already carries the emphasis. */
-export function wordScaled(input: Pick<WordRenderInput, "index" | "activeIndex" | "wordCount" | "anim">): boolean {
+export function wordScaled(
+	input: Pick<WordRenderInput, "index" | "activeIndex" | "wordCount" | "anim">,
+): boolean {
 	return (
-		input.anim.emphasis === "scale" &&
-		input.index === input.activeIndex &&
-		input.wordCount > 1
+		input.anim.emphasis === "scale" && input.index === input.activeIndex && input.wordCount > 1
 	);
 }

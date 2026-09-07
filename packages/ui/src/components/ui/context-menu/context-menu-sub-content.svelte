@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
-	import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import ContextMenuPortal from "./context-menu-portal.svelte";
-	import type { ComponentProps } from "svelte";
+import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
+import { CRAFT_OVERLAY_ANIMATION, cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import ContextMenuPortal from "./context-menu-portal.svelte";
+import type { ComponentProps } from "svelte";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		portalProps,
-		...restProps
-	}: ContextMenuPrimitive.SubContentProps & {
-		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof ContextMenuPortal>>;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	portalProps,
+	...restProps
+}: ContextMenuPrimitive.SubContentProps & {
+	portalProps?: WithoutChildrenOrChild<ComponentProps<typeof ContextMenuPortal>>;
+} = $props();
 </script>
 
 <!-- Portal the submenu to <body>, same as the root Content. Without this the

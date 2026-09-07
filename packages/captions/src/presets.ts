@@ -138,8 +138,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
 			background: "none",
 			backgroundColor: "#000000",
 			backgroundOpacity: 0,
-			// No pill to sit on, so the stroke is what keeps it readable over
-			// bright footage.
+			// No pill to sit on, so the stroke is what keeps it readable over bright footage.
 			outlineWidth: 4,
 			animation: { ...calm, chunk: "line", highlight: "none", entranceMs: 160 },
 		},
@@ -151,8 +150,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
 		style: {
 			...base,
 			fontFamily: stack("Archivo Black"),
-			// Archivo Black ships one weight; asking for 700 would miss the fetch
-			// and drop the burn-in to a libass fallback.
+			// Archivo Black ships one weight; asking for 700 would miss the fetch and drop the burn-in to a libass fallback.
 			fontWeight: 400,
 			fontSizePct: 5.4,
 			uppercase: true,

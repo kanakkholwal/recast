@@ -1,0 +1,191 @@
+{
+	"_comment": "The golden fixtures, read by BOTH arms: crates/recast-compositor/tests/golden.rs (native wgpu) and packages/engine/test/golden (the browser build). One definition, so the two arms cannot drift into testing different scenes. source.png and background.png next to this file are the input textures, for the same reason.",
+	"source": {
+		"width": 128,
+		"height": 72
+	},
+	"base": {
+		"trimStart": 0.0,
+		"trimEnd": 10.0,
+		"backgroundType": "color",
+		"backgroundValue": "#1e293b",
+		"backgroundBlur": 0.0,
+		"padding": 0.0,
+		"cursorEnabled": false,
+		"cursorSize": 3.0,
+		"cursorSmoothing": 50.0,
+		"cursorHighlightClicks": true,
+		"cursorHighlightColor": "#3b82f6",
+		"cursorHighlightOpacity": 40.0,
+		"cursorHideWhenIdle": false,
+		"cursorIdleTimeout": 3.0,
+		"zoomRegions": []
+	},
+	"fixtures": [
+		{
+			"name": "plain",
+			"time": 1.0,
+			"overrides": {}
+		},
+		{
+			"name": "padded-colour",
+			"time": 1.0,
+			"overrides": {
+				"padding": 18.0,
+				"backgroundValue": "#3b82f6"
+			}
+		},
+		{
+			"name": "gradient",
+			"time": 1.0,
+			"overrides": {
+				"backgroundType": "gradient",
+				"backgroundValue": "linear-gradient(60deg, #ff0000 0%, #0000ff 100%)",
+				"padding": 18.0
+			}
+		},
+		{
+			"name": "rounded-shadow",
+			"time": 1.0,
+			"overrides": {
+				"padding": 20.0,
+				"borderRadius": 28.0,
+				"shadow": {
+					"enabled": true,
+					"blur": 14.0,
+					"spread": 0.0,
+					"offsetY": 8.0,
+					"opacity": 75.0,
+					"color": "#000000"
+				}
+			},
+			"without": {
+				"padding": 20.0
+			}
+		},
+		{
+			"name": "zoomed",
+			"time": 1.0,
+			"overrides": {
+				"zoomRegions": [
+					{
+						"start": 0.0,
+						"end": 10.0,
+						"scale": 1.8,
+						"rampIn": 0.0,
+						"rampOut": 0.0,
+						"centerX": 0.3,
+						"centerY": 0.45
+					}
+				]
+			}
+		},
+		{
+			"name": "zoom-ramping",
+			"_why_time": "Mid-ramp on purpose: the eased scale and the dolly blur that rides it are only visible while the zoom is MOVING.",
+			"_why_fields": "Two things here are load-bearing and each was found by a mutation surviving without it. motionBlur defaults to zero, so a fixture that omits it never runs the blur code at all. And the centre is deliberately not 0.5/0.5, because the streak runs away from it and a centred one is symmetric enough that reversing its direction looks the same.",
+			"time": 0.6,
+			"overrides": {
+				"padding": 12.0,
+				"zoomRegions": [
+					{
+						"start": 0.5,
+						"end": 8.0,
+						"scale": 2.0,
+						"rampIn": 0.2,
+						"rampOut": 0.2,
+						"centerX": 0.28,
+						"centerY": 0.62,
+						"motionBlur": 1.0
+					}
+				]
+			},
+			"without": {
+				"padding": 12.0,
+				"zoomRegions": [
+					{
+						"start": 0.5,
+						"end": 8.0,
+						"scale": 2.0,
+						"rampIn": 0.2,
+						"rampOut": 0.2,
+						"centerX": 0.28,
+						"centerY": 0.62,
+						"motionBlur": 0.0
+					}
+				]
+			}
+		},
+		{
+			"name": "portrait",
+			"time": 1.0,
+			"overrides": {
+				"outputAspect": "9:16",
+				"padding": 10.0
+			}
+		},
+		{
+			"name": "rotating-in",
+			"_why_time": "Part way through the entrance, where the rotation is non-zero.",
+			"time": 0.25,
+			"overrides": {
+				"padding": 20.0,
+				"segmentAnims": [
+					{
+						"start": 0.0,
+						"in": {
+							"kind": "rotate",
+							"durationMs": 500.0
+						}
+					}
+				]
+			},
+			"without": {
+				"padding": 20.0
+			}
+		},
+		{
+			"name": "annotation",
+			"time": 1.0,
+			"overrides": {
+				"padding": 12.0,
+				"annotations": [
+					{
+						"id": "a1",
+						"start": 0.0,
+						"end": 10.0,
+						"fill": "#ff00ff",
+						"stroke": {
+							"width": 0.0,
+							"color": "transparent"
+						},
+						"kind": {
+							"kind": "rect",
+							"x": 0.2,
+							"y": 0.3,
+							"w": 0.45,
+							"h": 0.35
+						}
+					}
+				]
+			},
+			"without": {
+				"padding": 12.0
+			}
+		},
+		{
+			"name": "background-blur",
+			"time": 1.0,
+			"overrides": {
+				"backgroundType": "image",
+				"backgroundBlur": 30.0,
+				"padding": 24.0
+			},
+			"without": {
+				"backgroundType": "image",
+				"backgroundBlur": 0.0,
+				"padding": 24.0
+			}
+		}
+	]
+}

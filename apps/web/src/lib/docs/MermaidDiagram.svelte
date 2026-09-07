@@ -1,8 +1,5 @@
 <script lang="ts">
-// Mermaid is ~500KB, so it is imported dynamically and only on mount. A page
-// with no diagram never pays for it, and it stays out of the SSR pass (it
-// wants a DOM). Until it resolves, the source renders as a code block, which
-// is also what a reader with no JS sees.
+// Mermaid is ~500KB, so it loads dynamically on mount and stays out of SSR; until then the source renders as a code block.
 
 import { MERMAID_THEME_VARIABLES } from "./mermaid-theme";
 
@@ -32,8 +29,7 @@ $effect(() => {
 			const rendered = await mermaid.render(uid, diagram);
 			if (!cancelled) svg = rendered.svg;
 		} catch (err) {
-			// A malformed diagram must not take the page down with it; the
-			// fallback below keeps the source readable.
+			// A malformed diagram must not take the page down; the fallback keeps the source readable.
 			console.error("mermaid render failed", err);
 			if (!cancelled) failed = true;
 		}
@@ -63,8 +59,7 @@ $effect(() => {
 		border: 1px solid var(--color-border-low);
 		border-radius: 12px;
 		background: var(--color-paper);
-		/* Diagrams are wider than the prose column on narrow screens; scroll the
-		   diagram rather than the page. */
+		/* Diagrams outgrow the prose column on narrow screens, so scroll the diagram rather than the page. */
 		overflow-x: auto;
 	}
 
@@ -75,8 +70,7 @@ $effect(() => {
 		height: auto;
 	}
 
-	/* Mermaid writes fill and stroke attributes from its own palette; these take
-	   every mark back to a design token, in both themes. */
+	/* Mermaid writes its own palette into fill and stroke; these take every mark back to a design token. */
 	.mermaid :global(.nodeLabel),
 	.mermaid :global(.edgeLabel),
 	.mermaid :global(.label),

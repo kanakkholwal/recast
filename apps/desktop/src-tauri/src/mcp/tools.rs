@@ -1,8 +1,5 @@
-//! The tool surface an MCP client sees, and how each maps onto a control verb.
-//!
-//! Every mutating tool is branch-scoped: an agent can propose edits but cannot
-//! write the project. `branch.apply` is deliberately absent, so applying stays a
-//! human action in the editor or an explicit `recast branch apply`.
+//! The MCP tool surface and how each tool maps onto a control verb.
+//! Every mutating tool is branch-scoped and `branch.apply` is absent, so applying stays a human action.
 
 use serde_json::{json, Value};
 

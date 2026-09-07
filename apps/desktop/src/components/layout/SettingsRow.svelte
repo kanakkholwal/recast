@@ -1,25 +1,19 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
-	import type { Snippet } from "svelte";
+import { cn } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
 
-	interface Props {
-		label: string;
-		/** Supporting copy under the label. Reads full-width; the control sits right. */
-		description?: string;
-		/** The control (Switch, Segmented, Button…) rendered on the trailing edge. */
-		children: Snippet;
-		/** Render the control on its own line below the copy (wide controls). */
-		stacked?: boolean;
-		class?: string;
-	}
+interface Props {
+	label: string;
+	/** Supporting copy under the label. Reads full-width; the control sits right. */
+	description?: string;
+	/** The control (Switch, Segmented, Button…) rendered on the trailing edge. */
+	children: Snippet;
+	/** Render the control on its own line below the copy (wide controls). */
+	stacked?: boolean;
+	class?: string;
+}
 
-	let {
-		label,
-		description,
-		children,
-		stacked = false,
-		class: className,
-	}: Props = $props();
+let { label, description, children, stacked = false, class: className }: Props = $props();
 </script>
 
 <div

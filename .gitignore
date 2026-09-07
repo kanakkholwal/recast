@@ -1,8 +1,9 @@
 # Turborepo internal cache
 .turbo
 .scratch
-
+.agents
 node_modules
+skills-lock.json
 
 # Output
 .output
@@ -35,5 +36,21 @@ Thumbs.db
 
 *.turbo/turbo-build.log
 
-# Local scratch (audit reports, working notes) — never committed
+# Playwright (the engine's golden arm)
+test-results/
+playwright-report/
+
+# Local scratch (audit reports, working notes)
 .scratch/
+.tools
+.notes
+crates/target/
+# Golden frames: the PNGs are local eyeball material, regenerated on demand.
+# tests/goldens/manifest.json is committed and is what actually gates CI.
+apps/desktop/src-tauri/tests/goldens/*.png
+
+# wasm-bindgen build products. Only the hand-written .d.ts in that folder is
+# committed; the generated one names closures with per-build codegen hashes.
+packages/engine/wasm/*.js
+packages/engine/wasm/*.wasm
+packages/engine/wasm/*.wasm.d.ts

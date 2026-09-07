@@ -1,17 +1,16 @@
 <script lang="ts">
+import { Plus, Trash2 } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { ColorField } from "@recast/ui/color-field";
+import { cn } from "@recast/ui/utils";
 import {
 	DEFAULT_GRADIENT,
+	type EditorStore,
+	type GradientSpec,
 	MAX_GRADIENT_STOPS,
 	parseGradient,
 	serializeGradient,
-	type EditorStore,
-	type GradientSpec,
 } from "../../stores/editor-store.svelte";
-import { Move, Plus, RotateCw, Trash2 } from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import { ColorField } from "@recast/ui/color-field";
-import { SliderControl } from "@recast/ui/slider-control";
-import { cn } from "@recast/ui/utils";
 import {
 	clampStopPos,
 	insertStopInWidestGap,
@@ -19,6 +18,8 @@ import {
 	sampleStopColor,
 } from "./background-picker.logic";
 import PanelSection from "./PanelSection.svelte";
+import PropRow from "./PropRow.svelte";
+import SliderRow from "./SliderRow.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -30,17 +31,14 @@ interface Props {
 
 let { store, recents, onRememberColor }: Props = $props();
 
-// Local editing draft so dragging a stop doesn't round-trip through the store
-// every pointer-move; streamed back via setBackgroundLive (coalesced undo). It
-// serialises to the same CSS string both renderers (preview + Rust export) parse.
+// A local draft so dragging a stop doesn't round-trip the store per pointer-move; it serialises to the CSS both renderers parse.
 let gradientDraft = $derived<GradientSpec>(
 	parseGradient(store.backgroundType === "gradient" ? store.backgroundValue : DEFAULT_GRADIENT),
 );
 let selectedStop = $state(0);
 let gradientBarEl = $state<HTMLDivElement | null>(null);
 
-// Reconcile the draft on outside changes (undo/redo, preset click). The
-// serialise-compare stops our own live edits from bouncing back into the drag.
+// Reconcile on outside changes; the serialise-compare stops our own live edits bouncing back into the drag.
 $effect(() => {
 	if (store.backgroundType !== "gradient") return;
 	const current = store.backgroundValue;
@@ -52,8 +50,7 @@ $effect(() => {
 
 const gradientCss = $derived(serializeGradient(gradientDraft));
 
-// Live commit (drag gestures) → single coalesced undo entry. Discrete edits
-// (add/remove stop) pass `live=false` for a clean, individually-undoable step.
+// Drag gestures coalesce into one undo entry; discrete edits pass `live=false` for an individually-undoable step.
 function commitGradient(next: GradientSpec, live = true) {
 	gradientDraft = next;
 	const value = serializeGradient(next);
@@ -97,8 +94,7 @@ function removeStop(i: number) {
 	selectedStop = Math.min(selectedStop, stops.length - 1);
 }
 
-// Drag a stop handle along the bar. Streams position live; the whole drag
-// coalesces to one undo entry via `setBackgroundLive`.
+// Streams position live; the whole drag coalesces to one undo entry via `setBackgroundLive`.
 function startStopDrag(e: PointerEvent, i: number) {
 	e.preventDefault();
 	selectedStop = i;
@@ -150,12 +146,12 @@ function addStopAtPointer(e: MouseEvent) {
     </Button>
   {/snippet}
 
-  <div class="flex flex-col gap-2.5">
+  <div class="flex flex-col gap-2">
     <div
       bind:this={gradientBarEl}
       ondblclick={addStopAtPointer}
       role="presentation"
-      class="relative h-9 w-full overflow-visible rounded-md border border-border/60 shadow-(--shadow-craft-inset)"
+      class="relative h-7 w-full overflow-visible rounded-lg ring-1 ring-inset ring-border/40"
       style="background: {gradientCss}"
     >
       {#each gradientDraft.stops as stop, i (i)}
@@ -165,10 +161,10 @@ function addStopAtPointer(e: MouseEvent) {
           onclick={() => (selectedStop = i)}
           ondblclick={(e) => e.stopPropagation()}
           class={cn(
-            "absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 shadow-md transition-transform active:cursor-grabbing",
+            "absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-full border-2 border-white shadow-sm transition-transform active:cursor-grabbing",
             i === selectedStop
-              ? "scale-110 border-primary ring-2 ring-primary/40"
-              : "border-white/90 hover:scale-105",
+              ? "scale-110 ring-2 ring-foreground/50"
+              : "hover:scale-105",
           )}
           style="left: {stop.pos}%; background-color: {stop.color}"
           aria-label="Gradient stop {i + 1} at {Math.round(stop.pos)}%"
@@ -177,59 +173,53 @@ function addStopAtPointer(e: MouseEvent) {
       {/each}
     </div>
 
-    <div class="flex items-center gap-1.5">
-      <div class="min-w-0 flex-1">
-        <ColorField
-          label="Stop {selectedStop + 1}"
-          value={gradientDraft.stops[selectedStop]?.color ?? "#000000"}
-          {recents}
-          allowAlpha={false}
-          oncommit={(c: string) => {
-            setStopColor(selectedStop, c);
-            onRememberColor(c);
-          }}
-        />
-      </div>
+    <PropRow label="Stop {selectedStop + 1}">
+      <ColorField
+        dense
+        hideLabel
+        class="min-w-0 flex-1"
+        label="Stop {selectedStop + 1}"
+        value={gradientDraft.stops[selectedStop]?.color ?? "#000000"}
+        {recents}
+        allowAlpha={false}
+        oncommit={(c: string) => {
+          setStopColor(selectedStop, c);
+          onRememberColor(c);
+        }}
+      />
       <Button
         variant="ghost"
         size="icon-sm"
-        class="shrink-0 text-muted-foreground hover:text-destructive"
+        class="size-8 shrink-0 text-muted-foreground hover:text-destructive"
         onclick={() => removeStop(selectedStop)}
         disabled={gradientDraft.stops.length <= 2}
+        title={gradientDraft.stops.length <= 2
+          ? "A gradient needs at least two stops"
+          : "Remove selected stop"}
         aria-label="Remove selected stop"
       >
         <Trash2 size={13} />
       </Button>
-    </div>
+    </PropRow>
 
-    <SliderControl
+    <SliderRow
       label="Position"
       value={gradientDraft.stops[selectedStop]?.pos ?? 0}
       min={0}
       max={100}
       step={1}
       unit="%"
-      onstart={() => {}}
       onchange={(v) => setStopPos(selectedStop, v)}
-    >
-      {#snippet icon()}
-        <Move size={11} />
-      {/snippet}
-    </SliderControl>
+    />
 
-    <SliderControl
+    <SliderRow
       label="Angle"
       value={gradientDraft.angle}
       min={0}
       max={360}
       step={1}
       unit="°"
-      onstart={() => {}}
       onchange={(v) => setAngle(v)}
-    >
-      {#snippet icon()}
-        <RotateCw size={11} />
-      {/snippet}
-    </SliderControl>
+    />
   </div>
 </PanelSection>

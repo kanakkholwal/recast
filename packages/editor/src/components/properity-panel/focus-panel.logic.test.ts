@@ -70,8 +70,7 @@ describe("retimeStart", () => {
 		expect(retimeStart(r, -3, 1)).toEqual({ start: 1 });
 	});
 
-	// Silently snapping to end-0.1 would look like the button mis-fired, so the
-	// caller disables it instead.
+	// Silently snapping to end-0.1 would look like a mis-fire, so the caller disables the button instead.
 	it("returns null when the playhead leaves no room before the end", () => {
 		expect(retimeStart(r, 8, 0)).toBeNull();
 		expect(retimeStart(r, 7.95, 0)).toBeNull();
@@ -108,15 +107,13 @@ describe("focusWindow", () => {
 		expect(focusWindow(0.5, 0.5, 2)).toEqual({ left: 0.25, top: 0.25, size: 0.5 });
 	});
 
-	// The affine PINS the focus point to its own screen position rather than
-	// centring on it, so an edge focus point sits flush, never outside.
+	// The affine PINS the focus point to its own screen position, so an edge focus sits flush, never outside.
 	it("sits flush against the edge the focus point is on", () => {
 		expect(focusWindow(1, 0, 2)).toEqual({ left: 0.5, top: 0, size: 0.5 });
 		expect(focusWindow(0, 1, 4)).toEqual({ left: 0, top: 0.75, size: 0.25 });
 	});
 
-	// Parity: the window must equal what the preview shader samples, which is
-	// videoUV = (screenUV - c) / scale + c over screenUV in [0,1].
+	// Parity: the window must equal what the shader samples, videoUV = (screenUV - c) / scale + c.
 	it("matches the shader's focus-pinned affine", () => {
 		const shaderAt = (uv: number, c: number, s: number) => (uv - c) / s + c;
 		for (const c of [0, 0.2, 0.5, 0.83, 1]) {
@@ -139,8 +136,7 @@ describe("isOutsideClip", () => {
 		expect(isOutsideClip({ start: 2, end: 9.5 }, 1, 9)).toBe(true);
 	});
 
-	// Float drift from trim maths must not light up the warning on a span that
-	// is flush with the clip edges.
+	// Float drift from trim maths must not light the warning on a span flush with the clip edges.
 	it("tolerates float drift at the edges", () => {
 		expect(isOutsideClip({ start: 1 - 1e-9, end: 9 + 1e-9 }, 1, 9)).toBe(false);
 	});

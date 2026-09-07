@@ -1,7 +1,5 @@
-//! `recast mcp`: an MCP stdio server that proxies to the running app.
-//!
-//! Stateless by design. It holds no project state of its own, so a client that
-//! restarts it loses nothing, and the control socket stays the single writer.
+//! `recast mcp`: an MCP stdio server proxying to the running app.
+//! Stateless by design, so a client restart loses nothing and the control socket stays the single writer.
 
 mod protocol;
 mod tools;
@@ -23,9 +21,7 @@ impl protocol::ToolHost for ControlHost {
 }
 
 /// Serve MCP on stdin/stdout until the client closes the stream.
-///
-/// # Errors
-/// Only a stdout write failure, which means the client is gone.
+/// # Errors Only a stdout write failure, which means the client is gone.
 pub fn serve(auto_launch: bool, timeout_ms: u64) -> Result<(), String> {
     let host = ControlHost {
         auto_launch,

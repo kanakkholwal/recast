@@ -1,8 +1,5 @@
 #!/usr/bin/env node
-// Copies the screenshot-editor image assets from their single source of truth
-// (packages/application/assets/screenshot-assets) into each consuming app's
-// static dir. Those static copies are gitignored, so the repo keeps ONE
-// committed copy instead of duplicating ~5MB per app. Runs on predev/prebuild.
+// Copies the screenshot-editor assets into each app's static dir; those copies are gitignored, so the repo keeps one.
 import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

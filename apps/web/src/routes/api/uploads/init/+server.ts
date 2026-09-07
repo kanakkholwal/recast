@@ -1,15 +1,10 @@
 import { error, json } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
+import type { SignedUpload } from "files-sdk";
 import { z } from "zod";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { recast } from "$lib/db/schema";
-import { assertWorkspaceMember } from "$lib/workspace/guard";
-import {
-	checkUploadAllowed,
-	getQuotaSnapshot,
-	type UploadDenial,
-} from "$lib/storage/quota";
 import {
 	captionsObjectKey,
 	isStorageConfigured,
@@ -17,6 +12,8 @@ import {
 	recastObjectKey,
 	signUploadUrl,
 } from "$lib/storage";
+import { checkUploadAllowed, getQuotaSnapshot, type UploadDenial } from "$lib/storage/quota";
+import { assertWorkspaceMember } from "$lib/workspace/guard";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = {
@@ -26,7 +23,11 @@ type SessionShape = {
 const BodySchema = z.object({
 	workspaceId: z.string().min(1).optional(),
 	title: z.string().trim().min(1).max(200),
-	durationSec: z.number().int().nonnegative().max(24 * 60 * 60),
+	durationSec: z
+		.number()
+		.int()
+		.nonnegative()
+		.max(24 * 60 * 60),
 	sizeBytes: z.number().int().nonnegative(),
 	width: z.number().int().positive().optional(),
 	height: z.number().int().positive().optional(),
@@ -83,10 +84,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const db = getDb();
 
-	// Membership check. We don't trust the session's activeOrganizationId
-	// alone — a stale active-org pointer (e.g. after being kicked from a
-	// team) should fail closed, not silently let the user upload into a
-	// workspace they're no longer in.
+	// Don't trust the session's activeOrganizationId alone: a stale pointer must fail closed, not upload into a left workspace.
 	await assertWorkspaceMember(session.user.id, workspaceId);
 
 	const snapshot = await getQuotaSnapshot(workspaceId);
@@ -98,10 +96,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		heightPx: body.height,
 	});
 	if (!gate.ok) {
-		return json(
-			{ ok: false, denial: gate.denial },
-			{ status: denialStatus(gate.denial) },
-		);
+		return json({ ok: false, denial: gate.denial }, { status: denialStatus(gate.denial) });
 	}
 
 	const recastId = crypto.randomUUID();
@@ -117,30 +112,25 @@ export const POST: RequestHandler = async ({ request }) => {
 		width: body.width,
 		height: body.height,
 		fps: body.fps,
-		// Stored as the R2 key (relative). Absolute URLs are derived at
-		// read time so we can swap buckets or CDNs without rewriting rows.
+		// Stored as the relative key; absolute URLs are derived at read time so buckets or CDNs can swap without rewriting rows.
 		videoUrl: key,
 		provider: "r2",
 		source: "cloud",
 		status: "draft",
 	});
 
-	let upload;
+	let upload: SignedUpload;
 	try {
 		upload = await signUploadUrl({ key, contentType: body.contentType });
 	} catch (err) {
-		// Roll back the draft row — leaving it would count against the
-		// active-recasts cap (once /complete bumps usage) for a recast
-		// that was never uploadable.
+		// Roll back the draft row: leaving it would count against the active-recasts cap for something never uploadable.
 		await db.delete(recast).where(eq(recast.id, recastId));
 		console.error("[uploads/init] sign failed", err);
 		error(500, "Could not generate upload URL");
 	}
 
-	// Also sign a poster PUT (a single WebP frame). Best-effort and
-	// non-fatal: if it fails, the client simply skips the poster and the
-	// recast keeps a null `posterUrl`. The video is the only required asset.
-	let posterUpload;
+	// Best-effort and non-fatal: a failure just skips the poster, and the video is the only required asset.
+	let posterUpload: SignedUpload | undefined;
 	try {
 		posterUpload = await signUploadUrl({
 			key: posterObjectKey(workspaceId, recastId),
@@ -152,7 +142,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	// Captions track PUT (WebVTT), same best-effort contract as the poster.
-	let captionsUpload;
+	let captionsUpload: SignedUpload | undefined;
 	if (body.hasCaptions) {
 		try {
 			captionsUpload = await signUploadUrl({
@@ -165,10 +155,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	}
 
-	// `upload` is a discriminated union from files-sdk:
-	//   PUT  → { method: "PUT", url, headers? }
-	//   POST → { method: "POST", url, fields }
-	// Client picks the right `fetch()` shape based on `method`.
+	// `upload` is a discriminated union from files-sdk, and the client picks its fetch shape from `method`.
 	return json({
 		ok: true,
 		recastId,

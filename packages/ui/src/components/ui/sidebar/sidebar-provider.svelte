@@ -1,38 +1,38 @@
 <script lang="ts">
-	import * as Tooltip from "../tooltip";
-	import { cn, type WithElementRef } from "@recast/ui/utils";
-	import type { HTMLAttributes } from "svelte/elements";
-	import {
-		SIDEBAR_COOKIE_MAX_AGE,
-		SIDEBAR_COOKIE_NAME,
-		SIDEBAR_WIDTH,
-		SIDEBAR_WIDTH_ICON,
-	} from "./constants";
-	import { setSidebar } from "./context.svelte";
+import * as Tooltip from "../tooltip";
+import { cn, type WithElementRef } from "@recast/ui/utils";
+import type { HTMLAttributes } from "svelte/elements";
+import {
+	SIDEBAR_COOKIE_MAX_AGE,
+	SIDEBAR_COOKIE_NAME,
+	SIDEBAR_WIDTH,
+	SIDEBAR_WIDTH_ICON,
+} from "./constants";
+import { setSidebar } from "./context.svelte";
 
-	let {
-		ref = $bindable(null),
-		open = $bindable(true),
-		onOpenChange = () => {},
-		class: className,
-		style,
-		children,
-		...restProps
-	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
-		open?: boolean;
-		onOpenChange?: (open: boolean) => void;
-	} = $props();
+let {
+	ref = $bindable(null),
+	open = $bindable(true),
+	onOpenChange = () => undefined,
+	class: className,
+	style,
+	children,
+	...restProps
+}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
+	open?: boolean;
+	onOpenChange?: (open: boolean) => void;
+} = $props();
 
-	const sidebar = setSidebar({
-		open: () => open,
-		setOpen: (value: boolean) => {
-			open = value;
-			onOpenChange(value);
+const sidebar = setSidebar({
+	open: () => open,
+	setOpen: (value: boolean) => {
+		open = value;
+		onOpenChange(value);
 
-			// This sets the cookie to keep the sidebar state.
-			document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
-		},
-	});
+		// biome-ignore lint/suspicious/noDocumentCookie: cookieStore is Chromium-only; document.cookie is the portable write.
+		document.cookie = `${SIDEBAR_COOKIE_NAME}=${open}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+	},
+});
 </script>
 
 <svelte:window onkeydown={sidebar.handleShortcutKeydown} />

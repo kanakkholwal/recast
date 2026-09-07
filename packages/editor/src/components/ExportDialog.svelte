@@ -27,6 +27,7 @@ let advancedWasOpen = $state(false);
   import { cubicOut } from "svelte/easing";
   import { fade, slide } from "svelte/transition";
   import { motionDuration } from "../lib/motion.svelte";
+  import PanelSection from "./properity-panel/PanelSection.svelte";
   import {
     estimateExportBytes,
     formatByteRange,
@@ -65,8 +66,7 @@ let advancedWasOpen = $state(false);
     { value: "quality", label: "Quality", desc: "Slower, smallest file" },
   ];
 
-  // Swatch is a brand-tinted intensity ramp (faint to full primary) so it reads
-  // as "more color richness", not a red/amber/green judgement of good vs bad.
+  // A brand-tinted intensity ramp, so it reads as more colour richness, not a good-versus-bad judgement.
   const gifQualities: {
     value: GifQuality;
     label: string;
@@ -119,8 +119,7 @@ let advancedWasOpen = $state(false);
 
   const sourceFps = $derived(clampSourceFps(store.metadata?.fps));
   const fpsOptions = $derived(buildFpsOptions(sourceFps));
-  // Reads the store directly rather than `isGif` (declared below) to avoid a
-  // use-before-declaration.
+  // Reads the store directly rather than `isGif`, which is declared below.
   const showFps = $derived(
     store.exportFormat !== "gif" && fpsOptions.length > 1,
   );
@@ -146,8 +145,7 @@ let advancedWasOpen = $state(false);
         store.trimEnd < sourceDuration),
   );
 
-  // What the export actually produces. The quality preset is a BOUND, so a
-  // portrait clip at "HD" is 608x1080, so the preset label alone misleads.
+  // The quality preset is a BOUND, so a portrait clip at HD is 608x1080 and the preset label alone misleads.
   const outRes = $derived(
     outputResolution(
       store.metadata?.width ?? 0,
@@ -215,8 +213,7 @@ let advancedWasOpen = $state(false);
     store.updateGifSettings({ fps: null });
   }
 
-  // Loop-count stepper (2x..5x). "Once" already covers a single play, so the
-  // numeric range starts at 2. Stepping while on Forever/Once switches to count.
+  // 'Once' already covers a single play, so the range starts at 2; stepping from Forever or Once switches to count.
   const LOOP_MIN = 2;
   const LOOP_MAX = 5;
   const loopCount = $derived(
@@ -231,10 +228,7 @@ let advancedWasOpen = $state(false);
     setLoop(Math.min(LOOP_MAX, Math.max(LOOP_MIN, loopCount + delta)));
   }
 
-  // Frame rate + Speed are power-user tuning, tucked behind a disclosure so the
-  // common Format/Quality choices lead. Module-level so it survives the panel's
-  // per-phase remount: someone who always tunes Speed shouldn't reopen it every
-  // single export.
+  // Module-level so the disclosure survives the panel's per-phase remount and a Speed-tuner needn't reopen it every export.
   let advancedOpen = $state(advancedWasOpen);
   $effect(() => {
     advancedWasOpen = advancedOpen;
@@ -364,13 +358,14 @@ let advancedWasOpen = $state(false);
 {/snippet}
 
 {#snippet field(label: string, desc: string | undefined, control: import("svelte").Snippet)}
-  <div class="flex flex-col gap-1.5">
-    <span class="text-[11px] font-semibold text-foreground">{label}</span>
-    {@render control()}
-    {#if desc}
-      <p class="text-[11px] leading-snug text-muted-foreground">{desc}</p>
-    {/if}
-  </div>
+  <PanelSection title={label} flush>
+    <div class="flex flex-col gap-1.5">
+      {@render control()}
+      {#if desc}
+        <p class="text-[11px] leading-snug text-muted-foreground">{desc}</p>
+      {/if}
+    </div>
+  </PanelSection>
 {/snippet}
 
 {#snippet captionsSection()}
@@ -480,69 +475,45 @@ let advancedWasOpen = $state(false);
       {/snippet}
       {@render field("Quality", activeQuality?.desc, qualityControl)}
 
-      <!-- Advanced tuning. The collapsed row carries its current values so you
-           can tell whether opening it is worth it. -->
-      <div
-        class={cn(
-          "flex flex-col rounded-xl border transition-colors",
-          advancedOpen ? "border-border/60 bg-card/40" : "border-border/50",
-        )}
-      >
-        <button
-          type="button"
-          onclick={() => (advancedOpen = !advancedOpen)}
-          aria-expanded={advancedOpen}
-          aria-controls="export-advanced"
-          class="group flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          <Settings2 class="size-3.5 shrink-0 text-muted-foreground" />
-          <span class="shrink-0 text-[11px] font-semibold text-foreground">Advanced</span>
-          <span class="ml-auto min-w-0 truncate text-right text-[11px] text-muted-foreground">
-            {advancedOpen ? "" : advancedSummary}
-          </span>
-          <ChevronDown
-            class={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
-              advancedOpen && "rotate-180",
-            )}
-          />
-        </button>
-        {#if advancedOpen}
-          <div
-            id="export-advanced"
-            class="flex flex-col gap-4 border-t border-border/50 px-3 py-3"
-            transition:slide={{ duration: motionDuration(200), easing: cubicOut }}
-          >
-            {#if isGif}
-              {@render gifSettingsBody()}
-            {:else}
-              {#if showFps}
-                {#snippet fpsControl()}
-                  <Segmented
-                    options={fpsOptions.map((f) => ({
-                      value: String(f.value ?? "original"),
-                      label: f.label,
-                    }))}
-                    value={String(store.exportFps ?? "original")}
-                    onValueChange={(v) => setFps(v === "original" ? null : Number(v))}
-                    aria-label="Frame rate"
-                  />
-                {/snippet}
-                {@render field("Frame rate", activeFps?.desc, fpsControl)}
-              {/if}
-              {#snippet speedControl()}
+      <!-- Advanced tuning, collapsed by default; the summary rides the header row. -->
+      <PanelSection title="Advanced" collapsible bind:open={advancedOpen} flush>
+        {#snippet action()}
+          {#if !advancedOpen}
+            <span class="block max-w-44 truncate text-[11px] text-muted-foreground">
+              {advancedSummary}
+            </span>
+          {/if}
+        {/snippet}
+        <div class="flex flex-col gap-4 pt-1">
+          {#if isGif}
+            {@render gifSettingsBody()}
+          {:else}
+            {#if showFps}
+              {#snippet fpsControl()}
                 <Segmented
-                  options={speeds.map((sp) => ({ value: sp.value, label: sp.label }))}
-                  value={store.exportSpeed}
-                  onValueChange={setSpeed}
-                  aria-label="Speed"
+                  options={fpsOptions.map((f) => ({
+                    value: String(f.value ?? "original"),
+                    label: f.label,
+                  }))}
+                  value={String(store.exportFps ?? "original")}
+                  onValueChange={(v) => setFps(v === "original" ? null : Number(v))}
+                  aria-label="Frame rate"
                 />
               {/snippet}
-              {@render field("Speed", activeSpeed?.desc, speedControl)}
+              {@render field("Frame rate", activeFps?.desc, fpsControl)}
             {/if}
-          </div>
-        {/if}
-      </div>
+            {#snippet speedControl()}
+              <Segmented
+                options={speeds.map((sp) => ({ value: sp.value, label: sp.label }))}
+                value={store.exportSpeed}
+                onValueChange={setSpeed}
+                aria-label="Speed"
+              />
+            {/snippet}
+            {@render field("Speed", activeSpeed?.desc, speedControl)}
+          {/if}
+        </div>
+      </PanelSection>
       {#if hasCaptions}{@render captionsSection()}{/if}
     </div>
   </div>
@@ -560,9 +531,7 @@ let advancedWasOpen = $state(false);
 </div>
 
 <style>
-  /* Native buttons default to the arrow cursor. Every raw button in this panel
-     is a selectable toggle or action, so show the pointer (disabled ones keep
-     the default). */
+  /* Every raw button here is a toggle or action, so show the pointer; disabled ones keep the default. */
   button:not(:disabled) {
     cursor: pointer;
   }

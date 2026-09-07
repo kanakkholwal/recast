@@ -23,7 +23,7 @@ hitting a known-broken path, verified on hardware.
 | OS | Code complete | Production-ready | What's actually left |
 |---|---|---|---|
 | **Windows** | 100% | **~100% — shipping** | Verified, in users' hands. The reference platform. |
-| **macOS** | ~95% | **~75%** | (a) Out-of-the-box **system audio** needs BlackHole/virtual driver — native ScreenCaptureKit loopback is implemented but **default-off** behind the `sckit-loopback` Cargo feature (upstream apple-metal SDK-symbol issue). (b) Hardware verification of capture + the TCC permission flow + Retina/multi-monitor. (c) Deferred capture-read timeout (a stalled device can hang `stop()`). (d) Developer-ID signing + **notarization**. (e) First-run permissions UX. |
+| **macOS** | ~98% | **~80%** | (a) Hardware verification of capture + audio + the TCC permission flow + Retina/multi-monitor. (b) Deferred capture-read timeout (a stalled device can hang `stop()`). (c) Developer-ID signing + **notarization**. (d) First-run permissions UX. |
 | **Linux** | ~90% | **~60%** | (a) **Zero hardware verification yet** — biggest unknown. Portal+PipeWire (Wayland) and XGetImage (X11) are written but never run on a real session. (b) Wayland: cursor double-render and a portal dialog on every record (no `restore_token` persistence). (c) X11 perf: XShm fast path unwired, ~4× over-capture, window-occlusion not handled. (d) Functional sign-off on GNOME + KDE + an X11 session. |
 
 **One-line answer:** Windows is done. **macOS is roughly one focused
@@ -44,22 +44,23 @@ hardware-verified** · ⚠️ implemented with a known limitation · ❌ stub/no
 
 | Subsystem | Windows | Linux | macOS |
 |---|---|---|---|
-| Screen capture | ✅ DXGI Desktop Duplication | 🟢 Wayland (portal+PipeWire) & X11 (XGetImage) | 🟢 FFmpeg AVFoundation |
-| System audio (loopback) | ✅ WASAPI | 🟢 FFmpeg pulse `.monitor` (silence fallback if no PA) | ⚠️ BlackHole/virtual driver if installed, else silence + actionable log; native ScreenCaptureKit loopback implemented but **default-off** behind `sckit-loopback` |
-| Microphone | ✅ WASAPI | 🟢 FFmpeg pulse `default` | 🟢 FFmpeg avfoundation `:0` |
-| Camera / webcam | ✅ FFmpeg DirectShow | 🟢 FFmpeg V4L2 | 🟢 FFmpeg AVFoundation |
+| Screen capture | ✅ capturekit (DXGI + Windows Graphics Capture) | 🟢 capturekit (portal+PipeWire / X11) | 🟢 capturekit (ScreenCaptureKit) |
+| System audio (loopback) | ✅ capturekit (WASAPI) | 🟢 capturekit (PipeWire sink monitor) | 🟢 capturekit (ScreenCaptureKit tap, no virtual driver) |
+| Microphone | ✅ capturekit (WASAPI) | 🟢 capturekit (PipeWire) | 🟢 capturekit (AVFoundation, any named device) |
+| Camera / webcam | ✅ capturekit (Media Foundation) | 🟢 capturekit (V4L2) | 🟢 capturekit (AVFoundation) |
 | Cursor sampling | ✅ Win32 GetCursorPos | 🟢 device_query (xcb / XWayland) | 🟢 device_query (CoreGraphics) |
 | Reveal in file manager | ✅ `explorer /select,` | 🟢 D-Bus `FileManager1.ShowItems` + xdg-open fallback | 🟢 `open -R` |
-| Audio device list | ✅ WASAPI enumerate | 🟢 `pactl list short sources` (`.monitor` filtered) | 🟢 AVFoundation listing parsed |
-| Camera device list | ✅ FFmpeg `-list_devices` | 🟢 `/dev/video*` + sysfs V4L2 filter | 🟢 AVFoundation listing (screens filtered) |
+| Audio device list | ✅ capturekit (loopback filtered out) | 🟢 capturekit (loopback filtered out) | 🟢 capturekit (CoreAudio, loopback filtered out) |
+| Camera device list | ✅ capturekit | 🟢 capturekit | 🟢 capturekit |
 | Capture capabilities probe | ✅ `capture_capabilities` | 🟢 `capture_capabilities` | 🟢 `capture_capabilities` |
 | Window capture-exclusion | ✅ `set_content_protected` (`WDA_EXCLUDEFROMCAPTURE`) | ❌ no-op (no OS API — X11/Wayland have no per-window exclusion) | 🟢 `set_content_protected` (`NSWindow.sharingType`), works vs. AVFoundation capture |
 | Video encoding | ✅ FFmpeg (NVENC/x264) | 🟢 FFmpeg (x264, hw if present) | 🟢 FFmpeg (x264, VideoToolbox if present) |
 | Delete to trash | ✅ `trash` crate | 🟢 `trash` crate | 🟢 `trash` crate |
 
-The architecture uses a per-module `platform/{windows,macos,linux_*,fallback}.rs`
-abstraction with `#[cfg]` dispatch, and FFmpeg as the codec/format layer, so each
-gap is an additive, isolated file — no refactor required. **The 🟢 rows are the
+Screen, camera and audio capture all sit behind `capturekit`, which owns the
+per-OS backends; the app holds no `#[cfg]` capture code of its own, and asks
+`capturekit::capabilities()` what a platform can do rather than branching on the
+target. FFmpeg remains the codec/format layer. **The 🟢 rows are the
 whole story: code is written and green in CI on every target; the distance to ✅
 is a person sitting in front of a Mac / a Linux box.**
 
@@ -69,42 +70,28 @@ is a person sitting in front of a Mac / a Linux box.**
 
 ### macOS — nearest milestone (in active testing)
 - **Hardware pass:** capture + TCC permissions + Retina/multi-monitor.
-- **System-audio default decision** *(biggest out-of-the-box gap):* enable
-  `sckit-loopback` once the upstream apple-metal SDK-symbol issue clears, or
-  ship the BlackHole-guided path with clear in-app messaging. `macos_sckit.rs`
-  carries a Mac-reviewer smoke-test checklist. When enabled it shares the Screen
-  Recording TCC prompt with video, so there's no second permission cost.
-- **Deferred capture-read timeout:** interruptible/timeout reads in
-  `capture/platform/macos.rs` so a device stall (permission revoked mid-record)
-  can't block `stop()`.
+- **Deferred capture-read timeout:** a device stall (permission revoked
+  mid-record) must not block `stop()`.
 - **Permissions UX:** first launch prompts for Screen Recording / Microphone /
   Camera implicitly; capture errors already name the relevant Settings pane. A
   polished first-run flow with deep-links is a follow-up.
-- **Phase 5b (deferred):** swap the FFmpeg AVFoundation video source for a
-  ScreenCaptureKit `SCStream` video output (lower latency, per-window filtering,
-  native HiDPI). The audio half of SCKit is already wired, so the existing TCC
-  grant covers it; the cost is objc2 `CMSampleBuffer` → BGRA plumbing. FFmpeg
-  AVFoundation is the production bridge until then.
 
 ### Linux — one hardware bring-up behind
-- **Zero hardware verification** — the biggest unknown. Validate
-  `linux_wayland.rs` (portal dialog, PipeWire stream, frame pacing) on GNOME +
-  KDE and `linux_x11.rs` on an X11 session.
+- **Zero hardware verification** — the biggest unknown. Validate capturekit's
+  Wayland backend (portal dialog, PipeWire stream, frame pacing) on GNOME + KDE
+  and its X11 backend on an X11 session, plus PipeWire audio on both.
+- **PipeWire is the only audio backend.** A host running PulseAudio without
+  PipeWire loses system audio (silence fallback, reported honestly) and the
+  microphone (a warning). Every current mainstream distro ships PipeWire.
 - **Wayland cursor double-render:** `CursorMode::Embedded` burns the compositor
   cursor into frames *and* we record positions → two cursors in export. Switch
   to `CursorMode::Metadata` once the editor's stylized cursor is reliable on Linux.
 - **Portal dialog every record:** `PersistMode::DoNot` saves no consent. Switch
   to `PersistMode::ExplicitlyRevoked` and persist the `restore_token` in
   `AppConfig` for a one-time grant.
-- **X11 perf:** XShm fast path is unwired (per-frame XCB roundtrip); the pacer
-  drains ~4× per tick while `X11CaptureSource` ignores the timeout and returns a
-  fresh full-screen `GetImage` each call (~4× over-capture) — rate-limit inside
-  the source or land XShm. Window-occlusion (obscured region returns the
-  front-most window's pixels) is not handled.
-- **Portal stream lifetime:** `start_recording` stashes the portal stream before
-  `recording_manager.start()`; on a `start()` error the stashed fd lingers until
-  the next recording overwrites the slot. Stash after a successful start, or
-  clear on the error path.
+- **X11 perf:** the XShm fast path is unwired, so each read is a full-screen
+  `GetImage` over an XCB roundtrip. Window-occlusion (an obscured region returns
+  the front-most window's pixels) is not handled. Both live in capturekit.
 
 ### HiDPI / fractional-scaling cursor (macOS + Linux)
 `device_query` has no cursor-visibility signal, so `visible` is always `true`
@@ -145,11 +132,12 @@ com.apple.quarantine` on first launch), and hardened-runtime entitlements for
 
 ## Key files
 
-- `apps/desktop/src-tauri/src/capture/platform/` — `macos.rs`,
-  `linux_wayland.rs`, `linux_x11.rs`, `windows.rs`, `fallback.rs`
-- `apps/desktop/src-tauri/src/{audio,camera,cursor}/platform/` — per-OS backends
+- `crates/capturekit/src/platform/` — every screen, camera and audio backend
+- `apps/desktop/src-tauri/src/{capture,audio,camera}/` — the app's `#[cfg]`-free
+  adapters over capturekit
+- `apps/desktop/src-tauri/src/cursor/platform/` — the last per-OS backend the
+  app still owns
 - `apps/desktop/src-tauri/src/commands/system.rs` — device enumeration, window
   capture-exclusion, reveal-in-file-manager per-OS branches
-- `apps/desktop/src-tauri/Cargo.toml` — per-OS deps (`screencapturekit`,
-  `device_query`, `ashpd`/`pipewire`/`x11rb`)
+- `apps/desktop/src-tauri/Cargo.toml` — per-OS deps (`device_query`, `winreg`)
 - `apps/desktop/binaries/` — per-platform FFmpeg/FFprobe sidecars

@@ -35,9 +35,7 @@ export async function recordCheckoutIntent(
  * owned workspace; refuses to guess when the buyer owns several, since
  * granting the wrong workspace is worse than granting none.
  */
-export async function resolveCheckoutWorkspace(
-	userId: string,
-): Promise<WorkspaceResolution> {
+export async function resolveCheckoutWorkspace(userId: string): Promise<WorkspaceResolution> {
 	const db = getDb();
 	const [intent] = await db
 		.select({
@@ -57,7 +55,7 @@ export async function resolveCheckoutWorkspace(
 	}
 
 	const owned = await ownedWorkspaceIds(userId);
-	if (owned.length === 1) return { ok: true, organizationId: owned[0]!, seats: 3 };
+	if (owned.length === 1) return { ok: true, organizationId: owned[0], seats: 3 };
 	return {
 		ok: false,
 		reason: owned.length === 0 ? "no_owned_workspace" : "no_intent_ambiguous",
@@ -66,7 +64,5 @@ export async function resolveCheckoutWorkspace(
 
 /** Intents are single-use — a stale one would misroute the next purchase. */
 export async function clearCheckoutIntent(userId: string): Promise<void> {
-	await getDb()
-		.delete(billingCheckoutIntent)
-		.where(eq(billingCheckoutIntent.userId, userId));
+	await getDb().delete(billingCheckoutIntent).where(eq(billingCheckoutIntent.userId, userId));
 }

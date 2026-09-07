@@ -94,10 +94,7 @@ const PANEL_STEP = 16;
   let editorMode = $state<"screenshot" | "browser">("screenshot");
   const dragging = $derived(dragDepth > 0);
 
-  // --- Resizable side panels ------------------------------------------------
-  // The default 240px is the FLOOR (the controls are laid out for it), and the
-  // ceiling is a quarter of the viewport so the stage always keeps the majority
-  // of the screen. Widths are per-session, not persisted.
+  // --- Resizable side panels: 240px is the FLOOR the controls are laid out for, and a quarter viewport is the ceiling. Per-session, not persisted.
   let viewportWidth = $state(1440);
   let leftWidth = $state(PANEL_MIN);
   let rightWidth = $state(PANEL_MIN);
@@ -126,8 +123,7 @@ const PANEL_STEP = 16;
 
   function moveResize(e: PointerEvent) {
     if (!resizing) return;
-    // The left panel grows as the pointer moves right; the right panel is
-    // mirrored, so its delta is inverted.
+    // The left panel grows as the pointer moves right; the right panel is mirrored, so its delta is inverted.
     const delta = e.clientX - dragStartX;
     const next = clampPanel(dragStartWidth + (resizing === "left" ? delta : -delta));
     if (resizing === "left") leftWidth = next;
@@ -230,8 +226,7 @@ const PANEL_STEP = 16;
     editor.record();
   });
 
-  // Draft autosave: restore once on mount, then debounce-save the full snapshot
-  // (design + image) to IndexedDB on any change so a refresh never loses work.
+  // Restore once on mount, then debounce-save the full snapshot to IndexedDB so a refresh never loses work.
   let draftStatus = $state<"idle" | "saving" | "saved">("idle");
   let draftLoaded = $state(false);
 
@@ -246,9 +241,7 @@ const PANEL_STEP = 16;
   });
 
   $effect(() => {
-    // Subscribe cheaply to every persisted top-level ref (patch* methods replace
-    // objects, so touching the ref catches nested edits) WITHOUT serializing on
-    // each change; the heavy snapshot happens once per debounce, in the timeout.
+    // Touching each persisted top-level ref subscribes cheaply (patch* replaces objects) without serializing per change.
     void editor.image;
     void editor.slides;
     void editor.activeSlide;

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	buildShareUpdate,
-	toVisibility,
-	type ShareUpdateInput,
-} from "./share-manage-dialog.logic";
+import { buildShareUpdate, type ShareUpdateInput, toVisibility } from "./share-manage-dialog.logic";
 
 const base: ShareUpdateInput = {
 	visibility: "public",
@@ -29,12 +25,10 @@ describe("buildShareUpdate", () => {
 	});
 
 	it("emits visibility only when it differs", () => {
-		expect(
-			buildShareUpdate({ ...base, visibility: "private" }),
-		).toEqual({ visibility: "private" });
+		expect(buildShareUpdate({ ...base, visibility: "private" })).toEqual({ visibility: "private" });
 	});
 
-	it("removePassword wins over a typed password and emits \"\"", () => {
+	it('removePassword wins over a typed password and emits ""', () => {
 		const opts = buildShareUpdate({
 			...base,
 			removePassword: true,
@@ -44,15 +38,11 @@ describe("buildShareUpdate", () => {
 	});
 
 	it("sets a trimmed password", () => {
-		expect(buildShareUpdate({ ...base, password: "  secret  " }).password).toBe(
-			"secret",
-		);
+		expect(buildShareUpdate({ ...base, password: "  secret  " }).password).toBe("secret");
 	});
 
 	it("omits password for a blank/whitespace field (unchanged)", () => {
-		expect("password" in buildShareUpdate({ ...base, password: "   " })).toBe(
-			false,
-		);
+		expect("password" in buildShareUpdate({ ...base, password: "   " })).toBe(false);
 	});
 
 	it("emits end-of-day ISO when expiry is set", () => {
@@ -61,12 +51,10 @@ describe("buildShareUpdate", () => {
 			expiryDate: "2026-07-05",
 		});
 		// End-of-day local time → the ISO instant equals that local 23:59:59.
-		expect(opts.expiresAt).toBe(
-			new Date("2026-07-05T23:59:59").toISOString(),
-		);
+		expect(opts.expiresAt).toBe(new Date("2026-07-05T23:59:59").toISOString());
 	});
 
-	it("emits \"\" to clear expiry when cleared from a prior value", () => {
+	it('emits "" to clear expiry when cleared from a prior value', () => {
 		const opts = buildShareUpdate({
 			...base,
 			expiryDate: "",

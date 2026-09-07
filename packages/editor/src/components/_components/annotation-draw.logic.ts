@@ -5,17 +5,18 @@
  * existing importers keep one import site.
  */
 
-import type { HandleName } from "../../lib/annotations/hit";
 import type { ZoomTransform } from "../../lib/annotations/eval";
+import type { HandleName } from "../../lib/annotations/hit";
+
 export {
-	type StrokeStyle,
-	type Point,
 	type ArrowGeometry,
-	strokeDashPattern,
-	blurTint,
-	withAlpha,
 	arrowGeometry,
+	blurTint,
+	type Point,
 	roundRectPath,
+	type StrokeStyle,
+	strokeDashPattern,
+	withAlpha,
 } from "@recast/render";
 
 /** CSS-px half-size of an annotation resize handle (also the grab-slop base). */

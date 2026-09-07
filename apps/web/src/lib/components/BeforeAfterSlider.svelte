@@ -2,11 +2,7 @@
 import { Check, ChevronsLeftRight, Film, Pause, Play } from "@recast/icons";
 import { autoplayInView } from "$lib/motion-core";
 
-// Draggable wipe comparison. Raw fills the base; the polished clip is layered
-// on top and clipped to the RIGHT of the handle, so the left half is always the
-// raw take and the right half is always the polished one. Both clips autoplay
-// and loop independently: they are deliberately NOT frame-synced, because
-// polishing changes the video (silence-trim shortens it), which is the point.
+// A wipe comparison: raw fills the base and polished is clipped to the right. Deliberately not frame-synced, since polishing shortens the video.
 type Clip = {
 	src: string;
 	poster?: string;
@@ -22,8 +18,7 @@ let pos = $state(52);
 let root: HTMLElement | undefined = $state();
 let dragging = $state(false);
 
-// Each side's chrome is clipped to the same geometry as its own video, so a
-// label never sits over the footage it isn't describing.
+// Each side's chrome is clipped to its own video's geometry, so a label never sits over footage it isn't describing.
 const rawClip = $derived(`inset(0 ${100 - pos}% 0 0)`);
 const polishedClip = $derived(`inset(0 0 0 ${pos}%)`);
 
@@ -37,7 +32,7 @@ function togglePlayback() {
 	for (const v of [rawVideo, polishedVideo]) {
 		if (!v) continue;
 		if (userPaused) v.pause();
-		else void v.play().catch(() => {});
+		else void v.play().catch(() => undefined);
 	}
 }
 

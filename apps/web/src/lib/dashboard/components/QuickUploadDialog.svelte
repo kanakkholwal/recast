@@ -62,14 +62,12 @@ let {
 	firstUpload?: boolean;
 } = $props();
 
-// The flow: pick a file → watch it upload → choose sharing → get the link.
-// Sharing settings live AFTER the upload, so nothing gates the drop.
+// Sharing settings come AFTER the upload, so nothing gates the drop.
 type Step = "pick" | "uploading" | "configure" | "done" | "error";
 let step = $state<Step>("pick");
 
 let fileInput = $state<HTMLInputElement | null>(null);
-// Depth counter, not a boolean: dragging over a child fires dragleave on the
-// parent, which made the highlight flicker.
+// A depth counter, not a boolean: dragging over a child fires dragleave on the parent and flickered the highlight.
 let dragDepth = $state(0);
 const isDragging = $derived(dragDepth > 0);
 
@@ -83,9 +81,7 @@ let uploadError = $state("");
 // Lets the user stop a large upload instead of being held by the dialog.
 let uploadAbort: AbortController | null = null;
 
-// Cover frame. The file's <video> is loaded here (once) so we can auto-pick a
-// non-blank cover and, if the owner wants, scrub to a different frame, no
-// separate "upload a cover" step, and no ffmpeg.
+// The file's <video> loads once, so a cover frame can be auto-picked and scrubbed without ffmpeg or a second step.
 let videoEl = $state<HTMLVideoElement | null>(null);
 let videoUrl = $state<string | null>(null);
 let mediaDuration = $state(0);
@@ -139,8 +135,7 @@ async function drawScrub(t: number) {
 	}
 }
 
-// Size the scrub canvas to the video's aspect once, then repaint as the
-// slider (scrubTime) moves.
+// Size the scrub canvas to the video's aspect once, then repaint as the slider moves.
 $effect(() => {
 	const c = scrubCanvas;
 	if (!showScrubber || !c || !videoEl || !mediaW || !mediaH) return;
@@ -227,12 +222,7 @@ const shareOptions = $derived.by<ShareOptions>(() => ({
 	...(isPro && expiry !== "never" ? { expiresAt: expiresAt(expiry) } : {}),
 }));
 
-// Journey framing, a lightweight stage indicator for the sense of progress
-// across the whole flow. First-time users get an endowed-progress variant:
-// the account they already created counts as a completed first step, so the
-// bar reads "1 of 4 done" rather than "0 of 3", a goal-gradient nudge that
-// lifts follow-through. Latched when the journey begins so a mid-flow quota
-// refresh (post-upload invalidate) can't drop a segment underfoot.
+// Endowed progress: the account already created counts as step one, and latching stops a quota refresh dropping a segment.
 let endowed = $state(false);
 $effect(() => {
 	if (quickUpload.open && step === "pick") endowed = firstUpload;
@@ -328,9 +318,7 @@ async function startUpload(file: File | undefined) {
 	result = null;
 	uploadAbort = new AbortController();
 
-	// Load the file's <video> once, probe it, and auto-pick a cover frame. The
-	// element stays alive for the scrubber; the picked cover rides along with
-	// the upload so there's no second round-trip.
+	// The element stays alive for the scrubber, and the picked cover rides along with the upload, so there is no second round-trip.
 	cleanupMedia();
 	let media: ProbedMedia | undefined;
 	const url = URL.createObjectURL(file);
@@ -349,9 +337,7 @@ async function startUpload(file: File | undefined) {
 			posterBlob: null,
 		};
 		try {
-			// Capture the cover (each seek is already bounded by a timeout in
-			// seekTo, so this can't hang; screen recordings with sparse keyframes
-			// just seek a little slower).
+			// Each seek is bounded by a timeout in seekTo, so this can't hang; sparse keyframes just seek slower.
 			const picked = await pickBestPosterFrame(v);
 			if (picked) {
 				posterTime = scrubTime = picked.timeSec;
@@ -362,8 +348,7 @@ async function startUpload(file: File | undefined) {
 			// Cover capture failed; keep metadata + upload, placeholder covers it.
 		}
 	} catch {
-		// Browser can't decode this file for a preview; upload still proceeds
-		// (uploadRecastFile probes metadata itself, or surfaces a clear error).
+		// The browser can't decode this file for a preview; the upload still proceeds and probes metadata itself.
 		cleanupMedia();
 	}
 
@@ -428,9 +413,7 @@ async function createLink() {
 	}
 }
 
-// A file dropped elsewhere (e.g. the library) opens the dialog with the file
-// staged, start its upload straight away so the drop and the button share
-// one flow. Guarded on the `pick` step so it never re-fires mid-journey.
+// A file dropped elsewhere opens the dialog pre-staged; guarded on the `pick` step so it never re-fires mid-journey.
 $effect(() => {
 	if (quickUpload.open && quickUpload.pendingFile && step === "pick") {
 		const file = quickUpload.pendingFile;

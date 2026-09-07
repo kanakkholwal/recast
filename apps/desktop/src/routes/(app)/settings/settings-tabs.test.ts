@@ -7,8 +7,7 @@ import {
 } from "./settings-tabs";
 
 describe("parseSettingsTab", () => {
-	// Guards the drift the const array exists to prevent: add a tab and the URL
-	// must accept it without a second edit here.
+	// Guards the drift the const array exists to prevent: a new tab must work in the URL with no second edit.
 	it("accepts every tab the page defines", () => {
 		for (const tab of SETTINGS_TABS) {
 			expect(parseSettingsTab(tab)).toBe(tab);
@@ -19,8 +18,7 @@ describe("parseSettingsTab", () => {
 		expect(parseSettingsTab("  Cloud ")).toBe("cloud");
 	});
 
-	// Null, not the default: the caller decides what "no tab" means, and a junk
-	// value must not silently look like an explicit choice.
+	// Null, not the default: the caller decides what no-tab means, and junk must not look like an explicit choice.
 	it("returns null for unknown, empty and missing values", () => {
 		expect(parseSettingsTab("nope")).toBeNull();
 		expect(parseSettingsTab("")).toBeNull();

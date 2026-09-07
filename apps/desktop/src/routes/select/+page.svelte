@@ -1,172 +1,167 @@
 <script lang="ts">
-  import { page } from "$app/state";
-  import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
-  import { getDisplays, getLastSource, getWindows } from "$lib/ipc";
-  import {
-    AppWindow,
-    Check,
-    Crop,
-    Monitor as MonitorIcon,
-    RefreshCw,
-    Search,
-    X,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import * as Tabs from "@recast/ui/tabs";
-  import { cn } from "@recast/ui/utils";
-  import { emit, listen } from "@tauri-apps/api/event";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { onMount } from "svelte";
-  import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
-  import {
-    buildSources,
-    filterByType,
-    isSameSource,
-    lastRegionToSource,
-    regionEventToSource,
-    type TargetSource,
-  } from "./select.logic";
+import {
+	AppWindow,
+	Check,
+	Crop,
+	Monitor as MonitorIcon,
+	RefreshCw,
+	Search,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Tabs from "@recast/ui/tabs";
+import { cn } from "@recast/ui/utils";
+import { invoke } from "@tauri-apps/api/core";
+import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { onMount } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { scale } from "svelte/transition";
+import { page } from "$app/state";
+import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
+import { getDisplays, getLastSource, getWindows } from "$lib/ipc";
+import {
+	buildSources,
+	filterByType,
+	isSameSource,
+	lastRegionToSource,
+	regionEventToSource,
+	type TargetSource,
+} from "./select.logic";
 
-  let sources: TargetSource[] = $state([]);
-  let selectedSource: TargetSource | null = $state(null);
-  let tab = $state<"monitor" | "window" | "region">("monitor");
-  let isFetching = $state(true);
-  // Last region remembered between sessions (loaded from config).
-  let lastRegion = $state<TargetSource | null>(null);
-  // Filter for the screens/windows lists; reset when the tab changes so a stale
-  // query never hides everything on the next tab.
-  let query = $state("");
-  $effect(() => {
-    void tab;
-    query = "";
-  });
+// Popup materializes (scale + fade) instead of popping in; static under reduced motion.
+const prefersReducedMotion =
+	typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-  onMount(() => {
-    fetchSources();
+let sources: TargetSource[] = $state([]);
+let selectedSource: TargetSource | null = $state(null);
+let tab = $state<"monitor" | "window" | "region">("monitor");
+let isFetching = $state(true);
+// Why the overlay would not open, shown where the button that opens it is.
+let pickerError = $state<string | null>(null);
+// Last region remembered between sessions (loaded from config).
+let lastRegion = $state<TargetSource | null>(null);
+// Reset when the tab changes, so a stale query never hides everything on the next tab.
+let query = $state("");
+$effect(() => {
+	void tab;
+	query = "";
+});
 
-    // Open on the tab the caller asked for (home mode tiles pass ?tab=window,
-    // ?tab=region&autostart=1, etc.), and jump straight into the area drag when
-    // the region intent asked to autostart.
-    const wantTab = page.url.searchParams.get("tab");
-    if (wantTab === "monitor" || wantTab === "window" || wantTab === "region") {
-      tab = wantTab;
-    }
-    if (tab === "region" && page.url.searchParams.get("autostart")) {
-      void openAreaPicker();
-    }
+onMount(() => {
+	fetchSources();
 
-    // Pick up region drawn by the overlay window.
-    const unlistenRegion = listen<{
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      label: string;
-    }>("region-selected", (event) => {
-      const region = regionEventToSource(event.payload);
-      // Replace any prior region in the list and select it.
-      sources = [...sources.filter((s) => s.type !== "region"), region];
-      lastRegion = region;
-      selectedSource = region;
-      tab = "region";
-    });
+	// Open on the tab the caller asked for, jumping straight into the area drag when the region intent set autostart.
+	const wantTab = page.url.searchParams.get("tab");
+	if (wantTab === "monitor" || wantTab === "window" || wantTab === "region") {
+		tab = wantTab;
+	}
+	if (tab === "region" && page.url.searchParams.get("autostart")) {
+		void openAreaPicker();
+	}
 
-    // Hydrate the "remembered" region from persisted config.
-    getLastSource()
-      .then((last) => {
-        const remembered = lastRegionToSource(last);
-        if (remembered) lastRegion = remembered;
-      })
-      .catch(() => {});
+	// Pick up region drawn by the overlay window.
+	const unlistenRegion = listen<{
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+		label: string;
+	}>("region-selected", (event) => {
+		const region = regionEventToSource(event.payload);
+		// Replace any prior region in the list and select it.
+		sources = [...sources.filter((s) => s.type !== "region"), region];
+		lastRegion = region;
+		selectedSource = region;
+		tab = "region";
+	});
 
-    return () => {
-      unlistenRegion.then((fn) => fn());
-    };
-  });
+	// Hydrate the "remembered" region from persisted config.
+	getLastSource()
+		.then((last) => {
+			const remembered = lastRegionToSource(last);
+			if (remembered) lastRegion = remembered;
+		})
+		.catch(() => undefined);
 
-  async function openAreaPicker() {
-    // Oversize to cover the whole virtual desktop across multiple monitors.
-    await spawnOverlayWindow("region-picker", {
-      url: "/select-area",
-      title: "Select Area",
-      width: window.screen.availWidth,
-      height: window.screen.availHeight,
-      x: 0,
-      y: 0,
-      decorations: false,
-      transparent: true,
-      alwaysOnTop: true,
-      skipTaskbar: true,
-      resizable: false,
-      maximized: true,
-    });
-  }
+	return () => {
+		unlistenRegion.then((fn) => fn());
+	};
+});
 
-  async function fetchSources() {
-    isFetching = true;
-    try {
-      const [displays, windows] = await Promise.all([
-        getDisplays(),
-        getWindows(),
-      ]);
-      sources = buildSources(displays, windows);
-      if (!selectedSource && sources.length > 0) selectedSource = sources[0];
-    } catch (e) {
-      console.error(e);
-    } finally {
-      isFetching = false;
-    }
-  }
+async function openAreaPicker() {
+	pickerError = null;
+	try {
+		// Sized in Rust: `window.screen` is the primary display, in logical points.
+		await invoke("open_area_picker");
+	} catch (e) {
+		// Refusing silently leaves a button that looks broken.
+		pickerError = String(e);
+		console.error(e);
+	}
+}
 
-  function confirmSelection() {
-    if (!selectedSource) return;
-    emit("source-selected", selectedSource);
-    getCurrentWindow().close();
-  }
+async function fetchSources() {
+	isFetching = true;
+	try {
+		const [displays, windows] = await Promise.all([getDisplays(), getWindows()]);
+		sources = buildSources(displays, windows);
+		if (!selectedSource && sources.length > 0) selectedSource = sources[0];
+	} catch (e) {
+		console.error(e);
+	} finally {
+		isFetching = false;
+	}
+}
 
-  function closeWindow() {
-    getCurrentWindow().close();
-  }
+function confirmSelection() {
+	if (!selectedSource) return;
+	emit("source-selected", selectedSource);
+	getCurrentWindow().close();
+}
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      closeWindow();
-    } else if (e.key === "Enter" && selectedSource) {
-      e.preventDefault();
-      confirmSelection();
-    }
-  }
+function closeWindow() {
+	getCurrentWindow().close();
+}
 
-  const monitorSources = $derived(filterByType(sources, "monitor"));
-  const windowSources = $derived(filterByType(sources, "window"));
-  const regionSources = $derived(filterByType(sources, "region"));
-  const filteredSources = $derived(
-    tab === "monitor"
-      ? monitorSources
-      : tab === "window"
-        ? windowSources
-        : regionSources,
-  );
-  // Offer the filter only once a list is long enough to warrant it.
-  const showFilter = $derived(tab !== "region" && filteredSources.length > 6);
-  const visibleSources = $derived(
-    query.trim()
-      ? filteredSources.filter((s) =>
-          s.label.toLowerCase().includes(query.trim().toLowerCase()),
-        )
-      : filteredSources,
-  );
+function handleKeydown(e: KeyboardEvent) {
+	if (e.key === "Escape") {
+		e.preventDefault();
+		closeWindow();
+	} else if (e.key === "Enter" && selectedSource) {
+		e.preventDefault();
+		confirmSelection();
+	}
+}
 
-  function isSelected(source: TargetSource) {
-    return isSameSource(selectedSource, source);
-  }
+const monitorSources = $derived(filterByType(sources, "monitor"));
+const windowSources = $derived(filterByType(sources, "window"));
+const regionSources = $derived(filterByType(sources, "region"));
+const filteredSources = $derived(
+	tab === "monitor" ? monitorSources : tab === "window" ? windowSources : regionSources,
+);
+// Offer the filter only once a list is long enough to warrant it.
+const showFilter = $derived(tab !== "region" && filteredSources.length > 6);
+const visibleSources = $derived(
+	query.trim()
+		? filteredSources.filter((s) => s.label.toLowerCase().includes(query.trim().toLowerCase()))
+		: filteredSources,
+);
+
+function isSelected(source: TargetSource) {
+	return isSameSource(selectedSource, source);
+}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 <div
   class="group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-card/80 backdrop-blur-3xl"
+  in:scale={{
+    start: prefersReducedMotion ? 1 : 0.97,
+    duration: prefersReducedMotion ? 0 : 180,
+    easing: cubicOut,
+  }}
 >
   <!-- Header -->
   <header
@@ -209,7 +204,7 @@
               class={cn(
                 "rounded-sm px-1 py-px font-mono text-[10px] tabular-nums transition-colors",
                 tab === "monitor"
-                  ? "bg-primary/15 text-foreground"
+                  ? "bg-foreground/10 text-foreground"
                   : "bg-muted text-muted-foreground",
               )}
             >
@@ -228,7 +223,7 @@
               class={cn(
                 "rounded-sm px-1 py-px font-mono text-[10px] tabular-nums transition-colors",
                 tab === "window"
-                  ? "bg-primary/15 text-foreground"
+                  ? "bg-foreground/10 text-foreground"
                   : "bg-muted text-muted-foreground",
               )}
             >
@@ -267,6 +262,12 @@
           </p>
         </button>
 
+        {#if pickerError}
+          <p role="alert" class="text-[10px] text-destructive">
+            Could not open the area picker: {pickerError}
+          </p>
+        {/if}
+
         {#if lastRegion && !sources.some((s) => s.type === "region")}
           <button
             type="button"
@@ -302,7 +303,7 @@
             class={cn(
               "flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
               selected
-                ? "border-primary bg-primary/10"
+                ? "border-foreground/50 bg-foreground/5"
                 : "border-border bg-card hover:bg-muted/50",
             )}
           >
@@ -318,12 +319,12 @@
             </div>
             {#if selected}
               <span
-                class="size-5 rounded-full bg-primary flex items-center justify-center shadow-craft-sm"
+                class="size-5 rounded-full bg-foreground flex items-center justify-center shadow-craft-sm"
               >
                 <Check
                   size={11}
                   stroke={3}
-                  class="text-primary-foreground"
+                  class="text-background"
                 />
               </span>
             {/if}
@@ -385,10 +386,10 @@
             ondblclick={confirmSelection}
             aria-pressed={selected}
             class={cn(
-              "group/tile relative flex flex-col overflow-hidden rounded-md border text-left transition-colors",
+              "group/tile relative flex flex-col overflow-hidden rounded-lg border text-left transition-[background-color,border-color,transform] duration-150 motion-safe:active:scale-[0.99]",
               "focus:outline-none focus:ring-1 focus:ring-ring",
               selected
-                ? "border-primary bg-primary/10"
+                ? "border-foreground/50 bg-foreground/5"
                 : "border-border bg-card hover:bg-muted/50",
             )}
           >
@@ -422,7 +423,7 @@
                   <Check
                     size={11}
                     stroke={3}
-                    class="text-primary-foreground"
+                    class="text-background"
                   />
                 </div>
               {/if}
@@ -440,7 +441,7 @@
                   class="mt-0.5 text-[10px] font-mono tabular-nums text-muted-foreground"
                 >
                   {source.resolution}{#if source.refreshHz}
-                    <span class="text-primary/80"> · {source.refreshHz} Hz</span>
+                    <span class="text-muted-foreground/80"> · {source.refreshHz} Hz</span>
                   {/if}
                 </div>
               {/if}

@@ -58,10 +58,10 @@ flowchart TB
         raw -->|auto-track| memo
     end
 
-    subgraph engine["Render engines (read-only)"]
-        preview["VideoPreview<br/>computeFrameParams → FrameInput"]
-        export["export-scene / buildExportBase"]
-        core["RenderCore + WebGL2Backend<br/>(preview + export, shared)"]
+    subgraph engine["Render (read-only)"]
+        preview["VideoPreview"]
+        export["build-export-job"]
+        core["wasm engine<br/>(preview + export, shared)"]
     end
 
     raw -->|getters| preview
@@ -128,15 +128,12 @@ flowchart LR
    The `cuts → cutsMemo → segmentsMemo → timeMapMemo` chain recomputes lazily on
    next read; the pure math (`deriveSegments`, `timeMapFromSegments`) is unchanged,
    only re-run when an input actually changed.
-3. `VideoPreview.svelte` reads store getters (`timeMap`, `zoomRegions`,
-   `cameraOverlay`, `captionTranscript`, …) inside its draw effect, builds a
-   `FrameInput` via `computeFrameParams`, and hands it to `RenderCore`
-   (`components/render-core.ts`, driven by the render worker). The scene evaluators
-   (`lib/scenes/eval.ts`) are pure functions of that input, they hold no store
-   reference, so the engine cannot mutate state. This is the one-way boundary.
-4. Export takes the same path: `store.toRenderState()` → `buildExportBase` /
-   `export-scene.ts` → the *same* `RenderCore`, so preview and export composite
-   identically (`lib/export/export-scene.ts`).
+3. `VideoPreview.svelte` reads `store.toRenderState()` inside its scene effect
+   and hands it to the engine, which evaluates it in Rust. The engine holds no
+   store reference and cannot write back. This is the one-way boundary.
+4. Export takes the same path: `store.toRenderState()` → `buildExportJob` → the
+   *same* engine, so preview and export composite identically
+   (`lib/export/build-export-job.ts`).
 
 ### Loading a project
 
@@ -177,9 +174,8 @@ JSON to a separate recovery shadow, gated on `isDirty`.
   replace-only arrays use `$state.raw` (`transcript`, `thumbnailStrip`,
   `cursorSamplesRaw`, undo stacks): deep-proxying tens of thousands of entries is
   pure overhead; only array identity needs reactivity.
-- **One-way flow: the engine never mutates the store.** `RenderCore` / the WebGL2
-  backend / scene evaluators are pure over `FrameInput`/`EditorRenderState` and hold
-  no store reference. External seeks must go through `store.seek()` (moves playhead
+- **One-way flow: the engine never mutates the store.** The compositor and its
+  evaluator are pure over the scene and hold no store reference. External seeks must go through `store.seek()` (moves playhead
   *and* transport), never `store.currentTime =` alone, which the next playback
   publish overwrites.
 - **`$effect` that writes store state must `untrack` + `withoutUndo`.** A live-preview
@@ -219,6 +215,6 @@ JSON to a separate recovery shadow, gated on `isDirty`.
 
 ## Related
 
-- `03-preview-and-rendercore.md`, the read-only consumer of store state (`FrameInput` → `RenderCore`).
-- `05-timeline-model.md`, the cut/segment/time-map math the memos wrap.
-- `06-export-pipeline.md`, `toRenderState` → shared `RenderCore` → encoder.
+- [preview-engine.md](/architecture/preview-engine), the read-only consumer of store state.
+- [timeline-model.md](/architecture/timeline-model), the cut/segment/time-map math the memos wrap.
+- [export-pipeline.md](/architecture/export-pipeline), `toRenderState` → the same engine → encoder.

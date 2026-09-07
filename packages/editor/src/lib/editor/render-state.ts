@@ -18,12 +18,11 @@ import {
 	BACKGROUND_GRADIENTS,
 	type BackgroundPreset,
 } from "@recast/design/backgrounds";
-import { type AudioClip } from "../audio/music";
-import { type Easing } from "../easing/cubic-bezier";
-import { type MotionTone, type SegmentAnim } from "../scenes/segment-anim";
-import { type TimelineCut } from "../timeline/cuts";
-import { type SegmentSpeed } from "../timeline/segment-speed";
-import type { Segment } from "../timeline/segments";
+import type { AudioClip } from "../audio/music";
+import type { Easing } from "../easing/cubic-bezier";
+import type { MotionTone, SegmentAnim } from "../scenes/segment-anim";
+import type { TimelineCut } from "../timeline/cuts";
+import type { SegmentSpeed } from "../timeline/segment-speed";
 
 /** Transcript model. Lives here, not in `ipc-types`, because it is part of the
  *  project document (`EditorRenderState.transcript`) — the wire types depend on
@@ -101,8 +100,7 @@ export interface ShadowSettings {
 	color: string; // hex
 }
 
-// Annotations. Position/size live in video UV space (0..1) so they follow zoom
-// and crop transforms without re-projection. `kind` is a discriminated union.
+// Position and size live in video UV space (0..1), so annotations follow zoom and crop without re-projection.
 
 export type AnnotationStrokeStyle = "solid" | "dashed" | "dotted";
 
@@ -151,8 +149,7 @@ export type AnnotationKind =
 			headSize: number;
 	  }
 	| {
-			// Text overlays render in the WebView only and are rasterized to a
-			// PNG (kind=image) at export time. They never reach the Rust enum.
+			// Text renders in the WebView only and is rasterized to a PNG at export, so it never reaches the Rust enum.
 			kind: "text";
 			x: number; // UV top-left of bounding box
 			y: number;
@@ -169,9 +166,7 @@ export type AnnotationKind =
 			lineHeight: number;
 	  }
 	| {
-			// Generic image overlay: a PNG/JPG composited at the UV rect.
-			// Used both for the (deferred) Image tool and as the export
-			// substitute for text annotations after hybrid rasterization.
+			// Generic image overlay at the UV rect; also the export substitute for text after hybrid rasterization.
 			kind: "image";
 			x: number;
 			y: number;
@@ -182,10 +177,7 @@ export type AnnotationKind =
 			radius: number; // corner radius, fraction of the shorter side (0..0.5)
 	  }
 	| {
-			// Privacy / focus blur. Applies a box blur (separable, kernel
-			// proportional to `strength`) over the bounding rect, optionally
-			// tinted by `variant`. `glass` = clear blur, white/black tint at
-			// 30% over the blurred pixels, `color` = `tintColor` at 30%.
+			// Box blur over the rect, kernel proportional to `strength`; `glass` adds a 30% tint, `color` uses `tintColor`.
 			kind: "blur";
 			x: number;
 			y: number;
@@ -215,8 +207,7 @@ export interface Annotation {
 	fill: string; // CSS colour with alpha; "transparent" disables fill
 	kind: AnnotationKind;
 
-	// v2 envelope. Every field is optional; absence = v1 default. The render
-	// path reads these via `??` defaults so older projects keep loading.
+	// v2 envelope: every field is optional and the render path reads `??` defaults, so v1 projects keep loading.
 	/** User-renamed label. Falls back to `kindLabel(a)` when empty. */
 	name?: string;
 	/** Stacking order; higher draws later (on top). Default = insertion order
@@ -246,10 +237,7 @@ export const DEFAULT_ANNOTATION_STROKE: AnnotationStroke = {
 };
 export const DEFAULT_ANNOTATION_FILL = "rgba(59,130,246,0.20)";
 
-// Bundled built-in cursor styles. `dot` is the default soft circle (drawn by
-// the WebGL2 shader and the Rust export overlay); the system sets are SVG
-// sprites. The legacy macos/windows/outline/target styles moved into the
-// installable "Classic Cursors" pack (`ext:classic-cursors:<id>`).
+// `dot` is the default soft circle; the legacy macos, windows, outline and target styles moved to the Classic Cursors pack.
 export type CursorStyleId = "dot" | "macos-system" | "windows-system";
 
 /**
@@ -346,6 +334,31 @@ export interface CameraMotionSegment {
 	source?: CameraMotionSource;
 }
 
+/** Which half a split gives the camera: left in a horizontal split, top in a
+ *  vertical one. One union so an impossible pairing cannot be written down. */
+export type LayoutSide = "start" | "end";
+
+/** Mirrors Rust `CameraLayout`. `pip` carries no placement: where the bubble
+ *  sits is already answered by `defaultPlacement` and `keyframes`. */
+export type CameraLayout =
+	| { kind: "pip" }
+	| { kind: "splitH"; fraction: number; side: LayoutSide }
+	| { kind: "splitV"; fraction: number; side: LayoutSide }
+	| { kind: "screenOnly" }
+	| { kind: "cameraOnly" };
+
+/** Neither half may collapse; a split that rounds one side away is a worse
+ *  `screenOnly` than `screenOnly` is. Mirrors Rust `MIN/MAX_SPLIT_FRACTION`. */
+export const MIN_SPLIT_FRACTION = 0.15;
+export const MAX_SPLIT_FRACTION = 0.85;
+
+/** The layout for the clip starting at `start` on the ORIGINAL axis, keyed the
+ *  same way segment speeds and scene animations are. */
+export interface CameraClipLayout {
+	start: number;
+	layout: CameraLayout;
+}
+
 export interface CameraOverlaySettings {
 	enabled: boolean;
 	mirror: boolean;
@@ -364,6 +377,16 @@ export interface CameraOverlaySettings {
 	motionSegments: CameraMotionSegment[];
 	/** Per-cut position keyframes (original-time). Empty → static defaultPlacement. */
 	keyframes: CameraKeyframe[];
+	/** Per-clip arrangement. Empty means the whole recording uses the bubble. */
+	clipLayouts: CameraClipLayout[];
+	/** Seconds a layout change takes at a clip boundary, in OUTPUT time. 0 is a hard cut. */
+	layoutTransition: number;
+	/** Easing for that move. */
+	layoutTransitionEasing: Easing;
+	/** Nudge the bubble aside when the pointer comes near it. */
+	cursorDodge: boolean;
+	/** 0..1 how far it gets nudged. */
+	cursorDodgeStrength: number;
 	/** Easing for the glide BETWEEN keyframes (the "animation smoothness"). */
 	keyframeEasing: Easing;
 	/** Drop-shadow strength 0..1 (0 = none). Scales blur + offset + opacity together. */
@@ -406,7 +429,7 @@ export function cameraPlacementFromPreset(
 	preset: CameraPositionPreset,
 	size: number = CAMERA_DEFAULT_SIZE,
 	inset: number = CAMERA_PRESET_INSET,
-	aspect: number = 1,
+	aspect = 1,
 ): CameraPlacement {
 	const height = Math.min(1, size * aspect);
 	const farX = 1 - size - inset;
@@ -416,9 +439,7 @@ export function cameraPlacementFromPreset(
 	if (preset === "custom") {
 		return { x: farX, y: farY, width: size, height };
 	}
-	// The preset ids mix conventions ('top-left' is row-col but 'left-center' is
-	// col-row), so detect each axis by token rather than by split position — else
-	// 'left-center'/'right-center' resolve to the wrong cell.
+	// Preset ids mix conventions, so detect each axis by token: splitting by position resolves 'left-center' to the wrong cell.
 	const tokens = preset.split("-");
 	const x = tokens.includes("left") ? inset : tokens.includes("right") ? farX : centerX;
 	const y = tokens.includes("top") ? inset : tokens.includes("bottom") ? farY : centerY;
@@ -431,10 +452,7 @@ export function cameraPlacementFromPreset(
  * used to build the placement (video width/height) so the vertical anchors line
  * up. Returns `custom` for free-drag positions. Highlights the active chip.
  */
-export function cameraPresetFromPlacement(
-	p: CameraPlacement,
-	aspect: number = 1,
-): CameraPositionPreset {
+export function cameraPresetFromPlacement(p: CameraPlacement, aspect = 1): CameraPositionPreset {
 	const presets: CameraPositionPreset[] = [
 		"top-left",
 		"top-center",
@@ -464,9 +482,7 @@ export interface VideoMetadata {
 	sizeBytes: number;
 }
 
-// Pure padding maths lives in `$lib/editor/frame-padding` so `.logic.ts` modules
-// and unit tests can import it without loading this runes store. Imported for
-// internal use and re-exported to keep existing import sites working.
+// Padding maths lives in `$lib/editor/frame-padding` so `.logic.ts` modules and tests can import it without this runes store.
 import {
 	clampFramePaddingPercent,
 	framePaddingPixels,
@@ -582,9 +598,7 @@ export interface EditorRenderState {
 	 * for backwards compatibility: pre-field projects keep their default.
 	 */
 	layoutMode?: LayoutMode;
-	// Hybrid-raster cursor sprite, populated only on the export path
-	// (the editor route runs `rasterizeCursorSprites` right before invoking
-	// `enqueue_export`). Not persisted to disk; never set by `loadRenderState`.
+	// Populated only on the export path by `rasterizeCursorSprites`; never persisted and never set by `loadRenderState`.
 	cursorSpriteRest?: string; // data:image/png;base64,…
 	cursorSpritePress?: string; // optional; falls back to rest in Rust
 	cursorSpriteRightPress?: string; // optional; falls back to press → rest in Rust
@@ -668,11 +682,8 @@ export interface DeleteSelectionResult {
 	joinAt: number | null;
 }
 
-// Re-exported so the many existing `import type { PanelTab } from "…/editor-store"`
-// sites keep working; the list itself lives in a module light enough to import
-// from a unit test (see panel-tabs.ts).
+// Re-exported so existing `editor-store` import sites keep working; the list lives in a test-importable module.
 export { PANEL_TABS, type PanelTab } from "./panel-tabs";
-import type { PanelTab } from "./panel-tabs";
 
 /** Active timeline pointer tool. `select` is the default (scrub/drag/select);
  *  `razor` arms the click-to-cut tool. A tool is state of the whole timeline,
@@ -692,9 +703,7 @@ export interface TimelineCommands {
 	seekToEdge: (which: "in" | "out") => void;
 }
 
-// Wallpapers 19–23 were moved into the installable "Waves" extension pack
-// (extensions/packs/waves-wallpapers); keep the built-in default set at 18 so
-// the extension flow has real background content to exercise.
+// Wallpapers 19-23 moved to the Waves extension pack; the built-in set stays at 18 to exercise the extension flow.
 export const WALLPAPERS: WallpaperOption[] = Array.from({ length: 18 }, (_, i) => ({
 	id: `wallpaper${i + 1}`,
 	label: `Wallpaper ${i + 1}`,
@@ -756,8 +765,7 @@ export function parseGradient(value: string): GradientSpec {
 
 	const stopRe = /(#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4}))(?:\s+(-?\d+(?:\.\d+)?)%)?/g;
 	const raw: { color: string; pos: number | null }[] = [];
-	let m: RegExpExecArray | null;
-	while ((m = stopRe.exec(value)) !== null) {
+	for (let m = stopRe.exec(value); m !== null; m = stopRe.exec(value)) {
 		raw.push({
 			color: normalizeHex(m[1]),
 			pos: m[2] != null ? clampNum(parseFloat(m[2]), 0, 100) : null,
@@ -813,8 +821,7 @@ export type { CaptionAnimation, CaptionPreset, CaptionStyle };
  * Creates an editor store instance.
  * Call once per editor page mount, or use a singleton.
  */
-// Re-export the caption model (imported at the top) so modules that import it
-// from `editor-store` keep working.
+// Re-export the caption model so modules importing it from `editor-store` keep working.
 export { CAPTION_PRESETS, DEFAULT_CAPTION_ANIMATION, DEFAULT_CAPTION_STYLE };
 
 /** What to do with generated captions on export. Independent choices: you can

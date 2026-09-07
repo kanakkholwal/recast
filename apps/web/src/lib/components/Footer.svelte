@@ -103,8 +103,7 @@ import Logo from "$lib/logo.svelte";
 		}
 	}
 
-	/* The global guard collapses duration to 0.01ms, which would park the sheen
-	   mid-sweep; kill it outright and hold the flat fill. */
+	/* The global guard collapses duration to 0.01ms, parking the sheen mid-sweep, so kill it and hold the flat fill. */
 	@media (prefers-reduced-motion: reduce) {
 		.wordmark {
 			animation: none;

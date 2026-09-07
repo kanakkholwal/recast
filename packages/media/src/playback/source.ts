@@ -43,8 +43,7 @@ const INIT_TIMEOUT_MS = 30_000;
 /** ~20 seeks/sec: responsive to drag, without rebuilding a decoder per frame. */
 const SEEK_MIN_INTERVAL_MS = 50;
 
-// Read defensively: `import.meta.env` is a Vite extension and this package
-// must stay bundler-agnostic.
+// Read defensively: `import.meta.env` is a Vite extension and this package stays bundler-agnostic.
 const DIAG = ((): boolean => {
 	try {
 		return Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
@@ -150,8 +149,7 @@ export class MediabunnyVideoSource {
 			throw new MediaError("unsupported", "Worker/VideoFrame unavailable in this WebView");
 		}
 		const ref = toMediaRef(src);
-		// Reject known-undecodable containers up front rather than spawning a
-		// worker to discover it. The caller falls back to <video> either way.
+		// Reject known-undecodable containers up front rather than spawning a worker to discover it.
 		const ext = mediaRefExtension(ref);
 		if (ext && isUnsupportedContainer(ext)) {
 			throw new MediaError("unsupported", `MediaBunny cannot decode .${ext} files`);
@@ -173,8 +171,7 @@ export class MediabunnyVideoSource {
 						reject(new MediaError("bad-input", msg.message));
 					}
 				};
-				// A worker that fails to LOAD fires onerror with an empty message,
-				// so name the script — that distinguishes it from a throw inside.
+				// A worker that fails to LOAD fires onerror with an empty message, so name the script to tell it from a throw.
 				worker.onerror = (e) =>
 					reject(
 						new MediaError(
@@ -182,8 +179,7 @@ export class MediabunnyVideoSource {
 							e.message || `worker script failed to load: ${e.filename || "unknown"}`,
 						),
 					);
-				// Without this a stalled read (an asset-protocol fetch that never
-				// settles) leaves the caller waiting forever with no error.
+				// Without this a stalled read (an asset-protocol fetch that never settles) hangs the caller with no error.
 				timer = setTimeout(
 					() => reject(new MediaError("worker-died", "Timed out opening the media source")),
 					INIT_TIMEOUT_MS,
@@ -198,11 +194,9 @@ export class MediabunnyVideoSource {
 			});
 			clearTimeout(timer);
 			const source = new MediabunnyVideoSource(worker, meta);
-			// Singleton cache keyed by bare timestamp: scope it or another
-			// recording's frame answers reads for this one.
+			// The cache is a singleton keyed by bare timestamp, so scope it or another recording's frame answers this one.
 			source.#cache.setScope(mediaRefKey(ref));
-			// Frames are GPU surfaces; a cap that is safe at 1080p starves the
-			// decoder's pool at 4K, which is the classic ~8fps stall.
+			// Frames are GPU surfaces: a cap safe at 1080p starves the decoder's pool at 4K, the classic ~8fps stall.
 			source.#cache.memoryCapBytes = frameCacheCapBytes(meta.width, meta.height);
 			return source;
 		} catch (err) {
@@ -236,20 +230,16 @@ export class MediabunnyVideoSource {
 
 	#onMessage(msg: FromMediabunnyWorker): void {
 		if (this.#disposed) {
-			// Transferred frames are ours now; dropping one without closing leaks
-			// a decode surface.
+			// Transferred frames are ours now; dropping one without closing leaks a decode surface.
 			if (msg.type === "frame") msg.frame.close();
 			return;
 		}
 		if (msg.type === "frame") {
-			// Frames from a superseded run are still valid pictures for their own
-			// timestamp, so cache them. Dropping late frames (the old behavior)
-			// threw away work and starved the display.
+			// Frames from a superseded run are still valid for their own timestamp, so cache them rather than throw the work away.
 			const frame = msg.frame;
 			const tUs = Math.round(msg.originalSec * 1_000_000);
 			if (this.onFrameDecoded) {
-				// Hand off and release in the same tick, so the surface goes
-				// straight back to the decoder's pool.
+				// Hand off and release in the same tick, so the surface goes straight back to the decoder's pool.
 				try {
 					this.onFrameDecoded(frame, tUs);
 				} finally {
@@ -259,8 +249,7 @@ export class MediabunnyVideoSource {
 				this.#cache.write(tUs, frame as unknown as CachedFrame);
 			}
 			this.#decodedFrames++;
-			// §3 time-to-first-frame and scrub-seek rows, visible on the DevTools
-			// timeline. Only the first frame of a run closes the seek measure.
+			// Time-to-first-frame and scrub-seek rows on the DevTools timeline; only a run's first frame closes the seek measure.
 			if (!this.#sawFirstFrame) {
 				this.#sawFirstFrame = true;
 				measureSince("time-to-first-frame", this.#startedAtMs, {
@@ -272,22 +261,19 @@ export class MediabunnyVideoSource {
 				measureSince("seek-latency", this.#seekStartedMs, { seq: msg.seq });
 				this.#seekStartedMs = 0;
 			}
-			// Log jumps only: the run streams every frame, so per-frame logging
-			// would put 30-60 lines/sec into the dev console.
+			// Log jumps only: the run streams every frame, so per-frame logging would be 30-60 lines a second.
 			if (DIAG && msg.seq !== this.#loggedSeq) {
 				this.#loggedSeq = msg.seq;
 				console.log(
 					`[mb] run ${msg.seq} @ ${msg.originalSec.toFixed(3)}s (${msg.width}x${msg.height})`,
 				);
 			}
-			// Paint, since the editor's rAF loop is the only thing that re-renders
-			// during a pause, and a freshly-decoded seek target needs to repaint.
+			// The editor's rAF loop is the only thing repainting during a pause, so a freshly decoded seek target needs this.
 			this.onFrame?.();
 			return;
 		}
 		if (msg.type === "error") {
-			// A dead run means a frozen picture, not a degraded one — never
-			// downgrade this to a warning.
+			// A dead run means a frozen picture, not a degraded one; never downgrade this to a warning.
 			console.error("[mb] decode run failed:", msg.code, msg.message);
 			this.onError?.(new MediaError(msg.code, msg.message));
 		}
@@ -390,8 +376,7 @@ export class MediabunnyVideoSource {
 		this.#seekTimer = undefined;
 		if (this.onStats) this.onStats(this.stats());
 		this.#post({ type: "dispose" });
-		// Persistent cache survives on purpose: the next session should hit it.
-		// Worker self-closes; terminate is the backstop.
+		// The persistent cache survives on purpose for the next session; the worker self-closes and terminate is the backstop.
 		this.#worker.terminate();
 	}
 }

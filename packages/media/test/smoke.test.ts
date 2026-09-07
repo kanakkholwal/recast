@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { MediaError } from '../src/errors';
+import { describe, expect, it } from "vitest";
+import { MediaError } from "../src/errors";
 
 /**
  * Surface-level smoke tests for the public API. The package's other tests
@@ -10,23 +10,23 @@ import { MediaError } from '../src/errors';
  * every error is a `MediaError` (never a plain `Error`), cancellation is a
  * `MediaError` with `code: 'cancelled'`.
  */
-describe('public API surface', () => {
-	it('MediaError carries a code and is recognized by `isCancelled`', () => {
-		const e = new MediaError('cancelled', 'Cancelled.');
-		expect(e.code).toBe('cancelled');
+describe("public API surface", () => {
+	it("MediaError carries a code and is recognized by `isCancelled`", () => {
+		const e = new MediaError("cancelled", "Cancelled.");
+		expect(e.code).toBe("cancelled");
 		expect(e.isCancelled).toBe(true);
-		expect(e.name).toBe('MediaError');
+		expect(e.name).toBe("MediaError");
 	});
 
-	it('MediaError.isCancelled is false for non-cancellation codes', () => {
-		expect(new MediaError('bad-input', 'x').isCancelled).toBe(false);
-		expect(new MediaError('unsupported', 'x').isCancelled).toBe(false);
-		expect(new MediaError('internal', 'x').isCancelled).toBe(false);
+	it("MediaError.isCancelled is false for non-cancellation codes", () => {
+		expect(new MediaError("bad-input", "x").isCancelled).toBe(false);
+		expect(new MediaError("unsupported", "x").isCancelled).toBe(false);
+		expect(new MediaError("internal", "x").isCancelled).toBe(false);
 	});
 
-	it('MediaError preserves `cause`', () => {
-		const root = new Error('boom');
-		const wrapped = new MediaError('decode-failed', 'decode failed', { cause: root });
+	it("MediaError preserves `cause`", () => {
+		const root = new Error("boom");
+		const wrapped = new MediaError("decode-failed", "decode failed", { cause: root });
 		expect(wrapped.cause).toBe(root);
 	});
 });

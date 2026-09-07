@@ -4,8 +4,7 @@ import type { Snippet } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 
-// Heading block for every (auth) route. No card and no logo: the pane is the
-// surface and the layout header owns the mark.
+// Heading block for every auth route: no card and no logo, since the pane is the surface and the layout owns the mark.
 let {
 	eyebrow,
 	eyebrowIcon,

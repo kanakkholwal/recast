@@ -1,11 +1,8 @@
 <script lang="ts">
-	import { Drawer as DrawerPrimitive } from "vaul-svelte";
-	import { cn } from "@recast/ui/utils";
+import { Drawer as DrawerPrimitive } from "vaul-svelte";
+import { cn } from "@recast/ui/utils";
 
-	let {
-		class: className,
-		...restProps
-	}: DrawerPrimitive.DescriptionProps = $props();
+let { class: className, ...restProps }: DrawerPrimitive.DescriptionProps = $props();
 </script>
 
 <DrawerPrimitive.Description

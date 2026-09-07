@@ -13,8 +13,7 @@ import {
 } from "./panel-size";
 
 describe("timelineMaxHeight", () => {
-	// The reason the panel is bounded at all: every lane visible left the video
-	// a strip, so the timeline must never be able to take the column.
+	// Why the panel is bounded at all: every lane visible left the video a strip.
 	it("never exceeds its share of the column", () => {
 		for (const column of [600, 800, 1080, 1440]) {
 			expect(timelineMaxHeight(column), `column ${column}`).toBeLessThanOrEqual(
@@ -34,8 +33,7 @@ describe("timelineMaxHeight", () => {
 		expect(timelineMaxHeight(4000)).toBe(TIMELINE_MAX_HEIGHT_PX);
 	});
 
-	// Falling back to the share of zero would collapse the panel to its floor for
-	// a frame, then jump once layout settled.
+	// Falling back to the share of zero would collapse the panel to its floor for a frame, then jump.
 	it("falls back to the ceiling before the column is measured", () => {
 		expect(timelineMaxHeight(0)).toBe(TIMELINE_MAX_HEIGHT_PX);
 		expect(timelineMaxHeight(-1)).toBe(TIMELINE_MAX_HEIGHT_PX);
@@ -83,8 +81,7 @@ describe("clampSidebarWidth", () => {
 		expect(clampSidebarWidth(400.6)).toBe(401);
 	});
 
-	// localStorage returns "" for a missing key, and Number("") is 0 — which must
-	// not collapse the panel to its minimum on first open.
+	// localStorage returns an empty string for a missing key and Number('') is 0, which must not collapse the panel.
 	it("uses the default for a non-numeric stored value", () => {
 		expect(clampSidebarWidth(Number.NaN)).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
 	});

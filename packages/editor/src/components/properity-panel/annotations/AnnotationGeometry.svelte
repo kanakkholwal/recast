@@ -1,7 +1,4 @@
 <script lang="ts">
-import { isBoxKind } from "../../../lib/annotations/kind-groups";
-import { normaliseBox } from "../../../lib/annotations/uv";
-import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
 import {
 	AlignCenter as AlignCenterX,
 	AlignEndHorizontal,
@@ -10,10 +7,14 @@ import {
 	AlignStartVertical,
 	AlignVerticalSpaceAround,
 } from "@recast/icons";
-import { Input } from "@recast/ui/input";
 import { cn } from "@recast/ui/utils";
+import { isBoxKind } from "../../../lib/annotations/kind-groups";
+import { normaliseBox } from "../../../lib/annotations/uv";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
+import DraggableValue from "../DraggableValue.svelte";
 import PanelSection from "../PanelSection.svelte";
-import { alignTarget, fmt, parseAndCommit } from "./annotation-geometry.logic";
+import PropRow from "../PropRow.svelte";
+import { alignTarget } from "./annotation-geometry.logic";
 
 interface Props {
 	store: EditorStore;
@@ -22,25 +23,33 @@ interface Props {
 
 let { store, annotation }: Props = $props();
 
-function setBox(updates: Partial<{ x: number; y: number; w: number; h: number }>) {
-	if (isBoxKind(annotation.kind)) {
-		store.pushUndoState();
-		store.updateAnnotation(annotation.id, {
-			kind: { ...annotation.kind, ...updates },
-		});
-	}
+function applyBox(updates: Partial<{ x: number; y: number; w: number; h: number }>) {
+	if (!isBoxKind(annotation.kind)) return;
+	store.updateAnnotation(annotation.id, { kind: { ...annotation.kind, ...updates } });
 }
 
-function setArrow(updates: Partial<{ x1: number; y1: number; x2: number; y2: number }>) {
+function applyArrow(updates: Partial<{ x1: number; y1: number; x2: number; y2: number }>) {
 	if (annotation.kind.kind !== "arrow") return;
-	store.pushUndoState();
-	store.updateAnnotation(annotation.id, {
-		kind: { ...annotation.kind, ...updates },
-	});
+	store.updateAnnotation(annotation.id, { kind: { ...annotation.kind, ...updates } });
 }
 
-// Frame-relative alignment. For boxes we move the whole rect; for arrows we
-// shift both endpoints by the same delta so direction is preserved.
+// A drag pushes undo once at its start and previews without it; a typed edit stays one undo entry per commit.
+function field(apply: (v: number) => void) {
+	return {
+		onDragStart: () => store.pushUndoState(),
+		onInput: (v: number) => store.withoutUndo(() => apply(v / 100)),
+		onCommit: (v: number, viaDrag: boolean) => {
+			if (viaDrag) {
+				store.withoutUndo(() => apply(v / 100));
+			} else {
+				store.pushUndoState();
+				apply(v / 100);
+			}
+		},
+	};
+}
+
+// Boxes move as a whole rect; arrows shift both endpoints by the same delta so direction is preserved.
 function alignFrame(axis: "x" | "y", anchor: "start" | "center" | "end") {
 	store.pushUndoState();
 	const box = normaliseBox(annotation.kind);
@@ -70,115 +79,35 @@ function alignFrame(axis: "x" | "y", anchor: "start" | "center" | "end") {
 
 const isArrow = $derived(annotation.kind.kind === "arrow");
 
-const INPUT_CLASS = "h-7 px-2 text-[11px] tabular-nums";
 const ALIGN_BTN =
-	"grid size-7 place-items-center rounded-md border border-border/60 bg-card/60 text-muted-foreground transition-colors hover:border-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40";
-
-const FIELD_LABEL = "flex flex-col gap-0.5 text-[10px] text-muted-foreground";
+	"grid size-6 place-items-center rounded-md border border-border/60 bg-card/60 text-muted-foreground transition-colors hover:border-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40";
 </script>
 
 <PanelSection title="Geometry" flush collapsible defaultOpen={false}>
   <div class="flex flex-col gap-2.5">
     {#if isArrow && annotation.kind.kind === "arrow"}
       {@const k = annotation.kind}
-      <div class="grid grid-cols-2 gap-2">
-        <label class={FIELD_LABEL}>
-          <span>x1</span>
-          <Input
-            type="number"
-            step="0.5"
-            value={fmt(k.x1)}
-            onchange={(e) =>
-              setArrow({ x1: parseAndCommit((e.currentTarget as HTMLInputElement).value, k.x1) })}
-            class={INPUT_CLASS}
-          />
-        </label>
-        <label class={FIELD_LABEL}>
-          <span>y1</span>
-          <Input
-            type="number"
-            step="0.5"
-            value={fmt(k.y1)}
-            onchange={(e) =>
-              setArrow({ y1: parseAndCommit((e.currentTarget as HTMLInputElement).value, k.y1) })}
-            class={INPUT_CLASS}
-          />
-        </label>
-        <label class={FIELD_LABEL}>
-          <span>x2</span>
-          <Input
-            type="number"
-            step="0.5"
-            value={fmt(k.x2)}
-            onchange={(e) =>
-              setArrow({ x2: parseAndCommit((e.currentTarget as HTMLInputElement).value, k.x2) })}
-            class={INPUT_CLASS}
-          />
-        </label>
-        <label class={FIELD_LABEL}>
-          <span>y2</span>
-          <Input
-            type="number"
-            step="0.5"
-            value={fmt(k.y2)}
-            onchange={(e) =>
-              setArrow({ y2: parseAndCommit((e.currentTarget as HTMLInputElement).value, k.y2) })}
-            class={INPUT_CLASS}
-          />
-        </label>
-      </div>
+      <PropRow label="Start">
+        <DraggableValue class="flex-1" label="X" value={k.x1 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ x1: v }))} />
+        <DraggableValue class="flex-1" label="Y" value={k.y1 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ y1: v }))} />
+      </PropRow>
+      <PropRow label="End">
+        <DraggableValue class="flex-1" label="X" value={k.x2 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ x2: v }))} />
+        <DraggableValue class="flex-1" label="Y" value={k.y2 * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyArrow({ y2: v }))} />
+      </PropRow>
     {:else if isBoxKind(annotation.kind)}
       {@const k = annotation.kind}
-      <div class="grid grid-cols-2 gap-2">
-        <label class={FIELD_LABEL}>
-          <span>X</span>
-          <Input
-            type="number"
-            step="0.5"
-            value={fmt(k.x)}
-            onchange={(e) =>
-              setBox({ x: parseAndCommit((e.currentTarget as HTMLInputElement).value, k.x) })}
-            class={INPUT_CLASS}
-          />
-        </label>
-        <label class={FIELD_LABEL}>
-          <span>Y</span>
-          <Input
-            type="number"
-            step="0.5"
-            value={fmt(k.y)}
-            onchange={(e) =>
-              setBox({ y: parseAndCommit((e.currentTarget as HTMLInputElement).value, k.y) })}
-            class={INPUT_CLASS}
-          />
-        </label>
-        <label class={FIELD_LABEL}>
-          <span>W</span>
-          <Input
-            type="number"
-            step="0.5"
-            value={fmt(k.w)}
-            onchange={(e) =>
-              setBox({ w: parseAndCommit((e.currentTarget as HTMLInputElement).value, k.w) })}
-            class={INPUT_CLASS}
-          />
-        </label>
-        <label class={FIELD_LABEL}>
-          <span>H</span>
-          <Input
-            type="number"
-            step="0.5"
-            value={fmt(k.h)}
-            onchange={(e) =>
-              setBox({ h: parseAndCommit((e.currentTarget as HTMLInputElement).value, k.h) })}
-            class={INPUT_CLASS}
-          />
-        </label>
-      </div>
+      <PropRow label="Position">
+        <DraggableValue class="flex-1" label="X" value={k.x * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ x: v }))} />
+        <DraggableValue class="flex-1" label="Y" value={k.y * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ y: v }))} />
+      </PropRow>
+      <PropRow label="Size">
+        <DraggableValue class="flex-1" label="W" value={k.w * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ w: v }))} />
+        <DraggableValue class="flex-1" label="H" value={k.h * 100} step={0.5} decimals={1} suffix="%" {...field((v) => applyBox({ h: v }))} />
+      </PropRow>
     {/if}
 
-    <div class="flex flex-col gap-1">
-      <span class="text-[10px] text-muted-foreground">Align to frame</span>
+    <PropRow label="Align">
       <div class="flex items-center gap-1">
         <button type="button" onclick={() => alignFrame("x", "start")} class={cn(ALIGN_BTN)} title="Align left">
           <AlignStartVertical size={12} />
@@ -200,6 +129,6 @@ const FIELD_LABEL = "flex flex-col gap-0.5 text-[10px] text-muted-foreground";
           <AlignEndHorizontal size={12} />
         </button>
       </div>
-    </div>
+    </PropRow>
   </div>
 </PanelSection>

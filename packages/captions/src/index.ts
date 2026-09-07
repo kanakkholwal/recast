@@ -30,9 +30,7 @@ export { breakIntoLines } from "./linebreak";
 export { pillBox, type PillBox } from "./geometry";
 export { withAlpha } from "./color";
 export { wordColor, wordScaled, type WordRenderInput } from "./word-render";
-// NOTE: CaptionBox.svelte is deliberately NOT re-exported here. This entry must
-// stay pure TS so it imports cleanly from a plain-Node test runner (the desktop
-// vitest has no Svelte plugin). Import the component from "@recast/captions/box".
+// CaptionBox is deliberately not re-exported: this entry stays pure TS for plain-Node runners. Import it from "@recast/captions/box".
 export { parseKaraokeCue, parseVttTime } from "./vtt";
 export {
 	captionHeightFrac,

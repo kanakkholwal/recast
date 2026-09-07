@@ -8,10 +8,7 @@ function sessionMismatch(viewer: Viewer): boolean {
 	return Boolean(viewer && !viewer.emailMatches);
 }
 
-// Accept/decline are disabled when the viewer can't act on the invite: wrong
-// account, expired, or already resolved.
+// Accept and decline are disabled when the viewer can't act: wrong account, expired, or already resolved.
 export function isInviteBlocked(invite: Invite, viewer: Viewer): boolean {
-	return (
-		sessionMismatch(viewer) || invite.expired || invite.status !== "pending"
-	);
+	return sessionMismatch(viewer) || invite.expired || invite.status !== "pending";
 }

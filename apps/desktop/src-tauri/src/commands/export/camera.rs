@@ -4,17 +4,24 @@ use crate::render::easing::Easing;
 use crate::render::graph::{build_time_lut_expr, CanvasGeometry};
 use crate::render::node_types::{CameraKeyframe, CameraPlacement, ZoomRegion};
 
-/// Max video-UV drift per unit of `(scale-1)*strength`. MUST match the preview's
-/// `DRIFT_MAX` in `camera-overlay.logic.ts` so export == preview.
-const CAMERA_DRIFT_MAX: f64 = 0.18;
+// Placement lives in `recast_compositor::camera`; this module keeps only what is FFmpeg's: the shadow PNG padding and the sampled LUT exprs.
+pub(crate) use recast_compositor::camera::{
+    activation as region_camera_activation, follow_placement as camera_follow_placement,
+    placement_at as camera_placement_at,
+};
+use recast_compositor::camera::{SHADOW_BLUR_FRACTION, SHADOW_MAX_OPACITY, SHADOW_OFFSET_FRACTION};
 
-/// Drop-shadow geometry as FRACTIONS of the base bubble width. MUST match the
-/// preview's `CAMERA_SHADOW_*` in `camera-overlay.logic.ts` so the exported
-/// shadow == the editor's `box-shadow` (which sizes in `cqmin`). Strength scales
-/// blur + offset + opacity together.
-pub const CAMERA_SHADOW_BLUR_FRACTION: f64 = 0.14;
-pub const CAMERA_SHADOW_OFFSET_FRACTION: f64 = 0.05;
-pub const CAMERA_SHADOW_MAX_OPACITY: f64 = 0.6;
+/// The compositor takes borrowed regions, so a scene that owns them can lend a
+/// subset without copying; this path owns the whole list.
+fn camera_follow_scale_at(
+    regions: &[ZoomRegion],
+    t: f64,
+    duration: f64,
+    easing: Easing,
+) -> (f64, f64, f64) {
+    let borrowed: Vec<&ZoomRegion> = regions.iter().collect();
+    recast_compositor::camera::follow_scale_at(&borrowed, t, duration, easing)
+}
 
 /// Resolved drop-shadow geometry in canvas pixels for a base bubble of width
 /// `bubble_w`. `None` when the shadow is invisible (`strength ≤ 0`). `padding`
@@ -34,11 +41,10 @@ pub(crate) fn camera_shadow_geom(strength: f64, bubble_w: u32) -> Option<CameraS
         return None;
     }
     let bw = bubble_w as f64;
-    let blur_px = CAMERA_SHADOW_BLUR_FRACTION * s * bw;
-    let offset_px = CAMERA_SHADOW_OFFSET_FRACTION * s * bw;
-    let opacity = CAMERA_SHADOW_MAX_OPACITY * s;
-    // Bottom clearance past the silhouette must cover the blur spread (~2×) plus
-    // the downward offset; a couple of extra px guards against rounding.
+    let blur_px = SHADOW_BLUR_FRACTION * s * bw;
+    let offset_px = SHADOW_OFFSET_FRACTION * s * bw;
+    let opacity = SHADOW_MAX_OPACITY * s;
+    // Bottom clearance must cover the blur spread (about 2x) plus the downward offset, with a couple of px for rounding.
     let padding = (blur_px * 2.0 + offset_px + 2.0).ceil().max(1.0) as u32;
     Some(CameraShadowGeom {
         blur_px,
@@ -48,154 +54,18 @@ pub(crate) fn camera_shadow_geom(strength: f64, bubble_w: u32) -> Option<CameraS
     })
 }
 
-/// Pixel rect `(x, y, w, h)` of the camera bubble, from its UV-space `placement`
-/// and the canvas geometry. The bubble is square in screen pixels (`w == h`,
-/// sized off `video_w` to match the preview's `aspect-ratio: 1`), and clamped
-/// into the canvas so an out-of-range placement (legacy project / hand-edited
-/// JSON) still yields a valid overlay.
+/// The bubble rect in whole pixels, which is what the filtergraph's `overlay`
+/// and `crop` take.
 pub(crate) fn camera_bubble_rect(
     placement: &CameraPlacement,
     geom: &CanvasGeometry,
 ) -> (u32, u32, u32, u32) {
-    let bubble_w = (placement.width.clamp(0.02, 1.0) * geom.video_w as f64)
-        .round()
-        .max(2.0) as u32;
-    let bubble_h = bubble_w;
-    let max_x = geom.canvas_w.saturating_sub(bubble_w);
-    let max_y = geom.canvas_h.saturating_sub(bubble_h);
-    let bubble_x = ((geom.video_x as f64 + placement.x.clamp(0.0, 1.0) * geom.video_w as f64)
-        .round() as u32)
-        .min(max_x);
-    let bubble_y = ((geom.video_y as f64 + placement.y.clamp(0.0, 1.0) * geom.video_h as f64)
-        .round() as u32)
-        .min(max_y);
-    (bubble_x, bubble_y, bubble_w, bubble_h)
+    let rect = recast_compositor::camera::bubble_rect(placement, *geom);
+    (rect.x as u32, rect.y as u32, rect.w as u32, rect.h as u32)
 }
 
-/// Effective camera placement under the zoom-follow effect — the exact mirror of
-/// `applyZoomFollow` in `camera-overlay.logic.ts` (grow + drift away from the
-/// zoom focus, clamped on-screen), so preview and export agree. The bubble is
-/// square in *pixels*, so its UV height is `width * aspect` (aspect =
-/// videoW/videoH) — derived here, NOT read from `base.height`, so the drift
-/// centre and clamps are right on a non-square frame. Identity at rest
-/// (`scale≈1`) or zero strength.
-pub(crate) fn camera_follow_placement(
-    base: &CameraPlacement,
-    scale: f64,
-    cx: f64,
-    cy: f64,
-    strength: f64,
-    aspect: f64,
-) -> CameraPlacement {
-    let k = strength.clamp(0.0, 1.0);
-    if k <= 0.0 || scale <= 1.0001 {
-        return base.clone();
-    }
-    let base_h = (base.width * aspect).min(1.0);
-    let amount = (scale - 1.0) * k;
-    let width = (base.width * (1.0 + amount)).min(1.0);
-    let height = (width * aspect).min(1.0);
-    let bcx = base.x + base.width / 2.0;
-    let bcy = base.y + base_h / 2.0;
-    let mut dx = bcx - cx;
-    let mut dy = bcy - cy;
-    let len = (dx * dx + dy * dy).sqrt();
-    let drift = amount * CAMERA_DRIFT_MAX;
-    if len > 1e-4 {
-        dx = dx / len * drift;
-        dy = dy / len * drift;
-    } else {
-        dx = 0.0;
-        dy = 0.0;
-    }
-    CameraPlacement {
-        x: (bcx + dx - width / 2.0).clamp(0.0, 1.0 - width),
-        y: (bcy + dy - height / 2.0).clamp(0.0, 1.0 - height),
-        width,
-        height,
-    }
-}
-
-fn lerp_placement(a: &CameraPlacement, b: &CameraPlacement, e: f64) -> CameraPlacement {
-    CameraPlacement {
-        x: a.x + (b.x - a.x) * e,
-        y: a.y + (b.y - a.y) * e,
-        width: a.width + (b.width - a.width) * e,
-        height: a.height + (b.height - a.height) * e,
-    }
-}
-
-/// Effective BASE placement at original time `t`, gliding (via `easing`) between
-/// per-cut keyframes. Exact mirror of TS `cameraPlacementAt` so preview ==
-/// export. `keyframes` MUST be sorted by `at_sec`; empty → static `base`.
-pub(crate) fn camera_placement_at(
-    base: &CameraPlacement,
-    keyframes: &[CameraKeyframe],
-    t: f64,
-    easing: Easing,
-) -> CameraPlacement {
-    if keyframes.is_empty() {
-        return base.clone();
-    }
-    if keyframes.len() == 1 || t <= keyframes[0].at_sec {
-        return keyframes[0].placement.clone();
-    }
-    let last = &keyframes[keyframes.len() - 1];
-    if t >= last.at_sec {
-        return last.placement.clone();
-    }
-    for w in keyframes.windows(2) {
-        if t >= w[0].at_sec && t < w[1].at_sec {
-            let span = (w[1].at_sec - w[0].at_sec).max(1e-6);
-            let phase = ((t - w[0].at_sec) / span).clamp(0.0, 1.0);
-            let e = easing.y(phase as f32) as f64;
-            return lerp_placement(&w[0].placement, &w[1].placement, e);
-        }
-    }
-    last.placement.clone()
-}
-
-/// Camera-grow activation 0..1 for a region at time `t`: ramps in/out over the
-/// camera's OWN `duration` with `easing` (NOT the zoom's ramp), gated to the
-/// region's active window. Mirror of TS `cameraFollowScaleAt`'s `a`.
-fn region_camera_activation(r: &ZoomRegion, t: f64, duration: f64, easing: Easing) -> f64 {
-    if r.hidden || t <= r.start || t >= r.end {
-        return 0.0;
-    }
-    let d = duration.max(1e-3);
-    let in_a = easing.y((((t - r.start) / d).clamp(0.0, 1.0)) as f32) as f64;
-    let out_a = easing.y((((r.end - t) / d).clamp(0.0, 1.0)) as f32) as f64;
-    in_a.min(out_a)
-}
-
-/// Camera-grow `(scale, cx, cy)` at time `t` — first active region, effective
-/// scale `1 + activation*(peak-1)`. Mirror of TS `cameraFollowScaleAt`.
-fn camera_follow_scale_at(
-    regions: &[ZoomRegion],
-    t: f64,
-    duration: f64,
-    easing: Easing,
-) -> (f64, f64, f64) {
-    for r in regions {
-        if r.hidden || t <= r.start || t >= r.end {
-            continue;
-        }
-        let a = region_camera_activation(r, t, duration, easing);
-        return (
-            1.0 + a * (r.scale.max(1.0) - 1.0),
-            r.center_x.clamp(0.0, 1.0),
-            r.center_y.clamp(0.0, 1.0),
-        );
-    }
-    (1.0, 0.5, 0.5)
-}
-
-/// Time-varying camera bubble geometry for export: `(size_expr, x_expr, y_expr)`
-/// in output-stream `t`, from the per-cut keyframe glide (`camera_placement_at`)
-/// composed with zoom-follow (`camera_follow_placement`). `None` when the base is
-/// static AND no zoom-follow applies, so the caller uses the fixed overlay.
-/// Sampled at 20 Hz and collinear-merged, mirroring the main zoom LUT. Times map
-/// original→output as `- trim_start` (same convention as the zoom-follow LUT).
+/// Time-varying camera geometry as `(size_expr, x_expr, y_expr)` in output `t`, composing the keyframe glide with zoom-follow; `None` when static and unfollowed.
+/// Sampled at 20 Hz and collinear-merged like the main zoom LUT, with times mapped original to output as `- trim_start`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_camera_follow_exprs(
     regions: &[ZoomRegion],
@@ -271,8 +141,7 @@ pub(crate) fn build_camera_follow_exprs(
         ));
     }
 
-    // Keyframed base: it glides across the WHOLE timeline (even outside zoom
-    // regions), so sample uniformly and compose the follow where it applies.
+    // A keyframed base glides across the WHOLE timeline, so sample uniformly and compose the follow where it applies.
     let duration = (trim_end - trim_start).max(0.0);
     if duration <= 0.0 {
         return None;
@@ -309,6 +178,81 @@ pub(crate) fn build_camera_follow_exprs(
 mod tests {
     use super::*;
 
+    /// D-2, on the FFmpeg path. The bubble must drift along the SCREEN-SPACE
+    /// away-from-focus direction; normalising the UV pair pulls it toward
+    /// vertical on a 16:9 frame. The compositor and the preview were both
+    /// fixed for this; the graph is the export users actually get.
+    #[test]
+    fn zoom_follow_drifts_along_the_screen_direction_not_the_uv_one() {
+        let aspect = 16.0 / 9.0;
+        let base = CameraPlacement {
+            x: 0.425,
+            y: 0.267,
+            width: 0.15,
+            height: 0.15 * aspect,
+        };
+        let (fx, fy) = (0.3, 0.3);
+        let out = camera_follow_placement(&base, 1.5, fx, fy, 1.0, aspect);
+
+        let base_h = base.width * aspect;
+        let (bcx, bcy) = (base.x + base.width / 2.0, base.y + base_h / 2.0);
+        let away = ((bcx - fx) * aspect, bcy - fy);
+        let drift = (
+            (out.x + out.width / 2.0 - bcx) * aspect,
+            out.y + out.height / 2.0 - bcy,
+        );
+        let mag = away.0.hypot(away.1) * drift.0.hypot(drift.1);
+        assert!(mag > 1e-9, "a vector was degenerate: {away:?} {drift:?}");
+        let cross = (away.0 * drift.1 - away.1 * drift.0) / mag;
+        assert!(
+            cross.abs() < 1e-3,
+            "drift off the screen-away direction by {:.2} deg",
+            cross.asin().to_degrees()
+        );
+        assert!(
+            away.0 * drift.0 + away.1 * drift.1 > 0.0,
+            "the bubble drifted toward the focus, not away"
+        );
+        // D-2 was about magnitude: a fraction of frame HEIGHT whichever way the bubble ran, where normalising the UV pair drifted up to `aspect` times too far.
+        let want = (1.5 - 1.0) * 1.0 * 0.18;
+        let got = drift.0.hypot(drift.1);
+        assert!(
+            (got - want).abs() < 1e-6,
+            "drifted {got} of frame height, want {want}"
+        );
+    }
+
+    /// One rule, one implementation. The compositor is the authority: the
+    /// preview and the engine export both draw from it.
+    #[test]
+    fn the_follow_placement_matches_the_compositors() {
+        let aspect = 16.0 / 9.0;
+        let base = CameraPlacement {
+            x: 0.425,
+            y: 0.267,
+            width: 0.15,
+            height: 0.15 * aspect,
+        };
+        for (scale, cx, cy, strength) in [
+            (1.5, 0.3, 0.3, 1.0),
+            (2.0, 0.8, 0.2, 0.5),
+            (1.2, 0.5, 0.5, 1.0),
+            (3.0, 0.1, 0.9, 0.25),
+            (1.0, 0.3, 0.3, 1.0),
+        ] {
+            let ours = camera_follow_placement(&base, scale, cx, cy, strength, aspect);
+            let theirs =
+                recast_compositor::camera::follow_placement(&base, scale, cx, cy, strength, aspect);
+            assert!(
+                (ours.x - theirs.x).abs() < 1e-9
+                    && (ours.y - theirs.y).abs() < 1e-9
+                    && (ours.width - theirs.width).abs() < 1e-9
+                    && (ours.height - theirs.height).abs() < 1e-9,
+                "scale {scale} focus ({cx},{cy}) strength {strength}: {ours:?} vs {theirs:?}"
+            );
+        }
+    }
+
     // A 1920x1080 video at (40, 60) inside a 2000x1200 canvas.
     fn geom() -> CanvasGeometry {
         CanvasGeometry {
@@ -343,8 +287,7 @@ mod tests {
 
     #[test]
     fn placement_is_clamped_into_the_canvas() {
-        // x sits within bounds; y would place the bubble past the bottom edge, so
-        // it clamps to canvas_h - h.
+        // x sits within bounds; y would put the bubble past the bottom edge, so it clamps to canvas_h minus h.
         let (x, y, w, h) = camera_bubble_rect(&placement(0.8, 0.8, 0.2), &geom());
         assert_eq!((w, h), (384, 384));
         assert_eq!(x, 1576); // 40 + 0.8*1920 = 1576, within max_x 1616
@@ -382,8 +325,7 @@ mod tests {
 
     #[test]
     fn follow_height_is_width_times_aspect_on_a_wide_video() {
-        // Mirrors camera-overlay.logic.test.ts: square in pixels, so height =
-        // width * aspect for a 16:9 frame.
+        // Mirrors camera-overlay.logic.test.ts: square in pixels, so height is width times aspect on a 16:9 frame.
         let aspect = 16.0 / 9.0;
         let r = camera_follow_placement(&placement(0.4, 0.4, 0.15), 1.5, 0.1, 0.1, 1.0, aspect);
         assert!((r.width - 0.225).abs() < 1e-9, "width {}", r.width); // 0.15 * 1.5
@@ -497,8 +439,7 @@ mod tests {
         let rs = std::slice::from_ref(&region);
         // Outside the region → identity.
         assert_eq!(camera_follow_scale_at(rs, -1.0, 1.0, lin).0, 1.0);
-        // Duration 1s, linear: halfway through ramp-in (t=0.5) → activation 0.5 →
-        // scale = 1 + 0.5*(2-1) = 1.5; focus = region centre.
+        // Duration 1s linear: halfway through ramp-in gives activation 0.5, so scale 1.5 and focus at the region centre.
         let (s, cx, cy) = camera_follow_scale_at(rs, 0.5, 1.0, lin);
         assert!((s - 1.5).abs() < 1e-6, "scale {s}");
         assert!((cx - 0.3).abs() < 1e-9 && (cy - 0.7).abs() < 1e-9);

@@ -1,9 +1,4 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { page } from "$app/state";
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
-import { authClient } from "$lib/auth/client";
-import { canResetPassword, passwordsMatch } from "$lib/auth/password.logic";
 import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";
@@ -11,6 +6,11 @@ import { Label } from "@recast/ui/label";
 import { toast } from "@recast/ui/sonner";
 import { cubicOut } from "svelte/easing";
 import { slide } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import { canResetPassword, passwordsMatch } from "$lib/auth/password.logic";
 
 // Real Better Auth reset flow passes a one-time token in the URL.
 const token = $derived(page.url.searchParams.get("token") ?? "");

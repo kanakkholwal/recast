@@ -46,8 +46,7 @@ describe("resolveAvSync", () => {
 	});
 
 	it("treats exactly-at-threshold as in tolerance", () => {
-		// Anchored at 0 so the subtraction is exact — `10 + 0.06 - 10` lands a
-		// hair above the threshold in floating point and would resync.
+		// Anchored at 0 so the subtraction is exact: 10 + 0.06 - 10 lands a hair above the threshold and would resync.
 		const d = resolveAvSync({
 			videoTime: AV_RESYNC_THRESHOLD_SEC,
 			audioTime: 0,
@@ -81,9 +80,7 @@ describe("resolveAvSync", () => {
 	});
 
 	it("stops mastering on a stalled audio clock instead of pinning the picture", () => {
-		// A suspended AudioContext freezes currentTime. Without this, the picture
-		// is dragged back onto the same instant every frame — a total video freeze
-		// caused by an audio fault.
+		// A suspended AudioContext freezes currentTime, which without this drags the picture back every frame: a total freeze.
 		const d = resolveAvSync({
 			videoTime: 30,
 			audioTime: 10,

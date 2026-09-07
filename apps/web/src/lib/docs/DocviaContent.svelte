@@ -1,6 +1,5 @@
 <script lang="ts">
-// Recursive walker over docvia's compiled node tree. Self-imports to recurse
-// (Svelte 5's replacement for `<svelte:self>`).
+// Recursive walker over docvia's node tree; it self-imports, which is Svelte 5's replacement for `<svelte:self>`.
 import Self from "./DocviaContent.svelte";
 import MermaidDiagram from "./MermaidDiagram.svelte";
 import { mermaidSourceOf } from "./mermaid";

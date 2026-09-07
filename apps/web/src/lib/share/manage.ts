@@ -48,10 +48,6 @@ export async function resolveShareManage(
 	}
 
 	// 3. Global admin.
-	const [u] = await db
-		.select({ role: user.role })
-		.from(user)
-		.where(eq(user.id, userId))
-		.limit(1);
+	const [u] = await db.select({ role: user.role }).from(user).where(eq(user.id, userId)).limit(1);
 	return { ...row, canManage: u?.role === "admin" };
 }

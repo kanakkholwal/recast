@@ -1,0 +1,18 @@
+[package]
+name = "recast-text"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Font resolution, shaping and glyph rasterisation for the caption pass. Pure Rust, no C toolchain."
+
+[dependencies]
+# rustybuzz is a HarfBuzz port, so shaping matches libass's HarfBuzz closely and
+# the burn-in the export produces today lines up with what the compositor draws.
+rustybuzz = "0.20"
+ttf-parser = "0.25"
+zeno = "0.3"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# System font lookup needs a filesystem, which wasm32 does not have: the browser
+# host resolves the face and hands the bytes across instead.
+fontdb = "0.23"

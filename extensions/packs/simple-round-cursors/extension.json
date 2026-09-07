@@ -1,131 +1,131 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "simple-round-cursors",
-  "name": "Simple Round Cursors",
-  "version": "1.0.0",
-  "author": "Recast",
-  "description": "Five minimal rounded teardrop-arrow cursors with a click-press state.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "cursors": [
-      {
-        "id": "light",
-        "label": "Round — Light",
-        "description": "Rounded teardrop arrow.",
-        "rest": "light",
-        "press": "light-press",
-        "hotspot": {
-          "x": 5,
-          "y": 5
-        },
-        "pressedHotspot": {
-          "x": 5,
-          "y": 5
-        }
-      },
-      {
-        "id": "dark",
-        "label": "Round — Dark",
-        "description": "Rounded teardrop arrow.",
-        "rest": "dark",
-        "press": "dark-press",
-        "hotspot": {
-          "x": 5,
-          "y": 5
-        },
-        "pressedHotspot": {
-          "x": 5,
-          "y": 5
-        }
-      },
-      {
-        "id": "orange",
-        "label": "Round — Orange",
-        "description": "Rounded teardrop arrow.",
-        "rest": "orange",
-        "press": "orange-press",
-        "hotspot": {
-          "x": 5,
-          "y": 5
-        },
-        "pressedHotspot": {
-          "x": 5,
-          "y": 5
-        }
-      },
-      {
-        "id": "yellow",
-        "label": "Round — Yellow",
-        "description": "Rounded teardrop arrow.",
-        "rest": "yellow",
-        "press": "yellow-press",
-        "hotspot": {
-          "x": 5,
-          "y": 5
-        },
-        "pressedHotspot": {
-          "x": 5,
-          "y": 5
-        }
-      },
-      {
-        "id": "blue",
-        "label": "Round — Blue",
-        "description": "Rounded teardrop arrow.",
-        "rest": "blue",
-        "press": "blue-press",
-        "hotspot": {
-          "x": 5,
-          "y": 5
-        },
-        "pressedHotspot": {
-          "x": 5,
-          "y": 5
-        }
-      }
-    ]
-  },
-  "assets": [
-    {
-      "id": "light",
-      "file": "assets/light.svg"
-    },
-    {
-      "id": "light-press",
-      "file": "assets/light-press.svg"
-    },
-    {
-      "id": "dark",
-      "file": "assets/dark.svg"
-    },
-    {
-      "id": "dark-press",
-      "file": "assets/dark-press.svg"
-    },
-    {
-      "id": "orange",
-      "file": "assets/orange.svg"
-    },
-    {
-      "id": "orange-press",
-      "file": "assets/orange-press.svg"
-    },
-    {
-      "id": "yellow",
-      "file": "assets/yellow.svg"
-    },
-    {
-      "id": "yellow-press",
-      "file": "assets/yellow-press.svg"
-    },
-    {
-      "id": "blue",
-      "file": "assets/blue.svg"
-    },
-    {
-      "id": "blue-press",
-      "file": "assets/blue-press.svg"
-    }
-  ]
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "simple-round-cursors",
+	"name": "Simple Round Cursors",
+	"version": "1.0.0",
+	"author": "Recast",
+	"description": "Five minimal rounded teardrop-arrow cursors with a click-press state.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"cursors": [
+			{
+				"id": "light",
+				"label": "Round — Light",
+				"description": "Rounded teardrop arrow.",
+				"rest": "light",
+				"press": "light-press",
+				"hotspot": {
+					"x": 5,
+					"y": 5
+				},
+				"pressedHotspot": {
+					"x": 5,
+					"y": 5
+				}
+			},
+			{
+				"id": "dark",
+				"label": "Round — Dark",
+				"description": "Rounded teardrop arrow.",
+				"rest": "dark",
+				"press": "dark-press",
+				"hotspot": {
+					"x": 5,
+					"y": 5
+				},
+				"pressedHotspot": {
+					"x": 5,
+					"y": 5
+				}
+			},
+			{
+				"id": "orange",
+				"label": "Round — Orange",
+				"description": "Rounded teardrop arrow.",
+				"rest": "orange",
+				"press": "orange-press",
+				"hotspot": {
+					"x": 5,
+					"y": 5
+				},
+				"pressedHotspot": {
+					"x": 5,
+					"y": 5
+				}
+			},
+			{
+				"id": "yellow",
+				"label": "Round — Yellow",
+				"description": "Rounded teardrop arrow.",
+				"rest": "yellow",
+				"press": "yellow-press",
+				"hotspot": {
+					"x": 5,
+					"y": 5
+				},
+				"pressedHotspot": {
+					"x": 5,
+					"y": 5
+				}
+			},
+			{
+				"id": "blue",
+				"label": "Round — Blue",
+				"description": "Rounded teardrop arrow.",
+				"rest": "blue",
+				"press": "blue-press",
+				"hotspot": {
+					"x": 5,
+					"y": 5
+				},
+				"pressedHotspot": {
+					"x": 5,
+					"y": 5
+				}
+			}
+		]
+	},
+	"assets": [
+		{
+			"id": "light",
+			"file": "assets/light.svg"
+		},
+		{
+			"id": "light-press",
+			"file": "assets/light-press.svg"
+		},
+		{
+			"id": "dark",
+			"file": "assets/dark.svg"
+		},
+		{
+			"id": "dark-press",
+			"file": "assets/dark-press.svg"
+		},
+		{
+			"id": "orange",
+			"file": "assets/orange.svg"
+		},
+		{
+			"id": "orange-press",
+			"file": "assets/orange-press.svg"
+		},
+		{
+			"id": "yellow",
+			"file": "assets/yellow.svg"
+		},
+		{
+			"id": "yellow-press",
+			"file": "assets/yellow-press.svg"
+		},
+		{
+			"id": "blue",
+			"file": "assets/blue.svg"
+		},
+		{
+			"id": "blue-press",
+			"file": "assets/blue-press.svg"
+		}
+	]
 }

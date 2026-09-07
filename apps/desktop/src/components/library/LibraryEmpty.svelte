@@ -16,9 +16,9 @@ let { icon: Icon, title, description, action }: Props = $props();
 
 <div
   in:fade={{ duration: 200 }}
-  class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-12 text-center"
+  class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border/60 bg-card/40 p-12 text-center"
 >
-  <div class="flex size-12 items-center justify-center rounded-xl bg-foreground/5 text-muted-foreground">
+  <div class="flex size-12 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground ring-1 ring-inset ring-border/40">
     <Icon class="size-5" />
   </div>
   <div>

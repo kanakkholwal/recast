@@ -33,8 +33,8 @@ export function parseTimeParam(raw: string | null): number {
 export function parseTimeToken(s: string): number {
 	const parts = s.split(":").map((p) => Number(p));
 	if (parts.some(Number.isNaN)) return 0;
-	if (parts.length === 2) return parts[0]! * 60 + parts[1]!;
-	if (parts.length === 3) return parts[0]! * 3600 + parts[1]! * 60 + parts[2]!;
+	if (parts.length === 2) return parts[0] * 60 + parts[1];
+	if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
 	return 0;
 }
 
@@ -43,15 +43,15 @@ export function parseTimeToken(s: string): number {
  * `@mentions`.
  */
 export function parseCommentText(text: string): CommentSegment[] {
-	const re =
-		/\[(\d{1,2}(?::\d{2}){1,2})\]|\b(\d{1,2}:\d{2}(?::\d{2})?)\b|@([A-Za-z][\w]{0,31})/g;
+	const re = /\[(\d{1,2}(?::\d{2}){1,2})\]|\b(\d{1,2}:\d{2}(?::\d{2})?)\b|@([A-Za-z][\w]{0,31})/g;
 	const out: CommentSegment[] = [];
 	let lastIdx = 0;
-	let m: RegExpExecArray | null;
-	while ((m = re.exec(text)) !== null) {
+	for (let m = re.exec(text); m !== null; m = re.exec(text)) {
 		if (m.index > lastIdx) out.push({ kind: "text", text: text.slice(lastIdx, m.index) });
-		if (m[1] !== undefined) out.push({ kind: "timestamp", seconds: parseTimeToken(m[1]), raw: m[1] });
-		else if (m[2] !== undefined) out.push({ kind: "timestamp", seconds: parseTimeToken(m[2]), raw: m[2] });
+		if (m[1] !== undefined)
+			out.push({ kind: "timestamp", seconds: parseTimeToken(m[1]), raw: m[1] });
+		else if (m[2] !== undefined)
+			out.push({ kind: "timestamp", seconds: parseTimeToken(m[2]), raw: m[2] });
 		else if (m[3] !== undefined) out.push({ kind: "mention", name: m[3] });
 		lastIdx = m.index + m[0].length;
 	}
@@ -88,7 +88,7 @@ export function initials(
 	const src = (name ?? email ?? "?").trim();
 	if (!src) return "?";
 	const parts = src.split(/\s+/).filter(Boolean);
-	if (parts.length >= 2) return (parts[0]![0]! + parts[1]![0]!).toUpperCase();
+	if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
 	return src.slice(0, 2).toUpperCase();
 }
 

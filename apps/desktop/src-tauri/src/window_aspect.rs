@@ -1,27 +1,12 @@
-//! Aspect-ratio-locked window resizing.
-//!
-//! Tao (Tauri's windowing layer) only exposes min/max size constraints — it
-//! has no aspect-ratio lock. The JS side can *snap back* to an aspect after a
-//! resize finishes (`onResized` → `setSize`), but that reads as a janky
-//! rubber-band: the OS lets you drag width and height independently, then the
-//! box jumps once you release. To make the camera-preview bubble resize
-//! *proportionally while you drag* — and to cap its width at a fraction of the
-//! monitor — we intercept `WM_SIZING` natively on Windows and rewrite the drag
-//! rectangle in real time.
-//!
-//! Non-Windows builds get a no-op `apply` so callers don't need their own
-//! `cfg`; the JS snap-to-aspect fallback keeps those platforms usable until a
-//! native equivalent (macOS: `NSWindow.aspectRatio`) lands.
+//! Aspect-ratio-locked resizing: Tao exposes only min/max, and a JS snap-back after `onResized` reads as a rubber-band.
+//! Windows intercepts `WM_SIZING` to rewrite the drag rect live; other platforms get a no-op `apply`.
 
-#[cfg(windows)]
 mod imp {
     use std::collections::HashMap;
     use std::ffi::c_void;
     use std::sync::OnceLock;
 
-    // `parking_lot::Mutex` can't poison — a panic in the `WM_SIZING` subclass
-    // callback while holding this lock would otherwise poison it and abort the
-    // process on the next aspect-ratio operation.
+    // `parking_lot::Mutex` can't poison: a panic in the `WM_SIZING` subclass while holding this would abort the process.
     use parking_lot::Mutex;
 
     use tauri::AppHandle;
@@ -48,11 +33,8 @@ mod imp {
         max_fraction: f64,
         /// Minimum width in physical pixels.
         min_w: i32,
-        /// Fixed, non-scaling vertical extent (physical px) reserved at the
-        /// bottom of the window for the control bar that lives *outside* the
-        /// rounded video so it never gets clipped. `ratio` applies to
-        /// `height - chrome`, so the visible bubble keeps its aspect while the
-        /// window is `chrome` px taller. 0 == video fills the window.
+        /// Fixed, non-scaling physical pixels reserved at the bottom for the control bar that sits OUTSIDE the rounded video, so it is never clipped.
+        /// `ratio` applies to `height - chrome`, so the bubble keeps its aspect while the window is that much taller; 0 means video fills the window.
         chrome: i32,
     }
 
@@ -97,9 +79,7 @@ mod imp {
             first
         };
 
-        // SetWindowSubclass must run on the window's owning (UI) thread —
-        // cross-thread proc-chain edits are rejected by the OS. Only install
-        // once; subsequent ratio changes flow through the registry above.
+        // SetWindowSubclass must run on the window's UI thread, and only once; later ratio changes flow through the registry.
         if first {
             let _ = app.run_on_main_thread(move || unsafe {
                 let hwnd = HWND(hwnd_raw as *mut c_void);
@@ -131,16 +111,13 @@ mod imp {
         let cur_w = (rect.right - rect.left).max(1);
         let cur_h = (rect.bottom - rect.top).max(1);
 
-        // The control strip is fixed height; only the video region scales with
-        // the ratio, so strip it off before the aspect math and add it back to
-        // the final window height.
+        // The control strip is fixed height, so strip it off before the aspect math and add it back to the final height.
         let chrome = c.chrome.max(0);
         let max_w = max_w.max(c.min_w);
         let max_vid_h = ((max_w as f64) / c.ratio).round() as i32;
         let min_vid_h = (((c.min_w as f64) / c.ratio).round() as i32).max(1);
 
-        // Vertical-only edges (top/bottom) are height-led; everything else
-        // (left/right + all four corners) is width-led.
+        // Top and bottom edges are height-led; everything else, including all four corners, is width-led.
         let (new_w, new_h) = if edge == WMSZ_TOP || edge == WMSZ_BOTTOM {
             let vid_h = (cur_h - chrome).clamp(min_vid_h, max_vid_h.max(min_vid_h));
             ((vid_h as f64 * c.ratio).round() as i32, vid_h + chrome)
@@ -175,10 +152,7 @@ mod imp {
                 let key = hwnd.0 as isize;
                 let constraint = registry().lock().get(&key).copied();
                 if let Some(c) = constraint {
-                    // lParam is an LPRECT the OS uses as the new window bounds.
-                    // We edit it in place, then still chain to tao's proc so its
-                    // internal size bookkeeping stays in sync — we already keep
-                    // the rect inside tao's min/max, so it won't fight us.
+                    // lParam is the OS's new-bounds LPRECT: edit it in place, then chain to tao's proc so its size bookkeeping stays in sync.
                     let rect = &mut *(lparam.0 as *mut RECT);
                     let max_w = ((monitor_work_width(hwnd) as f64) * c.max_fraction).round() as i32;
                     constrain_rect(rect, wparam.0 as u32, c, max_w);
@@ -186,9 +160,7 @@ mod imp {
                 DefSubclassProc(hwnd, msg, wparam, lparam)
             }
             WM_NCDESTROY => {
-                // Drop our entry and detach the subclass before the window
-                // goes away (documented best practice — the chain is otherwise
-                // freed for us, but this keeps the registry from leaking).
+                // Detach before the window goes away: the chain is freed for us, but this keeps the registry from leaking.
                 registry().lock().remove(&(hwnd.0 as isize));
                 let _ = RemoveWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID);
                 DefSubclassProc(hwnd, msg, wparam, lparam)
@@ -198,18 +170,4 @@ mod imp {
     }
 }
 
-#[cfg(windows)]
 pub use imp::apply;
-
-/// No-op on platforms without a native aspect lock — the JS snap-to-aspect
-/// fallback handles resizing there.
-#[cfg(not(windows))]
-pub fn apply(
-    _app: &tauri::AppHandle,
-    _hwnd_raw: isize,
-    _ratio: f64,
-    _max_fraction: f64,
-    _min_w: i32,
-    _chrome: i32,
-) {
-}

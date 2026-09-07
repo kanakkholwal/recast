@@ -82,8 +82,7 @@ export function resolveAvSync(input: AvSyncInput): AvSyncDecision {
 		return { resync: false, target: videoTime, driftSec: 0, audioStalled: false };
 	}
 	const driftSec = videoTime - audioTime;
-	// A dead clock is not a master. Let the picture run free rather than
-	// pinning it to a timestamp that will never move again.
+	// A dead clock is not a master: let the picture run free rather than pin it to a timestamp that never moves.
 	if ((input.audioStalledSec ?? 0) > AUDIO_STALL_LIMIT_SEC) {
 		return { resync: false, target: videoTime, driftSec, audioStalled: true };
 	}

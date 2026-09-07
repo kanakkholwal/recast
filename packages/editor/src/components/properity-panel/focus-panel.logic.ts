@@ -123,8 +123,7 @@ export function scaleAt(r: ZoomRegion, t: number): number {
 		return r.scale;
 	}
 	phase = Math.max(0, Math.min(1, phase));
-	// Low-budget x→y approximation (polynomial-in-t with t ≈ x). Indistinguishable
-	// at sparkline resolution; avoids pulling in the full Newton-Raphson solver.
+	// A low-budget polynomial approximation, indistinguishable at sparkline resolution and free of the Newton-Raphson solver.
 	const a = 1 - 3 * curve.y2 + 3 * curve.y1;
 	const b = 3 * curve.y2 - 6 * curve.y1;
 	const c = 3 * curve.y1;

@@ -80,8 +80,7 @@ describe("buildSpineHandles", () => {
 		).toEqual([]);
 	});
 
-	// Two un-merged cuts can share a gap between drags; moving "the" cut would
-	// silently pick one and leave the other behind.
+	// Two un-merged cuts can share a gap, so moving 'the' cut would silently pick one and leave the other.
 	it("declines a seam filled by more than one cut", () => {
 		const handles = buildSpineHandles(
 			shape(

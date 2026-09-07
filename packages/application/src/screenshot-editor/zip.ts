@@ -85,8 +85,7 @@ export function zipStore(entries: ZipEntry[]): Blob {
 	ev.setUint32(12, centralSize, true);
 	ev.setUint32(16, offset, true); // central directory offset
 
-	// Concatenate into one buffer (also sidesteps BlobPart variance on the
-	// Uint8Array's backing ArrayBufferLike).
+	// One buffer, which also sidesteps BlobPart variance over the Uint8Array's backing ArrayBufferLike.
 	const parts = [...chunks, ...central, eocd];
 	const size = parts.reduce((n, p) => n + p.length, 0);
 	const out = new Uint8Array(size);

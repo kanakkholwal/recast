@@ -1,14 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-// Standalone vitest config — intentionally does NOT load the SvelteKit/Tailwind
-// plugins from vite.config.ts. The unit suite targets pure, framework-free
-// logic (timeline math, time mapping, etc.), so a plain Node environment keeps
-// the tests fast and free of browser/Svelte setup.
-//
-// The `$lib` alias mirrors SvelteKit's so extracted `.logic.ts` modules can use
-// the same import specifier as the app. Only pure modules resolve here; runes
-// (`.svelte.ts`) modules must be imported type-only to stay out of the Node run.
+// Standalone on purpose: the unit suite targets pure logic, so a plain Node run stays fast. The `$lib` alias mirrors SvelteKit's, and runes modules must be imported type-only.
 export default defineConfig({
 	resolve: {
 		alias: {

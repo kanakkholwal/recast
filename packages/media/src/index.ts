@@ -79,5 +79,4 @@ export {
 } from "./cache/unsupported-formats";
 export type { UnsupportedFormat } from "./cache/unsupported-formats";
 
-// MediaBunny primitives live on `@recast/media/mediabunny`. Re-exporting them
-// here would pull the whole library into every consumer (REQUIREMENTS.md §3).
+// MediaBunny primitives live on `@recast/media/mediabunny`: re-exporting here would pull the library into every consumer.

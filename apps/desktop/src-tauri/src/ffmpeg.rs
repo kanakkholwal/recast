@@ -52,7 +52,40 @@ fn resolve() -> &'static FfmpegPaths {
     PATHS.get_or_init(|| resolve_paths(None))
 }
 
+/// A user-supplied FFmpeg, taking priority over everything bundled or installed.
+/// `RECAST_FFPROBE` is optional: a pair normally lives in one directory.
+const FFMPEG_ENV: &str = "RECAST_FFMPEG";
+const FFPROBE_ENV: &str = "RECAST_FFPROBE";
+
+/// The pair named by the environment, if it is runnable.
+///
+/// Refused rather than half-used when it is not: falling back silently would
+/// hide a typo behind a bundled build that quietly ignores what was asked for.
+fn env_pair() -> Option<FfmpegPaths> {
+    let ffmpeg = PathBuf::from(std::env::var(FFMPEG_ENV).ok()?);
+    let ffprobe = match std::env::var(FFPROBE_ENV) {
+        Ok(explicit) => PathBuf::from(explicit),
+        Err(_) => ffmpeg.with_file_name(format!("ffprobe{EXE_SUFFIX}")),
+    };
+    if is_usable_pair(&ffmpeg, &ffprobe) {
+        log::info!(
+            "using the ffmpeg named by {FFMPEG_ENV}: {}",
+            ffmpeg.display()
+        );
+        return Some(FfmpegPaths { ffmpeg, ffprobe });
+    }
+    log::warn!(
+        "{FFMPEG_ENV} names {} but it and {} are not a runnable pair; falling back",
+        ffmpeg.display(),
+        ffprobe.display()
+    );
+    None
+}
+
 fn resolve_paths(app: Option<&tauri::AppHandle>) -> FfmpegPaths {
+    if let Some(paths) = env_pair() {
+        return paths;
+    }
     if let Some(paths) = find_bundled_pair(app) {
         return paths;
     }
@@ -99,8 +132,7 @@ fn resolve_paths(app: Option<&tauri::AppHandle>) -> FfmpegPaths {
         }
     }
 
-    // Fall back to PATH lookup. This is intentionally last because PATH may
-    // contain broken package-manager shims.
+    // PATH lookup last, because PATH may contain broken package-manager shims.
     let ffmpeg = PathBuf::from(format!("ffmpeg{EXE_SUFFIX}"));
     let ffprobe = PathBuf::from(format!("ffprobe{EXE_SUFFIX}"));
     if is_usable_pair(&ffmpeg, &ffprobe) {
@@ -148,12 +180,8 @@ fn find_bundled_pair(app: Option<&tauri::AppHandle>) -> Option<FfmpegPaths> {
     None
 }
 
-/// Well-known ffmpeg install prefixes, probed before the PATH fallback.
-///
-/// A Finder- or launcher-started `.app` inherits a minimal PATH (often just
-/// `/usr/bin:/bin`) that excludes Homebrew and MacPorts, so a PATH lookup alone
-/// reports "ffmpeg not found" even when it is installed. These are absolute, so
-/// they resolve regardless of the inherited PATH.
+/// Well-known ffmpeg install prefixes, probed before the PATH fallback, and absolute so they resolve regardless of the inherited PATH.
+/// A Finder-started `.app` inherits a minimal PATH excluding Homebrew and MacPorts, so a PATH lookup alone reports ffmpeg missing when it is installed.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn common_ffmpeg_dirs() -> &'static [&'static str] {
     #[cfg(target_os = "macos")]
@@ -237,26 +265,15 @@ pub fn configure_silent_command(cmd: &mut Command) {
 /// the end (codec error, disk full, etc.); FFmpeg's startup chatter is noise.
 const STDERR_TAIL_LIMIT: usize = 8192;
 
-/// A side-thread that continuously drains a long-lived FFmpeg child's stderr to
-/// a bounded tail.
-///
-/// This is **load-bearing, not just diagnostic**: FFmpeg writes its banner and
-/// periodic `frame=… fps=…` progress to stderr. If nobody reads it, the ~64 KB
-/// OS pipe buffer fills on a long capture, FFmpeg blocks on the stderr
-/// `write()`, stops producing frames, and any graceful `q`→wait stalls until it
-/// has to be force-killed (corrupt MP4). Any FFmpeg child that lives longer than
-/// a single short invocation and pipes stderr MUST be wrapped in one of these at
-/// spawn time. Mirrors the encoder's private pump; shared so capture backends
-/// don't each re-derive it.
+/// Drains a long-lived FFmpeg child's stderr to a bounded tail on its own thread. Every such child that pipes stderr MUST be wrapped at spawn.
+/// Load-bearing, not diagnostic: an undrained ~64KB pipe blocks FFmpeg's write, it stops producing frames, and a graceful quit stalls into a corrupt MP4.
 pub struct StderrTail {
     handle: Option<std::thread::JoinHandle<()>>,
     sink: std::sync::Arc<parking_lot::Mutex<String>>,
 }
 
 impl StderrTail {
-    /// Spawn the drain thread for `stderr`. Returns immediately; the thread runs
-    /// for the whole life of the process and exits at EOF (i.e. when FFmpeg
-    /// closes stderr on exit).
+    /// Spawn the drain thread for `stderr`. Returns immediately; the thread runs for the whole life of the process and exits at EOF (i.e. when FFmpeg closes stderr on exit).
     pub fn spawn(stderr: std::process::ChildStderr) -> Self {
         let sink = std::sync::Arc::new(parking_lot::Mutex::new(String::new()));
         let sink_clone = sink.clone();
@@ -286,9 +303,7 @@ impl StderrTail {
 
 impl Drop for StderrTail {
     fn drop(&mut self) {
-        // If `collect()` was already called the handle is gone. Otherwise detach
-        // the thread — the child has closed stderr by the time a `StderrTail` is
-        // dropped on an error path, so the pump reaches EOF and exits on its own.
+        // If `collect()` already ran the handle is gone; otherwise detach, since the child has closed stderr and the pump hits EOF.
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
@@ -310,14 +325,11 @@ fn pump_stderr_tail(
                 tail.push_str(&String::from_utf8_lossy(&chunk[..n]));
                 if tail.len() > STDERR_TAIL_LIMIT {
                     let mut cut = tail.len() - STDERR_TAIL_LIMIT;
-                    // Prefer a newline boundary so the tail starts on a clean
-                    // line; fall back to the raw offset.
+                    // Prefer a newline boundary so the tail starts on a clean line; fall back to the raw offset.
                     if let Some(nl) = tail[cut..].find('\n') {
                         cut += nl + 1;
                     }
-                    // `drain` panics on a non-char boundary (lossy decoding can
-                    // leave multi-byte chars straddling chunks), so back off to
-                    // the nearest boundary first.
+                    // `drain` panics off a char boundary, and lossy decoding can straddle chunks, so back off first.
                     while cut < tail.len() && !tail.is_char_boundary(cut) {
                         cut += 1;
                     }
@@ -339,77 +351,10 @@ pub fn ffprobe_path() -> &'static PathBuf {
     &resolve().ffprobe
 }
 
-/// Cached AVFoundation device listing (macOS only).
-///
-/// `ffmpeg -f avfoundation -list_devices true -i ""` is the only way to
-/// enumerate AVFoundation video + audio devices, and the probe is
-/// expensive: spawning FFmpeg, loading the framework, and walking the
-/// device list takes ~200–500 ms cold. Three subsystems need this
-/// output (camera enumeration, audio loopback detection, and the screen
-/// capture's "first screen index" lookup), and before this helper each
-/// of them ran its own private listing — so every recording start
-/// spawned FFmpeg twice or three times just to list devices, on top of
-/// the actual capture processes. That showed up as a burst of
-/// short-lived FFmpeg children in Activity Monitor and as a visible
-/// stutter on slower Macs.
-///
-/// Caching the output once per process collapses that to a single
-/// probe at the first device-list need. The downside is brand-new
-/// devices plugged in *after* launch won't appear until restart; for a
-/// recorder app where the device picker runs on the JS side anyway,
-/// this is an acceptable trade.
-#[cfg(target_os = "macos")]
-pub fn cached_avfoundation_devices() -> &'static str {
-    static CACHED: OnceLock<String> = OnceLock::new();
-    CACHED.get_or_init(|| {
-        let mut command = Command::new(ffmpeg_path());
-        // The empty `-i ""` is intentional: AVFoundation listing requires
-        // the format flag, and FFmpeg refuses to start without an input,
-        // so we hand it an empty one and let it fail. The device list
-        // gets printed to stderr *before* the failure, which is what we
-        // care about.
-        command.args([
-            "-hide_banner",
-            "-f",
-            "avfoundation",
-            "-list_devices",
-            "true",
-            "-i",
-            "",
-        ]);
-        configure_silent_command(&mut command);
-        match command.output() {
-            Ok(out) => String::from_utf8_lossy(&out.stderr).into_owned(),
-            Err(e) => {
-                log::warn!("avfoundation device list probe failed: {e}");
-                String::new()
-            }
-        }
-    })
-}
-
-/// Detect the best available H.264 encoder on the system, by *actually*
-/// running a 1-frame encode for each hardware candidate against a `lavfi`
-/// null source. `ffmpeg -encoders` only tells us a codec was *compiled in*
-/// (the bundled binaries always have NVENC/AMF/QSV) — it doesn't tell us
-/// codec-init will succeed: no GPU, missing driver, hitting NVENC's
-/// 3-session consumer-card concurrency limit, or an iGPU below the codec's
-/// minimum VRAM all surface only at runtime as a ~100ms-after-start
-/// FFmpeg exit, which the encoder thread sees as the cryptic "the pipe
-/// is being closed (os error 232)" on first frame write.
-///
-/// Priority: `h264_nvenc` (NVIDIA) → `h264_amf` (AMD) → `h264_qsv` (Intel)
-/// → `libx264` (CPU). Cached for the process lifetime; each probe costs
-/// ~300–500ms cold, so we stop at the first one that works.
+/// Best available H.264 encoder, found by actually running a 1-frame encode per hardware candidate; `-encoders` only proves a codec was compiled in.
+/// Priority nvenc, amf, qsv, then libx264. Cached for the process: a failed init surfaces ~100ms in as "the pipe is being closed (os error 232)".
 pub fn preferred_h264_encoder() -> &'static str {
-    // Cache only a WORKING HARDWARE encoder — that can't regress mid-session.
-    // The software fallback is deliberately NOT cached: the usual cause is a
-    // TRANSIENT miss (NVENC's 3-session consumer-card limit while a recording or
-    // preview still holds a session, or a momentarily busy driver), and caching
-    // it pinned libx264 for the WHOLE app run even after the GPU freed — turning
-    // every subsequent export ~5-10x slower, silently. Re-probing on the next
-    // export costs ~1-2s, which is noise against a minutes-long software encode,
-    // and lets hardware recover the instant it's free.
+    // Cache only a WORKING HARDWARE encoder: a software fallback is usually a transient NVENC-session miss, and caching it pinned libx264 for the whole run.
     static CACHED_HW: OnceLock<&'static str> = OnceLock::new();
     if let Some(hw) = CACHED_HW.get() {
         return hw;
@@ -434,12 +379,8 @@ pub fn preferred_h264_encoder() -> &'static str {
     "libx264"
 }
 
-/// Real availability of one H.264 encoder on THIS machine. Unlike
-/// `ffmpeg -encoders` (which only reports what was *compiled in* — the
-/// bundled binaries always ship NVENC/AMF/QSV), `available` reflects an
-/// actual 1-frame init probe, so it's true only when the GPU + driver
-/// combination can really encode. Surfaced to Settings → About so users
-/// can see exactly which hardware acceleration their device supports.
+/// Real availability of one H.264 encoder on THIS machine: `available` reflects an actual 1-frame init probe, not what was compiled in.
+/// Surfaced to Settings so users see exactly which hardware acceleration their GPU and driver combination can really do.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EncoderAvailability {
@@ -463,19 +404,10 @@ pub struct EncoderAvailability {
     pub active: bool,
 }
 
-/// Probe every recordable encoder candidate for real init success on this
-/// device. The H.264 family is listed in the same NVIDIA → AMD → Intel →
-/// CPU priority order the recorder selects from, followed by the HEVC
-/// family in the same order. The first *available H.264* candidate is
-/// flagged `active` — that's what the recorder/export actually picks
-/// (libx264 is the always-present software fallback, so there's always
-/// exactly one active entry, and it's always H.264 since the pipeline is
-/// H.264-only today). HEVC rows are informational. Each hardware probe
-/// spawns FFmpeg (~300–500 ms cold); callers should run this off the UI
-/// thread.
+/// Probes every encoder candidate for real init success, H.264 then HEVC, each in NVIDIA, AMD, Intel, CPU order.
+/// Exactly one entry is `active` (the picked H.264, libx264 always present); HEVC rows are informational. Each hardware probe spawns FFmpeg, so run it off the UI thread.
 pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
-    // (name, label, vendor, family, hardware, extra_args). H.264 first so
-    // the `active` lookup below lands on the codec the recorder uses.
+    // (name, label, vendor, family, hardware, extra_args). H.264 first so the `active` lookup lands on the recorder's codec.
     #[allow(clippy::type_complexity)] // one-off literal table; a type alias wouldn't help
     let candidates: [(&str, &str, &str, &str, bool, &[&str]); 10] = [
         (
@@ -548,14 +480,10 @@ pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
 
     let mut list: Vec<EncoderAvailability> = candidates
         .into_iter()
-        // Only probe encoders that can exist on this OS — skipping the rest
-        // avoids a guaranteed-to-fail spawn and its noisy FFmpeg stderr (e.g.
-        // VideoToolbox on Windows, NVENC/AMF/QSV on macOS).
+        // Probe only encoders that can exist on this OS, avoiding a guaranteed-to-fail spawn and its noisy stderr.
         .filter(|c| encoder_applies_to_platform(c.0))
         .map(|(name, label, vendor, family, hardware, extra)| {
-            // libx264 ships in every bundled build and always initializes —
-            // skip the spawn for it. Everything else (hardware paths and
-            // libx265, which isn't guaranteed compiled in) gets a real probe.
+            // libx264 ships in every bundled build and always initializes, so skip its spawn; everything else gets a real probe.
             let available = if name == "libx264" {
                 true
             } else {
@@ -573,11 +501,7 @@ pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
         })
         .collect();
 
-    // First available candidate (H.264 priority order preserved above) is
-    // what the recorder picks — identical logic to `preferred_h264_encoder`,
-    // computed here from the probe results so we don't double-probe the
-    // chain. libx264 is always available, so this always resolves to an
-    // H.264 row before reaching the HEVC section.
+    // Same order as `preferred_h264_encoder`, computed from the probe results so the chain isn't probed twice.
     if let Some(idx) = list.iter().position(|e| e.available) {
         list[idx].active = true;
     }
@@ -608,13 +532,7 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
         "error",
         "-f",
         "lavfi",
-        // 320x240, NOT a tiny 64x64. NVENC enforces a minimum frame size
-        // (H.264 ~145x49, HEVC larger) and rejects anything smaller with
-        // "Frame Dimension less than the minimum supported value" — which
-        // made this probe report every NVENC-capable GPU as unavailable and
-        // silently dropped the recorder to CPU x264 on machines that have a
-        // working NVIDIA encoder. 320x240 clears every hardware encoder's
-        // minimum while staying cheap to init.
+        // 320x240, not 64x64: NVENC enforces a minimum frame size and rejected the tiny probe, reporting every NVENC GPU unavailable.
         "-i",
         "nullsrc=s=320x240:d=0.04",
         "-c:v",
@@ -626,10 +544,7 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
     match command.output() {
         Ok(out) if out.status.success() => true,
         Ok(out) => {
-            // Expected for any hardware encoder this machine can't use. FFmpeg
-            // writes a multi-line failure dump to stderr; log only the first
-            // meaningful line, at debug, so a normal dev run isn't flooded with
-            // benign probe noise (the result is surfaced in Settings anyway).
+            // Expected for hardware this machine can't use: log only the first meaningful line, at debug, so dev runs aren't flooded.
             let reason = String::from_utf8_lossy(&out.stderr)
                 .lines()
                 .map(str::trim)
@@ -646,20 +561,8 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
     }
 }
 
-/// Whether the resolved FFmpeg was compiled with `name` as a filter.
-///
-/// A binary can ship every encoder the export needs and still be missing a
-/// *filter*: libass, freetype and fontconfig are separate `--enable-` flags, and
-/// some prebuilt FFmpegs (notably the `ffmpeg-static` npm package) drop them. So
-/// `-encoders` says nothing about whether caption burn-in can run, and a missing
-/// `ass` filter only surfaces at export time as FFmpeg's cryptic
-/// `No such filter: 'ass'`. Callers probe this up front to fail with something
-/// actionable instead.
-///
-/// A missing filter is NOT grounds for rejecting the binary in `is_usable_pair`:
-/// an FFmpeg without libass still records, probes and exports everything else, and
-/// disqualifying it would drop the app to the PATH fallback (or to no FFmpeg at
-/// all) over a feature the user may not even be using.
+/// Whether the resolved FFmpeg has `name` as a filter; `-encoders` says nothing about libass, which is a separate `--enable-` flag.
+/// Not grounds for rejecting the binary: without libass it still records and exports, and disqualifying it would drop the app to the PATH fallback.
 pub fn has_filter(name: &str) -> bool {
     static CACHED: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
     let filters = CACHED.get_or_init(|| {
@@ -677,12 +580,8 @@ pub fn has_filter(name: &str) -> bool {
     filters.contains(name)
 }
 
-/// Pull filter names out of `ffmpeg -filters` stdout.
-///
-/// Rows look like `.. ass  V->V  Render ASS subtitles...`: flag column, name,
-/// then an `in->out` spec. Requiring the arrow is what separates a real row from
-/// the legend block at the top (`T.. = Timeline support`), whose lines share the
-/// same leading-flag shape.
+/// Pulls filter names out of `ffmpeg -filters` stdout, where rows read as flags, name, then an `in->out` spec.
+/// Requiring the arrow is what separates a real row from the legend block at the top, whose lines share the same leading-flag shape.
 fn parse_filter_names(stdout: &str) -> std::collections::HashSet<String> {
     stdout
         .lines()
@@ -719,6 +618,29 @@ pub fn check_availability() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Bring-your-own FFmpeg: the pair is refused unless BOTH halves run, so a
+    /// path pointing at only one of them falls back instead of failing later
+    /// inside an export.
+    #[test]
+    fn an_unrunnable_override_is_refused_rather_than_half_used() {
+        let missing = std::env::temp_dir().join("recast-not-an-ffmpeg.exe");
+        assert!(!is_usable_pair(&missing, &missing));
+    }
+
+    /// The sidecar this repo ships is what a user-supplied one has to look like,
+    /// so it doubles as the positive case for the pair check.
+    #[test]
+    fn the_bundled_pair_is_usable() {
+        let Some(ffmpeg) = recast_testkit::ffmpeg_path() else {
+            return;
+        };
+        let ffprobe = ffmpeg.with_file_name(format!("ffprobe{EXE_SUFFIX}"));
+        if !ffprobe.exists() {
+            return;
+        }
+        assert!(is_usable_pair(&ffmpeg, &ffprobe));
+    }
     #[allow(unused_imports)]
     use super::*;
 

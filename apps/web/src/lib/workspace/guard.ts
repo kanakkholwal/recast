@@ -31,10 +31,7 @@ export async function requireUser(request: Request): Promise<SessionUser> {
  * 403 otherwise. Owner-only folders/tags still live inside a workspace, so
  * membership is the gate; per-folder permissions are a later concern.
  */
-export async function assertWorkspaceMember(
-	userId: string,
-	workspaceId: string,
-): Promise<void> {
+export async function assertWorkspaceMember(userId: string, workspaceId: string): Promise<void> {
 	const db = getDb();
 	const [m] = await db
 		.select({ id: member.id })
@@ -43,11 +40,7 @@ export async function assertWorkspaceMember(
 		.limit(1);
 	if (m) return;
 	// Global admins (re-read so a role change takes effect immediately) bypass.
-	const [u] = await db
-		.select({ role: user.role })
-		.from(user)
-		.where(eq(user.id, userId))
-		.limit(1);
+	const [u] = await db.select({ role: user.role }).from(user).where(eq(user.id, userId)).limit(1);
 	if (u?.role === "admin") return;
 	error(403, "Not a member of this workspace");
 }

@@ -6,8 +6,7 @@
 
 import type { RecordingProfile } from "@recast/editor/lib/profiles";
 
-// Device pickers live in a side panel so the dialog grows wider, not taller,
-// when a capability is enabled. Below `sm` they fall back inline.
+// Device pickers sit in a side panel so enabling a capability grows the dialog wider, not taller; inline below `sm`.
 export const DIALOG_MAIN_W = 408;
 export const DIALOG_ASIDE_W = 300;
 

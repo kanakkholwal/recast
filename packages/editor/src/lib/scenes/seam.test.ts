@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { clampAnimMs, DEFAULT_ANIM_MS, type SegmentAnim } from "./segment-anim";
 import { seamTransitionAt, setSeamTransition } from "./seam";
+import { clampAnimMs, DEFAULT_ANIM_MS, type SegmentAnim } from "./segment-anim";
 
 describe("setSeamTransition", () => {
 	it("writes a complementary slide pair for a push", () => {

@@ -12,10 +12,7 @@ import { AppleBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
 
 export type OS = "macOS" | "Windows" | "Linux" | "Unknown";
 
-// Per-platform shipping confidence. Surfaces the honest state of the
-// builds: Windows is the daily-driver, macOS/Linux are early ports. The
-// global heads-up card below the hero plus the per-tab chip both read
-// from this so the messaging stays in sync.
+// Per-platform shipping confidence: Windows is the daily driver and macOS/Linux are early ports. The hero card and tab chip both read this.
 export type Stability = "stable" | "beta";
 export const platforms: Array<{
 	id: Exclude<OS, "Unknown">;
@@ -69,11 +66,7 @@ export const ships = [
 	{ icon: ShieldCheck, label: "Open source", value: "GPLv3 licensed" },
 ];
 
-// System requirements. Recast probes NVENC (NVIDIA) → AMF (AMD) → QSV
-// (Intel) at startup and falls back to libx264 (CPU) if none initialize.
-// The "recommended" tier is what makes recording feel realtime at 1080p60;
-// the "minimum" tier covers the integrated-GPU and no-GPU CPU path so
-// users on older laptops know they're supported before they download.
+// Recast probes NVENC, then AMF, then QSV and falls back to libx264; 'recommended' is realtime 1080p60 and 'minimum' covers the CPU path.
 export const systemRequirements = [
 	{
 		icon: Cpu,
@@ -107,8 +100,7 @@ export const systemRequirements = [
 	},
 ];
 
-// Per-platform install instructions. Step `code` is a copy-paste-ready
-// shell command; `hint` is small print rendered under the body.
+// `code` is a copy-paste-ready shell command; `hint` is small print rendered under the body.
 export type InstallStep = {
 	title: string;
 	body: string;

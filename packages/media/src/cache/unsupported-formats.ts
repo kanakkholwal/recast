@@ -44,29 +44,29 @@ export interface UnsupportedFormat {
  */
 export const UNSUPPORTED_FORMATS: readonly UnsupportedFormat[] = [
 	{
-		container: ['avi'],
+		container: ["avi"],
 		codec: null,
-		reason: 'AVI container is not in MediaBunny\'s input format set',
+		reason: "AVI container is not in MediaBunny's input format set",
 	},
 	{
-		container: ['flv'],
+		container: ["flv"],
 		codec: null,
-		reason: 'Flash Video (FLV) container is not in MediaBunny\'s input format set',
+		reason: "Flash Video (FLV) container is not in MediaBunny's input format set",
 	},
 	{
-		container: ['wmv', 'asf'],
-		codec: 'vc-1',
-		reason: 'Windows Media Video (VC-1) is not in WebCodecs or MediaBunny',
+		container: ["wmv", "asf"],
+		codec: "vc-1",
+		reason: "Windows Media Video (VC-1) is not in WebCodecs or MediaBunny",
 	},
 	{
-		container: ['rm', 'rmvb'],
-		codec: 'realvideo',
-		reason: 'RealVideo is not in WebCodecs or MediaBunny',
+		container: ["rm", "rmvb"],
+		codec: "realvideo",
+		reason: "RealVideo is not in WebCodecs or MediaBunny",
 	},
 	{
-		container: ['3gp', '3g2'],
+		container: ["3gp", "3g2"],
 		codec: null,
-		reason: '3GP/3G2 (mobile video) container is not in MediaBunny\'s input format set',
+		reason: "3GP/3G2 (mobile video) container is not in MediaBunny's input format set",
 	},
 ];
 
@@ -77,7 +77,7 @@ export const UNSUPPORTED_FORMATS: readonly UnsupportedFormat[] = [
  * format tag.
  */
 export function isUnsupportedContainer(extension: string): boolean {
-	const ext = extension.toLowerCase().replace(/^\./, '');
+	const ext = extension.toLowerCase().replace(/^\./, "");
 	return UNSUPPORTED_FORMATS.some((f) => f.container.includes(ext));
 }
 

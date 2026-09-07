@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { PANEL_TABS } from "./panel-tabs";
 import {
 	boolParam,
 	PANEL_PARAM,
@@ -9,12 +8,12 @@ import {
 	TIMELINE_PARAM,
 	withEditorParams,
 } from "./editor-url";
+import { PANEL_TABS } from "./panel-tabs";
 
 const at = (search: string) => new URL(`recast://editor/clip.recast${search}`);
 
 describe("parsePanelTab", () => {
-	// Guards the drift the const array exists to prevent: add a tab to the store
-	// and the URL must accept it without a second edit here.
+	// Guards the drift the const array exists to prevent: a new store tab must work in the URL with no second edit.
 	it("accepts every tab the store defines", () => {
 		for (const tab of PANEL_TABS) {
 			expect(parsePanelTab(tab, true)).toBe(tab);
@@ -32,8 +31,7 @@ describe("parsePanelTab", () => {
 		expect(parsePanelTab(" Captions ")).toBe("captions");
 	});
 
-	// A production URL naming `dev` would select a tab with no trigger in the
-	// rail, leaving the panel with nothing highlighted.
+	// A production URL naming `dev` would select a tab with no trigger in the rail, leaving nothing highlighted.
 	it("gates the dev-only tab on the build", () => {
 		expect(parsePanelTab("dev")).toBeNull();
 		expect(parsePanelTab("dev", true)).toBe("dev");
@@ -46,8 +44,7 @@ describe("parseBoolParam", () => {
 		for (const v of ["0", "false", "no", "off"]) expect(parseBoolParam(v)).toBe(false);
 	});
 
-	// Null, not false: an absent or junk param must leave the caller's remembered
-	// preference alone rather than silently collapsing the panel.
+	// Null, not false: an absent or junk param must leave the remembered preference alone, not collapse the panel.
 	it("returns null when absent or unrecognised", () => {
 		expect(parseBoolParam(null)).toBeNull();
 		expect(parseBoolParam(undefined)).toBeNull();
@@ -71,8 +68,7 @@ describe("withEditorParams", () => {
 		expect(next?.searchParams.get(TIMELINE_PARAM)).toBe("0");
 	});
 
-	// The whole reason this takes a map: a per-param writer would rebuild from a
-	// URL its siblings hadn't updated yet and drop their changes.
+	// The whole reason this takes a map: a per-param writer would rebuild from a stale URL and drop sibling changes.
 	it("applies every change in one pass when only one differs", () => {
 		const next = withEditorParams(at("?tab=audio&sidebar=1&timeline=1"), full);
 		expect(next?.searchParams.get(TIMELINE_PARAM)).toBe("0");
@@ -80,8 +76,7 @@ describe("withEditorParams", () => {
 		expect(next?.searchParams.get(SIDEBAR_PARAM)).toBe("1");
 	});
 
-	// Null is the loop-breaker: the writer must not touch history when the URL
-	// already agrees with the app.
+	// Null is the loop-breaker: the writer must not touch history when the URL already agrees with the app.
 	it("returns null when the URL already says all of them", () => {
 		expect(withEditorParams(at("?tab=audio&sidebar=1&timeline=0"), full)).toBeNull();
 	});

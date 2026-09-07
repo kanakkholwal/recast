@@ -25,9 +25,8 @@ export type EyebrowVariant = VariantProps<typeof eyebrowVariants>["variant"];
 	import { cn, type WithElementRef } from "@recast/ui/utils";
 
 	type Props = WithElementRef<HTMLAttributes<HTMLSpanElement>> & {
-		// Permissive on purpose — accepts both @lucide/svelte (Svelte 5 functional) and
-		// legacy lucide-svelte (class) icon components without forcing a specific shape.
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// Permissive on purpose: accepts both functional and legacy class icon components without forcing a shape.
+		// biome-ignore lint/suspicious/noExplicitAny: accepts both functional and legacy class icon components.
 		icon?: any;
 		variant?: EyebrowVariant;
 		children: Snippet;

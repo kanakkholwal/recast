@@ -1,37 +1,37 @@
 <script lang="ts">
-	/**
-	 * Compact pill for tags / filters. Two shapes:
-	 *   - default: a toggle button (use `selected` + `onclick`) — filter chips.
-	 *   - removable: a static pill with an inline remove button — assigned tags.
-	 * Optional `color` renders a leading dot (hex). Dependency-free (no icon lib).
-	 */
-	import { cn } from "@recast/ui/utils";
+/**
+ * Compact pill for tags / filters. Two shapes:
+ *   - default: a toggle button (use `selected` + `onclick`) — filter chips.
+ *   - removable: a static pill with an inline remove button — assigned tags.
+ * Optional `color` renders a leading dot (hex). Dependency-free (no icon lib).
+ */
+import { cn } from "@recast/ui/utils";
 
-	let {
-		label,
-		color = null,
-		selected = false,
-		removable = false,
-		onclick,
-		onremove,
-		class: className,
-	}: {
-		label: string;
-		color?: string | null;
-		selected?: boolean;
-		removable?: boolean;
-		onclick?: () => void;
-		onremove?: () => void;
-		class?: string;
-	} = $props();
+let {
+	label,
+	color = null,
+	selected = false,
+	removable = false,
+	onclick,
+	onremove,
+	class: className,
+}: {
+	label: string;
+	color?: string | null;
+	selected?: boolean;
+	removable?: boolean;
+	onclick?: () => void;
+	onremove?: () => void;
+	class?: string;
+} = $props();
 
-	const base =
-		"inline-flex w-fit max-w-full shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors";
-	const tone = $derived(
-		selected
-			? "border-primary/40 bg-primary/12 text-foreground"
-			: "border-border-low/60 bg-foreground/3 text-muted-foreground hover:border-border hover:bg-foreground/8 hover:text-foreground",
-	);
+const base =
+	"inline-flex w-fit max-w-full shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors";
+const tone = $derived(
+	selected
+		? "border-primary/40 bg-primary/12 text-foreground"
+		: "border-border-low/60 bg-foreground/3 text-muted-foreground hover:border-border hover:bg-foreground/8 hover:text-foreground",
+);
 </script>
 
 {#if removable}

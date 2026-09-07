@@ -1,11 +1,15 @@
 <script lang="ts">
-	let {
-		class: klass = "",
-		size = 24,
-		color = "currentColor",
-		"aria-hidden": ariaHidden = "true",
-	}: { class?: string; size?: number | string; color?: string; "aria-hidden"?: boolean | "true" | "false" } =
-		$props();
+let {
+	class: klass = "",
+	size = 24,
+	color = "currentColor",
+	"aria-hidden": ariaHidden = "true",
+}: {
+	class?: string;
+	size?: number | string;
+	color?: string;
+	"aria-hidden"?: boolean | "true" | "false";
+} = $props();
 </script>
 
 <!--

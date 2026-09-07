@@ -15,7 +15,10 @@ const ALL: { name: TemplateName; data: Record<string, unknown> }[] = [
 			inviterEmail: "k@e.com",
 		},
 	},
-	{ name: "waitlist-approved", data: { url: "https://recast.li/reset-password?token=t", firstName: "Kanak" } },
+	{
+		name: "waitlist-approved",
+		data: { url: "https://recast.li/reset-password?token=t", firstName: "Kanak" },
+	},
 	{
 		name: "admin-invite",
 		data: {
@@ -27,7 +30,7 @@ const ALL: { name: TemplateName; data: Record<string, unknown> }[] = [
 ];
 
 describe.each(ALL)("$name", ({ name, data }) => {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// biome-ignore lint/suspicious/noExplicitAny: the table drives every template, so the per-template data union is erased on purpose.
 	const r = renderTemplate(name, data as any);
 
 	it("has a subject and both bodies", () => {
@@ -37,8 +40,7 @@ describe.each(ALL)("$name", ({ name, data }) => {
 	});
 
 	it("puts the action URL in both the html and the plain-text body", () => {
-		// Dev with no RESEND_API_KEY prints only `text` to stdout, so the link
-		// has to survive there or local testing is impossible.
+		// Dev without a Resend key prints only `text`, so the link must survive there or local testing is impossible.
 		expect(r.text).toContain(data.url);
 		expect(r.html).toContain(data.url as string);
 	});

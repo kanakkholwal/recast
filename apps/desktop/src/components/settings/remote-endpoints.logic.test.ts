@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	type EndpointForm,
 	emptyForm,
 	formFromEndpoint,
 	isValidBaseUrl,
@@ -8,7 +9,6 @@ import {
 	slugify,
 	toEndpoint,
 	validateForm,
-	type EndpointForm,
 } from "./remote-endpoints.logic";
 
 describe("slugify", () => {

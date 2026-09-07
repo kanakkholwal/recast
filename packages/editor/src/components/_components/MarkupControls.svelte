@@ -1,23 +1,26 @@
 <script lang="ts">
+import { Eye, EyeOff } from "@recast/icons";
+import { NotchedShelf } from "@recast/ui/notched-shelf";
+import * as Tooltip from "@recast/ui/tooltip";
+import { cn } from "@recast/ui/utils";
 import { insertImageAnnotation } from "../../lib/annotations/image-import";
 import {
 	ANNOTATION_TOOLS,
+	type AnnotationToolId,
 	IMAGE_TOOL,
 	toolForHotkey,
-	type AnnotationToolId,
 } from "../../lib/annotations/tools";
 import { isEditableTarget } from "../../lib/dom/editable";
 import type { EditorStore } from "../../stores/editor-store.svelte";
-import { Eye, EyeOff } from "@recast/icons";
-import * as Tooltip from "@recast/ui/tooltip";
-import { cn } from "@recast/ui/utils";
-import { BAR_BTN, BAR_GROUP } from "./player-bar.styles";
+import { BAR_BTN } from "./player-bar.styles";
 
 interface Props {
 	store: EditorStore;
+	/** Stack the tools in a vertical shelf (docked to a side edge). */
+	vertical?: boolean;
 }
 
-let { store }: Props = $props();
+let { store, vertical = false }: Props = $props();
 
 const ImageToolIcon = IMAGE_TOOL.icon;
 const count = $derived(store.annotations.length);
@@ -40,9 +43,7 @@ function toggleHide() {
 	store.annotationsGloballyHidden = !store.annotationsGloballyHidden;
 }
 
-// Tool hotkeys live with the tools they drive. Unlike the markup panel, this
-// component stays mounted on every tab, so the tab check is explicit rather
-// than a side effect of when it happens to be rendered.
+// This component stays mounted on every tab, so the tab check is explicit rather than a side effect of rendering.
 function handleHotkey(event: KeyboardEvent) {
 	if (!onTab) return;
 	if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -67,14 +68,18 @@ function handleHotkey(event: KeyboardEvent) {
      floating over it: markup is placed by eye and a pill over the frame covers
      the top-centre of the very content being annotated. -->
 {#if onTab}
-  <div class={cn(BAR_GROUP, "shrink-0")}>
+  <NotchedShelf fill="text-background" class="shrink-0" {vertical}>
+    <div class={cn("flex gap-0.5", vertical ? "flex-col px-1.5 py-2" : "items-center px-2")}>
     {#each ANNOTATION_TOOLS as t, i (t.id)}
       {@const Icon = t.icon}
       {@const active = isActive(t.id)}
       <!-- Select is the way out of every drawing mode, so it reads as its own
            group, as it does in Figma's toolbar. -->
       {#if i === 1}
-        <span class="mx-0.5 h-4 w-px bg-border/60" aria-hidden="true"></span>
+        <span
+          class={cn("shrink-0 bg-border/60", vertical ? "my-0.5 h-px w-4" : "mx-0.5 h-4 w-px")}
+          aria-hidden="true"
+        ></span>
       {/if}
       <Tooltip.Root>
         <Tooltip.Trigger>
@@ -87,9 +92,7 @@ function handleHotkey(event: KeyboardEvent) {
               aria-pressed={active}
               class={cn(
                 BAR_BTN,
-                // A filled accent, not the bar's raised pill: an armed tool
-                // changes what a click on the picture does, which is a stronger
-                // claim than "this view option is on".
+                // A filled accent, not the bar's raised pill: an armed tool changes what a click does, a stronger claim than a view option.
                 active && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
               )}
             >
@@ -97,11 +100,14 @@ function handleHotkey(event: KeyboardEvent) {
             </button>
           {/snippet}
         </Tooltip.Trigger>
-        <Tooltip.Content>{t.label} · {t.hotkey}</Tooltip.Content>
+        <Tooltip.Content side={vertical ? "right" : "top"}>{t.label} · {t.hotkey}</Tooltip.Content>
       </Tooltip.Root>
     {/each}
 
-    <span class="mx-0.5 h-4 w-px bg-border/60" aria-hidden="true"></span>
+    <span
+      class={cn("shrink-0 bg-border/60", vertical ? "my-0.5 h-px w-4" : "mx-0.5 h-4 w-px")}
+      aria-hidden="true"
+    ></span>
 
     <!-- One-shot insert, never a mode, so it never takes the pressed state. -->
     <Tooltip.Root>
@@ -118,7 +124,7 @@ function handleHotkey(event: KeyboardEvent) {
           </button>
         {/snippet}
       </Tooltip.Trigger>
-      <Tooltip.Content>{IMAGE_TOOL.label} · {IMAGE_TOOL.hotkey}</Tooltip.Content>
+      <Tooltip.Content side={vertical ? "right" : "top"}>{IMAGE_TOOL.label} · {IMAGE_TOOL.hotkey}</Tooltip.Content>
     </Tooltip.Root>
 
     {#if count > 0}
@@ -141,10 +147,11 @@ function handleHotkey(event: KeyboardEvent) {
             </button>
           {/snippet}
         </Tooltip.Trigger>
-        <Tooltip.Content>{hidden ? "Show markup" : "Hide markup"}</Tooltip.Content>
+        <Tooltip.Content side={vertical ? "right" : "top"}>{hidden ? "Show markup" : "Hide markup"}</Tooltip.Content>
       </Tooltip.Root>
     {/if}
-  </div>
+    </div>
+  </NotchedShelf>
 {/if}
 
 <!-- Hidden markup silently changes the exported file, so it is reported on every

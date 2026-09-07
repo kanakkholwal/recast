@@ -59,6 +59,28 @@ page and a small in-app dialog. Write for that.
 
 ## [Unreleased]
 
+### Highlights
+- Recording, audio and camera capture now run on one engine that works the same on Windows, macOS and Linux.
+- The camera can take half the frame or all of it, and change layout from one clip to the next.
+- Take a screenshot of any region, then crop, annotate and copy it without leaving Recast.
+
+### Added
+- Per-clip camera layouts. A clip can put the camera side by side with the screen, stack the two, hide the camera, or give it the whole frame, and the picture slides between arrangements when the layout changes. Each clip on the camera row carries its own, so a tutorial can switch framing partway through. Exporting a layout needs "Export in the background" turned on in Settings, Experimental.
+- The camera can dodge the pointer, moving aside when you point at something underneath it and easing back when you move away. Also needs "Export in the background" to reach an exported file.
+- Capture a single window instead of a whole display, and keep it framed when it moves or resizes.
+- Screenshots: press Alt+Shift+S, drag a region, and open it in an editor for cropping, annotating and copying.
+- Cameras are recorded on their own track, so the overlay can be repositioned, resized and re-framed after the take instead of being burned in.
+- Settings has a Diagnostics tab reporting what the machine supports, so a capture problem can be read off rather than guessed.
+
+### Changed
+- The preview and the export are drawn by one GPU engine rather than two renderers, so what you scrub is what you get. FFmpeg is now used to mux the audio back in rather than to composite the picture.
+- Exports are composited by the preview's own engine by default, so the file matches what you scrubbed. Settings, Advanced has "Use the legacy exporter" if an export comes out wrong on your machine, and the app falls back to the old exporter on its own where the engine cannot run.
+- "Export in the background" (alpha) runs that engine natively, with no resolution ceiling and no preview window needed. It stays off by default. Camera layouts and pointer dodging are refused by the legacy exporter with a message naming the feature rather than exporting a file that is not what you previewed.
+- Self-hosting is no longer experimental. The server address moved to Settings, Cloud, where it is a supported option rather than a flag.
+
+### Fixed
+- Silence detection failed to start, reporting a model error, on every machine. Its voice-activity model now ships inside the app instead of being downloaded, so it also works with no network and cannot be changed underneath you.
+
 ## [0.4.5] - 2026-08-01
 
 ### Highlights

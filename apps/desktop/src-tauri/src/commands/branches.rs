@@ -1,8 +1,5 @@
-//! Branch operations, shared by the control socket, Tauri IPC and MCP.
-//!
-//! Every surface goes through [`BranchService`] so the three cannot drift: the
-//! CLI, the editor's review panel and an agent all see the same journal, the
-//! same guarantees and the same payload shapes.
+//! Branch operations shared by the control socket, Tauri IPC and MCP.
+//! All three go through [`BranchService`], so the CLI, the review panel and an agent cannot drift on payloads or guarantees.
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
@@ -87,12 +84,8 @@ impl<'a> BranchService<'a> {
         Self { app, state }
     }
 
-    /// Fork a branch from the project's current state.
-    ///
-    /// # Errors
-    /// [`AppError`] if the app data directory is unavailable, the project cannot
-    /// be read, the id already holds proposed edits, or the project is at
-    /// [`journal::MAX_BRANCHES_PER_PROJECT`].
+    /// Forks a branch from the project's current state.
+    /// Errors when the app data directory is unavailable, the project cannot be read, the id already holds proposed edits, or the project is at [`journal::MAX_BRANCHES_PER_PROJECT`].
     pub fn create(
         &self,
         project: &str,
@@ -109,12 +102,8 @@ impl<'a> BranchService<'a> {
         Ok(branch)
     }
 
-    /// Journals that will not parse are skipped, so one corrupt file cannot
-    /// hide the rest.
-    ///
-    /// Sweeps abandoned empty branches first: listing is the one call every
-    /// surface makes, and housekeeping on a background timer would be a thread
-    /// for a job that costs a directory read.
+    /// Journals that will not parse are skipped, so one corrupt file cannot hide the rest.
+    /// Sweeps abandoned empty branches first: listing is the one call every surface makes, and housekeeping on a background timer would be a thread for a job that costs a directory read.
     pub fn list(&self, project: &str) -> AppResult<Vec<BranchSummary>> {
         let store = self.store(project)?;
         let now = now_ms();
@@ -133,15 +122,8 @@ impl<'a> BranchService<'a> {
         self.store(project)?.load(id).map_err(AppError::msg)
     }
 
-    /// Record `ops` as one atomic entry, replaying and validating the branch
-    /// before persisting so a bad proposal is rejected here, where the author
-    /// can still fix it, rather than at apply time in front of the reviewer.
-    ///
-    /// A rejected append leaves the journal on disk untouched.
-    ///
-    /// # Errors
-    /// [`AppError`] wrapping a stale `expect_seq`, an op that no longer fits, a
-    /// resulting state that violates an invariant, or a failed write.
+    /// Records `ops` as one atomic entry, replaying and validating first so a bad proposal is rejected where the author can still fix it, not at apply time.
+    /// A rejected append leaves the journal untouched. Errors on a stale `expect_seq`, an op that no longer fits, a violated invariant, or a failed write.
     pub fn append(
         &self,
         project: &str,
@@ -158,8 +140,7 @@ impl<'a> BranchService<'a> {
 
         let base = load_project(project)?;
         let proposed = branch.materialize(&base.render).map_err(AppError::msg)?;
-        // A retried idem key proposes nothing new, so re-judging it would let a
-        // project edited out of band turn a settled no-op into a failure.
+        // A retried idem key proposes nothing new, so re-judging it would turn a settled no-op into a failure.
         if outcome.is_recorded() {
             if let Err(issues) = super::validate_render_state(&proposed, base.duration) {
                 return Err(rejected(id, &issues));
@@ -214,14 +195,8 @@ impl<'a> BranchService<'a> {
         Ok(())
     }
 
-    /// Write the branch into the project, then delete it.
-    ///
-    /// Fast-forward only: materializing against the state the write-lock just
-    /// loaded is what rejects a project edited since the fork.
-    ///
-    /// # Errors
-    /// [`AppError`] wrapping `editor_locked`, a moved fork point, or a
-    /// validation failure on the resulting state.
+    /// Writes the branch into the project, then deletes it. Fast-forward only: materializing against the state the write-lock just loaded rejects a project edited since the fork.
+    /// Errors on `editor_locked`, a moved fork point, or a validation failure on the resulting state.
     pub fn apply(&self, project: &str, id: &BranchId, writer_id: &str) -> AppResult<ApplyReport> {
         let store = self.store(project)?;
         let branch = store.load(id).map_err(AppError::msg)?;
@@ -294,9 +269,7 @@ fn rejected(id: &BranchId, issues: &[ValidationIssue]) -> AppError {
 }
 
 /// Run `job` off the UI thread, handing it the service.
-///
-/// Tauri commands that block the main thread freeze the macOS WKWebView, and
-/// every branch call reads or writes the project.
+/// Tauri commands that block the main thread freeze the macOS WKWebView, and every branch call reads or writes the project.
 async fn off_thread<T, F>(app: AppHandle, job: F) -> AppResult<T>
 where
     T: Send + 'static,

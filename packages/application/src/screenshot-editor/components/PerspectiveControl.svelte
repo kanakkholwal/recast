@@ -15,8 +15,7 @@ export interface PerspectiveControlProps {
 
   let { editor }: PerspectiveControlProps = $props();
 
-  // Match a preset by comparing the numeric transform (so the active preset
-  // highlights, and manual slider edits deselect all of them).
+  // Match by numeric transform, so the active preset highlights and manual slider edits deselect all of them.
   function isActive(id: string): boolean {
     const p = PERSPECTIVE_PRESETS.find((x) => x.id === id);
     if (!p) return false;

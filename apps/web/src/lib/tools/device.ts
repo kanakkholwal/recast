@@ -57,8 +57,7 @@ export interface SizeBudget {
 /** The input budget for the current device. */
 export function inputBudget(): SizeBudget {
 	const bytes = computeMaxInputBytes(deviceMemoryGB(), isMobile());
-	// The tilde belongs to the budget, which is an estimate — not to the exact
-	// file sizes `checkFileSize` reports against it.
+	// The tilde belongs to the budget estimate, not to the exact file sizes `checkFileSize` reports against it.
 	return { maxInputBytes: bytes, label: `~${formatBytes(bytes)}` };
 }
 

@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
-	import { IconMinus } from '@tabler/icons-svelte';
-	import { IconCheck } from '@tabler/icons-svelte';
-	import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
-	import type { Snippet } from "svelte";
+import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
+import { Minus } from "@recast/icons";
+import { Check } from "@recast/icons";
+import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import type { Snippet } from "svelte";
 
-	let {
-		ref = $bindable(null),
-		checked = $bindable(false),
-		indeterminate = $bindable(false),
-		class: className,
-		children: childrenProp,
-		...restProps
-	}: WithoutChildrenOrChild<ContextMenuPrimitive.CheckboxItemProps> & {
-		children?: Snippet;
-	} = $props();
+let {
+	ref = $bindable(null),
+	checked = $bindable(false),
+	indeterminate = $bindable(false),
+	class: className,
+	children: childrenProp,
+	...restProps
+}: WithoutChildrenOrChild<ContextMenuPrimitive.CheckboxItemProps> & {
+	children?: Snippet;
+} = $props();
 </script>
 
 <ContextMenuPrimitive.CheckboxItem
@@ -34,9 +34,9 @@
 			data-slot="context-menu-checkbox-item-indicator"
 		>
 			{#if indeterminate}
-				<IconMinus  />
+				<Minus  />
 			{:else if checked}
-				<IconCheck  />
+				<Check  />
 			{/if}
 		</span>
 		{@render childrenProp?.()}

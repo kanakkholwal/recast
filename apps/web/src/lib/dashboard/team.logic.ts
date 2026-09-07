@@ -6,13 +6,13 @@ export function initials(name: string): string {
 			.split(/\s+/)
 			.filter(Boolean)
 			.slice(0, 2)
-			.map((w) => w[0]!.toUpperCase())
+			.map((w) => w[0].toUpperCase())
 			.join("") || "?"
 	);
 }
 
 export function capitalize(s: string): string {
-	return s ? s[0]!.toUpperCase() + s.slice(1) : s;
+	return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
 /** Seats left under the plan's member cap; Infinity when uncapped. */

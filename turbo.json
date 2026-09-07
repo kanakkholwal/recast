@@ -1,30 +1,31 @@
 {
-  "$schema": "https://v2-9-14.turborepo.dev/schema.json",
-  "tasks": {
-    "prepare": {
-      "cache": false
-    },
-    "build": {
-      "dependsOn": ["^build", "prepare"]
-    },
-    "check": {
-      "dependsOn": ["^build", "prepare"]
-    },
-    "fmt": {
-      "cache": false
-    },
-    "fmt:check": {
-      "cache": false
-    },
-    "lint": {
-      "cache": false
-    },
-    "lint:fix": {
-      "cache": false
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true
-    }
-  }
+	"$schema": "https://v2-9-14.turborepo.dev/schema.json",
+	"globalEnv": ["BASE_URL", "GH_REPO", "RELEASE_TAG", "TAG"],
+	"tasks": {
+		"prepare": {
+			"cache": false
+		},
+		"build": {
+			"dependsOn": ["^build", "prepare"]
+		},
+		"check": {
+			"dependsOn": ["^build", "prepare"]
+		},
+		"fmt": {
+			"cache": false
+		},
+		"fmt:check": {
+			"cache": false
+		},
+		"lint": {
+			"cache": false
+		},
+		"lint:fix": {
+			"cache": false
+		},
+		"dev": {
+			"cache": false,
+			"persistent": true
+		}
+	}
 }

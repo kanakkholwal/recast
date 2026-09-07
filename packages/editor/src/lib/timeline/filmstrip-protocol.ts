@@ -44,8 +44,12 @@ export type FromFilmstripWorker =
 	  }
 	/** `id` is set when a specific decode request failed, so the provider can
 	 *  clear it from in-flight (allowing a retry) instead of leaking the entry.
-	 *  Absent for init/storyboard errors that aren't tied to one request. */
+	 *  Absent for init errors that aren't tied to one request. */
 	| { type: "error"; message: string; id?: number }
+	/** The storyboard build failed. Its own type because it carries no request
+	 *  id: as a plain `error` the provider could not tell it apart, so the
+	 *  one-shot latch stayed set and hover scrub never retried for the session. */
+	| { type: "storyboard-error"; message: string }
 	/** A queued request evicted unanswered because the scroll outran the decoder.
 	 *  The provider must still clear it from in-flight or the tile wedges, but it
 	 *  is not a failure and must not be logged as one. */

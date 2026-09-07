@@ -1,9 +1,4 @@
-// Rules about who owns a keystroke.
-//
-// Window-level handlers are greedy: they see every key, including ones a focused
-// control or a layer above them has a stronger claim on. These predicates decide
-// when a global handler must stand down. The pure rules are separated from the
-// DOM adapters so they stay unit-testable in the Node test environment.
+// Window handlers see every key, so these predicates decide when one must stand down; the pure rules stay apart from the DOM adapters for testability.
 
 /**
  * Overlay layers, in z-order above the page. Every one of these is unmounted

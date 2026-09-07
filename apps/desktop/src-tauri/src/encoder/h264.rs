@@ -1,13 +1,5 @@
-//! FFmpeg H.264 codec-argument construction.
-//!
-//! Single source of truth for *how* to invoke each H.264 encoder family.
-//! Detecting which family is available lives in
-//! [`crate::ffmpeg::preferred_h264_encoder`]; this module only turns a chosen
-//! family plus an [`EncodePurpose`] into the `-c:v …` CLI args.
-//!
-//! Every path stays 8-bit 4:2:0 (`yuv420p`, or `nv12` for QSV): the editor
-//! previews the raw H.264 in a WebView `<video>` element whose decoder only
-//! supports up to High profile 4:2:0, so a 4:4:4 master would not play back.
+//! Turns a chosen H.264 encoder family plus an [`EncodePurpose`] into `-c:v` args; detection lives in [`crate::ffmpeg::preferred_h264_encoder`].
+//! Every path stays 8-bit 4:2:0, because the editor previews raw H.264 in a WebView decoder capped at High profile.
 
 use super::RecordingQuality;
 
@@ -86,38 +78,26 @@ pub enum EncodePurpose<'a> {
     /// Live screen capture: low-latency, must sustain real time. Carries the
     /// user-facing capture quality tier.
     RealtimeCapture(RecordingQuality),
-    /// One-shot re-encode of an existing clip — the camera pause-trim at
-    /// `stop()`. Fixed quality at the fastest preset; the goal is to finish
-    /// quickly, not to squeeze bitrate.
-    QuickTrim,
     /// Final render: quality-first (no real-time constraint), adds
     /// `-profile:v high`. Carries the resolved per-family knobs.
     Export(ExportEncodeParams<'a>),
 }
 
-/// Build the codec + rate-control args (from `-c:v` onward) for `encoder` at the
-/// given [`EncodePurpose`].
-///
+/// Build the codec + rate-control args (from `-c:v` onward) for `encoder` at the given [`EncodePurpose`].
 /// Guarantees 8-bit 4:2:0 output for every family (see the module docs for why).
 pub fn codec_args(encoder: H264Encoder, purpose: EncodePurpose<'_>) -> Vec<String> {
     match purpose {
         EncodePurpose::RealtimeCapture(quality) => realtime_capture_args(encoder, quality),
-        EncodePurpose::QuickTrim => quick_trim_args(encoder),
         EncodePurpose::Export(params) => export_args(encoder, params),
     }
 }
 
-/// Live-capture args. `Balanced` reproduces the pre-refactor recorder
-/// byte-for-byte (fast preset + low-latency tune, no explicit rate control) so
-/// existing recordings are unchanged; `High`/`Pristine` trade real-time
-/// headroom for fidelity via an explicit near-visually-lossless quality target.
-/// libx264 stays on `ultrafast` for `Balanced` so a weak, GPU-less CPU doesn't
-/// drop frames during capture.
+/// Live-capture args. `Balanced` reproduces the pre-refactor recorder byte-for-byte, so existing recordings are unchanged.
+/// `High` and `Pristine` trade real-time headroom for an explicit near-visually-lossless target; libx264 stays on `ultrafast` so a GPU-less CPU does not drop frames.
 fn realtime_capture_args(encoder: H264Encoder, quality: RecordingQuality) -> Vec<String> {
     use H264Encoder::*;
     use RecordingQuality::*;
-    // Args AFTER `-c:v <name>` — the codec name is emitted once, below, via
-    // `ffmpeg_name()` so it isn't restated in every arm.
+    // Args AFTER `-c:v <name>`: the codec name is emitted once below via `ffmpeg_name()`.
     let tail: &[&str] = match (encoder, quality) {
         (VideoToolbox, Balanced) => &["-realtime", "1", "-pix_fmt", "yuv420p"],
         (VideoToolbox, High) => &["-realtime", "1", "-b:v", "10M", "-pix_fmt", "yuv420p"],
@@ -169,8 +149,7 @@ fn realtime_capture_args(encoder: H264Encoder, quality: RecordingQuality) -> Vec
             "-pix_fmt",
             "yuv420p",
         ],
-        // Intel Quick Sync — `global_quality` is its constant-quality knob; QSV
-        // takes `nv12`, not `yuv420p`.
+        // Quick Sync: `global_quality` is its constant-quality knob, and QSV takes `nv12`, not `yuv420p`.
         (Qsv, Balanced) => &["-preset", "veryfast", "-pix_fmt", "nv12"],
         (Qsv, High) => &[
             "-preset",
@@ -188,8 +167,7 @@ fn realtime_capture_args(encoder: H264Encoder, quality: RecordingQuality) -> Vec
             "-pix_fmt",
             "nv12",
         ],
-        // libx264 software fallback. Balanced keeps zerolatency/ultrafast so
-        // weak CPUs don't drop; higher tiers drop zerolatency and lower CRF.
+        // libx264 fallback: Balanced keeps zerolatency and ultrafast so weak CPUs don't drop; higher tiers lower CRF.
         (Libx264, Balanced) => &[
             "-preset",
             "ultrafast",
@@ -213,33 +191,6 @@ fn with_codec(encoder: H264Encoder, tail: &[&str]) -> Vec<String> {
     out.push(encoder.ffmpeg_name().to_string());
     out.extend(tail.iter().map(|s| s.to_string()));
     out
-}
-
-/// One-shot re-encode args for cutting paused spans out of an existing clip
-/// (the camera pause-trim). Fixed near-visually-lossless quality at the fastest
-/// preset each family offers — this runs synchronously at `stop()`, so it's
-/// tuned to finish fast, not to minimize bitrate. 4:2:0 like every other path.
-fn quick_trim_args(encoder: H264Encoder) -> Vec<String> {
-    use H264Encoder::*;
-    let tail: &[&str] = match encoder {
-        VideoToolbox => &["-b:v", "3M", "-pix_fmt", "yuv420p"],
-        Nvenc => &[
-            "-preset", "p5", "-rc", "vbr", "-cq", "26", "-b:v", "0", "-pix_fmt", "yuv420p",
-        ],
-        Amf => &[
-            "-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p", "26", "-pix_fmt", "yuv420p",
-        ],
-        Qsv => &[
-            "-preset",
-            "veryfast",
-            "-global_quality",
-            "26",
-            "-pix_fmt",
-            "nv12",
-        ],
-        Libx264 => &["-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p"],
-    };
-    with_codec(encoder, tail)
 }
 
 /// Final-export args. Quality-first (no real-time pacing): hardware encoders use
@@ -393,8 +344,7 @@ mod tests {
             )
         }
 
-        // Regression guard: the default tier must be byte-identical to the
-        // pre-refactor recorder args so existing recordings don't change.
+        // Regression guard: the default tier must stay byte-identical to the pre-refactor recorder args.
         #[test]
         fn balanced_tier_reproduces_historical_args_exactly() {
             assert_eq!(
@@ -470,15 +420,12 @@ mod tests {
             ] {
                 for q in [RecordingQuality::High, RecordingQuality::Pristine] {
                     let args = realtime(enc, q);
-                    // Never emit a 4:4:4 pixel format — the editor preview can't
-                    // decode it.
+                    // Never emit a 4:4:4 pixel format: the editor preview can't decode it.
                     assert!(
                         !args.iter().any(|a| a.contains("444")),
                         "{enc}/{q:?} must stay 4:2:0, got {args:?}"
                     );
-                    // Must carry an explicit quality target (cq / qp /
-                    // global_quality / crf / q:v) so it's higher quality than
-                    // Balanced.
+                    // Must carry an explicit quality target, so it is higher quality than Balanced.
                     assert!(
                         args.iter().any(|a| matches!(
                             a.as_str(),
@@ -491,106 +438,10 @@ mod tests {
         }
     }
 
-    mod quick_trim {
-        use super::*;
-
-        fn trim(name: &str) -> Vec<String> {
-            codec_args(
-                H264Encoder::from_ffmpeg_name(name),
-                EncodePurpose::QuickTrim,
-            )
-        }
-
-        // Regression guard: byte-identical to the pre-refactor inline camera
-        // pause-trim args, so trimmed camera video is unchanged.
-        #[test]
-        fn reproduces_historical_trim_args_exactly() {
-            assert_eq!(
-                trim("h264_videotoolbox"),
-                [
-                    "-c:v",
-                    "h264_videotoolbox",
-                    "-b:v",
-                    "3M",
-                    "-pix_fmt",
-                    "yuv420p"
-                ]
-            );
-            assert_eq!(
-                trim("h264_nvenc"),
-                [
-                    "-c:v",
-                    "h264_nvenc",
-                    "-preset",
-                    "p5",
-                    "-rc",
-                    "vbr",
-                    "-cq",
-                    "26",
-                    "-b:v",
-                    "0",
-                    "-pix_fmt",
-                    "yuv420p"
-                ]
-            );
-            assert_eq!(
-                trim("h264_amf"),
-                [
-                    "-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p",
-                    "26", "-pix_fmt", "yuv420p"
-                ]
-            );
-            assert_eq!(
-                trim("h264_qsv"),
-                [
-                    "-c:v",
-                    "h264_qsv",
-                    "-preset",
-                    "veryfast",
-                    "-global_quality",
-                    "26",
-                    "-pix_fmt",
-                    "nv12"
-                ]
-            );
-            assert_eq!(
-                trim("libx264"),
-                [
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    "ultrafast",
-                    "-crf",
-                    "23",
-                    "-pix_fmt",
-                    "yuv420p"
-                ]
-            );
-        }
-
-        #[test]
-        fn stays_420_for_every_family() {
-            for name in [
-                "h264_videotoolbox",
-                "h264_nvenc",
-                "h264_amf",
-                "h264_qsv",
-                "libx264",
-            ] {
-                let args = trim(name);
-                assert!(
-                    !args.iter().any(|a| a.contains("444")),
-                    "{name} trim must stay 4:2:0, got {args:?}"
-                );
-            }
-        }
-    }
-
     mod export {
         use super::*;
 
-        // Representative resolved knobs — the test asserts arg *structure/order*,
-        // not the real Speed/QualityProfile values.
+        // Representative resolved knobs: the test asserts arg structure and order, not the real profile values.
         fn params() -> ExportEncodeParams<'static> {
             ExportEncodeParams {
                 nvenc_preset: "p5",
@@ -609,8 +460,7 @@ mod tests {
             )
         }
 
-        // Regression guard: byte-identical to the pre-refactor inline export
-        // match, so exported files don't change.
+        // Regression guard: byte-identical to the pre-refactor inline export match, so exported files don't change.
         #[test]
         fn reproduces_historical_export_args_exactly() {
             assert_eq!(

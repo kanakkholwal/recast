@@ -32,8 +32,7 @@ let cached: { provider: StorageProvider; files: Files; publicBaseUrl: string | n
 
 function activeProvider(): StorageProvider {
 	const env = serverEnv();
-	// `STORAGE_PROVIDER` is optional and falls back to `r2` so legacy
-	// deployments (R2-only env) keep working without an explicit value.
+	// `STORAGE_PROVIDER` is optional and falls back to `r2`, so R2-only deployments keep working.
 	const raw = (env.STORAGE_PROVIDER ?? "r2").toLowerCase();
 	switch (raw) {
 		case "r2":
@@ -47,6 +46,12 @@ function activeProvider(): StorageProvider {
 				`Unknown STORAGE_PROVIDER=${raw}; expected one of r2 | s3 | cloudinary | azure | gcs`,
 			);
 	}
+}
+
+// Credentials are only known-present when isStorageConfigured() passed; name the missing var rather than failing downstream in the adapter.
+function required(name: string, value: string | undefined | null): string {
+	if (!value) throw new Error(`STORAGE_PROVIDER=${activeProvider()} requires ${name} to be set`);
+	return value;
 }
 
 export function isStorageConfigured(): boolean {
@@ -67,10 +72,7 @@ export function isStorageConfigured(): boolean {
 			);
 		case "azure": {
 			const account = env.AZURE_STORAGE_ACCOUNT ?? "";
-			// A connection string is only self-sufficient when it carries BOTH
-			// AccountName= and AccountKey=. A SAS-based string has AccountName=
-			// but no key, so it still needs the separate AZURE_STORAGE_KEY —
-			// otherwise we'd report "configured" and then auth with an empty key.
+			// Self-sufficient only with BOTH AccountName= and AccountKey=; a SAS string still needs AZURE_STORAGE_KEY.
 			const hasInlineKey =
 				/(^|;)\s*AccountName=/i.test(account) && /(^|;)\s*AccountKey=/i.test(account);
 			return Boolean(
@@ -96,10 +98,10 @@ async function buildFiles(): Promise<{
 			return {
 				files: new Files({
 					adapter: r2({
-						bucket: env.R2_BUCKET!,
-						accountId: env.R2_ACCOUNT_ID!,
-						accessKeyId: env.R2_ACCESS_KEY_ID!,
-						secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
+						bucket: required("R2_BUCKET", env.R2_BUCKET),
+						accountId: required("R2_ACCOUNT_ID", env.R2_ACCOUNT_ID),
+						accessKeyId: required("R2_ACCESS_KEY_ID", env.R2_ACCESS_KEY_ID),
+						secretAccessKey: required("R2_SECRET_ACCESS_KEY", env.R2_SECRET_ACCESS_KEY),
 						publicBaseUrl: env.R2_PUBLIC_URL ?? undefined,
 					}),
 				}),
@@ -111,11 +113,11 @@ async function buildFiles(): Promise<{
 			return {
 				files: new Files({
 					adapter: s3({
-						bucket: env.S3_BUCKET!,
-						region: env.S3_REGION!,
+						bucket: required("S3_BUCKET", env.S3_BUCKET),
+						region: required("S3_REGION", env.S3_REGION),
 						credentials: {
-							accessKeyId: env.S3_ACCESS_KEY_ID!,
-							secretAccessKey: env.S3_SECRET_ACCESS_KEY!,
+							accessKeyId: required("S3_ACCESS_KEY_ID", env.S3_ACCESS_KEY_ID),
+							secretAccessKey: required("S3_SECRET_ACCESS_KEY", env.S3_SECRET_ACCESS_KEY),
 						},
 						endpoint: env.S3_ENDPOINT ?? undefined,
 					}),
@@ -130,12 +132,10 @@ async function buildFiles(): Promise<{
 			return {
 				files: new Files({
 					adapter: cloudinary({
-						cloudName: env.CLOUDINARY_CLOUD_NAME!,
-						apiKey: env.CLOUDINARY_API_KEY!,
-						apiSecret: env.CLOUDINARY_API_SECRET!,
-						// Cloudinary auto-detects "video" from filename, but we
-						// pin it so PUT/GET still works for files that bypass
-						// transforms (e.g. raw .recast project archives later).
+						cloudName: required("CLOUDINARY_CLOUD_NAME", env.CLOUDINARY_CLOUD_NAME),
+						apiKey: required("CLOUDINARY_API_KEY", env.CLOUDINARY_API_KEY),
+						apiSecret: required("CLOUDINARY_API_SECRET", env.CLOUDINARY_API_SECRET),
+						// Cloudinary auto-detects video from the filename, but pin it so files that bypass transforms still PUT and GET.
 						resourceType: "video",
 					}),
 				}),
@@ -145,13 +145,9 @@ async function buildFiles(): Promise<{
 
 		case "azure": {
 			const { azure } = await import("files-sdk/azure");
-			// Accept either bare credentials (account name + key) OR a full
-			// connection string pasted into AZURE_STORAGE_ACCOUNT — a common
-			// footgun, since the portal hands you the connection string. When
-			// it's a connection string we parse the account name / key out of
-			// it (the separate AZURE_STORAGE_KEY then becomes optional).
+			// The portal hands you a connection string, so accept one in AZURE_STORAGE_ACCOUNT and parse the name and key out of it.
 			const { accountName, accountKey } = resolveAzureCredentials(
-				env.AZURE_STORAGE_ACCOUNT!,
+				required("AZURE_STORAGE_ACCOUNT", env.AZURE_STORAGE_ACCOUNT),
 				env.AZURE_STORAGE_KEY,
 			);
 			return {
@@ -159,7 +155,7 @@ async function buildFiles(): Promise<{
 					adapter: azure({
 						accountName,
 						accountKey,
-						container: env.AZURE_BLOB_CONTAINER!,
+						container: required("AZURE_BLOB_CONTAINER", env.AZURE_BLOB_CONTAINER),
 					}),
 				}),
 				publicBaseUrl: env.AZURE_PUBLIC_URL ?? null,
@@ -171,10 +167,11 @@ async function buildFiles(): Promise<{
 			return {
 				files: new Files({
 					adapter: gcs({
-						bucket: env.GCS_BUCKET!,
-						// Service-account JSON pasted into the env var as a single
-						// line. Parsed here so callers don't need to know the shape.
-						credentials: JSON.parse(env.GCS_SERVICE_ACCOUNT_JSON!),
+						bucket: required("GCS_BUCKET", env.GCS_BUCKET),
+						// Service-account JSON pasted into the env var as one line; parsed here so callers don't need the shape.
+						credentials: JSON.parse(
+							required("GCS_SERVICE_ACCOUNT_JSON", env.GCS_SERVICE_ACCOUNT_JSON),
+						),
 					}),
 				}),
 				publicBaseUrl: env.GCS_PUBLIC_URL ?? null,
@@ -241,7 +238,7 @@ export function objectKeyFromStored(value: string | null | undefined): string | 
 	if (!/^https?:\/\//.test(v)) return v; // already a bare key
 	const base = cached?.publicBaseUrl;
 	if (!base) return null;
-	const prefix = base.replace(/\/$/, "") + "/";
+	const prefix = `${base.replace(/\/$/, "")}/`;
 	if (!v.startsWith(prefix)) return null;
 	try {
 		return decodeURI(v.slice(prefix.length));
@@ -267,9 +264,7 @@ export async function signUploadUrl(opts: {
 	expiresInSeconds?: number;
 }): Promise<SignedUpload> {
 	const { files, provider } = await get();
-	// Azure SAS never binds Content-Type into the signature, and files-sdk
-	// rejects the option rather than ignoring it, so passing it fails every
-	// signed upload on Azure. The client still sends the header on the PUT.
+	// Azure SAS never signs Content-Type and files-sdk rejects the option, so passing it fails every signed upload.
 	const contentType = provider === "azure" ? undefined : (opts.contentType ?? "video/mp4");
 	return files.signedUploadUrl(opts.key, {
 		expiresIn: opts.expiresInSeconds ?? 15 * 60,
@@ -308,8 +303,7 @@ export async function statObject(key: string): Promise<{
 			etag: head.etag ?? null,
 		};
 	} catch (err) {
-		// files-sdk throws FilesError with code "NotFound" when the object
-		// doesn't exist. Other errors propagate.
+		// files-sdk throws FilesError with code 'NotFound' when the object is missing; other errors propagate.
 		if (isNotFoundError(err)) return null;
 		throw err;
 	}
@@ -364,10 +358,7 @@ export async function resolvePlaybackUrl(
  * null when only signed reads are possible.
  */
 export function publicObjectUrl(key: string): string | null {
-	// Synchronous path — only safe when the cached client is already
-	// built. Most code paths only call this after a sign* call, so the
-	// cache is warm. If not warm, return null and the caller falls back
-	// to signed GETs (correct, just slightly slower).
+	// Only safe with a warm client cache; otherwise return null and let the caller fall back to signed GETs.
 	if (!cached) return null;
 	const base = cached.publicBaseUrl;
 	if (!base) return null;
@@ -384,9 +375,7 @@ function resolveAzureCredentials(
 	accountRaw: string,
 	keyRaw: string | undefined,
 ): { accountName: string; accountKey: string } {
-	// Connection string: "Key=Value;Key=Value;..." with AccountName= +
-	// AccountKey= pairs. The base64 AccountKey contains "=" but never ";",
-	// so splitting on ";" and the first "=" is safe.
+	// A connection string is Key=Value pairs; the base64 AccountKey contains '=' but never ';', so this split is safe.
 	if (/(^|;)\s*AccountName=/i.test(accountRaw)) {
 		const parts: Record<string, string> = {};
 		for (const seg of accountRaw.split(";")) {

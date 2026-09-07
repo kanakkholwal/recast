@@ -1,26 +1,5 @@
 //! System tray icon, menu, and event wiring.
-//!
-//! The tray is the canonical entry-point for quick actions while the main
-//! window is hidden (close-to-tray) or while the user is in another app.
-//! Items are grouped by frequency and reversibility:
-//!
-//!   1. **Status** (disabled) — `○ Ready` / `● Recording` / `⏸ Paused`. Gives a
-//!      glanceable state without opening the menu contents.
-//!   2. **Recording control** — toggle + (Pause/Resume if live). Mutually
-//!      exclusive based on `IS_RECORDING`.
-//!   3. **Output access** — "Open Output Folder" + Recent Exports +
-//!      Recent Projects. The two recents are separate because users want
-//!      them as different actions (re-share an export vs. resume editing a
-//!      project) and the OS shows them differently.
-//!   4. **Window toggle** — Show/Hide Recast.
-//!   5. **App maintenance** — Check for Updates, About, Quit (destructive last).
-//!
-//! The menu is rebuilt, not mutated, on every state change. Tauri v2's
-//! `Menu` is immutable post-creation; `TrayIcon::set_menu` swaps the whole
-//! tree. The cost is negligible: rebuild happens only on real transitions
-//! (recording start/stop/pause, export complete). The frontend pushes state
-//! via [`refresh_tray`] (Tauri command) so the Rust side never reads UI
-//! state directly.
+//! Tauri v2 menus are immutable, so every state change rebuilds the tree rather than mutating it.
 
 use std::fs;
 use std::path::PathBuf;
@@ -44,9 +23,9 @@ const MENU_ID_SHOW_HIDE: &str = "tray.show_hide";
 const MENU_ID_RECORD_TOGGLE: &str = "tray.record_toggle";
 const MENU_ID_PAUSE_TOGGLE: &str = "tray.pause_toggle";
 const MENU_ID_OPEN_OUTPUT: &str = "tray.open_output_folder";
+const MENU_ID_CAPTURE_AREA: &str = "tray.capture_area";
 const MENU_ID_CHECK_UPDATES: &str = "tray.check_updates";
 const MENU_ID_QUIT: &str = "tray.quit";
-const MENU_ID_ABOUT_DOCS: &str = "tray.about.docs";
 const MENU_ID_ABOUT_GITHUB: &str = "tray.about.github";
 const MENU_ID_RECENT_EXPORTS_PREFIX: &str = "tray.recent_export:";
 const MENU_ID_RECENT_PROJECTS_PREFIX: &str = "tray.recent_project:";
@@ -67,9 +46,7 @@ pub fn is_recording_active() -> bool {
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let menu = build_menu(app)?;
 
-    // The default icon is configured in tauri.conf.json so this should always
-    // be present — but a missing icon is a recoverable degradation (the app
-    // works without a tray), not a reason to abort startup.
+    // A missing icon is a recoverable degradation (the app works without a tray), not a reason to abort startup.
     let Some(icon) = app.default_window_icon().cloned() else {
         log::warn!("no default window icon; skipping system tray");
         return Ok(());
@@ -159,6 +136,19 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         None
     };
 
+    // Idle only: the overlay lands in the recording it interrupts. The shortcut agrees.
+    let capture_area = (!is_recording)
+        .then(|| {
+            MenuItem::with_id(
+                app,
+                MENU_ID_CAPTURE_AREA,
+                "Capture Area	Alt+Shift+S",
+                true,
+                None::<&str>,
+            )
+        })
+        .transpose()?;
+
     // Group 3: output access.
     let open_output = MenuItem::with_id(
         app,
@@ -200,6 +190,9 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         }
     } else {
         items.push(&record_toggle);
+    }
+    if let Some(ref capture) = capture_area {
+        items.push(capture);
     }
     items.push(&sep2);
     items.push(&open_output);
@@ -267,7 +260,6 @@ fn build_about_submenu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
         false, // disabled — informational only
         None::<&str>,
     )?;
-    let docs = MenuItem::with_id(app, MENU_ID_ABOUT_DOCS, "Documentation", true, None::<&str>)?;
     let github = MenuItem::with_id(
         app,
         MENU_ID_ABOUT_GITHUB,
@@ -275,7 +267,7 @@ fn build_about_submenu(app: &AppHandle) -> tauri::Result<Submenu<Wry>> {
         true,
         None::<&str>,
     )?;
-    Submenu::with_items(app, "About Recast", true, &[&version, &docs, &github])
+    Submenu::with_items(app, "About Recast", true, &[&version, &github])
 }
 
 /// Top-N most recent exports by mtime under `<output_dir>/exports/`. Mirrors
@@ -311,18 +303,15 @@ fn recent_exports(app: &AppHandle, limit: usize) -> Vec<(String, String)> {
         let name = entry.file_name().to_string_lossy().to_string();
         rows.push((mtime, path, name));
     }
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.0));
     rows.into_iter()
         .take(limit)
         .map(|(_, path, name)| (path.to_string_lossy().to_string(), name))
         .collect()
 }
 
-/// Top-N most recent `.recast` projects by mtime under `<output_dir>/recasts/`.
-/// Mirrors `jumplist::recent_recasts` so the tray and Windows Jump List show
-/// the same items. Duplicate filtering is per-source (not cross-source), so
-/// the two UIs might disagree if a project gets rewritten faster than the
-/// tray rebuild cadence — acceptable for a sync every few seconds.
+/// The most recent `.recast` projects by mtime, mirroring `jumplist::recent_recasts` so the tray and Jump List show the same items.
+/// Duplicate filtering is per-source, so the two can disagree if a project is rewritten faster than the tray rebuilds, which is fine at a few seconds.
 fn recent_projects(app: &AppHandle, limit: usize) -> Vec<(String, String)> {
     let Some(state) = app.try_state::<AppState>() else {
         return Vec::new();
@@ -355,7 +344,7 @@ fn recent_projects(app: &AppHandle, limit: usize) -> Vec<(String, String)> {
             .unwrap_or_default();
         rows.push((mtime, path, label));
     }
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    rows.sort_by_key(|row| std::cmp::Reverse(row.0));
     rows.into_iter()
         .take(limit)
         .map(|(_, path, label)| (path.to_string_lossy().to_string(), label))
@@ -389,20 +378,16 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         MENU_ID_PAUSE_TOGGLE => {
             let _ = app.emit("tray:pause-toggle", ());
         }
+        MENU_ID_CAPTURE_AREA => {
+            if let Err(e) = crate::commands::screenshot::open_region_overlay(app) {
+                log::warn!("region overlay failed to open: {e}");
+            }
+        }
         MENU_ID_OPEN_OUTPUT => open_output_folder(app),
         MENU_ID_CHECK_UPDATES => {
-            // Surface the window first so the corner card the frontend
-            // surfaces is actually visible.
+            // Surface the window first, so the corner card the frontend shows is actually visible.
             show_main_window(app);
             let _ = app.emit("updater:check-from-tray", ());
-        }
-        MENU_ID_ABOUT_DOCS => {
-            if let Err(e) = app.opener().open_url(
-                "https://github.com/kanakkholwal/recast/blob/main/apps/desktop/docs",
-                None::<&str>,
-            ) {
-                log::warn!("open docs failed: {e}");
-            }
         }
         MENU_ID_ABOUT_GITHUB => {
             if let Err(e) = app
@@ -417,18 +402,14 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         }
         other if other.starts_with(MENU_ID_RECENT_EXPORTS_PREFIX) => {
             let path = other[MENU_ID_RECENT_EXPORTS_PREFIX.len()..].to_string();
-            // Reveal in file manager. `open_file_location` is async; the
-            // handler is sync, so spawn it rather than dropping the future
-            // unrun (which silently did nothing).
+            // `open_file_location` is async and this handler is sync, so spawn it rather than drop the future unrun.
             tauri::async_runtime::spawn(async move {
                 let _ = crate::commands::system::open_file_location(path).await;
             });
         }
         other if other.starts_with(MENU_ID_RECENT_PROJECTS_PREFIX) => {
             let path = other[MENU_ID_RECENT_PROJECTS_PREFIX.len()..].to_string();
-            // Open (not reveal) — the `.recast` file-association routes through
-            // single-instance back to the running window. `open_path` delegates
-            // to the OS's default handler for the extension.
+            // Open, not reveal: the `.recast` association routes through single-instance back to the running window.
             if let Err(e) = app.opener().open_path(&path, None::<&str>) {
                 log::warn!("open project failed: {e}");
             }
@@ -438,10 +419,7 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
 }
 
 fn handle_tray_icon_event(tray: &tauri::tray::TrayIcon, event: TrayIconEvent) {
-    // Left-click toggles the main window on Windows/Linux. macOS opens the
-    // menu on left-click natively (set `show_menu_on_left_click(true)` if we
-    // ever want explicit macOS-style click-to-open-menu), and the tray crate
-    // passes the same Click event through. The toggle is harmless there.
+    // Left-click toggles the main window on Windows and Linux; macOS opens the menu natively and the toggle is harmless.
     if let TrayIconEvent::Click {
         button: MouseButton::Left,
         button_state: MouseButtonState::Up,
@@ -484,15 +462,8 @@ fn toggle_main_window(app: &AppHandle) {
     rebuild_menu(app);
 }
 
-/// Tauri command — lets the frontend trigger a tray rebuild after state
-/// changes the Rust side can't observe directly:
-///   * recording start/stop (frontend passes `is_recording=Some(...)`,
-///     optionally `started_at_ms=Some(...)` for a future live-timer feature)
-///   * fresh export / project landed (frontend passes `is_recording=None`;
-///     we leave the cached recording flag alone and just rebuild for the new
-///     file list)
-///
-/// All three parameters are optional; `None` means "leave whatever's there".
+/// Lets the frontend trigger a tray rebuild after state Rust cannot observe: a recording start/stop, or a fresh export or project landing.
+/// All parameters are optional, and `None` leaves the cached value alone.
 #[tauri::command]
 pub fn refresh_tray(app: AppHandle, is_recording: Option<bool>, started_at_ms: Option<u64>) {
     if let Some(value) = is_recording {

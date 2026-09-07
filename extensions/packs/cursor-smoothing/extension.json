@@ -1,18 +1,36 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "cursor-smoothing",
-  "name": "Cursor Smoothing",
-  "version": "1.0.0",
-  "author": "Recast",
-  "description": "Extra cursor-path smoothing presets — Steady for light tremor, Glide for fluid motion, Locked for max stabilization.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "smoothings": [
-      { "id": "steady", "label": "Steady", "smoothing": 35, "snapToClicks": true, "snapWindowMs": 70 },
-      { "id": "glide", "label": "Glide", "smoothing": 65, "snapToClicks": true, "snapWindowMs": 100 },
-      { "id": "locked", "label": "Locked", "smoothing": 100, "snapToClicks": true, "snapWindowMs": 150 }
-    ]
-  },
-  "assets": []
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "cursor-smoothing",
+	"name": "Cursor Smoothing",
+	"version": "1.0.0",
+	"author": "Recast",
+	"description": "Extra cursor-path smoothing presets — Steady for light tremor, Glide for fluid motion, Locked for max stabilization.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"smoothings": [
+			{
+				"id": "steady",
+				"label": "Steady",
+				"smoothing": 35,
+				"snapToClicks": true,
+				"snapWindowMs": 70
+			},
+			{
+				"id": "glide",
+				"label": "Glide",
+				"smoothing": 65,
+				"snapToClicks": true,
+				"snapWindowMs": 100
+			},
+			{
+				"id": "locked",
+				"label": "Locked",
+				"smoothing": 100,
+				"snapToClicks": true,
+				"snapWindowMs": 150
+			}
+		]
+	},
+	"assets": []
 }

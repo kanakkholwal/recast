@@ -1,15 +1,5 @@
-//! Caption font resolution for the export burn-in.
-//!
-//! libass does NOT treat the ASS `Fontsize` as the em size: it scales glyphs by
-//! `Fontsize / (usWinAscent + usWinDescent)`, while the DOM preview scales by
-//! `css_px / unitsPerEm`. Passing `css_px` straight through therefore renders
-//! the export SMALLER by a per-font factor (Arial ~0.90, Anton ~0.58). We read
-//! the font's own metrics here and hand `to_ass` the correction plus the family
-//! name libass will actually match on (its LEGACY name, ID 1 — which for a
-//! non-RIBBI weight like Inter-600 is "Inter SemiBold", not "Inter", so passing
-//! the CSS family silently falls back to a system face).
-//!
-//! Pure Rust (fontdb + ttf-parser), so this builds on every target.
+//! Caption font resolution for the export burn-in, in pure Rust so it builds everywhere.
+//! libass scales by `Fontsize / (ascent + descent)` and matches the LEGACY family name, so raw CSS px and family both render wrong.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -76,11 +66,8 @@ fn db() -> &'static Mutex<Db> {
     })
 }
 
-/// Resolve the face libass will use for `family` at `weight`, reading the size
-/// correction and the match name off the font file. `custom_dir` is the pack /
-/// download directory to also search (the same dir handed to libass via
-/// `fontsdir`); pass `None` for system families. Returns `None` when no face
-/// matches (caller falls back to the CSS name + no correction).
+/// Resolves the face libass will use for `family` at `weight`, reading the size correction and match name off the font file.
+/// `custom_dir` is the pack directory also handed to libass via `fontsdir`; pass `None` for system families. `None` when nothing matches, and the caller falls back to the CSS name.
 pub fn resolve_font(family: &str, weight: u32, custom_dir: Option<&Path>) -> Option<FontMatch> {
     let mut guard = db().lock().ok()?;
     if let Some(dir) = custom_dir {
@@ -104,8 +91,7 @@ pub fn resolve_font(family: &str, weight: u32, custom_dir: Option<&Path>) -> Opt
         if upem <= 0.0 {
             return None;
         }
-        // Denominator libass uses (see module doc). ttf-parser reports the
-        // windows descender negative, so this is a subtraction.
+        // The denominator libass uses; ttf-parser reports the windows descender negative, so this is a subtraction.
         let (win_asc, win_desc) = match face.tables().os2 {
             Some(os2) => (
                 os2.windows_ascender() as f64,

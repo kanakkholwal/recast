@@ -28,8 +28,7 @@ const SNAP: { x: number; y: number; label: string }[] = [
   let { editor }: TransformPadProps = $props();
   let padEl = $state<HTMLElement | null>(null);
 
-  // Dot position (0..1) derived from the current tilt, so the pad reflects
-  // slider/preset edits too. rotateY drives x; rotateX drives y (inverted).
+  // Derived from the current tilt so the pad reflects slider and preset edits: rotateY drives x, rotateX drives y inverted.
   const dotX = $derived(clamp((editor.transform.rotateY / MAX + 1) / 2, 0, 1));
   const dotY = $derived(clamp((1 - editor.transform.rotateX / MAX) / 2, 0, 1));
 

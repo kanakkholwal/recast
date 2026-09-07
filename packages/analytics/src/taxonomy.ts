@@ -40,10 +40,7 @@ export const ANALYTICS_EVENTS = [
 	"sign_out",
 	"consent_granted",
 	"consent_revoked",
-	// Preview engine telemetry — the signal that gates default-on and measures
-	// decode throughput / fallback-rate, dimensioned by OS (PostHog's auto
-	// `$os`) + resolution. The legacy webcodecs+mp4box pipeline was removed
-	// in PR-F; the events now describe the MediaBunny-backed pipeline.
+	// Preview telemetry gating default-on: decode throughput and fallback rate, dimensioned by OS and resolution.
 	"mediabunny_preview_init",
 	"mediabunny_preview_fallback",
 	"mediabunny_preview_perf",

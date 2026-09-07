@@ -19,8 +19,8 @@ export const contextMenuContentSizeVariants = tv({
 	variants: {
 		size: {
 			sm: "min-w-28 p-0.5 text-[11px]",
-			default: "min-w-32 p-1",
-			lg: "min-w-40 p-1.5 text-[14px]",
+			default: "min-w-40 p-1.5",
+			lg: "min-w-48 p-2 text-[14px]",
 		},
 	},
 	defaultVariants: { size: "default" },
@@ -31,9 +31,9 @@ export const contextMenuItemSizeVariants = tv({
 	base: "",
 	variants: {
 		size: {
-			sm: "h-7 gap-1.5 px-2 text-[11px] [&_svg:not([class*='size-'])]:size-3",
-			default: "gap-1.5 px-1.5 py-1 text-sm [&_svg:not([class*='size-'])]:size-4",
-			lg: "gap-2 px-2 py-1.5 text-[14px] [&_svg:not([class*='size-'])]:size-4",
+			sm: "h-7 gap-2 px-2 text-[11px] [&_svg:not([class*='size-'])]:size-3",
+			default: "gap-2.5 px-2.5 py-1.5 text-[13px] [&_svg:not([class*='size-'])]:size-4",
+			lg: "gap-2.5 px-3 py-2 text-[14px] [&_svg:not([class*='size-'])]:size-4",
 		},
 	},
 	defaultVariants: { size: "default" },

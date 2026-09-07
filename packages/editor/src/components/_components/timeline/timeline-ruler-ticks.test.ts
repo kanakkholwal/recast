@@ -20,8 +20,7 @@ describe("ruler tick windowing", () => {
 	});
 
 	it("gives a tick the same value wherever the window starts", () => {
-		// The value is the {#each} key: if it shifted with the window, scrolling
-		// would re-create every node instead of reusing them.
+		// The value is the each-key: if it shifted with the window, scrolling would re-create every node.
 		const a = buildMinorTicks(HALF_HOUR, 200, { startSec: 600, endSec: 610 });
 		const b = buildMinorTicks(HALF_HOUR, 200, { startSec: 603, endSec: 610 });
 		const overlap = a.filter((t) => t >= 603 && t <= 610);

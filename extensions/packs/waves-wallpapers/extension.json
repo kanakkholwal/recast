@@ -1,31 +1,41 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "waves-wallpapers",
-  "name": "Waves",
-  "version": "1.0.0",
-  "author": "Recast",
-  "description": "Five flowing wave wallpapers — deep emerald, amethyst, graphite, onyx, and azure aurora.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "backgrounds": [
-      { "id": "emerald", "label": "Emerald Waves", "asset": "emerald", "thumb": "emerald-thumb" },
-      { "id": "amethyst", "label": "Amethyst Waves", "asset": "amethyst", "thumb": "amethyst-thumb" },
-      { "id": "graphite", "label": "Graphite Waves", "asset": "graphite", "thumb": "graphite-thumb" },
-      { "id": "onyx", "label": "Onyx Waves", "asset": "onyx", "thumb": "onyx-thumb" },
-      { "id": "azure", "label": "Azure Aurora", "asset": "azure", "thumb": "azure-thumb" }
-    ]
-  },
-  "assets": [
-    { "id": "emerald", "file": "assets/emerald.png" },
-    { "id": "emerald-thumb", "file": "assets/emerald.webp" },
-    { "id": "amethyst", "file": "assets/amethyst.png" },
-    { "id": "amethyst-thumb", "file": "assets/amethyst.webp" },
-    { "id": "graphite", "file": "assets/graphite.png" },
-    { "id": "graphite-thumb", "file": "assets/graphite.webp" },
-    { "id": "onyx", "file": "assets/onyx.png" },
-    { "id": "onyx-thumb", "file": "assets/onyx.webp" },
-    { "id": "azure", "file": "assets/azure.png" },
-    { "id": "azure-thumb", "file": "assets/azure.webp" }
-  ]
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "waves-wallpapers",
+	"name": "Waves",
+	"version": "1.0.0",
+	"author": "Recast",
+	"description": "Five flowing wave wallpapers — deep emerald, amethyst, graphite, onyx, and azure aurora.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"backgrounds": [
+			{ "id": "emerald", "label": "Emerald Waves", "asset": "emerald", "thumb": "emerald-thumb" },
+			{
+				"id": "amethyst",
+				"label": "Amethyst Waves",
+				"asset": "amethyst",
+				"thumb": "amethyst-thumb"
+			},
+			{
+				"id": "graphite",
+				"label": "Graphite Waves",
+				"asset": "graphite",
+				"thumb": "graphite-thumb"
+			},
+			{ "id": "onyx", "label": "Onyx Waves", "asset": "onyx", "thumb": "onyx-thumb" },
+			{ "id": "azure", "label": "Azure Aurora", "asset": "azure", "thumb": "azure-thumb" }
+		]
+	},
+	"assets": [
+		{ "id": "emerald", "file": "assets/emerald.png" },
+		{ "id": "emerald-thumb", "file": "assets/emerald.webp" },
+		{ "id": "amethyst", "file": "assets/amethyst.png" },
+		{ "id": "amethyst-thumb", "file": "assets/amethyst.webp" },
+		{ "id": "graphite", "file": "assets/graphite.png" },
+		{ "id": "graphite-thumb", "file": "assets/graphite.webp" },
+		{ "id": "onyx", "file": "assets/onyx.png" },
+		{ "id": "onyx-thumb", "file": "assets/onyx.webp" },
+		{ "id": "azure", "file": "assets/azure.png" },
+		{ "id": "azure-thumb", "file": "assets/azure.webp" }
+	]
 }

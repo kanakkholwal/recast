@@ -19,10 +19,9 @@ export type RunStatus = "idle" | "running" | "ready" | "error";
 /** A progress bar's value, or null when the phase has nothing countable to show yet. */
 export function progressValue(p: OcrProgress | null): number | null {
 	if (!p || p.total <= 0) return null;
-	const pct = (p.done / p.total) * 100;
-	// The sampler's total is estimated from the container duration, which can
-	// undershoot the real frame count. Clamp rather than render a 104% bar.
-	return Math.min(100, Math.max(0, pct));
+	const percent = (p.done / p.total) * 100;
+	// The total is estimated from the container duration, so clamp rather than render a 104% bar.
+	return Math.min(100, Math.max(0, percent));
 }
 
 /** Headline for the current phase. */
@@ -81,10 +80,10 @@ const MIN_UNITS_FOR_ETA = 3;
 
 /** "about 12s left", or "" when there is nothing trustworthy to say. */
 export function etaLabel(phaseElapsedMs: number, p: OcrProgress | null): string {
-	const secs = etaSeconds(phaseElapsedMs, p);
-	if (secs === null) return "";
-	if (secs < 60) return `about ${secs}s left`;
-	return `about ${Math.ceil(secs / 60)} min left`;
+	const remaining = etaSeconds(phaseElapsedMs, p);
+	if (remaining === null) return "";
+	if (remaining < 60) return `about ${remaining}s left`;
+	return `about ${Math.ceil(remaining / 60)} min left`;
 }
 
 /**

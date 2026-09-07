@@ -13,7 +13,7 @@
  */
 export const PANEL_TABS = [
 	"clip",
-	"background",
+	"canvas",
 	"focus",
 	"annotations",
 	"cursor",
@@ -40,7 +40,7 @@ export type PanelTab = (typeof PANEL_TABS)[number];
  */
 export const WEB_PANEL_TABS = [
 	"clip",
-	"background",
+	"canvas",
 	"focus",
 	"annotations",
 	"cursor",

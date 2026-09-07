@@ -25,8 +25,8 @@ import { createServer } from "node:http";
 import { extname, join } from "node:path";
 import { buildRegistry, DIST_DIR, EXT_ROOT } from "./build-registry.mjs";
 
-const PORT = Number(process.env.PORT ?? 4422);
-const BASE_URL = (process.env.BASE_URL ?? `http://localhost:${PORT}`).replace(/\/+$/, "");
+const PORT = 4422;
+const BASE_URL = `http://localhost:${PORT}`.replace(/\/+$/, "");
 const DEBOUNCE_MS = 150;
 
 const CONTENT_TYPES = {
@@ -69,8 +69,7 @@ function rebuild(reason) {
 rebuild("initial build");
 
 const server = createServer((req, res) => {
-	// decodeURIComponent throws URIError on malformed percent-encoding; a single
-	// bad request must not take down the watcher/server loop.
+	// `decodeURIComponent` throws on malformed percent-encoding, and one bad request must not take down the server loop.
 	let path;
 	try {
 		path = decodeURIComponent((req.url ?? "/").split("?")[0]);
@@ -113,7 +112,8 @@ server.listen(PORT, () => {
 // Watch sources recursively; ignore our own writes under dist/.
 let timer = null;
 const isDistEvent = (file) =>
-	typeof file === "string" && (file === "dist" || file.startsWith(`dist${"\\"}`) || file.startsWith("dist/"));
+	typeof file === "string" &&
+	(file === "dist" || file.startsWith("dist\\") || file.startsWith("dist/"));
 
 const watcher = watch(EXT_ROOT, { recursive: true }, (_event, file) => {
 	if (isDistEvent(file)) return;

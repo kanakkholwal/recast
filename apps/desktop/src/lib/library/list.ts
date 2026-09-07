@@ -19,7 +19,7 @@ export function filterEntries(
 	return entries.filter(
 		(e) =>
 			e.filename.toLowerCase().includes(q) ||
-			(!!opts.matchExtension && getExtension(e.filename).toLowerCase().includes(q)),
+			(Boolean(opts.matchExtension) && getExtension(e.filename).toLowerCase().includes(q)),
 	);
 }
 

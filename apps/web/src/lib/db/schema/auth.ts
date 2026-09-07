@@ -151,8 +151,7 @@ export const deviceCode = pgTable(
 		updatedAt: timestamp("updated_at").notNull().defaultNow(),
 	},
 	(t) => [
-		// Plugin looks rows up by deviceCode (on /device/token poll) and by
-		// userCode (on /device GET + approve/deny). Both are hot paths.
+		// The plugin looks rows up by deviceCode on poll and by userCode on approve; both are hot paths.
 		index("device_code_device_code_idx").on(t.deviceCode),
 		index("device_code_user_code_idx").on(t.userCode),
 	],

@@ -3,7 +3,7 @@
 Curated icon barrel for the Recast monorepo. Two layers:
 
 - **`@recast/icons`** (root) — Tabler icons re-exported under their
-  Lucide-compatible PascalCase names. This is the 90% surface; call sites
+  @recast/icons-compatible PascalCase names. This is the 90% surface; call sites
   import exactly the way they used to under `@lucide/svelte`.
 
 - **`@recast/icons/ai`** — Phosphor **duotone** accents, **only** for
@@ -41,7 +41,7 @@ The prop surface accepts:
 | `aria-*` | `boolean \| "true" \| "false"` | Forwarded as `aria-hidden`/`aria-label`.        |
 
 Tailwind size utilities (`size-4`, `size-3.5`, etc.) win over the `size`
-prop via CSS, matching the Lucide ergonomics.
+prop via CSS, matching the @recast/icons ergonomics.
 
 ### AI accent layer (`@recast/icons/ai`)
 
@@ -60,7 +60,7 @@ All AI accents vendored from `@phosphor-icons/core/duotone/<name>.svg`
 into `packages/icons/src/ai/<Name>.svelte` to avoid any runtime SVG
 parsing and to keep the bundle a single, static asset per accent.
 
-## Why Tabler and not Lucide?
+## Why Tabler and not @recast/icons?
 
 Coverage. Tabler's `6,146`-icon manifest leaves no gaps in the 256
 icons Recast uses. Phosphor (the previous alt) only has `~1,300`, so
@@ -77,7 +77,7 @@ If you're bringing a new icon into the codebase:
 2. Add the entry to `aliases` in `scripts/icons/generate-tabler-barrel.mjs`.
 3. Run `node scripts/icons/generate-tabler-barrel.mjs` — the generated
    `packages/icons/src/tabler/index.ts` re-exports the new icon under
-   its Lucide name.
+   its @recast/icons name.
 4. Import from `@recast/icons` (not from `@tabler/icons-svelte`).
    Biome will block the latter.
 
@@ -91,7 +91,7 @@ If you're bringing a new icon into the codebase:
 
 ## Hand-stitched fallbacks
 
-A small set of icons have no direct Tabler equivalent (sparse Lucide
+A small set of icons have no direct Tabler equivalent (sparse @recast/icons
 glyphs). These live under `packages/icons/src/fallback/` and are
 re-exported through the barrel — see the file comments there for the
 visual rationale.

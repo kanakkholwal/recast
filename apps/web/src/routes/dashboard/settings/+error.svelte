@@ -2,9 +2,7 @@
 import { page } from "$app/state";
 import SectionError from "$lib/components/SectionError.svelte";
 
-// Finer-grained boundary than dashboard/+error: a settings *tab* load error
-// renders here, inside the settings layout — so the settings header + tab bar
-// stay put and the operator can switch tabs without a full reload.
+// Finer-grained than the dashboard boundary: a tab's load error keeps the settings header and tab bar usable.
 const status = $derived(page.status);
 const message = $derived(page.error?.message ?? "");
 </script>

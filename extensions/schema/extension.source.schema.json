@@ -1,209 +1,284 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://cdn.jsdelivr.net/gh/kanakkholwal/recast@main/extensions/schema/extension.source.schema.json",
-  "title": "Recast extension (source manifest)",
-  "description": "Authoring form of a Recast asset-pack. Committed under extensions/packs/<id>/extension.json. The CI verifier validates it and the registry builder turns it into the installable manifest (adding per-asset url + sha256).",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["id", "name", "version", "kind", "permissions", "contributes", "assets"],
-  "properties": {
-    "$schema": { "type": "string" },
-    "id": {
-      "type": "string",
-      "description": "Path-safe slug; must equal the pack's folder name. Mirrors is_safe_ext_id / isSafeExtId: 1-64 chars from [A-Za-z0-9._-], not leading with a dot.",
-      "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$"
-    },
-    "name": { "type": "string", "minLength": 1 },
-    "version": {
-      "type": "string",
-      "description": "Semantic version x.y.z.",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$"
-    },
-    "author": { "type": "string" },
-    "description": { "type": "string" },
-    "kind": { "const": "asset-pack" },
-    "permissions": {
-      "type": "array",
-      "description": "Asset-packs run no code — must be empty.",
-      "maxItems": 0
-    },
-    "contributes": {
-      "type": "object",
-      "additionalProperties": false,
-      "minProperties": 1,
-      "properties": {
-        "cursors": { "type": "array", "items": { "$ref": "#/$defs/cursor" } },
-        "backgrounds": { "type": "array", "items": { "$ref": "#/$defs/background" } },
-        "gradients": { "type": "array", "items": { "$ref": "#/$defs/gradient" } },
-        "colors": { "type": "array", "items": { "$ref": "#/$defs/color" } },
-        "easings": { "type": "array", "items": { "$ref": "#/$defs/easing" } },
-        "smoothings": { "type": "array", "items": { "$ref": "#/$defs/smoothing" } },
-        "captionPresets": { "type": "array", "items": { "$ref": "#/$defs/captionPreset" } }
-      }
-    },
-    "assets": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/asset" }
-    }
-  },
-  "$defs": {
-    "localId": { "type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$" },
-    "hotspot": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["x", "y"],
-      "properties": {
-        "x": { "type": "number", "minimum": 0, "maximum": 64 },
-        "y": { "type": "number", "minimum": 0, "maximum": 64 }
-      }
-    },
-    "asset": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "file"],
-      "properties": {
-        "id": { "$ref": "#/$defs/localId" },
-        "file": {
-          "type": "string",
-          "description": "Pack-relative path to the asset file (e.g. assets/arrow.svg).",
-          "pattern": "^assets/[^/\\\\]+$"
-        }
-      }
-    },
-    "cursor": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "label", "rest", "hotspot"],
-      "properties": {
-        "id": { "$ref": "#/$defs/localId" },
-        "label": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" },
-        "rest": { "type": "string", "description": "Asset id of the rest-state SVG." },
-        "press": { "type": "string", "description": "Asset id of the optional pressed-state (left-click) SVG." },
-        "rightPress": { "type": "string", "description": "Asset id of the optional right-click SVG. Falls back to press → rest." },
-        "drag": { "type": "string", "description": "Asset id of the optional drag SVG (button held while moving). Falls back to press → rest." },
-        "hotspot": { "$ref": "#/$defs/hotspot" },
-        "pressedHotspot": { "$ref": "#/$defs/hotspot" },
-        "rightPressedHotspot": { "$ref": "#/$defs/hotspot" },
-        "dragHotspot": { "$ref": "#/$defs/hotspot" }
-      }
-    },
-    "background": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "label", "asset"],
-      "properties": {
-        "id": { "$ref": "#/$defs/localId" },
-        "label": { "type": "string", "minLength": 1 },
-        "asset": { "type": "string", "description": "Asset id of the full-resolution image." },
-        "thumb": { "type": "string", "description": "Asset id of an optional thumbnail image." }
-      }
-    },
-    "gradient": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "label", "value"],
-      "properties": {
-        "id": { "$ref": "#/$defs/localId" },
-        "label": { "type": "string", "minLength": 1 },
-        "value": { "type": "string", "pattern": "gradient\\(" }
-      }
-    },
-    "color": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "label", "value"],
-      "properties": {
-        "id": { "$ref": "#/$defs/localId" },
-        "label": { "type": "string", "minLength": 1 },
-        "value": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" }
-      }
-    },
-    "easing": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "label", "value"],
-      "properties": {
-        "id": { "$ref": "#/$defs/localId" },
-        "label": { "type": "string", "minLength": 1 },
-        "value": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["x1", "y1", "x2", "y2"],
-          "properties": {
-            "x1": { "type": "number" },
-            "y1": { "type": "number" },
-            "x2": { "type": "number" },
-            "y2": { "type": "number" }
-          }
-        }
-      }
-    },
-    "smoothing": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "label", "smoothing", "snapToClicks", "snapWindowMs"],
-      "properties": {
-        "id": { "$ref": "#/$defs/localId" },
-        "label": { "type": "string", "minLength": 1 },
-        "smoothing": { "type": "number", "minimum": 0, "maximum": 100 },
-        "snapToClicks": { "type": "boolean" },
-        "snapWindowMs": { "type": "number", "minimum": 0 }
-      }
-    },
-    "hexColor": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" },
-    "captionPreset": {
-      "type": "object",
-      "description": "A caption theme — the visual half of a caption style, applied wholesale. References no assets (the style travels in the manifest).",
-      "additionalProperties": false,
-      "required": [
-        "id", "label", "fontFamily", "fontWeight", "fontSizePct", "position",
-        "align", "offsetPct", "color", "uppercase", "letterSpacing", "background",
-        "backgroundColor", "backgroundOpacity", "outlineWidth", "outlineColor", "maxLines"
-      ],
-      "properties": {
-        "id": { "$ref": "#/$defs/localId" },
-        "label": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" },
-        "fontFamily": { "type": "string", "minLength": 1, "description": "CSS font-family stack." },
-        "fontWeight": { "type": "integer", "minimum": 100, "maximum": 900 },
-        "fontSizePct": { "type": "number", "minimum": 1, "maximum": 20, "description": "Percent of video height." },
-        "position": { "enum": ["top", "center", "bottom"] },
-        "align": { "enum": ["left", "center", "right"] },
-        "offsetPct": { "type": "number", "minimum": 0, "maximum": 40 },
-        "color": { "$ref": "#/$defs/hexColor" },
-        "mutedColor": { "$ref": "#/$defs/hexColor", "description": "Unspoken-word colour for progressive highlight. Optional; defaults from the base style." },
-        "uppercase": { "type": "boolean" },
-        "letterSpacing": { "type": "number", "minimum": -0.2, "maximum": 1, "description": "em." },
-        "background": { "enum": ["none", "soft", "box"] },
-        "backgroundColor": { "$ref": "#/$defs/hexColor" },
-        "backgroundOpacity": { "type": "number", "minimum": 0, "maximum": 100 },
-        "boxPaddingXEm": { "type": "number", "minimum": 0, "maximum": 4, "description": "Pill horizontal padding, em of font size. Optional." },
-        "boxPaddingYEm": { "type": "number", "minimum": 0, "maximum": 4, "description": "Pill vertical padding, em of font size. Optional." },
-        "boxRadiusEm": { "type": "number", "minimum": 0, "maximum": 10, "description": "Pill corner radius, em of font size (clamps to a stadium). Optional." },
-        "lineHeight": { "type": "number", "minimum": 0.8, "maximum": 2.5, "description": "Line height as a multiple of font size. Optional." },
-        "outlineWidth": { "type": "number", "minimum": 0, "maximum": 20, "description": "Percent of font size." },
-        "outlineColor": { "$ref": "#/$defs/hexColor" },
-        "maxLines": { "type": "integer", "minimum": 1, "maximum": 6 },
-        "maxCharsPerLine": { "type": "integer", "minimum": 8, "maximum": 120, "description": "Greedy line-break width in characters. Optional." },
-        "animation": { "$ref": "#/$defs/captionAnimation" }
-      }
-    },
-    "captionAnimation": {
-      "type": "object",
-      "description": "Word-by-word animation spec. Absent = static caption.",
-      "additionalProperties": false,
-      "required": ["chunk", "chunkSize", "emphasis", "emphasisColor", "entrance", "entranceMs", "holdGaps"],
-      "properties": {
-        "chunk": { "enum": ["line", "phrase", "word"] },
-        "chunkSize": { "type": "integer", "minimum": 1, "maximum": 12 },
-        "emphasis": { "enum": ["none", "color", "scale"] },
-        "emphasisColor": { "$ref": "#/$defs/hexColor" },
-        "highlight": { "enum": ["none", "active", "progressive"], "description": "Spoken vs unspoken colouring. Optional; absent = active (legacy)." },
-        "entrance": { "enum": ["none", "fade", "pop", "slide"] },
-        "entranceMs": { "type": "number", "minimum": 0, "maximum": 2000 },
-        "holdGaps": { "type": "boolean" }
-      }
-    }
-  }
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://cdn.jsdelivr.net/gh/kanakkholwal/recast@main/extensions/schema/extension.source.schema.json",
+	"title": "Recast extension (source manifest)",
+	"description": "Authoring form of a Recast asset-pack. Committed under extensions/packs/<id>/extension.json. The CI verifier validates it and the registry builder turns it into the installable manifest (adding per-asset url + sha256).",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["id", "name", "version", "kind", "permissions", "contributes", "assets"],
+	"properties": {
+		"$schema": { "type": "string" },
+		"id": {
+			"type": "string",
+			"description": "Path-safe slug; must equal the pack's folder name. Mirrors is_safe_ext_id / isSafeExtId: 1-64 chars from [A-Za-z0-9._-], not leading with a dot.",
+			"pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$"
+		},
+		"name": { "type": "string", "minLength": 1 },
+		"version": {
+			"type": "string",
+			"description": "Semantic version x.y.z.",
+			"pattern": "^\\d+\\.\\d+\\.\\d+$"
+		},
+		"author": { "type": "string" },
+		"description": { "type": "string" },
+		"kind": { "const": "asset-pack" },
+		"permissions": {
+			"type": "array",
+			"description": "Asset-packs run no code — must be empty.",
+			"maxItems": 0
+		},
+		"contributes": {
+			"type": "object",
+			"additionalProperties": false,
+			"minProperties": 1,
+			"properties": {
+				"cursors": { "type": "array", "items": { "$ref": "#/$defs/cursor" } },
+				"backgrounds": { "type": "array", "items": { "$ref": "#/$defs/background" } },
+				"gradients": { "type": "array", "items": { "$ref": "#/$defs/gradient" } },
+				"colors": { "type": "array", "items": { "$ref": "#/$defs/color" } },
+				"easings": { "type": "array", "items": { "$ref": "#/$defs/easing" } },
+				"smoothings": { "type": "array", "items": { "$ref": "#/$defs/smoothing" } },
+				"captionPresets": { "type": "array", "items": { "$ref": "#/$defs/captionPreset" } }
+			}
+		},
+		"assets": {
+			"type": "array",
+			"items": { "$ref": "#/$defs/asset" }
+		}
+	},
+	"$defs": {
+		"localId": { "type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$" },
+		"hotspot": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["x", "y"],
+			"properties": {
+				"x": { "type": "number", "minimum": 0, "maximum": 64 },
+				"y": { "type": "number", "minimum": 0, "maximum": 64 }
+			}
+		},
+		"asset": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "file"],
+			"properties": {
+				"id": { "$ref": "#/$defs/localId" },
+				"file": {
+					"type": "string",
+					"description": "Pack-relative path to the asset file (e.g. assets/arrow.svg).",
+					"pattern": "^assets/[^/\\\\]+$"
+				}
+			}
+		},
+		"cursor": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "label", "rest", "hotspot"],
+			"properties": {
+				"id": { "$ref": "#/$defs/localId" },
+				"label": { "type": "string", "minLength": 1 },
+				"description": { "type": "string" },
+				"rest": { "type": "string", "description": "Asset id of the rest-state SVG." },
+				"press": {
+					"type": "string",
+					"description": "Asset id of the optional pressed-state (left-click) SVG."
+				},
+				"rightPress": {
+					"type": "string",
+					"description": "Asset id of the optional right-click SVG. Falls back to press → rest."
+				},
+				"drag": {
+					"type": "string",
+					"description": "Asset id of the optional drag SVG (button held while moving). Falls back to press → rest."
+				},
+				"hotspot": { "$ref": "#/$defs/hotspot" },
+				"pressedHotspot": { "$ref": "#/$defs/hotspot" },
+				"rightPressedHotspot": { "$ref": "#/$defs/hotspot" },
+				"dragHotspot": { "$ref": "#/$defs/hotspot" }
+			}
+		},
+		"background": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "label", "asset"],
+			"properties": {
+				"id": { "$ref": "#/$defs/localId" },
+				"label": { "type": "string", "minLength": 1 },
+				"asset": { "type": "string", "description": "Asset id of the full-resolution image." },
+				"thumb": { "type": "string", "description": "Asset id of an optional thumbnail image." }
+			}
+		},
+		"gradient": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "label", "value"],
+			"properties": {
+				"id": { "$ref": "#/$defs/localId" },
+				"label": { "type": "string", "minLength": 1 },
+				"value": { "type": "string", "pattern": "gradient\\(" }
+			}
+		},
+		"color": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "label", "value"],
+			"properties": {
+				"id": { "$ref": "#/$defs/localId" },
+				"label": { "type": "string", "minLength": 1 },
+				"value": {
+					"type": "string",
+					"pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+				}
+			}
+		},
+		"easing": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "label", "value"],
+			"properties": {
+				"id": { "$ref": "#/$defs/localId" },
+				"label": { "type": "string", "minLength": 1 },
+				"value": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["x1", "y1", "x2", "y2"],
+					"properties": {
+						"x1": { "type": "number" },
+						"y1": { "type": "number" },
+						"x2": { "type": "number" },
+						"y2": { "type": "number" }
+					}
+				}
+			}
+		},
+		"smoothing": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["id", "label", "smoothing", "snapToClicks", "snapWindowMs"],
+			"properties": {
+				"id": { "$ref": "#/$defs/localId" },
+				"label": { "type": "string", "minLength": 1 },
+				"smoothing": { "type": "number", "minimum": 0, "maximum": 100 },
+				"snapToClicks": { "type": "boolean" },
+				"snapWindowMs": { "type": "number", "minimum": 0 }
+			}
+		},
+		"hexColor": { "type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" },
+		"captionPreset": {
+			"type": "object",
+			"description": "A caption theme — the visual half of a caption style, applied wholesale. References no assets (the style travels in the manifest).",
+			"additionalProperties": false,
+			"required": [
+				"id",
+				"label",
+				"fontFamily",
+				"fontWeight",
+				"fontSizePct",
+				"position",
+				"align",
+				"offsetPct",
+				"color",
+				"uppercase",
+				"letterSpacing",
+				"background",
+				"backgroundColor",
+				"backgroundOpacity",
+				"outlineWidth",
+				"outlineColor",
+				"maxLines"
+			],
+			"properties": {
+				"id": { "$ref": "#/$defs/localId" },
+				"label": { "type": "string", "minLength": 1 },
+				"description": { "type": "string" },
+				"fontFamily": { "type": "string", "minLength": 1, "description": "CSS font-family stack." },
+				"fontWeight": { "type": "integer", "minimum": 100, "maximum": 900 },
+				"fontSizePct": {
+					"type": "number",
+					"minimum": 1,
+					"maximum": 20,
+					"description": "Percent of video height."
+				},
+				"position": { "enum": ["top", "center", "bottom"] },
+				"align": { "enum": ["left", "center", "right"] },
+				"offsetPct": { "type": "number", "minimum": 0, "maximum": 40 },
+				"color": { "$ref": "#/$defs/hexColor" },
+				"mutedColor": {
+					"$ref": "#/$defs/hexColor",
+					"description": "Unspoken-word colour for progressive highlight. Optional; defaults from the base style."
+				},
+				"uppercase": { "type": "boolean" },
+				"letterSpacing": { "type": "number", "minimum": -0.2, "maximum": 1, "description": "em." },
+				"background": { "enum": ["none", "soft", "box"] },
+				"backgroundColor": { "$ref": "#/$defs/hexColor" },
+				"backgroundOpacity": { "type": "number", "minimum": 0, "maximum": 100 },
+				"boxPaddingXEm": {
+					"type": "number",
+					"minimum": 0,
+					"maximum": 4,
+					"description": "Pill horizontal padding, em of font size. Optional."
+				},
+				"boxPaddingYEm": {
+					"type": "number",
+					"minimum": 0,
+					"maximum": 4,
+					"description": "Pill vertical padding, em of font size. Optional."
+				},
+				"boxRadiusEm": {
+					"type": "number",
+					"minimum": 0,
+					"maximum": 10,
+					"description": "Pill corner radius, em of font size (clamps to a stadium). Optional."
+				},
+				"lineHeight": {
+					"type": "number",
+					"minimum": 0.8,
+					"maximum": 2.5,
+					"description": "Line height as a multiple of font size. Optional."
+				},
+				"outlineWidth": {
+					"type": "number",
+					"minimum": 0,
+					"maximum": 20,
+					"description": "Percent of font size."
+				},
+				"outlineColor": { "$ref": "#/$defs/hexColor" },
+				"maxLines": { "type": "integer", "minimum": 1, "maximum": 6 },
+				"maxCharsPerLine": {
+					"type": "integer",
+					"minimum": 8,
+					"maximum": 120,
+					"description": "Greedy line-break width in characters. Optional."
+				},
+				"animation": { "$ref": "#/$defs/captionAnimation" }
+			}
+		},
+		"captionAnimation": {
+			"type": "object",
+			"description": "Word-by-word animation spec. Absent = static caption.",
+			"additionalProperties": false,
+			"required": [
+				"chunk",
+				"chunkSize",
+				"emphasis",
+				"emphasisColor",
+				"entrance",
+				"entranceMs",
+				"holdGaps"
+			],
+			"properties": {
+				"chunk": { "enum": ["line", "phrase", "word"] },
+				"chunkSize": { "type": "integer", "minimum": 1, "maximum": 12 },
+				"emphasis": { "enum": ["none", "color", "scale"] },
+				"emphasisColor": { "$ref": "#/$defs/hexColor" },
+				"highlight": {
+					"enum": ["none", "active", "progressive"],
+					"description": "Spoken vs unspoken colouring. Optional; absent = active (legacy)."
+				},
+				"entrance": { "enum": ["none", "fade", "pop", "slide"] },
+				"entranceMs": { "type": "number", "minimum": 0, "maximum": 2000 },
+				"holdGaps": { "type": "boolean" }
+			}
+		}
+	}
 }

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/useAwait: EditorServices declares these methods as Promise-returning; the browser host has nothing to await.
 /**
  * The browser implementation of {@link EditorServices}. Every native capability
  * is simply absent, so the editor hides those surfaces rather than offering
@@ -17,8 +18,7 @@ function download(blob: Blob, name: string): void {
 	a.href = url;
 	a.download = name;
 	a.click();
-	// Revoke on the next task: revoking synchronously can cancel the download
-	// in some browsers before it starts.
+	// Revoke on the next task: revoking synchronously can cancel the download in some browsers before it starts.
 	setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 

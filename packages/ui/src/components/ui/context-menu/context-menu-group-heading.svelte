@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
-	import { cn } from "@recast/ui/utils";
-	import type { ComponentProps } from "svelte";
+import { ContextMenu as ContextMenuPrimitive } from "bits-ui";
+import { cn } from "@recast/ui/utils";
+import type { ComponentProps } from "svelte";
 
-	let {
-		ref = $bindable(null),
-		class: className,
-		inset,
-		...restProps
-	}: ComponentProps<typeof ContextMenuPrimitive.GroupHeading> & {
-		inset?: boolean;
-	} = $props();
+let {
+	ref = $bindable(null),
+	class: className,
+	inset,
+	...restProps
+}: ComponentProps<typeof ContextMenuPrimitive.GroupHeading> & {
+	inset?: boolean;
+} = $props();
 </script>
 
 <ContextMenuPrimitive.GroupHeading

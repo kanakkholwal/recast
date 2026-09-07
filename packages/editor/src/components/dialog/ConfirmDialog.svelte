@@ -35,8 +35,7 @@ $effect(() => {
 	if (open) {
 		error = null;
 		busy = false;
-		// Cancel takes focus, so Enter on a destructive prompt backs out rather
-		// than confirming. Deliberate accepts still need one deliberate move.
+		// Cancel takes focus, so Enter on a destructive prompt backs out; accepting still needs one deliberate move.
 		queueMicrotask(() => cancelEl?.focus());
 	}
 });
@@ -59,9 +58,7 @@ function close() {
 	onOpenChange(false);
 }
 
-// On the window, not on a wrapper div: the footer buttons are siblings of the
-// body, so a handler scoped to the body never saw a keypress once focus moved
-// to Cancel — which is where focus starts.
+// On the window, not a wrapper: the footer buttons are siblings of the body, where focus starts on Cancel.
 function onWindowKeydown(e: KeyboardEvent) {
 	if (!open || busy) return;
 	if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -80,20 +77,20 @@ function onWindowKeydown(e: KeyboardEvent) {
 	tone={variant === "destructive" ? "destructive" : "default"}
 	{onOpenChange}
 >
-	<p class="text-[11px] leading-relaxed text-muted-foreground">
+	<p class="max-w-[46ch] text-[12px] leading-[1.55] text-muted-foreground text-pretty">
 		{description ?? "This can't be undone."}
 	</p>
 	{#if error}
-		<p class="mt-2 text-[11px] text-destructive" role="alert">{error}</p>
+		<p class="mt-2 text-[12px] text-destructive" role="alert">{error}</p>
 	{/if}
 
 	{#snippet footer()}
-		<Button bind:ref={cancelEl} variant="ghost" size="xs" onclick={close} disabled={busy}>
+		<Button bind:ref={cancelEl} variant="ghost" size="sm" onclick={close} disabled={busy}>
 			{cancelLabel}
 		</Button>
 		<Button
 			variant={variant === "destructive" ? "destructive" : "default"}
-			size="xs"
+			size="sm"
 			onclick={confirm}
 			disabled={busy}
 		>

@@ -1,12 +1,4 @@
 <script lang="ts">
-import { goto } from "$app/navigation";
-import { page } from "$app/state";
-import { authClient } from "$lib/auth/client";
-import { lookupEmailStatus } from "$lib/auth/lookup";
-import { safeNext } from "$lib/auth/redirect";
-import AuthCard from "$lib/auth/components/AuthCard.svelte";
-import OrDivider from "$lib/auth/components/OrDivider.svelte";
-import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
 import {
 	AlertCircle,
 	ArrowRight,
@@ -24,6 +16,14 @@ import { toast } from "@recast/ui/sonner";
 import * as Tabs from "@recast/ui/tabs";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { authClient } from "$lib/auth/client";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import OrDivider from "$lib/auth/components/OrDivider.svelte";
+import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
+import { lookupEmailStatus } from "$lib/auth/lookup";
+import { safeNext } from "$lib/auth/redirect";
 
 let { data } = $props();
 
@@ -52,8 +52,7 @@ const signupHref = $derived(
 	`/signup?next=${encodeURIComponent(next)}${email.trim() ? `&email=${encodeURIComponent(email.trim())}` : ""}`,
 );
 
-// Clear the inline banner the moment the user edits their email, so a stale
-// banner doesn't linger after they fix a typo.
+// Clear the inline banner as soon as the email is edited, so it doesn't linger after a typo is fixed.
 $effect(() => {
 	if (preflight && preflight.email !== email.trim()) preflight = null;
 });
@@ -127,9 +126,7 @@ async function signInWithPassword(e: SubmitEvent) {
 		});
 		if (error) throw new Error(error.message ?? "Sign in failed. Check your credentials.");
 		toast.success("Welcome back.", { id: toastId });
-		// Force a fresh load chain so the destination's server load sees
-		// the new session cookie immediately, not whatever the client had
-		// cached pre-login.
+		// A fresh load chain so the destination's server load sees the new session cookie, not the pre-login cache.
 		await goto(next, { invalidateAll: true });
 	} catch (err) {
 		toast.error((err as Error)?.message ?? "Sign in failed. Check your credentials.", {

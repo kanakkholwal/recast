@@ -5,7 +5,6 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager, State};
-use xcap::{Monitor, Window};
 
 use super::error::{AppError, AppResult};
 use super::ffmpeg::{encode_thumbnail_base64, make_thumbnail};
@@ -20,10 +19,7 @@ fn config_path(app: &AppHandle) -> PathBuf {
     let dir = match app.path().app_data_dir() {
         Ok(dir) => dir,
         Err(e) => {
-            // `%TEMP%` is periodically purged by the OS, so settings (incl.
-            // telemetry consent + install_id) won't survive between sessions.
-            // Log it so a "my settings keep resetting" report is diagnosable
-            // rather than silent.
+            // `%TEMP%` is periodically purged, so settings (telemetry consent, install_id) won't survive; log it so resets are diagnosable.
             log::warn!(
                 "app_data_dir unavailable ({e}); using temp dir for config — \
                  settings may not persist between sessions"
@@ -40,11 +36,7 @@ pub fn load_config(app: &AppHandle) -> AppConfig {
         Ok(data) => match serde_json::from_str(&data) {
             Ok(config) => config,
             Err(e) => {
-                // A genuine parse failure (partial write, hand-edit, schema
-                // drift) — distinct from "no file yet". Silently resetting here
-                // would wipe all settings AND flip telemetry_errors back to its
-                // default-on, a privacy-relevant regression. Back the bad file
-                // up for diagnosis before falling back to defaults.
+                // A genuine parse failure, not 'no file yet': resetting silently would wipe settings and flip telemetry back on, so back the file up.
                 log::warn!(
                     "config at {} is unreadable ({e}); backing up to .bak and \
                      resetting to defaults",
@@ -81,10 +73,7 @@ pub(crate) fn save_config(app: &AppHandle, config: &AppConfig) {
             return;
         }
     };
-    // Atomic write: a plain `fs::write` truncates-then-writes, so a crash or
-    // power loss mid-write leaves a corrupt file that the next launch discards —
-    // wiping every setting. Write to a sibling temp file, fsync, then rename
-    // over the target (atomic on the same volume).
+    // Atomic write: `fs::write` truncates first, so a crash mid-write leaves a corrupt file the next launch discards.
     let tmp = path.with_extension("json.tmp");
     if let Err(e) = write_atomic(&tmp, &path, data.as_bytes()) {
         log::warn!("failed to persist config to {}: {e}", path.display());
@@ -101,9 +90,7 @@ pub(crate) fn write_atomic(tmp: &Path, dest: &Path, bytes: &[u8]) -> std::io::Re
     fs::rename(tmp, dest)
 }
 
-/// Temp + rename for derived state written from async code (lockfiles, toggle
-/// state). No fsync: these are rebuildable, so the truncate window is the only
-/// thing worth closing.
+/// Temp + rename for derived state written from async code (lockfiles, toggle state). No fsync: these are rebuildable, so the truncate window is the only thing worth closing.
 pub(crate) async fn write_replace_async(dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = dest.with_extension("json.tmp");
     if let Err(e) = tokio::fs::write(&tmp, bytes).await {
@@ -186,31 +173,19 @@ pub fn default_output_dir(app: &AppHandle) -> PathBuf {
     base.join("Recast")
 }
 
-/// True on Linux + Wayland. xcap's per-source `capture_image()` triggers
-/// an `xdg-desktop-portal.ScreenCast` permission dialog *per source* on
-/// Wayland — calling it across every monitor/window during the picker hot
-/// path raises N consecutive dialogs and can stall the calling thread for
-/// seconds while the user dismisses each one. We deliberately skip the
-/// thumbnail entirely in that case; the picker remains usable from text
-/// labels alone, and we'll revisit this once we wire PipeWire directly
-/// (see `apps/desktop/docs/linux-native-recording.md` once written).
+/// True on Linux plus Wayland, where a per-source `capture_image()` raises one portal permission dialog PER SOURCE.
+/// Thumbnails are skipped entirely there: N consecutive dialogs stall the picker thread, and text labels keep it usable.
 fn is_wayland() -> bool {
     cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
-fn capture_monitor_thumbnail(monitor: &Monitor) -> Option<String> {
+/// A picker thumbnail, or `None` where taking one would be intrusive or fail.
+/// Skipped under Wayland, where every capture is a portal dialog and a picker full of thumbnails would be a picker full of prompts.
+fn capture_thumbnail(target: capturekit::Target) -> Option<String> {
     if is_wayland() {
         return None;
     }
-    let shot = monitor.capture_image().ok()?;
-    encode_thumbnail_base64(&make_thumbnail(&shot))
-}
-
-fn capture_window_thumbnail(window: &Window) -> Option<String> {
-    if is_wayland() {
-        return None;
-    }
-    let shot = window.capture_image().ok()?;
+    let shot = crate::capture::thumbnail(target).ok()?;
     encode_thumbnail_base64(&make_thumbnail(&shot))
 }
 
@@ -302,16 +277,50 @@ pub fn set_window_transparency(
     Ok(())
 }
 
+/// Whether the FFmpeg-free GPU writer is enabled. `native_encoder_available`
+/// reports whether this machine could honour it, so the UI can disable the
+/// toggle rather than offering a switch that silently does nothing.
+#[tauri::command]
+pub fn get_native_encoder(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.config.read().native_encoder)
+}
+
+#[tauri::command]
+pub fn set_native_encoder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> AppResult<()> {
+    let snapshot = {
+        let mut config = state.config.write();
+        config.native_encoder = enabled;
+        config.clone()
+    };
+    save_config(&app, &snapshot);
+    Ok(())
+}
+
+/// Whether this machine has what the native writer needs. Windows plus a Media
+/// Foundation H.264 encoder; anywhere else the answer is a flat no.
+#[tauri::command]
+pub fn native_encoder_available() -> bool {
+    #[cfg(windows)]
+    {
+        crate::encoder::native::available()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 #[tauri::command]
 pub fn get_hide_panel_from_capture(state: State<'_, AppState>) -> AppResult<bool> {
     Ok(state.config.read().hide_panel_from_capture)
 }
 
-/// Async on purpose: after persisting, it reflects the change on a *live*
-/// recording panel so the toggle is immediate rather than "next launch". The
-/// `set_content_protected` round-trip would deadlock the macOS main thread if
-/// this ran as a sync command (those run on the main thread) — see
-/// `exclude_window_from_capture`.
+/// Async on purpose: after persisting it reflects the change on a LIVE recording panel, so the toggle is immediate rather than next-launch.
+/// The `set_content_protected` round-trip would deadlock the macOS main thread if this ran as a sync command.
 #[tauri::command]
 pub async fn set_hide_panel_from_capture(
     app: AppHandle,
@@ -324,11 +333,7 @@ pub async fn set_hide_panel_from_capture(
         config.clone()
     };
     save_config(&app, &snapshot);
-    // If the floating panel is currently open, apply the change right away.
-    // `set_content_protected` toggles both directions (Windows
-    // WDA_EXCLUDEFROMCAPTURE ⇄ WDA_NONE, macOS NSWindow.sharingType none ⇄
-    // readOnly) and the compositor honors it on the next captured frame, so a
-    // mid-recording flip is reflected immediately. No-op on Linux.
+    // `set_content_protected` toggles both directions and the compositor honors it next frame, so a mid-recording flip applies at once.
     if let Some(panel) = app.get_webview_window("recording-panel") {
         panel
             .set_content_protected(enabled)
@@ -379,15 +384,8 @@ pub fn set_last_source(
     Ok(())
 }
 
-/// Apply the runtime log-level filter for the current diagnostic-logging
-/// setting. The tauri-plugin-log dispatch is built permissively (Trace), so
-/// this `log::set_max_level` is the single gate that decides what actually
-/// reaches the rotating file — for the Rust backend AND the webview logs the
-/// frontend forwards through the same plugin.
-///
-/// - off (default) → release builds stay quiet (Warn); debug builds keep Info.
-/// - on → Debug everywhere, capturing backend processing + editor-interaction
-///   traces for a support bundle.
+/// The single gate on what reaches the rotating log file, for the Rust backend and the webview logs forwarded through the same plugin.
+/// The plugin dispatch is built permissively, so off means Warn in release and Info in debug, and on means Debug everywhere.
 pub(crate) fn apply_log_level(diagnostic: bool) {
     let level = if diagnostic {
         log::LevelFilter::Debug
@@ -420,8 +418,7 @@ pub fn set_diagnostic_logging(
     };
     save_config(&app, &snapshot);
     apply_log_level(enabled);
-    // Logged AFTER raising the level so the "enabled" transition is the first
-    // line in a fresh diagnostic session.
+    // Logged AFTER raising the level, so the enabled transition is the first line of a fresh diagnostic session.
     log::info!(
         "diagnostic logging {}",
         if enabled { "enabled" } else { "disabled" }
@@ -449,37 +446,24 @@ pub fn open_log_dir(app: AppHandle) -> AppResult<String> {
     Ok(display)
 }
 
-// `get_displays` and `get_windows` are async + spawn_blocking because xcap's
-// underlying calls (`Monitor::all`, `Window::all`, `capture_image`) can stall
-// for hundreds of ms or longer on Linux/Wayland (portal handshake, compositor
-// IPC). Tauri runs sync commands directly on the GTK main thread on Linux —
-// any blocking work there freezes the entire window: close/minimize/maximize
-// stop responding because the WM can't deliver events. Pushing both onto a
-// blocking worker keeps the GTK loop free even if xcap hangs.
+// Enumeration and thumbnails hit the compositor; a sync command would freeze the GTK main thread.
 #[tauri::command]
 pub async fn get_displays() -> AppResult<Vec<DisplayInfo>> {
     tauri::async_runtime::spawn_blocking(|| -> AppResult<Vec<DisplayInfo>> {
-        let monitors = Monitor::all().map_err(|e| e.to_string())?;
-        Ok(monitors
-            .iter()
-            .map(|monitor| DisplayInfo {
-                id: monitor.id().unwrap_or_default(),
-                name: monitor.name().unwrap_or_default(),
-                x: monitor.x().unwrap_or_default(),
-                y: monitor.y().unwrap_or_default(),
-                width: monitor.width().unwrap_or_default(),
-                height: monitor.height().unwrap_or_default(),
-                is_primary: monitor.is_primary().unwrap_or_default(),
-                thumbnail: capture_monitor_thumbnail(monitor),
-                // The display's current refresh rate, rounded; 0 if unreported.
-                // This is the *current* rate, not the panel's max, so a 144 Hz
-                // monitor running at 60 correctly reports 60.
-                refresh_hz: monitor
-                    .frequency()
-                    .ok()
-                    .filter(|hz| hz.is_finite() && *hz >= 1.0)
-                    .map(|hz| hz.round() as u32)
-                    .unwrap_or(0),
+        let displays = capturekit::displays().map_err(|e| e.to_string())?;
+        Ok(displays
+            .into_iter()
+            .map(|display| DisplayInfo {
+                id: display.id.0,
+                name: display.name,
+                x: display.bounds.x,
+                y: display.bounds.y,
+                width: display.bounds.width,
+                height: display.bounds.height,
+                is_primary: display.is_primary,
+                thumbnail: capture_thumbnail(capturekit::Target::Display(display.id)),
+                // The CURRENT rate, not the panel's maximum; 0 if unreported.
+                refresh_hz: display.refresh_hz.map_or(0, |hz| hz.round() as u32),
             })
             .collect())
     })
@@ -490,30 +474,21 @@ pub async fn get_displays() -> AppResult<Vec<DisplayInfo>> {
 #[tauri::command]
 pub async fn get_windows() -> AppResult<Vec<WindowInfo>> {
     tauri::async_runtime::spawn_blocking(|| -> AppResult<Vec<WindowInfo>> {
-        let windows = Window::all().map_err(|e| e.to_string())?;
-        // Each xcap accessor hits the compositor/WM. The old filter + map
-        // called `.is_minimized()` and `.title()` twice each per window.
-        // Snapshot once into a local struct, then filter + map cheaply.
+        let windows = capturekit::windows().map_err(|e| e.to_string())?;
         Ok(windows
-            .iter()
-            .filter_map(|window| {
-                let is_minimized = window.is_minimized().unwrap_or_default();
-                let title = window.title().unwrap_or_default();
-                if is_minimized || title.is_empty() {
-                    return None;
-                }
-                Some(WindowInfo {
-                    id: window.id().unwrap_or_default(),
-                    pid: window.pid().unwrap_or_default(),
-                    app_name: window.app_name().unwrap_or_default(),
-                    title,
-                    x: window.x().unwrap_or_default(),
-                    y: window.y().unwrap_or_default(),
-                    width: window.width().unwrap_or_default(),
-                    height: window.height().unwrap_or_default(),
-                    is_minimized,
-                    thumbnail: capture_window_thumbnail(window),
-                })
+            .into_iter()
+            .filter(|window| window.is_capturable() && !window.title.is_empty())
+            .map(|window| WindowInfo {
+                id: window.id.0,
+                pid: window.pid,
+                app_name: window.app_name,
+                title: window.title,
+                x: window.bounds.x,
+                y: window.bounds.y,
+                width: window.bounds.width,
+                height: window.bounds.height,
+                is_minimized: window.is_minimized,
+                thumbnail: capture_thumbnail(capturekit::Target::Window(window.id)),
             })
             .collect())
     })
@@ -529,14 +504,8 @@ pub struct AudioDeviceInfo {
     pub is_default: bool,
 }
 
-/// List available audio input (microphone) devices.
-///
-/// `async` + `spawn_blocking` for the same reason as `get_camera_devices`:
-/// enumeration blocks — Linux spawns `pactl list short sources` and waits on
-/// the PulseAudio daemon; macOS spawns FFmpeg on the first (uncached) call;
-/// Windows walks the WASAPI endpoint COM API. Tauri runs sync commands on the
-/// main thread, which on macOS/Linux also renders the WebView, so a slow audio
-/// subsystem would freeze the UI. Push it onto a worker instead.
+/// Lists audio input devices; async plus `spawn_blocking` because enumeration blocks on `pactl`, an FFmpeg spawn, or the WASAPI COM walk.
+/// Tauri runs sync commands on the main thread, which also renders the WebView on macOS and Linux, so a slow audio subsystem would freeze the UI.
 #[tauri::command]
 pub async fn get_audio_devices() -> AppResult<Vec<AudioDeviceInfo>> {
     tauri::async_runtime::spawn_blocking(get_audio_devices_blocking)
@@ -545,202 +514,44 @@ pub async fn get_audio_devices() -> AppResult<Vec<AudioDeviceInfo>> {
         .map_err(Into::into)
 }
 
+/// Every microphone capturekit can name, plus the default row.
+/// Loopback endpoints are dropped: they are outputs read backwards, and a mic picker offering one records the desktop instead of the speaker.
 fn get_audio_devices_blocking() -> Result<Vec<AudioDeviceInfo>, String> {
-    #[cfg(windows)]
-    {
-        get_audio_devices_windows()
+    if !capturekit::capabilities().audio_device_enumeration {
+        return Ok(vec![default_microphone()]);
     }
-    #[cfg(target_os = "macos")]
-    {
-        Ok(get_audio_devices_macos())
-    }
-    #[cfg(target_os = "linux")]
-    {
-        Ok(get_audio_devices_linux())
-    }
-    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    {
-        Ok(Vec::new())
+    let devices = capturekit::audio_devices().map_err(|err| err.to_string())?;
+    Ok(microphones(&devices))
+}
+
+/// The row for a backend that names no devices, so the picker offers what will
+/// actually be captured rather than reading as "no microphone found".
+fn default_microphone() -> AudioDeviceInfo {
+    AudioDeviceInfo {
+        id: "default".to_string(),
+        name: "System default".to_string(),
+        is_default: true,
     }
 }
 
-/// macOS audio input devices via the cached AVFoundation listing in
-/// `ffmpeg.rs`. We reuse the already-collected stderr (one probe per
-/// process) instead of spawning FFmpeg again — see
-/// `cached_avfoundation_devices` for the caching rationale.
-///
-/// AVFoundation lacks a "system default" concept comparable to WASAPI's
-/// `eConsole` endpoint, so `is_default` flags the first device — which
-/// is what FFmpeg picks when `-i :0` is passed without an explicit index.
-#[cfg(target_os = "macos")]
-fn get_audio_devices_macos() -> Vec<AudioDeviceInfo> {
-    let stderr = crate::ffmpeg::cached_avfoundation_devices();
-    parse_avfoundation_section(stderr, AvfSection::Audio)
-        .into_iter()
-        .enumerate()
-        .map(|(idx, (id, name))| AudioDeviceInfo {
-            id,
-            name,
-            is_default: idx == 0,
+fn microphones(devices: &[capturekit::AudioDevice]) -> Vec<AudioDeviceInfo> {
+    devices
+        .iter()
+        .filter(|device| device.direction == capturekit::AudioDirection::Input)
+        .map(|device| AudioDeviceInfo {
+            id: device.id.0.clone(),
+            name: if device.name.is_empty() {
+                device.id.0.clone()
+            } else {
+                device.name.clone()
+            },
+            is_default: device.is_default,
         })
         .collect()
 }
 
-/// Linux audio input devices via `pactl list short sources`. Returns
-/// PulseAudio source names (e.g. `alsa_input.pci-0000_00_1f.3.analog-stereo`)
-/// as IDs. `.monitor` sources are filtered out — those are loopback
-/// sinks, not microphones, and would confuse a mic picker.
-#[cfg(target_os = "linux")]
-fn get_audio_devices_linux() -> Vec<AudioDeviceInfo> {
-    let output = match std::process::Command::new("pactl")
-        .args(["list", "short", "sources"])
-        .output()
-    {
-        Ok(out) if out.status.success() => out,
-        _ => return Vec::new(),
-    };
-    let text = String::from_utf8_lossy(&output.stdout);
-    let mut devices = Vec::new();
-    for line in text.lines() {
-        // Format: `<id>\t<name>\t<driver>\t<sample_spec>\t<state>`
-        let mut cols = line.split('\t');
-        let _ = cols.next();
-        let Some(name) = cols.next() else { continue };
-        if name.ends_with(".monitor") {
-            continue;
-        }
-        // First *surviving* (non-monitor) source becomes the default. Using
-        // the pre-filter enumerate index here would let a leading `.monitor`
-        // row eat the only default slot.
-        let is_default = devices.is_empty();
-        devices.push(AudioDeviceInfo {
-            id: name.to_string(),
-            name: name.to_string(),
-            is_default,
-        });
-    }
-    devices
-}
-
-#[cfg(windows)]
-fn get_audio_devices_windows() -> Result<Vec<AudioDeviceInfo>, String> {
-    use windows::Win32::Media::Audio::*;
-    use windows::Win32::System::Com::*;
-
-    unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-
-        let enumerator: IMMDeviceEnumerator =
-            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
-                .map_err(|e| format!("failed to create device enumerator: {e}"))?;
-
-        let default_id = enumerator
-            .GetDefaultAudioEndpoint(eCapture, eConsole)
-            .ok()
-            .and_then(|d| d.GetId().ok())
-            .map(|pwstr| pwstr.to_string().unwrap_or_default());
-
-        let collection = enumerator
-            .EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE)
-            .map_err(|e| format!("failed to enumerate audio devices: {e}"))?;
-
-        let count = collection.GetCount().map_err(|e| e.to_string())?;
-        let mut devices = Vec::new();
-
-        for i in 0..count {
-            let Ok(device) = collection.Item(i) else {
-                continue;
-            };
-
-            let id = device
-                .GetId()
-                .ok()
-                .and_then(|pwstr| pwstr.to_string().ok())
-                .unwrap_or_default();
-
-            // Use device friendly name from endpoint properties.
-            let name = get_device_name(&device).unwrap_or_else(|| format!("Microphone {}", i + 1));
-
-            let is_default = default_id.as_deref() == Some(&id);
-
-            devices.push(AudioDeviceInfo {
-                id,
-                name,
-                is_default,
-            });
-        }
-
-        Ok(devices)
-    }
-}
-
-/// Extract the friendly name from an audio device using its property store.
-#[cfg(windows)]
-fn get_device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> Option<String> {
-    use windows::core::GUID;
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
-
-    unsafe {
-        let store: IPropertyStore = device
-            .OpenPropertyStore(windows::Win32::System::Com::STGM(0))
-            .ok()?;
-        // PKEY_Device_FriendlyName = {a45c254e-df1c-4efd-8020-67d146a850e0}, 14
-        let key = PROPERTYKEY {
-            fmtid: GUID::from_values(
-                0xa45c254e,
-                0xdf1c,
-                0x4efd,
-                [0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0],
-            ),
-            pid: 14,
-        };
-        let value = store.GetValue(&key).ok()?;
-        // The value is a VT_LPWSTR PROPVARIANT. Use its Display/Debug impl.
-        let display = format!("{}", value);
-        if display.is_empty() || display == "EMPTY" {
-            None
-        } else {
-            Some(display)
-        }
-    }
-}
-
-/// Mark a Tauri window as excluded from screen capture.
-///
-/// On Windows this calls `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`,
-/// which tells the OS compositor to render the window to the user but
-/// substitute a black box (or skip it entirely on supported APIs) when any
-/// process captures the desktop — including DXGI Desktop Duplication, which
-/// is what Recast itself uses for screen recording.
-///
-/// This is the fix for the "I can see my own camera bubble inside the
-/// recorded video" bug: the floating webcam preview window we open during
-/// recording IS part of the desktop, so without this exclusion DXGI
-/// captures its pixels into the screen frame just like any other window.
-///
-/// Requires Windows 10 v2004+ (build 19041) for `WDA_EXCLUDEFROMCAPTURE`.
-/// Older Windows versions silently fall back to `WDA_MONITOR` (renders as
-/// a black box rather than excluded entirely) — still better than the
-/// preview leaking into the recording.
-///
-/// Delegates to Tauri/tao's `set_content_protected`, whose per-platform
-/// behavior is:
-///   - **Windows** — `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`,
-///     which removes the window entirely from every capture surface (DXGI
-///     Desktop Duplication included — the API Recast records with).
-///   - **macOS** — `NSWindow.sharingType = .none`. Recast captures the screen
-///     through FFmpeg AVFoundation, a compositor-level source that honors
-///     `sharingType`, so the window is genuinely absent from the recording.
-///     (The macOS-15 ScreenCaptureKit exception that ignores this flag does
-///     not apply to an AVFoundation capture.)
-///   - **Linux** — compile-time no-op: tao gates the implementation to
-///     macOS+Windows (`window.rs`), because neither X11 root `GetImage` nor
-///     the PipeWire portal exposes a per-window exclusion primitive. The call
-///     is harmless and would start working if tao ever adds a Wayland path.
-///
-/// Async on purpose: sync Tauri commands run on the macOS main thread, and
-/// `set_content_protected` round-trips to the event loop — doing that from the
-/// main thread would deadlock. An async command runs off it.
+/// Hide a window from screen capture, so the floating camera preview stops appearing inside the recording.
+/// Windows and macOS only (tao gates it); async because `set_content_protected` round-trips to the event loop and would deadlock the macOS main thread.
 #[tauri::command]
 pub async fn exclude_window_from_capture(app: AppHandle, label: String) -> AppResult<()> {
     let window = app
@@ -753,24 +564,8 @@ pub async fn exclude_window_from_capture(app: AppHandle, label: String) -> AppRe
     Ok(())
 }
 
-/// Lock a window's resize to a fixed aspect ratio and cap its width at a
-/// fraction of its current monitor.
-///
-/// On Windows this installs a `WM_SIZING` subclass so the box stays
-/// proportional *while dragging* (you can't pull width or height
-/// independently) and never exceeds `max_screen_fraction` of the monitor's
-/// work-area width. Re-invoke with a new ratio when the aspect changes (e.g.
-/// the camera bubble cycling 1:1 → 16:9) — the constraint updates in place.
-///
-/// No-op on other platforms; callers there keep the JS snap-to-aspect
-/// fallback. `min_width_px` and `chrome_px` are in physical pixels (the OS
-/// drag rect is too), so callers pass `logical * devicePixelRatio`.
-///
-/// `chrome_px` is fixed, non-scaling vertical space reserved at the bottom of
-/// the window for a control bar that sits *outside* the rounded video — the
-/// aspect ratio applies to `height - chrome_px`, so the visible bubble keeps
-/// its shape while the window is that much taller. Pass 0 for a video-only
-/// window.
+/// Locks a window's resize to an aspect ratio and caps its width at a fraction of the monitor; re-invoke to change the ratio in place.
+/// Windows only. Sizes are physical pixels, and `chrome_px` is non-scaling space excluded from the ratio for a control bar below the video.
 #[tauri::command]
 pub fn set_window_aspect_ratio(
     app: AppHandle,
@@ -814,9 +609,7 @@ pub fn set_window_aspect_ratio(
 /// List available camera/video capture devices.
 #[tauri::command]
 pub async fn get_camera_devices() -> AppResult<Vec<CameraDeviceInfo>> {
-    // Device enumeration can take a few hundred ms (or several seconds if a
-    // webcam is slow to respond on Windows dshow). Tauri runs sync commands
-    // on the main thread, which froze the UI; move to a worker.
+    // Enumeration opens every device node, which a slow webcam stalls for ages.
     tauri::async_runtime::spawn_blocking(get_camera_devices_blocking)
         .await
         .map_err(|e| AppError::msg(format!("get_camera_devices join error: {e}")))?
@@ -824,251 +617,19 @@ pub async fn get_camera_devices() -> AppResult<Vec<CameraDeviceInfo>> {
 }
 
 fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
-    #[cfg(windows)]
-    {
-        get_camera_devices_windows()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        Ok(get_camera_devices_macos())
-    }
-    #[cfg(target_os = "linux")]
-    {
-        Ok(get_camera_devices_linux())
-    }
-    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
-    {
-        Ok(Vec::new())
-    }
-}
-
-#[cfg(windows)]
-fn get_camera_devices_windows() -> Result<Vec<CameraDeviceInfo>, String> {
-    // ffmpeg DirectShow listing is the only way to enumerate dshow names
-    // that match what the capture pipeline opens.
-    let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
-    command.args([
-        "-hide_banner",
-        "-list_devices",
-        "true",
-        "-f",
-        "dshow",
-        "-i",
-        "dummy",
-    ]);
-    crate::ffmpeg::configure_silent_command(&mut command);
-    let output = command
-        .output()
-        .map_err(|e| format!("failed to list camera devices: {e}"))?;
-
-    // ffmpeg prints device list to stderr (it "fails" because "dummy" isn't a real input).
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Ok(parse_camera_devices(&stderr))
-}
-
-/// macOS cameras from the cached AVFoundation listing. The AVFoundation
-/// video section includes screen-capture pseudo-devices ("Capture screen 0",
-/// "Capture screen 1") that aren't real cameras — filter those so the UI
-/// picker doesn't surface them.
-#[cfg(target_os = "macos")]
-fn get_camera_devices_macos() -> Vec<CameraDeviceInfo> {
-    let stderr = crate::ffmpeg::cached_avfoundation_devices();
-    parse_avfoundation_section(stderr, AvfSection::Video)
+    // Id stays the friendly name: it is what a saved profile holds.
+    Ok(crate::camera::devices()?
         .into_iter()
-        .filter(|(_, name)| !name.to_ascii_lowercase().starts_with("capture screen"))
-        .map(|(id, name)| {
-            let (status, status_message) = classify_camera_name(&name);
+        .map(|camera| {
+            let (status, status_message) = classify_camera_name(&camera.name);
             CameraDeviceInfo {
-                id,
-                name,
+                id: camera.name.clone(),
+                name: camera.name,
                 status,
                 status_message,
             }
         })
-        .collect()
-}
-
-/// Linux cameras via /dev/video* scan + sysfs name lookup. Friendly names
-/// live in `/sys/class/video4linux/videoN/name`; the device node path is
-/// what the V4L2 input expects, so we return that as the ID.
-///
-/// V4L2 exposes capture *and* output devices under the same prefix. We
-/// only want capture devices (cameras); each video node's `device_caps`
-/// in sysfs has the V4L2_CAP_VIDEO_CAPTURE bit (0x00000001) set. Read
-/// that bit and skip nodes that don't have it.
-#[cfg(target_os = "linux")]
-fn get_camera_devices_linux() -> Vec<CameraDeviceInfo> {
-    let entries = match std::fs::read_dir("/dev") {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
-    let mut nodes: Vec<std::path::PathBuf> = entries
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if !name.starts_with("video") {
-                return None;
-            }
-            // Only numeric suffixes — skip "video-output" etc. that some drivers expose.
-            if !name[5..].chars().all(|c| c.is_ascii_digit()) {
-                return None;
-            }
-            Some(entry.path())
-        })
-        .collect();
-    // Sort by node number so /dev/video0 comes first, /dev/video10 after /dev/video2.
-    nodes.sort_by_key(|p| {
-        p.file_name()
-            .and_then(|s| s.to_str())
-            .and_then(|s| s[5..].parse::<u32>().ok())
-            .unwrap_or(u32::MAX)
-    });
-
-    let mut devices = Vec::new();
-    for node in nodes {
-        let Some(file_name) = node.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        // Skip non-capture devices (V4L2 output, metadata, etc.) — we only
-        // want webcams. The capture-capability bit is V4L2_CAP_VIDEO_CAPTURE.
-        let caps_path = format!("/sys/class/video4linux/{file_name}/device_caps");
-        if let Ok(caps_text) = std::fs::read_to_string(&caps_path) {
-            let caps =
-                u32::from_str_radix(caps_text.trim().trim_start_matches("0x"), 16).unwrap_or(0);
-            if caps & 0x0000_0001 == 0 {
-                continue;
-            }
-        }
-        let name = std::fs::read_to_string(format!("/sys/class/video4linux/{file_name}/name"))
-            .map(|s| s.trim().to_string())
-            .ok()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| file_name.to_string());
-        let id = node.to_string_lossy().to_string();
-        let (status, status_message) = classify_camera_name(&name);
-        devices.push(CameraDeviceInfo {
-            id,
-            name,
-            status,
-            status_message,
-        });
-    }
-    devices
-}
-
-/// AVFoundation listing sections. The `-list_devices true` probe prints
-/// two — video first, then audio — each marked with a header line we
-/// match on.
-#[cfg(target_os = "macos")]
-#[derive(Clone, Copy)]
-enum AvfSection {
-    Video,
-    Audio,
-}
-
-/// Parse `cached_avfoundation_devices`'s stderr for one section.
-///
-/// AVFoundation lines look like:
-/// ```text
-/// [AVFoundation indev @ 0x…] AVFoundation video devices:
-/// [AVFoundation indev @ 0x…] [0] FaceTime HD Camera
-/// [AVFoundation indev @ 0x…] [1] Capture screen 0
-/// [AVFoundation indev @ 0x…] AVFoundation audio devices:
-/// [AVFoundation indev @ 0x…] [0] MacBook Air Microphone
-/// ```
-///
-/// Returns `(id, name)` pairs where `id` is the numeric AVFoundation index
-/// (matches what the capture pipeline passes to FFmpeg as `-i N:M`) and
-/// `name` is the user-readable string after the index.
-#[cfg(target_os = "macos")]
-fn parse_avfoundation_section(stderr: &str, section: AvfSection) -> Vec<(String, String)> {
-    let (in_marker, other_marker) = match section {
-        AvfSection::Video => ("AVFoundation video devices", "AVFoundation audio devices"),
-        AvfSection::Audio => ("AVFoundation audio devices", "AVFoundation video devices"),
-    };
-    let mut in_section = false;
-    let mut out = Vec::new();
-    for line in stderr.lines() {
-        if line.contains(in_marker) {
-            in_section = true;
-            continue;
-        }
-        if line.contains(other_marker) {
-            in_section = false;
-            continue;
-        }
-        if !in_section {
-            continue;
-        }
-        // Each device line has `[N]` (the numeric index in square brackets)
-        // somewhere after the `[AVFoundation indev @ …]` prefix. Find the
-        // *last* `[` to skip the prefix.
-        let Some(idx_open) = line.rfind('[') else {
-            continue;
-        };
-        let Some(idx_close_rel) = line[idx_open + 1..].find(']') else {
-            continue;
-        };
-        let inside = &line[idx_open + 1..idx_open + 1 + idx_close_rel];
-        // Must be purely numeric — skip the prefix `[AVFoundation indev @ …]`.
-        if inside.is_empty() || !inside.chars().all(|c| c.is_ascii_digit()) {
-            continue;
-        }
-        let name = line[idx_open + 1 + idx_close_rel + 1..].trim().to_string();
-        if name.is_empty() {
-            continue;
-        }
-        out.push((inside.to_string(), name));
-    }
-    out
-}
-
-#[cfg(any(windows, test))]
-fn parse_camera_devices(stderr: &str) -> Vec<CameraDeviceInfo> {
-    let mut devices: Vec<CameraDeviceInfo> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    let mut in_video_section = false;
-    for line in stderr.lines() {
-        if line.contains("DirectShow video devices") {
-            in_video_section = true;
-            continue;
-        }
-        if line.contains("DirectShow audio devices") {
-            in_video_section = false;
-            continue;
-        }
-        if line.contains("Alternative name") {
-            continue;
-        }
-
-        let has_video_tag = line.contains("(video)");
-        let has_audio_tag = line.contains("(audio)");
-        let is_video_device = has_video_tag || (in_video_section && !has_audio_tag);
-        if !is_video_device {
-            continue;
-        }
-
-        let Some(start) = line.find('"') else {
-            continue;
-        };
-        let Some(end_rel) = line[start + 1..].find('"') else {
-            continue;
-        };
-        let name = line[start + 1..start + 1 + end_rel].trim().to_string();
-        if name.is_empty() || !seen.insert(name.clone()) {
-            continue;
-        }
-
-        let (status, status_message) = classify_camera_name(&name);
-        devices.push(CameraDeviceInfo {
-            id: name.clone(),
-            name,
-            status,
-            status_message,
-        });
-    }
-    devices
+        .collect())
 }
 
 #[tauri::command]
@@ -1090,11 +651,7 @@ pub async fn validate_camera_source(device_id: String) -> AppResult<CameraValida
             });
         };
 
-        // Deep liveliness probe is Windows-only — it spawns FFmpeg with
-        // `-f dshow` against the device ID. On macOS/Linux we trust the
-        // enumeration's classification (which already flags known
-        // virtual-camera quirks) since AVFoundation / V4L2 don't have a
-        // cheap equivalent to dshow's "open and grab one frame" check.
+        // The deep liveliness probe is Windows-only; AVFoundation and V4L2 have no cheap 'open and grab one frame' equivalent.
         #[cfg(windows)]
         let (status, status_message) = probe_camera_device_health(&device.id)
             .unwrap_or_else(|| (device.status.clone(), device.status_message.clone()));
@@ -1183,6 +740,51 @@ fn probe_camera_device_health(device_id: &str) -> Option<(String, Option<String>
 }
 
 #[cfg(test)]
+mod microphone_tests {
+    use super::{microphones, AudioDeviceInfo};
+    use capturekit::{AudioDevice, AudioDeviceId, AudioDirection, AudioFormat, SampleFormat};
+
+    fn device(id: &str, name: &str, direction: AudioDirection, is_default: bool) -> AudioDevice {
+        AudioDevice {
+            id: AudioDeviceId(id.to_string()),
+            name: name.to_string(),
+            direction,
+            is_default,
+            format: AudioFormat::new(48_000, 2, SampleFormat::F32),
+        }
+    }
+
+    fn listed() -> Vec<AudioDeviceInfo> {
+        microphones(&[
+            device("speakers", "Speakers", AudioDirection::Loopback, true),
+            device("yeti", "Blue Yeti", AudioDirection::Input, true),
+            device("nameless", "", AudioDirection::Input, false),
+        ])
+    }
+
+    /// A loopback endpoint is an output read backwards; offering one in a mic
+    /// picker records the desktop instead of the speaker.
+    #[test]
+    fn loopback_endpoints_are_not_offered_as_microphones() {
+        let ids: Vec<_> = listed().into_iter().map(|d| d.id).collect();
+        assert_eq!(ids, vec!["yeti", "nameless"]);
+    }
+
+    #[test]
+    fn the_default_flag_survives_the_filter() {
+        let devices = listed();
+        assert!(devices[0].is_default);
+        assert!(!devices[1].is_default);
+    }
+
+    /// PipeWire nodes can have no description; a blank row is unpickable.
+    #[test]
+    fn a_device_with_no_name_is_listed_under_its_id() {
+        assert_eq!(listed()[1].name, "nameless");
+    }
+}
+
+#[cfg(test)]
 mod manifest_tests {
     use super::{read_json_manifest, write_json_manifest};
     use std::collections::HashMap;
@@ -1236,7 +838,7 @@ mod manifest_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify_camera_name, parse_camera_devices};
+    use super::classify_camera_name;
 
     #[test]
     fn classifies_known_flaky_virtual_cameras_as_warning() {
@@ -1264,41 +866,9 @@ mod tests {
         let (status, _) = classify_camera_name("droidcam source");
         assert_eq!(status, "warning");
     }
-
-    #[test]
-    fn parses_legacy_ffmpeg_camera_list() {
-        let stderr = r#"
-[dshow @ 0000] DirectShow video devices
-[dshow @ 0000]  "Integrated Camera"
-[dshow @ 0000]  "NVIDIA Broadcast"
-[dshow @ 0000] DirectShow audio devices
-"#;
-        let devices = parse_camera_devices(stderr);
-        assert_eq!(devices.len(), 2);
-        assert_eq!(devices[0].name, "Integrated Camera");
-        assert_eq!(devices[0].status, "ready");
-        assert_eq!(devices[1].status, "warning");
-    }
-
-    #[test]
-    fn parses_inline_video_tags_and_dedupes() {
-        let stderr = r#"
-[dshow @ 0000] "OBS Virtual Camera" (video)
-[dshow @ 0000] "OBS Virtual Camera" (video)
-[dshow @ 0000] "Microphone" (audio)
-"#;
-        let devices = parse_camera_devices(stderr);
-        assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].name, "OBS Virtual Camera");
-        assert_eq!(devices[0].status, "unknown");
-    }
 }
 
-// `async` + `spawn_blocking`: the Linux path runs `gdbus ... .status()`, which
-// blocks on a D-Bus round-trip (and its timeout) to the file manager. Sync
-// commands run on the macOS/Linux UI thread, so that round-trip would briefly
-// freeze the window. The Windows/macOS branches only `spawn()` (non-blocking),
-// but routing all three through a worker keeps the command uniformly off-thread.
+// Async plus spawn_blocking: the Linux path blocks on a D-Bus round-trip, and sync commands run on the UI thread.
 #[tauri::command]
 pub async fn open_file_location(path: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || open_file_location_blocking(path))
@@ -1317,9 +887,7 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "macos")]
     {
-        // `open -R` is the Finder equivalent of `explorer /select,` —
-        // it opens Finder and highlights the file in its containing
-        // folder. Detached spawn; we never wait on Finder.
+        // `open -R` is Finder's equivalent of explorer select; a detached spawn, since we never wait on Finder.
         Command::new("open")
             .args(["-R", &path])
             .spawn()
@@ -1327,13 +895,7 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
-        // No portable "reveal" — the closest cross-DE option is the
-        // D-Bus FileManager1 interface, supported by Nautilus, Dolphin,
-        // Nemo, Caja, and Thunar. Try that first via `gdbus`, then fall
-        // back to opening the parent directory with `xdg-open`. Both
-        // paths are best-effort: if neither tool is present we still
-        // succeed at the IPC level so the UI doesn't surface a hard
-        // failure for what is a quality-of-life shortcut.
+        // No portable reveal: try D-Bus FileManager1 via `gdbus`, then fall back to `xdg-open` on the parent; both best-effort.
         let p = std::path::Path::new(&path);
         let uri = format!("file://{}", p.display());
         let reveal = Command::new("gdbus")
@@ -1366,11 +928,8 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Move a file to the OS recycle bin / trash.
-/// Validates the path exists and is a file before deleting.
-///
-/// `trash::delete` is a COM shell round-trip on Windows and a Finder/DBus one
-/// elsewhere, so it must not run on the main thread (macOS WKWebView freeze).
+/// Move a file to the OS recycle bin / trash. Validates the path exists and is a file before deleting.
+/// `trash::delete` is a COM shell round-trip on Windows and a Finder/DBus one elsewhere, so it must not run on the main thread (macOS WKWebView freeze).
 #[tauri::command]
 pub async fn delete_file(path: String) -> AppResult<()> {
     tokio::task::spawn_blocking(move || {
@@ -1387,15 +946,8 @@ pub async fn delete_file(path: String) -> AppResult<()> {
     .map_err(|e| AppError::msg(format!("delete task panicked: {e}")))?
 }
 
-/// Rename a file in place (same directory, new filename).
-/// Preserves the original extension by default if `new_name` has none.
-/// Returns the new absolute path on success.
-///
-/// Edge cases handled:
-/// - empty new name
-/// - name containing path separators or illegal chars
-/// - target filename already exists (reject, never overwrite)
-/// - source file missing
+/// Renames a file in place, keeping the original extension when `new_name` has none, and returns the new absolute path.
+/// Rejects an empty name, path separators or illegal characters, a missing source, and an existing target: it never overwrites.
 #[tauri::command]
 pub fn rename_file(path: String, new_name: String) -> AppResult<String> {
     let src = std::path::PathBuf::from(&path);
@@ -1449,14 +1001,8 @@ pub fn rename_file(path: String, new_name: String) -> AppResult<String> {
     Ok(dest.to_string_lossy().to_string())
 }
 
-/// Probe which video encoders actually initialize on this device (a real
-/// 1-frame encode per candidate, not just "compiled in"). Drives the
-/// Settings → About "Hardware acceleration" matrix so users can see which
-/// GPU encoder their machine supports and which one the recorder picks.
-///
-/// async + spawn_blocking because each hardware probe spawns FFmpeg and can
-/// take a few hundred ms cold — running it inline would freeze the GTK main
-/// thread on Linux (same rationale as `get_displays`).
+/// Probes which encoders actually initialize here with a real 1-frame encode, driving the Settings hardware-acceleration matrix.
+/// Async plus `spawn_blocking`: each hardware probe spawns FFmpeg and can take hundreds of ms cold, which would freeze the GTK main thread.
 #[tauri::command]
 pub async fn probe_video_encoders() -> AppResult<Vec<crate::ffmpeg::EncoderAvailability>> {
     tauri::async_runtime::spawn_blocking(crate::ffmpeg::probe_recordable_encoders)
@@ -1464,13 +1010,8 @@ pub async fn probe_video_encoders() -> AppResult<Vec<crate::ffmpeg::EncoderAvail
         .map_err(|e| AppError::msg(format!("probe_video_encoders join error: {e}")))
 }
 
-/// One capture-input capability and whether the *running* build can do it on
-/// *this* device. `backend` names the native API actually used (DXGI, PipeWire,
-/// AVFoundation, …) so the Settings panel can be specific instead of vague.
-/// Why a capability isn't usable — the distinction the UI needs to choose
-/// between "not supported on this OS" and "not available yet". `supported`
-/// stays as the plain boolean the Settings matrix already keys off; `status`
-/// refines the `false` case.
+/// Why a capability is not usable: the distinction the UI needs between "not supported on this OS" and "not available yet".
+/// `supported` stays the plain boolean the Settings matrix keys off, and this refines only its `false` case.
 #[derive(Debug, Serialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum CapabilityStatus {
@@ -1487,6 +1028,8 @@ pub enum CapabilityStatus {
     Planned,
 }
 
+/// One capture-input capability and whether the running build can do it on this device.
+/// `backend` names the native API actually used (DXGI, PipeWire, AVFoundation), so the Settings panel can be specific instead of vague.
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureCapability {
@@ -1539,6 +1082,27 @@ fn cap(
     }
 }
 
+/// The cursor row, from what capturekit reports rather than from a per-OS
+/// guess. Wayland hands the pointer to no application, so a hardcoded `true`
+/// there is how a silently empty cursor track ships.
+fn cursor_cap(backend: &str) -> CaptureCapability {
+    let caps = capturekit::capabilities();
+    let note = if !caps.cursor_pointer {
+        Some("Your session does not report the pointer to applications, so cursor tracking is off.")
+    } else if !caps.cursor_buttons {
+        Some("Movement is tracked, but clicks cannot be detected on this session.")
+    } else {
+        None
+    };
+    cap(
+        "cursor",
+        "Cursor tracking",
+        caps.cursor_pointer,
+        backend,
+        note,
+    )
+}
+
 /// A capability we plan to support but haven't built for this platform yet —
 /// distinct from `cap(.., false, ..)`, which marks something the OS can't do
 /// at all. Drives the "not available yet" toast rather than "not supported".
@@ -1555,9 +1119,8 @@ fn cap_planned(key: &str, label: &str, backend: &str, note: Option<&str>) -> Cap
     }
 }
 
-/// Build the capture-support matrix for whichever platform this binary was
-/// compiled for. Each `#[cfg]` block is the function's tail expression on its
-/// target — the same dispatch pattern as `capture::platform::create_source`.
+/// Build the capture-support matrix for whichever platform this binary was compiled for. Each `#[cfg]` block is the function's tail expression on its target.
+/// Every row but the cursor describes a capturekit backend; the cursor sampler is the app's own and has not moved yet.
 fn build_capture_capabilities() -> CaptureCapabilities {
     #[cfg(windows)]
     {
@@ -1571,35 +1134,34 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                     "Full-screen recording",
                     true,
                     screen_backend,
-                    Some("Falls back to GDI capture (xcap) if GPU duplication is unavailable."),
+                    None,
                 ),
-                cap("window", "Window capture", true, screen_backend, None),
+                cap(
+                    "window",
+                    "Window capture",
+                    true,
+                    "Windows Graphics Capture",
+                    Some("Records the window's own surface, so overlapping windows stay out."),
+                ),
                 cap("region", "Region capture", true, screen_backend, None),
                 cap("systemAudio", "System audio", true, "WASAPI loopback", None),
                 cap("microphone", "Microphone", true, "WASAPI", None),
-                cap("camera", "Webcam", true, "DirectShow (FFmpeg)", None),
                 cap(
-                    "cursor",
-                    "Cursor tracking",
+                    "camera",
+                    "Webcam",
                     true,
-                    "Win32 GetCursorInfo",
-                    None,
+                    "Media Foundation",
+                    Some("DirectShow-only virtual cameras are not listed."),
                 ),
+                cursor_cap("Win32 GetCursorInfo"),
             ],
         }
     }
     #[cfg(target_os = "macos")]
     {
-        // The AVFoundation device listing is cached after the first probe. A
-        // "Capture screen" pseudo-device in it means the bundled FFmpeg has
-        // avfoundation support wired — the prerequisite for the native macOS
-        // path. (Screen Recording *permission* is enforced at record time,
-        // not at listing time, so its presence here only proves the API is
-        // reachable, which is exactly the "is it supported" question.)
-        let listing = crate::ffmpeg::cached_avfoundation_devices();
-        let has_avf = !listing.is_empty();
-        let has_screen = listing.to_ascii_lowercase().contains("capture screen");
-        let screen_backend = "FFmpeg AVFoundation";
+        // Always present; the grant varies, and the row's note covers that.
+        let has_screen = true;
+        let screen_backend = "ScreenCaptureKit";
         CaptureCapabilities {
             platform: "macos".into(),
             screen_backend: screen_backend.into(),
@@ -1616,28 +1178,31 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                     "Window capture",
                     has_screen,
                     screen_backend,
-                    Some("Captured as a screen region; placement is approximate on Retina displays."),
+                    Some("Records the window's own surface, so overlapping windows stay out."),
                 ),
                 cap("region", "Region capture", has_screen, screen_backend, None),
                 cap(
                     "systemAudio",
                     "System audio",
-                    has_avf,
-                    "ScreenCaptureKit",
-                    Some("Falls back to a virtual device (e.g. BlackHole) when the system tap is unavailable."),
+                    has_screen,
+                    screen_backend,
+                    Some("Carries the Screen Recording grant: macOS taps the output mix through the same stream."),
                 ),
-                cap("microphone", "Microphone", has_avf, "AVFoundation", None),
-                cap("camera", "Webcam", has_avf, "AVFoundation", None),
-                cap("cursor", "Cursor tracking", true, "CoreGraphics", None),
+                cap(
+                    "microphone",
+                    "Microphone",
+                    true,
+                    "AVFoundation",
+                    Some("Uses the Microphone permission, separate from Screen Recording."),
+                ),
+                cap("camera", "Webcam", true, "AVFoundation", None),
+                cursor_cap("CoreGraphics"),
             ],
         }
     }
     #[cfg(target_os = "linux")]
     {
-        // Session-type dispatch mirrors `capture::platform::create_source`:
-        // prefer Wayland (PipeWire portal) when present, else X11, else the
-        // software fallback. WAYLAND_DISPLAY is checked first because XWayland
-        // sets both.
+        // WAYLAND_DISPLAY first: XWayland sets both, and X11 capture under it is black.
         let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
         let x11 = std::env::var_os("DISPLAY").is_some();
         let (screen_backend, screen_note): (&str, Option<&str>) = if wayland {
@@ -1649,18 +1214,11 @@ fn build_capture_capabilities() -> CaptureCapabilities {
             ("X11 (XGetImage)", None)
         } else {
             (
-                "xcap (software)",
-                Some("No display server detected — capture falls back to the slow software path."),
+                "None",
+                Some("No display server detected — set WAYLAND_DISPLAY or DISPLAY."),
             )
         };
-        // device_query reads the pointer through X11/xcb; a pure-Wayland
-        // session (no XWayland) blocks global pointer reads, so cursor
-        // tracking is best-effort there.
-        let cursor_note = if wayland && !x11 {
-            Some("Limited under Wayland — global cursor position may be unavailable.")
-        } else {
-            None
-        };
+        let audio = capturekit::capabilities().audio_loopback;
         CaptureCapabilities {
             platform: "linux".into(),
             screen_backend: screen_backend.into(),
@@ -1677,27 +1235,19 @@ fn build_capture_capabilities() -> CaptureCapabilities {
                 cap(
                     "systemAudio",
                     "System audio",
-                    true,
-                    "PulseAudio / PipeWire",
-                    Some("Uses a PulseAudio monitor source; needs PulseAudio or PipeWire-Pulse."),
+                    audio,
+                    "PipeWire",
+                    Some("Reads the default sink's monitor; needs a running PipeWire daemon."),
                 ),
-                cap(
-                    "microphone",
-                    "Microphone",
-                    true,
-                    "PulseAudio (FFmpeg)",
-                    None,
-                ),
+                cap("microphone", "Microphone", audio, "PipeWire", None),
                 cap("camera", "Webcam", true, "V4L2", None),
-                cap("cursor", "Cursor tracking", true, "X11 (xcb)", cursor_note),
+                cursor_cap("X11 XQueryPointer"),
             ],
         }
     }
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
-        // Unknown desktop platform: we have no backend wired yet, but this is a
-        // gap in our coverage rather than an OS that *can't* — so mark every row
-        // `planned` ("not available yet") instead of `unsupported`.
+        // No backend wired yet is a gap in our coverage, not an incapable OS, so mark every row planned, not unsupported.
         let pending = "Not implemented yet";
         CaptureCapabilities {
             platform: "other".into(),
@@ -1737,11 +1287,8 @@ pub fn cli_install_status() -> crate::path_install::InstallStatus {
     crate::path_install::status()
 }
 
-/// Put `recast` on the user's PATH (the in-app "Install command line tool").
-///
-/// Async + `spawn_blocking`: this copies the whole release binary (tens of MB
-/// with ggml + ocr linked) and edits the registry / shell rc. A sync command
-/// runs on the main thread, which freezes the macOS WKWebView.
+/// Puts `recast` on the user's PATH, the in-app "Install command line tool".
+/// Async plus `spawn_blocking`: it copies tens of MB of release binary and edits the registry or shell rc, and a sync command would freeze the macOS WKWebView.
 #[tauri::command]
 pub async fn install_cli() -> AppResult<String> {
     tokio::task::spawn_blocking(|| crate::path_install::install().map_err(AppError::msg))
@@ -1811,9 +1358,7 @@ pub async fn diagnose_ffmpeg() -> AppResult<FfmpegDiagnostics> {
                     missing.push(name.to_string());
                 }
             }
-            // Hardware encoders are informational, not required. Listing
-            // every vendor-specific codec the bundled FFmpeg supports so
-            // the diagnostics page reflects what's actually selectable.
+            // Hardware encoders are informational: list what the bundled FFmpeg supports so diagnostics reflect what is selectable.
             for hw in [
                 "h264_videotoolbox",
                 "h264_nvenc",

@@ -47,8 +47,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 				createdAt: recast.createdAt,
 				views: recastViewsSql(),
 				latestShareSlug: recastLatestShareSlugSql(),
-				// Tag id array per recast — resolved against the `tags` list
-				// below in the UI. `[]` when untagged.
+				// Tag ids per recast, resolved against the `tags` list in the UI; empty when untagged.
 				tags: recastTagIdsSql(),
 			})
 			.from(recast)
@@ -73,8 +72,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 
 	return {
 		workspaceId,
-		// `videoUrl` is stored as a bare object key; sign it into a playable URL
-		// the same way the share page does (signing is local/cheap per row).
+		// `videoUrl` is a bare object key, signed into a playable URL the same way the share page does.
 		recasts: await Promise.all(
 			rows.map(async (r) => ({
 				...r,

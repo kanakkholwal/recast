@@ -1,19 +1,35 @@
 {
-  "$schema": "../../schema/extension.source.schema.json",
-  "id": "motion-easings",
-  "name": "Motion Easings",
-  "version": "1.0.0",
-  "author": "Recast",
-  "description": "Cinematic easing curves — smooth expo and quint decelerations, a circular in-out, and a gentle overshoot.",
-  "kind": "asset-pack",
-  "permissions": [],
-  "contributes": {
-    "easings": [
-      { "id": "expo-out", "label": "Expo Out", "value": { "x1": 0.16, "y1": 1, "x2": 0.3, "y2": 1 } },
-      { "id": "quint-out", "label": "Quint Out", "value": { "x1": 0.22, "y1": 1, "x2": 0.36, "y2": 1 } },
-      { "id": "circ-in-out", "label": "Circ In-Out", "value": { "x1": 0.85, "y1": 0, "x2": 0.15, "y2": 1 } },
-      { "id": "back-out", "label": "Back Out", "value": { "x1": 0.34, "y1": 1.56, "x2": 0.64, "y2": 1 } }
-    ]
-  },
-  "assets": []
+	"$schema": "../../schema/extension.source.schema.json",
+	"id": "motion-easings",
+	"name": "Motion Easings",
+	"version": "1.0.0",
+	"author": "Recast",
+	"description": "Cinematic easing curves — smooth expo and quint decelerations, a circular in-out, and a gentle overshoot.",
+	"kind": "asset-pack",
+	"permissions": [],
+	"contributes": {
+		"easings": [
+			{
+				"id": "expo-out",
+				"label": "Expo Out",
+				"value": { "x1": 0.16, "y1": 1, "x2": 0.3, "y2": 1 }
+			},
+			{
+				"id": "quint-out",
+				"label": "Quint Out",
+				"value": { "x1": 0.22, "y1": 1, "x2": 0.36, "y2": 1 }
+			},
+			{
+				"id": "circ-in-out",
+				"label": "Circ In-Out",
+				"value": { "x1": 0.85, "y1": 0, "x2": 0.15, "y2": 1 }
+			},
+			{
+				"id": "back-out",
+				"label": "Back Out",
+				"value": { "x1": 0.34, "y1": 1.56, "x2": 0.64, "y2": 1 }
+			}
+		]
+	},
+	"assets": []
 }

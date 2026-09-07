@@ -13,8 +13,7 @@ import type { Actions, PageServerLoad } from "./$types";
 export const load: PageServerLoad = async (event) => {
 	await requireAdmin(event);
 	const db = getDb();
-	// Streamed — the page header and approve form render immediately while
-	// the list fills in.
+	// Streamed: the header and approve form render immediately while the list fills in.
 	const pending = db
 		.select({
 			id: user.id,
@@ -37,8 +36,7 @@ export const actions: Actions = {
 		if (!ids.length) return fail(400, { error: "No users selected" });
 
 		const db = getDb();
-		// Read before the flip so we know who was actually pending. Re-approving
-		// an already-active user shouldn't re-send them a welcome email.
+		// Read before the flip, so re-approving an already-active user doesn't re-send a welcome email.
 		const targets = await db
 			.select({ id: user.id, email: user.email, name: user.name, status: user.status })
 			.from(user)
@@ -58,8 +56,7 @@ export const actions: Actions = {
 			});
 		}
 
-		// Activation has to back-fill the default team: the user.create hook
-		// skipped it while they were pending.
+		// Activation back-fills the default team: the user.create hook skipped it while they were pending.
 		let emailed = 0;
 		for (const target of newlyApproved) {
 			await ensureDefaultTeamForUser({
@@ -67,9 +64,7 @@ export const actions: Actions = {
 				name: target.name ?? "",
 				email: target.email,
 			});
-			// One bad address shouldn't strand the rest of a bulk approve. The
-			// status flip already committed, so a failure here costs the user
-			// their email, not their account.
+			// One bad address shouldn't strand a bulk approve; the status flip already committed, so a failure costs only the email.
 			try {
 				const url = await createSetPasswordLink(target.id);
 				await sendTemplatedEmail({

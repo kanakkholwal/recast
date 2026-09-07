@@ -1,7 +1,7 @@
 <script lang="ts" module>
-  export type CutoutCorner = "tl" | "tr" | "bl" | "br";
-  /** Token surface the notch blends into (must match the area behind the corner). */
-  export type CutoutSurface = "background" | "card" | "muted" | "popover" | "inherit" | "custom";
+export type CutoutCorner = "tl" | "tr" | "bl" | "br";
+/** Token surface the notch blends into (must match the area behind the corner). */
+export type CutoutSurface = "background" | "card" | "muted" | "popover" | "inherit" | "custom";
 </script>
 
 <script lang="ts">

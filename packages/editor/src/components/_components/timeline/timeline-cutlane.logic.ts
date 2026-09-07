@@ -5,8 +5,7 @@ export interface CutBounds {
 	end: number;
 }
 
-// Translate a band by delta, pushing it back inside [0, duration] without
-// changing its length when it would run past either edge.
+// Translate a band by delta, pushing it back inside the clip without changing its length at either edge.
 export function clampCutMove(p: {
 	originStart: number;
 	originEnd: number;

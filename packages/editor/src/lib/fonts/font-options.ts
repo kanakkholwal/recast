@@ -1,6 +1,4 @@
-// Combined font catalog (system + Google) shared by the caption and annotation
-// font pickers, plus the on-demand loader hook. One source of truth so both
-// pickers (and any future one) stay in sync.
+// One combined catalog plus the on-demand loader hook, so the caption and annotation pickers stay in sync.
 import {
 	GOOGLE_FONTS,
 	googleFamilyFromStack,
@@ -41,7 +39,7 @@ export function fontLabel(value: string): string {
 }
 
 /** Fetch + register the font if it's a Google font. No-op for system stacks and
- *  fontsource-bundled fonts (Geist, etc.) — those are already in the document. */
+ *  fontsource-bundled fonts (Inter, etc.) — those are already in the document. */
 export function ensureFontLoaded(value: string, weight = 400): void {
 	if (isSystem(value)) return;
 	const family = googleFamilyFromStack(value);

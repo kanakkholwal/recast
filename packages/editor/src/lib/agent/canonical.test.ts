@@ -3,8 +3,7 @@ import { canonicalize, sameRenderState } from "./canonical";
 
 describe("canonicalize", () => {
 	it("treats an explicit null as an omitted key", () => {
-		// The exact shape the recording panel froze on: TS writes null, Rust's
-		// skip_serializing_if omits it.
+		// The exact shape the recording panel froze on: TS writes null where Rust's skip_serializing_if omits it.
 		expect(sameRenderState({ trimStart: 0, cameraOverlay: null }, { trimStart: 0 })).toBe(true);
 	});
 

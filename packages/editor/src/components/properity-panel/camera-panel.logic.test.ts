@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
+import type { CameraLayout } from "../../lib/editor/render-state";
+import { DEFAULT_SPLIT_FRACTION } from "../../lib/timeline/camera-clip-layout";
+import {
+	CAMERA_LAYOUT_OPTIONS,
+	cameraAvailability,
+	cameraControls,
+	dotStyleFor,
+	labelFor,
+	layoutForKind,
+	splitSideOptions,
+} from "./camera-panel.logic";
 
 describe("cameraAvailability", () => {
 	it("enables the overlay only when a separate track resolved to a file", () => {
@@ -10,8 +20,7 @@ describe("cameraAvailability", () => {
 		expect(cameraAvailability("legacy", false).editable).toBe(false);
 	});
 
-	// The camera WAS switched on; blaming the user for not enabling it is the
-	// exact wrong thing to say, and a warning already fired at record time.
+	// The camera WAS switched on, so blaming the user for not enabling it is exactly the wrong thing to say.
 	it("does not tell a failed capture to turn the camera on", () => {
 		const failed = cameraAvailability("failed", false);
 		expect(failed.description).not.toMatch(/turn the camera on/i);
@@ -19,9 +28,7 @@ describe("cameraAvailability", () => {
 		expect(failed.title).not.toMatch(/no camera/i);
 	});
 
-	// The whole reason capture state is carried separately from the file path:
-	// "you left the camera off" is wrong for a project recorded before the
-	// camera could be captured at all.
+	// Why capture state is carried apart from the path: 'you left the camera off' is wrong for a pre-capture project.
 	it("distinguishes a camera that was off from a project that predates capture", () => {
 		const off = cameraAvailability("off", false).description;
 		const legacy = cameraAvailability("legacy", false).description;
@@ -30,16 +37,14 @@ describe("cameraAvailability", () => {
 		expect(legacy).toMatch(/predates/i);
 	});
 
-	// A recorded-but-missing track is a broken project, not a choice, and must
-	// never read as "no camera was recorded".
+	// A recorded-but-missing track is a broken project, not a choice, and must never read as 'no camera was recorded'.
 	it("calls out a recorded track whose file is missing", () => {
 		const missing = cameraAvailability("separate", false);
 		expect(missing.title).toMatch(/missing/i);
 		expect(missing.description).not.toMatch(/no camera was recorded/i);
 	});
 
-	// Every unavailable state must read differently; two identical messages mean
-	// one of them is guessing.
+	// Every unavailable state must read differently; two identical messages mean one of them is guessing.
 	it("gives each unavailable state its own wording", () => {
 		const descriptions = (["off", "failed", "legacy"] as const).map(
 			(c) => cameraAvailability(c, false).description,
@@ -59,8 +64,7 @@ describe("cameraAvailability", () => {
 });
 
 describe("dotStyleFor", () => {
-	// The preset ids mix conventions ('top-left' = row-col, 'left-center' =
-	// col-row), so these lock the token-based parsing against a regression.
+	// The preset ids mix conventions, so these lock the token-based parsing against a regression.
 	it("places corner presets by row and column", () => {
 		expect(dotStyleFor("top-left")).toContain("left:18%;");
 		expect(dotStyleFor("top-left")).toContain("top:18%;");
@@ -98,5 +102,90 @@ describe("labelFor", () => {
 	it("title-cases the preset id", () => {
 		expect(labelFor("left-center")).toBe("Left Center");
 		expect(labelFor("bottom-right")).toBe("Bottom Right");
+	});
+});
+
+describe("layoutForKind", () => {
+	const splitH: CameraLayout = { kind: "splitH", fraction: 0.42, side: "end" };
+
+	it("fills in a share and a side when a split is first chosen", () => {
+		const next = layoutForKind({ kind: "pip" }, "splitV");
+		expect(next).toEqual({ kind: "splitV", fraction: DEFAULT_SPLIT_FRACTION, side: "start" });
+	});
+
+	// Flipping the axis of an already-framed split keeps that framing rather than resetting to the default.
+	it("carries the framing across a change of split axis", () => {
+		expect(layoutForKind(splitH, "splitV")).toEqual({ ...splitH, kind: "splitV" });
+	});
+
+	it("drops the split fields for a layout that has none", () => {
+		expect(layoutForKind(splitH, "pip")).toEqual({ kind: "pip" });
+		expect(layoutForKind(splitH, "screenOnly")).toEqual({ kind: "screenOnly" });
+	});
+});
+
+describe("splitSideOptions", () => {
+	// A vertical split has no left and right; those labels would describe the opposite of what the control does.
+	it("names the halves by the axis they divide", () => {
+		expect(splitSideOptions("splitH").map((o) => o.label)).toEqual(["Left", "Right"]);
+		expect(splitSideOptions("splitV").map((o) => o.label)).toEqual(["Top", "Bottom"]);
+	});
+
+	it("keeps the same side values on both axes", () => {
+		expect(splitSideOptions("splitH").map((o) => o.value)).toEqual(
+			splitSideOptions("splitV").map((o) => o.value),
+		);
+	});
+});
+
+describe("CAMERA_LAYOUT_OPTIONS", () => {
+	it("offers every layout the renderer knows how to draw", () => {
+		expect(CAMERA_LAYOUT_OPTIONS.map((o) => o.value)).toEqual([
+			"pip",
+			"splitH",
+			"splitV",
+			"screenOnly",
+			"cameraOnly",
+		]);
+	});
+});
+
+describe("cameraControls", () => {
+	const pip = { kind: "pip" } as CameraLayout;
+	const splitH = { kind: "splitH", fraction: 0.4, side: "start" } as CameraLayout;
+
+	it("offers every bubble control on a bubble clip", () => {
+		const c = cameraControls(pip, true);
+		expect([c.bubble, c.motion, c.dodge]).toEqual([true, true, true]);
+		expect(c.reason).toBeNull();
+	});
+
+	// The split writes state nothing reads: the layout owns the rect, not the placement.
+	it("turns the bubble controls off for a split and says which clip did it", () => {
+		const c = cameraControls(splitH, true);
+		expect([c.bubble, c.motion, c.dodge]).toEqual([false, false, false]);
+		expect(c.reason).toMatch(/split/i);
+	});
+
+	it.each([
+		["screenOnly", /hides the camera/i],
+		["cameraOnly", /whole frame/i],
+	])("explains why %s ignores the bubble", (kind, expected) => {
+		const c = cameraControls({ kind } as CameraLayout, true);
+		expect(c.bubble).toBe(false);
+		expect(c.reason).toMatch(expected);
+	});
+
+	// The dodge reads the pointer the frame draws, so no pointer means no dodge.
+	it("turns dodging off when the pointer is hidden, with its own reason", () => {
+		const c = cameraControls(pip, false);
+		expect(c.dodge).toBe(false);
+		expect(c.bubble).toBe(true);
+		expect(c.dodgeReason).toMatch(/pointer/i);
+		expect(c.reason).toBeNull();
+	});
+
+	it("keeps the layout reason for dodging when the layout is the cause", () => {
+		expect(cameraControls(splitH, false).dodgeReason).toBe(cameraControls(splitH, true).reason);
 	});
 });
