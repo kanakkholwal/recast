@@ -12,6 +12,11 @@ use capturekit::{
 /// The display to capture, or `None` when there is no desktop; skipping is allowed because a CI runner may have no session, display or grant.
 /// It must not hide a regression, so the reasons are narrow: an empty display list, or a permission the platform has not given. Any other error still fails.
 fn primary() -> Option<Display> {
+    // Run only on the leg that promises a desktop; an opportunistic runner may serve full frames yet time out on a cropped stream (macOS virtual displays do).
+    if std::env::var_os("CAPTUREKIT_REQUIRE_DESKTOP").is_none() {
+        eprintln!("skipped: set CAPTUREKIT_REQUIRE_DESKTOP=1 to run live capture");
+        return None;
+    }
     if !permission(PermissionKind::Screen).is_usable() {
         return skip("screen capture is not permitted for this process");
     }

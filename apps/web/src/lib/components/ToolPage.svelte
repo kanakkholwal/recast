@@ -275,7 +275,7 @@ $effect(() => {
 			<div class="mt-6">
 				<SectionLabel icon={ShieldCheck} label="Free tool" accent="green" />
 			</div>
-			<h1 class="mt-5 font-display text-balance text-heading-lg">{tool.title}</h1>
+			<h1 class="mt-5 font-display font-medium text-balance text-heading-lg">{tool.title}</h1>
 			<p class="mt-4 max-w-xl text-pretty text-body-lg text-muted-foreground">{tool.tagline}</p>
 		</Container>
 
@@ -539,9 +539,9 @@ $effect(() => {
 		</Container>
 	</section>
 
-	<section class="mx-auto w-full max-w-3xl">
+	<section class="mx-auto w-full max-w-3xl py-10">
 		<Container class="py-10">
-			<h2 class="font-display text-heading-sm">More free tools</h2>
+			<h2 class="font-display text-heading-sm font-medium">More free tools</h2>
 			<p class="mt-2 max-w-lg text-pretty text-body-sm text-muted-foreground">
 				Every conversion runs the same way: on your device, with nothing uploaded.
 			</p>
