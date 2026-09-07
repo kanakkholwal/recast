@@ -24,8 +24,10 @@ on:
         default: preview
         options: [preview, production]
 
+# Serialised per ref: two pushes to main otherwise race two production deploys AND two
+# db:migrate runs. In-progress runs are NOT cancelled, since a half-applied migration is worse.
 concurrency:
-  group: deploy-web-cf-${{ github.ref_name }}
+  group: deploy-web-cf-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -40,12 +42,10 @@ env:
   WRANGLER_BUILD_CONDITIONS: "workerd,worker,import,module,node,default"
 
 jobs:
-  # Circuit breaker: three prerequisites are still missing, and without this the run
-  # fails deep inside wrangler with an error that names none of them.
-  preflight:
-    name: Preflight
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     outputs:
       target: ${{ steps.target.outputs.value }}
     steps:
@@ -53,6 +53,8 @@ jobs:
       - id: target
         run: echo "value=${{ github.event.inputs.environment || (github.ref_name == 'main' && 'production' || 'preview') }}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
+
+      # Circuit breaker: without it the run fails deep inside wrangler with an error that names none of these.
       - name: Check Cloudflare prerequisites
         run: |
           set -euo pipefail
@@ -70,22 +72,13 @@ jobs:
             missing=1
           fi
           if [ "$missing" -ne 0 ]; then
-            echo "::error::Cloudflare deploy is not bootstrapped yet. See the checklist in this workflow's header."
+            echo "::error::Cloudflare deploy is not bootstrapped yet."
             exit 1
           fi
-          echo "::notice::Cloudflare prerequisites satisfied."
+          echo "::notice::Cloudflare prerequisites satisfied; target is ${{ steps.target.outputs.value }}."
 
-  deploy:
-    name: Deploy (${{ needs.preflight.outputs.target }})
-    needs: [preflight]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment:
-      name: ${{ needs.preflight.outputs.target }}
-      url: ${{ needs.preflight.outputs.target == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
-    steps:
-      - uses: actions/checkout@v4
       - name: Install pnpm
+        # Pinned to v4: v6 bootstraps an older pnpm then runs `pnpm self-update`, which crashes on our pinned version (pnpm/pnpm#12959).
         uses: pnpm/action-setup@v4
         with:
           run_install: false
@@ -98,13 +91,51 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Lint
+        run: pnpm exec biome lint --no-errors-on-unmatched apps/web
+      - name: Unit tests
+        if: ${{ !cancelled() }}
+        run: pnpm --filter recast-web test:unit
+
+  deploy:
+    name: Deploy (${{ needs.verify.outputs.target }})
+    needs: [verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ needs.verify.outputs.target }}
+      url: ${{ needs.verify.outputs.target == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Production only, and before the deploy: migrations must be expand-only so the
+      # currently-live code keeps working if the deploy below fails.
+      - name: Apply DB migrations
+        if: needs.verify.outputs.target == 'production'
+        timeout-minutes: 10
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+        run: pnpm --filter recast-web db:migrate
+
       - name: Build apps/web
         env:
           NODE_ENV: production
-          PUBLIC_APP_URL: ${{ needs.preflight.outputs.target == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
+          PUBLIC_APP_URL: ${{ needs.verify.outputs.target == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
         run: pnpm --filter recast-web build
 
-      # `--env production` selects the matching block in wrangler.jsonc; preview is the default.
+      # Top-level config is production; `--env preview` selects the preview worker.
       - name: Deploy via Wrangler
         uses: cloudflare/wrangler-action@v3
         with:
@@ -112,4 +143,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/web
           wranglerVersion: "4"
-          command: deploy ${{ needs.preflight.outputs.target == 'production' && '--env production' || '' }}
+          command: deploy ${{ needs.verify.outputs.target == 'preview' && '--env preview' || '' }}
