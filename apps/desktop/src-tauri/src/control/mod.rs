@@ -12,8 +12,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::Emitter;
 
-use crate::commands::{BranchService, BranchSummary, BRANCHES_CHANGED_EVENT};
-use crate::project::journal::BranchId;
+use crate::agent::axis::time_map;
+use crate::agent::check::{check, ProjectFacts};
+use crate::agent::guard::{within_budget, ProjectPath};
+use crate::agent::intents::{SilencePolicy, ZoomIntent};
+use crate::agent::perception::{silences_view, transcript_view, transcript_words, CONTENT_LABEL};
+use crate::agent::track::{TrackView, Window};
+use crate::commands::types::EditorDocument;
+use crate::commands::{parse_hash, BranchService, BranchSummary, BRANCHES_CHANGED_EVENT};
+use crate::project::journal::{BranchId, StateHash};
 use crate::render::graph::RenderState;
 use crate::render::ops::{apply_op, Op};
 use crate::render::scene_anim::SceneAnimSpec;
@@ -311,6 +318,55 @@ fn require_str(params: &Value, key: &str, method: &str) -> Result<String, String
 
 fn branch_id(params: &Value, method: &str) -> Result<BranchId, String> {
     BranchId::new(require_str(params, "branch", method)?).map_err(stringify)
+}
+
+/// A project path that passed the agent guard, so a verb never opens a file it was not meant to.
+fn guarded_path(params: &Value, method: &str) -> Result<String, String> {
+    let raw = require_str(params, "path", method)?;
+    Ok(ProjectPath::parse(&raw).map_err(stringify)?.as_str())
+}
+
+fn load_doc(path: &str) -> Result<EditorDocument, String> {
+    tauri::async_runtime::block_on(crate::commands::load_editor_document(path.to_string()))
+        .map_err(stringify)
+}
+
+/// `from`/`to` in output seconds; either alone is open-ended on the other side.
+fn window_of(params: &Value) -> Result<Option<Window>, String> {
+    let from = params.get("from").and_then(Value::as_f64);
+    let to = params.get("to").and_then(Value::as_f64);
+    if from.is_none() && to.is_none() {
+        return Ok(None);
+    }
+    Window::new(from.unwrap_or(0.0), to.unwrap_or(f64::MAX))
+        .map(Some)
+        .map_err(stringify)
+}
+
+fn expect_base(params: &Value) -> Result<Option<StateHash>, String> {
+    params
+        .get("expectBase")
+        .and_then(Value::as_str)
+        .map(|hex| parse_hash(hex).map_err(stringify))
+        .transpose()
+}
+
+fn f64_or(params: &Value, key: &str, default: f64) -> f64 {
+    params.get(key).and_then(Value::as_f64).unwrap_or(default)
+}
+
+fn require_f64(params: &Value, key: &str, method: &str) -> Result<f64, String> {
+    params
+        .get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| format!("{method} requires {key}"))
+}
+
+/// Recording content goes out labelled and within budget, so the model can tell data from the tool's own words.
+fn content_result(view: TrackView, hint: &str) -> Result<Value, String> {
+    let mut value = serde_json::to_value(view).map_err(stringify)?;
+    value["label"] = json!(CONTENT_LABEL);
+    Ok(within_budget(value, hint))
 }
 
 fn branches<'a>(
@@ -1200,16 +1256,126 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                     .ok_or_else(|| format!("{method} requires ops"))?,
             )
             .map_err(|e| format!("{method}: invalid ops: {e}"))?;
-            let report = branches(app, state.inner())
+            let receipt = branches(app, state.inner())
                 .append(
                     &project,
                     &branch_id(&params, method)?,
                     require_str(&params, "idemKey", method)?,
                     ops,
                     params.get("expectSeq").and_then(Value::as_u64),
+                    expect_base(&params)?,
                 )
                 .map_err(stringify)?;
-            serde_json::to_value(report).map_err(stringify)
+            serde_json::to_value(receipt).map_err(stringify)
+        }
+        "editor.head" => {
+            let doc = load_doc(&guarded_path(&params, method)?)?;
+            let facts = ProjectFacts::of(&doc);
+            let state = &doc.render_state;
+            let map = time_map(state);
+            let hash = StateHash::of(state).map_err(stringify)?;
+            Ok(json!({
+                "hash": hash,
+                "needsMigration": doc.needs_migration,
+                "sourceDuration": doc.metadata.duration,
+                "outputDuration": map.output_duration,
+                "segments": map.spans.iter().map(|s| json!({
+                    "srcStart": s.orig_start, "srcEnd": s.orig_end,
+                    "outStart": s.out_start, "outEnd": s.out_end, "speed": s.speed,
+                })).collect::<Vec<_>>(),
+                "cuts": state.cuts.len(),
+                "zooms": state.zoom_regions.len(),
+                "annotations": state.annotations.len(),
+                "lanes": {
+                    "zooms": state.focus_enabled,
+                    "annotations": state.annotations_enabled,
+                    "captions": state.caption_style.as_ref().is_some_and(|c| c.enabled),
+                    "camera": state.camera_overlay.enabled,
+                    "cursor": state.cursor_enabled,
+                },
+                "media": {
+                    "camera": facts.has_camera,
+                    "cursorTrack": facts.has_cursor_track,
+                    "words": transcript_words(state).len(),
+                },
+            }))
+        }
+        "agent.check" => {
+            let doc = load_doc(&guarded_path(&params, method)?)?;
+            serde_json::to_value(check(&doc.render_state, &ProjectFacts::of(&doc)))
+                .map_err(stringify)
+        }
+        "agent.transcript" => {
+            let doc = load_doc(&guarded_path(&params, method)?)?;
+            let view = transcript_view(
+                &doc.render_state,
+                &time_map(&doc.render_state),
+                window_of(&params)?,
+            );
+            content_result(
+                view,
+                "pass from and to (output seconds) for a narrower window",
+            )
+        }
+        "agent.silences" => {
+            let doc = load_doc(&guarded_path(&params, method)?)?;
+            let segments = crate::silence::detect_blocking(
+                doc.audio_path.as_deref(),
+                doc.microphone_path.as_deref(),
+                doc.cursor_path.as_deref(),
+                Default::default(),
+            )?;
+            let view = silences_view(&segments, &time_map(&doc.render_state), window_of(&params)?);
+            content_result(
+                view,
+                "pass from and to (output seconds) for a narrower window",
+            )
+        }
+        "agent.remove-silences" => {
+            let project = guarded_path(&params, method)?;
+            let defaults = SilencePolicy::default();
+            let policy = SilencePolicy {
+                min_duration: f64_or(&params, "minDuration", defaults.min_duration),
+                pad: f64_or(&params, "pad", defaults.pad),
+                min_confidence: f64_or(&params, "minConfidence", f64::from(defaults.min_confidence))
+                    as f32,
+            };
+            let receipt = branches(app, state.inner())
+                .remove_silences(
+                    &project,
+                    &branch_id(&params, method)?,
+                    require_str(&params, "idemKey", method)?,
+                    policy,
+                    expect_base(&params)?,
+                )
+                .map_err(stringify)?;
+            serde_json::to_value(receipt).map_err(stringify)
+        }
+        "agent.add-zoom" => {
+            let project = guarded_path(&params, method)?;
+            let idem_key = require_str(&params, "idemKey", method)?;
+            let intent = ZoomIntent {
+                id: params
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map_or_else(|| format!("zoom-{idem_key}"), str::to_string),
+                at: require_f64(&params, "at", method)?,
+                duration: f64_or(&params, "duration", 3.0),
+                center_x: f64_or(&params, "centerX", 0.5),
+                center_y: f64_or(&params, "centerY", 0.5),
+                scale: f64_or(&params, "scale", 1.8),
+                ramp: f64_or(&params, "ramp", 0.5),
+            };
+            let receipt = branches(app, state.inner())
+                .add_zoom(
+                    &project,
+                    &branch_id(&params, method)?,
+                    idem_key,
+                    &intent,
+                    expect_base(&params)?,
+                )
+                .map_err(stringify)?;
+            serde_json::to_value(receipt).map_err(stringify)
         }
         "branch.truncate" => {
             let project = require_str(&params, "path", method)?;

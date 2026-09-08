@@ -221,12 +221,7 @@ fn initialize_result() -> Value {
             "name": "recast",
             "version": env!("CARGO_PKG_VERSION"),
         },
-        "instructions": concat!(
-            "Start with recast_project_list to find a project path; nothing else here ",
-            "discovers one. Recast edits are then proposed on a branch, never written ",
-            "directly: create a branch, append ops to it, then tell the user to review ",
-            "and apply it in the editor. Applying is deliberately not available here."
-        ),
+        "instructions": crate::agent::instructions::MCP_INSTRUCTIONS,
     })
 }
 

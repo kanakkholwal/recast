@@ -40,6 +40,7 @@ const CLI_VERBS: &[&str] = &[
     "export",
     "branch",
     "mcp",
+    "skills",
 ];
 
 /// True when argv[1] is a CLI verb or a help request. `main` uses this to pick
@@ -217,6 +218,21 @@ enum Command {
     /// the client, not by hand. Exposes read verbs plus branch proposals only:
     /// applying a branch stays a human action.
     Mcp,
+    /// Install the editing skill an agent client reads, and print how to connect it.
+    Skills {
+        #[command(subcommand)]
+        action: SkillsAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillsAction {
+    /// Write `recast-editing/SKILL.md` under the skills directory (default: `~/.claude/skills`).
+    Install {
+        /// Skills directory to write into.
+        #[arg(long, value_name = "DIR")]
+        dir: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -307,6 +323,28 @@ enum ProjectAction {
     ZoomRegions { path: String },
     /// List the project's annotations.
     Annotations { path: String },
+    /// The project at a glance: state hash, durations, segments on both clocks, lanes, media.
+    Head { path: String },
+    /// Structural findings: zooms inside cuts, captions without words, validator errors.
+    Check { path: String },
+    /// Transcribed words on the output clock, optionally windowed.
+    Transcript {
+        path: String,
+        /// Window start, output seconds.
+        #[arg(long, value_name = "SECONDS")]
+        from: Option<f64>,
+        /// Window end, output seconds.
+        #[arg(long, value_name = "SECONDS")]
+        to: Option<f64>,
+    },
+    /// Detected silences on the output clock, optionally windowed.
+    Silences {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        from: Option<f64>,
+        #[arg(long, value_name = "SECONDS")]
+        to: Option<f64>,
+    },
     /// Acquire the project write-lock. Subsequent mutate/exports by either
     /// side block until release. Idempotent for the same caller.
     Lock {
@@ -1019,6 +1057,28 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
         Command::Export { action } => export_dispatch(cli, action),
         Command::Branch { action } => branch_dispatch(cli, action),
         Command::Mcp => crate::mcp::serve(!cli.no_launch, cli.timeout_ms),
+        Command::Skills {
+            action: SkillsAction::Install { dir },
+        } => {
+            use crate::agent::instructions;
+            let dir = match dir {
+                Some(dir) => std::path::PathBuf::from(dir),
+                None => {
+                    instructions::default_skills_dir().ok_or("no home directory; pass --dir")?
+                }
+            };
+            let file = instructions::install_skill(&dir)?;
+            emit(
+                &json!({
+                    "installed": file,
+                    "connect": {
+                        "claudeCode": "claude mcp add recast -- recast mcp",
+                        "mcpJson": { "mcpServers": { "recast": { "command": "recast", "args": ["mcp"] } } },
+                    },
+                }),
+                cli.format,
+            )
+        }
     }
 }
 
@@ -1032,11 +1092,31 @@ fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
                 crate::control::send("project.list", json!({}), !cli.no_launch, cli.timeout_ms)?;
             emit(&value, cli.format)
         }
+        ProjectAction::Transcript { path, from, to }
+        | ProjectAction::Silences { path, from, to } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let method = match action {
+                ProjectAction::Transcript { .. } => "agent.transcript",
+                _ => "agent.silences",
+            };
+            let mut params = json!({ "path": path });
+            if let Some(from) = from {
+                params["from"] = json!(from);
+            }
+            if let Some(to) = to {
+                params["to"] = json!(to);
+            }
+            send_and_emit(cli, method, params)
+        }
         ProjectAction::Open { path }
         | ProjectAction::Show { path }
         | ProjectAction::Timeline { path }
         | ProjectAction::ZoomRegions { path }
-        | ProjectAction::Annotations { path } => {
+        | ProjectAction::Annotations { path }
+        | ProjectAction::Head { path }
+        | ProjectAction::Check { path } => {
             let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
                 .to_string_lossy()
                 .into_owned();
@@ -1046,6 +1126,8 @@ fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
                 ProjectAction::Timeline { .. } => "editor.timeline",
                 ProjectAction::ZoomRegions { .. } => "editor.zoom-regions",
                 ProjectAction::Annotations { .. } => "editor.annotations",
+                ProjectAction::Head { .. } => "editor.head",
+                ProjectAction::Check { .. } => "agent.check",
                 _ => unreachable!(),
             };
             let value = crate::control::send(

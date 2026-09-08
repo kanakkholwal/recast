@@ -12,8 +12,10 @@ inputs:
 outputs:
   - "A branch journal on disk, outside the project bundle"
   - "A field-level diff for review"
+  - "A receipt per write: the delta, the timeline delta, and the check findings it introduced"
   - "A fast-forward apply into the .recast bundle"
 entrypoints:
+  - "apps/desktop/src-tauri/src/agent/"
   - "apps/desktop/src-tauri/src/render/ops.rs"
   - "apps/desktop/src-tauri/src/project/journal.rs"
   - "apps/desktop/src-tauri/src/commands/branches.rs"
@@ -23,6 +25,8 @@ invariants:
   - "No MCP tool writes the project. Apply is a human action, and a test asserts the mutating verbs are absent."
   - "The operation names are a wire contract stored inside journals, so renaming a variant invalidates every journal on disk."
   - "A branch carrying work is never deleted automatically, however old it is, and re-creating its id is refused rather than overwriting it."
+  - "Every number an agent reads is output seconds and every raw op is source seconds; tools convert, the model never does."
+  - "Guards are deny-first and deterministic: a project path is proven before it is opened, a write names the hash it was built on, a batch has a cap, a result has a budget."
 ---
 
 ## Overview
@@ -110,7 +114,14 @@ sequenceDiagram
 | `BranchService` | `commands/branches.rs` | The shared layer: 8 methods, called by socket dispatch, Tauri commands, and MCP |
 | `BranchService::apply` | `commands/branches.rs` | Materializes *inside* `patch_render_state`'s closure, so the fold is one atomic bundle write |
 | `Server::handle` | `mcp/protocol.rs` | Pure `(&Value, &impl ToolHost) -> Option<Value>`; testable with no socket and no process |
-| `TOOLS` | `mcp/tools.rs` | 11 tool descriptors, each a closed JSON Schema: one to discover projects, the rest read-only or branch-scoped |
+| `TOOLS` | `mcp/tools.rs` | 17 tool descriptors, each a closed JSON Schema: one to discover projects, reads, `check`, perception, two intent tools, and the branch verbs |
+| `agent::guard` | `agent/guard.rs` | `ProjectPath` (extension, traversal, existence), `MAX_OPS_PER_APPEND` (200), `within_budget` (cuts the largest array and says what it dropped) |
+| `agent::schema` | `agent/schema.rs` | One table of op specs that generates the `ops` JSON Schema; a test parses each row's document into an `Op`, so the schema cannot drift from serde |
+| `agent::receipt` | `agent/receipt.rs` | `Receipt { seq, recorded, compacted, base, head, changes, timeline, introduced }`; property-tested so patching a read with a receipt reproduces the written state |
+| `agent::check` | `agent/check.rs` | Tier 1 findings with stable codes and both clocks: validator errors, never-visible zooms and annotations, lanes without inputs, extreme speeds, tiny output |
+| `agent::perception` | `agent/perception.rs` | Transcript words and detected silences projected onto the output clock as guarded, windowed `TrackView`s, labelled as recording content |
+| `agent::intents` | `agent/intents.rs` | `cuts_for_silences` (padded, merged, skips existing cuts) and `zoom_op` (output seconds in, a full `ZoomRegion` out) |
+| `agent::instructions` | `agent/instructions.rs` | The MCP `instructions` text and the installable `recast-editing` skill; a test asserts the skill names every tool |
 | `resources/*` | `mcp/protocol.rs` | Each project as a `recast://project/<encoded path>` resource, so a client can attach state without spending a tool call |
 
 ## Control / data flow
@@ -141,6 +152,35 @@ in front of the reviewer, who could do nothing about it.
 
 A retried `idem_key` skips validation. It proposes nothing new, so re-judging it
 would let a project edited out of band turn a settled no-op into a failure.
+
+**Every write returns a receipt, not a status.** `Receipt.changes` is the
+field-level delta between the branch before and after the entry, `timeline` is
+the new output duration and kept segments (a cut moves every output time after
+it), and `introduced` is what `check` would now flag that it did not before. An
+agent patches its model with the receipt instead of re-reading; the property
+test in `agent/receipt.rs` folds random ops and asserts the patched read equals
+the written state. A retried `idem_key` returns `recorded: false` with no
+changes, so an ignored batch never looks like success.
+
+**A write names the read it was built on.** `expectBase` carries the hash from
+`recast_project_head`; a project that moved refuses with both hashes and the
+next step, before anything touches the journal. That is the stale-read check
+Claude Code's hooks make at edit time, done in the service so every transport
+has it.
+
+**Intent tools convert clocks.** `recast_remove_silences` runs detection, pads
+each silence inward, merges ones that still touch, skips ranges already cut,
+and appends the cuts; it refuses rather than journaling an empty entry.
+`recast_add_zoom` takes an output second, maps it to the recording's clock
+through the same `TimeMap` the preview uses, and fills every default. Raw ops
+stay available through `recast_branch_append` for what no intent covers, with
+the op vocabulary in the tool schema.
+
+**Perception is windowed and labelled.** `recast_transcript` and
+`recast_silences` return rows on the output clock with `n` and `span` for the
+whole track, a `window` when sliced, a one-line `note` when the window is empty,
+and a `label` saying the rows are recording content. Results over the budget
+lose the tail of their largest array and say what to call instead.
 
 **Concurrency is optimistic, retries are idempotent.** `expect_seq` rejects a
 stale writer with `SeqMismatch { expected, actual }`; an `idem_key` already on
@@ -195,6 +235,13 @@ of band. On success the journal is deleted: a branch is consumed, not archived.
 - **Listing resources never fails.** A client calls `resources/list` on connect;
   an unreachable app answers with an empty library rather than an error, which
   would read as a broken server.
+- **Guards run before any read.** A tool `path` must end in `.recast`, contain
+  no `..`, and exist (`ProjectPath`); an append carries at most 200 ops; a
+  result is cut to about 15k tokens with a `truncated` note naming the narrower
+  call. Deny-first, deterministic, no prompt in the loop.
+- **The schema is the wire.** `agent/schema.rs` is one table; a test builds each
+  row's document and parses it into `Op`, and another asserts the row count, so
+  adding a variant without a row fails the build rather than the agent.
 - **No MCP tool writes.** `branch.apply`, the `editor.*` mutators, `rec.*` and
   `export.*` are absent from `TOOLS`, and `no_tool_writes_the_project_directly`
   (`mcp/tools.rs`) asserts it. Failing verbs return `isError: true` with the

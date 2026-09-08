@@ -195,7 +195,7 @@ pub async fn detect_silence(
     .map_err(Into::into)
 }
 
-fn detect_blocking(
+pub(crate) fn detect_blocking(
     audio_path: Option<&str>,
     microphone_path: Option<&str>,
     cursor_path: Option<&str>,

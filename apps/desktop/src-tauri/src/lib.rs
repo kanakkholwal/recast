@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+mod agent;
 mod audio;
 pub mod audio_decode;
 mod cache;

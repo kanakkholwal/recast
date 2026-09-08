@@ -8,6 +8,10 @@ use super::editor::ValidationIssue;
 use super::editor_session::now_ms;
 use super::error::{AppError, AppResult};
 use super::types::AppState;
+use crate::agent::check::ProjectFacts;
+use crate::agent::guard;
+use crate::agent::intents::{self, SilencePolicy, ZoomIntent};
+use crate::agent::receipt::{receipt, Receipt};
 use crate::project::journal::{self, Branch, BranchId, BranchStore, FieldChange, StateHash};
 use crate::render::graph::RenderState;
 use crate::render::ops::Op;
@@ -56,15 +60,6 @@ impl From<&Branch> for BranchSummary {
             stale: false,
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AppendReport {
-    pub seq: u64,
-    /// `false` when the `idem_key` was already on the branch, so nothing new landed.
-    pub recorded: bool,
-    pub compacted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -123,7 +118,7 @@ impl<'a> BranchService<'a> {
     }
 
     /// Records `ops` as one atomic entry, replaying and validating first so a bad proposal is rejected where the author can still fix it, not at apply time.
-    /// A rejected append leaves the journal untouched. Errors on a stale `expect_seq`, an op that no longer fits, a violated invariant, or a failed write.
+    /// A rejected append leaves the journal untouched. Errors on an oversized batch, a moved `expect_base`, a stale `expect_seq`, an op that no longer fits, a violated invariant, or a failed write.
     pub fn append(
         &self,
         project: &str,
@@ -131,14 +126,82 @@ impl<'a> BranchService<'a> {
         idem_key: String,
         ops: Vec<Op>,
         expect_seq: Option<u64>,
-    ) -> AppResult<AppendReport> {
+        expect_base: Option<StateHash>,
+    ) -> AppResult<Receipt> {
+        let base = load_project(project)?;
+        self.append_loaded(&base, project, id, idem_key, ops, expect_seq, expect_base)
+    }
+
+    /// Cuts the detected silences onto a branch: one call instead of read, compute and append.
+    /// Refuses rather than journaling an empty entry when nothing meets the policy.
+    pub fn remove_silences(
+        &self,
+        project: &str,
+        id: &BranchId,
+        idem_key: String,
+        policy: SilencePolicy,
+        expect_base: Option<StateHash>,
+    ) -> AppResult<Receipt> {
+        let base = load_project(project)?;
+        let silences = crate::silence::detect_blocking(
+            base.audio_path.as_deref(),
+            base.microphone_path.as_deref(),
+            base.cursor_path.as_deref(),
+            Default::default(),
+        )
+        .map_err(AppError::msg)?;
+        let ops = intents::cuts_for_silences(&base.render, &silences, policy);
+        if ops.is_empty() {
+            return Err(AppError::msg(format!(
+                "no silence meets the policy (min {:.2}s after {:.2}s padding, confidence >= {:.2}) out of {} detected; nothing appended",
+                policy.min_duration,
+                policy.pad,
+                policy.min_confidence,
+                silences.len()
+            )));
+        }
+        self.append_loaded(&base, project, id, idem_key, ops, None, expect_base)
+    }
+
+    /// Places a zoom described on the output clock, converting to the recording's clock and filling every default.
+    pub fn add_zoom(
+        &self,
+        project: &str,
+        id: &BranchId,
+        idem_key: String,
+        intent: &ZoomIntent,
+        expect_base: Option<StateHash>,
+    ) -> AppResult<Receipt> {
+        let base = load_project(project)?;
+        let map = crate::agent::axis::time_map(&base.render);
+        let op = intents::zoom_op(&map, intent).map_err(AppError::msg)?;
+        self.append_loaded(&base, project, id, idem_key, vec![op], None, expect_base)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn append_loaded(
+        &self,
+        base: &Project,
+        project: &str,
+        id: &BranchId,
+        idem_key: String,
+        ops: Vec<Op>,
+        expect_seq: Option<u64>,
+        expect_base: Option<StateHash>,
+    ) -> AppResult<Receipt> {
+        guard::check_batch_size(ops.len()).map_err(AppError::msg)?;
+        let current = StateHash::of(&base.render).map_err(AppError::msg)?;
+        if let Some(expected) = expect_base.filter(|expected| *expected != current) {
+            return Err(stale(expected, current));
+        }
+
         let store = self.store(project)?;
         let mut branch = store.load(id).map_err(AppError::msg)?;
+        let before = branch.materialize(&base.render).map_err(AppError::msg)?;
         let outcome = branch
             .append(idem_key, ops, expect_seq, now_ms())
             .map_err(AppError::msg)?;
 
-        let base = load_project(project)?;
         let proposed = branch.materialize(&base.render).map_err(AppError::msg)?;
         // A retried idem key proposes nothing new, so re-judging it would turn a settled no-op into a failure.
         if outcome.is_recorded() {
@@ -155,11 +218,16 @@ impl<'a> BranchService<'a> {
 
         store.save(&branch).map_err(AppError::msg)?;
         self.announce(project);
-        Ok(AppendReport {
-            seq: outcome.seq(),
-            recorded: outcome.is_recorded(),
+        receipt(
+            &before,
+            &proposed,
+            branch.base,
+            &base.facts(),
+            outcome.seq(),
+            outcome.is_recorded(),
             compacted,
-        })
+        )
+        .map_err(AppError::msg)
     }
 
     pub fn truncate(&self, project: &str, id: &BranchId, seq: u64) -> AppResult<BranchSummary> {
@@ -240,10 +308,24 @@ pub fn branch_store(app: &AppHandle, project_path: &str) -> AppResult<BranchStor
     )))
 }
 
-/// The project's saved edits plus the source duration validation needs.
+/// The project's saved edits plus what validation, checks and silence detection need to know about its media.
 struct Project {
     render: RenderState,
     duration: f64,
+    audio_path: Option<String>,
+    microphone_path: Option<String>,
+    cursor_path: Option<String>,
+    has_camera: bool,
+}
+
+impl Project {
+    fn facts(&self) -> ProjectFacts {
+        ProjectFacts {
+            source_duration: self.duration,
+            has_camera: self.has_camera,
+            has_cursor_track: self.cursor_path.is_some(),
+        }
+    }
 }
 
 fn load_project(project_path: &str) -> AppResult<Project> {
@@ -251,8 +333,28 @@ fn load_project(project_path: &str) -> AppResult<Project> {
         |doc| Project {
             render: doc.render_state,
             duration: doc.metadata.duration,
+            audio_path: doc.audio_path,
+            microphone_path: doc.microphone_path,
+            cursor_path: doc.cursor_path,
+            has_camera: doc.camera_path.is_some(),
         },
     )
+}
+
+/// A hash as the wire carries it, so a caller can pass back exactly what a read printed.
+pub fn parse_hash(hex: &str) -> AppResult<StateHash> {
+    serde_json::from_value(serde_json::Value::String(hex.to_string())).map_err(|_| {
+        AppError::msg(format!(
+            "'{hex}' is not a state hash; pass the `hash` a read returned"
+        ))
+    })
+}
+
+/// Phrased as instructions, like `rejected`: the fix is a fresh read, not a retry.
+fn stale(expected: StateHash, actual: StateHash) -> AppError {
+    AppError::msg(format!(
+        "not appended: you read the project at {expected} but it is now at {actual}. Re-read it (recast_project_head), patch your plan, and append again with the new hash."
+    ))
 }
 
 /// Phrased as instructions: this reaches a model as tool output, and the useful
@@ -317,10 +419,12 @@ pub async fn append_to_branch(
     idem_key: String,
     ops: Vec<Op>,
     expect_seq: Option<u64>,
-) -> AppResult<AppendReport> {
+    expect_base: Option<String>,
+) -> AppResult<Receipt> {
     let id = parse_id(branch)?;
+    let expect_base = expect_base.as_deref().map(parse_hash).transpose()?;
     off_thread(app, move |service| {
-        service.append(&project_path, &id, idem_key, ops, expect_seq)
+        service.append(&project_path, &id, idem_key, ops, expect_seq, expect_base)
     })
     .await
 }
