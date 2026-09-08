@@ -90,7 +90,9 @@ export interface EditorDocument {
 	trackOffsets?: TrackOffsetsWire;
 	metadata: VideoMetadata;
 	renderState: EditorRenderState;
-	/** True for a legacy bundle: migrate before loading the editor. */
+	/** On-disk shape the project was opened from; null for a plain video. */
+	format: "v1" | "v2" | "v3" | null;
+	/** True when the bundle must be migrated before the editor loads it. */
 	needsMigration: boolean;
 }
 

@@ -970,6 +970,15 @@ export function setNativeEncoder(enabled: boolean): Promise<void> {
 	return invoke<void>("set_native_encoder", { enabled });
 }
 
+/** Whether new recordings are written as v3 project directories and bundles are offered the upgrade. */
+export function getProjectV3(): Promise<boolean> {
+	return invoke<boolean>("get_project_v3");
+}
+
+export function setProjectV3(enabled: boolean): Promise<void> {
+	return invoke<void>("set_project_v3", { enabled });
+}
+
 /** Whether this machine can honour the native writer (Windows + an MF H.264
  *  encoder). False elsewhere, so the toggle is shown disabled rather than
  *  silently doing nothing. */

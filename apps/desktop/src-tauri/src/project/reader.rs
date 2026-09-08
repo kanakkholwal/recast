@@ -25,7 +25,8 @@ const CACHE_MAX_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 #[derive(Debug, Clone)]
 pub struct ProjectOpenResult {
     pub metadata: ProjectMetadata,
-    /// True for a v1 bundle — the editor migrates before loading it.
+    pub format: super::Format,
+    /// True for a v1 bundle: the editor migrates before loading it.
     pub needs_migration: bool,
     pub recording_path: PathBuf,
     pub cursor_path: PathBuf,
@@ -40,6 +41,9 @@ pub struct ProjectOpenResult {
 /// `audio.wav`, `edits.json`) so the export/thumbnail pipeline is layout-blind;
 /// v2 additionally fans its `edits/` sections back into one `edits.json`.
 pub fn open_project(path: &Path) -> Result<ProjectOpenResult> {
+    if super::v3::is_project_dir(path) {
+        return super::v3::open(path);
+    }
     let file = File::open(path)?;
     let mut archive = ZipArchive::new(file)?;
 
@@ -95,6 +99,7 @@ fn open_v2(
 
     Ok(ProjectOpenResult {
         metadata,
+        format: super::Format::V2,
         needs_migration: false,
         recording_path,
         cursor_path,
@@ -120,6 +125,7 @@ fn open_v1(
 
     Ok(ProjectOpenResult {
         metadata,
+        format: super::Format::V1,
         needs_migration: true,
         recording_path,
         cursor_path,

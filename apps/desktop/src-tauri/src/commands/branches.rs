@@ -329,16 +329,16 @@ impl Project {
 }
 
 fn load_project(project_path: &str) -> AppResult<Project> {
-    tauri::async_runtime::block_on(super::load_editor_document(project_path.to_string())).map(
-        |doc| Project {
+    tauri::async_runtime::block_on(super::load_document(project_path.to_string())).map(|doc| {
+        Project {
             render: doc.render_state,
             duration: doc.metadata.duration,
             audio_path: doc.audio_path,
             microphone_path: doc.microphone_path,
             cursor_path: doc.cursor_path,
             has_camera: doc.camera_path.is_some(),
-        },
-    )
+        }
+    })
 }
 
 /// A hash as the wire carries it, so a caller can pass back exactly what a read printed.

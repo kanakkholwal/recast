@@ -1,6 +1,7 @@
-// docvia writes `docvia-env.d.ts` at the root, which SvelteKit's generated tsconfig does not include.
-
 /// <reference path="../docvia-env.d.ts" />
+
+// The reference above pulls in `docvia-env.d.ts` at the root, which SvelteKit's generated tsconfig does not include.
+import type { DurableObjectNamespace, KVNamespace } from "@cloudflare/workers-types";
 
 // See https://svelte.dev/docs/kit/types#app.d.ts for these interfaces.
 declare global {
@@ -14,11 +15,16 @@ declare global {
 		interface PageState {
 			playgroundEditing?: boolean;
 		}
-		// interface Platform {}
+		// Cloudflare Workers only; undefined under Vercel/Node and in `vite dev`. `lib/server/platform.ts` degrades to DATABASE_URL when absent.
+		interface Platform {
+			env?: {
+				KV?: KVNamespace;
+				DO?: DurableObjectNamespace;
+				HYPERDRIVE?: { connectionString: string };
+			};
+		}
 	}
 
 	// Injected by Vite `define`: the running web build version, used as an analytics super-property.
 	const __APP_VERSION__: string;
 }
-
-export {};

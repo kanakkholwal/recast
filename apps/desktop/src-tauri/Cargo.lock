@@ -65,6 +65,7 @@ dependencies = [
  "tauri-plugin-sharekit",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tract-onnx",

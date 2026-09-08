@@ -316,15 +316,29 @@ pub async fn get_video_metadata(path: String) -> AppResult<VideoMetadata> {
         .map_err(Into::into)
 }
 
+/// The editor's entry point: with `project_v3` on, a bundle also reports `needs_migration` so the dialog upgrades it to a directory.
 #[tauri::command]
-pub async fn load_editor_document(path: String) -> AppResult<EditorDocument> {
-    tauri::async_runtime::spawn_blocking(move || load_editor_document_blocking(path))
+pub async fn load_editor_document(
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<EditorDocument> {
+    let to_v3 = state.config.read().project_v3;
+    load_document_as(path, to_v3).await
+}
+
+/// Headless entry point (control socket, CLI, MCP): never asks for a format upgrade.
+pub async fn load_document(path: String) -> AppResult<EditorDocument> {
+    load_document_as(path, false).await
+}
+
+async fn load_document_as(path: String, to_v3: bool) -> AppResult<EditorDocument> {
+    tauri::async_runtime::spawn_blocking(move || load_editor_document_blocking(path, to_v3))
         .await
         .map_err(|e| AppError::msg(format!("load_editor_document join error: {e}")))?
         .map_err(Into::into)
 }
 
-fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String> {
+fn load_editor_document_blocking(path: String, to_v3: bool) -> Result<EditorDocument, String> {
     let input = PathBuf::from(&path);
     if let Some(project) = open_project_if_needed(&input)? {
         let media_duration = project.metadata.media_duration_secs();
@@ -378,10 +392,16 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
                 height: project.metadata.video.height,
                 fps: project.metadata.video.fps as f64,
                 codec: "h264".into(),
-                size_bytes: fs::metadata(&input).map(|m| m.len()).unwrap_or_default(),
+                size_bytes: if input.is_dir() {
+                    crate::project::v3::size_bytes(&input)
+                } else {
+                    fs::metadata(&input).map(|m| m.len()).unwrap_or_default()
+                },
             },
             render_state,
-            needs_migration: project.needs_migration,
+            format: Some(project.format),
+            needs_migration: project.needs_migration
+                || (to_v3 && project.format != crate::project::Format::V3),
         });
     }
 
@@ -402,6 +422,7 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
             trim_end: metadata.duration,
             ..RenderState::default()
         },
+        format: None,
         needs_migration: false,
     })
 }
@@ -509,9 +530,8 @@ where
     )
     .map_err(|e| e.to_string())?;
 
-    let doc =
-        tauri::async_runtime::block_on(crate::commands::load_editor_document(path.to_string()))
-            .map_err(|e| e.to_string())?;
+    let doc = tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+        .map_err(|e| e.to_string())?;
 
     let mut new_state = doc.render_state;
     let result = mutate(&mut new_state)?;
@@ -3843,14 +3863,21 @@ pub async fn autosave_project(project_path: String, edits_json: String) -> AppRe
 
 /// Re-pack a legacy `.recast` as the current format in place (keeps a `.bak`).
 /// Heavy zip I/O, so it runs off the main thread.
+/// Upgrades a bundle in place, keeping it as `.bak`: to a v3 directory when `project_v3` is on, else v1 to v2.
 #[tauri::command]
-pub async fn migrate_project(project_path: String) -> AppResult<()> {
+pub async fn migrate_project(state: State<'_, AppState>, project_path: String) -> AppResult<()> {
+    let to_v3 = state.config.read().project_v3;
     tauri::async_runtime::spawn_blocking(move || {
-        crate::project::migrate_project(Path::new(&project_path))
+        let path = Path::new(&project_path);
+        if to_v3 {
+            return crate::project::v3::migrate(path)
+                .map(drop)
+                .map_err(|e| AppError::msg(format!("{e:#}")));
+        }
+        crate::project::migrate_project(path).map_err(AppError::from)
     })
     .await
     .map_err(|e| AppError::msg(format!("migrate task panicked: {e}")))?
-    .map_err(AppError::from)
 }
 
 #[tauri::command]

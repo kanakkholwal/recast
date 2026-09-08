@@ -1,8 +1,9 @@
-//! Edits to a document, addressed by id: set, insert, remove, move. All-or-nothing over a batch.
+//! Edits to a document, addressed by id or kind path (see `address`): set, insert, remove, move. All-or-nothing over a batch.
 //! Variant and field names are a WIRE CONTRACT stored in journals; renaming one invalidates every journal written.
 
 use serde::{Deserialize, Serialize};
 
+use crate::address::{AddressError, Location};
 use crate::document::{Document, Node};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -73,11 +74,13 @@ impl From<&Node> for NodeSpec {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum OpError {
-    #[error("no element with id '{0}'")]
+    #[error("nothing at '{0}'")]
     NoSuchId(String),
+    #[error("bad address: {0}")]
+    Address(#[from] AddressError),
     #[error("cannot move '{id}' into its own subtree")]
     IntoSelf { id: String },
-    #[error("'{parent}' is the root's ancestor; the root cannot be moved or removed")]
+    #[error("'{parent}' is the root; it cannot be moved or removed")]
     Root { parent: String },
     #[error("<{kind}> does not carry text")]
     NoText { kind: String },
@@ -93,11 +96,18 @@ pub fn apply_all(doc: &Document, ops: &[Op]) -> Result<Document, (usize, OpError
     Ok(out)
 }
 
-fn apply(doc: &mut Document, op: &Op) -> Result<(), OpError> {
+fn resolve(doc: &Document, address: &str) -> Result<Location, OpError> {
+    doc.locate(address)?
+        .ok_or_else(|| OpError::NoSuchId(address.to_owned()))
+}
+
+/// Applies one op in place. On error the document may be partially changed; `apply_all` is the atomic entry point.
+pub(crate) fn apply(doc: &mut Document, op: &Op) -> Result<(), OpError> {
     match op {
         Op::Set { id, attr, value } => {
+            let loc = resolve(doc, id)?;
             let node = doc
-                .find_mut(id)
+                .node_at_mut(&loc)
                 .ok_or_else(|| OpError::NoSuchId(id.clone()))?;
             match value {
                 Some(v) => node.set(attr, v.clone()),
@@ -108,15 +118,17 @@ fn apply(doc: &mut Document, op: &Op) -> Result<(), OpError> {
             Ok(())
         }
         Op::SetText { id, text } => {
+            let loc = resolve(doc, id)?;
             let node = doc
-                .find_mut(id)
+                .node_at_mut(&loc)
                 .ok_or_else(|| OpError::NoSuchId(id.clone()))?;
             if !crate::schema::has_text(&node.kind) {
                 return Err(OpError::NoText {
                     kind: node.kind.clone(),
                 });
             }
-            node.text = Some(text.clone());
+            // Empty text is no text: the serializer writes neither, and a diff must not tell them apart.
+            node.text = (!text.is_empty()).then(|| text.clone());
             Ok(())
         }
         Op::Insert {
@@ -124,36 +136,32 @@ fn apply(doc: &mut Document, op: &Op) -> Result<(), OpError> {
             index,
             node,
         } => {
+            let loc = resolve(doc, parent)?;
             let target = doc
-                .find_mut(parent)
+                .node_at_mut(&loc)
                 .ok_or_else(|| OpError::NoSuchId(parent.clone()))?;
             let at = (*index).min(target.children.len());
             target.children.insert(at, Node::from(node.clone()));
             Ok(())
         }
         Op::Remove { id } => {
-            if doc.root.id() == Some(id) {
-                return Err(OpError::Root { parent: id.clone() });
-            }
-            let (parent, index) = doc
-                .parent_of_mut(id)
-                .ok_or_else(|| OpError::NoSuchId(id.clone()))?;
-            parent.children.remove(index);
+            let loc = resolve(doc, id)?;
+            detach(doc, &loc, id)?;
             Ok(())
         }
         Op::Move { id, parent, index } => {
-            let moving = doc.find(id).ok_or_else(|| OpError::NoSuchId(id.clone()))?;
-            if moving.id() == Some(parent) || subtree_has(moving, parent) {
+            let from = resolve(doc, id)?;
+            let to = resolve(doc, parent)?;
+            if from.contains(&to) {
                 return Err(OpError::IntoSelf { id: id.clone() });
             }
-            doc.find(parent)
-                .ok_or_else(|| OpError::NoSuchId(parent.clone()))?;
-            let (old_parent, old_index) = doc
-                .parent_of_mut(id)
-                .ok_or_else(|| OpError::NoSuchId(id.clone()))?;
-            let node = old_parent.children.remove(old_index);
+            let node = detach(doc, &from, id)?;
+            // The parent's location was computed before the node left; it shifts if it sat after the node.
+            let to = to
+                .after_removal(&from)
+                .ok_or_else(|| OpError::IntoSelf { id: id.clone() })?;
             let target = doc
-                .find_mut(parent)
+                .node_at_mut(&to)
                 .ok_or_else(|| OpError::NoSuchId(parent.clone()))?;
             let at = (*index).min(target.children.len());
             target.children.insert(at, node);
@@ -162,10 +170,14 @@ fn apply(doc: &mut Document, op: &Op) -> Result<(), OpError> {
     }
 }
 
-fn subtree_has(node: &Node, id: &str) -> bool {
-    node.children
-        .iter()
-        .any(|c| c.id() == Some(id) || subtree_has(c, id))
+fn detach(doc: &mut Document, loc: &Location, address: &str) -> Result<Node, OpError> {
+    let (parent, index) = loc.parent().ok_or_else(|| OpError::Root {
+        parent: address.to_owned(),
+    })?;
+    let parent = doc
+        .node_at_mut(&parent)
+        .ok_or_else(|| OpError::NoSuchId(address.to_owned()))?;
+    Ok(parent.children.remove(index))
 }
 
 #[cfg(test)]
@@ -275,6 +287,63 @@ mod tests {
                 kind: "zoom".into()
             }
         );
+    }
+
+    #[test]
+    fn id_less_elements_are_reached_by_kind_path_and_the_root_by_slash() {
+        let ops = vec![
+            Op::Insert {
+                parent: "/".into(),
+                index: 99,
+                node: NodeSpec {
+                    kind: "background".into(),
+                    attrs: Default::default(),
+                    text: None,
+                    children: vec![NodeSpec {
+                        kind: "solid".into(),
+                        attrs: [("color".to_owned(), "#000000".to_owned())].into(),
+                        text: None,
+                        children: vec![],
+                    }],
+                },
+            },
+            Op::Set {
+                id: "/background/solid".into(),
+                attr: "color".into(),
+                value: Some("#ff0000".into()),
+            },
+            Op::Move {
+                id: "/background".into(),
+                parent: "/".into(),
+                index: 0,
+            },
+        ];
+        let out = apply_all(&doc(), &ops).unwrap();
+        assert_eq!(out.root.children[0].kind, "background");
+        assert_eq!(
+            out.root.children[0].children[0].attr("color"),
+            Some("#ff0000")
+        );
+        let err = apply_all(&doc(), &[Op::Remove { id: "/".into() }]).unwrap_err();
+        assert!(matches!(err.1, OpError::Root { .. }));
+        let err = apply_all(&doc(), &[Op::Remove { id: "z1/x[".into() }]).unwrap_err();
+        assert!(matches!(err.1, OpError::Address(_)));
+    }
+
+    #[test]
+    fn moving_a_node_earlier_in_its_own_parent_lands_at_the_asked_index() {
+        let out = apply_all(
+            &doc(),
+            &[Op::Move {
+                id: "z2".into(),
+                parent: "/screen/zooms".into(),
+                index: 0,
+            }],
+        )
+        .unwrap();
+        let zooms = out.root.child("screen").unwrap().child("zooms").unwrap();
+        assert_eq!(zooms.children[0].id(), Some("z2"));
+        assert_eq!(zooms.children[1].id(), Some("z1"));
     }
 
     #[test]

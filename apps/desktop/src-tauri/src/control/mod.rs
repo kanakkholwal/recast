@@ -327,7 +327,7 @@ fn guarded_path(params: &Value, method: &str) -> Result<String, String> {
 }
 
 fn load_doc(path: &str) -> Result<EditorDocument, String> {
-    tauri::async_runtime::block_on(crate::commands::load_editor_document(path.to_string()))
+    tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
         .map_err(stringify)
 }
 
@@ -577,10 +577,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.open requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             serde_json::to_value(doc).map_err(|e| e.to_string())
         }
         "editor.show" => {
@@ -588,10 +587,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.show requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             serde_json::to_value(doc.render_state).map_err(|e| e.to_string())
         }
         "editor.timeline" => {
@@ -599,10 +597,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.timeline requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             let tl =
                 crate::commands::derive_project_timeline(&doc.render_state, doc.metadata.duration);
             serde_json::to_value(tl).map_err(|e| e.to_string())
@@ -612,10 +609,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.zoom-regions requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             serde_json::to_value(doc.render_state.zoom_regions).map_err(|e| e.to_string())
         }
         "editor.annotations" => {
@@ -623,10 +619,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.annotations requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             serde_json::to_value(doc.render_state.annotations).map_err(|e| e.to_string())
         }
         // `export.show` filters the same list by id; a second method would just be SELECT * WHERE id=?.
@@ -769,7 +764,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.cut.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -817,7 +812,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.zoom.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -906,7 +901,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.split-point.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -951,7 +946,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.speed.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -1003,7 +998,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.annotations.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -1138,7 +1133,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.animations.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -1506,7 +1501,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 writer_id_for_lock,
             )
             .map_err(|e| e.to_string())?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;

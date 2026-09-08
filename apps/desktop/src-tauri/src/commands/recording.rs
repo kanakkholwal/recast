@@ -104,6 +104,7 @@ pub async fn stop_recording(
     // `stop()` joins threads, finalizes the muxer and zips to disk; run inline on macOS's UI thread this froze the window after every recording.
     let manager = state.recording_manager.clone();
     let dest = recasts_dir(&state);
+    let as_directory = state.config.read().project_v3;
 
     let (project_path, warnings) =
         tauri::async_runtime::spawn_blocking(move || -> AppResult<(PathBuf, Vec<String>)> {
@@ -155,7 +156,7 @@ pub async fn stop_recording(
                 camera_overlay: artifacts.camera_overlay.clone(),
                 ..RenderState::default()
             };
-            let project_path = write_project(ProjectWriteRequest {
+            let request = ProjectWriteRequest {
                 output_path: final_path.clone(),
                 metadata,
                 recording_path: artifacts.recording_path.clone(),
@@ -165,7 +166,12 @@ pub async fn stop_recording(
                 camera_path: artifacts.camera_path.clone(),
                 edits_json: serde_json::to_string_pretty(&default_render_state)
                     .unwrap_or_else(|_| "{}".into()),
-            })
+            };
+            let project_path = if as_directory {
+                crate::project::v3::write_project(request)
+            } else {
+                write_project(request)
+            }
             .inspect_err(|e| log::error!("write_project failed: {e:#}"))?;
 
             // Clean up temporary session files.
@@ -261,7 +267,8 @@ pub async fn stop_camera_preview(session: u64) -> AppResult<()> {
 #[tauri::command]
 pub async fn list_recasts(state: State<'_, AppState>) -> AppResult<Vec<RecordingEntry>> {
     let dir = recasts_dir(&state);
-    tauri::async_runtime::spawn_blocking(move || list_files_by_ext(&dir, &["recast"]))
+    let to_v3 = state.config.read().project_v3;
+    tauri::async_runtime::spawn_blocking(move || list_files_by_ext(&dir, &["recast"], to_v3))
         .await
         .map_err(|e| AppError::msg(format!("list_recasts join error: {e}")))?
 }
@@ -269,9 +276,11 @@ pub async fn list_recasts(state: State<'_, AppState>) -> AppResult<Vec<Recording
 #[tauri::command]
 pub async fn list_exports(state: State<'_, AppState>) -> AppResult<Vec<RecordingEntry>> {
     let dir = exports_dir(&state);
-    tauri::async_runtime::spawn_blocking(move || list_files_by_ext(&dir, &["mp4", "webm", "gif"]))
-        .await
-        .map_err(|e| AppError::msg(format!("list_exports join error: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || {
+        list_files_by_ext(&dir, &["mp4", "webm", "gif"], false)
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("list_exports join error: {e}")))?
 }
 
 /// WebVTT for the caption sidecar next to `media_path` (e.g. `foo.mp4` →
@@ -287,9 +296,9 @@ pub async fn caption_sidecar_vtt(media_path: String) -> AppResult<Option<String>
     .map_err(|e| AppError::msg(format!("caption_sidecar_vtt join error: {e}")))
 }
 
-/// One pass over `dir`, collecting any file whose extension is in `exts`.
-/// Sorts newest-first by mtime.
-fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEntry>> {
+/// One pass over `dir`, collecting any file whose extension is in `exts`, newest-first by mtime.
+/// With `to_v3`, every bundle counts as needing migration, not only v1.
+fn list_files_by_ext(dir: &PathBuf, exts: &[&str], to_v3: bool) -> AppResult<Vec<RecordingEntry>> {
     let mut entries = Vec::new();
     let read = match fs::read_dir(dir) {
         Ok(r) => r,
@@ -320,11 +329,17 @@ fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEnt
                 .map(|d| d.as_secs())
                 .unwrap_or(modified);
             // Only `.recast` carries a format, and the probe reads just the zip central directory.
-            let needs_migration = file_ext == "recast" && crate::project::is_legacy_project(&path);
+            let needs_migration = file_ext == "recast"
+                && (crate::project::is_legacy_project(&path) || (to_v3 && meta.is_file()));
+            let size_bytes = if meta.is_dir() {
+                crate::project::v3::size_bytes(&path)
+            } else {
+                meta.len()
+            };
             entries.push(RecordingEntry {
                 filename: entry.file_name().to_string_lossy().to_string(),
                 path: path.to_string_lossy().to_string(),
-                size_bytes: meta.len(),
+                size_bytes,
                 created,
                 modified,
                 needs_migration,

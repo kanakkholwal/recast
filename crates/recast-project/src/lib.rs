@@ -4,6 +4,8 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod address;
+pub mod diff;
 pub mod document;
 pub mod hash;
 pub mod ids;
@@ -24,6 +26,8 @@ pub mod package;
 #[cfg(feature = "native")]
 pub mod store;
 
+pub use address::{Address, AddressError, Location};
+pub use diff::diff;
 pub use document::{Document, Node};
 pub use hash::DocHash;
 pub use ids::{Id, IdGen};

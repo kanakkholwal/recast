@@ -31,7 +31,8 @@ impl Default for Options {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Report {
     pub from_version: u32,
     pub dest: PathBuf,

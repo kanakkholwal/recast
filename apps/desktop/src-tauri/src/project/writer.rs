@@ -114,6 +114,9 @@ fn write_edit_sections(
 /// Rewrites the `edits/` sections of a v2 `.recast` in place, raw-copying every other entry's compressed bytes so media is never re-encoded.
 /// Atomic via a sibling `.recast.tmp` renamed on success, and it errors on a v1 archive so a save can never produce a hybrid bundle.
 pub fn update_project_edits(project_path: &Path, edits_json: &str) -> Result<()> {
+    if super::v3::is_project_dir(project_path) {
+        return super::v3::save_edits(project_path, edits_json);
+    }
     let temp_path = project_path.with_extension("recast.tmp");
 
     let result = update_project_edits_inner(project_path, &temp_path, edits_json);

@@ -509,6 +509,8 @@ pub fn run() {
             commands::set_cli_auto_install,
             commands::get_native_encoder,
             commands::set_native_encoder,
+            commands::get_project_v3,
+            commands::set_project_v3,
             commands::native_encoder_available,
             commands::get_hide_panel_from_capture,
             commands::set_hide_panel_from_capture,

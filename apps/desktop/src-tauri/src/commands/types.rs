@@ -111,7 +111,9 @@ pub struct EditorDocument {
     pub track_offsets: crate::recording::TrackOffsets,
     pub metadata: VideoMetadata,
     pub render_state: RenderState,
-    /// True when a legacy bundle must be migrated before the editor loads it.
+    /// `None` for a plain video opened without a project.
+    pub format: Option<crate::project::Format>,
+    /// True when the editor must migrate the bundle before loading it (v1, or any bundle once `project_v3` is on).
     pub needs_migration: bool,
 }
 
@@ -204,6 +206,9 @@ pub struct AppConfig {
     /// Default off because the native path, though complete and tested, has only run on the author's hardware; `RECAST_NATIVE_ENCODER=1` overrides.
     #[serde(default)]
     pub native_encoder: bool,
+    /// Write new recordings as v3 project directories instead of v2 bundles. Default off until the whole app has run on a directory end to end.
+    #[serde(default)]
+    pub project_v3: bool,
 }
 
 fn default_cli_auto_install() -> bool {
@@ -238,6 +243,7 @@ impl Default for AppConfig {
             cli_auto_install: true,
             cli_install_attempted: false,
             native_encoder: false,
+            project_v3: false,
         }
     }
 }

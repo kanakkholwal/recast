@@ -286,6 +286,22 @@ pub fn get_native_encoder(state: State<'_, AppState>) -> AppResult<bool> {
 }
 
 #[tauri::command]
+pub fn get_project_v3(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.config.read().project_v3)
+}
+
+#[tauri::command]
+pub fn set_project_v3(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> AppResult<()> {
+    let snapshot = {
+        let mut config = state.config.write();
+        config.project_v3 = enabled;
+        config.clone()
+    };
+    save_config(&app, &snapshot);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_native_encoder(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -928,7 +944,7 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Move a file to the OS recycle bin / trash. Validates the path exists and is a file before deleting.
+/// Move a file, or a v3 project directory, to the OS recycle bin / trash. Any other directory is refused.
 /// `trash::delete` is a COM shell round-trip on Windows and a Finder/DBus one elsewhere, so it must not run on the main thread (macOS WKWebView freeze).
 #[tauri::command]
 pub async fn delete_file(path: String) -> AppResult<()> {
@@ -937,13 +953,17 @@ pub async fn delete_file(path: String) -> AppResult<()> {
         if !target.exists() {
             return Err(AppError::from("File not found"));
         }
-        if !target.is_file() {
+        if !is_file_or_project(target) {
             return Err(AppError::from("Path is not a file"));
         }
         trash::delete(target).map_err(|e| AppError::msg(format!("Could not move to trash: {e}")))
     })
     .await
     .map_err(|e| AppError::msg(format!("delete task panicked: {e}")))?
+}
+
+fn is_file_or_project(path: &std::path::Path) -> bool {
+    path.is_file() || crate::project::v3::is_project_dir(path)
 }
 
 /// Renames a file in place, keeping the original extension when `new_name` has none, and returns the new absolute path.
@@ -954,7 +974,7 @@ pub fn rename_file(path: String, new_name: String) -> AppResult<String> {
     if !src.exists() {
         return Err(AppError::from("File not found"));
     }
-    if !src.is_file() {
+    if !is_file_or_project(&src) {
         return Err(AppError::from("Path is not a file"));
     }
 

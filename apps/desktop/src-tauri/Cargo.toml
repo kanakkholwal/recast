@@ -31,6 +31,7 @@ name = "recast"
 path = "src/main.rs"
 
 [dev-dependencies]
+tempfile = "3"
 recast-testkit = { path = "../../../crates/recast-testkit" }
 # Caption parity samples both paths, and only the compositor's takes a shaped face.
 recast-text = { path = "../../../crates/recast-text" }

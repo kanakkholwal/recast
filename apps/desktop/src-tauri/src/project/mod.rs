@@ -10,12 +10,26 @@ pub mod autosave;
 pub mod format;
 pub mod journal;
 pub mod reader;
+pub mod v3;
 pub mod writer;
+
+/// On-disk shape a project was opened from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Format {
+    V1,
+    V2,
+    V3,
+}
 
 /// Cheap format probe: reads only the ZIP central directory (entry names) — no
 /// extraction or media decompression — to decide whether `path` is a legacy v1
 /// bundle. Returns false for unreadable or non-archive files.
 pub fn is_legacy_project(path: &Path) -> bool {
+    // A v3 directory is never legacy, and `File::open` on a directory is an error on some platforms and a success on others.
+    if path.is_dir() {
+        return false;
+    }
     let Ok(file) = std::fs::File::open(path) else {
         return false;
     };

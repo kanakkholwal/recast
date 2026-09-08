@@ -23,7 +23,11 @@
 		"PUBLIC_APP_URL": "https://recast.li",
 		"PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com",
 		"PUBLIC_POSTHOG_UI_HOST": "https://us.posthog.com",
-		"EMAIL_FROM": "Recast <hello@recast.li>"
+		"EMAIL_FROM": "Recast <hello@recast.li>",
+		"NODE_ENV": "production",
+		"POLAR_SERVER": "sandbox",
+		"STORAGE_PROVIDER": "azure",
+		"TRUSTED_ORIGINS": "https://recast.li,https://www.recast.li,https://recast.nexonauts.com,https://recast-web.vercel.app,https://preview.recast.li"
 	},
 	"routes": [
 		{
@@ -50,7 +54,19 @@
 			],
 			"observability": {
 				"enabled": true
-			}
+			},
+			"hyperdrive": [
+				{
+					"binding": "recast-preview",
+					"id": "cedd359e3f774a96bcc229477cb55eb1"
+				}
+			]
 		}
-	}
+	},
+	"hyperdrive": [
+		{
+			"binding": "recast-prod",
+			"id": "97c3cec1775041329abf824a4a37522b"
+		}
+	]
 }
