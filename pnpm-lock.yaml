@@ -238,24 +238,15 @@ importers:
       mermaid:
         specifier: ^11.17.0
         version: 11.17.0
-      mode-watcher:
-        specifier: ^1.1.0
-        version: 1.1.0(svelte@5.57.0)
       nanoid:
         specifier: ^5.1.16
         version: 5.1.16
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
-      svelte-sonner:
-        specifier: ^1.2.1
-        version: 1.2.1(svelte@5.57.0)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
-      tailwind-variants:
-        specifier: ^3.3.1
-        version: 3.3.1(tailwind-merge@3.6.0)(tailwindcss@4.3.3)
       takumi-js:
         specifier: ^2.13.6
         version: 2.13.6(preact@10.29.8)(react@19.2.6)
@@ -521,8 +512,8 @@ importers:
         specifier: ^1.0.3
         version: 1.0.3
       mediabunny:
-        specifier: ^1.55.7
-        version: 1.55.7
+        specifier: ^1.56.0
+        version: 1.56.0
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -4922,8 +4913,8 @@ packages:
     resolution: {integrity: sha512-yz3xRaG20c6/BOzvYoDaGtPmGscs7YivItZEEqe6GbwNfHuxu9YNmvnEkMzKldAGY4/80pRcQRZSEnhquk9XuQ==}
     engines: {node: '>= 0.8'}
 
-  mediabunny@1.55.7:
-    resolution: {integrity: sha512-Sb/vI8frRiDPbPUwl3hz0n69NSe9yt4Nydcv5yxi8Rdgk0BgnujEGjZqE+uCTehFbafcqIu6gDAok8ln98dcqg==}
+  mediabunny@1.56.0:
+    resolution: {integrity: sha512-VLVYEVXI4fA2PabQoZs3XOmxDsio4gpG1Npz0iVICRNCQ+XYI3fBOngnwHljafaEjHUbYzrIDoctZbxcVfQpgQ==}
 
   memoize@10.2.0:
     resolution: {integrity: sha512-DeC6b7QBrZsRs3Y02A6A7lQyzFbsQbqgjI6UW0GigGWV+u1s25TycMr0XHZE4cJce7rY/vyw2ctMQqfDkIhUEA==}
@@ -10303,7 +10294,7 @@ snapshots:
   media-typer@1.1.1:
     optional: true
 
-  mediabunny@1.55.7:
+  mediabunny@1.56.0:
     dependencies:
       '@types/dom-mediacapture-transform': 0.1.12
       '@types/dom-webcodecs': 0.1.13

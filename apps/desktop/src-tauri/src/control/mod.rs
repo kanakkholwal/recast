@@ -1,6 +1,7 @@
 //! Local control channel: the GUI serves one JSON request per connection on a named pipe or Unix socket.
 //! Needed because the single-instance argv path is one-way and cannot answer a query; a 0600 token file backs the socket ACL.
 
+pub mod doc;
 mod events;
 
 use std::io::{BufRead, BufReader, Write};
@@ -452,6 +453,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
     let state = app.state::<crate::commands::types::AppState>();
     let manager = &state.recording_manager;
 
+    if let Some(result) = doc::dispatch(method, &params) {
+        return result;
+    }
     match method {
         "status" => Ok(json!({
             "recording": manager.is_recording(),

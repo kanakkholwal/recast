@@ -10,7 +10,8 @@ use recast_scene::Scene;
 use serde_json::Value;
 
 use super::{
-    canonical_color, ease_from, frac_from_pct, ids, near, secs_from_ms, Elide, PLACED_PASSTHROUGH,
+    canonical_color, ease_from, frac_from_pct, ids, near, secs_from_ms, Elide, Read,
+    PLACED_PASSTHROUGH,
 };
 use crate::document::{Document, Node};
 use crate::ids::{Id, IdGen};
@@ -47,6 +48,79 @@ pub struct MediaRefs {
     pub system: Option<String>,
     pub cursor: Option<TrackFile>,
     pub words: Option<TrackFile>,
+}
+
+impl MediaRefs {
+    /// Lifts the refs back out of a document, so a rewrite from state can run where no filesystem is (the webview replica).
+    #[must_use]
+    pub fn from_document(doc: &Document) -> Self {
+        let media = |id: &str| {
+            doc.find(id).map(|n| MediaFile {
+                src: n.text_or("src", ""),
+                width: n.num_or("w", 0.0) as u32,
+                height: n.num_or("h", 0.0) as u32,
+                fps: n.num_or("fps", 0.0),
+                duration: n.num_or("dur", 0.0),
+                offset: n.num_or("offset", 0.0),
+            })
+        };
+        let track = |id: &str| {
+            doc.find(id).map(|n| TrackFile {
+                src: n.text_or("src", ""),
+                rows: n.num_or("n", 0.0) as usize,
+                span: n.attr("span").and_then(|s| {
+                    let mut parts = s.split_whitespace().map(|p| p.parse::<f64>().ok());
+                    Some((parts.next()??, parts.next()??))
+                }),
+                engine: n.attr("engine").map(str::to_owned),
+                model: n.attr("model").map(str::to_owned),
+                lang: n.attr("lang").map(str::to_owned),
+            })
+        };
+        let src_of = |id: &str| doc.find(id).and_then(|n| n.attr("src")).map(str::to_owned);
+        Self {
+            recording: media(ids::RECORDING),
+            camera: media(ids::CAMERA_MEDIA),
+            mic: src_of(ids::MIC),
+            system: src_of(ids::SYSTEM),
+            cursor: track(ids::CURSOR_TRACK),
+            words: track(ids::WORDS_TRACK),
+        }
+    }
+}
+
+impl TrackFile {
+    /// The words track header for a transcript in the editor's JSON shape (`segments[].words[].{start,end}`).
+    #[must_use]
+    pub fn words(src: &str, transcript: &Value) -> Self {
+        let words: Vec<(f64, f64)> = transcript
+            .get("segments")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .flat_map(|s| {
+                s.get("words")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+            })
+            .filter_map(|w| Some((w.get("start")?.as_f64()?, w.get("end")?.as_f64()?)))
+            .collect();
+        let text = |key: &str| {
+            transcript
+                .get(key)
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+        Self {
+            src: src.to_owned(),
+            rows: words.len(),
+            span: words.first().zip(words.last()).map(|(f, l)| (f.0, l.1)),
+            engine: text("engine"),
+            model: text("modelId"),
+            lang: text("language"),
+        }
+    }
 }
 
 /// Builds the document. `base` supplies what the state cannot carry (`vars`, `graphic`, `shader`, unknown elements), so an edit round trip keeps them.

@@ -4,10 +4,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use recast_project::layout::{self, locate, Layout, Located};
 use recast_project::scene::{self, MediaFile, MediaRefs, TrackFile};
-use recast_project::{parse, serialize, IdGen};
+use recast_project::store::Expect;
+use recast_project::{serialize, IdGen};
+
+use super::documents::{documents, Outcome};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -21,7 +24,6 @@ pub fn is_project_dir(path: &Path) -> bool {
     matches!(locate(path), Ok(Located::V3Dir(_)))
 }
 
-/// Opens a v3 directory as the same `ProjectOpenResult` a bundle produces, writing the derived state under `.cache/`.
 /// Upgrades the bundle at `path` into a v3 directory at the same path, keeping the bundle as `Name.recast.bak`.
 pub fn migrate(path: &Path) -> Result<recast_project::migrate::Report> {
     recast_project::migrate::migrate(path, path, recast_project::migrate::Options::default())
@@ -44,9 +46,13 @@ pub fn size_bytes(root: &Path) -> u64 {
         .sum()
 }
 
+/// Opens a v3 directory as the same `ProjectOpenResult` a bundle produces, writing the derived state under `.cache/`.
+/// The document comes from the owner, so a WAL left by a crash is already replayed into what the editor sees.
 pub fn open(path: &Path) -> Result<ProjectOpenResult> {
     let layout = Layout::new(path);
-    let doc = read_document(&layout)?;
+    let doc = documents()
+        .document(path)
+        .context("opening the project document")?;
     let mut state =
         scene::to_render_state(&doc).context("mapping the document to a render state")?;
     if let Some(transcript) = read_words(&layout) {
@@ -71,10 +77,13 @@ pub fn open(path: &Path) -> Result<ProjectOpenResult> {
     })
 }
 
-/// Saves the editor's whole state into the document, lifting the transcript into `tracks/`. Ids are recycled from the current document.
+/// Saves the editor's whole state as one sequenced batch: the new document is diffed against the owner's copy, so a GUI save
+/// and an agent op go through the same WAL and the same `seq`. Ids are recycled from the current document.
 pub fn save_edits(path: &Path, edits_json: &str) -> Result<()> {
     let layout = Layout::new(path);
-    let current = read_document(&layout)?;
+    let current = documents()
+        .document(path)
+        .context("opening the project document")?;
     let mut state: RenderState = serde_json::from_str(edits_json).context("parsing the edits")?;
     let words = state
         .passthrough
@@ -87,7 +96,16 @@ pub fn save_edits(path: &Path, edits_json: &str) -> Result<()> {
     let refs = media_refs(&layout, &metadata, &current, words.as_ref());
     let mut ids = IdGen::seeded(seed_of(edits_json));
     let doc = scene::from_render_state_public(&state, &refs, Some(&current), &mut ids);
-    atomic(&layout.document(), serialize(&doc).as_bytes())?;
+    let ops = recast_project::diff(&current, &doc).context("diffing the saved state")?;
+    if !ops.is_empty() {
+        match documents()
+            .apply(path, &ops, Expect::default())
+            .context("applying the saved state")?
+        {
+            Outcome::Applied { .. } => {}
+            Outcome::Stale { .. } => bail!("the document moved during an unconditional save"),
+        }
+    }
     write_derived_state(&layout, &state)?;
     Ok(())
 }
@@ -131,12 +149,6 @@ pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
     atomic(&layout.document(), serialize(&doc).as_bytes())?;
     write_derived_state(&layout, &state)?;
     Ok(root.clone())
-}
-
-fn read_document(layout: &Layout) -> Result<recast_project::Document> {
-    let text = fs::read_to_string(layout.document())
-        .with_context(|| format!("reading {}", layout.document().display()))?;
-    parse(&text).context("parsing project.rcx")
 }
 
 fn read_capture(layout: &Layout) -> Result<ProjectMetadata> {
@@ -198,7 +210,7 @@ fn media_refs(
         system: exists(layout::SYSTEM).then(|| layout::SYSTEM.into()),
         cursor: exists(layout::CURSOR_TRACK)
             .then(|| track_from_current(current, scene::ids::CURSOR_TRACK, layout::CURSOR_TRACK)),
-        words: words.map(words_track),
+        words: words.map(|w| TrackFile::words(layout::WORDS_TRACK, w)),
     }
 }
 
@@ -220,36 +232,6 @@ fn track_from_current(current: &recast_project::Document, id: &str, src: &str) -
         engine: None,
         model: None,
         lang: None,
-    }
-}
-
-fn words_track(transcript: &Value) -> TrackFile {
-    let words: Vec<(f64, f64)> = transcript
-        .get("segments")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .flat_map(|s| {
-            s.get("words")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-        })
-        .filter_map(|w| Some((w.get("start")?.as_f64()?, w.get("end")?.as_f64()?)))
-        .collect();
-    let text = |key: &str| {
-        transcript
-            .get(key)
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-    };
-    TrackFile {
-        src: layout::WORDS_TRACK.into(),
-        rows: words.len(),
-        span: words.first().zip(words.last()).map(|(f, l)| (f.0, l.1)),
-        engine: text("engine"),
-        model: text("modelId"),
-        lang: text("language"),
     }
 }
 
@@ -309,6 +291,14 @@ mod tests {
         let mut state: RenderState = serde_json::from_str(&edits).unwrap();
         state.padding = 12.0;
         save_edits(&dir, &serde_json::to_string(&state).unwrap()).unwrap();
+        let snapshot = documents().snapshot(&dir).unwrap();
+        assert!(
+            snapshot.text.contains("pad=\"12\""),
+            "the owner's copy is the truth: {}",
+            snapshot.text
+        );
+        assert_eq!(snapshot.seq, 1, "one save is one sequenced batch");
+        documents().flush(&dir).unwrap();
         let text = fs::read_to_string(dir.join(layout::DOCUMENT)).unwrap();
         assert!(text.contains("pad=\"12\""), "{text}");
         let again: RenderState =

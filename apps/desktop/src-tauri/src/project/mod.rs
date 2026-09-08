@@ -7,6 +7,7 @@ use crate::capture::CaptureTarget;
 use crate::recording::RecordingStats;
 
 pub mod autosave;
+pub mod documents;
 pub mod format;
 pub mod journal;
 pub mod reader;

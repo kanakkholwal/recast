@@ -359,8 +359,19 @@ enum ProjectAction {
     Pack { dir: String, file: String },
     /// Extract a packaged v3 project into a new directory.
     Unpack { file: String, dir: String },
-    /// Parse and validate a v3 project's document; prints the hash and every finding.
+    /// Parse and validate a v3 project's document offline; prints the hash and every finding.
     Doc { dir: String },
+    /// The live document from the running app (`doc.show`): canonical text, hash, seq.
+    Rcx { path: String },
+    /// Apply a JSON array of ops to the live document (`doc.apply`), refusing if it moved past `--expect-seq`.
+    Ops {
+        path: String,
+        /// File holding the ops array; `-` reads stdin.
+        #[arg(long, value_name = "FILE")]
+        file: String,
+        #[arg(long, value_name = "SEQ")]
+        expect_seq: Option<u64>,
+    },
     /// Acquire the project write-lock. Subsequent mutate/exports by either
     /// side block until release. Idempotent for the same caller.
     Lock {
@@ -1163,6 +1174,37 @@ fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
                 }),
                 cli.format,
             )
+        }
+        ProjectAction::Rcx { path } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            send_and_emit(cli, "doc.show", json!({ "path": path }))
+        }
+        ProjectAction::Ops {
+            path,
+            file,
+            expect_seq,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let text = if file == "-" {
+                let mut s = String::new();
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut s)
+                    .map_err(|e| format!("reading ops from stdin: {e}"))?;
+                s
+            } else {
+                std::fs::read_to_string(file.as_str())
+                    .map_err(|e| format!("reading {file}: {e}"))?
+            };
+            let ops: Value =
+                serde_json::from_str(&text).map_err(|e| format!("{file} is not JSON: {e}"))?;
+            let mut params = json!({ "path": path, "ops": ops });
+            if let Some(seq) = expect_seq {
+                params["expectSeq"] = json!(seq);
+            }
+            send_and_emit(cli, "doc.apply", params)
         }
         ProjectAction::Transcript { path, from, to }
         | ProjectAction::Silences { path, from, to } => {

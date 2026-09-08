@@ -143,7 +143,7 @@ impl Differ {
                     order.insert(ti, Some(ti));
                 }
                 Source::Elsewhere(_) | Source::Fresh => {
-                    self.purge(child)?;
+                    self.purge(child, loc, &mut order)?;
                     self.emit(Op::Insert {
                         parent: addr.to_owned(),
                         index: ti,
@@ -200,11 +200,26 @@ impl Differ {
     }
 
     /// Removes every node whose id the inserted subtree will reuse, so an insert never duplicates an id.
-    fn purge(&mut self, subtree: &Node) -> Result<(), OpError> {
+    /// A direct child of the parent being reconciled leaves `order` too; the branch being stood on is never cut.
+    fn purge(
+        &mut self,
+        subtree: &Node,
+        loc: &Location,
+        order: &mut Vec<Option<usize>>,
+    ) -> Result<(), OpError> {
         for id in ids_in(subtree) {
-            if self.work.find(&id).is_some() {
-                self.emit(Op::Remove { id })?;
+            let Some(at) = self.work.locate(&id).ok().flatten() else {
+                continue;
+            };
+            if at.contains(loc) {
+                continue;
             }
+            if let Some((parent, index)) = at.parent() {
+                if parent == *loc {
+                    order.remove(index);
+                }
+            }
+            self.emit(Op::Remove { id })?;
         }
         Ok(())
     }

@@ -340,6 +340,7 @@ async fn load_document_as(path: String, to_v3: bool) -> AppResult<EditorDocument
 
 fn load_editor_document_blocking(path: String, to_v3: bool) -> Result<EditorDocument, String> {
     let input = PathBuf::from(&path);
+    grant_opened(&input);
     if let Some(project) = open_project_if_needed(&input)? {
         let media_duration = project.metadata.media_duration_secs();
         let default_state = || RenderState {
@@ -398,7 +399,7 @@ fn load_editor_document_blocking(path: String, to_v3: bool) -> Result<EditorDocu
                     fs::metadata(&input).map(|m| m.len()).unwrap_or_default()
                 },
             },
-            render_state,
+            render_state: grant_named(render_state),
             format: Some(project.format),
             needs_migration: project.needs_migration
                 || (to_v3 && project.format != crate::project::Format::V3),
@@ -425,6 +426,24 @@ fn load_editor_document_blocking(path: String, to_v3: bool) -> Result<EditorDocu
         format: None,
         needs_migration: false,
     })
+}
+
+/// Files the state names (music, background images, annotation images) are readable for as long as the app runs.
+fn grant_named(state: RenderState) -> RenderState {
+    if let Ok(value) = serde_json::to_value(&state) {
+        crate::asset_scheme::scope().grant_named_in(&value);
+    }
+    state
+}
+
+/// Opening a file is the authorisation to show it: the file itself, or a v3 directory's whole tree.
+fn grant_opened(input: &Path) {
+    let scope = crate::asset_scheme::scope();
+    if input.is_dir() {
+        scope.allow_root(input);
+    } else if input.is_file() {
+        scope.grant_file(input);
+    }
 }
 
 /// Read-only timeline summary, mirroring the shape `deriveSegments` and `timeMapFromSegments` produce; shared parity fixtures hold the two to the same precision.

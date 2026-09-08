@@ -123,6 +123,11 @@ sequenceDiagram
 | `agent::intents` | `agent/intents.rs` | `cuts_for_silences` (padded, merged, skips existing cuts) and `zoom_op` (output seconds in, a full `ZoomRegion` out) |
 | `agent::instructions` | `agent/instructions.rs` | The MCP `instructions` text and the installable `recast-editing` skill; a test asserts the skill names every tool |
 | `resources/*` | `mcp/protocol.rs` | Each project as a `recast://project/<encoded path>` resource, so a client can attach state without spending a tool call |
+| `Store` | `crates/recast-project/store.rs` | v3 directory projects: the in-memory document, monotonic `seq`, per-batch WAL, atomic checkpoint, a 256-entry ring for `since(seq)`, and `apply_expecting` (`Stale { seq, hash, since }` on a mismatch) |
+| `diff` | `crates/recast-project/diff.rs` | `diff(from, to)` turns a whole-state save or an edited file into one op batch; property-tested over random edit sequences |
+| `Address` | `crates/recast-project/address.rs` | Op targets: an id, `id/kind[n]`, or `/kind/kind[n]` from the root, so id-less elements (`background`, `shadow`, `enter`) are reachable |
+| `Documents` | `project/documents.rs` | The core's document owner: one `Store` per open project, every writer sequenced through it, checkpoint 500 ms after the last op and on exit |
+| `control::doc` | `control/doc.rs` | `doc.show / apply / since / flush` for the socket, the Tauri commands and the CLI (`recast project rcx`, `recast project ops`) |
 
 ## Control / data flow
 
@@ -252,6 +257,12 @@ of band. On success the journal is deleted: a branch is consumed, not archived.
   it. Revisit if the MSRV moves for another reason.
 - **Proposing is free.** `proposing_edits_leaves_the_bundle_untouched` byte-compares
   the `.recast` before and after an append.
+- **On a v3 directory the core's copy is the truth.** Every write, the GUI's
+  whole-state save included, becomes a sequenced op batch on `Documents`; the
+  file is a checkpoint at most half a second behind. `recast_doc_show` and
+  `recast_doc_since` read from that copy. `doc.apply` is deliberately absent
+  from MCP (the same `no_tool_writes_the_project_directly` test pins it) until
+  the live-apply setting exists; the CLI and the editor are the human's hands.
 
 ## Related
 

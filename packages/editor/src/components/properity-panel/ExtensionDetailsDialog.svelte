@@ -25,6 +25,7 @@ import {
 	fetchManifestPreview,
 	hasUpdate,
 	installFromUrl,
+	previewUrl,
 	type RegistryIndexEntry,
 	removeExtension,
 	toggleExtension,
@@ -111,11 +112,26 @@ const groups = $derived(buildContributionGroups(manifest, contributionDefs));
 
 const assetCount = $derived(manifest?.assets?.length ?? 0);
 
-// Previews resolve manifest-local asset ids to their remote source URLs
+// Previews resolve manifest-local asset ids to their remote source URLs; SVGs arrive re-typed through `previewUrl`.
 const contributes = $derived<ExtensionContributions>(manifest?.contributes ?? {});
 const assetById = $derived(new Map((manifest?.assets ?? []).map((a) => [a.id, a])));
+let previewById = $state<Record<string, string>>({});
+$effect(() => {
+	const assets = manifest?.assets ?? [];
+	let cancelled = false;
+	previewById = {};
+	for (const asset of assets) {
+		void previewUrl(asset.url).then((url) => {
+			if (cancelled || !url || url === asset.url) return;
+			previewById = { ...previewById, [asset.id]: url };
+		});
+	}
+	return () => {
+		cancelled = true;
+	};
+});
 function assetUrl(id: string | null | undefined): string | null {
-	return id ? (assetById.get(id)?.url ?? null) : null;
+	return id ? (previewById[id] ?? assetById.get(id)?.url ?? null) : null;
 }
 function bgThumbUrl(bg: { thumb?: string; asset: string }): string | null {
 	const a = assetById.get(bg.thumb ?? bg.asset);

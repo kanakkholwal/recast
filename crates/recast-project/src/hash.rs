@@ -7,7 +7,8 @@ use crate::document::Document;
 use crate::serialize::serialize;
 
 /// Hex sha256, shortened to 16 characters on the wire; collisions at that length are not a concern for one library.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct DocHash(String);
 
 impl DocHash {
@@ -29,6 +30,20 @@ impl DocHash {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// # Errors When `text` is not 16 lowercase hex characters.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let ok = text.len() == 16
+            && text
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase());
+        if !ok {
+            return Err(format!(
+                "'{text}' is not a document hash (16 hex characters)"
+            ));
+        }
+        Ok(Self(text.to_owned()))
     }
 }
 

@@ -35,6 +35,12 @@ launches on first call if it is not running.
 | `recast_branch_list` | Open branches and their fork hashes. |
 | `recast_branch_truncate` | Undo the tail of a branch. |
 | `recast_branch_discard` | Delete a branch. |
+| `recast_doc_show` | The live v3 document (`project.rcx`) with `hash` and `seq`. Directory projects only. |
+| `recast_doc_since` | Ops after a `seq` you hold, so you patch instead of re-reading. |
+
+## The live document (v3 directory projects)
+
+A project saved as a folder holds one markup file, `project.rcx`. While Recast is running, `recast_doc_show` is the truth and the file on disk is a checkpoint up to half a second behind, so read through the tool, not the file. Elements are addressed by id, or by kind path for the few that have none (`/background/solid`, `k1/enter`, `/background/gradient/stop[1]`). Writing the live document is the human's action (`recast project ops` on the CLI, or the editor); you still propose on branches.
 
 ## Read before you write
 

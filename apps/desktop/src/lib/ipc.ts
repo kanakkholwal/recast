@@ -865,6 +865,11 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
 	return invoke<T>("fetch_extension_registry", { indexUrl });
 }
 
+/** A remote pack asset's bytes, fetched by the core (the release CSP blocks the webview from doing it). */
+export async function fetchExtensionAsset(url: string): Promise<Uint8Array> {
+	return new Uint8Array(await invoke<number[] | ArrayBuffer>("fetch_extension_asset", { url }));
+}
+
 export async function launchRecordingPanel(intent?: CaptureIntent) {
 	const existing = await WebviewWindow.getByLabel("recording-panel");
 	if (existing) {

@@ -224,6 +224,43 @@ fn rich_extras(state: &mut RenderState) {
 }
 
 #[test]
+fn media_refs_lift_back_out_of_the_document_they_were_written_into() {
+    let refs = MediaRefs {
+        recording: Some(MediaFile {
+            src: "media/recording.mp4".into(),
+            width: 1920,
+            height: 1080,
+            fps: 60.0,
+            duration: 11.35,
+            offset: 0.0,
+        }),
+        camera: Some(MediaFile {
+            src: "media/camera.mp4".into(),
+            offset: 0.856,
+            ..Default::default()
+        }),
+        mic: Some("media/mic.wav".into()),
+        system: Some("media/system.wav".into()),
+        cursor: Some(TrackFile {
+            src: "tracks/cursor.json".into(),
+            rows: 1200,
+            span: Some((0.0, 11.3)),
+            ..Default::default()
+        }),
+        words: Some(TrackFile::words(
+            "tracks/words.json",
+            &json!({ "engine": "parakeet", "modelId": "v3", "language": "en",
+                     "segments": [{ "words": [{ "start": 0.5, "end": 0.9 }, { "start": 1.0, "end": 1.4 }] }] }),
+        )),
+    };
+    let mut ids = IdGen::seeded(1);
+    let doc = from_render_state(&rich_state(), &refs, None, &mut ids);
+    assert_eq!(MediaRefs::from_document(&doc), refs);
+    assert_eq!(refs.words.as_ref().unwrap().rows, 2);
+    assert_eq!(refs.words.as_ref().unwrap().span, Some((0.5, 1.4)));
+}
+
+#[test]
 fn a_rich_state_survives_the_document_and_comes_back_equal() {
     let state = rich_state();
     let doc = from_render_state(&state, &media(), None, &mut IdGen::seeded(1));

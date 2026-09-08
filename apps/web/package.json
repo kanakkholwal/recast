@@ -5,8 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"sync:assets": "node ../../scripts/sync-screenshot-assets.mjs",
-		"dev": "pnpm --filter @recast/engine build:wasm:ensure && pnpm sync:assets && vite dev",
-		"build": "pnpm --filter @recast/engine build:wasm:ensure && pnpm sync:assets && vite build",
+		"dev": "pnpm sync:assets && vite dev",
+		"build": "pnpm sync:assets && vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "docvia build && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -74,12 +74,9 @@
 		"files-sdk": "^1.9.0",
 		"gsap": "^3.15.0",
 		"mermaid": "^11.17.0",
-		"mode-watcher": "^1.1.0",
 		"nanoid": "^5.1.16",
 		"postgres": "^3.4.9",
-		"svelte-sonner": "^1.2.1",
 		"tailwind-merge": "^3.6.0",
-		"tailwind-variants": "^3.3.1",
 		"takumi-js": "^2.13.6",
 		"zod": "^4.4.3"
 	}

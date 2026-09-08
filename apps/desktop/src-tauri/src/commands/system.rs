@@ -150,6 +150,33 @@ pub(crate) fn write_json_manifest<T: serde::Serialize>(path: &Path, value: &T) {
     }
 }
 
+/// The directories the webview may read media from without a per-file grant: app data (assets, extensions, fonts),
+/// the recordings and exports root, and the temp cache bundles extract into. Opened files and picked files are granted singly.
+pub fn seed_asset_scope(app: &AppHandle, config: &AppConfig) {
+    let scope = crate::asset_scheme::scope();
+    if let Ok(dir) = app.path().app_data_dir() {
+        scope.allow_root(&dir);
+    }
+    if let Ok(dir) = app.path().app_cache_dir() {
+        scope.allow_root(&dir);
+    }
+    if let Some(dir) = &config.output_dir {
+        scope.allow_root(Path::new(dir));
+    }
+    scope.allow_root(&env::temp_dir().join("recast-cache"));
+}
+
+/// A file the user chose in a picker becomes readable through `recast-asset://`. The path must already exist.
+#[tauri::command]
+pub fn grant_asset_path(path: String) -> AppResult<()> {
+    let file = Path::new(&path);
+    if !file.is_absolute() || !file.is_file() {
+        return Err(AppError::from("Path is not a file"));
+    }
+    crate::asset_scheme::scope().grant_file(file);
+    Ok(())
+}
+
 pub fn get_active_output_dir(state: &State<'_, AppState>) -> PathBuf {
     let config = state.config.read();
     if let Some(dir) = &config.output_dir {
@@ -199,6 +226,7 @@ pub fn set_output_dir(app: AppHandle, state: State<'_, AppState>, path: String) 
     if !Path::new(&path).exists() {
         return Err(AppError::from("Directory does not exist"));
     }
+    crate::asset_scheme::scope().allow_root(Path::new(&path));
     let snapshot = {
         let mut config = state.config.write();
         config.output_dir = Some(path);
@@ -956,6 +984,7 @@ pub async fn delete_file(path: String) -> AppResult<()> {
         if !is_file_or_project(target) {
             return Err(AppError::from("Path is not a file"));
         }
+        release_project(target)?;
         trash::delete(target).map_err(|e| AppError::msg(format!("Could not move to trash: {e}")))
     })
     .await
@@ -964,6 +993,16 @@ pub async fn delete_file(path: String) -> AppResult<()> {
 
 fn is_file_or_project(path: &std::path::Path) -> bool {
     path.is_file() || crate::project::v3::is_project_dir(path)
+}
+
+/// Checkpoints and forgets an open project directory before it is moved, so no debounced write lands in the old place.
+fn release_project(path: &std::path::Path) -> AppResult<()> {
+    if !crate::project::v3::is_project_dir(path) {
+        return Ok(());
+    }
+    crate::project::documents::documents()
+        .close(path)
+        .map_err(|e| AppError::msg(format!("Could not release the project: {e}")))
 }
 
 /// Renames a file in place, keeping the original extension when `new_name` has none, and returns the new absolute path.
@@ -977,6 +1016,7 @@ pub fn rename_file(path: String, new_name: String) -> AppResult<String> {
     if !is_file_or_project(&src) {
         return Err(AppError::from("Path is not a file"));
     }
+    release_project(&src)?;
 
     let trimmed = new_name.trim();
     if trimmed.is_empty() {

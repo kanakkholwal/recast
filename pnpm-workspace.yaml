@@ -7,7 +7,7 @@ allowBuilds:
   sharp: true
   workerd: true
 minimumReleaseAgeExclude:
-  - mediabunny@1.52.0
+  - mediabunny@1.52.0 || 1.56.0
   - '@takumi-rs/core-darwin-arm64@2.13.6'
   - '@takumi-rs/core-darwin-x64@2.13.6'
   - '@takumi-rs/core-linux-arm64-gnu@2.13.6'

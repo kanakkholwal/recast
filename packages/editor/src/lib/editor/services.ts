@@ -124,6 +124,8 @@ export interface AssetService {
 /** Asset-pack install. Absent ⇒ the Extensions panel is read-only. */
 export interface ExtensionService {
 	fetchRegistry<T = unknown>(indexUrl: string): Promise<T>;
+	/** Bytes of one remote pack asset, for previews the webview cannot load directly. Absent: previews use the URL as is. */
+	fetchAssetBytes?(url: string): Promise<Uint8Array>;
 	install(manifestUrl: string): Promise<InstalledExtension>;
 	listInstalled(): Promise<InstalledExtension[]>;
 	setEnabled(extId: string, enabled: boolean): Promise<void>;

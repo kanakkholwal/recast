@@ -2,12 +2,6 @@ import { describe, expect, it } from "vitest";
 import { isChromeless, isIndexable } from "./layout.logic";
 
 describe("isChromeless", () => {
-	// The editor is full-height with its own toolbar, so the marketing navbar would push it past the viewport.
-	it("drops the chrome across the whole video editor playground", () => {
-		expect(isChromeless("/playground")).toBe(true);
-		expect(isChromeless("/playground/edit")).toBe(true);
-	});
-
 	it("keeps the existing app-shell routes chromeless", () => {
 		for (const p of [
 			"/dashboard",
@@ -43,7 +37,6 @@ describe("isIndexable", () => {
 			"/architecture/system-overview",
 			"/tools",
 			"/tools/mp4-to-gif",
-			"/playground",
 		]) {
 			expect(isIndexable(p), p).toBe(true);
 		}

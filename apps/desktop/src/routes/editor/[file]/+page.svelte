@@ -1,5 +1,11 @@
 <script lang="ts">
-import { agentSession, Editor, resolveTrackOffsets } from "@recast/editor";
+import {
+	agentSession,
+	DocumentSession,
+	Editor,
+	loadProjectDocumentParser,
+	resolveTrackOffsets,
+} from "@recast/editor";
 import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
 import BranchReviewPanel from "@recast/editor/components/BranchReviewPanel.svelte";
 import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
@@ -72,7 +78,6 @@ import {
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { Spinner } from "@recast/ui/spinner";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
 import { fade } from "svelte/transition";
@@ -103,6 +108,7 @@ import {
 	openFileLocation,
 	saveProjectEdits,
 } from "$lib/ipc";
+import { fileUrl } from "$lib/assetUrl";
 import { log } from "$lib/logger";
 import { generateAutoZoom } from "$lib/services/analysis";
 import { isShareSupported, shareRecording } from "$lib/share";
@@ -213,6 +219,8 @@ let cameraCapture = $state<CameraCapture>("legacy");
 let trackOffsets = $state(resolveTrackOffsets(undefined));
 let cameraSrc = $state("");
 let documentPath = $state("");
+// v3 projects only: the replica that mirrors edits to the core as op batches. Null for a bundle or a plain video.
+let docSession: DocumentSession | null = null;
 let isLoading = $state(true);
 let error = $state("");
 let loadedPath = $state("");
@@ -265,8 +273,12 @@ function startAutosave() {
 		// Most idle ticks are clean, so skip the full serialize until there is real work to persist.
 		if (!store.isDirty) return;
 		try {
-			const editsJson = JSON.stringify(store.toRenderState());
-			await autosaveProject(documentPath, editsJson);
+			if (docSession) {
+				await docSession.commit();
+			} else {
+				const editsJson = JSON.stringify(store.toRenderState());
+				await autosaveProject(documentPath, editsJson);
+			}
 			if (autosaveFailing) {
 				autosaveFailing = false;
 				toast.dismiss(AUTOSAVE_TOAST_ID);
@@ -295,10 +307,48 @@ function stopAutosave() {
 // The GUI is a first-class lock holder, so an agent patching this open project is refused, not raced.
 const editorWriterId = `ui:${crypto.randomUUID().slice(0, 8)}`;
 
+/** Swap the document session for the project just loaded; a non-v3 path closes any open one. */
+async function openDocumentSession(projectPath: string | null) {
+	const previous = docSession;
+	docSession = null;
+	await previous?.dispose();
+	if (!projectPath) return;
+	try {
+		docSession = await DocumentSession.open({
+			store,
+			projectPath,
+			parse: await loadProjectDocumentParser(),
+			onConflict: () =>
+				toast.warning("Another editor changed this project", {
+					description:
+						"Your last edit could not be applied on top of it, so its version was loaded.",
+				}),
+			onError: (context, err) =>
+				log.warn("document", `replica ${context} failed`, { err: String(err) }),
+		});
+	} catch (err) {
+		// The store still saves whole-state through the adapter, so the editor stays usable without a replica.
+		log.warn("document", "replica unavailable", { err: String(err) });
+	}
+}
+
+// Mirror off the render path: reading only `isDirty` keeps this effect from depending on every field.
+$effect(() => {
+	if (store.isDirty) docSession?.scheduleCommit();
+});
+
+// The file is exactly current the moment the window loses focus.
+onMount(() => {
+	const onBlur = () => void docSession?.flush().catch(() => undefined);
+	window.addEventListener("blur", onBlur);
+	return () => window.removeEventListener("blur", onBlur);
+});
+
 /** Re-read the saved edits after a branch lands, so the editor shows what was
  *  actually written rather than the pre-apply state. */
 async function reloadRenderStateFromDisk() {
-	if (!documentPath) return;
+	// A v3 project announced the batch already; the session adopted it through the replica.
+	if (!documentPath || docSession) return;
 	try {
 		const document = await loadEditorDocument(documentPath);
 		store.loadRenderState(document.renderState);
@@ -355,6 +405,7 @@ onMount(() => {
 
 onDestroy(() => {
 	stopAutosave();
+	void openDocumentSession(null);
 	log.clearRecast();
 	// Clear autosave on clean exit.
 	if (documentPath) {
@@ -589,7 +640,7 @@ $effect(() => {
 // Resolve the store's music clips to playable specs (asset URLs).
 function buildMusicSpecs(): MusicClipSpec[] {
 	return store.musicClips.map((c) => ({
-		url: convertFileSrc(clipAssetPath(c.source)),
+		url: fileUrl(clipAssetPath(c.source)),
 		startOutputSec: c.startOutputSec,
 		offsetSec: c.offsetSec,
 		durationSec: c.durationSec,
@@ -795,6 +846,7 @@ async function loadDocument() {
 		store.videoPath = document.projectPath;
 		store.metadata = document.metadata;
 		store.loadRenderState(document.renderState);
+		await openDocumentSession(document.format === "v3" ? document.projectPath : null);
 		// Scope every subsequent log in this window to the opened recast.
 		log.setRecast(documentPath, {
 			width: document.metadata.width,
@@ -803,7 +855,7 @@ async function loadDocument() {
 			fps: document.metadata.fps,
 			codec: document.metadata.codec,
 		});
-		videoSrc = convertFileSrc(document.mediaPath);
+		videoSrc = fileUrl(document.mediaPath);
 		cursorPath = document.cursorPath ?? null;
 		store.cursorPath = cursorPath;
 		// Raw on-disk media paths for Rust-side analysis (silence detection).
@@ -825,13 +877,13 @@ async function loadDocument() {
 		store.waveform = [];
 		// Lazy: the idle effect below extracts the waveform, so the ffmpeg pass never competes with load.
 		waveformRequested = false;
-		systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
-		micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
+		systemAudioSrc = document.audioPath ? fileUrl(document.audioPath) : "";
+		micAudioSrc = document.microphonePath ? fileUrl(document.microphonePath) : "";
 		trackOffsets = resolveTrackOffsets(document.trackOffsets);
 		cameraPath = document.cameraPath ?? null;
 		// Absent from an older backend: unknowable, so `legacy` — never "off".
 		cameraCapture = document.cameraCapture ?? "legacy";
-		cameraSrc = cameraPath ? convertFileSrc(cameraPath) : "";
+		cameraSrc = cameraPath ? fileUrl(cameraPath) : "";
 		// A recorded camera is composited only when enabled; a fresh recording never sets that flag, so turn it on when one exists and the project hasn't already decided.
 		if (cameraPath && document.renderState?.cameraOverlay?.enabled === undefined) {
 			store.updateCameraOverlay({ enabled: true });
@@ -1461,9 +1513,14 @@ async function handleSave() {
 	// Serialize stays on the main thread: Tauri JSON-encodes command args there anyway, so a worker only adds a clone.
 	await tick();
 	try {
-		const editsJson = JSON.stringify(store.toRenderState());
-		const savedAt = await saveProjectEdits(documentPath, editsJson);
-		store.markSaved(savedAt);
+		if (docSession) {
+			await docSession.save();
+			store.markSaved(Date.now());
+		} else {
+			const editsJson = JSON.stringify(store.toRenderState());
+			const savedAt = await saveProjectEdits(documentPath, editsJson);
+			store.markSaved(savedAt);
+		}
 		toast.success("Saved");
 	} catch (err) {
 		const message =

@@ -62,6 +62,21 @@ pub const TOOLS: &[Tool] = &[
         schema: project_only,
     },
     Tool {
+        name: "recast_doc_show",
+        description: concat!(
+            "The live v3 document (`project.rcx`) as canonical text with its `hash` and `seq`. While Recast is running this ",
+            "is the truth; the file on disk lags by up to half a second. Pass `seq` as expectSeq on recast_doc_apply."
+        ),
+        verb: "doc.show",
+        schema: project_only,
+    },
+    Tool {
+        name: "recast_doc_since",
+        description: "Ops applied after a seq you already hold, oldest first; `ops` is null when too far behind, then recast_doc_show again.",
+        verb: "doc.since",
+        schema: doc_since_schema,
+    },
+    Tool {
         name: "recast_project_timeline",
         description: concat!(
             "Trim, cuts, split points and kept segments with speeds. Cuts and splits are SOURCE seconds; ",
@@ -232,6 +247,16 @@ fn project_window() -> Value {
     )
 }
 
+fn doc_since_schema() -> Value {
+    object(
+        json!({
+            "path": project_property(),
+            "seq": { "type": "integer", "minimum": 0 },
+        }),
+        &["path", "seq"],
+    )
+}
+
 fn branch_only_schema() -> Value {
     object(
         json!({ "path": project_property(), "branch": branch_property() }),
@@ -391,8 +416,11 @@ mod tests {
     /// The whole point of the adapter: an agent proposes, a human applies.
     #[test]
     fn no_tool_writes_the_project_directly() {
+        // `doc.apply` lands on the live document; it stays off MCP until the live-apply setting (step 8) gates it.
         let writes_project = |verb: &str| {
-            verb == "branch.apply" || verb.starts_with("editor.") && !is_read_verb(verb)
+            verb == "branch.apply"
+                || verb == "doc.apply"
+                || verb.starts_with("editor.") && !is_read_verb(verb)
         };
 
         for tool in TOOLS {
@@ -487,6 +515,8 @@ mod tests {
         matches!(
             verb,
             "editor.show"
+                | "doc.show"
+                | "doc.since"
                 | "editor.head"
                 | "editor.timeline"
                 | "editor.session"

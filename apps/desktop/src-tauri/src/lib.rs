@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod agent;
+mod asset_scheme;
 mod audio;
 pub mod audio_decode;
 mod cache;
@@ -228,6 +229,9 @@ pub fn run() {
     );
 
     builder
+        .register_uri_scheme_protocol(asset_scheme::SCHEME, |_ctx, request| {
+            asset_scheme::handle(&request)
+        })
         // No-op outside Linux and WebKitGTK; macOS and Windows expose MediaDevices once their privacy gates are met.
         .on_page_load(|_webview, _payload| {
             #[cfg(target_os = "linux")]
@@ -248,6 +252,8 @@ pub fn run() {
             // The plugin was built at Trace: off leaves release at Warn, on captures backend and forwarded webview diagnostics.
             commands::system::apply_log_level(config.diagnostic_logging);
 
+            commands::system::seed_asset_scope(handle, &config);
+
             // Seed the self-host override so the no-arg `cloud_api_url()` reflects the saved choice from the first request.
             commands::auth::init_cloud_api_override(config.cloud_api_url.clone());
 
@@ -255,6 +261,8 @@ pub fn run() {
             let cold_open_file: Vec<String> = std::env::args().collect();
             let pending_open_file = parse_open_arg(&cold_open_file);
             let launched_for_new_recording = cold_open_file.iter().any(|a| a == "--new-recording");
+
+            control::doc::announce_changes(handle.clone());
 
             // One source for the CLI and the panel; an absent file seeds in memory with initialized=false.
             let (profiles_state, profiles_initialized) =
@@ -434,6 +442,11 @@ pub fn run() {
             commands::release_editor_write,
             commands::force_release_editor_write,
             commands::migrate_project,
+            commands::doc_show,
+            commands::grant_asset_path,
+            commands::doc_apply,
+            commands::doc_since,
+            commands::doc_flush,
             commands::generate_thumbnails,
             commands::cancel_export,
             commands::enqueue_export,
@@ -483,6 +496,7 @@ pub fn run() {
             commands::set_extension_enabled,
             commands::uninstall_extension,
             commands::fetch_extension_registry,
+            commands::fetch_extension_asset,
             commands::diagnose_ffmpeg,
             commands::probe_video_encoders,
             commands::capture_capabilities,
@@ -559,6 +573,7 @@ pub fn run() {
 
             // Only on `Exit`: tray quit calls `process::exit` and skips `Drop for RecordingManager`, so mic and camera children would outlive the app.
             if matches!(event, tauri::RunEvent::Exit) {
+                crate::project::documents::documents().flush_all();
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.recording_manager.abort_for_shutdown();
                 }

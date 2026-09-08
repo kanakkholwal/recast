@@ -4,7 +4,7 @@ import { formatDateTime, formatSize, isImageFile } from "@recast/editor/lib/form
 import { FolderOpen, Image as ImageIcon, Video } from "@recast/icons";
 import { RecastPlayer } from "@recast/player";
 import { Button } from "@recast/ui/button";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { fileUrl } from "$lib/assetUrl";
 import type { RecordingEntry } from "$lib/ipc";
 import { captionSidecarVtt, openFileLocation } from "$lib/ipc";
 
@@ -17,7 +17,7 @@ let {
 } = $props();
 
 // The WebView can't read raw OS paths; recomputed if the parent swaps `entry` in place, as the rename flow does.
-const src = $derived(convertFileSrc(entry.path));
+const src = $derived(fileUrl(entry.path));
 
 // Image exports can't play in the video element, so they get an <img> preview; GIFs loop on their own.
 const isImage = $derived(isImageFile(entry.filename));

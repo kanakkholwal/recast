@@ -36,9 +36,30 @@ export interface WasmPreviewEngine {
 	outputDuration(): number;
 }
 
+/** The webview's copy of a v3 project document (`crates/recast-project` compiled in). Same rules as
+ *  `WasmPreviewEngine`: the `#[wasm_bindgen]` surface in `crates/recast-ffi-wasm/src/document.rs` is the truth. */
+export interface WasmProjectDocument {
+	free(): void;
+	/** Canonical text, byte-identical to what the core writes. */
+	text(): string;
+	hash(): string;
+	/** Applies a JSON array of ops, all or nothing; returns how many landed. Throws a string. */
+	apply(opsJson: string): number;
+	/** The editor render state as JSON. */
+	renderState(): string;
+	/** JSON array of ops that take this document to the one the state describes; `[]` when nothing moved. */
+	opsForState(stateJson: string): string;
+	/** Validation findings as JSON. */
+	issues(): string;
+	clone(): WasmProjectDocument;
+}
+
 export interface EngineModule {
 	PreviewEngine: {
 		create(canvas: unknown, backend?: string | null): Promise<WasmPreviewEngine>;
+	};
+	ProjectDocument: {
+		parse(text: string): WasmProjectDocument;
 	};
 }
 

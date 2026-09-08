@@ -153,6 +153,30 @@ export async function loadRegistryIndex<T = unknown>(): Promise<T | null> {
 	}
 }
 
+const previewCache = new Map<string, Promise<string | null>>();
+
+/** A URL an `<img>` renders for a pack asset. SVGs come through the host as bytes and are re-typed: release hosts
+ *  serve them as `application/octet-stream`, which the webview will not draw. Raster assets use their URL as is. */
+export function previewUrl(url: string): Promise<string | null> {
+	if (!/\.svg(?:[?#]|$)/i.test(url)) return Promise.resolve(url);
+	const fetchBytes = extService()?.fetchAssetBytes;
+	if (!fetchBytes) return Promise.resolve(url);
+	let pending = previewCache.get(url);
+	if (!pending) {
+		pending = fetchBytes(url)
+			.then((bytes) =>
+				URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "image/svg+xml" })),
+			)
+			.catch((err) => {
+				log.warn("extensions", "asset_preview_failed", { err: String(err) });
+				previewCache.delete(url);
+				return null;
+			});
+		previewCache.set(url, pending);
+	}
+	return pending;
+}
+
 /** Fetch a pack's full manifest for the pre-install details preview. Reuses the
  *  URL-allowlisted registry fetch, so the same https/localhost gate applies. */
 export async function fetchManifestPreview(manifestUrl: string): Promise<ExtensionManifest | null> {
