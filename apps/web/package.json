@@ -45,7 +45,7 @@
 		"@types/node": "^22.20.1",
 		"cloudinary": "^2.10.0",
 		"drizzle-kit": "^0.31.10",
-		"layerchart": "2.0.0-next.48",
+		"layerchart": "2.4.0",
 		"svelte": "5.57.0",
 		"svelte-check": "^4.7.6",
 		"tailwindcss": "^4.3.3",
