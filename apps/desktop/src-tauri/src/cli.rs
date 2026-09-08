@@ -345,6 +345,22 @@ enum ProjectAction {
         #[arg(long, value_name = "SECONDS")]
         to: Option<f64>,
     },
+    /// Migrate a v1 or v2 `.recast` bundle into a v3 project directory. Runs headless; the bundle is kept as `.bak`.
+    Migrate {
+        path: String,
+        /// Directory to create (default: the bundle's own path, moving the bundle aside).
+        #[arg(long, value_name = "DIR")]
+        dest: Option<String>,
+        /// Delete the bundle instead of keeping it as `.bak`.
+        #[arg(long)]
+        no_backup: bool,
+    },
+    /// Zip a v3 project directory into one file for sharing. Media is stored, `.cache` is left out.
+    Pack { dir: String, file: String },
+    /// Extract a packaged v3 project into a new directory.
+    Unpack { file: String, dir: String },
+    /// Parse and validate a v3 project's document; prints the hash and every finding.
+    Doc { dir: String },
     /// Acquire the project write-lock. Subsequent mutate/exports by either
     /// side block until release. Idempotent for the same caller.
     Lock {
@@ -1091,6 +1107,62 @@ fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
             let value =
                 crate::control::send("project.list", json!({}), !cli.no_launch, cli.timeout_ms)?;
             emit(&value, cli.format)
+        }
+        ProjectAction::Migrate {
+            path,
+            dest,
+            no_backup,
+        } => {
+            let abs =
+                |p: &str| crate::commands::screenshot::absolutize(std::path::PathBuf::from(p));
+            let src = abs(path);
+            let dest = dest.as_deref().map_or_else(|| src.clone(), abs);
+            let opts = recast_project::migrate::Options {
+                keep_backup: !no_backup,
+            };
+            let report =
+                recast_project::migrate::migrate(&src, &dest, opts).map_err(|e| e.to_string())?;
+            emit(
+                &json!({
+                    "fromVersion": report.from_version,
+                    "dest": report.dest,
+                    "backup": report.backup,
+                    "media": report.media,
+                    "tracks": report.tracks,
+                    "unknownKeys": report.unknown_keys,
+                    "warnings": report.warnings,
+                }),
+                cli.format,
+            )
+        }
+        ProjectAction::Pack { dir, file } => {
+            let abs =
+                |p: &str| crate::commands::screenshot::absolutize(std::path::PathBuf::from(p));
+            let file = abs(file);
+            recast_project::package::pack(&abs(dir), &file).map_err(|e| e.to_string())?;
+            emit(&json!({ "packed": file }), cli.format)
+        }
+        ProjectAction::Unpack { file, dir } => {
+            let abs =
+                |p: &str| crate::commands::screenshot::absolutize(std::path::PathBuf::from(p));
+            let dir = abs(dir);
+            recast_project::package::unpack(&abs(file), &dir).map_err(|e| e.to_string())?;
+            emit(&json!({ "unpacked": dir }), cli.format)
+        }
+        ProjectAction::Doc { dir } => {
+            let dir = crate::commands::screenshot::absolutize(std::path::PathBuf::from(dir));
+            let store = recast_project::store::Store::open(&dir).map_err(|e| e.to_string())?;
+            let report = store.check();
+            emit(
+                &json!({
+                    "hash": store.hash().to_string(),
+                    "seq": store.seq(),
+                    "pending": store.pending(),
+                    "ok": report.is_ok(),
+                    "issues": report.issues,
+                }),
+                cli.format,
+            )
         }
         ProjectAction::Transcript { path, from, to }
         | ProjectAction::Silences { path, from, to } => {

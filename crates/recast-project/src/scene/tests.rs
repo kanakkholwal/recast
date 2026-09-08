@@ -1,0 +1,330 @@
+use recast_scene::v1::nodes::{
+    Annotation, AnnotationGlow, AnnotationKind, AudioClip, AudioClipSource, CameraClipLayout,
+    CameraKeyframe, CameraLayout, CameraPlacement, LayoutSide, ZoomRegion,
+};
+use recast_scene::v1::{CutRange, RenderState, SceneAnimSpec, SegmentAnim, SegmentSpeed};
+use serde_json::json;
+
+use super::read::to_render_state;
+use super::write::{default_annotation, from_render_state, MediaFile, MediaRefs, TrackFile};
+use crate::ids::IdGen;
+use crate::parse::parse;
+use crate::serialize::serialize;
+use crate::validate::validate;
+
+fn media() -> MediaRefs {
+    MediaRefs {
+        recording: Some(MediaFile {
+            src: "media/recording.mp4".into(),
+            width: 1920,
+            height: 1080,
+            fps: 60.0,
+            duration: 92.4,
+            offset: 0.0,
+        }),
+        camera: Some(MediaFile {
+            src: "media/camera.mp4".into(),
+            offset: 0.856,
+            ..Default::default()
+        }),
+        mic: Some("media/mic.wav".into()),
+        system: Some("media/system.wav".into()),
+        cursor: Some(TrackFile {
+            src: "tracks/cursor.json".into(),
+            rows: 2614,
+            span: Some((0.0, 92.4)),
+            ..Default::default()
+        }),
+        words: Some(TrackFile {
+            src: "tracks/words.json".into(),
+            rows: 731,
+            span: Some((0.52, 91.9)),
+            engine: Some("parakeet".into()),
+            ..Default::default()
+        }),
+    }
+}
+
+fn annotation(id: &str, kind: AnnotationKind) -> Annotation {
+    Annotation {
+        id: id.into(),
+        start: 16.8,
+        end: 20.8,
+        kind,
+        glow: Some(AnnotationGlow {
+            color: "#ff5c5c".into(),
+            blur: 8.0,
+            opacity: 0.5,
+        }),
+        opacity: 0.9,
+        z_index: 2,
+        fill: "transparent".into(),
+        ..default_annotation()
+    }
+}
+
+fn rich_state() -> RenderState {
+    let mut state = RenderState {
+        trim_start: 0.5,
+        trim_end: 92.4,
+        background_type: "gradient".into(),
+        background_value: "linear-gradient(135deg, #ff5c5c 0%, #3b82f6 100%)".into(),
+        background_blur: 12.0,
+        padding: 40.0,
+        output_aspect: Some("16:9".into()),
+        border_radius: 1.2,
+        cursor_smoothing: 65.0,
+        cursor_highlight_opacity: 40.0,
+        cursor_hide_when_idle: true,
+        cursor_motion_easing: Some(recast_scene::v1::Easing {
+            x1: 0.4,
+            y1: 0.0,
+            x2: 0.2,
+            y2: 1.0,
+        }),
+        split_points: vec![30.0],
+        segment_speeds: vec![SegmentSpeed {
+            start: 30.0,
+            speed: 1.5,
+        }],
+        scene_animations: vec![SegmentAnim {
+            start: 30.0,
+            anim_in: Some(SceneAnimSpec {
+                kind: "slide".into(),
+                duration_ms: 400.0,
+                easing: Default::default(),
+                dir: Some("left".into()),
+                intensity: Some(0.5),
+            }),
+            anim_out: None,
+        }],
+        ..RenderState::default()
+    };
+    state.cuts.push(CutRange {
+        start: 12.3,
+        end: 14.8,
+        extra: [
+            ("id".to_owned(), json!("c1")),
+            ("source".to_owned(), json!("silence")),
+        ]
+        .into_iter()
+        .collect(),
+    });
+    state.zoom_regions.push(ZoomRegion {
+        start: 4.5,
+        end: 10.5,
+        scale: 1.8,
+        ease_in: Default::default(),
+        ease_out: Default::default(),
+        ramp_in: 0.6,
+        ramp_out: 0.6,
+        center_x: 0.32,
+        center_y: 0.28,
+        hidden: false,
+        motion_blur: 0.0,
+        extra: [
+            ("id".to_owned(), json!("z1")),
+            ("source".to_owned(), json!("manual")),
+        ]
+        .into_iter()
+        .collect(),
+    });
+    state.shadow.enabled = true;
+    state.shadow.opacity = 35.0;
+    state.camera_overlay.enabled = true;
+    state.camera_overlay.cursor_dodge = true;
+    state.camera_overlay.keyframes.push(CameraKeyframe {
+        at_sec: 28.4,
+        placement: CameraPlacement {
+            x: 0.04,
+            y: 0.72,
+            width: 0.22,
+            height: 0.3,
+        },
+    });
+    state.camera_overlay.clip_layouts.push(CameraClipLayout {
+        start: 30.0,
+        layout: CameraLayout::SplitH {
+            fraction: 0.4,
+            side: LayoutSide::End,
+        },
+    });
+    rich_extras(&mut state);
+    state
+}
+
+fn rich_extras(state: &mut RenderState) {
+    state.annotations.push(annotation(
+        "a1",
+        AnnotationKind::Arrow {
+            x1: 0.1,
+            y1: 0.2,
+            x2: 0.5,
+            y2: 0.6,
+            head_size: 0.2,
+        },
+    ));
+    state.annotations.push(annotation(
+        "t1",
+        AnnotationKind::Text {
+            x: 0.1,
+            y: 0.1,
+            w: 0.4,
+            h: 0.1,
+            content: "Hello & <world>".into(),
+            font_family: "Inter".into(),
+            font_size: 42.0,
+            font_weight: 600.0,
+            color: "#ffffff".into(),
+            align: "center".into(),
+            line_height: 1.3,
+        },
+    ));
+    state.caption_style = Some(recast_captions::CaptionStyle {
+        background_opacity: 76.0,
+        ..Default::default()
+    });
+    state.audio_settings.mic_volume = 80.0;
+    state.audio_settings.normalize_loudness = true;
+    state.music_clips.push(AudioClip {
+        id: "m1".into(),
+        source: AudioClipSource::Provider {
+            provider_id: "pixabay".into(),
+            track_id: "42".into(),
+            asset_path: "C:/cache/42.mp3".into(),
+            attribution: Some("by X".into()),
+            license: None,
+        },
+        role: Default::default(),
+        start_output_sec: 2.0,
+        offset_sec: 0.5,
+        duration_sec: 30.0,
+        gain: 45.0,
+        muted: false,
+        fade_in: 1.0,
+        fade_out: 2.0,
+        looping: true,
+        ducking: true,
+    });
+    state
+        .passthrough
+        .insert("cursorStyle".into(), json!("macos"));
+    state.passthrough.insert("cutsEnabled".into(), json!(false));
+    state
+        .passthrough
+        .insert("autoZoomEnabled".into(), json!(true));
+    state.passthrough.insert("layoutMode".into(), json!("crop"));
+    state.passthrough.insert(
+        "dismissedSilences".into(),
+        json!([{ "start": 50.0, "end": 51.5 }]),
+    );
+    state
+        .passthrough
+        .insert("someFutureToggle".into(), json!({ "a": 1 }));
+}
+
+#[test]
+fn a_rich_state_survives_the_document_and_comes_back_equal() {
+    let state = rich_state();
+    let doc = from_render_state(&state, &media(), None, &mut IdGen::seeded(1));
+    let back = to_render_state(&doc).unwrap();
+    assert_eq!(back, state, "\n{}", serialize(&doc));
+}
+
+#[test]
+fn the_writer_emits_a_schema_valid_document_with_no_warnings() {
+    let doc = from_render_state(&rich_state(), &media(), None, &mut IdGen::seeded(1));
+    let report = validate(&doc);
+    assert!(
+        report.issues.is_empty(),
+        "{:#?}\n{}",
+        report.issues,
+        serialize(&doc)
+    );
+}
+
+#[test]
+fn writing_reading_and_writing_again_is_idempotent_and_deterministic() {
+    let first = from_render_state(&rich_state(), &media(), None, &mut IdGen::seeded(9));
+    let second = from_render_state(
+        &to_render_state(&first).unwrap(),
+        &media(),
+        Some(&first),
+        &mut IdGen::seeded(9),
+    );
+    assert_eq!(serialize(&first), serialize(&second));
+    let again = from_render_state(&rich_state(), &media(), None, &mut IdGen::seeded(9));
+    assert_eq!(serialize(&first), serialize(&again));
+}
+
+#[test]
+fn a_default_state_serialises_to_a_small_skeleton() {
+    let state = RenderState {
+        trim_end: 10.0,
+        ..RenderState::default()
+    };
+    let doc = from_render_state(&state, &MediaRefs::default(), None, &mut IdGen::seeded(1));
+    let text = serialize(&doc);
+    assert!(text.lines().count() < 20, "{text}");
+    assert!(!text.contains("<media"));
+    assert!(text.contains("out=\"10.000\""), "{text}");
+}
+
+#[test]
+fn base_elements_the_state_cannot_carry_survive_a_rewrite() {
+    let base = parse(
+        "<recast v=\"3\"><vars><var name=\"accent\" type=\"color\" value=\"#ff5c5c\"/></vars><graphic id=\"g1\" component=\"lower-third@1\" title=\"Hi\"/><future id=\"f1\"/></recast>",
+    )
+    .unwrap();
+    let doc = from_render_state(&rich_state(), &media(), Some(&base), &mut IdGen::seeded(3));
+    let text = serialize(&doc);
+    assert!(text.contains("<var name=\"accent\""));
+    assert!(text.contains("<graphic id=\"g1\""));
+    assert!(text.contains("<future id=\"f1\"/>"));
+}
+
+#[test]
+fn a_hand_written_document_reads_into_the_state_it_describes() {
+    let src = r##"<recast v="3" aspect="9:16" pad="12">
+  <media id="rec" kind="video" src="media/recording.mp4"/>
+  <timeline src="rec" in="1" out="60"><cuts><cut id="c1" at="10" dur="2"/></cuts><clip id="k1" at="20" speed="2" layout="cameraOnly"/></timeline>
+  <background><solid color="#123456"/></background>
+  <screen id="scr" src="rec"><corner pct="2"/><zooms><zoom id="z1" at="5" dur="3" scale="2" cx="0.25" cy="0.75"/></zooms></screen>
+  <camera id="bubble" enabled="true" shape="circle" x="0.1" y="0.1" w="0.2" h="0.2">
+    <bind id="follow" prop="x y" src="zoom.center" map="follow" strength="0.9"/>
+  </camera>
+  <cursor id="pointer" enabled="true" style="windows" smoothing="0.25"/>
+  <annotations><rect id="r1" at="3" dur="2" x="0.1" y="0.1" w="0.3" h="0.2" fill="none" strokeStyle="dashed"/></annotations>
+  <audio gain="0.5"><mic id="mic" src="media/mic.wav" muted="true"/></audio>
+</recast>"##;
+    let state = to_render_state(&parse(src).unwrap()).unwrap();
+    assert_eq!(state.output_aspect.as_deref(), Some("9:16"));
+    assert_eq!(state.padding, 12.0);
+    assert_eq!((state.trim_start, state.trim_end), (1.0, 60.0));
+    assert_eq!(state.cuts[0].end, 12.0);
+    assert_eq!(state.segment_speeds[0].speed, 2.0);
+    assert!(matches!(
+        state.camera_overlay.clip_layouts[0].layout,
+        CameraLayout::CameraOnly
+    ));
+    assert_eq!(state.background_value, "#123456");
+    assert_eq!(state.border_radius, 2.0);
+    assert_eq!(state.zoom_regions[0].center_y, 0.75);
+    assert!(state.camera_overlay.enabled);
+    assert!(state.camera_overlay.zoom_follow && !state.camera_overlay.cursor_dodge);
+    assert_eq!(state.camera_overlay.zoom_follow_strength, 0.9);
+    assert_eq!(state.cursor_smoothing, 25.0);
+    assert_eq!(state.passthrough["cursorStyle"], json!("windows"));
+    assert_eq!(state.annotations[0].fill, "transparent");
+    assert_eq!(state.audio_settings.volume, 50.0);
+    assert!(state.audio_settings.mic_muted);
+}
+
+#[test]
+fn a_missing_required_attribute_is_named_with_its_element_and_id() {
+    let doc = parse("<recast v=\"3\"><timeline out=\"5\"><cuts><cut id=\"c1\" at=\"1\"/></cuts></timeline></recast>").unwrap();
+    let err = to_render_state(&doc).unwrap_err();
+    assert_eq!(err.to_string(), "<cut id=\"c1\"> needs dur");
+    let err = to_render_state(&parse("<recast v=\"2\"/>").unwrap()).unwrap_err();
+    assert!(err.to_string().contains("version 2"));
+}

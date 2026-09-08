@@ -52,6 +52,8 @@ recast-codec = { path = "../../../crates/recast-codec" }
 recast-mux = { path = "../../../crates/recast-mux" }
 recast-captions = { path = "../../../crates/recast-captions" }
 recast-scene = { path = "../../../crates/recast-scene" }
+# The v3 project format: document, migration from v1/v2 bundles, packaging, store.
+recast-project = { path = "../../../crates/recast-project" }
 recast-time = { path = "../../../crates/recast-time" }
 recast-color = { path = "../../../crates/recast-color" }
 # The engine, in the shipping binary rather than only in tests. `recast-export`
