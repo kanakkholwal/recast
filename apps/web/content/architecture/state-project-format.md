@@ -1,7 +1,7 @@
 ---
 kind: architecture
 title: "State and the project format"
-description: "The runes store that holds the whole document, the one-way flow rule, and the sectioned .recast bundle."
+description: "The runes store that holds the whole document, the one-way flow rule, the sectioned .recast bundle, and the v3 folder project with its markup document."
 position: 8
 status: production
 domain: editor
@@ -12,10 +12,13 @@ inputs:
 outputs:
   - "Render-state snapshots for preview and export"
   - "An atomically written .recast v2 bundle"
+  - "A v3 folder project: project.rcx plus media and tracks, checkpointed from a sequenced document"
 entrypoints:
   - "packages/editor/src/stores/editor-store.svelte.ts"
   - "packages/editor/src/lib/editor/render-state.ts"
   - "apps/desktop/src-tauri/src/project/"
+  - "crates/recast-project/"
+  - "packages/editor/src/lib/document/"
 invariants:
   - "State flows one way: the engine reads the store and never mutates it."
   - "An effect that writes store state must untrack and run without undo, or every field becomes an undo dependency."
@@ -165,6 +168,61 @@ flowchart LR
 Autosave (`autosaveProject`, `analysis.ts`) writes the same `toRenderState()`
 JSON to a separate recovery shadow, gated on `isDirty`.
 
+## The v3 folder project
+
+Behind Settings > Recording writer > "Save projects as folders", a recording
+is written as `Name.recast/` instead of a zip:
+
+```
+Name.recast/
+  project.rcx          the document: one markup file, ids, seconds, 0..1 fractions
+  capture.json         the recorder's metadata, verbatim
+  media/               recording.mp4, camera.mp4, mic.wav, system.wav, imported/
+  tracks/              cursor.json, words.json (pointed at by <track src>)
+  branches/            agent proposals
+  .cache/              wal.log, store.json, edits.json, thumbs (never packaged)
+```
+
+`crates/recast-project` owns the format: the schema table, parser and
+canonical serializer, validation, ops addressed by id or kind path, the diff
+that turns two documents into an op batch, the one typed mapping
+`Document <-> RenderState`, migration from v1 and v2 (the bundle is kept as
+`.bak`), pack and unpack for the interchange zip, and the store.
+
+**While the app runs, the core's in-memory document is the truth.** Every
+write, the GUI's whole-state save included, becomes one sequenced op batch on
+the owner (`project/documents.rs`): appended to `.cache/wal.log` with fsync,
+then checkpointed into `project.rcx` 500 ms after the last batch, on blur,
+and on exit. A crash loses at most the batch in flight; the WAL replays on
+the next open. `doc.show`, `doc.apply`, `doc.since` and `doc.flush` expose
+that copy on the control socket and as Tauri commands, with `expectSeq` so a
+stale writer gets the ops it missed instead of a refusal.
+
+**The webview holds a replica.** The engine's wasm compiles the same crate in,
+so `packages/editor/src/lib/document/` can turn the store's state into an op
+batch (`opsForState`), send it with `expectSeq`, and apply the answer with
+the same code the core ran. Another writer's batch arrives as a
+`document:changed` event, is pulled as ops, and lands in the store as one
+undo step. Unsaved edits are mirrored first, so both sides merge; when both
+wrote the same property the editor's value stands and a toast says so.
+
+**The file is a writer too.** `project.rcx` is watched (`project/watch.rs`);
+an outside edit is read back as ops against the last checkpoint, so edits
+sequenced since are kept, our own checkpoint echoes back and is ignored, and
+a file that does not parse is reported with its line and column rather than
+loaded.
+
+**Media is served through `recast-asset://`** (`asset_scheme.rs`): a
+deny-first scope of app roots, the opened project, files the document names
+and files the user picked; explicit MIME with `nosniff`; single-range reads
+for seeking. The old asset protocol with `scope: ["**"]` is gone.
+
+Bundles still open and save through the same store seam, so the editor did
+not change; the folder adapter (`project/v3.rs`) derives `.cache/edits.json`
+from the document on open and diffs the saved state back into ops. Agents
+read the document with `recast_doc_show` and propose on branches; live apply
+is a setting, see the agentic page.
+
 ## Invariants & gotchas
 
 - **Only `$state` that affects output belongs in the reactive graph.** Fields read
@@ -213,8 +271,18 @@ JSON to a separate recovery shadow, gated on `isDirty`.
   (recordings can be irreplaceable). A save refuses to run on a non-v2 archive, so
   it can never produce a hybrid v1/v2 bundle (`writer.rs`).
 
+- **v3 never trusts the file while the app runs.** Reads through the tool,
+  not the disk: the file is a checkpoint up to half a second behind. Two GUI
+  instances on one folder are not supported; the second is read-only, as with
+  bundles.
+- **Migration to v3 never refuses an editor-written value.** A zoom past the
+  slider's cap in an old bundle migrates and is reported, not rejected; the
+  store likewise refuses only errors a batch introduces, so one legacy value
+  cannot block every later edit.
+
 ## Related
 
+- [agentic-edits-mcp.md](/architecture/agentic-edits-mcp), branches, the live document verbs and the gated live apply.
 - [preview-engine.md](/architecture/preview-engine), the read-only consumer of store state.
 - [timeline-model.md](/architecture/timeline-model), the cut/segment/time-map math the memos wrap.
 - [export-pipeline.md](/architecture/export-pipeline), `toRenderState` → the same engine → encoder.

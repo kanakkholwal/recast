@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod backend;
+mod bench_io;
 mod cursor_io;
 mod project_io;
 mod ring;

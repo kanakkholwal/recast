@@ -316,6 +316,80 @@ pub fn bubble_shadow(
 
 #[cfg(test)]
 mod tests {
+    use recast_scene::bind::{keys_at, Key};
+
+    /// Step 9's first proof: the camera keyframe glide is a `keys` binding per placement component, sample for sample.
+    #[test]
+    fn camera_keyframes_are_a_keys_binding_per_component() {
+        let ease = Easing {
+            x1: 0.25,
+            y1: 0.1,
+            x2: 0.25,
+            y2: 1.0,
+        };
+        let frames = vec![
+            CameraKeyframe {
+                at_sec: 1.0,
+                placement: CameraPlacement {
+                    x: 0.1,
+                    y: 0.2,
+                    width: 0.2,
+                    height: 0.2,
+                },
+            },
+            CameraKeyframe {
+                at_sec: 4.0,
+                placement: CameraPlacement {
+                    x: 0.7,
+                    y: 0.6,
+                    width: 0.3,
+                    height: 0.3,
+                },
+            },
+            CameraKeyframe {
+                at_sec: 6.0,
+                placement: CameraPlacement {
+                    x: 0.4,
+                    y: 0.4,
+                    width: 0.25,
+                    height: 0.25,
+                },
+            },
+        ];
+        let keys = |pick: fn(&CameraPlacement) -> f64| -> Vec<Key> {
+            frames
+                .iter()
+                .map(|k| Key {
+                    at: k.at_sec,
+                    value: pick(&k.placement),
+                    ease,
+                })
+                .collect()
+        };
+        let (kx, ky, kw, kh) = (
+            keys(|p| p.x),
+            keys(|p| p.y),
+            keys(|p| p.width),
+            keys(|p| p.height),
+        );
+        let base = CameraPlacement::default();
+        for i in 0..80 {
+            let t = f64::from(i) * 0.1;
+            let engine = placement_at(&base, &frames, t, ease);
+            for (name, engine_v, bound) in [
+                ("x", engine.x, keys_at(&kx, t, base.x)),
+                ("y", engine.y, keys_at(&ky, t, base.y)),
+                ("w", engine.width, keys_at(&kw, t, base.width)),
+                ("h", engine.height, keys_at(&kh, t, base.height)),
+            ] {
+                assert!(
+                    (engine_v - bound).abs() < 1e-6,
+                    "{name} at {t}: engine {engine_v} vs binding {bound}"
+                );
+            }
+        }
+    }
+
     use super::*;
 
     /// Shared with `camera-overlay.logic.test.ts`. The preview's bubble and the

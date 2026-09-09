@@ -2050,6 +2050,7 @@ dependencies = [
  "recast-time",
  "serde",
  "serde_json",
+ "thiserror",
 ]
 
 [[package]]
