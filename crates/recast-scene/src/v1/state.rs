@@ -155,6 +155,12 @@ pub struct RenderState {
     /// passthrough key, so the export ignored it while the preview applied it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor_motion_easing: Option<crate::v1::easing::Easing>,
+    /// Signal-driven properties by layer, as the v3 document declares them; the editor never edits these, the mapping does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bindings: Vec<crate::bind::LayerBinding>,
+    /// 3D transforms by layer, as the v3 document declares them on `<screen>`, `<camera>` and annotations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transforms: Vec<crate::bind::LayerTransform>,
     /// Catch-all for JS-only settings Rust never reads, slurped by `#[serde(flatten)]` and re-emitted on serialisation.
     /// Without it every undeclared field would be dropped on reopen, resetting the user's tweaks to defaults.
     #[serde(flatten, default)]
@@ -209,6 +215,8 @@ impl Default for RenderState {
             cursor_sprite_hotspot_drag: None,
             cursor_sprite_size_px: None,
             cursor_motion_easing: None,
+            bindings: Vec::new(),
+            transforms: Vec::new(),
             passthrough: serde_json::Map::new(),
         }
     }

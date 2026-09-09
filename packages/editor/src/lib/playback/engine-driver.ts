@@ -2,7 +2,9 @@ import {
 	type CursorPlacement,
 	type CursorSlot,
 	type EngineBackend,
+	isEmptyPatch,
 	PreviewEngine,
+	shallowPatch,
 } from "@recast/engine";
 import type { EditorRenderState } from "../editor/render-state";
 
@@ -33,7 +35,8 @@ export interface EngineDriverInfo {
  */
 export class PreviewEngineDriver {
 	readonly #engine: PreviewEngine;
-	#sceneSignature = "";
+	/** The state as last pushed, its compound fields by identity. */
+	#lastState: Record<string, unknown> | null = null;
 	#timeMapSignature = "\0";
 	#trackSignature = "";
 	#canvasSize = "";
@@ -78,19 +81,26 @@ export class PreviewEngineDriver {
 	}
 
 	/**
-	 * Pushes the scene only when it actually changed. The caller runs this from a
-	 * reactive effect that fires on any store write, and re-parsing an unchanged
-	 * scene rebuilds the evaluator and the time map for nothing.
+	 * Pushes what changed. The caller runs this from a reactive effect that fires
+	 * on any store write; the store memoises its compound fields, so the diff is a
+	 * few reference checks and only the changed fields are serialised. The first
+	 * push, or one the engine cannot patch, sends the whole state.
 	 */
 	syncScene(state: EditorRenderState): boolean {
-		const json = JSON.stringify(state);
-		if (json === this.#sceneSignature) return false;
-		this.#sceneSignature = json;
+		const next = state as unknown as Record<string, unknown>;
+		const patch = this.#lastState ? shallowPatch(this.#lastState, next) : null;
+		if (patch && isEmptyPatch(patch)) return false;
 		try {
-			this.#engine.setScene(json);
+			if (patch) {
+				this.#engine.patchScene(patch);
+			} else {
+				this.#engine.setScene(JSON.stringify(state));
+			}
+			this.#lastState = next;
 		} catch (err) {
 			// Thrown from a reactive effect this would strand the engine on its last scene and silently ignore every later edit.
 			console.error("preview engine refused the scene:", err);
+			this.#lastState = null;
 			return false;
 		}
 		// Layer ids are assigned during migration, so they can move when the scene changes shape.

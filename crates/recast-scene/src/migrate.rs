@@ -24,6 +24,35 @@ impl From<&Scene> for RenderState {
     }
 }
 
+/// Puts each binding on the layer its `LayerRef` names; a ref to an annotation the state does not have is dropped.
+pub fn attach_bindings(layers: &mut [Layer], bindings: &[crate::bind::LayerBinding]) {
+    for lb in bindings {
+        if let Some(layer) = layer_for(layers, &lb.layer) {
+            layer.bindings.push(lb.binding.clone());
+        }
+    }
+}
+
+/// Puts each transform on the layer its `LayerRef` names.
+pub fn attach_transforms(layers: &mut [Layer], transforms: &[crate::bind::LayerTransform]) {
+    for lt in transforms {
+        if let Some(layer) = layer_for(layers, &lt.layer) {
+            layer.transform = lt.transform;
+        }
+    }
+}
+
+fn layer_for<'a>(layers: &'a mut [Layer], target: &crate::bind::LayerRef) -> Option<&'a mut Layer> {
+    use crate::bind::LayerRef;
+    match target {
+        LayerRef::Screen => layers.get_mut(SCREEN_LAYER as usize),
+        LayerRef::Camera => layers.get_mut(CAMERA_LAYER as usize),
+        LayerRef::Annotation { id } => layers
+            .iter_mut()
+            .find(|l| matches!(&l.source, LayerSource::Annotation(a) if a.id == *id)),
+    }
+}
+
 pub fn to_scene(state: &RenderState) -> Scene {
     let mut layers = vec![
         Layer::new(BACKGROUND_LAYER, background_source(state))
@@ -39,6 +68,8 @@ pub fn to_scene(state: &RenderState) -> Scene {
         ),
     ];
     layers[CAMERA_LAYER as usize].hidden = !state.camera_overlay.enabled;
+    layers[CAMERA_LAYER as usize].placement =
+        crate::bind::PlacementRule::from_settings(&state.camera_overlay);
     layers[CURSOR_LAYER as usize].hidden = !state.cursor_enabled;
 
     for (index, annotation) in state.annotations.iter().enumerate() {
@@ -50,6 +81,8 @@ pub fn to_scene(state: &RenderState) -> Scene {
         layer.opacity = annotation.opacity;
         layers.push(layer);
     }
+    attach_bindings(&mut layers, &state.bindings);
+    attach_transforms(&mut layers, &state.transforms);
 
     Scene {
         schema: SCHEMA_VERSION,

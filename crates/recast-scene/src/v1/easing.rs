@@ -49,6 +49,17 @@ impl Easing {
     /// Evaluate `y` for a given `x` in `[0, 1]`. Returns `y(t)` where `t`
     /// is the bezier parameter that produces `x` (solved via Newton-Raphson
     /// with a bisection fallback, same technique as Blink/WebKit).
+    /// The same curve run backwards: what a ramp evaluated from its far end looks like when read from its near end.
+    #[must_use]
+    pub fn reversed(self) -> Self {
+        Self {
+            x1: 1.0 - self.x2,
+            y1: 1.0 - self.y2,
+            x2: 1.0 - self.x1,
+            y2: 1.0 - self.y1,
+        }
+    }
+
     pub fn y(&self, x: f32) -> f32 {
         if (self.x1 - self.y1).abs() < f32::EPSILON && (self.x2 - self.y2).abs() < f32::EPSILON {
             return x.clamp(0.0, 1.0);

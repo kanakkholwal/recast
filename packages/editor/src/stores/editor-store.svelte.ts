@@ -73,6 +73,8 @@ import {
 	WALLPAPERS,
 	wallpaperBackgroundValue,
 	type ZoomRegion,
+	type LayerBinding,
+	type LayerTransform,
 } from "../lib/editor/render-state";
 import type { TimeMode } from "../lib/editor/time";
 import { log } from "../lib/log";
@@ -240,6 +242,9 @@ export function createEditorStore() {
 
 	// `null` means linear; a curve reshapes the per-sample lerp in the WebGL preview.
 	let cursorMotionEasing = $state<Easing | null>(null);
+	// Declared by the document, never by a panel; carried so every save and every preview frame keeps them.
+	let bindings = $state.raw<LayerBinding[]>([]);
+	let transforms = $state.raw<LayerTransform[]>([]);
 
 	// Cursor settings
 	let cursorSettings = $state<CursorSettings>({
@@ -355,6 +360,8 @@ export function createEditorStore() {
 			outputAspect,
 			lastAppliedPresetId,
 			cursorMotionEasing,
+			bindings,
+			transforms,
 			musicClips,
 			captionStyle,
 		};
@@ -524,6 +531,8 @@ export function createEditorStore() {
 		outputAspect = s.outputAspect ?? "source";
 		lastAppliedPresetId = s.lastAppliedPresetId ?? null;
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
+		bindings = s.bindings ?? [];
+		transforms = s.transforms ?? [];
 		// Merge over defaults so an older snapshot missing newer style keys stays valid.
 		if (s.captionStyle) captionStyle = { ...DEFAULT_CAPTION_STYLE, ...s.captionStyle };
 	}
@@ -1204,6 +1213,8 @@ export function createEditorStore() {
 		annotationSnapEnabled = true;
 		annotationZSeq = 1;
 		cursorMotionEasing = null;
+		bindings = [];
+		transforms = [];
 		cursorSettings = {
 			enabled: true,
 			size: 2,
@@ -1652,6 +1663,54 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
+	// Memoised compound snapshots: the same object until something inside changes, so the preview and the replica
+	// can see what moved by identity and serialise only that, instead of the whole state on every edit.
+	const zoomRegionsSnapshot = $derived(
+		zoomRegions.map((region) => ({
+			id: region.id,
+			start: region.start,
+			end: region.end,
+			scale: region.scale,
+			easeIn: region.easeIn,
+			easeOut: region.easeOut,
+			rampIn: region.rampIn,
+			rampOut: region.rampOut,
+			centerX: region.centerX,
+			centerY: region.centerY,
+			motionBlur: region.motionBlur,
+			source: region.source,
+			hidden: region.hidden ?? false,
+		})),
+	);
+	const cutsSnapshot = $derived(cuts.map((cut) => ({ ...cut })));
+	const splitPointsSnapshot = $derived([...splitPoints]);
+	// Orphaned anchors are pruned on the way out so the section diffs cleanly.
+	const segmentSpeedsSnapshot = $derived(pruneSegmentSpeeds(segmentSpeeds, currentSegments()));
+	const segmentAnimsSnapshot = $derived(pruneSegmentAnims(segmentAnims, currentSegments()));
+	const dismissedSilencesSnapshot = $derived(dismissedSilences.map((d) => ({ ...d })));
+	const annotationsSnapshot = $derived(annotations.map((annotation) => ({ ...annotation })));
+	const shadowSnapshot = $derived({ ...shadow });
+	const audioSettingsSnapshot = $derived({ ...audioSettings });
+	const musicClipsSnapshot = $derived(musicClips.map((c) => ({ ...c, source: { ...c.source } })));
+	const captionStyleSnapshot = $derived({ ...captionStyle });
+	const cameraOverlaySnapshot = $derived({
+		...cameraOverlay,
+		defaultPlacement: { ...cameraOverlay.defaultPlacement },
+		motionSegments: cameraOverlay.motionSegments.map((segment) => ({
+			...segment,
+		})),
+		keyframes: cameraOverlay.keyframes.map((k) => ({
+			atSec: k.atSec,
+			placement: { ...k.placement },
+		})),
+		clipLayouts: cameraOverlay.clipLayouts.map((c) => ({
+			start: c.start,
+			layout: { ...c.layout },
+		})),
+		layoutTransitionEasing: { ...cameraOverlay.layoutTransitionEasing },
+		keyframeEasing: { ...cameraOverlay.keyframeEasing },
+	});
+
 	function toRenderState(): EditorRenderState {
 		return {
 			trimStart,
@@ -1679,57 +1738,28 @@ export function createEditorStore() {
 			cursorClickBounce: cursorSettings.clickBounce,
 			cursorBounceSpeedMs: cursorSettings.bounceSpeedMs,
 			cursorSway: cursorSettings.sway,
-			zoomRegions: zoomRegions.map((region) => ({
-				id: region.id,
-				start: region.start,
-				end: region.end,
-				scale: region.scale,
-				easeIn: region.easeIn,
-				easeOut: region.easeOut,
-				rampIn: region.rampIn,
-				rampOut: region.rampOut,
-				centerX: region.centerX,
-				centerY: region.centerY,
-				motionBlur: region.motionBlur,
-				source: region.source,
-				hidden: region.hidden ?? false,
-			})),
+			zoomRegions: zoomRegionsSnapshot,
 			autoZoomApplied,
 			autoZoomEnabled,
-			cuts: cuts.map((cut) => ({ ...cut })),
-			splitPoints: [...splitPoints],
-			// Prune orphaned anchors on save so the section diffs cleanly.
-			segmentSpeeds: pruneSegmentSpeeds(segmentSpeeds, currentSegments()),
-			segmentAnims: pruneSegmentAnims(segmentAnims, currentSegments()),
+			cuts: cutsSnapshot,
+			splitPoints: splitPointsSnapshot,
+			segmentSpeeds: segmentSpeedsSnapshot,
+			segmentAnims: segmentAnimsSnapshot,
 			motionTone,
 			cutsEnabled,
 			focusEnabled,
 			annotationsEnabled: !annotationsGloballyHidden,
-			dismissedSilences: dismissedSilences.map((d) => ({ ...d })),
+			dismissedSilences: dismissedSilencesSnapshot,
 			cursorMotionEasing,
-			annotations: annotations.map((annotation) => ({ ...annotation })),
-			shadow: { ...shadow },
-			audioSettings: { ...audioSettings },
-			musicClips: musicClips.map((c) => ({ ...c, source: { ...c.source } })),
+			bindings,
+			transforms,
+			annotations: annotationsSnapshot,
+			shadow: shadowSnapshot,
+			audioSettings: audioSettingsSnapshot,
+			musicClips: musicClipsSnapshot,
 			transcript,
-			captionStyle: { ...captionStyle },
-			cameraOverlay: {
-				...cameraOverlay,
-				defaultPlacement: { ...cameraOverlay.defaultPlacement },
-				motionSegments: cameraOverlay.motionSegments.map((segment) => ({
-					...segment,
-				})),
-				keyframes: cameraOverlay.keyframes.map((k) => ({
-					atSec: k.atSec,
-					placement: { ...k.placement },
-				})),
-				clipLayouts: cameraOverlay.clipLayouts.map((c) => ({
-					start: c.start,
-					layout: { ...c.layout },
-				})),
-				layoutTransitionEasing: { ...cameraOverlay.layoutTransitionEasing },
-				keyframeEasing: { ...cameraOverlay.keyframeEasing },
-			},
+			captionStyle: captionStyleSnapshot,
+			cameraOverlay: cameraOverlaySnapshot,
 			layoutMode,
 		};
 	}
@@ -1824,6 +1854,8 @@ export function createEditorStore() {
 			cameraPlacementFromPreset("bottom-right"),
 		);
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
+		bindings = state.bindings ?? [];
+		transforms = state.transforms ?? [];
 		layoutMode = state.layoutMode ?? layoutMode;
 		annotations = (state.annotations ?? []).map((a, idx) => ({
 			id: generateId(),

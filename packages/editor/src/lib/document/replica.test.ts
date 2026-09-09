@@ -37,6 +37,25 @@ describe("DocumentReplica", () => {
 		expect(core.shows).toBe(1);
 	});
 
+	it("after the first commit only the fields that moved cross into the document", async () => {
+		const core = new FakeCore();
+		const replica = await open(core);
+		await replica.commit({ padding: 12, trimEnd: 0 });
+		const spy: string[] = [];
+		const inner = FakeDoc.prototype.opsForPatch;
+		FakeDoc.prototype.opsForPatch = function (this: FakeDoc, patch: string) {
+			spy.push(patch);
+			return inner.call(this, patch);
+		};
+		try {
+			await replica.commit({ padding: 12, trimEnd: 30 });
+		} finally {
+			FakeDoc.prototype.opsForPatch = inner;
+		}
+		expect(spy).toEqual(['{"trimEnd":30}']);
+		expect(core.doc.attrs).toEqual({ pad: "12", trimEnd: "30" });
+	});
+
 	it("a stale commit merges the missed ops in and lands on top", async () => {
 		const core = new FakeCore();
 		const replica = await open(core);

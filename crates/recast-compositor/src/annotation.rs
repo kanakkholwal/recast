@@ -59,6 +59,10 @@ pub struct AnnotationParams {
     pub stroke: Srgba,
     pub stroke_width: f32,
     pub alpha: f32,
+    /// Video-anchored: the shape sits on the recorded screen and tilts with it; frame-anchored shapes never do.
+    pub rides_card: bool,
+    /// Set by the evaluator when the card is tilted and this shape rides it.
+    pub warp: Option<crate::plane::Homography>,
 }
 
 /// Where a UV point lands on the canvas. `Frame` pins to the output frame and
@@ -291,6 +295,8 @@ pub fn annotation_params(
         stroke: parse_css_color(&annotation.stroke.color).unwrap_or(recast_color::TRANSPARENT),
         stroke_width: (annotation.stroke.width.max(0.0) as f32) * scale,
         alpha: alpha as f32,
+        rides_card: annotation.anchor == AnnotationAnchor::Video,
+        warp: None,
     })
 }
 

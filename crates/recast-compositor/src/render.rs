@@ -51,6 +51,7 @@ struct ShadowUniform {
     rect: [f32; 4],
     shape: [f32; 4],
     tint: [f32; 4],
+    warp: [[f32; 4]; 3],
 }
 
 #[repr(C)]
@@ -60,6 +61,7 @@ struct ShapeUniform {
     params: [f32; 4],
     fill: [f32; 4],
     stroke: [f32; 4],
+    warp: [[f32; 4]; 3],
 }
 
 #[repr(C)]
@@ -79,6 +81,10 @@ struct CardUniform {
     affine_b: [f32; 4],
     flags: [f32; 4],
     focus: [f32; 4],
+    /// Projected corners 0 and 1 (xy each), then 2 and 3; `plane_w` is their depth. `flags.w` says whether they apply.
+    plane_a: [f32; 4],
+    plane_b: [f32; 4],
+    plane_w: [f32; 4],
 }
 
 /// Decoded source frames for one instant, addressed by layer.
@@ -410,6 +416,8 @@ impl Compositor {
                 radius: pill.radius,
             },
             fill: pill.color,
+            rides_card: false,
+            warp: None,
             stroke: recast_color::TRANSPARENT,
             stroke_width: 0.0,
             alpha: 1.0,
@@ -1264,6 +1272,7 @@ impl Compositor {
             params: [1.0, 0.0, 0.0, alpha.clamp(0.0, 1.0)],
             fill: srgba_parts(color),
             stroke: [0.0; 4],
+            warp: [[0.0; 4]; 3],
         };
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cursor-shape"),
@@ -1540,6 +1549,7 @@ fn shadow_uniform(shadow: &ShadowParams) -> ShadowUniform {
             shadow.offset_y_px,
             shadow.radius_px,
         ],
+        warp: warp_rows(shadow.warp.as_ref()),
         tint: [
             shadow.color.r as f32 / 255.0,
             shadow.color.g as f32 / 255.0,
@@ -1547,6 +1557,16 @@ fn shadow_uniform(shadow: &ShadowParams) -> ShadowUniform {
             shadow.opacity,
         ],
     }
+}
+
+/// The inverse of a card's tilt as the SDF passes take it, or a flagged-off identity when the card is flat.
+fn warp_rows(warp: Option<&crate::plane::Homography>) -> [[f32; 4]; 3] {
+    let Some(inverse) = warp.and_then(|w| w.inverse()) else {
+        return [[0.0; 4]; 3];
+    };
+    let mut rows = inverse.rows();
+    rows[2][3] = 1.0;
+    rows
 }
 
 fn srgba_parts(color: recast_color::Srgba) -> [f32; 4] {
@@ -1577,6 +1597,7 @@ fn shape_uniform(annotation: &AnnotationParams) -> ShapeUniform {
         params: [kind, detail, annotation.stroke_width, annotation.alpha],
         fill: srgba_parts(annotation.fill),
         stroke: srgba_parts(annotation.stroke),
+        warp: warp_rows(annotation.warp.as_ref()),
     }
 }
 
@@ -1597,7 +1618,7 @@ fn card_uniform(
             if needs_srgb_decode { 1.0 } else { 0.0 },
             layer.rotate,
             streak_length(layer),
-            0.0,
+            if layer.plane.is_some() { 1.0 } else { 0.0 },
         ],
         focus: [
             layer.zoom_center[0],
@@ -1608,7 +1629,23 @@ fn card_uniform(
             },
             0.0,
         ],
+        plane_a: plane_corners(layer, 0),
+        plane_b: plane_corners(layer, 2),
+        plane_w: layer.plane.map_or([1.0; 4], |p| p.depth),
     }
+}
+
+/// Two consecutive projected corners as one vec4; the flat rect's own corners when there is no plane.
+fn plane_corners(layer: &LayerParams, first: usize) -> [f32; 4] {
+    let d = layer.dest;
+    let flat = [
+        [d.x, d.y],
+        [d.x + d.w, d.y],
+        [d.x + d.w, d.y + d.h],
+        [d.x, d.y + d.h],
+    ];
+    let c = layer.plane.map_or(flat, |p| p.corners);
+    [c[first][0], c[first][1], c[first + 1][0], c[first + 1][1]]
 }
 
 /// Streak length in source UV. Velocity-driven, so the blur fires during a ramp and vanishes on the hold; `MAX_STREAK` keeps a fast ramp from smearing the whole frame.
@@ -2286,6 +2323,7 @@ mod tests {
             },
             rotate: 0.0,
             corner_radius: 0.0,
+            plane: None,
             blur: 0.0,
             motion_blur,
             zoom_center: [0.5, 0.5],
@@ -2349,6 +2387,8 @@ mod tests {
             stroke: Srgba::opaque(0, 0, 0),
             stroke_width: 0.0,
             alpha: 1.0,
+            rides_card: true,
+            warp: None,
         }
     }
 
@@ -2442,6 +2482,8 @@ mod tests {
     fn the_uniforms_match_the_std140_sizes_the_shaders_declare() {
         assert_eq!(std::mem::size_of::<BackgroundUniform>(), 16 * 3 + 16 * 8);
         assert_eq!(std::mem::size_of::<BlurUniform>(), 16);
-        assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 6);
+        assert_eq!(std::mem::size_of::<ShadowUniform>(), 16 * 6);
+        assert_eq!(std::mem::size_of::<ShapeUniform>(), 16 * 7);
+        assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 9);
     }
 }

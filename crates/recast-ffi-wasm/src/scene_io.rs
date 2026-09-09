@@ -18,6 +18,80 @@ impl std::fmt::Display for SceneParseError {
 
 impl std::error::Error for SceneParseError {}
 
+/// A v1 state kept as JSON so a later patch (a few changed top-level fields) can be merged in without the editor
+/// serialising the whole state again. The edit path's cost is then the patch, the merge and one migration.
+#[derive(Debug, Clone, Default)]
+pub struct PatchableState {
+    last: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+#[derive(Debug)]
+pub enum PatchError {
+    NoBase,
+    NotAnObject,
+    Json(String),
+    State(String),
+}
+
+impl std::fmt::Display for PatchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoBase => write!(f, "patch before any full state was set"),
+            Self::NotAnObject => {
+                write!(f, "a patch must be a JSON object of top-level state fields")
+            }
+            Self::Json(e) => write!(f, "patch is not JSON: {e}"),
+            Self::State(e) => write!(f, "patched state does not deserialise: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for PatchError {}
+
+impl PatchableState {
+    /// Remembers a full state; a `Scene` payload clears it, since a scene cannot take a state patch.
+    pub fn remember(&mut self, json: &str) {
+        self.last = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| match v {
+                serde_json::Value::Object(map)
+                    if map.get("schema").is_none() || map.get("layers").is_none() =>
+                {
+                    Some(map)
+                }
+                _ => None,
+            });
+    }
+
+    /// Merges `patch` (top-level keys replace) into the remembered state and returns the result, keeping it as the new base.
+    /// # Errors When nothing was remembered, the patch is not an object, or the merged state does not deserialise.
+    pub fn apply(&mut self, patch: &str) -> Result<RenderState, PatchError> {
+        let base = self.last.as_mut().ok_or(PatchError::NoBase)?;
+        let patch: serde_json::Value =
+            serde_json::from_str(patch).map_err(|e| PatchError::Json(e.to_string()))?;
+        let serde_json::Value::Object(fields) = patch else {
+            return Err(PatchError::NotAnObject);
+        };
+        let mut merged = base.clone();
+        for (key, value) in fields {
+            if value.is_null() {
+                merged.remove(&key);
+            } else {
+                merged.insert(key, value);
+            }
+        }
+        let state: RenderState = serde_json::from_value(serde_json::Value::Object(merged.clone()))
+            .map_err(|e| PatchError::State(e.to_string()))?;
+        *base = merged;
+        Ok(state)
+    }
+
+    #[cfg(test)]
+    pub fn has_base(&self) -> bool {
+        self.last.is_some()
+    }
+}
+
 /// Accepts either a `Scene` or a v1 `RenderState`, so the editor can hand over
 /// whichever it holds while the migration is in flight. Kept out of the
 /// `wasm_bindgen` layer so it is testable on the host.
@@ -65,6 +139,40 @@ mod tests {
         let json = serde_json::to_string(&scene).expect("serialize");
         let again = parse_scene(&json).expect("scene");
         assert_eq!(scene, again);
+    }
+
+    #[test]
+    fn a_patch_replaces_top_level_fields_and_needs_a_base() {
+        let mut state = PatchableState::default();
+        assert!(matches!(
+            state.apply(r#"{"padding": 9}"#),
+            Err(PatchError::NoBase)
+        ));
+        state.remember(V1);
+        let patched = state
+            .apply(r#"{"padding": 9, "trimEnd": 8.0}"#)
+            .expect("patch");
+        assert_eq!(patched.padding, 9.0);
+        assert_eq!(patched.trim_end, 8.0);
+        let again = state
+            .apply(r#"{"padding": 3}"#)
+            .expect("second patch on the merged base");
+        assert_eq!(again.trim_end, 8.0, "earlier patches stay merged");
+        assert!(matches!(state.apply("[1]"), Err(PatchError::NotAnObject)));
+        assert!(matches!(
+            state.apply(r#"{"trimEnd": "no"}"#),
+            Err(PatchError::State(_))
+        ));
+        assert_eq!(
+            state.apply(r#"{}"#).expect("empty").trim_end,
+            8.0,
+            "a refused patch left the base intact"
+        );
+        state.remember(r#"{"schema":2,"layers":[]}"#);
+        assert!(
+            !state.has_base(),
+            "a scene payload cannot take a state patch"
+        );
     }
 
     #[test]

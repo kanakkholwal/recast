@@ -30,14 +30,24 @@ export class FakeDoc implements ReplicaDocument {
 		this.attrs = next;
 		return ops.length;
 	}
+	/** The last whole state handed over, so a patch can be merged into it as the wasm does. */
+	lastState: Record<string, unknown> | null = null;
 	renderState() {
-		return JSON.stringify({
+		const json = JSON.stringify({
 			padding: Number(this.attrs.pad ?? 0),
 			trimEnd: Number(this.attrs.trimEnd ?? 0),
 		});
+		this.lastState = JSON.parse(json) as Record<string, unknown>;
+		return json;
+	}
+	opsForPatch(patchJson: string) {
+		if (!this.lastState) throw "patch before any full state was set";
+		const merged = { ...this.lastState, ...(JSON.parse(patchJson) as Record<string, unknown>) };
+		return this.opsForState(JSON.stringify(merged));
 	}
 	opsForState(stateJson: string) {
 		const state = JSON.parse(stateJson) as { padding?: number; trimEnd?: number };
+		this.lastState = state as Record<string, unknown>;
 		const ops: DocumentOp[] = [];
 		for (const [attr, value] of [
 			["pad", state.padding],

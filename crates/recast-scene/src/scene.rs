@@ -179,6 +179,15 @@ pub struct Layer {
     pub hidden: bool,
     #[serde(default = "unit")]
     pub opacity: f64,
+    /// Properties driven by signals; sampled by the evaluator after the static value and the segment animation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bindings: Vec<crate::bind::Binding>,
+    /// The camera's placement rules, in evaluation order; empty on every other layer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub placement: Vec<crate::bind::PlacementRule>,
+    /// The layer's 3D transform; identity draws through the flat path unchanged.
+    #[serde(default, skip_serializing_if = "crate::bind::Transform3::is_identity")]
+    pub transform: crate::bind::Transform3,
 }
 
 fn unit() -> f64 {
@@ -194,6 +203,9 @@ impl Layer {
             blend: BlendMode::Normal,
             hidden: false,
             opacity: 1.0,
+            bindings: Vec::new(),
+            placement: Vec::new(),
+            transform: crate::bind::Transform3::IDENTITY,
         }
     }
 

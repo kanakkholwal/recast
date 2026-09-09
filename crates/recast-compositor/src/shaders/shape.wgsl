@@ -10,6 +10,10 @@ struct Shape {
     params: vec4<f32>,
     fill: vec4<f32>,
     stroke: vec4<f32>,
+    // Rows of the inverse tilt (canvas to flat card); warp2.w = 1 when the shape rides a tilted card.
+    warp0: vec4<f32>,
+    warp1: vec4<f32>,
+    warp2: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> shape: Shape;
@@ -69,8 +73,21 @@ fn arrow_head_sdf(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>, head_len: f32) -> f3
     return max(outside_axis, across - taper);
 }
 
+
+/// Canvas pixel to the flat card's pixel through the inverse of the card's tilt, when there is one (w > 0.5).
+/// Every distance below is then measured on the plane, so a corner radius or a blur is the same size at both edges.
+fn unwarp(p: vec2<f32>, r0: vec4<f32>, r1: vec4<f32>, r2: vec4<f32>) -> vec2<f32> {
+    if (r2.w < 0.5) {
+        return p;
+    }
+    let w = r2.x * p.x + r2.y * p.y + r2.z;
+    let safe = select(w, 1e-6, abs(w) < 1e-6);
+    return vec2<f32>(r0.x * p.x + r0.y * p.y + r0.z, r1.x * p.x + r1.y * p.y + r1.z) / safe;
+}
+
 @fragment
 fn fs(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
+    let px = unwarp(frag.xy, shape.warp0, shape.warp1, shape.warp2);
     let kind = u32(shape.params.x);
     let detail = shape.params.y;
     let stroke_width = shape.params.z;
@@ -79,15 +96,15 @@ fn fs(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     var sd = 1e9;
     if (kind == KIND_RECT) {
         let half_size = shape.geom.zw * 0.5;
-        sd = rounded_box_sdf(frag.xy - shape.geom.xy - half_size, half_size, detail);
+        sd = rounded_box_sdf(px - shape.geom.xy - half_size, half_size, detail);
     } else if (kind == KIND_ELLIPSE) {
-        sd = ellipse_sdf(frag.xy - shape.geom.xy, shape.geom.zw);
+        sd = ellipse_sdf(px - shape.geom.xy, shape.geom.zw);
     } else {
         let a = shape.geom.xy;
         let b = shape.geom.zw;
         let head_len = length(b - a) * detail;
-        let shaft = segment_sdf(frag.xy, a, b) - max(stroke_width, 1.0) * 0.5;
-        sd = min(shaft, arrow_head_sdf(frag.xy, a, b, head_len));
+        let shaft = segment_sdf(px, a, b) - max(stroke_width, 1.0) * 0.5;
+        sd = min(shaft, arrow_head_sdf(px, a, b, head_len));
     }
 
     let fill_coverage = clamp(1.0 - smoothstep(-0.5, 0.5, sd), 0.0, 1.0);

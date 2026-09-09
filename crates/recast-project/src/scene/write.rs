@@ -1,6 +1,10 @@
 //! `RenderState` (and so `Scene`) to a document. Every attribute is elided against the v1 default, so an untouched project serialises to its skeleton.
 //! Ids already carried by v1 rows (`extra.id`, `Annotation.id`) are kept; rows without one get a minted id in document order.
 
+use recast_scene::bind::{
+    Binding, LayerBinding, LayerRef, LayerTransform, Map, Signal, Transform3,
+};
+use recast_scene::v1::easing::Easing;
 use recast_scene::v1::nodes::{
     Annotation, AnnotationKind, AudioClip, AudioClipSource, AudioSettings, CameraLayout,
     CameraOverlaySettings, ShadowSettings, ZoomRegion,
@@ -123,6 +127,171 @@ impl TrackFile {
     }
 }
 
+/// The bindings to write: the state's when it carries any, else the base document's generic ones (the editor's whole-state
+/// save never names them, so a save must not drop what an agent declared). The camera's keys, follow and dodge come from settings.
+fn generic_binds(state: &RenderState, base: Option<&Document>) -> Vec<LayerBinding> {
+    if !state.bindings.is_empty() {
+        return state.bindings.clone();
+    }
+    let Some(base) = base else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut take = |node: &Node, layer: LayerRef| {
+        for bind in node.children_of("bind") {
+            let map = bind.attr("map").unwrap_or("");
+            if node.kind == "camera" && crate::validate::STACKABLE.contains(&map) {
+                continue;
+            }
+            if let Some(binding) = super::read::binding_of(bind) {
+                out.push(LayerBinding {
+                    layer: layer.clone(),
+                    binding,
+                });
+            }
+        }
+    };
+    if let Some(n) = base.root.child("screen") {
+        take(n, LayerRef::Screen);
+    }
+    if let Some(n) = base.root.child("camera") {
+        take(n, LayerRef::Camera);
+    }
+    if let Some(group) = base.root.child("annotations") {
+        for n in &group.children {
+            if let Some(id) = n.id() {
+                take(n, LayerRef::Annotation { id: id.to_owned() });
+            }
+        }
+    }
+    out
+}
+
+/// Writes each non-identity transform as a `<transform>` child of the element its layer names.
+fn attach_transforms(root: &mut Node, transforms: &[LayerTransform]) {
+    for lt in transforms {
+        if lt.transform.is_identity() {
+            continue;
+        }
+        let target = match &lt.layer {
+            LayerRef::Screen => root.child_mut("screen"),
+            LayerRef::Camera => root.child_mut("camera"),
+            LayerRef::Annotation { id } => root
+                .child_mut("annotations")
+                .and_then(|g| g.children.iter_mut().find(|n| n.id() == Some(id))),
+        };
+        let Some(node) = target else {
+            continue;
+        };
+        let (t, d) = (&lt.transform, Transform3::IDENTITY);
+        let mut child = Node::new("transform");
+        for (name, v, default) in [
+            ("x", t.x, d.x),
+            ("y", t.y, d.y),
+            ("z", t.z, d.z),
+            ("rx", t.rx, d.rx),
+            ("ry", t.ry, d.ry),
+            ("rz", t.rz, d.rz),
+            ("scale", t.scale, d.scale),
+            ("ax", t.anchor_x, d.anchor_x),
+            ("ay", t.anchor_y, d.anchor_y),
+            ("persp", t.perspective, d.perspective),
+        ] {
+            child.num(name, v, default);
+        }
+        node.children.push(child);
+    }
+}
+
+/// Writes each binding under the element its layer names; a binding for an annotation the state no longer has is dropped with it.
+fn attach_binds(root: &mut Node, binds: &[LayerBinding], ids: &mut IdGen) {
+    for lb in binds {
+        let target = match &lb.layer {
+            LayerRef::Screen => root.child_mut("screen"),
+            LayerRef::Camera => root.child_mut("camera"),
+            LayerRef::Annotation { id } => root
+                .child_mut("annotations")
+                .and_then(|g| g.children.iter_mut().find(|n| n.id() == Some(id))),
+        };
+        if let Some(node) = target {
+            node.children.push(bind_node(&lb.binding, ids));
+        }
+    }
+}
+
+fn bind_node(b: &Binding, ids: &mut IdGen) -> Node {
+    let mut node = Node::new("bind")
+        .with_id(&ids.next_id().to_string())
+        .with("prop", b.prop.clone())
+        .with("src", signal_src(&b.signal));
+    match &b.map {
+        Map::Keys(keys) => {
+            node.set("map", "keys");
+            for k in keys {
+                let mut key = Node::new("key")
+                    .with_id(&ids.next_id().to_string())
+                    .with("at", fmt_secs(k.at))
+                    .with("value", value::fmt_num(k.value));
+                key.ease("ease", k.ease, Easing::default());
+                node.children.push(key);
+            }
+        }
+        Map::Linear {
+            from,
+            to,
+            period,
+            looped,
+        } => {
+            node.set("map", "linear");
+            node.set("from", value::fmt_num(*from));
+            node.set("to", value::fmt_num(*to));
+            if let Some(p) = period {
+                node.set("period", value::fmt_num(*p));
+            }
+            node.set_flag("loop", *looped);
+        }
+        Map::Wave { from, to, period } => {
+            node.set("map", "wave");
+            node.set("from", value::fmt_num(*from));
+            node.set("to", value::fmt_num(*to));
+            node.set("period", value::fmt_num(*period));
+        }
+        Map::Step { from, to } => {
+            node.set("map", "step");
+            node.set("from", value::fmt_num(*from));
+            node.set("to", value::fmt_num(*to));
+        }
+        Map::Clamp { from, to } => {
+            node.set("map", "clamp");
+            node.set("from", value::fmt_num(*from));
+            node.set("to", value::fmt_num(*to));
+        }
+    }
+    if let Some((i, o)) = b.window {
+        node.set("in", fmt_secs(i));
+        node.set("out", fmt_secs(o));
+    }
+    node
+}
+
+fn signal_src(s: &Signal) -> String {
+    match s {
+        Signal::Time => "time".into(),
+        Signal::Cursor => "cursor".into(),
+        Signal::CursorX => "cursor.x".into(),
+        Signal::CursorY => "cursor.y".into(),
+        Signal::CursorPressed => "cursor.pressed".into(),
+        Signal::CursorIdle => "cursor.idle".into(),
+        Signal::ZoomScale => "zoom.scale".into(),
+        Signal::ZoomCenter => "zoom.center".into(),
+        Signal::ZoomCenterX => "zoom.center.x".into(),
+        Signal::ZoomCenterY => "zoom.center.y".into(),
+        Signal::AudioLevel(track) => format!("audio.level({track})"),
+        Signal::WordActive => "word.active".into(),
+        Signal::LayerProp { layer, prop } => format!("layer({layer}).{prop}"),
+    }
+}
+
 /// Builds the document. `base` supplies what the state cannot carry (`vars`, `graphic`, `shader`, unknown elements), so an edit round trip keeps them.
 pub fn from_scene(
     scene: &Scene,
@@ -163,6 +332,9 @@ pub fn from_render_state(
     root.children.push(camera(state, media, ids));
     root.children.push(cursor(state, media));
     root.children.push(annotations(state));
+    let generic = generic_binds(state, base);
+    attach_binds(root, &generic, ids);
+    attach_transforms(root, &state.transforms);
     if let Some(style) = &state.caption_style {
         root.children.push(captions(style, media));
     }

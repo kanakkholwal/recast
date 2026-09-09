@@ -497,6 +497,34 @@ export {
 	normalizeFramePaddingPercent,
 };
 
+/** One binding as the wire carries it: the layer, the property, the signal, the map and its parameters. */
+export interface LayerBinding {
+	layer: "screen" | "camera" | "annotation";
+	/** The annotation id when `layer` is `annotation`. */
+	id?: string;
+	prop: string;
+	signal: string;
+	map: string;
+	window?: [number, number];
+	[parameter: string]: unknown;
+}
+
+/** One layer's 3D transform as the wire carries it, beside its layer ref. */
+export interface LayerTransform {
+	layer: "screen" | "camera" | "annotation";
+	id?: string;
+	x?: number;
+	y?: number;
+	z?: number;
+	rx?: number;
+	ry?: number;
+	rz?: number;
+	scale?: number;
+	anchorX?: number;
+	anchorY?: number;
+	perspective?: number;
+}
+
 export interface EditorRenderState {
 	trimStart: number;
 	trimEnd: number;
@@ -585,6 +613,11 @@ export interface EditorRenderState {
 	/** Silence suggestions the user dismissed, kept so they don't resurface. */
 	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
+	/** Signal-driven properties by layer, declared in the v3 document (`<bind>`). No panel edits these; the engine
+	 *  samples them. Mirrors `recast_scene::bind::LayerBinding` on the wire, flattened. */
+	bindings?: LayerBinding[];
+	/** 3D transforms by layer, declared in the v3 document (`<transform>`). Same rule as bindings: carried, not edited here. */
+	transforms?: LayerTransform[];
 	/** `id` included: Rust's `Annotation.id` has no `#[serde(default)]`, and a
 	 *  missing one fails the WHOLE RenderState deserialize, not just that entry. */
 	annotations: Annotation[];

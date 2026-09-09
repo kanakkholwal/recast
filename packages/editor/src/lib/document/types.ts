@@ -67,6 +67,8 @@ export interface ReplicaDocument {
 	apply(opsJson: string): number;
 	renderState(): string;
 	opsForState(stateJson: string): string;
+	/** The same for a few changed fields merged into the last whole state handed over; throws before any. */
+	opsForPatch(patchJson: string): string;
 }
 
 export type CommitResult =

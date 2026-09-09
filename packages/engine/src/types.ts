@@ -10,6 +10,8 @@ export interface WasmPreviewEngine {
 	adapterName(): string;
 	isSoftware(): boolean;
 	setScene(json: string): void;
+	/** A few changed top-level state fields merged into the last `setScene` state; throws before any setScene. */
+	patchScene(json: string): void;
 	setSourceSize(width: number, height: number): void;
 	setCanvasSize(width: number, height: number): void;
 	screenLayerId(): number | undefined;
@@ -49,6 +51,8 @@ export interface WasmProjectDocument {
 	renderState(): string;
 	/** JSON array of ops that take this document to the one the state describes; `[]` when nothing moved. */
 	opsForState(stateJson: string): string;
+	/** The same for a few changed fields merged into the last whole state; throws before any whole state. */
+	opsForPatch(patchJson: string): string;
 	/** Validation findings as JSON. */
 	issues(): string;
 	clone(): WasmProjectDocument;

@@ -10,6 +10,7 @@ function wasmStub() {
 		adapterName: vi.fn(() => "SwiftShader"),
 		isSoftware: vi.fn(() => true),
 		setScene: vi.fn(),
+		patchScene: vi.fn(),
 		setSourceSize: vi.fn(),
 		setCanvasSize: vi.fn(),
 		screenLayerId: vi.fn(() => 1),

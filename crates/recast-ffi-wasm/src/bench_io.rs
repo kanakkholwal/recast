@@ -6,7 +6,7 @@ mod tests {
     use std::time::Instant;
 
     use recast_compositor::eval::{Evaluator, SourceGeometry};
-    use recast_project::scene::to_scene;
+    use recast_project::scene::{to_render_state, to_scene};
     use recast_project::{parse, serialize};
 
     /// A document the size of a real edited recording: cuts, zooms, annotations, captions, camera keys.
@@ -72,10 +72,28 @@ mod tests {
             std::hint::black_box(Evaluator::new(&scene, geometry));
         }
         let eval_us = started.elapsed().as_secs_f64() * 1e6 / f64::from(rounds);
+        // The GUI edit path after step 5 phase 2: a patch of one field merged into the last state, migrated, evaluated.
+        let state_json =
+            serde_json::to_string(&to_render_state(&doc).expect("state")).expect("json");
+        let mut patchable = crate::scene_io::PatchableState::default();
+        patchable.remember(&state_json);
+        let started = Instant::now();
+        for i in 0..rounds {
+            let state = patchable
+                .apply(&format!("{{\"padding\": {}}}", i % 40))
+                .expect("patch");
+            let scene = recast_scene::migrate::to_scene(&state);
+            std::hint::black_box(Evaluator::new(&scene, geometry));
+        }
+        let patch_us = started.elapsed().as_secs_f64() * 1e6 / f64::from(rounds);
         println!(
-            "document {} bytes: parse {parse_us:.0} us, map {map_us:.0} us, evaluator {eval_us:.0} us, edit path (map + evaluator) {:.0} us",
+            "document {} bytes: parse {parse_us:.0} us, map {map_us:.0} us, evaluator {eval_us:.0} us, edit path (map + evaluator) {:.0} us, GUI patch path (merge + migrate + evaluator) {patch_us:.0} us",
             canonical.len(),
             map_us + eval_us
+        );
+        assert!(
+            patch_us < 5_000.0,
+            "a patched edit must leave most of a frame for the draw"
         );
         assert!(
             map_us + eval_us < 20_000.0,

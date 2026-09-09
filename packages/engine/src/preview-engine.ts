@@ -104,6 +104,11 @@ export class PreviewEngine {
 		this.#live.setScene(typeof scene === "string" ? scene : JSON.stringify(scene));
 	}
 
+	/** A few changed top-level fields, merged into the last full state inside the engine. */
+	patchScene(patch: Record<string, unknown>): void {
+		this.#live.patchScene(JSON.stringify(patch));
+	}
+
 	setSourceSize(width: number, height: number): void {
 		this.#live.setSourceSize(width, height);
 	}

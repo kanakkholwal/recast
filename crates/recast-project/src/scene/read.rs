@@ -1,6 +1,10 @@
 //! Document to `RenderState` (and so `Scene`): the inverse of `write`, reading every attribute back with the same default it was elided against.
 //! Planned elements the engine does not draw yet (`vars`, `graphic`, `shader`, extra binds) are left in the document and ignored here.
 
+use recast_scene::bind::{
+    Binding, Key, LayerBinding, LayerRef, LayerTransform, Map as BindMap, Signal, Transform3,
+};
+use recast_scene::v1::easing::Easing;
 use recast_scene::v1::nodes::{
     Annotation, AnnotationAnchor, AnnotationGlow, AnnotationKind, AnnotationStroke,
     AnnotationStrokeStyle, AudioClip, AudioClipRole, AudioClipSource, CameraClipLayout,
@@ -80,12 +84,16 @@ pub fn to_render_state(doc: &Document) -> Result<RenderState, MapError> {
     }
     if let Some(screen) = root.child("screen") {
         screen_into(screen, &mut state)?;
+        push_binds(screen, LayerRef::Screen, &mut state.bindings);
+        push_transform(screen, LayerRef::Screen, &mut state.transforms);
     }
     if let Some(camera) = root.child("camera") {
         state.camera_overlay = camera_settings(
             camera,
             std::mem::take(&mut state.camera_overlay.clip_layouts),
         )?;
+        push_binds(camera, LayerRef::Camera, &mut state.bindings);
+        push_transform(camera, LayerRef::Camera, &mut state.transforms);
     }
     if let Some(cursor) = root.child("cursor") {
         cursor_into(cursor, &mut state);
@@ -93,7 +101,18 @@ pub fn to_render_state(doc: &Document) -> Result<RenderState, MapError> {
     if let Some(group) = root.child("annotations") {
         state.annotations_enabled = !group.flag("disabled");
         for node in &group.children {
-            state.annotations.push(annotation(node)?);
+            let a = annotation(node)?;
+            push_binds(
+                node,
+                LayerRef::Annotation { id: a.id.clone() },
+                &mut state.bindings,
+            );
+            push_transform(
+                node,
+                LayerRef::Annotation { id: a.id.clone() },
+                &mut state.transforms,
+            );
+            state.annotations.push(a);
         }
     }
     state.caption_style = root.child("captions").map(captions);
@@ -306,6 +325,90 @@ fn zoom_region(z: &Node) -> Result<ZoomRegion, MapError> {
         hidden: z.flag("hidden"),
         motion_blur: z.num_or("blur", 0.0),
         extra,
+    })
+}
+
+/// Generic `<bind>` children become state bindings; the camera's own keys, follow and dodge are its settings, not bindings.
+fn push_binds(node: &Node, layer: LayerRef, out: &mut Vec<LayerBinding>) {
+    for bind in node.children_of("bind") {
+        let map = bind.attr("map").unwrap_or("");
+        if node.kind == "camera" && crate::validate::STACKABLE.contains(&map) {
+            continue;
+        }
+        if let Some(binding) = binding_of(bind) {
+            out.push(LayerBinding {
+                layer: layer.clone(),
+                binding,
+            });
+        }
+    }
+}
+
+/// A `<transform>` child becomes the layer's transform; absent attributes keep the identity's values.
+fn push_transform(node: &Node, layer: LayerRef, out: &mut Vec<LayerTransform>) {
+    let Some(t) = node.child("transform") else {
+        return;
+    };
+    let d = Transform3::IDENTITY;
+    let transform = Transform3 {
+        x: t.num_or("x", d.x),
+        y: t.num_or("y", d.y),
+        z: t.num_or("z", d.z),
+        rx: t.num_or("rx", d.rx),
+        ry: t.num_or("ry", d.ry),
+        rz: t.num_or("rz", d.rz),
+        scale: t.num_or("scale", d.scale),
+        anchor_x: t.num_or("ax", d.anchor_x),
+        anchor_y: t.num_or("ay", d.anchor_y),
+        perspective: t.num_or("persp", d.perspective),
+    };
+    if !transform.is_identity() {
+        out.push(LayerTransform { layer, transform });
+    }
+}
+
+/// A `<bind>` element as the engine's typed binding; `None` when the source or map does not parse (the validator reports it).
+pub fn binding_of(bind: &Node) -> Option<Binding> {
+    let signal = Signal::parse(bind.attr("src")?).ok()?;
+    let num = |name: &str| bind.attr(name).and_then(|v| v.parse::<f64>().ok());
+    let map = match bind.attr("map")? {
+        "keys" => BindMap::Keys(
+            bind.children_of("key")
+                .filter_map(|k| {
+                    Some(Key {
+                        at: k.attr("at")?.parse().ok()?,
+                        value: k.attr("value")?.parse().ok()?,
+                        ease: k.ease_or("ease", bind.ease_or("ease", Easing::default())),
+                    })
+                })
+                .collect(),
+        ),
+        "linear" => BindMap::Linear {
+            from: num("from").unwrap_or(0.0),
+            to: num("to").unwrap_or(1.0),
+            period: num("period"),
+            looped: bind.flag("loop"),
+        },
+        "wave" => BindMap::Wave {
+            from: num("from").unwrap_or(0.0),
+            to: num("to").unwrap_or(1.0),
+            period: num("period").unwrap_or(1.0),
+        },
+        "step" => BindMap::Step {
+            from: num("from").unwrap_or(0.0),
+            to: num("to").unwrap_or(1.0),
+        },
+        "clamp" => BindMap::Clamp {
+            from: num("from").unwrap_or(0.0),
+            to: num("to").unwrap_or(1.0),
+        },
+        _ => return None,
+    };
+    Some(Binding {
+        prop: bind.attr("prop")?.to_owned(),
+        signal,
+        map,
+        window: num("in").zip(num("out")),
     })
 }
 

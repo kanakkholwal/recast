@@ -74,6 +74,8 @@ pub struct PreviewEngine {
     /// Keyed by the annotation's image path, matching the host's own per-path
     /// cache, so two annotations on one file upload once.
     annotation_images: Vec<(String, LayerTexture)>,
+    /// The last v1 state, so `patchScene` can merge a few fields instead of re-parsing the whole state.
+    state: crate::scene_io::PatchableState,
 }
 
 #[wasm_bindgen]
@@ -135,13 +137,28 @@ impl PreviewEngine {
             cursor_sprites: [None, None, None, None],
             cursor_hotspots: [[0.5, 0.5]; 4],
             annotation_images: Vec::new(),
+            state: Default::default(),
         })
     }
 
     #[wasm_bindgen(js_name = setScene)]
     pub fn set_scene(&mut self, json: &str) -> Result<(), JsValue> {
         let scene = parse_scene(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.state.remember(json);
         self.session.set_scene(scene);
+        Ok(())
+    }
+
+    /// A few changed top-level state fields, merged into the last full state: the edit path without a whole-state
+    /// serialise. Refused (so the caller falls back to `setScene`) when no full state was set yet.
+    #[wasm_bindgen(js_name = patchScene)]
+    pub fn patch_scene(&mut self, patch_json: &str) -> Result<(), JsValue> {
+        let state = self
+            .state
+            .apply(patch_json)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.session
+            .set_scene(recast_scene::migrate::to_scene(&state));
         Ok(())
     }
 

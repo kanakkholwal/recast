@@ -1,3 +1,4 @@
+use recast_scene::bind::PlacementRule;
 use recast_scene::v1::nodes::{CameraKeyframe, CameraOverlaySettings, CameraPlacement, ZoomRegion};
 use recast_scene::v1::Easing;
 
@@ -252,6 +253,20 @@ pub fn bubble_params(
     geometry: CanvasGeometry,
     cursor: Option<(f64, f64)>,
 ) -> Option<BubbleParams> {
+    let rules = PlacementRule::from_settings(settings);
+    bubble_params_ruled(settings, &rules, regions, source_time, geometry, cursor)
+}
+
+/// The bubble from its placement rules, the scene's data for the three `<bind>`s, folded in their declared order.
+/// `settings` still supplies the base placement, the shape and the mirror.
+pub fn bubble_params_ruled(
+    settings: &CameraOverlaySettings,
+    rules: &[PlacementRule],
+    regions: &[&ZoomRegion],
+    source_time: f64,
+    geometry: CanvasGeometry,
+    cursor: Option<(f64, f64)>,
+) -> Option<BubbleParams> {
     if !settings.enabled {
         return None;
     }
@@ -260,35 +275,58 @@ pub fn bubble_params(
     } else {
         1.0
     };
-
-    let base = placement_at(
-        &settings.default_placement,
-        &settings.keyframes,
-        source_time,
-        settings.keyframe_easing,
-    );
-    let placement = if settings.zoom_follow {
-        let (scale, cx, cy) = follow_scale_at(
-            regions,
-            source_time,
-            settings.zoom_follow_duration,
-            settings.zoom_follow_easing,
-        );
-        follow_placement(&base, scale, cx, cy, settings.zoom_follow_strength, aspect)
-    } else {
-        base
-    };
-    // After the zoom: the zoom decides the size and where the bubble is heading, the pointer only nudges it off whatever it is covering.
-    let placement = match (settings.cursor_dodge, cursor) {
-        (true, Some(at)) => dodge_placement(&placement, at, settings.cursor_dodge_strength, aspect),
-        _ => placement,
-    };
+    let placement = rules
+        .iter()
+        .fold(settings.default_placement.clone(), |placement, rule| {
+            apply_rule(&placement, rule, regions, source_time, aspect, cursor)
+        });
 
     Some(BubbleParams {
         dest: bubble_rect(&placement, geometry),
         corner_radius: corner_radius_for(settings),
         transform: bubble_transform(settings),
     })
+}
+
+/// One rule over the placement so far. Keys replace it (the glide has its own base), follow grows and drifts it,
+/// dodge nudges it off the pointer; the pointer only nudges what the zoom already decided.
+fn apply_rule(
+    placement: &CameraPlacement,
+    rule: &PlacementRule,
+    regions: &[&ZoomRegion],
+    source_time: f64,
+    aspect: f64,
+    cursor: Option<(f64, f64)>,
+) -> CameraPlacement {
+    match rule {
+        PlacementRule::Keys { keys, ease } => {
+            let frames: Vec<CameraKeyframe> = keys
+                .iter()
+                .map(|k| CameraKeyframe {
+                    at_sec: k.at,
+                    placement: CameraPlacement {
+                        x: k.x,
+                        y: k.y,
+                        width: k.w,
+                        height: k.h,
+                    },
+                })
+                .collect();
+            placement_at(placement, &frames, source_time, *ease)
+        }
+        PlacementRule::Follow {
+            strength,
+            duration,
+            ease,
+        } => {
+            let (scale, cx, cy) = follow_scale_at(regions, source_time, *duration, *ease);
+            follow_placement(placement, scale, cx, cy, *strength, aspect)
+        }
+        PlacementRule::Dodge { strength } => match cursor {
+            Some(at) => dodge_placement(placement, at, *strength, aspect),
+            None => placement.clone(),
+        },
+    }
 }
 
 pub fn bubble_shadow(
@@ -311,6 +349,7 @@ pub fn bubble_shadow(
         half_w: bubble.dest.w / 2.0,
         half_h: bubble.dest.h / 2.0,
         radius_px: bubble.corner_radius * bubble.dest.w.min(bubble.dest.h),
+        warp: None,
     })
 }
 

@@ -270,13 +270,34 @@ fn in_range(v: f64, min: Option<f64>, max: Option<f64>) -> Result<(), String> {
 }
 
 /// Maps that may stack on one property, applied in this order; the camera's keys-then-follow-then-dodge is the only composition the engine defines.
-const STACKABLE: &[&str] = &["keys", "follow", "dodge"];
+pub(crate) const STACKABLE: &[&str] = &["keys", "follow", "dodge"];
 
 /// One driver per property, except the fixed camera stack: two binds naming the same prop is a conflict, not a composition.
+/// The source must parse as a signal, and a property the engine cannot drive yet is a warning, not a refusal.
 fn check_binds(node: &Node, report: &mut Report) {
     let mut seen: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for bind in node.children_of("bind") {
         let map = bind.attr("map").unwrap_or("");
+        if let Some(src) = bind.attr("src") {
+            if let Err(e) = recast_scene::bind::Signal::parse(src) {
+                report.push(
+                    Level::Error,
+                    "unknown_signal",
+                    bind,
+                    Some("src"),
+                    e.to_string(),
+                );
+            }
+        }
+        let camera_stack = node.kind == "camera" && STACKABLE.contains(&map);
+        if !camera_stack && STACKABLE.contains(&map) {
+            report.push(Level::Error, "camera_only_map", bind, Some("map"), format!("'{map}' is a camera placement rule; other elements take linear, wave, step or clamp"));
+        }
+        for prop in bind.attr("prop").unwrap_or("").split_whitespace() {
+            if !camera_stack && !recast_scene::bind::BINDABLE.contains(&prop) {
+                report.push(Level::Warning, "unbound_prop", bind, Some("prop"), format!("the engine does not drive '{prop}' yet; the binding is kept but has no effect"));
+            }
+        }
         for prop in bind.attr("prop").unwrap_or("").split_whitespace() {
             let maps = seen.entry(prop).or_default();
             let stacks =

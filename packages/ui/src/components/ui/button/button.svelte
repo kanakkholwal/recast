@@ -52,6 +52,7 @@ export const buttonVariants = tv({
 			raw: "border-0 p-0 h-auto w-auto hover:scale-100 active:scale-100",
 			dark: "bg-foreground text-background shadow-craft-sm hover:bg-foreground/90",
 			light: "bg-white text-black shadow-craft-sm dark:bg-black dark:text-white",
+			theme: "bg-background text-foreground",
 		},
 		size: {
 			default:

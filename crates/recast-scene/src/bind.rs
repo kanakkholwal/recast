@@ -1,18 +1,25 @@
 //! The relational mapping: a property driven by a signal through a closed map. Typed data, no code, one hop.
 //! Pure and allocation-free per sample, so the evaluator can run it per frame in wasm and native alike.
 
+use serde::{Deserialize, Serialize};
+
 use crate::v1::easing::Easing;
 
 /// What a binding reads. Closed: an unknown source is a validation error, never a runtime lookup.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Signal {
     /// Seconds since the binding's window opened.
     Time,
+    /// The pointer as a pair; a scalar map reads its x.
+    Cursor,
     CursorX,
     CursorY,
     CursorPressed,
     CursorIdle,
     ZoomScale,
+    /// The zoom focus as a pair; a scalar map reads its x.
+    ZoomCenter,
     ZoomCenterX,
     ZoomCenterY,
     AudioLevel(String),
@@ -30,11 +37,13 @@ impl Signal {
         let bad = || BindError::UnknownSignal(text.to_owned());
         Ok(match text {
             "time" => Self::Time,
+            "cursor" => Self::Cursor,
             "cursor.x" => Self::CursorX,
             "cursor.y" => Self::CursorY,
             "cursor.pressed" => Self::CursorPressed,
             "cursor.idle" => Self::CursorIdle,
             "zoom.scale" => Self::ZoomScale,
+            "zoom.center" => Self::ZoomCenter,
             "zoom.center.x" => Self::ZoomCenterX,
             "zoom.center.y" => Self::ZoomCenterY,
             "word.active" => Self::WordActive,
@@ -60,7 +69,8 @@ impl Signal {
 }
 
 /// One keyframe of a `keys` map: the value the property holds at `at` seconds into the window.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Key {
     pub at: f64,
     pub value: f64,
@@ -68,8 +78,11 @@ pub struct Key {
     pub ease: Easing,
 }
 
-/// The closed map set. Composite behaviours are ONE named map, never a composition rule.
-#[derive(Debug, Clone, PartialEq)]
+/// The closed scalar map set. The camera's `keys`, `follow` and `dodge` are vector rules on its placement and stay in the
+/// compositor; the validator refuses those names elsewhere. No lag map: the evaluator is frame-pure (a frame depends only
+/// on its own time, so seeking and export agree), and a lag needs state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "map", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Map {
     /// Piecewise eased interpolation over time; holds the first key before it and the last after it.
     Keys(Vec<Key>),
@@ -86,27 +99,14 @@ pub enum Map {
         to: f64,
         period: f64,
     },
-    /// Exponential lag toward the signal with time constant `tau`; the state is the caller's, see `smooth_step`.
-    Smooth {
-        tau: f64,
-    },
     /// `from` until the signal crosses `0.5`, then `to`.
     Step {
         from: f64,
         to: f64,
     },
-    /// The camera-dodge rule: push away from the signal by `strength` when it comes within `radius` of the property's rest value.
-    Dodge {
-        strength: f64,
-        radius: f64,
-    },
     Clamp {
         from: f64,
         to: f64,
-    },
-    /// Follow the signal at `strength`, resting at the static value when the signal is at rest (0.5).
-    Follow {
-        strength: f64,
     },
 }
 
@@ -123,13 +123,187 @@ pub enum BindError {
 }
 
 /// A property driven by a signal through a map inside a window; outside the window the static value stands.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Binding {
     pub prop: String,
     pub signal: Signal,
+    /// Flattened: the map's name and its parameters sit beside `prop` and `signal` on the wire.
+    #[serde(flatten)]
     pub map: Map,
     /// Window on the layer's clock, seconds; `None` is the whole layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window: Option<(f64, f64)>,
+}
+
+/// Which layer a binding sits on, as the v1 state names layers (it has no layer ids of its own).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "layer",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum LayerRef {
+    Screen,
+    Camera,
+    Annotation { id: String },
+}
+
+/// A binding with the layer it drives; what the v1 state carries and `migrate::to_scene` attaches.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerBinding {
+    #[serde(flatten)]
+    pub layer: LayerRef,
+    #[serde(flatten)]
+    pub binding: Binding,
+}
+
+/// The camera's placement rules: the three `<bind>`s on `x y w h`, evaluated in this order and no other
+/// (keys set the base, follow moves it with the zoom, dodge nudges it off the pointer). Vector maps, so they
+/// live beside the scalar set rather than in it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "rule",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum PlacementRule {
+    Keys {
+        keys: Vec<PlacementKey>,
+        ease: Easing,
+    },
+    Follow {
+        strength: f64,
+        duration: f64,
+        ease: Easing,
+    },
+    Dodge {
+        strength: f64,
+    },
+}
+
+/// A placement keyframe: where the bubble is at `at` seconds, in frame fractions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlacementKey {
+    pub at: f64,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
+impl PlacementRule {
+    /// The rules a camera's settings declare, in evaluation order. The settings stay the wire form the editor edits.
+    pub fn from_settings(c: &crate::v1::nodes::CameraOverlaySettings) -> Vec<Self> {
+        let mut rules = Vec::new();
+        if !c.keyframes.is_empty() {
+            rules.push(Self::Keys {
+                keys: c
+                    .keyframes
+                    .iter()
+                    .map(|k| PlacementKey {
+                        at: k.at_sec,
+                        x: k.placement.x,
+                        y: k.placement.y,
+                        w: k.placement.width,
+                        h: k.placement.height,
+                    })
+                    .collect(),
+                ease: c.keyframe_easing,
+            });
+        }
+        if c.zoom_follow {
+            rules.push(Self::Follow {
+                strength: c.zoom_follow_strength,
+                duration: c.zoom_follow_duration,
+                ease: c.zoom_follow_easing,
+            });
+        }
+        if c.cursor_dodge {
+            rules.push(Self::Dodge {
+                strength: c.cursor_dodge_strength,
+            });
+        }
+        rules
+    }
+}
+
+/// The properties the compositor can drive today; `check` warns on anything else.
+pub const BINDABLE: &[&str] = &["opacity", "blur", "x", "y", "z", "rx", "ry", "rz", "scale"];
+
+/// A layer's 3D transform, rendered as a homography (06, D-1): offsets in frame fractions (`z` in frame heights, away is
+/// positive), rotations in degrees, `scale` about the anchor, `perspective` the focal length in frame heights.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Transform3 {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    pub rx: f64,
+    pub ry: f64,
+    pub rz: f64,
+    pub scale: f64,
+    pub anchor_x: f64,
+    pub anchor_y: f64,
+    pub perspective: f64,
+}
+
+impl Default for Transform3 {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
+impl Transform3 {
+    pub const IDENTITY: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        rx: 0.0,
+        ry: 0.0,
+        rz: 0.0,
+        scale: 1.0,
+        anchor_x: 0.5,
+        anchor_y: 0.5,
+        perspective: 2.0,
+    };
+
+    /// True when the transform changes nothing, so the flat path (and its goldens) stays in force.
+    #[must_use]
+    pub fn is_identity(&self) -> bool {
+        *self == Self::IDENTITY
+    }
+
+    /// The transform after a layer's bindings on its fields; `sample` reads each field's static value as the rest.
+    #[must_use]
+    pub fn bound(mut self, bindings: &[Binding], t: f64, signals: &Signals) -> Self {
+        let fold = |prop: &str, rest: f64| {
+            bindings
+                .iter()
+                .filter(|b| b.prop.split_whitespace().any(|p| p == prop))
+                .fold(rest, |v, b| b.sample(t, signals, v).unwrap_or(v))
+        };
+        self.x = fold("x", self.x);
+        self.y = fold("y", self.y);
+        self.z = fold("z", self.z);
+        self.rx = fold("rx", self.rx);
+        self.ry = fold("ry", self.ry);
+        self.rz = fold("rz", self.rz);
+        self.scale = fold("scale", self.scale);
+        self
+    }
+}
+
+/// A transform with the layer it belongs to, as the v1 state carries it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerTransform {
+    #[serde(flatten)]
+    pub layer: LayerRef,
+    #[serde(flatten)]
+    pub transform: Transform3,
 }
 
 /// The signal values at one instant, as the evaluator resolves them before sampling. Missing signals read as rest.
@@ -157,12 +331,12 @@ impl Binding {
     pub fn read(&self, s: &Signals) -> f64 {
         match &self.signal {
             Signal::Time => s.time - self.window.map_or(0.0, |w| w.0),
-            Signal::CursorX => s.cursor.0,
+            Signal::Cursor | Signal::CursorX => s.cursor.0,
             Signal::CursorY => s.cursor.1,
             Signal::CursorPressed => f64::from(u8::from(s.cursor_pressed)),
             Signal::CursorIdle => f64::from(u8::from(s.cursor_idle)),
             Signal::ZoomScale => s.zoom_scale,
-            Signal::ZoomCenterX => s.zoom_center.0,
+            Signal::ZoomCenter | Signal::ZoomCenterX => s.zoom_center.0,
             Signal::ZoomCenterY => s.zoom_center.1,
             Signal::AudioLevel(_) => s.audio_level,
             Signal::WordActive => f64::from(u8::from(s.word_active)),
@@ -170,16 +344,8 @@ impl Binding {
         }
     }
 
-    /// The bound value at `t`, or `None` outside the window (the static value stands). `rest` is the static value;
-    /// `previous` is the last bound value, which only `smooth` needs.
-    pub fn sample(
-        &self,
-        t: f64,
-        s: &Signals,
-        rest: f64,
-        previous: Option<f64>,
-        dt: f64,
-    ) -> Option<f64> {
+    /// The bound value at `t`, or `None` outside the window (the static value stands). `rest` is the static value.
+    pub fn sample(&self, t: f64, s: &Signals, rest: f64) -> Option<f64> {
         if !self.active(t) {
             return None;
         }
@@ -209,7 +375,6 @@ impl Binding {
                 let mid = (from + to) / 2.0;
                 mid + (to - from) / 2.0 * (phase * std::f64::consts::TAU).sin()
             }
-            Map::Smooth { tau } => smooth_step(previous.unwrap_or(rest), x, *tau, dt),
             Map::Step { from, to } => {
                 if x < 0.5 {
                     *from
@@ -217,32 +382,9 @@ impl Binding {
                     *to
                 }
             }
-            Map::Dodge { strength, radius } => {
-                let d = x - rest;
-                if d.abs() >= *radius || *radius <= 0.0 {
-                    rest
-                } else {
-                    let push = (1.0 - d.abs() / radius) * strength;
-                    if d >= 0.0 {
-                        rest - push
-                    } else {
-                        rest + push
-                    }
-                }
-            }
             Map::Clamp { from, to } => x.clamp(from.min(*to), from.max(*to)),
-            Map::Follow { strength } => rest + (x - 0.5) * strength,
         })
     }
-}
-
-/// Exponential lag: the fraction of the gap closed in `dt` seconds with time constant `tau`.
-pub fn smooth_step(previous: f64, target: f64, tau: f64, dt: f64) -> f64 {
-    if tau <= 0.0 || dt <= 0.0 {
-        return target;
-    }
-    let k = 1.0 - (-dt / tau).exp();
-    previous + (target - previous) * k
 }
 
 /// Piecewise eased interpolation; holds the first key before it and the last after it; no keys means the rest value.
@@ -336,6 +478,25 @@ mod tests {
             Signal::parse("layer(k1)"),
             Err(BindError::UnknownSignal(_))
         ));
+        assert_eq!(Signal::parse("cursor").unwrap(), Signal::Cursor);
+        let wire: Binding = serde_json::from_str(
+            r#"{"prop":"opacity","signal":"time","map":"wave","from":0.2,"to":1,"period":2}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            wire.map,
+            Map::Wave {
+                from: 0.2,
+                to: 1.0,
+                period: 2.0
+            }
+        );
+        assert_eq!(serde_json::to_value(&wire).unwrap()["map"], "wave");
+        let placed: LayerBinding = serde_json::from_str(
+            r#"{"layer":"annotation","id":"a1","prop":"opacity","signal":"cursorX","map":"clamp","from":0,"to":1}"#,
+        )
+        .unwrap();
+        assert_eq!(placed.layer, LayerRef::Annotation { id: "a1".into() });
     }
 
     #[test]
@@ -349,9 +510,9 @@ mod tests {
                 looped: false,
             },
         );
-        assert_eq!(b.sample(0.5, &signals(), 7.0, None, 0.016), None);
+        assert_eq!(b.sample(0.5, &signals(), 7.0), None);
         assert_eq!(
-            b.sample(3.0, &signals(), 7.0, None, 0.016),
+            b.sample(3.0, &signals(), 7.0),
             Some(5.0),
             "2 s into a 4 s period is halfway"
         );
@@ -363,12 +524,10 @@ mod tests {
                     ..signals()
                 },
                 7.0,
-                None,
-                0.016,
             )
             .unwrap();
         assert!((near_end - 9.9975).abs() < 1e-9);
-        assert_eq!(b.sample(5.0, &signals(), 7.0, None, 0.016), None);
+        assert_eq!(b.sample(5.0, &signals(), 7.0), None);
     }
 
     #[test]
@@ -383,7 +542,7 @@ mod tests {
                 looped: false,
             },
         );
-        assert_eq!(lin.sample(3.0, &s, 0.0, None, 0.0), Some(4.0));
+        assert_eq!(lin.sample(3.0, &s, 0.0), Some(4.0));
         let looped = bind(
             Signal::Time,
             Map::Linear {
@@ -395,7 +554,7 @@ mod tests {
         );
         assert!(
             (looped
-                .sample(3.0, &Signals { time: 3.25, ..s }, 0.0, None, 0.0)
+                .sample(3.0, &Signals { time: 3.25, ..s }, 0.0)
                 .unwrap()
                 - 0.25)
                 .abs()
@@ -410,16 +569,11 @@ mod tests {
             },
         );
         assert!(
-            (wave
-                .sample(2.0, &Signals { time: 2.0, ..s }, 0.0, None, 0.0)
-                .unwrap()
-                - 1.0)
-                .abs()
-                < 1e-9,
+            (wave.sample(2.0, &Signals { time: 2.0, ..s }, 0.0).unwrap() - 1.0).abs() < 1e-9,
             "a quarter period is the crest"
         );
         let step = bind(Signal::CursorPressed, Map::Step { from: 1.0, to: 1.2 });
-        assert_eq!(step.sample(3.0, &s, 1.0, None, 0.0), Some(1.0));
+        assert_eq!(step.sample(3.0, &s, 1.0), Some(1.0));
         assert_eq!(
             step.sample(
                 3.0,
@@ -427,14 +581,12 @@ mod tests {
                     cursor_pressed: true,
                     ..s
                 },
-                1.0,
-                None,
-                0.0
+                1.0
             ),
             Some(1.2)
         );
         let clamp = bind(Signal::ZoomScale, Map::Clamp { from: 1.0, to: 1.5 });
-        assert_eq!(clamp.sample(3.0, &s, 0.0, None, 0.0), Some(1.5));
+        assert_eq!(clamp.sample(3.0, &s, 0.0), Some(1.5));
     }
 
     #[test]
@@ -463,57 +615,66 @@ mod tests {
         assert_eq!(keys_at(&[], 1.0, 99.0), 99.0);
     }
 
+    /// Step 9's second proof: a zoom's eased envelope is a `keys` binding on `scale` over its window, the exit ease reversed.
     #[test]
-    fn smooth_closes_a_fixed_fraction_of_the_gap_per_time_constant() {
-        let after_one_tau = smooth_step(0.0, 1.0, 0.5, 0.5);
-        assert!((after_one_tau - (1.0 - (-1.0f64).exp())).abs() < 1e-12);
-        assert_eq!(
-            smooth_step(0.0, 1.0, 0.0, 0.5),
-            1.0,
-            "no lag without a time constant"
-        );
-        let b = bind(Signal::CursorX, Map::Smooth { tau: 0.2 });
-        let first = b.sample(3.0, &signals(), 0.5, None, 0.1).unwrap();
-        assert!(
-            first > 0.5 && first < 0.75,
-            "moves toward the cursor without arriving: {first}"
-        );
-    }
-
-    #[test]
-    fn dodge_pushes_away_inside_the_radius_and_follow_rides_the_signal() {
-        let dodge = bind(
-            Signal::CursorX,
-            Map::Dodge {
-                strength: 0.2,
-                radius: 0.3,
+    fn a_zoom_ramp_is_a_keys_binding_on_scale() {
+        let ease_in = Easing {
+            x1: 0.42,
+            y1: 0.0,
+            x2: 0.58,
+            y2: 1.0,
+        };
+        let ease_out = Easing {
+            x1: 0.25,
+            y1: 0.1,
+            x2: 0.25,
+            y2: 1.0,
+        };
+        let region = crate::v1::nodes::ZoomRegion {
+            start: 2.0,
+            end: 8.0,
+            scale: 2.5,
+            ease_in,
+            ease_out,
+            ramp_in: 1.0,
+            ramp_out: 1.5,
+            ..serde_json::from_str(r#"{"start":0,"end":1,"scale":1}"#).unwrap()
+        };
+        let keys = vec![
+            Key {
+                at: 2.0,
+                value: 1.0,
+                ease: Easing::LINEAR,
             },
-        );
-        let pushed = dodge.sample(3.0, &signals(), 0.9, None, 0.0).unwrap();
-        assert!(
-            (pushed - 1.0).abs() < 1e-9,
-            "cursor at 0.75 is 0.15 of 0.3 away: pushed up by half the strength: {pushed}"
-        );
-        let above = dodge
-            .sample(
-                3.0,
-                &Signals {
-                    cursor: (0.95, 0.0),
-                    ..signals()
-                },
-                0.9,
-                None,
-                0.0,
-            )
-            .unwrap();
-        assert!(above < 0.9, "cursor above the rest pushes it down: {above}");
-        assert_eq!(
-            dodge.sample(3.0, &signals(), 0.2, None, 0.0),
-            Some(0.2),
-            "far away: at rest"
-        );
-        let follow = bind(Signal::CursorY, Map::Follow { strength: 0.4 });
-        assert_eq!(follow.sample(3.0, &signals(), 0.5, None, 0.0), Some(0.4));
+            Key {
+                at: 3.0,
+                value: 2.5,
+                ease: ease_in,
+            },
+            Key {
+                at: 6.5,
+                value: 2.5,
+                ease: Easing::LINEAR,
+            },
+            Key {
+                at: 8.0,
+                value: 1.0,
+                ease: ease_out.reversed(),
+            },
+        ];
+        for i in 0..=120 {
+            let t = 2.0 + f64::from(i) * 0.05;
+            let engine = region.scale_at(t);
+            let bound = if t >= 8.0 {
+                1.0
+            } else {
+                keys_at(&keys, t, 1.0)
+            };
+            assert!(
+                (engine - bound).abs() < 1e-4,
+                "at {t}: engine {engine} vs keys {bound}"
+            );
+        }
     }
 
     #[test]

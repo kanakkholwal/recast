@@ -165,8 +165,8 @@ async function handleMigrateOne(entry: RecordingEntry) {
         Update {legacyCount} older
       </Button>
     {/if}
-    <Button size="sm" class="gap-1.5" variant="outline" onclick={newRecording}>
-      <Video class="size-4" /> New recording
+    <Button size="sm" variant="theme" onclick={newRecording}>
+      <Video /> New recording
     </Button>
   {/snippet}
 

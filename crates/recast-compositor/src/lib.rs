@@ -7,6 +7,7 @@ pub mod caption;
 pub mod eval;
 pub mod geometry;
 pub mod layout;
+pub mod plane;
 pub mod render;
 pub mod session;
 pub mod source;

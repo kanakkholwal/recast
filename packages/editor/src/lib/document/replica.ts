@@ -5,6 +5,7 @@
  * than a JSON blob on the wire.
  */
 
+import { isEmptyPatch, shallowPatch } from "@recast/engine";
 import type { EditorRenderState } from "../editor/render-state";
 import type {
 	CommitResult,
@@ -48,6 +49,8 @@ export class DocumentReplica {
 	#doc: ReplicaDocument;
 	#seq: number;
 	#hash: string;
+	/** The state as last committed, compound fields by identity, so the next commit sends only what moved. */
+	#lastState: Record<string, unknown> | null = null;
 	#disposed = false;
 
 	private constructor(opts: ReplicaOptions, doc: ReplicaDocument, seq: number, hash: string) {
@@ -75,9 +78,27 @@ export class DocumentReplica {
 		return this.#hash;
 	}
 
-	/** The editor state the document currently describes. */
+	/** The editor state the document currently describes. Also resets the patch base: what the caller adopts next
+	 *  is what the next commit diffs against. */
 	renderState(): Partial<EditorRenderState> {
-		return JSON.parse(this.#doc.renderState()) as Partial<EditorRenderState>;
+		const state = JSON.parse(this.#doc.renderState()) as Partial<EditorRenderState>;
+		this.#lastState = state as Record<string, unknown>;
+		return state;
+	}
+
+	/** The ops for `state`: a patch of what moved since the last commit when there is one, the whole state otherwise. */
+	#opsFor(state: Partial<EditorRenderState>): DocumentOp[] {
+		const next = state as Record<string, unknown>;
+		if (this.#lastState) {
+			const patch = shallowPatch(this.#lastState, next);
+			if (isEmptyPatch(patch)) return [];
+			const ops = JSON.parse(this.#doc.opsForPatch(JSON.stringify(patch))) as DocumentOp[];
+			this.#lastState = next;
+			return ops;
+		}
+		const ops = JSON.parse(this.#doc.opsForState(JSON.stringify(state))) as DocumentOp[];
+		this.#lastState = next;
+		return ops;
 	}
 
 	/**
@@ -88,7 +109,7 @@ export class DocumentReplica {
 	 */
 	async commit(state: Partial<EditorRenderState>): Promise<CommitResult> {
 		this.#assertLive();
-		const ops = JSON.parse(this.#doc.opsForState(JSON.stringify(state))) as DocumentOp[];
+		const ops = this.#opsFor(state);
 		if (ops.length === 0) return { status: "clean" };
 
 		const first = await this.#driver.apply(this.#path, ops, this.#seq);

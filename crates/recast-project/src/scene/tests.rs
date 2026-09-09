@@ -224,6 +224,118 @@ fn rich_extras(state: &mut RenderState) {
 }
 
 #[test]
+fn a_generic_bind_reads_into_the_state_survives_a_save_that_does_not_name_it_and_is_validated() {
+    use recast_scene::bind::{LayerRef, Map, Signal};
+    let text = r##"<recast v="3" timebase="source-seconds">
+  <timeline in="0" out="10"/>
+  <screen id="scr"><bind id="b1" prop="opacity" src="time" map="wave" from="0.2" to="1" period="2"/></screen>
+  <camera id="bubble" enabled="true"><bind id="keys" prop="x y w h" src="time" map="keys"/></camera>
+  <annotations>
+    <rect id="a1" at="1" dur="2" x="0.1" y="0.1" w="0.2" h="0.2"><bind id="b2" prop="opacity" src="cursor.x" map="clamp" from="0" to="1" in="0.500" out="1.500"/></rect>
+  </annotations>
+</recast>
+"##;
+    let doc = parse(text).unwrap();
+    let report = validate(&doc);
+    assert!(report.is_ok(), "{:?}", report.issues);
+    let state = to_render_state(&doc).unwrap();
+    assert_eq!(
+        state.bindings.len(),
+        2,
+        "the camera's keys stack is settings, not a binding"
+    );
+    assert_eq!(state.bindings[0].layer, LayerRef::Screen);
+    assert_eq!(
+        state.bindings[0].binding.map,
+        Map::Wave {
+            from: 0.2,
+            to: 1.0,
+            period: 2.0
+        }
+    );
+    assert_eq!(
+        state.bindings[1].layer,
+        LayerRef::Annotation { id: "a1".into() }
+    );
+    assert_eq!(state.bindings[1].binding.signal, Signal::CursorX);
+    assert_eq!(state.bindings[1].binding.window, Some((0.5, 1.5)));
+    let scene = super::read::to_scene(&doc).unwrap();
+    assert_eq!(
+        scene.layers[1].bindings.len(),
+        1,
+        "the screen layer carries its binding"
+    );
+
+    // The editor's whole-state save never names bindings; the base document keeps them.
+    let mut saved = state.clone();
+    saved.bindings.clear();
+    let mut ids = IdGen::seeded(3);
+    let rewritten = from_render_state(&saved, &MediaRefs::default(), Some(&doc), &mut ids);
+    let again = to_render_state(&rewritten).unwrap();
+    assert_eq!(again.bindings, state.bindings, "{}", serialize(&rewritten));
+
+    let bad = parse(
+        &text.replace("src=\"cursor.x\"", "src=\"mouse.x\"").replace(
+            "prop=\"opacity\" src=\"time\"",
+            "prop=\"rotation\" src=\"time\"",
+        ),
+    )
+    .unwrap();
+    let codes: Vec<&str> = validate(&bad).issues.iter().map(|i| i.code).collect();
+    assert!(codes.contains(&"unknown_signal"), "{codes:?}");
+    assert!(codes.contains(&"unbound_prop"), "{codes:?}");
+}
+
+#[test]
+fn a_transform_child_reads_into_the_state_and_writes_back_elided_against_the_identity() {
+    use recast_scene::bind::{LayerRef, Transform3};
+    let text = r##"<recast v="3" timebase="source-seconds">
+  <timeline in="0" out="10"/>
+  <screen id="scr"><transform ry="35" z="0.15"/></screen>
+  <annotations>
+    <rect id="a1" at="1" dur="2" x="0.1" y="0.1" w="0.2" h="0.2"><transform scale="1.2" ax="0" ay="0"/></rect>
+  </annotations>
+</recast>
+"##;
+    let doc = parse(text).unwrap();
+    assert!(validate(&doc).is_ok(), "{:?}", validate(&doc).issues);
+    let state = to_render_state(&doc).unwrap();
+    assert_eq!(state.transforms.len(), 2);
+    assert_eq!(state.transforms[0].layer, LayerRef::Screen);
+    assert_eq!(
+        state.transforms[0].transform,
+        Transform3 {
+            ry: 35.0,
+            z: 0.15,
+            ..Transform3::IDENTITY
+        }
+    );
+    let scene = super::read::to_scene(&doc).unwrap();
+    assert_eq!(scene.layers[1].transform.ry, 35.0);
+    let mut ids = IdGen::seeded(4);
+    let rewritten = serialize(&from_render_state(
+        &state,
+        &MediaRefs::default(),
+        Some(&doc),
+        &mut ids,
+    ));
+    assert!(
+        rewritten.contains("<transform z=\"0.15\" ry=\"35\"/>"),
+        "{rewritten}"
+    );
+    assert!(
+        rewritten.contains("<transform scale=\"1.2\" ax=\"0\" ay=\"0\"/>"),
+        "{rewritten}"
+    );
+    assert_eq!(
+        to_render_state(&parse(&rewritten).unwrap())
+            .unwrap()
+            .transforms,
+        state.transforms
+    );
+}
+
+#[test]
 fn media_refs_lift_back_out_of_the_document_they_were_written_into() {
     let refs = MediaRefs {
         recording: Some(MediaFile {
