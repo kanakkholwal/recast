@@ -20,7 +20,7 @@ use crate::agent::intents::{SilencePolicy, ZoomIntent};
 use crate::agent::perception::{silences_view, transcript_view, transcript_words, CONTENT_LABEL};
 use crate::agent::track::{TrackView, Window};
 use crate::commands::types::EditorDocument;
-use crate::commands::{parse_hash, BranchService, BranchSummary, BRANCHES_CHANGED_EVENT};
+use crate::commands::{BranchService, BRANCHES_CHANGED_EVENT};
 use crate::project::journal::{BranchId, StateHash};
 use crate::render::graph::RenderState;
 use crate::render::ops::{apply_op, Op};
@@ -344,12 +344,12 @@ fn window_of(params: &Value) -> Result<Option<Window>, String> {
         .map_err(stringify)
 }
 
-fn expect_base(params: &Value) -> Result<Option<StateHash>, String> {
-    params
+/// The hash the caller read, as they spelled it; each journal format parses its own.
+fn expect_base(params: &Value) -> Result<Option<String>, String> {
+    Ok(params
         .get("expectBase")
         .and_then(Value::as_str)
-        .map(|hex| parse_hash(hex).map_err(stringify))
-        .transpose()
+        .map(str::to_owned))
 }
 
 fn f64_or(params: &Value, key: &str, default: f64) -> f64 {
@@ -1240,7 +1240,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                         .map(str::to_string),
                 )
                 .map_err(stringify)?;
-            serde_json::to_value(BranchSummary::from(&branch)).map_err(stringify)
+            serde_json::to_value(branch).map_err(stringify)
         }
         "branch.list" => {
             let project = require_str(&params, "path", method)?;
@@ -1251,13 +1251,10 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
         }
         "branch.append" => {
             let project = require_str(&params, "path", method)?;
-            let ops: Vec<Op> = serde_json::from_value(
-                params
-                    .get("ops")
-                    .cloned()
-                    .ok_or_else(|| format!("{method} requires ops"))?,
-            )
-            .map_err(|e| format!("{method}: invalid ops: {e}"))?;
+            let ops = params
+                .get("ops")
+                .cloned()
+                .ok_or_else(|| format!("{method} requires ops"))?;
             let receipt = branches(app, state.inner())
                 .append(
                     &project,

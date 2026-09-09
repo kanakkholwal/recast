@@ -22,6 +22,7 @@ pub(crate) mod types;
 pub use assets::*;
 pub use auth::*;
 pub use branches::*;
+pub mod branches_doc;
 pub use cloud::*;
 pub use document::*;
 pub(crate) use editor::extract_single_thumbnail;

@@ -47,6 +47,31 @@ pub fn receipt(
     recorded: bool,
     compacted: bool,
 ) -> Result<Receipt, JournalError> {
+    let head = StateHash::of(after)?.to_string();
+    receipt_with(
+        before,
+        after,
+        &base.to_string(),
+        &head,
+        facts,
+        seq,
+        recorded,
+        compacted,
+    )
+}
+
+/// The receipt with the fork point and head as the journal spells them: a state hash for a bundle, a document hash for a folder.
+#[allow(clippy::too_many_arguments)]
+pub fn receipt_with(
+    before: &RenderState,
+    after: &RenderState,
+    base: &str,
+    head: &str,
+    facts: &ProjectFacts,
+    seq: u64,
+    recorded: bool,
+    compacted: bool,
+) -> Result<Receipt, JournalError> {
     let changes = if recorded {
         journal::diff(before, after)?
     } else {
@@ -58,8 +83,8 @@ pub fn receipt(
         seq,
         recorded,
         compacted,
-        base: base.to_string(),
-        head: StateHash::of(after)?.to_string(),
+        base: base.to_owned(),
+        head: head.to_owned(),
         changes,
         timeline: TimelineDelta {
             output_duration_before: tl_before.output_duration,

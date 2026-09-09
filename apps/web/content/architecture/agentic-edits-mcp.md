@@ -266,6 +266,14 @@ of band. On success the journal is deleted: a branch is consumed, not archived.
   user turned on "Let agents edit the open project live" and has that project
   open. Then the batch lands as one undo step, the editor's replica adopts it,
   and an overlap on the same property is toasted with the editor's value kept.
+- **A folder project journals document ops.** Journal v2: the same
+  `Branch` and `BranchStore` types, generic over the op and the hash, hold
+  `recast_project::Op`s forked from a `DocHash` in the project's own
+  `branches/`. `recast_branch_append` takes document ops there; the intents
+  convert their render-state ops through the one Rust mapping. Applying
+  replays the ops by id onto the live document through the owner, so a
+  branch whose fork point moved still lands, refused only when an op's
+  target is gone. Bundles keep journal v1 in app data until they are gone.
 - **The file is a writer too.** `project.rcx` is watched; an outside edit is
   read back as ops against the last checkpoint (never a revert of edits
   sequenced since), our own checkpoint echoes back and is ignored, and a file

@@ -10,6 +10,7 @@ pub mod autosave;
 pub mod documents;
 pub mod format;
 pub mod journal;
+pub mod journal_doc;
 pub mod reader;
 pub mod v3;
 pub mod watch;

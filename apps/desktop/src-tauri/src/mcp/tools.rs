@@ -365,8 +365,8 @@ fn branch_append_schema() -> Value {
         "ops".into(),
         json!({
             "type": "array",
-            "description": "Edit operations, each tagged by `op`. Times are SOURCE seconds.",
-            "items": ops_item_schema(),
+            "description": "Edit operations, each tagged by `op`. A bundle takes render-state ops (times in SOURCE seconds); a folder project takes document ops (set, setText, insert, remove, move) addressed by id or kind path, as recast_doc_show spells them.",
+            "items": { "oneOf": [ops_item_schema(), doc_op_item_schema()] },
             "minItems": 1,
             "maxItems": crate::agent::guard::MAX_OPS_PER_APPEND,
         }),
