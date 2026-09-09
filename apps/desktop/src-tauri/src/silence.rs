@@ -244,8 +244,8 @@ pub(crate) fn detect_blocking(
         Some(p) if Path::new(p).exists() => {
             let bytes =
                 std::fs::read(Path::new(p)).map_err(|e| format!("read cursor track: {e}"))?;
-            let track: crate::cursor::CursorTrack =
-                serde_json::from_slice(&bytes).map_err(|e| format!("parse cursor track: {e}"))?;
+            let track = crate::cursor::CursorTrack::from_json(&bytes)
+                .map_err(|e| format!("parse cursor track: {e}"))?;
             let periods = crate::cursor::smoothing::detect_idle_periods(
                 &track.samples,
                 CURSOR_IDLE_MIN_US,

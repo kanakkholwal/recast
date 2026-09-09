@@ -3946,8 +3946,8 @@ pub async fn suggest_zoom_regions(
     tauri::async_runtime::spawn_blocking(move || {
         let bytes =
             fs::read(Path::new(&cursor_path)).map_err(|e| format!("read cursor track: {e}"))?;
-        let track: crate::cursor::CursorTrack =
-            serde_json::from_slice(&bytes).map_err(|e| format!("parse cursor track: {e}"))?;
+        let track = crate::cursor::CursorTrack::from_json(&bytes)
+            .map_err(|e| format!("parse cursor track: {e}"))?;
         Ok::<_, String>(crate::cursor::smoothing::detect_zoom_triggers(
             &track.samples,
             &track.clicks,

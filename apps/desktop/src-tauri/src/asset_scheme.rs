@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use parking_lot::RwLock;
-use tauri::http::{header, Request, Response, StatusCode};
+use tauri::http::{header, HeaderValue, Request, Response, StatusCode};
 
 pub const SCHEME: &str = "recast-asset";
 
@@ -86,7 +86,31 @@ fn normal(path: &Path) -> PathBuf {
 }
 
 /// Handles one request. Errors are HTTP statuses, never panics: the protocol thread must stay alive.
+/// WebView2 runs CORS on a registered scheme, so every answer carries the allow headers and a preflight is answered here.
 pub fn handle(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let mut response = respond(request);
+    let headers = response.headers_mut();
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        HeaderValue::from_static("*"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_EXPOSE_HEADERS,
+        HeaderValue::from_static("content-range, content-length, accept-ranges"),
+    );
+    response
+}
+
+fn respond(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    if request.method() == tauri::http::Method::OPTIONS {
+        return Response::builder()
+            .status(StatusCode::NO_CONTENT)
+            .header(header::ACCESS_CONTROL_ALLOW_METHODS, "GET, HEAD, OPTIONS")
+            .header(header::ACCESS_CONTROL_ALLOW_HEADERS, "range, content-type")
+            .header(header::ACCESS_CONTROL_MAX_AGE, "86400")
+            .body(Vec::new())
+            .unwrap_or_else(|_| status(StatusCode::INTERNAL_SERVER_ERROR));
+    }
     let Some(path) = path_of(request.uri().path()) else {
         return status(StatusCode::BAD_REQUEST);
     };
@@ -319,6 +343,25 @@ mod tests {
         assert_eq!(header_of(&past, header::CONTENT_RANGE), "bytes */100");
         let clipped = get(&encoded(&file), Some("bytes=0-1000"));
         assert_eq!(header_of(&clipped, header::CONTENT_RANGE), "bytes 0-99/100");
+    }
+
+    #[test]
+    fn every_answer_allows_the_webview_origin_and_a_preflight_is_answered_without_a_file() {
+        let denied = get("/relative.mp4", None);
+        assert_eq!(header_of(&denied, header::ACCESS_CONTROL_ALLOW_ORIGIN), "*");
+        let preflight = handle(
+            &Request::builder()
+                .method(tauri::http::Method::OPTIONS)
+                .uri("recast-asset://localhost/anything")
+                .body(Vec::new())
+                .unwrap(),
+        );
+        assert_eq!(preflight.status(), StatusCode::NO_CONTENT);
+        assert!(header_of(&preflight, header::ACCESS_CONTROL_ALLOW_HEADERS).contains("range"));
+        assert_eq!(
+            header_of(&preflight, header::ACCESS_CONTROL_ALLOW_ORIGIN),
+            "*"
+        );
     }
 
     #[test]

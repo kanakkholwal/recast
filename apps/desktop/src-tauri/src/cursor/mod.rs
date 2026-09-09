@@ -33,11 +33,42 @@ pub struct CursorSample {
     pub timestamp_us: u64,
     pub x: i32,
     pub y: i32,
+    /// Derived from neighbouring samples; a v3 track omits it and `CursorTrack::from_json` recomputes it.
+    #[serde(default)]
     pub velocity_x: f32,
+    #[serde(default)]
     pub velocity_y: f32,
     pub visible: bool,
     pub left_down: bool,
     pub right_down: bool,
+}
+
+impl CursorTrack {
+    /// Parses a track file. Velocities absent from the file (v3 strips them as derived data) are rebuilt from positions.
+    pub fn from_json(bytes: &[u8]) -> serde_json::Result<Self> {
+        let mut track: Self = serde_json::from_slice(bytes)?;
+        if track
+            .samples
+            .iter()
+            .all(|s| s.velocity_x == 0.0 && s.velocity_y == 0.0)
+        {
+            recompute_velocities(&mut track.samples);
+        }
+        Ok(track)
+    }
+}
+
+/// The capture-time formula: position delta over seconds since the previous sample, the first sample at rest.
+pub fn recompute_velocities(samples: &mut [CursorSample]) {
+    for i in 1..samples.len() {
+        let (prev, cur) = (&samples[i - 1], &samples[i]);
+        let delta_t =
+            cur.timestamp_us.saturating_sub(prev.timestamp_us).max(1) as f32 / 1_000_000.0;
+        let vx = (cur.x - prev.x) as f32 / delta_t;
+        let vy = (cur.y - prev.y) as f32 / delta_t;
+        samples[i].velocity_x = vx;
+        samples[i].velocity_y = vy;
+    }
 }
 
 /// A click event with duration tracking.
@@ -313,6 +344,30 @@ pub fn write_cursor_track(path: &Path, track: &CursorTrack) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_v3_track_without_velocities_parses_and_gets_the_capture_time_velocities_back() {
+        let json = r#"{"samples":[
+            {"timestampUs":0,"x":0,"y":0,"visible":true,"leftDown":false,"rightDown":false},
+            {"timestampUs":500000,"x":100,"y":-50,"visible":true,"leftDown":false,"rightDown":false}
+        ],"clicks":[]}"#;
+        let track = CursorTrack::from_json(json.as_bytes()).unwrap();
+        assert_eq!(
+            (track.samples[0].velocity_x, track.samples[0].velocity_y),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            (track.samples[1].velocity_x, track.samples[1].velocity_y),
+            (200.0, -100.0)
+        );
+        let kept = r#"{"samples":[
+            {"timestampUs":0,"x":0,"y":0,"velocityX":7,"velocityY":0,"visible":true,"leftDown":false,"rightDown":false}
+        ],"clicks":[]}"#;
+        assert_eq!(
+            CursorTrack::from_json(kept.as_bytes()).unwrap().samples[0].velocity_x,
+            7.0
+        );
+    }
 
     /// Run the capture thread against the real pointer, with `video_start`
     /// marked `warmup` after the thread is already sampling.

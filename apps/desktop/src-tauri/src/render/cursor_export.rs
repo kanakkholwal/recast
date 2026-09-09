@@ -103,7 +103,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             request.cursor_track_path.display()
         )
     })?;
-    let track: CursorTrack = serde_json::from_slice(&track_bytes)
+    let track = CursorTrack::from_json(&track_bytes)
         .with_context(|| "failed to parse cursor track JSON")?;
 
     if track.samples.is_empty() {
