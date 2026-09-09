@@ -3,6 +3,8 @@
 
 pub mod axis;
 pub mod check;
+pub mod frames;
+pub mod geometry;
 pub mod guard;
 pub mod instructions;
 pub mod intents;

@@ -92,6 +92,7 @@ pub fn check(state: &RenderState, facts: &ProjectFacts) -> Report {
     push_visibility(state, &map, &mut findings);
     push_lanes(state, facts, &mut findings);
     push_timeline(state, &map, &mut findings);
+    super::geometry::push_geometry(state, &map, &mut findings);
     let errors = findings
         .iter()
         .filter(|f| f.severity == Severity::Error)
@@ -261,7 +262,7 @@ fn push_timeline(state: &RenderState, map: &TimeMap, out: &mut Vec<Finding>) {
     }
 }
 
-fn finding(
+pub(super) fn finding(
     code: &str,
     severity: Severity,
     field: String,
@@ -280,7 +281,7 @@ fn finding(
     }
 }
 
-fn plain(code: &str, severity: Severity, field: &str, message: &str) -> Finding {
+pub(super) fn plain(code: &str, severity: Severity, field: &str, message: &str) -> Finding {
     Finding {
         code: code.to_string(),
         severity,

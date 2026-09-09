@@ -24,6 +24,7 @@ pub use auth::*;
 pub use branches::*;
 pub use cloud::*;
 pub use document::*;
+pub(crate) use editor::extract_single_thumbnail;
 pub use editor::*;
 pub(crate) use editor_session::*;
 pub use export_queue::*;

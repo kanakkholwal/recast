@@ -24,6 +24,7 @@ const macLights = $derived(layoutMode.current === "os-native" && isMac);
 
 <div
   data-recast-titlebar
+  data-tauri-drag-region
   class={cn(
     "group h-10 flex items-center gap-1 backdrop-blur-xl shrink-0 select-none px-1 py-1 transition-all duration-300",
     wrapperClass,

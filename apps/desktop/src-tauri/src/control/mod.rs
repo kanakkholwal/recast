@@ -1333,6 +1333,27 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 "pass from and to (output seconds) for a narrower window",
             )
         }
+        "agent.frames" => {
+            let project = guarded_path(&params, method)?;
+            let doc = load_doc(&project)?;
+            let count = params
+                .get("count")
+                .and_then(Value::as_u64)
+                .map_or(crate::agent::frames::DEFAULT_FRAMES, |n| n as u32);
+            let media = std::path::PathBuf::from(&doc.media_path);
+            let extract = |source: f64, width: u32| {
+                crate::commands::extract_single_thumbnail(&media, source, width)
+            };
+            let view = crate::agent::frames::frames_view(
+                &project,
+                &time_map(&doc.render_state),
+                window_of(&params)?,
+                count,
+                &extract,
+            )
+            .map_err(|e| format!("frames: {e}"))?;
+            serde_json::to_value(view).map_err(stringify)
+        }
         "agent.remove-silences" => {
             let project = guarded_path(&params, method)?;
             let defaults = SilencePolicy::default();

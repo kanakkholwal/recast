@@ -24,6 +24,7 @@ launches on first call if it is not running.
 | `recast_project_timeline` | Cuts, splits, speeds in source seconds, for placing raw ops. |
 | `recast_project_show` | The whole state. Large; copy a shape from it, do not browse it. |
 | `recast_transcript` | Words on the output clock, windowed. |
+| `recast_frames` | JPEG frames on disk at evenly spaced OUTPUT times (cuts skipped); open the paths to see the screen. Window and count to scrub. |
 | `recast_silences` | Detected silences on the output clock, windowed. |
 | `recast_check` | Findings you cannot see from the state. Run before hand-off. |
 | `recast_branch_create` | Fork a branch to propose on. |

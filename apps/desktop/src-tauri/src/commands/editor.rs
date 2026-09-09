@@ -2257,7 +2257,7 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
 }
 
 /// Pull a single thumbnail at `timestamp` (seconds). Used for poster frames where the timeline-strip's multi-frame batching would be overkill.
-fn extract_single_thumbnail(
+pub(crate) fn extract_single_thumbnail(
     media_path: &Path,
     timestamp: f64,
     scale_width: u32,

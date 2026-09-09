@@ -337,6 +337,17 @@ enum ProjectAction {
         #[arg(long, value_name = "SECONDS")]
         to: Option<f64>,
     },
+    /// JPEG frames at evenly spaced output times, written under the temp dir; prints their paths.
+    Frames {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        from: Option<f64>,
+        #[arg(long, value_name = "SECONDS")]
+        to: Option<f64>,
+        /// How many frames to sample (max 24).
+        #[arg(long, default_value_t = 12)]
+        count: u32,
+    },
     /// Detected silences on the output clock, optionally windowed.
     Silences {
         path: String,
@@ -1205,6 +1216,24 @@ fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
                 params["expectSeq"] = json!(seq);
             }
             send_and_emit(cli, "doc.apply", params)
+        }
+        ProjectAction::Frames {
+            path,
+            from,
+            to,
+            count,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let mut params = json!({ "path": path, "count": count });
+            if let Some(from) = from {
+                params["from"] = json!(from);
+            }
+            if let Some(to) = to {
+                params["to"] = json!(to);
+            }
+            send_and_emit(cli, "agent.frames", params)
         }
         ProjectAction::Transcript { path, from, to }
         | ProjectAction::Silences { path, from, to } => {
