@@ -12,6 +12,8 @@ use crate::project::documents::documents;
 
 /// Emitted after every sequenced batch, so a replica can pull `since` its own seq.
 pub const DOCUMENT_CHANGED_EVENT: &str = "document:changed";
+/// Emitted when `project.rcx` on disk cannot be taken (parse error, unappliable edit); the editor shows it.
+pub const DOCUMENT_INVALID_EVENT: &str = "document:invalid";
 
 /// The live document: canonical text, its hash, and the seq it is at.
 pub fn show(path: &str) -> Result<Value, String> {
@@ -68,6 +70,65 @@ pub fn announce_changes(app: tauri::AppHandle) {
     }));
 }
 
+/// Turns on the `project.rcx` watcher for every project the app opens and routes its findings to the editor.
+pub fn watch_files(app: tauri::AppHandle) {
+    use tauri::Emitter;
+    documents().on_invalid(Box::new(move |invalid| {
+        let _ = app.emit(DOCUMENT_INVALID_EVENT, invalid);
+    }));
+    documents().watch_files(true);
+}
+
+/// Why a live apply is refused. Pure, so the rule is testable without an app.
+pub fn live_apply_gate(
+    enabled: bool,
+    open_in_editor: Option<&Path>,
+    project: &Path,
+) -> Result<(), String> {
+    if !enabled {
+        return Err("live apply is off: propose on a branch (recast_branch_append), or the user can enable it in Settings > Recording writer > Let agents edit the open project live".into());
+    }
+    match open_in_editor {
+        Some(open) if same_project(open, project) => Ok(()),
+        _ => Err("no editor has this project open: propose on a branch (recast_branch_append), which the user reviews and applies".into()),
+    }
+}
+
+fn same_project(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    norm(a) == norm(b)
+}
+
+/// `doc.apply` for an agent while the GUI is open: gated by the live-apply setting, then announced as agent activity
+/// so the badge and the activity list show it. The replica adopts it as one undo step.
+pub fn live_apply(
+    app: &tauri::AppHandle,
+    path: &str,
+    ops: &[Op],
+    expect: Expect,
+) -> Result<Value, String> {
+    use tauri::{Emitter, Manager};
+    let state = app.state::<crate::commands::types::AppState>();
+    let project = guarded(path)?;
+    let (enabled, open) = {
+        let session = state.editor_session.read();
+        (
+            state.config.read().agent_live_apply,
+            session.project_path.clone(),
+        )
+    };
+    live_apply_gate(enabled, open.as_deref(), &project)?;
+    let value = apply(path, ops, expect)?;
+    if value.get("result").and_then(Value::as_str) == Some("applied") {
+        crate::commands::editor_session::record_activity(&state);
+        let _ = app.emit(
+            "editor-state:changed",
+            json!({ "path": path, "summary": format!("Agent applied {} edit(s) live", ops.len()) }),
+        );
+    }
+    Ok(value)
+}
+
 /// Routes a `doc.*` method; `None` for any other method.
 pub fn dispatch(method: &str, params: &Value) -> Option<Result<Value, String>> {
     let path = || {
@@ -101,6 +162,31 @@ pub fn dispatch(method: &str, params: &Value) -> Option<Result<Value, String>> {
     })
 }
 
+/// `agent.apply`, which needs the app for the gate and the announcement.
+pub fn dispatch_live(
+    app: &tauri::AppHandle,
+    method: &str,
+    params: &Value,
+) -> Option<Result<Value, String>> {
+    if method != "agent.apply" {
+        return None;
+    }
+    Some((|| {
+        let path = params
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("{method} requires path"))?;
+        let ops: Vec<Op> = serde_json::from_value(
+            params
+                .get("ops")
+                .cloned()
+                .ok_or_else(|| format!("{method} requires ops"))?,
+        )
+        .map_err(|e| format!("{method}: invalid ops: {e}"))?;
+        live_apply(app, path, &ops, expect_of(params)?)
+    })())
+}
+
 pub fn expect_of(params: &Value) -> Result<Expect, String> {
     let hash = match params.get("expectHash").and_then(Value::as_str) {
         Some(h) => Some(DocHash::parse(h).map_err(stringify)?),
@@ -125,4 +211,23 @@ fn guarded(path: &str) -> Result<std::path::PathBuf, String> {
 
 fn stringify(err: impl std::fmt::Display) -> String {
     err.to_string()
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::live_apply_gate;
+    use std::path::Path;
+
+    #[test]
+    fn live_apply_needs_the_setting_and_an_editor_on_that_project() {
+        let p = Path::new("C:/x/P.recast");
+        assert!(live_apply_gate(false, Some(p), p)
+            .unwrap_err()
+            .contains("off"));
+        assert!(live_apply_gate(true, None, p)
+            .unwrap_err()
+            .contains("no editor"));
+        assert!(live_apply_gate(true, Some(Path::new("C:/x/Other.recast")), p).is_err());
+        assert!(live_apply_gate(true, Some(p), p).is_ok());
+    }
 }

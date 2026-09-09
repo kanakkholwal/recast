@@ -7,6 +7,7 @@ use std::io::{self, BufRead, BufReader, Write};
 
 use serde::{Deserialize, Serialize};
 
+use crate::diff::diff;
 use crate::document::Document;
 use crate::hash::DocHash;
 use crate::layout::{locate, Layout, Located};
@@ -87,7 +88,18 @@ pub struct Store {
     doc: Document,
     seq: u64,
     checkpoint_seq: u64,
+    /// The document as the file last held it, so an outside edit of the file can be diffed against what it was based on.
+    checkpoint_doc: Document,
     recent: VecDeque<Entry>,
+}
+
+/// What reading the file back found.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileChange {
+    /// The file matches the last checkpoint: our own write echoing back, or nothing new.
+    Echo,
+    /// The file moved: these ops, applied on top of the live document, bring it in.
+    Ops(Vec<Op>),
 }
 
 impl Store {
@@ -99,7 +111,8 @@ impl Store {
         };
         let layout = Layout::new(root);
         let text = fs::read_to_string(layout.document()).map_err(io_err("reading the document"))?;
-        let mut doc = parse(&text)?;
+        let checkpoint_doc = parse(&text)?;
+        let mut doc = checkpoint_doc.clone();
         let checkpoint_seq = read_checkpoint(&layout)?;
         let mut seq = checkpoint_seq;
         let mut recent = VecDeque::new();
@@ -119,8 +132,30 @@ impl Store {
             doc,
             seq,
             checkpoint_seq,
+            checkpoint_doc,
             recent,
         })
+    }
+
+    /// Reads the file and tells what changed since the last checkpoint. The ops come from a diff against the
+    /// checkpoint document, not the live one, so edits sequenced since the checkpoint are kept, not reverted.
+    /// # Errors When the file cannot be read or does not parse (with line and column).
+    pub fn read_file_change(&self) -> Result<FileChange, StoreError> {
+        let text =
+            fs::read_to_string(self.layout.document()).map_err(io_err("reading the document"))?;
+        if DocHash::of_text(&text) == DocHash::of(&self.checkpoint_doc) {
+            return Ok(FileChange::Echo);
+        }
+        // Both sides re-spelled canonically first, or `in="0"` against `in="0.000"` would read as an edit.
+        let on_disk = canonical(&parse(&text)?);
+        let ops = diff(&canonical(&self.checkpoint_doc), &on_disk).map_err(|e| StoreError::Op {
+            index: 0,
+            source: e,
+        })?;
+        if ops.is_empty() {
+            return Ok(FileChange::Echo);
+        }
+        Ok(FileChange::Ops(ops))
     }
 
     /// The ops applied after `seq`, oldest first; `None` when `seq` is older than the ring remembers.
@@ -232,8 +267,13 @@ impl Store {
             .and_then(|f| f.sync_all())
             .map_err(io_err("truncating the WAL"))?;
         self.checkpoint_seq = self.seq;
+        self.checkpoint_doc = self.doc.clone();
         Ok(())
     }
+}
+
+fn canonical(doc: &Document) -> Document {
+    parse(&serialize(doc)).unwrap_or_else(|_| doc.clone())
 }
 
 fn remember(recent: &mut VecDeque<Entry>, entry: Entry) {
@@ -423,6 +463,45 @@ mod tests {
         }
         assert!(store.since(1).is_none(), "seq 1 fell out of the ring");
         assert_eq!(store.since(store.seq() - 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_outside_edit_of_the_file_is_read_as_ops_against_the_checkpoint_not_the_live_document() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("P.recast");
+        project(&dir);
+        let mut store = Store::open(&dir).unwrap();
+        assert_eq!(store.read_file_change().unwrap(), FileChange::Echo);
+        store.checkpoint().unwrap();
+        assert_eq!(
+            store.read_file_change().unwrap(),
+            FileChange::Echo,
+            "our own write is an echo"
+        );
+        // An edit sequenced but not yet checkpointed, then someone edits the file underneath.
+        store.apply(&[add_zoom("z1", "4.5")]).unwrap();
+        let mut text = fs::read_to_string(dir.join(layout::DOCUMENT)).unwrap();
+        text = text.replace("out=\"60.000\"", "out=\"50.000\"");
+        fs::write(dir.join(layout::DOCUMENT), &text).unwrap();
+        let FileChange::Ops(ops) = store.read_file_change().unwrap() else {
+            panic!("the file moved");
+        };
+        assert_eq!(
+            ops.len(),
+            1,
+            "only the foreign change, not a revert of z1: {ops:?}"
+        );
+        store.apply(&ops).unwrap();
+        assert!(store.document().find("z1").is_some());
+        assert_eq!(
+            store.document().root.child("timeline").unwrap().attr("out"),
+            Some("50.000")
+        );
+        fs::write(dir.join(layout::DOCUMENT), "<recast v=\"3\"><timeline").unwrap();
+        assert!(matches!(
+            store.read_file_change(),
+            Err(StoreError::Parse(_))
+        ));
     }
 
     #[test]

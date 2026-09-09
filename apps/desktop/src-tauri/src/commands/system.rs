@@ -319,6 +319,26 @@ pub fn get_project_v3(state: State<'_, AppState>) -> AppResult<bool> {
 }
 
 #[tauri::command]
+pub fn get_agent_live_apply(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.config.read().agent_live_apply)
+}
+
+#[tauri::command]
+pub fn set_agent_live_apply(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> AppResult<()> {
+    let snapshot = {
+        let mut config = state.config.write();
+        config.agent_live_apply = enabled;
+        config.clone()
+    };
+    save_config(&app, &snapshot);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_project_v3(app: AppHandle, state: State<'_, AppState>, enabled: bool) -> AppResult<()> {
     let snapshot = {
         let mut config = state.config.write();

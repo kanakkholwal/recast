@@ -456,6 +456,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
     if let Some(result) = doc::dispatch(method, &params) {
         return result;
     }
+    if let Some(result) = doc::dispatch_live(app, method, &params) {
+        return result;
+    }
     match method {
         "status" => Ok(json!({
             "recording": manager.is_recording(),

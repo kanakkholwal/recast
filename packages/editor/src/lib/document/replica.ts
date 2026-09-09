@@ -21,6 +21,26 @@ export interface ReplicaOptions {
 	parse: (text: string) => ReplicaDocument;
 }
 
+/** The target an op writes: id plus attribute for a set, the element for everything else. */
+function targetOf(op: DocumentOp): string {
+	switch (op.op) {
+		case "set":
+			return `${op.id}@${op.attr}`;
+		case "setText":
+			return `${op.id}@#text`;
+		case "insert":
+			return `${op.parent}@#children`;
+		default:
+			return op.id;
+	}
+}
+
+/** Our ops whose target the other writer's batch also wrote; ours land last, so these are the ones that overrode. */
+export function overlapping(ours: DocumentOp[], theirs: DocumentOp[]): DocumentOp[] {
+	const taken = new Set(theirs.map(targetOf));
+	return ours.filter((op) => taken.has(targetOf(op)));
+}
+
 export class DocumentReplica {
 	#driver: DocumentDriver;
 	#path: string;
@@ -76,6 +96,7 @@ export class DocumentReplica {
 			this.#landed(ops, first.seq, first.hash);
 			return { status: "applied", seq: first.seq, ops: ops.length };
 		}
+		const overlaps = first.since ? overlapping(ops, first.since) : [];
 		await this.#catchUp(first.since ?? null, first.seq, first.hash);
 
 		let retry: Awaited<ReturnType<DocumentDriver["apply"]>>;
@@ -86,7 +107,7 @@ export class DocumentReplica {
 		}
 		if (retry.result === "applied") {
 			this.#landed(ops, retry.seq, retry.hash);
-			return { status: "rebased", seq: retry.seq, ops: ops.length };
+			return { status: "rebased", seq: retry.seq, ops: ops.length, overlaps };
 		}
 		await this.#catchUp(retry.since ?? null, retry.seq, retry.hash);
 		return { status: "conflict", seq: this.#seq, reason: "the document kept moving" };

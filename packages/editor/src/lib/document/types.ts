@@ -36,6 +36,13 @@ export interface DocumentChanged {
 	hash: string;
 }
 
+/** The file on disk could not be taken (a hand edit that does not parse, say). */
+export interface DocumentInvalid {
+	path: string;
+	message: string;
+	at?: { line: number; column: number };
+}
+
 export interface DocumentDriver {
 	show(path: string): Promise<DocumentSnapshot>;
 	apply(path: string, ops: DocumentOp[], expectSeq: number): Promise<DocumentApplyOutcome>;
@@ -48,6 +55,8 @@ export interface DocumentDriver {
 	flush(path: string): Promise<void>;
 	/** Fires after every writer's batch. Resolves to an unsubscribe fn. */
 	subscribe(sink: (event: DocumentChanged) => void): Promise<() => void>;
+	/** Fires when the file on disk was edited into something the core refused. Optional: a host without a watcher omits it. */
+	subscribeInvalid?(sink: (event: DocumentInvalid) => void): Promise<() => void>;
 }
 
 /** The in-webview document (the engine's wasm `ProjectDocument`). Structural so tests can fake it. */
@@ -65,7 +74,8 @@ export type CommitResult =
 	| { status: "clean" }
 	/** The batch landed as `seq`. */
 	| { status: "applied"; seq: number; ops: number }
-	/** Another writer moved the document first; its ops were merged in and ours landed on top. The host must adopt the replica's state. */
-	| { status: "rebased"; seq: number; ops: number }
+	/** Another writer moved the document first; its ops were merged in and ours landed on top. The host must adopt the replica's state.
+	 *  `overlaps` are our ops that touched the same target the other writer did: ours won, and the user should hear it. */
+	| { status: "rebased"; seq: number; ops: number; overlaps: DocumentOp[] }
 	/** Ours could not land on the moved document. The replica holds the other writer's version; the host must adopt it. */
 	| { status: "conflict"; seq: number; reason: string };

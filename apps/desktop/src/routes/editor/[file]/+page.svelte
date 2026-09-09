@@ -307,6 +307,12 @@ function stopAutosave() {
 // The GUI is a first-class lock holder, so an agent patching this open project is refused, not raced.
 const editorWriterId = `ui:${crypto.randomUUID().slice(0, 8)}`;
 
+/** One line for the overlap toast: the attributes both sides wrote, or the count when there are many. */
+function describeOverlap(ops: { op: string; attr?: string }[]): string {
+	const attrs = [...new Set(ops.map((o) => o.attr ?? o.op))];
+	return attrs.length <= 3 ? attrs.join(", ") : `${attrs.length} properties`;
+}
+
 /** Swap the document session for the project just loaded; a non-v3 path closes any open one. */
 async function openDocumentSession(projectPath: string | null) {
 	const previous = docSession;
@@ -322,6 +328,15 @@ async function openDocumentSession(projectPath: string | null) {
 				toast.warning("Another editor changed this project", {
 					description:
 						"Your last edit could not be applied on top of it, so its version was loaded.",
+				}),
+			onOverlap: (ops) =>
+				toast.info("You and another writer changed the same thing", {
+					description: `${describeOverlap(ops)} kept your value.`,
+				}),
+			onInvalid: (event) =>
+				toast.error("project.rcx on disk could not be loaded", {
+					description: event.message,
+					duration: 15_000,
 				}),
 			onError: (context, err) =>
 				log.warn("document", `replica ${context} failed`, { err: String(err) }),

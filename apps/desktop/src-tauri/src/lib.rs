@@ -263,6 +263,7 @@ pub fn run() {
             let launched_for_new_recording = cold_open_file.iter().any(|a| a == "--new-recording");
 
             control::doc::announce_changes(handle.clone());
+            control::doc::watch_files(handle.clone());
 
             // One source for the CLI and the panel; an absent file seeds in memory with initialized=false.
             let (profiles_state, profiles_initialized) =
@@ -525,6 +526,8 @@ pub fn run() {
             commands::set_native_encoder,
             commands::get_project_v3,
             commands::set_project_v3,
+            commands::get_agent_live_apply,
+            commands::set_agent_live_apply,
             commands::native_encoder_available,
             commands::get_hide_panel_from_capture,
             commands::set_hide_panel_from_capture,

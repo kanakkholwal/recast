@@ -209,6 +209,9 @@ pub struct AppConfig {
     /// Write new recordings as v3 project directories instead of v2 bundles. Default off until the whole app has run on a directory end to end.
     #[serde(default)]
     pub project_v3: bool,
+    /// Lets an agent land ops on the open project directly (one undo step each) instead of proposing on a branch.
+    #[serde(default)]
+    pub agent_live_apply: bool,
 }
 
 fn default_cli_auto_install() -> bool {
@@ -244,6 +247,7 @@ impl Default for AppConfig {
             cli_install_attempted: false,
             native_encoder: false,
             project_v3: false,
+            agent_live_apply: false,
         }
     }
 }

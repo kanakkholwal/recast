@@ -24,6 +24,19 @@ pub enum ParseError {
     StrayText { at: Position, parent: String },
 }
 
+impl ParseError {
+    /// Where the error sits in the source, when the error has a place.
+    #[must_use]
+    pub fn position(&self) -> Option<Position> {
+        match self {
+            Self::Syntax { at, .. } | Self::WrongRoot { at, .. } | Self::StrayText { at, .. } => {
+                Some(*at)
+            }
+            Self::Empty => None,
+        }
+    }
+}
+
 impl std::fmt::Display for Position {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "line {}, column {}", self.line, self.column)

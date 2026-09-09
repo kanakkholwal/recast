@@ -7,7 +7,13 @@
 import type { EditorRenderState } from "../editor/render-state";
 import { getDocumentDriver } from "./driver";
 import { DocumentReplica } from "./replica";
-import type { CommitResult, DocumentDriver, ReplicaDocument } from "./types";
+import type {
+	CommitResult,
+	DocumentDriver,
+	DocumentInvalid,
+	DocumentOp,
+	ReplicaDocument,
+} from "./types";
 
 /** The slice of the editor store the session touches; structural so tests can fake it. */
 export interface SessionStore {
@@ -25,6 +31,10 @@ export interface SessionOptions {
 	parse: (text: string) => ReplicaDocument;
 	/** Edits kept landing under ours: the other writer's version now stands in the store. */
 	onConflict?: (reason: string) => void;
+	/** Both sides wrote the same properties; ours won. The user should hear what the other writer lost. */
+	onOverlap?: (overlaps: DocumentOp[]) => void;
+	/** The file on disk was edited into something the core refused. */
+	onInvalid?: (event: DocumentInvalid) => void;
 	onError?: (context: string, err: unknown) => void;
 	driver?: DocumentDriver;
 	/** How long after the last edit the mirror runs. */
@@ -38,6 +48,7 @@ export class DocumentSession {
 	#replica: DocumentReplica;
 	#opts: Required<Pick<SessionOptions, "store" | "now" | "mirrorDelayMs">> & SessionOptions;
 	#unsubscribe: (() => void) | undefined;
+	#unsubscribeInvalid: (() => void) | undefined;
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#inFlight: Promise<CommitResult> | null = null;
 	/** A change event arrived mid-commit (possibly our own, before seq advanced); settle it once the flight lands. */
@@ -68,6 +79,12 @@ export class DocumentSession {
 			if (session.#inFlight) session.#pendingRemote = true;
 			else void session.#adoptRemote();
 		});
+		if (opts.onInvalid && driver.subscribeInvalid) {
+			const onInvalid = opts.onInvalid;
+			session.#unsubscribeInvalid = await driver.subscribeInvalid((event) => {
+				if (!session.#disposed && event.path === opts.projectPath) onInvalid(event);
+			});
+		}
 		return session;
 	}
 
@@ -126,6 +143,7 @@ export class DocumentSession {
 		}
 		this.#disposed = true;
 		this.#unsubscribe?.();
+		this.#unsubscribeInvalid?.();
 		this.#replica.dispose();
 	}
 
@@ -149,6 +167,7 @@ export class DocumentSession {
 		// The document moved under us: what the replica now holds is the merged truth.
 		this.#adopt(this.#replica.renderState());
 		if (result.status === "conflict") this.#opts.onConflict?.(result.reason);
+		else if (result.overlaps.length > 0) this.#opts.onOverlap?.(result.overlaps);
 		return result;
 	}
 

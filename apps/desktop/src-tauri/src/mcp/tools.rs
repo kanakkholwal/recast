@@ -77,6 +77,16 @@ pub const TOOLS: &[Tool] = &[
         schema: doc_since_schema,
     },
     Tool {
+        name: "recast_doc_apply",
+        description: concat!(
+            "Land document ops on the OPEN project right away, as one undo step in the editor. Refused unless the user ",
+            "turned on live apply in Settings and has this project open; then propose on a branch instead. Pass the `seq` ",
+            "from recast_doc_show as expectSeq: a stale answer carries the ops you missed, apply them to your copy and retry."
+        ),
+        verb: "agent.apply",
+        schema: doc_apply_schema,
+    },
+    Tool {
         name: "recast_project_timeline",
         description: concat!(
             "Trim, cuts, split points and kept segments with speeds. Cuts and splits are SOURCE seconds; ",
@@ -257,6 +267,51 @@ fn doc_since_schema() -> Value {
     )
 }
 
+/// One `recast_project::Op`: addressed by id, or by kind path (`z1/enter`, `/background/solid`) for id-less elements.
+fn doc_op_item_schema() -> Value {
+    let address = json!({
+        "type": "string",
+        "description": "An element id, or a kind path for elements without one: `k1/enter`, `/background/gradient/stop[1]`, `/` for the root.",
+    });
+    let node = json!({
+        "type": "object",
+        "properties": {
+            "kind": { "type": "string" },
+            "attrs": { "type": "object", "additionalProperties": { "type": "string" } },
+            "text": { "type": "string" },
+            "children": { "type": "array", "items": { "type": "object" } },
+        },
+        "required": ["kind"],
+    });
+    json!({
+        "oneOf": [
+            { "type": "object", "properties": { "op": { "const": "set" }, "id": address, "attr": { "type": "string" }, "value": { "type": ["string", "null"], "description": "null removes the attribute" } }, "required": ["op", "id", "attr", "value"] },
+            { "type": "object", "properties": { "op": { "const": "setText" }, "id": address, "text": { "type": "string" } }, "required": ["op", "id", "text"] },
+            { "type": "object", "properties": { "op": { "const": "insert" }, "parent": address, "index": { "type": "integer", "minimum": 0 }, "node": node }, "required": ["op", "parent", "index", "node"] },
+            { "type": "object", "properties": { "op": { "const": "remove" }, "id": address }, "required": ["op", "id"] },
+            { "type": "object", "properties": { "op": { "const": "move" }, "id": address, "parent": address, "index": { "type": "integer", "minimum": 0 } }, "required": ["op", "id", "parent", "index"] },
+        ]
+    })
+}
+
+fn doc_apply_schema() -> Value {
+    object(
+        json!({
+            "path": project_property(),
+            "ops": {
+                "type": "array",
+                "description": "Document ops in order; all land or none do. Values are strings as the document spells them (seconds with 3 decimals, hex colours, 0..1 fractions).",
+                "items": doc_op_item_schema(),
+                "minItems": 1,
+                "maxItems": crate::agent::guard::MAX_OPS_PER_APPEND,
+            },
+            "expectSeq": { "type": "integer", "minimum": 0, "description": "The seq you read; refused as stale if the document moved." },
+            "expectHash": { "type": "string", "description": "The hash you read; same rule." },
+        }),
+        &["path", "ops"],
+    )
+}
+
 fn branch_only_schema() -> Value {
     object(
         json!({ "path": project_property(), "branch": branch_property() }),
@@ -413,10 +468,10 @@ mod tests {
         }
     }
 
-    /// The whole point of the adapter: an agent proposes, a human applies.
+    /// The whole point of the adapter: an agent proposes, a human applies. The one exception is `agent.apply`,
+    /// which the core refuses unless the user turned live apply on AND has the project open (`live_apply_gate`).
     #[test]
     fn no_tool_writes_the_project_directly() {
-        // `doc.apply` lands on the live document; it stays off MCP until the live-apply setting (step 8) gates it.
         let writes_project = |verb: &str| {
             verb == "branch.apply"
                 || verb == "doc.apply"
@@ -431,6 +486,20 @@ mod tests {
                 tool.verb
             );
         }
+    }
+
+    #[test]
+    fn the_live_write_tool_is_the_gated_verb_not_the_raw_one() {
+        let live = TOOLS
+            .iter()
+            .find(|t| t.name == "recast_doc_apply")
+            .expect("tool");
+        assert_eq!(live.verb, "agent.apply");
+        let schema = (live.schema)();
+        assert_eq!(schema["required"], serde_json::json!(["path", "ops"]));
+        assert!(schema["properties"]["ops"]["items"]["oneOf"]
+            .as_array()
+            .is_some_and(|v| v.len() == 5));
     }
 
     #[test]

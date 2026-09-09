@@ -77,6 +77,7 @@ import {
 	getHidePanelFromCapture,
 	getLastSource,
 	getNativeEncoder,
+	getAgentLiveApply,
 	getOutputDir,
 	getProjectV3,
 	getWindowTransparency,
@@ -86,6 +87,7 @@ import {
 	setCloseToTray,
 	setHidePanelFromCapture,
 	setNativeEncoder,
+	setAgentLiveApply,
 	setOutputDir,
 	setProjectV3,
 	setWindowTransparency,
@@ -119,6 +121,7 @@ let hidePanelFromCapture = $state(true);
 let nativeEncoder = $state(false);
 let nativeEncoderSupported = $state(false);
 let projectV3 = $state(false);
+let agentLiveApply = $state(false);
 // Content protection is a compile-time no-op on Linux, so the toggle is shown disabled rather than pretending.
 const isLinux = platform() === "linux";
 // Window-chrome toggle only differs on macOS; Windows/Linux render one control set, so it's dead there.
@@ -293,8 +296,9 @@ async function fetchSettings() {
 	}
 	try {
 		projectV3 = await getProjectV3();
+		agentLiveApply = await getAgentLiveApply();
 	} catch {
-		// Older builds without the command: leave it off.
+		// Older builds without the commands: leave them off.
 	}
 	try {
 		cliAutoInstall = await getCliAutoInstall();
@@ -346,6 +350,17 @@ async function toggleNativeEncoder() {
 		await setNativeEncoder(next);
 	} catch (e) {
 		nativeEncoder = !next;
+		toast.error(`Could not update setting: ${e}`);
+	}
+}
+
+async function toggleAgentLiveApply() {
+	const next = !agentLiveApply;
+	agentLiveApply = next;
+	try {
+		await setAgentLiveApply(next);
+	} catch (e) {
+		agentLiveApply = !next;
 		toast.error(`Could not update setting: ${e}`);
 	}
 }
@@ -935,6 +950,18 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               checked={projectV3}
               onCheckedChange={() => toggleProjectV3()}
               aria-label="Save projects as folders"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Let agents edit the open project live"
+            description={agentLiveApply
+              ? "An agent's edits land in the editor as they happen, each one undoable. Off, agents propose on a branch you review."
+              : "Agents propose on a branch you review and apply. Turn on to let them edit the open folder project directly."}
+          >
+            <Switch
+              checked={agentLiveApply}
+              onCheckedChange={() => toggleAgentLiveApply()}
+              aria-label="Let agents edit the open project live"
             />
           </SettingsRow>
         </SectionCard>

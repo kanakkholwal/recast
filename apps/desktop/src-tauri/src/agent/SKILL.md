@@ -37,10 +37,11 @@ launches on first call if it is not running.
 | `recast_branch_discard` | Delete a branch. |
 | `recast_doc_show` | The live v3 document (`project.rcx`) with `hash` and `seq`. Directory projects only. |
 | `recast_doc_since` | Ops after a `seq` you hold, so you patch instead of re-reading. |
+| `recast_doc_apply` | Land document ops on the OPEN project as one undo step. Works only when the user turned on live apply and has the project open; otherwise propose on a branch. |
 
 ## The live document (v3 directory projects)
 
-A project saved as a folder holds one markup file, `project.rcx`. While Recast is running, `recast_doc_show` is the truth and the file on disk is a checkpoint up to half a second behind, so read through the tool, not the file. Elements are addressed by id, or by kind path for the few that have none (`/background/solid`, `k1/enter`, `/background/gradient/stop[1]`). Writing the live document is the human's action (`recast project ops` on the CLI, or the editor); you still propose on branches.
+A project saved as a folder holds one markup file, `project.rcx`. While Recast is running, `recast_doc_show` is the truth and the file on disk is a checkpoint up to half a second behind, so read through the tool, not the file. Elements are addressed by id, or by kind path for the few that have none (`/background/solid`, `k1/enter`, `/background/gradient/stop[1]`). Writing the live document is the human's action by default (`recast project ops` on the CLI, or the editor); you propose on branches. The exception is `recast_doc_apply`: when the user has turned on "Let agents edit the open project live" and has the project open, your ops land immediately as one undo step, with `expectSeq` from `recast_doc_show`. A stale answer carries the ops you missed; apply them to your copy and retry. If both of you wrote the same property, the editor's value stands and the user is told.
 
 ## Read before you write
 

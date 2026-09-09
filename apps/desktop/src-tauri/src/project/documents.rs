@@ -11,6 +11,8 @@ use recast_project::store::{Expect, Store, StoreError};
 use recast_project::{DocHash, Document, Op};
 use serde::Serialize;
 
+use super::watch::{FileWatch, InvalidListener};
+
 pub const CHECKPOINT_DEBOUNCE: Duration = Duration::from_millis(500);
 
 static DOCUMENTS: LazyLock<Documents> = LazyLock::new(Documents::default);
@@ -26,13 +28,17 @@ pub type ChangeListener = Box<dyn Fn(&Path, u64, &DocHash) + Send + Sync>;
 #[derive(Default)]
 pub struct Documents {
     open: Mutex<HashMap<PathBuf, Arc<Mutex<Held>>>>,
-    listener: Mutex<Option<ChangeListener>>,
+    listener: Arc<Mutex<Option<ChangeListener>>>,
+    invalid: Arc<Mutex<Option<InvalidListener>>>,
+    /// Off in unit tests that only exercise the sequencer; on in the app.
+    watch_files: Mutex<bool>,
 }
 
 struct Held {
     store: Store,
     /// Bumped per apply; a debounce task checkpoints only if nothing landed after it was scheduled.
     generation: u64,
+    _watch: Option<FileWatch>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,12 +75,61 @@ impl Documents {
         let held = Arc::new(Mutex::new(Held {
             store,
             generation: 0,
+            _watch: None,
         }));
+        if *self.watch_files.lock() {
+            held.lock()._watch = self.watch(root, &held);
+        }
         self.open
             .lock()
             .entry(key)
             .or_insert_with(|| Arc::clone(&held));
         Ok(held)
+    }
+
+    /// Starts watching `project.rcx` for every project opened from now on.
+    pub fn watch_files(&self, on: bool) {
+        *self.watch_files.lock() = on;
+    }
+
+    pub fn on_invalid(&self, listener: InvalidListener) {
+        *self.invalid.lock() = Some(listener);
+    }
+
+    /// A foreign edit lands through the same `apply` as every writer, so it is sequenced, logged and announced.
+    fn watch(&self, root: &Path, held: &Arc<Mutex<Held>>) -> Option<FileWatch> {
+        let reader = Arc::clone(held);
+        let read = Arc::new(move || reader.lock().store.read_file_change());
+        let apply = self.applier(root, held);
+        match FileWatch::start(root, read, apply, Arc::clone(&self.invalid)) {
+            Ok(watch) => Some(watch),
+            Err(e) => {
+                log::warn!("cannot watch {}: {e}", root.display());
+                None
+            }
+        }
+    }
+
+    /// Reads the file back now, as the watcher would, without waiting on the OS event.
+    #[cfg(test)]
+    pub fn settle_file(&self, root: &Path) -> Result<(), StoreError> {
+        let held = self.held(root)?;
+        let reader = Arc::clone(&held);
+        let read = move || reader.lock().store.read_file_change();
+        let apply = self.applier(root, &held);
+        super::watch::settle(root, &read, &apply, &self.invalid);
+        Ok(())
+    }
+
+    /// The sequencer as a closure a watcher thread can own: no reference back into this registry.
+    fn applier(&self, root: &Path, held: &Arc<Mutex<Held>>) -> super::watch::Apply {
+        let held = Arc::clone(held);
+        let listener = Arc::clone(&self.listener);
+        let root = root.to_path_buf();
+        Arc::new(move |ops: &[Op], expect: Expect| {
+            apply_on(&held, &listener, &root, ops, expect)
+                .map(|o| matches!(o, Outcome::Applied { .. }))
+        })
     }
 
     /// Runs `f` against the current document, opening the project (and replaying its WAL) on first touch.
@@ -104,29 +159,7 @@ impl Documents {
     /// Sequences one batch and schedules the checkpoint. `Stale` comes back as an outcome; every other failure is an error.
     pub fn apply(&self, root: &Path, ops: &[Op], expect: Expect) -> Result<Outcome, StoreError> {
         let held = self.held(root)?;
-        let outcome = {
-            let mut guard = held.lock();
-            match guard.store.apply_expecting(ops, expect) {
-                Ok(applied) => {
-                    guard.generation += 1;
-                    Outcome::Applied {
-                        seq: applied.seq,
-                        hash: applied.hash,
-                    }
-                }
-                Err(StoreError::Stale { seq, hash, since }) => {
-                    return Ok(Outcome::Stale { seq, hash, since })
-                }
-                Err(e) => return Err(e),
-            }
-        };
-        schedule_checkpoint(held);
-        if let Outcome::Applied { seq, hash } = &outcome {
-            if let Some(listener) = self.listener.lock().as_ref() {
-                listener(root, *seq, hash);
-            }
-        }
-        Ok(outcome)
+        apply_on(&held, &self.listener, root, ops, expect)
     }
 
     /// Checkpoints now. Idle, blur and exit call this so the file is exactly current the moment editing stops.
@@ -157,6 +190,39 @@ impl Documents {
     }
 }
 
+/// The sequencer proper: one batch onto one held store, then the checkpoint timer and the announcement.
+fn apply_on(
+    held: &Arc<Mutex<Held>>,
+    listener: &Mutex<Option<ChangeListener>>,
+    root: &Path,
+    ops: &[Op],
+    expect: Expect,
+) -> Result<Outcome, StoreError> {
+    let outcome = {
+        let mut guard = held.lock();
+        match guard.store.apply_expecting(ops, expect) {
+            Ok(applied) => {
+                guard.generation += 1;
+                Outcome::Applied {
+                    seq: applied.seq,
+                    hash: applied.hash,
+                }
+            }
+            Err(StoreError::Stale { seq, hash, since }) => {
+                return Ok(Outcome::Stale { seq, hash, since })
+            }
+            Err(e) => return Err(e),
+        }
+    };
+    schedule_checkpoint(Arc::clone(held));
+    if let Outcome::Applied { seq, hash } = &outcome {
+        if let Some(listener) = listener.lock().as_ref() {
+            listener(root, *seq, hash);
+        }
+    }
+    Ok(outcome)
+}
+
 fn schedule_checkpoint(held: Arc<Mutex<Held>>) {
     let scheduled_at = held.lock().generation;
     tauri::async_runtime::spawn(async move {
@@ -174,6 +240,7 @@ fn schedule_checkpoint(held: Arc<Mutex<Held>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project::watch::Invalid;
     use recast_project::layout;
     use recast_project::ops::NodeSpec;
 
@@ -244,6 +311,76 @@ mod tests {
             .unwrap()
             .contains("50.000"));
         assert_eq!(docs.snapshot(&dir).unwrap().seq, 1, "seq survives a reopen");
+    }
+
+    #[test]
+    fn an_edit_of_the_file_on_disk_is_sequenced_and_our_own_checkpoint_is_not() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("P.recast");
+        let docs = project(&dir);
+        docs.watch_files(true);
+        let invalid: Arc<Mutex<Vec<Invalid>>> = Arc::default();
+        let sink = Arc::clone(&invalid);
+        docs.on_invalid(Box::new(move |i| sink.lock().push(i)));
+        docs.apply(&dir, &[set_out("50")], Expect::default())
+            .unwrap();
+        docs.flush(&dir).unwrap();
+        let path = dir.join(layout::DOCUMENT);
+        let text = std::fs::read_to_string(&path).unwrap();
+        // Simulate what the watcher does once the burst settles, without depending on the OS event latency.
+        std::fs::write(&path, text.replace("out=\"50.000\"", "out=\"40.000\"")).unwrap();
+        docs.settle_file(&dir).unwrap();
+        let snapshot = docs.snapshot(&dir).unwrap();
+        assert_eq!(snapshot.seq, 2, "the foreign edit is batch 2");
+        assert!(snapshot.text.contains("out=\"40.000\""));
+        docs.flush(&dir).unwrap();
+        docs.settle_file(&dir).unwrap();
+        assert_eq!(
+            docs.snapshot(&dir).unwrap().seq,
+            2,
+            "our own checkpoint is an echo"
+        );
+        std::fs::write(&path, "<recast v=\"3\"><timeline").unwrap();
+        docs.settle_file(&dir).unwrap();
+        assert_eq!(
+            docs.snapshot(&dir).unwrap().seq,
+            2,
+            "a broken file changes nothing"
+        );
+        let reported = invalid.lock();
+        assert_eq!(reported.len(), 1);
+        assert!(
+            reported[0].at.is_some(),
+            "the parse error names a line and column"
+        );
+    }
+
+    #[test]
+    fn the_os_watcher_delivers_a_disk_edit_within_the_hmr_budget() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("P.recast");
+        let docs = Box::leak(Box::new(project(&dir)));
+        docs.watch_files(true);
+        docs.flush(&dir).unwrap();
+        let path = dir.join(layout::DOCUMENT);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, text.replace("out=\"60.000\"", "out=\"45.000\"")).unwrap();
+        let started = std::time::Instant::now();
+        while started.elapsed() < Duration::from_secs(3) {
+            if docs.snapshot(&dir).unwrap().seq == 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let took = started.elapsed();
+        assert_eq!(
+            docs.snapshot(&dir).unwrap().seq,
+            1,
+            "the watcher never delivered"
+        );
+        assert!(docs.snapshot(&dir).unwrap().text.contains("out=\"45.000\""));
+        // The HMR budget in the plan is 100 ms edit to pixels; the file half of it must leave room for the rest.
+        assert!(took < Duration::from_millis(250), "took {took:?}");
     }
 
     #[test]

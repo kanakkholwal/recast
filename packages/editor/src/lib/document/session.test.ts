@@ -130,6 +130,34 @@ describe("DocumentSession", () => {
 		expect(store.isDirty).toBe(false);
 	});
 
+	it("an overlapping rebase tells the host which properties the other writer lost", async () => {
+		const core = new FakeCore();
+		const store = new FakeStore();
+		const overlaps: string[] = [];
+		await open(core, store, {
+			onOverlap: (ops) => overlaps.push(...ops.map((o) => (o.op === "set" ? o.attr : o.op))),
+		});
+		store.edit({ padding: 12 });
+		core.write([{ op: "set", id: "/", attr: "pad", value: "9" }]);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(overlaps).toEqual(["pad"]);
+		expect(store.state.padding).toBe(12);
+	});
+
+	it("an invalid file on disk reaches the host only for the bound project", async () => {
+		const core = new FakeCore();
+		const store = new FakeStore();
+		const seen: string[] = [];
+		await open(core, store, { onInvalid: (e) => seen.push(e.message) });
+		core.invalid({ path: "other.recast", message: "no" });
+		core.invalid({
+			path: "P.recast",
+			message: "line 3, column 9: unexpected end",
+			at: { line: 3, column: 9 },
+		});
+		expect(seen).toEqual(["line 3, column 9: unexpected end"]);
+	});
+
 	it("a conflict adopts the other writer's version and tells the host", async () => {
 		const core = new FakeCore();
 		const store = new FakeStore();

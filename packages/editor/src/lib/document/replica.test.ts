@@ -42,10 +42,22 @@ describe("DocumentReplica", () => {
 		const replica = await open(core);
 		core.write([{ op: "set", id: "/", attr: "trimEnd", value: "30" }]);
 		const result = await replica.commit({ padding: 12, trimEnd: 0 });
-		expect(result).toEqual({ status: "rebased", seq: 2, ops: 1 });
+		expect(result).toEqual({ status: "rebased", seq: 2, ops: 1, overlaps: [] });
 		expect(core.doc.attrs).toEqual({ pad: "12", trimEnd: "30" });
 		expect(replica.renderState()).toEqual({ padding: 12, trimEnd: 30 });
 		expect(core.shows).toBe(1);
+	});
+
+	it("a rebase names the properties both sides wrote, since ours overrode theirs", async () => {
+		const core = new FakeCore();
+		const replica = await open(core);
+		core.write([{ op: "set", id: "/", attr: "pad", value: "9" }]);
+		const result = await replica.commit({ padding: 12 });
+		expect(result).toMatchObject({
+			status: "rebased",
+			overlaps: [{ op: "set", id: "/", attr: "pad", value: "12" }],
+		});
+		expect(core.doc.attrs.pad).toBe("12");
 	});
 
 	it("a commit that cannot land on the moved document reports a conflict and holds the other version", async () => {

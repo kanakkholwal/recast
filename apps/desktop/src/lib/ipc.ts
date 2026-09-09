@@ -984,6 +984,15 @@ export function setProjectV3(enabled: boolean): Promise<void> {
 	return invoke<void>("set_project_v3", { enabled });
 }
 
+/** Whether an agent may land ops on the open project directly (one undo step each) instead of proposing on a branch. */
+export function getAgentLiveApply(): Promise<boolean> {
+	return invoke<boolean>("get_agent_live_apply");
+}
+
+export function setAgentLiveApply(enabled: boolean): Promise<void> {
+	return invoke<void>("set_agent_live_apply", { enabled });
+}
+
 /** Whether this machine can honour the native writer (Windows + an MF H.264
  *  encoder). False elsewhere, so the toggle is shown disabled rather than
  *  silently doing nothing. */

@@ -47,6 +47,7 @@ export type {
 	DocumentApplyOutcome,
 	DocumentChanged,
 	DocumentDriver,
+	DocumentInvalid,
 	DocumentNodeSpec,
 	DocumentOp,
 	DocumentSnapshot,

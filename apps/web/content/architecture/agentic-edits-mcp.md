@@ -260,9 +260,16 @@ of band. On success the journal is deleted: a branch is consumed, not archived.
 - **On a v3 directory the core's copy is the truth.** Every write, the GUI's
   whole-state save included, becomes a sequenced op batch on `Documents`; the
   file is a checkpoint at most half a second behind. `recast_doc_show` and
-  `recast_doc_since` read from that copy. `doc.apply` is deliberately absent
-  from MCP (the same `no_tool_writes_the_project_directly` test pins it) until
-  the live-apply setting exists; the CLI and the editor are the human's hands.
+  `recast_doc_since` read from that copy. The raw `doc.apply` stays off MCP
+  (the same `no_tool_writes_the_project_directly` test pins it); what MCP gets
+  is `recast_doc_apply` over `agent.apply`, which the core refuses unless the
+  user turned on "Let agents edit the open project live" and has that project
+  open. Then the batch lands as one undo step, the editor's replica adopts it,
+  and an overlap on the same property is toasted with the editor's value kept.
+- **The file is a writer too.** `project.rcx` is watched; an outside edit is
+  read back as ops against the last checkpoint (never a revert of edits
+  sequenced since), our own checkpoint echoes back and is ignored, and a file
+  that does not parse is reported with its line and column, not loaded.
 
 ## Related
 

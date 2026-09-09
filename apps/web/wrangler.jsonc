@@ -58,15 +58,18 @@
 			"hyperdrive": [
 				{
 					"binding": "recast-preview",
-					"id": "cedd359e3f774a96bcc229477cb55eb1"
+					"id": "cedd359e3f774a96bcc229477cb55eb1",
+					"localConnectionString": "postgresql://localhost:5432/recast"
 				}
 			]
 		}
 	},
+	// localConnectionString is local-emulation only (build prerender + wrangler dev); production uses the id.
 	"hyperdrive": [
 		{
 			"binding": "recast-prod",
-			"id": "97c3cec1775041329abf824a4a37522b"
+			"id": "97c3cec1775041329abf824a4a37522b",
+			"localConnectionString": "postgresql://localhost:5432/recast"
 		}
 	]
 }

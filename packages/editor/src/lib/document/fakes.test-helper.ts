@@ -2,6 +2,7 @@ import type {
 	DocumentApplyOutcome,
 	DocumentChanged,
 	DocumentDriver,
+	DocumentInvalid,
 	DocumentOp,
 	ReplicaDocument,
 } from "./types";
@@ -56,6 +57,7 @@ export class FakeCore implements DocumentDriver {
 	seq = 0;
 	log: { seq: number; ops: DocumentOp[] }[] = [];
 	sinks: ((e: DocumentChanged) => void)[] = [];
+	invalidSinks: ((e: DocumentInvalid) => void)[] = [];
 	applies = 0;
 	shows = 0;
 	flushes = 0;
@@ -101,6 +103,18 @@ export class FakeCore implements DocumentDriver {
 	flush() {
 		this.flushes++;
 		return Promise.resolve();
+	}
+
+	/** The watcher refusing a hand edit of the file. */
+	invalid(event: DocumentInvalid) {
+		for (const sink of this.invalidSinks) sink(event);
+	}
+
+	subscribeInvalid(sink: (e: DocumentInvalid) => void) {
+		this.invalidSinks.push(sink);
+		return Promise.resolve(() => {
+			this.invalidSinks = this.invalidSinks.filter((s) => s !== sink);
+		});
 	}
 
 	subscribe(sink: (e: DocumentChanged) => void) {

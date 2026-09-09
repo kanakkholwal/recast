@@ -12,6 +12,7 @@ pub mod format;
 pub mod journal;
 pub mod reader;
 pub mod v3;
+pub mod watch;
 pub mod writer;
 
 /// On-disk shape a project was opened from.
