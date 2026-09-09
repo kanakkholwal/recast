@@ -525,6 +525,19 @@ export interface LayerTransform {
 	perspective?: number;
 }
 
+/** One component instance. Mirrors `recast_scene::component::GraphicSpec`; the
+ *  registry owns what the parameters mean, so they stay text on the wire. */
+export interface GraphicSpec {
+	id: string;
+	/** `name@major.minor`, kept verbatim so a round trip cannot rewrite the pin. */
+	component: string;
+	start?: number;
+	duration?: number;
+	params?: Record<string, string>;
+	/** Where the declaring element wants it drawn when the component does not resolve. */
+	fallbackSurface?: "overlay" | "screen";
+}
+
 export interface EditorRenderState {
 	trimStart: number;
 	trimEnd: number;
@@ -618,6 +631,8 @@ export interface EditorRenderState {
 	bindings?: LayerBinding[];
 	/** 3D transforms by layer, declared in the v3 document (`<transform>`). Same rule as bindings: carried, not edited here. */
 	transforms?: LayerTransform[];
+	/** Component instances (`<graphic>`, `<shader>`). Same rule again: the registry renders them, no panel edits them. */
+	graphics?: GraphicSpec[];
 	/** `id` included: Rust's `Annotation.id` has no `#[serde(default)]`, and a
 	 *  missing one fails the WHOLE RenderState deserialize, not just that entry. */
 	annotations: Annotation[];

@@ -35,9 +35,9 @@ something a test has to keep checking after the fact.
 
 The host's job is deliberately small. It hands the engine a scene, a time map
 and whatever assets wasm cannot fetch, then per frame it picks a decoded frame,
-binds it, and asks for an output time. Everything below `setScene` — geometry,
+binds it, and asks for an output time. Everything below `setScene` (geometry,
 zoom, animation, the drop shadow, the cursor, the camera bubble, annotations and
-captions — is evaluated in Rust.
+captions) is evaluated in Rust.
 
 Two things are deliberately decoupled from the `<video>` element:
 
@@ -109,6 +109,7 @@ pass has to know about subsampling.
 | `PreviewEngineDriver` | `lib/playback/engine-driver.ts` | Host-side handle: dedupes scene, cursor, sprite and asset uploads so an unchanged value never crosses into wasm. |
 | `PreviewEngine` | `packages/engine/src/preview-engine.ts` | Typed wrapper over the wasm surface: backend probe, module load, marshalling, lifecycle. No render logic. |
 | `recast-compositor` | `crates/recast-compositor/` | The frame graph, the pure scene-to-uniforms evaluator, and the WGSL passes. Native and wasm. |
+| Component registry | `crates/recast-scene/src/component.rs` | Every vetted recipe: name, version, surface, typed parameters. First-party and in-repo; a document names one, it never carries code. |
 | `recast-ffi-wasm` | `crates/recast-ffi-wasm/` | `wasm-bindgen` surface: frame ring, asset slots, scene JSON in, nothing else. |
 | `PlaybackClock` | `lib/playback/clock.ts` | Wall-clock integrator over gapless output time; the picture master on the MediaBunny path. |
 | `resolveAvSync` | `lib/playback/av-sync.ts` | Pure drift policy: audio is master, re-anchor the picture past 60 ms drift. |
@@ -138,7 +139,7 @@ once on the way out so a mid-playback change is not stranded.
 Note the two axes. The engine takes **output** time, because it evaluates the
 scene and the scene is authored on the output timeline. The host uses
 **original** time only to pick which decoded frame to bind. Binding also carries
-a floor — the end of the most recent cut — so the picture can never step back
+a floor, the end of the most recent cut, so the picture can never step back
 into removed content.
 
 **How export reuses the engine** (`offscreen-export.ts`). Export creates a
@@ -190,6 +191,31 @@ Layouts and pointer dodging are engine-only. The FFmpeg graph places the camera
 with a sampled expression LUT already at its parser's term budget, so it
 refuses them by name rather than drawing something else. See
 [Export pipeline](/architecture/export-pipeline).
+
+## Components
+
+A `<graphic>` or `<shader>` in the document is an instance of a **component**: a
+name, a pinned `major.minor`, and typed parameters. The registry
+(`recast-scene/src/component.rs`) holds the manifests; the recipes are arms of a
+single `component.wgsl` compiled with everything else, so nothing is compiled at
+render time and an unsupported feature is a build error rather than a black
+frame.
+
+Resolution is deliberate about versions. Patch and minor both move underneath a
+pin, because a minor only adds parameters and an unset parameter takes its
+declared default. A major difference, or a pin ahead of the registry, does not
+render the recipe: it renders the placeholder, a hatched box in the instance's
+own rect, and `check` says why. An instance never silently disappears.
+
+The manifest's `surface` decides where an instance draws. An overlay recipe
+covers the canvas; a screen recipe takes the screen card's rect, corner radius
+and tilt, so a gloss stays on the card when the card is rotated. Time reaches a
+recipe as progress through the instance's own window, not as timeline seconds.
+
+`<vars>` is the other half. An attribute whose whole value is `$name` resolves
+against the document's declared variables on the way into the engine, and only
+on the way in: the file keeps the reference, so a variable survives every round
+trip and the compositor never sees one.
 
 ## Invariants & gotchas
 

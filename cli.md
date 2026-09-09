@@ -1,18 +1,22 @@
-# Recast CLI — Reference
+# Recast CLI reference
 
 > The `recast` CLI ships in two forms from one binary:
 >
-> - **Headless** — invoked as `recast <verb>` in a terminal; reads args
->   from `argv`, runs one verb, prints JSON/YAML, exits.
-> - **GUI** — invoked with no args; runs the Tauri app (or auto-focuses the
->   already-running instance via `tauri-plugin-single-instance`).
+> - **Headless**: invoked as `recast <verb>` in a terminal. Reads args
+>   from `argv`, runs one verb, prints JSON or YAML, exits.
+> - **GUI**: invoked with no args. Runs the Tauri app, or auto-focuses the
+>   already-running instance via `tauri-plugin-single-instance`.
 >
 > Most verbs route through the running GUI app over a local socket
-> (`control.rs`). The CLI is the surface an AI agent or shell script
+> (`control/mod.rs`). The CLI is the surface an AI agent or shell script
 > uses to drive Recast; every GUI button has an equivalent verb.
 >
-> Source: `apps/desktop/src-tauri/src/cli.rs`, `control.rs`,
-> `commands/editor.rs`. Architecture: `apps/desktop/docs/architecture.md`.
+> Only one instance owns the socket: the first one to bind. When two builds
+> are running (a packaged app and a dev build, say), `recast status` reports
+> the `exe` and `pid` that answered, so you can tell which one you reached.
+>
+> Source: `apps/desktop/src-tauri/src/cli.rs`, `control/mod.rs`,
+> `commands/editor.rs`. Architecture: `apps/web/content/architecture/`.
 
 ---
 
@@ -33,10 +37,10 @@ recast uninstall            # remove from PATH (also reverts any rc-file edits)
 
 Per-platform mechanics live in `commands/path_install.rs`:
 
-- **Windows** — appends the binary's folder to `HKCU\Environment\Path`
+- **Windows**: appends the binary's folder to `HKCU\Environment\Path`
   (`REG_EXPAND_SZ`) and broadcasts `WM_SETTINGCHANGE` so live shells
   pick it up without a re-login.
-- **macOS / Linux** — symlinks to `~/.local/bin/recast` AND
+- **macOS / Linux**: symlinks to `~/.local/bin/recast` AND
   idempotently injects a guarded `PATH` line into whichever rc files
   exist (`~/.zprofile`/`~/.zshrc`/`~/.bash_profile`/`~/.bashrc`/
   `~/.profile`). The block is bounded by
@@ -50,7 +54,7 @@ Every verb accepts these before the subcommand:
 | Flag | Effect |
 |------|--------|
 | `-f`, `--format yaml\|json` | Override the default renderer (YAML at a terminal, JSON when piped). |
-| `--thumbnails` | Include base64 thumbnails in `displays list` / `windows list` (off by default — they're large). |
+| `--thumbnails` | Include base64 thumbnails in `displays list` / `windows list` (off by default, they are large). |
 | `--no-launch` | Don't auto-start Recast for control commands; fail with `Recast is not running (...)` if the GUI isn't up. |
 | `--timeout-ms <N>` | Milliseconds to wait for the app + control server on auto-launch. Default 8000. |
 
@@ -58,8 +62,8 @@ Every verb accepts these before the subcommand:
 
 Two renderers, same in-memory JSON:
 
-- **YAML** — human-readable, the default when stdout is a terminal.
-- **JSON** — single line, the default when piped/captured or `-f json` is passed.
+- **YAML**: human-readable, the default when stdout is a terminal.
+- **JSON**: single line, the default when piped/captured or `-f json` is passed.
 
 Errors go to stderr and exit non-zero. A trailing verbose new-line is
 included for human readers; pipe-to-file consumers strip it.
@@ -91,12 +95,19 @@ recast transcribe --input X --model Y [--language Z] [--out PATH]
 recast watch [--events rec,selection,profiles,editor,export] [--since SEQ]
 recast install / recast uninstall    # install the CLI to PATH
 
-recast project { open | show | timeline | zoom-regions | annotations
-               | lock | unlock | patch } <PATH> ...
+recast project list                  # the library, newest first (no path needed)
+recast project { open | show | head | check | timeline | zoom-regions
+               | annotations } <PATH>        # read a project
+recast project { transcript | silences } <PATH> [--from S] [--to S]
+recast project frames <PATH> [--from S] [--to S] [--count N]  # JPEGs to look at
+recast project { lock | unlock | patch } <PATH> ...   # write the whole state
+recast project { migrate | pack | unpack } ...        # v3 project directories
+recast project { doc | rcx | ops } ...                # the v3 markup document
 recast editor ...                    # see "Editor control" below
-recast branch { create | list | append | diff | show
-              | truncate | discard | apply } <PATH> ...   # propose edits for review
+recast branch { create | list | append | remove-silences | add-zoom
+              | diff | show | truncate | discard | apply } <PATH> ...
 recast mcp                          # MCP server on stdio (launched by the client)
+recast skills install                # write the editing skill an agent client reads
 recast export { list | show | start | cancel | wait } ...
 recast --help                       # all of the above + global flags
 ```
@@ -105,7 +116,7 @@ recast --help                       # all of the above + global flags
 
 ## Recording lifecycle
 
-The recording verbs don't talk to the editor — they only drive
+The recording verbs don't talk to the editor. They only drive
 `RecordingManager`. Auto-launches the GUI by default.
 
 ```bash
@@ -117,7 +128,7 @@ recast rec stop                                    # {"projectPath":"<output>/ex
 recast rec status                                  # {"recording":bool,"paused":bool}
 ```
 
-### `recast select` — stage the next recording source
+### `recast select`: stage the next recording source
 
 ```bash
 recast select screen 2                       # display id 2 (from `recast displays list`)
@@ -130,7 +141,7 @@ recast select camera Webcam                   # enable webcam
 recast select camera none                     # disable webcam
 ```
 
-### `recast set` — tweak options on the staged intent
+### `recast set`: tweak options on the staged intent
 
 ```bash
 recast set system-audio off    # or `on`
@@ -139,14 +150,14 @@ recast set quality balanced    # auto | balanced | high | pristine
 recast set countdown 3         # pre-roll seconds, or `off`
 ```
 
-### `recast selection` — inspect/reset
+### `recast selection`: inspect or reset
 
 ```bash
 recast selection show        # print the staged CaptureIntent JSON
 recast selection reset       # back to defaults (no source, system-audio on)
 ```
 
-### `recast profile` — saved recording presets
+### `recast profile`: saved recording presets
 
 Persisted to `recast_profiles.json`; the panel reads the same store.
 
@@ -158,14 +169,12 @@ recast profile use <id|name> # apply to the staged intent
 
 ---
 
-## Editor control — full timeline + everything else
+## Editor control: full timeline and everything else
 
-Read-only verbs (`project {open,show,timeline,zoom-regions,annotations}`)
-were the first surface. Mutate-side landed after — every mutating verb
-acquires the project's per-instance **write-lock**, runs
-`validate_render_state` against `VideoMetadata.duration`, persists
-via `save_project_edits`, and broadcasts `editor-state:changed` so the
-GUI's editor store rehydrates on the next focus.
+Every mutating verb acquires the project's per-instance **write-lock**, runs
+`validate_render_state` against `VideoMetadata.duration`, persists via
+`save_project_edits`, and broadcasts `editor-state:changed` so the GUI's
+editor store rehydrates on the next focus. The read verbs take no lock.
 
 ### Acquisition / release
 
@@ -176,7 +185,7 @@ recast project lock <PATH> --as agent --writer-id agent:claude-123
 # Release (the GUI releases on project close; the CLI on verb return).
 recast project unlock --writer-id agent:claude-123
 
-# Force-evict (use sparingly — wipes any in-flight GUI session).
+# Force-evict. Wipes any in-flight GUI session, so use it only on a lock you know is stale.
 recast project unlock --force --writer-id agent:claude-123
 ```
 
@@ -190,12 +199,53 @@ use `recast project unlock --force` to reclaim or wait 60s for TTL.
 ### Read-side (`recast project …`)
 
 ```bash
-recast project open <PATH>           # EditorDocument — every field the GUI uses
-recast project show <PATH>           # RenderState (the edits.json) verbatim
-recast project timeline <PATH>      # derived trim/cuts/segments/output duration
+recast project list                  # the library, newest first: where an agent starts
+recast project open <PATH>           # EditorDocument: every field the GUI uses
+recast project show <PATH>           # the render state verbatim
+recast project head <PATH>           # at a glance: hash, durations, segments, lanes, media
+recast project check <PATH>          # findings a render will not show you
+recast project timeline <PATH>       # derived trim/cuts/segments/output duration
 recast project zoom-regions <PATH>   # list every zoom region
 recast project annotations <PATH>    # list every annotation (id, kind, start, end)
 ```
+
+Three verbs answer "what is actually in this recording", on the output clock,
+and all three take an optional `--from` / `--to` window:
+
+```bash
+recast project transcript <PATH> [--from 10 --to 40]   # words with timings
+recast project silences  <PATH> [--from 10 --to 40]    # gaps worth cutting
+recast project frames    <PATH> [--count 12]           # JPEGs under the temp dir
+```
+
+`frames` prints the paths it wrote (at most 24, 640 px wide, cuts skipped), so
+an agent that can read images sees the video rather than guessing from numbers.
+
+`head` is the cheap first call: one payload with the state hash, both clocks,
+the kept segments, what is on each lane, and the media the project references.
+
+`check` is the reviewer. It reports zooms buried inside cuts, captions with no
+words behind them, annotations that fall off the frame or sit under the camera
+bubble, zoom targets that had to be clamped, and every validator error.
+
+### v3 project directories
+
+A v3 project is a directory (`Name.recast/`) holding `project.rcx` markup, the
+media, the tracks, and its own `branches/`. These verbs work on that shape:
+
+```bash
+recast project migrate <BUNDLE> [--dest DIR] [--no-backup]  # v1/v2 bundle to a directory
+recast project pack   <DIR> <FILE>    # zip one up for sharing (.cache left out)
+recast project unpack <FILE> <DIR>    # and back again
+recast project doc    <DIR>           # parse and validate offline: hash plus findings
+recast project rcx    <PATH>          # the live document from the app: text, hash, seq
+recast project ops    <PATH> --file ops.json [--expect-seq N]
+```
+
+`doc` is offline and needs no running app. `rcx` and `ops` go through the
+running app so the editor and the CLI never hold two different documents:
+`ops` is refused if the document moved past `--expect-seq`, and the answer
+tells you where it is now.
 
 `project timeline` payload:
 
@@ -218,7 +268,7 @@ Each verb is shaped identically (set / add / remove / list
 subcommands). The lock + validator + event emission are wired through
 a single helper so all verbs look and feel the same.
 
-#### Universal mutator — `recast editor set`
+#### Universal mutator: `recast editor set`
 
 Use the universal mutator for **any scalar/struct field** in
 `RenderState`. Dotted paths (`borderRadius`, `cursorSize`,
@@ -248,10 +298,10 @@ recast editor set <PATH> --field cursorSmoothing --value 25 \
 `--value` accepts a JSON value: number, true/false, string (quote inside
 the flag), array, or object.
 
-#### Whole-state patch — `recast project patch`
+#### Whole-state patch: `recast project patch`
 
-When the targeted verbs don't cover what you want in one shot — or
-when an LLM generates a full `RenderState` — round-trip the whole
+When the targeted verbs don't cover what you want in one shot, or
+when an LLM generates a full `RenderState`, round-trip the whole
 thing through `project patch`:
 
 ```bash
@@ -346,7 +396,7 @@ recast editor speed remove <PATH> \
 #### Scene animations (per-segment entrance/exit)
 
 ```bash
-# Animate the start of segment at t=12 — fade-in over 600ms, no outro.
+# Animate the start of segment at t=12: fade-in over 600ms, no outro.
 recast editor animations add <PATH> --start 12.0 \
     --in '{"kind":"fade","durationMs":600,"easing":{"x1":0.25,"y1":0.1,"x2":0.25,"y2":1.0}}' \
     --writer-id agent:claude-123
@@ -471,12 +521,12 @@ commit.
 
 ---
 
-## Branches — propose edits without touching the project
+## Branches: propose edits without touching the project
 
-`recast editor …` writes straight into the `.recast`. `recast branch …`
-instead journals typed ops against the render state they forked from,
-so an agent can propose a whole edit without holding the lock, without
-rewriting the bundle per op, and without a human losing their work.
+`recast editor …` writes straight into the project. `recast branch …` instead
+journals typed ops against the hash they forked from, so an agent can propose a
+whole edit without holding the lock, without rewriting the project per op, and
+without a human losing their work.
 
 ```
 recast branch create  <PATH> --branch a1 --author agent:claude [--label "tighten intro"]
@@ -490,10 +540,33 @@ recast branch discard <PATH> --branch a1
 recast branch apply   <PATH> --branch a1 --writer-id ui:me
 ```
 
+Every verb that records also takes `--expect-base <HASH>`, the hash you read
+before you started. A project edited since then is refused rather than rebased
+behind your back.
+
+### Intents
+
+Two edits are common enough to have a verb of their own, so an agent never
+hand-rolls the arithmetic. Each lands as one reviewable entry on the branch:
+
+```bash
+recast branch remove-silences <PATH> --branch a1 --idem-key k1 \
+  [--min-duration 0.4] [--pad 0.1] [--min-confidence 0.6]
+
+recast branch add-zoom <PATH> --branch a1 --idem-key k2 --at 12.5 \
+  [--duration 3] [--center-x 0.5] [--center-y 0.5] [--scale 1.8] [--ramp 0.5]
+```
+
+Both answer with a receipt: what changed, how the durations moved, and the
+hash the branch now sits on.
+
 ### Ops
 
-`--ops` takes a JSON array of the same operations the targeted verbs
-perform. The `op` tag is the camelCase verb name:
+`--ops` takes a JSON array. Which op shape depends on what kind of project it
+is, and `branch list` tells you (a v1 or v2 bundle forks from a state hash, a
+v3 directory from a document hash).
+
+A bundle takes render-state ops, tagged with the camelCase verb name:
 
 ```json
 [
@@ -503,6 +576,15 @@ perform. The `op` tag is the camelCase verb name:
   { "op": "speedSet", "segmentStart": 12.0, "rate": 1.5 },
   { "op": "annotationRemove", "id": "rect-1" },
   { "op": "set", "field": "borderRadius", "value": 12 }
+]
+```
+
+A v3 project directory takes document ops, addressed by element id:
+
+```json
+[
+  { "op": "set", "id": "z1", "attr": "scale", "value": "2.0" },
+  { "op": "remove", "id": "cut-3" }
 ]
 ```
 
@@ -516,12 +598,14 @@ Every op in one `append` lands together or not at all.
 | Another writer got in first | `--expect-seq` mismatch is rejected before anything is recorded |
 | An op that cannot apply | Rejected at `append` time (the branch is replayed first), not at review time |
 | Project edited since the fork | `branch apply` fails with `branch forked from <hash> but the project is now at <hash>` |
-| A branch that grows unbounded | Auto-compacts to a single `replace` op past 512 entries; the fork point is preserved |
-| Bundle rewrites | One, on `apply`. Never on `append` |
+| A branch that grows unbounded | Auto-compacts to a single batch past 512 entries; the fork point is preserved |
+| Project rewrites | One, on `apply`. Never on `append` |
 
-Journals live under `<app_data_dir>/branches/<project-key>/<branch>.json`,
-not beside the `.recast`, so the temp-dir sweeper cannot reclaim pending
-work. Listen for changes with `recast watch --events editor`.
+A bundle's journals live under `<app_data_dir>/branches/<project-key>/<branch>.json`,
+not beside the `.recast`, so the temp-dir sweeper cannot reclaim pending work.
+A v3 project keeps its own in `<project>/branches/`, where the format put them,
+and a branch there rebases by element id when the fork point has moved. Listen
+for changes with `recast watch --events editor`.
 
 ---
 
@@ -530,7 +614,7 @@ work. Listen for changes with `recast watch --events editor`.
 The export queue lives in SQLite (`export_jobs`) and feeds a single
 serial worker. Each verb maps onto a row in `ExportJobDto`.
 
-### `recast export start` — every flag
+### `recast export start`: every flag
 
 ```bash
 recast export start <PATH> \
@@ -554,7 +638,7 @@ The render-state patch is picked up via `--renderState <JSON>`
 (advanced; most callers want `recast editor patch` instead).
 
 Validation: `validate_render_state` runs at the IPC door (in
-`commands/export_queue.rs` — independent of this CLI verb) so a bad
+`commands/export_queue.rs`, independent of this CLI verb) so a bad
 state fails immediately rather than mid-encode.
 
 ### `recast export list` / `show` / `cancel` / `wait`
@@ -617,7 +701,7 @@ recast screen-read /path/foo.mp4
 ### `recast transcribe`
 
 Offline transcription against a downloaded `.gguf` model. Doesn't
-need the GUI to be running — works in CI / release smoke test.
+need the GUI to be running, so it works in CI and the release smoke test.
 
 ```bash
 recast transcribe --input audio.wav --model whisper-base-Q5_K_M.gguf \
@@ -681,7 +765,7 @@ a restart and re-snapshot.
 
 ---
 
-## MCP — `recast mcp`
+## MCP: `recast mcp`
 
 Serves the [Model Context Protocol](https://modelcontextprotocol.io) on
 stdin/stdout so an MCP client can drive Recast. The client launches it; you
@@ -699,13 +783,24 @@ Or, for Claude Code: `claude mcp add recast -- recast mcp`.
 
 ### What it exposes
 
-| Tool | Reads / writes |
-|------|----------------|
+| Tool | Reads or writes |
+|------|-----------------|
 | `recast_status` | Is the app running, is it recording |
+| `recast_project_list` | The library, newest first: where a session starts |
+| `recast_project_head` | One project at a glance: hash, clocks, segments, lanes, media |
 | `recast_project_show` | A project's saved edits |
 | `recast_project_timeline` | Trim window, cuts, kept segments with speeds |
+| `recast_transcript` | Words with timings on the output clock |
+| `recast_silences` | Gaps worth cutting, with confidence |
+| `recast_frames` | JPEGs of the output at evenly spaced times, to look at |
+| `recast_check` | Findings a render will not show: off-frame, buried, clamped, unvalidated |
+| `recast_doc_show` | The live v3 document: canonical text, hash, seq |
+| `recast_doc_since` | Ops applied after a seq you already hold |
+| `recast_doc_apply` | Write the open project live, when the user has allowed it |
 | `recast_branch_list` | Open proposals for a project |
 | `recast_branch_create` | Fork a branch from the project's current state |
+| `recast_remove_silences` | Cut the detected silences, as one branch entry |
+| `recast_add_zoom` | Add a zoom by intent, as one branch entry |
 | `recast_branch_append` | Record ops onto a branch, atomically |
 | `recast_branch_diff` | Field-level changes a branch would make |
 | `recast_branch_show` | The render state a branch would produce |
@@ -714,20 +809,31 @@ Or, for Claude Code: `claude mcp add recast -- recast mcp`.
 
 ### What it deliberately does not expose
 
-**Applying a branch, editing a project directly, recording, and exporting.**
+**Applying a branch, recording, and exporting.**
 
-An MCP agent can propose any edit and inspect the result, but the write itself
-is a human action: `branch apply` in the CLI, or Apply in the editor's proposed
-changes panel. This is structural, not a policy toggle — the tool table has no
-verb that writes the project, and a test asserts it stays that way.
+An MCP agent can propose any edit and inspect the result, but committing a
+proposal is a human action: `branch apply` in the CLI, or Apply in the editor's
+proposed changes panel. This is structural, not a policy toggle: the tool table
+has no verb that applies a branch, and a test asserts it stays that way.
+
+The one write into the open project is `recast_doc_apply`, and it is gated on
+the user turning on "Let agents edit the open project live" with that project
+open. It carries `expectSeq` from `recast_doc_show`; a stale answer hands back
+the ops you missed so you can rebase and retry, and if you and the editor both
+wrote the same property, the editor's value stands and the user is told. The
+raw document write the GUI uses is not on the tool table at all.
 
 ### Shape of a session
 
 ```
-recast_branch_create   path=…/demo.recast branch=agent-1 author=agent:claude
-recast_branch_append   branch=agent-1 idemKey=k1 ops=[{"op":"trim","start":1,"end":30}]
+recast_project_list                          # pick one
+recast_project_head    path=…/Demo.recast    # what is in it
+recast_frames          path=…/Demo.recast    # and what it looks like
+recast_branch_create   path=…/Demo.recast branch=agent-1 author=agent:claude
+recast_remove_silences branch=agent-1 idemKey=k1
+recast_add_zoom        branch=agent-1 idemKey=k2 at=12.5
 recast_branch_diff     branch=agent-1        # check it did what you meant
-→ tell the user to review and apply it
+then tell the user to review and apply it
 ```
 
 The adapter holds no state of its own, so a client that restarts it loses
@@ -740,16 +846,16 @@ read the reason and adjust rather than seeing a transport failure.
 
 ---
 
-## CLI installer — `recast install` / `uninstall`
+## CLI installer: `recast install` and `uninstall`
 
 `recast install` is idempotent. After running, open a new terminal so
 the shell re-reads `PATH`.
 
 Setting toggles in the GUI: **Settings → Command line tool**.
 
-- `Install the recast command` — calls `install_cli`.
-- `Auto-install on first launch` — controlled by `AppConfig.cli_auto_install`. Defaults to on. Disable to stop future auto-attempts; the install verb is still callable.
-- `Modified shell config: ~/.zshrc ~/.profile` — pill chips showing which rc files carry the `recast` block (macOS / Linux only).
+- `Install the recast command` calls `install_cli`.
+- `Auto-install on first launch` is controlled by `AppConfig.cli_auto_install`. Defaults to on. Disable to stop future auto-attempts; the install verb is still callable.
+- `Modified shell config: ~/.zshrc ~/.profile` is pill chips showing which rc files carry the `recast` block (macOS / Linux only).
 
 `recast install --no-launch` writes to PATH without touching the
 running app. `recast uninstall --no-launch` removes it. `--no-launch`
@@ -768,7 +874,7 @@ activity for `EditorSession::TTL_MS` = 60s) auto-reclaims.
 | Holder | Other side experience |
 |--------|------------------------|
 | GUI user holds write | CLI mutate verbs return `editor_locked: … held by 'ui:<user>' (acquired Nms ago)` |
-| Agent holds write | GUI shows banner *"Agent `<writer_id>` is editing this project — your edits are paused"* + disables mutating inputs (preview scrubbing + watch still work) |
+| Agent holds write | GUI shows banner *"Agent `<writer_id>` is editing this project, your edits are paused"* + disables mutating inputs (preview scrubbing + watch still work) |
 
 Re-acquiring is free for the writer that already holds the lock: the
 same `writer_id` refreshes the activity stamp and keeps the original
@@ -876,7 +982,7 @@ recast project unlock --writer-id agent:builder
 If the GUI user grabbed the lock first:
 
 ```bash
-# `editor_locked: … held by 'ui:bob'` — don't fight, surface to the caller.
+# `editor_locked: … held by 'ui:bob'`: don't fight, surface to the caller.
 # The verb returns immediately; no implicit retry/wait.
 ```
 
@@ -896,27 +1002,33 @@ recast export start /path/foo.recast \
 ## Backwards-compat notes
 
 - `recast watch --events` keeps the comma-separated flag for the
-  pre-existing groups (`rec`, `selection`, `profiles`); the new
-  `editor` / `export` groups plug into the same flag.
-- `recast install` / `recast uninstall` no longer just symlink — on
-  Unix they also edit rc files. The `message` field still confirms
-  what changed.
+  pre-existing groups (`rec`, `selection`, `profiles`); the `editor` and
+  `export` groups plug into the same flag.
+- `recast install` and `recast uninstall` no longer just symlink. On Unix they
+  also edit rc files. The `message` field still confirms what changed.
 - The validation gate returns `Vec<ValidationIssue>` as JSON;
   older scripts that grep for `validation_failed` still work via the
   wrapper message text.
+- `branch create` used to answer with the whole branch; it now answers with the
+  summary (`id`, `author`, `label`, `base`, `seq`), and `base` is a string
+  because a v3 project forks from a document hash rather than a state hash.
+- `--expect-base` is accepted wherever a branch records, and is the one guard
+  that survives a project edited out of band.
 
 ---
 
 ## See also
 
-- `apps/desktop/docs/architecture.md` — recording + editor + render
-  pipeline architecture (the model this CLI drives).
-- `apps/desktop/src-tauri/src/cli.rs` — single source of truth for verb
+- `apps/web/content/architecture/`: the recording, editor and render pipeline
+  this CLI drives, plus `agentic-edits-mcp.md` for the agent surface and
+  `cli-control-socket.md` for the transport.
+- `apps/desktop/src-tauri/src/cli.rs`: the single source of truth for verb
   shape and parsing.
-- `apps/desktop/src-tauri/src/control.rs` — the dispatch table the
-  CLI channels its live verbs through.
-- `apps/desktop/src-tauri/src/commands/editor.rs` —
-  `validate_render_state` + `derive_project_timeline` +
-  `patch_render_state` helpers.
-- `apps/desktop/src-tauri/src/commands/editor_session.rs` — the
-  `EditorSession` lock + persistence helpers.
+- `apps/desktop/src-tauri/src/control/mod.rs`: the dispatch table the CLI
+  channels its live verbs through.
+- `apps/desktop/src-tauri/src/agent/SKILL.md`: what an agent client is told
+  about these verbs, installed by `recast skills install`.
+- `apps/desktop/src-tauri/src/commands/editor.rs`: `validate_render_state`,
+  `derive_project_timeline` and `patch_render_state`.
+- `apps/desktop/src-tauri/src/commands/editor_session.rs`: the `EditorSession`
+  lock and persistence helpers.

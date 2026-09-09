@@ -422,14 +422,75 @@ fn a_default_state_serialises_to_a_small_skeleton() {
 #[test]
 fn base_elements_the_state_cannot_carry_survive_a_rewrite() {
     let base = parse(
-        "<recast v=\"3\"><vars><var name=\"accent\" type=\"color\" value=\"#ff5c5c\"/></vars><graphic id=\"g1\" component=\"lower-third@1\" title=\"Hi\"/><future id=\"f1\"/></recast>",
+        "<recast v=\"3\"><vars><var name=\"accent\" type=\"color\" value=\"#ff5c5c\"/></vars><future id=\"f1\"/></recast>",
     )
     .unwrap();
     let doc = from_render_state(&rich_state(), &media(), Some(&base), &mut IdGen::seeded(3));
     let text = serialize(&doc);
     assert!(text.contains("<var name=\"accent\""));
-    assert!(text.contains("<graphic id=\"g1\""));
     assert!(text.contains("<future id=\"f1\"/>"));
+}
+
+/// A uniform may name a variable, and the engine is handed the value: nothing
+/// downstream of the reader knows variables exist.
+#[test]
+fn a_shader_uniform_may_be_a_variable_and_reaches_the_engine_resolved() {
+    let src = concat!(
+        r##"<recast v="3"><vars><var name="accent" type="color" value="#22d3ee"/>"##,
+        r#"<var name="spin" type="number" value="42"/></vars>"#,
+        r#"<timeline in="0.000" out="10.000"/>"#,
+        r#"<shader id="s1" component="sweep@1.0">"#,
+        r#"<uniform name="tint" value="$accent"/><uniform name="angle" value="$spin"/>"#,
+        r#"</shader></recast>"#
+    );
+    let doc = parse(src).unwrap();
+
+    let state = to_render_state(&doc).unwrap();
+
+    let params = &state.graphics[0].params;
+    assert_eq!(params.get("tint").map(String::as_str), Some("#22d3ee"));
+    assert_eq!(params.get("angle").map(String::as_str), Some("42"));
+    assert!(
+        serialize(&doc).contains("value=\"$accent\""),
+        "and the document still holds the reference"
+    );
+}
+
+/// Both spellings survive a whole-state rewrite through the state itself, not
+/// by being copied off the base: an editor that never saw the file still keeps them.
+#[test]
+fn component_instances_round_trip_through_the_state() {
+    let src = concat!(
+        "<recast v=\"3\">",
+        "<timeline in=\"0.000\" out=\"10.000\"/>",
+        "<graphic id=\"g1\" component=\"spotlight@1.0\" at=\"1.000\" dur=\"4.000\" radius=\"0.2\"/>",
+        "<shader id=\"s1\" component=\"sweep@1.0\"><uniform name=\"angle\" value=\"20\"/></shader>",
+        "</recast>"
+    );
+    let doc = parse(src).unwrap();
+
+    let state = to_render_state(&doc).unwrap();
+    let again = from_render_state(&state, &MediaRefs::default(), None, &mut IdGen::seeded(4));
+
+    assert_eq!(state.graphics.len(), 2);
+    assert_eq!(
+        state.graphics[0].params.get("radius").map(String::as_str),
+        Some("0.2")
+    );
+    assert_eq!(
+        state.graphics[1].params.get("angle").map(String::as_str),
+        Some("20")
+    );
+    let text = serialize(&again);
+    assert!(
+        text.contains("<graphic id=\"g1\" component=\"spotlight@1.0\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("<uniform name=\"angle\" value=\"20\"/>"),
+        "{text}"
+    );
+    assert_eq!(to_render_state(&again).unwrap().graphics, state.graphics);
 }
 
 #[test]

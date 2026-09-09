@@ -42,6 +42,18 @@ pub fn attach_transforms(layers: &mut [Layer], transforms: &[crate::bind::LayerT
     }
 }
 
+/// One layer per instance whatever surface it draws on, so document order survives the round trip and the renderer has one thing to walk.
+/// Where it lands is the manifest's business, read at evaluation.
+pub fn attach_graphics(layers: &mut Vec<Layer>, graphics: &[crate::component::GraphicSpec]) {
+    let first = layers.len() as u32 + FIRST_ANNOTATION_LAYER;
+    for (offset, spec) in graphics.iter().enumerate() {
+        layers.push(Layer::new(
+            first + offset as u32,
+            LayerSource::Graphic(Box::new(spec.clone())),
+        ));
+    }
+}
+
 fn layer_for<'a>(layers: &'a mut [Layer], target: &crate::bind::LayerRef) -> Option<&'a mut Layer> {
     use crate::bind::LayerRef;
     match target {
@@ -81,6 +93,7 @@ pub fn to_scene(state: &RenderState) -> Scene {
         layer.opacity = annotation.opacity;
         layers.push(layer);
     }
+    attach_graphics(&mut layers, &state.graphics);
     attach_bindings(&mut layers, &state.bindings);
     attach_transforms(&mut layers, &state.transforms);
 
@@ -256,6 +269,7 @@ pub fn to_render_state(scene: &Scene) -> RenderState {
             LayerSource::Annotation(annotation) => {
                 state.annotations.push((**annotation).clone());
             }
+            LayerSource::Graphic(graphic) => state.graphics.push((**graphic).clone()),
         }
     }
     state
@@ -587,7 +601,12 @@ mod tests {
             { "id": "m1", "source": { "kind": "local", "path": "C:/music/a.mp3" },
               "startOutputSec": 1.0, "durationSec": 8.0, "gain": 0.7 }
         ],
-        "cameraOverlay": { "enabled": true, "mirror": false, "shape": "circle", "cornerRadius": 0.3 }
+        "cameraOverlay": { "enabled": true, "mirror": false, "shape": "circle", "cornerRadius": 0.3 },
+        "graphics": [
+            { "id": "g1", "component": "sweep@1.0", "start": 1.0, "duration": 4.0,
+              "params": { "angle": "20" }, "fallbackSurface": "screen" },
+            { "id": "g2", "component": "spotlight@1.0", "start": 0.0, "duration": 2.0 }
+        ]
     }"##;
 
     /// The round trip is only an oracle if a fixture actually sets the field.
@@ -624,7 +643,59 @@ mod tests {
 
     /// Keys `fully_populated()` must emit. Bumped deliberately, never to make a
     /// failing test pass.
-    const RENDER_STATE_KEYS: usize = 45;
+    const RENDER_STATE_KEYS: usize = 46;
+
+    /// Both spellings become layers, in the order the document listed them, so
+    /// the z-order an author sees is the order they wrote.
+    #[test]
+    fn every_component_instance_becomes_one_layer_in_document_order() {
+        let state = state_json(serde_json::json!({
+            "graphics": [
+                { "id": "over", "component": "spotlight@1.0" },
+                { "id": "screen", "component": "sweep@1.0", "fallbackSurface": "screen" }
+            ]
+        }));
+
+        let scene = to_scene(&state);
+
+        let names: Vec<&str> = scene
+            .layers
+            .iter()
+            .filter_map(|l| match &l.source {
+                LayerSource::Graphic(g) => Some(g.id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(names, ["over", "screen"]);
+        assert_eq!(
+            to_render_state(&scene).graphics.len(),
+            2,
+            "and both come back"
+        );
+    }
+
+    /// An instance the registry cannot serve is still an instance: dropping it
+    /// on load would silently delete an author's work.
+    #[test]
+    fn an_unresolvable_component_still_reaches_the_scene() {
+        let state = state_json(serde_json::json!({
+            "graphics": [{ "id": "g1", "component": "not-a-component@9.9" }]
+        }));
+
+        let scene = to_scene(&state);
+
+        let graphic = scene.layers.iter().find_map(|l| match &l.source {
+            LayerSource::Graphic(g) => Some(g),
+            _ => None,
+        });
+        let graphic = graphic.expect("the layer survives");
+        assert!(!graphic.resolution().is_ready());
+        assert_eq!(
+            graphic.resolution().recipe(),
+            crate::component::PLACEHOLDER,
+            "and draws the placeholder"
+        );
+    }
 
     #[test]
     fn layer_ids_are_unique_and_next_id_does_not_collide() {

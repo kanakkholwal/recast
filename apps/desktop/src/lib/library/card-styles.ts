@@ -10,7 +10,7 @@
 export type LibraryView = "grid" | "list";
 
 export const GRID_CLASS =
-	"grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 divide-y divide-border/60 sm:divide-y-0 sm:divide-x sm:gap-px";
+	"grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 divide-y divide-x divide-border/60 sm:divide-y-0 sm:divide-x sm:gap-px";
 
 /** Wrapper for the results, laid out per view. */
 export function listClass(view: LibraryView): string {

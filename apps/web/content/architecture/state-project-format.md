@@ -217,6 +217,14 @@ deny-first scope of app roots, the opened project, files the document names
 and files the user picked; explicit MIME with `nosniff`; single-range reads
 for seeking. The old asset protocol with `scope: ["**"]` is gone.
 
+**Variables and components.** `<vars>` declares typed values that any
+attribute references as `$name`; a reference resolves on the way into the
+engine and never in the file, so a variable survives every round trip. A
+`<graphic>` or `<shader>` names a registered component and its parameters,
+never code. Both are read into the render state, so an editor that has never
+seen the file still carries them through a save. See the preview page for how
+they render.
+
 Bundles still open and save through the same store seam, so the editor did
 not change; the folder adapter (`project/v3.rs`) derives `.cache/edits.json`
 from the document on open and diffs the saved state back into ops. Agents

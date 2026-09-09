@@ -117,7 +117,6 @@ fn feed_event_log(app: &tauri::AppHandle) {
 
 fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
     feed_event_log(app);
-    let token = write_token()?;
     let socket = socket_name();
     let name = socket
         .clone()
@@ -134,6 +133,8 @@ fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
             return Err(format!("bind {socket}: {e}"));
         }
     };
+    // Bind first: an instance that wrote the token then lost the bind left the socket owner rejecting every call.
+    let token = write_token()?;
     log::info!("cli control server listening on {socket}");
 
     // One thread per connection so a long-lived `watch` never blocks `status` or `rec` from being answered.
@@ -464,6 +465,8 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             "recording": manager.is_recording(),
             "paused": manager.is_paused(),
             "version": app.package_info().version.to_string(),
+            "exe": std::env::current_exe().ok(),
+            "pid": std::process::id(),
         })),
         "rec.status" => Ok(json!({
             "recording": manager.is_recording(),

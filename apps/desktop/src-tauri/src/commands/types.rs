@@ -489,9 +489,7 @@ pub struct EditorSession {
 }
 
 impl EditorSession {
-    /// Inactivity window after which the lock is reclaimable. A long
-    /// `recast editor patch` over a multi-MB `RenderState` should keep the
-    /// activity stamp fresh (`commands::editor_session::record_activity`);
-    /// the TTL is the safety net for a crashed CLI/GUI that never released.
+    /// Inactivity window after which the lock is reclaimable; a long `recast project patch` keeps the stamp fresh via `record_activity`.
+    /// The TTL is the safety net for a crashed CLI or GUI that never released.
     pub const TTL_MS: i64 = 60_000;
 }

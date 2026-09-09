@@ -837,11 +837,15 @@ fn extras_group() -> Vec<ElementSpec> {
         },
         el(
             "shader",
-            "",
+            "A component instance painted over the screen card; its uniforms are the component's parameters.",
             IdRule::Required,
             &[
                 ID,
-                req("src", AttrType::Src, "A .wgsl file."),
+                req(
+                    "component",
+                    AttrType::Text,
+                    "name@major.minor of a registered screen component.",
+                ),
                 a("at", AttrType::Seconds, ""),
                 a("dur", AttrType::Seconds, ""),
             ],

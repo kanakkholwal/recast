@@ -16,6 +16,7 @@ pub mod schema;
 pub mod serialize;
 pub mod validate;
 pub mod value;
+pub mod vars;
 
 #[cfg(feature = "native")]
 pub mod layout;
@@ -35,6 +36,7 @@ pub use ops::{apply_all, Op, OpError};
 pub use parse::{parse, ParseError, Position};
 pub use serialize::serialize;
 pub use validate::{validate, Issue, Level, Report};
+pub use vars::{Var, VarType, Vars};
 
 /// The document version this crate reads and writes.
 pub const FORMAT_VERSION: u32 = 3;

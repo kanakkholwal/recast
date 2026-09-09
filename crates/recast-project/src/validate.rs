@@ -10,6 +10,7 @@ use crate::ids::Id;
 use crate::parse::Position;
 use crate::schema::{self, AttrType, ElementSpec, IdRule};
 use crate::value;
+use crate::vars::{self, Vars};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -82,7 +83,10 @@ pub fn validate(doc: &Document) -> Report {
     let mut report = Report::default();
     let mut ids: BTreeMap<String, usize> = BTreeMap::new();
     let kinds_by_id = index_ids(doc, &mut ids);
-    check_node(&doc.root, None, &kinds_by_id, &mut report);
+    let declared = Vars::from_document(doc);
+    check_node(&doc.root, None, &kinds_by_id, &declared, &mut report);
+    check_vars(doc, &declared, &mut report);
+    check_graphics(doc, &declared, &mut report);
     for (id, count) in ids.into_iter().filter(|(_, c)| *c > 1) {
         report.issues.push(Issue {
             level: Level::Error,
@@ -113,6 +117,7 @@ fn check_node(
     node: &Node,
     parent: Option<&ElementSpec>,
     kinds: &BTreeMap<String, String>,
+    declared: &Vars,
     report: &mut Report,
 ) {
     let Some(spec) = schema::element(&node.kind) else {
@@ -137,7 +142,7 @@ fn check_node(
         }
     }
     check_id(node, spec, report);
-    check_attrs(node, spec, kinds, report);
+    check_attrs(node, spec, kinds, declared, report);
     if spec.text && node.text.is_none() && spec.kind == "text" {
         report.push(
             Level::Warning,
@@ -149,7 +154,7 @@ fn check_node(
     }
     check_binds(node, report);
     for child in &node.children {
-        check_node(child, Some(spec), kinds, report);
+        check_node(child, Some(spec), kinds, declared, report);
     }
 }
 
@@ -182,6 +187,7 @@ fn check_attrs(
     node: &Node,
     spec: &ElementSpec,
     kinds: &BTreeMap<String, String>,
+    declared: &Vars,
     report: &mut Report,
 ) {
     for attr in spec.attrs.iter().filter(|a| a.required) {
@@ -197,7 +203,11 @@ fn check_attrs(
     }
     for (name, raw) in &node.attrs {
         match spec.attrs.iter().find(|a| a.name == name) {
-            Some(attr) => check_value(node, name, attr.ty, raw, kinds, report),
+            Some(attr) => {
+                if let Some(value) = resolved_for(node, name, raw, declared, report) {
+                    check_value(node, name, attr.ty, &value, kinds, report);
+                }
+            }
             None if spec.open_attrs || name == "id" => {}
             None => report.push(
                 Level::Warning,
@@ -256,6 +266,194 @@ fn check_value(
     if let Err(message) = result {
         report.push(Level::Error, "bad_value", node, Some(name), message);
     }
+}
+
+/// A `$name` checks as the value it stands for, so a reference is only ever as good as what it resolves to.
+/// Returns `None` when nothing declares it, which is reported here and leaves the type check with nothing to say.
+fn resolved_for(
+    node: &Node,
+    name: &str,
+    raw: &str,
+    declared: &Vars,
+    report: &mut Report,
+) -> Option<String> {
+    let Some(var) = vars::reference(raw) else {
+        return Some(raw.to_owned());
+    };
+    match declared.get(var) {
+        Some(found) => Some(found.resolved()),
+        None => {
+            report.push(
+                Level::Error,
+                "unknown_var",
+                node,
+                Some(name),
+                format!("no <var name=\"{var}\"> to resolve {raw}"),
+            );
+            None
+        }
+    }
+}
+
+/// The declarations themselves: a value that does not read as its type, a range resolution would clamp, a name declared twice.
+fn check_vars(doc: &Document, declared: &Vars, report: &mut Report) {
+    let Some(block) = doc.root.child("vars") else {
+        return;
+    };
+    let duplicates = declared.duplicates();
+    for node in block.children_of("var") {
+        let Some(name) = node.attr("name") else {
+            continue;
+        };
+        let Some(var) = declared.get(name) else {
+            continue;
+        };
+        if duplicates.contains(&name) {
+            report.push(
+                Level::Error,
+                "duplicate_var",
+                node,
+                Some("name"),
+                format!("'{name}' is declared more than once; the first one resolves"),
+            );
+        }
+        if var.is_ill_typed() {
+            report.push(
+                Level::Error,
+                "bad_var_value",
+                node,
+                Some("value"),
+                format!("'{}' does not read as a {}", var.value, unspell(node)),
+            );
+        } else if var.is_out_of_range() {
+            report.push(
+                Level::Warning,
+                "var_out_of_range",
+                node,
+                Some("value"),
+                format!(
+                    "'{}' is outside its own range; it resolves as {}",
+                    var.value,
+                    var.resolved()
+                ),
+            );
+        }
+    }
+}
+
+/// Component instances: the reference has to resolve to a recipe that draws where the element puts it, and each parameter has to read as the type the manifest declares.
+fn check_graphics(doc: &Document, declared: &Vars, report: &mut Report) {
+    use recast_scene::component::{self, Resolution, Surface};
+    for node in &doc.root.children {
+        let wants = match node.kind.as_str() {
+            "graphic" => Surface::Overlay,
+            "shader" => Surface::Screen,
+            _ => continue,
+        };
+        let Some(spec) = node.attr("component") else {
+            continue;
+        };
+        let resolution = component::resolve(spec);
+        if let Some(complaint) = resolution.complaint() {
+            report.push(
+                Level::Error,
+                "unknown_component",
+                node,
+                Some("component"),
+                complaint,
+            );
+            continue;
+        }
+        if let Resolution::Ready { name, surface, .. } = resolution {
+            if surface != wants {
+                report.push(
+                    Level::Error,
+                    "wrong_surface",
+                    node,
+                    Some("component"),
+                    match surface {
+                        Surface::Screen => {
+                            format!("{name} paints over the screen card, so it is a <shader>")
+                        }
+                        Surface::Overlay => {
+                            format!("{name} draws on its own layer, so it is a <graphic>")
+                        }
+                    },
+                );
+            }
+            let Some(manifest) = component::manifest(name) else {
+                continue;
+            };
+            for (param, raw) in params_of(node) {
+                check_param(node, manifest, &param, &raw, declared, report);
+            }
+        }
+    }
+}
+
+/// Every parameter the instance sets, from attributes on a `<graphic>` and `<uniform>` children on a `<shader>`.
+fn params_of(node: &Node) -> Vec<(String, String)> {
+    const OWN: &[&str] = &["id", "component", "at", "dur"];
+    let mut out: Vec<(String, String)> = node
+        .attrs
+        .iter()
+        .filter(|(name, _)| !OWN.contains(&name.as_str()))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    for uniform in node.children_of("uniform") {
+        if let (Some(name), Some(value)) = (uniform.attr("name"), uniform.attr("value")) {
+            out.push((name.to_owned(), value.to_owned()));
+        }
+    }
+    out
+}
+
+fn check_param(
+    node: &Node,
+    manifest: &recast_scene::component::Manifest,
+    param: &str,
+    raw: &str,
+    declared: &Vars,
+    report: &mut Report,
+) {
+    use recast_scene::component::ParamType;
+    let Some(spec) = manifest.param(param) else {
+        report.push(
+            Level::Warning,
+            "unknown_param",
+            node,
+            Some(param),
+            format!("{} takes no parameter '{param}'; kept as is", manifest.name),
+        );
+        return;
+    };
+    let Some(value) = resolved_for(node, param, raw, declared, report) else {
+        return;
+    };
+    let result = match spec.ty {
+        ParamType::Color => value::parse_color(&value)
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        ParamType::Bool => value::parse_bool(&value)
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        ParamType::Angle => value::parse_num(&value)
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        ParamType::Fraction => value::parse_num(&value)
+            .map_err(|e| e.to_string())
+            .and_then(|v| in_range(v, Some(0.0), Some(1.0))),
+        ParamType::Number { min, max } => value::parse_num(&value)
+            .map_err(|e| e.to_string())
+            .and_then(|v| in_range(v, Some(min), Some(max))),
+    };
+    if let Err(message) = result {
+        report.push(Level::Error, "bad_param", node, Some(param), message);
+    }
+}
+
+fn unspell(node: &Node) -> &str {
+    node.attr("type").unwrap_or("value")
 }
 
 fn in_range(v: f64, min: Option<f64>, max: Option<f64>) -> Result<(), String> {
@@ -408,6 +606,93 @@ mod tests {
             .into_iter()
             .map(|i| i.code)
             .collect()
+    }
+
+    #[test]
+    fn a_component_must_resolve_and_draw_where_its_element_puts_it() {
+        let ok =
+            r#"<recast v="3"><graphic id="g1" component="spotlight@1.0" radius="0.2"/></recast>"#;
+        assert!(codes(ok).is_empty(), "{:?}", codes(ok));
+
+        let missing = r#"<recast v="3"><graphic id="g1" component="nope@1.0"/></recast>"#;
+        assert_eq!(codes(missing), ["unknown_component"]);
+
+        let swapped = r#"<recast v="3"><graphic id="g1" component="sweep@1.0"/></recast>"#;
+        assert_eq!(codes(swapped), ["wrong_surface"], "sweep paints the card");
+    }
+
+    #[test]
+    fn a_parameter_is_checked_against_the_type_the_manifest_declares() {
+        let wide =
+            r#"<recast v="3"><graphic id="g1" component="spotlight@1.0" radius="4"/></recast>"#;
+        assert_eq!(codes(wide), ["bad_param"], "a fraction is 0 to 1");
+
+        let unknown =
+            r#"<recast v="3"><graphic id="g1" component="spotlight@1.0" nonsense="1"/></recast>"#;
+        assert_eq!(codes(unknown), ["unknown_param"], "kept, but said out loud");
+
+        let uniform = r#"<recast v="3"><shader id="s1" component="sweep@1.0"><uniform name="width" value="9"/></shader></recast>"#;
+        assert_eq!(
+            codes(uniform),
+            ["bad_param"],
+            "a uniform is a parameter too"
+        );
+    }
+
+    #[test]
+    fn a_parameter_may_be_a_variable_and_is_checked_after_it_resolves() {
+        let src = concat!(
+            r##"<recast v="3"><vars><var name="accent" type="color" value="#ff0000"/>"##,
+            r#"<var name="wide" type="number" value="4"/></vars>"#,
+            r#"<graphic id="g1" component="shape-reveal@1.0" fill="$accent" radius="$wide"/></recast>"#
+        );
+
+        assert_eq!(
+            codes(src),
+            ["bad_param"],
+            "only the one that resolves badly"
+        );
+    }
+
+    #[test]
+    fn a_reference_is_checked_as_the_value_it_stands_for() {
+        let ok = r##"<recast v="3"><vars><var name="tint" type="color" value="#112233"/></vars><background><solid color="$tint"/></background></recast>"##;
+        assert!(codes(ok).is_empty(), "{:?}", codes(ok));
+
+        let wrong = r#"<recast v="3"><vars><var name="tint" type="text" value="mauve"/></vars><background><solid color="$tint"/></background></recast>"#;
+        assert_eq!(
+            codes(wrong),
+            ["bad_value"],
+            "the resolved value is not a colour"
+        );
+    }
+
+    #[test]
+    fn a_reference_nothing_declares_is_an_error_naming_the_variable() {
+        let src = r#"<recast v="3"><background><solid color="$brand"/></background></recast>"#;
+
+        let issues = validate(&parse(src).unwrap()).issues;
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].code, "unknown_var");
+        assert!(
+            issues[0].message.contains("$brand"),
+            "{}",
+            issues[0].message
+        );
+    }
+
+    #[test]
+    fn a_declaration_is_checked_against_its_own_type_and_range() {
+        let ill =
+            r#"<recast v="3"><vars><var name="n" type="number" value="wide"/></vars></recast>"#;
+        assert_eq!(codes(ill), ["bad_var_value"]);
+
+        let wide = r#"<recast v="3"><vars><var name="n" type="number" value="140" min="0" max="100"/></vars></recast>"#;
+        assert_eq!(codes(wide), ["var_out_of_range"], "clamped, so a warning");
+
+        let twice = r#"<recast v="3"><vars><var name="n" type="int" value="1"/><var name="n" type="int" value="2"/></vars></recast>"#;
+        assert_eq!(codes(twice), ["duplicate_var", "duplicate_var"]);
     }
 
     #[test]

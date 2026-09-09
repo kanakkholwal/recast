@@ -339,14 +339,10 @@ pub fn from_render_state(
         root.children.push(captions(style, media));
     }
     root.children.push(audio(state, media));
+    for graphic in &state.graphics {
+        root.children.push(graphic_node(graphic));
+    }
     if let Some(base) = base {
-        root.children.extend(
-            base.root
-                .children
-                .iter()
-                .filter(|c| matches!(c.kind.as_str(), "graphic" | "shader"))
-                .cloned(),
-        );
         root.children.extend(
             base.root
                 .children
@@ -1176,6 +1172,32 @@ fn music(clip: &AudioClip) -> Node {
     node.secs("fadeOut", clip.fade_out, 0.0);
     node.set_flag("loop", clip.looping);
     node.set_flag("duck", clip.ducking);
+    node
+}
+
+/// The element it came from, so a `<shader>` does not become a `<graphic>` on the way back.
+fn graphic_node(spec: &recast_scene::component::GraphicSpec) -> Node {
+    use recast_scene::component::Surface;
+    let shader = spec.fallback_surface == Surface::Screen;
+    let mut node = Node::new(if shader { "shader" } else { "graphic" });
+    node.set("id", spec.id.clone());
+    node.set("component", spec.component.clone());
+    if spec.start != 0.0 {
+        node.set("at", value::fmt_secs(spec.start));
+    }
+    if spec.duration != 0.0 {
+        node.set("dur", value::fmt_secs(spec.duration));
+    }
+    for (name, param) in &spec.params {
+        match shader {
+            true => node.children.push(
+                Node::new("uniform")
+                    .with("name", name.clone())
+                    .with("value", param.clone()),
+            ),
+            false => node.set(name, param.clone()),
+        }
+    }
     node
 }
 

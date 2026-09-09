@@ -74,6 +74,7 @@ import {
 	wallpaperBackgroundValue,
 	type ZoomRegion,
 	type LayerBinding,
+	type GraphicSpec,
 	type LayerTransform,
 } from "../lib/editor/render-state";
 import type { TimeMode } from "../lib/editor/time";
@@ -245,6 +246,7 @@ export function createEditorStore() {
 	// Declared by the document, never by a panel; carried so every save and every preview frame keeps them.
 	let bindings = $state.raw<LayerBinding[]>([]);
 	let transforms = $state.raw<LayerTransform[]>([]);
+	let graphics = $state.raw<GraphicSpec[]>([]);
 
 	// Cursor settings
 	let cursorSettings = $state<CursorSettings>({
@@ -362,6 +364,7 @@ export function createEditorStore() {
 			cursorMotionEasing,
 			bindings,
 			transforms,
+			graphics,
 			musicClips,
 			captionStyle,
 		};
@@ -533,6 +536,7 @@ export function createEditorStore() {
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
 		bindings = s.bindings ?? [];
 		transforms = s.transforms ?? [];
+		graphics = s.graphics ?? [];
 		// Merge over defaults so an older snapshot missing newer style keys stays valid.
 		if (s.captionStyle) captionStyle = { ...DEFAULT_CAPTION_STYLE, ...s.captionStyle };
 	}
@@ -1215,6 +1219,7 @@ export function createEditorStore() {
 		cursorMotionEasing = null;
 		bindings = [];
 		transforms = [];
+		graphics = [];
 		cursorSettings = {
 			enabled: true,
 			size: 2,
@@ -1663,8 +1668,7 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
-	// Memoised compound snapshots: the same object until something inside changes, so the preview and the replica
-	// can see what moved by identity and serialise only that, instead of the whole state on every edit.
+	// Memoised so the preview and the replica see what moved by identity and serialise only that.
 	const zoomRegionsSnapshot = $derived(
 		zoomRegions.map((region) => ({
 			id: region.id,
@@ -1753,6 +1757,7 @@ export function createEditorStore() {
 			cursorMotionEasing,
 			bindings,
 			transforms,
+			graphics,
 			annotations: annotationsSnapshot,
 			shadow: shadowSnapshot,
 			audioSettings: audioSettingsSnapshot,
@@ -1856,6 +1861,7 @@ export function createEditorStore() {
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		bindings = state.bindings ?? [];
 		transforms = state.transforms ?? [];
+		graphics = state.graphics ?? [];
 		layoutMode = state.layoutMode ?? layoutMode;
 		annotations = (state.annotations ?? []).map((a, idx) => ({
 			id: generateId(),

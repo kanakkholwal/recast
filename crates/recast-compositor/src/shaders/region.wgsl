@@ -5,6 +5,10 @@ struct Region {
     params: vec4<f32>,
     // Wash over the blurred pixels; a = 0 leaves them clear.
     tint: vec4<f32>,
+    // Canvas to flat-rect, for a region riding a tilted card; warp2.w = 0 is flat.
+    warp0: vec4<f32>,
+    warp1: vec4<f32>,
+    warp2: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> region: Region;
@@ -24,6 +28,15 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
     return mix(high, low, cutoff);
 }
 
+fn unwarp(p: vec2<f32>, r0: vec4<f32>, r1: vec4<f32>, r2: vec4<f32>) -> vec2<f32> {
+    if (r2.w < 0.5) {
+        return p;
+    }
+    let w = r2.x * p.x + r2.y * p.y + r2.z;
+    let safe = select(w, 1e-6, abs(w) < 1e-6);
+    return vec2<f32>(r0.x * p.x + r0.y * p.y + r0.z, r1.x * p.x + r1.y * p.y + r1.z) / safe;
+}
+
 fn rounded_box_sdf(p: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
     let r = min(radius, min(half_size.x, half_size.y));
     let q = abs(p) - half_size + vec2<f32>(r);
@@ -34,10 +47,14 @@ fn rounded_box_sdf(p: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
 /// source is sampled at the fragment's own position rather than through a
 /// transform. Opacity does NOT fade the blur itself, matching `paintBlur`:
 /// a half-faded redaction would leak what it is there to hide.
+///
+/// The shape of the region rides a tilted card, but the sample stays at the
+/// fragment: a redaction must hide whatever is actually on screen there.
 @fragment
 fn fs(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
+    let px = unwarp(frag.xy, region.warp0, region.warp1, region.warp2);
     let half_size = region.rect.zw * 0.5;
-    let sd = rounded_box_sdf(frag.xy - region.rect.xy - half_size, half_size, region.params.x);
+    let sd = rounded_box_sdf(px - region.rect.xy - half_size, half_size, region.params.x);
     let coverage = clamp(1.0 - smoothstep(-0.5, 0.5, sd), 0.0, 1.0);
     if (coverage <= 0.0) {
         discard;

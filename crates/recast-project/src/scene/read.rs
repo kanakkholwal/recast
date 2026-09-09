@@ -1,5 +1,5 @@
 //! Document to `RenderState` (and so `Scene`): the inverse of `write`, reading every attribute back with the same default it was elided against.
-//! Planned elements the engine does not draw yet (`vars`, `graphic`, `shader`, extra binds) are left in the document and ignored here.
+//! `$name` references are resolved on the way in, so nothing downstream of here has to know variables exist.
 
 use recast_scene::bind::{
     Binding, Key, LayerBinding, LayerRef, LayerTransform, Map as BindMap, Signal, Transform3,
@@ -40,6 +40,38 @@ pub enum MapError {
     Version(u32, u32),
 }
 
+/// `<graphic>` carries its parameters as attributes, `<shader>` as `<uniform>` children; both are the same instance to everything downstream.
+fn graphic(node: &Node) -> Option<recast_scene::component::GraphicSpec> {
+    use recast_scene::component::{GraphicSpec, Surface};
+    let surface = match node.kind.as_str() {
+        "graphic" => Surface::Overlay,
+        "shader" => Surface::Screen,
+        _ => return None,
+    };
+    let mut params: std::collections::BTreeMap<String, String> = node
+        .attrs
+        .iter()
+        .filter(|(name, _)| !GRAPHIC_ATTRS.contains(&name.as_str()))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    for uniform in node.children_of("uniform") {
+        if let (Some(name), Some(value)) = (uniform.attr("name"), uniform.attr("value")) {
+            params.insert(name.to_owned(), value.to_owned());
+        }
+    }
+    Some(GraphicSpec {
+        id: node.id().unwrap_or_default().to_owned(),
+        component: node.attr("component").unwrap_or_default().to_owned(),
+        start: node.num_or("at", 0.0),
+        duration: node.num_or("dur", 0.0),
+        params,
+        fallback_surface: surface,
+    })
+}
+
+/// Attributes of the element itself; everything else on a `<graphic>` is a parameter.
+const GRAPHIC_ATTRS: &[&str] = &["id", "component", "at", "dur"];
+
 fn id_suffix(node: &Node) -> String {
     node.id()
         .map_or_else(String::new, |id| format!(" id=\"{id}\""))
@@ -66,6 +98,11 @@ pub fn to_scene(doc: &Document) -> Result<Scene, MapError> {
 
 /// # Errors As `to_scene`.
 pub fn to_render_state(doc: &Document) -> Result<RenderState, MapError> {
+    let resolved = crate::vars::resolve(doc);
+    read_resolved(&resolved)
+}
+
+fn read_resolved(doc: &Document) -> Result<RenderState, MapError> {
     match doc.version() {
         Some(v) if v == crate::FORMAT_VERSION => {}
         other => return Err(MapError::Version(other.unwrap_or(0), crate::FORMAT_VERSION)),
@@ -113,6 +150,11 @@ pub fn to_render_state(doc: &Document) -> Result<RenderState, MapError> {
                 &mut state.transforms,
             );
             state.annotations.push(a);
+        }
+    }
+    for node in &root.children {
+        if let Some(graphic) = graphic(node) {
+            state.graphics.push(graphic);
         }
     }
     state.caption_style = root.child("captions").map(captions);

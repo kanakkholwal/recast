@@ -66,10 +66,23 @@ struct ShapeUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct ComponentUniform {
+    rect: [f32; 4],
+    canvas: [f32; 4],
+    p0: [f32; 4],
+    p1: [f32; 4],
+    tint: [f32; 4],
+    tint2: [f32; 4],
+    warp: [[f32; 4]; 3],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct RegionUniform {
     rect: [f32; 4],
     params: [f32; 4],
     tint: [f32; 4],
+    warp: [[f32; 4]; 3],
 }
 
 #[repr(C)]
@@ -248,6 +261,7 @@ pub struct Compositor {
     shadow: ShadowPass,
     card: CardPass,
     shape: ShapePass,
+    component: ComponentPass,
     region: RegionPass,
     image: ImagePass,
     sprite: SpritePass,
@@ -299,6 +313,11 @@ struct YuvPass {
     planes: Option<(u32, u32, PlaneLayout, Vec<wgpu::Texture>)>,
 }
 
+struct ComponentPass {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+}
+
 struct ShapePass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -345,6 +364,7 @@ impl Compositor {
             shadow: ShadowPass::new(&device),
             card: CardPass::new(&device),
             shape: ShapePass::new(&device),
+            component: ComponentPass::new(&device),
             region: RegionPass::new(&device),
             image: ImagePass::new(&device),
             sprite: SpritePass::new(&device),
@@ -389,6 +409,7 @@ impl Compositor {
             &inputs.caption.glyphs,
             (width, height),
         );
+        self.draw_components(&mut encoder, &working_view, params);
         self.present(&mut encoder, &working_view, target);
 
         self.queue.submit([encoder.finish()]);
@@ -1002,6 +1023,7 @@ impl Compositor {
                 rect: [*x, *y, *w, *h],
                 params: [radius.max(0.0), opacity * annotation.alpha, 0.0, 0.0],
                 tint: [0.0; 4],
+                warp: warp_rows(annotation.warp.as_ref()),
             }),
         );
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1099,6 +1121,7 @@ impl Compositor {
                 rect: [x, y, w, h],
                 params: [radius.max(0.0), 0.0, 0.0, 0.0],
                 tint: srgba_parts(tint),
+                warp: warp_rows(annotation.warp.as_ref()),
             }),
         );
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1149,6 +1172,64 @@ impl Compositor {
         match &self.region.blurred {
             Some((_, _, texture)) => texture.create_view(&Default::default()),
             None => unreachable!("the blurred target was just created"),
+        }
+    }
+
+    /// The topmost layers, in document order, after everything the recording itself put on screen.
+    fn draw_components(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        params: &FrameParams,
+    ) {
+        if params.components.is_empty() {
+            return;
+        }
+        let mut buffers = Vec::with_capacity(params.components.len());
+        let mut bind_groups = Vec::with_capacity(params.components.len());
+        for component in &params.components {
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("component-uniform"),
+                size: std::mem::size_of::<ComponentUniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue.write_buffer(
+                &buffer,
+                0,
+                bytemuck::bytes_of(&component_uniform(component, params)),
+            );
+            bind_groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("component"),
+                layout: &self.component.layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            }));
+            buffers.push(buffer);
+        }
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("components"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: working,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.component.pipeline);
+        for bind_group in &bind_groups {
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..3, 0..1);
         }
     }
 
@@ -1560,6 +1641,26 @@ fn shadow_uniform(shadow: &ShadowParams) -> ShadowUniform {
 }
 
 /// The inverse of a card's tilt as the SDF passes take it, or a flagged-off identity when the card is flat.
+fn component_uniform(
+    component: &crate::component::ComponentParams,
+    params: &FrameParams,
+) -> ComponentUniform {
+    ComponentUniform {
+        rect: component.rect,
+        canvas: [
+            params.geometry.canvas_w as f32,
+            params.geometry.canvas_h as f32,
+            component.progress,
+            component.recipe as f32,
+        ],
+        p0: component.p0,
+        p1: component.p1,
+        tint: srgba_parts(component.tint),
+        tint2: srgba_parts(component.tint2),
+        warp: warp_rows(component.warp.as_ref()),
+    }
+}
+
 fn warp_rows(warp: Option<&crate::plane::Homography>) -> [[f32; 4]; 3] {
     let Some(inverse) = warp.and_then(|w| w.inverse()) else {
         return [[0.0; 4]; 3];
@@ -1959,6 +2060,34 @@ impl SpritePass {
             }),
             sampler: clamped_linear_sampler(device, "sprite"),
         }
+    }
+}
+
+impl ComponentPass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("component"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let pipeline = fullscreen_pipeline(
+            device,
+            "component",
+            include_str!("shaders/component.wgsl"),
+            &layout,
+            WORKING_FORMAT,
+            Some(PREMULTIPLIED),
+            "vs",
+        );
+        Self { pipeline, layout }
     }
 }
 
@@ -2368,6 +2497,7 @@ mod tests {
             cursor_draw: None,
             layers,
             annotations: Vec::new(),
+            components: Vec::new(),
             source_time: 0.0,
         }
     }

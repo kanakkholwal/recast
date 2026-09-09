@@ -234,6 +234,9 @@ pub enum LayerSource {
         kind: String,
         value: String,
     },
+    /// A component instance. Its manifest says whether it draws over the whole
+    /// canvas or attached to the screen card, so both spellings are one layer.
+    Graphic(Box<crate::component::GraphicSpec>),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

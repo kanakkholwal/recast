@@ -254,6 +254,8 @@ pub struct FrameParams {
     pub layers: Vec<LayerParams>,
     /// In draw order: z-index, then insertion order.
     pub annotations: Vec<AnnotationParams>,
+    /// Component instances, in document order, drawn above everything else.
+    pub components: Vec<crate::component::ComponentParams>,
     /// Where `output_time` lands on the original recording axis.
     pub source_time: f64,
 }
@@ -369,6 +371,9 @@ impl Evaluator {
         let mut card_warp: Option<crate::plane::Homography> = None;
         // The pointer and annotations are anchored to the screen card, so a layout that hides the screen has to take them with it rather than leaving them over the camera.
         let mut card_alpha = 1.0f32;
+        // Collected as they are met and placed afterwards, since a screen recipe needs the card the loop has not reached yet.
+        let mut graphics: Vec<&recast_scene::component::GraphicSpec> = Vec::new();
+        let mut card_radius = 0.0f32;
 
         for layer in &scene.layers {
             match &layer.source {
@@ -435,6 +440,11 @@ impl Evaluator {
                     }
                     layers.push(params);
                 }
+                LayerSource::Graphic(spec) => {
+                    if !layer.hidden && spec.covers(output_time) {
+                        graphics.push(spec);
+                    }
+                }
                 _ => {
                     let mut params =
                         self.layer_params(layer, source_time, output_time, focus, &signals);
@@ -446,6 +456,7 @@ impl Evaluator {
                             params.visible = params.visible && rects.screen_opacity > 0.0;
                         }
                         card = (params.dest, params.transform);
+                        card_radius = params.corner_radius;
                         card_warp = params.plane.map(|p| p.warp(params.dest));
                         card_alpha = match params.visible {
                             true => params.opacity.clamp(0.0, 1.0),
@@ -485,9 +496,44 @@ impl Evaluator {
                     .collect(),
                 false => Vec::new(),
             },
+            components: self.components(&graphics, output_time, card.0, card_radius, card_warp),
             layers,
             source_time,
         }
+    }
+
+    /// Places each instance: an overlay covers the canvas, a screen recipe takes
+    /// the card's rect, rounding and tilt, so a gloss stays on the card.
+    fn components(
+        &self,
+        graphics: &[&recast_scene::component::GraphicSpec],
+        output_time: f64,
+        card: DestRect,
+        card_radius: f32,
+        card_warp: Option<crate::plane::Homography>,
+    ) -> Vec<crate::component::ComponentParams> {
+        use recast_scene::component::Surface;
+        let canvas = [
+            0.0,
+            0.0,
+            self.geometry.canvas_w as f32,
+            self.geometry.canvas_h as f32,
+        ];
+        graphics
+            .iter()
+            .map(|spec| match crate::component::surface_of(spec) {
+                Surface::Screen => crate::component::params_for(
+                    spec,
+                    output_time,
+                    [card.x, card.y, card.w, card.h],
+                    card_radius,
+                    card_warp,
+                ),
+                Surface::Overlay => {
+                    crate::component::params_for(spec, output_time, canvas, 0.0, None)
+                }
+            })
+            .collect()
     }
 
     /// This frame's arrangement: the clip's layout, and the one it is easing out
@@ -1614,6 +1660,35 @@ mod tests {
             "inside the window time past 0.5 s selects `to`"
         );
         assert!((opacity(6.0) - 1.0).abs() < 1e-6);
+    }
+
+    /// Every kind that anchors to the video rides the tilt, not just the ones
+    /// the SDF pass happened to draw: an unwarped blur would redact the wrong
+    /// pixels and an unwarped image would float off the card.
+    #[test]
+    fn every_video_anchored_annotation_kind_rides_a_tilted_card() {
+        let json = concat!(
+            r#""transforms": [{"layer":"screen","ry":-30.0,"z":0.2}], "#,
+            r#""annotations": [
+                {"id":"r1","start":0.0,"end":9.0,"kind":{"kind":"rect","x":0.2,"y":0.3,"w":0.2,"h":0.2}},
+                {"id":"b1","start":0.0,"end":9.0,"kind":{"kind":"blur","x":0.5,"y":0.3,"w":0.2,"h":0.2}},
+                {"id":"i1","start":0.0,"end":9.0,"kind":{"kind":"image","x":0.1,"y":0.6,"w":0.2,"h":0.2,"path":"a.png"}},
+                {"id":"f1","start":0.0,"end":9.0,"anchor":"frame","kind":{"kind":"rect","x":0.7,"y":0.7,"w":0.2,"h":0.2}}
+            ], "#
+        );
+        let scene = scene_with(json);
+
+        let drawn = Evaluator::new(&scene, source())
+            .evaluate(&scene, 1.0)
+            .annotations;
+
+        assert_eq!(drawn.len(), 4, "every annotation reaches the draw list");
+        let riding: Vec<bool> = drawn.iter().map(|a| a.warp.is_some()).collect();
+        assert_eq!(
+            riding,
+            [true, true, true, false],
+            "the three video-anchored kinds carry the card's warp; the frame-anchored one does not"
+        );
     }
 
     #[test]

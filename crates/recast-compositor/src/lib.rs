@@ -4,6 +4,7 @@
 pub mod annotation;
 pub mod camera;
 pub mod caption;
+pub mod component;
 pub mod eval;
 pub mod geometry;
 pub mod layout;

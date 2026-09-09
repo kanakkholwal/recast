@@ -202,6 +202,61 @@
 			}
 		},
 		{
+			"_why_fields": "A blur annotation anchored to the video rides the tilt: its rect is unwarped into plane space while the blurred sample stays at the fragment, which is the only pass pairing the two.",
+			"name": "tilted-blur",
+			"time": 1.0,
+			"overrides": {
+				"padding": 24.0,
+				"annotations": [{ "id": "b1", "start": 0.0, "end": 10.0, "fill": "transparent", "stroke": { "width": 0.0, "color": "transparent" }, "kind": { "kind": "blur", "x": 0.5, "y": 0.2, "w": 0.4, "h": 0.5, "strength": 0.8, "radius": 0.1 } }],
+				"transforms": [{ "layer": "screen", "ry": -32.0, "z": 0.2 }]
+			},
+			"without": {
+				"padding": 24.0,
+				"annotations": [{ "id": "b1", "start": 0.0, "end": 10.0, "fill": "transparent", "stroke": { "width": 0.0, "color": "transparent" }, "kind": { "kind": "blur", "x": 0.5, "y": 0.2, "w": 0.4, "h": 0.5, "strength": 0.8, "radius": 0.1 } }]
+			}
+		},
+		{
+			"_why_fields": "An overlay recipe covers the canvas and is placed by its own parameters; nothing else in the set exercises the component pass.",
+			"name": "component-spotlight",
+			"time": 1.0,
+			"overrides": {
+				"padding": 12.0,
+				"graphics": [{ "id": "g1", "component": "spotlight@1.0", "params": { "cx": "0.35", "cy": "0.45", "radius": "0.28", "strength": "0.75" } }]
+			},
+			"without": { "padding": 12.0 }
+		},
+		{
+			"_why_time": "Halfway through the instance's own window, so the band is mid-travel rather than at an end.",
+			"name": "component-sweep",
+			"time": 2.0,
+			"overrides": {
+				"padding": 24.0,
+				"borderRadius": 28.0,
+				"graphics": [{ "id": "g1", "component": "sweep@1.0", "start": 0.0, "duration": 4.0, "fallbackSurface": "screen", "params": { "strength": "0.8", "width": "0.3" } }]
+			},
+			"without": { "padding": 24.0, "borderRadius": 28.0 }
+		},
+		{
+			"_why_fields": "An instance the registry cannot serve still draws, so a missing component is visible rather than silent.",
+			"name": "component-placeholder",
+			"time": 1.0,
+			"overrides": {
+				"padding": 12.0,
+				"graphics": [{ "id": "g1", "component": "not-real@3.0", "params": { "x": "0.2", "y": "0.2", "w": "0.4", "h": "0.4" } }]
+			},
+			"without": { "padding": 12.0 }
+		},
+		{
+			"_why_fields": "The one recipe that mixes a colour per pixel, so a single tint slot would not carry it.",
+			"name": "component-mesh",
+			"time": 1.0,
+			"overrides": {
+				"padding": 30.0,
+				"graphics": [{ "id": "g1", "component": "mesh@1.0", "start": 0.0, "duration": 4.0, "params": { "a": "#7c3aed", "b": "#06b6d4", "strength": "0.9" } }]
+			},
+			"without": { "padding": 30.0 }
+		},
+		{
 			"name": "background-blur",
 			"time": 1.0,
 			"overrides": {

@@ -2,6 +2,7 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod bind;
+pub mod component;
 mod scene;
 
 pub mod migrate;
