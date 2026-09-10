@@ -498,6 +498,37 @@ fn a_sequence_reads_as_a_composition_and_sets_the_output_duration() {
     assert!((composition.items[1].area.y - 0.4).abs() < 1e-9);
 }
 
+/// A composition can set a font per item, so two titles in one film are not
+/// forced to share one face.
+#[test]
+fn a_text_item_carries_its_own_font_through_the_round_trip() {
+    use recast_scene::composition::ItemContent;
+    let src = concat!(
+        r#"<recast v="3"><sequence>"#,
+        r##"<text id="t1" at="0.000" dur="3.000" font="Anton" size="0.08" color="#ffffff">Hello</text>"##,
+        r##"<text id="t2" at="3.000" dur="3.000" size="0.05" color="#ffffff">Plain</text>"##,
+        r#"</sequence></recast>"#
+    );
+
+    let state = to_render_state(&parse(src).unwrap()).unwrap();
+
+    let items = &state.composition.as_ref().expect("a composition").items;
+    let font_of = |i: usize| match &items[i].content {
+        ItemContent::Text { font, .. } => font.clone(),
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(font_of(0), "Anton");
+    assert_eq!(font_of(1), "", "unset takes the project's own face");
+
+    let again = from_render_state(&state, &MediaRefs::default(), None, &mut IdGen::seeded(21));
+    let text = serialize(&again);
+    assert!(text.contains(r#"font="Anton""#), "{text}");
+    assert_eq!(
+        to_render_state(&again).unwrap().composition,
+        state.composition
+    );
+}
+
 #[test]
 fn a_composition_survives_a_whole_state_rewrite() {
     let src = concat!(

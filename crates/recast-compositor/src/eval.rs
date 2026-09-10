@@ -283,6 +283,8 @@ fn draws_shape(spec: &recast_scene::component::GraphicSpec) -> bool {
 pub struct TextItemDraw {
     pub rect: [f32; 4],
     pub content: String,
+    /// The CSS family stack it asked for; empty takes the session's own face.
+    pub font: String,
     /// Already resolved from the item's share of the frame height.
     pub size_px: f32,
     pub color: Srgba,
@@ -585,6 +587,7 @@ impl Evaluator {
                 }),
                 ItemContent::Text {
                     content,
+                    font,
                     size,
                     color,
                     align,
@@ -593,6 +596,7 @@ impl Evaluator {
                 } => texts.push(TextItemDraw {
                     rect,
                     content: content.clone(),
+                    font: font.clone(),
                     size_px: (*size * f64::from(ch)) as f32,
                     color: recast_color::parse_css_color(color)
                         .unwrap_or(Srgba::opaque(255, 255, 255)),

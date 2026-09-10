@@ -236,6 +236,23 @@ as a vertex output, which is 1 on the flat path, so an untilted card is
 untouched by construction. Absent means unlit, which is how every project made
 before this renders.
 
+## Fonts
+
+A session holds a registry of faces, not one face. A key is a CSS family stack
+plus a weight, and the first name is what gets matched, since the resolver takes
+one name rather than a fallback list. Ids are handed out once per key and never
+reused, because the glyph atlas keys on the face id: two families sharing one
+would read each other's glyphs back.
+
+A family that resolves to nothing, or an empty one, falls back to the face the
+host supplied. In the browser nothing resolves at all, so the host's face is the
+only one there is. That is why a composition item or a text component can name a
+font and still draw on a machine that does not have it.
+
+Text annotations are the exception: the engine does not draw them. They are
+rendered by a DOM layer in the editor and reach an export pre-rasterised into an
+image, which is what keeps the preview and the export showing the same pixels.
+
 ## Compositions
 
 A document either edits a recording or composes a sequence, never both: the

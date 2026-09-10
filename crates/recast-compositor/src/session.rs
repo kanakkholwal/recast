@@ -30,6 +30,8 @@ pub struct Session {
     /// The caption face and the glyphs packed from it. Held across frames
     /// because re-rasterising a line every frame is the whole cost.
     caption_face: Option<CaptionFace>,
+    /// Every face this session draws with, and the ids the atlas keys them by.
+    faces: crate::faces::Faces,
     /// Rasterised glyphs, held here because this session's compositor is the
     /// one that mirrors them. See `Compositor::sync_glyph_atlas`.
     atlas: GlyphAtlas,
@@ -55,6 +57,7 @@ impl Session {
             evaluator,
             compositor: Compositor::new(ctx)?,
             caption_face: None,
+            faces: crate::faces::Faces::new(),
             atlas: GlyphAtlas::new(ATLAS_WIDTH, ATLAS_MAX_HEIGHT),
             output: None,
             output_allocations: 0,
@@ -212,10 +215,10 @@ impl Session {
         if items.is_empty() {
             return CaptionFrame::default();
         }
-        let Some(face) = self.text_face() else {
-            return CaptionFrame::default();
-        };
-        let glyphs = crate::item_text::layout_items(&items, &face, 0, &mut self.atlas);
+        // Each item resolves its own family; the session's face is the fallback.
+        let fallback = self.text_face();
+        self.faces.set_host(fallback);
+        let glyphs = crate::item_text::layout_items(&items, &mut self.faces, &mut self.atlas);
         self.compositor.sync_glyph_atlas(&mut self.atlas);
         CaptionFrame { pill: None, glyphs }
     }

@@ -4,6 +4,8 @@
 use recast_scene::composition::TextAlign;
 use recast_text::{FontFace, GlyphAtlas};
 
+use crate::faces::Faces;
+
 use crate::eval::TextItemDraw;
 use crate::text::GlyphQuad;
 
@@ -16,16 +18,19 @@ struct Pending {
 }
 
 /// Shapes every item and packs its glyphs, returning them in the order they were given.
+/// Each item asks the registry for its own family, so two titles in one frame can be set in different fonts.
 /// The box clips nothing: a title that overflows is the author's to fix, and silently cropping one is worse than showing it.
 pub fn layout_items(
     items: &[TextItemDraw],
-    face: &FontFace,
-    face_id: u32,
+    faces: &mut Faces,
     atlas: &mut GlyphAtlas,
 ) -> Vec<GlyphQuad> {
     let mut pending = Vec::new();
     for item in items {
-        layout_one(item, face, face_id, atlas, &mut pending);
+        let Some((face_id, face)) = faces.face_for(&item.font, item.weight as u16) else {
+            continue;
+        };
+        layout_one(item, &face, face_id, atlas, &mut pending);
     }
     let (aw, ah) = atlas.size();
     pending
@@ -121,6 +126,7 @@ mod tests {
         TextItemDraw {
             rect: [100.0, 50.0, 400.0, 200.0],
             content: content.into(),
+            font: String::new(),
             size_px: 32.0,
             color: Srgba::opaque(255, 255, 255),
             align,

@@ -144,7 +144,7 @@ onDestroy(() => {
 });
 
 // `_frame` dependency forces re-derive on rAF ticks so position tracks playback/zoom.
-function styleFor(a: Annotation): string {
+function styleFor(a: Annotation, rank: number): string {
 	if (a.kind.kind !== "text") return "";
 	void _frame;
 	const t = playbackTime();
@@ -161,7 +161,6 @@ function styleFor(a: Annotation): string {
 	// Size font and glow off the ANCHOR rect, not the layer: the export scales its comp-resolution raster into that rect, so layer-relative sizing drifted off the exported glyphs.
 	const rect = rectCssFor(a);
 	const fontSizePx = k.fontSize * rect.h;
-	const z = a.zIndex ?? 0;
 	// Glow becomes a CSS drop-shadow so the preview matches the exported text's draw_image_shadow.
 	const g = a.glow;
 	const glowFilter = g
@@ -173,7 +172,8 @@ function styleFor(a: Annotation): string {
 		`width: ${cssW}px`,
 		`min-height: ${cssH}px`,
 		`opacity: ${opacity}`,
-		`z-index: ${z}`,
+		// Its position in `annotationsByZ`, never the authored number: a raw z-index escapes this layer and stacks against the whole preview.
+		`z-index: ${rank}`,
 		`font-family: ${k.fontFamily}`,
 		`font-size: ${fontSizePx}px`,
 		`font-weight: ${k.fontWeight}`,
@@ -312,10 +312,10 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
 
 <div
   bind:this={layerEl}
-  class="pointer-events-none absolute inset-0 overflow-hidden"
+  class="pointer-events-none absolute inset-0 z-0 isolate overflow-hidden"
   class:hidden={store.annotationsGloballyHidden}
 >
-  {#each store.annotationsByZ as a (a.id)}
+  {#each store.annotationsByZ as a, rank (a.id)}
     {#if a.kind.kind === "text" && !a.hidden}
       {@const isEditing = editingId === a.id}
       {@const isSelected = a.id === store.selectedAnnotationId}
@@ -334,7 +334,7 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
         class:cursor-grab={interactive && !isEditing && !isDragging}
         class:cursor-grabbing={isDragging}
         contenteditable={isEditing}
-        style={styleFor(a)}
+        style={styleFor(a, rank)}
         onpointerdown={(e) => handleTextPointerDown(e, a)}
         onpointermove={(e) => handleTextPointerMove(e, a)}
         onpointerup={(e) => handleTextPointerUp(e, a)}

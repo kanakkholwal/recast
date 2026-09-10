@@ -1250,6 +1250,7 @@ fn sequence_node(composition: &recast_scene::composition::Composition) -> Node {
             }
             ItemContent::Text {
                 content,
+                font,
                 size,
                 color,
                 align,
@@ -1257,6 +1258,9 @@ fn sequence_node(composition: &recast_scene::composition::Composition) -> Node {
                 line_height,
             } => {
                 child.text = Some(content.clone());
+                if !font.is_empty() {
+                    child.set("font", font.clone());
+                }
                 child.set("size", value::fmt_num(*size));
                 child.set("color", color.clone());
                 if *align != recast_scene::composition::TextAlign::default() {

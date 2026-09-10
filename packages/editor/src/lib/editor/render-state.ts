@@ -546,6 +546,8 @@ export type ItemContent =
 	| {
 			kind: "text";
 			content: string;
+			/** CSS family stack; empty takes whatever face the session has. */
+			font?: string;
 			/** Share of the frame height, so a title is the same size at any output resolution. */
 			size: number;
 			color: string;

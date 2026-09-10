@@ -70,6 +70,7 @@ fn sequence_item(node: &Node) -> Result<Option<recast_scene::composition::Item>,
         },
         "text" => ItemContent::Text {
             content: node.text.clone().unwrap_or_default(),
+            font: node.attr("font").unwrap_or_default().to_owned(),
             size: node.num_or("size", DEFAULT_ITEM_TEXT_SIZE),
             color: node.attr("color").unwrap_or("#ffffff").to_owned(),
             align: node

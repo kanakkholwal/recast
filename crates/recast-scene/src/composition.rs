@@ -103,6 +103,9 @@ pub enum ItemContent {
     #[serde(rename_all = "camelCase")]
     Text {
         content: String,
+        /// CSS family stack; empty takes whatever face the session has.
+        #[serde(default)]
+        font: String,
         /// Share of the frame height, so a title is the same size at any output resolution.
         size: f64,
         color: String,

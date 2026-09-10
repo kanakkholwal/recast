@@ -263,6 +263,11 @@ pub static REGISTRY: &[Manifest] = &[
                 "",
                 "A second line under it; empty leaves it out.",
             ),
+            text(
+                "font",
+                "",
+                "Family to draw with; empty takes the project's own.",
+            ),
             colour("fill", "#101014", "Panel colour."),
             colour("color", "#ffffff", "Text colour."),
             frac("size", "0.12", "Title size, share of the frame height."),
@@ -299,6 +304,11 @@ pub static REGISTRY: &[Manifest] = &[
         params: &[
             text("name", "Name", "Who this is."),
             text("role", "", "What they do; empty leaves it out."),
+            text(
+                "font",
+                "",
+                "Family to draw with; empty takes the project's own.",
+            ),
             colour("fill", "#101014", "Bar colour."),
             colour("color", "#ffffff", "Text colour."),
             frac("size", "0.06", "Name size, share of the frame height."),
@@ -333,6 +343,11 @@ pub static REGISTRY: &[Manifest] = &[
             num("decimals", 0.0, 6.0, "0", "Digits after the point."),
             text("prefix", "", "Written before the number."),
             text("suffix", "", "Written after it."),
+            text(
+                "font",
+                "",
+                "Family to draw with; empty takes the project's own.",
+            ),
             colour("color", "#ffffff", "Text colour."),
             frac("size", "0.14", "Share of the frame height."),
             num("align", -1.0, 1.0, "0", "-1 left, 0 centre, 1 right."),

@@ -208,6 +208,7 @@ pub fn text_for(spec: &GraphicSpec, time: f64, surface: [f32; 4]) -> Vec<TextIte
             align_of(num(manifest, spec, "align", 0.0)),
             colour,
             reveal_alpha(progress, num(manifest, spec, "hold", 0.6)),
+            &text_of(manifest, spec, "font"),
         ),
         6 => stacked(
             &text_of(manifest, spec, "name"),
@@ -218,6 +219,7 @@ pub fn text_for(spec: &GraphicSpec, time: f64, surface: [f32; 4]) -> Vec<TextIte
             TextAlign::Start,
             colour,
             reveal_alpha(progress, num(manifest, spec, "hold", 0.7)),
+            &text_of(manifest, spec, "font"),
         ),
         7 => stacked(
             &counted(manifest, spec, progress),
@@ -228,6 +230,7 @@ pub fn text_for(spec: &GraphicSpec, time: f64, surface: [f32; 4]) -> Vec<TextIte
             align_of(num(manifest, spec, "align", 0.0)),
             colour,
             1.0,
+            &text_of(manifest, spec, "font"),
         ),
         _ => Vec::new(),
     }
@@ -262,6 +265,7 @@ fn stacked(
     align: TextAlign,
     colour: Srgba,
     alpha: f32,
+    font: &str,
 ) -> Vec<TextItemDraw> {
     if lead.trim().is_empty() && under.trim().is_empty() {
         return Vec::new();
@@ -279,6 +283,7 @@ fn stacked(
         out.push(TextItemDraw {
             rect: [rect[0], top, rect[2], lead_px],
             content: lead.to_owned(),
+            font: font.to_owned(),
             size_px: lead_px,
             color: colour,
             align,
@@ -291,6 +296,7 @@ fn stacked(
         out.push(TextItemDraw {
             rect: [rect[0], top + lead_px + gap, rect[2], under_px],
             content: under.to_owned(),
+            font: font.to_owned(),
             size_px: under_px,
             color: colour,
             align,

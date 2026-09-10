@@ -341,6 +341,49 @@ pub(crate) fn sweep_stale_jobs(app: &AppHandle) {
 /// then persists the (heavy, self-contained) render payload to disk, inserts
 /// a `queued` row, and wakes the worker. Returns once the job is durably
 /// queued; the export itself runs in the background.
+/// Annotation kinds neither renderer draws. Text reaches an export
+/// pre-rasterised by the WebView, and an unknown kind came from a newer build.
+/// A caller without a WebView (the CLI, the control socket) would otherwise get
+/// a file with them silently missing, so it is refused, which is the rule the
+/// rest of the export already follows for a layer it cannot draw.
+fn unrenderable_without_a_webview(state: &crate::render::graph::RenderState) -> Option<String> {
+    use crate::render::node_types::AnnotationKind;
+    let stranded: Vec<&str> = state
+        .annotations
+        .iter()
+        .filter(|a| !a.hidden)
+        .filter(|a| {
+            matches!(
+                a.kind,
+                AnnotationKind::Text { .. } | AnnotationKind::Unsupported
+            )
+        })
+        .map(|a| a.id.as_str())
+        .collect();
+    if stranded.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{} annotation{} ({}) can only be drawn by the editor, so exporting here would leave {} out. Export from the editor window, or hide them first.",
+        stranded.len(),
+        if stranded.len() == 1 { "" } else { "s" },
+        stranded.join(", "),
+        if stranded.len() == 1 { "it" } else { "them" }
+    ))
+}
+
+/// A pointer style the caller never rasterised. The dot is a reasonable
+/// fallback, unlike losing someone's words, so this is a log line and not a refusal.
+fn styled_cursor_without_sprites(state: &crate::render::graph::RenderState) -> bool {
+    state.cursor_enabled
+        && state.cursor_sprite_rest.is_none()
+        && state
+            .passthrough
+            .get("cursorStyle")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|style| style != "dot")
+}
+
 #[tauri::command]
 pub async fn enqueue_export(
     app: AppHandle,
@@ -388,6 +431,16 @@ pub async fn enqueue_export(
             if issues.len() == 1 { "" } else { "s" },
             serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}")),
         )));
+    }
+
+    if let Some(reason) = unrenderable_without_a_webview(&request.render_state) {
+        return Err(AppError::msg(format!("enqueue_export: {reason}")));
+    }
+    if styled_cursor_without_sprites(&request.render_state) {
+        log::warn!(
+            "enqueue_export[{}] cursor sprites absent; the pointer exports as the plain dot",
+            request.export_id
+        );
     }
 
     let id = request.export_id.clone();
@@ -642,6 +695,106 @@ pub async fn retry_export_job(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The CLI, the control socket and the queue all reach `enqueue_export`
+    /// with whatever the project saved. Before this they exported a file with
+    /// the user's words missing and said nothing.
+    mod headless_guard {
+        use super::*;
+        use crate::render::node_types::Annotation;
+
+        /// Built from JSON so every serde default applies, the way a saved
+        /// project reaches this function.
+        fn annotation(id: &str, hidden: bool, kind: serde_json::Value) -> Annotation {
+            serde_json::from_value(serde_json::json!({
+                "id": id, "start": 0.0, "end": 1.0, "hidden": hidden, "kind": kind
+            }))
+            .expect("the fixture annotation deserialises")
+        }
+
+        fn text(id: &str, hidden: bool) -> Annotation {
+            annotation(
+                id,
+                hidden,
+                serde_json::json!({
+                    "kind": "text", "x": 0.1, "y": 0.1, "w": 0.4, "h": 0.1,
+                    "content": "Ship it", "fontFamily": "Inter", "fontSize": 42.0,
+                    "fontWeight": 600.0, "color": "#ffffff", "align": "center",
+                    "lineHeight": 1.2
+                }),
+            )
+        }
+
+        #[test]
+        fn a_text_annotation_is_refused_by_name_rather_than_dropped() {
+            let mut state = crate::render::graph::RenderState::default();
+            state.annotations.push(text("title", false));
+
+            let refused = unrenderable_without_a_webview(&state).expect("refused");
+
+            assert!(refused.contains("title"), "{refused}");
+            assert!(
+                unrenderable_without_a_webview(&{
+                    let mut newer = crate::render::graph::RenderState::default();
+                    newer.annotations.push(
+                        serde_json::from_value(serde_json::json!({
+                            "id": "from-a-newer-build", "start": 0.0, "end": 1.0,
+                            "kind": { "kind": "hologram" }
+                        }))
+                        .expect("an unknown kind deserialises as Unsupported"),
+                    );
+                    newer
+                })
+                .is_some(),
+                "a kind this build does not know is the same silent loss"
+            );
+            assert!(
+                refused.contains("editor"),
+                "it has to say what to do: {refused}"
+            );
+        }
+
+        #[test]
+        fn a_hidden_text_annotation_is_not_in_the_export_so_it_does_not_block_one() {
+            let mut state = crate::render::graph::RenderState::default();
+            state.annotations.push(text("title", true));
+
+            assert!(unrenderable_without_a_webview(&state).is_none());
+        }
+
+        #[test]
+        fn a_state_the_editor_already_rasterised_passes_through() {
+            let mut state = crate::render::graph::RenderState::default();
+            state.annotations.push(annotation(
+                "title",
+                false,
+                serde_json::json!({
+                    "kind": "image", "x": 0.1, "y": 0.1, "w": 0.4, "h": 0.1,
+                    "path": "data:image/png;base64,AAA", "opacity": 1.0, "radius": 0.0
+                }),
+            ));
+
+            assert!(unrenderable_without_a_webview(&state).is_none());
+        }
+
+        /// A dot is a fair fallback for a style; losing someone's words is not.
+        #[test]
+        fn a_styled_cursor_with_no_sprites_is_noticed_but_not_refused() {
+            let mut state = crate::render::graph::RenderState {
+                cursor_enabled: true,
+                ..Default::default()
+            };
+            state
+                .passthrough
+                .insert("cursorStyle".into(), serde_json::json!("macos"));
+
+            assert!(styled_cursor_without_sprites(&state));
+            assert!(unrenderable_without_a_webview(&state).is_none());
+
+            state.cursor_sprite_rest = Some("data:image/png;base64,AAA".into());
+            assert!(!styled_cursor_without_sprites(&state));
+        }
+    }
 
     fn open_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
