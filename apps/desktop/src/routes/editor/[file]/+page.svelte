@@ -852,7 +852,7 @@ async function loadDocument() {
 	try {
 		const document = await loadEditorDocument(data.filePath);
 		if (document.needsMigration) {
-			// Stop before loading anything, and prompt to update the format first.
+			// Stop before loading anything, and prompt to convert the archive first.
 			isLoading = false;
 			showMigration = true;
 			return;
@@ -1757,9 +1757,9 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
 
   <ConfirmDialog
     bind:open={showMigration}
-    title="Update project format"
-    description="This project was made with an older version of Recast. Update it to the current format to keep editing. A backup (.bak) is saved next to it first."
-    confirmLabel="Update project"
+    title="Convert to a project folder"
+    description="This is a .recast archive. Projects are folders, so it has to be converted before you can edit it. The archive is kept as a .bak next to it."
+    confirmLabel="Convert"
     cancelLabel="Not now"
     onConfirm={confirmMigration}
     onOpenChange={onMigrationOpenChange}

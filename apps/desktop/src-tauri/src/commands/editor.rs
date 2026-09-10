@@ -316,29 +316,28 @@ pub async fn get_video_metadata(path: String) -> AppResult<VideoMetadata> {
         .map_err(Into::into)
 }
 
-/// The editor's entry point: with `project_v3` on, a bundle also reports `needs_migration` so the dialog upgrades it to a directory.
+/// The editor's entry point: a `.recast` archive reports `needs_migration` so the dialog converts it into a project directory.
 #[tauri::command]
-pub async fn load_editor_document(
-    state: State<'_, AppState>,
-    path: String,
-) -> AppResult<EditorDocument> {
-    let to_v3 = state.config.read().project_v3;
-    load_document_as(path, to_v3).await
+pub async fn load_editor_document(path: String) -> AppResult<EditorDocument> {
+    load_document_as(path, true).await
 }
 
-/// Headless entry point (control socket, CLI, MCP): never asks for a format upgrade.
+/// Headless entry point (control socket, CLI, MCP): nothing there can answer a conversion dialog, so it never asks.
 pub async fn load_document(path: String) -> AppResult<EditorDocument> {
     load_document_as(path, false).await
 }
 
-async fn load_document_as(path: String, to_v3: bool) -> AppResult<EditorDocument> {
-    tauri::async_runtime::spawn_blocking(move || load_editor_document_blocking(path, to_v3))
+async fn load_document_as(path: String, offer_upgrade: bool) -> AppResult<EditorDocument> {
+    tauri::async_runtime::spawn_blocking(move || load_editor_document_blocking(path, offer_upgrade))
         .await
         .map_err(|e| AppError::msg(format!("load_editor_document join error: {e}")))?
         .map_err(Into::into)
 }
 
-fn load_editor_document_blocking(path: String, to_v3: bool) -> Result<EditorDocument, String> {
+fn load_editor_document_blocking(
+    path: String,
+    offer_upgrade: bool,
+) -> Result<EditorDocument, String> {
     let input = PathBuf::from(&path);
     grant_opened(&input);
     if let Some(project) = open_project_if_needed(&input)? {
@@ -402,7 +401,7 @@ fn load_editor_document_blocking(path: String, to_v3: bool) -> Result<EditorDocu
             render_state: grant_named(render_state),
             format: Some(project.format),
             needs_migration: project.needs_migration
-                || (to_v3 && project.format != crate::project::Format::V3),
+                || (offer_upgrade && project.format != crate::project::Format::V3),
         });
     }
 
@@ -3880,20 +3879,25 @@ pub async fn autosave_project(project_path: String, edits_json: String) -> AppRe
     .map_err(Into::into)
 }
 
-/// Re-pack a legacy `.recast` as the current format in place (keeps a `.bak`).
-/// Heavy zip I/O, so it runs off the main thread.
-/// Upgrades a bundle in place, keeping it as `.bak`: to a v3 directory when `project_v3` is on, else v1 to v2.
+/// Packs a project directory into a single `.recast` archive for sharing. The project stays a directory.
 #[tauri::command]
-pub async fn migrate_project(state: State<'_, AppState>, project_path: String) -> AppResult<()> {
-    let to_v3 = state.config.read().project_v3;
+pub async fn export_project_archive(project_path: String, dest_path: String) -> AppResult<String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let path = Path::new(&project_path);
-        if to_v3 {
-            return crate::project::v3::migrate(path)
-                .map(drop)
-                .map_err(|e| AppError::msg(format!("{e:#}")));
-        }
-        crate::project::migrate_project(path).map_err(AppError::from)
+        crate::project::v3::export_archive(Path::new(&project_path), Path::new(&dest_path))
+            .map(|()| dest_path)
+            .map_err(|e| AppError::msg(format!("{e:#}")))
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("export task panicked: {e}")))?
+}
+
+/// Converts a `.recast` archive into a project directory at the same path, keeping the archive as `.bak`.
+/// Heavy zip I/O, so it runs off the main thread.
+#[tauri::command]
+pub async fn migrate_project(project_path: String) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::project::v3::import_archive(Path::new(&project_path))
+            .map_err(|e| AppError::msg(format!("{e:#}")))
     })
     .await
     .map_err(|e| AppError::msg(format!("migrate task panicked: {e}")))?

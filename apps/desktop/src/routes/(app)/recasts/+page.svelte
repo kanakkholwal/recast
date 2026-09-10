@@ -7,8 +7,10 @@ import {
 	Film,
 	FolderOpen,
 	History,
+	Download,
 	ListChecks,
 	MoreHorizontal,
+	Package,
 	Pencil,
 	RefreshCw,
 	Trash2,
@@ -35,6 +37,8 @@ import {
 } from "$components/library";
 import { ConfirmDialog, RenameDialog } from "$components/recast";
 import {
+	exportProjectArchive,
+	importProjectArchive,
 	launchRecordingPanel,
 	listRecasts,
 	migrateProject,
@@ -61,6 +65,7 @@ let deleteTarget = $state<RecordingEntry | null>(null);
 let bulkDeleteOpen = $state(false);
 let migrateAllOpen = $state(false);
 let migrating = $state(false);
+let importing = $state(false);
 const legacyCount = $derived(lib.entries.filter((e) => e.needsMigration).length);
 
 const shareSupported = isShareSupported();
@@ -130,18 +135,58 @@ async function handleMigrateAll() {
 	}
 	migrating = false;
 	const failed = legacy.length - ok;
-	if (failed > 0) toast.error(`Updated ${ok} · ${failed} failed`);
-	else toast.success(`Updated ${ok} project${ok === 1 ? "" : "s"}`);
+	if (failed > 0) toast.error(`Converted ${ok} · ${failed} failed`);
+	else toast.success(`Converted ${ok} archive${ok === 1 ? "" : "s"}`);
 	await lib.refresh();
 }
 
 async function handleMigrateOne(entry: RecordingEntry) {
 	try {
 		await migrateProject(entry.path);
-		toast.success(`Updated "${entry.filename}"`);
+		toast.success(`Converted "${entry.filename}"`);
 		await lib.refresh();
 	} catch (err) {
-		toast.error(`Update failed: ${err}`);
+		toast.error(`Conversion failed: ${err}`);
+	}
+}
+
+// A project is a folder; an archive is how one travels. Nothing here turns a project back into one.
+async function exportArchive(entry: RecordingEntry) {
+	const { save } = await import("@tauri-apps/plugin-dialog");
+	const dest = await save({
+		title: "Export as a .recast archive",
+		defaultPath: entry.filename,
+		filters: [{ name: "Recast archive", extensions: ["recast"] }],
+	});
+	if (!dest) return;
+	try {
+		await exportProjectArchive(entry.path, dest);
+		toast.success(`Exported "${entry.filename}"`, {
+			action: { label: "Show", onClick: () => void openFileLocation(dest) },
+		});
+	} catch (err) {
+		toast.error(`Export failed: ${err}`);
+	}
+}
+
+async function importArchive() {
+	const { open } = await import("@tauri-apps/plugin-dialog");
+	const picked = await open({
+		multiple: false,
+		directory: false,
+		title: "Import a .recast archive",
+		filters: [{ name: "Recast archive", extensions: ["recast"] }],
+	});
+	if (typeof picked !== "string") return;
+	importing = true;
+	try {
+		await importProjectArchive(picked);
+		toast.success("Imported into your recordings");
+		await lib.refresh();
+	} catch (err) {
+		toast.error(`Import failed: ${err}`);
+	} finally {
+		importing = false;
 	}
 }
 </script>
@@ -155,16 +200,26 @@ async function handleMigrateOne(entry: RecordingEntry) {
         class="gap-1.5"
         onclick={() => (migrateAllOpen = true)}
         disabled={migrating}
-        title="Update older projects to the current format"
+        title="Convert .recast archives into project folders"
       >
         {#if migrating}
           <RefreshCw size={13} class="motion-safe:animate-spin" />
         {:else}
           <History size={13} />
         {/if}
-        Update {legacyCount} older
+        Convert {legacyCount} archive{legacyCount === 1 ? "" : "s"}
       </Button>
     {/if}
+    <Button
+      variant="secondary"
+      size="sm"
+      class="gap-1.5"
+      onclick={importArchive}
+      disabled={importing}
+      title="Import a .recast archive into your recordings"
+    >
+      <Download size={13} /> Import
+    </Button>
     <Button size="sm" variant="theme" onclick={newRecording}>
       <Video /> New recording
     </Button>
@@ -284,7 +339,7 @@ async function handleMigrateOne(entry: RecordingEntry) {
                 <DropdownMenu.Content align="end" size="sm" class="w-44">
                   {#if entry.needsMigration}
                     <DropdownMenu.Item onSelect={() => handleMigrateOne(entry)}>
-                      <History class="size-3" /> Update format
+                      <History class="size-3" /> Convert to a folder
                     </DropdownMenu.Item>
                     <DropdownMenu.Separator />
                   {/if}
@@ -306,6 +361,11 @@ async function handleMigrateOne(entry: RecordingEntry) {
                   <DropdownMenu.Item onSelect={() => lib.copyPath(entry)}>
                     <CopyIcon class="size-3" /> Copy path
                   </DropdownMenu.Item>
+                  {#if !entry.needsMigration}
+                    <DropdownMenu.Item onSelect={() => exportArchive(entry)}>
+                      <Package class="size-3" /> Export archive…
+                    </DropdownMenu.Item>
+                  {/if}
                   {#if shareSupported}
                     <DropdownMenu.Item onSelect={() => shareEntry(entry)}>
                       <ShareIcon class="size-3" /> Share…
@@ -342,9 +402,9 @@ async function handleMigrateOne(entry: RecordingEntry) {
 {#if migrateAllOpen}
   <ConfirmDialog
     open={true}
-    title={`Update ${legacyCount} older project${legacyCount === 1 ? "" : "s"}?`}
-    description="These projects use an older format. Each is updated in place to the current format, keeping a backup (.bak) next to it. You can also update them one at a time from a project's menu."
-    confirmLabel="Update all"
+    title={`Convert ${legacyCount} archive${legacyCount === 1 ? "" : "s"}?`}
+    description="Projects are folders. Each .recast archive here becomes one in place, keeping the archive as a .bak next to it. You can also convert them one at a time from a project's menu."
+    confirmLabel="Convert all"
     onConfirm={handleMigrateAll}
     onOpenChange={(v) => {
       if (!v) migrateAllOpen = false;

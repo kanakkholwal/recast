@@ -30,6 +30,41 @@ pub fn migrate(path: &Path) -> Result<recast_project::migrate::Report> {
         .with_context(|| format!("failed to migrate {} to v3", path.display()))
 }
 
+/// Converts the `.recast` archive at `path` into a project directory at the same path, keeping the archive as `Name.recast.bak`.
+/// A v1 or v2 bundle is migrated; one packed by `export_archive` is unpacked. Directories are already there and are refused.
+pub fn import_archive(path: &Path) -> Result<()> {
+    match locate(path).with_context(|| format!("reading {}", path.display()))? {
+        Located::V1Zip(_) | Located::V2Zip(_) => migrate(path).map(drop),
+        Located::Packaged(_) => unpack_in_place(path),
+        Located::V3Dir(_) => bail!("{} is already a project directory", path.display()),
+    }
+}
+
+/// `unpack` refuses to write over the archive, so stage beside it and swap, which also
+/// leaves the archive untouched if anything fails.
+fn unpack_in_place(path: &Path) -> Result<()> {
+    let staging = path.with_extension("recast.importing");
+    if staging.exists() {
+        fs::remove_dir_all(&staging).context("clearing a stale staging directory")?;
+    }
+    recast_project::package::unpack(path, &staging)
+        .with_context(|| format!("unpacking {}", path.display()))?;
+    let backup = path.with_extension("recast.bak");
+    fs::rename(path, &backup).context("moving the archive aside")?;
+    if let Err(e) = fs::rename(&staging, path) {
+        let _ = fs::rename(&backup, path);
+        let _ = fs::remove_dir_all(&staging);
+        return Err(e).context("renaming the unpacked project into place");
+    }
+    Ok(())
+}
+
+/// Zips the project directory at `path` into `dest` for sharing. Refuses to overwrite.
+pub fn export_archive(path: &Path, dest: &Path) -> Result<()> {
+    recast_project::package::pack(path, dest)
+        .with_context(|| format!("packing {} into {}", path.display(), dest.display()))
+}
+
 /// Bytes a project directory occupies on disk, minus `.cache` (rebuildable, and the library card should say what a copy costs).
 pub fn size_bytes(root: &Path) -> u64 {
     let Ok(entries) = fs::read_dir(root) else {
@@ -305,6 +340,86 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(open(&dir).unwrap().edits_path).unwrap())
                 .unwrap();
         assert_eq!(again.padding, 12.0);
+    }
+
+    fn fresh_project(root: &Path, name: &str) -> PathBuf {
+        let staged = root.join(format!("staged-{name}"));
+        fs::create_dir_all(&staged).unwrap();
+        let rec = staged.join("x.recording.mp4");
+        let cur = staged.join("x.cursor.json");
+        fs::write(&rec, b"MP4").unwrap();
+        fs::write(&cur, r#"{"samples":[],"clicks":[]}"#).unwrap();
+        let metadata: ProjectMetadata = serde_json::from_str(
+            r#"{"schemaVersion":1,"createdAtUnixMs":1,"captureTarget":{"kind":"display","id":1,"label":"x","source":{"x":0,"y":0,"width":1920,"height":1080},"crop":{"x":0,"y":0,"width":1920,"height":1080},"displayId":1,"scaleFactor":1},"stats":{"capturedFrames":60,"encodedFrames":60,"droppedFrames":0,"durationMs":1000,"nominalFps":60},"video":{"width":1920,"height":1080,"fps":60,"durationMs":1000}}"#,
+        )
+        .unwrap();
+        let state = RenderState {
+            trim_end: 1.0,
+            ..RenderState::default()
+        };
+        write_project(ProjectWriteRequest {
+            output_path: root.join(format!("{name}.recast")),
+            metadata,
+            recording_path: rec,
+            cursor_path: cur,
+            audio_path: None,
+            microphone_path: None,
+            camera_path: None,
+            edits_json: serde_json::to_string(&state).unwrap(),
+        })
+        .unwrap()
+    }
+
+    /// The archive is the interchange form and the directory stays the project, so a
+    /// pack must not disturb what it packed.
+    #[test]
+    fn exporting_leaves_the_project_a_directory_and_refuses_to_overwrite() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = fresh_project(tmp.path(), "Shared");
+        let dest = tmp.path().join("Shared-copy.recast");
+
+        export_archive(&project, &dest).unwrap();
+
+        assert!(dest.is_file(), "the archive is one file");
+        assert!(is_project_dir(&project), "the project is untouched");
+        assert!(
+            export_archive(&project, &dest).is_err(),
+            "a second export would silently replace someone's file"
+        );
+    }
+
+    /// Import is the only way back in, so the archive has to survive a swap that fails
+    /// halfway; it stays as `.bak` even when everything works.
+    #[test]
+    fn importing_an_exported_archive_puts_a_directory_at_its_path_and_keeps_the_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = fresh_project(tmp.path(), "Trip");
+        let archive = tmp.path().join("Trip-packed.recast");
+        export_archive(&project, &archive).unwrap();
+
+        import_archive(&archive).unwrap();
+
+        assert!(is_project_dir(&archive), "the path is now the project");
+        assert!(
+            archive.with_extension("recast.bak").is_file(),
+            "the archive is kept"
+        );
+        let text = fs::read_to_string(archive.join(layout::DOCUMENT)).unwrap();
+        assert!(text.contains("out=\"1.000\""), "{text}");
+    }
+
+    #[test]
+    fn importing_a_directory_is_refused_rather_than_clobbering_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = fresh_project(tmp.path(), "Already");
+
+        let err = import_archive(&project).unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("already a project directory"),
+            "{err:#}"
+        );
+        assert!(is_project_dir(&project));
     }
 
     #[test]

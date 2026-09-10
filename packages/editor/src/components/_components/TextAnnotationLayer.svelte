@@ -148,8 +148,13 @@ onDestroy(() => {
 	if (rafHandle !== null) cancelAnimationFrame(rafHandle);
 });
 
-// `_frame` dependency forces re-derive on rAF ticks so position tracks playback/zoom.
-function styleFor(a: Annotation, rank: number): string {
+/**
+ * The one owner of a text annotation's inline style. It must stay the only one:
+ * a `style:` directive alongside it silently strips its own property out of this
+ * string, even when the directive resolves to undefined.
+ * `_frame` forces a re-derive on rAF ticks so position tracks playback and zoom.
+ */
+function styleFor(a: Annotation, rank: number, isEditing: boolean): string {
 	if (a.kind.kind !== "text") return "";
 	void _frame;
 	const t = playbackTime();
@@ -182,13 +187,21 @@ function styleFor(a: Annotation, rank: number): string {
 		`font-family: ${k.fontFamily}`,
 		`font-size: ${fontSizePx}px`,
 		`font-weight: ${k.fontWeight}`,
-		`color: ${k.color}`,
+		// Transparent, not hidden: the caret and the selection still need a box while the engine draws the glyphs.
+		`color: ${store.engineDrawsAnnotationText && !isEditing ? "transparent" : k.color}`,
 		`text-align: ${k.align}`,
 		`line-height: ${k.lineHeight}`,
+		`pointer-events: ${interactive(a) ? "auto" : "none"}`,
+		`touch-action: ${interactive(a) ? "none" : "auto"}`,
 		glowFilter,
 	]
 		.filter(Boolean)
 		.join(";");
+}
+
+// Text only takes the pointer on its own tab, so it cannot fight the canvas overlay.
+function interactive(a: Annotation): boolean {
+	return store.activePanel === "annotations" && !a.locked;
 }
 
 function startEditing(a: Annotation) {
@@ -325,8 +338,8 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
       {@const isEditing = store.editingAnnotationId === a.id}
       {@const isSelected = a.id === store.selectedAnnotationId}
       {@const isActiveTab = store.activePanel === "annotations"}
-      {@const interactive = isActiveTab && !a.locked}
       {@const isDragging = drag?.id === a.id && drag?.moved}
+      {@const canEdit = interactive(a)}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         data-text-anno-id={a.id}
@@ -336,21 +349,21 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
         class:outline-dashed={isSelected && isActiveTab && !isEditing}
         class:outline-primary={isSelected && isActiveTab}
         class:cursor-text={isEditing}
-        class:cursor-grab={interactive && !isEditing && !isDragging}
+        class:cursor-grab={canEdit && !isEditing && !isDragging}
         class:cursor-grabbing={isDragging}
         contenteditable={isEditing}
-        style={styleFor(a, rank)}
+        style={styleFor(a, rank, isEditing)}
         onpointerdown={(e) => handleTextPointerDown(e, a)}
         onpointermove={(e) => handleTextPointerMove(e, a)}
         onpointerup={(e) => handleTextPointerUp(e, a)}
         onpointercancel={(e) => handleTextPointerUp(e, a)}
         ondblclick={(e) => {
-          if (!interactive) return;
+          if (!canEdit) return;
           e.stopPropagation();
           startEditing(a);
         }}
         onclick={(e) => {
-          if (!interactive) return;
+          if (!canEdit) return;
           if (isEditing) return;
           // Suppress the click that tails a successful drag.
           if (drag?.id === a.id && drag?.moved) {
@@ -362,9 +375,6 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
         }}
         onblur={(e) => commitEditing(a, e.currentTarget as HTMLElement)}
         onkeydown={(e) => handleKeyDown(e, a)}
-        style:pointer-events={interactive ? "auto" : "none"}
-        style:touch-action={interactive ? "none" : "auto"}
-        style:color={store.engineDrawsAnnotationText && !isEditing ? "transparent" : undefined}
       >{a.kind.content}</div>
     {/if}
   {/each}

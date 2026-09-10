@@ -11,8 +11,8 @@ inputs:
   - "User edits through store methods"
 outputs:
   - "Render-state snapshots for preview and export"
-  - "An atomically written .recast v2 bundle"
-  - "A v3 folder project: project.rcx plus media and tracks, checkpointed from a sequenced document"
+  - "A folder project: project.rcx plus media and tracks, checkpointed from a sequenced document"
+  - "A .recast archive, on export only"
 entrypoints:
   - "packages/editor/src/stores/editor-store.svelte.ts"
   - "packages/editor/src/lib/editor/render-state.ts"
@@ -170,8 +170,9 @@ JSON to a separate recovery shadow, gated on `isDirty`.
 
 ## The v3 folder project
 
-Behind Settings > Recording writer > "Save projects as folders", a recording
-is written as `Name.recast/` instead of a zip:
+Every recording is written as `Name.recast/`, a folder, and there is no setting
+that says otherwise. A `.recast` file is the interchange form, not a save format:
+it can be imported and exported, never saved back into.
 
 ```
 Name.recast/
@@ -186,8 +187,17 @@ Name.recast/
 `crates/recast-project` owns the format: the schema table, parser and
 canonical serializer, validation, ops addressed by id or kind path, the diff
 that turns two documents into an op batch, the one typed mapping
-`Document <-> RenderState`, migration from v1 and v2 (the bundle is kept as
+`Document <-> RenderState`, migration from v1 and v2 (the archive is kept as
 `.bak`), pack and unpack for the interchange zip, and the store.
+
+Import and export go through one door each. `import_project_archive` copies the
+picked archive into the recordings folder and converts it there, so the file the
+user chose is left alone; `migrate_project` converts an archive already in the
+library in place. Both dispatch on what the archive is: a v1 or v2 bundle is
+migrated, one written by `export_project_archive` is unpacked.
+`export_project_archive` packs a folder into a single `.recast` and leaves the
+folder as the project. `recast project pack` and `recast project unpack` are the
+same two operations on the CLI.
 
 **While the app runs, the core's in-memory document is the truth.** Every
 write, the GUI's whole-state save included, becomes one sequenced op batch on
@@ -277,17 +287,16 @@ is a setting, see the agentic page.
   Each `edits/<section>.json` carries its own `version` for per-section migration.
   Output is canonicalized (sorted keys, id-sorted arrays) so git diffs are minimal
   (`canonicalize`).
-- **Atomic writes; never remove-before-rename.** Both `write_project` and
-  `update_project_edits` write a `.recast.tmp`, `sync_all()`, then `fs::rename` over
-  the original, which already replaces atomically. Deleting the original first
-  opens a window where a crash loses the project outright (`writer.rs`,
-  reader mirrors this for extracted assets at `reader.rs`).
-- **Migration is dialog-gated and backed up.** `is_legacy_project` cheaply probes
-  only the ZIP central directory for the absence of `project.json`
-  (`mod.rs`). Loading a v1 project stops and prompts; the user confirms, then
-  `migrate_project` re-packs to v2 in place after copying a one-time `.recast.bak`
-  (recordings can be irreplaceable). A save refuses to run on a non-v2 archive, so
-  it can never produce a hybrid v1/v2 bundle (`writer.rs`).
+- **Atomic writes; never remove-before-rename.** `update_project_edits` writes a
+  `.recast.tmp`, `sync_all()`, then `fs::rename` over the original, which already
+  replaces atomically. Deleting the original first opens a window where a crash
+  loses the project outright (`writer.rs`, and the reader mirrors this for
+  extracted assets at `reader.rs`). Packing and unpacking stage beside the target
+  and swap for the same reason (`package.rs`, `v3.rs`).
+- **Conversion is dialog-gated and backed up.** An opened archive reports
+  `needs_migration`, the user confirms, and the archive is kept as a one-time
+  `.recast.bak` (recordings can be irreplaceable). Nothing writes a v2 bundle any
+  more: `writer::write_project` is `#[cfg(test)]`, kept only to fixture the reader.
 
 - **v3 never trusts the file while the app runs.** Reads through the tool,
   not the disk: the file is a checkpoint up to half a second behind. Two GUI

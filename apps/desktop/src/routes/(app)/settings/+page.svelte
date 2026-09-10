@@ -79,7 +79,6 @@ import {
 	getNativeEncoder,
 	getAgentLiveApply,
 	getOutputDir,
-	getProjectV3,
 	getWindowTransparency,
 	installCli,
 	nativeEncoderAvailable,
@@ -89,7 +88,6 @@ import {
 	setNativeEncoder,
 	setAgentLiveApply,
 	setOutputDir,
-	setProjectV3,
 	setWindowTransparency,
 	uninstallCli,
 } from "$lib/ipc";
@@ -120,7 +118,6 @@ let hidePanelFromCapture = $state(true);
 // Backed by AppConfig, not the experimental store: the backend reads it before any window exists.
 let nativeEncoder = $state(false);
 let nativeEncoderSupported = $state(false);
-let projectV3 = $state(false);
 let agentLiveApply = $state(false);
 // Content protection is a compile-time no-op on Linux, so the toggle is shown disabled rather than pretending.
 const isLinux = platform() === "linux";
@@ -295,7 +292,6 @@ async function fetchSettings() {
 		// Older builds without the commands: leave it off and unsupported.
 	}
 	try {
-		projectV3 = await getProjectV3();
 		agentLiveApply = await getAgentLiveApply();
 	} catch {
 		// Older builds without the commands: leave them off.
@@ -361,17 +357,6 @@ async function toggleAgentLiveApply() {
 		await setAgentLiveApply(next);
 	} catch (e) {
 		agentLiveApply = !next;
-		toast.error(`Could not update setting: ${e}`);
-	}
-}
-
-async function toggleProjectV3() {
-	const next = !projectV3;
-	projectV3 = next;
-	try {
-		await setProjectV3(next);
-	} catch (e) {
-		projectV3 = !next;
 		toast.error(`Could not update setting: ${e}`);
 	}
 }
@@ -938,18 +923,6 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               disabled={!nativeEncoderSupported}
               onCheckedChange={() => toggleNativeEncoder()}
               aria-label="Use the GPU writer instead of FFmpeg"
-            />
-          </SettingsRow>
-          <SettingsRow
-            label="Save projects as folders"
-            description={projectV3
-              ? "New recordings are folders with a readable project file inside. Older projects offer an upgrade when opened."
-              : "New recordings are single .recast files. Folders are readable by agents and version control, but newer."}
-          >
-            <Switch
-              checked={projectV3}
-              onCheckedChange={() => toggleProjectV3()}
-              aria-label="Save projects as folders"
             />
           </SettingsRow>
           <SettingsRow

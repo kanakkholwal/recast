@@ -228,15 +228,17 @@ the kept segments, what is on each lane, and the media the project references.
 words behind them, annotations that fall off the frame or sit under the camera
 bubble, zoom targets that had to be clamped, and every validator error.
 
-### v3 project directories
+### Project directories
 
-A v3 project is a directory (`Name.recast/`) holding `project.rcx` markup, the
-media, the tracks, and its own `branches/`. These verbs work on that shape:
+A project is a directory (`Name.recast/`) holding `project.rcx` markup, the
+media, the tracks, and its own `branches/`. That is the only shape the app
+saves; a `.recast` file is how a project travels, not how it is stored. These
+verbs work on that shape:
 
 ```bash
 recast project migrate <BUNDLE> [--dest DIR] [--no-backup]  # v1/v2 bundle to a directory
-recast project pack   <DIR> <FILE>    # zip one up for sharing (.cache left out)
-recast project unpack <FILE> <DIR>    # and back again
+recast project pack   <DIR> <FILE>    # export: zip one up for sharing (.cache left out)
+recast project unpack <FILE> <DIR>    # import: a packed archive back to a directory
 recast project doc    <DIR>           # parse and validate offline: hash plus findings
 recast project rcx    <PATH>          # the live document from the app: text, hash, seq
 recast project ops    <PATH> --file ops.json [--expect-seq N]

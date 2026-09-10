@@ -491,9 +491,19 @@ export function loadEditorDocument(path: string): Promise<EditorDocument> {
 	return invoke<EditorDocument>("load_editor_document", { path });
 }
 
-/** Re-pack a legacy `.recast` to the current format in place (keeps a `.bak`). */
+/** Convert a `.recast` archive into a project folder at the same path, keeping the archive as `.bak`. */
 export function migrateProject(projectPath: string): Promise<void> {
 	return invoke<void>("migrate_project", { projectPath });
+}
+
+/** Pack a project folder into a single `.recast` archive. The project stays a folder. */
+export function exportProjectArchive(projectPath: string, destPath: string): Promise<string> {
+	return invoke<string>("export_project_archive", { projectPath, destPath });
+}
+
+/** Copy a `.recast` archive into the recordings folder and convert it to a project there. */
+export function importProjectArchive(archivePath: string): Promise<string> {
+	return invoke<string>("import_project_archive", { archivePath });
 }
 
 export function generateThumbnails(path: string, count: number): Promise<string[]> {
@@ -981,15 +991,6 @@ export function getNativeEncoder(): Promise<boolean> {
 
 export function setNativeEncoder(enabled: boolean): Promise<void> {
 	return invoke<void>("set_native_encoder", { enabled });
-}
-
-/** Whether new recordings are written as v3 project directories and bundles are offered the upgrade. */
-export function getProjectV3(): Promise<boolean> {
-	return invoke<boolean>("get_project_v3");
-}
-
-export function setProjectV3(enabled: boolean): Promise<void> {
-	return invoke<void>("set_project_v3", { enabled });
 }
 
 /** Whether an agent may land ops on the open project directly (one undo step each) instead of proposing on a branch. */

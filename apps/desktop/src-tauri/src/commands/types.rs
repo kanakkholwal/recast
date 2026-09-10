@@ -113,7 +113,7 @@ pub struct EditorDocument {
     pub render_state: RenderState,
     /// `None` for a plain video opened without a project.
     pub format: Option<crate::project::Format>,
-    /// True when the editor must migrate the bundle before loading it (v1, or any bundle once `project_v3` is on).
+    /// True when the editor must convert a `.recast` archive into a project directory before loading it.
     pub needs_migration: bool,
 }
 
@@ -206,9 +206,6 @@ pub struct AppConfig {
     /// Default off because the native path, though complete and tested, has only run on the author's hardware; `RECAST_NATIVE_ENCODER=1` overrides.
     #[serde(default)]
     pub native_encoder: bool,
-    /// Write new recordings as v3 project directories instead of v2 bundles. Default off until the whole app has run on a directory end to end.
-    #[serde(default)]
-    pub project_v3: bool,
     /// Lets an agent land ops on the open project directly (one undo step each) instead of proposing on a branch.
     #[serde(default)]
     pub agent_live_apply: bool,
@@ -246,7 +243,6 @@ impl Default for AppConfig {
             cli_auto_install: true,
             cli_install_attempted: false,
             native_encoder: false,
-            project_v3: false,
             agent_live_apply: false,
         }
     }
