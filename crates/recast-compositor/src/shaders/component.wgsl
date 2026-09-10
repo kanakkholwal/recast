@@ -61,7 +61,8 @@ fn spotlight(uv: vec2<f32>, size: vec2<f32>) -> f32 {
 }
 
 /// A rounded panel wiping in and out along an angle.
-/// p0 = corner radius (fraction), angle (radians), softness, hold.
+/// p0 = corner radius (fraction), angle (radians), softness, and the wipe front,
+/// which the CPU computes so the panel and any words on it cannot drift apart.
 fn shape_reveal(uv: vec2<f32>, size: vec2<f32>) -> f32 {
     let half_size = size * 0.5;
     let radius = component.p0.x * min(size.x, size.y);
@@ -76,16 +77,7 @@ fn shape_reveal(uv: vec2<f32>, size: vec2<f32>) -> f32 {
     let t = (dot(uv - vec2<f32>(0.5), axis) / max(extent, 1e-4)) + 0.5;
 
     let softness = max(component.p0.z, 1e-3);
-    let hold = clamp(component.p0.w, 0.0, 1.0);
-    let phase = max((1.0 - hold) * 0.5, 1e-4);
-    let progress = component.canvas.z;
-
-    var front = 1.0 + softness;
-    if (progress < phase) {
-        front = mix(-softness, 1.0 + softness, progress / phase);
-    } else if (progress > 1.0 - phase) {
-        front = mix(1.0 + softness, -softness, (progress - (1.0 - phase)) / phase);
-    }
+    let front = component.p0.w;
     return coverage * (1.0 - smoothstep(front - softness, front, t));
 }
 
@@ -146,6 +138,8 @@ fn fs(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
             colour = bloom.rgb;
             alpha = bloom.a;
         }
+        // A title card and a lower third are the same panel; only their words and their box differ.
+        case 5u, 6u: { alpha = shape_reveal(uv, size); }
         default: { alpha = placeholder(uv, size); }
     }
 

@@ -494,6 +494,8 @@ fn check_param(
         ParamType::Number { min, max } => value::parse_num(&value)
             .map_err(|e| e.to_string())
             .and_then(|v| in_range(v, Some(min), Some(max))),
+        // What a title says is not the format's business.
+        ParamType::Text => Ok(()),
     };
     if let Err(message) = result {
         report.push(Level::Error, "bad_param", node, Some(param), message);

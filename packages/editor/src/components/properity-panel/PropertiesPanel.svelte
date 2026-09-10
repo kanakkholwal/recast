@@ -9,7 +9,6 @@ import {
 	Lock,
 	MousePointer,
 	Pencil,
-	ScanText,
 	SlidersHorizontal,
 	SquareSplitHorizontal,
 	Volume,
@@ -140,18 +139,6 @@ const TABS: TabType[] = [
 		group: "meta",
 		hint: "Recording details.",
 	},
-	// Dev builds only; tree-shaken out of production by import.meta.env.DEV.
-	...(import.meta.env.DEV
-		? [
-				{
-					id: "dev" as PanelTab,
-					label: "Screen text",
-					icon: ScanText,
-					group: "meta" as TabGroup,
-					hint: "On-device screen text (dev).",
-				},
-			]
-		: []),
 ];
 
 const GROUP_ORDER: TabGroup[] = ["composition", "selection", "meta"];

@@ -201,6 +201,12 @@ single `component.wgsl` compiled with everything else, so nothing is compiled at
 render time and an unsupported feature is a build error rather than a black
 frame.
 
+A component may carry words as well as pixels: a title card and a lower third
+draw their panel through the component pass and their text through the caption
+pass, and a counter draws no panel at all. What holds the two halves together
+is that the wipe envelope is computed once, on the CPU, and handed to the
+shader; deriving it in both places is how a panel and its title drift apart.
+
 Resolution is deliberate about versions. Patch and minor both move underneath a
 pin, because a minor only adds parameters and an unset parameter takes its
 declared default. A major difference, or a pin ahead of the registry, does not

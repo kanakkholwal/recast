@@ -35,10 +35,15 @@ impl fmt::Display for Pin {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ParamType {
     Color,
-    Number { min: f64, max: f64 },
+    Number {
+        min: f64,
+        max: f64,
+    },
     Fraction,
     Angle,
     Bool,
+    /// Any string. What a title says is not the format's business.
+    Text,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -65,6 +70,9 @@ pub struct Manifest {
     pub surface: Surface,
     /// The recipe the compositor selects on; the registry owns these numbers.
     pub recipe: u32,
+    /// Whether the recipe puts pixels through the component pass. A text-only
+    /// one does not, and skipping it saves a draw call that would only discard.
+    pub shape: bool,
     pub doc: &'static str,
     pub params: &'static [ParamSpec],
 }
@@ -112,6 +120,15 @@ const fn frac(name: &'static str, default: &'static str, doc: &'static str) -> P
     }
 }
 
+const fn text(name: &'static str, default: &'static str, doc: &'static str) -> ParamSpec {
+    ParamSpec {
+        name,
+        ty: ParamType::Text,
+        default,
+        doc,
+    }
+}
+
 const fn colour(name: &'static str, default: &'static str, doc: &'static str) -> ParamSpec {
     ParamSpec {
         name,
@@ -136,6 +153,7 @@ pub static REGISTRY: &[Manifest] = &[
     Manifest {
         name: "spotlight",
         version: v(1, 0, 0),
+        shape: true,
         surface: Surface::Overlay,
         recipe: 1,
         doc: "Darkens everything outside a soft ellipse, to put the eye somewhere.",
@@ -159,6 +177,7 @@ pub static REGISTRY: &[Manifest] = &[
     Manifest {
         name: "shape-reveal",
         version: v(1, 0, 0),
+        shape: true,
         surface: Surface::Overlay,
         recipe: 2,
         doc: "A rounded panel that wipes in along an angle over its own duration.",
@@ -191,6 +210,7 @@ pub static REGISTRY: &[Manifest] = &[
     Manifest {
         name: "mesh",
         version: v(1, 0, 0),
+        shape: true,
         surface: Surface::Overlay,
         recipe: 4,
         doc: "Two soft colour blooms drifting over each other, the gradient backdrop.",
@@ -211,6 +231,7 @@ pub static REGISTRY: &[Manifest] = &[
     Manifest {
         name: "sweep",
         version: v(1, 0, 0),
+        shape: true,
         surface: Surface::Screen,
         recipe: 3,
         doc: "A gloss band travelling across the screen card, the hero shader.",
@@ -226,6 +247,99 @@ pub static REGISTRY: &[Manifest] = &[
                 "How many times it crosses over the duration.",
             ),
             frac("strength", "0.35", "Peak brightness it adds."),
+        ],
+    },
+    Manifest {
+        name: "title-card",
+        version: v(1, 0, 0),
+        shape: true,
+        surface: Surface::Overlay,
+        recipe: 5,
+        doc: "A panel with a title and a subtitle, wiping in and out over its own duration.",
+        params: &[
+            text("title", "Title", "The headline."),
+            text(
+                "subtitle",
+                "",
+                "A second line under it; empty leaves it out.",
+            ),
+            colour("fill", "#101014", "Panel colour."),
+            colour("color", "#ffffff", "Text colour."),
+            frac("size", "0.12", "Title size, share of the frame height."),
+            frac(
+                "subSize",
+                "0.05",
+                "Subtitle size, share of the frame height.",
+            ),
+            num("align", -1.0, 1.0, "0", "-1 left, 0 centre, 1 right."),
+            frac(
+                "radius",
+                "0.04",
+                "Corner radius, fraction of the shorter edge.",
+            ),
+            frac("softness", "0.06", "Width of the wipe's soft edge."),
+            frac(
+                "hold",
+                "0.6",
+                "Share of the duration the panel stays fully in.",
+            ),
+            frac("x", "0.12", "Left edge, fraction of the canvas."),
+            frac("y", "0.3", "Top edge, fraction of the canvas."),
+            frac("w", "0.76", "Width, fraction of the canvas."),
+            frac("h", "0.4", "Height, fraction of the canvas."),
+        ],
+    },
+    Manifest {
+        name: "lower-third",
+        version: v(1, 0, 0),
+        shape: true,
+        surface: Surface::Overlay,
+        recipe: 6,
+        doc: "A name and a role on a bar in the lower left, the broadcast introduction.",
+        params: &[
+            text("name", "Name", "Who this is."),
+            text("role", "", "What they do; empty leaves it out."),
+            colour("fill", "#101014", "Bar colour."),
+            colour("color", "#ffffff", "Text colour."),
+            frac("size", "0.06", "Name size, share of the frame height."),
+            frac("subSize", "0.035", "Role size, share of the frame height."),
+            frac(
+                "radius",
+                "0.02",
+                "Corner radius, fraction of the shorter edge.",
+            ),
+            frac("softness", "0.05", "Width of the wipe's soft edge."),
+            frac(
+                "hold",
+                "0.7",
+                "Share of the duration the bar stays fully in.",
+            ),
+            frac("x", "0.06", "Left edge, fraction of the canvas."),
+            frac("y", "0.72", "Top edge, fraction of the canvas."),
+            frac("w", "0.45", "Width, fraction of the canvas."),
+            frac("h", "0.16", "Height, fraction of the canvas."),
+        ],
+    },
+    Manifest {
+        name: "counter",
+        version: v(1, 0, 0),
+        shape: false,
+        surface: Surface::Overlay,
+        recipe: 7,
+        doc: "A number counting from one value to another over the instance's duration.",
+        params: &[
+            num("from", -1.0e9, 1.0e9, "0", "Where it starts."),
+            num("to", -1.0e9, 1.0e9, "100", "Where it lands."),
+            num("decimals", 0.0, 6.0, "0", "Digits after the point."),
+            text("prefix", "", "Written before the number."),
+            text("suffix", "", "Written after it."),
+            colour("color", "#ffffff", "Text colour."),
+            frac("size", "0.14", "Share of the frame height."),
+            num("align", -1.0, 1.0, "0", "-1 left, 0 centre, 1 right."),
+            frac("x", "0.1", "Left edge, fraction of the canvas."),
+            frac("y", "0.4", "Top edge, fraction of the canvas."),
+            frac("w", "0.8", "Width, fraction of the canvas."),
+            frac("h", "0.2", "Height, fraction of the canvas."),
         ],
     },
 ];
@@ -416,6 +530,7 @@ mod tests {
     static AHEAD: Manifest = Manifest {
         name: "ahead",
         version: v(2, 4, 1),
+        shape: true,
         surface: Surface::Overlay,
         recipe: 9,
         doc: "",
@@ -516,6 +631,7 @@ mod tests {
                         .parse::<f64>()
                         .is_ok_and(|v| (min..=max).contains(&v)),
                     ParamType::Angle => p.default.parse::<f64>().is_ok(),
+                    ParamType::Text => true,
                 };
                 assert!(ok, "{}.{} default '{}'", m.name, p.name, p.default);
             }

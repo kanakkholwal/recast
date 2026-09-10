@@ -2514,7 +2514,7 @@ mod tests {
             layers,
             annotations: Vec::new(),
             components: Vec::new(),
-            composition_text: Vec::new(),
+            text_draws: Vec::new(),
             source_time: 0.0,
         }
     }

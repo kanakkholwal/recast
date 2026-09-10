@@ -286,6 +286,26 @@
 			}
 		},
 		{
+			"_why_time": "Inside the hold, so the panel is fully in and its rounding and box are what the frame shows. The words are not here: the browser arm has no system fonts, so text is covered by unit tests instead.",
+			"name": "component-title-card",
+			"time": 2.0,
+			"overrides": {
+				"padding": 12.0,
+				"graphics": [{ "id": "g1", "component": "title-card@1.0", "start": 0.0, "duration": 4.0, "params": { "title": "Recast", "subtitle": "A demo", "fill": "#101014", "radius": "0.06" } }]
+			},
+			"without": { "padding": 12.0 }
+		},
+		{
+			"_why_time": "Mid-wipe, where the soft leading edge is visible and a hold-time frame would look like a plain bar.",
+			"name": "component-lower-third",
+			"time": 0.3,
+			"overrides": {
+				"padding": 12.0,
+				"graphics": [{ "id": "g1", "component": "lower-third@1.0", "start": 0.0, "duration": 4.0, "params": { "name": "Kanak", "role": "Recast", "fill": "#1d4ed8" } }]
+			},
+			"without": { "padding": 12.0 }
+		},
+		{
 			"name": "background-blur",
 			"time": 1.0,
 			"overrides": {

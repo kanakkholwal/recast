@@ -256,11 +256,24 @@ pub struct FrameParams {
     pub annotations: Vec<AnnotationParams>,
     /// Component instances, in document order, drawn above everything else.
     pub components: Vec<crate::component::ComponentParams>,
-    /// A composition's text items, which the session turns into glyphs; its
-    /// image items are in `annotations`, since they draw through the same pass.
-    pub composition_text: Vec<TextItemDraw>,
+    /// Every word this frame, from a composition's text items and from the
+    /// components that carry words. The session turns them into glyphs; a
+    /// composition's IMAGE items are in `annotations`, drawing through that pass.
+    pub text_draws: Vec<TextItemDraw>,
     /// Where `output_time` lands on the original recording axis.
     pub source_time: f64,
+}
+
+/// Whether an instance puts pixels through the component pass at all.
+/// An unresolved one does: the placeholder is the whole point.
+fn draws_shape(spec: &recast_scene::component::GraphicSpec) -> bool {
+    use recast_scene::component::Resolution;
+    match spec.resolution() {
+        Resolution::Ready { name, .. } => {
+            recast_scene::component::manifest(name).is_some_and(|m| m.shape)
+        }
+        _ => true,
+    }
 }
 
 /// One composition text item, placed in canvas pixels and ready to shape.
@@ -519,7 +532,10 @@ impl Evaluator {
                 })
                 .collect(),
             components: self.components(&graphics, output_time, card.0, card_radius, card_warp),
-            composition_text,
+            text_draws: composition_text
+                .into_iter()
+                .chain(self.component_text(&graphics, output_time))
+                .collect(),
             layers,
             source_time,
         }
@@ -588,6 +604,24 @@ impl Evaluator {
         (images, texts)
     }
 
+    /// The words the component instances carry, placed inside their own boxes.
+    fn component_text(
+        &self,
+        graphics: &[&recast_scene::component::GraphicSpec],
+        output_time: f64,
+    ) -> Vec<TextItemDraw> {
+        let canvas = [
+            0.0,
+            0.0,
+            self.geometry.canvas_w as f32,
+            self.geometry.canvas_h as f32,
+        ];
+        graphics
+            .iter()
+            .flat_map(|spec| crate::component::text_for(spec, output_time, canvas))
+            .collect()
+    }
+
     /// Places each instance: an overlay covers the canvas, a screen recipe takes
     /// the card's rect, rounding and tilt, so a gloss stays on the card.
     fn components(
@@ -607,6 +641,8 @@ impl Evaluator {
         ];
         graphics
             .iter()
+            // A text-only recipe would draw a pass that only discards.
+            .filter(|spec| draws_shape(spec))
             .map(|spec| match crate::component::surface_of(spec) {
                 Surface::Screen => crate::component::params_for(
                     spec,

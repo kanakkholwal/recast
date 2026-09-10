@@ -204,13 +204,11 @@ impl Session {
         frame
     }
 
-    /// A composition's titles, shaped through the same face and atlas as the
-    /// captions. They ride in the caption frame because they draw in its pass.
+    /// Every word this frame that is not a caption: a composition's titles and
+    /// the components that carry text. They ride in the caption frame because
+    /// they draw in its pass, through the same face and atlas.
     fn composition_frame(&mut self, output_time: f64) -> CaptionFrame {
-        let items = self
-            .evaluator
-            .evaluate(&self.scene, output_time)
-            .composition_text;
+        let items = self.evaluator.evaluate(&self.scene, output_time).text_draws;
         if items.is_empty() {
             return CaptionFrame::default();
         }
