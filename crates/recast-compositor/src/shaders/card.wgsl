@@ -19,6 +19,8 @@ struct Card {
     plane_a: vec4<f32>,
     plane_b: vec4<f32>,
     plane_w: vec4<f32>,
+    // contact, rim, rim width (share of the shorter side), spare. All zero is unlit.
+    material: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> card: Card;
@@ -28,6 +30,9 @@ struct Card {
 struct VsOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) uv: vec2<f32>,
+    /// This corner's depth over the card's mean, so the contact term reads how
+    /// far away the pixel is without a light or a normal. 1 on the flat path.
+    @location(1) shade: f32,
 }
 
 fn plane_corner(index: u32) -> vec2<f32> {
@@ -100,6 +105,8 @@ fn vs(@builtin(vertex_index) i: u32) -> VsOut {
     // Scaled by w so the divide the rasteriser does restores ndc and interpolates uv perspective-correctly.
     out.pos = vec4<f32>(ndc * w, 0.0, w);
     out.uv = corner;
+    let mean_w = dot(card.plane_w, vec4<f32>(0.25));
+    out.shade = select(1.0, w / max(mean_w, 1e-6), card.flags.w > 0.5);
     return out;
 }
 
@@ -131,6 +138,31 @@ fn dolly_blur(uv: vec2<f32>, streak: f32) -> vec4<f32> {
         total = total + sample_source(uv + direction * streak * t);
     }
     return total / f32(BLUR_TAPS);
+}
+
+/// Darkens what lies further away and lifts the card's own edge. Not a light
+/// model: two numbers over the card's own depth and its distance to the border.
+fn lit(colour: vec3<f32>, uv: vec2<f32>, shade: f32) -> vec3<f32> {
+    let contact = card.material.x;
+    let rim = card.material.y;
+    if (contact <= 0.0 && rim <= 0.0) {
+        return colour;
+    }
+    var out = colour;
+    if (contact > 0.0) {
+        // Depth over the mean, so a flat card is untouched and a tilted one
+        // darkens only where it recedes.
+        let away = clamp(shade - 1.0, 0.0, 1.0);
+        out = out * (1.0 - away * contact);
+    }
+    if (rim > 0.0) {
+        let size = card.rect.zw;
+        let px = uv * size;
+        let edge = min(min(px.x, px.y), min(size.x - px.x, size.y - px.y));
+        let width = max(card.material.z * min(size.x, size.y), 1.0);
+        out = out + vec3<f32>(rim * (1.0 - smoothstep(0.0, width, edge)));
+    }
+    return out;
 }
 
 /// Signed distance to a rounded rectangle centred on the origin. Negative inside.
@@ -194,5 +226,5 @@ fn fs(in: VsOut) -> @location(0) vec4<f32> {
         alpha = alpha * (1.0 - smoothstep(-1.0, 0.0, d));
     }
 
-    return vec4<f32>(colour.rgb * alpha, alpha);
+    return vec4<f32>(lit(colour.rgb, in.uv, in.shade) * alpha, alpha);
 }

@@ -198,6 +198,9 @@ pub struct Layer {
     /// The layer's 3D transform; identity draws through the flat path unchanged.
     #[serde(default, skip_serializing_if = "crate::bind::Transform3::is_identity")]
     pub transform: crate::bind::Transform3,
+    /// How the layer catches light. All zero is no shading, which is every project made before it.
+    #[serde(default, skip_serializing_if = "crate::material::Material::is_none")]
+    pub material: crate::material::Material,
 }
 
 fn unit() -> f64 {
@@ -216,6 +219,7 @@ impl Layer {
             bindings: Vec::new(),
             placement: Vec::new(),
             transform: crate::bind::Transform3::IDENTITY,
+            material: crate::material::Material::NONE,
         }
     }
 

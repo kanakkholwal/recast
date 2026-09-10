@@ -525,6 +525,16 @@ export interface LayerTransform {
 	perspective?: number;
 }
 
+/** How a layer catches light. Mirrors `recast_scene::material::LayerMaterial`;
+ *  absent means unlit, which is how every project before it rendered. */
+export interface LayerMaterial {
+	layer: "screen" | "camera" | "annotation";
+	id?: string;
+	contact?: number;
+	rim?: number;
+	rimWidth?: number;
+}
+
 /** How one composition item gives way to the next. */
 export type Transition = "none" | "dissolve";
 
@@ -701,6 +711,8 @@ export interface EditorRenderState {
 	vars?: VarSpec[];
 	/** An authored sequence (`<sequence>`). Present instead of a recording, never alongside one. */
 	composition?: Composition;
+	/** Per-layer lighting (`<material>`). Carried, not edited by a panel. */
+	materials?: LayerMaterial[];
 	/** `id` included: Rust's `Annotation.id` has no `#[serde(default)]`, and a
 	 *  missing one fails the WHOLE RenderState deserialize, not just that entry. */
 	annotations: Annotation[];

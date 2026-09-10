@@ -44,6 +44,48 @@ mod tests {
         text
     }
 
+    /// What an agent pays to read the whole project, which is the claim in
+    /// section 2.2: the document is small enough to hand over whole.
+    /// Tokens are an ESTIMATE from the character count; no offline tokeniser
+    /// matches the one the model actually uses, so the bytes are the measurement
+    /// and the ratio is stated rather than assumed.
+    #[test]
+    #[ignore = "a measurement, printed with --nocapture"]
+    fn the_document_is_small_enough_to_hand_an_agent_whole() {
+        let text = document();
+        let doc = parse(&text).expect("parses");
+        let canonical = serialize(&doc);
+        let state = to_render_state(&doc).expect("state");
+        let json = serde_json::to_string(&state).expect("minified json");
+        let pretty = serde_json::to_string_pretty(&state).expect("pretty json");
+
+        let chars = canonical.chars().count();
+        let ratio = canonical.len() as f64 / json.len() as f64;
+        println!(
+            "document {} bytes ({chars} chars) | minified RenderState JSON {} bytes | pretty {} bytes | document/minified {ratio:.2}x",
+            canonical.len(),
+            json.len(),
+            pretty.len()
+        );
+        for per_token in [3.5_f64, 4.0] {
+            println!(
+                "  at {per_token:.1} chars/token: about {:.0} tokens",
+                chars as f64 / per_token
+            );
+        }
+
+        assert!(
+            canonical.len() < 8_000,
+            "a project an agent reads whole has to stay small: {} bytes",
+            canonical.len()
+        );
+        // A third of the minified JSON: the document elides every default and the state spells them all out.
+        assert!(
+            ratio < 0.45,
+            "the markup must stay well under the JSON it replaced: {ratio:.2}x"
+        );
+    }
+
     #[test]
     #[ignore = "a measurement, printed with --nocapture; run in release"]
     fn parse_map_and_evaluator_rebuild_on_a_real_sized_document() {

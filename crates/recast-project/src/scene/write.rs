@@ -203,6 +203,34 @@ fn attach_transforms(root: &mut Node, transforms: &[LayerTransform]) {
     }
 }
 
+/// Writes each material under the element its layer names. Only `<screen>` and `<camera>` take one; an annotation has no card to light.
+fn attach_materials(root: &mut Node, materials: &[recast_scene::material::LayerMaterial]) {
+    use recast_scene::material::Material;
+    for lm in materials {
+        if lm.material.is_none() {
+            continue;
+        }
+        let target = match &lm.layer {
+            LayerRef::Screen => root.child_mut("screen"),
+            LayerRef::Camera => root.child_mut("camera"),
+            LayerRef::Annotation { .. } => None,
+        };
+        let Some(node) = target else {
+            continue;
+        };
+        let (m, d) = (&lm.material, Material::NONE);
+        let mut child = Node::new("material");
+        for (name, v, default) in [
+            ("contact", m.contact, d.contact),
+            ("rim", m.rim, d.rim),
+            ("rimWidth", m.rim_width, d.rim_width),
+        ] {
+            child.num(name, v, default);
+        }
+        node.children.push(child);
+    }
+}
+
 /// Writes each binding under the element its layer names; a binding for an annotation the state no longer has is dropped with it.
 fn attach_binds(root: &mut Node, binds: &[LayerBinding], ids: &mut IdGen) {
     for lb in binds {
@@ -337,6 +365,7 @@ pub fn from_render_state(
     let generic = generic_binds(state, base);
     attach_binds(root, &generic, ids);
     attach_transforms(root, &state.transforms);
+    attach_materials(root, &state.materials);
     if let Some(style) = &state.caption_style {
         root.children.push(captions(style, media));
     }

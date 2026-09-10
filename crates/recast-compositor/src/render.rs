@@ -98,6 +98,7 @@ struct CardUniform {
     plane_a: [f32; 4],
     plane_b: [f32; 4],
     plane_w: [f32; 4],
+    material: [f32; 4],
 }
 
 /// Decoded source frames for one instant, addressed by layer.
@@ -1749,6 +1750,7 @@ fn card_uniform(
         plane_a: plane_corners(layer, 0),
         plane_b: plane_corners(layer, 2),
         plane_w: layer.plane.map_or([1.0; 4], |p| p.depth),
+        material: layer.material.lanes(),
     }
 }
 
@@ -2469,6 +2471,7 @@ mod tests {
             rotate: 0.0,
             corner_radius: 0.0,
             plane: None,
+            material: recast_scene::material::Material::NONE,
             blur: 0.0,
             motion_blur,
             zoom_center: [0.5, 0.5],
@@ -2632,6 +2635,8 @@ mod tests {
         assert_eq!(std::mem::size_of::<BlurUniform>(), 16);
         assert_eq!(std::mem::size_of::<ShadowUniform>(), 16 * 6);
         assert_eq!(std::mem::size_of::<ShapeUniform>(), 16 * 7);
-        assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 9);
+        assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 10);
+        assert_eq!(std::mem::size_of::<RegionUniform>(), 16 * 6);
+        assert_eq!(std::mem::size_of::<ComponentUniform>(), 16 * 9);
     }
 }

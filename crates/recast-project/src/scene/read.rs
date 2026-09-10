@@ -183,6 +183,7 @@ fn read_resolved(doc: &Document) -> Result<RenderState, MapError> {
         screen_into(screen, &mut state)?;
         push_binds(screen, LayerRef::Screen, &mut state.bindings);
         push_transform(screen, LayerRef::Screen, &mut state.transforms);
+        push_material(screen, LayerRef::Screen, &mut state.materials);
     }
     if let Some(camera) = root.child("camera") {
         state.camera_overlay = camera_settings(
@@ -191,6 +192,7 @@ fn read_resolved(doc: &Document) -> Result<RenderState, MapError> {
         )?;
         push_binds(camera, LayerRef::Camera, &mut state.bindings);
         push_transform(camera, LayerRef::Camera, &mut state.transforms);
+        push_material(camera, LayerRef::Camera, &mut state.materials);
     }
     if let Some(cursor) = root.child("cursor") {
         cursor_into(cursor, &mut state);
@@ -457,6 +459,26 @@ fn push_binds(node: &Node, layer: LayerRef, out: &mut Vec<LayerBinding>) {
 }
 
 /// A `<transform>` child becomes the layer's transform; absent attributes keep the identity's values.
+fn push_material(
+    node: &Node,
+    layer: LayerRef,
+    out: &mut Vec<recast_scene::material::LayerMaterial>,
+) {
+    use recast_scene::material::{LayerMaterial, Material};
+    let Some(m) = node.child("material") else {
+        return;
+    };
+    let d = Material::NONE;
+    let material = Material {
+        contact: m.num_or("contact", d.contact),
+        rim: m.num_or("rim", d.rim),
+        rim_width: m.num_or("rimWidth", d.rim_width),
+    };
+    if !material.is_none() {
+        out.push(LayerMaterial { layer, material });
+    }
+}
+
 fn push_transform(node: &Node, layer: LayerRef, out: &mut Vec<LayerTransform>) {
     let Some(t) = node.child("transform") else {
         return;

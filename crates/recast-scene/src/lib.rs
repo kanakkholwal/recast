@@ -4,6 +4,7 @@
 pub mod bind;
 pub mod component;
 pub mod composition;
+pub mod material;
 mod scene;
 pub mod vars;
 

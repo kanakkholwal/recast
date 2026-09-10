@@ -431,6 +431,37 @@ fn base_elements_the_state_cannot_carry_survive_a_rewrite() {
     assert!(text.contains("<future id=\"f1\"/>"));
 }
 
+/// Lighting is a few numbers on the layer, and absent means unlit, which is
+/// how every project made before it renders.
+#[test]
+fn a_material_reads_writes_and_stays_off_when_it_is_not_declared() {
+    let src = concat!(
+        r#"<recast v="3"><timeline in="0.000" out="10.000"/>"#,
+        r#"<screen id="scr"><material contact="0.4" rim="0.25" rimWidth="0.06"/></screen>"#,
+        r#"</recast>"#
+    );
+
+    let state = to_render_state(&parse(src).unwrap()).unwrap();
+
+    assert_eq!(state.materials.len(), 1);
+    assert!((state.materials[0].material.contact - 0.4).abs() < 1e-9);
+    assert!((state.materials[0].material.rim_width - 0.06).abs() < 1e-9);
+
+    let again = from_render_state(&state, &MediaRefs::default(), None, &mut IdGen::seeded(13));
+    let text = serialize(&again);
+    assert!(text.contains(r#"<material contact="0.4""#), "{text}");
+    assert_eq!(to_render_state(&again).unwrap().materials, state.materials);
+
+    let unlit = r#"<recast v="3"><timeline in="0.000" out="10.000"/><screen id="scr"/></recast>"#;
+    let bare = to_render_state(&parse(unlit).unwrap()).unwrap();
+    assert!(bare.materials.is_empty(), "no element, no lighting");
+    let rewritten = from_render_state(&bare, &MediaRefs::default(), None, &mut IdGen::seeded(14));
+    assert!(
+        !serialize(&rewritten).contains("<material"),
+        "and none written back"
+    );
+}
+
 /// A composition has no recording, so the sequence's own end has to become the
 /// output duration or every clock downstream would think the project is empty.
 #[test]

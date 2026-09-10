@@ -226,6 +226,9 @@ and its parameters, never code. Both are read into the render state, so an
 editor that has never seen the file still carries them through a save. See the
 preview page for how they render.
 
+**Lighting.** `<material contact rim rimWidth/>` on `<screen>` or `<camera>`
+is a few numbers, not a light model. Absent means unlit.
+
 **A composition instead of a recording.** `<sequence>` holds `<img>` and
 `<text>` items on the output clock, with a transition between neighbours. They
 are the same elements annotations use, and the parent is what says which clock

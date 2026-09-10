@@ -77,6 +77,7 @@ import {
 	type Composition,
 	type GraphicSpec,
 	type VarSpec,
+	type LayerMaterial,
 	type LayerTransform,
 } from "../lib/editor/render-state";
 import type { TimeMode } from "../lib/editor/time";
@@ -248,6 +249,7 @@ export function createEditorStore() {
 	// Declared by the document, never by a panel; carried so every save and every preview frame keeps them.
 	let bindings = $state.raw<LayerBinding[]>([]);
 	let transforms = $state.raw<LayerTransform[]>([]);
+	let materials = $state.raw<LayerMaterial[]>([]);
 	let graphics = $state.raw<GraphicSpec[]>([]);
 	let vars = $state.raw<VarSpec[]>([]);
 	let composition = $state.raw<Composition | undefined>(undefined);
@@ -368,6 +370,7 @@ export function createEditorStore() {
 			cursorMotionEasing,
 			bindings,
 			transforms,
+			materials,
 			graphics,
 			vars,
 			composition,
@@ -542,6 +545,7 @@ export function createEditorStore() {
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
 		bindings = s.bindings ?? [];
 		transforms = s.transforms ?? [];
+		materials = s.materials ?? [];
 		graphics = s.graphics ?? [];
 		vars = s.vars ?? [];
 		composition = s.composition;
@@ -1235,6 +1239,7 @@ export function createEditorStore() {
 		cursorMotionEasing = null;
 		bindings = [];
 		transforms = [];
+		materials = [];
 		graphics = [];
 		vars = [];
 		composition = undefined;
@@ -1775,6 +1780,7 @@ export function createEditorStore() {
 			cursorMotionEasing,
 			bindings,
 			transforms,
+			materials,
 			graphics,
 			vars,
 			composition,
@@ -1881,6 +1887,7 @@ export function createEditorStore() {
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		bindings = state.bindings ?? [];
 		transforms = state.transforms ?? [];
+		materials = state.materials ?? [];
 		graphics = state.graphics ?? [];
 		vars = state.vars ?? [];
 		composition = state.composition;

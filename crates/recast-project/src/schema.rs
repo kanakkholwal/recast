@@ -155,6 +155,7 @@ fn build() -> Vec<ElementSpec> {
     out.extend(root_and_refs());
     out.extend(timeline_group());
     out.extend(background_group());
+    out.extend(screen_group());
     out.extend(camera_group());
     out.extend(annotation_group());
     out.extend(caption_group());
@@ -436,18 +437,44 @@ fn background_group() -> Vec<ElementSpec> {
             &[req("src", AttrType::Src, "")],
             &[],
         ),
+    ]
+}
+
+/// The screen card and everything drawn on it: its rounding, its shadow, its
+/// lighting and its zooms.
+fn screen_group() -> Vec<ElementSpec> {
+    vec![
         el(
             "screen",
             "The recorded screen.",
             IdRule::Required,
             &[ID, a("src", AttrType::Ref("media"), "")],
-            &["corner", "shadow", "zooms", "bind", "transform"],
+            &["corner", "shadow", "material", "zooms", "bind", "transform"],
         ),
         el(
             "corner",
             "",
             IdRule::None,
             &[req("pct", AttrType::Percent, "")],
+            &[],
+        ),
+        el(
+            "material",
+            "How the layer catches light: a few numbers, never a light model. Absent is unlit, which is how every project before it rendered.",
+            IdRule::None,
+            &[
+                a(
+                    "contact",
+                    AttrType::Fraction,
+                    "How much the further parts of a tilted layer darken.",
+                ),
+                a("rim", AttrType::Fraction, "How much its edge lifts."),
+                a(
+                    "rimWidth",
+                    AttrType::Fraction,
+                    "How far in the rim reaches, share of the shorter side.",
+                ),
+            ],
             &[],
         ),
         el(
@@ -528,7 +555,7 @@ fn camera_group() -> Vec<ElementSpec> {
             a("layoutTransition", AttrType::Seconds, "Seconds a layout change takes, output time."),
             a("layoutEase", AttrType::Ease, ""),
         ],
-        &["bind", "transform"],
+        &["bind", "transform", "material"],
     ),
     el(
         "bind",

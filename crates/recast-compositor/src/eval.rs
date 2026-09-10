@@ -220,6 +220,8 @@ pub struct LayerParams {
     pub corner_radius: f32,
     /// The tilted card's projected corners; `None` draws the flat rect.
     pub plane: Option<crate::plane::Plane>,
+    /// How the layer catches light; all zero leaves the card exactly as it was.
+    pub material: recast_scene::material::Material,
     pub blur: f32,
     /// Authored 0..1 strength of the dolly blur.
     pub motion_blur: f32,
@@ -921,6 +923,7 @@ impl Evaluator {
             rotate,
             corner_radius: corner_radius_of(layer),
             plane,
+            material: layer.material,
             blur: Self::bound(
                 layer,
                 "blur",

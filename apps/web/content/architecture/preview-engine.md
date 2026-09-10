@@ -223,6 +223,19 @@ against the document's declared variables on the way into the engine, and only
 on the way in: the file keeps the reference, so a variable survives every round
 trip and the compositor never sees one.
 
+## Lighting
+
+A layer can carry a small material block: `contact` darkens the parts of a
+tilted card that recede, `rim` lifts its edge. It is not a light model, and
+there is no third term for a specular sweep because that is a component
+(`sweep`), which composes and animates where a fixed lane would not.
+
+Contact is the one term a component cannot provide, since only the card knows
+its own depth. The card shader carries each corner's depth over the card's mean
+as a vertex output, which is 1 on the flat path, so an untilted card is
+untouched by construction. Absent means unlit, which is how every project made
+before this renders.
+
 ## Compositions
 
 A document either edits a recording or composes a sequence, never both: the

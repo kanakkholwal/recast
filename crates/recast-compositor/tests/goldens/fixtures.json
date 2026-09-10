@@ -306,6 +306,22 @@
 			"without": { "padding": 12.0 }
 		},
 		{
+			"_why_fields": "The material block (06, D-6) on a tilted card: contact darkens what recedes, which needs the card's own depth, and the rim lifts its edge. Both are off in every other fixture, so those stay byte-identical.",
+			"name": "tilted-lit",
+			"time": 1.0,
+			"overrides": {
+				"padding": 24.0,
+				"borderRadius": 20.0,
+				"transforms": [{ "layer": "screen", "ry": -34.0, "z": 0.18 }],
+				"materials": [{ "layer": "screen", "contact": 0.65, "rim": 0.35, "rimWidth": 0.05 }]
+			},
+			"without": {
+				"padding": 24.0,
+				"borderRadius": 20.0,
+				"transforms": [{ "layer": "screen", "ry": -34.0, "z": 0.18 }]
+			}
+		},
+		{
 			"name": "background-blur",
 			"time": 1.0,
 			"overrides": {

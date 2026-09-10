@@ -33,6 +33,15 @@ pub fn attach_bindings(layers: &mut [Layer], bindings: &[crate::bind::LayerBindi
     }
 }
 
+/// Puts each material on the layer its `LayerRef` names.
+pub fn attach_materials(layers: &mut [Layer], materials: &[crate::material::LayerMaterial]) {
+    for lm in materials {
+        if let Some(layer) = layer_for(layers, &lm.layer) {
+            layer.material = lm.material;
+        }
+    }
+}
+
 /// Puts each transform on the layer its `LayerRef` names.
 pub fn attach_transforms(layers: &mut [Layer], transforms: &[crate::bind::LayerTransform]) {
     for lt in transforms {
@@ -96,6 +105,7 @@ pub fn to_scene(state: &RenderState) -> Scene {
     attach_graphics(&mut layers, &state.graphics);
     attach_bindings(&mut layers, &state.bindings);
     attach_transforms(&mut layers, &state.transforms);
+    attach_materials(&mut layers, &state.materials);
 
     Scene {
         schema: SCHEMA_VERSION,
@@ -241,6 +251,9 @@ pub fn to_render_state(scene: &Scene) -> RenderState {
         music_clips: scene.audio.clips.clone(),
         composition: scene.composition.clone(),
         vars: scene.vars.clone(),
+        bindings: layer_bindings(scene),
+        transforms: layer_transforms(scene),
+        materials: layer_materials(scene),
         passthrough: scene.passthrough.clone(),
         ..RenderState::default()
     };
@@ -277,6 +290,66 @@ pub fn to_render_state(scene: &Scene) -> RenderState {
         }
     }
     state
+}
+
+/// The per-layer blocks, back off the layers they were attached to. Without
+/// these a round trip through the scene silently drops what the document
+/// declared, which the fully-populated oracle is there to catch.
+fn layer_ref(scene: &Scene, index: usize, layer: &Layer) -> Option<crate::bind::LayerRef> {
+    use crate::bind::LayerRef;
+    let _ = scene;
+    match (index as u32, &layer.source) {
+        (SCREEN_LAYER, _) => Some(LayerRef::Screen),
+        (CAMERA_LAYER, _) => Some(LayerRef::Camera),
+        (_, LayerSource::Annotation(a)) => Some(LayerRef::Annotation { id: a.id.clone() }),
+        _ => None,
+    }
+}
+
+fn layer_bindings(scene: &Scene) -> Vec<crate::bind::LayerBinding> {
+    let mut out = Vec::new();
+    for (index, layer) in scene.layers.iter().enumerate() {
+        let Some(target) = layer_ref(scene, index, layer) else {
+            continue;
+        };
+        for binding in &layer.bindings {
+            out.push(crate::bind::LayerBinding {
+                layer: target.clone(),
+                binding: binding.clone(),
+            });
+        }
+    }
+    out
+}
+
+fn layer_transforms(scene: &Scene) -> Vec<crate::bind::LayerTransform> {
+    scene
+        .layers
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !l.transform.is_identity())
+        .filter_map(|(index, layer)| {
+            Some(crate::bind::LayerTransform {
+                layer: layer_ref(scene, index, layer)?,
+                transform: layer.transform,
+            })
+        })
+        .collect()
+}
+
+fn layer_materials(scene: &Scene) -> Vec<crate::material::LayerMaterial> {
+    scene
+        .layers
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !l.material.is_none())
+        .filter_map(|(index, layer)| {
+            Some(crate::material::LayerMaterial {
+                layer: layer_ref(scene, index, layer)?,
+                material: layer.material,
+            })
+        })
+        .collect()
 }
 
 /// A colour that did not survive parsing is stored as an `Asset` layer, so
@@ -614,6 +687,16 @@ mod tests {
         "vars": [
             { "name": "accent", "type": "color", "value": "#22d3ee", "path": "Brand" }
         ],
+        "materials": [
+            { "layer": "screen", "contact": 0.4, "rim": 0.25, "rimWidth": 0.06 }
+        ],
+        "transforms": [
+            { "layer": "screen", "ry": 24.0, "z": 0.2 }
+        ],
+        "bindings": [
+            { "layer": "screen", "prop": "opacity", "signal": "time", "map": "wave",
+              "from": 0.2, "to": 1.0, "period": 2.0 }
+        ],
         "composition": {
             "transition": "dissolve",
             "transitionDur": 0.5,
@@ -662,7 +745,7 @@ mod tests {
 
     /// Keys `fully_populated()` must emit. Bumped deliberately, never to make a
     /// failing test pass.
-    const RENDER_STATE_KEYS: usize = 48;
+    const RENDER_STATE_KEYS: usize = 51;
 
     /// Both spellings become layers, in the order the document listed them, so
     /// the z-order an author sees is the order they wrote.
