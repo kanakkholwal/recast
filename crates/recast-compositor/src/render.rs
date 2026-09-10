@@ -116,6 +116,9 @@ pub struct FrameInputs<'a> {
     /// This frame's caption, already laid out in canvas pixels. Owned rather
     /// than borrowed because the layout is built per frame, not uploaded.
     caption: CaptionFrame,
+    /// The words annotations carry, laid out the same way but drawn with them,
+    /// so a text annotation stacks where its author put it rather than on top.
+    annotation_glyphs: Vec<crate::text::GlyphQuad>,
 }
 
 /// A pointer sprite and the point on it that sits on the cursor position.
@@ -184,6 +187,11 @@ impl<'a> FrameInputs<'a> {
             .iter()
             .find(|(p, _)| p == path)
             .map(|(_, input)| input)
+    }
+
+    pub fn set_annotation_glyphs(&mut self, glyphs: Vec<crate::text::GlyphQuad>) -> &mut Self {
+        self.annotation_glyphs = glyphs;
+        self
     }
 
     pub fn set_caption(&mut self, caption: CaptionFrame) -> &mut Self {
@@ -399,6 +407,15 @@ impl Compositor {
         self.blur_background(&mut encoder, &working_view, params, width, height);
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_annotations(&mut encoder, &working_view, params, inputs, width, height);
+        // With the annotations, not the captions: a text annotation keeps the z order its author gave it.
+        self.text.draw(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &working_view,
+            &inputs.annotation_glyphs,
+            (width, height),
+        );
         self.draw_cursor(&mut encoder, &working_view, params, inputs, width, height);
         // Captions last: they sit above the pointer, as the DOM overlay does.
         self.draw_caption_pill(&mut encoder, &working_view, &inputs.caption);
@@ -2517,6 +2534,7 @@ mod tests {
             layers,
             annotations: Vec::new(),
             components: Vec::new(),
+            annotation_text: Vec::new(),
             text_draws: Vec::new(),
             source_time: 0.0,
         }

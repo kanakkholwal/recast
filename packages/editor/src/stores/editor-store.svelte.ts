@@ -224,6 +224,8 @@ export function createEditorStore() {
 	let annotationTool = $state<AnnotationKindName | null>(null);
 	// Layer-panel hover: the overlay flashes the matching annotation so a layer is findable in a busy frame.
 	let hoveredAnnotationId = $state<string | null>(null);
+	// The engine draws every text annotation but this one, whose words the editor is drawing live in a contenteditable.
+	let editingAnnotationId = $state<string | null>(null);
 	// Independent of per-annotation `hidden`, so the master toggle never tramples user state.
 	let annotationsGloballyHidden = $state<boolean>(false);
 	// Snap engine on/off. Default on. Alt held during drag bypasses regardless.
@@ -1097,6 +1099,7 @@ export function createEditorStore() {
 		annotations = annotations.filter((a) => a.id !== id);
 		if (selectedAnnotationId === id) selectedAnnotationId = null;
 		if (hoveredAnnotationId === id) hoveredAnnotationId = null;
+		if (editingAnnotationId === id) editingAnnotationId = null;
 		log.info("annotation", "removed", { id });
 	}
 
@@ -2355,6 +2358,12 @@ export function createEditorStore() {
 		},
 		set hoveredAnnotationId(v: string | null) {
 			hoveredAnnotationId = v;
+		},
+		get editingAnnotationId() {
+			return editingAnnotationId;
+		},
+		set editingAnnotationId(v: string | null) {
+			editingAnnotationId = v;
 		},
 		get annotationsGloballyHidden() {
 			return annotationsGloballyHidden;

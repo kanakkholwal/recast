@@ -207,9 +207,45 @@ impl Session {
         frame
     }
 
-    /// Every word this frame that is not a caption: a composition's titles and
-    /// the components that carry text. They ride in the caption frame because
-    /// they draw in its pass, through the same face and atlas.
+    /// The words annotations carry, shaped through the same faces and atlas.
+    /// They draw in their own pass, with the annotations, so a text annotation
+    /// keeps the z order its author gave it.
+    pub fn annotation_glyphs(&mut self, output_time: f64) -> Vec<crate::text::GlyphQuad> {
+        let items = self
+            .evaluator
+            .evaluate(&self.scene, output_time)
+            .annotation_text;
+        if items.is_empty() {
+            return Vec::new();
+        }
+        let fallback = self.text_face();
+        self.faces.set_host(fallback);
+        let glyphs = crate::item_text::layout_items(&items, &mut self.faces, &mut self.atlas);
+        self.compositor.sync_glyph_atlas(&mut self.atlas);
+        glyphs
+    }
+
+    /// A face the host resolved for `family` at `weight`. The browser has no font
+    /// database, so a text annotation or a composition item that names a family
+    /// draws in it only when the host supplies it. False when the bytes are not
+    /// a face this build can read, leaving whatever was there in place.
+    pub fn set_text_font(&mut self, family: &str, weight: u16, data: Vec<u8>, index: u32) -> bool {
+        let Some(face) = FontFace::from_bytes(std::sync::Arc::new(data), index) else {
+            return false;
+        };
+        self.faces.insert(family, weight, face);
+        true
+    }
+
+    /// Names the annotation whose words the host is drawing itself, because it
+    /// has a caret in them. Everything else about that annotation still renders.
+    pub fn set_editing_annotation(&mut self, id: Option<String>) {
+        self.evaluator.set_editing(id);
+    }
+
+    /// Every word this frame that is not a caption or an annotation: a
+    /// composition's titles and the components that carry text. They ride in the
+    /// caption frame because they draw in its pass, through the same faces.
     fn composition_frame(&mut self, output_time: f64) -> CaptionFrame {
         let items = self.evaluator.evaluate(&self.scene, output_time).text_draws;
         if items.is_empty() {

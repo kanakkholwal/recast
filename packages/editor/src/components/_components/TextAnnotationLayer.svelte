@@ -8,7 +8,12 @@ import type { Annotation, AnnotationAnchor, EditorStore } from "../../stores/edi
 import { IDENTITY_ZOOM, withAlpha } from "./annotation-draw.logic";
 import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
 
-// An HTML layer so text gets the WebView's glyph rendering; export rasterizes each to a PNG, so Rust never sees fonts.
+/**
+ * An HTML layer so text gets the WebView's glyph rendering, including families no
+ * browser can hand the engine as bytes; the export rasterises each to a PNG, so
+ * the exported pixels are these pixels. The engine can shape text too, and does
+ * on the headless export path, where a font database resolves the family.
+ */
 
 interface Props {
 	store: EditorStore;
@@ -31,7 +36,7 @@ $effect(() => {
 
 let layerEl: HTMLDivElement | undefined = $state();
 let layerSize = $state({ w: 0, h: 0 });
-let editingId = $state<string | null>(null);
+
 // Pre-edit text, captured on entry so Escape can restore it.
 let editStartContent = "";
 let rafHandle: number | null = null;
@@ -191,7 +196,7 @@ function startEditing(a: Annotation) {
 	if (a.locked) return;
 	// Remember the pre-edit text for Escape, and defer undo to commit so a no-change edit pushes nothing.
 	editStartContent = a.kind.content;
-	editingId = a.id;
+	store.editingAnnotationId = a.id;
 	void tick().then(() => {
 		const el = document.querySelector(`[data-text-anno-id="${a.id}"]`) as HTMLElement | null;
 		if (el) {
@@ -209,7 +214,7 @@ function startEditing(a: Annotation) {
 function commitEditing(a: Annotation, el: HTMLElement) {
 	if (a.kind.kind !== "text") return;
 	const content = el.innerText.replace(/​/g, "");
-	editingId = null;
+	store.editingAnnotationId = null;
 	// Emptied text is dropped rather than left as an invisible layer the canvas hit-test can't select.
 	if (content.trim() === "") {
 		store.removeAnnotation(a.id);
@@ -232,7 +237,7 @@ function handleKeyDown(e: KeyboardEvent, a: Annotation) {
 }
 
 function handleTextPointerDown(e: PointerEvent, a: Annotation) {
-	if (editingId === a.id) return; // let contenteditable take the gesture
+	if (store.editingAnnotationId === a.id) return; // let contenteditable take the gesture
 	if (a.locked || a.kind.kind !== "text") return;
 	if (e.button !== 0) return;
 	// Text dragging only on the Annotations tab so it doesn't fight the canvas/focus overlay.
@@ -317,7 +322,7 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
 >
   {#each store.annotationsByZ as a, rank (a.id)}
     {#if a.kind.kind === "text" && !a.hidden}
-      {@const isEditing = editingId === a.id}
+      {@const isEditing = store.editingAnnotationId === a.id}
       {@const isSelected = a.id === store.selectedAnnotationId}
       {@const isActiveTab = store.activePanel === "annotations"}
       {@const interactive = isActiveTab && !a.locked}

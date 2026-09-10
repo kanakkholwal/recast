@@ -27,6 +27,8 @@ export interface WasmPreviewEngine {
 	setCursorTrack(json: string): void;
 	setCaptionTrack(json: string): void;
 	setCaptionFont(data: Uint8Array, index: number): boolean;
+	setEditingAnnotation(id: string | undefined): void;
+	setTextFont(family: string, weight: number, data: Uint8Array, index: number): boolean;
 	setCursorSprite(slot: CursorSlot, image: ImageBitmap, hotspotX: number, hotspotY: number): void;
 	setAnnotationImage(path: string, image: ImageBitmap): void;
 	clearAnnotationImages(): void;

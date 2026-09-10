@@ -874,6 +874,13 @@ $effect(() => {
 	});
 });
 
+// The engine draws every text annotation except the one with a caret in it, which the layer above is drawing live.
+$effect(() => {
+	if (!engineDriver) return;
+	engineDriver.setEditingAnnotation(store.editingAnnotationId);
+	requestRedraw();
+});
+
 // Read the store playhead, not the hidden <video>: on the WebCodecs path it is not kept aligned, so the camera would stick at the start. Tolerance avoids re-seeking on micro-jitter.
 $effect(() => {
 	if (!cameraEl) return;

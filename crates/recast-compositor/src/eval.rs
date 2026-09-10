@@ -6,7 +6,9 @@ use recast_scene::v1::{Easing, SegmentAnim};
 use recast_scene::{Effect, LayerId, LayerSource, Scene};
 use recast_time::{original_to_output, output_to_original, Segment, TimeMap};
 
-use crate::annotation::{annotation_params, sorted_visible, AnnotationParams, AnnotationShape};
+use crate::annotation::{
+    annotation_params, sorted_visible, text_params, AnnotationParams, AnnotationShape,
+};
 use crate::camera::{bubble_params_ruled, bubble_shadow, BubbleParams};
 use crate::geometry::{canvas_geometry, CanvasGeometry};
 use crate::layout::ANCHOR_EPS;
@@ -258,7 +260,9 @@ pub struct FrameParams {
     pub annotations: Vec<AnnotationParams>,
     /// Component instances, in document order, drawn above everything else.
     pub components: Vec<crate::component::ComponentParams>,
-    /// Every word this frame, from a composition's text items and from the
+    /// Words that draw WITH the annotations, below the pointer and the captions.
+    pub annotation_text: Vec<TextItemDraw>,
+    /// Every other word this frame, from a composition's text items and from the
     /// components that carry words. The session turns them into glyphs; a
     /// composition's IMAGE items are in `annotations`, drawing through that pass.
     pub text_draws: Vec<TextItemDraw>,
@@ -337,6 +341,10 @@ pub struct Evaluator {
     segments: Vec<Segment>,
     geometry: CanvasGeometry,
     source: SourceGeometry,
+    /// The annotation the host has a caret in. Its words are left to the host,
+    /// which is drawing them live; everything else about it still renders.
+    /// Not scene data: nothing about which row is being typed into is saved.
+    editing: Option<String>,
 }
 
 impl Evaluator {
@@ -359,7 +367,13 @@ impl Evaluator {
                 scene.output.aspect.as_deref(),
             ),
             source,
+            editing: None,
         }
+    }
+
+    /// Names the annotation the host draws the words of itself, or clears it.
+    pub fn set_editing(&mut self, id: Option<String>) {
+        self.editing = id;
     }
 
     pub fn geometry(&self) -> CanvasGeometry {
@@ -535,6 +549,17 @@ impl Evaluator {
                     false => Vec::new(),
                 })
                 .collect(),
+            annotation_text: match scene.flags.annotations && card_alpha > 0.0 {
+                true => self
+                    .annotation_text(scene, source_time, card.0, card.1)
+                    .into_iter()
+                    .map(|mut t| {
+                        t.alpha *= card_alpha;
+                        t
+                    })
+                    .collect(),
+                false => Vec::new(),
+            },
             components: self.components(&graphics, output_time, card.0, card_radius, card_warp),
             text_draws: composition_text
                 .into_iter()
@@ -791,6 +816,24 @@ impl Evaluator {
                 }
             }),
         })
+    }
+
+    /// The words annotations carry, in the z order their shapes draw in. The one
+    /// the host is editing is left out: it is drawing that itself, live.
+    fn annotation_text(
+        &self,
+        scene: &Scene,
+        source_time: f64,
+        dest: DestRect,
+        transform: Affine2,
+    ) -> Vec<TextItemDraw> {
+        let all = scene.annotations();
+        sorted_visible(&all)
+            .into_iter()
+            .map(|index| all[index])
+            .filter(|a| self.editing.as_deref() != Some(a.id.as_str()))
+            .filter_map(|a| text_params(a, source_time, self.geometry, dest, transform))
+            .collect()
     }
 
     fn annotations(
@@ -1794,6 +1837,43 @@ mod tests {
     /// Every kind that anchors to the video rides the tilt, not just the ones
     /// the SDF pass happened to draw: an unwarped blur would redact the wrong
     /// pixels and an unwarped image would float off the card.
+    /// The engine draws the words of every text annotation except the one with
+    /// a caret in it, which the host is drawing live.
+    #[test]
+    fn text_annotations_reach_the_shaper_and_the_edited_one_is_left_to_the_host() {
+        let json = r##""annotations": [
+                {"id":"t1","start":0.0,"end":9.0,"kind":{"kind":"text","x":0.1,"y":0.1,"w":0.5,"h":0.2,
+                  "content":"Ship it","fontFamily":"Inter","fontSize":0.08,"fontWeight":600,
+                  "color":"#ffffff","align":"left","lineHeight":1.2}},
+                {"id":"t2","start":0.0,"end":9.0,"kind":{"kind":"text","x":0.1,"y":0.5,"w":0.5,"h":0.2,
+                  "content":"Second","fontFamily":"Inter","fontSize":0.05,"fontWeight":400,
+                  "color":"#ff0000","align":"center","lineHeight":1.2}}
+            ], "##;
+        let scene = scene_with(json);
+        let mut ev = Evaluator::new(&scene, source());
+
+        let both = ev.evaluate(&scene, 1.0).annotation_text;
+        ev.set_editing(Some("t1".into()));
+        let one = ev.evaluate(&scene, 1.0).annotation_text;
+
+        assert_eq!(both.len(), 2, "both are shaped by default");
+        assert_eq!(both[0].content, "Ship it");
+        assert!(
+            both[0].size_px > both[1].size_px,
+            "sized off the canvas height"
+        );
+        assert_eq!(both[0].align, recast_scene::composition::TextAlign::Start);
+        assert_eq!(
+            one.iter().map(|t| t.content.as_str()).collect::<Vec<_>>(),
+            ["Second"],
+            "the edited one is the host's to draw"
+        );
+        assert!(
+            ev.evaluate(&scene, 1.0).annotations.is_empty(),
+            "and text never reaches the shape pass"
+        );
+    }
+
     #[test]
     fn every_video_anchored_annotation_kind_rides_a_tilted_card() {
         let json = concat!(

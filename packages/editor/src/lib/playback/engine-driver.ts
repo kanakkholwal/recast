@@ -47,6 +47,7 @@ export class PreviewEngineDriver {
 	#ringCapacity = 0;
 	#spriteKey = "";
 	#captionTrackSignature = "";
+	#editingAnnotation: string | null = null;
 	#captionFontKey = "";
 	#annotationImageKey = "";
 
@@ -171,6 +172,16 @@ export class PreviewEngineDriver {
 		} catch (err) {
 			console.warn("preview engine refused the caption track:", err);
 		}
+	}
+
+	/**
+	 * Names the text annotation the editor is drawing itself, because the caret
+	 * is in it. Deduped, since it is set from an effect that runs per frame.
+	 */
+	setEditingAnnotation(id: string | null): void {
+		if (id === this.#editingAnnotation) return;
+		this.#editingAnnotation = id;
+		this.#engine.setEditingAnnotation(id);
 	}
 
 	/**

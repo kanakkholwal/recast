@@ -49,6 +49,24 @@ impl Faces {
         self.host.as_ref()
     }
 
+    /// Puts a face the HOST resolved under `family` and `weight`. The browser has
+    /// no font database, so this is the only way a page gets a second face.
+    /// Returns the id it was packed under, replacing any face already there.
+    pub fn insert(&mut self, family: &str, weight: u16, face: FontFace) -> u32 {
+        let key = Key {
+            family: first_family(family),
+            weight,
+        };
+        if let Some(entry) = self.entries.iter_mut().find(|(k, _, _)| *k == key) {
+            entry.2 = Some(face);
+            return entry.1;
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        self.entries.push((key, id, Some(face)));
+        id
+    }
+
     /// The face to draw `family` at `weight` with, and the id to pack it under.
     /// An empty family, or one that resolves to nothing, falls back to the host's.
     pub fn face_for(&mut self, family: &str, weight: u16) -> Option<(u32, FontFace)> {
@@ -144,6 +162,30 @@ mod tests {
             "and there is no host face"
         );
         assert!(faces.entries.is_empty(), "nothing was cached for it");
+    }
+
+    /// The browser resolves nothing, so a supplied face is the only way a second
+    /// family draws there. It must win over a search that would fail.
+    #[test]
+    fn a_supplied_face_is_used_for_its_family_and_keeps_one_id_when_replaced() {
+        let Some(face) = any_system_face() else {
+            return;
+        };
+        let mut faces = Faces::new();
+
+        let first = faces.insert("Anton", 700, face.clone());
+        let (found, _) = faces.face_for("Anton", 700).expect("the supplied face");
+        let again = faces.insert("Anton", 700, face);
+
+        assert_eq!(
+            found, first,
+            "asked for by name, answered with the supplied one"
+        );
+        assert_eq!(
+            again, first,
+            "replacing it keeps the id its glyphs are under"
+        );
+        assert_ne!(first, HOST_FACE);
     }
 
     #[test]

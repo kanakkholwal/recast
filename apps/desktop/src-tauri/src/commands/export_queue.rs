@@ -341,12 +341,13 @@ pub(crate) fn sweep_stale_jobs(app: &AppHandle) {
 /// then persists the (heavy, self-contained) render payload to disk, inserts
 /// a `queued` row, and wakes the worker. Returns once the job is durably
 /// queued; the export itself runs in the background.
-/// Annotation kinds neither renderer draws. Text reaches an export
-/// pre-rasterised by the WebView, and an unknown kind came from a newer build.
-/// A caller without a WebView (the CLI, the control socket) would otherwise get
-/// a file with them silently missing, so it is refused, which is the rule the
-/// rest of the export already follows for a layer it cannot draw.
-fn unrenderable_without_a_webview(state: &crate::render::graph::RenderState) -> Option<String> {
+/// Annotations the FFmpeg graph cannot draw: it has no shaper, so text reaches
+/// it pre-rasterised by the WebView, and an unknown kind came from a newer
+/// build. The ENGINE path shapes text itself, so this only applies when that
+/// path is not the one running. A caller without a WebView (the CLI, the control
+/// socket) would otherwise get a file with the words silently missing, and the
+/// rule for a layer a renderer cannot draw is to decline, not to drop.
+fn undrawable_by_the_graph(state: &crate::render::graph::RenderState) -> Option<String> {
     use crate::render::node_types::AnnotationKind;
     let stranded: Vec<&str> = state
         .annotations
@@ -364,7 +365,7 @@ fn unrenderable_without_a_webview(state: &crate::render::graph::RenderState) -> 
         return None;
     }
     Some(format!(
-        "{} annotation{} ({}) can only be drawn by the editor, so exporting here would leave {} out. Export from the editor window, or hide them first.",
+        "{} annotation{} ({}) need a text shaper the FFmpeg path does not have, so exporting here would leave {} out. Export from the editor window, or turn the engine export on.",
         stranded.len(),
         if stranded.len() == 1 { "" } else { "s" },
         stranded.join(", "),
@@ -433,8 +434,11 @@ pub async fn enqueue_export(
         )));
     }
 
-    if let Some(reason) = unrenderable_without_a_webview(&request.render_state) {
-        return Err(AppError::msg(format!("enqueue_export: {reason}")));
+    // The engine path shapes text itself; only the graph needs saving from it.
+    if !crate::export_engine::enabled(request.engine_export) {
+        if let Some(reason) = undrawable_by_the_graph(&request.render_state) {
+            return Err(AppError::msg(format!("enqueue_export: {reason}")));
+        }
     }
     if styled_cursor_without_sprites(&request.render_state) {
         log::warn!(
@@ -730,11 +734,11 @@ mod tests {
             let mut state = crate::render::graph::RenderState::default();
             state.annotations.push(text("title", false));
 
-            let refused = unrenderable_without_a_webview(&state).expect("refused");
+            let refused = undrawable_by_the_graph(&state).expect("refused");
 
             assert!(refused.contains("title"), "{refused}");
             assert!(
-                unrenderable_without_a_webview(&{
+                undrawable_by_the_graph(&{
                     let mut newer = crate::render::graph::RenderState::default();
                     newer.annotations.push(
                         serde_json::from_value(serde_json::json!({
@@ -759,7 +763,7 @@ mod tests {
             let mut state = crate::render::graph::RenderState::default();
             state.annotations.push(text("title", true));
 
-            assert!(unrenderable_without_a_webview(&state).is_none());
+            assert!(undrawable_by_the_graph(&state).is_none());
         }
 
         #[test]
@@ -774,7 +778,7 @@ mod tests {
                 }),
             ));
 
-            assert!(unrenderable_without_a_webview(&state).is_none());
+            assert!(undrawable_by_the_graph(&state).is_none());
         }
 
         /// A dot is a fair fallback for a style; losing someone's words is not.
@@ -789,7 +793,7 @@ mod tests {
                 .insert("cursorStyle".into(), serde_json::json!("macos"));
 
             assert!(styled_cursor_without_sprites(&state));
-            assert!(unrenderable_without_a_webview(&state).is_none());
+            assert!(undrawable_by_the_graph(&state).is_none());
 
             state.cursor_sprite_rest = Some("data:image/png;base64,AAA".into());
             assert!(!styled_cursor_without_sprites(&state));

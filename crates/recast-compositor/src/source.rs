@@ -34,6 +34,10 @@ pub trait Renderable: RenderSource {
     /// `&mut` because laying out captions rasterises into the glyph cache.
     fn caption_frame(&mut self, output_time: f64) -> CaptionFrame;
 
+    /// The words annotations carry. Their own list because they draw with the
+    /// annotations rather than on top with the captions.
+    fn annotation_glyphs(&mut self, output_time: f64) -> Vec<crate::text::GlyphQuad>;
+
     /// A texture sized for one decoded picture, to be filled by
     /// [`Self::decode_source`] and handed back through `FrameInputs`.
     fn source_texture(&self, width: u32, height: u32) -> wgpu::Texture;
@@ -82,6 +86,10 @@ impl RenderSource for Session {
 impl Renderable for Session {
     fn caption_frame(&mut self, output_time: f64) -> CaptionFrame {
         Self::caption_frame(self, output_time)
+    }
+
+    fn annotation_glyphs(&mut self, output_time: f64) -> Vec<crate::text::GlyphQuad> {
+        Self::annotation_glyphs(self, output_time)
     }
 
     fn source_texture(&self, width: u32, height: u32) -> wgpu::Texture {

@@ -177,7 +177,66 @@ fn blur_tint(variant: &str, tint_color: &str, strength: f64, opacity: f32) -> Sr
 }
 
 /// `None` for a kind this pass cannot draw. Only text is left: it reaches the
-/// export pre-rasterised as an `Image`, so the compositor never sees a glyph.
+/// export pre-rasterised as an `Image`, so this pass never sees a glyph.
+/// `text_params` draws it instead, through the shaper.
+/// A text annotation as the shaper takes it: its box in canvas pixels and the
+/// size resolved from the frame height, so a title is the same size at any
+/// output resolution. `None` for every other kind, and for one the host is
+/// editing, which it draws itself while the caret is in it.
+pub fn text_params(
+    annotation: &Annotation,
+    source_time: f64,
+    geometry: CanvasGeometry,
+    dest: DestRect,
+    transform: Affine2,
+) -> Option<crate::eval::TextItemDraw> {
+    use recast_scene::composition::TextAlign;
+    let AnnotationKind::Text {
+        x,
+        y,
+        w,
+        h,
+        content,
+        font_family,
+        font_size,
+        font_weight,
+        color,
+        align,
+        line_height,
+    } = &annotation.kind
+    else {
+        return None;
+    };
+    if annotation.hidden || content.trim().is_empty() {
+        return None;
+    }
+    let alpha = annotation_alpha(annotation, source_time);
+    if alpha <= 0.0 {
+        return None;
+    }
+    let to_canvas =
+        |x: f64, y: f64| uv_to_canvas((x, y), annotation.anchor, geometry, dest, transform);
+    let (left, top) = (x.min(x + w), y.min(y + h));
+    let (px, py) = to_canvas(left, top);
+    let (fx, fy) = to_canvas(left + w.abs(), top + h.abs());
+    Some(crate::eval::TextItemDraw {
+        rect: [px, py, fx - px, fy - py],
+        content: content.clone(),
+        font: font_family.clone(),
+        // A share of the CANVAS height, which is what the editor's box means.
+        size_px: (font_size * f64::from(geometry.canvas_h)) as f32,
+        color: parse_css_color(color).unwrap_or(Srgba::opaque(255, 255, 255)),
+        align: match align.as_str() {
+            "left" => TextAlign::Start,
+            "right" => TextAlign::End,
+            _ => TextAlign::Center,
+        },
+        weight: *font_weight,
+        line_height: *line_height,
+        alpha: alpha as f32,
+    })
+}
+
 pub fn annotation_params(
     annotation: &Annotation,
     source_time: f64,

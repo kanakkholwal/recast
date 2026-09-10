@@ -249,9 +249,19 @@ host supplied. In the browser nothing resolves at all, so the host's face is the
 only one there is. That is why a composition item or a text component can name a
 font and still draw on a machine that does not have it.
 
-Text annotations are the exception: the engine does not draw them. They are
-rendered by a DOM layer in the editor and reach an export pre-rasterised into an
-image, which is what keeps the preview and the export showing the same pixels.
+Text annotations are where this gets decided rather than assumed. The engine can
+shape them, and does on the headless export path, where a font database resolves
+any installed family. In a browser there is none, so the host must supply bytes,
+and the only families it can fetch are downloadable ones. A text annotation set
+in an installed system font can be drawn by the DOM and cannot be drawn by the
+engine in a webview, and the desktop preview is a webview.
+
+So the preview draws text in the DOM and the editor's export bakes that same
+rendering into an image. That pairing is what makes the exported pixels the
+previewed pixels; moving one side to the engine alone would break it, and moving
+both would restyle every system-font annotation. When the engine does draw them,
+they get their own glyph pass immediately after the annotation shapes, so a text
+annotation keeps its author's z order instead of floating above the camera.
 
 ## Compositions
 

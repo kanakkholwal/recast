@@ -210,6 +210,23 @@ impl PreviewEngine {
         self.session.set_caption_font(data, index)
     }
 
+    /// A font file to draw one family with, for the text annotations and
+    /// composition items that name it. Required in a browser, which has no font
+    /// database of its own. False when the bytes are not a face we can read.
+    #[wasm_bindgen(js_name = setTextFont)]
+    pub fn set_text_font(&mut self, family: &str, weight: u32, data: Vec<u8>, index: u32) -> bool {
+        self.session
+            .set_text_font(family, weight as u16, data, index)
+    }
+
+    /// Names the text annotation the host is drawing itself, because the caret
+    /// is in it. The engine keeps rendering everything else about that
+    /// annotation; pass `None` when editing ends. Nothing about this is saved.
+    #[wasm_bindgen(js_name = setEditingAnnotation)]
+    pub fn set_editing_annotation(&mut self, id: Option<String>) {
+        self.session.set_editing_annotation(id);
+    }
+
     /// Where the pointer sits at `output_time` in CANVAS PIXELS as `[x, y, alpha, spritePx, dotRadiusPx, slot, hlX, hlY, hlRadiusPx, hlAlpha]`, or empty when nothing is drawn.
     /// The engine draws the pointer itself; this lets a host place a DOM overlay on top without re-deriving the position from the scene.
     #[wasm_bindgen(js_name = cursorAt)]
@@ -598,6 +615,7 @@ impl PreviewEngine {
             );
         }
 
+        // No annotation glyphs: in a browser the editor draws those itself, with fonts the page has and cannot hand over as bytes.
         inputs.set_caption(self.session.caption_frame(output_time));
         let stats = self.session.render(output_time, &inputs, &view);
         drop(view);

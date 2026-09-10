@@ -175,6 +175,18 @@ export class PreviewEngine {
 	/** The font file captions are drawn with. Required: wasm has no filesystem
 	 *  to resolve a CSS family against. False means the bytes were unreadable,
 	 *  and any working face is left in place. */
+	/** A font file for one family, for the text annotations and composition items
+	 *  that name it. Required in a browser, which has no font database. */
+	setTextFont(family: string, weight: number, data: Uint8Array, index = 0): boolean {
+		return this.#live.setTextFont(family, weight, data, index);
+	}
+
+	/** Names the text annotation the host draws itself while the caret is in it,
+	 *  so the engine does not draw the same words underneath. */
+	setEditingAnnotation(id: string | null): void {
+		this.#live.setEditingAnnotation(id ?? undefined);
+	}
+
 	setCaptionFont(data: Uint8Array, index = 0): boolean {
 		return this.#live.setCaptionFont(data, index);
 	}
