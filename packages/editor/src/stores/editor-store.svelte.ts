@@ -226,6 +226,8 @@ export function createEditorStore() {
 	let hoveredAnnotationId = $state<string | null>(null);
 	// The engine draws every text annotation but this one, whose words the editor is drawing live in a contenteditable.
 	let editingAnnotationId = $state<string | null>(null);
+	// True once the engine has a face for every family the text annotations use, so the DOM layer stops painting their glyphs. All or none: two shapers in one frame drift.
+	let engineDrawsAnnotationText = $state(false);
 	// Independent of per-annotation `hidden`, so the master toggle never tramples user state.
 	let annotationsGloballyHidden = $state<boolean>(false);
 	// Snap engine on/off. Default on. Alt held during drag bypasses regardless.
@@ -2364,6 +2366,12 @@ export function createEditorStore() {
 		},
 		set editingAnnotationId(v: string | null) {
 			editingAnnotationId = v;
+		},
+		get engineDrawsAnnotationText() {
+			return engineDrawsAnnotationText;
+		},
+		set engineDrawsAnnotationText(v: boolean) {
+			engineDrawsAnnotationText = v;
 		},
 		get annotationsGloballyHidden() {
 			return annotationsGloballyHidden;

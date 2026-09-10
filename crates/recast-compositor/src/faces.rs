@@ -105,6 +105,18 @@ fn resolve(family: &str, weight: u16) -> Option<FontFace> {
     recast_text::resolve_face(family, weight, None).map(|resolved| resolved.face)
 }
 
+/// The bytes of an installed family, for a host with no font database of its own.
+/// A webview cannot look one up; the side that can hands the file over so both
+/// shape from the same face. `None` when nothing matches.
+#[cfg(not(target_arch = "wasm32"))]
+#[must_use]
+pub fn installed_font_bytes(family: &str, weight: u16) -> Option<Vec<u8>> {
+    resolve(family, weight).map(|face| {
+        let (data, _) = face.source();
+        data.as_ref().clone()
+    })
+}
+
 /// No filesystem to search: the host's face is the only one there is.
 #[cfg(target_arch = "wasm32")]
 fn resolve(_family: &str, _weight: u16) -> Option<FontFace> {

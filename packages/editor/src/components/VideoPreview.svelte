@@ -9,6 +9,9 @@ import { computeCanvasGeometry } from "../lib/canvas-geometry";
 import { CursorSmoother } from "../lib/cursor/smoother";
 import { smoothingStrengthToSigmaMs } from "../lib/cursor/smoothing";
 import { getEditorServices } from "../lib/editor/services";
+import { resolveEngineFont } from "../lib/fonts/engine-font";
+import { textAnnotationFaces } from "../lib/fonts/text-annotation-faces";
+import { experimentalStore } from "../stores/experimental.svelte";
 import { cameraPlaybackRate, trackTimeAt } from "../lib/editor/track-offsets";
 import { analytics, exportActivity } from "../lib/host-hooks";
 import { AudioStallMonitor, resolveAvSync } from "../lib/playback/av-sync";
@@ -879,6 +882,36 @@ $effect(() => {
 	if (!engineDriver) return;
 	engineDriver.setEditingAnnotation(store.editingAnnotationId);
 	requestRedraw();
+});
+
+/**
+ * Hand the engine the words of text annotations, but only when it will draw them
+ * in the EXPORT too: the FFmpeg path has no shaper, so its exports take text
+ * pre-rasterised from the DOM layer, and previewing through a different shaper
+ * than the one that writes the file is the drift this design exists to avoid.
+ * Then only if a face resolves for EVERY family, since some words in one shaper
+ * and the rest in another is that same drift inside a single frame.
+ */
+$effect(() => {
+	const engineWillExport = experimentalStore.isEnabled("engineExport");
+	const wanted = engineWillExport ? textAnnotationFaces(store.annotations) : [];
+	untrack(() => {
+		void (async () => {
+			const driver = engineDriver;
+			if (!driver) return;
+			const loaded = await Promise.all(
+				wanted.map(async ({ family, weight }) => {
+					if (driver.hasTextFont(family, weight)) return true;
+					const font = await resolveEngineFont(family, weight);
+					return font !== null && driver.setTextFont(family, weight, font.data);
+				}),
+			);
+			const all = wanted.length > 0 && loaded.every(Boolean);
+			driver.setDrawAnnotationText(all);
+			store.engineDrawsAnnotationText = all;
+			requestRedraw();
+		})();
+	});
 });
 
 // Read the store playhead, not the hidden <video>: on the WebCodecs path it is not kept aligned, so the camera would stick at the start. Tolerance avoids re-seeking on micro-jitter.

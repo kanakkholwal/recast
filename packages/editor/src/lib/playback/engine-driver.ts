@@ -48,6 +48,8 @@ export class PreviewEngineDriver {
 	#spriteKey = "";
 	#captionTrackSignature = "";
 	#editingAnnotation: string | null = null;
+	#textFonts = new Map<string, boolean>();
+	#drawsAnnotationText = false;
 	#captionFontKey = "";
 	#annotationImageKey = "";
 
@@ -172,6 +174,32 @@ export class PreviewEngineDriver {
 		} catch (err) {
 			console.warn("preview engine refused the caption track:", err);
 		}
+	}
+
+	/**
+	 * A face for one family, so the engine can shape text that names it. Deduped
+	 * by family and weight: the bytes are megabytes and the upload is not free.
+	 * Returns whether the engine can now draw that family.
+	 */
+	setTextFont(family: string, weight: number, data: Uint8Array): boolean {
+		const key = `${family}:${weight}`;
+		if (this.#textFonts.has(key)) return this.#textFonts.get(key) === true;
+		const ok = this.#engine.setTextFont(family, weight, data, 0);
+		this.#textFonts.set(key, ok);
+		if (!ok) console.warn("preview engine could not read the text font", key);
+		return ok;
+	}
+
+	/** Families the engine has a face for, so the host knows what it can stop drawing. */
+	hasTextFont(family: string, weight: number): boolean {
+		return this.#textFonts.get(`${family}:${weight}`) === true;
+	}
+
+	/** Hands the words of text annotations to the engine, or takes them back. */
+	setDrawAnnotationText(on: boolean): void {
+		if (on === this.#drawsAnnotationText) return;
+		this.#drawsAnnotationText = on;
+		this.#engine.setDrawAnnotationText(on);
 	}
 
 	/**

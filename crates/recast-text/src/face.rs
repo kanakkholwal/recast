@@ -12,6 +12,16 @@ pub struct FontFace {
     line_gap: f64,
 }
 
+impl FontFace {
+    /// The bytes this face was parsed from, and which face inside them it is.
+    /// A host with no font database of its own needs these to draw the same
+    /// family: it cannot look one up, so the side that can hands them over.
+    #[must_use]
+    pub fn source(&self) -> (&Arc<Vec<u8>>, u32) {
+        (&self.data, self.index)
+    }
+}
+
 /// Vertical metrics in EM units (multiply by the pixel size to get pixels).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Metrics {

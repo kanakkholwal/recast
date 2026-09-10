@@ -65,6 +65,9 @@ pub struct PreviewEngine {
     canvas_size: Option<(u32, u32)>,
     /// See `flush_uploads`.
     defers_uploads: bool,
+    /// Set by the host once it has a face for every family the text annotations
+    /// name; until then the page draws them and the engine leaves them alone.
+    draw_annotation_text: bool,
     frames: Vec<(LayerId, LayerRing)>,
     background: Option<LayerTexture>,
     /// Indexed by `CursorSlot::index`. An empty slot draws the dot instead.
@@ -132,6 +135,7 @@ impl PreviewEngine {
             surface_size: (0, 0),
             canvas_size: None,
             defers_uploads,
+            draw_annotation_text: false,
             frames: Vec::new(),
             background: None,
             cursor_sprites: [None, None, None, None],
@@ -208,6 +212,14 @@ impl PreviewEngine {
     #[wasm_bindgen(js_name = setCaptionFont)]
     pub fn set_caption_font(&mut self, data: Vec<u8>, index: u32) -> bool {
         self.session.set_caption_font(data, index)
+    }
+
+    /// Whether the engine draws the words of text annotations. Off until the host
+    /// says it has a face for EVERY family they use: drawing some of them here
+    /// and the rest in the page would put two shapers in one frame.
+    #[wasm_bindgen(js_name = setDrawAnnotationText)]
+    pub fn set_draw_annotation_text(&mut self, on: bool) {
+        self.draw_annotation_text = on;
     }
 
     /// A font file to draw one family with, for the text annotations and
@@ -615,7 +627,9 @@ impl PreviewEngine {
             );
         }
 
-        // No annotation glyphs: in a browser the editor draws those itself, with fonts the page has and cannot hand over as bytes.
+        if self.draw_annotation_text {
+            inputs.set_annotation_glyphs(self.session.annotation_glyphs(output_time));
+        }
         inputs.set_caption(self.session.caption_frame(output_time));
         let stats = self.session.render(output_time, &inputs, &view);
         drop(view);

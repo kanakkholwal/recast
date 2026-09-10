@@ -364,6 +364,7 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
         onkeydown={(e) => handleKeyDown(e, a)}
         style:pointer-events={interactive ? "auto" : "none"}
         style:touch-action={interactive ? "none" : "auto"}
+        style:color={store.engineDrawsAnnotationText && !isEditing ? "transparent" : undefined}
       >{a.kind.content}</div>
     {/if}
   {/each}

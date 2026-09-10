@@ -29,6 +29,7 @@ export interface WasmPreviewEngine {
 	setCaptionFont(data: Uint8Array, index: number): boolean;
 	setEditingAnnotation(id: string | undefined): void;
 	setTextFont(family: string, weight: number, data: Uint8Array, index: number): boolean;
+	setDrawAnnotationText(on: boolean): void;
 	setCursorSprite(slot: CursorSlot, image: ImageBitmap, hotspotX: number, hotspotY: number): void;
 	setAnnotationImage(path: string, image: ImageBitmap): void;
 	clearAnnotationImages(): void;

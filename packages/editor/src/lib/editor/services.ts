@@ -116,6 +116,9 @@ export interface AssetService {
 	 *  neither woff2 nor a `FontFace`, so it needs the file itself. Absent on a
 	 *  host with no TTF cache, where engine captions fall back to the default. */
 	captionFontFile?(family: string, weight: number): Promise<string>;
+	/** The bytes of an INSTALLED family, which a browser can never fetch. Absent
+	 *  on a host with no font database, where text it names is drawn by the DOM. */
+	installedFontBytes?(family: string, weight: number): Promise<Uint8Array | null>;
 	ensureInstalled(manifestUrl: string): Promise<AssetInstallResult>;
 	getCachedPath(id: string): Promise<string | null>;
 	hydrate(): Promise<HydratedAsset[]>;

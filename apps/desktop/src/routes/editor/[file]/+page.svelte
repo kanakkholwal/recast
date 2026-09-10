@@ -1114,6 +1114,7 @@ async function handleExport() {
 		// The browser engine composites text and cursor itself in buildExportJob, so skip that raster here.
 		const { renderState: finalRenderState, metadata: meta } = await buildExportRenderState(store, {
 			skipVisualRaster: engine.engine === "browser",
+			engineExport: experimentalStore.isEnabled("engineExport"),
 		});
 
 		// Warn but don't block: the export otherwise drops unloadable image annotations silently.

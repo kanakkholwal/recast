@@ -128,6 +128,19 @@ pub async fn caption_font_file(app: AppHandle, family: String, weight: u32) -> A
         .map_err(AppError::msg)
 }
 
+/// The bytes of an INSTALLED family, for a webview that has no font database.
+/// The engine shapes from bytes; a browser can fetch a downloadable family but
+/// never an installed one, so the native side looks it up and hands it over.
+/// `None` when nothing matches, which the caller answers by drawing it itself.
+#[tauri::command]
+pub async fn system_font_bytes(family: String, weight: u32) -> AppResult<Option<Vec<u8>>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        recast_compositor::faces::installed_font_bytes(&family, weight as u16)
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("system_font_bytes join error: {e}")))
+}
+
 /// Pull the first font URL with `ext` out of a Google Fonts `css2` response
 /// (`src: url(https://fonts.gstatic.com/…) format(...)`).
 fn extract_font_url(css: &str, ext: &str) -> Option<String> {

@@ -175,6 +175,13 @@ export class PreviewEngine {
 	/** The font file captions are drawn with. Required: wasm has no filesystem
 	 *  to resolve a CSS family against. False means the bytes were unreadable,
 	 *  and any working face is left in place. */
+	/** Whether the engine draws the words of text annotations. Off until the host
+	 *  has a face for EVERY family they use, since two shapers in one frame is
+	 *  how a preview drifts from an export. */
+	setDrawAnnotationText(on: boolean): void {
+		this.#live.setDrawAnnotationText(on);
+	}
+
 	/** A font file for one family, for the text annotations and composition items
 	 *  that name it. Required in a browser, which has no font database. */
 	setTextFont(family: string, weight: number, data: Uint8Array, index = 0): boolean {

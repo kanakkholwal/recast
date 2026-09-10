@@ -667,6 +667,14 @@ export function ensureGoogleFont(family: string, weight: number): Promise<string
 }
 
 /** The same family's TTF. The engine's shaper cannot read the woff2 above. */
+export async function installedFontBytes(
+	family: string,
+	weight: number,
+): Promise<Uint8Array | null> {
+	const bytes = await invoke<number[] | null>("system_font_bytes", { family, weight });
+	return bytes ? new Uint8Array(bytes) : null;
+}
+
 export function captionFontFile(family: string, weight: number): Promise<string> {
 	return invoke<string>("caption_font_file", { family, weight });
 }
