@@ -6,61 +6,18 @@ use std::collections::BTreeMap;
 use crate::document::{Document, Node};
 use crate::value;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VarType {
-    Color,
-    Number,
-    Int,
-    Bool,
-    Text,
-    Select,
-    Font,
-    Vec2,
-    Angle,
-    Asset,
+pub use recast_scene::vars::{VarSpec as Var, VarType};
+
+/// The rules a declaration obeys. An extension trait because the type itself travels to the engine and the editor, while these belong to the parser.
+pub trait VarRules {
+    fn resolved(&self) -> String;
+    fn is_ill_typed(&self) -> bool;
+    fn is_out_of_range(&self) -> bool;
 }
 
-impl VarType {
-    #[must_use]
-    pub fn parse(text: &str) -> Option<Self> {
-        Some(match text {
-            "color" => Self::Color,
-            "number" => Self::Number,
-            "int" => Self::Int,
-            "bool" => Self::Bool,
-            "text" => Self::Text,
-            "select" => Self::Select,
-            "font" => Self::Font,
-            "vec2" => Self::Vec2,
-            "angle" => Self::Angle,
-            "asset" => Self::Asset,
-            _ => return None,
-        })
-    }
-
-    /// Numeric types carry a range and are the only ones `min`/`max`/`step` apply to.
-    #[must_use]
-    pub fn is_numeric(self) -> bool {
-        matches!(self, Self::Number | Self::Int | Self::Angle)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Var {
-    pub name: String,
-    pub ty: VarType,
-    pub value: String,
-    pub path: Option<String>,
-    pub min: Option<f64>,
-    pub max: Option<f64>,
-    pub step: Option<f64>,
-    pub options: Vec<String>,
-}
-
-impl Var {
+impl VarRules for Var {
     /// What a reference expands to: the declared value, clamped for a numeric type with a range.
-    #[must_use]
-    pub fn resolved(&self) -> String {
+    fn resolved(&self) -> String {
         if !self.ty.is_numeric() {
             return self.value.clone();
         }
@@ -78,8 +35,7 @@ impl Var {
     }
 
     /// True when the declared value does not read as its declared type.
-    #[must_use]
-    pub fn is_ill_typed(&self) -> bool {
+    fn is_ill_typed(&self) -> bool {
         match self.ty {
             VarType::Number | VarType::Angle => value::parse_num(&self.value).is_err(),
             VarType::Int => value::parse_int(&self.value).is_err(),
@@ -91,8 +47,7 @@ impl Var {
     }
 
     /// True when a numeric value sits outside its own range, which resolution then clamps.
-    #[must_use]
-    pub fn is_out_of_range(&self) -> bool {
+    fn is_out_of_range(&self) -> bool {
         if !self.ty.is_numeric() {
             return false;
         }

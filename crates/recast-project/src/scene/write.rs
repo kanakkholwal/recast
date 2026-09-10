@@ -322,8 +322,10 @@ pub fn from_render_state(
     }
     root.num("pad", state.padding, 0.0);
 
-    if let Some(vars) = base.and_then(|b| b.root.child("vars")) {
-        root.children.push(vars.clone());
+    if let Some(vars) =
+        vars_node(state).or_else(|| base.and_then(|b| b.root.child("vars")).cloned())
+    {
+        root.children.push(vars);
     }
     root.children.extend(media_nodes(media));
     root.children.push(timeline(state, ids));
@@ -339,6 +341,9 @@ pub fn from_render_state(
         root.children.push(captions(style, media));
     }
     root.children.push(audio(state, media));
+    if let Some(composition) = &state.composition {
+        root.children.push(sequence_node(composition));
+    }
     for graphic in &state.graphics {
         root.children.push(graphic_node(graphic));
     }
@@ -1173,6 +1178,99 @@ fn music(clip: &AudioClip) -> Node {
     node.set_flag("loop", clip.looping);
     node.set_flag("duck", clip.ducking);
     node
+}
+
+/// The composition, written with the same elements the annotations use; the parent is what puts them on the output clock.
+fn sequence_node(composition: &recast_scene::composition::Composition) -> Node {
+    use recast_scene::composition::{ItemContent, Transition};
+    let mut node = Node::new("sequence");
+    if composition.transition != Transition::None {
+        node.set("transition", composition.transition.as_str());
+    }
+    if composition.transition_dur != 0.0 {
+        node.set("transitionDur", value::fmt_secs(composition.transition_dur));
+    }
+    for item in &composition.items {
+        let mut child = Node::new(match &item.content {
+            ItemContent::Image { .. } => "img",
+            ItemContent::Text { .. } => "text",
+        });
+        child.set("id", item.id.clone());
+        child.set("at", value::fmt_secs(item.at));
+        child.set("dur", value::fmt_secs(item.dur));
+        for (name, number, default) in [
+            ("x", item.area.x, 0.0),
+            ("y", item.area.y, 0.0),
+            ("w", item.area.w, 1.0),
+            ("h", item.area.h, 1.0),
+            ("opacity", item.opacity, 1.0),
+        ] {
+            if number != default {
+                child.set(name, value::fmt_num(number));
+            }
+        }
+        match &item.content {
+            ItemContent::Image { src, fit, radius } => {
+                child.set("src", src.clone());
+                if *fit != recast_scene::composition::Fit::default() {
+                    child.set("fit", fit.as_str());
+                }
+                if *radius != 0.0 {
+                    child.set("radius", value::fmt_num(*radius));
+                }
+            }
+            ItemContent::Text {
+                content,
+                size,
+                color,
+                align,
+                weight,
+                line_height,
+            } => {
+                child.text = Some(content.clone());
+                child.set("size", value::fmt_num(*size));
+                child.set("color", color.clone());
+                if *align != recast_scene::composition::TextAlign::default() {
+                    child.set("align", align.as_str());
+                }
+                if *weight != 400.0 {
+                    child.set("weight", value::fmt_num(*weight));
+                }
+                if *line_height != super::read::DEFAULT_ITEM_LINE_HEIGHT {
+                    child.set("lineHeight", value::fmt_num(*line_height));
+                }
+            }
+        }
+        node.children.push(child);
+    }
+    node
+}
+
+/// `<vars>` from the state, or nothing when it declares none, in which case the base document's block still stands.
+fn vars_node(state: &RenderState) -> Option<Node> {
+    if state.vars.is_empty() {
+        return None;
+    }
+    let mut node = Node::new("vars");
+    for var in &state.vars {
+        let mut child = Node::new("var");
+        child.set("name", var.name.clone());
+        child.set("type", var.ty.as_str());
+        child.set("value", var.value.clone());
+        if let Some(path) = &var.path {
+            child.set("path", path.clone());
+        }
+        for (name, number) in [("min", var.min), ("max", var.max), ("step", var.step)] {
+            if let Some(number) = number {
+                child.set(name, value::fmt_num(number));
+            }
+        }
+        if !var.options.is_empty() {
+            child.set("options", var.options.join(","));
+        }
+        node.children.push(child);
+    }
+    Some(node)
 }
 
 /// The element it came from, so a `<shader>` does not become a `<graphic>` on the way back.

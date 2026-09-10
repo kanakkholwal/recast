@@ -49,6 +49,9 @@ pub enum AnnotationShape {
         radius: f32,
         opacity: f32,
         path: Box<str>,
+        /// How it fills the box. An annotation stretches, which is what the
+        /// editor's resize handles mean; a composition item may crop or letterbox.
+        fit: recast_scene::composition::Fit,
     },
 }
 
@@ -284,6 +287,7 @@ pub fn annotation_params(
                 radius: (*radius as f32) * bw.abs().min(bh.abs()),
                 opacity: opacity.clamp(0.0, 1.0) as f32,
                 path: path.as_str().into(),
+                fit: recast_scene::composition::Fit::Fill,
             }
         }
         _ => return None,

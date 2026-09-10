@@ -217,6 +217,29 @@ against the document's declared variables on the way into the engine, and only
 on the way in: the file keeps the reference, so a variable survives every round
 trip and the compositor never sees one.
 
+## Compositions
+
+A document either edits a recording or composes a sequence, never both: the
+validator refuses a file with a `<screen>` and a `<sequence>` in it. A
+composition's items sit on the OUTPUT clock, since there is no recording to
+measure against, and reading one sets the timeline's end to the composition's
+own end so every clock downstream keeps working unchanged.
+
+Items draw through passes that already existed. An image item produces the same
+parameters an image annotation does, so the host resolves its source the way it
+already resolves annotation images, and the shape carries a `fit` (cover,
+contain, fill). A text item is shaped by the caption shaper into the caption
+atlas and rides back in the caption frame, so a composition has one font: the
+host's if it set one, else the caption style's.
+
+That reuse has one consequence worth knowing: text draws in the caption pass
+and images in the annotation pass, so a title is always above an image whatever
+the document order says.
+
+A dissolve is not a blend of one item into another. Each item has its own rise
+and fall, capped at half its length so a short item still reaches full, and the
+two simply overlap. Nothing has to know which one is leaving.
+
 ## Invariants & gotchas
 
 - **Picture clock is master, not `<video>`.** On the MediaBunny path the gapless

@@ -104,6 +104,8 @@ pub fn to_scene(state: &RenderState) -> Scene {
         captions: state.caption_style.clone(),
         // The words live in their own file, like the pointer path, and the editor attaches them after migrating.
         caption_track: None,
+        composition: state.composition.clone(),
+        vars: state.vars.clone(),
         flags: SceneFlags {
             focus: state.focus_enabled,
             annotations: state.annotations_enabled,
@@ -237,6 +239,8 @@ pub fn to_render_state(scene: &Scene) -> RenderState {
         segment_speeds: scene.timeline.segment_speeds.clone(),
         audio_settings: scene.audio.settings.clone(),
         music_clips: scene.audio.clips.clone(),
+        composition: scene.composition.clone(),
+        vars: scene.vars.clone(),
         passthrough: scene.passthrough.clone(),
         ..RenderState::default()
     };
@@ -606,7 +610,22 @@ mod tests {
             { "id": "g1", "component": "sweep@1.0", "start": 1.0, "duration": 4.0,
               "params": { "angle": "20" }, "fallbackSurface": "screen" },
             { "id": "g2", "component": "spotlight@1.0", "start": 0.0, "duration": 2.0 }
-        ]
+        ],
+        "vars": [
+            { "name": "accent", "type": "color", "value": "#22d3ee", "path": "Brand" }
+        ],
+        "composition": {
+            "transition": "dissolve",
+            "transitionDur": 0.5,
+            "items": [
+                { "id": "i1", "at": 0.0, "dur": 4.0, "opacity": 0.9,
+                  "area": { "x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8 },
+                  "content": { "kind": "image", "src": "media/a.png", "fit": "contain", "radius": 0.02 } },
+                { "id": "t1", "at": 4.0, "dur": 3.0,
+                  "content": { "kind": "text", "content": "Hello", "size": 0.08,
+                               "color": "#ffffff", "align": "start", "weight": 700.0, "lineHeight": 1.2 } }
+            ]
+        }
     }"##;
 
     /// The round trip is only an oracle if a fixture actually sets the field.
@@ -643,7 +662,7 @@ mod tests {
 
     /// Keys `fully_populated()` must emit. Bumped deliberately, never to make a
     /// failing test pass.
-    const RENDER_STATE_KEYS: usize = 46;
+    const RENDER_STATE_KEYS: usize = 48;
 
     /// Both spellings become layers, in the order the document listed them, so
     /// the z-order an author sees is the order they wrote.

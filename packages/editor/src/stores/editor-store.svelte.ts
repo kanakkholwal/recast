@@ -74,7 +74,9 @@ import {
 	wallpaperBackgroundValue,
 	type ZoomRegion,
 	type LayerBinding,
+	type Composition,
 	type GraphicSpec,
+	type VarSpec,
 	type LayerTransform,
 } from "../lib/editor/render-state";
 import type { TimeMode } from "../lib/editor/time";
@@ -247,6 +249,8 @@ export function createEditorStore() {
 	let bindings = $state.raw<LayerBinding[]>([]);
 	let transforms = $state.raw<LayerTransform[]>([]);
 	let graphics = $state.raw<GraphicSpec[]>([]);
+	let vars = $state.raw<VarSpec[]>([]);
+	let composition = $state.raw<Composition | undefined>(undefined);
 
 	// Cursor settings
 	let cursorSettings = $state<CursorSettings>({
@@ -365,6 +369,8 @@ export function createEditorStore() {
 			bindings,
 			transforms,
 			graphics,
+			vars,
+			composition,
 			musicClips,
 			captionStyle,
 		};
@@ -537,6 +543,8 @@ export function createEditorStore() {
 		bindings = s.bindings ?? [];
 		transforms = s.transforms ?? [];
 		graphics = s.graphics ?? [];
+		vars = s.vars ?? [];
+		composition = s.composition;
 		// Merge over defaults so an older snapshot missing newer style keys stays valid.
 		if (s.captionStyle) captionStyle = { ...DEFAULT_CAPTION_STYLE, ...s.captionStyle };
 	}
@@ -1063,6 +1071,14 @@ export function createEditorStore() {
 		return annotation;
 	}
 
+	/** Every `$name` reference picks the new value up on the next frame, so one
+	 *  edit here can move the whole composition. Undo is the caller's, as with annotations: a drag is one entry, not one per pixel. */
+	function setVariable(name: string, value: string) {
+		if (!vars.some((v) => v.name === name && v.value !== value)) return;
+		vars = vars.map((v) => (v.name === name ? { ...v, value } : v));
+		log.debounced(`variable-${name}`, "variable", "set", { name });
+	}
+
 	function updateAnnotation(id: string, updates: Partial<Annotation>) {
 		// Position/style edits stream from drags + property sliders, so debounce.
 		log.debounced(`annotation-${id}`, "annotation", "updated", {
@@ -1220,6 +1236,8 @@ export function createEditorStore() {
 		bindings = [];
 		transforms = [];
 		graphics = [];
+		vars = [];
+		composition = undefined;
 		cursorSettings = {
 			enabled: true,
 			size: 2,
@@ -1758,6 +1776,8 @@ export function createEditorStore() {
 			bindings,
 			transforms,
 			graphics,
+			vars,
+			composition,
 			annotations: annotationsSnapshot,
 			shadow: shadowSnapshot,
 			audioSettings: audioSettingsSnapshot,
@@ -1862,6 +1882,8 @@ export function createEditorStore() {
 		bindings = state.bindings ?? [];
 		transforms = state.transforms ?? [];
 		graphics = state.graphics ?? [];
+		vars = state.vars ?? [];
+		composition = state.composition;
 		layoutMode = state.layoutMode ?? layoutMode;
 		annotations = (state.annotations ?? []).map((a, idx) => ({
 			id: generateId(),
@@ -2300,6 +2322,9 @@ export function createEditorStore() {
 			cursorMotionEasing = v;
 		},
 
+		get vars() {
+			return vars;
+		},
 		get annotations() {
 			return annotations;
 		},
@@ -2532,6 +2557,7 @@ export function createEditorStore() {
 		dismissSilence,
 		clearDismissedSilences,
 		addAnnotation,
+		setVariable,
 		updateAnnotation,
 		removeAnnotation,
 		toggleAnnotationLock,

@@ -257,6 +257,35 @@
 			"without": { "padding": 30.0 }
 		},
 		{
+			"_why_time": "Mid-crossfade, where both items are partly on and neither is at full: the frame a hard cut could never produce.",
+			"_why_fields": "The only fixture with a composition, and the only one binding an image, so it covers the item pass and its fit modes too. The recording underneath is the harness's: a real composition document has no screen, and the validator refuses both in one file.",
+			"name": "composition-dissolve",
+			"time": 3.25,
+			"overrides": {
+				"padding": 0.0,
+				"composition": {
+					"transition": "dissolve",
+					"transitionDur": 1.0,
+					"items": [
+						{ "id": "i1", "at": 0.0, "dur": 4.0, "content": { "kind": "image", "src": "media/a.png", "fit": "cover" } },
+						{ "id": "i2", "at": 3.0, "dur": 4.0, "area": { "x": 0.52, "y": 0.48, "w": 0.44, "h": 0.48 },
+						  "content": { "kind": "image", "src": "media/b.png", "fit": "contain", "radius": 0.08 } }
+					]
+				}
+			},
+			"without": {
+				"padding": 0.0,
+				"composition": {
+					"transition": "none",
+					"items": [
+						{ "id": "i1", "at": 0.0, "dur": 4.0, "content": { "kind": "image", "src": "media/a.png", "fit": "cover" } },
+						{ "id": "i2", "at": 3.0, "dur": 4.0, "area": { "x": 0.52, "y": 0.48, "w": 0.44, "h": 0.48 },
+						  "content": { "kind": "image", "src": "media/b.png", "fit": "contain", "radius": 0.08 } }
+					]
+				}
+			}
+		},
+		{
 			"name": "background-blur",
 			"time": 1.0,
 			"overrides": {

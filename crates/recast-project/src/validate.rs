@@ -10,7 +10,7 @@ use crate::ids::Id;
 use crate::parse::Position;
 use crate::schema::{self, AttrType, ElementSpec, IdRule};
 use crate::value;
-use crate::vars::{self, Vars};
+use crate::vars::{self, VarRules as _, Vars};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -87,6 +87,7 @@ pub fn validate(doc: &Document) -> Report {
     check_node(&doc.root, None, &kinds_by_id, &declared, &mut report);
     check_vars(doc, &declared, &mut report);
     check_graphics(doc, &declared, &mut report);
+    check_sequence(doc, &mut report);
     for (id, count) in ids.into_iter().filter(|(_, c)| *c > 1) {
         report.issues.push(Issue {
             level: Level::Error,
@@ -391,6 +392,53 @@ fn check_graphics(doc: &Document, declared: &Vars, report: &mut Report) {
     }
 }
 
+/// A composition stands on its own: it has no recording, so an item with no duration never appears and a document cannot be both.
+fn check_sequence(doc: &Document, report: &mut Report) {
+    let Some(node) = doc.root.child("sequence") else {
+        return;
+    };
+    if doc.root.child("screen").is_some() {
+        report.push(
+            Level::Error,
+            "sequence_with_screen",
+            node,
+            None,
+            "a document composes a sequence or edits a recording, not both".into(),
+        );
+    }
+    let mut shortest = f64::INFINITY;
+    for item in &node.children {
+        let dur = item
+            .attr("dur")
+            .and_then(|v| value::parse_num(v).ok())
+            .unwrap_or(0.0);
+        if dur <= 0.0 {
+            report.push(
+                Level::Warning,
+                "item_never_shows",
+                item,
+                Some("dur"),
+                "an item with no duration never appears".into(),
+            );
+            continue;
+        }
+        shortest = shortest.min(dur);
+    }
+    let fade = node
+        .attr("transitionDur")
+        .and_then(|v| value::parse_num(v).ok())
+        .unwrap_or(0.0);
+    if fade > 0.0 && shortest.is_finite() && fade > shortest {
+        report.push(
+            Level::Warning,
+            "transition_longer_than_item",
+            node,
+            Some("transitionDur"),
+            format!("{fade}s is longer than the shortest item ({shortest}s), so it is capped at half of each"),
+        );
+    }
+}
+
 /// Every parameter the instance sets, from attributes on a `<graphic>` and `<uniform>` children on a `<shader>`.
 fn params_of(node: &Node) -> Vec<(String, String)> {
     const OWN: &[&str] = &["id", "component", "at", "dur"];
@@ -606,6 +654,25 @@ mod tests {
             .into_iter()
             .map(|i| i.code)
             .collect()
+    }
+
+    #[test]
+    fn a_sequence_is_checked_for_the_ways_an_item_can_never_be_seen() {
+        let ok = r##"<recast v="3"><sequence transition="dissolve" transitionDur="0.5"><img id="i1" at="0" dur="4" src="media/a.png"/></sequence></recast>"##;
+        assert!(codes(ok).is_empty(), "{:?}", codes(ok));
+
+        let zero = r#"<recast v="3"><sequence><img id="i1" at="0" dur="0" src="media/a.png"/></sequence></recast>"#;
+        assert_eq!(codes(zero), ["item_never_shows"]);
+
+        let long = r#"<recast v="3"><sequence transitionDur="9"><img id="i1" at="0" dur="2" src="media/a.png"/></sequence></recast>"#;
+        assert_eq!(codes(long), ["transition_longer_than_item"]);
+    }
+
+    #[test]
+    fn a_document_composes_or_edits_a_recording_but_not_both() {
+        let src = r#"<recast v="3"><screen id="scr"/><sequence><img id="i1" at="0" dur="2" src="media/a.png"/></sequence></recast>"#;
+
+        assert_eq!(codes(src), ["sequence_with_screen"]);
     }
 
     #[test]

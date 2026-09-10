@@ -3,7 +3,9 @@
 
 pub mod bind;
 pub mod component;
+pub mod composition;
 mod scene;
+pub mod vars;
 
 pub mod migrate;
 pub mod ops;

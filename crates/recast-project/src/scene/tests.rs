@@ -431,6 +431,100 @@ fn base_elements_the_state_cannot_carry_survive_a_rewrite() {
     assert!(text.contains("<future id=\"f1\"/>"));
 }
 
+/// A composition has no recording, so the sequence's own end has to become the
+/// output duration or every clock downstream would think the project is empty.
+#[test]
+fn a_sequence_reads_as_a_composition_and_sets_the_output_duration() {
+    use recast_scene::composition::{Fit, ItemContent, TextAlign, Transition};
+    let src = concat!(
+        r##"<recast v="3"><sequence transition="dissolve" transitionDur="0.500">"##,
+        r#"<img id="i1" at="0.000" dur="4.000" src="media/a.png" fit="contain" radius="0.02"/>"#,
+        r##"<text id="t1" at="3.500" dur="3.000" size="0.08" color="#ffffff" align="left" y="0.4">Hello</text>"##,
+        r#"</sequence></recast>"#
+    );
+
+    let state = to_render_state(&parse(src).unwrap()).unwrap();
+
+    let composition = state.composition.as_ref().expect("a composition");
+    assert_eq!(composition.transition, Transition::Dissolve);
+    assert_eq!(composition.items.len(), 2);
+    assert!((state.trim_end - 6.5).abs() < 1e-9, "the last item's end");
+    match &composition.items[0].content {
+        ItemContent::Image { src, fit, radius } => {
+            assert_eq!(src, "media/a.png");
+            assert_eq!(*fit, Fit::Contain);
+            assert!((radius - 0.02).abs() < 1e-9);
+        }
+        other => panic!("{other:?}"),
+    }
+    match &composition.items[1].content {
+        ItemContent::Text { content, align, .. } => {
+            assert_eq!(content, "Hello");
+            assert_eq!(*align, TextAlign::Start, "the CSS spelling reads too");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!((composition.items[1].area.y - 0.4).abs() < 1e-9);
+}
+
+#[test]
+fn a_composition_survives_a_whole_state_rewrite() {
+    let src = concat!(
+        r##"<recast v="3"><sequence transition="dissolve" transitionDur="0.500">"##,
+        r#"<img id="i1" at="0.000" dur="4.000" src="media/a.png" fit="contain"/>"#,
+        r##"<text id="t1" at="3.500" dur="3.000" size="0.08" color="#ffffff">Hello</text>"##,
+        r#"</sequence></recast>"#
+    );
+    let state = to_render_state(&parse(src).unwrap()).unwrap();
+
+    let again = from_render_state(&state, &MediaRefs::default(), None, &mut IdGen::seeded(11));
+
+    let text = serialize(&again);
+    assert!(
+        text.contains(r#"<sequence transition="dissolve""#),
+        "{text}"
+    );
+    assert!(text.contains(">Hello</text>"), "{text}");
+    assert_eq!(
+        to_render_state(&again).unwrap().composition,
+        state.composition
+    );
+}
+
+/// The inspector edits declarations, so they travel in the state rather than
+/// being copied off the file: an editor that never saw the document keeps them.
+#[test]
+fn declarations_round_trip_through_the_state_and_an_edited_value_reaches_the_file() {
+    use recast_scene::vars::VarType;
+    let src = concat!(
+        r##"<recast v="3"><vars>"##,
+        r##"<var name="accent" type="color" value="#22d3ee" path="Brand"/>"##,
+        r#"<var name="pad" type="number" value="40" min="0" max="100" step="5"/>"#,
+        r#"<var name="mood" type="select" value="warm" options="warm,cool"/>"#,
+        r#"</vars><timeline in="0.000" out="10.000"/></recast>"#
+    );
+
+    let mut state = to_render_state(&parse(src).unwrap()).unwrap();
+
+    assert_eq!(state.vars.len(), 3);
+    assert_eq!(state.vars[0].ty, VarType::Color);
+    assert_eq!(state.vars[0].path.as_deref(), Some("Brand"));
+    assert_eq!(state.vars[1].min, Some(0.0));
+    assert_eq!(state.vars[2].options, ["warm", "cool"]);
+
+    state.vars[0].value = "#ff0000".into();
+    let doc = from_render_state(&state, &MediaRefs::default(), None, &mut IdGen::seeded(7));
+
+    let text = serialize(&doc);
+    assert!(text.contains(r##"value="#ff0000""##), "{text}");
+    assert!(text.contains(r#"options="warm,cool""#), "{text}");
+    assert_eq!(
+        to_render_state(&doc).unwrap().vars,
+        state.vars,
+        "and the whole block survives the trip"
+    );
+}
+
 /// A uniform may name a variable, and the engine is handed the value: nothing
 /// downstream of the reader knows variables exist.
 #[test]

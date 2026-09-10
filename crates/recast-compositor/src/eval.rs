@@ -6,7 +6,7 @@ use recast_scene::v1::{Easing, SegmentAnim};
 use recast_scene::{Effect, LayerId, LayerSource, Scene};
 use recast_time::{original_to_output, output_to_original, Segment, TimeMap};
 
-use crate::annotation::{annotation_params, sorted_visible, AnnotationParams};
+use crate::annotation::{annotation_params, sorted_visible, AnnotationParams, AnnotationShape};
 use crate::camera::{bubble_params_ruled, bubble_shadow, BubbleParams};
 use crate::geometry::{canvas_geometry, CanvasGeometry};
 use crate::layout::ANCHOR_EPS;
@@ -256,8 +256,25 @@ pub struct FrameParams {
     pub annotations: Vec<AnnotationParams>,
     /// Component instances, in document order, drawn above everything else.
     pub components: Vec<crate::component::ComponentParams>,
+    /// A composition's text items, which the session turns into glyphs; its
+    /// image items are in `annotations`, since they draw through the same pass.
+    pub composition_text: Vec<TextItemDraw>,
     /// Where `output_time` lands on the original recording axis.
     pub source_time: f64,
+}
+
+/// One composition text item, placed in canvas pixels and ready to shape.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextItemDraw {
+    pub rect: [f32; 4],
+    pub content: String,
+    /// Already resolved from the item's share of the frame height.
+    pub size_px: f32,
+    pub color: Srgba,
+    pub align: recast_scene::composition::TextAlign,
+    pub weight: f64,
+    pub line_height: f64,
+    pub alpha: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -374,6 +391,7 @@ impl Evaluator {
         // Collected as they are met and placed afterwards, since a screen recipe needs the card the loop has not reached yet.
         let mut graphics: Vec<&recast_scene::component::GraphicSpec> = Vec::new();
         let mut card_radius = 0.0f32;
+        let (composition_images, composition_text) = self.composition_draws(scene, output_time);
 
         for layer in &scene.layers {
             match &layer.source {
@@ -482,24 +500,92 @@ impl Evaluator {
                 false => None,
             },
             cursor,
-            annotations: match scene.flags.annotations && card_alpha > 0.0 {
-                true => self
-                    .annotations(scene, source_time, card.0, card.1, &signals)
-                    .into_iter()
-                    .map(|mut a| {
-                        a.alpha *= card_alpha;
-                        if a.rides_card {
-                            a.warp = card_warp;
-                        }
-                        a
-                    })
-                    .collect(),
-                false => Vec::new(),
-            },
+            // The composition's images lead: an annotation on a composition is still an overlay on top of it.
+            annotations: composition_images
+                .into_iter()
+                .chain(match scene.flags.annotations && card_alpha > 0.0 {
+                    true => self
+                        .annotations(scene, source_time, card.0, card.1, &signals)
+                        .into_iter()
+                        .map(|mut a| {
+                            a.alpha *= card_alpha;
+                            if a.rides_card {
+                                a.warp = card_warp;
+                            }
+                            a
+                        })
+                        .collect(),
+                    false => Vec::new(),
+                })
+                .collect(),
             components: self.components(&graphics, output_time, card.0, card_radius, card_warp),
+            composition_text,
             layers,
             source_time,
         }
+    }
+
+    /// A composition draws over the whole frame: its items are placed in frame
+    /// fractions, not against a card, because there is no recording to anchor to.
+    fn composition_draws(
+        &self,
+        scene: &Scene,
+        output_time: f64,
+    ) -> (Vec<AnnotationParams>, Vec<TextItemDraw>) {
+        use recast_scene::composition::ItemContent;
+        let Some(composition) = &scene.composition else {
+            return (Vec::new(), Vec::new());
+        };
+        let (cw, ch) = (self.geometry.canvas_w as f32, self.geometry.canvas_h as f32);
+        let mut images = Vec::new();
+        let mut texts = Vec::new();
+        for (item, alpha) in composition.visible(output_time) {
+            let rect = [
+                item.area.x as f32 * cw,
+                item.area.y as f32 * ch,
+                item.area.w as f32 * cw,
+                item.area.h as f32 * ch,
+            ];
+            match &item.content {
+                ItemContent::Image { src, fit, radius } => images.push(AnnotationParams {
+                    shape: AnnotationShape::Image {
+                        x: rect[0],
+                        y: rect[1],
+                        w: rect[2],
+                        h: rect[3],
+                        radius: *radius as f32 * rect[2].abs().min(rect[3].abs()),
+                        opacity: 1.0,
+                        path: src.as_str().into(),
+                        fit: *fit,
+                    },
+                    fill: Srgba::opaque(0, 0, 0),
+                    stroke: Srgba::opaque(0, 0, 0),
+                    stroke_width: 0.0,
+                    alpha: alpha as f32,
+                    rides_card: false,
+                    warp: None,
+                }),
+                ItemContent::Text {
+                    content,
+                    size,
+                    color,
+                    align,
+                    weight,
+                    line_height,
+                } => texts.push(TextItemDraw {
+                    rect,
+                    content: content.clone(),
+                    size_px: (*size * f64::from(ch)) as f32,
+                    color: recast_color::parse_css_color(color)
+                        .unwrap_or(Srgba::opaque(255, 255, 255)),
+                    align: *align,
+                    weight: *weight,
+                    line_height: *line_height,
+                    alpha: alpha as f32,
+                }),
+            }
+        }
+        (images, texts)
     }
 
     /// Places each instance: an overlay covers the canvas, a screen recipe takes

@@ -219,11 +219,18 @@ for seeking. The old asset protocol with `scope: ["**"]` is gone.
 
 **Variables and components.** `<vars>` declares typed values that any
 attribute references as `$name`; a reference resolves on the way into the
-engine and never in the file, so a variable survives every round trip. A
-`<graphic>` or `<shader>` names a registered component and its parameters,
-never code. Both are read into the render state, so an editor that has never
-seen the file still carries them through a save. See the preview page for how
-they render.
+engine and never in the file, so a variable survives every round trip. The
+Variables tab in the inspector edits the declarations, and appears only for a
+project that has some. A `<graphic>` or `<shader>` names a registered component
+and its parameters, never code. Both are read into the render state, so an
+editor that has never seen the file still carries them through a save. See the
+preview page for how they render.
+
+**A composition instead of a recording.** `<sequence>` holds `<img>` and
+`<text>` items on the output clock, with a transition between neighbours. They
+are the same elements annotations use, and the parent is what says which clock
+they are on. A document does one or the other: the validator refuses a
+`<sequence>` alongside a `<screen>`.
 
 Bundles still open and save through the same store seam, so the editor did
 not change; the folder adapter (`project/v3.rs`) derives `.cache/edits.json`

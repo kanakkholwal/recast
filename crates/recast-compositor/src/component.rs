@@ -128,8 +128,7 @@ pub fn params_for(
             params.tint2 = colour(manifest, spec, "b");
         }
         _ => {
-            // Unresolved: honour a written placement so one missing component
-            // marks its own corner instead of hatching the whole frame.
+            // Unresolved: a written placement is honoured, so one missing component marks its corner rather than the frame.
             params.rect = placement(manifest, spec, surface);
         }
     }

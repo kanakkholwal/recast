@@ -167,14 +167,15 @@ impl Session {
     /// rasterise. The host hands the result back through `FrameInputs`, the way
     /// it hands over sprites and annotation images.
     pub fn caption_frame(&mut self, output_time: f64) -> CaptionFrame {
+        let mut frame = self.composition_frame(output_time);
         let Some(style) = self.scene.captions.clone() else {
-            return CaptionFrame::default();
+            return frame;
         };
         let Some(track) = self.scene.caption_track.clone() else {
-            return CaptionFrame::default();
+            return frame;
         };
         let Some(face) = self.caption_face_for(&style) else {
-            return CaptionFrame::default();
+            return frame;
         };
 
         let params = self.evaluator.evaluate(&self.scene, output_time);
@@ -187,7 +188,7 @@ impl Session {
             output: output_time,
             time_map: self.evaluator.time_map(),
         };
-        let frame = layout_caption(
+        let caption = layout_caption(
             &style,
             &track,
             clock,
@@ -197,8 +198,38 @@ impl Session {
             0,
             &mut self.atlas,
         );
+        frame.pill = caption.pill;
+        frame.glyphs.extend(caption.glyphs);
         self.compositor.sync_glyph_atlas(&mut self.atlas);
         frame
+    }
+
+    /// A composition's titles, shaped through the same face and atlas as the
+    /// captions. They ride in the caption frame because they draw in its pass.
+    fn composition_frame(&mut self, output_time: f64) -> CaptionFrame {
+        let items = self
+            .evaluator
+            .evaluate(&self.scene, output_time)
+            .composition_text;
+        if items.is_empty() {
+            return CaptionFrame::default();
+        }
+        let Some(face) = self.text_face() else {
+            return CaptionFrame::default();
+        };
+        let glyphs = crate::item_text::layout_items(&items, &face, 0, &mut self.atlas);
+        self.compositor.sync_glyph_atlas(&mut self.atlas);
+        CaptionFrame { pill: None, glyphs }
+    }
+
+    /// The face a composition's text draws with: the host's if it set one, else
+    /// the caption style's. A composition has one face, not one per item.
+    fn text_face(&mut self) -> Option<FontFace> {
+        if let Some(CaptionFace::Host(face)) = &self.caption_face {
+            return Some(face.clone());
+        }
+        let style = self.scene.captions.clone().unwrap_or_default();
+        self.caption_face_for(&style)
     }
 
     /// The face for this style, resolving it the first time and again whenever

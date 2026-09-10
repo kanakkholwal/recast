@@ -10,6 +10,7 @@ import {
 	MousePointer,
 	Pencil,
 	ScanText,
+	SlidersHorizontal,
 	SquareSplitHorizontal,
 	Volume,
 	ZoomIn,
@@ -30,6 +31,7 @@ import ExtensionsPanel from "./ExtensionsPanel.svelte";
 import FocusPanel from "./FocusPanel.svelte";
 import InfoPanel from "./InfoPanel.svelte";
 import MusicPanel from "./MusicPanel.svelte";
+import VariablesPanel from "./VariablesPanel.svelte";
 
 interface Props {
 	store: EditorStore;
@@ -118,6 +120,13 @@ const TABS: TabType[] = [
 		hint: "Arrows, boxes, text, and blur.",
 	},
 	{
+		id: "variables",
+		label: "Variables",
+		icon: SlidersHorizontal,
+		group: "composition",
+		hint: "Values the project file declares, reused by name.",
+	},
+	{
 		id: "extensions",
 		label: "Plugins",
 		icon: Blocks,
@@ -156,7 +165,9 @@ let {
 	readOnly = false,
 }: Props = $props();
 
-const visibleTabs = $derived(panels ? TABS.filter((t) => panels.includes(t.id)) : TABS);
+// Variables are declared by the project file, so the tab appears only for a project that has some; an empty rail button is a dead end.
+const servable = $derived(TABS.filter((t) => t.id !== "variables" || store.vars.length > 0));
+const visibleTabs = $derived(panels ? servable.filter((t) => panels.includes(t.id)) : servable);
 // Grouped + ordered for the rail; empty groups drop out so dividers stay honest.
 const groupedTabs = $derived(
 	GROUP_ORDER.map((g) => visibleTabs.filter((t) => t.group === g)).filter((g) => g.length > 0),
@@ -278,6 +289,8 @@ const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 no-scrollbar";
         <MusicPanel {store} />
       {:else if store.activePanel === "captions"}
         <CaptionsPanel {store} />
+      {:else if store.activePanel === "variables"}
+        <VariablesPanel {store} />
       {:else if store.activePanel === "extensions"}
         <ExtensionsPanel {store} />
       {:else if store.activePanel === "info"}

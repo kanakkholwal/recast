@@ -7,6 +7,7 @@ pub mod caption;
 pub mod component;
 pub mod eval;
 pub mod geometry;
+pub mod item_text;
 pub mod layout;
 pub mod plane;
 pub mod render;

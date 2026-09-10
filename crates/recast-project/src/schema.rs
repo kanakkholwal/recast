@@ -195,6 +195,7 @@ fn root_and_refs() -> Vec<ElementSpec> {
                 "annotations",
                 "captions",
                 "audio",
+                "sequence",
                 "graphic",
                 "shader",
                 "editor",
@@ -616,6 +617,11 @@ fn annotation_group() -> Vec<ElementSpec> {
                 BOX[3],
                 req("src", AttrType::Src, ""),
                 a("radius", NON_NEG, ""),
+                a(
+                    "fit",
+                    AttrType::Enum(&["cover", "contain", "fill"]),
+                    "How it fills its box when the aspects disagree. Sequence items only.",
+                ),
             ],
         ),
         annotation(
@@ -820,6 +826,24 @@ fn audio_and_extras() -> Vec<ElementSpec> {
 
 fn extras_group() -> Vec<ElementSpec> {
     vec![
+        el(
+            "sequence",
+            "An authored composition: items on the OUTPUT clock, with no recording underneath. Their `at` and `dur` are output seconds, unlike the same elements inside <annotations>.",
+            IdRule::Optional,
+            &[
+                a(
+                    "transition",
+                    AttrType::Enum(&["none", "dissolve"]),
+                    "How one item gives way to the next.",
+                ),
+                a(
+                    "transitionDur",
+                    NON_NEG,
+                    "How long a transition takes, in output seconds.",
+                ),
+            ],
+            &["img", "text"],
+        ),
         ElementSpec {
             open_attrs: true,
             ..el(

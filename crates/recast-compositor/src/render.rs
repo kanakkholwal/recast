@@ -999,6 +999,7 @@ impl Compositor {
             radius,
             opacity,
             path,
+            fit,
         } = &annotation.shape
         else {
             return;
@@ -1021,7 +1022,12 @@ impl Compositor {
             0,
             bytemuck::bytes_of(&RegionUniform {
                 rect: [*x, *y, *w, *h],
-                params: [radius.max(0.0), opacity * annotation.alpha, 0.0, 0.0],
+                params: [
+                    radius.max(0.0),
+                    opacity * annotation.alpha,
+                    fit_code(*fit),
+                    0.0,
+                ],
                 tint: [0.0; 4],
                 warp: warp_rows(annotation.warp.as_ref()),
             }),
@@ -1641,6 +1647,16 @@ fn shadow_uniform(shadow: &ShadowParams) -> ShadowUniform {
 }
 
 /// The inverse of a card's tilt as the SDF passes take it, or a flagged-off identity when the card is flat.
+/// What the image shader switches on. Numbers rather than an enum because a uniform lane is a float.
+fn fit_code(fit: recast_scene::composition::Fit) -> f32 {
+    use recast_scene::composition::Fit;
+    match fit {
+        Fit::Fill => 0.0,
+        Fit::Cover => 1.0,
+        Fit::Contain => 2.0,
+    }
+}
+
 fn component_uniform(
     component: &crate::component::ComponentParams,
     params: &FrameParams,
@@ -2498,6 +2514,7 @@ mod tests {
             layers,
             annotations: Vec::new(),
             components: Vec::new(),
+            composition_text: Vec::new(),
             source_time: 0.0,
         }
     }
@@ -2512,6 +2529,7 @@ mod tests {
                 radius: 0.0,
                 opacity: 1.0,
                 path: path.into(),
+                fit: recast_scene::composition::Fit::Fill,
             },
             fill: Srgba::opaque(0, 0, 0),
             stroke: Srgba::opaque(0, 0, 0),

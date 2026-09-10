@@ -40,6 +40,66 @@ pub enum MapError {
     Version(u32, u32),
 }
 
+/// `<sequence>` reuses `<img>` and `<text>`, the same elements annotations use, because an item needs the same box, timing and styling.
+/// The parent is what says they sit on the output clock.
+fn sequence(node: &Node) -> Result<recast_scene::composition::Composition, MapError> {
+    use recast_scene::composition::{Composition, Transition};
+    let mut items = Vec::new();
+    for child in &node.children {
+        if let Some(item) = sequence_item(child)? {
+            items.push(item);
+        }
+    }
+    Ok(Composition {
+        transition: node
+            .attr("transition")
+            .and_then(Transition::parse)
+            .unwrap_or_default(),
+        transition_dur: node.num_or("transitionDur", 0.0),
+        items,
+    })
+}
+
+fn sequence_item(node: &Node) -> Result<Option<recast_scene::composition::Item>, MapError> {
+    use recast_scene::composition::{Fit, Item, ItemBox, ItemContent, TextAlign};
+    let content = match node.kind.as_str() {
+        "img" => ItemContent::Image {
+            src: node.attr("src").unwrap_or_default().to_owned(),
+            fit: node.attr("fit").and_then(Fit::parse).unwrap_or_default(),
+            radius: node.num_or("radius", 0.0),
+        },
+        "text" => ItemContent::Text {
+            content: node.text.clone().unwrap_or_default(),
+            size: node.num_or("size", DEFAULT_ITEM_TEXT_SIZE),
+            color: node.attr("color").unwrap_or("#ffffff").to_owned(),
+            align: node
+                .attr("align")
+                .and_then(TextAlign::parse)
+                .unwrap_or_default(),
+            weight: node.num_or("weight", 400.0),
+            line_height: node.num_or("lineHeight", DEFAULT_ITEM_LINE_HEIGHT),
+        },
+        _ => return Ok(None),
+    };
+    Ok(Some(Item {
+        id: node.id().unwrap_or_default().to_owned(),
+        at: node.num_or("at", 0.0),
+        dur: node.num_or("dur", 0.0),
+        area: ItemBox {
+            x: node.num_or("x", 0.0),
+            y: node.num_or("y", 0.0),
+            w: node.num_or("w", 1.0),
+            h: node.num_or("h", 1.0),
+        },
+        opacity: node.num_or("opacity", 1.0),
+        content,
+    }))
+}
+
+/// A title at a tenth of the frame height, which reads at every output size.
+pub(super) const DEFAULT_ITEM_TEXT_SIZE: f64 = 0.1;
+pub(super) const DEFAULT_ITEM_LINE_HEIGHT: f64 = 1.2;
+
 /// `<graphic>` carries its parameters as attributes, `<shader>` as `<uniform>` children; both are the same instance to everything downstream.
 fn graphic(node: &Node) -> Option<recast_scene::component::GraphicSpec> {
     use recast_scene::component::{GraphicSpec, Surface};
@@ -156,6 +216,16 @@ fn read_resolved(doc: &Document) -> Result<RenderState, MapError> {
         if let Some(graphic) = graphic(node) {
             state.graphics.push(graphic);
         }
+    }
+    // Read off the ORIGINAL document: the resolved copy leaves declarations alone, but the intent is clearer named.
+    state.vars = crate::vars::Vars::from_root(root).iter().cloned().collect();
+    if let Some(node) = root.child("sequence") {
+        let composition = sequence(node)?;
+        // A composition has no recording, so its own end IS the output duration and every downstream clock keeps working unchanged.
+        if state.trim_end <= 0.0 {
+            state.trim_end = composition.duration();
+        }
+        state.composition = Some(composition);
     }
     state.caption_style = root.child("captions").map(captions);
     if let Some(audio) = root.child("audio") {

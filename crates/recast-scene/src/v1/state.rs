@@ -164,6 +164,12 @@ pub struct RenderState {
     /// Component instances the document declares as `<graphic>` and `<shader>`, in document order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graphics: Vec<crate::component::GraphicSpec>,
+    /// Variables the document declares; references to them are already resolved by the time the engine reads anything.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vars: Vec<crate::vars::VarSpec>,
+    /// An authored sequence, for a project that composes items rather than editing a recording.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<crate::composition::Composition>,
     /// Catch-all for JS-only settings Rust never reads, slurped by `#[serde(flatten)]` and re-emitted on serialisation.
     /// Without it every undeclared field would be dropped on reopen, resetting the user's tweaks to defaults.
     #[serde(flatten, default)]
@@ -221,6 +227,8 @@ impl Default for RenderState {
             bindings: Vec::new(),
             transforms: Vec::new(),
             graphics: Vec::new(),
+            vars: Vec::new(),
+            composition: None,
             passthrough: serde_json::Map::new(),
         }
     }

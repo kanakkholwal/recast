@@ -39,8 +39,16 @@ pub struct Scene {
     /// the same reason as the pointer path: captured signal, not authored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caption_track: Option<CaptionTrack>,
+    /// An authored sequence rather than an edited recording. The two are not
+    /// mixed: a document has a screen or a composition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<crate::composition::Composition>,
     #[serde(default)]
     pub flags: SceneFlags,
+    /// Declared variables. Every reference is already resolved, so the engine
+    /// never reads these; carried for the same reason as `passthrough`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vars: Vec<crate::vars::VarSpec>,
     /// Editor-owned keys the engine never reads. Carried so a round trip
     /// through the engine cannot reset a user's settings.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
@@ -58,6 +66,8 @@ impl Default for Scene {
             cursor_track: None,
             captions: None,
             caption_track: None,
+            composition: None,
+            vars: Vec::new(),
             flags: SceneFlags::default(),
             passthrough: serde_json::Map::new(),
         }
