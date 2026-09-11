@@ -434,7 +434,9 @@ pub async fn enqueue_export(
         )));
     }
 
-    // The engine path shapes text itself; only the graph needs saving from it.
+    // Only the engine draws these, so the export goes there instead of losing them or refusing.
+    crate::commands::editor::route_for_graph_gaps(&mut request)
+        .map_err(|reason| AppError::msg(format!("enqueue_export: {reason}")))?;
     if !crate::export_engine::enabled(request.engine_export) {
         if let Some(reason) = undrawable_by_the_graph(&request.render_state) {
             return Err(AppError::msg(format!("enqueue_export: {reason}")));

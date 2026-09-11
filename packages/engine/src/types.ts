@@ -29,6 +29,12 @@ export interface WasmPreviewEngine {
 	setCaptionFont(data: Uint8Array, index: number): boolean;
 	setEditingAnnotation(id: string | undefined): void;
 	setTextFont(family: string, weight: number, data: Uint8Array, index: number): boolean;
+	/** JSON `[{stack, weight}]`: every face the scene's words ask for. */
+	wantedFaces(): string;
+	/** JSON `{stack, weight}`: the face unnamed or unfound families draw with. */
+	fallbackFace(): string;
+	/** JSON array of every image file the scene draws, composition slides included. */
+	wantedImages(): string;
 	setDrawAnnotationText(on: boolean): void;
 	setCursorSprite(slot: CursorSlot, image: ImageBitmap, hotspotX: number, hotspotY: number): void;
 	setAnnotationImage(path: string, image: ImageBitmap): void;

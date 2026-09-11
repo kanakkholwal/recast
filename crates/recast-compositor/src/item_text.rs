@@ -27,7 +27,7 @@ pub fn layout_items(
 ) -> Vec<GlyphQuad> {
     let mut pending = Vec::new();
     for item in items {
-        let Some((face_id, face)) = faces.face_for(&item.font, item.weight as u16) else {
+        let Some((face_id, face)) = faces.face_for(&item.font, face_key_weight(item.weight)) else {
             continue;
         };
         layout_one(item, &face, face_id, atlas, &mut pending);
@@ -115,6 +115,12 @@ fn start_x(item: &TextItemDraw, width: f64) -> f64 {
         TextAlign::Center => left + (box_w - width) * 0.5,
         TextAlign::End => left + box_w - width,
     }
+}
+
+/// The weight a face is looked up and supplied under. One function, so a face the host
+/// supplies from `host_needs` sits under exactly the key the drawing reads.
+pub(crate) fn face_key_weight(weight: f64) -> u16 {
+    weight as u16
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Annotation } from "../editor/render-state";
-import { textAnnotationFaces } from "./text-annotation-faces";
+import { engineCanShapeText, textAnnotationFaces } from "./text-annotation-faces";
 
 function text(
 	id: string,
@@ -73,5 +73,31 @@ describe("textAnnotationFaces", () => {
 		const faces = textAnnotationFaces([text("a", "  Inter  ")]);
 
 		expect(faces).toEqual([{ family: "Inter", weight: 400 }]);
+	});
+});
+
+describe("engineCanShapeText", () => {
+	const found = async () => ({});
+
+	it("lets the engine shape text only when every face resolves natively", async () => {
+		const annotations = [text("a", "Segoe UI"), text("b", "Arial", 700)];
+
+		expect(await engineCanShapeText(annotations, found)).toBe(true);
+	});
+
+	/** The app's default is a bundled webfont, not installed, so the exporter drew no glyphs at all. */
+	it("rasterises everything when one face is missing, so a frame never mixes shapers", async () => {
+		const resolve = async (family: string) => (family.includes("Inter Variable") ? null : {});
+		const annotations = [text("a", "Segoe UI"), text("b", "'Inter Variable', sans-serif")];
+
+		expect(await engineCanShapeText(annotations, resolve)).toBe(false);
+	});
+
+	it("treats an empty family as missing, since the face it falls back to may not exist", async () => {
+		expect(await engineCanShapeText([text("a", "")], found)).toBe(false);
+	});
+
+	it("has nothing to shape without visible text", async () => {
+		expect(await engineCanShapeText([rect("r"), text("h", "Arial", 400, true)], found)).toBe(false);
 	});
 });

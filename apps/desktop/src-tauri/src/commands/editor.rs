@@ -1909,7 +1909,7 @@ mod validate_tests {
             CameraLayout::CameraOnly,
         ] {
             assert!(
-                unsupported_by_graph(&state_with_layout(layout)).is_some(),
+                !unsupported_by_graph(&state_with_layout(layout)).is_empty(),
                 "{layout:?} was allowed through"
             );
         }
@@ -1918,8 +1918,8 @@ mod validate_tests {
     #[test]
     fn the_bubble_the_graph_already_draws_is_not_refused() {
         use recast_scene::v1::nodes::CameraLayout;
-        assert!(unsupported_by_graph(&state_with_layout(CameraLayout::Pip)).is_none());
-        assert!(unsupported_by_graph(&RenderState::default()).is_none());
+        assert!(unsupported_by_graph(&state_with_layout(CameraLayout::Pip)).is_empty());
+        assert!(unsupported_by_graph(&RenderState::default()).is_empty());
     }
 
     /// A layout authored and then the camera switched off is not a reason to
@@ -1929,7 +1929,7 @@ mod validate_tests {
         use recast_scene::v1::nodes::CameraLayout;
         let mut state = state_with_layout(CameraLayout::ScreenOnly);
         state.camera_overlay.enabled = false;
-        assert!(unsupported_by_graph(&state).is_none());
+        assert!(unsupported_by_graph(&state).is_empty());
     }
 
     /// The graph has no dodge at all, so leaving it unrefused exported a bubble
@@ -1939,9 +1939,129 @@ mod validate_tests {
         let mut state = RenderState::default();
         state.camera_overlay.enabled = true;
         state.camera_overlay.cursor_dodge = true;
-        assert!(unsupported_by_graph(&state).is_some());
+        assert!(!unsupported_by_graph(&state).is_empty());
         state.camera_overlay.cursor_dodge = false;
-        assert!(unsupported_by_graph(&state).is_none());
+        assert!(unsupported_by_graph(&state).is_empty());
+    }
+
+    fn engine_only_state() -> RenderState {
+        use recast_scene::bind::{LayerRef, LayerTransform, Transform3};
+        use recast_scene::material::{LayerMaterial, Material};
+        // The shape `QA-Newwwww` carried, the project that lost seven components on the FFmpeg path.
+        let graphic = serde_json::json!({
+            "id": "qa_sh1", "component": "sweep@1.0", "start": 2.0, "duration": 2.0,
+            "params": { "tint": "#ffcc00" }, "fallbackSurface": "screen"
+        });
+        let doc = recast_project::parse(
+            r#"<recast v="3"><timeline in="0" out="10"/><screen id="scr"><bind id="b1" prop="opacity" src="time" map="wave" from="0.2" to="1" period="2"/></screen></recast>"#,
+        )
+        .expect("parse");
+        RenderState {
+            graphics: vec![
+                serde_json::from_value(graphic.clone()).expect("graphic"),
+                serde_json::from_value(graphic).expect("graphic"),
+            ],
+            materials: vec![LayerMaterial {
+                layer: LayerRef::Screen,
+                material: Material {
+                    contact: 0.3,
+                    ..Material::NONE
+                },
+            }],
+            transforms: vec![LayerTransform {
+                layer: LayerRef::Screen,
+                transform: Transform3 {
+                    ry: 20.0,
+                    ..Transform3::IDENTITY
+                },
+            }],
+            bindings: recast_project::scene::to_render_state(&doc)
+                .expect("map")
+                .bindings,
+            composition: Some(recast_scene::composition::Composition::default()),
+            ..RenderState::default()
+        }
+    }
+
+    /// The graph drops these silently, so naming only the first left a project that lost
+    /// seven components with a message about the camera.
+    #[test]
+    fn every_engine_only_feature_is_named_not_just_the_first() {
+        let features = unsupported_by_graph(&engine_only_state());
+
+        assert_eq!(
+            features,
+            [
+                "2 components",
+                "a material",
+                "a 3D transform",
+                "1 binding",
+                "a composition"
+            ]
+        );
+    }
+
+    #[test]
+    fn an_unlit_material_or_an_identity_transform_is_not_refused() {
+        use recast_scene::bind::{LayerRef, LayerTransform, Transform3};
+        use recast_scene::material::{LayerMaterial, Material};
+        let state = RenderState {
+            materials: vec![LayerMaterial {
+                layer: LayerRef::Screen,
+                material: Material::NONE,
+            }],
+            transforms: vec![LayerTransform {
+                layer: LayerRef::Screen,
+                transform: Transform3::IDENTITY,
+            }],
+            ..RenderState::default()
+        };
+
+        assert!(
+            unsupported_by_graph(&state).is_empty(),
+            "neither draws anything"
+        );
+    }
+
+    fn request_for(state: RenderState) -> ExportRequest {
+        serde_json::from_value(serde_json::json!({
+            "exportId": "e1", "inputPath": "C:/recasts/QA.recast", "format": "mp4",
+            "quality": "source", "renderState": serde_json::to_value(&state).expect("state")
+        }))
+        .expect("request")
+    }
+
+    /// Refusing sent the user hunting for a setting; the engine is the only renderer
+    /// that draws these, so the export goes there instead.
+    #[test]
+    fn a_project_the_graph_cannot_draw_is_routed_to_the_engine() {
+        let mut request = request_for(engine_only_state());
+
+        route_with(&mut request, false).expect("routed");
+
+        assert!(request.engine_export);
+    }
+
+    #[test]
+    fn a_project_the_graph_draws_whole_stays_on_it() {
+        let mut request = request_for(RenderState::default());
+
+        route_with(&mut request, false).expect("nothing to route");
+
+        assert!(!request.engine_export);
+    }
+
+    #[test]
+    fn an_engine_switched_off_by_env_refuses_by_name_rather_than_dropping() {
+        let mut request = request_for(engine_only_state());
+
+        let reason = route_with(&mut request, true).expect_err("refused");
+
+        assert!(
+            reason.contains("2 components") && reason.contains("RECAST_ENGINE_EXPORT=0"),
+            "{reason}"
+        );
+        assert!(!request.engine_export);
     }
 
     fn state_with_zoom(region: ZoomRegion) -> RenderState {
@@ -2393,36 +2513,78 @@ fn engine_decline_reason(error: &crate::export_engine::EngineExportError) -> &'s
     }
 }
 
-/// Container and codecs for a muxed export.
-///
-/// The video intermediate is always H.264 in mp4, so mp4 stream-copies and
-/// anything else has to re-encode; WebM additionally cannot carry AAC.
-/// The name of a camera feature the FFmpeg graph cannot draw, or `None` when
-/// the scene is one it already knows how to place.
-///
-/// Its placement is a sampled expression LUT already at `av_expr_parse`'s term
-/// budget, so anything that moves the camera on a second axis has to be
-/// refused rather than silently dropped: an export that is not what was
-/// previewed is worse than one that will not start.
-fn unsupported_by_graph(state: &RenderState) -> Option<&'static str> {
+/// Everything the FFmpeg graph cannot draw and would drop silently, by name; empty means it can export the project.
+/// Checked at enqueue and again in the worker, so a queued or replayed job cannot slip past it.
+pub(crate) fn unsupported_by_graph(state: &RenderState) -> Vec<String> {
     use recast_scene::v1::nodes::CameraLayout;
-    if !state.camera_overlay.enabled {
-        return None;
+    let mut found = Vec::new();
+    if state.camera_overlay.enabled {
+        if state.camera_overlay.cursor_dodge {
+            found.push("pointer dodging".to_owned());
+        }
+        let layout = state
+            .camera_overlay
+            .clip_layouts
+            .iter()
+            .find_map(|clip| match clip.layout {
+                CameraLayout::Pip => None,
+                CameraLayout::SplitH { .. } => Some("the side-by-side split layout"),
+                CameraLayout::SplitV { .. } => Some("the stacked split layout"),
+                CameraLayout::ScreenOnly => Some("the screen-only layout"),
+                CameraLayout::CameraOnly => Some("the camera-only layout"),
+            });
+        found.extend(layout.map(str::to_owned));
     }
-    if state.camera_overlay.cursor_dodge {
-        return Some("pointer dodging");
+    if !state.graphics.is_empty() {
+        found.push(plural(state.graphics.len(), "component"));
     }
-    state
-        .camera_overlay
-        .clip_layouts
-        .iter()
-        .find_map(|clip| match clip.layout {
-            CameraLayout::Pip => None,
-            CameraLayout::SplitH { .. } => Some("the side-by-side split layout"),
-            CameraLayout::SplitV { .. } => Some("the stacked split layout"),
-            CameraLayout::ScreenOnly => Some("the screen-only layout"),
-            CameraLayout::CameraOnly => Some("the camera-only layout"),
-        })
+    // Unlit or identity draws nothing, so it must not block an export.
+    if state.materials.iter().any(|m| !m.material.is_unlit()) {
+        found.push("a material".to_owned());
+    }
+    if state.transforms.iter().any(|t| !t.transform.is_identity()) {
+        found.push("a 3D transform".to_owned());
+    }
+    if !state.bindings.is_empty() {
+        found.push(plural(state.bindings.len(), "binding"));
+    }
+    if state.composition.is_some() {
+        found.push("a composition".to_owned());
+    }
+    found
+}
+
+/// Sends a project the graph cannot draw to the engine, its only correct renderer.
+/// Refused only when `RECAST_ENGINE_EXPORT=0` switches the engine off.
+pub(crate) fn route_for_graph_gaps(request: &mut ExportRequest) -> Result<(), String> {
+    route_with(request, crate::export_engine::forced_off())
+}
+
+fn route_with(request: &mut ExportRequest, engine_forced_off: bool) -> Result<(), String> {
+    if crate::export_engine::enabled(request.engine_export) {
+        return Ok(());
+    }
+    let missing = unsupported_by_graph(&request.render_state);
+    if missing.is_empty() {
+        return Ok(());
+    }
+    if engine_forced_off {
+        return Err(format!(
+            "This project uses {}, which only the export engine draws, and RECAST_ENGINE_EXPORT=0 switches it off.",
+            missing.join(", ")
+        ));
+    }
+    log::info!(
+        "export[{}] routed to the engine: the graph cannot draw {}",
+        request.export_id,
+        missing.join(", ")
+    );
+    request.engine_export = true;
+    Ok(())
+}
+
+fn plural(n: usize, noun: &str) -> String {
+    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
 }
 
 fn mux_codecs(format: &str) -> (&'static str, &'static [&'static str], &'static str) {
@@ -2975,6 +3137,38 @@ pub(crate) async fn run_export_job(
         Some(crate::export_engine::CaptionBurnIn { track, font })
     }
 
+    /// Every face the scene's words ask for, plus the fallback, resolved the way the
+    /// preview resolves them, so neither draws a font the other does not.
+    async fn engine_faces(
+        app: &AppHandle,
+        state: &RenderState,
+    ) -> crate::export_engine::SuppliedFaces {
+        let scene = recast_scene::migrate::to_scene(state);
+        let fallback = recast_compositor::host_needs::fallback_face(&scene);
+        let mut supplied = crate::export_engine::SuppliedFaces {
+            fallback: crate::fonts::resolve_engine_font(
+                app,
+                &fallback.stack,
+                u32::from(fallback.weight),
+            )
+            .await,
+            faces: Vec::new(),
+        };
+        for want in recast_compositor::host_needs::wanted_faces(&scene) {
+            let Some(data) =
+                crate::fonts::resolve_engine_font(app, &want.stack, u32::from(want.weight)).await
+            else {
+                continue;
+            };
+            supplied.faces.push(crate::export_engine::SuppliedFace {
+                stack: want.stack,
+                weight: want.weight,
+                data,
+            });
+        }
+        supplied
+    }
+
     // The camera is its own file composited at export; the shift is the capture lag the graph passes as `-itsoffset`.
     let camera_engine_input: Option<(PathBuf, f64)> = request
         .render_state
@@ -2991,13 +3185,7 @@ pub(crate) async fn run_export_job(
                 })
         })
         .flatten();
-    if let Some(feature) = unsupported_by_graph(&request.render_state) {
-        if !crate::export_engine::enabled(request.engine_export) {
-            return Err(AppError::msg(format!(
-                "This project uses {feature}, which needs the new export engine. Turn on Experimental engine export in Settings, or switch that off in the Camera panel."
-            )));
-        }
-    }
+    route_for_graph_gaps(&mut request).map_err(AppError::msg)?;
     // Opt in. Everything above still runs (it validates the request and names the output the same way), so the two paths differ only in who renders.
     if crate::export_engine::enabled(request.engine_export) {
         let engine_map = request.time_map.as_ref().map(|spans| {
@@ -3026,6 +3214,7 @@ pub(crate) async fn run_export_job(
         // A stalled bar beats one that rewinds: the mux pass restarts at 0 and the UI keeps the maximum.
         let ceiling = if direct { 100.0 } else { ENGINE_RENDER_CEILING };
         let captions = engine_caption_burn_in(&app, &request).await;
+        let faces = engine_faces(&app, &request.render_state).await;
         // Whole percents only: the frontend redraws per event, and 30 a second is not a smoother bar.
         let mut last_pct = -1i64;
         let mut on_frame = |done: u64, total: u64| {
@@ -3042,6 +3231,7 @@ pub(crate) async fn run_export_job(
         let result = crate::export_engine::export_video(
             &request.render_state,
             &crate::export_engine::ExportSpec {
+                faces: Some(&faces),
                 input: &source_video,
                 output: &render_target,
                 fps: (target_fps.round().max(1.0) as u32, 1),
@@ -3080,17 +3270,24 @@ pub(crate) async fn run_export_job(
                 emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
                 return Err(AppError::msg("export cancelled"));
             }
-            // Declined, not failed: the FFmpeg graph below renders every scene, so a scene this path cannot do is a fallback rather than a lost export.
+            // The graph stands in only for a scene it can draw whole; otherwise the fallback wrote a file missing the user's work.
             Err(
                 e @ (crate::export_engine::EngineExportError::Unsupported(_)
                 | crate::export_engine::EngineExportError::Encode(_)),
             ) => {
+                let _ = std::fs::remove_file(&render_target);
+                let missing = unsupported_by_graph(&request.render_state);
+                if !missing.is_empty() {
+                    return Err(AppError::msg(format!(
+                        "The export engine could not finish ({e}), and the FFmpeg path cannot draw {}.",
+                        missing.join(", ")
+                    )));
+                }
                 log::info!("export[{export_id}] engine declined ({e}); using the FFmpeg graph");
                 emit_export_state(
                     &app,
                     ExportStateEvent::preparing(&export_id, engine_decline_reason(&e)),
                 );
-                let _ = std::fs::remove_file(&render_target);
                 None
             }
             Err(e) => {

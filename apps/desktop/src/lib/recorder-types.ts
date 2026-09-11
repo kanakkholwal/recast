@@ -311,6 +311,8 @@ export interface EnqueueExportRequest {
 	/** The editor's resolved kept-timeline. The backend replays it instead of
 	 *  re-deriving one from cuts + splits + speed anchors. */
 	timeMap?: ExportTimeSpan[] | null;
+	/** Render through the engine instead of the FFmpeg graph; `RECAST_ENGINE_EXPORT` overrides it. */
+	engineExport?: boolean;
 }
 
 /** A queue row as the backend reports it (source of truth for the activity UI). */

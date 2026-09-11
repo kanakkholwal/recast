@@ -263,6 +263,7 @@ mod live {
         output: &'a std::path::Path,
     ) -> crate::export_engine::ExportSpec<'a> {
         crate::export_engine::ExportSpec {
+            faces: None,
             input,
             output,
             fps: (FPS, 1),

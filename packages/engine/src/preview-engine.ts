@@ -19,6 +19,12 @@ export interface PreviewEngineOptions {
 /** Index order must match `CursorSlot::index` in `recast-compositor`. */
 const SLOTS: CursorSlot[] = ["rest", "press", "rightPress", "drag"];
 
+/** A face some text asks for, keyed as the engine looks faces up. */
+export interface FaceRequest {
+	stack: string;
+	weight: number;
+}
+
 export class EngineDestroyedError extends Error {
 	constructor() {
 		super("the preview engine has been destroyed");
@@ -186,6 +192,21 @@ export class PreviewEngine {
 	 *  that name it. Required in a browser, which has no font database. */
 	setTextFont(family: string, weight: number, data: Uint8Array, index = 0): boolean {
 		return this.#live.setTextFont(family, weight, data, index);
+	}
+
+	/** Every face the scene's words ask for, so the host can supply each before drawing. */
+	wantedFaces(): FaceRequest[] {
+		return JSON.parse(this.#live.wantedFaces()) as FaceRequest[];
+	}
+
+	/** The face unnamed or unfound families draw with. */
+	fallbackFace(): FaceRequest {
+		return JSON.parse(this.#live.fallbackFace()) as FaceRequest;
+	}
+
+	/** Every image file the scene draws, composition slides included. */
+	wantedImages(): string[] {
+		return JSON.parse(this.#live.wantedImages()) as string[];
 	}
 
 	/** Names the text annotation the host draws itself while the caret is in it,

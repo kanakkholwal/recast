@@ -231,6 +231,32 @@ impl PreviewEngine {
             .set_text_font(family, weight as u16, data, index)
     }
 
+    /// Every face the scene's words ask for, as JSON `[{stack, weight}]`, so the host can
+    /// supply each before the engine draws them. The export asks the same session.
+    #[wasm_bindgen(js_name = wantedFaces)]
+    pub fn wanted_faces(&self) -> String {
+        let faces: Vec<serde_json::Value> = self
+            .session
+            .wanted_faces()
+            .into_iter()
+            .map(|face| serde_json::json!({ "stack": face.stack, "weight": face.weight }))
+            .collect();
+        serde_json::Value::Array(faces).to_string()
+    }
+
+    /// The face unnamed or unfound families draw with, as JSON `{stack, weight}`.
+    #[wasm_bindgen(js_name = fallbackFace)]
+    pub fn fallback_face(&self) -> String {
+        let face = self.session.fallback_face_request();
+        serde_json::json!({ "stack": face.stack, "weight": face.weight }).to_string()
+    }
+
+    /// Every image file the scene draws, annotation images and composition slides, as JSON.
+    #[wasm_bindgen(js_name = wantedImages)]
+    pub fn wanted_images(&self) -> String {
+        serde_json::to_string(&self.session.wanted_images()).unwrap_or_else(|_| "[]".into())
+    }
+
     /// Names the text annotation the host is drawing itself, because the caret
     /// is in it. The engine keeps rendering everything else about that
     /// annotation; pass `None` when editing ends. Nothing about this is saved.

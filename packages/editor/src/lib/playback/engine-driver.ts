@@ -195,6 +195,21 @@ export class PreviewEngineDriver {
 		return this.#textFonts.get(`${family}:${weight}`) === true;
 	}
 
+	/** Every face the scene's words ask for. Read after `setScene`: it answers for the scene the engine holds. */
+	wantedFaces(): { stack: string; weight: number }[] {
+		return this.#engine.wantedFaces();
+	}
+
+	/** The face unnamed or unfound families draw with. */
+	fallbackFace(): { stack: string; weight: number } {
+		return this.#engine.fallbackFace();
+	}
+
+	/** Every image file the scene draws, composition slides included. */
+	wantedImages(): string[] {
+		return this.#engine.wantedImages();
+	}
+
 	/** Hands the words of text annotations to the engine, or takes them back. */
 	setDrawAnnotationText(on: boolean): void {
 		if (on === this.#drawsAnnotationText) return;

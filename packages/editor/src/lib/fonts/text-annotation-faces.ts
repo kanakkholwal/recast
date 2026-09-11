@@ -23,3 +23,20 @@ export function textAnnotationFaces(annotations: Annotation[]): FaceRequest[] {
 	}
 	return [...seen.values()];
 }
+
+/**
+ * Whether the NATIVE export can shape every visible text annotation itself. All or none, so a frame never
+ * mixes two shapers; an empty family counts as missing, since the face it falls back to may not exist.
+ */
+export async function engineCanShapeText(
+	annotations: Annotation[],
+	resolveNative: (family: string, weight: number) => Promise<object | null>,
+): Promise<boolean> {
+	const texts = annotations.filter((a) => !a.hidden && a.kind.kind === "text");
+	if (texts.length === 0) return false;
+	if (texts.some((a) => a.kind.kind === "text" && !a.kind.fontFamily.trim())) return false;
+	const found = await Promise.all(
+		textAnnotationFaces(annotations).map(({ family, weight }) => resolveNative(family, weight)),
+	);
+	return found.every((face) => face !== null);
+}

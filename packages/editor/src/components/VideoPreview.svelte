@@ -10,7 +10,7 @@ import { CursorSmoother } from "../lib/cursor/smoother";
 import { smoothingStrengthToSigmaMs } from "../lib/cursor/smoothing";
 import { getEditorServices } from "../lib/editor/services";
 import { resolveEngineFont } from "../lib/fonts/engine-font";
-import { textAnnotationFaces } from "../lib/fonts/text-annotation-faces";
+import { engineCanShapeText, textAnnotationFaces } from "../lib/fonts/text-annotation-faces";
 import { experimentalStore } from "../stores/experimental.svelte";
 import { cameraPlaybackRate, trackTimeAt } from "../lib/editor/track-offsets";
 import { analytics, exportActivity } from "../lib/host-hooks";
@@ -730,12 +730,15 @@ $effect(() => {
 	const state = store.toRenderState();
 	const meta = store.metadata;
 	const timeMap = store.timeMap;
+	const engineWillExport = experimentalStore.isEnabled("engineExport");
 	untrack(() => {
 		if (!engineDriver) return;
 		if (meta?.width && meta?.height) engineDriver.setSourceSize(meta.width, meta.height);
 		// Before the scene: the axis defines what output time MEANS, or a dropped cut resolves on the old axis.
 		engineDriver.setTimeMap(timeMap);
-		engineDriver.syncScene(state);
+		const changed = engineDriver.syncScene(state);
+		// After the push: the engine names the fonts and images of the scene it now holds.
+		if (changed || engineWillExport !== assetsForExport) void syncEngineAssets(engineWillExport);
 		requestRedraw();
 	});
 });
@@ -822,27 +825,50 @@ function syncEngineFrameInputs() {
 	}
 }
 
-/** Paths last handed to the engine, so a store write that leaves the image
- *  annotations alone does not re-decode every asset. */
+/** Paths last handed to the engine, so a store write that leaves the images alone does
+ *  not re-decode every asset. A path that fails to decode is skipped, not drawn. */
 let engineImageKey = "";
+/** The `engineExport` value assets were last synced for, so a flag flip re-syncs. */
+let assetsForExport: boolean | null = null;
+let assetGeneration = 0;
 
-// A path that fails to decode never uploads, so the annotation is skipped rather than drawn as a placeholder.
-$effect(() => {
-	if (!engineDriver) return;
-	const paths = [
-		...new Set(
-			store.annotations
-				.filter((a) => a.kind.kind === "image" && a.kind.path)
-				.map((a) => (a.kind as { path: string }).path),
-		),
-	].sort();
-	const key = paths.join("\u0000");
-	untrack(() => {
-		if (!engineDriver || key === engineImageKey) return;
+/**
+ * Supplies what the scene the engine now holds asks for: its images (composition slides
+ * included), every face its words name, and the fallback face. Read from the engine, so
+ * the preview and the export resolve the same list the same way.
+ */
+async function syncEngineAssets(engineWillExport: boolean) {
+	const driver = engineDriver;
+	if (!driver) return;
+	assetsForExport = engineWillExport;
+	const generation = ++assetGeneration;
+	const paths = [...driver.wantedImages()].sort();
+	const key = JSON.stringify(paths);
+	if (key !== engineImageKey) {
 		engineImageKey = key;
 		void loadAnnotationImages(paths, key);
-	});
-});
+	}
+	const fallback = driver.fallbackFace();
+	const fallbackFont = await resolveEngineFont(fallback.stack, fallback.weight);
+	if (fallbackFont && driver.setCaptionFont(fallbackFont.key, fallbackFont.data)) requestRedraw();
+	for (const { stack, weight } of driver.wantedFaces()) {
+		if (driver.hasTextFont(stack, weight)) continue;
+		const font = await resolveEngineFont(stack, weight);
+		if (font && driver.setTextFont(stack, weight, font.data)) requestRedraw();
+	}
+	// Engine-drawn words only when every face resolved AND uploaded; otherwise the DOM draws them.
+	const annotations = store.annotations;
+	const engineText =
+		engineWillExport &&
+		(await engineCanShapeText(annotations, resolveEngineFont)) &&
+		textAnnotationFaces(annotations).every(({ family, weight }) =>
+			driver.hasTextFont(family, weight),
+		);
+	if (generation !== assetGeneration || driver !== engineDriver) return;
+	driver.setDrawAnnotationText(engineText);
+	store.engineDrawsAnnotationText = engineText;
+	requestRedraw();
+}
 
 async function loadAnnotationImages(paths: string[], key: string) {
 	const images = new Map<string, ImageBitmap>();
@@ -882,36 +908,6 @@ $effect(() => {
 	if (!engineDriver) return;
 	engineDriver.setEditingAnnotation(store.editingAnnotationId);
 	requestRedraw();
-});
-
-/**
- * Hand the engine the words of text annotations, but only when it will draw them
- * in the EXPORT too: the FFmpeg path has no shaper, so its exports take text
- * pre-rasterised from the DOM layer, and previewing through a different shaper
- * than the one that writes the file is the drift this design exists to avoid.
- * Then only if a face resolves for EVERY family, since some words in one shaper
- * and the rest in another is that same drift inside a single frame.
- */
-$effect(() => {
-	const engineWillExport = experimentalStore.isEnabled("engineExport");
-	const wanted = engineWillExport ? textAnnotationFaces(store.annotations) : [];
-	untrack(() => {
-		void (async () => {
-			const driver = engineDriver;
-			if (!driver) return;
-			const loaded = await Promise.all(
-				wanted.map(async ({ family, weight }) => {
-					if (driver.hasTextFont(family, weight)) return true;
-					const font = await resolveEngineFont(family, weight);
-					return font !== null && driver.setTextFont(family, weight, font.data);
-				}),
-			);
-			const all = wanted.length > 0 && loaded.every(Boolean);
-			driver.setDrawAnnotationText(all);
-			store.engineDrawsAnnotationText = all;
-			requestRedraw();
-		})();
-	});
 });
 
 // Read the store playhead, not the hidden <video>: on the WebCodecs path it is not kept aligned, so the camera would stick at the start. Tolerance avoids re-seeking on micro-jitter.

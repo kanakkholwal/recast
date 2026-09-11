@@ -489,6 +489,7 @@ pub fn run() {
             fonts::ensure_google_font,
             fonts::caption_font_file,
             fonts::system_font_bytes,
+            fonts::engine_font_bytes,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,
             commands::hydrate_cached_assets,

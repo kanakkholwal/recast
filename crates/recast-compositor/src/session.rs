@@ -286,6 +286,45 @@ impl Session {
         resolved
     }
 
+    /// Every face this scene's words ask for, for a host that resolves fonts itself.
+    #[must_use]
+    pub fn wanted_faces(&self) -> Vec<crate::host_needs::FaceRequest> {
+        crate::host_needs::wanted_faces(&self.scene)
+    }
+
+    /// Every image file this scene draws: annotation images and composition slides.
+    #[must_use]
+    pub fn wanted_images(&self) -> Vec<String> {
+        crate::host_needs::wanted_images(&self.scene)
+    }
+
+    /// The face an unnamed family, or one no face was found for, draws with.
+    #[must_use]
+    pub fn fallback_face_request(&self) -> crate::host_needs::FaceRequest {
+        crate::host_needs::fallback_face(&self.scene)
+    }
+
+    /// Families this scene's words would draw with no face at all, named for a refusal.
+    pub fn unshapeable_faces(&mut self) -> Vec<String> {
+        let fallback = self.text_face();
+        self.faces.set_host(fallback);
+        let mut missing: Vec<String> = Vec::new();
+        for want in crate::host_needs::wanted_faces(&self.scene) {
+            if self.faces.face_for(&want.stack, want.weight).is_some() {
+                continue;
+            }
+            let name = if want.stack.is_empty() {
+                "the default font".to_owned()
+            } else {
+                want.stack
+            };
+            if !missing.contains(&name) {
+                missing.push(name);
+            }
+        }
+        missing
+    }
+
     pub fn render(
         &mut self,
         output_time: f64,

@@ -562,15 +562,11 @@ export function enqueueExport(req: EnqueueExportRequest): Promise<string[]> {
 		speed: req.speed ?? "balanced",
 		fps: req.fps ?? "source",
 	});
+	// Spread, not a field list: a hand-copied list dropped `engineExport`, so every editor export ran on FFmpeg.
 	return invoke<string[]>("enqueue_export", {
 		request: {
-			exportId: req.exportId,
-			inputPath: req.inputPath,
-			format: req.format,
-			quality: req.quality,
+			...req,
 			speed: req.speed ?? "balanced",
-			renderState: req.renderState,
-			gifSettings: req.gifSettings,
 			fps: req.fps ?? null,
 			burnCaptions: req.burnCaptions ?? false,
 			captionSidecar: req.captionSidecar ?? null,
@@ -689,6 +685,12 @@ export async function installedFontBytes(
 	weight: number,
 ): Promise<Uint8Array | null> {
 	const bytes = await invoke<number[] | null>("system_font_bytes", { family, weight });
+	return bytes ? new Uint8Array(bytes) : null;
+}
+
+/** Bytes the engine shapes `stack` with, resolved exactly as the native export resolves them. */
+export async function engineFontBytes(stack: string, weight: number): Promise<Uint8Array | null> {
+	const bytes = await invoke<number[] | null>("engine_font_bytes", { stack, weight });
 	return bytes ? new Uint8Array(bytes) : null;
 }
 

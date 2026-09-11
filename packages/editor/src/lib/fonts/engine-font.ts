@@ -22,15 +22,11 @@ export interface EngineFont {
 // Successes only: a failure here is usually the first-use download, and caching it would strand the font.
 const cache = new Map<string, EngineFont>();
 
-/**
- * Resolve a CSS font stack to bytes the engine can shape with, or null when the
- * host cannot supply them. Null is not an error: the engine falls back to its
- * bundled face, which is what a system stack wants anyway.
- *
- * Main thread only, since it goes through the host's asset service. The export
- * resolves it in the producer and ships the bytes into the worker.
- */
+/** Resolve a CSS stack to bytes the engine can shape, or null. The engine has no bundled face, so
+ *  null means the DOM draws that text. Main thread only: it goes through the host's asset service. */
 export async function resolveEngineFont(stack: string, weight = 400): Promise<EngineFont | null> {
+	const host = getEditorServices().assets?.engineFontBytes;
+	if (host) return hostEngineFont(host, stack, weight);
 	const google = googleFamilyFromStack(stack);
 	const downloadable = google !== null && isGoogleFont(google);
 	const family = downloadable ? google : firstFamily(stack);
@@ -44,6 +40,27 @@ export async function resolveEngineFont(stack: string, weight = 400): Promise<En
 		: await installedEngineFont(family, weight, key);
 	if (resolved) cache.set(key, resolved);
 	return resolved;
+}
+
+/** The desktop path: one host resolver shared with the native export, so both shape the same bytes. */
+async function hostEngineFont(
+	host: (stack: string, weight: number) => Promise<Uint8Array | null>,
+	stack: string,
+	weight: number,
+): Promise<EngineFont | null> {
+	const key = `host:${firstFamily(stack)}:${weight}`;
+	const hit = cache.get(key);
+	if (hit) return hit;
+	try {
+		const data = await host(stack, weight);
+		if (!data) return null;
+		const font = { key, data };
+		cache.set(key, font);
+		return font;
+	} catch (err) {
+		console.warn(`engine font unavailable: ${key}`, err);
+		return null;
+	}
 }
 
 /** The first name of a CSS stack, unquoted, which is what a font database matches. */

@@ -141,6 +141,61 @@ pub async fn system_font_bytes(family: String, weight: u32) -> AppResult<Option<
     .map_err(|e| AppError::msg(format!("system_font_bytes join error: {e}")))
 }
 
+/// The TTF the engine shapes `stack` at `weight` with: an installed face first, else
+/// the Google family, downloaded once. The preview and the export both resolve here.
+pub(crate) async fn resolve_engine_font(
+    app: &AppHandle,
+    stack: &str,
+    weight: u32,
+) -> Option<Vec<u8>> {
+    let family = recast_compositor::faces::first_family(stack);
+    if family.is_empty() {
+        return None;
+    }
+    let installed = {
+        let family = family.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            recast_compositor::faces::installed_font_bytes(&family, weight as u16)
+        })
+        .await
+        .ok()
+        .flatten()
+    };
+    if installed.is_some() {
+        return installed;
+    }
+    let google = google_family(&family);
+    match ensure_caption_font_file(app, &google, weight).await {
+        Ok(path) => tauri::async_runtime::spawn_blocking(move || std::fs::read(path).ok())
+            .await
+            .ok()
+            .flatten(),
+        Err(e) => {
+            log::warn!("engine font {google} at {weight}: {e}");
+            None
+        }
+    }
+}
+
+/// A Fontsource variable family ("Inter Variable") is the Google family without the suffix.
+fn google_family(family: &str) -> String {
+    family
+        .strip_suffix(" Variable")
+        .unwrap_or(family)
+        .trim()
+        .to_owned()
+}
+
+/// `resolve_engine_font` for the webview, so the preview shapes with the bytes the export will.
+#[tauri::command]
+pub async fn engine_font_bytes(
+    app: AppHandle,
+    stack: String,
+    weight: u32,
+) -> AppResult<Option<Vec<u8>>> {
+    Ok(resolve_engine_font(&app, &stack, weight).await)
+}
+
 /// Pull the first font URL with `ext` out of a Google Fonts `css2` response
 /// (`src: url(https://fonts.gstatic.com/…) format(...)`).
 fn extract_font_url(css: &str, ext: &str) -> Option<String> {
@@ -157,6 +212,13 @@ fn extract_font_url(css: &str, ext: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::extract_font_url;
+
+    /// The app's default annotation font is Fontsource's name for a Google family.
+    #[test]
+    fn a_fontsource_variable_family_resolves_as_its_google_family() {
+        assert_eq!(super::google_family("Inter Variable"), "Inter");
+        assert_eq!(super::google_family("Anton"), "Anton");
+    }
 
     #[test]
     fn extract_font_url_returns_first_matching_extension() {

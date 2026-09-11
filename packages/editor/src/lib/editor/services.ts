@@ -119,6 +119,9 @@ export interface AssetService {
 	/** The bytes of an INSTALLED family, which a browser can never fetch. Absent
 	 *  on a host with no font database, where text it names is drawn by the DOM. */
 	installedFontBytes?(family: string, weight: number): Promise<Uint8Array | null>;
+	/** Bytes the engine shapes `stack` at `weight` with, resolved on the host exactly as the
+	 *  export resolves them: an installed face first, else the Google family. */
+	engineFontBytes?(stack: string, weight: number): Promise<Uint8Array | null>;
 	ensureInstalled(manifestUrl: string): Promise<AssetInstallResult>;
 	getCachedPath(id: string): Promise<string | null>;
 	hydrate(): Promise<HydratedAsset[]>;

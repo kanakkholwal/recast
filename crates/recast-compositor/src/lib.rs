@@ -8,6 +8,7 @@ pub mod component;
 pub mod eval;
 pub mod faces;
 pub mod geometry;
+pub mod host_needs;
 pub mod item_text;
 pub mod layout;
 pub mod plane;

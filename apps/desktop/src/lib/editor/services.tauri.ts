@@ -10,6 +10,7 @@ import {
 	cancelTranscription,
 	captionCapabilities,
 	captionFontFile,
+	engineFontBytes,
 	installedFontBytes,
 	deleteCaptionModel,
 	detectSilence,
@@ -112,6 +113,7 @@ export const tauriEditorServices: EditorServices = {
 	assets: {
 		googleFont: ensureGoogleFont,
 		captionFontFile,
+		engineFontBytes,
 		installedFontBytes,
 		ensureInstalled: ensureAssetsInstalled,
 		getCachedPath: getCachedAssetPath,

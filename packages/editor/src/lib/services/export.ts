@@ -31,6 +31,8 @@ import {
 import { toOutputTimeTranscript } from "../captions/output-time";
 import { rasterizeCursorSprites } from "../export/rasterize-cursor";
 import { expandTextAnnotations } from "../export/rasterize-text";
+import { resolveEngineFont } from "../fonts/engine-font";
+import { engineCanShapeText } from "../fonts/text-annotation-faces";
 import type { Transcript } from "../wire-types";
 
 /** Optional progress hooks for the hybrid-raster "Preparing…" phase. Each fires
@@ -93,8 +95,10 @@ export async function buildExportRenderState(
 	const canvasW = meta ? meta.width + paddingPx * 2 : 0;
 	const canvasH = meta ? meta.height + paddingPx * 2 : 0;
 
-	// The engine shapes text; only the FFmpeg graph needs it flattened first.
-	const rasterisesText = !engineExport;
+	// The engine shapes text only if the native exporter finds every face; otherwise the DOM's pixels travel.
+	const engineShapesText =
+		engineExport && (await engineCanShapeText(renderState.annotations, resolveEngineFont));
+	const rasterisesText = !engineShapesText;
 	const hasText = rasterisesText && renderState.annotations.some((a) => a.kind.kind === "text");
 	const hasStyledCursor = store.cursorSettings.style !== "dot";
 	hooks?.onText?.(hasText ? "running" : "done");
